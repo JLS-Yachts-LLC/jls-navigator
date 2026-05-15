@@ -126,9 +126,12 @@ export function AppSidebar() {
           </div>
         </div>
         <div className="flex gap-1">
-          <Button variant="ghost" size="sm" className="flex-1 h-7 text-xs justify-start gap-1.5">
+          <Link
+            to="/settings"
+            className="flex flex-1 items-center gap-1.5 rounded-md px-2 h-7 text-xs text-foreground/70 hover:bg-accent hover:text-foreground transition-colors"
+          >
             <Settings className="h-3.5 w-3.5" /> Settings
-          </Button>
+          </Link>
           <Button variant="ghost" size="sm" onClick={signOut} className="h-7 px-2 text-xs gap-1.5">
             <LogOut className="h-3.5 w-3.5" />
           </Button>
