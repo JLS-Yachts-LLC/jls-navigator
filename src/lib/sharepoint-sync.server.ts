@@ -120,6 +120,7 @@ export async function pushYachtToSharePoint(yachtId: string): Promise<void> {
   const spFields: Record<string, any> = {}
   for (const [spField, dbField] of Object.entries(cfg.fieldMapping)) {
     if (!dbField) continue
+    if (dbField === 'vessel_image') continue // SP image columns can't be set via field value
     const val = (yacht as Record<string, any>)[dbField]
     if (val !== null && val !== undefined && val !== '') {
       spFields[spField] = val
@@ -206,6 +207,46 @@ export async function pushYachtToSharePoint(yachtId: string): Promise<void> {
   }
 }
 
+// ─── Image download helper ─────────────────────────────────────────────────────
+
+async function fetchSpImageToSupabase(raw: unknown, token: string, tenantUrl: string, spItemId: string): Promise<string | null> {
+  // SP image/thumbnail columns return an object (or sometimes a JSON string)
+  let img: Record<string, any> | null = null
+  if (typeof raw === 'string') {
+    // Could be a JSON-encoded object or a plain URL
+    try { img = JSON.parse(raw) } catch { return raw } // plain URL — use as-is
+  } else if (raw && typeof raw === 'object') {
+    img = raw as Record<string, any>
+  }
+  if (!img) return null
+
+  // Hyperlink/Picture column returns { Url, Description }
+  if (typeof img.Url === 'string') return img.Url
+
+  const serverUrl: string = img.serverUrl ?? tenantUrl.replace(/\/$/, '')
+  const serverRelativeUrl: string | undefined = img.serverRelativeUrl
+  if (!serverRelativeUrl) return null
+
+  // Download the image from SharePoint using the Graph Bearer token
+  const imgRes = await fetch(`${serverUrl}${serverRelativeUrl}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!imgRes.ok) return null
+
+  const arrayBuffer = await imgRes.arrayBuffer()
+  const contentType = imgRes.headers.get('content-type') ?? 'image/jpeg'
+  const ext = contentType.split('/')[1]?.split(';')[0] ?? 'jpg'
+  const fileName = img.fileName ?? `vessel-${spItemId}.${ext}`
+  const path = `sharepoint/${spItemId}-${fileName}`
+
+  const { error } = await supabaseAdmin.storage
+    .from('vessel-images')
+    .upload(path, arrayBuffer, { upsert: true, contentType })
+
+  if (error) return null
+  return supabaseAdmin.storage.from('vessel-images').getPublicUrl(path).data.publicUrl
+}
+
 // ─── Inbound: SharePoint → App (delta sync) ────────────────────────────────────
 
 export async function syncFromSharePoint(): Promise<{ synced: number; errors: number }> {
@@ -261,10 +302,8 @@ export async function syncFromSharePoint(): Promise<{ synced: number; errors: nu
     for (const [spField, dbField] of Object.entries(cfg.fieldMapping)) {
       if (!dbField || !(spField in fields)) continue
       const raw = fields[spField]
-      // SharePoint image/thumbnail columns return objects; extract URL
-      if (dbField === 'vessel_image' && raw && typeof raw === 'object') {
-        const url = raw.url ?? (raw.serverUrl && raw.serverRelativeUrl ? `${raw.serverUrl}${raw.serverRelativeUrl}` : null)
-        record[dbField] = url ?? null
+      if (dbField === 'vessel_image') {
+        record[dbField] = await fetchSpImageToSupabase(raw, token, cfg.tenantUrl, item.id)
       } else {
         record[dbField] = raw !== '' ? raw : null
       }
