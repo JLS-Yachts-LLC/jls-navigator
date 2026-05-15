@@ -11,12 +11,12 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
   if (request.method === 'GET') {
     const token = url.searchParams.get('validationToken')
     if (token) {
-      return new Response(token, {
+      return new Response(decodeURIComponent(token), {
         status: 200,
-        headers: { 'Content-Type': 'text/plain' },
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
       })
     }
-    return new Response('Not found', { status: 404 })
+    return new Response('ok', { status: 200 })
   }
 
   // POST: SharePoint change notification.
@@ -36,7 +36,7 @@ export default {
   async fetch(request: Request, env: Record<string, unknown>, ctx: { waitUntil: (p: Promise<unknown>) => void }): Promise<Response> {
     const url = new URL(request.url)
 
-    if (url.pathname === '/api/sharepoint-webhook') {
+    if (url.pathname === '/api/sharepoint-webhook' || url.pathname === '/api/sharepoint-webhook/') {
       return handleSharePointWebhook(request, ctx)
     }
 
