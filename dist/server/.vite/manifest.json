@@ -1,0 +1,660 @@
+{
+  "%23tanstack-start-plugin-adapters": {
+    "file": "assets/__23tanstack-start-plugin-adapters-Cwee5PKy.js",
+    "name": "__23tanstack-start-plugin-adapters",
+    "src": "%23tanstack-start-plugin-adapters",
+    "isDynamicEntry": true
+  },
+  "C:/Users/Matthew/OneDrive - New Horizon-IT/Documents/GitHub/jls-navigator/src/styles.css": {
+    "file": "assets/styles-DWkAy1hS.css",
+    "src": "C:/Users/Matthew/OneDrive - New Horizon-IT/Documents/GitHub/jls-navigator/src/styles.css"
+  },
+  "_Combination-CQXUNOP5.js": {
+    "file": "assets/Combination-CQXUNOP5.js",
+    "name": "Combination",
+    "imports": [
+      "_createLucideIcon-B0i5Fv77.js",
+      "_worker-entry-Da-yLdYc.js",
+      "_button-B7lrsNYO.js",
+      "_router-DkuxBX4X.js"
+    ]
+  },
+  "_button-B7lrsNYO.js": {
+    "file": "assets/button-B7lrsNYO.js",
+    "name": "button",
+    "imports": [
+      "_worker-entry-Da-yLdYc.js"
+    ]
+  },
+  "_chevron-down-D6cTS-qr.js": {
+    "file": "assets/chevron-down-D6cTS-qr.js",
+    "name": "chevron-down",
+    "imports": [
+      "_createLucideIcon-B0i5Fv77.js"
+    ]
+  },
+  "_chevron-right-xYt6hyHb.js": {
+    "file": "assets/chevron-right-xYt6hyHb.js",
+    "name": "chevron-right",
+    "imports": [
+      "_createLucideIcon-B0i5Fv77.js"
+    ]
+  },
+  "_createLucideIcon-B0i5Fv77.js": {
+    "file": "assets/createLucideIcon-B0i5Fv77.js",
+    "name": "createLucideIcon",
+    "imports": [
+      "_worker-entry-Da-yLdYc.js"
+    ]
+  },
+  "_createServerRpc-Dv52oNjy.js": {
+    "file": "assets/createServerRpc-Dv52oNjy.js",
+    "name": "createServerRpc",
+    "imports": [
+      "_worker-entry-Da-yLdYc.js"
+    ]
+  },
+  "_createSsrRpc-BIUDpMC-.js": {
+    "file": "assets/createSsrRpc-BIUDpMC-.js",
+    "name": "createSsrRpc",
+    "imports": [
+      "_worker-entry-Da-yLdYc.js"
+    ]
+  },
+  "_file-check-corner-Br_ysgUJ.js": {
+    "file": "assets/file-check-corner-Br_ysgUJ.js",
+    "name": "file-check-corner",
+    "imports": [
+      "_createLucideIcon-B0i5Fv77.js"
+    ]
+  },
+  "_index-BIVay9xR.js": {
+    "file": "assets/index-BIVay9xR.js",
+    "name": "index",
+    "imports": [
+      "_worker-entry-Da-yLdYc.js",
+      "_button-B7lrsNYO.js",
+      "_Combination-CQXUNOP5.js"
+    ]
+  },
+  "_input-Xwj40ESg.js": {
+    "file": "assets/input-Xwj40ESg.js",
+    "name": "input",
+    "imports": [
+      "_worker-entry-Da-yLdYc.js",
+      "_button-B7lrsNYO.js"
+    ]
+  },
+  "_jls-logo-DfpNKY-Z.js": {
+    "file": "assets/jls-logo-DfpNKY-Z.js",
+    "name": "jls-logo",
+    "assets": [
+      "assets/jls-logo-4cU9_Jk8.png"
+    ]
+  },
+  "_label-CMI1dy08.js": {
+    "file": "assets/label-CMI1dy08.js",
+    "name": "label",
+    "imports": [
+      "_worker-entry-Da-yLdYc.js",
+      "_router-DkuxBX4X.js",
+      "_button-B7lrsNYO.js"
+    ]
+  },
+  "_permits-page-ZXlx2h7k.js": {
+    "file": "assets/permits-page-ZXlx2h7k.js",
+    "name": "permits-page",
+    "imports": [
+      "_worker-entry-Da-yLdYc.js",
+      "_router-DkuxBX4X.js",
+      "_button-B7lrsNYO.js",
+      "_input-Xwj40ESg.js",
+      "_label-CMI1dy08.js",
+      "_select-CDcbRRoP.js",
+      "_Combination-CQXUNOP5.js",
+      "_index-BIVay9xR.js",
+      "_x-DNkAtvLh.js",
+      "_status-pill-Bh_hmnxN.js",
+      "_file-check-corner-Br_ysgUJ.js",
+      "_createLucideIcon-B0i5Fv77.js",
+      "_save-BMATX320.js",
+      "_search-CIt2BkZo.js"
+    ]
+  },
+  "_router-DkuxBX4X.js": {
+    "file": "assets/router-DkuxBX4X.js",
+    "name": "router",
+    "isDynamicEntry": true,
+    "imports": [
+      "_worker-entry-Da-yLdYc.js"
+    ],
+    "dynamicImports": [
+      "src/routes/auth.tsx?tsr-split=component",
+      "src/routes/_app.tsx?tsr-split=component",
+      "src/routes/index.tsx?tsr-split=component",
+      "src/routes/_app.small-boat-registration.tsx?tsr-split=component",
+      "src/routes/_app.settings.tsx?tsr-split=errorComponent",
+      "src/routes/_app.settings.tsx?tsr-split=component",
+      "src/routes/_app.packages.tsx?tsr-split=component",
+      "src/routes/_app.orbit.tsx?tsr-split=component",
+      "src/routes/_app.director.tsx?tsr-split=component",
+      "src/routes/_app.crew-cab.tsx?tsr-split=component",
+      "src/routes/_app.yachts.index.tsx?tsr-split=component",
+      "src/routes/_app.yachts.new.tsx?tsr-split=component",
+      "src/routes/_app.yachts.$id.tsx?tsr-split=component",
+      "src/routes/_app.permits.tdra.tsx?tsr-split=component",
+      "src/routes/_app.permits.sanitation.tsx?tsr-split=component",
+      "src/routes/_app.permits.navigation-license.tsx?tsr-split=component",
+      "src/routes/_app.permits.gate-pass.tsx?tsr-split=component",
+      "src/routes/_app.permits.exit-entry.tsx?tsr-split=component",
+      "src/routes/_app.permits.dma.tsx?tsr-split=component",
+      "src/routes/_app.permits.cruising-tenders.tsx?tsr-split=component",
+      "src/routes/_app.permits.cruising-mothership.tsx?tsr-split=component"
+    ],
+    "assets": [
+      "assets/styles-DWkAy1hS.css"
+    ]
+  },
+  "_save-BMATX320.js": {
+    "file": "assets/save-BMATX320.js",
+    "name": "save",
+    "imports": [
+      "_createLucideIcon-B0i5Fv77.js"
+    ]
+  },
+  "_search-CIt2BkZo.js": {
+    "file": "assets/search-CIt2BkZo.js",
+    "name": "search",
+    "imports": [
+      "_createLucideIcon-B0i5Fv77.js"
+    ]
+  },
+  "_select-CDcbRRoP.js": {
+    "file": "assets/select-CDcbRRoP.js",
+    "name": "select",
+    "imports": [
+      "_createLucideIcon-B0i5Fv77.js",
+      "_worker-entry-Da-yLdYc.js",
+      "_button-B7lrsNYO.js",
+      "_router-DkuxBX4X.js",
+      "_Combination-CQXUNOP5.js",
+      "_chevron-down-D6cTS-qr.js"
+    ]
+  },
+  "_ship-Cin4A30m.js": {
+    "file": "assets/ship-Cin4A30m.js",
+    "name": "ship",
+    "imports": [
+      "_createLucideIcon-B0i5Fv77.js"
+    ]
+  },
+  "_status-pill-Bh_hmnxN.js": {
+    "file": "assets/status-pill-Bh_hmnxN.js",
+    "name": "status-pill",
+    "imports": [
+      "_worker-entry-Da-yLdYc.js",
+      "_button-B7lrsNYO.js"
+    ]
+  },
+  "_stub-page-DRRmBfrX.js": {
+    "file": "assets/stub-page-DRRmBfrX.js",
+    "name": "stub-page",
+    "imports": [
+      "_worker-entry-Da-yLdYc.js",
+      "_createLucideIcon-B0i5Fv77.js"
+    ]
+  },
+  "_upload-BiN-bZba.js": {
+    "file": "assets/upload-BiN-bZba.js",
+    "name": "upload",
+    "imports": [
+      "_createLucideIcon-B0i5Fv77.js"
+    ]
+  },
+  "_users-Du5S8QLq.js": {
+    "file": "assets/users-Du5S8QLq.js",
+    "name": "users",
+    "imports": [
+      "_createLucideIcon-B0i5Fv77.js"
+    ]
+  },
+  "_worker-entry-Da-yLdYc.js": {
+    "file": "assets/worker-entry-Da-yLdYc.js",
+    "name": "worker-entry",
+    "isDynamicEntry": true,
+    "dynamicImports": [
+      "tanstack-start-manifest:v",
+      "src/routes/_app.settings.tsx?tss-serverfn-split",
+      "src/routes/_app.settings.tsx?tss-serverfn-split",
+      "src/routes/_app.settings.tsx?tss-serverfn-split",
+      "src/routes/_app.settings.tsx?tss-serverfn-split",
+      "src/routes/_app.settings.tsx?tss-serverfn-split",
+      "src/routes/_app.settings.tsx?tss-serverfn-split",
+      "src/routes/_app.settings.tsx?tss-serverfn-split",
+      "src/routes/_app.settings.tsx?tss-serverfn-split",
+      "src/routes/_app.settings.tsx?tss-serverfn-split",
+      "src/routes/_app.settings.tsx?tss-serverfn-split",
+      "src/routes/_app.settings.tsx?tss-serverfn-split",
+      "src/routes/_app.settings.tsx?tss-serverfn-split",
+      "src/routes/_app.settings.tsx?tss-serverfn-split",
+      "src/routes/_app.yachts.$id.tsx?tss-serverfn-split",
+      "src/routes/_app.yachts.new.tsx?tss-serverfn-split",
+      "_router-DkuxBX4X.js",
+      "node_modules/@tanstack/react-start/dist/plugin/default-entry/start.ts",
+      "%23tanstack-start-plugin-adapters"
+    ]
+  },
+  "_x-DNkAtvLh.js": {
+    "file": "assets/x-DNkAtvLh.js",
+    "name": "x",
+    "imports": [
+      "_createLucideIcon-B0i5Fv77.js"
+    ]
+  },
+  "_yacht-fields-Bhe7PujE.js": {
+    "file": "assets/yacht-fields-Bhe7PujE.js",
+    "name": "yacht-fields"
+  },
+  "node_modules/@tanstack/react-start/dist/plugin/default-entry/start.ts": {
+    "file": "assets/start-HYkvq4Ni.js",
+    "name": "start",
+    "src": "node_modules/@tanstack/react-start/dist/plugin/default-entry/start.ts",
+    "isDynamicEntry": true
+  },
+  "src/assets/jls-logo.png": {
+    "file": "assets/jls-logo-4cU9_Jk8.png",
+    "src": "src/assets/jls-logo.png"
+  },
+  "src/routes/_app.crew-cab.tsx?tsr-split=component": {
+    "file": "assets/_app.crew-cab-C3ytpaQF.js",
+    "name": "_app.crew-cab",
+    "src": "src/routes/_app.crew-cab.tsx?tsr-split=component",
+    "isDynamicEntry": true,
+    "imports": [
+      "_worker-entry-Da-yLdYc.js",
+      "_stub-page-DRRmBfrX.js",
+      "_createLucideIcon-B0i5Fv77.js"
+    ]
+  },
+  "src/routes/_app.director.tsx?tsr-split=component": {
+    "file": "assets/_app.director-BQiM1rwB.js",
+    "name": "_app.director",
+    "src": "src/routes/_app.director.tsx?tsr-split=component",
+    "isDynamicEntry": true,
+    "imports": [
+      "_worker-entry-Da-yLdYc.js",
+      "_stub-page-DRRmBfrX.js",
+      "_createLucideIcon-B0i5Fv77.js"
+    ]
+  },
+  "src/routes/_app.orbit.tsx?tsr-split=component": {
+    "file": "assets/_app.orbit-DyFaGcUI.js",
+    "name": "_app.orbit",
+    "src": "src/routes/_app.orbit.tsx?tsr-split=component",
+    "isDynamicEntry": true,
+    "imports": [
+      "_worker-entry-Da-yLdYc.js",
+      "_stub-page-DRRmBfrX.js",
+      "_createLucideIcon-B0i5Fv77.js"
+    ]
+  },
+  "src/routes/_app.packages.tsx?tsr-split=component": {
+    "file": "assets/_app.packages-DOMVXEBC.js",
+    "name": "_app.packages",
+    "src": "src/routes/_app.packages.tsx?tsr-split=component",
+    "isDynamicEntry": true,
+    "imports": [
+      "_worker-entry-Da-yLdYc.js",
+      "_stub-page-DRRmBfrX.js",
+      "_createLucideIcon-B0i5Fv77.js"
+    ]
+  },
+  "src/routes/_app.permits.cruising-mothership.tsx?tsr-split=component": {
+    "file": "assets/_app.permits.cruising-mothership-Cwn6beF-.js",
+    "name": "_app.permits.cruising-mothership",
+    "src": "src/routes/_app.permits.cruising-mothership.tsx?tsr-split=component",
+    "isDynamicEntry": true,
+    "imports": [
+      "_worker-entry-Da-yLdYc.js",
+      "_permits-page-ZXlx2h7k.js",
+      "_router-DkuxBX4X.js",
+      "_button-B7lrsNYO.js",
+      "_input-Xwj40ESg.js",
+      "_label-CMI1dy08.js",
+      "_select-CDcbRRoP.js",
+      "_createLucideIcon-B0i5Fv77.js",
+      "_Combination-CQXUNOP5.js",
+      "_chevron-down-D6cTS-qr.js",
+      "_index-BIVay9xR.js",
+      "_x-DNkAtvLh.js",
+      "_status-pill-Bh_hmnxN.js",
+      "_file-check-corner-Br_ysgUJ.js",
+      "_save-BMATX320.js",
+      "_search-CIt2BkZo.js"
+    ]
+  },
+  "src/routes/_app.permits.cruising-tenders.tsx?tsr-split=component": {
+    "file": "assets/_app.permits.cruising-tenders-CQgKxC0U.js",
+    "name": "_app.permits.cruising-tenders",
+    "src": "src/routes/_app.permits.cruising-tenders.tsx?tsr-split=component",
+    "isDynamicEntry": true,
+    "imports": [
+      "_worker-entry-Da-yLdYc.js",
+      "_permits-page-ZXlx2h7k.js",
+      "_router-DkuxBX4X.js",
+      "_button-B7lrsNYO.js",
+      "_input-Xwj40ESg.js",
+      "_label-CMI1dy08.js",
+      "_select-CDcbRRoP.js",
+      "_createLucideIcon-B0i5Fv77.js",
+      "_Combination-CQXUNOP5.js",
+      "_chevron-down-D6cTS-qr.js",
+      "_index-BIVay9xR.js",
+      "_x-DNkAtvLh.js",
+      "_status-pill-Bh_hmnxN.js",
+      "_file-check-corner-Br_ysgUJ.js",
+      "_save-BMATX320.js",
+      "_search-CIt2BkZo.js"
+    ]
+  },
+  "src/routes/_app.permits.dma.tsx?tsr-split=component": {
+    "file": "assets/_app.permits.dma-CsWd1g0x.js",
+    "name": "_app.permits.dma",
+    "src": "src/routes/_app.permits.dma.tsx?tsr-split=component",
+    "isDynamicEntry": true,
+    "imports": [
+      "_worker-entry-Da-yLdYc.js",
+      "_permits-page-ZXlx2h7k.js",
+      "_router-DkuxBX4X.js",
+      "_button-B7lrsNYO.js",
+      "_input-Xwj40ESg.js",
+      "_label-CMI1dy08.js",
+      "_select-CDcbRRoP.js",
+      "_createLucideIcon-B0i5Fv77.js",
+      "_Combination-CQXUNOP5.js",
+      "_chevron-down-D6cTS-qr.js",
+      "_index-BIVay9xR.js",
+      "_x-DNkAtvLh.js",
+      "_status-pill-Bh_hmnxN.js",
+      "_file-check-corner-Br_ysgUJ.js",
+      "_save-BMATX320.js",
+      "_search-CIt2BkZo.js"
+    ]
+  },
+  "src/routes/_app.permits.exit-entry.tsx?tsr-split=component": {
+    "file": "assets/_app.permits.exit-entry-DJry74vR.js",
+    "name": "_app.permits.exit-entry",
+    "src": "src/routes/_app.permits.exit-entry.tsx?tsr-split=component",
+    "isDynamicEntry": true,
+    "imports": [
+      "_worker-entry-Da-yLdYc.js",
+      "_permits-page-ZXlx2h7k.js",
+      "_router-DkuxBX4X.js",
+      "_button-B7lrsNYO.js",
+      "_input-Xwj40ESg.js",
+      "_label-CMI1dy08.js",
+      "_select-CDcbRRoP.js",
+      "_createLucideIcon-B0i5Fv77.js",
+      "_Combination-CQXUNOP5.js",
+      "_chevron-down-D6cTS-qr.js",
+      "_index-BIVay9xR.js",
+      "_x-DNkAtvLh.js",
+      "_status-pill-Bh_hmnxN.js",
+      "_file-check-corner-Br_ysgUJ.js",
+      "_save-BMATX320.js",
+      "_search-CIt2BkZo.js"
+    ]
+  },
+  "src/routes/_app.permits.gate-pass.tsx?tsr-split=component": {
+    "file": "assets/_app.permits.gate-pass-B2cuhw0A.js",
+    "name": "_app.permits.gate-pass",
+    "src": "src/routes/_app.permits.gate-pass.tsx?tsr-split=component",
+    "isDynamicEntry": true,
+    "imports": [
+      "_worker-entry-Da-yLdYc.js",
+      "_stub-page-DRRmBfrX.js",
+      "_createLucideIcon-B0i5Fv77.js"
+    ]
+  },
+  "src/routes/_app.permits.navigation-license.tsx?tsr-split=component": {
+    "file": "assets/_app.permits.navigation-license-C0gPpv5G.js",
+    "name": "_app.permits.navigation-license",
+    "src": "src/routes/_app.permits.navigation-license.tsx?tsr-split=component",
+    "isDynamicEntry": true,
+    "imports": [
+      "_worker-entry-Da-yLdYc.js",
+      "_stub-page-DRRmBfrX.js",
+      "_createLucideIcon-B0i5Fv77.js"
+    ]
+  },
+  "src/routes/_app.permits.sanitation.tsx?tsr-split=component": {
+    "file": "assets/_app.permits.sanitation-T23qftbL.js",
+    "name": "_app.permits.sanitation",
+    "src": "src/routes/_app.permits.sanitation.tsx?tsr-split=component",
+    "isDynamicEntry": true,
+    "imports": [
+      "_worker-entry-Da-yLdYc.js",
+      "_permits-page-ZXlx2h7k.js",
+      "_router-DkuxBX4X.js",
+      "_button-B7lrsNYO.js",
+      "_input-Xwj40ESg.js",
+      "_label-CMI1dy08.js",
+      "_select-CDcbRRoP.js",
+      "_createLucideIcon-B0i5Fv77.js",
+      "_Combination-CQXUNOP5.js",
+      "_chevron-down-D6cTS-qr.js",
+      "_index-BIVay9xR.js",
+      "_x-DNkAtvLh.js",
+      "_status-pill-Bh_hmnxN.js",
+      "_file-check-corner-Br_ysgUJ.js",
+      "_save-BMATX320.js",
+      "_search-CIt2BkZo.js"
+    ]
+  },
+  "src/routes/_app.permits.tdra.tsx?tsr-split=component": {
+    "file": "assets/_app.permits.tdra-DOfFd9Lt.js",
+    "name": "_app.permits.tdra",
+    "src": "src/routes/_app.permits.tdra.tsx?tsr-split=component",
+    "isDynamicEntry": true,
+    "imports": [
+      "_worker-entry-Da-yLdYc.js",
+      "_stub-page-DRRmBfrX.js",
+      "_createLucideIcon-B0i5Fv77.js"
+    ]
+  },
+  "src/routes/_app.settings.tsx?tsr-split=component": {
+    "file": "assets/_app.settings-D0RaFwWv.js",
+    "name": "_app.settings",
+    "src": "src/routes/_app.settings.tsx?tsr-split=component",
+    "isDynamicEntry": true,
+    "imports": [
+      "_worker-entry-Da-yLdYc.js",
+      "_createSsrRpc-BIUDpMC-.js",
+      "_router-DkuxBX4X.js",
+      "_button-B7lrsNYO.js",
+      "_input-Xwj40ESg.js",
+      "_label-CMI1dy08.js",
+      "_select-CDcbRRoP.js",
+      "_users-Du5S8QLq.js",
+      "_createLucideIcon-B0i5Fv77.js",
+      "_Combination-CQXUNOP5.js",
+      "_save-BMATX320.js",
+      "_x-DNkAtvLh.js",
+      "_chevron-down-D6cTS-qr.js",
+      "_search-CIt2BkZo.js"
+    ]
+  },
+  "src/routes/_app.settings.tsx?tsr-split=errorComponent": {
+    "file": "assets/_app.settings-BBi79iPr.js",
+    "name": "_app.settings",
+    "src": "src/routes/_app.settings.tsx?tsr-split=errorComponent",
+    "isDynamicEntry": true,
+    "imports": [
+      "_worker-entry-Da-yLdYc.js"
+    ]
+  },
+  "src/routes/_app.settings.tsx?tss-serverfn-split": {
+    "file": "assets/_app.settings-iUWHVcmK.js",
+    "name": "_app.settings",
+    "src": "src/routes/_app.settings.tsx?tss-serverfn-split",
+    "isDynamicEntry": true,
+    "imports": [
+      "_createServerRpc-Dv52oNjy.js",
+      "_worker-entry-Da-yLdYc.js"
+    ]
+  },
+  "src/routes/_app.small-boat-registration.tsx?tsr-split=component": {
+    "file": "assets/_app.small-boat-registration-D-_zWqwr.js",
+    "name": "_app.small-boat-registration",
+    "src": "src/routes/_app.small-boat-registration.tsx?tsr-split=component",
+    "isDynamicEntry": true,
+    "imports": [
+      "_worker-entry-Da-yLdYc.js",
+      "_stub-page-DRRmBfrX.js",
+      "_createLucideIcon-B0i5Fv77.js"
+    ]
+  },
+  "src/routes/_app.tsx?tsr-split=component": {
+    "file": "assets/_app-BlCafZpW.js",
+    "name": "_app",
+    "src": "src/routes/_app.tsx?tsr-split=component",
+    "isDynamicEntry": true,
+    "imports": [
+      "_worker-entry-Da-yLdYc.js",
+      "_router-DkuxBX4X.js",
+      "_jls-logo-DfpNKY-Z.js",
+      "_button-B7lrsNYO.js",
+      "_search-CIt2BkZo.js",
+      "_ship-Cin4A30m.js",
+      "_createLucideIcon-B0i5Fv77.js",
+      "_chevron-right-xYt6hyHb.js",
+      "_file-check-corner-Br_ysgUJ.js",
+      "_users-Du5S8QLq.js",
+      "_chevron-down-D6cTS-qr.js"
+    ]
+  },
+  "src/routes/_app.yachts.$id.tsx?tsr-split=component": {
+    "file": "assets/_app.yachts._id-BDqttiAw.js",
+    "name": "_app.yachts._id",
+    "src": "src/routes/_app.yachts.$id.tsx?tsr-split=component",
+    "isDynamicEntry": true,
+    "imports": [
+      "_worker-entry-Da-yLdYc.js",
+      "_createSsrRpc-BIUDpMC-.js",
+      "_router-DkuxBX4X.js",
+      "_button-B7lrsNYO.js",
+      "_input-Xwj40ESg.js",
+      "_label-CMI1dy08.js",
+      "_status-pill-Bh_hmnxN.js",
+      "_yacht-fields-Bhe7PujE.js",
+      "_upload-BiN-bZba.js",
+      "_x-DNkAtvLh.js",
+      "_save-BMATX320.js",
+      "_ship-Cin4A30m.js",
+      "_createLucideIcon-B0i5Fv77.js"
+    ]
+  },
+  "src/routes/_app.yachts.$id.tsx?tss-serverfn-split": {
+    "file": "assets/_app.yachts._id-CM4rjUBX.js",
+    "name": "_app.yachts._id",
+    "src": "src/routes/_app.yachts.$id.tsx?tss-serverfn-split",
+    "isDynamicEntry": true,
+    "imports": [
+      "_createServerRpc-Dv52oNjy.js",
+      "_worker-entry-Da-yLdYc.js"
+    ],
+    "dynamicImports": [
+      "_worker-entry-Da-yLdYc.js"
+    ]
+  },
+  "src/routes/_app.yachts.index.tsx?tsr-split=component": {
+    "file": "assets/_app.yachts.index-Dp0SEmH_.js",
+    "name": "_app.yachts.index",
+    "src": "src/routes/_app.yachts.index.tsx?tsr-split=component",
+    "isDynamicEntry": true,
+    "imports": [
+      "_worker-entry-Da-yLdYc.js",
+      "_router-DkuxBX4X.js",
+      "_button-B7lrsNYO.js",
+      "_input-Xwj40ESg.js",
+      "_status-pill-Bh_hmnxN.js",
+      "_yacht-fields-Bhe7PujE.js",
+      "_Combination-CQXUNOP5.js",
+      "_index-BIVay9xR.js",
+      "_chevron-right-xYt6hyHb.js",
+      "_createLucideIcon-B0i5Fv77.js",
+      "_search-CIt2BkZo.js",
+      "_ship-Cin4A30m.js"
+    ]
+  },
+  "src/routes/_app.yachts.new.tsx?tsr-split=component": {
+    "file": "assets/_app.yachts.new-DvcjP09q.js",
+    "name": "_app.yachts.new",
+    "src": "src/routes/_app.yachts.new.tsx?tsr-split=component",
+    "isDynamicEntry": true,
+    "imports": [
+      "_worker-entry-Da-yLdYc.js",
+      "_createSsrRpc-BIUDpMC-.js",
+      "_router-DkuxBX4X.js",
+      "_button-B7lrsNYO.js",
+      "_input-Xwj40ESg.js",
+      "_label-CMI1dy08.js",
+      "_yacht-fields-Bhe7PujE.js",
+      "_upload-BiN-bZba.js",
+      "_save-BMATX320.js",
+      "_createLucideIcon-B0i5Fv77.js"
+    ]
+  },
+  "src/routes/_app.yachts.new.tsx?tss-serverfn-split": {
+    "file": "assets/_app.yachts.new-0vNq6qS7.js",
+    "name": "_app.yachts.new",
+    "src": "src/routes/_app.yachts.new.tsx?tss-serverfn-split",
+    "isDynamicEntry": true,
+    "imports": [
+      "_createServerRpc-Dv52oNjy.js",
+      "_worker-entry-Da-yLdYc.js"
+    ],
+    "dynamicImports": [
+      "_worker-entry-Da-yLdYc.js"
+    ]
+  },
+  "src/routes/auth.tsx?tsr-split=component": {
+    "file": "assets/auth-ByCUc_ro.js",
+    "name": "auth",
+    "src": "src/routes/auth.tsx?tsr-split=component",
+    "isDynamicEntry": true,
+    "imports": [
+      "_worker-entry-Da-yLdYc.js",
+      "_router-DkuxBX4X.js",
+      "_button-B7lrsNYO.js",
+      "_input-Xwj40ESg.js",
+      "_label-CMI1dy08.js",
+      "_jls-logo-DfpNKY-Z.js"
+    ]
+  },
+  "src/routes/index.tsx?tsr-split=component": {
+    "file": "assets/index-B2whtilh.js",
+    "name": "index",
+    "src": "src/routes/index.tsx?tsr-split=component",
+    "isDynamicEntry": true,
+    "imports": [
+      "_worker-entry-Da-yLdYc.js",
+      "_router-DkuxBX4X.js"
+    ]
+  },
+  "tanstack-start-manifest:v": {
+    "file": "assets/_tanstack-start-manifest_v-DLPYG_M0.js",
+    "name": "_tanstack-start-manifest_v",
+    "src": "tanstack-start-manifest:v",
+    "isDynamicEntry": true
+  },
+  "virtual:cloudflare/worker-entry": {
+    "file": "index.js",
+    "name": "index",
+    "src": "virtual:cloudflare/worker-entry",
+    "isEntry": true,
+    "imports": [
+      "_worker-entry-Da-yLdYc.js"
+    ]
+  }
+}

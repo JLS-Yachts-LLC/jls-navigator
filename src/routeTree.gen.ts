@@ -13,6 +13,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppSmallBoatRegistrationRouteImport } from './routes/_app.small-boat-registration'
+import { Route as AppSettingsRouteImport } from './routes/_app.settings'
 import { Route as AppPackagesRouteImport } from './routes/_app.packages'
 import { Route as AppOrbitRouteImport } from './routes/_app.orbit'
 import { Route as AppDirectorRouteImport } from './routes/_app.director'
@@ -49,6 +50,11 @@ const AppSmallBoatRegistrationRoute =
     path: '/small-boat-registration',
     getParentRoute: () => AppRoute,
   } as any)
+const AppSettingsRoute = AppSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppPackagesRoute = AppPackagesRouteImport.update({
   id: '/packages',
   path: '/packages',
@@ -135,6 +141,7 @@ export interface FileRoutesByFullPath {
   '/director': typeof AppDirectorRoute
   '/orbit': typeof AppOrbitRoute
   '/packages': typeof AppPackagesRoute
+  '/settings': typeof AppSettingsRoute
   '/small-boat-registration': typeof AppSmallBoatRegistrationRoute
   '/permits/cruising-mothership': typeof AppPermitsCruisingMothershipRoute
   '/permits/cruising-tenders': typeof AppPermitsCruisingTendersRoute
@@ -155,6 +162,7 @@ export interface FileRoutesByTo {
   '/director': typeof AppDirectorRoute
   '/orbit': typeof AppOrbitRoute
   '/packages': typeof AppPackagesRoute
+  '/settings': typeof AppSettingsRoute
   '/small-boat-registration': typeof AppSmallBoatRegistrationRoute
   '/permits/cruising-mothership': typeof AppPermitsCruisingMothershipRoute
   '/permits/cruising-tenders': typeof AppPermitsCruisingTendersRoute
@@ -177,6 +185,7 @@ export interface FileRoutesById {
   '/_app/director': typeof AppDirectorRoute
   '/_app/orbit': typeof AppOrbitRoute
   '/_app/packages': typeof AppPackagesRoute
+  '/_app/settings': typeof AppSettingsRoute
   '/_app/small-boat-registration': typeof AppSmallBoatRegistrationRoute
   '/_app/permits/cruising-mothership': typeof AppPermitsCruisingMothershipRoute
   '/_app/permits/cruising-tenders': typeof AppPermitsCruisingTendersRoute
@@ -199,6 +208,7 @@ export interface FileRouteTypes {
     | '/director'
     | '/orbit'
     | '/packages'
+    | '/settings'
     | '/small-boat-registration'
     | '/permits/cruising-mothership'
     | '/permits/cruising-tenders'
@@ -219,6 +229,7 @@ export interface FileRouteTypes {
     | '/director'
     | '/orbit'
     | '/packages'
+    | '/settings'
     | '/small-boat-registration'
     | '/permits/cruising-mothership'
     | '/permits/cruising-tenders'
@@ -240,6 +251,7 @@ export interface FileRouteTypes {
     | '/_app/director'
     | '/_app/orbit'
     | '/_app/packages'
+    | '/_app/settings'
     | '/_app/small-boat-registration'
     | '/_app/permits/cruising-mothership'
     | '/_app/permits/cruising-tenders'
@@ -288,6 +300,13 @@ declare module '@tanstack/react-router' {
       path: '/small-boat-registration'
       fullPath: '/small-boat-registration'
       preLoaderRoute: typeof AppSmallBoatRegistrationRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/settings': {
+      id: '/_app/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AppSettingsRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/packages': {
@@ -403,6 +422,7 @@ interface AppRouteChildren {
   AppDirectorRoute: typeof AppDirectorRoute
   AppOrbitRoute: typeof AppOrbitRoute
   AppPackagesRoute: typeof AppPackagesRoute
+  AppSettingsRoute: typeof AppSettingsRoute
   AppSmallBoatRegistrationRoute: typeof AppSmallBoatRegistrationRoute
   AppPermitsCruisingMothershipRoute: typeof AppPermitsCruisingMothershipRoute
   AppPermitsCruisingTendersRoute: typeof AppPermitsCruisingTendersRoute
@@ -422,6 +442,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppDirectorRoute: AppDirectorRoute,
   AppOrbitRoute: AppOrbitRoute,
   AppPackagesRoute: AppPackagesRoute,
+  AppSettingsRoute: AppSettingsRoute,
   AppSmallBoatRegistrationRoute: AppSmallBoatRegistrationRoute,
   AppPermitsCruisingMothershipRoute: AppPermitsCruisingMothershipRoute,
   AppPermitsCruisingTendersRoute: AppPermitsCruisingTendersRoute,
@@ -446,3 +467,12 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { createStart } from '@tanstack/react-start'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+  }
+}

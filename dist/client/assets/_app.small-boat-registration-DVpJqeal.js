@@ -1,0 +1,1 @@
+import{j as t}from"./index-B-u1L2Mm.js";import{S as o}from"./stub-page-CuFicbS7.js";import"./createLucideIcon-DQBy92pd.js";const e=()=>t.jsx(o,{title:"Small Boat Registration",breadcrumb:"Port & Operations"});export{e as component};
