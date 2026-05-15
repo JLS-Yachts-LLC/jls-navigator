@@ -240,9 +240,22 @@ export async function syncFromSharePoint(): Promise<{ synced: number; errors: nu
     if (page['@odata.deltaLink']) newDeltaLink = page['@odata.deltaLink'] as string
   }
 
+  // Load ALL existing yachts once — avoids N per-item DB round trips
+  const { data: existingYachts } = await supabaseAdmin
+    .from('yachts')
+    .select('id, vessel_name, imo_no, sharepoint_item_id')
+  const bySpId = new Map<string, string>()
+  const byImo = new Map<string, string>()
+  const byName = new Map<string, string>()
+  for (const y of (existingYachts ?? []) as Record<string, any>[]) {
+    if (y.sharepoint_item_id) bySpId.set(String(y.sharepoint_item_id), String(y.id))
+    if (y.imo_no) byImo.set(String(y.imo_no).toLowerCase(), String(y.id))
+    if (y.vessel_name) byName.set(String(y.vessel_name).toLowerCase(), String(y.id))
+  }
+
   let synced = 0, errors = 0
   for (const item of allChanged) {
-    if (item['@removed']) continue // deleted in SP — skip (or could delete locally)
+    if (item['@removed']) continue
     const fields = item.fields ?? {}
     const record: Record<string, any> = {}
     for (const [spField, dbField] of Object.entries(cfg.fieldMapping)) {
@@ -254,28 +267,25 @@ export async function syncFromSharePoint(): Promise<{ synced: number; errors: nu
     record.sharepoint_item_id = item.id
     record.sharepoint_synced_at = new Date().toISOString()
 
-    // Match on sharepoint_item_id first (most reliable), then imo_no, then vessel_name
-    const { data: bySpId } = await supabaseAdmin
-      .from('yachts')
-      .select('id')
-      .eq('sharepoint_item_id' as never, item.id)
-      .maybeSingle()
+    // In-memory match — no extra DB queries
+    const existingId =
+      bySpId.get(String(item.id)) ??
+      (record.imo_no ? byImo.get(String(record.imo_no).toLowerCase()) : undefined) ??
+      byName.get(String(record.vessel_name).toLowerCase())
 
-    let existing = bySpId
-    if (!existing) {
-      const matchField = record.imo_no ? 'imo_no' : 'vessel_name'
-      const { data } = await supabaseAdmin
-        .from('yachts')
-        .select('id')
-        .eq(matchField, record[matchField])
-        .maybeSingle()
-      existing = data
-    }
-
-    const { error } = existing
-      ? await supabaseAdmin.from('yachts').update(record as never).eq('id', existing.id)
+    const { error } = existingId
+      ? await supabaseAdmin.from('yachts').update(record as never).eq('id', existingId)
       : await supabaseAdmin.from('yachts').insert({ ...record, status: record.status ?? 'Active' } as never)
-    if (error) errors++; else synced++
+
+    if (error) {
+      errors++
+    } else {
+      synced++
+      // Update local maps so subsequent items in the same batch can match
+      bySpId.set(String(item.id), existingId ?? record.vessel_name)
+      if (record.imo_no) byImo.set(String(record.imo_no).toLowerCase(), existingId ?? '')
+      byName.set(String(record.vessel_name).toLowerCase(), existingId ?? '')
+    }
   }
 
   // Persist new delta token so next run is incremental
