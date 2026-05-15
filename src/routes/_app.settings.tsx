@@ -62,43 +62,40 @@ const getUsers = createServerFn({ method: 'GET' }).handler(async (): Promise<Use
 })
 
 const doInviteUser = createServerFn({ method: 'POST' })
-  .validator((d: { email: string }) => d)
-  .handler(async ({ data }) => {
-    const { error } = await supabaseAdmin.auth.admin.inviteUserByEmail(data.email)
+  .handler(async (ctx: { data: { email: string } }) => {
+    const { error } = await supabaseAdmin.auth.admin.inviteUserByEmail(ctx.data.email)
     if (error) throw new Error(error.message)
   })
 
 const doResetPassword = createServerFn({ method: 'POST' })
-  .validator((d: { email: string }) => d)
-  .handler(async ({ data }) => {
-    const { error } = await supabaseAdmin.auth.resetPasswordForEmail(data.email)
+  .handler(async (ctx: { data: { email: string } }) => {
+    const { error } = await supabaseAdmin.auth.resetPasswordForEmail(ctx.data.email)
     if (error) throw new Error(error.message)
   })
 
 const doSetRole = createServerFn({ method: 'POST' })
-  .validator((d: { userId: string; role: AppRole }) => d)
-  .handler(async ({ data }) => {
+  .handler(async (ctx: { data: { userId: string; role: AppRole } }) => {
+    const { userId, role } = ctx.data
     const { data: existing } = await supabaseAdmin
-      .from('user_roles').select('id').eq('user_id', data.userId).maybeSingle()
+      .from('user_roles').select('id').eq('user_id', userId).maybeSingle()
     const { error } = existing
-      ? await supabaseAdmin.from('user_roles').update({ role: data.role }).eq('user_id', data.userId)
-      : await supabaseAdmin.from('user_roles').insert({ user_id: data.userId, role: data.role })
+      ? await supabaseAdmin.from('user_roles').update({ role }).eq('user_id', userId)
+      : await supabaseAdmin.from('user_roles').insert({ user_id: userId, role })
     if (error) throw new Error(error.message)
   })
 
 const doDeleteUser = createServerFn({ method: 'POST' })
-  .validator((d: { userId: string }) => d)
-  .handler(async ({ data }) => {
-    const { error } = await supabaseAdmin.auth.admin.deleteUser(data.userId)
+  .handler(async (ctx: { data: { userId: string } }) => {
+    const { error } = await supabaseAdmin.auth.admin.deleteUser(ctx.data.userId)
     if (error) throw new Error(error.message)
   })
 
 const doDisableMFA = createServerFn({ method: 'POST' })
-  .validator((d: { userId: string; factorIds: string[] }) => d)
-  .handler(async ({ data }) => {
-    for (const factorId of data.factorIds) {
+  .handler(async (ctx: { data: { userId: string; factorIds: string[] } }) => {
+    const { userId, factorIds } = ctx.data
+    for (const factorId of factorIds) {
       const res = await fetch(
-        `${process.env.SUPABASE_URL}/auth/v1/admin/users/${data.userId}/factors/${factorId}`,
+        `${process.env.SUPABASE_URL}/auth/v1/admin/users/${userId}/factors/${factorId}`,
         {
           method: 'DELETE',
           headers: {
@@ -119,11 +116,10 @@ const getPerms = createServerFn({ method: 'GET' }).handler(async (): Promise<Dep
 })
 
 const savePerms = createServerFn({ method: 'POST' })
-  .validator((d: DeptPerm[]) => d)
-  .handler(async ({ data }) => {
+  .handler(async (ctx: { data: DeptPerm[] }) => {
     const { error } = await (supabaseAdmin as any)
       .from('department_permissions')
-      .upsert(data, { onConflict: 'department,module' })
+      .upsert(ctx.data, { onConflict: 'department,module' })
     if (error) throw new Error(error.message)
   })
 
