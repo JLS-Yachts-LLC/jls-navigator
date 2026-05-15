@@ -307,9 +307,8 @@ export async function registerSharePointWebhook(notificationUrl: string): Promis
   const siteId = await resolveSpSite(token, cfg.tenantUrl, cfg.siteUrl)
   const listId = await getSpListId(token, siteId, cfg.listName)
 
-  // SharePoint webhook subscriptions last max 6 months
-  const expiry = new Date()
-  expiry.setMonth(expiry.getMonth() + 6)
+  // SharePoint max subscription lifetime is 180 days; use 179 to stay safely under
+  const expiry = new Date(Date.now() + 179 * 24 * 60 * 60 * 1000)
 
   const res = await fetch(
     `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/subscriptions`,
@@ -345,8 +344,7 @@ export async function renewSharePointWebhook(): Promise<string> {
   const siteId = await resolveSpSite(token, cfg.tenantUrl, cfg.siteUrl)
   const listId = await getSpListId(token, siteId, cfg.listName)
 
-  const expiry = new Date()
-  expiry.setMonth(expiry.getMonth() + 6)
+  const expiry = new Date(Date.now() + 179 * 24 * 60 * 60 * 1000)
 
   const res = await fetch(
     `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/subscriptions/${subId}`,
