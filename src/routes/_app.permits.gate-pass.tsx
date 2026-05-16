@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { StubPage } from "@/components/stub-page";
+import { PermitsPage } from "@/components/permits-page";
+import { PERMIT_META } from "@/lib/permit-types";
 
 export const Route = createFileRoute("/_app/permits/gate-pass")({
-  component: () => <StubPage title="Gate Pass" breadcrumb="Port & Operations / Permits" />,
-  head: () => ({ meta: [{ title: "Gate Pass — JLS Yachts CRM" }] }),
+  component: () => <PermitsPage permitType="gate_pass" />,
+  head: () => ({ meta: [{ title: `${PERMIT_META.gate_pass.label} — JLS Yachts CRM` }] }),
 });

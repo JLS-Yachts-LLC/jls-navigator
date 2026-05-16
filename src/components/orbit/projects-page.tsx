@@ -8,8 +8,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuTrigger, DropdownMenuRadioGroup,
+  DropdownMenuRadioItem, DropdownMenuLabel, DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import {
   Orbit, Plus, Pencil, Trash2, Loader2, Ship, CalendarDays,
-  ChevronRight, CheckSquare, Clock, AlertTriangle, Circle,
+  ChevronRight, CheckSquare, Clock, AlertTriangle, Circle, Search,
+  SlidersHorizontal, ChevronDown,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -202,6 +207,9 @@ export function ProjectsPage() {
   const [yachts, setYachts] = useState<Yacht[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<"all" | ProjectStatus>("all");
+  const [priorityFilter, setPriorityFilter] = useState<"all" | Priority>("all");
+  const [yachtFilter, setYachtFilter] = useState<"all" | string>("all");
+  const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Project | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -250,10 +258,21 @@ export function ProjectsPage() {
     setLoading(false);
   }
 
-  const filtered = useMemo(
-    () => statusFilter === "all" ? projects : projects.filter(p => p.status === statusFilter),
-    [projects, statusFilter],
-  );
+  const filtered = useMemo(() => {
+    let list = projects;
+    if (statusFilter !== "all") list = list.filter(p => p.status === statusFilter);
+    if (priorityFilter !== "all") list = list.filter(p => p.priority === priorityFilter);
+    if (yachtFilter !== "all") list = list.filter(p => p.yacht_id === yachtFilter);
+    if (search.trim()) {
+      const s = search.toLowerCase();
+      list = list.filter(p =>
+        p.name.toLowerCase().includes(s) ||
+        (p.yacht?.vessel_name ?? "").toLowerCase().includes(s) ||
+        (p.description ?? "").toLowerCase().includes(s)
+      );
+    }
+    return list;
+  }, [projects, statusFilter, priorityFilter, yachtFilter, search]);
 
   function openNew() { setEditing(null); setForm(EMPTY_FORM); setOpen(true); }
   function openEdit(p: Project) {
@@ -309,11 +328,20 @@ export function ProjectsPage() {
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <header className="flex items-center justify-between border-b border-border bg-card/40 px-6 py-4">
-        <div className="flex items-center gap-3">
-          <Orbit className="h-5 w-5 text-primary" />
-          <h1 className="font-display text-xl font-semibold">Orbit</h1>
-          <div className="flex items-center gap-1 ml-2">
+      <header className="border-b border-border bg-card/40 px-6 py-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Orbit className="h-5 w-5 text-primary" />
+            <h1 className="font-display text-xl font-semibold">Orbit</h1>
+          </div>
+          <Button onClick={openNew} size="sm" className="gap-1.5">
+            <Plus className="h-4 w-4" /> New Project
+          </Button>
+        </div>
+        {/* Filters row */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Status tabs */}
+          <div className="flex items-center gap-1">
             {(["all", "active", "on_hold", "completed", "cancelled"] as const).map(f => (
               <button
                 key={f}
@@ -324,10 +352,67 @@ export function ProjectsPage() {
               </button>
             ))}
           </div>
+          <div className="h-4 w-px bg-border mx-1" />
+          {/* Priority filter */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-7 gap-1 text-xs">
+                <SlidersHorizontal className="h-3 w-3" />
+                Priority{priorityFilter !== "all" ? `: ${PRIORITY_LABEL[priorityFilter as Priority]}` : ""}
+                <ChevronDown className="h-3 w-3 opacity-60" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuLabel>Filter by Priority</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuRadioGroup value={priorityFilter} onValueChange={v => setPriorityFilter(v as "all" | Priority)}>
+                <DropdownMenuRadioItem value="all">All Priorities</DropdownMenuRadioItem>
+                {(["low", "medium", "high", "urgent"] as Priority[]).map(p => (
+                  <DropdownMenuRadioItem key={p} value={p}>{PRIORITY_LABEL[p]}</DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {/* Yacht filter */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-7 gap-1 text-xs">
+                <Ship className="h-3 w-3" />
+                {yachtFilter === "all" ? "All Yachts" : (yachts.find(y => y.id === yachtFilter)?.vessel_name ?? "Yacht")}
+                <ChevronDown className="h-3 w-3 opacity-60" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+              <DropdownMenuLabel>Filter by Yacht</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuRadioGroup value={yachtFilter} onValueChange={v => setYachtFilter(v)}>
+                <DropdownMenuRadioItem value="all">All Yachts</DropdownMenuRadioItem>
+                {yachts.map(y => (
+                  <DropdownMenuRadioItem key={y.id} value={y.id}>{y.vessel_name}</DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {/* Clear filters */}
+          {(priorityFilter !== "all" || yachtFilter !== "all" || search) && (
+            <button
+              onClick={() => { setPriorityFilter("all"); setYachtFilter("all"); setSearch(""); }}
+              className="text-xs text-muted-foreground hover:text-foreground transition"
+            >
+              Clear filters
+            </button>
+          )}
+          {/* Search */}
+          <div className="ml-auto relative">
+            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search projects or yachts…"
+              className="h-7 w-56 pl-8 text-xs"
+            />
+          </div>
         </div>
-        <Button onClick={openNew} size="sm" className="gap-1.5">
-          <Plus className="h-4 w-4" /> New Project
-        </Button>
       </header>
 
       {/* Content */}

@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { StubPage } from "@/components/stub-page";
+import { SmallBoatRegistrationPage } from "@/components/small-boat-registration-page";
 
 export const Route = createFileRoute("/_app/small-boat-registration")({
-  component: () => <StubPage title="Small Boat Registration" breadcrumb="Port & Operations" />,
+  component: SmallBoatRegistrationPage,
   head: () => ({ meta: [{ title: "Small Boat Registration — JLS Yachts CRM" }] }),
 });
