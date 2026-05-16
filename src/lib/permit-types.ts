@@ -53,6 +53,9 @@ export type Permit = {
   contact_email?: string | null;
   preferred_inspection_date?: string | null;
   jls_quotation_number?: string | null;
+  // Navigation License fields (added via migration 20260516000001)
+  license_no?: string | null;
+  requested_by?: string | null;
 };
 
 export function daysUntil(dateStr: string | null): number | null {

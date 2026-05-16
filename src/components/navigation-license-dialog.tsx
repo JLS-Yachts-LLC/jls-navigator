@@ -31,42 +31,25 @@ const AUTHORITIES = [
   "Other",
 ];
 
-// Field mapping for Navigation License (stored in permits table):
-//   yacht_id              → Boat Name
-//   issue_date            → Navigation License Date Applied
-//   expiry_date           → Expiry Date
-//   holder_name           → Client Name/Purser
-//   contact_email         → Email
-//   issuing_authority     → Authority
-//   permit_number         → Applied By
-//   jls_quotation_number  → Quotation Number
-//   dma_phase             → Requested By
-//   preferred_inspection_date → License No. (text)
-//   notes                 → JSON blob: { id: "issue_date", rmk: "remarks" }
-//   document_url          → Attachments
-
-function parseNotes(raw: string | null | undefined): { issueDate: string; remarks: string } {
-  if (!raw) return { issueDate: "", remarks: "" };
-  try {
-    const obj = JSON.parse(raw) as { id?: string; rmk?: string };
-    return { issueDate: obj.id ?? "", remarks: obj.rmk ?? "" };
-  } catch {
-    // Legacy plain-text notes → treat as remarks
-    return { issueDate: "", remarks: raw };
-  }
-}
-
-function buildNotes(issueDate: string, remarks: string): string | null {
-  if (!issueDate && !remarks) return null;
-  return JSON.stringify({ id: issueDate || undefined, rmk: remarks || undefined });
-}
+// Field mapping for Navigation License:
+//   yacht_id                  → Boat Name
+//   issue_date                → Navigation License Date Applied
+//   expiry_date               → Expiry Date
+//   holder_name               → Client Name/Purser
+//   contact_email             → Email
+//   issuing_authority         → Authority
+//   permit_number             → Applied By
+//   jls_quotation_number      → Quotation Number
+//   requested_by              → Requested By  (dedicated column)
+//   license_no                → License No.   (dedicated column)
+//   preferred_inspection_date → Issue Date    (actual issue date from authority)
+//   notes                     → Remarks
+//   document_url              → Attachments for Client
 
 export function NavigationLicenseDialog({ yachts, editing, userId, onSaved }: Props) {
   const [form, setForm] = useState<Partial<Permit>>(() =>
     editing ?? { permit_type: "navigation_license", status: "pending" }
   );
-  const [issueDate, setIssueDate] = useState("");
-  const [remarks, setRemarks] = useState("");
   const [busy, setBusy] = useState(false);
   const [emailBusy, setEmailBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -75,9 +58,6 @@ export function NavigationLicenseDialog({ yachts, editing, userId, onSaved }: Pr
 
   useEffect(() => {
     setForm(editing ?? { permit_type: "navigation_license", status: "pending" });
-    const parsed = parseNotes(editing?.notes);
-    setIssueDate(parsed.issueDate);
-    setRemarks(parsed.remarks);
     if (editing?.document_url) {
       const parts = editing.document_url.split("/");
       setFileName(decodeURIComponent(parts[parts.length - 1].split("?")[0]));
@@ -113,18 +93,20 @@ export function NavigationLicenseDialog({ yachts, editing, userId, onSaved }: Pr
     return {
       permit_type: "navigation_license" as const,
       yacht_id: form.yacht_id ?? null,
-      permit_number: form.permit_number || null,         // Applied By
+      permit_number: form.permit_number || null,              // Applied By
       status: (form.status ?? "pending") as PermitStatus,
-      issue_date: form.issue_date || null,               // Navigation License Date Applied
-      expiry_date: form.expiry_date || null,             // Expiry Date
+      issue_date: form.issue_date || null,                    // Navigation License Date Applied
+      expiry_date: form.expiry_date || null,                  // Expiry Date
       issuing_authority: form.issuing_authority || null,
-      holder_name: form.holder_name || null,             // Client Name/Purser
+      holder_name: form.holder_name || null,                  // Client Name/Purser
       contact_email: form.contact_email || null,
-      dma_phase: form.dma_phase || null,                 // Requested By
-      preferred_inspection_date: form.preferred_inspection_date || null, // License No.
-      jls_quotation_number: form.jls_quotation_number || null,
+      dma_phase: null,
+      preferred_inspection_date: form.preferred_inspection_date || null, // Issue Date
+      jls_quotation_number: form.jls_quotation_number || null,           // Quotation Number
+      license_no: form.license_no || null,                               // License No.
+      requested_by: form.requested_by || null,                           // Requested By
       document_url: form.document_url || null,
-      notes: buildNotes(issueDate, remarks),             // Issue Date + Remarks
+      notes: form.notes || null,                              // Remarks
     };
   }
 
@@ -191,14 +173,14 @@ export function NavigationLicenseDialog({ yachts, editing, userId, onSaved }: Pr
           .replace(/\{\{authority\}\}/g, form.issuing_authority ?? "")
           .replace(/\{\{applied_by\}\}/g, form.permit_number ?? "")
           .replace(/\{\{quotation_number\}\}/g, form.jls_quotation_number ?? "")
-          .replace(/\{\{requested_by\}\}/g, form.dma_phase ?? "")
-          .replace(/\{\{license_no\}\}/g, (form.preferred_inspection_date as string) ?? "")
-          .replace(/\{\{actual_issue_date\}\}/g, issueDate);
+          .replace(/\{\{requested_by\}\}/g, (form.requested_by as string) ?? "")
+          .replace(/\{\{license_no\}\}/g, (form.license_no as string) ?? "")
+          .replace(/\{\{actual_issue_date\}\}/g, form.preferred_inspection_date ?? "");
 
       const subject = tmpl ? replace(tmpl.subject) : `Navigation License — ${yachtName}`;
       const body = tmpl
         ? replace(tmpl.body)
-        : `Dear ${form.holder_name ?? "Client"},\n\nPlease find your Navigation License details below.\n\nVessel: ${yachtName}\nDate Applied: ${form.issue_date ?? "—"}\nExpiry: ${form.expiry_date ?? "—"}\nAuthority: ${form.issuing_authority ?? "—"}\nApplied By: ${form.permit_number ?? "—"}\n${form.jls_quotation_number ? `JLS Quotation No: ${form.jls_quotation_number}\n` : ""}${form.dma_phase ? `Requested By: ${form.dma_phase}\n` : ""}${form.preferred_inspection_date ? `License No: ${form.preferred_inspection_date}\n` : ""}${issueDate ? `Issue Date: ${issueDate}\n` : ""}${remarks ? `\nRemarks: ${remarks}` : ""}${form.document_url ? `\nAttachment: ${form.document_url}` : ""}\n\nKind regards,\nJLS Yachts`;
+        : `Dear ${form.holder_name ?? "Client"},\n\nPlease find your Navigation License details below.\n\nVessel: ${yachtName}\nDate Applied: ${form.issue_date ?? "—"}\nExpiry: ${form.expiry_date ?? "—"}\nAuthority: ${form.issuing_authority ?? "—"}\nApplied By: ${form.permit_number ?? "—"}\n${form.jls_quotation_number ? `JLS Quotation No: ${form.jls_quotation_number}\n` : ""}${form.requested_by ? `Requested By: ${form.requested_by}\n` : ""}${form.license_no ? `License No: ${form.license_no}\n` : ""}${form.preferred_inspection_date ? `Issue Date: ${form.preferred_inspection_date}\n` : ""}${form.notes ? `\nRemarks: ${form.notes}` : ""}${form.document_url ? `\nAttachment: ${form.document_url}` : ""}\n\nKind regards,\nJLS Yachts`;
 
       window.open(
         `mailto:${form.contact_email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`,
@@ -310,8 +292,8 @@ export function NavigationLicenseDialog({ yachts, editing, userId, onSaved }: Pr
             <div className="space-y-1.5">
               <Label>Requested By</Label>
               <Input
-                value={form.dma_phase ?? ""}
-                onChange={(e) => set("dma_phase", e.target.value)}
+                value={(form.requested_by as string) ?? ""}
+                onChange={(e) => set("requested_by" as keyof Permit, e.target.value)}
               />
             </div>
 
@@ -319,8 +301,8 @@ export function NavigationLicenseDialog({ yachts, editing, userId, onSaved }: Pr
             <div className="space-y-1.5">
               <Label>License No.</Label>
               <Input
-                value={(form.preferred_inspection_date as string) ?? ""}
-                onChange={(e) => set("preferred_inspection_date" as keyof Permit, e.target.value)}
+                value={(form.license_no as string) ?? ""}
+                onChange={(e) => set("license_no" as keyof Permit, e.target.value)}
                 placeholder="e.g. NAV-2024-001"
               />
             </div>
@@ -328,16 +310,16 @@ export function NavigationLicenseDialog({ yachts, editing, userId, onSaved }: Pr
               <Label>Issue Date</Label>
               <Input
                 type="date"
-                value={issueDate}
-                onChange={(e) => setIssueDate(e.target.value)}
+                value={(form.preferred_inspection_date as string) ?? ""}
+                onChange={(e) => set("preferred_inspection_date" as keyof Permit, e.target.value)}
               />
             </div>
             <div className="space-y-1.5">
               <Label>Remarks</Label>
               <Textarea
                 rows={2}
-                value={remarks}
-                onChange={(e) => setRemarks(e.target.value)}
+                value={form.notes ?? ""}
+                onChange={(e) => set("notes", e.target.value)}
               />
             </div>
           </div>
