@@ -214,6 +214,7 @@ function YachtDetail() {
   if (!y) return <div className="p-6 text-sm text-muted-foreground">Not found.</div>;
 
   const displayImage = imagePreview ?? (y.vessel_image ? String(y.vessel_image) : null);
+  const [imgLoadError, setImgLoadError] = useState(false);
 
   return (
     <div className="flex h-full flex-col">
@@ -258,8 +259,13 @@ function YachtDetail() {
           <div className="lg:col-span-1 space-y-4">
             <div className="overflow-hidden rounded-lg border border-border bg-card">
               <div className="aspect-video bg-muted">
-                {displayImage ? (
-                  <img src={displayImage} alt="" className="h-full w-full object-cover" />
+                {displayImage && !imgLoadError ? (
+                  <img
+                    src={displayImage}
+                    alt=""
+                    className="h-full w-full object-cover"
+                    onError={() => setImgLoadError(true)}
+                  />
                 ) : (
                   <div className="flex h-full items-center justify-center"><Ship className="h-12 w-12 text-muted-foreground/40" /></div>
                 )}

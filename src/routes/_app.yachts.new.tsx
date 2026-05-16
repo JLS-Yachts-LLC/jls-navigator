@@ -12,6 +12,20 @@ const doPushToSharePoint = createServerFn({ method: 'POST' })
       // SharePoint push is non-critical
     }
   })
+
+const doCreateSpFolder = createServerFn({ method: 'POST' })
+  .handler(async (ctx: { data: { vesselName: string; yachtId: string } }) => {
+    try {
+      const { createYachtFolderInSharePoint } = await import('@/lib/sharepoint-sync.server')
+      const { supabaseAdmin } = await import('@/integrations/supabase/client.server')
+      const folderUrl = await createYachtFolderInSharePoint(ctx.data.vesselName)
+      if (folderUrl) {
+        await supabaseAdmin.from('yachts').update({ link_to_folder: folderUrl } as never).eq('id', ctx.data.yachtId)
+      }
+    } catch {
+      // Non-critical — SP may not be configured
+    }
+  })
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -87,8 +101,9 @@ function NewYacht() {
       const { data, error } = await supabase.from("yachts").insert([payload as never]).select("id").single();
       if (error) throw error;
       toast.success("Yacht added");
-      // Non-blocking push to SharePoint
+      // Non-blocking: push data to SP list + create folder in SP Documents/Yacht/
       doPushToSharePoint({ data: { yachtId: data.id } }).catch(() => {});
+      doCreateSpFolder({ data: { vesselName: form.vessel_name!, yachtId: data.id } }).catch(() => {});
       navigate({ to: "/yachts/$id", params: { id: data.id } });
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Failed to save");

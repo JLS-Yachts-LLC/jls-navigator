@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/select'
 import { supabase } from '@/integrations/supabase/client'
 import { supabaseAdmin } from '@/integrations/supabase/client.server'
+import { toast } from 'sonner'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -175,7 +176,7 @@ const doSyncSharePoint = createServerFn({ method: 'POST' })
 
 const doRegisterWebhook = createServerFn({ method: 'POST' })
   .handler(async (ctx: { data: { appUrl: string } }) => {
-    const notificationUrl = `${ctx.data.appUrl.replace(/\/$/, '')}/api/sharepoint-webhook`
+    const notificationUrl = `${ctx.data.appUrl.replace(/\/$/, '')}/sp-hook`
     return registerSharePointWebhook(notificationUrl)
   })
 
@@ -939,6 +940,25 @@ const PERMIT_TYPE_OPTIONS = [
   { value: 'navigation_license', label: 'Navigation License' },
   { value: 'tdra', label: 'TDRA' },
   { value: 'dma', label: 'DMA Permits' },
+  { value: 'permit_to_work', label: 'Permit to Work' },
+  { value: 'boat_registration_update', label: 'Boat Registration Update' },
+]
+
+const BOAT_REG_TABLE_HTML = `<table style="border:1px solid #b3adad;padding:8px;border-collapse:collapse;width:100%"><thead><tr><th style="border:1px solid #b3adad;padding:8px;background:#153d63;color:#fff">Phase</th><th style="border:1px solid #b3adad;padding:8px;background:#153d63;color:#fff">Status</th><th style="border:1px solid #b3adad;padding:8px;background:#153d63;color:#fff">Remarks</th></tr></thead><tbody><tr><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7;color:#313030">Phase 1: Application</td><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7"></td><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7"></td></tr><tr><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7;color:#313030">Quotation</td><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7"></td><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7"></td></tr><tr><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7;color:#313030">Log-in Creation</td><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7"></td><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7"></td></tr><tr><td colspan="3" style="border:1px solid #b3adad;padding:4px;background:#dae9f7"></td></tr><tr><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7;color:#313030">Phase 2: Documents</td><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7"></td><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7"></td></tr><tr><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7;color:#313030">Collection</td><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7"></td><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7"></td></tr><tr><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7;color:#313030">Submission</td><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7"></td><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7"></td></tr><tr><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7;color:#313030">Approval</td><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7"></td><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7"></td></tr><tr><td colspan="3" style="border:1px solid #b3adad;padding:4px;background:#dae9f7"></td></tr><tr><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7;color:#313030">Phase 3: Technical Inspection</td><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7"></td><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7"></td></tr><tr><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7;color:#313030">Booking the inspection</td><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7"></td><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7"></td></tr><tr><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7;color:#313030">Inspection result</td><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7"></td><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7"></td></tr><tr><td colspan="3" style="border:1px solid #b3adad;padding:4px;background:#dae9f7"></td></tr><tr><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7;color:#313030">Phase 4: License &amp; Payment</td><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7"></td><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7"></td></tr><tr><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7;color:#313030">Marine Craft License</td><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7"></td><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7"></td></tr><tr><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7;color:#313030">Invoicing</td><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7"></td><td style="border:1px solid #b3adad;padding:8px;background:#dae9f7"></td></tr></tbody></table>`
+
+const DEFAULT_TEMPLATES = [
+  {
+    name: 'Permit to Work',
+    permit_type: 'permit_to_work',
+    subject: '{{boat_name}} - Permit to Work',
+    body: `Dear {{holder_name}},\n\nGreetings from JLS Yachts!\nPlease find the attached approved Permit to Work.\n\nYacht Name: {{boat_name}}\nPermit Duration: {{expiry_date}}\nType of Permit: {{authority}}\nWork Description: {{notes}}\nPermit No.: {{permit_number}}\nExpiry date: {{expiry_date}}\n\nBest Regards,\nJLS Yachts Team`,
+  },
+  {
+    name: 'Boat Registration Update',
+    permit_type: 'boat_registration_update',
+    subject: '{{boat_name}} - Boat Registration Update',
+    body: `Dear {{holder_name}},\n\nGreetings from JLS Yachts!\nPlease find below the current status of your boat registration.\n\nYacht Name: {{boat_name}}\nQuotation No.: {{quotation_number}}\n\n` + BOAT_REG_TABLE_HTML + `\n\nFor any queries please do not hesitate to contact us.\n\nBest Regards,\nJLS Yachts Team`,
+  },
 ]
 
 const MERGE_TAGS = [
@@ -966,6 +986,17 @@ function EmailTemplatesPanel() {
 
   function startNew() {
     setEditing({ name: '', permit_type: null, subject: '', body: '' })
+  }
+
+  async function seedDefaults() {
+    for (const tpl of DEFAULT_TEMPLATES) {
+      const existing = templates.find(t => t.name === tpl.name)
+      if (!existing) {
+        await (supabase as any).from('email_templates').insert([tpl])
+      }
+    }
+    await loadTemplates()
+    toast.success('Default templates added')
   }
 
   function startEdit(t: EmailTemplate) {
@@ -1094,9 +1125,14 @@ function EmailTemplatesPanel() {
             Templates used when emailing permits. Use merge tags to personalise content.
           </p>
         </div>
-        <Button size="sm" onClick={startNew} className="gap-1.5">
-          <Plus className="h-4 w-4" /> New Template
-        </Button>
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={seedDefaults} className="gap-1.5">
+            Seed Defaults
+          </Button>
+          <Button size="sm" onClick={startNew} className="gap-1.5">
+            <Plus className="h-4 w-4" /> New Template
+          </Button>
+        </div>
       </div>
 
       {loading ? (

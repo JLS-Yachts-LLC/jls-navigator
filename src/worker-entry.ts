@@ -38,7 +38,7 @@ export default {
   async fetch(request: Request, env: Record<string, unknown>, ctx: { waitUntil: (p: Promise<unknown>) => void }): Promise<Response> {
     const url = new URL(request.url)
 
-    if (url.pathname === '/api/sharepoint-webhook' || url.pathname === '/api/sharepoint-webhook/') {
+    if (url.pathname === '/sp-hook' || url.pathname === '/api/sharepoint-webhook' || url.pathname === '/api/sharepoint-webhook/') {
       return handleSharePointWebhook(request, ctx)
     }
 
