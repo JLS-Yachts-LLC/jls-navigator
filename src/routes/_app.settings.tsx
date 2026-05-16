@@ -1216,7 +1216,116 @@ const YACHT_DB_FIELDS = [
   { value: 'contact_no', label: 'Contact No.' },
   { value: 'berth', label: 'Berth' },
   { value: 'status', label: 'Status' },
+  { value: 'location', label: 'Location' },
+  { value: 'eta', label: 'ETA' },
+  { value: 'etd', label: 'ETD' },
+  { value: 'air_draft_m', label: 'Air Draft (m)' },
+  { value: 'max_crew', label: 'Max Crew' },
+  { value: 'max_guests', label: 'Max Guests' },
+  { value: 'engine', label: 'Engine' },
 ]
+
+const PERMIT_DB_FIELDS = [
+  { value: '', label: '— Skip —' },
+  { value: 'vessel_name', label: 'Vessel Name (match)' },
+  { value: 'permit_number', label: 'Permit Number' },
+  { value: 'holder_name', label: 'Holder / Visitor Name' },
+  { value: 'contact_email', label: 'Contact Email' },
+  { value: 'issuing_authority', label: 'Issuing Authority / Zone' },
+  { value: 'issue_date', label: 'Issue / Entry Date' },
+  { value: 'expiry_date', label: 'Expiry / Exit Date' },
+  { value: 'status', label: 'Status' },
+  { value: 'notes', label: 'Notes / Purpose' },
+  { value: 'jls_quotation_number', label: 'Quotation Number' },
+  { value: 'dma_phase', label: 'DMA Phase' },
+  { value: 'license_no', label: 'License No.' },
+  { value: 'requested_by', label: 'Requested By' },
+  { value: 'preferred_inspection_date', label: 'Inspection Date' },
+]
+
+const SMALL_BOAT_DB_FIELDS = [
+  { value: '', label: '— Skip —' },
+  { value: 'boat_name', label: 'Boat Name' },
+  { value: 'boat_type', label: 'Boat Type' },
+  { value: 'reg_type', label: 'Registration Type' },
+  { value: 'reg_no', label: 'Registration No.' },
+  { value: 'hull_id', label: 'Hull ID' },
+  { value: 'color', label: 'Color' },
+  { value: 'length_m', label: 'Length (m)' },
+  { value: 'engine_type', label: 'Engine Type' },
+  { value: 'engine_power_hp', label: 'Engine Power (HP)' },
+  { value: 'flag', label: 'Flag' },
+  { value: 'port_of_registry', label: 'Port of Registry' },
+  { value: 'owner_name', label: 'Owner Name' },
+  { value: 'owner_nationality', label: 'Owner Nationality' },
+  { value: 'client_email', label: 'Client Email' },
+  { value: 'client_phone', label: 'Client Phone' },
+  { value: 'status', label: 'Status' },
+  { value: 'registration_expiry', label: 'Registration Expiry' },
+  { value: 'insurance_expiry', label: 'Insurance Expiry' },
+  { value: 'notes', label: 'Notes' },
+]
+
+/** Returns the correct App Field dropdown list for a given SharePoint list name */
+function getFieldSetForList(listName: string): typeof YACHT_DB_FIELDS {
+  const n = listName.toLowerCase().trim()
+  if (n.includes('tdra') || n.includes('sanitation') || n.includes('gate') || n.includes('cruising') || n.includes('navigation') || n.includes('dma') || n.includes('permit') || n.includes('exit') || n.includes('entry')) {
+    return PERMIT_DB_FIELDS
+  }
+  if (n.includes('small boat') || n.includes('smallboat') || n.includes('boat reg') || n.includes('boatreg')) {
+    return SMALL_BOAT_DB_FIELDS
+  }
+  // Default: Yachts
+  return YACHT_DB_FIELDS
+}
+
+/** Per-list auto-suggest for permit fields */
+function autoSuggestPermit(displayName: string): string {
+  const n = displayName.toLowerCase().replace(/[\s._\-()+#]/g, '')
+  const map: Record<string, string> = {
+    title: 'vessel_name', vesselname: 'vessel_name', yacht: 'vessel_name', boatname: 'vessel_name',
+    permitnumber: 'permit_number', permitno: 'permit_number',
+    holdername: 'holder_name', visitorname: 'holder_name', name: 'holder_name',
+    email: 'contact_email', contactemail: 'contact_email',
+    issuingauthority: 'issuing_authority', authority: 'issuing_authority', zone: 'issuing_authority', accesszone: 'issuing_authority',
+    issuedate: 'issue_date', dateapplied: 'issue_date', startdate: 'issue_date', entrydate: 'issue_date',
+    expirydate: 'expiry_date', expiry: 'expiry_date', exitdate: 'expiry_date', enddate: 'expiry_date',
+    status: 'status',
+    notes: 'notes', purpose: 'notes', remarks: 'notes',
+    quotation: 'jls_quotation_number', quotationno: 'jls_quotation_number', referenceno: 'jls_quotation_number',
+    phase: 'dma_phase', dmaphase: 'dma_phase',
+    licenseno: 'license_no', licenceno: 'license_no',
+    requestedby: 'requested_by',
+    inspectiondate: 'preferred_inspection_date', preferredinspectiondate: 'preferred_inspection_date',
+  }
+  return map[n] ?? ''
+}
+
+function autoSuggestSmallBoat(displayName: string): string {
+  const n = displayName.toLowerCase().replace(/[\s._\-()+#]/g, '')
+  const map: Record<string, string> = {
+    title: 'boat_name', boatname: 'boat_name', name: 'boat_name',
+    boattype: 'boat_type', type: 'boat_type', vesseltype: 'boat_type',
+    regtype: 'reg_type', registrationtype: 'reg_type',
+    regno: 'reg_no', registrationno: 'reg_no',
+    hullid: 'hull_id', hull: 'hull_id',
+    color: 'color', colour: 'color',
+    length: 'length_m', lengthinmeters: 'length_m', loa: 'length_m',
+    enginetype: 'engine_type', engine: 'engine_type',
+    enginepower: 'engine_power_hp', hp: 'engine_power_hp',
+    flag: 'flag',
+    portofregistry: 'port_of_registry',
+    ownername: 'owner_name', owner: 'owner_name',
+    ownernationality: 'owner_nationality', nationality: 'owner_nationality',
+    email: 'client_email', contactemail: 'client_email',
+    phone: 'client_phone', contactno: 'client_phone',
+    status: 'status',
+    registrationexpiry: 'registration_expiry', regexpiry: 'registration_expiry',
+    insuranceexpiry: 'insurance_expiry',
+    notes: 'notes', remarks: 'notes',
+  }
+  return map[n] ?? ''
+}
 
 function autoSuggest(displayName: string): string {
   const n = displayName.toLowerCase().replace(/[\s._\-()+#]/g, '')
@@ -1271,13 +1380,25 @@ function SharePointSyncSection() {
     doGetWebhookStatus().then(setWebhook).catch(() => {})
   }, [])
 
+  function getSuggestFn() {
+    const n = listName.toLowerCase().trim()
+    if (n.includes('tdra') || n.includes('sanitation') || n.includes('gate') || n.includes('cruising') || n.includes('navigation') || n.includes('dma') || n.includes('permit') || n.includes('exit') || n.includes('entry')) {
+      return autoSuggestPermit
+    }
+    if (n.includes('small boat') || n.includes('smallboat') || n.includes('boat reg') || n.includes('boatreg')) {
+      return autoSuggestSmallBoat
+    }
+    return autoSuggest
+  }
+
   async function handleDiscover() {
     setDiscovering(true); setSyncErr(null); setResult(null)
     try {
       const cols = await doDiscoverSharePointColumns({ data: { listName } })
       setColumns(cols)
+      const suggestFn = getSuggestFn()
       const auto: Record<string, string> = {}
-      for (const c of cols) auto[c.name] = autoSuggest(c.displayName)
+      for (const c of cols) auto[c.name] = suggestFn(c.displayName)
       setMapping(auto)
     } catch (e) {
       setSyncErr(e instanceof Error ? e.message : 'Discovery failed')
@@ -1366,13 +1487,25 @@ function SharePointSyncSection() {
 
       {/* ── Field mapping ── */}
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <p className="text-sm font-semibold">Field Mapping &amp; Full Sync</p>
+        <div>
+          <p className="text-sm font-semibold">Field Mapping &amp; Full Sync</p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">
+            App fields shown are matched to: <strong className="text-foreground">
+              {(() => {
+                const n = listName.toLowerCase().trim()
+                if (n.includes('tdra') || n.includes('sanitation') || n.includes('gate') || n.includes('cruising') || n.includes('navigation') || n.includes('dma') || n.includes('permit') || n.includes('exit') || n.includes('entry')) return 'Permits'
+                if (n.includes('small boat') || n.includes('smallboat') || n.includes('boat reg') || n.includes('boatreg')) return 'Small Boat Registration'
+                return 'Yachts'
+              })()}
+            </strong>
+          </p>
+        </div>
         <div className="flex items-center gap-2">
           <Input
             value={listName}
-            onChange={e => setListName(e.target.value)}
+            onChange={e => { setListName(e.target.value); setColumns([]); setMapping({}); }}
             placeholder="List name"
-            className="h-8 w-32 text-sm"
+            className="h-8 w-36 text-sm"
           />
           <Button size="sm" variant="outline" onClick={handleDiscover} disabled={discovering} className="gap-1.5 h-8">
             {discovering ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
@@ -1412,7 +1545,7 @@ function SharePointSyncSection() {
                     onChange={e => setMapping(prev => ({ ...prev, [col.name]: e.target.value }))}
                     className="w-full rounded border border-input bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
                   >
-                    {YACHT_DB_FIELDS.map(f => (
+                    {getFieldSetForList(listName).map(f => (
                       <option key={f.value} value={f.value}>{f.label}</option>
                     ))}
                   </select>

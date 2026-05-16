@@ -436,6 +436,21 @@ function BoardRow({
         )}
       </BoardCell>
 
+      {/* Drop-off Time */}
+      <BoardCell editing={isActive("dropoff_datetime")} onClick={() => onActivate("dropoff_datetime")} className="w-36">
+        {isActive("dropoff_datetime") ? (
+          <input
+            autoFocus
+            type="datetime-local"
+            defaultValue={trip.dropoff_datetime ? trip.dropoff_datetime.slice(0, 16) : ""}
+            onBlur={e => { onSave(trip.id, { dropoff_datetime: e.target.value || null }); onActivate(""); }}
+            className="h-5 w-full rounded border border-border bg-card text-xs focus:outline-none focus:ring-1 focus:ring-primary px-1"
+          />
+        ) : (
+          <span className="text-muted-foreground whitespace-nowrap">{fmtDt(trip.dropoff_datetime)}</span>
+        )}
+      </BoardCell>
+
       {/* Driver */}
       <BoardCell editing={isActive("driver_id")} onClick={() => onActivate("driver_id")} className="w-28">
         {isActive("driver_id") ? (
@@ -508,7 +523,7 @@ function BoardAddRow({
   const [form, setForm] = useState<Partial<FormState>>({
     trip_type: "crew_pickup", status: "pending",
     yacht_id: "__none", driver_id: "__none", vehicle_id: "__none",
-    passenger_name: "", pickup_address: "", dropoff_address: "", pickup_datetime: "",
+    passenger_name: "", pickup_address: "", dropoff_address: "", pickup_datetime: "", dropoff_datetime: "",
   });
   const [saving, setSaving] = useState(false);
 
@@ -516,7 +531,7 @@ function BoardAddRow({
     if (!form.passenger_name && !form.pickup_address) return;
     setSaving(true);
     await onAdd(form);
-    setForm({ trip_type: "crew_pickup", status: "pending", yacht_id: "__none", driver_id: "__none", vehicle_id: "__none", passenger_name: "", pickup_address: "", dropoff_address: "", pickup_datetime: "" });
+    setForm({ trip_type: "crew_pickup", status: "pending", yacht_id: "__none", driver_id: "__none", vehicle_id: "__none", passenger_name: "", pickup_address: "", dropoff_address: "", pickup_datetime: "", dropoff_datetime: "" });
     setActive(false);
     setSaving(false);
   }
@@ -566,6 +581,10 @@ function BoardAddRow({
       </td>
       <td className="border-r border-border/40 px-2 py-1">
         <input type="datetime-local" value={form.pickup_datetime ?? ""} onChange={e => setForm(f => ({ ...f, pickup_datetime: e.target.value }))}
+          className="h-6 w-full rounded border border-border bg-card text-xs px-1 focus:outline-none focus:ring-1 focus:ring-primary" />
+      </td>
+      <td className="border-r border-border/40 px-2 py-1">
+        <input type="datetime-local" value={form.dropoff_datetime ?? ""} onChange={e => setForm(f => ({ ...f, dropoff_datetime: e.target.value }))}
           className="h-6 w-full rounded border border-border bg-card text-xs px-1 focus:outline-none focus:ring-1 focus:ring-primary" />
       </td>
       <td className="border-r border-border/40 px-2 py-1">
@@ -741,6 +760,7 @@ export function TripsPage() {
       pickup_address: partialForm.pickup_address || null,
       dropoff_address: partialForm.dropoff_address || null,
       pickup_datetime: partialForm.pickup_datetime || null,
+      dropoff_datetime: partialForm.dropoff_datetime || null,
       driver_id: partialForm.driver_id === "__none" ? null : partialForm.driver_id,
       vehicle_id: partialForm.vehicle_id === "__none" ? null : partialForm.vehicle_id,
       status: partialForm.status ?? "pending",
@@ -860,10 +880,10 @@ export function TripsPage() {
               <LayoutGrid className="h-3 w-3 text-muted-foreground" />
               <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Board — click any cell to edit inline · Tab / Enter to confirm</span>
             </div>
-            <table className="w-full min-w-[1100px]">
+            <table className="w-full min-w-[1300px]">
               <thead className="bg-muted/20 border-b border-border/60">
                 <tr>
-                  {["Type", "Passenger", "Yacht", "Pickup", "Drop-off", "Date & Time", "Driver", "Vehicle", "Status", ""].map(h => (
+                  {["Type", "Passenger", "Yacht", "Pickup", "Drop-off", "Pickup Time", "Drop-off Time", "Driver", "Vehicle", "Status", ""].map(h => (
                     <th key={h} className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap border-r border-border/40 last:border-r-0">
                       {h}
                     </th>

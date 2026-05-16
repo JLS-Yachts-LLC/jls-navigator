@@ -6,8 +6,8 @@ import { Input } from "@/components/ui/input";
 import { StatusPill } from "@/components/status-pill";
 import { YACHT_COLUMNS, DEFAULT_VISIBLE_COLUMNS, type YachtColumnKey } from "@/lib/yacht-fields";
 import {
-  Plus, LayoutGrid, List, Search, SlidersHorizontal, Anchor, Ship, MapPin, Archive,
-  ChevronUp, ChevronDown, ChevronsUpDown,
+  Plus, LayoutGrid, List, Search, SlidersHorizontal, Anchor, Ship, MapPin, LogOut, RefreshCcw,
+  ChevronUp, ChevronDown, ChevronsUpDown, Pencil,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -21,7 +21,7 @@ export const Route = createFileRoute("/_app/yachts/")({
 });
 
 type Yacht = Record<string, unknown> & { id: string; vessel_name: string; vessel_image?: string | null };
-type StatusFilter = "all" | "active" | "archived";
+type StatusFilter = "all" | "in_country" | "departed" | "change_agency";
 type SortDir = "asc" | "desc";
 
 const LS_VISIBLE_KEY = "jls-yachts-visible-columns";
@@ -48,6 +48,7 @@ function YachtsPage() {
   const [visible, setVisible] = useState<YachtColumnKey[]>(loadVisibleCols);
   const [sortKey, setSortKey] = useState<YachtColumnKey | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [quickEditId, setQuickEditId] = useState<string | null>(null);
 
   useEffect(() => { void load(); }, []);
 
@@ -55,6 +56,13 @@ function YachtsPage() {
   useEffect(() => {
     localStorage.setItem(LS_VISIBLE_KEY, JSON.stringify(visible));
   }, [visible]);
+
+  async function updateStatus(id: string, status: string) {
+    const { error } = await supabase.from("yachts").update({ status }).eq("id", id);
+    if (error) toast.error(error.message);
+    else setYachts(prev => prev.map(y => y.id === id ? { ...y, status } : y));
+    setQuickEditId(null);
+  }
 
   async function load() {
     setLoading(true);
@@ -69,21 +77,31 @@ function YachtsPage() {
 
   const stats = useMemo(() => {
     const total = yachts.length;
-    const active = yachts.filter((y) =>
-      String(y.status ?? "").toLowerCase() === "active",
+    const inCountry = yachts.filter((y) =>
+      String(y.status ?? "").toLowerCase() === "in country",
     ).length;
-    const archived = yachts.filter((y) => y.archive === true).length;
-    return { total, active, archived };
+    const departed = yachts.filter((y) =>
+      String(y.status ?? "").toLowerCase() === "departed",
+    ).length;
+    const changeAgency = yachts.filter((y) =>
+      String(y.status ?? "").toLowerCase() === "change agency",
+    ).length;
+    return { total, inCountry, departed, changeAgency };
   }, [yachts]);
+
+  const STATUS_TARGETS: Record<Exclude<StatusFilter, "all">, string> = {
+    in_country: "in country",
+    departed: "departed",
+    change_agency: "change agency",
+  };
 
   const filtered = useMemo(() => {
     let rows = yachts;
 
     // Status filter
-    if (statusFilter === "active") {
-      rows = rows.filter((y) => String(y.status ?? "").toLowerCase() === "active");
-    } else if (statusFilter === "archived") {
-      rows = rows.filter((y) => y.archive === true);
+    if (statusFilter !== "all") {
+      const target = STATUS_TARGETS[statusFilter];
+      rows = rows.filter((y) => String(y.status ?? "").toLowerCase() === target);
     }
 
     // Text search
@@ -187,7 +205,7 @@ function YachtsPage() {
       </header>
 
       {/* Stat strip — clickable to filter */}
-      <div className="grid grid-cols-3 gap-3 px-5 py-3">
+      <div className="grid grid-cols-4 gap-3 px-5 py-3">
         <StatCard
           label="Total Vessels"
           value={stats.total}
@@ -197,20 +215,28 @@ function YachtsPage() {
           onClick={() => setStatusFilter("all")}
         />
         <StatCard
-          label="Active"
-          value={stats.active}
+          label="In Country"
+          value={stats.inCountry}
           icon={MapPin}
           accent="text-success"
-          active={statusFilter === "active"}
-          onClick={() => toggleStatFilter("active")}
+          active={statusFilter === "in_country"}
+          onClick={() => toggleStatFilter("in_country")}
         />
         <StatCard
-          label="Archived"
-          value={stats.archived}
-          icon={Archive}
+          label="Departed"
+          value={stats.departed}
+          icon={LogOut}
           accent="text-muted-foreground"
-          active={statusFilter === "archived"}
-          onClick={() => toggleStatFilter("archived")}
+          active={statusFilter === "departed"}
+          onClick={() => toggleStatFilter("departed")}
+        />
+        <StatCard
+          label="Change Agency"
+          value={stats.changeAgency}
+          icon={RefreshCcw}
+          accent="text-warning"
+          active={statusFilter === "change_agency"}
+          onClick={() => toggleStatFilter("change_agency")}
         />
       </div>
 
@@ -240,6 +266,9 @@ function YachtsPage() {
             sortKey={sortKey}
             sortDir={sortDir}
             onSort={toggleSort}
+            quickEditId={quickEditId}
+            setQuickEditId={setQuickEditId}
+            updateStatus={updateStatus}
           />
         ) : (
           <CardsView rows={filtered} />
@@ -307,13 +336,16 @@ function fmt(v: unknown) {
 }
 
 function ListView({
-  rows, visible, sortKey, sortDir, onSort,
+  rows, visible, sortKey, sortDir, onSort, quickEditId, setQuickEditId, updateStatus,
 }: {
   rows: Yacht[];
   visible: YachtColumnKey[];
   sortKey: YachtColumnKey | null;
   sortDir: SortDir;
   onSort: (key: YachtColumnKey) => void;
+  quickEditId: string | null;
+  setQuickEditId: (id: string | null) => void;
+  updateStatus: (id: string, status: string) => Promise<void>;
 }) {
   const cols = YACHT_COLUMNS.filter((c) => visible.includes(c.key));
   return (
@@ -351,7 +383,25 @@ function ListView({
                       {fmt(y[c.key])}
                     </Link>
                   ) : c.key === "status" ? (
-                    <StatusPill status={y[c.key] as string | null} />
+                    quickEditId === y.id ? (
+                      <select
+                        autoFocus
+                        defaultValue={y.status as string ?? ""}
+                        onBlur={e => updateStatus(y.id, e.target.value)}
+                        onChange={e => updateStatus(y.id, e.target.value)}
+                        className="h-6 w-full rounded border border-border bg-card text-xs px-1 focus:outline-none focus:ring-1 focus:ring-primary"
+                        onClick={e => e.stopPropagation()}
+                      >
+                        {["In Country", "Departed", "Change Agency", "Active", "Inactive", "Arrived", "Pending"].map(s => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="flex items-center gap-1 group/status cursor-pointer" onClick={() => setQuickEditId(y.id)}>
+                        <StatusPill status={y[c.key] as string | null} />
+                        <Pencil className="h-2.5 w-2.5 text-muted-foreground opacity-0 group-hover/status:opacity-60 transition-opacity" />
+                      </div>
+                    )
                   ) : (
                     <span className="text-foreground/80">{fmt(y[c.key])}</span>
                   )}
