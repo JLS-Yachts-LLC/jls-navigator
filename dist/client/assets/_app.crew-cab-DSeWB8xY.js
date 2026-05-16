@@ -1,0 +1,1 @@
+import{j as t}from"./index-D9HYD75C.js";import{S as o}from"./stub-page-Bwt1GHhp.js";import"./createLucideIcon-BMhycyxv.js";const p=()=>t.jsx(o,{title:"Crew Cab",breadcrumb:"Crew Cab"});export{p as component};
