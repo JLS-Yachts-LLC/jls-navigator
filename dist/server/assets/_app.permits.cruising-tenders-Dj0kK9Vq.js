@@ -1,0 +1,34 @@
+import { U as jsxRuntimeExports } from "./worker-entry-D7ynLlqD.js";
+import { P as PermitsPage } from "./permits-page-B6UQa9e7.js";
+import "node:events";
+import "node:async_hooks";
+import "node:stream/web";
+import "node:stream";
+import "./router-DOVXXrXT.js";
+import "./button-9fOcQ-L3.js";
+import "./utils-Bz4m9VPB.js";
+import "./input-eaXjLIH7.js";
+import "./label-Bh2-DMXP.js";
+import "./select-DUuu40QP.js";
+import "./Combination-Bn5qB9iH.js";
+import "./createLucideIcon-DK6ljyX0.js";
+import "./chevron-down-G_oG5OlX.js";
+import "./dialog-B00pcbfZ.js";
+import "./index-DLh2Sz4e.js";
+import "./x-QWn3cpFS.js";
+import "./alert-dialog-D_uyoaxR.js";
+import "./status-pill-D94Ns90E.js";
+import "./loader-circle-B_mYZ8oF.js";
+import "./file-check-corner-DO6NRC0D.js";
+import "./save-OkpAYxy9.js";
+import "./mail-5xEbRpVS.js";
+import "./search-jx6tuJRa.js";
+import "./circle-check-D3SpSBZ-.js";
+import "./clock-Cn9U5AJJ.js";
+import "./triangle-alert-CY4U4urA.js";
+import "./pencil-Du1FrOwP.js";
+import "./trash-2-CDDkZ-iL.js";
+const SplitComponent = () => /* @__PURE__ */ jsxRuntimeExports.jsx(PermitsPage, { permitType: "cruising_tenders" });
+export {
+  SplitComponent as component
+};
