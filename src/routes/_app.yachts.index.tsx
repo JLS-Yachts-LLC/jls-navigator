@@ -8,6 +8,7 @@ import { YACHT_COLUMNS, DEFAULT_VISIBLE_COLUMNS, type YachtColumnKey } from "@/l
 import {
   Plus, LayoutGrid, List, Search, SlidersHorizontal, Anchor, Ship, MapPin, LogOut, RefreshCcw,
   ChevronUp, ChevronDown, ChevronsUpDown, Pencil, Radar,
+  ChevronLeft, ChevronRight, BookMarked, X, Check,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -20,11 +21,63 @@ export const Route = createFileRoute("/_app/yachts/")({
   head: () => ({ meta: [{ title: "Yachts — JLS Yachts CRM" }] }),
 });
 
+// ── Types ──────────────────────────────────────────────────────────────────────
 type Yacht = Record<string, unknown> & { id: string; vessel_name: string; vessel_image?: string | null };
 type StatusFilter = "all" | "in_country" | "departed" | "change_agency";
 type SortDir = "asc" | "desc";
 
-const LS_VISIBLE_KEY = "jls-yachts-visible-columns";
+type ViewPreset = {
+  id: string;
+  name: string;
+  columns: YachtColumnKey[];
+  builtin?: boolean;
+};
+
+// ── Built-in view presets ──────────────────────────────────────────────────────
+const BUILTIN_VIEWS: ViewPreset[] = [
+  {
+    id: "default",
+    name: "Default",
+    columns: DEFAULT_VISIBLE_COLUMNS,
+    builtin: true,
+  },
+  {
+    id: "compact",
+    name: "Compact",
+    columns: ["vessel_name", "flag", "status", "berth", "eta", "etd"],
+    builtin: true,
+  },
+  {
+    id: "operations",
+    name: "Operations",
+    columns: [
+      "vessel_name", "vessel_type", "flag", "status",
+      "berth", "location", "eta", "etd", "departed_date", "cruising_permit_expiry",
+    ],
+    builtin: true,
+  },
+  {
+    id: "registry",
+    name: "Registry",
+    columns: [
+      "vessel_name", "vessel_type", "flag", "imo_no", "official_no",
+      "port_of_registry", "built_year", "builders_name", "gross_tonnage", "owners_name",
+    ],
+    builtin: true,
+  },
+];
+
+// ── localStorage keys ──────────────────────────────────────────────────────────
+const LS_VIEW_KEY      = "jls-yachts-view";           // "list" | "cards"
+const LS_VISIBLE_KEY   = "jls-yachts-visible-columns"; // YachtColumnKey[]
+const LS_CUSTOM_KEY    = "jls-yachts-custom-views";    // ViewPreset[]
+const LS_ACTIVE_KEY    = "jls-yachts-active-view";     // string | null
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+function loadView(): "list" | "cards" {
+  try { return localStorage.getItem(LS_VIEW_KEY) === "cards" ? "cards" : "list"; }
+  catch { return "list"; }
+}
 
 function loadVisibleCols(): YachtColumnKey[] {
   try {
@@ -39,30 +92,71 @@ function loadVisibleCols(): YachtColumnKey[] {
   return DEFAULT_VISIBLE_COLUMNS;
 }
 
+function loadCustomViews(): ViewPreset[] {
+  try {
+    const raw = localStorage.getItem(LS_CUSTOM_KEY);
+    return raw ? (JSON.parse(raw) as ViewPreset[]) : [];
+  } catch { return []; }
+}
+
+function loadActiveViewId(): string | null {
+  try { return localStorage.getItem(LS_ACTIVE_KEY); }
+  catch { return null; }
+}
+
+/** One-time init: resolves active view columns → visible cols */
+function initViewState() {
+  const customViews = loadCustomViews();
+  const activeViewId = loadActiveViewId();
+  let visible: YachtColumnKey[];
+  if (activeViewId) {
+    const all = [...BUILTIN_VIEWS, ...customViews];
+    const match = all.find((v) => v.id === activeViewId);
+    visible = match
+      ? (match.columns.filter((k) => YACHT_COLUMNS.some((c) => c.key === k)) as YachtColumnKey[])
+      : loadVisibleCols();
+  } else {
+    visible = loadVisibleCols();
+  }
+  return { customViews, activeViewId, visible };
+}
+
+// ── Page component ─────────────────────────────────────────────────────────────
 function YachtsPage() {
-  const [view, setView] = useState<"list" | "cards">("list");
+  // Init from localStorage (runs once)
+  const [init] = useState(initViewState);
+
+  const [view, setView] = useState<"list" | "cards">(loadView);
   const [yachts, setYachts] = useState<Yacht[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [visible, setVisible] = useState<YachtColumnKey[]>(loadVisibleCols);
+  const [visible, setVisible] = useState<YachtColumnKey[]>(init.visible);
   const [sortKey, setSortKey] = useState<YachtColumnKey | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [quickEditId, setQuickEditId] = useState<string | null>(null);
 
+  // View management state
+  const [customViews, setCustomViews] = useState<ViewPreset[]>(init.customViews);
+  const [activeViewId, setActiveViewId] = useState<string | null>(init.activeViewId);
+  const [newViewName, setNewViewName] = useState("");
+
   useEffect(() => { void load(); }, []);
 
-  // Persist visible columns to localStorage
-  useEffect(() => {
-    localStorage.setItem(LS_VISIBLE_KEY, JSON.stringify(visible));
-  }, [visible]);
+  // Persist list/cards choice
+  useEffect(() => { localStorage.setItem(LS_VIEW_KEY, view); }, [view]);
 
-  async function updateStatus(id: string, status: string) {
-    const { error } = await supabase.from("yachts").update({ status }).eq("id", id);
-    if (error) toast.error(error.message);
-    else setYachts(prev => prev.map(y => y.id === id ? { ...y, status } : y));
-    setQuickEditId(null);
-  }
+  // Persist column visibility
+  useEffect(() => { localStorage.setItem(LS_VISIBLE_KEY, JSON.stringify(visible)); }, [visible]);
+
+  // Persist custom views
+  useEffect(() => { localStorage.setItem(LS_CUSTOM_KEY, JSON.stringify(customViews)); }, [customViews]);
+
+  // Persist active view id
+  useEffect(() => {
+    if (activeViewId) localStorage.setItem(LS_ACTIVE_KEY, activeViewId);
+    else localStorage.removeItem(LS_ACTIVE_KEY);
+  }, [activeViewId]);
 
   async function load() {
     setLoading(true);
@@ -75,17 +169,60 @@ function YachtsPage() {
     setLoading(false);
   }
 
+  async function updateStatus(id: string, status: string) {
+    const { error } = await supabase.from("yachts").update({ status }).eq("id", id);
+    if (error) toast.error(error.message);
+    else setYachts((prev) => prev.map((y) => (y.id === id ? { ...y, status } : y)));
+    setQuickEditId(null);
+  }
+
+  // ── View preset functions ────────────────────────────────────────────────────
+  const allViews = useMemo(() => [...BUILTIN_VIEWS, ...customViews], [customViews]);
+  const activeView = allViews.find((v) => v.id === activeViewId) ?? null;
+
+  function applyView(v: ViewPreset) {
+    const validCols = v.columns.filter((k) =>
+      YACHT_COLUMNS.some((c) => c.key === k),
+    ) as YachtColumnKey[];
+    setVisible(validCols);
+    setActiveViewId(v.id);
+  }
+
+  function cycleView(dir: 1 | -1) {
+    if (allViews.length === 0) return;
+    const idx = allViews.findIndex((v) => v.id === activeViewId);
+    const next = (idx + dir + allViews.length) % allViews.length;
+    applyView(allViews[next]);
+  }
+
+  function saveCurrentView() {
+    const name = newViewName.trim();
+    if (!name) return;
+    const id = `custom-${Date.now()}`;
+    const preset: ViewPreset = { id, name, columns: [...visible] };
+    setCustomViews((prev) => [...prev, preset]);
+    setActiveViewId(id);
+    setNewViewName("");
+    toast.success(`View "${name}" saved`);
+  }
+
+  function deleteCustomView(id: string) {
+    setCustomViews((prev) => prev.filter((v) => v.id !== id));
+    if (activeViewId === id) setActiveViewId(null);
+  }
+
+  // ── Column toggle (clears active view if user customises manually) ───────────
+  function toggleVisible(key: YachtColumnKey, checked: boolean) {
+    setVisible((prev) => (checked ? [...prev, key] : prev.filter((k) => k !== key)));
+    setActiveViewId(null); // manually adjusted — no longer a named view
+  }
+
+  // ── Stats ────────────────────────────────────────────────────────────────────
   const stats = useMemo(() => {
-    const total = yachts.length;
-    const inCountry = yachts.filter((y) =>
-      String(y.status ?? "").toLowerCase() === "in country",
-    ).length;
-    const departed = yachts.filter((y) =>
-      String(y.status ?? "").toLowerCase() === "departed",
-    ).length;
-    const changeAgency = yachts.filter((y) =>
-      String(y.status ?? "").toLowerCase() === "change agency",
-    ).length;
+    const total      = yachts.length;
+    const inCountry  = yachts.filter((y) => String(y.status ?? "").toLowerCase() === "in country").length;
+    const departed   = yachts.filter((y) => String(y.status ?? "").toLowerCase() === "departed").length;
+    const changeAgency = yachts.filter((y) => String(y.status ?? "").toLowerCase() === "change agency").length;
     return { total, inCountry, departed, changeAgency };
   }, [yachts]);
 
@@ -97,22 +234,16 @@ function YachtsPage() {
 
   const filtered = useMemo(() => {
     let rows = yachts;
-
-    // Status filter
     if (statusFilter !== "all") {
       const target = STATUS_TARGETS[statusFilter];
       rows = rows.filter((y) => String(y.status ?? "").toLowerCase() === target);
     }
-
-    // Text search
     if (q.trim()) {
       const s = q.toLowerCase();
       rows = rows.filter((y) =>
         Object.values(y).some((v) => String(v ?? "").toLowerCase().includes(s)),
       );
     }
-
-    // Sort
     if (sortKey) {
       rows = [...rows].sort((a, b) => {
         const av = String(a[sortKey] ?? "").toLowerCase();
@@ -121,25 +252,16 @@ function YachtsPage() {
         return sortDir === "asc" ? cmp : -cmp;
       });
     }
-
     return rows;
   }, [yachts, q, statusFilter, sortKey, sortDir]);
 
   function toggleSort(key: YachtColumnKey) {
-    if (sortKey === key) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
-      setSortKey(key);
-      setSortDir("asc");
-    }
+    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortKey(key); setSortDir("asc"); }
   }
 
   function toggleStatFilter(filter: StatusFilter) {
     setStatusFilter((prev) => (prev === filter ? "all" : filter));
-  }
-
-  function toggleVisible(key: YachtColumnKey, checked: boolean) {
-    setVisible((prev) => (checked ? [...prev, key] : prev.filter((k) => k !== key)));
   }
 
   return (
@@ -155,6 +277,7 @@ function YachtsPage() {
           <h1 className="font-display text-base font-semibold tracking-tight">Yacht Registry</h1>
         </div>
         <div className="flex items-center gap-2">
+          {/* Search */}
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -164,6 +287,8 @@ function YachtsPage() {
               className="h-8 w-56 pl-8"
             />
           </div>
+
+          {/* List / Cards toggle */}
           <div className="flex h-8 rounded-md border border-border bg-card p-0.5">
             <button
               onClick={() => setView("list")}
@@ -178,15 +303,116 @@ function YachtsPage() {
               <LayoutGrid className="h-3.5 w-3.5" /> Cards
             </button>
           </div>
+
+          {/* View cycle control */}
+          <div className="flex h-8 items-center rounded-md border border-border bg-card overflow-hidden">
+            <button
+              onClick={() => cycleView(-1)}
+              title="Previous view"
+              className="flex h-full items-center px-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </button>
+            <span className="px-2 text-[11px] font-medium text-foreground/80 min-w-[72px] text-center select-none">
+              {activeView?.name ?? "Custom"}
+            </span>
+            <button
+              onClick={() => cycleView(1)}
+              title="Next view"
+              className="flex h-full items-center px-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition"
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+
+          {/* Views & Columns dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs">
-                <SlidersHorizontal className="h-3.5 w-3.5" /> Columns
+                <BookMarked className="h-3.5 w-3.5" /> Views
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="max-h-96 overflow-y-auto w-64">
-              <DropdownMenuLabel>Visible columns</DropdownMenuLabel>
+            <DropdownMenuContent align="end" className="w-72 max-h-[520px] overflow-y-auto">
+
+              {/* Built-in views */}
+              <DropdownMenuLabel className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider">
+                <BookMarked className="h-3 w-3" /> Built-in Views
+              </DropdownMenuLabel>
+              {BUILTIN_VIEWS.map((v) => (
+                <DropdownMenuCheckboxItem
+                  key={v.id}
+                  checked={activeViewId === v.id}
+                  onCheckedChange={() => applyView(v)}
+                >
+                  {v.name}
+                  <span className="ml-auto text-[10px] text-muted-foreground">
+                    {v.columns.length} cols
+                  </span>
+                </DropdownMenuCheckboxItem>
+              ))}
+
+              {/* Custom views */}
+              {customViews.length > 0 && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel className="text-[10px] uppercase tracking-wider">My Views</DropdownMenuLabel>
+                  {customViews.map((v) => (
+                    <div key={v.id} className="flex items-center pr-1">
+                      <DropdownMenuCheckboxItem
+                        className="flex-1"
+                        checked={activeViewId === v.id}
+                        onCheckedChange={() => applyView(v)}
+                      >
+                        {v.name}
+                        <span className="ml-auto text-[10px] text-muted-foreground">
+                          {v.columns.length} cols
+                        </span>
+                      </DropdownMenuCheckboxItem>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); deleteCustomView(v.id); }}
+                        className="ml-1 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition"
+                        title={`Delete "${v.name}"`}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+                </>
+              )}
+
+              {/* Save current as */}
               <DropdownMenuSeparator />
+              <div
+                className="px-2 py-1.5 flex gap-1.5"
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                <Input
+                  value={newViewName}
+                  onChange={(e) => setNewViewName(e.target.value)}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.key === "Enter") saveCurrentView();
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  placeholder="Save current as…"
+                  className="h-7 text-xs flex-1"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 px-2 text-xs gap-1"
+                  onClick={(e) => { e.stopPropagation(); saveCurrentView(); }}
+                  disabled={!newViewName.trim()}
+                >
+                  <Check className="h-3 w-3" /> Save
+                </Button>
+              </div>
+
+              {/* Columns */}
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider">
+                <SlidersHorizontal className="h-3 w-3" /> Columns
+              </DropdownMenuLabel>
               {YACHT_COLUMNS.map((c) => (
                 <DropdownMenuCheckboxItem
                   key={c.key}
@@ -198,6 +424,7 @@ function YachtsPage() {
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
+
           <Button asChild size="sm" className="h-8 gap-1.5 text-xs">
             <Link to="/yachts/new"><Plus className="h-3.5 w-3.5" /> Add Yacht</Link>
           </Button>
@@ -207,48 +434,29 @@ function YachtsPage() {
       {/* Stat strip — clickable to filter */}
       <div className="grid grid-cols-4 gap-3 px-5 py-3">
         <StatCard
-          label="Total Vessels"
-          value={stats.total}
-          icon={Ship}
-          accent="text-primary"
-          active={statusFilter === "all"}
-          onClick={() => setStatusFilter("all")}
+          label="Total Vessels" value={stats.total} icon={Ship} accent="text-primary"
+          active={statusFilter === "all"} onClick={() => setStatusFilter("all")}
         />
         <StatCard
-          label="In Country"
-          value={stats.inCountry}
-          icon={MapPin}
-          accent="text-success"
-          active={statusFilter === "in_country"}
-          onClick={() => toggleStatFilter("in_country")}
+          label="In Country" value={stats.inCountry} icon={MapPin} accent="text-success"
+          active={statusFilter === "in_country"} onClick={() => toggleStatFilter("in_country")}
         />
         <StatCard
-          label="Departed"
-          value={stats.departed}
-          icon={LogOut}
-          accent="text-muted-foreground"
-          active={statusFilter === "departed"}
-          onClick={() => toggleStatFilter("departed")}
+          label="Departed" value={stats.departed} icon={LogOut} accent="text-muted-foreground"
+          active={statusFilter === "departed"} onClick={() => toggleStatFilter("departed")}
         />
         <StatCard
-          label="Change Agency"
-          value={stats.changeAgency}
-          icon={RefreshCcw}
-          accent="text-warning"
-          active={statusFilter === "change_agency"}
-          onClick={() => toggleStatFilter("change_agency")}
+          label="Change Agency" value={stats.changeAgency} icon={RefreshCcw} accent="text-warning"
+          active={statusFilter === "change_agency"} onClick={() => toggleStatFilter("change_agency")}
         />
       </div>
 
       {statusFilter !== "all" && (
         <div className="px-5 pb-1 flex items-center gap-2">
           <span className="text-xs text-muted-foreground">
-            Filtering by: <strong className="text-foreground capitalize">{statusFilter}</strong>
+            Filtering by: <strong className="text-foreground capitalize">{statusFilter.replace("_", " ")}</strong>
           </span>
-          <button
-            onClick={() => setStatusFilter("all")}
-            className="text-xs text-primary hover:underline"
-          >
+          <button onClick={() => setStatusFilter("all")} className="text-xs text-primary hover:underline">
             Clear
           </button>
         </div>
@@ -278,15 +486,13 @@ function YachtsPage() {
   );
 }
 
+// ── Sub-components ─────────────────────────────────────────────────────────────
+
 function StatCard({
   label, value, icon: Icon, accent, active, onClick,
 }: {
-  label: string;
-  value: number;
-  icon: React.ComponentType<{ className?: string }>;
-  accent: string;
-  active: boolean;
-  onClick: () => void;
+  label: string; value: number; icon: React.ComponentType<{ className?: string }>;
+  accent: string; active: boolean; onClick: () => void;
 }) {
   return (
     <button
@@ -338,15 +544,10 @@ function fmt(v: unknown) {
 /** Returns a MarineTraffic deep-link using IMO → MMSI → name as fallback */
 function trackUrl(y: Yacht): string {
   const imo = String(y.imo_no ?? "").trim();
-  if (imo && imo !== "—") {
-    return `https://www.marinetraffic.com/en/ais/details/ships/imo:${imo}`;
-  }
+  if (imo && imo !== "—") return `https://www.marinetraffic.com/en/ais/details/ships/imo:${imo}`;
   const mmsi = String(y.mmsi ?? "").trim();
-  if (mmsi && mmsi !== "—") {
-    return `https://www.marinetraffic.com/en/ais/details/ships/mmsi:${mmsi}`;
-  }
-  const name = String(y.vessel_name ?? "").trim();
-  return `https://www.marinetraffic.com/en/ais/index/search/all/keyword:${encodeURIComponent(name)}`;
+  if (mmsi && mmsi !== "—") return `https://www.marinetraffic.com/en/ais/details/ships/mmsi:${mmsi}`;
+  return `https://www.marinetraffic.com/en/ais/index/search/all/keyword:${encodeURIComponent(String(y.vessel_name ?? ""))}`;
 }
 
 function ListView({
@@ -404,12 +605,12 @@ function ListView({
                       <select
                         autoFocus
                         defaultValue={y.status as string ?? ""}
-                        onBlur={e => updateStatus(y.id, e.target.value)}
-                        onChange={e => updateStatus(y.id, e.target.value)}
+                        onBlur={(e) => updateStatus(y.id, e.target.value)}
+                        onChange={(e) => updateStatus(y.id, e.target.value)}
                         className="h-6 w-full rounded border border-border bg-card text-xs px-1 focus:outline-none focus:ring-1 focus:ring-primary"
-                        onClick={e => e.stopPropagation()}
+                        onClick={(e) => e.stopPropagation()}
                       >
-                        {["In Country", "Departed", "Change Agency", "Active", "Inactive", "Arrived", "Pending"].map(s => (
+                        {["In Country", "Departed", "Change Agency", "Active", "Inactive", "Arrived", "Pending"].map((s) => (
                           <option key={s} value={s}>{s}</option>
                         ))}
                       </select>
@@ -431,7 +632,7 @@ function ListView({
                   target="_blank"
                   rel="noopener noreferrer"
                   title="Track on MarineTraffic"
-                  onClick={e => e.stopPropagation()}
+                  onClick={(e) => e.stopPropagation()}
                   className="inline-flex h-6 w-6 items-center justify-center rounded transition hover:bg-primary/10 hover:text-primary text-muted-foreground/50"
                 >
                   <Radar className="h-3.5 w-3.5" />
@@ -483,7 +684,7 @@ function CardsView({ rows }: { rows: Yacht[] }) {
                 target="_blank"
                 rel="noopener noreferrer"
                 title="Track on MarineTraffic"
-                onClick={e => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
                 className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-[11px] text-muted-foreground transition hover:bg-primary/10 hover:text-primary"
               >
                 <Radar className="h-3 w-3" />
