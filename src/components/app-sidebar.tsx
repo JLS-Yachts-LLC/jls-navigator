@@ -40,7 +40,7 @@ const NAV: NavItem[] = [
       { label: "Small Boat Registration", to: "/small-boat-registration", icon: Sailboat },
     ],
   },
-  { label: "Orbit", to: "/orbit", icon: Orbit },
+  { label: "Orbit", to: "/orbit/", icon: Orbit },
   {
     label: "Crew Cab",
     icon: Users,

@@ -15,11 +15,13 @@ type TripStatus = "pending" | "confirmed" | "in_progress" | "completed" | "cance
 type SavedLocation = { id: string; name: string; address: string | null; latitude: number | null; longitude: number | null };
 type Driver = { id: string; full_name: string };
 type Vehicle = { id: string; make: string; model: string; registration: string | null };
+type Yacht = { id: string; vessel_name: string };
 
 type Trip = {
   id: string;
   trip_type: TripType;
   passenger_name: string | null;
+  yacht_id: string | null;
   pickup_location_id: string | null;
   pickup_address: string | null;
   dropoff_location_id: string | null;
@@ -34,11 +36,13 @@ type Trip = {
   vehicle?: { make: string; model: string; registration: string | null } | null;
   pickup_loc?: { name: string; latitude: number | null; longitude: number | null } | null;
   dropoff_loc?: { name: string; latitude: number | null; longitude: number | null } | null;
+  yacht?: { vessel_name: string } | null;
 };
 
 const EMPTY_FORM = {
   trip_type: "crew_pickup" as TripType,
   passenger_name: "",
+  yacht_id: "__none",
   pickup_location_id: "__none",
   pickup_address: "",
   dropoff_location_id: "__none",
@@ -88,6 +92,7 @@ export function TripsPage() {
   const [locations, setLocations] = useState<SavedLocation[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [yachts, setYachts] = useState<Yacht[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | TripType>("all");
   const [open, setOpen] = useState(false);
@@ -99,16 +104,18 @@ export function TripsPage() {
 
   async function loadAll() {
     setLoading(true);
-    const [tripsRes, locsRes, driversRes, vehiclesRes] = await Promise.all([
-      (supabase as any).from("crew_trips").select(`*, driver:crew_drivers(full_name), vehicle:crew_vehicles(make,model,registration), pickup_loc:crew_locations!pickup_location_id(name,latitude,longitude), dropoff_loc:crew_locations!dropoff_location_id(name,latitude,longitude)`).order("pickup_datetime", { ascending: false }),
+    const [tripsRes, locsRes, driversRes, vehiclesRes, yachtsRes] = await Promise.all([
+      (supabase as any).from("crew_trips").select(`*, driver:crew_drivers(full_name), vehicle:crew_vehicles(make,model,registration), pickup_loc:crew_locations!pickup_location_id(name,latitude,longitude), dropoff_loc:crew_locations!dropoff_location_id(name,latitude,longitude), yacht:yachts(vessel_name)`).order("pickup_datetime", { ascending: false }),
       (supabase as any).from("crew_locations").select("id,name,address,latitude,longitude").order("name"),
       (supabase as any).from("crew_drivers").select("id,full_name").eq("status","active").order("full_name"),
       (supabase as any).from("crew_vehicles").select("id,make,model,registration").eq("status","available").order("make"),
+      (supabase as any).from("yachts").select("id,vessel_name").order("vessel_name"),
     ]);
     if (tripsRes.error) toast.error(tripsRes.error.message); else setTrips(tripsRes.data as Trip[]);
     if (!locsRes.error) setLocations(locsRes.data as SavedLocation[]);
     if (!driversRes.error) setDrivers(driversRes.data as Driver[]);
     if (!vehiclesRes.error) setVehicles(vehiclesRes.data as Vehicle[]);
+    if (!yachtsRes.error) setYachts(yachtsRes.data as Yacht[]);
     setLoading(false);
   }
 
@@ -120,6 +127,7 @@ export function TripsPage() {
     setForm({
       trip_type: t.trip_type,
       passenger_name: t.passenger_name ?? "",
+      yacht_id: t.yacht_id ?? "__none",
       pickup_location_id: t.pickup_location_id ?? "__none",
       pickup_address: t.pickup_address ?? "",
       dropoff_location_id: t.dropoff_location_id ?? "__none",
@@ -144,6 +152,7 @@ export function TripsPage() {
       const payload = {
         trip_type: form.trip_type,
         passenger_name: form.passenger_name || null,
+        yacht_id: form.yacht_id === "__none" ? null : form.yacht_id,
         pickup_location_id: form.pickup_location_id === "__none" ? null : form.pickup_location_id,
         pickup_address: form.pickup_address || null,
         dropoff_location_id: form.dropoff_location_id === "__none" ? null : form.dropoff_location_id,
@@ -205,13 +214,14 @@ export function TripsPage() {
           <div className="rounded-lg border border-border overflow-x-auto">
             <table className="w-full text-sm min-w-[1000px]">
               <thead className="bg-muted/40 border-b border-border">
-                <tr>{["Type","Passenger","Pickup","Drop-off","Pickup Time","Dropoff Time","Driver","Vehicle","Status",""].map(h => <th key={h} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground whitespace-nowrap">{h}</th>)}</tr>
+                <tr>{["Type","Passenger","Yacht","Pickup","Drop-off","Pickup Time","Dropoff Time","Driver","Vehicle","Status",""].map(h => <th key={h} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground whitespace-nowrap">{h}</th>)}</tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {filtered.map(t => (
                   <tr key={t.id} className="hover:bg-muted/20 transition-colors">
                     <td className="px-4 py-3"><TypeBadge type={t.trip_type} /></td>
                     <td className="px-4 py-3 font-medium">{t.passenger_name ?? "—"}</td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">{t.yacht?.vessel_name ?? "—"}</td>
                     <td className="px-4 py-3 text-muted-foreground text-xs max-w-[160px] truncate">{pickupDisplay(t)}</td>
                     <td className="px-4 py-3 text-muted-foreground text-xs max-w-[160px] truncate">{dropoffDisplay(t)}</td>
                     <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{fmtDt(t.pickup_datetime)}</td>
@@ -247,9 +257,19 @@ export function TripsPage() {
                 <Label>Status</Label>
                 <Select value={form.status} onValueChange={v => setForm(f => ({ ...f, status: v as TripStatus }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{(["pending","confirmed","in_progress","completed","cancelled"] as TripStatus[]).map(s => <SelectItem key={s} value={s}>{STATUS_LABEL[s]}</SelectItem>)}</SelectContent></Select>
               </div>
-              <div className="space-y-1.5 col-span-2">
+              <div className="space-y-1.5">
                 <Label>Passenger Name</Label>
                 <Input value={form.passenger_name} onChange={setF("passenger_name")} placeholder="e.g. Captain Smith / Crew of MV Horizon" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Yacht <span className="text-muted-foreground text-xs">(client)</span></Label>
+                <Select value={form.yacht_id} onValueChange={v => setForm(f => ({ ...f, yacht_id: v }))}>
+                  <SelectTrigger><SelectValue placeholder="Select yacht…" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none">— None —</SelectItem>
+                    {yachts.map(y => <SelectItem key={y.id} value={y.id}>{y.vessel_name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-1.5">
                 <Label>Driver</Label>

@@ -20,6 +20,7 @@ import { Route as AppDirectorRouteImport } from './routes/_app.director'
 import { Route as AppCrewCabRouteImport } from './routes/_app.crew-cab'
 import { Route as AppChangelogRouteImport } from './routes/_app.changelog'
 import { Route as AppYachtsIndexRouteImport } from './routes/_app.yachts.index'
+import { Route as AppOrbitIndexRouteImport } from './routes/_app.orbit.index'
 import { Route as AppYachtsNewRouteImport } from './routes/_app.yachts.new'
 import { Route as AppYachtsIdRouteImport } from './routes/_app.yachts.$id'
 import { Route as AppPermitsTdraRouteImport } from './routes/_app.permits.tdra'
@@ -30,6 +31,7 @@ import { Route as AppPermitsExitEntryRouteImport } from './routes/_app.permits.e
 import { Route as AppPermitsDmaRouteImport } from './routes/_app.permits.dma'
 import { Route as AppPermitsCruisingTendersRouteImport } from './routes/_app.permits.cruising-tenders'
 import { Route as AppPermitsCruisingMothershipRouteImport } from './routes/_app.permits.cruising-mothership'
+import { Route as AppOrbitProjectIdRouteImport } from './routes/_app.orbit.$projectId'
 import { Route as AppCrewCabVehiclesRouteImport } from './routes/_app.crew-cab.vehicles'
 import { Route as AppCrewCabTripsRouteImport } from './routes/_app.crew-cab.trips'
 import { Route as AppCrewCabLocationsRouteImport } from './routes/_app.crew-cab.locations'
@@ -90,6 +92,11 @@ const AppYachtsIndexRoute = AppYachtsIndexRouteImport.update({
   path: '/yachts/',
   getParentRoute: () => AppRoute,
 } as any)
+const AppOrbitIndexRoute = AppOrbitIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppOrbitRoute,
+} as any)
 const AppYachtsNewRoute = AppYachtsNewRouteImport.update({
   id: '/yachts/new',
   path: '/yachts/new',
@@ -143,6 +150,11 @@ const AppPermitsCruisingMothershipRoute =
     path: '/permits/cruising-mothership',
     getParentRoute: () => AppRoute,
   } as any)
+const AppOrbitProjectIdRoute = AppOrbitProjectIdRouteImport.update({
+  id: '/$projectId',
+  path: '/$projectId',
+  getParentRoute: () => AppOrbitRoute,
+} as any)
 const AppCrewCabVehiclesRoute = AppCrewCabVehiclesRouteImport.update({
   id: '/vehicles',
   path: '/vehicles',
@@ -170,7 +182,7 @@ export interface FileRoutesByFullPath {
   '/changelog': typeof AppChangelogRoute
   '/crew-cab': typeof AppCrewCabRouteWithChildren
   '/director': typeof AppDirectorRoute
-  '/orbit': typeof AppOrbitRoute
+  '/orbit': typeof AppOrbitRouteWithChildren
   '/packages': typeof AppPackagesRoute
   '/settings': typeof AppSettingsRoute
   '/small-boat-registration': typeof AppSmallBoatRegistrationRoute
@@ -178,6 +190,7 @@ export interface FileRoutesByFullPath {
   '/crew-cab/locations': typeof AppCrewCabLocationsRoute
   '/crew-cab/trips': typeof AppCrewCabTripsRoute
   '/crew-cab/vehicles': typeof AppCrewCabVehiclesRoute
+  '/orbit/$projectId': typeof AppOrbitProjectIdRoute
   '/permits/cruising-mothership': typeof AppPermitsCruisingMothershipRoute
   '/permits/cruising-tenders': typeof AppPermitsCruisingTendersRoute
   '/permits/dma': typeof AppPermitsDmaRoute
@@ -188,6 +201,7 @@ export interface FileRoutesByFullPath {
   '/permits/tdra': typeof AppPermitsTdraRoute
   '/yachts/$id': typeof AppYachtsIdRoute
   '/yachts/new': typeof AppYachtsNewRoute
+  '/orbit/': typeof AppOrbitIndexRoute
   '/yachts/': typeof AppYachtsIndexRoute
 }
 export interface FileRoutesByTo {
@@ -196,7 +210,6 @@ export interface FileRoutesByTo {
   '/changelog': typeof AppChangelogRoute
   '/crew-cab': typeof AppCrewCabRouteWithChildren
   '/director': typeof AppDirectorRoute
-  '/orbit': typeof AppOrbitRoute
   '/packages': typeof AppPackagesRoute
   '/settings': typeof AppSettingsRoute
   '/small-boat-registration': typeof AppSmallBoatRegistrationRoute
@@ -204,6 +217,7 @@ export interface FileRoutesByTo {
   '/crew-cab/locations': typeof AppCrewCabLocationsRoute
   '/crew-cab/trips': typeof AppCrewCabTripsRoute
   '/crew-cab/vehicles': typeof AppCrewCabVehiclesRoute
+  '/orbit/$projectId': typeof AppOrbitProjectIdRoute
   '/permits/cruising-mothership': typeof AppPermitsCruisingMothershipRoute
   '/permits/cruising-tenders': typeof AppPermitsCruisingTendersRoute
   '/permits/dma': typeof AppPermitsDmaRoute
@@ -214,6 +228,7 @@ export interface FileRoutesByTo {
   '/permits/tdra': typeof AppPermitsTdraRoute
   '/yachts/$id': typeof AppYachtsIdRoute
   '/yachts/new': typeof AppYachtsNewRoute
+  '/orbit': typeof AppOrbitIndexRoute
   '/yachts': typeof AppYachtsIndexRoute
 }
 export interface FileRoutesById {
@@ -224,7 +239,7 @@ export interface FileRoutesById {
   '/_app/changelog': typeof AppChangelogRoute
   '/_app/crew-cab': typeof AppCrewCabRouteWithChildren
   '/_app/director': typeof AppDirectorRoute
-  '/_app/orbit': typeof AppOrbitRoute
+  '/_app/orbit': typeof AppOrbitRouteWithChildren
   '/_app/packages': typeof AppPackagesRoute
   '/_app/settings': typeof AppSettingsRoute
   '/_app/small-boat-registration': typeof AppSmallBoatRegistrationRoute
@@ -232,6 +247,7 @@ export interface FileRoutesById {
   '/_app/crew-cab/locations': typeof AppCrewCabLocationsRoute
   '/_app/crew-cab/trips': typeof AppCrewCabTripsRoute
   '/_app/crew-cab/vehicles': typeof AppCrewCabVehiclesRoute
+  '/_app/orbit/$projectId': typeof AppOrbitProjectIdRoute
   '/_app/permits/cruising-mothership': typeof AppPermitsCruisingMothershipRoute
   '/_app/permits/cruising-tenders': typeof AppPermitsCruisingTendersRoute
   '/_app/permits/dma': typeof AppPermitsDmaRoute
@@ -242,6 +258,7 @@ export interface FileRoutesById {
   '/_app/permits/tdra': typeof AppPermitsTdraRoute
   '/_app/yachts/$id': typeof AppYachtsIdRoute
   '/_app/yachts/new': typeof AppYachtsNewRoute
+  '/_app/orbit/': typeof AppOrbitIndexRoute
   '/_app/yachts/': typeof AppYachtsIndexRoute
 }
 export interface FileRouteTypes {
@@ -260,6 +277,7 @@ export interface FileRouteTypes {
     | '/crew-cab/locations'
     | '/crew-cab/trips'
     | '/crew-cab/vehicles'
+    | '/orbit/$projectId'
     | '/permits/cruising-mothership'
     | '/permits/cruising-tenders'
     | '/permits/dma'
@@ -270,6 +288,7 @@ export interface FileRouteTypes {
     | '/permits/tdra'
     | '/yachts/$id'
     | '/yachts/new'
+    | '/orbit/'
     | '/yachts/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -278,7 +297,6 @@ export interface FileRouteTypes {
     | '/changelog'
     | '/crew-cab'
     | '/director'
-    | '/orbit'
     | '/packages'
     | '/settings'
     | '/small-boat-registration'
@@ -286,6 +304,7 @@ export interface FileRouteTypes {
     | '/crew-cab/locations'
     | '/crew-cab/trips'
     | '/crew-cab/vehicles'
+    | '/orbit/$projectId'
     | '/permits/cruising-mothership'
     | '/permits/cruising-tenders'
     | '/permits/dma'
@@ -296,6 +315,7 @@ export interface FileRouteTypes {
     | '/permits/tdra'
     | '/yachts/$id'
     | '/yachts/new'
+    | '/orbit'
     | '/yachts'
   id:
     | '__root__'
@@ -313,6 +333,7 @@ export interface FileRouteTypes {
     | '/_app/crew-cab/locations'
     | '/_app/crew-cab/trips'
     | '/_app/crew-cab/vehicles'
+    | '/_app/orbit/$projectId'
     | '/_app/permits/cruising-mothership'
     | '/_app/permits/cruising-tenders'
     | '/_app/permits/dma'
@@ -323,6 +344,7 @@ export interface FileRouteTypes {
     | '/_app/permits/tdra'
     | '/_app/yachts/$id'
     | '/_app/yachts/new'
+    | '/_app/orbit/'
     | '/_app/yachts/'
   fileRoutesById: FileRoutesById
 }
@@ -411,6 +433,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppYachtsIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/orbit/': {
+      id: '/_app/orbit/'
+      path: '/'
+      fullPath: '/orbit/'
+      preLoaderRoute: typeof AppOrbitIndexRouteImport
+      parentRoute: typeof AppOrbitRoute
+    }
     '/_app/yachts/new': {
       id: '/_app/yachts/new'
       path: '/yachts/new'
@@ -481,6 +510,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppPermitsCruisingMothershipRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/orbit/$projectId': {
+      id: '/_app/orbit/$projectId'
+      path: '/$projectId'
+      fullPath: '/orbit/$projectId'
+      preLoaderRoute: typeof AppOrbitProjectIdRouteImport
+      parentRoute: typeof AppOrbitRoute
+    }
     '/_app/crew-cab/vehicles': {
       id: '/_app/crew-cab/vehicles'
       path: '/vehicles'
@@ -530,11 +566,25 @@ const AppCrewCabRouteWithChildren = AppCrewCabRoute._addFileChildren(
   AppCrewCabRouteChildren,
 )
 
+interface AppOrbitRouteChildren {
+  AppOrbitProjectIdRoute: typeof AppOrbitProjectIdRoute
+  AppOrbitIndexRoute: typeof AppOrbitIndexRoute
+}
+
+const AppOrbitRouteChildren: AppOrbitRouteChildren = {
+  AppOrbitProjectIdRoute: AppOrbitProjectIdRoute,
+  AppOrbitIndexRoute: AppOrbitIndexRoute,
+}
+
+const AppOrbitRouteWithChildren = AppOrbitRoute._addFileChildren(
+  AppOrbitRouteChildren,
+)
+
 interface AppRouteChildren {
   AppChangelogRoute: typeof AppChangelogRoute
   AppCrewCabRoute: typeof AppCrewCabRouteWithChildren
   AppDirectorRoute: typeof AppDirectorRoute
-  AppOrbitRoute: typeof AppOrbitRoute
+  AppOrbitRoute: typeof AppOrbitRouteWithChildren
   AppPackagesRoute: typeof AppPackagesRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppSmallBoatRegistrationRoute: typeof AppSmallBoatRegistrationRoute
@@ -555,7 +605,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppChangelogRoute: AppChangelogRoute,
   AppCrewCabRoute: AppCrewCabRouteWithChildren,
   AppDirectorRoute: AppDirectorRoute,
-  AppOrbitRoute: AppOrbitRoute,
+  AppOrbitRoute: AppOrbitRouteWithChildren,
   AppPackagesRoute: AppPackagesRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppSmallBoatRegistrationRoute: AppSmallBoatRegistrationRoute,
