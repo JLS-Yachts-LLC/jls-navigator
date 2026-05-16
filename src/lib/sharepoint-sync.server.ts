@@ -57,6 +57,15 @@ export async function saveSpConfigPatch(patch: Record<string, unknown>): Promise
 // ─── Graph API helpers ─────────────────────────────────────────────────────────
 
 export async function getGraphToken(tenantId: string, clientId: string, clientSecret: string): Promise<string> {
+  return _getToken(tenantId, clientId, clientSecret, 'https://graph.microsoft.com/.default')
+}
+
+// SharePoint file downloads require a SharePoint-scoped token, not the Graph token.
+export async function getSharePointToken(tenantId: string, clientId: string, clientSecret: string, spHostname: string): Promise<string> {
+  return _getToken(tenantId, clientId, clientSecret, `https://${spHostname}/.default`)
+}
+
+async function _getToken(tenantId: string, clientId: string, clientSecret: string, scope: string): Promise<string> {
   const res = await fetch(
     `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
     {
@@ -65,7 +74,7 @@ export async function getGraphToken(tenantId: string, clientId: string, clientSe
       body: new URLSearchParams({
         client_id: clientId,
         client_secret: clientSecret,
-        scope: 'https://graph.microsoft.com/.default',
+        scope,
         grant_type: 'client_credentials',
       }).toString(),
     }
@@ -209,7 +218,15 @@ export async function pushYachtToSharePoint(yachtId: string): Promise<void> {
 
 // ─── Image download helper ─────────────────────────────────────────────────────
 
-async function fetchSpImageToSupabase(raw: unknown, token: string, tenantUrl: string, spItemId: string): Promise<string | null> {
+async function fetchSpImageToSupabase(
+  raw: unknown,
+  graphToken: string,
+  tenantUrl: string,
+  spItemId: string,
+  tenantId?: string,
+  clientId?: string,
+  clientSecret?: string,
+): Promise<string | null> {
   // SP image/thumbnail columns return an object (or sometimes a JSON string)
   let img: Record<string, any> | null = null
   if (typeof raw === 'string') {
@@ -221,15 +238,37 @@ async function fetchSpImageToSupabase(raw: unknown, token: string, tenantUrl: st
   if (!img) return null
 
   // Hyperlink/Picture column returns { Url, Description }
-  if (typeof img.Url === 'string') return img.Url
+  if (typeof img.Url === 'string') {
+    // Plain URL — download directly with Graph token, or just store the URL
+    const directRes = await fetch(img.Url, { headers: { Authorization: `Bearer ${graphToken}` } })
+    if (!directRes.ok) return img.Url // store raw URL as fallback
+    const ab = await directRes.arrayBuffer()
+    const ct = directRes.headers.get('content-type') ?? 'image/jpeg'
+    const ext = ct.split('/')[1]?.split(';')[0] ?? 'jpg'
+    const path = `sharepoint/${spItemId}-hyperlink.${ext}`
+    const { error } = await supabaseAdmin.storage.from('vessel-images').upload(path, ab, { upsert: true, contentType: ct })
+    if (error) return img.Url
+    return supabaseAdmin.storage.from('vessel-images').getPublicUrl(path).data.publicUrl
+  }
 
   const serverUrl: string = img.serverUrl ?? tenantUrl.replace(/\/$/, '')
   const serverRelativeUrl: string | undefined = img.serverRelativeUrl
   if (!serverRelativeUrl) return null
 
-  // Download the image from SharePoint using the Graph Bearer token
+  // SharePoint file downloads require a SharePoint-scoped token (not the Graph token).
+  // Try to get one if credentials are available, otherwise fall back to Graph token.
+  let downloadToken = graphToken
+  if (tenantId && clientId && clientSecret) {
+    try {
+      const hostname = new URL(serverUrl).hostname
+      downloadToken = await getSharePointToken(tenantId, clientId, clientSecret, hostname)
+    } catch {
+      // keep Graph token as fallback
+    }
+  }
+
   const imgRes = await fetch(`${serverUrl}${serverRelativeUrl}`, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { Authorization: `Bearer ${downloadToken}` },
   })
   if (!imgRes.ok) return null
 
@@ -481,7 +520,7 @@ export async function downloadPendingImages(): Promise<number> {
       const raw = item.fields?.[imageSpField]
       if (!raw) continue
 
-      const url = await fetchSpImageToSupabase(raw, token, cfg.tenantUrl, yacht.sharepoint_item_id)
+      const url = await fetchSpImageToSupabase(raw, token, cfg.tenantUrl, yacht.sharepoint_item_id, cfg.tenantId, cfg.clientId, cfg.clientSecret)
       if (url) {
         await supabaseAdmin.from('yachts').update({ vessel_image: url } as never).eq('id', yacht.id)
         downloaded++
@@ -557,7 +596,7 @@ export async function downloadYachtImage(yachtId: string): Promise<{ url: string
   const raw = item.fields?.[imageSpField]
   if (!raw) return { url: null, reason: 'The SharePoint item has no image attached.' }
 
-  const url = await fetchSpImageToSupabase(raw, token, cfg.tenantUrl, spItemId)
+  const url = await fetchSpImageToSupabase(raw, token, cfg.tenantUrl, spItemId, cfg.tenantId, cfg.clientId, cfg.clientSecret)
   if (url) {
     await supabaseAdmin.from('yachts').update({ vessel_image: url } as never).eq('id', yachtId)
   }
