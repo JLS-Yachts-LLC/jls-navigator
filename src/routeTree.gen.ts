@@ -18,6 +18,7 @@ import { Route as AppPackagesRouteImport } from './routes/_app.packages'
 import { Route as AppOrbitRouteImport } from './routes/_app.orbit'
 import { Route as AppDirectorRouteImport } from './routes/_app.director'
 import { Route as AppCrewCabRouteImport } from './routes/_app.crew-cab'
+import { Route as AppChangelogRouteImport } from './routes/_app.changelog'
 import { Route as AppYachtsIndexRouteImport } from './routes/_app.yachts.index'
 import { Route as AppYachtsNewRouteImport } from './routes/_app.yachts.new'
 import { Route as AppYachtsIdRouteImport } from './routes/_app.yachts.$id'
@@ -77,6 +78,11 @@ const AppDirectorRoute = AppDirectorRouteImport.update({
 const AppCrewCabRoute = AppCrewCabRouteImport.update({
   id: '/crew-cab',
   path: '/crew-cab',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppChangelogRoute = AppChangelogRouteImport.update({
+  id: '/changelog',
+  path: '/changelog',
   getParentRoute: () => AppRoute,
 } as any)
 const AppYachtsIndexRoute = AppYachtsIndexRouteImport.update({
@@ -161,6 +167,7 @@ const AppCrewCabDriversRoute = AppCrewCabDriversRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/changelog': typeof AppChangelogRoute
   '/crew-cab': typeof AppCrewCabRouteWithChildren
   '/director': typeof AppDirectorRoute
   '/orbit': typeof AppOrbitRoute
@@ -186,6 +193,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/changelog': typeof AppChangelogRoute
   '/crew-cab': typeof AppCrewCabRouteWithChildren
   '/director': typeof AppDirectorRoute
   '/orbit': typeof AppOrbitRoute
@@ -213,6 +221,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_app': typeof AppRouteWithChildren
   '/auth': typeof AuthRoute
+  '/_app/changelog': typeof AppChangelogRoute
   '/_app/crew-cab': typeof AppCrewCabRouteWithChildren
   '/_app/director': typeof AppDirectorRoute
   '/_app/orbit': typeof AppOrbitRoute
@@ -240,6 +249,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/auth'
+    | '/changelog'
     | '/crew-cab'
     | '/director'
     | '/orbit'
@@ -265,6 +275,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/auth'
+    | '/changelog'
     | '/crew-cab'
     | '/director'
     | '/orbit'
@@ -291,6 +302,7 @@ export interface FileRouteTypes {
     | '/'
     | '/_app'
     | '/auth'
+    | '/_app/changelog'
     | '/_app/crew-cab'
     | '/_app/director'
     | '/_app/orbit'
@@ -383,6 +395,13 @@ declare module '@tanstack/react-router' {
       path: '/crew-cab'
       fullPath: '/crew-cab'
       preLoaderRoute: typeof AppCrewCabRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/changelog': {
+      id: '/_app/changelog'
+      path: '/changelog'
+      fullPath: '/changelog'
+      preLoaderRoute: typeof AppChangelogRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/yachts/': {
@@ -512,6 +531,7 @@ const AppCrewCabRouteWithChildren = AppCrewCabRoute._addFileChildren(
 )
 
 interface AppRouteChildren {
+  AppChangelogRoute: typeof AppChangelogRoute
   AppCrewCabRoute: typeof AppCrewCabRouteWithChildren
   AppDirectorRoute: typeof AppDirectorRoute
   AppOrbitRoute: typeof AppOrbitRoute
@@ -532,6 +552,7 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppChangelogRoute: AppChangelogRoute,
   AppCrewCabRoute: AppCrewCabRouteWithChildren,
   AppDirectorRoute: AppDirectorRoute,
   AppOrbitRoute: AppOrbitRoute,

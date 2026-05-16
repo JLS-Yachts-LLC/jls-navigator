@@ -1,1 +1,0 @@
-import{j as t}from"./index-Cua93vs6.js";import{S as o}from"./stub-page-BBL3OvgM.js";import"./createLucideIcon-Bd-oyhxX.js";const p=()=>t.jsx(o,{title:"Orbit",breadcrumb:"Orbit"});export{p as component};
