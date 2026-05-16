@@ -1,0 +1,35 @@
+import { U as jsxRuntimeExports } from "./worker-entry-BSYsl9bp.js";
+import { P as PermitsPage } from "./permits-page-D_VfuIAL.js";
+import "node:events";
+import "node:async_hooks";
+import "node:stream/web";
+import "node:stream";
+import "./router-0WOApg3Q.js";
+import "./button-C_UVuWgo.js";
+import "./utils-Bz4m9VPB.js";
+import "./input-P0HOiVbI.js";
+import "./label-BMC-gKrJ.js";
+import "./select-Bn-V9QVk.js";
+import "./Combination-C8622hQS.js";
+import "./createLucideIcon-BzTIKZ77.js";
+import "./index-BX6xHXc7.js";
+import "./chevron-down-D4a7VFP9.js";
+import "./dialog-BmHWKtCu.js";
+import "./index-rYu5McGX.js";
+import "./index-C2g22c79.js";
+import "./x-IdPt_vgf.js";
+import "./alert-dialog-CDGXaw4H.js";
+import "./status-pill-SAx7pdeF.js";
+import "./loader-circle-DFMxZ2Xk.js";
+import "./file-check-corner-BP0ansuE.js";
+import "./save-BtDyljOY.js";
+import "./mail-CdwNnJ-R.js";
+import "./search-BVGrgeeq.js";
+import "./circle-check-CBGaRs5N.js";
+import "./clock-DjyGFOdd.js";
+import "./triangle-alert-CGzYAedn.js";
+import "./trash-2-Cg3Hw-Hd.js";
+const SplitComponent = () => /* @__PURE__ */ jsxRuntimeExports.jsx(PermitsPage, { permitType: "sanitation" });
+export {
+  SplitComponent as component
+};
