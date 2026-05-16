@@ -3,9 +3,9 @@ import {
   Ship, FileCheck2, Sailboat, Orbit, Users, Package, BarChart3,
   ChevronDown, ChevronRight, LogOut, Settings, Search,
   LogIn, ShieldCheck, Compass, Anchor, DoorOpen, Radio, Navigation, FileBadge, LayoutGrid,
-  Route, UserCircle2, Car, MapPin, ScrollText,
+  Route, UserCircle2, Car, MapPin, ScrollText, X,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import logo from "@/assets/jls-logo.png";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -29,8 +29,8 @@ const NAV: NavItem[] = [
         children: [
           { label: "Exit & Entry Permits", to: "/permits/exit-entry", icon: LogIn },
           { label: "Sanitation", to: "/permits/sanitation", icon: ShieldCheck },
-          { label: "Cruising Permit — Mot...", to: "/permits/cruising-mothership", icon: Compass },
-          { label: "Cruising Permit — Ten...", to: "/permits/cruising-tenders", icon: Anchor },
+          { label: "Cruising Permit — Mothership", to: "/permits/cruising-mothership", icon: Compass },
+          { label: "Cruising Permit — Tenders", to: "/permits/cruising-tenders", icon: Anchor },
           { label: "Gate Pass", to: "/permits/gate-pass", icon: DoorOpen },
           { label: "TDRA", to: "/permits/tdra", icon: Radio },
           { label: "Navigation License", to: "/permits/navigation-license", icon: Navigation },
@@ -63,21 +63,47 @@ const NAV: NavItem[] = [
   },
 ];
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/** True if this item or any descendant matches the current pathname */
+function containsPath(item: NavItem, pathname: string): boolean {
+  if (item.to) {
+    return pathname === item.to || pathname.startsWith(item.to.replace(/\/$/, "") + "/");
+  }
+  return (item.children ?? []).some(c => containsPath(c, pathname));
+}
+
+/** Flatten the nav tree into leaf items (those with a `to`) that match the query */
+function flatSearch(items: NavItem[], query: string): NavItem[] {
+  const q = query.toLowerCase();
+  const results: NavItem[] = [];
+  function walk(list: NavItem[]) {
+    for (const item of list) {
+      if (item.to && item.label.toLowerCase().includes(q)) results.push(item);
+      if (item.children) walk(item.children);
+    }
+  }
+  walk(items);
+  return results;
+}
+
+// ─── Nav Node ─────────────────────────────────────────────────────────────────
+
 function NavNode({ item, depth = 0 }: { item: NavItem; depth?: number }) {
   const location = useLocation();
   const hasChildren = !!item.children?.length;
-  const isActiveDeep = item.to ? location.pathname === item.to || location.pathname.startsWith(item.to + "/") : false;
-  const containsActive = hasChildren
-    ? JSON.stringify(item.children).includes(`"${location.pathname}"`)
+  const isActiveDeep = item.to
+    ? location.pathname === item.to || location.pathname.startsWith(item.to.replace(/\/$/, "") + "/")
     : false;
-  const [open, setOpen] = useState(depth === 0 || isActiveDeep || containsActive);
+  const childActive = hasChildren ? containsPath(item, location.pathname) : false;
+  const [open, setOpen] = useState(depth === 0 || isActiveDeep || childActive);
   const Icon = item.icon;
 
   if (hasChildren) {
     return (
       <div>
         <button
-          onClick={() => setOpen((v) => !v)}
+          onClick={() => setOpen(v => !v)}
           className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-sm font-medium text-sidebar-foreground/80 transition hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
           style={{ paddingLeft: 10 + depth * 12 }}
         >
@@ -87,7 +113,7 @@ function NavNode({ item, depth = 0 }: { item: NavItem; depth?: number }) {
         </button>
         {open && (
           <div className="mt-0.5 space-y-0.5 border-l border-sidebar-border ml-[18px]">
-            {item.children!.map((c) => (
+            {item.children!.map(c => (
               <NavNode key={c.label} item={c} depth={depth + 1} />
             ))}
           </div>
@@ -109,10 +135,41 @@ function NavNode({ item, depth = 0 }: { item: NavItem; depth?: number }) {
   );
 }
 
+/** Flat search result row */
+function SearchResult({ item }: { item: NavItem }) {
+  const location = useLocation();
+  const isActive = item.to
+    ? location.pathname === item.to || location.pathname.startsWith(item.to.replace(/\/$/, "") + "/")
+    : false;
+  const Icon = item.icon;
+  return (
+    <Link
+      to={item.to!}
+      className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-sidebar-foreground/75 transition hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[active=true]:bg-primary/15 data-[active=true]:text-primary data-[active=true]:font-medium"
+      data-active={isActive}
+    >
+      {Icon && <Icon className="h-4 w-4 shrink-0 opacity-70" />}
+      <span className="truncate">{item.label}</span>
+    </Link>
+  );
+}
+
+// ─── Sidebar ─────────────────────────────────────────────────────────────────
+
 export function AppSidebar() {
   const { user, signOut } = useAuth();
+  const [searchQ, setSearchQ] = useState("");
+
+  const searchResults = useMemo(
+    () => (searchQ.trim().length >= 1 ? flatSearch(NAV, searchQ.trim()) : []),
+    [searchQ],
+  );
+
+  const isSearching = searchQ.trim().length >= 1;
+
   return (
     <aside className="flex h-screen w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
+      {/* Logo */}
       <div className="flex items-center gap-2.5 px-4 py-4 border-b border-sidebar-border">
         <div className="flex h-9 w-9 items-center justify-center rounded-md bg-white p-1">
           <img src={logo} alt="JLS Yachts" className="h-full w-full object-contain" />
@@ -123,22 +180,41 @@ export function AppSidebar() {
         </div>
       </div>
 
+      {/* Search */}
       <div className="px-3 py-3">
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <input
+            value={searchQ}
+            onChange={e => setSearchQ(e.target.value)}
             placeholder="Search…"
-            className="h-8 w-full rounded-md border border-sidebar-border bg-sidebar-accent/40 pl-8 pr-2 text-xs text-sidebar-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            className="h-8 w-full rounded-md border border-sidebar-border bg-sidebar-accent/40 pl-8 pr-7 text-xs text-sidebar-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
           />
+          {isSearching && (
+            <button
+              onClick={() => setSearchQ("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
         </div>
       </div>
 
-      <nav className="flex-1 overflow-y-auto px-2 pb-3 space-y-1">
-        {NAV.map((item) => (
-          <NavNode key={item.label} item={item} />
-        ))}
+      {/* Nav */}
+      <nav className="flex-1 overflow-y-auto px-2 pb-3 space-y-0.5">
+        {isSearching ? (
+          searchResults.length > 0 ? (
+            searchResults.map(item => <SearchResult key={item.to} item={item} />)
+          ) : (
+            <p className="px-3 py-2 text-xs text-muted-foreground">No results for "{searchQ}"</p>
+          )
+        ) : (
+          NAV.map(item => <NavNode key={item.label} item={item} />)
+        )}
       </nav>
 
+      {/* User footer */}
       <div className="border-t border-sidebar-border p-3 space-y-1">
         <div className="flex items-center gap-2 px-1.5 py-1">
           <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/20 text-[11px] font-semibold text-primary">

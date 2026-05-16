@@ -394,9 +394,9 @@ export function ProjectsPage() {
             </DropdownMenuContent>
           </DropdownMenu>
           {/* Clear filters */}
-          {(priorityFilter !== "all" || yachtFilter !== "all" || search) && (
+          {(statusFilter !== "all" || priorityFilter !== "all" || yachtFilter !== "all" || search) && (
             <button
-              onClick={() => { setPriorityFilter("all"); setYachtFilter("all"); setSearch(""); }}
+              onClick={() => { setStatusFilter("all"); setPriorityFilter("all"); setYachtFilter("all"); setSearch(""); }}
               className="text-xs text-muted-foreground hover:text-foreground transition"
             >
               Clear filters

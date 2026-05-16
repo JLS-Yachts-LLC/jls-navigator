@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Mail, Paperclip, Save, X } from "lucide-react";
+import { Loader2, Mail, Paperclip, Save, X, Info } from "lucide-react";
 import { toast } from "sonner";
 
 type Yacht = { id: string; vessel_name: string };
@@ -65,9 +65,9 @@ export function ExitEntryDialog({
     setUploading(true);
     try {
       const path = `permits/${Date.now()}-${file.name}`;
-      const { error } = await supabase.storage.from("attachments").upload(path, file);
+      const { error } = await supabase.storage.from("permit-documents").upload(path, file);
       if (error) throw error;
-      const { data: { publicUrl } } = supabase.storage.from("attachments").getPublicUrl(path);
+      const { data: { publicUrl } } = supabase.storage.from("permit-documents").getPublicUrl(path);
       set("document_url", publicUrl);
       toast.success("File attached");
     } catch (err) {
@@ -77,7 +77,7 @@ export function ExitEntryDialog({
     }
   }
 
-  async function doSave(sendEmail: boolean) {
+  async function doSave() {
     if (!userId) return;
     setBusy(true);
     try {
@@ -97,7 +97,6 @@ export function ExitEntryDialog({
         notes: form.notes || null,
       };
 
-      let savedId: string | undefined = editing?.id;
       if (editing) {
         const { error } = await supabase.from("permits").update(payload).eq("id", editing.id);
         if (error) throw error;
@@ -109,12 +108,7 @@ export function ExitEntryDialog({
           .select("id")
           .single();
         if (error) throw error;
-        savedId = (data as { id: string }).id;
         toast.success("Permit created");
-      }
-
-      if (sendEmail && form.contact_email) {
-        toast.info("Email sending is not yet configured — permit saved.");
       }
 
       onSaved();
@@ -346,25 +340,25 @@ export function ExitEntryDialog({
         </div>
       </div>
 
-      <DialogFooter className="gap-2 sm:gap-0">
+      {form.contact_email && (
+        <div className="flex items-start gap-2 rounded-md border border-blue-500/20 bg-blue-500/10 px-3 py-2 text-xs text-blue-400">
+          <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+          <span>
+            Email notifications are not yet configured. The permit will be saved but{" "}
+            <strong>{form.contact_email}</strong> will not receive an automated email.
+          </span>
+        </div>
+      )}
+
+      <DialogFooter>
         <Button
           type="button"
-          variant="outline"
           disabled={busy}
-          onClick={() => doSave(false)}
+          onClick={doSave}
           className="gap-1.5"
         >
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          Save only
-        </Button>
-        <Button
-          type="button"
-          disabled={busy || !form.contact_email}
-          onClick={() => doSave(true)}
-          className="gap-1.5"
-        >
-          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
-          Email Pass &amp; Save
+          {editing ? "Save Changes" : "Create Permit"}
         </Button>
       </DialogFooter>
     </DialogContent>

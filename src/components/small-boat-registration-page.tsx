@@ -708,7 +708,8 @@ export function SmallBoatRegistrationPage() {
                   <div className="space-y-1.5">
                     <Label>Login Password</Label>
                     <Input
-                      type="text"
+                      type="password"
+                      autoComplete="new-password"
                       value={form.login_password ?? ""}
                       onChange={e => setF("login_password", e.target.value)}
                     />
