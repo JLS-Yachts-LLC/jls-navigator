@@ -11,6 +11,7 @@ interface SpConfig {
   listName: string
   // spColumnInternalName → yachts DB column name
   fieldMapping: Record<string, string>
+  syncTarget: string
 }
 
 // ─── Config helpers ────────────────────────────────────────────────────────────
@@ -22,7 +23,7 @@ export async function getSpConfig(): Promise<SpConfig> {
     .eq('integration_name', 'sharepoint')
     .maybeSingle()
   const cfg = row?.config ?? {}
-  const { tenant_id, client_id, client_secret, tenant_url, site_url, list_name, field_mapping } = cfg
+  const { tenant_id, client_id, client_secret, tenant_url, site_url, list_name, field_mapping, sync_target } = cfg
   if (!tenant_id || !client_id || !client_secret || !tenant_url || !site_url) {
     throw new Error('SharePoint integration not fully configured in Settings (Tenant ID, Client ID, Secret, URLs).')
   }
@@ -36,6 +37,7 @@ export async function getSpConfig(): Promise<SpConfig> {
     siteUrl: site_url,
     listName: list_name ?? 'Yachts',
     fieldMapping: mapping,
+    syncTarget: sync_target ?? 'yachts',
   }
 }
 
@@ -333,6 +335,13 @@ export async function syncFromSharePoint(): Promise<{ synced: number; errors: nu
   const cfg = await getSpConfig()
   if (Object.keys(cfg.fieldMapping).length === 0) return { synced: 0, errors: 0 }
 
+  if (cfg.syncTarget === 'permits') return _syncPermits(cfg)
+  // small_boats: placeholder until table confirmed
+  if (cfg.syncTarget === 'small_boats') return { synced: 0, errors: 0 }
+  return _syncYachts(cfg)
+}
+
+async function _syncYachts(cfg: SpConfig): Promise<{ synced: number; errors: number }> {
   const token = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret)
   const siteId = await resolveSpSite(token, cfg.tenantUrl, cfg.siteUrl)
 
@@ -429,6 +438,108 @@ export async function syncFromSharePoint(): Promise<{ synced: number; errors: nu
   }
 
   return { synced, errors }
+}
+
+async function _syncPermits(cfg: SpConfig): Promise<{ synced: number; errors: number }> {
+  const token = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret)
+  const siteId = await resolveSpSite(token, cfg.tenantUrl, cfg.siteUrl)
+
+  const permitType = _permitTypeFromListName(cfg.listName)
+
+  // Fetch ALL items (no delta for permits yet)
+  let allItems: any[] = []
+  let nextUrl: string | null =
+    `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${cfg.listName}/items?$expand=fields&$top=200`
+  while (nextUrl) {
+    const res = await fetch(nextUrl, { headers: { Authorization: `Bearer ${token}` } })
+    const page = await res.json() as Record<string, any>
+    if (!page.value) break
+    allItems = allItems.concat(page.value as any[])
+    nextUrl = page['@odata.nextLink'] ?? null
+  }
+
+  // Load existing permits for matching
+  const { data: existingPermits } = await (supabaseAdmin as any)
+    .from('permits')
+    .select('id, permit_number, holder_name')
+  const byPermitNo = new Map<string, string>()
+  const byHolderName = new Map<string, string>()
+  for (const p of (existingPermits ?? []) as Record<string, any>[]) {
+    if (p.permit_number) byPermitNo.set(String(p.permit_number).toLowerCase(), String(p.id))
+    if (p.holder_name) byHolderName.set(String(p.holder_name).toLowerCase(), String(p.id))
+  }
+
+  // Preload yachts for vessel_name → yacht_id resolution
+  const { data: yachts } = await supabaseAdmin.from('yachts').select('id, vessel_name')
+  const yachtByName = new Map<string, string>()
+  for (const y of (yachts ?? []) as Record<string, any>[]) {
+    if (y.vessel_name) yachtByName.set(String(y.vessel_name).toLowerCase(), String(y.id))
+  }
+
+  let synced = 0, errors = 0
+
+  for (const item of allItems) {
+    if (item['@removed']) continue
+    const fields = item.fields ?? {}
+    const record: Record<string, any> = {
+      sharepoint_synced_at: new Date().toISOString(),
+    }
+    if (permitType) record.permit_type = permitType
+
+    for (const [spField, dbField] of Object.entries(cfg.fieldMapping)) {
+      if (!dbField || !(spField in fields)) continue
+      const raw = fields[spField]
+      // vessel_name → resolve to yacht_id
+      if (dbField === 'vessel_name') {
+        const key = String(raw ?? '').toLowerCase().trim()
+        if (key) {
+          const yachtId = yachtByName.get(key)
+          if (yachtId) record.yacht_id = yachtId
+        }
+        continue
+      }
+      record[dbField] = raw !== '' && raw !== null && raw !== undefined ? raw : null
+    }
+
+    if (!record.holder_name && !record.permit_number) continue
+
+    const existingId =
+      (record.permit_number
+        ? byPermitNo.get(String(record.permit_number).toLowerCase())
+        : undefined) ??
+      (record.holder_name
+        ? byHolderName.get(String(record.holder_name).toLowerCase())
+        : undefined)
+
+    const { error } = existingId
+      ? await (supabaseAdmin as any).from('permits').update(record).eq('id', existingId)
+      : await (supabaseAdmin as any).from('permits').insert({ ...record })
+
+    if (error) {
+      errors++
+    } else {
+      synced++
+      if (record.permit_number)
+        byPermitNo.set(String(record.permit_number).toLowerCase(), existingId ?? 'new')
+      if (record.holder_name)
+        byHolderName.set(String(record.holder_name).toLowerCase(), existingId ?? 'new')
+    }
+  }
+
+  return { synced, errors }
+}
+
+function _permitTypeFromListName(listName: string): string | null {
+  const n = listName.toLowerCase().trim()
+  if (n.includes('gate')) return 'gate_pass'
+  if (n.includes('tdra')) return 'tdra'
+  if (n.includes('sanitation')) return 'sanitation'
+  if (n.includes('exit') || n.includes('entry')) return 'exit_entry'
+  if (n.includes('cruising') && n.includes('tender')) return 'cruising_tenders'
+  if (n.includes('cruising')) return 'cruising_mothership'
+  if (n.includes('navigation')) return 'navigation_license'
+  if (n.includes('dma')) return 'dma'
+  return null
 }
 
 // ─── Webhook subscription management ──────────────────────────────────────────

@@ -162,12 +162,11 @@ const doDiscoverSharePointColumns = createServerFn({ method: 'POST' })
   })
 
 const doSyncSharePoint = createServerFn({ method: 'POST' })
-  .handler(async (ctx: { data: { listName: string; fieldMapping: Record<string, string> } }) => {
-    // Persist the mapping so automatic sync (cron/webhook) uses it
+  .handler(async (ctx: { data: { listName: string; fieldMapping: Record<string, string>; syncTarget: string } }) => {
     await saveSpConfigPatch({
       list_name: ctx.data.listName,
       field_mapping: ctx.data.fieldMapping,
-      // Reset delta token so this full sync acts as a fresh baseline
+      sync_target: ctx.data.syncTarget,
       delta_token: null,
     })
     const { synced, errors } = await syncFromSharePoint()
@@ -1227,8 +1226,7 @@ const YACHT_DB_FIELDS = [
 
 const PERMIT_DB_FIELDS = [
   { value: '', label: '— Skip —' },
-  { value: 'vessel_name', label: 'Vessel Name (match)' },
-  { value: 'permit_number', label: 'Permit Number' },
+  { value: 'permit_number', label: 'Permit Number (match)' },
   { value: 'holder_name', label: 'Holder / Visitor Name' },
   { value: 'contact_email', label: 'Contact Email' },
   { value: 'issuing_authority', label: 'Issuing Authority / Zone' },
@@ -1241,6 +1239,7 @@ const PERMIT_DB_FIELDS = [
   { value: 'license_no', label: 'License No.' },
   { value: 'requested_by', label: 'Requested By' },
   { value: 'preferred_inspection_date', label: 'Inspection Date' },
+  { value: 'vessel_name', label: 'Linked Vessel Name' },
 ]
 
 const SMALL_BOAT_DB_FIELDS = [
@@ -1283,7 +1282,7 @@ function getFieldSetForList(listName: string): typeof YACHT_DB_FIELDS {
 function autoSuggestPermit(displayName: string): string {
   const n = displayName.toLowerCase().replace(/[\s._\-()+#]/g, '')
   const map: Record<string, string> = {
-    title: 'vessel_name', vesselname: 'vessel_name', yacht: 'vessel_name', boatname: 'vessel_name',
+    title: 'holder_name', vesselname: 'vessel_name', yacht: 'vessel_name', boatname: 'vessel_name',
     permitnumber: 'permit_number', permitno: 'permit_number',
     holdername: 'holder_name', visitorname: 'holder_name', name: 'holder_name',
     email: 'contact_email', contactemail: 'contact_email',
@@ -1370,6 +1369,25 @@ function SharePointSyncSection() {
   const [syncing, setSyncing] = useState(false)
   const [result, setResult] = useState<{ synced: number; errors: number; total: number } | null>(null)
   const [syncErr, setSyncErr] = useState<string | null>(null)
+  const [syncTarget, setSyncTarget] = useState<'yachts' | 'permits' | 'small_boats'>('yachts')
+
+  useEffect(() => {
+    const n = listName.toLowerCase().trim()
+    if (
+      n.includes('tdra') || n.includes('sanitation') || n.includes('gate') ||
+      n.includes('cruising') || n.includes('navigation') || n.includes('dma') ||
+      n.includes('permit') || n.includes('exit') || n.includes('entry')
+    ) {
+      setSyncTarget('permits')
+    } else if (
+      n.includes('small boat') || n.includes('smallboat') ||
+      n.includes('boat reg') || n.includes('boatreg')
+    ) {
+      setSyncTarget('small_boats')
+    } else {
+      setSyncTarget('yachts')
+    }
+  }, [listName])
 
   // Webhook state
   const [webhook, setWebhook] = useState<{ subscriptionId: string | null; expiresAt: string | null; daysLeft: number | null } | null>(null)
@@ -1408,7 +1426,7 @@ function SharePointSyncSection() {
   async function handleSync() {
     setSyncing(true); setSyncErr(null); setResult(null)
     try {
-      const res = await doSyncSharePoint({ data: { listName, fieldMapping: mapping } })
+      const res = await doSyncSharePoint({ data: { listName, fieldMapping: mapping, syncTarget } })
       setResult(res)
     } catch (e) {
       setSyncErr(e instanceof Error ? e.message : 'Sync failed')
@@ -1490,14 +1508,18 @@ function SharePointSyncSection() {
         <div>
           <p className="text-sm font-semibold">Field Mapping &amp; Full Sync</p>
           <p className="text-[11px] text-muted-foreground mt-0.5">
-            App fields shown are matched to: <strong className="text-foreground">
-              {(() => {
-                const n = listName.toLowerCase().trim()
-                if (n.includes('tdra') || n.includes('sanitation') || n.includes('gate') || n.includes('cruising') || n.includes('navigation') || n.includes('dma') || n.includes('permit') || n.includes('exit') || n.includes('entry')) return 'Permits'
-                if (n.includes('small boat') || n.includes('smallboat') || n.includes('boat reg') || n.includes('boatreg')) return 'Small Boat Registration'
-                return 'Yachts'
-              })()}
-            </strong>
+            App fields: <strong className="text-foreground">{
+              syncTarget === 'permits' ? 'Permits' :
+              syncTarget === 'small_boats' ? 'Small Boat Registration' : 'Yachts'
+            }</strong>
+            {' · '}
+            Syncs to: <strong className={
+              syncTarget === 'yachts' ? 'text-primary' :
+              syncTarget === 'permits' ? 'text-success' : 'text-warning'
+            }>{
+              syncTarget === 'yachts' ? 'yachts table' :
+              syncTarget === 'permits' ? 'permits table' : 'small_boats table'
+            }</strong>
           </p>
         </div>
         <div className="flex items-center gap-2">
