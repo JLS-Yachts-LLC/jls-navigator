@@ -1,0 +1,1 @@
+import{j as t}from"./index-BKarWPOo.js";import{S as o}from"./stub-page-BGSyltqy.js";import"./createLucideIcon-DIOOe6AH.js";const p=()=>t.jsx(o,{title:"Orbit",breadcrumb:"Orbit"});export{p as component};
