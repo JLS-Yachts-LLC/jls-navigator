@@ -26,10 +26,9 @@ const doSyncImage = createServerFn({ method: 'POST' })
   .handler(async (ctx: { data: { yachtId: string } }) => {
     try {
       const { downloadYachtImage } = await import('@/lib/sharepoint-sync.server')
-      const url = await downloadYachtImage(ctx.data.yachtId)
-      return { url }
-    } catch {
-      return { url: null }
+      return await downloadYachtImage(ctx.data.yachtId)
+    } catch (e) {
+      return { url: null, reason: e instanceof Error ? e.message : 'Unexpected error during sync.' }
     }
   })
 
@@ -296,7 +295,7 @@ function YachtDetail() {
                           await load();
                           toast.success("Image synced from SharePoint");
                         } else {
-                          toast.error("No image found in SharePoint for this yacht");
+                          toast.error(result?.reason ?? "No image found in SharePoint for this yacht");
                         }
                       } catch {
                         toast.error("Failed to sync image");

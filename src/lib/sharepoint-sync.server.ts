@@ -493,36 +493,73 @@ export async function downloadPendingImages(): Promise<number> {
   return downloaded
 }
 
-// Download the SP image for a single yacht by its DB id (on-demand, e.g. from the detail page button)
-export async function downloadYachtImage(yachtId: string): Promise<string | null> {
+// Download the SP image for a single yacht by its DB id (on-demand, e.g. from the detail page button).
+// If the yacht has no sharepoint_item_id yet, searches SP by IMO or vessel_name first to establish the link.
+export async function downloadYachtImage(yachtId: string): Promise<{ url: string | null; reason?: string }> {
   const cfg = await getSpConfig().catch(() => null)
-  if (!cfg) return null
+  if (!cfg) return { url: null, reason: 'SharePoint is not configured in Settings.' }
 
   const imageSpField = Object.entries(cfg.fieldMapping).find(([, db]) => db === 'vessel_image')?.[0]
-  if (!imageSpField) return null
+  if (!imageSpField) return { url: null, reason: 'No image field is mapped in SharePoint settings.' }
 
   const { data: yacht } = await supabaseAdmin
     .from('yachts')
-    .select('id, sharepoint_item_id')
+    .select('id, vessel_name, imo_no, sharepoint_item_id')
     .eq('id', yachtId)
-    .maybeSingle() as { data: { id: string; sharepoint_item_id: string | null } | null }
+    .maybeSingle() as { data: { id: string; vessel_name: string | null; imo_no: string | null; sharepoint_item_id: string | null } | null }
 
-  if (!yacht?.sharepoint_item_id) return null
+  if (!yacht) return { url: null, reason: 'Yacht not found.' }
 
   const token = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret)
   const siteId = await resolveSpSite(token, cfg.tenantUrl, cfg.siteUrl)
 
+  let spItemId = yacht.sharepoint_item_id
+
+  // If no SP item link, try to find the item by IMO or vessel name
+  if (!spItemId) {
+    const imoSpField = Object.entries(cfg.fieldMapping).find(([, db]) => db === 'imo_no')?.[0]
+    const nameSpField = Object.entries(cfg.fieldMapping).find(([, db]) => db === 'vessel_name')?.[0]
+
+    if (imoSpField && yacht.imo_no) {
+      const r = await fetch(
+        `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${cfg.listName}/items?$filter=${encodeURIComponent(`fields/${imoSpField} eq '${yacht.imo_no}'`)}&$select=id`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+      const d = await r.json() as Record<string, any>
+      spItemId = d.value?.[0]?.id ?? null
+    }
+
+    if (!spItemId && nameSpField && yacht.vessel_name) {
+      const r = await fetch(
+        `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${cfg.listName}/items?$filter=${encodeURIComponent(`fields/${nameSpField} eq '${yacht.vessel_name}'`)}&$select=id`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+      const d = await r.json() as Record<string, any>
+      spItemId = d.value?.[0]?.id ?? null
+    }
+
+    if (!spItemId) {
+      return { url: null, reason: `"${yacht.vessel_name}" was not found in the SharePoint list. Check that the vessel name or IMO matches exactly.` }
+    }
+
+    // Save the link so future syncs are instant
+    await supabaseAdmin
+      .from('yachts')
+      .update({ sharepoint_item_id: spItemId } as never)
+      .eq('id', yachtId)
+  }
+
   const res = await fetch(
-    `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${cfg.listName}/items/${yacht.sharepoint_item_id}?$expand=fields($select=${encodeURIComponent(imageSpField)})`,
+    `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${cfg.listName}/items/${spItemId}?$expand=fields($select=${encodeURIComponent(imageSpField)})`,
     { headers: { Authorization: `Bearer ${token}` } }
   )
   const item = await res.json() as Record<string, any>
   const raw = item.fields?.[imageSpField]
-  if (!raw) return null
+  if (!raw) return { url: null, reason: 'The SharePoint item has no image attached.' }
 
-  const url = await fetchSpImageToSupabase(raw, token, cfg.tenantUrl, yacht.sharepoint_item_id)
+  const url = await fetchSpImageToSupabase(raw, token, cfg.tenantUrl, spItemId)
   if (url) {
     await supabaseAdmin.from('yachts').update({ vessel_image: url } as never).eq('id', yachtId)
   }
-  return url ?? null
+  return { url: url ?? null, reason: url ? undefined : 'Image was found in SharePoint but could not be downloaded.' }
 }
