@@ -3,7 +3,7 @@ import {
   Ship, FileCheck2, Sailboat, Orbit, Users, Package, BarChart3,
   ChevronDown, ChevronRight, LogOut, Settings, Search,
   LogIn, ShieldCheck, Compass, Anchor, DoorOpen, Radio, Navigation, FileBadge, LayoutGrid,
-  Route, UserCircle2, Car, MapPin,
+  Route, UserCircle2, Car, MapPin, ScrollText,
 } from "lucide-react";
 import { useState } from "react";
 import logo from "@/assets/jls-logo.png";
@@ -58,6 +58,7 @@ const NAV: NavItem[] = [
     children: [
       { label: "Dashboard", to: "/director", icon: BarChart3 },
       { label: "Settings", to: "/settings", icon: Settings },
+      { label: "Changelog", to: "/changelog", icon: ScrollText },
     ],
   },
 ];
