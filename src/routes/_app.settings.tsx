@@ -25,6 +25,8 @@ type UserRecord = {
   id: string
   email: string
   displayName: string | null
+  firstName: string | null
+  lastName: string | null
   role: AppRole
   mfaEnabled: boolean
   invited: boolean
@@ -47,20 +49,25 @@ const getUsers = createServerFn({ method: 'GET' }).handler(async (): Promise<Use
   const [{ data: auth, error }, { data: roles }, { data: profiles }] = await Promise.all([
     supabaseAdmin.auth.admin.listUsers({ perPage: 1000 }),
     supabaseAdmin.from('user_roles').select('user_id, role'),
-    supabaseAdmin.from('profiles').select('id, display_name'),
+    supabaseAdmin.from('profiles').select('id, display_name, first_name, last_name'),
   ])
   if (error) throw new Error(error.message)
-  return (auth?.users ?? []).map((u: any) => ({
+  return (auth?.users ?? []).map((u: any) => {
+    const profile = profiles?.find((p: any) => p.id === u.id)
+    return ({
     id: u.id,
     email: u.email ?? '',
-    displayName: profiles?.find((p: any) => p.id === u.id)?.display_name ?? null,
+    displayName: profile?.display_name ?? null,
+    firstName: profile?.first_name ?? null,
+    lastName: profile?.last_name ?? null,
     role: (roles?.find((r: any) => r.user_id === u.id)?.role ?? 'user') as AppRole,
     mfaEnabled: (u.factors?.length ?? 0) > 0,
     invited: !u.last_sign_in_at,
     lastSignIn: u.last_sign_in_at ?? null,
     createdAt: u.created_at,
     factorIds: (u.factors ?? []).map((f: any) => f.id),
-  }))
+  })
+  })
 })
 
 const doInviteUser = createServerFn({ method: 'POST' })
@@ -89,6 +96,24 @@ const doSetRole = createServerFn({ method: 'POST' })
 const doDeleteUser = createServerFn({ method: 'POST' })
   .handler(async (ctx: { data: { userId: string } }) => {
     const { error } = await supabaseAdmin.auth.admin.deleteUser(ctx.data.userId)
+    if (error) throw new Error(error.message)
+  })
+
+const doUpdateProfile = createServerFn({ method: 'POST' })
+  .handler(async (ctx: { data: { userId: string; firstName: string; lastName: string } }) => {
+    const { userId, firstName, lastName } = ctx.data
+    const displayName = [firstName.trim(), lastName.trim()].filter(Boolean).join(' ') || null
+    const { data: existing } = await supabaseAdmin
+      .from('profiles').select('id').eq('id', userId).maybeSingle()
+    const payload = {
+      id: userId,
+      first_name: firstName.trim() || null,
+      last_name: lastName.trim() || null,
+      display_name: displayName,
+    }
+    const { error } = existing
+      ? await supabaseAdmin.from('profiles').update(payload).eq('id', userId)
+      : await supabaseAdmin.from('profiles').insert(payload)
     if (error) throw new Error(error.message)
   })
 
@@ -459,6 +484,13 @@ function UsersPanel() {
                   onRoleChange={role => handleRoleChange(user.id, role)}
                   onDisableMFA={() => handleDisableMFA(user)}
                   onRemove={() => handleRemove(user)}
+                  onProfileUpdated={(userId, firstName, lastName) => {
+                    setUsers(prev => prev.map(u =>
+                      u.id === userId
+                        ? { ...u, firstName, lastName, displayName: [firstName, lastName].filter(Boolean).join(' ') || u.displayName }
+                        : u
+                    ))
+                  }}
                 />
               ))}
             </tbody>
@@ -476,7 +508,7 @@ const ROLE_STYLES: Record<AppRole, string> = {
 }
 
 function UserRow({
-  user, isLoading, onResetPassword, onRoleChange, onDisableMFA, onRemove,
+  user, isLoading, onResetPassword, onRoleChange, onDisableMFA, onRemove, onProfileUpdated,
 }: {
   user: UserRecord
   isLoading: boolean
@@ -484,11 +516,39 @@ function UserRow({
   onRoleChange: (r: AppRole) => void
   onDisableMFA: () => void
   onRemove: () => void
+  onProfileUpdated: (userId: string, firstName: string, lastName: string) => void
 }) {
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState({ top: 0, right: 0 })
   const btnRef = useRef<HTMLButtonElement>(null)
-  const initials = (user.displayName ?? user.email).slice(0, 2).toUpperCase()
+  const [editName, setEditName] = useState(false)
+  const [nameForm, setNameForm] = useState({ first: user.firstName ?? '', last: user.lastName ?? '' })
+  const [savingName, setSavingName] = useState(false)
+
+  // Initials: first letter of first name + first letter of last name (when set), else first 2 of email
+  const initials = user.firstName && user.lastName
+    ? (user.firstName[0] + user.lastName[0]).toUpperCase()
+    : user.firstName
+      ? user.firstName.slice(0, 2).toUpperCase()
+      : user.email.slice(0, 2).toUpperCase()
+
+  const displayLabel = user.firstName || user.lastName
+    ? [user.firstName, user.lastName].filter(Boolean).join(' ')
+    : user.displayName ?? user.email
+
+  async function handleSaveName() {
+    setSavingName(true)
+    try {
+      await doUpdateProfile({ data: { userId: user.id, firstName: nameForm.first, lastName: nameForm.last } })
+      onProfileUpdated(user.id, nameForm.first, nameForm.last)
+      setEditName(false)
+      toast.success('Name updated')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to update name')
+    } finally {
+      setSavingName(false)
+    }
+  }
 
   function handleOpen() {
     if (btnRef.current) {
@@ -499,6 +559,52 @@ function UserRow({
   }
 
   return (
+    <>
+    {/* Edit Name dialog */}
+    {editName && createPortal(
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+        <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+          <div>
+            <h2 className="text-base font-semibold">Edit Name</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">{user.email}</p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">First Name</Label>
+              <Input
+                value={nameForm.first}
+                onChange={e => setNameForm(f => ({ ...f, first: e.target.value }))}
+                onKeyDown={e => e.key === 'Enter' && handleSaveName()}
+                placeholder="First"
+                autoFocus
+                className="h-8 text-sm"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Last Name</Label>
+              <Input
+                value={nameForm.last}
+                onChange={e => setNameForm(f => ({ ...f, last: e.target.value }))}
+                onKeyDown={e => e.key === 'Enter' && handleSaveName()}
+                placeholder="Last"
+                className="h-8 text-sm"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-1">
+            <Button variant="ghost" size="sm" onClick={() => setEditName(false)} disabled={savingName}>
+              <X className="h-3.5 w-3.5 mr-1" /> Cancel
+            </Button>
+            <Button size="sm" onClick={handleSaveName} disabled={savingName} className="gap-1.5">
+              {savingName ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+              Save
+            </Button>
+          </div>
+        </div>
+      </div>,
+      document.body
+    )}
+
     <tr className="hover:bg-muted/20 transition-colors">
       <td className="px-4 py-3">
         <div className="flex items-center gap-2.5">
@@ -506,8 +612,8 @@ function UserRow({
             {initials}
           </div>
           <div className="min-w-0">
-            <div className="font-medium truncate">{user.displayName ?? user.email}</div>
-            {user.displayName && (
+            <div className="font-medium truncate">{displayLabel}</div>
+            {(user.firstName || user.lastName || user.displayName) && (
               <div className="text-xs text-muted-foreground truncate">{user.email}</div>
             )}
           </div>
@@ -582,6 +688,13 @@ function UserRow({
                 <div className="my-1 border-t border-border" />
 
                 <button
+                  onClick={() => { setEditName(true); setNameForm({ first: user.firstName ?? '', last: user.lastName ?? '' }); setOpen(false) }}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent"
+                >
+                  <Pencil className="h-3.5 w-3.5" /> Edit Name
+                </button>
+
+                <button
                   onClick={() => { onResetPassword(); setOpen(false) }}
                   className="flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent"
                 >
@@ -612,6 +725,7 @@ function UserRow({
         </div>
       </td>
     </tr>
+    </>
   )
 }
 
