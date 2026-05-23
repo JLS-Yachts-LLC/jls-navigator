@@ -13,6 +13,10 @@ import { Textarea } from '@/components/ui/textarea'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { supabase } from '@/integrations/supabase/client'
 import { supabaseAdmin } from '@/integrations/supabase/client.server'
 import { toast } from 'sonner'
@@ -159,6 +163,11 @@ import {
   syncFromSharePoint,
   registerSharePointWebhook,
   renewSharePointWebhook,
+  getSpSyncs,
+  saveSpSync,
+  deleteSpSync,
+  syncById as _syncById,
+  type SpSyncConfig,
 } from '@/lib/sharepoint-sync.server'
 
 const doDiscoverSharePointColumns = createServerFn({ method: 'POST' })
@@ -207,6 +216,24 @@ const doRegisterWebhook = createServerFn({ method: 'POST' })
 const doRenewWebhook = createServerFn({ method: 'POST' })
   .handler(async () => {
     return renewSharePointWebhook()
+  })
+
+const doGetSpSyncs = createServerFn({ method: 'GET' })
+  .handler(async (): Promise<SpSyncConfig[]> => getSpSyncs())
+
+const doSaveSpSync = createServerFn({ method: 'POST' })
+  .handler(async (ctx: { data: Pick<SpSyncConfig, 'id' | 'name' | 'listName' | 'syncTarget' | 'fieldMapping' | 'enabled'> & { id?: string } }): Promise<SpSyncConfig> => {
+    return saveSpSync(ctx.data)
+  })
+
+const doDeleteSpSync = createServerFn({ method: 'POST' })
+  .handler(async (ctx: { data: { id: string } }): Promise<void> => {
+    return deleteSpSync(ctx.data.id)
+  })
+
+const doSyncById = createServerFn({ method: 'POST' })
+  .handler(async (ctx: { data: { id: string } }): Promise<{ synced: number; errors: number }> => {
+    return _syncById(ctx.data.id)
   })
 
 const doGetWebhookStatus = createServerFn({ method: 'GET' })
@@ -1475,56 +1502,138 @@ function autoSuggest(displayName: string): string {
   return map[n] ?? ''
 }
 
-function SharePointSyncSection() {
-  const [listName, setListName] = useState('Yachts')
-  const [columns, setColumns] = useState<{ name: string; displayName: string }[]>([])
-  const [mapping, setMapping] = useState<Record<string, string>>({})
-  const [discovering, setDiscovering] = useState(false)
-  const [syncing, setSyncing] = useState(false)
-  const [result, setResult] = useState<{ synced: number; errors: number; total: number } | null>(null)
-  const [syncErr, setSyncErr] = useState<string | null>(null)
-  const [syncTarget, setSyncTarget] = useState<'yachts' | 'permits' | 'small_boats'>('yachts')
+// ─── Sync Card ────────────────────────────────────────────────────────────────
 
+function SyncTargetBadge({ target }: { target: string }) {
+  const map: Record<string, string> = {
+    yachts: 'bg-primary/15 text-primary border-primary/20',
+    permits: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20',
+    small_boats: 'bg-amber-500/15 text-amber-400 border-amber-500/20',
+  }
+  const label: Record<string, string> = {
+    yachts: 'Yachts', permits: 'Permits', small_boats: 'Small Boats',
+  }
+  return (
+    <span className={`inline-flex items-center rounded-full border px-1.5 py-0 text-[10px] font-semibold ${map[target] ?? 'bg-muted text-muted-foreground border-border'}`}>
+      {label[target] ?? target}
+    </span>
+  )
+}
+
+function SyncCard({
+  sync, onEdit, onDelete,
+}: { sync: SpSyncConfig & { syncing?: boolean }; onEdit: () => void; onDelete: () => void }) {
+  const [syncing, setSyncing] = useState(false)
+  const [result, setResult] = useState<{ synced: number; errors: number } | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+
+  // Seed result from stored stats
+  useEffect(() => {
+    if (sync.lastSyncSynced !== null || sync.lastSyncErrors !== null) {
+      setResult({ synced: sync.lastSyncSynced ?? 0, errors: sync.lastSyncErrors ?? 0 })
+    }
+  }, [sync.lastSyncSynced, sync.lastSyncErrors])
+
+  async function handleSync() {
+    setSyncing(true); setErr(null); setResult(null)
+    try {
+      const r = await doSyncById({ data: { id: sync.id } })
+      setResult(r)
+      toast.success(`Sync complete — ${r.synced} records`)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Sync failed')
+    } finally { setSyncing(false) }
+  }
+
+  return (
+    <div className="rounded-lg border border-border bg-muted/10 p-3 space-y-2">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-semibold text-sm">{sync.name}</span>
+            <SyncTargetBadge target={sync.syncTarget} />
+            {!sync.enabled && (
+              <span className="text-[10px] text-muted-foreground italic">disabled</span>
+            )}
+          </div>
+          <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1.5 flex-wrap">
+            <span className="font-mono bg-muted/60 rounded px-1">{sync.listName}</span>
+            {sync.lastSyncedAt && (
+              <span>· Last sync {new Date(sync.lastSyncedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+            )}
+            {!sync.lastSyncedAt && <span>· Never synced</span>}
+          </div>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          <Button
+            size="sm" variant="outline"
+            onClick={handleSync} disabled={syncing}
+            className="h-7 gap-1.5 text-xs px-2.5"
+          >
+            {syncing ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
+            {syncing ? 'Syncing…' : 'Sync Now'}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={onEdit} className="h-7 w-7 p-0" title="Edit mapping">
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+          <Button size="sm" variant="ghost" onClick={onDelete} className="h-7 w-7 p-0 text-destructive/70 hover:text-destructive" title="Delete">
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </div>
+
+      {result && (
+        <div className={`rounded px-2 py-1 text-[11px] ${result.errors > 0 ? 'bg-amber-500/10 text-amber-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
+          {result.synced} synced · {result.errors} errors
+        </div>
+      )}
+      {err && <div className="rounded px-2 py-1 text-[11px] bg-destructive/10 text-destructive">{err}</div>}
+    </div>
+  )
+}
+
+// ─── Sync Edit Panel ──────────────────────────────────────────────────────────
+
+function SyncEditPanel({
+  initial, onSaved, onCancel,
+}: {
+  initial: Partial<SpSyncConfig> | null
+  onSaved: (sync: SpSyncConfig) => void
+  onCancel: () => void
+}) {
+  const isNew = !initial?.id
+  const [name, setName] = useState(initial?.name ?? '')
+  const [listName, setListName] = useState(initial?.listName ?? '')
+  const [syncTarget, setSyncTarget] = useState<SpSyncConfig['syncTarget']>(initial?.syncTarget ?? 'yachts')
+  const [enabled, setEnabled] = useState(initial?.enabled ?? true)
+  const [columns, setColumns] = useState<{ name: string; displayName: string }[]>([])
+  const [mapping, setMapping] = useState<Record<string, string>>(initial?.fieldMapping ?? {})
+  const [discovering, setDiscovering] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [discoverErr, setDiscoverErr] = useState<string | null>(null)
+
+  // Auto-detect target from list name
   useEffect(() => {
     const n = listName.toLowerCase().trim()
-    if (
-      n.includes('tdra') || n.includes('sanitation') || n.includes('gate') ||
-      n.includes('cruising') || n.includes('navigation') || n.includes('dma') ||
-      n.includes('permit') || n.includes('exit') || n.includes('entry')
-    ) {
+    if (n.includes('tdra') || n.includes('sanitation') || n.includes('gate') || n.includes('cruising') || n.includes('navigation') || n.includes('dma') || n.includes('permit') || n.includes('exit') || n.includes('entry')) {
       setSyncTarget('permits')
-    } else if (
-      n.includes('small boat') || n.includes('smallboat') ||
-      n.includes('boat reg') || n.includes('boatreg')
-    ) {
+    } else if (n.includes('small boat') || n.includes('smallboat') || n.includes('boat reg') || n.includes('boatreg')) {
       setSyncTarget('small_boats')
     } else {
       setSyncTarget('yachts')
     }
+    // Auto-set name if blank
+    if (!name && listName) setName(listName)
   }, [listName])
 
-  // Webhook state
-  const [webhook, setWebhook] = useState<{ subscriptionId: string | null; expiresAt: string | null; daysLeft: number | null } | null>(null)
-  const [webhookBusy, setWebhookBusy] = useState(false)
-  const [webhookErr, setWebhookErr] = useState<string | null>(null)
-
-  useEffect(() => {
-    doGetWebhookStatus().then(setWebhook).catch(() => {})
-  }, [])
-
   function getSuggestFn() {
-    const n = listName.toLowerCase().trim()
-    if (n.includes('tdra') || n.includes('sanitation') || n.includes('gate') || n.includes('cruising') || n.includes('navigation') || n.includes('dma') || n.includes('permit') || n.includes('exit') || n.includes('entry')) {
-      return autoSuggestPermit
-    }
-    if (n.includes('small boat') || n.includes('smallboat') || n.includes('boat reg') || n.includes('boatreg')) {
-      return autoSuggestSmallBoat
-    }
+    if (syncTarget === 'permits') return autoSuggestPermit
+    if (syncTarget === 'small_boats') return autoSuggestSmallBoat
     return autoSuggest
   }
 
   async function handleDiscover() {
-    setDiscovering(true); setSyncErr(null); setResult(null)
+    setDiscovering(true); setDiscoverErr(null)
     try {
       const cols = await doDiscoverSharePointColumns({ data: { listName } })
       setColumns(cols)
@@ -1533,19 +1642,166 @@ function SharePointSyncSection() {
       for (const c of cols) auto[c.name] = suggestFn(c.displayName)
       setMapping(auto)
     } catch (e) {
-      setSyncErr(e instanceof Error ? e.message : 'Discovery failed')
+      setDiscoverErr(e instanceof Error ? e.message : 'Discovery failed')
     } finally { setDiscovering(false) }
   }
 
-  async function handleSync() {
-    setSyncing(true); setSyncErr(null); setResult(null)
+  async function handleSave() {
+    if (!name.trim() || !listName.trim()) {
+      toast.error('Name and List Name are required')
+      return
+    }
+    setSaving(true)
     try {
-      const res = await doSyncSharePoint({ data: { listName, fieldMapping: mapping, syncTarget } })
-      setResult(res)
+      const saved = await doSaveSpSync({
+        data: {
+          id: initial?.id,
+          name: name.trim(),
+          listName: listName.trim(),
+          syncTarget,
+          fieldMapping: mapping,
+          enabled,
+        },
+      })
+      onSaved(saved)
+      toast.success(isNew ? 'Sync created' : 'Sync updated')
     } catch (e) {
-      setSyncErr(e instanceof Error ? e.message : 'Sync failed')
-    } finally { setSyncing(false) }
+      toast.error(e instanceof Error ? e.message : 'Save failed')
+    } finally { setSaving(false) }
   }
+
+  return (
+    <div className="border-t border-border mt-4 pt-4 space-y-4">
+      <div className="flex items-center gap-2">
+        <button onClick={onCancel} className="text-muted-foreground hover:text-foreground">
+          <X className="h-4 w-4" />
+        </button>
+        <h3 className="text-sm font-semibold">{isNew ? 'New Sync' : `Edit — ${initial?.name}`}</h3>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1">
+          <Label className="text-xs">Display Name</Label>
+          <Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Yachts List" className="h-8 text-sm" />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">SharePoint List Name</Label>
+          <div className="flex gap-2">
+            <Input
+              value={listName}
+              onChange={e => { setListName(e.target.value); setColumns([]); setMapping({}) }}
+              placeholder="e.g. Small Boat Reg"
+              className="h-8 text-sm flex-1"
+            />
+            <Button size="sm" variant="outline" onClick={handleDiscover} disabled={discovering || !listName.trim()} className="h-8 gap-1.5 shrink-0">
+              {discovering ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
+              Load
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-4">
+        <div className="space-y-1">
+          <Label className="text-xs">Syncs To</Label>
+          <div className="flex gap-1.5">
+            {(['yachts', 'permits', 'small_boats'] as const).map(t => (
+              <button
+                key={t}
+                onClick={() => setSyncTarget(t)}
+                className={`rounded-full border px-2.5 py-0.5 text-xs font-medium transition ${
+                  syncTarget === t ? 'bg-primary text-primary-foreground border-primary' : 'border-border text-muted-foreground hover:bg-muted'
+                }`}
+              >
+                {t === 'yachts' ? 'Yachts' : t === 'permits' ? 'Permits' : 'Small Boats'}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">Enabled</Label>
+          <button
+            onClick={() => setEnabled(v => !v)}
+            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${enabled ? 'bg-primary' : 'bg-muted-foreground/30'}`}
+          >
+            <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${enabled ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
+          </button>
+        </div>
+      </div>
+
+      {discoverErr && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          {discoverErr}
+        </div>
+      )}
+
+      {columns.length > 0 && (
+        <div className="rounded-lg border border-border overflow-hidden text-sm">
+          <div className="grid grid-cols-[1fr_20px_1fr] gap-2 bg-muted/40 border-b border-border px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <span>SharePoint Column</span><span /><span>App Field ({syncTarget === 'yachts' ? 'Yachts' : syncTarget === 'permits' ? 'Permits' : 'Small Boats'})</span>
+          </div>
+          <div className="divide-y divide-border max-h-64 overflow-auto">
+            {columns.map(col => (
+              <div key={col.name} className="grid grid-cols-[1fr_20px_1fr] gap-2 items-center px-3 py-1.5">
+                <div>
+                  <div className="font-medium text-xs">{col.displayName}</div>
+                  <div className="text-[10px] text-muted-foreground font-mono">{col.name}</div>
+                </div>
+                <span className="text-center text-muted-foreground text-xs">→</span>
+                <select
+                  value={mapping[col.name] ?? ''}
+                  onChange={e => setMapping(prev => ({ ...prev, [col.name]: e.target.value }))}
+                  className="w-full rounded border border-input bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                >
+                  {getFieldSetForList(listName).map(f => (
+                    <option key={f.value} value={f.value}>{f.label}</option>
+                  ))}
+                </select>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {columns.length === 0 && !discovering && (
+        <p className="text-xs text-muted-foreground">
+          Enter the SharePoint list name and click <strong>Load</strong> to fetch columns and auto-suggest field mappings.
+        </p>
+      )}
+
+      <div className="flex justify-end gap-2">
+        <Button variant="outline" size="sm" onClick={onCancel} className="h-7 text-xs">Cancel</Button>
+        <Button size="sm" onClick={handleSave} disabled={saving} className="h-7 gap-1.5 text-xs">
+          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+          {isNew ? 'Create Sync' : 'Save Changes'}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Main SharePoint Sync Manager ─────────────────────────────────────────────
+
+function SharePointSyncSection() {
+  const [syncs, setSyncs] = useState<SpSyncConfig[]>([])
+  const [loading, setLoading] = useState(true)
+  const [editingSync, setEditingSync] = useState<Partial<SpSyncConfig> | null>(null)
+  const [isNewSync, setIsNewSync] = useState(false)
+  const [deleteTargetSync, setDeleteTargetSync] = useState<SpSyncConfig | null>(null)
+  const [deleting, setDeleting] = useState(false)
+
+  // Webhook state
+  const [webhook, setWebhook] = useState<{ subscriptionId: string | null; expiresAt: string | null; daysLeft: number | null } | null>(null)
+  const [webhookBusy, setWebhookBusy] = useState(false)
+  const [webhookErr, setWebhookErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    doGetSpSyncs().then(setSyncs).catch(() => {}).finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => {
+    doGetWebhookStatus().then(setWebhook).catch(() => {})
+  }, [])
 
   async function handleRegisterWebhook() {
     setWebhookBusy(true); setWebhookErr(null)
@@ -1568,8 +1824,44 @@ function SharePointSyncSection() {
     } finally { setWebhookBusy(false) }
   }
 
+  async function confirmDeleteSync() {
+    if (!deleteTargetSync) return
+    setDeleting(true)
+    try {
+      await doDeleteSpSync({ data: { id: deleteTargetSync.id } })
+      setSyncs(prev => prev.filter(s => s.id !== deleteTargetSync.id))
+      toast.success('Sync deleted')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Delete failed')
+    } finally {
+      setDeleting(false)
+      setDeleteTargetSync(null)
+    }
+  }
+
   const webhookActive = webhook?.subscriptionId && webhook.daysLeft !== null && webhook.daysLeft > 0
   const webhookExpiringSoon = webhookActive && (webhook.daysLeft ?? 0) < 30
+
+  // Show edit/create panel full-screen within the section
+  if (isNewSync || editingSync !== null) {
+    return (
+      <SyncEditPanel
+        initial={isNewSync ? null : editingSync}
+        onSaved={(saved) => {
+          setSyncs(prev => {
+            const idx = prev.findIndex(s => s.id === saved.id)
+            if (idx >= 0) {
+              const next = [...prev]; next[idx] = saved; return next
+            }
+            return [...prev, saved]
+          })
+          setEditingSync(null)
+          setIsNewSync(false)
+        }}
+        onCancel={() => { setEditingSync(null); setIsNewSync(false) }}
+      />
+    )
+  }
 
   return (
     <div className="border-t border-border mt-4 pt-4 space-y-4">
@@ -1617,92 +1909,68 @@ function SharePointSyncSection() {
         </p>
       </div>
 
-      {/* ── Field mapping ── */}
-      <div className="flex items-center justify-between flex-wrap gap-2">
+      {/* ── Syncs list ── */}
+      <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-semibold">Field Mapping &amp; Full Sync</p>
+          <p className="text-sm font-semibold">SharePoint Syncs</p>
           <p className="text-[11px] text-muted-foreground mt-0.5">
-            App fields: <strong className="text-foreground">{
-              syncTarget === 'permits' ? 'Permits' :
-              syncTarget === 'small_boats' ? 'Small Boat Registration' : 'Yachts'
-            }</strong>
-            {' · '}
-            Syncs to: <strong className={
-              syncTarget === 'yachts' ? 'text-primary' :
-              syncTarget === 'permits' ? 'text-success' : 'text-warning'
-            }>{
-              syncTarget === 'yachts' ? 'yachts table' :
-              syncTarget === 'permits' ? 'permits table' : 'small_boats table'
-            }</strong>
+            Each sync maps one SharePoint list to an app table.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Input
-            value={listName}
-            onChange={e => { setListName(e.target.value); setColumns([]); setMapping({}); }}
-            placeholder="List name"
-            className="h-8 w-36 text-sm"
-          />
-          <Button size="sm" variant="outline" onClick={handleDiscover} disabled={discovering} className="gap-1.5 h-8">
-            {discovering ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
-            Load Columns
-          </Button>
-        </div>
+        <Button
+          size="sm"
+          onClick={() => { setEditingSync(null); setIsNewSync(true) }}
+          className="gap-1.5 h-7 text-xs"
+        >
+          + Add Sync
+        </Button>
       </div>
 
-      {syncErr && (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-          {syncErr}
+      {loading ? (
+        <div className="flex justify-center py-6">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>
-      )}
-      {result && (
-        <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-400">
-          Sync complete — {result.synced} records synced, {result.errors} errors (of {result.total} total rows).
-          Field mapping saved — auto-sync will use it going forward.
+      ) : syncs.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border py-8 text-center">
+          <p className="text-sm text-muted-foreground">No syncs configured yet.</p>
+          <p className="text-xs text-muted-foreground mt-1">Click <strong>+ Add Sync</strong> to connect a SharePoint list.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {syncs.map(sync => (
+            <SyncCard
+              key={sync.id}
+              sync={sync}
+              onEdit={() => setEditingSync(sync)}
+              onDelete={() => setDeleteTargetSync(sync)}
+            />
+          ))}
         </div>
       )}
 
-      {columns.length > 0 ? (
-        <>
-          <div className="rounded-lg border border-border overflow-hidden text-sm">
-            <div className="grid grid-cols-[1fr_20px_1fr] gap-2 bg-muted/40 border-b border-border px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-              <span>SharePoint Column</span><span /><span>App Field</span>
-            </div>
-            <div className="divide-y divide-border max-h-72 overflow-auto">
-              {columns.map(col => (
-                <div key={col.name} className="grid grid-cols-[1fr_20px_1fr] gap-2 items-center px-3 py-1.5">
-                  <div>
-                    <div className="font-medium text-xs">{col.displayName}</div>
-                    <div className="text-[10px] text-muted-foreground font-mono">{col.name}</div>
-                  </div>
-                  <span className="text-center text-muted-foreground text-xs">→</span>
-                  <select
-                    value={mapping[col.name] ?? ''}
-                    onChange={e => setMapping(prev => ({ ...prev, [col.name]: e.target.value }))}
-                    className="w-full rounded border border-input bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-                  >
-                    {getFieldSetForList(listName).map(f => (
-                      <option key={f.value} value={f.value}>{f.label}</option>
-                    ))}
-                  </select>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="flex justify-end">
-            <Button size="sm" onClick={handleSync} disabled={syncing} className="gap-1.5">
-              {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              {syncing ? 'Syncing…' : 'Sync Now'}
-            </Button>
-          </div>
-        </>
-      ) : !discovering && (
-        <p className="text-xs text-muted-foreground">
-          Click <strong>Load Columns</strong> to fetch the SharePoint list columns,
-          review the auto-suggested field mapping, then click <strong>Sync Now</strong>.
-          The mapping is saved and used for all future auto-syncs.
-        </p>
-      )}
+      {/* ── Delete confirmation ── */}
+      <AlertDialog open={!!deleteTargetSync} onOpenChange={open => { if (!open) setDeleteTargetSync(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete sync?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the <strong>{deleteTargetSync?.name}</strong> sync configuration.
+              No data will be removed from the app tables. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteSync}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

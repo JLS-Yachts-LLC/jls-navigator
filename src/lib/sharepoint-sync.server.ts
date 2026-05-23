@@ -14,6 +14,19 @@ interface SpConfig {
   syncTarget: string
 }
 
+export interface SpSyncConfig {
+  id: string
+  name: string
+  listName: string
+  syncTarget: 'yachts' | 'permits' | 'small_boats'
+  fieldMapping: Record<string, string>
+  enabled: boolean
+  deltaToken: string | null
+  lastSyncedAt: string | null
+  lastSyncSynced: number | null
+  lastSyncErrors: number | null
+}
+
 // ─── Config helpers ────────────────────────────────────────────────────────────
 
 export async function getSpConfig(): Promise<SpConfig> {
@@ -54,6 +67,75 @@ export async function saveSpConfigPatch(patch: Record<string, unknown>): Promise
       { integration_name: 'sharepoint', enabled: true, config: { ...existing, ...patch } },
       { onConflict: 'integration_name' }
     )
+}
+
+// ─── Multi-sync CRUD ─────────────────────────────────────────────────────────
+
+export async function getSpSyncs(): Promise<SpSyncConfig[]> {
+  const { data } = await (supabaseAdmin as any)
+    .from('sharepoint_sync_configs')
+    .select('*')
+    .order('created_at')
+  return (data ?? []).map((r: any) => ({
+    id: r.id,
+    name: r.name,
+    listName: r.list_name,
+    syncTarget: r.sync_target as SpSyncConfig['syncTarget'],
+    fieldMapping: (r.field_mapping ?? {}) as Record<string, string>,
+    enabled: r.enabled,
+    deltaToken: r.delta_token ?? null,
+    lastSyncedAt: r.last_synced_at ?? null,
+    lastSyncSynced: r.last_sync_synced ?? null,
+    lastSyncErrors: r.last_sync_errors ?? null,
+  }))
+}
+
+export async function saveSpSync(
+  sync: Pick<SpSyncConfig, 'id' | 'name' | 'listName' | 'syncTarget' | 'fieldMapping' | 'enabled'> & { id?: string },
+): Promise<SpSyncConfig> {
+  const payload = {
+    name: sync.name,
+    list_name: sync.listName,
+    sync_target: sync.syncTarget,
+    field_mapping: sync.fieldMapping,
+    enabled: sync.enabled,
+    updated_at: new Date().toISOString(),
+  }
+  let row: any
+  if (sync.id) {
+    const { data, error } = await (supabaseAdmin as any)
+      .from('sharepoint_sync_configs').update(payload).eq('id', sync.id).select().single()
+    if (error) throw new Error(error.message)
+    row = data
+  } else {
+    const { data, error } = await (supabaseAdmin as any)
+      .from('sharepoint_sync_configs').insert(payload).select().single()
+    if (error) throw new Error(error.message)
+    row = data
+  }
+  return {
+    id: row.id, name: row.name, listName: row.list_name,
+    syncTarget: row.sync_target, fieldMapping: row.field_mapping ?? {},
+    enabled: row.enabled, deltaToken: row.delta_token ?? null,
+    lastSyncedAt: row.last_synced_at ?? null,
+    lastSyncSynced: row.last_sync_synced ?? null,
+    lastSyncErrors: row.last_sync_errors ?? null,
+  }
+}
+
+export async function deleteSpSync(id: string): Promise<void> {
+  const { error } = await (supabaseAdmin as any)
+    .from('sharepoint_sync_configs').delete().eq('id', id)
+  if (error) throw new Error(error.message)
+}
+
+export async function syncById(id: string): Promise<{ synced: number; errors: number }> {
+  const syncs = await getSpSyncs()
+  const sync = syncs.find(s => s.id === id)
+  if (!sync) throw new Error(`Sync config not found: ${id}`)
+  const cfg = await getSpConfig()
+  const result = await _syncWithConfig(cfg, sync)
+  return result
 }
 
 // ─── Graph API helpers ─────────────────────────────────────────────────────────
@@ -332,26 +414,79 @@ async function uploadUrlToSupabase(
 // ─── Inbound: SharePoint → App (delta sync) ────────────────────────────────────
 
 export async function syncFromSharePoint(): Promise<{ synced: number; errors: number }> {
+  // ── Multi-sync path (new table) ──────────────────────────────────────────────
+  const syncs = await getSpSyncs().catch(() => [] as SpSyncConfig[])
+  const enabled = syncs.filter(s => s.enabled)
+
+  if (enabled.length > 0) {
+    const cfg = await getSpConfig()
+    let totalSynced = 0, totalErrors = 0
+    for (const sync of enabled) {
+      const r = await _syncWithConfig(cfg, sync)
+      totalSynced += r.synced
+      totalErrors += r.errors
+    }
+    return { synced: totalSynced, errors: totalErrors }
+  }
+
+  // ── Legacy single-sync fallback ──────────────────────────────────────────────
   const cfg = await getSpConfig()
   if (Object.keys(cfg.fieldMapping).length === 0) return { synced: 0, errors: 0 }
-
   if (cfg.syncTarget === 'permits') return _syncPermits(cfg)
-  // small_boats: placeholder until table confirmed
   if (cfg.syncTarget === 'small_boats') return { synced: 0, errors: 0 }
   return _syncYachts(cfg)
 }
 
-async function _syncYachts(cfg: SpConfig): Promise<{ synced: number; errors: number }> {
+/** Dispatch a single SpSyncConfig row using the given credentials. */
+async function _syncWithConfig(cfg: SpConfig, sync: SpSyncConfig): Promise<{ synced: number; errors: number }> {
+  const merged: SpConfig = {
+    ...cfg,
+    listName: sync.listName,
+    fieldMapping: sync.fieldMapping,
+    syncTarget: sync.syncTarget,
+  }
+  let result: { synced: number; errors: number }
+  if (sync.syncTarget === 'permits') {
+    result = await _syncPermits(merged)
+  } else if (sync.syncTarget === 'small_boats') {
+    result = await _syncSmallBoats(merged)
+  } else {
+    result = await _syncYachts(merged, sync.id, sync.deltaToken)
+  }
+  // Persist last sync stats back to the table
+  await (supabaseAdmin as any)
+    .from('sharepoint_sync_configs')
+    .update({
+      last_synced_at: new Date().toISOString(),
+      last_sync_synced: result.synced,
+      last_sync_errors: result.errors,
+    })
+    .eq('id', sync.id)
+  return result
+}
+
+async function _syncYachts(
+  cfg: SpConfig,
+  syncId?: string,
+  preloadedDeltaToken?: string | null,
+): Promise<{ synced: number; errors: number }> {
   const token = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret)
   const siteId = await resolveSpSite(token, cfg.tenantUrl, cfg.siteUrl)
 
   // Load stored delta token for incremental sync
-  const { data: settingsRow } = await (supabaseAdmin as any)
-    .from('integration_settings')
-    .select('config')
-    .eq('integration_name', 'sharepoint')
-    .maybeSingle()
-  const storedDeltaToken: string | null = settingsRow?.config?.delta_token ?? null
+  let storedDeltaToken: string | null
+  if (preloadedDeltaToken !== undefined) {
+    // Multi-sync path: delta token comes from sharepoint_sync_configs row
+    storedDeltaToken = preloadedDeltaToken
+  } else {
+    // Legacy path: read from integration_settings
+    const { data: settingsRow } = await (supabaseAdmin as any)
+      .from('integration_settings')
+      .select('config')
+      .eq('integration_name', 'sharepoint')
+      .maybeSingle()
+    storedDeltaToken = settingsRow?.config?.delta_token ?? null
+  }
 
   const baseUrl = storedDeltaToken
     ? `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${cfg.listName}/items/delta?$deltatoken=${encodeURIComponent(storedDeltaToken)}&$expand=fields`
@@ -433,7 +568,16 @@ async function _syncYachts(cfg: SpConfig): Promise<{ synced: number; errors: num
   if (newDeltaLink) {
     const newToken = new URL(newDeltaLink).searchParams.get('$deltatoken')
     if (newToken) {
-      await saveSpConfigPatch({ delta_token: newToken })
+      if (syncId) {
+        // Multi-sync path: save to the sync config row
+        await (supabaseAdmin as any)
+          .from('sharepoint_sync_configs')
+          .update({ delta_token: newToken })
+          .eq('id', syncId)
+      } else {
+        // Legacy path: save to integration_settings
+        await saveSpConfigPatch({ delta_token: newToken })
+      }
     }
   }
 
@@ -523,6 +667,68 @@ async function _syncPermits(cfg: SpConfig): Promise<{ synced: number; errors: nu
         byPermitNo.set(String(record.permit_number).toLowerCase(), existingId ?? 'new')
       if (record.holder_name)
         byHolderName.set(String(record.holder_name).toLowerCase(), existingId ?? 'new')
+    }
+  }
+
+  return { synced, errors }
+}
+
+// Small boats sync: same pattern as permits but targets small_boats table
+async function _syncSmallBoats(cfg: SpConfig): Promise<{ synced: number; errors: number }> {
+  const token = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret)
+  const siteId = await resolveSpSite(token, cfg.tenantUrl, cfg.siteUrl)
+
+  let allItems: any[] = []
+  let nextUrl: string | null =
+    `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${cfg.listName}/items?$expand=fields&$top=200`
+  while (nextUrl) {
+    const res = await fetch(nextUrl, { headers: { Authorization: `Bearer ${token}` } })
+    const page = await res.json() as Record<string, any>
+    if (!page.value) break
+    allItems = allItems.concat(page.value as any[])
+    nextUrl = page['@odata.nextLink'] ?? null
+  }
+
+  // Load existing small_boats for matching
+  const { data: existing } = await (supabaseAdmin as any)
+    .from('small_boats')
+    .select('id, boat_name, reg_no')
+  const byRegNo = new Map<string, string>()
+  const byName = new Map<string, string>()
+  for (const b of (existing ?? []) as Record<string, any>[]) {
+    if (b.reg_no) byRegNo.set(String(b.reg_no).toLowerCase(), String(b.id))
+    if (b.boat_name) byName.set(String(b.boat_name).toLowerCase(), String(b.id))
+  }
+
+  let synced = 0, errors = 0
+
+  for (const item of allItems) {
+    if (item['@removed']) continue
+    const fields = item.fields ?? {}
+    const record: Record<string, any> = { sharepoint_synced_at: new Date().toISOString() }
+
+    for (const [spField, dbField] of Object.entries(cfg.fieldMapping)) {
+      if (!dbField || !(spField in fields)) continue
+      const raw = fields[spField]
+      record[dbField] = raw !== '' && raw !== null && raw !== undefined ? raw : null
+    }
+
+    if (!record.boat_name && !record.reg_no) continue
+
+    const existingId =
+      (record.reg_no ? byRegNo.get(String(record.reg_no).toLowerCase()) : undefined) ??
+      (record.boat_name ? byName.get(String(record.boat_name).toLowerCase()) : undefined)
+
+    const { error } = existingId
+      ? await (supabaseAdmin as any).from('small_boats').update(record).eq('id', existingId)
+      : await (supabaseAdmin as any).from('small_boats').insert({ ...record })
+
+    if (error) {
+      errors++
+    } else {
+      synced++
+      if (record.reg_no) byRegNo.set(String(record.reg_no).toLowerCase(), existingId ?? 'new')
+      if (record.boat_name) byName.set(String(record.boat_name).toLowerCase(), existingId ?? 'new')
     }
   }
 
