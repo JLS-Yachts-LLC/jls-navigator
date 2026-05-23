@@ -1,8 +1,8 @@
-import { ae } from "./assets/worker-entry-lPp1rPgE.js";
+import { ai } from "./assets/worker-entry-BhSB73Oa.js";
 import "node:events";
 import "node:async_hooks";
 import "node:stream/web";
 import "node:stream";
 export {
-  ae as default
+  ai as default
 };

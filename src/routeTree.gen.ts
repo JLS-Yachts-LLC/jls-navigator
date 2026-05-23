@@ -12,14 +12,18 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AppYachtItRouteImport } from './routes/_app.yacht-it'
 import { Route as AppSmallBoatRegistrationRouteImport } from './routes/_app.small-boat-registration'
 import { Route as AppSettingsRouteImport } from './routes/_app.settings'
+import { Route as AppProcurementRouteImport } from './routes/_app.procurement'
 import { Route as AppPackagesRouteImport } from './routes/_app.packages'
 import { Route as AppOrbitRouteImport } from './routes/_app.orbit'
+import { Route as AppFinanceRouteImport } from './routes/_app.finance'
 import { Route as AppDirectorRouteImport } from './routes/_app.director'
 import { Route as AppCrewCabRouteImport } from './routes/_app.crew-cab'
 import { Route as AppChangelogRouteImport } from './routes/_app.changelog'
 import { Route as AppYachtsIndexRouteImport } from './routes/_app.yachts.index'
+import { Route as AppPackagesIndexRouteImport } from './routes/_app.packages.index'
 import { Route as AppOrbitIndexRouteImport } from './routes/_app.orbit.index'
 import { Route as AppYachtsNewRouteImport } from './routes/_app.yachts.new'
 import { Route as AppYachtsIdRouteImport } from './routes/_app.yachts.$id'
@@ -31,6 +35,8 @@ import { Route as AppPermitsExitEntryRouteImport } from './routes/_app.permits.e
 import { Route as AppPermitsDmaRouteImport } from './routes/_app.permits.dma'
 import { Route as AppPermitsCruisingTendersRouteImport } from './routes/_app.permits.cruising-tenders'
 import { Route as AppPermitsCruisingMothershipRouteImport } from './routes/_app.permits.cruising-mothership'
+import { Route as AppPackagesDriversRouteImport } from './routes/_app.packages.drivers'
+import { Route as AppPackagesDeliveriesRouteImport } from './routes/_app.packages.deliveries'
 import { Route as AppOrbitProjectIdRouteImport } from './routes/_app.orbit.$projectId'
 import { Route as AppCrewCabVehiclesRouteImport } from './routes/_app.crew-cab.vehicles'
 import { Route as AppCrewCabTripsRouteImport } from './routes/_app.crew-cab.trips'
@@ -51,6 +57,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppYachtItRoute = AppYachtItRouteImport.update({
+  id: '/yacht-it',
+  path: '/yacht-it',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppSmallBoatRegistrationRoute =
   AppSmallBoatRegistrationRouteImport.update({
     id: '/small-boat-registration',
@@ -62,6 +73,11 @@ const AppSettingsRoute = AppSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AppRoute,
 } as any)
+const AppProcurementRoute = AppProcurementRouteImport.update({
+  id: '/procurement',
+  path: '/procurement',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppPackagesRoute = AppPackagesRouteImport.update({
   id: '/packages',
   path: '/packages',
@@ -70,6 +86,11 @@ const AppPackagesRoute = AppPackagesRouteImport.update({
 const AppOrbitRoute = AppOrbitRouteImport.update({
   id: '/orbit',
   path: '/orbit',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppFinanceRoute = AppFinanceRouteImport.update({
+  id: '/finance',
+  path: '/finance',
   getParentRoute: () => AppRoute,
 } as any)
 const AppDirectorRoute = AppDirectorRouteImport.update({
@@ -91,6 +112,11 @@ const AppYachtsIndexRoute = AppYachtsIndexRouteImport.update({
   id: '/yachts/',
   path: '/yachts/',
   getParentRoute: () => AppRoute,
+} as any)
+const AppPackagesIndexRoute = AppPackagesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppPackagesRoute,
 } as any)
 const AppOrbitIndexRoute = AppOrbitIndexRouteImport.update({
   id: '/',
@@ -150,6 +176,16 @@ const AppPermitsCruisingMothershipRoute =
     path: '/permits/cruising-mothership',
     getParentRoute: () => AppRoute,
   } as any)
+const AppPackagesDriversRoute = AppPackagesDriversRouteImport.update({
+  id: '/drivers',
+  path: '/drivers',
+  getParentRoute: () => AppPackagesRoute,
+} as any)
+const AppPackagesDeliveriesRoute = AppPackagesDeliveriesRouteImport.update({
+  id: '/deliveries',
+  path: '/deliveries',
+  getParentRoute: () => AppPackagesRoute,
+} as any)
 const AppOrbitProjectIdRoute = AppOrbitProjectIdRouteImport.update({
   id: '/$projectId',
   path: '/$projectId',
@@ -182,15 +218,20 @@ export interface FileRoutesByFullPath {
   '/changelog': typeof AppChangelogRoute
   '/crew-cab': typeof AppCrewCabRouteWithChildren
   '/director': typeof AppDirectorRoute
+  '/finance': typeof AppFinanceRoute
   '/orbit': typeof AppOrbitRouteWithChildren
-  '/packages': typeof AppPackagesRoute
+  '/packages': typeof AppPackagesRouteWithChildren
+  '/procurement': typeof AppProcurementRoute
   '/settings': typeof AppSettingsRoute
   '/small-boat-registration': typeof AppSmallBoatRegistrationRoute
+  '/yacht-it': typeof AppYachtItRoute
   '/crew-cab/drivers': typeof AppCrewCabDriversRoute
   '/crew-cab/locations': typeof AppCrewCabLocationsRoute
   '/crew-cab/trips': typeof AppCrewCabTripsRoute
   '/crew-cab/vehicles': typeof AppCrewCabVehiclesRoute
   '/orbit/$projectId': typeof AppOrbitProjectIdRoute
+  '/packages/deliveries': typeof AppPackagesDeliveriesRoute
+  '/packages/drivers': typeof AppPackagesDriversRoute
   '/permits/cruising-mothership': typeof AppPermitsCruisingMothershipRoute
   '/permits/cruising-tenders': typeof AppPermitsCruisingTendersRoute
   '/permits/dma': typeof AppPermitsDmaRoute
@@ -202,6 +243,7 @@ export interface FileRoutesByFullPath {
   '/yachts/$id': typeof AppYachtsIdRoute
   '/yachts/new': typeof AppYachtsNewRoute
   '/orbit/': typeof AppOrbitIndexRoute
+  '/packages/': typeof AppPackagesIndexRoute
   '/yachts/': typeof AppYachtsIndexRoute
 }
 export interface FileRoutesByTo {
@@ -210,14 +252,18 @@ export interface FileRoutesByTo {
   '/changelog': typeof AppChangelogRoute
   '/crew-cab': typeof AppCrewCabRouteWithChildren
   '/director': typeof AppDirectorRoute
-  '/packages': typeof AppPackagesRoute
+  '/finance': typeof AppFinanceRoute
+  '/procurement': typeof AppProcurementRoute
   '/settings': typeof AppSettingsRoute
   '/small-boat-registration': typeof AppSmallBoatRegistrationRoute
+  '/yacht-it': typeof AppYachtItRoute
   '/crew-cab/drivers': typeof AppCrewCabDriversRoute
   '/crew-cab/locations': typeof AppCrewCabLocationsRoute
   '/crew-cab/trips': typeof AppCrewCabTripsRoute
   '/crew-cab/vehicles': typeof AppCrewCabVehiclesRoute
   '/orbit/$projectId': typeof AppOrbitProjectIdRoute
+  '/packages/deliveries': typeof AppPackagesDeliveriesRoute
+  '/packages/drivers': typeof AppPackagesDriversRoute
   '/permits/cruising-mothership': typeof AppPermitsCruisingMothershipRoute
   '/permits/cruising-tenders': typeof AppPermitsCruisingTendersRoute
   '/permits/dma': typeof AppPermitsDmaRoute
@@ -229,6 +275,7 @@ export interface FileRoutesByTo {
   '/yachts/$id': typeof AppYachtsIdRoute
   '/yachts/new': typeof AppYachtsNewRoute
   '/orbit': typeof AppOrbitIndexRoute
+  '/packages': typeof AppPackagesIndexRoute
   '/yachts': typeof AppYachtsIndexRoute
 }
 export interface FileRoutesById {
@@ -239,15 +286,20 @@ export interface FileRoutesById {
   '/_app/changelog': typeof AppChangelogRoute
   '/_app/crew-cab': typeof AppCrewCabRouteWithChildren
   '/_app/director': typeof AppDirectorRoute
+  '/_app/finance': typeof AppFinanceRoute
   '/_app/orbit': typeof AppOrbitRouteWithChildren
-  '/_app/packages': typeof AppPackagesRoute
+  '/_app/packages': typeof AppPackagesRouteWithChildren
+  '/_app/procurement': typeof AppProcurementRoute
   '/_app/settings': typeof AppSettingsRoute
   '/_app/small-boat-registration': typeof AppSmallBoatRegistrationRoute
+  '/_app/yacht-it': typeof AppYachtItRoute
   '/_app/crew-cab/drivers': typeof AppCrewCabDriversRoute
   '/_app/crew-cab/locations': typeof AppCrewCabLocationsRoute
   '/_app/crew-cab/trips': typeof AppCrewCabTripsRoute
   '/_app/crew-cab/vehicles': typeof AppCrewCabVehiclesRoute
   '/_app/orbit/$projectId': typeof AppOrbitProjectIdRoute
+  '/_app/packages/deliveries': typeof AppPackagesDeliveriesRoute
+  '/_app/packages/drivers': typeof AppPackagesDriversRoute
   '/_app/permits/cruising-mothership': typeof AppPermitsCruisingMothershipRoute
   '/_app/permits/cruising-tenders': typeof AppPermitsCruisingTendersRoute
   '/_app/permits/dma': typeof AppPermitsDmaRoute
@@ -259,6 +311,7 @@ export interface FileRoutesById {
   '/_app/yachts/$id': typeof AppYachtsIdRoute
   '/_app/yachts/new': typeof AppYachtsNewRoute
   '/_app/orbit/': typeof AppOrbitIndexRoute
+  '/_app/packages/': typeof AppPackagesIndexRoute
   '/_app/yachts/': typeof AppYachtsIndexRoute
 }
 export interface FileRouteTypes {
@@ -269,15 +322,20 @@ export interface FileRouteTypes {
     | '/changelog'
     | '/crew-cab'
     | '/director'
+    | '/finance'
     | '/orbit'
     | '/packages'
+    | '/procurement'
     | '/settings'
     | '/small-boat-registration'
+    | '/yacht-it'
     | '/crew-cab/drivers'
     | '/crew-cab/locations'
     | '/crew-cab/trips'
     | '/crew-cab/vehicles'
     | '/orbit/$projectId'
+    | '/packages/deliveries'
+    | '/packages/drivers'
     | '/permits/cruising-mothership'
     | '/permits/cruising-tenders'
     | '/permits/dma'
@@ -289,6 +347,7 @@ export interface FileRouteTypes {
     | '/yachts/$id'
     | '/yachts/new'
     | '/orbit/'
+    | '/packages/'
     | '/yachts/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -297,14 +356,18 @@ export interface FileRouteTypes {
     | '/changelog'
     | '/crew-cab'
     | '/director'
-    | '/packages'
+    | '/finance'
+    | '/procurement'
     | '/settings'
     | '/small-boat-registration'
+    | '/yacht-it'
     | '/crew-cab/drivers'
     | '/crew-cab/locations'
     | '/crew-cab/trips'
     | '/crew-cab/vehicles'
     | '/orbit/$projectId'
+    | '/packages/deliveries'
+    | '/packages/drivers'
     | '/permits/cruising-mothership'
     | '/permits/cruising-tenders'
     | '/permits/dma'
@@ -316,6 +379,7 @@ export interface FileRouteTypes {
     | '/yachts/$id'
     | '/yachts/new'
     | '/orbit'
+    | '/packages'
     | '/yachts'
   id:
     | '__root__'
@@ -325,15 +389,20 @@ export interface FileRouteTypes {
     | '/_app/changelog'
     | '/_app/crew-cab'
     | '/_app/director'
+    | '/_app/finance'
     | '/_app/orbit'
     | '/_app/packages'
+    | '/_app/procurement'
     | '/_app/settings'
     | '/_app/small-boat-registration'
+    | '/_app/yacht-it'
     | '/_app/crew-cab/drivers'
     | '/_app/crew-cab/locations'
     | '/_app/crew-cab/trips'
     | '/_app/crew-cab/vehicles'
     | '/_app/orbit/$projectId'
+    | '/_app/packages/deliveries'
+    | '/_app/packages/drivers'
     | '/_app/permits/cruising-mothership'
     | '/_app/permits/cruising-tenders'
     | '/_app/permits/dma'
@@ -345,6 +414,7 @@ export interface FileRouteTypes {
     | '/_app/yachts/$id'
     | '/_app/yachts/new'
     | '/_app/orbit/'
+    | '/_app/packages/'
     | '/_app/yachts/'
   fileRoutesById: FileRoutesById
 }
@@ -377,6 +447,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_app/yacht-it': {
+      id: '/_app/yacht-it'
+      path: '/yacht-it'
+      fullPath: '/yacht-it'
+      preLoaderRoute: typeof AppYachtItRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/small-boat-registration': {
       id: '/_app/small-boat-registration'
       path: '/small-boat-registration'
@@ -391,6 +468,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSettingsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/procurement': {
+      id: '/_app/procurement'
+      path: '/procurement'
+      fullPath: '/procurement'
+      preLoaderRoute: typeof AppProcurementRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/packages': {
       id: '/_app/packages'
       path: '/packages'
@@ -403,6 +487,13 @@ declare module '@tanstack/react-router' {
       path: '/orbit'
       fullPath: '/orbit'
       preLoaderRoute: typeof AppOrbitRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/finance': {
+      id: '/_app/finance'
+      path: '/finance'
+      fullPath: '/finance'
+      preLoaderRoute: typeof AppFinanceRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/director': {
@@ -432,6 +523,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/yachts/'
       preLoaderRoute: typeof AppYachtsIndexRouteImport
       parentRoute: typeof AppRoute
+    }
+    '/_app/packages/': {
+      id: '/_app/packages/'
+      path: '/'
+      fullPath: '/packages/'
+      preLoaderRoute: typeof AppPackagesIndexRouteImport
+      parentRoute: typeof AppPackagesRoute
     }
     '/_app/orbit/': {
       id: '/_app/orbit/'
@@ -510,6 +608,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppPermitsCruisingMothershipRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/packages/drivers': {
+      id: '/_app/packages/drivers'
+      path: '/drivers'
+      fullPath: '/packages/drivers'
+      preLoaderRoute: typeof AppPackagesDriversRouteImport
+      parentRoute: typeof AppPackagesRoute
+    }
+    '/_app/packages/deliveries': {
+      id: '/_app/packages/deliveries'
+      path: '/deliveries'
+      fullPath: '/packages/deliveries'
+      preLoaderRoute: typeof AppPackagesDeliveriesRouteImport
+      parentRoute: typeof AppPackagesRoute
+    }
     '/_app/orbit/$projectId': {
       id: '/_app/orbit/$projectId'
       path: '/$projectId'
@@ -580,14 +692,33 @@ const AppOrbitRouteWithChildren = AppOrbitRoute._addFileChildren(
   AppOrbitRouteChildren,
 )
 
+interface AppPackagesRouteChildren {
+  AppPackagesDeliveriesRoute: typeof AppPackagesDeliveriesRoute
+  AppPackagesDriversRoute: typeof AppPackagesDriversRoute
+  AppPackagesIndexRoute: typeof AppPackagesIndexRoute
+}
+
+const AppPackagesRouteChildren: AppPackagesRouteChildren = {
+  AppPackagesDeliveriesRoute: AppPackagesDeliveriesRoute,
+  AppPackagesDriversRoute: AppPackagesDriversRoute,
+  AppPackagesIndexRoute: AppPackagesIndexRoute,
+}
+
+const AppPackagesRouteWithChildren = AppPackagesRoute._addFileChildren(
+  AppPackagesRouteChildren,
+)
+
 interface AppRouteChildren {
   AppChangelogRoute: typeof AppChangelogRoute
   AppCrewCabRoute: typeof AppCrewCabRouteWithChildren
   AppDirectorRoute: typeof AppDirectorRoute
+  AppFinanceRoute: typeof AppFinanceRoute
   AppOrbitRoute: typeof AppOrbitRouteWithChildren
-  AppPackagesRoute: typeof AppPackagesRoute
+  AppPackagesRoute: typeof AppPackagesRouteWithChildren
+  AppProcurementRoute: typeof AppProcurementRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppSmallBoatRegistrationRoute: typeof AppSmallBoatRegistrationRoute
+  AppYachtItRoute: typeof AppYachtItRoute
   AppPermitsCruisingMothershipRoute: typeof AppPermitsCruisingMothershipRoute
   AppPermitsCruisingTendersRoute: typeof AppPermitsCruisingTendersRoute
   AppPermitsDmaRoute: typeof AppPermitsDmaRoute
@@ -605,10 +736,13 @@ const AppRouteChildren: AppRouteChildren = {
   AppChangelogRoute: AppChangelogRoute,
   AppCrewCabRoute: AppCrewCabRouteWithChildren,
   AppDirectorRoute: AppDirectorRoute,
+  AppFinanceRoute: AppFinanceRoute,
   AppOrbitRoute: AppOrbitRouteWithChildren,
-  AppPackagesRoute: AppPackagesRoute,
+  AppPackagesRoute: AppPackagesRouteWithChildren,
+  AppProcurementRoute: AppProcurementRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppSmallBoatRegistrationRoute: AppSmallBoatRegistrationRoute,
+  AppYachtItRoute: AppYachtItRoute,
   AppPermitsCruisingMothershipRoute: AppPermitsCruisingMothershipRoute,
   AppPermitsCruisingTendersRoute: AppPermitsCruisingTendersRoute,
   AppPermitsDmaRoute: AppPermitsDmaRoute,
