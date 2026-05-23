@@ -7,8 +7,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Plus, Pencil, Trash2, Loader2, Route, MapPin, Navigation,
-  Table2, LayoutGrid, Search, Check, X, ChevronDown,
+  Search, Check, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -17,7 +21,6 @@ import { cn } from "@/lib/utils";
 
 type TripType = "crew_pickup" | "inhouse";
 type TripStatus = "pending" | "confirmed" | "in_progress" | "completed" | "cancelled";
-type ViewMode = "table" | "board";
 
 type SavedLocation = { id: string; name: string; address: string | null; latitude: number | null; longitude: number | null };
 type Driver = { id: string; full_name: string };
@@ -151,7 +154,7 @@ function AddressCombobox({
   const [suggestions, setSuggestions] = useState<AddressSuggestion[]>([]);
   const [open, setOpen] = useState(false);
   const [fetching, setFetching] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   // Sync display label when value changes externally
@@ -324,7 +327,7 @@ function InlineSelect<T extends string>({
 type BoardCell = { row: string | "new"; field: string } | null;
 
 function BoardRow({
-  trip, locations, drivers, vehicles, yachts, active, onActivate, onSave, onDelete,
+  trip, locations, drivers, vehicles, yachts, active, onActivate, onSave, onDelete, onEdit,
 }: {
   trip: Trip;
   locations: SavedLocation[];
@@ -334,7 +337,8 @@ function BoardRow({
   active: BoardCell;
   onActivate: (field: string) => void;
   onSave: (id: string, patch: Partial<Trip>) => Promise<void>;
-  onDelete: (id: string) => void;
+  onDelete: (trip: Trip) => void;
+  onEdit?: (trip: Trip) => void;
 }) {
   const isActive = (f: string) => active?.row === trip.id && active.field === f;
 
@@ -494,10 +498,20 @@ function BoardRow({
       </BoardCell>
 
       {/* Actions */}
-      <td className="w-16 px-2 py-1">
+      <td className="w-20 px-2 py-1">
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity justify-end">
+          {onEdit && (
+            <button
+              onClick={e => { e.stopPropagation(); onEdit(trip); }}
+              title="Open full form"
+              className="rounded p-1 hover:bg-muted transition"
+            >
+              <Pencil className="h-3 w-3 text-muted-foreground" />
+            </button>
+          )}
           <button
-            onClick={e => { e.stopPropagation(); onDelete(trip.id); }}
+            onClick={e => { e.stopPropagation(); onDelete(trip); }}
+            title="Delete"
             className="rounded p-1 hover:bg-destructive/10 transition"
           >
             <Trash2 className="h-3 w-3 text-destructive/60" />
@@ -631,12 +645,12 @@ export function TripsPage() {
   const [yachts, setYachts] = useState<Yacht[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | TripType>("all");
-  const [viewMode, setViewMode] = useState<ViewMode>("table");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Trip | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [busy, setBusy] = useState(false);
   const [boardActive, setBoardActive] = useState<{ row: string; field: string } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Trip | null>(null);
 
   useEffect(() => { void loadAll(); }, []);
 
@@ -771,11 +785,12 @@ export function TripsPage() {
     toast.success("Trip added");
   }
 
-  async function handleDelete(id: string) {
-    if (!confirm("Delete this trip?")) return;
-    const { error } = await (supabase as any).from("crew_trips").delete().eq("id", id);
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    const { error } = await (supabase as any).from("crew_trips").delete().eq("id", deleteTarget.id);
     if (error) toast.error(error.message);
-    else { toast.success("Removed"); await loadAll(); }
+    else { toast.success("Trip removed"); await loadAll(); }
+    setDeleteTarget(null);
   }
 
   return (
@@ -785,6 +800,7 @@ export function TripsPage() {
         <div className="flex items-center gap-3">
           <Route className="h-4 w-4 text-primary" />
           <h1 className="font-display text-base font-semibold">Trips</h1>
+          <span className="text-xs text-muted-foreground">({trips.length})</span>
           <div className="flex items-center gap-0.5 ml-1">
             {(["all", "crew_pickup", "inhouse"] as const).map(f => (
               <button
@@ -801,29 +817,9 @@ export function TripsPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* View toggle */}
-          <div className="flex h-7 items-center rounded-md border border-border bg-card p-0.5 gap-0.5">
-            <button
-              onClick={() => setViewMode("table")}
-              title="Table view"
-              className={cn("flex items-center gap-1 rounded px-2 py-1 text-xs transition", viewMode === "table" ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted")}
-            >
-              <Table2 className="h-3 w-3" /> Table
-            </button>
-            <button
-              onClick={() => setViewMode("board")}
-              title="Board / inline edit"
-              className={cn("flex items-center gap-1 rounded px-2 py-1 text-xs transition", viewMode === "board" ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted")}
-            >
-              <LayoutGrid className="h-3 w-3" /> Board
-            </button>
-          </div>
-
-          <Button onClick={openNew} size="sm" className="h-7 gap-1.5 text-xs px-3">
-            <Plus className="h-3.5 w-3.5" /> New Trip
-          </Button>
-        </div>
+        <Button onClick={openNew} size="sm" className="h-7 gap-1.5 text-xs px-3">
+          <Plus className="h-3.5 w-3.5" /> New Trip
+        </Button>
       </header>
 
       {/* Content */}
@@ -832,53 +828,16 @@ export function TripsPage() {
           <div className="flex h-40 items-center justify-center">
             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
           </div>
-        ) : filtered.length === 0 && viewMode === "table" ? (
-          <div className="flex h-40 flex-col items-center justify-center gap-2 text-muted-foreground">
-            <Route className="h-8 w-8 opacity-30" />
-            <p className="text-xs">No trips yet.</p>
-          </div>
-        ) : viewMode === "table" ? (
-          /* ── Table View ── */
-          <div className="rounded-lg border border-border overflow-x-auto bg-card">
-            <table className="w-full text-xs min-w-[1000px]">
-              <thead className="bg-muted/30 border-b border-border">
-                <tr>
-                  {["Type", "Passenger", "Yacht", "Pickup", "Drop-off", "Pickup Time", "Driver", "Vehicle", "Status", ""].map(h => (
-                    <th key={h} className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap">
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/50">
-                {filtered.map(t => (
-                  <tr key={t.id} className="hover:bg-muted/20 transition-colors group">
-                    <td className="px-3 py-1.5"><Badge label={TYPE_LABEL[t.trip_type]} color={TYPE_COLOR[t.trip_type]} /></td>
-                    <td className="px-3 py-1.5 font-medium text-foreground">{t.passenger_name ?? "—"}</td>
-                    <td className="px-3 py-1.5 text-muted-foreground">{t.yacht?.vessel_name ?? "—"}</td>
-                    <td className="px-3 py-1.5 text-muted-foreground max-w-[140px] truncate">{t.pickup_loc?.name ?? t.pickup_address ?? "—"}</td>
-                    <td className="px-3 py-1.5 text-muted-foreground max-w-[140px] truncate">{t.dropoff_loc?.name ?? t.dropoff_address ?? "—"}</td>
-                    <td className="px-3 py-1.5 text-muted-foreground whitespace-nowrap">{fmtDt(t.pickup_datetime)}</td>
-                    <td className="px-3 py-1.5 text-muted-foreground">{t.driver?.full_name ?? "—"}</td>
-                    <td className="px-3 py-1.5 text-muted-foreground">{t.vehicle ? `${t.vehicle.make} ${t.vehicle.model}` : "—"}</td>
-                    <td className="px-3 py-1.5"><Badge label={STATUS_LABEL[t.status]} color={STATUS_COLOR[t.status]} /></td>
-                    <td className="px-3 py-1.5">
-                      <div className="flex items-center gap-0.5 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onClick={() => openEdit(t)} className="rounded p-1 hover:bg-muted transition"><Pencil className="h-3 w-3 text-muted-foreground" /></button>
-                        <button onClick={() => handleDelete(t.id)} className="rounded p-1 hover:bg-destructive/10 transition"><Trash2 className="h-3 w-3 text-destructive/60" /></button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
         ) : (
-          /* ── Board View ── */
           <div className="rounded-lg border border-border overflow-x-auto bg-card">
-            <div className="px-3 py-2 border-b border-border/60 flex items-center gap-2">
-              <LayoutGrid className="h-3 w-3 text-muted-foreground" />
-              <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Board — click any cell to edit inline · Tab / Enter to confirm</span>
+            {/* Hint bar */}
+            <div className="px-3 py-1.5 border-b border-border/60 flex items-center gap-2 bg-muted/20">
+              <span className="text-[10px] text-muted-foreground">
+                Click any cell to edit inline · Enter or Tab to confirm · Add rows below
+              </span>
+              {filtered.length === 0 && (
+                <span className="ml-auto text-[10px] text-muted-foreground italic">No trips yet — add one below ↓</span>
+              )}
             </div>
             <table className="w-full min-w-[1300px]">
               <thead className="bg-muted/20 border-b border-border/60">
@@ -902,7 +861,8 @@ export function TripsPage() {
                     active={boardActive?.row === t.id ? boardActive : null}
                     onActivate={field => field ? setBoardActive({ row: t.id, field }) : setBoardActive(null)}
                     onSave={boardSave}
-                    onDelete={handleDelete}
+                    onDelete={t => setDeleteTarget(t)}
+                    onEdit={openEdit}
                   />
                 ))}
                 <BoardAddRow
@@ -917,6 +877,30 @@ export function TripsPage() {
           </div>
         )}
       </div>
+
+      {/* ── Delete Confirmation ── */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={o => !o && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete trip?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget?.passenger_name
+                ? <><strong>{deleteTarget.passenger_name}</strong>'s trip will be permanently removed.</>
+                : "This trip will be permanently removed."
+              }{" "}This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* ── Form Dialog ── */}
       <Dialog open={open} onOpenChange={setOpen}>
