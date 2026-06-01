@@ -101,19 +101,19 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex items-center justify-between border-b border-border bg-card/40 px-6 py-3">
+      <header className="flex items-center justify-between border-b border-border/70 bg-card/30 backdrop-blur-sm px-6 py-3.5">
         <div>
-          <div className="text-xs text-muted-foreground">{meta.breadcrumb}</div>
-          <h1 className="font-display text-xl font-semibold tracking-tight">{meta.label}</h1>
+          <div className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-muted-foreground/60">{meta.breadcrumb}</div>
+          <h1 className="mt-0.5 font-display text-[1.25rem] font-semibold tracking-tight text-foreground">{meta.label}</h1>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
           <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search…" className="h-9 w-64 pl-8" />
+            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/50" />
+            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search permits…" className="h-9 w-60 pl-8 text-sm bg-background/50 border-border/60 placeholder:text-muted-foreground/40" />
           </div>
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-              <Button size="sm" onClick={startNew} className="h-9 gap-1.5">
+              <Button size="sm" onClick={startNew} className="h-9 gap-1.5 px-3.5 font-medium shadow-sm">
                 <Plus className="h-3.5 w-3.5" /> New permit
               </Button>
             </DialogTrigger>
@@ -204,19 +204,19 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
             <Button onClick={startNew} className="mt-4 gap-1.5"><Plus className="h-4 w-4" /> New permit</Button>
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-border bg-card">
-            <table className="min-w-full text-sm">
-              <thead className="bg-card/95 backdrop-blur">
-                <tr className="border-b border-border text-[11px] uppercase tracking-wider text-muted-foreground">
-                  <th className="px-3 py-2 text-left font-medium">Permit #</th>
-                  <th className="px-3 py-2 text-left font-medium">Yacht</th>
-                  <th className="px-3 py-2 text-left font-medium">Holder</th>
-                  <th className="px-3 py-2 text-left font-medium">Authority</th>
-                  {meta.showDmaPhase && <th className="px-3 py-2 text-left font-medium">Phase</th>}
-                  <th className="px-3 py-2 text-left font-medium">Issued</th>
-                  <th className="px-3 py-2 text-left font-medium">Expiry</th>
-                  <th className="px-3 py-2 text-left font-medium">Status</th>
-                  <th className="px-3 py-2 text-right font-medium">Actions</th>
+          <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-[0_2px_12px_-4px_rgba(0,0,0,0.4)]">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Permit #</th>
+                  <th>Yacht</th>
+                  <th>Holder</th>
+                  <th>Authority</th>
+                  {meta.showDmaPhase && <th>Phase</th>}
+                  <th>Issued</th>
+                  <th>Expiry</th>
+                  <th>Status</th>
+                  <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -224,16 +224,18 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
                   const days = daysUntil(r.expiry_date);
                   const variant = expiryVariant(days);
                   return (
-                    <tr key={r.id} className="border-b border-border/50 transition hover:bg-accent/30">
-                      <td className="px-3 py-2 font-medium tabular-nums">{r.permit_number ?? "—"}</td>
-                      <td className="px-3 py-2">{yachtName(r.yacht_id)}</td>
-                      <td className="px-3 py-2">{r.holder_name ?? "—"}</td>
-                      <td className="px-3 py-2">{r.issuing_authority ?? "—"}</td>
-                      {meta.showDmaPhase && <td className="px-3 py-2">{r.dma_phase ?? "—"}</td>}
-                      <td className="px-3 py-2 tabular-nums">{r.issue_date ?? "—"}</td>
-                      <td className="px-3 py-2 tabular-nums">
+                    <tr key={r.id}>
+                      <td className="font-medium tabular-nums text-foreground/90">{r.permit_number ?? <span className="text-muted-foreground/50">—</span>}</td>
+                      <td className="font-medium">{yachtName(r.yacht_id)}</td>
+                      <td className="text-foreground/75">{r.holder_name ?? <span className="text-muted-foreground/50">—</span>}</td>
+                      <td className="text-foreground/75">{r.issuing_authority ?? <span className="text-muted-foreground/50">—</span>}</td>
+                      {meta.showDmaPhase && <td className="text-foreground/75">{r.dma_phase ?? <span className="text-muted-foreground/50">—</span>}</td>}
+                      <td className="tabular-nums text-foreground/60">{r.issue_date ?? "—"}</td>
+                      <td className="tabular-nums">
                         <div className="flex items-center gap-2">
-                          <span>{r.expiry_date ?? "—"}</span>
+                          <span className={days !== null && days < 0 ? "text-destructive" : days !== null && days <= 30 ? "text-warning" : "text-foreground/75"}>
+                            {r.expiry_date ?? <span className="text-muted-foreground/50">—</span>}
+                          </span>
                           {days !== null && (
                             <span className={cn("pill", variant)}>
                               {days < 0 ? `${Math.abs(days)}d ago` : `${days}d`}
@@ -241,13 +243,13 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
                           )}
                         </div>
                       </td>
-                      <td className="px-3 py-2"><StatusPill status={r.status} /></td>
-                      <td className="px-3 py-2 text-right">
-                        <div className="inline-flex gap-1">
-                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => startEdit(r)}>
+                      <td><StatusPill status={r.status} /></td>
+                      <td style={{ textAlign: 'right' }}>
+                        <div className="inline-flex gap-0.5">
+                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground" onClick={() => startEdit(r)}>
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
-                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive/70 hover:text-destructive" onClick={() => setDeleteTarget(r)}>
+                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground/60 hover:text-destructive" onClick={() => setDeleteTarget(r)}>
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </div>
@@ -290,12 +292,14 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
 
 function Stat({ label, value, icon: Icon, accent }: { label: string; value: number; icon: React.ComponentType<{ className?: string }>; accent: string }) {
   return (
-    <div className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3">
+    <div className="flex items-center justify-between rounded-xl border border-border bg-card px-4 py-3.5 transition-colors hover:border-border/80 hover:bg-card/80">
       <div>
-        <div className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</div>
-        <div className={`font-display text-2xl font-bold tabular-nums ${accent}`}>{value}</div>
+        <div className="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-muted-foreground/70">{label}</div>
+        <div className={`mt-1 font-display text-[1.625rem] font-bold leading-none tabular-nums ${accent}`}>{value}</div>
       </div>
-      <Icon className={`h-7 w-7 ${accent} opacity-60`} />
+      <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${accent.replace('text-', 'bg-').replace('primary', 'primary/10').replace('success', 'success/10').replace('warning', 'warning/10').replace('destructive', 'destructive/10')}`}>
+        <Icon className={`h-4.5 w-4.5 ${accent} opacity-80`} style={{ height: '1.125rem', width: '1.125rem' }} />
+      </div>
     </div>
   );
 }

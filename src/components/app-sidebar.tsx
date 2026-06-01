@@ -115,15 +115,20 @@ function NavNode({ item, depth = 0 }: { item: NavItem; depth?: number }) {
       <div>
         <button
           onClick={() => setOpen(v => !v)}
-          className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-sm font-medium text-sidebar-foreground/80 transition hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          style={{ paddingLeft: 10 + depth * 12 }}
+          className="flex w-full items-center gap-2 rounded-md py-1.5 text-[13px] font-semibold text-sidebar-foreground/60 transition-colors hover:text-sidebar-foreground/90 hover:bg-sidebar-accent/50"
+          style={{ paddingLeft: 10 + depth * 12, paddingRight: 8 }}
         >
-          {Icon && <Icon className="h-4 w-4 shrink-0 text-primary/80" />}
-          <span className="flex-1 text-left">{item.label}</span>
-          {open ? <ChevronDown className="h-3.5 w-3.5 opacity-60" /> : <ChevronRight className="h-3.5 w-3.5 opacity-60" />}
+          {Icon && <Icon className={`h-3.5 w-3.5 shrink-0 ${depth === 0 ? "text-sidebar-foreground/40" : "text-primary/70"}`} />}
+          <span className={`flex-1 text-left tracking-tight ${depth === 0 ? "text-[11px] font-semibold uppercase tracking-widest text-sidebar-foreground/40" : ""}`}>
+            {item.label}
+          </span>
+          {childActive && !open && <span className="h-1.5 w-1.5 rounded-full bg-primary/70 mr-1" />}
+          {open
+            ? <ChevronDown className="h-3 w-3 opacity-40 transition-transform" />
+            : <ChevronRight className="h-3 w-3 opacity-40 transition-transform" />}
         </button>
         {open && (
-          <div className="mt-0.5 space-y-0.5 border-l border-sidebar-border ml-[18px]">
+          <div className={`mt-0.5 space-y-px ${depth === 0 ? "border-l border-sidebar-border/50 ml-4" : "border-l border-sidebar-border/30 ml-[18px]"}`}>
             {item.children!.map(c => (
               <NavNode key={c.label} item={c} depth={depth + 1} />
             ))}
@@ -136,11 +141,11 @@ function NavNode({ item, depth = 0 }: { item: NavItem; depth?: number }) {
   return (
     <Link
       to={item.to!}
-      className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-sidebar-foreground/75 transition hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[active=true]:bg-primary/15 data-[active=true]:text-primary data-[active=true]:font-medium"
+      className="nav-link flex items-center gap-2 rounded-r-md py-1.5 text-[13px] text-sidebar-foreground/65 transition-all hover:bg-sidebar-accent/60 hover:text-sidebar-foreground data-[active=true]:bg-primary/12 data-[active=true]:text-primary data-[active=true]:font-semibold"
       data-active={isActiveDeep}
-      style={{ paddingLeft: 10 + depth * 12 }}
+      style={{ paddingLeft: 10 + depth * 12, paddingRight: 8 }}
     >
-      {Icon && <Icon className="h-4 w-4 shrink-0 opacity-70" />}
+      {Icon && <Icon className="h-3.5 w-3.5 shrink-0 opacity-60 data-[active=true]:opacity-100" />}
       <span className="truncate">{item.label}</span>
     </Link>
   );
@@ -156,10 +161,11 @@ function SearchResult({ item }: { item: NavItem }) {
   return (
     <Link
       to={item.to!}
-      className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-sidebar-foreground/75 transition hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[active=true]:bg-primary/15 data-[active=true]:text-primary data-[active=true]:font-medium"
+      className="nav-link flex items-center gap-2 rounded-r-md py-1.5 text-[13px] text-sidebar-foreground/65 transition-all hover:bg-sidebar-accent/60 hover:text-sidebar-foreground data-[active=true]:bg-primary/12 data-[active=true]:text-primary data-[active=true]:font-semibold"
       data-active={isActive}
+      style={{ paddingLeft: 10, paddingRight: 8 }}
     >
-      {Icon && <Icon className="h-4 w-4 shrink-0 opacity-70" />}
+      {Icon && <Icon className="h-3.5 w-3.5 shrink-0 opacity-60" />}
       <span className="truncate">{item.label}</span>
     </Link>
   );
@@ -181,30 +187,30 @@ export function AppSidebar() {
   return (
     <aside className="flex h-screen w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
       {/* Logo */}
-      <div className="flex items-center gap-2.5 px-4 py-4 border-b border-sidebar-border">
-        <div className="flex h-9 w-9 items-center justify-center rounded-md bg-white p-1">
+      <div className="flex items-center gap-3 px-4 py-[14px] border-b border-sidebar-border/70">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white shadow-sm p-1">
           <img src={logo} alt="JLS Yachts" className="h-full w-full object-contain" />
         </div>
-        <div className="leading-tight">
-          <div className="font-display text-sm font-bold tracking-tight">JLS Yachts</div>
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">A Family of Excellence</div>
+        <div className="min-w-0">
+          <div className="font-display text-[13px] font-bold tracking-tight text-sidebar-foreground">JLS Yachts</div>
+          <div className="text-[9.5px] uppercase tracking-[0.12em] text-sidebar-foreground/35 mt-px">A Family of Excellence</div>
         </div>
       </div>
 
       {/* Search */}
-      <div className="px-3 py-3">
+      <div className="px-3 pt-3 pb-2">
         <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Search className="absolute left-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-sidebar-foreground/30" />
           <input
             value={searchQ}
             onChange={e => setSearchQ(e.target.value)}
-            placeholder="Search…"
-            className="h-8 w-full rounded-md border border-sidebar-border bg-sidebar-accent/40 pl-8 pr-7 text-xs text-sidebar-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            placeholder="Quick find…"
+            className="h-8 w-full rounded-md border border-sidebar-border/60 bg-sidebar-accent/30 pl-8 pr-7 text-[12px] text-sidebar-foreground placeholder:text-sidebar-foreground/30 focus:outline-none focus:ring-1 focus:ring-primary/40 focus:border-primary/40 transition-colors"
           />
           {isSearching && (
             <button
               onClick={() => setSearchQ("")}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-sidebar-foreground/30 hover:text-sidebar-foreground transition"
             >
               <X className="h-3 w-3" />
             </button>
@@ -213,32 +219,35 @@ export function AppSidebar() {
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto px-2 pb-3 space-y-0.5">
+      <nav className="flex-1 overflow-y-auto px-2 pb-4 space-y-px">
         {isSearching ? (
           searchResults.length > 0 ? (
             searchResults.map(item => <SearchResult key={item.to} item={item} />)
           ) : (
-            <p className="px-3 py-2 text-xs text-muted-foreground">No results for "{searchQ}"</p>
+            <p className="px-3 py-3 text-[11px] text-sidebar-foreground/40">No results for "{searchQ}"</p>
           )
         ) : (
-          NAV.map(item => <NavNode key={item.label} item={item} />)
+          NAV.map((item, i) => (
+            <div key={item.label}>
+              {i > 0 && !item.to && <div className="mx-2 my-1.5 h-px bg-sidebar-border/50" />}
+              <NavNode item={item} />
+            </div>
+          ))
         )}
       </nav>
 
       {/* User footer */}
-      <div className="border-t border-sidebar-border p-3 space-y-1">
-        <div className="flex items-center gap-2 px-1.5 py-1">
-          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/20 text-[11px] font-semibold text-primary">
+      <div className="border-t border-sidebar-border/70 p-2.5">
+        <div className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-sidebar-accent/50 transition-colors cursor-default">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full ring-1 ring-primary/30 bg-primary/15 text-[10px] font-bold text-primary">
             {(user?.email ?? "?").slice(0, 2).toUpperCase()}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="truncate text-xs font-medium">{user?.email ?? "Guest"}</div>
-            <div className="text-[10px] text-muted-foreground">Signed in</div>
+            <div className="truncate text-[11px] font-medium text-sidebar-foreground/80">{user?.email ?? "Guest"}</div>
+            <div className="text-[9.5px] text-sidebar-foreground/35 tracking-wide">Signed in</div>
           </div>
-        </div>
-        <div className="flex gap-1">
-          <Button variant="ghost" size="sm" onClick={signOut} className="h-7 px-2 text-xs gap-1.5">
-            <LogOut className="h-3.5 w-3.5" /> Sign out
+          <Button variant="ghost" size="sm" onClick={signOut} className="h-6 w-6 p-0 text-sidebar-foreground/40 hover:text-sidebar-foreground hover:bg-transparent" title="Sign out">
+            <LogOut className="h-3.5 w-3.5" />
           </Button>
         </div>
       </div>

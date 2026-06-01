@@ -374,16 +374,40 @@ function AddressCombobox({
 function RouteMap({ pickupLat, pickupLng, dropLat, dropLng }: { pickupLat: number; pickupLng: number; dropLat: number; dropLng: number }) {
   const midLat = ((pickupLat + dropLat) / 2).toFixed(5);
   const midLng = ((pickupLng + dropLng) / 2).toFixed(5);
-  const src = `https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route=${pickupLat}%2C${pickupLng}%3B${dropLat}%2C${dropLng}#map=11/${midLat}/${midLng}`;
+
+  // Bounding box with 20% padding around the route
+  const latDelta = Math.abs(dropLat - pickupLat) * 0.3 || 0.02;
+  const lngDelta = Math.abs(dropLng - pickupLng) * 0.3 || 0.02;
+  const bbox = [
+    (Math.min(pickupLng, dropLng) - lngDelta).toFixed(5),
+    (Math.min(pickupLat, dropLat) - latDelta).toFixed(5),
+    (Math.max(pickupLng, dropLng) + lngDelta).toFixed(5),
+    (Math.max(pickupLat, dropLat) + latDelta).toFixed(5),
+  ].join(",");
+
+  // OSM export/embed.html supports iframes (unlike the main site)
+  const embedSrc = `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${midLat},${midLng}`;
+  const directionsUrl = `https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route=${pickupLat}%2C${pickupLng}%3B${dropLat}%2C${dropLng}`;
+
   return (
-    <iframe
-      key={src}
-      src={src}
-      title="Route Preview"
-      className="w-full h-full rounded-md border border-border"
-      style={{ minHeight: 260 }}
-      loading="lazy"
-    />
+    <div className="relative w-full h-full" style={{ minHeight: 260 }}>
+      <iframe
+        key={embedSrc}
+        src={embedSrc}
+        title="Route Preview"
+        className="w-full h-full rounded-md border border-border"
+        style={{ minHeight: 260 }}
+        loading="lazy"
+      />
+      <a
+        href={directionsUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="absolute bottom-2 right-2 rounded-md bg-background/90 border border-border px-2.5 py-1 text-[11px] font-medium text-foreground hover:bg-accent transition-colors shadow-sm backdrop-blur-sm"
+      >
+        Open directions ↗
+      </a>
+    </div>
   );
 }
 
