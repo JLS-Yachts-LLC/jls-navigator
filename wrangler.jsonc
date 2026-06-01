@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "jls-navigator",
+  "name": "lighthouse",
   "account_id": "4a0be15a938a847c43555a99ef72bea1",
   "compatibility_date": "2025-09-24",
   "compatibility_flags": ["nodejs_compat"],
@@ -10,6 +10,7 @@
   },
   "vars": {
     "SUPABASE_URL": "https://cqzdroabjcdyncfqwawy.supabase.co",
-    "SUPABASE_PUBLISHABLE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxemRyb2FiamNkeW5jZnF3YXd5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg4MjkyNjYsImV4cCI6MjA5NDQwNTI2Nn0.ZHjXFJuUCFa3aRHnUVvSK1pBxwtxZ5nWrdELlsT96-c"
+    "SUPABASE_PUBLISHABLE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxemRyb2FiamNkeW5jZnF3YXd5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg4MjkyNjYsImV4cCI6MjA5NDQwNTI2Nn0.ZHjXFJuUCFa3aRHnUVvSK1pBxwtxZ5nWrdELlsT96-c",
+    "VITE_APP_URL": "https://lighthouse.nh-servicedesk.workers.dev"
   }
 }
