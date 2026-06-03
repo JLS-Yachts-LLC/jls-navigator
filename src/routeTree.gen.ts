@@ -35,6 +35,7 @@ import { Route as AppPermitsExitEntryRouteImport } from './routes/_app.permits.e
 import { Route as AppPermitsDmaRouteImport } from './routes/_app.permits.dma'
 import { Route as AppPermitsCruisingTendersRouteImport } from './routes/_app.permits.cruising-tenders'
 import { Route as AppPermitsCruisingMothershipRouteImport } from './routes/_app.permits.cruising-mothership'
+import { Route as AppPermitsAbuDhabiRouteImport } from './routes/_app.permits.abu-dhabi'
 import { Route as AppPackagesDriversRouteImport } from './routes/_app.packages.drivers'
 import { Route as AppPackagesDeliveriesRouteImport } from './routes/_app.packages.deliveries'
 import { Route as AppOrbitProjectIdRouteImport } from './routes/_app.orbit.$projectId'
@@ -176,6 +177,11 @@ const AppPermitsCruisingMothershipRoute =
     path: '/permits/cruising-mothership',
     getParentRoute: () => AppRoute,
   } as any)
+const AppPermitsAbuDhabiRoute = AppPermitsAbuDhabiRouteImport.update({
+  id: '/permits/abu-dhabi',
+  path: '/permits/abu-dhabi',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppPackagesDriversRoute = AppPackagesDriversRouteImport.update({
   id: '/drivers',
   path: '/drivers',
@@ -232,6 +238,7 @@ export interface FileRoutesByFullPath {
   '/orbit/$projectId': typeof AppOrbitProjectIdRoute
   '/packages/deliveries': typeof AppPackagesDeliveriesRoute
   '/packages/drivers': typeof AppPackagesDriversRoute
+  '/permits/abu-dhabi': typeof AppPermitsAbuDhabiRoute
   '/permits/cruising-mothership': typeof AppPermitsCruisingMothershipRoute
   '/permits/cruising-tenders': typeof AppPermitsCruisingTendersRoute
   '/permits/dma': typeof AppPermitsDmaRoute
@@ -264,6 +271,7 @@ export interface FileRoutesByTo {
   '/orbit/$projectId': typeof AppOrbitProjectIdRoute
   '/packages/deliveries': typeof AppPackagesDeliveriesRoute
   '/packages/drivers': typeof AppPackagesDriversRoute
+  '/permits/abu-dhabi': typeof AppPermitsAbuDhabiRoute
   '/permits/cruising-mothership': typeof AppPermitsCruisingMothershipRoute
   '/permits/cruising-tenders': typeof AppPermitsCruisingTendersRoute
   '/permits/dma': typeof AppPermitsDmaRoute
@@ -300,6 +308,7 @@ export interface FileRoutesById {
   '/_app/orbit/$projectId': typeof AppOrbitProjectIdRoute
   '/_app/packages/deliveries': typeof AppPackagesDeliveriesRoute
   '/_app/packages/drivers': typeof AppPackagesDriversRoute
+  '/_app/permits/abu-dhabi': typeof AppPermitsAbuDhabiRoute
   '/_app/permits/cruising-mothership': typeof AppPermitsCruisingMothershipRoute
   '/_app/permits/cruising-tenders': typeof AppPermitsCruisingTendersRoute
   '/_app/permits/dma': typeof AppPermitsDmaRoute
@@ -336,6 +345,7 @@ export interface FileRouteTypes {
     | '/orbit/$projectId'
     | '/packages/deliveries'
     | '/packages/drivers'
+    | '/permits/abu-dhabi'
     | '/permits/cruising-mothership'
     | '/permits/cruising-tenders'
     | '/permits/dma'
@@ -368,6 +378,7 @@ export interface FileRouteTypes {
     | '/orbit/$projectId'
     | '/packages/deliveries'
     | '/packages/drivers'
+    | '/permits/abu-dhabi'
     | '/permits/cruising-mothership'
     | '/permits/cruising-tenders'
     | '/permits/dma'
@@ -403,6 +414,7 @@ export interface FileRouteTypes {
     | '/_app/orbit/$projectId'
     | '/_app/packages/deliveries'
     | '/_app/packages/drivers'
+    | '/_app/permits/abu-dhabi'
     | '/_app/permits/cruising-mothership'
     | '/_app/permits/cruising-tenders'
     | '/_app/permits/dma'
@@ -608,6 +620,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppPermitsCruisingMothershipRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/permits/abu-dhabi': {
+      id: '/_app/permits/abu-dhabi'
+      path: '/permits/abu-dhabi'
+      fullPath: '/permits/abu-dhabi'
+      preLoaderRoute: typeof AppPermitsAbuDhabiRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/packages/drivers': {
       id: '/_app/packages/drivers'
       path: '/drivers'
@@ -719,6 +738,7 @@ interface AppRouteChildren {
   AppSettingsRoute: typeof AppSettingsRoute
   AppSmallBoatRegistrationRoute: typeof AppSmallBoatRegistrationRoute
   AppYachtItRoute: typeof AppYachtItRoute
+  AppPermitsAbuDhabiRoute: typeof AppPermitsAbuDhabiRoute
   AppPermitsCruisingMothershipRoute: typeof AppPermitsCruisingMothershipRoute
   AppPermitsCruisingTendersRoute: typeof AppPermitsCruisingTendersRoute
   AppPermitsDmaRoute: typeof AppPermitsDmaRoute
@@ -743,6 +763,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppSettingsRoute: AppSettingsRoute,
   AppSmallBoatRegistrationRoute: AppSmallBoatRegistrationRoute,
   AppYachtItRoute: AppYachtItRoute,
+  AppPermitsAbuDhabiRoute: AppPermitsAbuDhabiRoute,
   AppPermitsCruisingMothershipRoute: AppPermitsCruisingMothershipRoute,
   AppPermitsCruisingTendersRoute: AppPermitsCruisingTendersRoute,
   AppPermitsDmaRoute: AppPermitsDmaRoute,

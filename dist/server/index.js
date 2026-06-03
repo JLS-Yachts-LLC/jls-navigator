@@ -1,4 +1,4 @@
-import { ai } from "./assets/worker-entry-BhSB73Oa.js";
+import { ai } from "./assets/worker-entry-D_PcEoTf.js";
 import "node:events";
 import "node:async_hooks";
 import "node:stream/web";
