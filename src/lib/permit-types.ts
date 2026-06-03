@@ -6,7 +6,8 @@ export type PermitType =
   | "gate_pass"
   | "tdra"
   | "navigation_license"
-  | "dma";
+  | "dma"
+  | "abu_dhabi";
 
 export type PermitStatus = "pending" | "active" | "expired" | "cancelled";
 
@@ -22,6 +23,7 @@ export const PERMIT_META: Record<
   tdra: { label: "TDRA", route: "/permits/tdra", breadcrumb: "Port & Operations / Permits" },
   navigation_license: { label: "Navigation License", route: "/permits/navigation-license", breadcrumb: "Port & Operations / Permits" },
   dma: { label: "DMA Permits", route: "/permits/dma", breadcrumb: "Port & Operations / Permits", showDmaPhase: true },
+  abu_dhabi: { label: "Abu Dhabi Permits", route: "/permits/abu-dhabi", breadcrumb: "Port & Operations / Permits", showDmaPhase: true },
 };
 
 export const PERMIT_STATUSES: { value: PermitStatus; label: string }[] = [
@@ -32,6 +34,16 @@ export const PERMIT_STATUSES: { value: PermitStatus; label: string }[] = [
 ];
 
 export const DMA_PHASES = ["Phase 1", "Phase 2", "Phase 3", "Phase 4"];
+
+export const ABU_DHABI_PERMIT_TYPES = [
+  "Anchorage",
+  "Bunkering",
+  "Mooring",
+  "Permits To Work",
+  "Skips",
+  "Other",
+] as const;
+export type AbuDhabiPermitType = typeof ABU_DHABI_PERMIT_TYPES[number];
 
 export type Permit = {
   id: string;
@@ -56,6 +68,9 @@ export type Permit = {
   // Navigation License fields (added via migration 20260516000001)
   license_no?: string | null;
   requested_by?: string | null;
+  // Email tracking fields
+  email_sent_at?: string | null;
+  email_sent_by?: string | null;
 };
 
 export function daysUntil(dateStr: string | null): number | null {

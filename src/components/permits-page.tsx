@@ -29,7 +29,9 @@ import { TdraDialog } from "@/components/tdra-dialog";
 import { DmaDialog } from "@/components/dma-dialog";
 import { NavigationLicenseDialog } from "@/components/navigation-license-dialog";
 import { GatePassDialog } from "@/components/gate-pass-dialog";
-import { Plus, Search, FileCheck2, Pencil, Trash2, AlertTriangle, CheckCircle2, Clock } from "lucide-react";
+import { AbuDhabiDialog } from "@/components/abu-dhabi-dialog";
+import { doSendPermitEmail } from "@/lib/permit-email.server";
+import { Plus, Search, FileCheck2, Pencil, Trash2, AlertTriangle, CheckCircle2, Clock, Mail, MailCheck, Loader2 as SpinnerIcon } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -45,12 +47,28 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
   const [editing, setEditing] = useState<Permit | null>(null);
   const [open, setOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Permit | null>(null);
+  const [sendingEmail, setSendingEmail] = useState<string | null>(null);
 
   useEffect(() => { void load(); void loadYachts(); }, [permitType]);
 
+  async function handleSendEmail(permit: Permit) {
+    if (!user?.email) { toast.error("You must be signed in to send emails"); return; }
+    if (!permit.contact_email) { toast.error("This permit has no contact email address"); return; }
+    setSendingEmail(permit.id);
+    try {
+      await (doSendPermitEmail as any)({ data: { permitId: permit.id, senderEmail: user.email } });
+      toast.success(`Email sent to ${permit.contact_email}`);
+      void load(); // refresh to show email_sent_at
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Email failed to send");
+    } finally {
+      setSendingEmail(null);
+    }
+  }
+
   async function load() {
     setLoading(true);
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from("permits")
       .select("*")
       .eq("permit_type", permitType)
@@ -173,6 +191,13 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
                 userId={user?.id}
                 onSaved={() => { setOpen(false); void load(); }}
               />
+            ) : permitType === "abu_dhabi" ? (
+              <AbuDhabiDialog
+                yachts={yachts}
+                editing={editing}
+                userId={user?.id}
+                onSaved={() => { setOpen(false); void load(); }}
+              />
             ) : (
               <PermitDialog
                 permitType={permitType}
@@ -216,6 +241,7 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
                   <th>Issued</th>
                   <th>Expiry</th>
                   <th>Status</th>
+                  <th>Email</th>
                   <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
@@ -244,6 +270,32 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
                         </div>
                       </td>
                       <td><StatusPill status={r.status} /></td>
+                      {/* Email send / sent indicator */}
+                      <td>
+                        {r.contact_email ? (
+                          r.email_sent_at ? (
+                            <div className="flex items-center gap-1 text-emerald-400/80" title={`Sent ${new Date(r.email_sent_at).toLocaleString("en-GB")} by ${r.email_sent_by ?? "unknown"}`}>
+                              <MailCheck className="h-3.5 w-3.5" />
+                              <span className="text-[10px] font-medium whitespace-nowrap">{new Date(r.email_sent_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span>
+                            </div>
+                          ) : (
+                            <Button
+                              size="sm" variant="ghost"
+                              className="h-7 gap-1 px-2 text-muted-foreground/60 hover:text-primary text-[11px]"
+                              disabled={sendingEmail === r.id}
+                              onClick={() => handleSendEmail(r)}
+                              title={`Send to ${r.contact_email}`}
+                            >
+                              {sendingEmail === r.id
+                                ? <SpinnerIcon className="h-3 w-3 animate-spin" />
+                                : <Mail className="h-3 w-3" />}
+                              Send
+                            </Button>
+                          )
+                        ) : (
+                          <span className="text-[11px] text-muted-foreground/30">—</span>
+                        )}
+                      </td>
                       <td style={{ textAlign: 'right' }}>
                         <div className="inline-flex gap-0.5">
                           <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground" onClick={() => startEdit(r)}>
@@ -344,12 +396,13 @@ function PermitDialog({
         document_url: form.document_url || null,
         notes: form.notes || null,
       };
+      const db = supabase as any;
       if (editing) {
-        const { error } = await supabase.from("permits").update(payload).eq("id", editing.id);
+        const { error } = await db.from("permits").update(payload).eq("id", editing.id);
         if (error) throw error;
         toast.success("Permit updated");
       } else {
-        const { error } = await supabase.from("permits").insert([{ ...payload, created_by: userId } as never]);
+        const { error } = await db.from("permits").insert([{ ...payload, created_by: userId }]);
         if (error) throw error;
         toast.success("Permit created");
       }

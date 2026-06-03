@@ -36,6 +36,7 @@ const NAV: NavItem[] = [
           { label: "TDRA", to: "/permits/tdra", icon: Radio },
           { label: "Navigation License", to: "/permits/navigation-license", icon: Navigation },
           { label: "DMA Permits", to: "/permits/dma", icon: FileBadge },
+          { label: "Abu Dhabi Permits", to: "/permits/abu-dhabi", icon: Anchor },
         ],
       },
       { label: "Small Boat Registration", to: "/small-boat-registration", icon: Sailboat },
