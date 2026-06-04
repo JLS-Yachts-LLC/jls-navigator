@@ -12,6 +12,7 @@ import { Plus, Search, UserCircle2, Pencil, Trash2, Loader2, FileText, Eye } fro
 import { toast } from "sonner";
 import { Link } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
+import { useActiveVessel } from "@/components/vessel-switcher";
 
 type Yacht = { id: string; vessel_name: string };
 
@@ -69,6 +70,7 @@ export function CrewListPage() {
   const [q, setQ] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterYacht, setFilterYacht] = useState("all");
+  const activeVessel = useActiveVessel();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<CrewMember | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -76,6 +78,9 @@ export function CrewListPage() {
   const [deleteTarget, setDeleteTarget] = useState<CrewMember | null>(null);
 
   useEffect(() => { void load(); void loadYachts(); }, []);
+
+  // Sync page filter to the global active vessel
+  useEffect(() => { setFilterYacht(activeVessel ?? "all"); }, [activeVessel]);
 
   async function load() {
     setLoading(true);

@@ -12,6 +12,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Plus, Search, FileText, Pencil, Trash2, Loader2, CheckCircle2, Clock, AlertTriangle, XCircle, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { useActiveVessel } from "@/components/vessel-switcher";
 
 type CrewMember = { id: string; first_name: string; last_name: string; rank: string | null; yacht_id: string | null };
 type Yacht = { id: string; vessel_name: string };
@@ -74,6 +75,7 @@ const EMPTY_FORM = {
 export function VisasPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const activeVessel = useActiveVessel();
   const [visas, setVisas] = useState<VisaApplication[]>([]);
   const [crew, setCrew] = useState<CrewMember[]>([]);
   const [yachts, setYachts] = useState<Yacht[]>([]);
@@ -192,13 +194,14 @@ export function VisasPage() {
 
   const filtered = useMemo(() => visas.filter(v => {
     if (filterStatus !== "all" && v.status !== filterStatus) return false;
+    if (activeVessel && v.yacht_id !== activeVessel) return false;
     if (q.trim()) {
       const s = q.toLowerCase();
       const hay = [crewName(v.crew_member_id), v.visa_type, v.destination_country, v.jls_reference, v.assigned_to].join(" ").toLowerCase();
       if (!hay.includes(s)) return false;
     }
     return true;
-  }), [visas, filterStatus, q]);
+  }), [visas, filterStatus, q, activeVessel]);
 
   const STATUS_FLOW = ["draft", "submitted", "in_review", "processing", "approved", "completed"];
 

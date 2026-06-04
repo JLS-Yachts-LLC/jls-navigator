@@ -15,6 +15,19 @@ export function getActiveVessel(): string | null {
   try { return localStorage.getItem(STORAGE_KEY); } catch { return null; }
 }
 
+/** Reactive hook — returns the active vessel id and updates when it changes. */
+export function useActiveVessel(): string | null {
+  const [id, setId] = useState<string | null>(() =>
+    typeof window !== "undefined" ? getActiveVessel() : null,
+  );
+  useEffect(() => {
+    const handler = (e: Event) => setId((e as CustomEvent).detail ?? null);
+    window.addEventListener("aquila:vessel-change", handler);
+    return () => window.removeEventListener("aquila:vessel-change", handler);
+  }, []);
+  return id;
+}
+
 export function VesselSwitcher() {
   const [yachts, setYachts] = useState<Yacht[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
