@@ -30,8 +30,8 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "JLS Yachts CRM" },
-      { name: "description", content: "JLS Yachts — Port & Operations CRM" },
+      { title: "Aquila One" },
+      { name: "description", content: "Aquila One — The Operating System Behind Yacht Operations" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },

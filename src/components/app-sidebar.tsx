@@ -252,18 +252,13 @@ export function AppSidebar() {
 
   return (
     <aside className="flex h-screen w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
-      {/* Logo — Aquila One */}
-      <div className="flex items-center gap-2.5 px-4 py-[13px] border-b border-sidebar-border/70">
-        <img src={logo} alt="Aquila One" className="h-9 w-9 shrink-0 object-contain" />
-        <div className="min-w-0">
-          <div className="font-display text-[14px] font-bold tracking-tight leading-tight">
-            <span className="text-sidebar-foreground">AQUILA </span>
-            <span style={{ color: "var(--gold)" }}>ONE</span>
-          </div>
-          <div className="text-[8px] uppercase text-sidebar-foreground/30 tracking-[0.1em] mt-0.5 leading-tight">
-            The Operating System Behind Yacht Operations
-          </div>
-        </div>
+      {/* Logo — Aquila One full lockup (white eagle + wordmark + tagline) */}
+      <div className="flex items-center px-4 py-3.5 border-b border-sidebar-border/70">
+        <img
+          src={logo}
+          alt="Aquila One — The Operating System Behind Yacht Operations"
+          className="h-11 w-auto max-w-full object-contain object-left"
+        />
       </div>
 
       {/* Search */}

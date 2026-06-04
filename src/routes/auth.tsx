@@ -10,7 +10,7 @@ import logo from "@/assets/jls-logo.png";
 
 export const Route = createFileRoute("/auth")({
   component: AuthPage,
-  head: () => ({ meta: [{ title: "Sign in — JLS Yachts CRM" }] }),
+  head: () => ({ meta: [{ title: "Sign in — Aquila One" }] }),
 });
 
 type Mode = "signin" | "set-password" | "forgot-password";
@@ -103,13 +103,10 @@ function AuthPage() {
     <div className="flex min-h-screen items-center justify-center bg-background p-6">
       <div className="absolute inset-0 -z-10 opacity-40 [background-image:radial-gradient(circle_at_25%_15%,oklch(0.62_0.18_245/.25),transparent_45%),radial-gradient(circle_at_80%_80%,oklch(0.74_0.18_155/.18),transparent_50%)]" />
       <div className="w-full max-w-sm rounded-xl border border-border bg-card/80 p-6 backdrop-blur-md shadow-2xl">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="flex h-11 w-11 items-center justify-center rounded-md bg-white p-1.5">
-            <img src={logo} alt="JLS Yachts" className="h-full w-full object-contain" />
-          </div>
-          <div>
-            <div className="font-display text-lg font-bold">JLS Yachts</div>
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Port & Operations</div>
+        <div className="flex flex-col items-center text-center gap-2 mb-7">
+          <img src={logo} alt="Aquila One" className="h-14 w-auto object-contain" />
+          <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+            The Operating System Behind Yacht Operations
           </div>
         </div>
 
