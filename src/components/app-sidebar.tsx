@@ -78,6 +78,7 @@ const NAV: NavItem[] = [
       { label: "Packages",          to: "/packages",           icon: Package },
       { label: "Drivers",           to: "/packages/drivers",   icon: UserCircle2 },
       { label: "Deliveries / Route",to: "/packages/deliveries",icon: Truck },
+      { label: "Live Tracking",     to: "/fleet-tracking",     icon: Navigation },
     ],
   },
 
@@ -117,10 +118,11 @@ const NAV: NavItem[] = [
     label: "Transport & Fleet",
     icon: Car,
     children: [
-      { label: "Trips",     to: "/crew-cab/trips",     icon: Route },
-      { label: "Drivers",   to: "/crew-cab/drivers",   icon: UserCircle2 },
-      { label: "Vehicles",  to: "/crew-cab/vehicles",  icon: Car },
-      { label: "Locations", to: "/crew-cab/locations", icon: MapPin },
+      { label: "Trips",         to: "/crew-cab/trips",     icon: Route },
+      { label: "Drivers",       to: "/crew-cab/drivers",   icon: UserCircle2 },
+      { label: "Vehicles",      to: "/crew-cab/vehicles",  icon: Car },
+      { label: "Locations",     to: "/crew-cab/locations", icon: MapPin },
+      { label: "Live Tracking", to: "/fleet-tracking",     icon: Navigation },
     ],
   },
 
@@ -251,16 +253,14 @@ export function AppSidebar() {
   return (
     <aside className="flex h-screen w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
       {/* Logo — Aquila One */}
-      <div className="flex items-center gap-3 px-4 py-[13px] border-b border-sidebar-border/70">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 shadow-sm p-1 ring-1 ring-white/10">
-          <img src={logo} alt="Aquila One" className="h-full w-full object-contain" />
-        </div>
+      <div className="flex items-center gap-2.5 px-4 py-[13px] border-b border-sidebar-border/70">
+        <img src={logo} alt="Aquila One" className="h-9 w-9 shrink-0 object-contain" />
         <div className="min-w-0">
-          <div className="font-display text-[13px] font-bold tracking-tight leading-tight">
+          <div className="font-display text-[14px] font-bold tracking-tight leading-tight">
             <span className="text-sidebar-foreground">AQUILA </span>
             <span style={{ color: "var(--gold)" }}>ONE</span>
           </div>
-          <div className="text-[8.5px] text-sidebar-foreground/30 tracking-[0.08em] mt-px leading-tight">
+          <div className="text-[8px] uppercase text-sidebar-foreground/30 tracking-[0.1em] mt-0.5 leading-tight">
             The Operating System Behind Yacht Operations
           </div>
         </div>
