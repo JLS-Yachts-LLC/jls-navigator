@@ -45,6 +45,18 @@ const RELEASES: Release[] = [
       },
       {
         type: "feature",
+        title: "Light & dark themes",
+        description:
+          "Toggle between the light enterprise theme (white surfaces, navy sidebar) and a full dark theme from the top bar. Your choice persists and applies before the page paints — no flash.",
+      },
+      {
+        type: "improvement",
+        title: "Concept-aligned menu",
+        description:
+          "Sidebar menu reordered to match the Aquila One concept — Dashboard, Vessel Overview, Crew, Crew & Immigration (Crew List, Visas, Permits & Gate Passes, Sign On/Off, Crew Documents), Logistics, Operations, Maintenance, Finance, Reports, Settings — with matching icons. Remaining modules grouped under a Modules section below.",
+      },
+      {
+        type: "feature",
         title: "Global top bar",
         description:
           "New top bar across the app with global search (find any crew member or vessel as you type), notifications, and a user menu with quick access to settings and sign out.",

@@ -117,6 +117,45 @@
   --color-gold: var(--gold);
 }
 
+/* ── Dark theme — deep navy content surfaces, navy sidebar ──────────────────── */
+.dark {
+  --background: oklch(0.145 0.018 250);
+  --foreground: oklch(0.95 0.006 250);
+
+  --card: oklch(0.185 0.020 252);
+  --card-foreground: oklch(0.95 0.006 250);
+  --popover: oklch(0.205 0.020 252);
+  --popover-foreground: oklch(0.95 0.006 250);
+
+  --primary: oklch(0.64 0.19 256);
+  --primary-foreground: oklch(0.99 0.005 250);
+
+  --secondary: oklch(0.25 0.022 252);
+  --secondary-foreground: oklch(0.95 0.006 250);
+
+  --muted: oklch(0.23 0.018 252);
+  --muted-foreground: oklch(0.66 0.022 252);
+
+  --accent: oklch(0.28 0.026 254);
+  --accent-foreground: oklch(0.97 0.006 250);
+
+  --success: oklch(0.72 0.16 152);
+  --success-foreground: oklch(0.15 0.02 152);
+  --destructive: oklch(0.64 0.21 25);
+  --destructive-foreground: oklch(0.99 0.005 0);
+  --warning: oklch(0.76 0.15 65);
+  --warning-foreground: oklch(0.18 0.02 65);
+  --info: oklch(0.70 0.14 240);
+  --info-foreground: oklch(0.15 0.02 240);
+
+  --border: oklch(0.28 0.018 252);
+  --input: oklch(0.26 0.018 252);
+  --ring: oklch(0.64 0.19 256);
+
+  --shadow-md: 0 4px 16px -4px oklch(0 0 0 / 0.5), 0 1px 3px oklch(0 0 0 / 0.3);
+  --shadow-lg: 0 8px 32px -8px oklch(0 0 0 / 0.6), 0 2px 6px oklch(0 0 0 / 0.4);
+}
+
 @layer base {
   * { border-color: var(--color-border); }
   html, body { font-family: var(--font-sans); }

@@ -2,10 +2,10 @@ import { Link, useLocation } from "@tanstack/react-router";
 import {
   Ship, FileCheck2, Sailboat, Users, Package, BarChart3,
   ChevronDown, ChevronRight, LogOut, Settings, Search,
-  LogIn, ShieldCheck, Compass, Anchor, DoorOpen, Radio, Navigation, FileBadge, LayoutGrid,
-  Route, UserCircle2, Car, MapPin, ScrollText, X, DollarSign, Monitor, ShoppingCart, Truck,
-  UserCog, Globe, GraduationCap, Bot, Layers as LayersIcon, UserPlus, LayoutDashboard,
-  FileText, Wrench, ClipboardList, UtensilsCrossed, Cpu,
+  LogIn, ShieldCheck, Compass, Anchor, DoorOpen, Radio, Navigation, FileBadge,
+  Route, UserCircle2, Car, MapPin, ScrollText, X, ShoppingCart, Truck,
+  GraduationCap, Bot, Layers as LayersIcon, UserPlus, LayoutDashboard,
+  FileText, Wrench, UtensilsCrossed, Cpu, IdCard, Boxes, Cog, ClipboardList,
 } from "lucide-react";
 import { useState, useMemo } from "react";
 import logo from "@/assets/jls-logo-alt-2.png";
@@ -21,124 +21,84 @@ type NavItem = {
 };
 
 const NAV: NavItem[] = [
-  // ── Dashboard ──────────────────────────────────────────────────────────────
-  { label: "Dashboard", to: "/director", icon: LayoutDashboard },
-
-  // ── Superyacht Middle East ─────────────────────────────────────────────────
+  // ── OVERVIEW — matches the Aquila One concept menu, in order ────────────────
   {
-    label: "Superyacht Middle East",
-    icon: Globe,
+    label: "Overview",
     children: [
-      { label: "Yachts", to: "/yachts", icon: Ship },
-      {
-        label: "Permits",
-        icon: FileCheck2,
-        children: [
-          { label: "Exit & Entry Permits",         to: "/permits/exit-entry",           icon: LogIn },
-          { label: "Sanitation",                   to: "/permits/sanitation",            icon: ShieldCheck },
-          { label: "Cruising — Mothership",        to: "/permits/cruising-mothership",   icon: Compass },
-          { label: "Cruising — Tenders",           to: "/permits/cruising-tenders",      icon: Anchor },
-          { label: "Gate Pass",                    to: "/permits/gate-pass",             icon: DoorOpen },
-          { label: "TDRA",                         to: "/permits/tdra",                  icon: Radio },
-          { label: "Navigation License",           to: "/permits/navigation-license",    icon: Navigation },
-          { label: "DMA Permits",                  to: "/permits/dma",                   icon: FileBadge },
-          { label: "Abu Dhabi Permits",            to: "/permits/abu-dhabi",             icon: Anchor },
-        ],
-      },
+      { label: "Dashboard",        to: "/director", icon: LayoutDashboard },
+      { label: "Vessel Overview",  to: "/yachts",   icon: Ship },
+      { label: "Crew",             to: "/crew-immigration/crew", icon: Users },
       {
         label: "Crew & Immigration",
-        icon: Users,
+        icon: IdCard,
         children: [
-          { label: "Crew List",       to: "/crew-immigration/crew",        icon: UserCircle2 },
-          { label: "Visas",           to: "/crew-immigration/visas",       icon: FileText },
-          { label: "Sign On / Off",   to: "/crew-immigration/sign-on-off", icon: LogIn },
-          { label: "Crew Documents",  to: "/crew-immigration/documents",   icon: ClipboardList },
+          { label: "Crew List",        to: "/crew-immigration/crew",        icon: UserCircle2 },
+          { label: "Visas",            to: "/crew-immigration/visas",       icon: FileText },
+          {
+            label: "Permits & Gate Passes",
+            icon: FileCheck2,
+            children: [
+              { label: "Exit & Entry Permits",  to: "/permits/exit-entry",         icon: LogIn },
+              { label: "Sanitation",            to: "/permits/sanitation",          icon: ShieldCheck },
+              { label: "Cruising — Mothership", to: "/permits/cruising-mothership", icon: Compass },
+              { label: "Cruising — Tenders",    to: "/permits/cruising-tenders",    icon: Anchor },
+              { label: "Gate Pass",             to: "/permits/gate-pass",           icon: DoorOpen },
+              { label: "TDRA",                  to: "/permits/tdra",                icon: Radio },
+              { label: "Navigation License",    to: "/permits/navigation-license",  icon: Navigation },
+              { label: "DMA Permits",           to: "/permits/dma",                 icon: FileBadge },
+              { label: "Abu Dhabi Permits",     to: "/permits/abu-dhabi",           icon: Anchor },
+            ],
+          },
+          { label: "Sign On / Sign Off", to: "/crew-immigration/sign-on-off", icon: LogIn },
+          { label: "Crew Documents",     to: "/crew-immigration/documents",   icon: ClipboardList },
         ],
       },
+      { label: "Logistics",   to: "/packages",   icon: Boxes },
+      { label: "Operations",  to: "/orbit/",     icon: Cog },
+      { label: "Maintenance", to: "/orbit/",     icon: Wrench },
+      { label: "Finance",     to: "/finance",    icon: BarChart3 },
+      { label: "Reports",     to: "/director",   icon: FileText },
+      { label: "Settings",    to: "/settings",   icon: Settings },
     ],
   },
 
-  // ── Orbit ─────────────────────────────────────────────────────────────────
+  // ── MODULES — Aquila One modules that aren't in the concept menu (for now) ──
   {
-    label: "Orbit",
-    icon: LayersIcon,
+    label: "Modules",
     children: [
-      { label: "Overview",              to: "/orbit/",                    icon: LayoutDashboard },
-      { label: "Planned Maintenance",   to: "/orbit/",                    icon: Wrench },
-      { label: "Compliance",            to: "/orbit/",                    icon: ShieldCheck },
-      { label: "Defects & Repairs",     to: "/orbit/",                    icon: Wrench },
-      { label: "Small Boat Management", to: "/small-boat-registration",   icon: Sailboat },
+      { label: "Orbit",                   to: "/orbit/",       icon: LayersIcon },
+      {
+        label: "ShipSync",
+        icon: Package,
+        children: [
+          { label: "Packages",           to: "/packages",            icon: Package },
+          { label: "Drivers",            to: "/packages/drivers",    icon: UserCircle2 },
+          { label: "Deliveries / Route", to: "/packages/deliveries", icon: Truck },
+          { label: "Live Tracking",      to: "/fleet-tracking",      icon: Navigation },
+        ],
+      },
+      {
+        label: "Transport & Fleet",
+        icon: Car,
+        children: [
+          { label: "Trips",         to: "/crew-cab/trips",     icon: Route },
+          { label: "Drivers",       to: "/crew-cab/drivers",   icon: UserCircle2 },
+          { label: "Vehicles",      to: "/crew-cab/vehicles",  icon: Car },
+          { label: "Locations",     to: "/crew-cab/locations", icon: MapPin },
+          { label: "Live Tracking", to: "/fleet-tracking",     icon: Navigation },
+        ],
+      },
+      { label: "Waypoint",                to: "/waypoint",      icon: ShoppingCart },
+      { label: "Superyacht Provisioning", to: "/provisioning",  icon: UtensilsCrossed },
+      { label: "JLS Training Institute",  to: "/training",      icon: GraduationCap },
+      { label: "Crew Placement",          to: "/crew-placement",icon: UserPlus },
+      { label: "Yacht IT Solutions",      to: "/yacht-it",      icon: Cpu },
+      { label: "AI Assistant",            to: "/ai-assistant",  icon: Bot },
+      { label: "Compass",                 to: "/compass",       icon: Compass },
+      { label: "Changelog",               to: "/changelog",     icon: ScrollText },
+      { label: "Small Boat Registration", to: "/small-boat-registration", icon: Sailboat },
     ],
   },
-
-  // ── ShipSync ──────────────────────────────────────────────────────────────
-  {
-    label: "ShipSync",
-    icon: Package,
-    children: [
-      { label: "Packages",          to: "/packages",           icon: Package },
-      { label: "Drivers",           to: "/packages/drivers",   icon: UserCircle2 },
-      { label: "Deliveries / Route",to: "/packages/deliveries",icon: Truck },
-      { label: "Live Tracking",     to: "/fleet-tracking",     icon: Navigation },
-    ],
-  },
-
-  // ── Waypoint ──────────────────────────────────────────────────────────────
-  {
-    label: "Waypoint",
-    icon: ShoppingCart,
-    children: [
-      { label: "Procurement",   to: "/procurement",  icon: ShoppingCart },
-      { label: "Quotations",    to: "/waypoint",     icon: FileText },
-      { label: "Suppliers",     to: "/waypoint",     icon: Users },
-    ],
-  },
-
-  // ── Superyacht Provisioning ───────────────────────────────────────────────
-  { label: "Superyacht Provisioning", to: "/provisioning",   icon: UtensilsCrossed },
-
-  // ── JLS Training Institute ────────────────────────────────────────────────
-  {
-    label: "JLS Training Institute",
-    icon: GraduationCap,
-    children: [
-      { label: "Training Records",    to: "/training",                    icon: ClipboardList },
-      { label: "Certifications",      to: "/training",                    icon: FileCheck2 },
-      { label: "Small Boat Reg.",     to: "/small-boat-registration",     icon: Sailboat },
-    ],
-  },
-
-  // ── Crew Placement ────────────────────────────────────────────────────────
-  { label: "Crew Placement",  to: "/crew-placement", icon: UserPlus },
-
-  // ── Finance ───────────────────────────────────────────────────────────────
-  { label: "Finance",         to: "/finance",        icon: DollarSign },
-
-  // ── Transport & Fleet ─────────────────────────────────────────────────────
-  {
-    label: "Transport & Fleet",
-    icon: Car,
-    children: [
-      { label: "Trips",         to: "/crew-cab/trips",     icon: Route },
-      { label: "Drivers",       to: "/crew-cab/drivers",   icon: UserCircle2 },
-      { label: "Vehicles",      to: "/crew-cab/vehicles",  icon: Car },
-      { label: "Locations",     to: "/crew-cab/locations", icon: MapPin },
-      { label: "Live Tracking", to: "/fleet-tracking",     icon: Navigation },
-    ],
-  },
-
-  // ── Yacht IT Solutions ────────────────────────────────────────────────────
-  { label: "Yacht IT Solutions", to: "/yacht-it",      icon: Cpu },
-
-  // ── AI Assistant ──────────────────────────────────────────────────────────
-  { label: "AI Assistant",   to: "/ai-assistant",  icon: Bot },
-
-  // ── Compass ───────────────────────────────────────────────────────────────
-  { label: "Compass",        to: "/compass",       icon: Compass },
-
-  // ── Admin ─────────────────────────────────────────────────────────────────
-  { label: "Changelog",      to: "/changelog",     icon: ScrollText },
-  { label: "Settings",       to: "/settings",      icon: UserCog },
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
