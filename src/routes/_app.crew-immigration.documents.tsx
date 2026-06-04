@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ModuleStub } from "@/components/module-stub";
 import { FileText } from "lucide-react";
 
-export const Route = createFileRoute("/_app/crew-immigration/documents" as any)({
+export const Route = createFileRoute("/_app/crew-immigration/documents")({
   component: () => (
     <ModuleStub
       icon={<FileText />}

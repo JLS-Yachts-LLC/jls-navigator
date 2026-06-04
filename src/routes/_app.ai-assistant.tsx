@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ModuleStub } from "@/components/module-stub";
 import { Bot } from "lucide-react";
 
-export const Route = createFileRoute("/_app/ai-assistant" as any)({
+export const Route = createFileRoute("/_app/ai-assistant")({
   component: () => (
     <ModuleStub
       icon={<Bot />}

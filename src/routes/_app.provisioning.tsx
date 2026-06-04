@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ModuleStub } from "@/components/module-stub";
 import { UtensilsCrossed } from "lucide-react";
 
-export const Route = createFileRoute("/_app/provisioning" as any)({
+export const Route = createFileRoute("/_app/provisioning")({
   component: () => (
     <ModuleStub
       icon={<UtensilsCrossed />}

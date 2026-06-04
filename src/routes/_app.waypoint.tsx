@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ModuleStub } from "@/components/module-stub";
 import { ShoppingCart } from "lucide-react";
 
-export const Route = createFileRoute("/_app/waypoint" as any)({
+export const Route = createFileRoute("/_app/waypoint")({
   component: () => (
     <ModuleStub
       icon={<ShoppingCart />}

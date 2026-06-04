@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ModuleStub } from "@/components/module-stub";
 import { GraduationCap } from "lucide-react";
 
-export const Route = createFileRoute("/_app/training" as any)({
+export const Route = createFileRoute("/_app/training")({
   component: () => (
     <ModuleStub
       icon={<GraduationCap />}

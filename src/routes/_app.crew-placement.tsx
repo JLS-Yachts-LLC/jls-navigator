@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ModuleStub } from "@/components/module-stub";
 import { UserPlus } from "lucide-react";
 
-export const Route = createFileRoute("/_app/crew-placement" as any)({
+export const Route = createFileRoute("/_app/crew-placement")({
   component: () => (
     <ModuleStub
       icon={<UserPlus />}

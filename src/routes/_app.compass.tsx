@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ModuleStub } from "@/components/module-stub";
 import { Compass } from "lucide-react";
 
-export const Route = createFileRoute("/_app/compass" as any)({
+export const Route = createFileRoute("/_app/compass")({
   component: () => (
     <ModuleStub
       icon={<Compass />}
