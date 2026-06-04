@@ -21,6 +21,55 @@ type Release = {
 
 const RELEASES: Release[] = [
   {
+    version: "2.0.0",
+    date: "2026-06-04",
+    summary: "Aquila One — platform rebrand to The Operating System Behind Yacht Operations, with a new light enterprise theme, Crew & Immigration, live fleet tracking and a full module restructure.",
+    entries: [
+      {
+        type: "feature",
+        title: "Aquila One rebrand",
+        description:
+          "JLS Navigator is now Aquila One — The Operating System Behind Yacht Operations. New eagle logo lockup, gold accent, and a light enterprise theme (white content surfaces, deep navy sidebar, enterprise-blue accents) matching the brand identity.",
+      },
+      {
+        type: "feature",
+        title: "Module restructure",
+        description:
+          "Navigation reorganised into the full Aquila One module hierarchy: Superyacht Middle East (Yachts, Permits, Crew & Immigration), Orbit, ShipSync, Waypoint, Superyacht Provisioning, JLS Training Institute, Crew Placement, Finance, Transport & Fleet, Yacht IT Solutions, AI Assistant and Compass.",
+      },
+      {
+        type: "feature",
+        title: "Crew & Immigration",
+        description:
+          "New module with reusable crew profiles (enter once, reuse everywhere) and an airline-style Visa Application tracker — pipeline status flow (Draft → Submitted → In Review → Processing → Approved → Completed), priority flags, document checklist and per-application detail panel.",
+      },
+      {
+        type: "feature",
+        title: "Live Fleet Tracking",
+        description:
+          "Real-time GPS vehicle tracking (map, positions, speed, addresses, trip history) embedded under ShipSync and Transport & Fleet, powered by the mygps.ae fleet platform.",
+      },
+      {
+        type: "feature",
+        title: "Module landing pages",
+        description:
+          "Waypoint, Superyacht Provisioning, JLS Training Institute, Crew Placement, AI Assistant and Compass now have landing pages describing their planned capabilities and roadmap phase.",
+      },
+      {
+        type: "improvement",
+        title: "Shared driver pool",
+        description:
+          "ShipSync Drivers and Transport & Fleet Drivers now share a single driver roster — add or edit a driver in either module and it appears in both.",
+      },
+      {
+        type: "fix",
+        title: "Production build — route generation",
+        description:
+          "Removed type-cast workarounds from route definitions that were breaking the TanStack Router code generator and failing the Cloudflare build. Routes now use plain string literals as required.",
+      },
+    ],
+  },
+  {
     version: "1.5.0",
     date: "2026-05-16",
     summary: "Crew Cab module — full transport management system with trips, drivers, vehicles and locations.",
@@ -315,7 +364,7 @@ export function ChangelogPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Changelog</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            A running history of new features, fixes and improvements to JLS Navigator.
+            A running history of new features, fixes and improvements to Aquila One.
           </p>
         </div>
       </div>

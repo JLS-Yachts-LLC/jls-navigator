@@ -8,7 +8,7 @@ import {
   FileText, Wrench, ClipboardList, UtensilsCrossed, Cpu,
 } from "lucide-react";
 import { useState, useMemo } from "react";
-import logo from "@/assets/jls-logo.png";
+import logo from "@/assets/jls-logo-alt-2.png";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 
@@ -252,12 +252,12 @@ export function AppSidebar() {
 
   return (
     <aside className="flex h-screen w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
-      {/* Logo — Aquila One full lockup (white eagle + wordmark + tagline) */}
-      <div className="flex items-center px-4 py-3.5 border-b border-sidebar-border/70">
+      {/* Logo — Aquila One horizontal lockup (merges with matching sidebar navy) */}
+      <div className="flex items-center px-3 py-3 border-b border-sidebar-border/50">
         <img
           src={logo}
           alt="Aquila One — The Operating System Behind Yacht Operations"
-          className="h-11 w-auto max-w-full object-contain object-left"
+          className="h-auto w-[208px] max-w-full object-contain"
         />
       </div>
 
