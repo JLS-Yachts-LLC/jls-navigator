@@ -45,6 +45,18 @@ const RELEASES: Release[] = [
       },
       {
         type: "feature",
+        title: "Global top bar",
+        description:
+          "New top bar across the app with global search (find any crew member or vessel as you type), notifications, and a user menu with quick access to settings and sign out.",
+      },
+      {
+        type: "feature",
+        title: "Active vessel switcher",
+        description:
+          "Vessel selector in the sidebar lets you set an active vessel (or All Vessels). The selection persists and provides the foundation for vessel-scoped views across modules.",
+      },
+      {
+        type: "feature",
         title: "Live Fleet Tracking",
         description:
           "Real-time GPS vehicle tracking (map, positions, speed, addresses, trip history) embedded under ShipSync and Transport & Fleet, powered by the mygps.ae fleet platform.",

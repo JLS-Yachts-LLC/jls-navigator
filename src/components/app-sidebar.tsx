@@ -11,6 +11,7 @@ import { useState, useMemo } from "react";
 import logo from "@/assets/jls-logo-alt-2.png";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
+import { VesselSwitcher } from "@/components/vessel-switcher";
 
 type NavItem = {
   label: string;
@@ -260,6 +261,9 @@ export function AppSidebar() {
           className="h-auto w-[208px] max-w-full object-contain"
         />
       </div>
+
+      {/* Active vessel switcher */}
+      <VesselSwitcher />
 
       {/* Search */}
       <div className="px-3 pt-3 pb-2">
