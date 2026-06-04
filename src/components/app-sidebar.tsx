@@ -207,11 +207,11 @@ function NavNode({ item, depth = 0 }: { item: NavItem; depth?: number }) {
   return (
     <Link
       to={item.to!}
-      className="nav-link flex items-center gap-2 rounded-r-md py-1.5 text-[13px] text-sidebar-foreground/65 transition-all hover:bg-sidebar-accent/60 hover:text-sidebar-foreground data-[active=true]:bg-primary/12 data-[active=true]:text-primary data-[active=true]:font-semibold"
+      className="group/navlink mx-1.5 flex items-center gap-2.5 rounded-lg py-1.5 text-[13px] text-sidebar-foreground/70 transition-all hover:bg-sidebar-accent/50 hover:text-sidebar-foreground data-[active=true]:bg-sidebar-accent data-[active=true]:text-white data-[active=true]:font-semibold data-[active=true]:shadow-sm"
       data-active={isActiveDeep}
-      style={{ paddingLeft: 10 + depth * 12, paddingRight: 8 }}
+      style={{ paddingLeft: 10 + depth * 10, paddingRight: 8 }}
     >
-      {Icon && <Icon className="h-3.5 w-3.5 shrink-0 opacity-60 data-[active=true]:opacity-100" />}
+      {Icon && <Icon className="h-4 w-4 shrink-0 opacity-60 group-data-[active=true]/navlink:opacity-100 group-data-[active=true]/navlink:text-sidebar-primary" />}
       <span className="truncate">{item.label}</span>
     </Link>
   );
@@ -227,11 +227,11 @@ function SearchResult({ item }: { item: NavItem }) {
   return (
     <Link
       to={item.to!}
-      className="nav-link flex items-center gap-2 rounded-r-md py-1.5 text-[13px] text-sidebar-foreground/65 transition-all hover:bg-sidebar-accent/60 hover:text-sidebar-foreground data-[active=true]:bg-primary/12 data-[active=true]:text-primary data-[active=true]:font-semibold"
+      className="group/navlink mx-1.5 flex items-center gap-2.5 rounded-lg py-1.5 text-[13px] text-sidebar-foreground/70 transition-all hover:bg-sidebar-accent/50 hover:text-sidebar-foreground data-[active=true]:bg-sidebar-accent data-[active=true]:text-white data-[active=true]:font-semibold data-[active=true]:shadow-sm"
       data-active={isActive}
       style={{ paddingLeft: 10, paddingRight: 8 }}
     >
-      {Icon && <Icon className="h-3.5 w-3.5 shrink-0 opacity-60" />}
+      {Icon && <Icon className="h-4 w-4 shrink-0 opacity-60 group-data-[active=true]/navlink:opacity-100 group-data-[active=true]/navlink:text-sidebar-primary" />}
       <span className="truncate">{item.label}</span>
     </Link>
   );
