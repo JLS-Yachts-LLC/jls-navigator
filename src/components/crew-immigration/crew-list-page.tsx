@@ -8,11 +8,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Plus, Search, UserCircle2, Pencil, Trash2, Loader2, FileText, Eye } from "lucide-react";
+import { Plus, Search, UserCircle2, Pencil, Trash2, Loader2, FileText, Table2, LayoutGrid, Rows3, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
 import { useActiveVessel } from "@/components/vessel-switcher";
+import { CrewCards, CrewGrid, CsvImportDialog } from "@/components/crew-immigration/crew-list-views";
 
 type Yacht = { id: string; vessel_name: string };
 
@@ -76,8 +77,17 @@ export function CrewListPage() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [busy, setBusy] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<CrewMember | null>(null);
+  const [view, setView] = useState<"table" | "grid" | "cards">("table");
+  const [csvOpen, setCsvOpen] = useState(false);
 
   useEffect(() => { void load(); void loadYachts(); }, []);
+
+  // Inline save for the spreadsheet/grid view
+  async function quickSave(id: string, patch: Partial<CrewMember>) {
+    setCrew(prev => prev.map(m => m.id === id ? { ...m, ...patch } as CrewMember : m));
+    const { error } = await (supabase as any).from("crew_members").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", id);
+    if (error) { toast.error(error.message); void load(); }
+  }
 
   // Sync page filter to the global active vessel
   useEffect(() => { setFilterYacht(activeVessel ?? "all"); }, [activeVessel]);
@@ -214,6 +224,29 @@ export function CrewListPage() {
               {Object.entries(STATUS_LABELS).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
             </SelectContent>
           </Select>
+
+          {/* View switcher */}
+          <div className="flex items-center rounded-lg border border-border bg-muted/30 p-0.5">
+            {([
+              { v: "table", icon: Table2, label: "Table" },
+              { v: "grid", icon: LayoutGrid, label: "Grid" },
+              { v: "cards", icon: Rows3, label: "Cards" },
+            ] as const).map(({ v, icon: Icon, label }) => (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                title={label}
+                className={cn("flex h-8 w-8 items-center justify-center rounded-md transition",
+                  view === v ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
+              >
+                <Icon className="h-4 w-4" />
+              </button>
+            ))}
+          </div>
+
+          <Button size="sm" variant="outline" onClick={() => setCsvOpen(true)} className="h-9 gap-1.5 text-xs">
+            <Upload className="h-3.5 w-3.5" /> Import CSV
+          </Button>
           <Button size="sm" onClick={openNew} className="h-9 gap-1.5 px-3.5 font-medium shadow-sm">
             <Plus className="h-3.5 w-3.5" /> Add Crew Member
           </Button>
@@ -246,7 +279,7 @@ export function CrewListPage() {
             <p className="text-sm text-muted-foreground mt-1">Add crew members to track visas, documents, and movements.</p>
             {!q && <Button onClick={openNew} className="mt-4 gap-1.5"><Plus className="h-4 w-4" /> Add First Crew Member</Button>}
           </div>
-        ) : (
+        ) : view === "table" ? (
           <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-[0_2px_12px_-4px_rgba(0,0,0,0.4)]">
             <table className="w-full text-sm">
               <thead>
@@ -306,8 +339,20 @@ export function CrewListPage() {
               </tbody>
             </table>
           </div>
+        ) : view === "grid" ? (
+          <CrewGrid crew={filtered} yachts={yachts} onSave={quickSave} onDelete={setDeleteTarget} />
+        ) : (
+          <CrewCards crew={filtered} yachtName={yachtName} fmtDate={fmtDate} onEdit={openEdit} onDelete={setDeleteTarget} />
         )}
       </div>
+
+      {/* CSV import */}
+      <CsvImportDialog
+        open={csvOpen}
+        onOpenChange={setCsvOpen}
+        userId={user?.id}
+        onImported={() => { setCsvOpen(false); void load(); }}
+      />
 
       {/* Add / Edit Dialog */}
       <Dialog open={open} onOpenChange={setOpen}>

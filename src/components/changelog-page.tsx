@@ -45,6 +45,12 @@ const RELEASES: Release[] = [
       },
       {
         type: "feature",
+        title: "Crew List — CSV import & multiple views",
+        description:
+          "Bulk-import crew from a CSV (with a downloadable template and live preview), and switch the Crew List between three views: Table, an Excel-style inline-editable Grid (click any cell to edit), and Cards. Import auto-maps common column names and normalises dates and statuses.",
+      },
+      {
+        type: "feature",
         title: "Crew Documents vault",
         description:
           "Central document vault for every crew member — upload passports, visas, seaman's books, STCW and medical certificates with issue/expiry dates. Expiring (≤30d) and expired documents are surfaced automatically.",
