@@ -21,6 +21,19 @@ type Release = {
 
 const RELEASES: Release[] = [
   {
+    version: "2.1.1",
+    date: "2026-06-05",
+    summary: "Hotfix — restored access to all authenticated pages.",
+    entries: [
+      {
+        type: "fix",
+        title: "Fixed crash on all signed-in pages",
+        description:
+          "A missing icon import in the sidebar caused a 'Something went wrong' error on every page after signing in. The icon is now imported correctly and all pages load again.",
+      },
+    ],
+  },
+  {
     version: "2.1.0",
     date: "2026-06-05",
     summary: "Procurement, provisioning and training modules go live — completing the Aquila One module roadmap.",
