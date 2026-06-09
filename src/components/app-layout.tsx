@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { TopBar } from "@/components/top-bar";
 import { LeoBubble } from "@/components/leo-bubble";
+import { WorkingIndicator } from "@/components/working-indicator";
 import { useAuth } from "@/lib/auth";
 
 export function AppLayout() {
@@ -31,6 +32,7 @@ export function AppLayout() {
           <Outlet />
         </main>
       </div>
+      <WorkingIndicator />
       <LeoBubble />
     </div>
   );
