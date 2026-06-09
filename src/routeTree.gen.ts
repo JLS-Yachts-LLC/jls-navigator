@@ -54,6 +54,7 @@ import { Route as AppPermitsExitEntryRouteImport } from './routes/_app.permits.e
 import { Route as AppPermitsDmaRouteImport } from './routes/_app.permits.dma'
 import { Route as AppPermitsCruisingTendersRouteImport } from './routes/_app.permits.cruising-tenders'
 import { Route as AppPermitsCruisingMothershipRouteImport } from './routes/_app.permits.cruising-mothership'
+import { Route as AppPermitsCommandCentreRouteImport } from './routes/_app.permits.command-centre'
 import { Route as AppPermitsAbuDhabiRouteImport } from './routes/_app.permits.abu-dhabi'
 import { Route as AppPackagesDriversRouteImport } from './routes/_app.packages.drivers'
 import { Route as AppPackagesDeliveriesRouteImport } from './routes/_app.packages.deliveries'
@@ -72,6 +73,7 @@ import { Route as AppCrewCabTripsRouteImport } from './routes/_app.crew-cab.trip
 import { Route as AppCrewCabLocationsRouteImport } from './routes/_app.crew-cab.locations'
 import { Route as AppCrewCabDriversRouteImport } from './routes/_app.crew-cab.drivers'
 import { Route as AppGuidesDepartmentIndexRouteImport } from './routes/_app.guides.$department.index'
+import { Route as AppCrewImmigrationVisasIndexRouteImport } from './routes/_app.crew-immigration.visas.index'
 import { Route as AppGuidesDepartmentGuideIdRouteImport } from './routes/_app.guides.$department.$guideId'
 import { Route as AppCrewImmigrationVisasNewRouteImport } from './routes/_app.crew-immigration.visas.new'
 
@@ -304,6 +306,11 @@ const AppPermitsCruisingMothershipRoute =
     path: '/permits/cruising-mothership',
     getParentRoute: () => AppRoute,
   } as any)
+const AppPermitsCommandCentreRoute = AppPermitsCommandCentreRouteImport.update({
+  id: '/permits/command-centre',
+  path: '/permits/command-centre',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppPermitsAbuDhabiRoute = AppPermitsAbuDhabiRouteImport.update({
   id: '/permits/abu-dhabi',
   path: '/permits/abu-dhabi',
@@ -398,6 +405,12 @@ const AppGuidesDepartmentIndexRoute =
     path: '/',
     getParentRoute: () => AppGuidesDepartmentRoute,
   } as any)
+const AppCrewImmigrationVisasIndexRoute =
+  AppCrewImmigrationVisasIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AppCrewImmigrationVisasRoute,
+  } as any)
 const AppGuidesDepartmentGuideIdRoute =
   AppGuidesDepartmentGuideIdRouteImport.update({
     id: '/$guideId',
@@ -453,6 +466,7 @@ export interface FileRoutesByFullPath {
   '/packages/deliveries': typeof AppPackagesDeliveriesRoute
   '/packages/drivers': typeof AppPackagesDriversRoute
   '/permits/abu-dhabi': typeof AppPermitsAbuDhabiRoute
+  '/permits/command-centre': typeof AppPermitsCommandCentreRoute
   '/permits/cruising-mothership': typeof AppPermitsCruisingMothershipRoute
   '/permits/cruising-tenders': typeof AppPermitsCruisingTendersRoute
   '/permits/dma': typeof AppPermitsDmaRoute
@@ -475,6 +489,7 @@ export interface FileRoutesByFullPath {
   '/yachts/': typeof AppYachtsIndexRoute
   '/crew-immigration/visas/new': typeof AppCrewImmigrationVisasNewRoute
   '/guides/$department/$guideId': typeof AppGuidesDepartmentGuideIdRoute
+  '/crew-immigration/visas/': typeof AppCrewImmigrationVisasIndexRoute
   '/guides/$department/': typeof AppGuidesDepartmentIndexRoute
 }
 export interface FileRoutesByTo {
@@ -502,7 +517,6 @@ export interface FileRoutesByTo {
   '/crew-immigration/crew': typeof AppCrewImmigrationCrewRoute
   '/crew-immigration/documents': typeof AppCrewImmigrationDocumentsRoute
   '/crew-immigration/sign-on-off': typeof AppCrewImmigrationSignOnOffRoute
-  '/crew-immigration/visas': typeof AppCrewImmigrationVisasRouteWithChildren
   '/crew-placement/vacancies': typeof AppCrewPlacementVacanciesRoute
   '/it-tickets/$ticketId': typeof AppItTicketsTicketIdRoute
   '/orbit/$projectId': typeof AppOrbitProjectIdRoute
@@ -511,6 +525,7 @@ export interface FileRoutesByTo {
   '/packages/deliveries': typeof AppPackagesDeliveriesRoute
   '/packages/drivers': typeof AppPackagesDriversRoute
   '/permits/abu-dhabi': typeof AppPermitsAbuDhabiRoute
+  '/permits/command-centre': typeof AppPermitsCommandCentreRoute
   '/permits/cruising-mothership': typeof AppPermitsCruisingMothershipRoute
   '/permits/cruising-tenders': typeof AppPermitsCruisingTendersRoute
   '/permits/dma': typeof AppPermitsDmaRoute
@@ -533,6 +548,7 @@ export interface FileRoutesByTo {
   '/yachts': typeof AppYachtsIndexRoute
   '/crew-immigration/visas/new': typeof AppCrewImmigrationVisasNewRoute
   '/guides/$department/$guideId': typeof AppGuidesDepartmentGuideIdRoute
+  '/crew-immigration/visas': typeof AppCrewImmigrationVisasIndexRoute
   '/guides/$department': typeof AppGuidesDepartmentIndexRoute
 }
 export interface FileRoutesById {
@@ -579,6 +595,7 @@ export interface FileRoutesById {
   '/_app/packages/deliveries': typeof AppPackagesDeliveriesRoute
   '/_app/packages/drivers': typeof AppPackagesDriversRoute
   '/_app/permits/abu-dhabi': typeof AppPermitsAbuDhabiRoute
+  '/_app/permits/command-centre': typeof AppPermitsCommandCentreRoute
   '/_app/permits/cruising-mothership': typeof AppPermitsCruisingMothershipRoute
   '/_app/permits/cruising-tenders': typeof AppPermitsCruisingTendersRoute
   '/_app/permits/dma': typeof AppPermitsDmaRoute
@@ -601,6 +618,7 @@ export interface FileRoutesById {
   '/_app/yachts/': typeof AppYachtsIndexRoute
   '/_app/crew-immigration/visas/new': typeof AppCrewImmigrationVisasNewRoute
   '/_app/guides/$department/$guideId': typeof AppGuidesDepartmentGuideIdRoute
+  '/_app/crew-immigration/visas/': typeof AppCrewImmigrationVisasIndexRoute
   '/_app/guides/$department/': typeof AppGuidesDepartmentIndexRoute
 }
 export interface FileRouteTypes {
@@ -647,6 +665,7 @@ export interface FileRouteTypes {
     | '/packages/deliveries'
     | '/packages/drivers'
     | '/permits/abu-dhabi'
+    | '/permits/command-centre'
     | '/permits/cruising-mothership'
     | '/permits/cruising-tenders'
     | '/permits/dma'
@@ -669,6 +688,7 @@ export interface FileRouteTypes {
     | '/yachts/'
     | '/crew-immigration/visas/new'
     | '/guides/$department/$guideId'
+    | '/crew-immigration/visas/'
     | '/guides/$department/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -696,7 +716,6 @@ export interface FileRouteTypes {
     | '/crew-immigration/crew'
     | '/crew-immigration/documents'
     | '/crew-immigration/sign-on-off'
-    | '/crew-immigration/visas'
     | '/crew-placement/vacancies'
     | '/it-tickets/$ticketId'
     | '/orbit/$projectId'
@@ -705,6 +724,7 @@ export interface FileRouteTypes {
     | '/packages/deliveries'
     | '/packages/drivers'
     | '/permits/abu-dhabi'
+    | '/permits/command-centre'
     | '/permits/cruising-mothership'
     | '/permits/cruising-tenders'
     | '/permits/dma'
@@ -727,6 +747,7 @@ export interface FileRouteTypes {
     | '/yachts'
     | '/crew-immigration/visas/new'
     | '/guides/$department/$guideId'
+    | '/crew-immigration/visas'
     | '/guides/$department'
   id:
     | '__root__'
@@ -772,6 +793,7 @@ export interface FileRouteTypes {
     | '/_app/packages/deliveries'
     | '/_app/packages/drivers'
     | '/_app/permits/abu-dhabi'
+    | '/_app/permits/command-centre'
     | '/_app/permits/cruising-mothership'
     | '/_app/permits/cruising-tenders'
     | '/_app/permits/dma'
@@ -794,6 +816,7 @@ export interface FileRouteTypes {
     | '/_app/yachts/'
     | '/_app/crew-immigration/visas/new'
     | '/_app/guides/$department/$guideId'
+    | '/_app/crew-immigration/visas/'
     | '/_app/guides/$department/'
   fileRoutesById: FileRoutesById
 }
@@ -1120,6 +1143,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppPermitsCruisingMothershipRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/permits/command-centre': {
+      id: '/_app/permits/command-centre'
+      path: '/permits/command-centre'
+      fullPath: '/permits/command-centre'
+      preLoaderRoute: typeof AppPermitsCommandCentreRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/permits/abu-dhabi': {
       id: '/_app/permits/abu-dhabi'
       path: '/permits/abu-dhabi'
@@ -1246,6 +1276,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppGuidesDepartmentIndexRouteImport
       parentRoute: typeof AppGuidesDepartmentRoute
     }
+    '/_app/crew-immigration/visas/': {
+      id: '/_app/crew-immigration/visas/'
+      path: '/'
+      fullPath: '/crew-immigration/visas/'
+      preLoaderRoute: typeof AppCrewImmigrationVisasIndexRouteImport
+      parentRoute: typeof AppCrewImmigrationVisasRoute
+    }
     '/_app/guides/$department/$guideId': {
       id: '/_app/guides/$department/$guideId'
       path: '/$guideId'
@@ -1283,11 +1320,13 @@ const AppCrewCabRouteWithChildren = AppCrewCabRoute._addFileChildren(
 
 interface AppCrewImmigrationVisasRouteChildren {
   AppCrewImmigrationVisasNewRoute: typeof AppCrewImmigrationVisasNewRoute
+  AppCrewImmigrationVisasIndexRoute: typeof AppCrewImmigrationVisasIndexRoute
 }
 
 const AppCrewImmigrationVisasRouteChildren: AppCrewImmigrationVisasRouteChildren =
   {
     AppCrewImmigrationVisasNewRoute: AppCrewImmigrationVisasNewRoute,
+    AppCrewImmigrationVisasIndexRoute: AppCrewImmigrationVisasIndexRoute,
   }
 
 const AppCrewImmigrationVisasRouteWithChildren =
@@ -1452,6 +1491,7 @@ interface AppRouteChildren {
   AppWaypointRoute: typeof AppWaypointRouteWithChildren
   AppYachtItRoute: typeof AppYachtItRoute
   AppPermitsAbuDhabiRoute: typeof AppPermitsAbuDhabiRoute
+  AppPermitsCommandCentreRoute: typeof AppPermitsCommandCentreRoute
   AppPermitsCruisingMothershipRoute: typeof AppPermitsCruisingMothershipRoute
   AppPermitsCruisingTendersRoute: typeof AppPermitsCruisingTendersRoute
   AppPermitsDmaRoute: typeof AppPermitsDmaRoute
@@ -1489,6 +1529,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppWaypointRoute: AppWaypointRouteWithChildren,
   AppYachtItRoute: AppYachtItRoute,
   AppPermitsAbuDhabiRoute: AppPermitsAbuDhabiRoute,
+  AppPermitsCommandCentreRoute: AppPermitsCommandCentreRoute,
   AppPermitsCruisingMothershipRoute: AppPermitsCruisingMothershipRoute,
   AppPermitsCruisingTendersRoute: AppPermitsCruisingTendersRoute,
   AppPermitsDmaRoute: AppPermitsDmaRoute,
