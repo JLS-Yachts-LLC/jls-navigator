@@ -29,5 +29,5 @@ const config: ResourceConfig = {
 
 export const Route = createFileRoute("/_app/training/certifications")({
   component: () => <ResourcePage config={config} />,
-  head: () => ({ meta: [{ title: "Certifications — Aquila One" }] }),
+  head: () => ({ meta: [{ title: "Certifications — Polaris" }] }),
 });

@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { useState, useMemo } from "react";
 import { DEPARTMENTS } from "@/components/guides/guide-meta";
-import logo from "@/assets/jls-logo-alt-2.png";
+import { PolarisLogo } from "@/components/polaris-logo";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { VesselSwitcher } from "@/components/vessel-switcher";
@@ -23,7 +23,7 @@ type NavItem = {
 };
 
 const NAV: NavItem[] = [
-  // ── OVERVIEW — matches the Aquila One concept menu, in order ────────────────
+  // ── OVERVIEW — matches the Polaris concept menu, in order ────────────────
   {
     label: "Overview",
     children: [
@@ -41,6 +41,7 @@ const NAV: NavItem[] = [
             label: "Permits & Gate Passes",
             icon: FileCheck2,
             children: [
+              { label: "Command Centre",        to: "/permits/command-centre",      icon: ShieldCheck },
               { label: "Exit & Entry Permits",  to: "/permits/exit-entry",         icon: LogIn },
               { label: "Sanitation",            to: "/permits/sanitation",          icon: ShieldCheck },
               { label: "Cruising — Mothership", to: "/permits/cruising-mothership", icon: Compass },
@@ -65,7 +66,7 @@ const NAV: NavItem[] = [
     ],
   },
 
-  // ── MODULES — Aquila One modules that aren't in the concept menu (for now) ──
+  // ── MODULES — Polaris modules that aren't in the concept menu (for now) ──
   {
     label: "Modules",
     children: [
@@ -265,13 +266,9 @@ export function AppSidebar() {
 
   return (
     <aside className="flex h-screen w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
-      {/* Logo — Aquila One horizontal lockup (merges with matching sidebar navy) */}
+      {/* Polaris logo lockup */}
       <div className="flex items-center px-3 py-3 border-b border-sidebar-border/50">
-        <img
-          src={logo}
-          alt="Aquila One — The Operating System Behind Yacht Operations"
-          className="h-auto w-[208px] max-w-full object-contain"
-        />
+        <PolarisLogo className="h-auto w-[208px] max-w-full" />
       </div>
 
       {/* Active vessel switcher */}

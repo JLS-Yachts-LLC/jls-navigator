@@ -30,5 +30,5 @@ const config: ResourceConfig = {
 
 export const Route = createFileRoute("/_app/provisioning")({
   component: () => <ResourcePage config={config} />,
-  head: () => ({ meta: [{ title: "Superyacht Provisioning — Aquila One" }] }),
+  head: () => ({ meta: [{ title: "Superyacht Provisioning — Polaris" }] }),
 });

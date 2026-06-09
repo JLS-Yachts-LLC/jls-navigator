@@ -3,5 +3,5 @@ import { CrewDocumentsPage } from "@/components/crew-immigration/crew-documents-
 
 export const Route = createFileRoute("/_app/crew-immigration/documents")({
   component: CrewDocumentsPage,
-  head: () => ({ meta: [{ title: "Crew Documents — Aquila One" }] }),
+  head: () => ({ meta: [{ title: "Crew Documents — Polaris" }] }),
 });

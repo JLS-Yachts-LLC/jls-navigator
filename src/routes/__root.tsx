@@ -30,8 +30,8 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Aquila One" },
-      { name: "description", content: "Aquila One — The Operating System Behind Yacht Operations" },
+      { title: "Polaris" },
+      { name: "description", content: "Polaris — The Management Platform for Yacht Operations" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
@@ -53,7 +53,7 @@ function RootShell({ children }: { children: React.ReactNode }) {
         {/* Apply stored theme before paint to avoid a flash */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{var t=localStorage.getItem('aquila.theme');if(t==='dark')document.documentElement.classList.add('dark');}catch(e){}`,
+            __html: `try{var t=localStorage.getItem('polaris.theme')||localStorage.getItem('aquila.theme');if(t==='dark')document.documentElement.classList.add('dark');}catch(e){}`,
           }}
         />
       </head>

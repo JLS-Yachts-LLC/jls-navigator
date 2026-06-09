@@ -36,7 +36,7 @@ import { toast } from "sonner";
 
 export const Route = createFileRoute("/_app/yachts/new")({
   component: NewYacht,
-  head: () => ({ meta: [{ title: "Add Yacht — JLS Yachts CRM" }] }),
+  head: () => ({ meta: [{ title: "Add Yacht — Polaris" }] }),
 });
 
 const NUMERIC_KEYS = new Set([

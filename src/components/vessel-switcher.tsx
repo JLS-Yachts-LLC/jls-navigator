@@ -8,11 +8,14 @@ import {
 
 type Yacht = { id: string; vessel_name: string; vessel_type: string | null; flag: string | null };
 
-const STORAGE_KEY = "aquila.activeVessel";
+const STORAGE_KEY = "polaris.activeVessel";
+const EVENT_KEY = "polaris:vessel-change";
 
 /** Read the active vessel id from localStorage (other pages can use this). */
 export function getActiveVessel(): string | null {
-  try { return localStorage.getItem(STORAGE_KEY); } catch { return null; }
+  try {
+    return localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem("aquila.activeVessel");
+  } catch { return null; }
 }
 
 /** Reactive hook — returns the active vessel id and updates when it changes. */
@@ -22,8 +25,8 @@ export function useActiveVessel(): string | null {
   );
   useEffect(() => {
     const handler = (e: Event) => setId((e as CustomEvent).detail ?? null);
-    window.addEventListener("aquila:vessel-change", handler);
-    return () => window.removeEventListener("aquila:vessel-change", handler);
+    window.addEventListener(EVENT_KEY, handler);
+    return () => window.removeEventListener(EVENT_KEY, handler);
   }, []);
   return id;
 }
@@ -49,8 +52,7 @@ export function VesselSwitcher() {
       if (id) localStorage.setItem(STORAGE_KEY, id);
       else localStorage.removeItem(STORAGE_KEY);
     } catch { /* ignore */ }
-    // Notify any listeners (pages can subscribe later)
-    window.dispatchEvent(new CustomEvent("aquila:vessel-change", { detail: id }));
+    window.dispatchEvent(new CustomEvent(EVENT_KEY, { detail: id }));
   }
 
   const active = yachts.find((y) => y.id === activeId) ?? null;

@@ -13,8 +13,19 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { uploadVisaDocToSharePoint } from "@/lib/visa-sharepoint.server";
 
 type Yacht = { id: string; vessel_name: string };
+
+/** Read a File's bytes as a base64 string (no data: prefix). */
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(",")[1] ?? "");
+    r.onerror = () => reject(r.error ?? new Error("File read failed"));
+    r.readAsDataURL(file);
+  });
+}
 type CrewLite = { id: string; first_name: string; last_name: string; rank: string | null; status: string; yacht_id: string | null };
 
 const STEPS = ["Crew Member", "Personal Details", "Visa Details", "Documents", "Review & Submit"] as const;
@@ -70,7 +81,20 @@ export function VisaWizardPage() {
       if (error) throw error;
       const { data: { publicUrl } } = supabase.storage.from("permit-documents").getPublicUrl(path);
       setDocs((arr) => arr.map((x, xi) => xi === i ? { ...x, status: "uploaded", url: publicUrl } : x));
-      toast.success(`${file.name} attached`);
+
+      // Also push a copy to the SharePoint Crew Visas folder (best-effort —
+      // the Supabase copy is the source of truth, so a SP failure isn't fatal).
+      try {
+        const vesselName = yachts.find((y) => y.id === form.yacht_id)?.vessel_name ?? null;
+        const crewName = `${form.first_name} ${form.last_name}`.trim() || "Unknown Crew";
+        const base64 = await fileToBase64(file);
+        await (uploadVisaDocToSharePoint as any)({
+          data: { vesselName, crewName, fileName: file.name, contentType: file.type, base64 },
+        });
+        toast.success(`${file.name} attached & synced to SharePoint`);
+      } catch (spErr: any) {
+        toast.warning(`${file.name} attached, but SharePoint sync failed: ${spErr?.message ?? "unknown error"}`);
+      }
     } catch (e: any) {
       toast.error(e.message ?? "Upload failed");
     } finally {

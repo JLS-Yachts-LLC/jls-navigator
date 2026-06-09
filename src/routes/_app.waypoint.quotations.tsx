@@ -31,5 +31,5 @@ const config: ResourceConfig = {
 
 export const Route = createFileRoute("/_app/waypoint/quotations")({
   component: () => <ResourcePage config={config} />,
-  head: () => ({ meta: [{ title: "Quotations — Aquila One" }] }),
+  head: () => ({ meta: [{ title: "Quotations — Polaris" }] }),
 });

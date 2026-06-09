@@ -3,5 +3,5 @@ import { DirectorPage } from "@/components/director-page";
 
 export const Route = createFileRoute("/_app/director")({
   component: DirectorPage,
-  head: () => ({ meta: [{ title: "Director — JLS Yachts CRM" }] }),
+  head: () => ({ meta: [{ title: "Director — Polaris" }] }),
 });

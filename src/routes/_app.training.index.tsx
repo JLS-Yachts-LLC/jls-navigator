@@ -30,5 +30,5 @@ const config: ResourceConfig = {
 
 export const Route = createFileRoute("/_app/training/")({
   component: () => <ResourcePage config={config} />,
-  head: () => ({ meta: [{ title: "Training Records — Aquila One" }] }),
+  head: () => ({ meta: [{ title: "Training Records — Polaris" }] }),
 });

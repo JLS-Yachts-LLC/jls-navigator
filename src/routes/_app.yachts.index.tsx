@@ -18,7 +18,7 @@ import {
 
 export const Route = createFileRoute("/_app/yachts/")({
   component: YachtsPage,
-  head: () => ({ meta: [{ title: "Yachts — JLS Yachts CRM" }] }),
+  head: () => ({ meta: [{ title: "Yachts — Polaris" }] }),
 });
 
 // ── Types ──────────────────────────────────────────────────────────────────────

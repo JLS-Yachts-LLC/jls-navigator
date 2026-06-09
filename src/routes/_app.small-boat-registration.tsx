@@ -3,5 +3,5 @@ import { SmallBoatRegistrationPage } from "@/components/small-boat-registration-
 
 export const Route = createFileRoute("/_app/small-boat-registration")({
   component: SmallBoatRegistrationPage,
-  head: () => ({ meta: [{ title: "Small Boat Registration — JLS Yachts CRM" }] }),
+  head: () => ({ meta: [{ title: "Small Boat Registration — Polaris" }] }),
 });

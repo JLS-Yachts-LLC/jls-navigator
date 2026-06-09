@@ -33,5 +33,5 @@ const config: ResourceConfig = {
 
 export const Route = createFileRoute("/_app/orbit/defects")({
   component: () => <ResourcePage config={config} />,
-  head: () => ({ meta: [{ title: "Defects & Repairs — Aquila One" }] }),
+  head: () => ({ meta: [{ title: "Defects & Repairs — Polaris" }] }),
 });

@@ -29,5 +29,5 @@ const config: ResourceConfig = {
 
 export const Route = createFileRoute("/_app/waypoint/")({
   component: () => <ResourcePage config={config} />,
-  head: () => ({ meta: [{ title: "Suppliers — Aquila One" }] }),
+  head: () => ({ meta: [{ title: "Suppliers — Polaris" }] }),
 });

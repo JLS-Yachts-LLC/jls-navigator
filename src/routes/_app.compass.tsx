@@ -37,5 +37,5 @@ const config: ResourceConfig = {
 
 export const Route = createFileRoute("/_app/compass")({
   component: () => <ResourcePage config={config} />,
-  head: () => ({ meta: [{ title: "Compass — Aquila One" }] }),
+  head: () => ({ meta: [{ title: "Compass — Polaris" }] }),
 });

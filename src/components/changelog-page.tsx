@@ -36,7 +36,7 @@ const RELEASES: Release[] = [
   {
     version: "2.1.0",
     date: "2026-06-05",
-    summary: "Procurement, provisioning and training modules go live — completing the Aquila One module roadmap.",
+    summary: "Procurement, provisioning and training modules go live — completing the Polaris module roadmap.",
     entries: [
       {
         type: "feature",
@@ -67,19 +67,19 @@ const RELEASES: Release[] = [
   {
     version: "2.0.0",
     date: "2026-06-04",
-    summary: "Aquila One — platform rebrand to The Operating System Behind Yacht Operations, with a new light enterprise theme, Crew & Immigration, live fleet tracking and a full module restructure.",
+    summary: "Polaris — platform rebrand to The Operating System Behind Yacht Operations, with a new light enterprise theme, Crew & Immigration, live fleet tracking and a full module restructure.",
     entries: [
       {
         type: "feature",
-        title: "Aquila One rebrand",
+        title: "Polaris rebrand",
         description:
-          "JLS Navigator is now Aquila One — The Operating System Behind Yacht Operations. New eagle logo lockup, gold accent, and a light enterprise theme (white content surfaces, deep navy sidebar, enterprise-blue accents) matching the brand identity.",
+          "JLS Navigator is now Polaris — The Operating System Behind Yacht Operations. New eagle logo lockup, gold accent, and a light enterprise theme (white content surfaces, deep navy sidebar, enterprise-blue accents) matching the brand identity.",
       },
       {
         type: "feature",
         title: "Module restructure",
         description:
-          "Navigation reorganised into the full Aquila One module hierarchy: Superyacht Middle East (Yachts, Permits, Crew & Immigration), Orbit, ShipSync, Waypoint, Superyacht Provisioning, JLS Training Institute, Crew Placement, Finance, Transport & Fleet, Yacht IT Solutions, AI Assistant and Compass.",
+          "Navigation reorganised into the full Polaris module hierarchy: Superyacht Middle East (Yachts, Permits, Crew & Immigration), Orbit, ShipSync, Waypoint, Superyacht Provisioning, JLS Training Institute, Crew Placement, Finance, Transport & Fleet, Yacht IT Solutions, AI Assistant and Compass.",
       },
       {
         type: "feature",
@@ -133,7 +133,7 @@ const RELEASES: Release[] = [
         type: "improvement",
         title: "Concept-aligned menu",
         description:
-          "Sidebar menu reordered to match the Aquila One concept — Dashboard, Vessel Overview, Crew, Crew & Immigration (Crew List, Visas, Permits & Gate Passes, Sign On/Off, Crew Documents), Logistics, Operations, Maintenance, Finance, Reports, Settings — with matching icons. Remaining modules grouped under a Modules section below.",
+          "Sidebar menu reordered to match the Polaris concept — Dashboard, Vessel Overview, Crew, Crew & Immigration (Crew List, Visas, Permits & Gate Passes, Sign On/Off, Crew Documents), Logistics, Operations, Maintenance, Finance, Reports, Settings — with matching icons. Remaining modules grouped under a Modules section below.",
       },
       {
         type: "feature",
@@ -468,7 +468,7 @@ export function ChangelogPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Changelog</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            A running history of new features, fixes and improvements to Aquila One.
+            A running history of new features, fixes and improvements to Polaris.
           </p>
         </div>
       </div>

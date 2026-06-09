@@ -6,11 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import logo from "@/assets/jls-logo-alt-2.png";
+import { PolarisLogo } from "@/components/polaris-logo";
 
 export const Route = createFileRoute("/auth")({
   component: AuthPage,
-  head: () => ({ meta: [{ title: "Sign in — Aquila One" }] }),
+  head: () => ({ meta: [{ title: "Sign in — Polaris" }] }),
 });
 
 type Mode = "signin" | "set-password" | "forgot-password";
@@ -95,7 +95,7 @@ function AuthPage() {
 
   const titles: Record<Mode, { heading: string; sub: string }> = {
     "signin": { heading: "Sign in", sub: "Access the operations dashboard." },
-    "set-password": { heading: "Set your password", sub: "You have been invited to JLS Yachts CRM. Choose a password to activate your account." },
+    "set-password": { heading: "Set your password", sub: "You have been invited to Polaris. Choose a password to activate your account." },
     "forgot-password": { heading: "Reset password", sub: "Enter your email and we'll send you a reset link." },
   };
 
@@ -104,7 +104,7 @@ function AuthPage() {
       <div className="absolute inset-0 -z-10 opacity-40 [background-image:radial-gradient(circle_at_25%_15%,oklch(0.62_0.18_245/.25),transparent_45%),radial-gradient(circle_at_80%_80%,oklch(0.74_0.18_155/.18),transparent_50%)]" />
       <div className="w-full max-w-sm rounded-xl border border-border bg-card/80 p-6 backdrop-blur-md shadow-2xl">
         <div className="flex flex-col items-center mb-7">
-          <img src={logo} alt="Aquila One — The Operating System Behind Yacht Operations" className="w-60 max-w-full h-auto object-contain rounded-lg" />
+          <PolarisLogo className="w-60 max-w-full" />
         </div>
 
         <h1 className="font-display text-xl font-semibold mb-1">{titles[mode].heading}</h1>

@@ -32,5 +32,5 @@ const config: ResourceConfig = {
 
 export const Route = createFileRoute("/_app/orbit/maintenance")({
   component: () => <ResourcePage config={config} />,
-  head: () => ({ meta: [{ title: "Planned Maintenance — Aquila One" }] }),
+  head: () => ({ meta: [{ title: "Planned Maintenance — Polaris" }] }),
 });

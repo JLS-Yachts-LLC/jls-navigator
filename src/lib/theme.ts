@@ -2,14 +2,14 @@ import { useEffect, useState } from "react";
 
 export type Theme = "light" | "dark";
 
-const STORAGE_KEY = "aquila.theme";
+const STORAGE_KEY = "polaris.theme";
 
 export function getStoredTheme(): Theme {
   try {
-    const t = localStorage.getItem(STORAGE_KEY);
+    const t = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem("aquila.theme");
     if (t === "light" || t === "dark") return t;
   } catch { /* ignore */ }
-  return "light"; // Aquila One defaults to the light enterprise theme
+  return "light";
 }
 
 export function applyTheme(theme: Theme) {

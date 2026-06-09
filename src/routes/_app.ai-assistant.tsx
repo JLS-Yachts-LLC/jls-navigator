@@ -25,5 +25,5 @@ export const Route = createFileRoute("/_app/ai-assistant")({
       ]}
     />
   ),
-  head: () => ({ meta: [{ title: "AI Assistant — Aquila One" }] }),
+  head: () => ({ meta: [{ title: "AI Assistant — Polaris" }] }),
 });

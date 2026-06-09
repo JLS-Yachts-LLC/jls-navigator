@@ -29,5 +29,5 @@ const config: ResourceConfig = {
 
 export const Route = createFileRoute("/_app/crew-placement/vacancies")({
   component: () => <ResourcePage config={config} />,
-  head: () => ({ meta: [{ title: "Vacancies — Aquila One" }] }),
+  head: () => ({ meta: [{ title: "Vacancies — Polaris" }] }),
 });

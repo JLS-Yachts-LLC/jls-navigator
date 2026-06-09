@@ -56,7 +56,7 @@ export function ModuleStub({
         </div>
 
         <p className="mt-6 text-xs text-muted-foreground/40">
-          This module is on the Aquila One roadmap and will be activated in a future phase.
+          This module is on the Polaris roadmap and will be activated in a future phase.
         </p>
       </div>
     </div>
