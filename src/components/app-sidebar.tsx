@@ -6,9 +6,10 @@ import {
   Route, UserCircle2, Car, MapPin, ScrollText, X, ShoppingCart, Truck,
   GraduationCap, Bot, Layers as LayersIcon, UserPlus, LayoutDashboard,
   FileText, Wrench, UtensilsCrossed, Cpu, IdCard, Boxes, Cog, ClipboardList,
-  Globe, Headset,
+  Globe, Headset, BookOpen,
 } from "lucide-react";
 import { useState, useMemo } from "react";
+import { DEPARTMENTS } from "@/components/guides/guide-meta";
 import logo from "@/assets/jls-logo-alt-2.png";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -137,6 +138,15 @@ const NAV: NavItem[] = [
       { label: "Compass",                 to: "/compass",       icon: Compass },
       { label: "Changelog",               to: "/changelog",     icon: ScrollText },
       { label: "Small Boat Registration", to: "/small-boat-registration", icon: Sailboat },
+    ],
+  },
+
+  // ── GUIDES — knowledge base, one menu item per department ───────────────────
+  {
+    label: "Guides",
+    children: [
+      { label: "All Guides", to: "/guides", icon: BookOpen },
+      ...DEPARTMENTS.map(d => ({ label: d.label, to: `/guides/${d.key}`, icon: d.icon })),
     ],
   },
 ];
