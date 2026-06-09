@@ -6,7 +6,7 @@ import {
   Route, UserCircle2, Car, MapPin, ScrollText, X, ShoppingCart, Truck,
   GraduationCap, Bot, Layers as LayersIcon, UserPlus, LayoutDashboard,
   FileText, Wrench, UtensilsCrossed, Cpu, IdCard, Boxes, Cog, ClipboardList,
-  Globe,
+  Globe, Headset,
 } from "lucide-react";
 import { useState, useMemo } from "react";
 import logo from "@/assets/jls-logo-alt-2.png";
@@ -129,7 +129,7 @@ const NAV: NavItem[] = [
         label: "Yacht IT Solutions",
         icon: Cpu,
         children: [
-          { label: "Support Tickets",      to: "/it-tickets", icon: Cpu },
+          { label: "Service Desk",         to: "/it-tickets", icon: Headset },
           { label: "Contracts & Services", to: "/yacht-it",   icon: FileText },
         ],
       },
