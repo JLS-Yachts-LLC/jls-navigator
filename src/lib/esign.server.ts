@@ -30,10 +30,13 @@ function reqMeta(): { ip: string | null; ua: string | null; origin: string | nul
 }
 
 function baseUrl(origin: string | null): string {
+  // VITE_APP_URL is already defined in wrangler.jsonc vars; prefer it so signing
+  // links use the real deployed domain. Fall back to PUBLIC_APP_URL / request origin.
   return (
+    (process.env.VITE_APP_URL as string | undefined) ||
     (process.env.PUBLIC_APP_URL as string | undefined) ||
     origin ||
-    "https://lighthouse.nh-servicedesk.workers.dev"
+    "https://jls-navigator.m-peeters-4a0.workers.dev"
   ).replace(/\/$/, "");
 }
 
