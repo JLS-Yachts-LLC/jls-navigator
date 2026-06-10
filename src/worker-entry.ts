@@ -3,6 +3,7 @@ import { syncFromSharePoint, downloadPendingImages } from './lib/sharepoint-sync
 import { runExpiryAlerts } from './lib/permit-expiry-cron.server'
 import { syncFleetPositions } from './lib/mygps.server'
 import { syncVesselPositions } from './lib/vesselfinder.server'
+import { runDailyComplianceChecks } from './lib/visa/complianceMonitor.server'
 
 const handleRequest = createStartHandler(defaultStreamHandler)
 
@@ -77,6 +78,16 @@ export default {
         .then(({ matched, updated }) => console.log(`[vesselfinder-cron] matched=${matched} updated=${updated}`))
         .catch((e) => console.error('[vesselfinder-cron] error:', e))
     )
+
+    // Run visa compliance monitor once daily at 07:00 UTC
+    if (utcHour === 7) {
+      ctx.waitUntil(
+        runDailyComplianceChecks()
+          .then(({ passports, visas, staleDocs }) =>
+            console.log(`[visa-compliance] passports=${passports} visas=${visas} staleDocs=${staleDocs}`))
+          .catch((e) => console.error('[visa-compliance] error:', e))
+      )
+    }
 
     // Send expiry alerts once daily at 08:00 UTC
     if (utcHour === 8) {

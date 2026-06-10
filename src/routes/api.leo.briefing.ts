@@ -41,6 +41,7 @@ async function assembleLeoContext(userId: string, userEmail: string) {
     ticketsRes,
     visasRes,
     esignRes,
+    complianceAlertsRes,
   ] = await Promise.all([
     // ── Fleet ────────────────────────────────────────────────────────────────
     caps.allVessels
@@ -105,6 +106,16 @@ async function assembleLeoContext(userId: string, userEmail: string) {
           .in('status', ['sent'])
           .order('sent_at', { ascending: false })
           .limit(10)
+      : Promise.resolve({ data: [], error: null }),
+
+    // ── Visa compliance alerts (critical + warn, unresolved, due soonest) ─────
+    caps.crewData
+      ? (sb as any).from('compliance_alerts')
+          .select('alert_type, severity, message, due_date, crew_members(full_name, first_name, last_name)')
+          .eq('resolved', false)
+          .in('severity', ['warn', 'critical'])
+          .order('due_date', { ascending: true })
+          .limit(5)
       : Promise.resolve({ data: [], error: null }),
   ])
 
@@ -195,6 +206,16 @@ async function assembleLeoContext(userId: string, userEmail: string) {
         signer: d.signer_name,
       })),
     },
+    visaCompliance: {
+      criticalCount: (complianceAlertsRes.data ?? []).filter((a: any) => a.severity === 'critical').length,
+      alerts: (complianceAlertsRes.data ?? []).map((a: any) => ({
+        type:     a.alert_type,
+        severity: a.severity,
+        message:  a.message,
+        due:      a.due_date,
+        crew:     a.crew_members?.full_name ?? ((a.crew_members?.first_name ?? '') + ' ' + (a.crew_members?.last_name ?? '')).trim(),
+      })),
+    },
   }
 }
 
@@ -237,6 +258,11 @@ No "I can help with", no "would you like me to", no hedging.
 FORMAT: Plain prose. No markdown headers. No bullet points. No asterisks.
 Target 150–220 words for a briefing. Shorter is better than longer.
 Numbers matter. Name vessels. Be specific.
+
+VISA & COMPLIANCE ALERTS:
+If visa_compliance contains critical items, surface the single most urgent one in the briefing.
+Name the crew member and the exact date. Be specific. Example: "Ahmed Al Rashidi's UAE visa expires in 4 days — renewal has not been initiated."
+Do not list every alert. One maximum in the briefing prose. Prioritise critical over warn.
 
 When in CHAT mode (follow-up questions after the briefing):
 Answer directly from the context provided. If data is not in context, say so plainly.

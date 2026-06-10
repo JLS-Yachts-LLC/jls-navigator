@@ -1,7 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { VisaWizardPage } from "@/components/crew-immigration/visa-wizard-page";
+import { createFileRoute } from '@tanstack/react-router'
+import NewApplicationWizard from '@/components/visa/NewApplicationWizard'
 
-export const Route = createFileRoute("/_app/crew-immigration/visas/new")({
-  component: VisaWizardPage,
-  head: () => ({ meta: [{ title: "New Visa Application — Polaris" }] }),
-});
+export const Route = createFileRoute('/_app/crew-immigration/visas/new')({
+  component: () => <NewApplicationWizard />,
+  head: () => ({ meta: [{ title: 'New Visa Application — Polaris' }] }),
+})
