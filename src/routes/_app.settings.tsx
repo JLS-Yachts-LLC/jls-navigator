@@ -1467,6 +1467,26 @@ function autoSuggestSmallBoat(displayName: string): string {
   return map[n] ?? ''
 }
 
+function autoSuggestVisa(displayName: string): string {
+  const n = displayName.toLowerCase().replace(/[\s._\-()+#]/g, '')
+  const map: Record<string, string> = {
+    title: 'crew_member_name', crewname: 'crew_member_name', crew: 'crew_member_name',
+    name: 'crew_member_name', fullname: 'crew_member_name', applicant: 'crew_member_name', seafarer: 'crew_member_name',
+    vessel: 'vessel_name', yacht: 'vessel_name', vesselname: 'vessel_name',
+    visatype: 'visa_type', type: 'visa_type',
+    destinationcountry: 'destination_country', country: 'destination_country',
+    destinationcity: 'destination_city', city: 'destination_city',
+    priority: 'priority', status: 'status',
+    plannedarrival: 'planned_arrival', arrival: 'planned_arrival', arrivaldate: 'planned_arrival',
+    planneddeparture: 'planned_departure', departure: 'planned_departure', departuredate: 'planned_departure',
+    reference: 'jls_reference', jlsreference: 'jls_reference', referenceno: 'jls_reference', refno: 'jls_reference', jlsref: 'jls_reference',
+    assignedto: 'assigned_to', handledby: 'assigned_to', processedby: 'assigned_to',
+    notes: 'application_notes', remarks: 'application_notes', comments: 'application_notes',
+    rejectionreason: 'rejection_reason',
+  }
+  return map[n] ?? ''
+}
+
 function autoSuggest(displayName: string): string {
   const n = displayName.toLowerCase().replace(/[\s._\-()+#]/g, '')
   const map: Record<string, string> = {
@@ -1509,9 +1529,10 @@ function SyncTargetBadge({ target }: { target: string }) {
     yachts: 'bg-primary/15 text-primary border-primary/20',
     permits: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20',
     small_boats: 'bg-amber-500/15 text-amber-400 border-amber-500/20',
+    visa_applications: 'bg-violet-500/15 text-violet-400 border-violet-500/20',
   }
   const label: Record<string, string> = {
-    yachts: 'Yachts', permits: 'Permits', small_boats: 'Small Boats',
+    yachts: 'Yachts', permits: 'Permits', small_boats: 'Small Boats', visa_applications: 'Visa Applications',
   }
   return (
     <span className={`inline-flex items-center rounded-full border px-1.5 py-0 text-[10px] font-semibold ${map[target] ?? 'bg-muted text-muted-foreground border-border'}`}>
@@ -1619,6 +1640,8 @@ function SyncEditPanel({
       setSyncTarget('permits')
     } else if (n.includes('small boat') || n.includes('smallboat') || n.includes('boat reg') || n.includes('boatreg')) {
       setSyncTarget('small_boats')
+    } else if (n.includes('visa')) {
+      setSyncTarget('visa_applications')
     } else {
       setSyncTarget('yachts')
     }
@@ -1629,6 +1652,7 @@ function SyncEditPanel({
   function getSuggestFn() {
     if (syncTarget === 'permits') return autoSuggestPermit
     if (syncTarget === 'small_boats') return autoSuggestSmallBoat
+    if (syncTarget === 'visa_applications') return autoSuggestVisa
     return autoSuggest
   }
 
@@ -1705,7 +1729,7 @@ function SyncEditPanel({
         <div className="space-y-1">
           <Label className="text-xs">Syncs To</Label>
           <div className="flex gap-1.5">
-            {(['yachts', 'permits', 'small_boats'] as const).map(t => (
+            {(['yachts', 'permits', 'small_boats', 'visa_applications'] as const).map(t => (
               <button
                 key={t}
                 onClick={() => setSyncTarget(t)}
@@ -1713,7 +1737,7 @@ function SyncEditPanel({
                   syncTarget === t ? 'bg-primary text-primary-foreground border-primary' : 'border-border text-muted-foreground hover:bg-muted'
                 }`}
               >
-                {t === 'yachts' ? 'Yachts' : t === 'permits' ? 'Permits' : 'Small Boats'}
+                {t === 'yachts' ? 'Yachts' : t === 'permits' ? 'Permits' : t === 'small_boats' ? 'Small Boats' : 'Visa Applications'}
               </button>
             ))}
           </div>

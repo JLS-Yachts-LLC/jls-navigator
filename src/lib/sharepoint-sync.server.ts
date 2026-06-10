@@ -18,7 +18,7 @@ export interface SpSyncConfig {
   id: string
   name: string
   listName: string
-  syncTarget: 'yachts' | 'permits' | 'small_boats'
+  syncTarget: 'yachts' | 'permits' | 'small_boats' | 'visa_applications'
   fieldMapping: Record<string, string>
   enabled: boolean
   deltaToken: string | null
@@ -433,6 +433,7 @@ export async function syncFromSharePoint(): Promise<{ synced: number; errors: nu
   const cfg = await getSpConfig()
   if (Object.keys(cfg.fieldMapping).length === 0) return { synced: 0, errors: 0 }
   if (cfg.syncTarget === 'permits') return _syncPermits(cfg)
+  if (cfg.syncTarget === 'visa_applications') return _syncVisas(cfg)
   if (cfg.syncTarget === 'small_boats') return { synced: 0, errors: 0 }
   return _syncYachts(cfg)
 }
@@ -450,6 +451,8 @@ async function _syncWithConfig(cfg: SpConfig, sync: SpSyncConfig): Promise<{ syn
     result = await _syncPermits(merged)
   } else if (sync.syncTarget === 'small_boats') {
     result = await _syncSmallBoats(merged)
+  } else if (sync.syncTarget === 'visa_applications') {
+    result = await _syncVisas(merged)
   } else {
     result = await _syncYachts(merged, sync.id, sync.deltaToken)
   }
@@ -729,6 +732,96 @@ async function _syncSmallBoats(cfg: SpConfig): Promise<{ synced: number; errors:
       synced++
       if (record.reg_no) byRegNo.set(String(record.reg_no).toLowerCase(), existingId ?? 'new')
       if (record.boat_name) byName.set(String(record.boat_name).toLowerCase(), existingId ?? 'new')
+    }
+  }
+
+  return { synced, errors }
+}
+
+// Visa applications sync: SharePoint Visa list → visa_applications.
+// Resolves crew name → crew_member_id and vessel name → yacht_id; matches
+// existing rows by SharePoint item id, then jls_reference. Date-typed targets
+// are truncated to YYYY-MM-DD.
+async function _syncVisas(cfg: SpConfig): Promise<{ synced: number; errors: number }> {
+  const token = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret)
+  const siteId = await resolveSpSite(token, cfg.tenantUrl, cfg.siteUrl)
+
+  let allItems: any[] = []
+  let nextUrl: string | null =
+    `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${cfg.listName}/items?$expand=fields&$top=200`
+  while (nextUrl) {
+    const res = await fetch(nextUrl, { headers: { Authorization: `Bearer ${token}` } })
+    const page = await res.json() as Record<string, any>
+    if (!page.value) break
+    allItems = allItems.concat(page.value as any[])
+    nextUrl = page['@odata.nextLink'] ?? null
+  }
+
+  // Lookups for resolving foreign keys by name.
+  const { data: crew } = await (supabaseAdmin as any).from('crew_members').select('id, full_name')
+  const crewByName = new Map<string, string>()
+  for (const c of (crew ?? []) as Record<string, any>[]) {
+    if (c.full_name) crewByName.set(String(c.full_name).toLowerCase().trim(), String(c.id))
+  }
+  const { data: yachts } = await supabaseAdmin.from('yachts').select('id, vessel_name')
+  const yachtByName = new Map<string, string>()
+  for (const y of (yachts ?? []) as Record<string, any>[]) {
+    if (y.vessel_name) yachtByName.set(String(y.vessel_name).toLowerCase().trim(), String(y.id))
+  }
+
+  // Existing visa rows for matching.
+  const { data: existing } = await (supabaseAdmin as any)
+    .from('visa_applications').select('id, jls_reference, sharepoint_item_id')
+  const bySpId = new Map<string, string>()
+  const byRef = new Map<string, string>()
+  for (const v of (existing ?? []) as Record<string, any>[]) {
+    if (v.sharepoint_item_id) bySpId.set(String(v.sharepoint_item_id), String(v.id))
+    if (v.jls_reference) byRef.set(String(v.jls_reference).toLowerCase(), String(v.id))
+  }
+
+  const DATE_FIELDS = new Set(['planned_arrival', 'planned_departure'])
+  let synced = 0, errors = 0
+
+  for (const item of allItems) {
+    if (item['@removed']) continue
+    const fields = item.fields ?? {}
+    const record: Record<string, any> = {
+      sharepoint_item_id: item.id,
+      sharepoint_synced_at: new Date().toISOString(),
+    }
+
+    for (const [spField, dbField] of Object.entries(cfg.fieldMapping)) {
+      if (!dbField || !(spField in fields)) continue
+      const raw = fields[spField]
+      if (dbField === 'crew_member_name') {
+        const id = crewByName.get(String(raw ?? '').toLowerCase().trim())
+        if (id) record.crew_member_id = id
+        continue
+      }
+      if (dbField === 'vessel_name') {
+        const id = yachtByName.get(String(raw ?? '').toLowerCase().trim())
+        if (id) record.yacht_id = id
+        continue
+      }
+      let val: any = raw === '' || raw === undefined ? null : raw
+      if (val != null && DATE_FIELDS.has(dbField)) val = String(val).slice(0, 10)
+      record[dbField] = val
+    }
+
+    const existingId =
+      bySpId.get(String(item.id)) ??
+      (record.jls_reference ? byRef.get(String(record.jls_reference).toLowerCase()) : undefined)
+
+    const { error } = existingId
+      ? await (supabaseAdmin as any).from('visa_applications').update(record).eq('id', existingId)
+      : await (supabaseAdmin as any).from('visa_applications').insert({ status: 'submitted', ...record })
+
+    if (error) {
+      errors++
+    } else {
+      synced++
+      bySpId.set(String(item.id), existingId ?? 'new')
+      if (record.jls_reference) byRef.set(String(record.jls_reference).toLowerCase(), existingId ?? 'new')
     }
   }
 
