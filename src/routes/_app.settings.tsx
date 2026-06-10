@@ -1406,16 +1406,28 @@ const SMALL_BOAT_DB_FIELDS = [
   { value: 'notes', label: 'Notes' },
 ]
 
-/** Returns the correct App Field dropdown list for a given SharePoint list name */
-function getFieldSetForList(listName: string): typeof YACHT_DB_FIELDS {
-  const n = listName.toLowerCase().trim()
-  if (n.includes('tdra') || n.includes('sanitation') || n.includes('gate') || n.includes('cruising') || n.includes('navigation') || n.includes('dma') || n.includes('permit') || n.includes('exit') || n.includes('entry')) {
-    return PERMIT_DB_FIELDS
-  }
-  if (n.includes('small boat') || n.includes('smallboat') || n.includes('boat reg') || n.includes('boatreg')) {
-    return SMALL_BOAT_DB_FIELDS
-  }
-  // Default: Yachts
+const VISA_DB_FIELDS = [
+  { value: '', label: '— Skip —' },
+  { value: 'crew_member_name', label: 'Crew Member (match by name)' },
+  { value: 'vessel_name', label: 'Vessel (match by name)' },
+  { value: 'visa_type', label: 'Visa Type' },
+  { value: 'destination_country', label: 'Destination Country' },
+  { value: 'destination_city', label: 'Destination City' },
+  { value: 'planned_arrival', label: 'Planned Arrival' },
+  { value: 'planned_departure', label: 'Planned Departure' },
+  { value: 'priority', label: 'Priority' },
+  { value: 'status', label: 'Status' },
+  { value: 'jls_reference', label: 'JLS Reference' },
+  { value: 'assigned_to', label: 'Assigned To' },
+  { value: 'application_notes', label: 'Notes' },
+  { value: 'rejection_reason', label: 'Rejection Reason' },
+]
+
+/** App Field dropdown list for the explicitly-selected sync target. */
+function getFieldSetForTarget(target: string): typeof YACHT_DB_FIELDS {
+  if (target === 'permits') return PERMIT_DB_FIELDS
+  if (target === 'small_boats') return SMALL_BOAT_DB_FIELDS
+  if (target === 'visa_applications') return VISA_DB_FIELDS
   return YACHT_DB_FIELDS
 }
 
@@ -1762,7 +1774,7 @@ function SyncEditPanel({
       {columns.length > 0 && (
         <div className="rounded-lg border border-border overflow-hidden text-sm">
           <div className="grid grid-cols-[1fr_20px_1fr] gap-2 bg-muted/40 border-b border-border px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            <span>SharePoint Column</span><span /><span>App Field ({syncTarget === 'yachts' ? 'Yachts' : syncTarget === 'permits' ? 'Permits' : 'Small Boats'})</span>
+            <span>SharePoint Column</span><span /><span>App Field ({syncTarget === 'yachts' ? 'Yachts' : syncTarget === 'permits' ? 'Permits' : syncTarget === 'small_boats' ? 'Small Boats' : 'Visa Applications'})</span>
           </div>
           <div className="divide-y divide-border max-h-64 overflow-auto">
             {columns.map(col => (
@@ -1777,7 +1789,7 @@ function SyncEditPanel({
                   onChange={e => setMapping(prev => ({ ...prev, [col.name]: e.target.value }))}
                   className="w-full rounded border border-input bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
                 >
-                  {getFieldSetForList(listName).map(f => (
+                  {getFieldSetForTarget(syncTarget).map(f => (
                     <option key={f.value} value={f.value}>{f.label}</option>
                   ))}
                 </select>
