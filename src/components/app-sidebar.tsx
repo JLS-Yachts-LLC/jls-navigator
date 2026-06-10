@@ -6,7 +6,7 @@ import {
   Route, UserCircle2, Car, MapPin, ScrollText, X, ShoppingCart, Truck,
   GraduationCap, Sparkles, Layers as LayersIcon, UserPlus, LayoutDashboard,
   FileText, Wrench, UtensilsCrossed, Cpu, IdCard, Boxes, Cog, ClipboardList,
-  Globe, Headset, BookOpen, FileSignature,
+  Globe, Headset, BookOpen, FileSignature, KeyRound,
 } from "lucide-react";
 import { useState, useMemo } from "react";
 import { DEPARTMENTS } from "@/components/guides/guide-meta";
@@ -133,6 +133,7 @@ const NAV: NavItem[] = [
         icon: Cpu,
         children: [
           { label: "Service Desk",         to: "/it-tickets", icon: Headset },
+          { label: "Licensing",            to: "/licensing",  icon: KeyRound },
           { label: "Contracts & Services", to: "/yacht-it",   icon: FileText },
         ],
       },
