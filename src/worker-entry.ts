@@ -1,9 +1,5 @@
 import { createStartHandler, defaultStreamHandler } from '@tanstack/react-start/server'
 import { syncFromSharePoint, downloadPendingImages, pushChangedRecords, discoverSharePoint, syncById, getSpSyncs } from './lib/sharepoint-sync.server'
-
-// Self-invoke base URL for fan-out (each list syncs in its own invocation to
-// stay under Cloudflare's per-invocation subrequest limit).
-const SELF_BASE = 'https://jls-navigator.m-peeters-4a0.workers.dev'
 import { runExpiryAlerts } from './lib/permit-expiry-cron.server'
 import { syncFleetPositions } from './lib/mygps.server'
 import { syncVesselPositions } from './lib/vesselfinder.server'
@@ -31,8 +27,8 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
       const results: Array<Record<string, unknown>> = []
       for (const s of syncs) {
         try {
-          const res = await fetch(`${url.origin}/sp-hook?run=1&only=${encodeURIComponent(s.id)}`)
-          results.push({ name: s.name, ...(await res.json() as Record<string, unknown>) })
+          const r = await syncById(s.id)
+          results.push({ name: s.name, ...r })
         } catch (e) {
           results.push({ name: s.name, ok: false, error: e instanceof Error ? e.message : String(e) })
         }
@@ -114,15 +110,13 @@ export default {
     // Pull is fanned out one-invocation-per-list via /sp-hook?run=1 (self-fetch)
     // so no single invocation exceeds the Cloudflare subrequest limit.
     if (isHourly) {
-      const base = (typeof (_env as Record<string, unknown>).PUBLIC_APP_URL === 'string'
-        && (_env as Record<string, string>).PUBLIC_APP_URL) || SELF_BASE
       ctx.waitUntil(
         pushChangedRecords()
           .then(({ pushed }) => console.log(`[sp-pushback] pushed=${pushed}`))
           .catch((e) => console.error('[sp-pushback] error:', e))
-          .then(() => fetch(`${base}/sp-hook?run=1`))
-          .then((r) => r.text())
-          .then((t) => console.log(`[sp-cron] ${t.slice(0, 300)}`))
+          .then(() => syncFromSharePoint())
+          .then((r) => { if (r) console.log(`[sp-cron] synced=${r.synced} errors=${r.errors}`); return downloadPendingImages() })
+          .then((imgs) => { if (imgs) console.log(`[sp-cron] images downloaded=${imgs}`) })
           .catch((e) => console.error('[sp-cron] error:', e))
       )
     }
