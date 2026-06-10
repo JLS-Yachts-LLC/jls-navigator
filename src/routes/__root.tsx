@@ -53,7 +53,7 @@ function RootShell({ children }: { children: React.ReactNode }) {
         {/* Apply stored theme before paint to avoid a flash */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{var t=localStorage.getItem('polaris.theme')||localStorage.getItem('aquila.theme');if(t==='dark')document.documentElement.classList.add('dark');}catch(e){}`,
+            __html: `try{var t=localStorage.getItem('polaris.theme')||localStorage.getItem('aquila.theme');if(t!=='light')document.documentElement.classList.add('dark');}catch(e){document.documentElement.classList.add('dark');}`,
           }}
         />
       </head>
