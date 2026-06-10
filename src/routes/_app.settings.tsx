@@ -1732,6 +1732,12 @@ function SyncEditPanel({
     if (!name && listName) setName(listName)
   }, [listName])
 
+  // Editing an existing sync: auto-load its columns so the mapping renders + fills in.
+  useEffect(() => {
+    if (initial?.id && (initial?.listName ?? '').trim()) void handleDiscover()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   function getSuggestFn() {
     if (syncTarget === 'permits') return autoSuggestPermit
     if (syncTarget === 'small_boats') return autoSuggestSmallBoat
@@ -1746,9 +1752,12 @@ function SyncEditPanel({
       const cols = await doDiscoverSharePointColumns({ data: { listName } })
       setColumns(cols)
       const suggestFn = getSuggestFn()
-      const auto: Record<string, string> = {}
-      for (const c of cols) auto[c.name] = suggestFn(c.displayName)
-      setMapping(auto)
+      // Preserve any existing mapping; only auto-suggest columns not already mapped.
+      setMapping(prev => {
+        const next: Record<string, string> = { ...prev }
+        for (const c of cols) if (!next[c.name]) next[c.name] = suggestFn(c.displayName)
+        return next
+      })
     } catch (e) {
       setDiscoverErr(e instanceof Error ? e.message : 'Discovery failed')
     } finally { setDiscovering(false) }
@@ -1757,6 +1766,10 @@ function SyncEditPanel({
   async function handleSave() {
     if (!name.trim() || !listName.trim()) {
       toast.error('Name and List Name are required')
+      return
+    }
+    if (Object.values(mapping).filter(Boolean).length === 0) {
+      toast.error('Map at least one column before saving (click Load, then map e.g. First Name + Surname).')
       return
     }
     setSaving(true)
