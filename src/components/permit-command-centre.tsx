@@ -235,16 +235,28 @@ export function PermitCommandCentre() {
 
   async function load() {
     setLoading(true);
-    const [permitsRes, yachtsRes] = await Promise.all([
-      (supabase as any)
+    // Supabase/PostgREST caps a single response at 1000 rows — page through so
+    // every permit is loaded (there are several thousand).
+    const PAGE = 1000;
+    const allPermits: Permit[] = [];
+    let from = 0;
+    let permitErr: string | null = null;
+    for (;;) {
+      const { data, error } = await (supabase as any)
         .from("permits")
         .select("*")
-        .order("expiry_date", { ascending: true, nullsFirst: false }),
-      supabase.from("yachts").select("id, vessel_name").order("vessel_name"),
-    ]);
-    if (permitsRes.error) toast.error(permitsRes.error.message);
+        .order("expiry_date", { ascending: true, nullsFirst: false })
+        .range(from, from + PAGE - 1);
+      if (error) { permitErr = error.message; break; }
+      const batch = (data ?? []) as Permit[];
+      allPermits.push(...batch);
+      if (batch.length < PAGE) break;
+      from += PAGE;
+    }
+    const yachtsRes = await supabase.from("yachts").select("id, vessel_name").order("vessel_name");
+    if (permitErr) toast.error(permitErr);
     if (yachtsRes.error) toast.error(yachtsRes.error.message);
-    setPermits((permitsRes.data ?? []) as Permit[]);
+    setPermits(allPermits);
     setYachts((yachtsRes.data ?? []) as Yacht[]);
     setLoading(false);
   }

@@ -69,13 +69,27 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
 
   async function load() {
     setLoading(true);
-    const { data, error } = await (supabase as any)
-      .from("permits")
-      .select("*")
-      .eq("permit_type", permitType)
-      .order("expiry_date", { ascending: true, nullsFirst: false });
-    if (error) toast.error(error.message);
-    else setRows((data ?? []) as Permit[]);
+    // PostgREST caps a response at 1000 rows — page through (Gate Pass alone
+    // exceeds 1000) so the full list for this permit type loads.
+    const PAGE = 1000;
+    const all: Permit[] = [];
+    let from = 0;
+    let errMsg: string | null = null;
+    for (;;) {
+      const { data, error } = await (supabase as any)
+        .from("permits")
+        .select("*")
+        .eq("permit_type", permitType)
+        .order("expiry_date", { ascending: true, nullsFirst: false })
+        .range(from, from + PAGE - 1);
+      if (error) { errMsg = error.message; break; }
+      const batch = (data ?? []) as Permit[];
+      all.push(...batch);
+      if (batch.length < PAGE) break;
+      from += PAGE;
+    }
+    if (errMsg) toast.error(errMsg);
+    else setRows(all);
     setLoading(false);
   }
   async function loadYachts() {
