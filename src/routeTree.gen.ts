@@ -30,6 +30,7 @@ import { Route as AppFleetTrackingRouteImport } from './routes/_app.fleet-tracki
 import { Route as AppFinanceRouteImport } from './routes/_app.finance'
 import { Route as AppEsignRouteImport } from './routes/_app.esign'
 import { Route as AppDirectorRouteImport } from './routes/_app.director'
+import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
 import { Route as AppCrewPlacementRouteImport } from './routes/_app.crew-placement'
 import { Route as AppCrewImmigrationRouteImport } from './routes/_app.crew-immigration'
 import { Route as AppCrewCabRouteImport } from './routes/_app.crew-cab'
@@ -185,6 +186,11 @@ const AppEsignRoute = AppEsignRouteImport.update({
 const AppDirectorRoute = AppDirectorRouteImport.update({
   id: '/director',
   path: '/director',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppDashboardRoute = AppDashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
   getParentRoute: () => AppRoute,
 } as any)
 const AppCrewPlacementRoute = AppCrewPlacementRouteImport.update({
@@ -464,6 +470,7 @@ export interface FileRoutesByFullPath {
   '/crew-cab': typeof AppCrewCabRouteWithChildren
   '/crew-immigration': typeof AppCrewImmigrationRouteWithChildren
   '/crew-placement': typeof AppCrewPlacementRouteWithChildren
+  '/dashboard': typeof AppDashboardRoute
   '/director': typeof AppDirectorRoute
   '/esign': typeof AppEsignRouteWithChildren
   '/finance': typeof AppFinanceRoute
@@ -536,6 +543,7 @@ export interface FileRoutesByTo {
   '/compass': typeof AppCompassRoute
   '/crew-cab': typeof AppCrewCabRouteWithChildren
   '/crew-immigration': typeof AppCrewImmigrationRouteWithChildren
+  '/dashboard': typeof AppDashboardRoute
   '/director': typeof AppDirectorRoute
   '/finance': typeof AppFinanceRoute
   '/fleet-tracking': typeof AppFleetTrackingRoute
@@ -602,6 +610,7 @@ export interface FileRoutesById {
   '/_app/crew-cab': typeof AppCrewCabRouteWithChildren
   '/_app/crew-immigration': typeof AppCrewImmigrationRouteWithChildren
   '/_app/crew-placement': typeof AppCrewPlacementRouteWithChildren
+  '/_app/dashboard': typeof AppDashboardRoute
   '/_app/director': typeof AppDirectorRoute
   '/_app/esign': typeof AppEsignRouteWithChildren
   '/_app/finance': typeof AppFinanceRoute
@@ -677,6 +686,7 @@ export interface FileRouteTypes {
     | '/crew-cab'
     | '/crew-immigration'
     | '/crew-placement'
+    | '/dashboard'
     | '/director'
     | '/esign'
     | '/finance'
@@ -749,6 +759,7 @@ export interface FileRouteTypes {
     | '/compass'
     | '/crew-cab'
     | '/crew-immigration'
+    | '/dashboard'
     | '/director'
     | '/finance'
     | '/fleet-tracking'
@@ -814,6 +825,7 @@ export interface FileRouteTypes {
     | '/_app/crew-cab'
     | '/_app/crew-immigration'
     | '/_app/crew-placement'
+    | '/_app/dashboard'
     | '/_app/director'
     | '/_app/esign'
     | '/_app/finance'
@@ -1032,6 +1044,13 @@ declare module '@tanstack/react-router' {
       path: '/director'
       fullPath: '/director'
       preLoaderRoute: typeof AppDirectorRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/dashboard': {
+      id: '/_app/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof AppDashboardRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/crew-placement': {
@@ -1583,6 +1602,7 @@ interface AppRouteChildren {
   AppCrewCabRoute: typeof AppCrewCabRouteWithChildren
   AppCrewImmigrationRoute: typeof AppCrewImmigrationRouteWithChildren
   AppCrewPlacementRoute: typeof AppCrewPlacementRouteWithChildren
+  AppDashboardRoute: typeof AppDashboardRoute
   AppDirectorRoute: typeof AppDirectorRoute
   AppEsignRoute: typeof AppEsignRouteWithChildren
   AppFinanceRoute: typeof AppFinanceRoute
@@ -1623,6 +1643,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppCrewCabRoute: AppCrewCabRouteWithChildren,
   AppCrewImmigrationRoute: AppCrewImmigrationRouteWithChildren,
   AppCrewPlacementRoute: AppCrewPlacementRouteWithChildren,
+  AppDashboardRoute: AppDashboardRoute,
   AppDirectorRoute: AppDirectorRoute,
   AppEsignRoute: AppEsignRouteWithChildren,
   AppFinanceRoute: AppFinanceRoute,
