@@ -471,6 +471,19 @@ async function _syncWithConfig(cfg: SpConfig, sync: SpSyncConfig): Promise<{ syn
   return result
 }
 
+// SharePoint numeric columns often hold text like "8.60M" or "N/A"; coerce to a
+// number (first numeric token) or null so they don't break numeric DB columns.
+const YACHT_NUMERIC_FIELDS = new Set([
+  'gross_tonnage', 'net_tonnage', 'length_overall_m', 'breadth_m', 'draught_m',
+  'air_draft_m', 'built_year', 'max_crew', 'max_guests',
+])
+function coerceNumeric(v: any): number | null {
+  if (v == null || v === '') return null
+  if (typeof v === 'number') return isFinite(v) ? v : null
+  const m = String(v).replace(/,/g, '').match(/-?\d+(\.\d+)?/)
+  return m ? Number(m[0]) : null
+}
+
 async function _syncYachts(
   cfg: SpConfig,
   syncId?: string,
@@ -540,6 +553,8 @@ async function _syncYachts(
           // Leave vessel_image out of record — existing value preserved, null yachts get picked up by cron
         }
         continue
+      } else if (YACHT_NUMERIC_FIELDS.has(dbField)) {
+        record[dbField] = coerceNumeric(raw)
       } else {
         record[dbField] = raw !== '' ? raw : null
       }
@@ -695,14 +710,12 @@ async function _syncSmallBoats(cfg: SpConfig): Promise<{ synced: number; errors:
     nextUrl = page['@odata.nextLink'] ?? null
   }
 
-  // Load existing small_boats for matching
+  // Load existing small_boats for matching (table keys on boat_name; there is no reg_no column)
   const { data: existing } = await (supabaseAdmin as any)
     .from('small_boats')
-    .select('id, boat_name, reg_no')
-  const byRegNo = new Map<string, string>()
+    .select('id, boat_name')
   const byName = new Map<string, string>()
   for (const b of (existing ?? []) as Record<string, any>[]) {
-    if (b.reg_no) byRegNo.set(String(b.reg_no).toLowerCase(), String(b.id))
     if (b.boat_name) byName.set(String(b.boat_name).toLowerCase(), String(b.id))
   }
 
@@ -719,11 +732,9 @@ async function _syncSmallBoats(cfg: SpConfig): Promise<{ synced: number; errors:
       record[dbField] = raw !== '' && raw !== null && raw !== undefined ? raw : null
     }
 
-    if (!record.boat_name && !record.reg_no) continue
+    if (!record.boat_name) continue
 
-    const existingId =
-      (record.reg_no ? byRegNo.get(String(record.reg_no).toLowerCase()) : undefined) ??
-      (record.boat_name ? byName.get(String(record.boat_name).toLowerCase()) : undefined)
+    const existingId = byName.get(String(record.boat_name).toLowerCase())
 
     const { error } = existingId
       ? await (supabaseAdmin as any).from('small_boats').update(record).eq('id', existingId)
@@ -733,8 +744,7 @@ async function _syncSmallBoats(cfg: SpConfig): Promise<{ synced: number; errors:
       errors++
     } else {
       synced++
-      if (record.reg_no) byRegNo.set(String(record.reg_no).toLowerCase(), existingId ?? 'new')
-      if (record.boat_name) byName.set(String(record.boat_name).toLowerCase(), existingId ?? 'new')
+      byName.set(String(record.boat_name).toLowerCase(), existingId ?? 'new')
     }
   }
 
