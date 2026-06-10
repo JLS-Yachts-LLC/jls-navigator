@@ -1,16 +1,17 @@
 import { ScrollText } from "lucide-react";
+import { GENERATED_RELEASES } from "@/data/changelog-generated";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type EntryType = "feature" | "fix" | "improvement" | "patch";
+export type EntryType = "feature" | "fix" | "improvement" | "patch";
 
-type ChangeEntry = {
+export type ChangeEntry = {
   type: EntryType;
   title: string;
   description?: string;
 };
 
-type Release = {
+export type Release = {
   version: string;
   date: string;
   summary?: string;
@@ -19,7 +20,10 @@ type Release = {
 
 // ─── Changelog data ───────────────────────────────────────────────────────────
 
-const RELEASES: Release[] = [
+// Curated history (through v2.1.1). Newer releases are auto-generated from
+// Conventional Commit history at build time (see scripts/generate-changelog.mjs)
+// and merged on top by `RELEASES` below — so the changelog updates on every deploy.
+const CURATED_RELEASES: Release[] = [
   {
     version: "2.1.1",
     date: "2026-06-05",
@@ -363,6 +367,9 @@ const RELEASES: Release[] = [
     ],
   },
 ];
+
+// Auto-generated releases (newest) followed by the curated history.
+const RELEASES: Release[] = [...GENERATED_RELEASES, ...CURATED_RELEASES];
 
 // ─── Badge styles ─────────────────────────────────────────────────────────────
 
