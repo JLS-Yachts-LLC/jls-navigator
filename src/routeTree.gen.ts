@@ -83,6 +83,7 @@ import { Route as AppGuidesDepartmentIndexRouteImport } from './routes/_app.guid
 import { Route as AppCrewImmigrationVisasIndexRouteImport } from './routes/_app.crew-immigration.visas.index'
 import { Route as AppGuidesDepartmentGuideIdRouteImport } from './routes/_app.guides.$department.$guideId'
 import { Route as AppCrewImmigrationVisasNewRouteImport } from './routes/_app.crew-immigration.visas.new'
+import { Route as AppCrewImmigrationVisasInfoCountryCodeRouteImport } from './routes/_app.crew-immigration.visas.info.$countryCode'
 
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
@@ -465,6 +466,12 @@ const AppCrewImmigrationVisasNewRoute =
     path: '/new',
     getParentRoute: () => AppCrewImmigrationVisasRoute,
   } as any)
+const AppCrewImmigrationVisasInfoCountryCodeRoute =
+  AppCrewImmigrationVisasInfoCountryCodeRouteImport.update({
+    id: '/info/$countryCode',
+    path: '/info/$countryCode',
+    getParentRoute: () => AppCrewImmigrationVisasRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -540,6 +547,7 @@ export interface FileRoutesByFullPath {
   '/guides/$department/$guideId': typeof AppGuidesDepartmentGuideIdRoute
   '/crew-immigration/visas/': typeof AppCrewImmigrationVisasIndexRoute
   '/guides/$department/': typeof AppGuidesDepartmentIndexRoute
+  '/crew-immigration/visas/info/$countryCode': typeof AppCrewImmigrationVisasInfoCountryCodeRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -605,6 +613,7 @@ export interface FileRoutesByTo {
   '/guides/$department/$guideId': typeof AppGuidesDepartmentGuideIdRoute
   '/crew-immigration/visas': typeof AppCrewImmigrationVisasIndexRoute
   '/guides/$department': typeof AppGuidesDepartmentIndexRoute
+  '/crew-immigration/visas/info/$countryCode': typeof AppCrewImmigrationVisasInfoCountryCodeRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -682,6 +691,7 @@ export interface FileRoutesById {
   '/_app/guides/$department/$guideId': typeof AppGuidesDepartmentGuideIdRoute
   '/_app/crew-immigration/visas/': typeof AppCrewImmigrationVisasIndexRoute
   '/_app/guides/$department/': typeof AppGuidesDepartmentIndexRoute
+  '/_app/crew-immigration/visas/info/$countryCode': typeof AppCrewImmigrationVisasInfoCountryCodeRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -759,6 +769,7 @@ export interface FileRouteTypes {
     | '/guides/$department/$guideId'
     | '/crew-immigration/visas/'
     | '/guides/$department/'
+    | '/crew-immigration/visas/info/$countryCode'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -824,6 +835,7 @@ export interface FileRouteTypes {
     | '/guides/$department/$guideId'
     | '/crew-immigration/visas'
     | '/guides/$department'
+    | '/crew-immigration/visas/info/$countryCode'
   id:
     | '__root__'
     | '/'
@@ -900,6 +912,7 @@ export interface FileRouteTypes {
     | '/_app/guides/$department/$guideId'
     | '/_app/crew-immigration/visas/'
     | '/_app/guides/$department/'
+    | '/_app/crew-immigration/visas/info/$countryCode'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -1429,6 +1442,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppCrewImmigrationVisasNewRouteImport
       parentRoute: typeof AppCrewImmigrationVisasRoute
     }
+    '/_app/crew-immigration/visas/info/$countryCode': {
+      id: '/_app/crew-immigration/visas/info/$countryCode'
+      path: '/info/$countryCode'
+      fullPath: '/crew-immigration/visas/info/$countryCode'
+      preLoaderRoute: typeof AppCrewImmigrationVisasInfoCountryCodeRouteImport
+      parentRoute: typeof AppCrewImmigrationVisasRoute
+    }
   }
 }
 
@@ -1453,12 +1473,15 @@ const AppCrewCabRouteWithChildren = AppCrewCabRoute._addFileChildren(
 interface AppCrewImmigrationVisasRouteChildren {
   AppCrewImmigrationVisasNewRoute: typeof AppCrewImmigrationVisasNewRoute
   AppCrewImmigrationVisasIndexRoute: typeof AppCrewImmigrationVisasIndexRoute
+  AppCrewImmigrationVisasInfoCountryCodeRoute: typeof AppCrewImmigrationVisasInfoCountryCodeRoute
 }
 
 const AppCrewImmigrationVisasRouteChildren: AppCrewImmigrationVisasRouteChildren =
   {
     AppCrewImmigrationVisasNewRoute: AppCrewImmigrationVisasNewRoute,
     AppCrewImmigrationVisasIndexRoute: AppCrewImmigrationVisasIndexRoute,
+    AppCrewImmigrationVisasInfoCountryCodeRoute:
+      AppCrewImmigrationVisasInfoCountryCodeRoute,
   }
 
 const AppCrewImmigrationVisasRouteWithChildren =

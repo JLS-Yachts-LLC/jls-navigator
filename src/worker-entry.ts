@@ -1,5 +1,5 @@
 import { createStartHandler, defaultStreamHandler } from '@tanstack/react-start/server'
-import { syncFromSharePoint, downloadPendingImages } from './lib/sharepoint-sync.server'
+import { syncFromSharePoint, downloadPendingImages, pushChangedRecords } from './lib/sharepoint-sync.server'
 import { runExpiryAlerts } from './lib/permit-expiry-cron.server'
 import { syncFleetPositions } from './lib/mygps.server'
 import { syncVesselPositions } from './lib/vesselfinder.server'
@@ -51,19 +51,28 @@ export default {
     return handleRequest(request, env, ctx)
   },
 
-  // Cloudflare cron trigger — runs every 15 min for SharePoint; expiry alerts only at 08:xx UTC
+  // Cron triggers: "0 * * * *" (hourly) → SharePoint inbound sync of all lists;
+  // "*/15 * * * *" (every 15 min) → live vehicle/vessel tracking + daily alert checks.
   async scheduled(_event: unknown, _env: Record<string, unknown>, ctx: { waitUntil: (p: Promise<unknown>) => void }): Promise<void> {
     const utcHour = new Date().getUTCHours();
+    const cron = (_event as { cron?: string } | undefined)?.cron;
+    const isHourly = cron === '0 * * * *' || (cron == null && new Date().getUTCMinutes() < 15);
+    const isQuarterly = cron === '*/15 * * * *' || cron == null;
 
-    ctx.waitUntil(
-      syncFromSharePoint()
-        .then(({ synced, errors }) => {
-          console.log(`[sp-cron] synced=${synced} errors=${errors}`)
-          return downloadPendingImages()
-        })
-        .then((imgs) => { if (imgs) console.log(`[sp-cron] images downloaded=${imgs}`) })
-        .catch((e) => console.error('[sp-cron] error:', e))
-    )
+    // ── Hourly: push in-app edits OUT, then pull SharePoint changes IN ──
+    if (isHourly) {
+      ctx.waitUntil(
+        pushChangedRecords()
+          .then(({ pushed }) => console.log(`[sp-pushback] pushed=${pushed}`))
+          .catch((e) => console.error('[sp-pushback] error:', e))
+          .then(() => syncFromSharePoint())
+          .then((r) => { if (r) console.log(`[sp-cron] synced=${r.synced} errors=${r.errors}`); return downloadPendingImages() })
+          .then((imgs) => { if (imgs) console.log(`[sp-cron] images downloaded=${imgs}`) })
+          .catch((e) => console.error('[sp-cron] error:', e))
+      )
+    }
+
+    if (!isQuarterly) return;
 
     // Sync live myGPS vehicle positions onto crew_vehicles every run (~15 min)
     ctx.waitUntil(

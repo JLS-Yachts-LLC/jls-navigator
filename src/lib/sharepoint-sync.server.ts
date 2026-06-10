@@ -413,6 +413,116 @@ async function uploadUrlToSupabase(
 
 // ─── Inbound: SharePoint → App (delta sync) ────────────────────────────────────
 
+// ─── Outbound: App → SharePoint (generic, all targets) ─────────────────────────
+
+const TARGET_TABLE: Record<string, string> = {
+  yachts: 'yachts', permits: 'permits', small_boats: 'small_boats',
+  crew_members: 'crew_members', visa_applications: 'visa_applications',
+};
+// Natural keys used to find an existing SP item when a record has no sharepoint_item_id yet.
+const TARGET_KEY_FIELDS: Record<string, string[]> = {
+  yachts: ['imo_no', 'vessel_name'],
+  permits: ['permit_number', 'holder_name'],
+  small_boats: ['boat_name'],
+  crew_members: ['passport_number'],
+  visa_applications: ['jls_reference'],
+};
+
+/** Push one app record to every enabled SharePoint sync for its target. */
+export async function pushRecordToSharePoint(target: string, id: string): Promise<void> {
+  const table = TARGET_TABLE[target];
+  if (!table) return;
+  const syncs = (await getSpSyncs().catch(() => [])).filter(s => s.enabled && s.syncTarget === target);
+  if (!syncs.length) return;
+
+  const cfg = await getSpConfig();
+  const { data: rec } = await (supabaseAdmin as any).from(table).select('*').eq('id', id).maybeSingle();
+  if (!rec) return;
+
+  // Resolve name-based links for reverse mapping.
+  let yachtName: string | null = rec.vessel_name ?? null;
+  if (rec.yacht_id) {
+    const { data: y } = await (supabaseAdmin as any).from('yachts').select('vessel_name').eq('id', rec.yacht_id).maybeSingle();
+    if (y?.vessel_name) yachtName = y.vessel_name;
+  }
+  let crewName: string | null = null;
+  if (rec.crew_member_id) {
+    const { data: c } = await (supabaseAdmin as any).from('crew_members').select('first_name, last_name').eq('id', rec.crew_member_id).maybeSingle();
+    if (c) crewName = `${c.first_name ?? ''} ${c.last_name ?? ''}`.trim() || null;
+  }
+  const valueFor = (dbField: string): any =>
+    dbField === 'vessel_name' ? yachtName : dbField === 'crew_member_name' ? crewName : rec[dbField];
+
+  const token = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret);
+  const siteId = await resolveSpSite(token, cfg.tenantUrl, cfg.siteUrl);
+
+  for (const sync of syncs) {
+    const list = sync.listName;
+    const spFields: Record<string, any> = {};
+    for (const [spCol, dbField] of Object.entries(sync.fieldMapping)) {
+      if (!dbField || dbField === 'vessel_image') continue;
+      const v = valueFor(dbField);
+      if (v !== null && v !== undefined && v !== '') spFields[spCol] = v;
+    }
+    if (!Object.keys(spFields).length) continue;
+
+    let spId: string | null = rec.sharepoint_item_id ?? null;
+    if (!spId) {
+      for (const kf of (TARGET_KEY_FIELDS[target] ?? [])) {
+        const spCol = Object.entries(sync.fieldMapping).find(([, db]) => db === kf)?.[0];
+        const kv = valueFor(kf);
+        if (!spCol || !kv) continue;
+        const r = await fetch(
+          `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${list}/items?$filter=${encodeURIComponent(`fields/${spCol} eq '${String(kv).replace(/'/g, "''")}'`)}&$select=id`,
+          { headers: { Authorization: `Bearer ${token}` } });
+        const d = await r.json() as any;
+        spId = d.value?.[0]?.id ?? null;
+        if (spId) break;
+      }
+    }
+
+    if (spId) {
+      await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${list}/items/${spId}/fields`,
+        { method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(spFields) });
+    } else {
+      const cr = await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${list}/items`,
+        { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ fields: spFields }) });
+      spId = ((await cr.json()) as any).id ?? null;
+    }
+    if (spId) {
+      await (supabaseAdmin as any).from(table)
+        .update({ sharepoint_item_id: spId, sharepoint_synced_at: new Date().toISOString() }).eq('id', id);
+    }
+  }
+}
+
+/**
+ * Push back records that were edited in-app since their last SharePoint sync.
+ * SAFE: only touches rows already linked to a SharePoint item (sharepoint_item_id
+ * set) → always a PATCH, never a mass-create. Loop-safe (updated_at > synced_at).
+ */
+export async function pushChangedRecords(): Promise<{ pushed: number }> {
+  const syncs = (await getSpSyncs().catch(() => [])).filter(s => s.enabled);
+  const targets = Array.from(new Set(syncs.map(s => s.syncTarget)));
+  let pushed = 0;
+  for (const target of targets) {
+    const table = TARGET_TABLE[target];
+    if (!table) continue;
+    const { data } = await (supabaseAdmin as any).from(table)
+      .select('id, updated_at, sharepoint_synced_at')
+      .not('sharepoint_item_id', 'is', null)
+      .order('updated_at', { ascending: false })
+      .limit(500);
+    for (const r of (data ?? []) as any[]) {
+      if (!r.updated_at) continue;
+      // Only push if edited in-app after the last SharePoint sync (with 5s slack to ignore the sync's own write).
+      if (r.sharepoint_synced_at && new Date(r.updated_at).getTime() <= new Date(r.sharepoint_synced_at).getTime() + 5000) continue;
+      try { await pushRecordToSharePoint(target, r.id); pushed++; } catch { /* per-record best-effort */ }
+    }
+  }
+  return { pushed };
+}
+
 export async function syncFromSharePoint(): Promise<{ synced: number; errors: number }> {
   // ── Multi-sync path (new table) ──────────────────────────────────────────────
   const syncs = await getSpSyncs().catch(() => [] as SpSyncConfig[])
