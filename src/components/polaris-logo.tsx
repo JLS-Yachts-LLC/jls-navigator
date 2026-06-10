@@ -11,11 +11,11 @@ export function PolarisLogo({ className }: { className?: string }) {
 
   return (
     <svg
-      viewBox="0 0 220 56"
+      viewBox="0 0 330 56"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       className={className}
-      aria-label="Polaris Management Platform"
+      aria-label="Polaris — Yacht Concierge & Operational Platform"
     >
       {/* ── Compass-rose mark ─────────────────────────────────── */}
       <g transform="translate(28,28)">
@@ -100,18 +100,18 @@ export function PolarisLogo({ className }: { className?: string }) {
         x="63"
         y="39"
         fontFamily="'Space Grotesk', 'Inter', sans-serif"
-        fontSize="7"
-        letterSpacing="2.8"
+        fontSize="6"
+        letterSpacing="1.4"
         fill={SIGNAL_DIM}
         fontWeight="500"
       >
-        MANAGEMENT PLATFORM
+        YACHT CONCIERGE & OPERATIONAL PLATFORM
       </text>
 
       {/* Thin rule under wordmark */}
       <line
         x1="62" y1="44"
-        x2="218" y2="44"
+        x2="328" y2="44"
         stroke={SIGNAL}
         strokeWidth="0.5"
         strokeOpacity="0.25"
