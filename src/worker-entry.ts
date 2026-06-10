@@ -1,5 +1,9 @@
 import { createStartHandler, defaultStreamHandler } from '@tanstack/react-start/server'
-import { syncFromSharePoint, downloadPendingImages, pushChangedRecords, discoverSharePoint } from './lib/sharepoint-sync.server'
+import { syncFromSharePoint, downloadPendingImages, pushChangedRecords, discoverSharePoint, syncById, getSpSyncs } from './lib/sharepoint-sync.server'
+
+// Self-invoke base URL for fan-out (each list syncs in its own invocation to
+// stay under Cloudflare's per-invocation subrequest limit).
+const SELF_BASE = 'https://jls-navigator.m-peeters-4a0.workers.dev'
 import { runExpiryAlerts } from './lib/permit-expiry-cron.server'
 import { syncFleetPositions } from './lib/mygps.server'
 import { syncVesselPositions } from './lib/vesselfinder.server'
@@ -10,21 +14,36 @@ const handleRequest = createStartHandler(defaultStreamHandler)
 async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: Promise<unknown>) => void }): Promise<Response> {
   const url = new URL(request.url)
 
-  // Manual run: `?run=1` awaits the full inbound sync and returns the JSON
-  // result (synced/errors). Per-sync error samples are persisted to
-  // sharepoint_sync_configs.last_sync_error_sample for diagnosis.
+  // Manual run: `?run=1` syncs all enabled lists, each in its OWN invocation
+  // (fan-out via self-fetch) so no single invocation exceeds Cloudflare's
+  // subrequest limit. `?run=1&only=<syncId>` runs just that one list.
+  // Per-sync error samples persist to sharepoint_sync_configs.last_sync_error_sample.
   if (url.searchParams.get('run') === '1') {
+    const only = url.searchParams.get('only')
     try {
-      const r = await syncFromSharePoint()
+      if (only) {
+        const r = await syncById(only)
+        return new Response(JSON.stringify({ ok: true, only, ...r }), {
+          status: 200, headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      const syncs = (await getSpSyncs()).filter((s) => s.enabled)
+      const results: Array<Record<string, unknown>> = []
+      for (const s of syncs) {
+        try {
+          const res = await fetch(`${url.origin}/sp-hook?run=1&only=${encodeURIComponent(s.id)}`)
+          results.push({ name: s.name, ...(await res.json() as Record<string, unknown>) })
+        } catch (e) {
+          results.push({ name: s.name, ok: false, error: e instanceof Error ? e.message : String(e) })
+        }
+      }
       ctx.waitUntil(downloadPendingImages().catch(() => 0))
-      return new Response(JSON.stringify({ ok: true, ...r }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
+      return new Response(JSON.stringify({ ok: true, results }), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
       })
     } catch (e) {
       return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json' },
+        status: 500, headers: { 'Content-Type': 'application/json' },
       })
     }
   }
@@ -92,14 +111,18 @@ export default {
     const isQuarterly = cron === '*/15 * * * *' || cron == null;
 
     // ── Hourly: push in-app edits OUT, then pull SharePoint changes IN ──
+    // Pull is fanned out one-invocation-per-list via /sp-hook?run=1 (self-fetch)
+    // so no single invocation exceeds the Cloudflare subrequest limit.
     if (isHourly) {
+      const base = (typeof (_env as Record<string, unknown>).PUBLIC_APP_URL === 'string'
+        && (_env as Record<string, string>).PUBLIC_APP_URL) || SELF_BASE
       ctx.waitUntil(
         pushChangedRecords()
           .then(({ pushed }) => console.log(`[sp-pushback] pushed=${pushed}`))
           .catch((e) => console.error('[sp-pushback] error:', e))
-          .then(() => syncFromSharePoint())
-          .then((r) => { if (r) console.log(`[sp-cron] synced=${r.synced} errors=${r.errors}`); return downloadPendingImages() })
-          .then((imgs) => { if (imgs) console.log(`[sp-cron] images downloaded=${imgs}`) })
+          .then(() => fetch(`${base}/sp-hook?run=1`))
+          .then((r) => r.text())
+          .then((t) => console.log(`[sp-cron] ${t.slice(0, 300)}`))
           .catch((e) => console.error('[sp-cron] error:', e))
       )
     }
