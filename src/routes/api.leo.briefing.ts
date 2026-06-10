@@ -272,6 +272,19 @@ Stay in character as Leo. Operational. Precise. No filler.`
 // ── API Route ─────────────────────────────────────────────────────────────────
 export const APIRoute = createAPIFileRoute('/api/leo/briefing')({
   POST: async ({ request }) => {
+    try {
+      return await leoBriefingHandler(request)
+    } catch (e: any) {
+      console.error('Leo briefing unhandled error:', e)
+      return new Response(
+        JSON.stringify({ error: `Leo error: ${e?.message ?? String(e)}` }),
+        { status: 500, headers: { 'Content-Type': 'application/json' } },
+      )
+    }
+  },
+})
+
+async function leoBriefingHandler(request: Request): Promise<Response> {
     const apiKey = process.env.ANTHROPIC_API_KEY
     if (!apiKey) {
       return new Response(
@@ -396,5 +409,4 @@ export const APIRoute = createAPIFileRoute('/api/leo/briefing')({
         'X-Accel-Buffering': 'no',
       },
     })
-  },
-})
+}
