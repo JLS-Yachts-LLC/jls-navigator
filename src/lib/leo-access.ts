@@ -10,12 +10,12 @@ export type AccessLevel = 'developer' | 'manager' | 'user' | 'guest'
 
 /**
  * Full-access developer accounts.
- * TODO: confirm matt.tighe@jlsyachts.com is correct for Matt Tighe.
+ * Tighe Fetton (t.fetton@jlsyachts.com) — access pending, enable once confirmed.
  */
 export const DEVELOPER_EMAILS: string[] = [
-  'm.peeters@jlsyachts.com',
-  'matt.tighe@jlsyachts.com',
-  'm.fetton@jlsyachts.com',
+  'm.peeters@jlsyachts.com',   // Matt Peeters
+  'm.fetton@jlsyachts.com',    // Mike Fetton
+  // 't.fetton@jlsyachts.com', // Tighe Fetton — uncomment when access is granted
 ]
 
 export function getAccessLevel(email?: string | null): AccessLevel {
