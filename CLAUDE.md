@@ -1,25 +1,36 @@
 # CLAUDE.md — Polaris / Leo Platform
 > Claude Code reads this file automatically. Follow every instruction here precisely.
 > Last updated: June 2026 — v1.3 (added Seaport Immigration module)
+
 ---
+
 ## 1. What We Are Building
+
 **Polaris** is a yacht management platform. It is a technology product — not a yacht operator.
 **Leo** is the AI intelligence engine embedded inside Polaris.
+
 On every login, Leo immediately delivers a personalised briefing to the authenticated user.
 The user does not ask anything — Leo speaks first. This is the core product experience.
+
 The platform includes three core operational modules:
 - **Leo Intelligence** — AI briefing engine, Lean/6 Sigma signals, compliance alerts
 - **Visa Module** — crew visa management across UAE, Oman, Maldives, KSA, Qatar, Bahrain, Egypt
 - **Seaport Immigration** — digitised sign-on/off request workflow with SLA tracking and reporting
+
 All operational knowledge comes from **our Port & Agency Team**. Never use the company
 trading name in user-facing UI — always "our Port & Agency Team".
+
 Stack: **React · Supabase · Anthropic API (claude-sonnet-4-20250514)**
+
 Companion spec files — drop all alongside this file in the project root:
 - `POLARIS_VISA_MODULE.md` — visa module architecture, schema, 7-country config, logic
 - `POLARIS_VISA_HANDBOOK.md` — UAE operational detail, process flows, handbook link
 - `POLARIS_SEAPORT_IMMIGRATION.md` — seaport sign-on/off request form, SLA tracking, reports
+
 ---
+
 ## 2. Project Structure
+
 ```
 /
 ├── app/
@@ -118,9 +129,13 @@ Companion spec files — drop all alongside this file in the project root:
 ├── POLARIS_VISA_HANDBOOK.md            # UAE handbook integration spec
 └── .env.local                          # API keys — server only, never commit
 ```
+
 ---
+
 ## 3. Brand & Design Tokens
+
 Always use these exact values. Never substitute.
+
 ```ts
 // lib/tokens.ts
 export const COLORS = {
@@ -129,48 +144,62 @@ export const COLORS = {
   abyss:     '#0D1520',   // panel background
   deep:      '#0F2030',   // borders
   ocean:     '#1E4060',   // table headers, muted fills
+
   // Polaris accent
   signal:    '#00C4CC',   // primary interactive, Polaris highlights
   signalMid: '#00838A',   // secondary signal uses
+
   // Leo accent
   leoAmber:  '#E8A020',   // Leo UI, AI-origin content
   warn:      '#E87020',   // warnings, high priority
   error:     '#E87050',   // errors, rejected states
+
   // Status
   success:   '#4CAF80',   // approved, complete
   info:      '#7A9DB8',   // informational
+
   // Text
   frost:     '#E8EDF5',   // primary text
   muted:     '#4A7090',   // body text
   steel:     '#3A5570',   // labels, secondary text
 } as const;
+
 export const FONTS = {
   display: 'Space Grotesk',   // all headings, brand, labels, UI
   body:    'Inter',            // body copy, Leo briefing stream text only
   mono:    'Courier New',      // code references only
 } as const;
 ```
+
 **Typography rules:**
 - `Space Grotesk` everywhere except Leo's streaming briefing text (use `Inter` there)
 - No serif typefaces — ever
 - Labels: 9–10px, uppercase, `letter-spacing: 0.18–0.22em`, `font-weight: 600`
 - Body / stream: 13px, `line-height: 1.75`, `color: #C8D8E8`
+
 **Priority dot colours (tasks):**
 - High → `#E87050` (red-orange)
 - Medium → `#E8A020` (Leo amber)
 - Low → `#00C4CC` (signal cyan)
+
 **Dev changelog badge colours:**
 - `FEAT` → cyan (`#00C4CC`)
 - `FIX` → amber (`#E8A020`)
 - `PERF` → purple (`#9A70E8`)
+
 **Visa compliance severity colours:**
 - Critical (blocks submit) → `#E87050` on `#1A0A08` background
 - Warn (acknowledge only) → `#E8A020` on `#1A1200` background
 - Pass → `#4CAF80` on `#0A1F0A` background
+
 ---
+
 ## 4. Supabase Schema
+
 Run migrations in order: 001 → 002 → 003 → 004.
+
 ### Migration 001 — Core platform tables
+
 ```sql
 create table user_profiles (
   user_id        uuid primary key references auth.users(id),
@@ -182,12 +211,14 @@ create table user_profiles (
   last_login     timestamptz,
   timezone       text default 'Asia/Dubai'
 );
+
 create table last_sessions (
   user_id         uuid primary key references user_profiles(user_id),
   session_summary text,
   last_active_at  timestamptz,
   key_actions     jsonb default '[]'
 );
+
 create table tasks (
   task_id      uuid primary key default gen_random_uuid(),
   assigned_to  uuid references user_profiles(user_id),
@@ -199,6 +230,7 @@ create table tasks (
   company_tag  text,
   created_at   timestamptz default now()
 );
+
 create table dev_changelog (
   change_id   uuid primary key default gen_random_uuid(),
   author_id   uuid references user_profiles(user_id),
@@ -208,6 +240,7 @@ create table dev_changelog (
   ticket_ref  text,
   created_at  timestamptz default now()
 );
+
 create table platform_alerts (
   alert_id     uuid primary key default gen_random_uuid(),
   scope        text not null check (scope in ('global','role','user')),
@@ -218,6 +251,7 @@ create table platform_alerts (
   created_at   timestamptz default now(),
   expires_at   timestamptz
 );
+
 create table process_metrics (
   metric_id                  uuid primary key default gen_random_uuid(),
   user_id                    uuid references user_profiles(user_id),
@@ -229,7 +263,9 @@ create table process_metrics (
   computed_at                timestamptz default now()
 );
 ```
+
 ### Migration 002 — Visa core tables
+
 ```sql
 create table crew_members (
   crew_id            uuid primary key default gen_random_uuid(),
@@ -243,6 +279,7 @@ create table crew_members (
   updated_at         timestamptz default now(),
   constraint crew_unique unique (full_name, date_of_birth)
 );
+
 create table crew_passports (
   passport_id      uuid primary key default gen_random_uuid(),
   crew_id          uuid not null references crew_members(crew_id) on delete cascade,
@@ -256,6 +293,7 @@ create table crew_passports (
   created_at       timestamptz default now(),
   updated_at       timestamptz default now()
 );
+
 create table vessels (
   vessel_id    uuid primary key default gen_random_uuid(),
   vessel_name  text not null,
@@ -263,6 +301,7 @@ create table vessels (
   imo_number   text,
   created_at   timestamptz default now()
 );
+
 create table vessel_crew (
   vessel_id  uuid references vessels(vessel_id) on delete cascade,
   crew_id    uuid references crew_members(crew_id) on delete cascade,
@@ -271,6 +310,7 @@ create table vessel_crew (
   active     boolean default true,
   primary key (vessel_id, crew_id)
 );
+
 create table visa_applications (
   application_id    uuid primary key default gen_random_uuid(),
   crew_id           uuid not null references crew_members(crew_id),
@@ -292,6 +332,7 @@ create table visa_applications (
   created_at        timestamptz default now(),
   updated_at        timestamptz default now()
 );
+
 create table visa_application_fields (
   field_id       uuid primary key default gen_random_uuid(),
   application_id uuid not null references visa_applications(application_id) on delete cascade,
@@ -299,6 +340,7 @@ create table visa_application_fields (
   field_value    text,
   document_url   text
 );
+
 create table compliance_alerts (
   alert_id       uuid primary key default gen_random_uuid(),
   crew_id        uuid references crew_members(crew_id),
@@ -315,7 +357,9 @@ create table compliance_alerts (
   created_at     timestamptz default now()
 );
 ```
+
 ### Migration 003 — Satellite office access
+
 ```sql
 create table offices (
   office_id    uuid primary key default gen_random_uuid(),
@@ -323,6 +367,7 @@ create table offices (
   country_code text,
   created_at   timestamptz default now()
 );
+
 create table office_vessel_access (
   office_id  uuid references offices(office_id) on delete cascade,
   vessel_id  uuid references vessels(vessel_id) on delete cascade,
@@ -330,6 +375,7 @@ create table office_vessel_access (
   granted_at timestamptz default now(),
   primary key (office_id, vessel_id)
 );
+
 create table office_members (
   office_id uuid references offices(office_id) on delete cascade,
   user_id   uuid references auth.users(id) on delete cascade,
@@ -337,7 +383,9 @@ create table office_members (
   primary key (office_id, user_id)
 );
 ```
+
 ### Migration 004 — UAE seaport events (visa compliance)
+
 ```sql
 create table seaport_events (
   event_id       uuid primary key default gen_random_uuid(),
@@ -352,8 +400,11 @@ create table seaport_events (
   created_at     timestamptz default now()
 );
 ```
+
 ### Migration 005 — Seaport immigration requests
+
 Full schema in `POLARIS_SEAPORT_IMMIGRATION.md` section 1. Summary:
+
 ```sql
 -- seaport_requests  — one request per vessel per week, tracks lifecycle status
 -- seaport_arrivals  — individual crew arrival rows (up to 15 per request)
@@ -361,7 +412,9 @@ Full schema in `POLARIS_SEAPORT_IMMIGRATION.md` section 1. Summary:
 -- seaport_sla       — SLA timing: submitted → acknowledged → completed → report sent
 -- Enable RLS on all four tables (see POLARIS_SEAPORT_IMMIGRATION.md for policies)
 ```
+
 ### Row-level security — enable on all tables
+
 ```sql
 alter table user_profiles         enable row level security;
 alter table last_sessions          enable row level security;
@@ -376,6 +429,7 @@ alter table visa_application_fields enable row level security;
 alter table compliance_alerts      enable row level security;
 alter table office_vessel_access   enable row level security;
 alter table seaport_events         enable row level security;
+
 -- Core platform
 create policy "own profile"   on user_profiles  for select using (auth.uid() = user_id);
 create policy "own sessions"  on last_sessions   for select using (auth.uid() = user_id);
@@ -385,6 +439,7 @@ create policy "all changelog" on dev_changelog   for select using (auth.role() =
 create policy "alerts"        on platform_alerts for select using (
   scope = 'global' or (scope = 'user' and user_target = auth.uid())
 );
+
 -- Visa: crew access scoped to office vessel assignments
 create policy "crew_access" on crew_members for select using (
   exists (
@@ -397,9 +452,13 @@ create policy "crew_access" on crew_members for select using (
 );
 -- platform_owner bypasses RLS via Supabase custom claims / service role
 ```
+
 ---
+
 ## 5. Data Fetching (`lib/supabase/queries.ts`)
+
 Fetch all Leo context in parallel on login. Target: **< 300ms total**.
+
 ```ts
 export async function fetchLeoContext(userId: string) {
   const [profile, session, tasks, changelog, alerts, visaAlerts] =
@@ -427,26 +486,34 @@ export async function fetchLeoContext(userId: string) {
         .order('created_at', { ascending: true })
         .limit(5),
     ]);
+
   return { profile, session, tasks, changelog, alerts, visaAlerts, seaportRequests };
 }
 ```
+
 ---
+
 ## 6. Lean & 6 Sigma Metrics (`lib/leo/computeMetrics.ts`)
+
 ```ts
 export function computeMetrics(tasks: Task[], changelog: ChangelogEntry[]) {
   const today       = new Date();
   const oldestTask  = tasks.reduce((a, b) =>
     new Date(a.updated_at) < new Date(b.updated_at) ? a : b, tasks[0]);
+
   const wipAgingDays = oldestTask
     ? Math.round((Date.now() - new Date(oldestTask.updated_at).getTime()) / 86400000)
     : 0;
+
   const onSchedule = tasks.filter(t =>
     !t.due_date || t.due_date >= today.toISOString().split('T')[0]
   ).length;
+
   const last7            = changelog.slice(0, 7);
   const deployDefectRate = last7.length
     ? parseFloat((last7.filter(c => c.type === 'fix').length / last7.length).toFixed(2))
     : 0;
+
   return {
     wipAgingDays,
     tasksOnSchedulePct:       tasks.length ? Math.round((onSchedule / tasks.length) * 100) : 100,
@@ -456,16 +523,21 @@ export function computeMetrics(tasks: Task[], changelog: ChangelogEntry[]) {
   };
 }
 ```
+
 ---
+
 ## 7. Context Assembly (`lib/leo/assembleContext.ts`)
+
 ```ts
 export function assembleContext(data: LeoContextData): LeoContext {
   const { profile, session, tasks, changelog, alerts, visaAlerts, metrics } = data;
+
   const hour     = new Date().toLocaleString('en-GB', {
     timeZone: profile.timezone, hour: 'numeric', hour12: false
   });
   const greeting = parseInt(hour) < 12 ? 'morning'
                  : parseInt(hour) < 17 ? 'afternoon' : 'evening';
+
   return {
     user: {
       id:         profile.user_id,
@@ -515,6 +587,7 @@ export function assembleContext(data: LeoContextData): LeoContext {
     process_metrics: metrics,
   };
 }
+
 function relativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const mins = Math.round(diff / 60000);
@@ -523,19 +596,25 @@ function relativeTime(iso: string): string {
   return `${Math.round(mins / 1440)}d ago`;
 }
 ```
+
 ---
+
 ## 8. Leo API Route (`app/api/leo/briefing/route.ts`)
+
 ```ts
 import Anthropic from '@anthropic-ai/sdk';
 import { createClient } from '@/lib/supabase/server';
 import { fetchLeoContext } from '@/lib/supabase/queries';
 import { assembleContext } from '@/lib/leo/assembleContext';
 import { computeMetrics } from '@/lib/leo/computeMetrics';
+
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
 export async function POST(req: Request) {
   const supabase = createClient();
   const { data: { user }, error } = await supabase.auth.getUser();
   if (error || !user) return new Response('Unauthorized', { status: 401 });
+
   const rawContext = await fetchLeoContext(user.id);
   const metrics    = computeMetrics(
     rawContext.tasks?.data    ?? [],
@@ -548,6 +627,7 @@ export async function POST(req: Request) {
     system:     buildSystemPrompt(context),
     messages:   [{ role: 'user', content: 'Generate my login briefing now.' }],
   });
+
   const encoder = new TextEncoder();
   const readable = new ReadableStream({
     async start(controller) {
@@ -559,6 +639,7 @@ export async function POST(req: Request) {
       controller.close();
     }
   });
+
   return new Response(readable, {
     headers: {
       'Content-Type':     'text/plain; charset=utf-8',
@@ -568,43 +649,56 @@ export async function POST(req: Request) {
   });
 }
 ```
+
 ---
+
 ## 9. Leo System Prompt (`buildSystemPrompt`)
+
 ```ts
 function buildSystemPrompt(context: LeoContext): string {
   return `
 You are Leo — the active intelligence engine inside the Polaris yacht management platform.
 You are not a chatbot. You are a proactive briefing officer who speaks first on every login.
+
 CONTEXT:
 ${JSON.stringify(context, null, 2)}
+
 BRIEFING STRUCTURE — follow this order exactly:
+
 1. GREETING
    Address ${context.user.name} by name. Acknowledge the time of day (it is ${context.user.greeting}).
    One sentence only. Direct.
+
 2. LAST INTERACTION
    Reference their last session specifically: ${context.last_session.summary}
    One or two sentences.
+
 3. PENDING TASKS
    Highlight the highest-priority open items only. Name the task, the deadline, the urgency.
    Do not list everything. Surface the two or three that matter most right now.
+
 4. PLATFORM UPDATES
    Note any relevant developer changes since their last session. Credit the developer by name.
    Only include changes relevant to this user's role (${context.user.role}).
+
 5. OPERATIONAL INSIGHT
    Provide one insight derived from the process metrics.
    Apply Lean or 6 Sigma principles where relevant.
    Name the signal explicitly (e.g. "WIP aging", "DPMO", "cycle time deviation").
    Be specific and actionable. Not generic.
+
 6. VISA & COMPLIANCE (only if visa_compliance contains items)
    If there are critical visa compliance alerts, surface the most urgent one.
    Name the crew member and the expiry date. Be specific.
    Example: "Ahmed Al Rashidi's UAE visa expires in 4 days — renewal has not been initiated."
    One alert maximum. Prioritise critical over warn.
+
 7. SEAPORT IMMIGRATION (only if seaport_pending contains time-sensitive items)
    Surface only if a request has been waiting > 2 hours without completion, or SLA is breached.
    Name the vessel and time elapsed. One item maximum.
    Example: "M/Y Seraphina submitted a seaport sign-on request 3 hours ago — SLA expires in 1 hour."
    Never surface completed or report_sent requests.
+
 UAE VISA PROCESS KNOWLEDGE:
 - UAE crew visas MUST be pre-approved before crew arrives. Non-negotiable.
 - Minimum processing time is 1–2 working days. Never promise same-day.
@@ -612,13 +706,16 @@ UAE VISA PROCESS KNOWLEDGE:
 - On departure: crew MUST complete seaport immigration sign-off before exiting UAE.
 - For help, refer to "our Port & Agency Team" — never name the company.
 - Contact: support@jlsyachts.com / +971 4 331 3555.
+
 TONE:
 Direct. Confident. Like a knowledgeable first officer delivering a handover brief.
 Never say "I'm here to help" or "How can I assist you today."
 Use plain language. Lean/6 Sigma terminology is acceptable when precise.
+
 FORMAT:
 Plain prose only. No markdown. No bullet points. No headers.
 Target 120–180 words.
+
 After the prose briefing — on a new line — output a JSON block wrapped in <insights> tags:
 <insights>
 {
@@ -627,38 +724,51 @@ After the prose briefing — on a new line — output a JSON block wrapped in <i
   "alert":   "One sentence — the single most urgent thing requiring attention."
 }
 </insights>
+
 The <insights> block is parsed by the client and rendered separately. It must be valid JSON.
 Do not mention the <insights> block in the prose briefing.
 `.trim();
 }
 ```
+
 ---
+
 ## 10. LeoPanel Component (`components/leo/LeoPanel.tsx`)
+
 ```tsx
 'use client';
 import { useEffect, useRef, useState } from 'react';
+
 type Insights = { lean: string; process: string; alert: string };
+
 export function LeoPanel() {
   const [text, setText]         = useState('');
   const [status, setStatus]     = useState<'thinking'|'streaming'|'ready'>('thinking');
   const [insights, setInsights] = useState<Insights | null>(null);
   const bufferRef               = useRef('');
+
   useEffect(() => { streamBriefing(); }, []);
+
   async function streamBriefing() {
     setStatus('streaming');
     const res = await fetch('/api/leo/briefing', { method: 'POST' });
     if (!res.body) return;
+
     const reader  = res.body.getReader();
     const decoder = new TextDecoder();
+
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
+
       bufferRef.current += decoder.decode(value, { stream: true });
+
       const insightStart = bufferRef.current.indexOf('<insights>');
       const visibleText  = insightStart === -1
         ? bufferRef.current
         : bufferRef.current.slice(0, insightStart);
       setText(visibleText);
+
       const insightEnd = bufferRef.current.indexOf('</insights>');
       if (insightStart !== -1 && insightEnd !== -1 && !insights) {
         const json = bufferRef.current.slice(insightStart + 10, insightEnd).trim();
@@ -667,6 +777,7 @@ export function LeoPanel() {
     }
     setStatus('ready');
   }
+
   return (
     <div style={{ background: '#0D1520', border: '1px solid #0F2030', borderRadius: 6 }}>
       <div style={{ background: '#0A1018', borderBottom: '1px solid #0F2030',
@@ -688,6 +799,7 @@ export function LeoPanel() {
           {status === 'ready'     && 'Briefing ready'}
         </div>
       </div>
+
       <div style={{ padding: '14px 16px' }}>
         <p style={{ fontFamily: 'Inter', fontSize: 13, color: '#C8D8E8',
                     lineHeight: 1.75, margin: 0, whiteSpace: 'pre-wrap' }}>
@@ -698,6 +810,7 @@ export function LeoPanel() {
                            animation: 'blink 0.7s infinite' }} />
           )}
         </p>
+
         {insights && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr',
                         gap: 10, marginTop: 14 }}>
@@ -726,10 +839,14 @@ export function LeoPanel() {
   );
 }
 ```
+
 ---
+
 ## 11. Visa Module — Key Rules
+
 Full spec in `POLARIS_VISA_MODULE.md` and `POLARIS_VISA_HANDBOOK.md`.
 These rules are non-negotiable and override any assumptions:
+
 1. **Never duplicate crew** — always run `findOrPromptCrewMatch(name, dob)` before inserting.
 2. **Match crew on `full_name + date_of_birth` only** — never on nationality alone.
 3. **Always ask about multiple passports** on crew profile creation.
@@ -744,8 +861,11 @@ These rules are non-negotiable and override any assumptions:
 12. **Handbook link appears only on the country info page** — `components/visa/HandbookLink.tsx`.
 13. **Label the Port & Agency Team as "our Port & Agency Team"** — never the company name.
 14. **Visa compliance alerts feed Leo** — unresolved critical alerts surface in the login briefing.
+
 ---
+
 ## 12. Environment Variables
+
 ```bash
 # .env.local — never commit this file
 ANTHROPIC_API_KEY=sk-ant-...          # server only — never expose to client
@@ -753,14 +873,20 @@ NEXT_PUBLIC_SUPABASE_URL=https://...
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...         # server only
 ```
+
 ---
+
 ## 13. Dev Mode — User Context Switcher
+
 - Render only when `process.env.NODE_ENV === 'development'` OR
   `role === 'platform_owner'` AND URL contains `?devMode=true`.
 - Switching triggers: re-fetch tasks, re-fetch metrics, new Leo briefing call.
 - Must not render in production builds under any circumstances.
+
 ---
+
 ## 14. Key Rules for Claude Code
+
 1. **Never call the Anthropic API from the client** — always route through `/api/leo/briefing`.
 2. **Never expose `ANTHROPIC_API_KEY` or `SUPABASE_SERVICE_ROLE_KEY`** to the client.
 3. **Always stream Leo's response** — never wait for the full response before rendering.
@@ -776,8 +902,11 @@ SUPABASE_SERVICE_ROLE_KEY=...         # server only
 13. **Seaport SLA is tracked on every status transition** — call `updateSLA()` without exception.
 14. **Seaport report is only sent after all crew rows are terminal** — never send early.
 15. **Seaport module integrates with Migration 004** — completing a sign-on/off row also writes to `seaport_events`.
+
 ---
+
 ## 15. Open Tickets (as of June 2026)
+
 | Ticket | Assigned   | Priority | Description |
 |--------|------------|----------|-------------|
 | #118   | Matt Tighe | HIGH     | ISM cert expiry edge case — expiry on a weekend not handled in compliance module |
@@ -790,5 +919,7 @@ SUPABASE_SERVICE_ROLE_KEY=...         # server only
 | #125   | Matt Tighe | MED      | SLA timer component and seaport_sla auto-update on status transitions |
 | #126   | Matt Tighe | MED      | Completion report PDF generation and send to vessel |
 | #127   | Matt Tighe | LOW      | Add seaport section to vessel detail page |
+
 ---
+
 *Polaris / Leo — Internal · Confidential · v1.3 — June 2026*
