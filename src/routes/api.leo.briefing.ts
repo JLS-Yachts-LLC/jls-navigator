@@ -11,7 +11,7 @@
 
 import { createAPIFileRoute } from '@tanstack/react-start/api'
 import { createClient } from '@supabase/supabase-js'
-import { getAccessLevel, ACCESS_CAPS } from '@/lib/leo-access'
+import { getAccessLevel, ACCESS_CAPS, ACCESS_LABELS } from '@/lib/leo-access'
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages'
 const LEO_MODEL     = 'claude-sonnet-4-6'
@@ -318,7 +318,6 @@ export const APIRoute = createAPIFileRoute('/api/leo/briefing')({
       context = { error: 'Context assembly failed', accessLevel: getAccessLevel(userEmail) }
     }
 
-    const { getAccessLevel: _g, ACCESS_LABELS } = await import('@/lib/leo-access')
     const accessLabel = ACCESS_LABELS[getAccessLevel(userEmail)]
     const systemPrompt = buildSystemPrompt(userName, accessLabel, context)
 
