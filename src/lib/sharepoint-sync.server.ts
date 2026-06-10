@@ -129,6 +129,24 @@ export async function deleteSpSync(id: string): Promise<void> {
   if (error) throw new Error(error.message)
 }
 
+/**
+ * Sync the single least-recently-synced enabled list. Called every cron tick so
+ * the lists rotate through one-per-invocation — each runs in its own Cloudflare
+ * invocation, staying under the per-invocation subrequest limit (running all
+ * lists at once exceeds it). Self-fetch fan-out isn't an option: Cloudflare
+ * blocks a Worker from fetching its own zone.
+ */
+export async function syncStalestList(): Promise<{ name: string; synced: number; errors: number } | null> {
+  const syncs = (await getSpSyncs()).filter(s => s.enabled)
+  if (!syncs.length) return null
+  syncs.sort((a, b) =>
+    (a.lastSyncedAt ? new Date(a.lastSyncedAt).getTime() : 0) -
+    (b.lastSyncedAt ? new Date(b.lastSyncedAt).getTime() : 0))
+  const target = syncs[0]
+  const r = await syncById(target.id)
+  return { name: target.name, synced: r.synced, errors: r.errors }
+}
+
 export async function syncById(id: string): Promise<{ synced: number; errors: number; samples?: string[] }> {
   const syncs = await getSpSyncs()
   const sync = syncs.find(s => s.id === id)
