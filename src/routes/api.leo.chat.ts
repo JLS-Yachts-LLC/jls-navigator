@@ -8,7 +8,6 @@
  * Security: ANTHROPIC_API_KEY is a Wrangler secret.
  */
 
-import { createAPIFileRoute } from '@tanstack/react-start/api'
 import { createClient } from '@supabase/supabase-js'
 import { getAccessLevel, ACCESS_LABELS } from '@/lib/leo-access'
 
@@ -32,20 +31,7 @@ Stay in character: confident, direct, no filler phrases.
 Keep responses concise — 2-4 sentences unless more detail is clearly needed.
 Use plain text only, no markdown headers, no bullet lists.`
 
-export const APIRoute = createAPIFileRoute('/api/leo/chat')({
-  POST: async ({ request }) => {
-    try {
-      return await leoChatHandler(request)
-    } catch (e: any) {
-      console.error('Leo chat unhandled error:', e)
-      return new Response(
-        JSON.stringify({ error: `Leo error: ${e?.message ?? String(e)}` }),
-        { status: 500, headers: { 'Content-Type': 'application/json' } },
-      )
-    }
-  },
-})
-
+// ── Handler (called directly from worker-entry.ts) ───────────────────────────
 export async function leoChatHandler(request: Request): Promise<Response> {
     const apiKey = process.env.ANTHROPIC_API_KEY
     if (!apiKey) {

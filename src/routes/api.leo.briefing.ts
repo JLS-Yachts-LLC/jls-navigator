@@ -9,7 +9,6 @@
  * Set it with: wrangler secret put ANTHROPIC_API_KEY
  */
 
-import { createAPIFileRoute } from '@tanstack/react-start/api'
 import { createClient } from '@supabase/supabase-js'
 import { getAccessLevel, ACCESS_CAPS, ACCESS_LABELS } from '@/lib/leo-access'
 
@@ -269,21 +268,7 @@ Answer directly from the context provided. If data is not in context, say so pla
 Stay in character as Leo. Operational. Precise. No filler.`
 }
 
-// ── API Route ─────────────────────────────────────────────────────────────────
-export const APIRoute = createAPIFileRoute('/api/leo/briefing')({
-  POST: async ({ request }) => {
-    try {
-      return await leoBriefingHandler(request)
-    } catch (e: any) {
-      console.error('Leo briefing unhandled error:', e)
-      return new Response(
-        JSON.stringify({ error: `Leo error: ${e?.message ?? String(e)}` }),
-        { status: 500, headers: { 'Content-Type': 'application/json' } },
-      )
-    }
-  },
-})
-
+// ── Handler (called directly from worker-entry.ts) ───────────────────────────
 export async function leoBriefingHandler(request: Request): Promise<Response> {
     const apiKey = process.env.ANTHROPIC_API_KEY
     if (!apiKey) {
