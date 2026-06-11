@@ -9,6 +9,7 @@ import { leoBriefingHandler } from './routes/api.leo.briefing'
 import { leoChatHandler } from './routes/api.leo.chat'
 import { visaComplianceHandler } from './routes/api.visa.compliance'
 import { visaMonitorHandler } from './routes/api.visa.monitor'
+import { visaExportHandler } from './routes/api.visa.export'
 
 const handleRequest = createStartHandler(defaultStreamHandler)
 
@@ -127,6 +128,11 @@ export default {
 
     if (url.pathname === '/api/visa/monitor' && request.method === 'POST') {
       return visaMonitorHandler(request)
+    }
+
+    if ((url.pathname === '/api/visa/export' && request.method === 'GET') ||
+        (url.pathname === '/api/visa/export/email' && request.method === 'POST')) {
+      return visaExportHandler(request)
     }
 
     return handleRequest(request, env, ctx)
