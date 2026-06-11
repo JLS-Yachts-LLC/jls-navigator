@@ -34,7 +34,11 @@ export const VISA_WORKBOOKS = [
 // and how to render the value for Excel.
 type FieldSpec = { dbKey: string; aliases: string[]; kind: 'text' | 'date' }
 const FIELDS: FieldSpec[] = [
-  { dbKey: 'status',             aliases: ['STATUS'],                                   kind: 'text' },
+  // NOTE: the tracker's STATUS column is operational crew-movement state
+  // (closed / on board / sign off / on signer / cancelled …) — a different
+  // concept from the app's visa-application status. Writing the app status
+  // here would overwrite meaningful values, so STATUS is intentionally NOT
+  // synced. (The only clean overlap would be cancelled→cancelled.)
   { dbKey: 'visa_number',        aliases: ['VISA REF', 'VISA REFERENCE', 'VISA NO', 'VISA NUMBER'], kind: 'text' },
   { dbKey: 'visa_issuance_date', aliases: ['VISA ISSUANCE', 'VISA ISSUE', 'ISSUANCE'],  kind: 'date' },
   { dbKey: 'visa_expiry',        aliases: ['VISA EXPIRY', 'VISA EXP'],                  kind: 'date' },
