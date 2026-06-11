@@ -9,6 +9,9 @@ export const Route = createFileRoute('/_app/admin')({
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) throw redirect({ to: '/auth' })
 
+    // In dev mode, any authenticated session can access admin
+    if (import.meta.env.DEV) return
+
     const email = session.user.email?.toLowerCase() ?? ''
     const role  = session.user.app_metadata?.role ??
                   (DEVELOPER_EMAILS.includes(email) ? 'global_admin' : null)

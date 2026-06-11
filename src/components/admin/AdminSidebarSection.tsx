@@ -22,7 +22,10 @@ export function AdminSidebarSection() {
     (user as any)?.app_metadata?.role ??
     (DEVELOPER_EMAILS.includes(email) ? 'global_admin' : '')
 
-  if (!['global_admin', 'org_admin'].includes(role)) return null
+  // In dev mode, all authenticated users can access admin UI
+  // (API routes still enforce role checks server-side)
+  const isDev = import.meta.env.DEV
+  if (!isDev && !['global_admin', 'org_admin'].includes(role)) return null
 
   return (
     <div
