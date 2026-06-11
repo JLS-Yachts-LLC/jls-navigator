@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchAllRows } from "@/lib/fetch-all";
 import { Loader2, BookOpen, ChevronRight } from "lucide-react";
 import { DEPARTMENTS } from "./guide-meta";
 
@@ -12,7 +13,7 @@ export function GuidesOverview() {
 
   async function load() {
     setLoading(true);
-    const { data } = await (supabase as any).from("guides").select("department");
+    const { data } = await fetchAllRows(() => (supabase as any).from("guides").select("department"));
     const c: Record<string, number> = {};
     for (const r of (data ?? []) as { department: string }[]) c[r.department] = (c[r.department] ?? 0) + 1;
     setCounts(c);

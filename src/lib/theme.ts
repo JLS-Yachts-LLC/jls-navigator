@@ -9,7 +9,8 @@ export function getStoredTheme(): Theme {
     const t = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem("aquila.theme");
     if (t === "light" || t === "dark") return t;
   } catch { /* ignore */ }
-  return "light";
+  // Default to dark to match the pre-paint script in __root.tsx (brand is dark-first).
+  return "dark";
 }
 
 export function applyTheme(theme: Theme) {

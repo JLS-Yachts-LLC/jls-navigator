@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Route } from "@/routes/_app.orbit.$projectId";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchAllRows } from "@/lib/fetch-all";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -190,7 +191,7 @@ export function ProjectDetailPage() {
     setLoading(true);
     const [projRes, tasksRes] = await Promise.all([
       (supabase as any).from("orbit_projects").select("*, yacht:yachts(vessel_name)").eq("id", projectId).maybeSingle(),
-      (supabase as any).from("orbit_tasks").select("*").eq("project_id", projectId).order("sort_order").order("created_at"),
+      fetchAllRows(() => (supabase as any).from("orbit_tasks").select("*").eq("project_id", projectId).order("sort_order").order("created_at")),
     ]);
     if (projRes.error || !projRes.data) {
       toast.error("Project not found");

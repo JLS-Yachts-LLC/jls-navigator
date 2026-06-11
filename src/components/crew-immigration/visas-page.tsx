@@ -11,6 +11,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Plus, Search, FileText, Pencil, Trash2, Loader2, CheckCircle2, Clock, AlertTriangle, XCircle, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
+import { doPushToSharePoint } from "@/lib/sharepoint-push.server";
+import { fetchAllRows } from "@/lib/fetch-all";
 import { cn } from "@/lib/utils";
 import { useActiveVessel } from "@/components/vessel-switcher";
 
@@ -93,22 +95,22 @@ export function VisasPage() {
 
   async function load() {
     setLoading(true);
-    const { data, error } = await (supabase as any)
+    const { data, error } = await fetchAllRows(() => (supabase as any)
       .from("visa_applications")
       .select("*")
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false }));
     if (error) toast.error(error.message);
     else setVisas(data ?? []);
     setLoading(false);
   }
 
   async function loadCrew() {
-    const { data } = await (supabase as any).from("crew_members").select("id, first_name, last_name, rank, yacht_id").order("last_name");
+    const { data } = await fetchAllRows(() => (supabase as any).from("crew_members").select("id, first_name, last_name, rank, yacht_id").order("last_name"));
     setCrew(data ?? []);
   }
 
   async function loadYachts() {
-    const { data } = await supabase.from("yachts").select("id, vessel_name").order("vessel_name");
+    const { data } = await fetchAllRows(() => supabase.from("yachts").select("id, vessel_name").order("vessel_name"));
     setYachts((data ?? []) as Yacht[]);
   }
 
@@ -156,11 +158,12 @@ export function VisasPage() {
         updated_at: new Date().toISOString(),
       };
       const db = supabase as any;
-      const { error } = editing
-        ? await db.from("visa_applications").update(payload).eq("id", editing.id)
-        : await db.from("visa_applications").insert([payload]);
+      const { data: saved, error } = editing
+        ? await db.from("visa_applications").update(payload).eq("id", editing.id).select("id").single()
+        : await db.from("visa_applications").insert([payload]).select("id").single();
       if (error) throw error;
       toast.success(editing ? "Application updated" : "Visa application created");
+      if (saved?.id) doPushToSharePoint({ data: { target: "visa_applications", id: saved.id } } as any).catch(() => {});
       setOpen(false);
       void load();
     } catch (e: any) {

@@ -14,6 +14,7 @@
  */
 import { createServerFn } from "@tanstack/react-start";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { fetchAllRows } from "./fetch-all";
 
 const BASE = "https://tracking.mygps.ae/backend";
 
@@ -79,7 +80,7 @@ async function fetchFleetRaw(): Promise<FleetVehicle[]> {
 type VehIdx = Map<string, { id: string; make: string | null; model: string | null }>;
 
 async function loadVehicleIndex(): Promise<VehIdx> {
-  const { data } = await (supabaseAdmin as any).from("crew_vehicles").select("id, registration, make, model");
+  const { data } = await fetchAllRows(() => (supabaseAdmin as any).from("crew_vehicles").select("id, registration, make, model").order("id"));
   const idx: VehIdx = new Map();
   for (const r of (data ?? []) as any[]) {
     if (r.registration) idx.set(String(r.registration).toUpperCase(), { id: r.id, make: r.make, model: r.model });

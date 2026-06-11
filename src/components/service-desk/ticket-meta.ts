@@ -5,12 +5,14 @@ export type TicketStatus = "open" | "in_progress" | "waiting" | "resolved" | "cl
 export type TicketPriority = "urgent" | "high" | "normal" | "low";
 export type TicketCategory =
   | "connectivity" | "cyber_security" | "hardware" | "software" | "network" | "general";
+export type TicketQueue = "polaris" | "license" | "hardware" | "sim_card";
 
 export const STATUS_ORDER: TicketStatus[] = ["open", "in_progress", "waiting", "resolved", "closed"];
 export const PRIORITY_ORDER: TicketPriority[] = ["urgent", "high", "normal", "low"];
 export const CATEGORY_ORDER: TicketCategory[] = [
   "connectivity", "cyber_security", "hardware", "software", "network", "general",
 ];
+export const QUEUE_ORDER: TicketQueue[] = ["polaris", "license", "hardware", "sim_card"];
 
 export const STATUS_LABEL: Record<string, string> = {
   open: "Open", in_progress: "In Progress", waiting: "Waiting",
@@ -45,6 +47,10 @@ export const PRIORITY_COLOR: Record<string, string> = {
 export const CATEGORY_LABEL: Record<string, string> = {
   connectivity: "Connectivity", cyber_security: "Cyber Security", hardware: "Hardware",
   software: "Software", network: "Network", general: "General",
+};
+
+export const QUEUE_LABEL: Record<string, string> = {
+  polaris: "Polaris", license: "License", hardware: "Hardware", sim_card: "Sim Card",
 };
 
 export const labelFor = (map: Record<string, string>, v: string | null | undefined) =>

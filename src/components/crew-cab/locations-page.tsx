@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchAllRows } from "@/lib/fetch-all";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -61,7 +62,7 @@ export function LocationsPage() {
 
   async function load() {
     setLoading(true);
-    const { data, error } = await (supabase as any).from("crew_locations").select("*").order("name");
+    const { data, error } = await fetchAllRows(() => (supabase as any).from("crew_locations").select("*").order("name"));
     if (error) toast.error(error.message);
     else setLocations(data as Location[]);
     setLoading(false);

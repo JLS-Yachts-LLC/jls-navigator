@@ -9,12 +9,11 @@
  * Set it with: wrangler secret put ANTHROPIC_API_KEY
  */
 
-import { createAPIFileRoute } from '@tanstack/react-start/api'
 import { createClient } from '@supabase/supabase-js'
-import { getAccessLevel, ACCESS_CAPS } from '@/lib/leo-access'
+import { getAccessLevel, ACCESS_CAPS, ACCESS_LABELS } from '@/lib/leo-access'
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages'
-const LEO_MODEL     = 'claude-opus-4-5'   // update to latest available model
+const LEO_MODEL     = 'claude-sonnet-4-6'
 
 // ── Supabase admin client (server-only) ─────────────────────────────────────
 function getAdmin() {
@@ -269,9 +268,8 @@ Answer directly from the context provided. If data is not in context, say so pla
 Stay in character as Leo. Operational. Precise. No filler.`
 }
 
-// ── API Route ─────────────────────────────────────────────────────────────────
-export const APIRoute = createAPIFileRoute('/api/leo/briefing')({
-  POST: async ({ request }) => {
+// ── Handler (called directly from worker-entry.ts) ───────────────────────────
+export async function leoBriefingHandler(request: Request): Promise<Response> {
     const apiKey = process.env.ANTHROPIC_API_KEY
     if (!apiKey) {
       return new Response(
@@ -318,31 +316,40 @@ export const APIRoute = createAPIFileRoute('/api/leo/briefing')({
       context = { error: 'Context assembly failed', accessLevel: getAccessLevel(userEmail) }
     }
 
-    const { getAccessLevel: _g, ACCESS_LABELS } = await import('@/lib/leo-access')
     const accessLabel = ACCESS_LABELS[getAccessLevel(userEmail)]
     const systemPrompt = buildSystemPrompt(userName, accessLabel, context)
 
     // Call Anthropic — stream the response
-    const anthropicRes = await fetch(ANTHROPIC_URL, {
-      method: 'POST',
-      headers: {
-        'x-api-key':         apiKey,
-        'anthropic-version': '2023-06-01',
-        'content-type':      'application/json',
-      },
-      body: JSON.stringify({
-        model:      LEO_MODEL,
-        max_tokens: 1200,
-        stream:     true,
-        system:     systemPrompt,
-        messages:   [{ role: 'user', content: 'Deliver my briefing now.' }],
-      }),
-    })
+    let anthropicRes: Response
+    try {
+      anthropicRes = await fetch(ANTHROPIC_URL, {
+        method: 'POST',
+        headers: {
+          'x-api-key':         apiKey,
+          'anthropic-version': '2023-06-01',
+          'content-type':      'application/json',
+        },
+        body: JSON.stringify({
+          model:      LEO_MODEL,
+          max_tokens: 1200,
+          stream:     true,
+          system:     systemPrompt,
+          messages:   [{ role: 'user', content: 'Deliver my briefing now.' }],
+        }),
+      })
+    } catch (e: any) {
+      console.error('Leo Anthropic fetch failed:', e)
+      return new Response(
+        JSON.stringify({ error: `Failed to reach Anthropic: ${e?.message ?? 'network error'}` }),
+        { status: 502, headers: { 'Content-Type': 'application/json' } },
+      )
+    }
 
     if (!anthropicRes.ok) {
       const err = await anthropicRes.text()
+      console.error('Leo Anthropic non-OK:', anthropicRes.status, err)
       return new Response(
-        JSON.stringify({ error: `Anthropic error: ${anthropicRes.status} — ${err}` }),
+        JSON.stringify({ error: `Anthropic error ${anthropicRes.status}: ${err}` }),
         { status: 502, headers: { 'Content-Type': 'application/json' } },
       )
     }
@@ -387,5 +394,4 @@ export const APIRoute = createAPIFileRoute('/api/leo/briefing')({
         'X-Accel-Buffering': 'no',
       },
     })
-  },
-})
+}

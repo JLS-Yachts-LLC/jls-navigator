@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchAllRows } from "@/lib/fetch-all";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -50,7 +51,7 @@ export function DriversPage() {
 
   async function load() {
     setLoading(true);
-    const { data, error } = await (supabase as any).from("crew_drivers").select("*").order("full_name");
+    const { data, error } = await fetchAllRows(() => (supabase as any).from("crew_drivers").select("*").order("full_name"));
     if (error) toast.error(error.message);
     else setDrivers(data as Driver[]);
     setLoading(false);

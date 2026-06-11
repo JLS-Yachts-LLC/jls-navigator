@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchAllRows } from "@/lib/fetch-all";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -107,8 +108,8 @@ export function VisaWizardPage() {
     void (async () => {
       const db = supabase as any;
       const [c, y] = await Promise.all([
-        db.from("crew_members").select("id, first_name, last_name, rank, status, yacht_id").order("last_name"),
-        supabase.from("yachts").select("id, vessel_name").order("vessel_name"),
+        fetchAllRows(() => db.from("crew_members").select("id, first_name, last_name, rank, status, yacht_id").order("last_name")),
+        fetchAllRows(() => supabase.from("yachts").select("id, vessel_name").order("vessel_name")),
       ]);
       setCrew(c.data ?? []);
       setYachts((y.data ?? []) as Yacht[]);

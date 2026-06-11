@@ -17,6 +17,7 @@ import {
   CalendarDays, AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
+import { doPushToSharePoint } from "@/lib/sharepoint-push.server";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -298,10 +299,12 @@ export function SmallBoatRegistrationPage() {
         const { error } = await (supabase as any).from("small_boats").update(payload).eq("id", editing.id);
         if (error) throw error;
         toast.success("Boat updated");
+        doPushToSharePoint({ data: { target: "small_boats", id: editing.id } } as any).catch(() => {});
       } else {
-        const { error } = await (supabase as any).from("small_boats").insert([payload]);
+        const { data: ins, error } = await (supabase as any).from("small_boats").insert([payload]).select("id").single();
         if (error) throw error;
         toast.success("Boat added");
+        if (ins?.id) doPushToSharePoint({ data: { target: "small_boats", id: ins.id } } as any).catch(() => {});
       }
       setOpen(false);
       await load();

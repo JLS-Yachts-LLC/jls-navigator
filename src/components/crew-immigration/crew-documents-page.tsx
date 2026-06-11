@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchAllRows } from "@/lib/fetch-all";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -68,17 +69,17 @@ export function CrewDocumentsPage() {
 
   async function load() {
     setLoading(true);
-    const { data, error } = await (supabase as any).from("crew_documents").select("*").order("expiry_date", { ascending: true, nullsFirst: false });
+    const { data, error } = await fetchAllRows(() => (supabase as any).from("crew_documents").select("*").order("expiry_date", { ascending: true, nullsFirst: false }));
     if (error) toast.error(error.message);
     else setDocs(data ?? []);
     setLoading(false);
   }
   async function loadCrew() {
-    const { data } = await (supabase as any).from("crew_members").select("id, first_name, last_name, yacht_id").order("last_name");
+    const { data } = await fetchAllRows(() => (supabase as any).from("crew_members").select("id, first_name, last_name, yacht_id").order("last_name"));
     setCrew(data ?? []);
   }
   async function loadYachts() {
-    const { data } = await supabase.from("yachts").select("id, vessel_name").order("vessel_name");
+    const { data } = await fetchAllRows(() => supabase.from("yachts").select("id, vessel_name").order("vessel_name"));
     setYachts((data ?? []) as { id: string; vessel_name: string }[]);
   }
 

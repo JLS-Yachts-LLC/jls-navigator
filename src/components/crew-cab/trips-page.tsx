@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchAllRows } from "@/lib/fetch-all";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -799,11 +800,11 @@ export function TripsPage() {
   async function loadAll() {
     setLoading(true);
     const [tripsRes, locsRes, driversRes, vehiclesRes, yachtsRes] = await Promise.all([
-      (supabase as any).from("crew_trips").select(`*, driver:crew_drivers(full_name), vehicle:crew_vehicles(make,model,registration), pickup_loc:crew_locations!pickup_location_id(name,latitude,longitude), dropoff_loc:crew_locations!dropoff_location_id(name,latitude,longitude), yacht:yachts(vessel_name)`).order("pickup_datetime", { ascending: false }),
-      (supabase as any).from("crew_locations").select("id,name,address,latitude,longitude").order("name"),
-      (supabase as any).from("crew_drivers").select("id,full_name").order("full_name"),
-      (supabase as any).from("crew_vehicles").select("id,make,model,registration").order("make"),
-      (supabase as any).from("yachts").select("id,vessel_name").order("vessel_name"),
+      fetchAllRows(() => (supabase as any).from("crew_trips").select(`*, driver:crew_drivers(full_name), vehicle:crew_vehicles(make,model,registration), pickup_loc:crew_locations!pickup_location_id(name,latitude,longitude), dropoff_loc:crew_locations!dropoff_location_id(name,latitude,longitude), yacht:yachts(vessel_name)`).order("pickup_datetime", { ascending: false })),
+      fetchAllRows(() => (supabase as any).from("crew_locations").select("id,name,address,latitude,longitude").order("name")),
+      fetchAllRows(() => (supabase as any).from("crew_drivers").select("id,full_name").order("full_name")),
+      fetchAllRows(() => (supabase as any).from("crew_vehicles").select("id,make,model,registration").order("make")),
+      fetchAllRows(() => (supabase as any).from("yachts").select("id,vessel_name").order("vessel_name")),
     ]);
     if (tripsRes.error) toast.error(tripsRes.error.message); else setTrips(tripsRes.data as Trip[]);
     if (!locsRes.error) setLocations(locsRes.data as SavedLocation[]);

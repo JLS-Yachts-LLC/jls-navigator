@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchAllRows } from "@/lib/fetch-all";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,7 +47,7 @@ export function SignOnOffPage() {
 
   async function load() {
     setLoading(true);
-    const { data, error } = await (supabase as any).from("crew_signon_events").select("*").order("event_date", { ascending: false, nullsFirst: false });
+    const { data, error } = await fetchAllRows(() => (supabase as any).from("crew_signon_events").select("*").order("event_date", { ascending: false, nullsFirst: false }));
     if (error) toast.error(error.message);
     else setEvents(data ?? []);
     setLoading(false);
@@ -54,8 +55,8 @@ export function SignOnOffPage() {
   async function loadRefs() {
     const db = supabase as any;
     const [c, y] = await Promise.all([
-      db.from("crew_members").select("id, first_name, last_name, rank").order("last_name"),
-      supabase.from("yachts").select("id, vessel_name").order("vessel_name"),
+      fetchAllRows(() => db.from("crew_members").select("id, first_name, last_name, rank").order("last_name")),
+      fetchAllRows(() => supabase.from("yachts").select("id, vessel_name").order("vessel_name")),
     ]);
     setCrew(c.data ?? []);
     setYachts((y.data ?? []) as Yacht[]);

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchAllRows } from "@/lib/fetch-all";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -127,7 +128,7 @@ export function VehiclesPage() {
 
   async function load() {
     setLoading(true);
-    const { data, error } = await (supabase as any).from("crew_vehicles").select("*").order("make");
+    const { data, error } = await fetchAllRows(() => (supabase as any).from("crew_vehicles").select("*").order("make"));
     if (error) toast.error(error.message);
     else setVehicles(data as Vehicle[]);
     setLoading(false);

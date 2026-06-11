@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchAllRows } from "@/lib/fetch-all";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -96,10 +97,10 @@ export function DeliveriesPage() {
 
   async function load() {
     setLoading(true);
-    const { data, error } = await (supabase as any)
+    const { data, error } = await fetchAllRows(() => (supabase as any)
       .from("deliveries")
       .select("*")
-      .order("scheduled_date", { ascending: false });
+      .order("scheduled_date", { ascending: false }));
     if (error) {
       if (String(error.message).includes("does not exist") || String(error.code) === "42P01") {
         setTableError(true);
@@ -114,20 +115,20 @@ export function DeliveriesPage() {
   }
 
   async function loadYachts() {
-    const { data } = await supabase.from("yachts").select("id, vessel_name").order("vessel_name");
+    const { data } = await fetchAllRows(() => supabase.from("yachts").select("id, vessel_name").order("vessel_name"));
     setYachts((data ?? []) as Yacht[]);
   }
 
   async function loadDrivers() {
-    const { data } = await (supabase as any).from("delivery_drivers").select("id, name").order("name");
+    const { data } = await fetchAllRows(() => (supabase as any).from("delivery_drivers").select("id, name").order("name"));
     setDrivers((data ?? []) as Driver[]);
   }
 
   async function loadPackages() {
-    const { data } = await (supabase as any)
+    const { data } = await fetchAllRows(() => (supabase as any)
       .from("packages")
       .select("id, tracking_number, description")
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false }));
     setPackages((data ?? []) as PackageRef[]);
   }
 

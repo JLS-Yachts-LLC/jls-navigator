@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchAllRows } from "@/lib/fetch-all";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Plus, Search, UserCircle2, Pencil, Trash2, Loader2, FileText, Table2, LayoutGrid, Rows3, Upload } from "lucide-react";
 import { toast } from "sonner";
+import { doPushToSharePoint } from "@/lib/sharepoint-push.server";
 import { Link } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
 import { useActiveVessel } from "@/components/vessel-switcher";
@@ -94,17 +96,17 @@ export function CrewListPage() {
 
   async function load() {
     setLoading(true);
-    const { data, error } = await (supabase as any)
+    const { data, error } = await fetchAllRows(() => (supabase as any)
       .from("crew_members")
       .select("*")
-      .order("last_name", { ascending: true });
+      .order("last_name", { ascending: true }));
     if (error) toast.error(error.message);
     else setCrew(data ?? []);
     setLoading(false);
   }
 
   async function loadYachts() {
-    const { data } = await supabase.from("yachts").select("id, vessel_name").order("vessel_name");
+    const { data } = await fetchAllRows(() => supabase.from("yachts").select("id, vessel_name").order("vessel_name"));
     setYachts((data ?? []) as Yacht[]);
   }
 
@@ -157,11 +159,12 @@ export function CrewListPage() {
         updated_at: new Date().toISOString(),
       };
       const db = supabase as any;
-      const { error } = editing
-        ? await db.from("crew_members").update(payload).eq("id", editing.id)
-        : await db.from("crew_members").insert([payload]);
+      const { data: saved, error } = editing
+        ? await db.from("crew_members").update(payload).eq("id", editing.id).select("id").single()
+        : await db.from("crew_members").insert([payload]).select("id").single();
       if (error) throw error;
       toast.success(editing ? "Crew member updated" : "Crew member added");
+      if (saved?.id) doPushToSharePoint({ data: { target: "crew_members", id: saved.id } } as any).catch(() => {});
       setOpen(false);
       void load();
     } catch (e: any) {

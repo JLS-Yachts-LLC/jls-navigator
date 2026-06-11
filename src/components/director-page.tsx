@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchAllRows } from "@/lib/fetch-all";
 import { PERMIT_META, daysUntil, expiryVariant } from "@/lib/permit-types";
 import type { PermitType } from "@/lib/permit-types";
 import {
@@ -108,10 +109,10 @@ export function DirectorPage() {
 
       // Core queries — must succeed
       const [yachtsRes, permitsRes, tripsRes, driversRes] = await Promise.all([
-        supabase.from("yachts").select("id, vessel_name, status").order("vessel_name"),
-        supabase.from("permits").select("id, permit_type, yacht_id, expiry_date, status").order("expiry_date", { ascending: true, nullsFirst: false }),
+        fetchAllRows(() => supabase.from("yachts").select("id, vessel_name, status").order("vessel_name")),
+        fetchAllRows(() => supabase.from("permits").select("id, permit_type, yacht_id, expiry_date, status").order("expiry_date", { ascending: true, nullsFirst: false })),
         db.from("crew_trips").select("id, pickup_location, dropoff_location, pickup_datetime, status, driver_id").gte("pickup_datetime", now).lte("pickup_datetime", in7Days).order("pickup_datetime", { ascending: true }).limit(10),
-        db.from("crew_drivers").select("id, full_name"),
+        fetchAllRows(() => db.from("crew_drivers").select("id, full_name")),
       ]);
 
       if (yachtsRes.error) throw yachtsRes.error;

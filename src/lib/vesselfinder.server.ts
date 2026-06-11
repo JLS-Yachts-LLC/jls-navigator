@@ -8,6 +8,7 @@
  * Docs: GET https://api.vesselfinder.com/vessels?userkey=&mmsi=&imo=&format=json&extradata=voyage
  */
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { fetchAllRows } from "./fetch-all";
 
 const ENDPOINT = "https://api.vesselfinder.com/vessels";
 
@@ -31,8 +32,8 @@ export async function syncVesselPositions(): Promise<{ requested: number; matche
   const userkey = process.env.VESSELFINDER_USERKEY as string | undefined;
   if (!userkey) throw new Error("VesselFinder is not configured — set the VESSELFINDER_USERKEY secret.");
 
-  const { data: yachts } = await (supabaseAdmin as any)
-    .from("yachts").select("id, mmsi, imo_no, ais_navstat");
+  const { data: yachts } = await fetchAllRows(() => (supabaseAdmin as any)
+    .from("yachts").select("id, mmsi, imo_no, ais_navstat").order("id"));
   const rows = (yachts ?? []) as YachtRow[];
 
   const mmsis = rows.map(r => (r.mmsi ?? "").trim()).filter(Boolean);

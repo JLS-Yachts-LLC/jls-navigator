@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '@/integrations/supabase/client.server'
+import { fetchAllRows } from './fetch-all'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -129,7 +130,25 @@ export async function deleteSpSync(id: string): Promise<void> {
   if (error) throw new Error(error.message)
 }
 
-export async function syncById(id: string): Promise<{ synced: number; errors: number }> {
+/**
+ * Sync the single least-recently-synced enabled list. Called every cron tick so
+ * the lists rotate through one-per-invocation — each runs in its own Cloudflare
+ * invocation, staying under the per-invocation subrequest limit (running all
+ * lists at once exceeds it). Self-fetch fan-out isn't an option: Cloudflare
+ * blocks a Worker from fetching its own zone.
+ */
+export async function syncStalestList(): Promise<{ name: string; synced: number; errors: number } | null> {
+  const syncs = (await getSpSyncs()).filter(s => s.enabled)
+  if (!syncs.length) return null
+  syncs.sort((a, b) =>
+    (a.lastSyncedAt ? new Date(a.lastSyncedAt).getTime() : 0) -
+    (b.lastSyncedAt ? new Date(b.lastSyncedAt).getTime() : 0))
+  const target = syncs[0]
+  const r = await syncById(target.id)
+  return { name: target.name, synced: r.synced, errors: r.errors }
+}
+
+export async function syncById(id: string): Promise<{ synced: number; errors: number; samples?: string[] }> {
   const syncs = await getSpSyncs()
   const sync = syncs.find(s => s.id === id)
   if (!sync) throw new Error(`Sync config not found: ${id}`)
@@ -191,6 +210,39 @@ export async function getSpListId(token: string, siteId: string, listName: strin
     throw new Error(`List "${listName}" not found: ${data.error?.message ?? ''}`)
   }
   return data.id as string
+}
+
+// ─── Discovery: enumerate lists + their columns (for auto-creating syncs) ──────
+
+export async function discoverSharePoint(): Promise<{
+  lists: Array<{ name: string; displayName: string; itemCount?: number; columns: Array<{ name: string; displayName: string }> }>
+}> {
+  const cfg = await getSpConfig()
+  const token = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret)
+  const siteId = await resolveSpSite(token, cfg.tenantUrl, cfg.siteUrl)
+
+  const listsRes = await fetch(
+    `https://graph.microsoft.com/v1.0/sites/${siteId}/lists?$select=name,displayName,list&$top=100`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  )
+  const listsData = await listsRes.json() as Record<string, any>
+  const rawLists = (listsData.value ?? []) as Record<string, any>[]
+  // Skip hidden/system lists (document libraries, app lists etc.)
+  const userLists = rawLists.filter(l => l.list?.hidden !== true && l.list?.template === 'genericList')
+
+  const out: Array<{ name: string; displayName: string; columns: Array<{ name: string; displayName: string }> }> = []
+  for (const l of userLists) {
+    const colRes = await fetch(
+      `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${encodeURIComponent(l.name)}/columns?$select=name,displayName,readOnly,hidden`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+    const colData = await colRes.json() as Record<string, any>
+    const cols = ((colData.value ?? []) as Record<string, any>[])
+      .filter(c => c.hidden !== true && c.readOnly !== true && !String(c.name).startsWith('_') && !String(c.name).startsWith('@'))
+      .map(c => ({ name: String(c.name), displayName: String(c.displayName ?? c.name) }))
+    out.push({ name: String(l.name), displayName: String(l.displayName ?? l.name), columns: cols })
+  }
+  return { lists: out }
 }
 
 // ─── Outbound: App → SharePoint ────────────────────────────────────────────────
@@ -413,7 +465,117 @@ async function uploadUrlToSupabase(
 
 // ─── Inbound: SharePoint → App (delta sync) ────────────────────────────────────
 
-export async function syncFromSharePoint(): Promise<{ synced: number; errors: number }> {
+// ─── Outbound: App → SharePoint (generic, all targets) ─────────────────────────
+
+const TARGET_TABLE: Record<string, string> = {
+  yachts: 'yachts', permits: 'permits', small_boats: 'small_boats',
+  crew_members: 'crew_members', visa_applications: 'visa_applications',
+};
+// Natural keys used to find an existing SP item when a record has no sharepoint_item_id yet.
+const TARGET_KEY_FIELDS: Record<string, string[]> = {
+  yachts: ['imo_no', 'vessel_name'],
+  permits: ['permit_number', 'holder_name'],
+  small_boats: ['boat_name'],
+  crew_members: ['passport_number'],
+  visa_applications: ['jls_reference'],
+};
+
+/** Push one app record to every enabled SharePoint sync for its target. */
+export async function pushRecordToSharePoint(target: string, id: string): Promise<void> {
+  const table = TARGET_TABLE[target];
+  if (!table) return;
+  const syncs = (await getSpSyncs().catch(() => [])).filter(s => s.enabled && s.syncTarget === target);
+  if (!syncs.length) return;
+
+  const cfg = await getSpConfig();
+  const { data: rec } = await (supabaseAdmin as any).from(table).select('*').eq('id', id).maybeSingle();
+  if (!rec) return;
+
+  // Resolve name-based links for reverse mapping.
+  let yachtName: string | null = rec.vessel_name ?? null;
+  if (rec.yacht_id) {
+    const { data: y } = await (supabaseAdmin as any).from('yachts').select('vessel_name').eq('id', rec.yacht_id).maybeSingle();
+    if (y?.vessel_name) yachtName = y.vessel_name;
+  }
+  let crewName: string | null = null;
+  if (rec.crew_member_id) {
+    const { data: c } = await (supabaseAdmin as any).from('crew_members').select('first_name, last_name').eq('id', rec.crew_member_id).maybeSingle();
+    if (c) crewName = `${c.first_name ?? ''} ${c.last_name ?? ''}`.trim() || null;
+  }
+  const valueFor = (dbField: string): any =>
+    dbField === 'vessel_name' ? yachtName : dbField === 'crew_member_name' ? crewName : rec[dbField];
+
+  const token = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret);
+  const siteId = await resolveSpSite(token, cfg.tenantUrl, cfg.siteUrl);
+
+  for (const sync of syncs) {
+    const list = sync.listName;
+    const spFields: Record<string, any> = {};
+    for (const [spCol, dbField] of Object.entries(sync.fieldMapping)) {
+      if (!dbField || dbField === 'vessel_image') continue;
+      const v = valueFor(dbField);
+      if (v !== null && v !== undefined && v !== '') spFields[spCol] = v;
+    }
+    if (!Object.keys(spFields).length) continue;
+
+    let spId: string | null = rec.sharepoint_item_id ?? null;
+    if (!spId) {
+      for (const kf of (TARGET_KEY_FIELDS[target] ?? [])) {
+        const spCol = Object.entries(sync.fieldMapping).find(([, db]) => db === kf)?.[0];
+        const kv = valueFor(kf);
+        if (!spCol || !kv) continue;
+        const r = await fetch(
+          `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${list}/items?$filter=${encodeURIComponent(`fields/${spCol} eq '${String(kv).replace(/'/g, "''")}'`)}&$select=id`,
+          { headers: { Authorization: `Bearer ${token}` } });
+        const d = await r.json() as any;
+        spId = d.value?.[0]?.id ?? null;
+        if (spId) break;
+      }
+    }
+
+    if (spId) {
+      await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${list}/items/${spId}/fields`,
+        { method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(spFields) });
+    } else {
+      const cr = await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${list}/items`,
+        { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ fields: spFields }) });
+      spId = ((await cr.json()) as any).id ?? null;
+    }
+    if (spId) {
+      await (supabaseAdmin as any).from(table)
+        .update({ sharepoint_item_id: spId, sharepoint_synced_at: new Date().toISOString() }).eq('id', id);
+    }
+  }
+}
+
+/**
+ * Push back records that were edited in-app since their last SharePoint sync.
+ * SAFE: only touches rows already linked to a SharePoint item (sharepoint_item_id
+ * set) → always a PATCH, never a mass-create. Loop-safe (updated_at > synced_at).
+ */
+export async function pushChangedRecords(): Promise<{ pushed: number }> {
+  const syncs = (await getSpSyncs().catch(() => [])).filter(s => s.enabled);
+  const targets = Array.from(new Set(syncs.map(s => s.syncTarget)));
+  let pushed = 0;
+  for (const target of targets) {
+    const table = TARGET_TABLE[target];
+    if (!table) continue;
+    const { data } = await (supabaseAdmin as any).from(table)
+      .select('id, updated_at, sharepoint_synced_at')
+      .not('sharepoint_item_id', 'is', null)
+      .order('updated_at', { ascending: false })
+      .limit(500);
+    for (const r of (data ?? []) as any[]) {
+      if (!r.updated_at) continue;
+      // Only push if edited in-app after the last SharePoint sync (with 5s slack to ignore the sync's own write).
+      if (r.sharepoint_synced_at && new Date(r.updated_at).getTime() <= new Date(r.sharepoint_synced_at).getTime() + 5000) continue;
+      try { await pushRecordToSharePoint(target, r.id); pushed++; } catch { /* per-record best-effort */ }
+    }
+  }
+  return { pushed };
+}
+
+export async function syncFromSharePoint(): Promise<{ synced: number; errors: number; samples?: string[] }> {
   // ── Multi-sync path (new table) ──────────────────────────────────────────────
   const syncs = await getSpSyncs().catch(() => [] as SpSyncConfig[])
   const enabled = syncs.filter(s => s.enabled)
@@ -440,14 +602,14 @@ export async function syncFromSharePoint(): Promise<{ synced: number; errors: nu
 }
 
 /** Dispatch a single SpSyncConfig row using the given credentials. */
-async function _syncWithConfig(cfg: SpConfig, sync: SpSyncConfig): Promise<{ synced: number; errors: number }> {
+async function _syncWithConfig(cfg: SpConfig, sync: SpSyncConfig): Promise<{ synced: number; errors: number; samples?: string[] }> {
   const merged: SpConfig = {
     ...cfg,
     listName: sync.listName,
     fieldMapping: sync.fieldMapping,
     syncTarget: sync.syncTarget,
   }
-  let result: { synced: number; errors: number }
+  let result: { synced: number; errors: number; samples?: string[] }
   if (sync.syncTarget === 'permits') {
     result = await _syncPermits(merged)
   } else if (sync.syncTarget === 'small_boats') {
@@ -466,6 +628,7 @@ async function _syncWithConfig(cfg: SpConfig, sync: SpSyncConfig): Promise<{ syn
       last_synced_at: new Date().toISOString(),
       last_sync_synced: result.synced,
       last_sync_errors: result.errors,
+      last_sync_error_sample: result.samples ?? [],
     })
     .eq('id', sync.id)
   return result
@@ -484,36 +647,48 @@ function coerceNumeric(v: any): number | null {
   return m ? Number(m[0]) : null
 }
 
+// Bulk-write collected records in chunks. Per-row writes (one Supabase call each)
+// blow Cloudflare's per-invocation subrequest limit on any large list — this
+// reduces hundreds of subrequests to a handful. updateById: rows with a known id
+// (upsert on the PK); insertByKey: new rows (de-duped by SharePoint item id).
+async function bulkPersist(
+  table: string,
+  updateById: Map<string, Record<string, any>>,
+  insertByKey: Map<string, Record<string, any>>,
+): Promise<{ synced: number; errors: number; samples: string[] }> {
+  const samples: string[] = []
+  let synced = 0, errors = 0
+  const addSample = (m: string) => { if (m && samples.length < 8 && !samples.includes(m)) samples.push(m) }
+  const chunks = (arr: Record<string, any>[], n: number) => {
+    const out: Record<string, any>[][] = []
+    for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n))
+    return out
+  }
+  for (const c of chunks([...insertByKey.values()], 100)) {
+    const { error } = await (supabaseAdmin as any).from(table).insert(c)
+    if (error) { errors += c.length; addSample(`insert: ${error.message}`) } else synced += c.length
+  }
+  for (const c of chunks([...updateById.values()], 100)) {
+    const { error } = await (supabaseAdmin as any).from(table).upsert(c, { onConflict: 'id' })
+    if (error) { errors += c.length; addSample(`update: ${error.message}`) } else synced += c.length
+  }
+  return { synced, errors, samples }
+}
+
 async function _syncYachts(
   cfg: SpConfig,
   syncId?: string,
   preloadedDeltaToken?: string | null,
-): Promise<{ synced: number; errors: number }> {
+): Promise<{ synced: number; errors: number; samples?: string[] }> {
+  void syncId; void preloadedDeltaToken; // delta sync retired — always full-pull (see below)
   const token = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret)
   const siteId = await resolveSpSite(token, cfg.tenantUrl, cfg.siteUrl)
 
-  // Load stored delta token for incremental sync
-  let storedDeltaToken: string | null
-  if (preloadedDeltaToken !== undefined) {
-    // Multi-sync path: delta token comes from sharepoint_sync_configs row
-    storedDeltaToken = preloadedDeltaToken
-  } else {
-    // Legacy path: read from integration_settings
-    const { data: settingsRow } = await (supabaseAdmin as any)
-      .from('integration_settings')
-      .select('config')
-      .eq('integration_name', 'sharepoint')
-      .maybeSingle()
-    storedDeltaToken = settingsRow?.config?.delta_token ?? null
-  }
-
-  const baseUrl = storedDeltaToken
-    ? `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${cfg.listName}/items/delta?$deltatoken=${encodeURIComponent(storedDeltaToken)}&$expand=fields`
-    : `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${cfg.listName}/items/delta?$expand=fields`
-
+  // Full pull every run (like the other lists). Delta sync was skipping rows that
+  // errored on a previous run — they never came back unless edited in SharePoint.
   let allChanged: any[] = []
-  let nextUrl: string | null = baseUrl
-  let newDeltaLink: string | null = null
+  let nextUrl: string | null =
+    `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${cfg.listName}/items?$expand=fields&$top=200`
 
   while (nextUrl) {
     const res = await fetch(nextUrl, { headers: { Authorization: `Bearer ${token}` } })
@@ -521,13 +696,13 @@ async function _syncYachts(
     if (!page.value) break
     allChanged = allChanged.concat(page.value as any[])
     nextUrl = page['@odata.nextLink'] ?? null
-    if (page['@odata.deltaLink']) newDeltaLink = page['@odata.deltaLink'] as string
   }
 
   // Load ALL existing yachts once — avoids N per-item DB round trips
-  const { data: existingYachts } = await supabaseAdmin
+  const { data: existingYachts } = await fetchAllRows(() => supabaseAdmin
     .from('yachts')
     .select('id, vessel_name, imo_no, sharepoint_item_id')
+    .order('id'))
   const bySpId = new Map<string, string>()
   const byImo = new Map<string, string>()
   const byName = new Map<string, string>()
@@ -537,7 +712,8 @@ async function _syncYachts(
     if (y.vessel_name) byName.set(String(y.vessel_name).toLowerCase(), String(y.id))
   }
 
-  let synced = 0, errors = 0
+  const updateById = new Map<string, Record<string, any>>()
+  const insertByKey = new Map<string, Record<string, any>>()
   for (const item of allChanged) {
     if (item['@removed']) continue
     const fields = item.fields ?? {}
@@ -564,48 +740,23 @@ async function _syncYachts(
     record.sharepoint_item_id = item.id
     record.sharepoint_synced_at = new Date().toISOString()
 
-    // In-memory match — no extra DB queries
+    // Match against pre-loaded existing yachts (sp id → imo → name).
     const existingId =
       bySpId.get(String(item.id)) ??
       (record.imo_no ? byImo.get(String(record.imo_no).toLowerCase()) : undefined) ??
       byName.get(String(record.vessel_name).toLowerCase())
 
-    const { error } = existingId
-      ? await supabaseAdmin.from('yachts').update(record as never).eq('id', existingId)
-      : await supabaseAdmin.from('yachts').insert({ ...record, status: record.status ?? 'Active' } as never)
-
-    if (error) {
-      errors++
+    if (existingId) {
+      updateById.set(existingId, { ...record, id: existingId })
     } else {
-      synced++
-      // Update local maps so subsequent items in the same batch can match
-      bySpId.set(String(item.id), existingId ?? record.vessel_name)
-      if (record.imo_no) byImo.set(String(record.imo_no).toLowerCase(), existingId ?? '')
-      byName.set(String(record.vessel_name).toLowerCase(), existingId ?? '')
+      insertByKey.set(String(item.id), { ...record, status: record.status ?? 'Active' })
     }
   }
 
-  // Persist new delta token so next run is incremental
-  if (newDeltaLink) {
-    const newToken = new URL(newDeltaLink).searchParams.get('$deltatoken')
-    if (newToken) {
-      if (syncId) {
-        // Multi-sync path: save to the sync config row
-        await (supabaseAdmin as any)
-          .from('sharepoint_sync_configs')
-          .update({ delta_token: newToken })
-          .eq('id', syncId)
-      } else {
-        // Legacy path: save to integration_settings
-        await saveSpConfigPatch({ delta_token: newToken })
-      }
-    }
-  }
-
-  return { synced, errors }
+  return bulkPersist('yachts', updateById, insertByKey)
 }
 
-async function _syncPermits(cfg: SpConfig): Promise<{ synced: number; errors: number }> {
+async function _syncPermits(cfg: SpConfig): Promise<{ synced: number; errors: number; samples?: string[] }> {
   const token = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret)
   const siteId = await resolveSpSite(token, cfg.tenantUrl, cfg.siteUrl)
 
@@ -623,25 +774,29 @@ async function _syncPermits(cfg: SpConfig): Promise<{ synced: number; errors: nu
     nextUrl = page['@odata.nextLink'] ?? null
   }
 
-  // Load existing permits for matching
-  const { data: existingPermits } = await (supabaseAdmin as any)
+  // Load existing permits for matching (sp item id first, then permit no / holder)
+  const { data: existingPermits } = await fetchAllRows(() => (supabaseAdmin as any)
     .from('permits')
-    .select('id, permit_number, holder_name')
+    .select('id, permit_number, holder_name, sharepoint_item_id')
+    .order('id'))
+  const bySpId = new Map<string, string>()
   const byPermitNo = new Map<string, string>()
   const byHolderName = new Map<string, string>()
   for (const p of (existingPermits ?? []) as Record<string, any>[]) {
+    if (p.sharepoint_item_id) bySpId.set(String(p.sharepoint_item_id), String(p.id))
     if (p.permit_number) byPermitNo.set(String(p.permit_number).toLowerCase(), String(p.id))
     if (p.holder_name) byHolderName.set(String(p.holder_name).toLowerCase(), String(p.id))
   }
 
   // Preload yachts for vessel_name → yacht_id resolution
-  const { data: yachts } = await supabaseAdmin.from('yachts').select('id, vessel_name')
+  const { data: yachts } = await fetchAllRows(() => supabaseAdmin.from('yachts').select('id, vessel_name').order('id'))
   const yachtByName = new Map<string, string>()
   for (const y of (yachts ?? []) as Record<string, any>[]) {
     if (y.vessel_name) yachtByName.set(String(y.vessel_name).toLowerCase(), String(y.id))
   }
 
-  let synced = 0, errors = 0
+  const updateById = new Map<string, Record<string, any>>()
+  const insertByKey = new Map<string, Record<string, any>>()
 
   for (const item of allItems) {
     if (item['@removed']) continue
@@ -667,8 +822,10 @@ async function _syncPermits(cfg: SpConfig): Promise<{ synced: number; errors: nu
     }
 
     if (!record.holder_name && !record.permit_number) continue
+    record.sharepoint_item_id = item.id
 
     const existingId =
+      bySpId.get(String(item.id)) ??
       (record.permit_number
         ? byPermitNo.get(String(record.permit_number).toLowerCase())
         : undefined) ??
@@ -676,26 +833,15 @@ async function _syncPermits(cfg: SpConfig): Promise<{ synced: number; errors: nu
         ? byHolderName.get(String(record.holder_name).toLowerCase())
         : undefined)
 
-    const { error } = existingId
-      ? await (supabaseAdmin as any).from('permits').update(record).eq('id', existingId)
-      : await (supabaseAdmin as any).from('permits').insert({ ...record })
-
-    if (error) {
-      errors++
-    } else {
-      synced++
-      if (record.permit_number)
-        byPermitNo.set(String(record.permit_number).toLowerCase(), existingId ?? 'new')
-      if (record.holder_name)
-        byHolderName.set(String(record.holder_name).toLowerCase(), existingId ?? 'new')
-    }
+    if (existingId) updateById.set(existingId, { ...record, id: existingId })
+    else insertByKey.set(String(item.id), { ...record })
   }
 
-  return { synced, errors }
+  return bulkPersist('permits', updateById, insertByKey)
 }
 
 // Small boats sync: same pattern as permits but targets small_boats table
-async function _syncSmallBoats(cfg: SpConfig): Promise<{ synced: number; errors: number }> {
+async function _syncSmallBoats(cfg: SpConfig): Promise<{ synced: number; errors: number; samples?: string[] }> {
   const token = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret)
   const siteId = await resolveSpSite(token, cfg.tenantUrl, cfg.siteUrl)
 
@@ -711,15 +857,17 @@ async function _syncSmallBoats(cfg: SpConfig): Promise<{ synced: number; errors:
   }
 
   // Load existing small_boats for matching (table keys on boat_name; there is no reg_no column)
-  const { data: existing } = await (supabaseAdmin as any)
+  const { data: existing } = await fetchAllRows(() => (supabaseAdmin as any)
     .from('small_boats')
     .select('id, boat_name')
+    .order('id'))
   const byName = new Map<string, string>()
   for (const b of (existing ?? []) as Record<string, any>[]) {
     if (b.boat_name) byName.set(String(b.boat_name).toLowerCase(), String(b.id))
   }
 
-  let synced = 0, errors = 0
+  const updateById = new Map<string, Record<string, any>>()
+  const insertByKey = new Map<string, Record<string, any>>()
 
   for (const item of allItems) {
     if (item['@removed']) continue
@@ -733,29 +881,21 @@ async function _syncSmallBoats(cfg: SpConfig): Promise<{ synced: number; errors:
     }
 
     if (!record.boat_name) continue
+    record.sharepoint_item_id = item.id
 
     const existingId = byName.get(String(record.boat_name).toLowerCase())
-
-    const { error } = existingId
-      ? await (supabaseAdmin as any).from('small_boats').update(record).eq('id', existingId)
-      : await (supabaseAdmin as any).from('small_boats').insert({ ...record })
-
-    if (error) {
-      errors++
-    } else {
-      synced++
-      byName.set(String(record.boat_name).toLowerCase(), existingId ?? 'new')
-    }
+    if (existingId) updateById.set(existingId, { ...record, id: existingId })
+    else insertByKey.set(String(item.id), { ...record })
   }
 
-  return { synced, errors }
+  return bulkPersist('small_boats', updateById, insertByKey)
 }
 
 // Visa applications sync: SharePoint Visa list → visa_applications.
 // Resolves crew name → crew_member_id and vessel name → yacht_id; matches
 // existing rows by SharePoint item id, then jls_reference. Date-typed targets
 // are truncated to YYYY-MM-DD.
-async function _syncVisas(cfg: SpConfig): Promise<{ synced: number; errors: number }> {
+async function _syncVisas(cfg: SpConfig): Promise<{ synced: number; errors: number; samples?: string[] }> {
   const token = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret)
   const siteId = await resolveSpSite(token, cfg.tenantUrl, cfg.siteUrl)
 
@@ -771,20 +911,20 @@ async function _syncVisas(cfg: SpConfig): Promise<{ synced: number; errors: numb
   }
 
   // Lookups for resolving foreign keys by name.
-  const { data: crew } = await (supabaseAdmin as any).from('crew_members').select('id, full_name')
+  const { data: crew } = await fetchAllRows(() => (supabaseAdmin as any).from('crew_members').select('id, full_name').order('id'))
   const crewByName = new Map<string, string>()
   for (const c of (crew ?? []) as Record<string, any>[]) {
     if (c.full_name) crewByName.set(String(c.full_name).toLowerCase().trim(), String(c.id))
   }
-  const { data: yachts } = await supabaseAdmin.from('yachts').select('id, vessel_name')
+  const { data: yachts } = await fetchAllRows(() => supabaseAdmin.from('yachts').select('id, vessel_name').order('id'))
   const yachtByName = new Map<string, string>()
   for (const y of (yachts ?? []) as Record<string, any>[]) {
     if (y.vessel_name) yachtByName.set(String(y.vessel_name).toLowerCase().trim(), String(y.id))
   }
 
   // Existing visa rows for matching.
-  const { data: existing } = await (supabaseAdmin as any)
-    .from('visa_applications').select('id, jls_reference, sharepoint_item_id')
+  const { data: existing } = await fetchAllRows(() => (supabaseAdmin as any)
+    .from('visa_applications').select('id, jls_reference, sharepoint_item_id').order('id'))
   const bySpId = new Map<string, string>()
   const byRef = new Map<string, string>()
   for (const v of (existing ?? []) as Record<string, any>[]) {
@@ -793,7 +933,8 @@ async function _syncVisas(cfg: SpConfig): Promise<{ synced: number; errors: numb
   }
 
   const DATE_FIELDS = new Set(['planned_arrival', 'planned_departure'])
-  let synced = 0, errors = 0
+  const updateById = new Map<string, Record<string, any>>()
+  const insertByKey = new Map<string, Record<string, any>>()
 
   for (const item of allItems) {
     if (item['@removed']) continue
@@ -825,26 +966,17 @@ async function _syncVisas(cfg: SpConfig): Promise<{ synced: number; errors: numb
       bySpId.get(String(item.id)) ??
       (record.jls_reference ? byRef.get(String(record.jls_reference).toLowerCase()) : undefined)
 
-    const { error } = existingId
-      ? await (supabaseAdmin as any).from('visa_applications').update(record).eq('id', existingId)
-      : await (supabaseAdmin as any).from('visa_applications').insert({ status: 'submitted', ...record })
-
-    if (error) {
-      errors++
-    } else {
-      synced++
-      bySpId.set(String(item.id), existingId ?? 'new')
-      if (record.jls_reference) byRef.set(String(record.jls_reference).toLowerCase(), existingId ?? 'new')
-    }
+    if (existingId) updateById.set(existingId, { ...record, id: existingId })
+    else insertByKey.set(String(item.id), { ...record, status: record.status || 'submitted' })
   }
 
-  return { synced, errors }
+  return bulkPersist('visa_applications', updateById, insertByKey)
 }
 
 // Crew sync: a SharePoint crew/visa list (people with passports) → crew_members.
 // Resolves vessel name → yacht_id; matches existing crew by SP item id, then
 // passport number, then first+last name. Date-typed targets truncated to date.
-async function _syncCrew(cfg: SpConfig): Promise<{ synced: number; errors: number }> {
+async function _syncCrew(cfg: SpConfig): Promise<{ synced: number; errors: number; samples?: string[] }> {
   const token = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret)
   const siteId = await resolveSpSite(token, cfg.tenantUrl, cfg.siteUrl)
 
@@ -859,14 +991,14 @@ async function _syncCrew(cfg: SpConfig): Promise<{ synced: number; errors: numbe
     nextUrl = page['@odata.nextLink'] ?? null
   }
 
-  const { data: yachts } = await supabaseAdmin.from('yachts').select('id, vessel_name')
+  const { data: yachts } = await fetchAllRows(() => supabaseAdmin.from('yachts').select('id, vessel_name').order('id'))
   const yachtByName = new Map<string, string>()
   for (const y of (yachts ?? []) as Record<string, any>[]) {
     if (y.vessel_name) yachtByName.set(String(y.vessel_name).toLowerCase().trim(), String(y.id))
   }
 
-  const { data: existing } = await (supabaseAdmin as any)
-    .from('crew_members').select('id, first_name, last_name, passport_number, sharepoint_item_id')
+  const { data: existing } = await fetchAllRows(() => (supabaseAdmin as any)
+    .from('crew_members').select('id, first_name, last_name, passport_number, sharepoint_item_id').order('id'))
   const bySpId = new Map<string, string>()
   const byPassport = new Map<string, string>()
   const byName = new Map<string, string>()
@@ -878,7 +1010,10 @@ async function _syncCrew(cfg: SpConfig): Promise<{ synced: number; errors: numbe
   }
 
   const DATE_FIELDS = new Set(['date_of_birth', 'passport_issue_date', 'passport_expiry_date', 'seamans_book_expiry'])
-  let synced = 0, errors = 0
+  let skipped = 0
+  const skipSamples: string[] = []
+  const updateById = new Map<string, Record<string, any>>()
+  const insertByKey = new Map<string, Record<string, any>>()
 
   for (const item of allItems) {
     if (item['@removed']) continue
@@ -907,23 +1042,21 @@ async function _syncCrew(cfg: SpConfig): Promise<{ synced: number; errors: numbe
       ((record.first_name && record.last_name) ? byName.get(nameKey(record.first_name, record.last_name)) : undefined)
 
     // Inserts require first + last name (NOT NULL); updates can be partial.
-    if (!existingId && (!record.first_name || !record.last_name)) { errors++; continue }
-
-    const { error } = existingId
-      ? await (supabaseAdmin as any).from('crew_members').update(record).eq('id', existingId)
-      : await (supabaseAdmin as any).from('crew_members').insert({ status: 'active', ...record })
-
-    if (error) {
-      errors++
-    } else {
-      synced++
-      bySpId.set(String(item.id), existingId ?? 'new')
-      if (record.passport_number) byPassport.set(String(record.passport_number).toLowerCase().trim(), existingId ?? 'new')
-      if (record.first_name && record.last_name) byName.set(nameKey(record.first_name, record.last_name), existingId ?? 'new')
+    if (!existingId && (!record.first_name || !record.last_name)) {
+      skipped++
+      const msg = 'Row skipped: SharePoint item has no first/last name mapped or populated'
+      if (!skipSamples.includes(msg)) skipSamples.push(msg)
+      continue
     }
+
+    if (existingId) updateById.set(existingId, { ...record, id: existingId })
+    // status AFTER the spread so a blank mapped SP "Status" can't clobber the
+    // NOT NULL column with null (that failed every insert: 0 synced / N errors).
+    else insertByKey.set(String(item.id), { ...record, status: record.status || 'active' })
   }
 
-  return { synced, errors }
+  const r = await bulkPersist('crew_members', updateById, insertByKey)
+  return { synced: r.synced, errors: r.errors + skipped, samples: [...skipSamples, ...r.samples].slice(0, 8) }
 }
 
 function _permitTypeFromListName(listName: string): string | null {

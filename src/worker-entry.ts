@@ -1,14 +1,79 @@
 import { createStartHandler, defaultStreamHandler } from '@tanstack/react-start/server'
-import { syncFromSharePoint, downloadPendingImages } from './lib/sharepoint-sync.server'
+import { syncFromSharePoint, downloadPendingImages, pushChangedRecords, discoverSharePoint, syncById, getSpSyncs, syncStalestList } from './lib/sharepoint-sync.server'
+import { syncAisPositions } from './lib/aisstream.server'
 import { runExpiryAlerts } from './lib/permit-expiry-cron.server'
 import { syncFleetPositions } from './lib/mygps.server'
 import { syncVesselPositions } from './lib/vesselfinder.server'
 import { runDailyComplianceChecks } from './lib/visa/complianceMonitor.server'
+import { leoBriefingHandler } from './routes/api.leo.briefing'
+import { leoChatHandler } from './routes/api.leo.chat'
+import { visaComplianceHandler } from './routes/api.visa.compliance'
+import { visaMonitorHandler } from './routes/api.visa.monitor'
 
 const handleRequest = createStartHandler(defaultStreamHandler)
 
 async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: Promise<unknown>) => void }): Promise<Response> {
   const url = new URL(request.url)
+
+  // Manual run: `?run=1` syncs all enabled lists, each in its OWN invocation
+  // (fan-out via self-fetch) so no single invocation exceeds Cloudflare's
+  // subrequest limit. `?run=1&only=<syncId>` runs just that one list.
+  // Per-sync error samples persist to sharepoint_sync_configs.last_sync_error_sample.
+  if (url.searchParams.get('run') === '1') {
+    const only = url.searchParams.get('only')
+    try {
+      if (only) {
+        const r = await syncById(only)
+        return new Response(JSON.stringify({ ok: true, only, ...r }), {
+          status: 200, headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      const syncs = (await getSpSyncs()).filter((s) => s.enabled)
+      const results: Array<Record<string, unknown>> = []
+      for (const s of syncs) {
+        try {
+          const r = await syncById(s.id)
+          results.push({ name: s.name, ...r })
+        } catch (e) {
+          results.push({ name: s.name, ok: false, error: e instanceof Error ? e.message : String(e) })
+        }
+      }
+      ctx.waitUntil(downloadPendingImages().catch(() => 0))
+      return new Response(JSON.stringify({ ok: true, results }), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
+      })
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), {
+        status: 500, headers: { 'Content-Type': 'application/json' },
+      })
+    }
+  }
+
+  // Manual AIS run: `?ais=1` collects live vessel positions from AISStream and
+  // writes them to the yachts table, returning the JSON result.
+  if (url.searchParams.get('ais') === '1') {
+    try {
+      const r = await syncAisPositions(15000)
+      return new Response(JSON.stringify(r), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }), {
+        status: 500, headers: { 'Content-Type': 'application/json' },
+      })
+    }
+  }
+
+  // Discovery: `?discover=1` returns all user lists + their columns (no row data,
+  // no secrets) so syncs can be created with correct field mappings.
+  if (url.searchParams.get('discover') === '1') {
+    try {
+      const d = await discoverSharePoint()
+      return new Response(JSON.stringify(d), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }), {
+        status: 500, headers: { 'Content-Type': 'application/json' },
+      })
+    }
+  }
 
   // SharePoint sends GET with validationToken when registering a subscription.
   // Must echo the raw token back as text/plain within 5 seconds.
@@ -48,19 +113,63 @@ export default {
       return handleSharePointWebhook(request, ctx)
     }
 
+    if (url.pathname === '/api/leo/briefing' && request.method === 'POST') {
+      return leoBriefingHandler(request)
+    }
+
+    if (url.pathname === '/api/leo/chat' && request.method === 'POST') {
+      return leoChatHandler(request)
+    }
+
+    if (url.pathname === '/api/visa/compliance' && request.method === 'POST') {
+      return visaComplianceHandler(request)
+    }
+
+    if (url.pathname === '/api/visa/monitor' && request.method === 'POST') {
+      return visaMonitorHandler(request)
+    }
+
     return handleRequest(request, env, ctx)
   },
 
-  // Cloudflare cron trigger — runs every 15 min for SharePoint; expiry alerts only at 08:xx UTC
+  // Cron triggers: "0 * * * *" (hourly) → SharePoint inbound sync of all lists;
+  // "*/15 * * * *" (every 15 min) → live vehicle/vessel tracking + daily alert checks.
   async scheduled(_event: unknown, _env: Record<string, unknown>, ctx: { waitUntil: (p: Promise<unknown>) => void }): Promise<void> {
     const utcHour = new Date().getUTCHours();
+    const cron = (_event as { cron?: string } | undefined)?.cron;
+    const isHourly = cron === '0 * * * *' || (cron == null && new Date().getUTCMinutes() < 15);
+    const isQuarterly = cron === '*/15 * * * *' || cron == null;
+    const isAis = cron === '5,20,35,50 * * * *';
 
+    // ── AIS tick: collect live vessel positions in its own invocation (own
+    //    subrequest budget) and write them to the yachts table. ──
+    if (isAis) {
+      ctx.waitUntil(
+        syncAisPositions()
+          .then((r) => console.log(`[ais-cron] tracked=${r.tracked} received=${r.received} updated=${r.updated}${r.note ? ' note=' + r.note : ''}`))
+          .catch((e) => console.error('[ais-cron] error:', e))
+      );
+      return;
+    }
+
+    // ── Hourly: push in-app edits OUT to SharePoint ──
+    if (isHourly) {
+      ctx.waitUntil(
+        pushChangedRecords()
+          .then(({ pushed }) => console.log(`[sp-pushback] pushed=${pushed}`))
+          .catch((e) => console.error('[sp-pushback] error:', e))
+      )
+    }
+
+    if (!isQuarterly) return;
+
+    // ── Every 15 min: pull SharePoint changes IN, ONE list per tick ──
+    // All lists at once exceeds Cloudflare's per-invocation subrequest limit, and
+    // a Worker can't self-fetch to fan out — so each tick syncs the single
+    // least-recently-synced list, rotating through the whole set over time.
     ctx.waitUntil(
-      syncFromSharePoint()
-        .then(({ synced, errors }) => {
-          console.log(`[sp-cron] synced=${synced} errors=${errors}`)
-          return downloadPendingImages()
-        })
+      syncStalestList()
+        .then((r) => { if (r) console.log(`[sp-cron] ${r.name}: synced=${r.synced} errors=${r.errors}`); return downloadPendingImages() })
         .then((imgs) => { if (imgs) console.log(`[sp-cron] images downloaded=${imgs}`) })
         .catch((e) => console.error('[sp-cron] error:', e))
     )

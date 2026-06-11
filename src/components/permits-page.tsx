@@ -33,6 +33,7 @@ import { AbuDhabiDialog } from "@/components/abu-dhabi-dialog";
 import { doSendPermitEmail } from "@/lib/permit-email.server";
 import { Plus, Search, FileCheck2, Pencil, Trash2, AlertTriangle, CheckCircle2, Clock, Mail, MailCheck, Loader2 as SpinnerIcon } from "lucide-react";
 import { toast } from "sonner";
+import { doPushToSharePoint } from "@/lib/sharepoint-push.server";
 import { cn } from "@/lib/utils";
 
 type Yacht = { id: string; vessel_name: string };
@@ -68,13 +69,27 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
 
   async function load() {
     setLoading(true);
-    const { data, error } = await (supabase as any)
-      .from("permits")
-      .select("*")
-      .eq("permit_type", permitType)
-      .order("expiry_date", { ascending: true, nullsFirst: false });
-    if (error) toast.error(error.message);
-    else setRows((data ?? []) as Permit[]);
+    // PostgREST caps a response at 1000 rows — page through (Gate Pass alone
+    // exceeds 1000) so the full list for this permit type loads.
+    const PAGE = 1000;
+    const all: Permit[] = [];
+    let from = 0;
+    let errMsg: string | null = null;
+    for (;;) {
+      const { data, error } = await (supabase as any)
+        .from("permits")
+        .select("*")
+        .eq("permit_type", permitType)
+        .order("expiry_date", { ascending: true, nullsFirst: false })
+        .range(from, from + PAGE - 1);
+      if (error) { errMsg = error.message; break; }
+      const batch = (data ?? []) as Permit[];
+      all.push(...batch);
+      if (batch.length < PAGE) break;
+      from += PAGE;
+    }
+    if (errMsg) toast.error(errMsg);
+    else setRows(all);
     setLoading(false);
   }
   async function loadYachts() {
@@ -401,10 +416,12 @@ function PermitDialog({
         const { error } = await db.from("permits").update(payload).eq("id", editing.id);
         if (error) throw error;
         toast.success("Permit updated");
+        doPushToSharePoint({ data: { target: "permits", id: editing.id } } as any).catch(() => {});
       } else {
-        const { error } = await db.from("permits").insert([{ ...payload, created_by: userId }]);
+        const { data: ins, error } = await db.from("permits").insert([{ ...payload, created_by: userId }]).select("id").single();
         if (error) throw error;
         toast.success("Permit created");
+        if (ins?.id) doPushToSharePoint({ data: { target: "permits", id: ins.id } } as any).catch(() => {});
       }
       onSaved();
     } catch (err) {

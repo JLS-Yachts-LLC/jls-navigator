@@ -6,7 +6,7 @@ import {
   Route, UserCircle2, Car, MapPin, ScrollText, X, ShoppingCart, Truck,
   GraduationCap, Sparkles, Layers as LayersIcon, UserPlus, LayoutDashboard,
   FileText, Wrench, UtensilsCrossed, Cpu, IdCard, Boxes, Cog, ClipboardList,
-  Globe, Headset, BookOpen, FileSignature,
+  Globe, Headset, BookOpen, FileSignature, KeyRound,
 } from "lucide-react";
 import { AdminSidebarSection } from "@/components/admin/AdminSidebarSection";
 import { useState, useMemo } from "react";
@@ -38,22 +38,6 @@ const NAV: NavItem[] = [
         children: [
           { label: "Crew List",        to: "/crew-immigration/crew",        icon: UserCircle2 },
           { label: "Visas",            to: "/crew-immigration/visas",       icon: FileText },
-          {
-            label: "Permits & Gate Passes",
-            icon: FileCheck2,
-            children: [
-              { label: "Command Centre",        to: "/permits/command-centre",      icon: ShieldCheck },
-              { label: "Exit & Entry Permits",  to: "/permits/exit-entry",         icon: LogIn },
-              { label: "Sanitation",            to: "/permits/sanitation",          icon: ShieldCheck },
-              { label: "Cruising — Mothership", to: "/permits/cruising-mothership", icon: Compass },
-              { label: "Cruising — Tenders",    to: "/permits/cruising-tenders",    icon: Anchor },
-              { label: "Gate Pass",             to: "/permits/gate-pass",           icon: DoorOpen },
-              { label: "TDRA",                  to: "/permits/tdra",                icon: Radio },
-              { label: "Navigation License",    to: "/permits/navigation-license",  icon: Navigation },
-              { label: "DMA Permits",           to: "/permits/dma",                 icon: FileBadge },
-              { label: "Abu Dhabi Permits",     to: "/permits/abu-dhabi",           icon: Anchor },
-            ],
-          },
           { label: "Sign On / Sign Off", to: "/crew-immigration/sign-on-off", icon: LogIn },
           { label: "Crew Documents",     to: "/crew-immigration/documents",   icon: ClipboardList },
         ],
@@ -134,6 +118,7 @@ const NAV: NavItem[] = [
         icon: Cpu,
         children: [
           { label: "Service Desk",         to: "/it-tickets", icon: Headset },
+          { label: "Licensing",            to: "/licensing",  icon: KeyRound },
           { label: "Contracts & Services", to: "/yacht-it",   icon: FileText },
         ],
       },
@@ -142,6 +127,23 @@ const NAV: NavItem[] = [
       { label: "Compass",                 to: "/compass",       icon: Compass },
       { label: "Changelog",               to: "/changelog",     icon: ScrollText },
       { label: "Small Boat Registration", to: "/small-boat-registration", icon: Sailboat },
+    ],
+  },
+
+  // ── PORT OPERATIONS & AGENCY ─────────────────────────────────────────────────
+  {
+    label: "Port Operations & Agency",
+    children: [
+      { label: "Command Centre",        to: "/permits/command-centre",      icon: ShieldCheck },
+      { label: "Exit & Entry Permits",  to: "/permits/exit-entry",          icon: LogIn },
+      { label: "Sanitation",            to: "/permits/sanitation",          icon: ShieldCheck },
+      { label: "Cruising — Mothership", to: "/permits/cruising-mothership", icon: Compass },
+      { label: "Cruising — Tenders",    to: "/permits/cruising-tenders",    icon: Anchor },
+      { label: "Gate Pass",             to: "/permits/gate-pass",           icon: DoorOpen },
+      { label: "TDRA",                  to: "/permits/tdra",                icon: Radio },
+      { label: "Navigation License",    to: "/permits/navigation-license",  icon: Navigation },
+      { label: "DMA Permits",           to: "/permits/dma",                 icon: FileBadge },
+      { label: "Abu Dhabi Permits",     to: "/permits/abu-dhabi",           icon: Anchor },
     ],
   },
 

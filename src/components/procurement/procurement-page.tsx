@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchAllRows } from "@/lib/fetch-all";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -511,8 +512,8 @@ export function ProcurementPage() {
   async function load() {
     setLoading(true);
     const [itemsRes, yachtsRes] = await Promise.all([
-      (supabase as any).from("procurement_items").select("*").order("requested_date", { ascending: false }),
-      (supabase as any).from("yachts").select("id,vessel_name").order("vessel_name"),
+      fetchAllRows(() => (supabase as any).from("procurement_items").select("*").order("requested_date", { ascending: false })),
+      fetchAllRows(() => (supabase as any).from("yachts").select("id,vessel_name").order("vessel_name")),
     ]);
     if (itemsRes.error) toast.error(itemsRes.error.message);
     else setItems(itemsRes.data as ProcurementItem[]);

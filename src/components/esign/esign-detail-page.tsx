@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Route } from "@/routes/_app.esign.$documentId";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchAllRows } from "@/lib/fetch-all";
 import { useAuth } from "@/lib/auth";
 import { doSendForSignature } from "@/lib/esign.server";
 import { Button } from "@/components/ui/button";
@@ -46,7 +47,7 @@ export function EsignDetailPage() {
     setLoading(true);
     const [dRes, eRes] = await Promise.all([
       (supabase as any).from("esign_documents").select("*").eq("id", documentId).maybeSingle(),
-      (supabase as any).from("esign_events").select("*").eq("document_id", documentId).order("created_at", { ascending: false }),
+      fetchAllRows(() => (supabase as any).from("esign_events").select("*").eq("document_id", documentId).order("created_at", { ascending: false })),
     ]);
     if (dRes.error || !dRes.data) { toast.error("Document not found"); navigate({ to: "/esign" }); return; }
     setDoc(dRes.data as Doc);

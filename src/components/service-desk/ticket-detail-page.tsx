@@ -16,7 +16,9 @@ import { cn } from "@/lib/utils";
 import {
   STATUS_ORDER, STATUS_LABEL, STATUS_COLOR,
   PRIORITY_ORDER, PRIORITY_LABEL, PRIORITY_COLOR,
-  CATEGORY_ORDER, CATEGORY_LABEL, labelFor,
+  CATEGORY_ORDER, CATEGORY_LABEL,
+  QUEUE_ORDER, QUEUE_LABEL,
+  labelFor,
 } from "./ticket-meta";
 
 type Ticket = {
@@ -25,6 +27,7 @@ type Ticket = {
   subject: string;
   description: string | null;
   yacht_id: string | null;
+  queue: string | null;
   category: string | null;
   priority: string | null;
   status: string | null;
@@ -273,6 +276,13 @@ export function TicketDetailPage() {
             <Select value={ticket.priority ?? "normal"} onValueChange={v => patchTicket({ priority: v })}>
               <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
               <SelectContent>{PRIORITY_ORDER.map(p => <SelectItem key={p} value={p}>{PRIORITY_LABEL[p]}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">Queue</Label>
+            <Select value={ticket.queue ?? "polaris"} onValueChange={v => patchTicket({ queue: v })}>
+              <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+              <SelectContent>{QUEUE_ORDER.map(q => <SelectItem key={q} value={q}>{QUEUE_LABEL[q]}</SelectItem>)}</SelectContent>
             </Select>
           </div>
           <div className="space-y-1.5">

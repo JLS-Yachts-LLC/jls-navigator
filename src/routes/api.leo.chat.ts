@@ -8,12 +8,11 @@
  * Security: ANTHROPIC_API_KEY is a Wrangler secret.
  */
 
-import { createAPIFileRoute } from '@tanstack/react-start/api'
 import { createClient } from '@supabase/supabase-js'
 import { getAccessLevel, ACCESS_LABELS } from '@/lib/leo-access'
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages'
-const LEO_MODEL     = 'claude-opus-4-5'
+const LEO_MODEL     = 'claude-sonnet-4-6'
 
 function getAdmin() {
   const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? ''
@@ -32,8 +31,8 @@ Stay in character: confident, direct, no filler phrases.
 Keep responses concise — 2-4 sentences unless more detail is clearly needed.
 Use plain text only, no markdown headers, no bullet lists.`
 
-export const APIRoute = createAPIFileRoute('/api/leo/chat')({
-  POST: async ({ request }) => {
+// ── Handler (called directly from worker-entry.ts) ───────────────────────────
+export async function leoChatHandler(request: Request): Promise<Response> {
     const apiKey = process.env.ANTHROPIC_API_KEY
     if (!apiKey) {
       return new Response(
@@ -79,7 +78,7 @@ export const APIRoute = createAPIFileRoute('/api/leo/chat')({
     const safeMessages = messages
       .filter(m => m.role === 'user' || m.role === 'assistant')
       .filter(m => typeof m.content === 'string' && m.content.trim().length > 0)
-      .slice(-20)  // cap at last 20 turns to manage token budget
+      .slice(-20)
 
     if (safeMessages.length === 0 || safeMessages[safeMessages.length - 1].role !== 'user') {
       return new Response(JSON.stringify({ error: 'Last message must be from user' }), {
@@ -88,26 +87,34 @@ export const APIRoute = createAPIFileRoute('/api/leo/chat')({
       })
     }
 
-    const anthropicRes = await fetch(ANTHROPIC_URL, {
-      method: 'POST',
-      headers: {
-        'x-api-key':         apiKey,
-        'anthropic-version': '2023-06-01',
-        'content-type':      'application/json',
-      },
-      body: JSON.stringify({
-        model:      LEO_MODEL,
-        max_tokens: 800,
-        stream:     true,
-        system:     systemPrompt,
-        messages:   safeMessages,
-      }),
-    })
+    let anthropicRes: Response
+    try {
+      anthropicRes = await fetch(ANTHROPIC_URL, {
+        method: 'POST',
+        headers: {
+          'x-api-key':         apiKey,
+          'anthropic-version': '2023-06-01',
+          'content-type':      'application/json',
+        },
+        body: JSON.stringify({
+          model:      LEO_MODEL,
+          max_tokens: 800,
+          stream:     true,
+          system:     systemPrompt,
+          messages:   safeMessages,
+        }),
+      })
+    } catch (e: any) {
+      return new Response(
+        JSON.stringify({ error: `Failed to reach Anthropic: ${e?.message ?? 'network error'}` }),
+        { status: 502, headers: { 'Content-Type': 'application/json' } },
+      )
+    }
 
     if (!anthropicRes.ok) {
       const err = await anthropicRes.text()
       return new Response(
-        JSON.stringify({ error: `Anthropic error: ${anthropicRes.status} — ${err}` }),
+        JSON.stringify({ error: `Anthropic error ${anthropicRes.status}: ${err}` }),
         { status: 502, headers: { 'Content-Type': 'application/json' } },
       )
     }
@@ -151,5 +158,4 @@ export const APIRoute = createAPIFileRoute('/api/leo/chat')({
         'X-Accel-Buffering': 'no',
       },
     })
-  },
-})
+}

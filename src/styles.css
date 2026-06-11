@@ -73,69 +73,73 @@
 :root {
   --radius: 0.5rem;
 
-  /* Page background — void #080D14 */
-  --background:       oklch(0.073 0.018 255);
-  --foreground:       oklch(0.944 0.009 255);   /* frost #E8EDF5 */
+  /* ── Light theme (default state, no .dark class) ──
+     White content surfaces + deep-navy sidebar, per the Polaris brand. The
+     dark palette lives in .dark below. */
 
-  /* Panel / card background — abyss #0D1520 */
-  --card:             oklch(0.105 0.028 255);
-  --card-foreground:  oklch(0.944 0.009 255);
-  --popover:          oklch(0.105 0.028 255);
-  --popover-foreground: oklch(0.944 0.009 255);
+  /* Page background — frost white */
+  --background:       oklch(0.985 0.004 255);
+  --foreground:       oklch(0.205 0.030 255);   /* deep navy ink */
+
+  /* Panel / card background — white */
+  --card:             oklch(1 0 0);
+  --card-foreground:  oklch(0.205 0.030 255);
+  --popover:          oklch(1 0 0);
+  --popover-foreground: oklch(0.205 0.030 255);
 
   /* Primary interactive — signal #00C4CC */
   --primary:          oklch(0.742 0.136 196);
   --primary-foreground: oklch(0.073 0.018 255);  /* void for contrast */
 
-  /* Secondary — deep #0F2030 */
-  --secondary:        oklch(0.140 0.043 250);
-  --secondary-foreground: oklch(0.944 0.009 255);
+  /* Secondary — light grey */
+  --secondary:        oklch(0.955 0.006 255);
+  --secondary-foreground: oklch(0.245 0.030 255);
 
   /* Muted surfaces */
-  --muted:            oklch(0.140 0.043 250);
-  --muted-foreground: oklch(0.472 0.054 240);    /* muted #4A7090 */
+  --muted:            oklch(0.960 0.005 255);
+  --muted-foreground: oklch(0.515 0.030 250);
 
-  /* Accent — ocean #1E4060 */
-  --accent:           oklch(0.256 0.071 240);
-  --accent-foreground: oklch(0.944 0.009 255);
+  /* Accent — faint teal tint */
+  --accent:           oklch(0.945 0.022 200);
+  --accent-foreground: oklch(0.245 0.040 240);
 
-  /* Status */
-  --success:            oklch(0.70 0.15 152);
-  --success-foreground: oklch(0.073 0.018 255);
-  --destructive:        oklch(0.678 0.162 46);   /* warn #E87020 */
-  --destructive-foreground: oklch(0.944 0.009 255);
-  --warning:            oklch(0.740 0.155 72);   /* leoAmber #E8A020 */
-  --warning-foreground: oklch(0.073 0.018 255);
-  --info:               oklch(0.742 0.136 196);  /* signal */
-  --info-foreground:    oklch(0.073 0.018 255);
+  /* Status (vivid hues read on white) */
+  --success:            oklch(0.62 0.15 152);
+  --success-foreground: oklch(0.99 0 0);
+  --destructive:        oklch(0.620 0.190 27);   /* red */
+  --destructive-foreground: oklch(0.99 0 0);
+  --warning:            oklch(0.700 0.160 72);   /* amber */
+  --warning-foreground: oklch(0.145 0.02 255);
+  --info:               oklch(0.560 0.110 220);
+  --info-foreground:    oklch(0.99 0 0);
 
-  /* Borders + inputs — deep #0F2030 */
-  --border: oklch(0.140 0.043 250);
-  --input:  oklch(0.140 0.043 250);
-  --ring:   oklch(0.520 0.095 196);              /* signalMid #00838A */
+  /* Borders + inputs — light grey */
+  --border: oklch(0.905 0.008 255);
+  --input:  oklch(0.905 0.008 255);
+  --ring:   oklch(0.640 0.110 196);
 
   /* Charts */
-  --chart-1: oklch(0.742 0.136 196);   /* signal  */
-  --chart-2: oklch(0.740 0.155 72);    /* amber   */
-  --chart-3: oklch(0.678 0.162 46);    /* warn    */
-  --chart-4: oklch(0.70 0.15 152);     /* green   */
-  --chart-5: oklch(0.65 0.14 298);     /* violet  */
+  --chart-1: oklch(0.640 0.120 196);
+  --chart-2: oklch(0.700 0.150 72);
+  --chart-3: oklch(0.620 0.190 27);
+  --chart-4: oklch(0.620 0.150 152);
+  --chart-5: oklch(0.560 0.140 298);
 
-  /* Sidebar — slightly darker than void (#050A10) */
+  /* Sidebar — stays deep navy in light mode (brand) */
   --sidebar:                    oklch(0.055 0.016 255);
   --sidebar-foreground:         oklch(0.944 0.009 255);
-  --sidebar-primary:            oklch(0.742 0.136 196);   /* signal */
+  --sidebar-primary:            oklch(0.742 0.136 196);
   --sidebar-primary-foreground: oklch(0.073 0.018 255);
-  --sidebar-accent:             oklch(0.105 0.028 255);   /* abyss */
+  --sidebar-accent:             oklch(0.150 0.035 255);
   --sidebar-accent-foreground:  oklch(0.944 0.009 255);
-  --sidebar-border:             oklch(0.140 0.043 250);   /* deep */
+  --sidebar-border:             oklch(0.160 0.040 250);
   --sidebar-ring:               oklch(0.742 0.136 196);
 
-  /* Shadows */
+  /* Shadows — soft for light surfaces */
   --shadow-glow: 0 0 0 1px color-mix(in oklab, #00C4CC 25%, transparent),
                  0 8px 30px -10px color-mix(in oklab, #00C4CC 20%, transparent);
-  --shadow-md:  0 4px 16px -4px oklch(0 0 0 / 0.60), 0 1px 3px oklch(0 0 0 / 0.40);
-  --shadow-lg:  0 8px 32px -8px oklch(0 0 0 / 0.70), 0 2px 6px oklch(0 0 0 / 0.50);
+  --shadow-md:  0 4px 16px -4px oklch(0 0 0 / 0.12), 0 1px 3px oklch(0 0 0 / 0.10);
+  --shadow-lg:  0 8px 32px -8px oklch(0 0 0 / 0.16), 0 2px 6px oklch(0 0 0 / 0.12);
 }
 
 /* .dark mirrors :root — the design is always dark-first */
@@ -182,6 +186,14 @@
 
 @layer base {
   * { border-color: var(--color-border); }
+
+  /* Hide scrollbars app-wide while keeping scroll/wheel/touch working. */
+  * {
+    scrollbar-width: none;        /* Firefox */
+    -ms-overflow-style: none;     /* legacy Edge/IE */
+  }
+  *::-webkit-scrollbar { width: 0; height: 0; display: none; }  /* WebKit */
+
   html, body { font-family: var(--font-sans); }
   body {
     background-color: var(--color-background);

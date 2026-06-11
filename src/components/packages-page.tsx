@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchAllRows } from "@/lib/fetch-all";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -122,7 +123,7 @@ export function PackagesPage() {
   }
 
   async function loadYachts() {
-    const { data } = await supabase.from("yachts").select("id, vessel_name").order("vessel_name");
+    const { data } = await fetchAllRows(() => supabase.from("yachts").select("id, vessel_name").order("vessel_name"));
     setYachts((data ?? []) as Yacht[]);
   }
 

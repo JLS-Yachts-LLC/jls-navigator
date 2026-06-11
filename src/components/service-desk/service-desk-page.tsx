@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { Link } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchAllRows } from "@/lib/fetch-all";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +15,9 @@ import { cn } from "@/lib/utils";
 import {
   STATUS_ORDER, STATUS_LABEL, STATUS_COLOR, STATUS_DOT,
   PRIORITY_ORDER, PRIORITY_LABEL, PRIORITY_COLOR,
-  CATEGORY_ORDER, CATEGORY_LABEL, labelFor,
+  CATEGORY_ORDER, CATEGORY_LABEL,
+  QUEUE_ORDER, QUEUE_LABEL,
+  labelFor,
 } from "./ticket-meta";
 
 type Ticket = {
@@ -22,6 +25,7 @@ type Ticket = {
   ticket_no: string | null;
   subject: string;
   yacht_id: string | null;
+  queue: string | null;
   category: string | null;
   priority: string | null;
   status: string | null;
@@ -34,7 +38,7 @@ type Yacht = { id: string; vessel_name: string };
 type Profile = { id: string; display_name: string | null };
 
 const EMPTY_FORM = {
-  subject: "", description: "", yacht_id: "", category: "general",
+  subject: "", description: "", yacht_id: "", queue: "polaris", category: "general",
   priority: "normal", requested_by: "", assigned_to: "",
 };
 
@@ -59,6 +63,7 @@ export function ServiceDeskPage() {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
+  const [filterQueue, setFilterQueue] = useState("all");
   const [filterPriority, setFilterPriority] = useState("all");
   const [filterCategory, setFilterCategory] = useState("all");
   const [filterYacht, setFilterYacht] = useState("all");
@@ -71,9 +76,9 @@ export function ServiceDeskPage() {
   async function load() {
     setLoading(true);
     const [tRes, yRes, pRes] = await Promise.all([
-      (supabase as any).from("it_tickets").select("*").order("updated_at", { ascending: false }),
-      supabase.from("yachts").select("id, vessel_name").order("vessel_name"),
-      (supabase as any).from("profiles").select("id, display_name").order("display_name"),
+      fetchAllRows(() => (supabase as any).from("it_tickets").select("*").order("updated_at", { ascending: false })),
+      fetchAllRows(() => supabase.from("yachts").select("id, vessel_name").order("vessel_name")),
+      fetchAllRows(() => (supabase as any).from("profiles").select("id, display_name").order("display_name")),
     ]);
     if (tRes.error) toast.error(tRes.error.message);
     setRows((tRes.data ?? []) as Ticket[]);
@@ -92,6 +97,7 @@ export function ServiceDeskPage() {
         subject: form.subject.trim(),
         description: form.description || null,
         yacht_id: form.yacht_id || null,
+        queue: form.queue,
         category: form.category,
         priority: form.priority,
         status: "open",
@@ -109,6 +115,7 @@ export function ServiceDeskPage() {
 
   const filtered = useMemo(() => rows.filter(r => {
     if (filterStatus !== "all" && r.status !== filterStatus) return false;
+    if (filterQueue !== "all" && r.queue !== filterQueue) return false;
     if (filterPriority !== "all" && r.priority !== filterPriority) return false;
     if (filterCategory !== "all" && r.category !== filterCategory) return false;
     if (filterYacht !== "all" && r.yacht_id !== filterYacht) return false;
@@ -118,7 +125,7 @@ export function ServiceDeskPage() {
       if (!hay.includes(q.toLowerCase())) return false;
     }
     return true;
-  }), [rows, q, filterStatus, filterPriority, filterCategory, filterYacht, yachts]);
+  }), [rows, q, filterStatus, filterQueue, filterPriority, filterCategory, filterYacht, yachts]);
 
   return (
     <div className="flex h-full flex-col">
@@ -154,6 +161,13 @@ export function ServiceDeskPage() {
           </button>
         ))}
         <div className="ml-auto flex items-center gap-2">
+          <Select value={filterQueue} onValueChange={setFilterQueue}>
+            <SelectTrigger className="h-8 w-36 text-xs"><SelectValue placeholder="Queue" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Queues</SelectItem>
+              {QUEUE_ORDER.map(q => <SelectItem key={q} value={q}>{QUEUE_LABEL[q]}</SelectItem>)}
+            </SelectContent>
+          </Select>
           <Select value={filterPriority} onValueChange={setFilterPriority}>
             <SelectTrigger className="h-8 w-32 text-xs"><SelectValue placeholder="Priority" /></SelectTrigger>
             <SelectContent>
@@ -198,7 +212,7 @@ export function ServiceDeskPage() {
           <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-[0_2px_12px_-4px_rgba(0,0,0,0.4)]">
             <table className="w-full text-sm">
               <thead><tr className="border-b border-border bg-muted/30">
-                {["Ticket", "Subject", "Vessel", "Category", "Priority", "Status", "Assigned", "Updated"].map(h => (
+                {["Ticket", "Subject", "Vessel", "Queue", "Category", "Priority", "Status", "Assigned", "Updated"].map(h => (
                   <th key={h} className="px-4 py-2.5 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">{h}</th>
                 ))}
               </tr></thead>
@@ -220,6 +234,7 @@ export function ServiceDeskPage() {
                         ? <span className="inline-flex items-center gap-1"><Ship className="h-3 w-3" />{yachtName(r.yacht_id)}</span>
                         : <span className="text-muted-foreground/40">—</span>}
                     </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">{labelFor(QUEUE_LABEL, r.queue)}</td>
                     <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">{labelFor(CATEGORY_LABEL, r.category)}</td>
                     <td className="px-4 py-3"><Pill value={r.priority} map={PRIORITY_LABEL} color={PRIORITY_COLOR} /></td>
                     <td className="px-4 py-3"><Pill value={r.status} map={STATUS_LABEL} color={STATUS_COLOR} /></td>
@@ -254,6 +269,13 @@ export function ServiceDeskPage() {
                   <SelectItem value="__none">— None —</SelectItem>
                   {yachts.map(y => <SelectItem key={y.id} value={y.id}>{y.vessel_name}</SelectItem>)}
                 </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Queue</Label>
+              <Select value={form.queue} onValueChange={v => setForm(f => ({ ...f, queue: v }))}>
+                <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>{QUEUE_ORDER.map(q => <SelectItem key={q} value={q}>{QUEUE_LABEL[q]}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div className="space-y-1.5">
