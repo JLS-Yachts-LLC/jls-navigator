@@ -6,10 +6,14 @@
 # Authors: Mike Fetton / Matt Tighe
 # Version: 1.0 — June 2026
 # Tickets: #133 (admin panel UI), #134 (audit log), #128–#132 (access control prereqs)
+
 ---
+
 ## CRITICAL BUILD ORDER
+
 The admin panel depends on the access control layer. Do NOT build this until
 migrations 010–014 from `POLARIS_ACCESS_CONTROL.md` are complete and deployed.
+
 Prerequisites:
 - ✅ Migration 010 — organisations, locations, vessels tables
 - ✅ Migration 011 — roles, user_roles, permission_rules tables  
@@ -18,16 +22,22 @@ Prerequisites:
 - ✅ Migration 014 — MFA enforcement + JWT custom claims
 - ✅ `requireAccess()` middleware wired into all API routes
 - ✅ `logAuditEvent()` called from middleware and all mutation routes
+
 ---
+
 ## 1. Overview
+
 The admin panel is embedded in the main Polaris sidebar as a collapsible
 amber-accented section. It renders ONLY for users whose JWT contains
 `role: 'global_admin'` or `role: 'org_admin'`. All other roles see nothing —
 the section does not render at all, not even as a disabled/greyed state.
+
 ### Sidebar placement (Option A)
+
 ```
 [ POLARIS logo — home button ]
 [ Vessel selector ]
+
 OVERVIEW
   Leo
   Vessel Overview
@@ -38,6 +48,7 @@ OVERVIEW
   Operations
   Maintenance
   Finance
+
 ──────────────────────────────  ← divider
                                    ← renders only if is_admin
 ┌─ ADMIN  [amber border box] ─┐
@@ -47,9 +58,12 @@ OVERVIEW
 │  Permissions                │
 │  Audit Log                  │
 └─────────────────────────────┘
+
 [ Avatar · email · settings · logout ]
 ```
+
 ### Routes
+
 ```
 /admin                     → redirects to /admin/users
 /admin/users               → Users & Roles page (this spec)
@@ -57,13 +71,19 @@ OVERVIEW
 /admin/permissions         → RBAC matrix page (this spec)
 /admin/audit               → Audit log page (this spec)
 ```
+
 All `/admin/*` routes are server-side protected. `requireAccess()` must
 validate `global_admin` or `org_admin` before rendering anything.
+
 ---
+
 ## 2. Database Schema
+
 All tables are already created in migrations 010–014. This section
 documents the tables the admin panel reads and writes.
+
 ### 2.1 Tables used
+
 ```sql
 -- From migration 011
 user_roles (
@@ -78,6 +98,7 @@ user_roles (
   expires_at    timestamptz,            -- null = no expiry
   is_active     boolean DEFAULT true
 )
+
 -- From migration 011
 permission_rules (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -87,6 +108,7 @@ permission_rules (
   scope         text NOT NULL,          -- 'global' | 'org' | 'vessel' | 'own'
   conditions    jsonb                   -- optional extra conditions
 )
+
 -- From migration 013
 audit_log (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -104,7 +126,9 @@ audit_log (
   created_at    timestamptz DEFAULT now()
 )
 ```
+
 ### 2.2 Roles enum
+
 ```ts
 export type PolarisRole =
   | 'global_admin'      // JLS staff — full platform access
@@ -118,7 +142,9 @@ export type PolarisRole =
   | 'training_user'     // Training institute module only
   | 'placement_user';   // Crew placement module only
 ```
+
 ### 2.3 Audit event types enum
+
 ```ts
 export type AuditEventType =
   | 'AUTH'      // Login, logout, MFA events, failed attempts
@@ -129,25 +155,32 @@ export type AuditEventType =
   | 'ADMIN'     // Admin panel actions
   | 'SYSTEM';   // Automated jobs — compliance checks, reminders
 ```
+
 ### 2.4 RLS policies for admin tables
+
 ```sql
 -- user_roles: only global_admin can read all rows; org_admin sees own org only
 ALTER TABLE user_roles ENABLE ROW LEVEL SECURITY;
+
 CREATE POLICY "global_admin_all_user_roles" ON user_roles
   FOR ALL USING (
     (auth.jwt() ->> 'role') = 'global_admin'
   );
+
 CREATE POLICY "org_admin_own_org_user_roles" ON user_roles
   FOR SELECT USING (
     (auth.jwt() ->> 'role') = 'org_admin'
     AND org_id = (auth.jwt() ->> 'org_id')::uuid
   );
+
 -- audit_log: global_admin reads all; org_admin reads own org only; no user writes directly
 ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
+
 CREATE POLICY "global_admin_all_audit" ON audit_log
   FOR SELECT USING (
     (auth.jwt() ->> 'role') = 'global_admin'
   );
+
 CREATE POLICY "org_admin_own_audit" ON audit_log
   FOR SELECT USING (
     (auth.jwt() ->> 'role') = 'org_admin'
@@ -156,14 +189,19 @@ CREATE POLICY "org_admin_own_audit" ON audit_log
       WHERE org_id = (auth.jwt() ->> 'org_id')::uuid
     )
   );
+
 -- audit_log INSERT via service_role only (logAuditEvent uses service client)
 CREATE POLICY "service_role_insert_audit" ON audit_log
   FOR INSERT WITH CHECK (true);  -- enforced at service layer, not row level
 ```
+
 ---
+
 ## 3. API Routes
+
 All routes live under `app/api/admin/`. Every route must call
 `requireAccess()` at the top before any logic.
+
 ```
 GET  /api/admin/users                → paginated user list with roles
 GET  /api/admin/users/[id]           → single user detail
@@ -171,15 +209,20 @@ POST /api/admin/users/invite         → invite new user (send Supabase magic li
 PATCH /api/admin/users/[id]/role     → update user role
 PATCH /api/admin/users/[id]/suspend  → suspend / unsuspend user
 DELETE /api/admin/users/[id]         → soft delete (set is_active = false)
+
 GET  /api/admin/permissions          → full RBAC matrix for all roles
 PATCH /api/admin/permissions         → update a specific permission rule
+
 GET  /api/admin/audit                → paginated audit log with filters
 GET  /api/admin/audit/export         → CSV export of filtered audit log
 ```
+
 ### 3.1 requireAccess helper (already in lib/auth/access.ts)
+
 ```ts
 // Every admin API route must start with this
 import { requireAccess } from '@/lib/auth/access';
+
 export async function GET(request: Request) {
   const session = await requireAccess(request, ['global_admin', 'org_admin']);
   if (!session.ok) return session.response; // 401 or 403
@@ -187,10 +230,13 @@ export async function GET(request: Request) {
   // ... rest of handler
 }
 ```
+
 ### 3.2 logAuditEvent helper (already in lib/auth/audit.ts)
+
 ```ts
 // Call after every state-changing admin action
 import { logAuditEvent } from '@/lib/auth/audit';
+
 await logAuditEvent({
   event_type: 'PERM',
   actor_id:   session.user.id,
@@ -204,21 +250,26 @@ await logAuditEvent({
   result:      'success',
 });
 ```
+
 ### 3.3 User list route
+
 ```ts
 // app/api/admin/users/route.ts
 export async function GET(request: Request) {
   const session = await requireAccess(request, ['global_admin', 'org_admin']);
   if (!session.ok) return session.response;
+
   const { searchParams } = new URL(request.url);
   const page     = parseInt(searchParams.get('page') ?? '1');
   const pageSize = parseInt(searchParams.get('pageSize') ?? '25');
   const search   = searchParams.get('search') ?? '';
   const role     = searchParams.get('role') ?? '';
+
   // org_admin scope filter
   const scopeFilter = session.user.role === 'org_admin'
     ? `AND ur.org_id = '${session.user.org_id}'`
     : '';
+
   const { data, error, count } = await supabaseAdmin
     .from('user_roles')
     .select(`
@@ -231,16 +282,21 @@ export async function GET(request: Request) {
     .eq(role ? 'role' : 'is_active', role || true)
     .order('granted_at', { ascending: false })
     .range((page - 1) * pageSize, page * pageSize - 1);
+
   return Response.json({ users: data, total: count, page, pageSize });
 }
 ```
+
 ### 3.4 Invite user route
+
 ```ts
 // app/api/admin/users/invite/route.ts
 export async function POST(request: Request) {
   const session = await requireAccess(request, ['global_admin', 'org_admin']);
   if (!session.ok) return session.response;
+
   const { email, role, org_id, vessel_id, location_id } = await request.json();
+
   // Validate org_admin cannot grant roles above their own level
   if (session.user.role === 'org_admin') {
     const allowedRoles: PolarisRole[] = ['captain', 'crew', 'supplier', 'port_agent'];
@@ -248,12 +304,14 @@ export async function POST(request: Request) {
       return Response.json({ error: 'Insufficient permission to grant this role' }, { status: 403 });
     }
   }
+
   // Send Supabase invite
   const { data: inviteData, error } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
     data: { role, org_id, vessel_id, location_id },
     redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/mfa-setup`,
   });
   if (error) return Response.json({ error: error.message }, { status: 400 });
+
   // Write user_role row immediately (pending MFA enrolment)
   await supabaseAdmin.from('user_roles').insert({
     user_id: inviteData.user.id,
@@ -261,6 +319,7 @@ export async function POST(request: Request) {
     granted_by: session.user.id,
     is_active: false,  // activated only after MFA enrolment
   });
+
   await logAuditEvent({
     event_type: 'PERM',
     actor_id: session.user.id,
@@ -272,15 +331,19 @@ export async function POST(request: Request) {
     ip_address: request.headers.get('x-forwarded-for'),
     result: 'pending',
   });
+
   return Response.json({ success: true });
 }
 ```
+
 ### 3.5 Audit log route with filters
+
 ```ts
 // app/api/admin/audit/route.ts
 export async function GET(request: Request) {
   const session = await requireAccess(request, ['global_admin', 'org_admin']);
   if (!session.ok) return session.response;
+
   const { searchParams } = new URL(request.url);
   const page       = parseInt(searchParams.get('page') ?? '1');
   const pageSize   = parseInt(searchParams.get('pageSize') ?? '50');
@@ -289,16 +352,19 @@ export async function GET(request: Request) {
   const actorEmail = searchParams.get('actor') ?? '';
   const dateFrom   = searchParams.get('from') ?? '';
   const dateTo     = searchParams.get('to') ?? '';
+
   let query = supabaseAdmin
     .from('audit_log')
     .select('*', { count: 'exact' })
     .order('created_at', { ascending: false })
     .range((page - 1) * pageSize, page * pageSize - 1);
+
   if (eventType)  query = query.eq('event_type', eventType);
   if (result)     query = query.eq('result', result);
   if (actorEmail) query = query.ilike('actor_email', `%${actorEmail}%`);
   if (dateFrom)   query = query.gte('created_at', dateFrom);
   if (dateTo)     query = query.lte('created_at', dateTo);
+
   // org_admin scope — only see events from users in their org
   if (session.user.role === 'org_admin') {
     const { data: orgUsers } = await supabaseAdmin
@@ -308,13 +374,18 @@ export async function GET(request: Request) {
     const userIds = orgUsers?.map(u => u.user_id) ?? [];
     query = query.in('actor_id', userIds);
   }
+
   const { data, error, count } = await query;
   return Response.json({ events: data, total: count, page, pageSize });
 }
 ```
+
 ---
+
 ## 4. React Components
+
 ### 4.1 File structure
+
 ```
 components/
 ├── admin/
@@ -337,11 +408,14 @@ components/
 │       ├── EventTypeBadge.tsx    # AUTH / PERM / DATA / SEC / EXPORT badges
 │       └── AuditExportButton.tsx # Triggers CSV export
 ```
+
 ### 4.2 AdminSidebarSection.tsx
+
 ```tsx
 // components/admin/AdminSidebarSection.tsx
 // Renders in the sidebar ONLY for global_admin and org_admin.
 // Uses amber accent to visually separate from operational nav.
+
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -350,6 +424,7 @@ import {
   ShieldLock, UsersGroup, Building,
   LockAccess, ListSearch
 } from '@tabler/icons-react';
+
 const ADMIN_NAV = [
   { href: '/admin',              label: 'Admin Panel',    icon: ShieldLock  },
   { href: '/admin/users',        label: 'Users & Roles',  icon: UsersGroup  },
@@ -357,11 +432,14 @@ const ADMIN_NAV = [
   { href: '/admin/permissions',  label: 'Permissions',    icon: LockAccess  },
   { href: '/admin/audit',        label: 'Audit Log',      icon: ListSearch  },
 ];
+
 export function AdminSidebarSection() {
   const { user } = useSession();
   const pathname = usePathname();
+
   // Only render for admin roles — no placeholder, no disabled state
   if (!['global_admin', 'org_admin'].includes(user?.role ?? '')) return null;
+
   return (
     <div className="mx-2 my-1.5 rounded-lg border border-amber-500/20
                     bg-amber-500/[0.07] overflow-hidden">
@@ -393,7 +471,9 @@ export function AdminSidebarSection() {
   );
 }
 ```
+
 ### 4.3 RoleBadge.tsx
+
 ```tsx
 // components/admin/users/RoleBadge.tsx
 const ROLE_STYLES: Record<string, string> = {
@@ -408,6 +488,7 @@ const ROLE_STYLES: Record<string, string> = {
   training_user:  'bg-purple-500/12 text-purple-400',
   placement_user: 'bg-pink-500/12 text-pink-400',
 };
+
 export function RoleBadge({ role }: { role: string }) {
   return (
     <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px]
@@ -417,17 +498,21 @@ export function RoleBadge({ role }: { role: string }) {
   );
 }
 ```
+
 ### 4.4 UserTable.tsx (abbreviated)
+
 ```tsx
 // components/admin/users/UserTable.tsx
 'use client';
 import { useState } from 'react';
 import { RoleBadge } from './RoleBadge';
 import { InviteUserModal } from './InviteUserModal';
+
 export function UserTable({ users, total, onRefresh }: UserTableProps) {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
+
   return (
     <div>
       {/* Toolbar */}
@@ -461,6 +546,7 @@ export function UserTable({ users, total, onRefresh }: UserTableProps) {
           + Invite user
         </button>
       </div>
+
       {/* Table */}
       <table className="w-full text-xs" style={{ tableLayout: 'fixed' }}>
         <thead>
@@ -480,6 +566,7 @@ export function UserTable({ users, total, onRefresh }: UserTableProps) {
           ))}
         </tbody>
       </table>
+
       {inviteOpen && (
         <InviteUserModal
           onClose={() => setInviteOpen(false)}
@@ -490,18 +577,23 @@ export function UserTable({ users, total, onRefresh }: UserTableProps) {
   );
 }
 ```
+
 ### 4.5 RBACMatrix.tsx (abbreviated)
+
 ```tsx
 // components/admin/rbac/RBACMatrix.tsx
 // Renders the permissions grid. Cells are either:
 //   ✓  (green)   — full access at this role
 //   —  (grey)    — no access
 //   scoped label (amber) — access limited by scope (own vessel, own org etc.)
+
 const ROLES   = ['global_admin','jls_staff','vessel_owner','captain','crew','supplier','port_agent'];
 const ACTIONS = ['view','create','edit','approve','finance','manage_users','admin_panel','audit_log','leo_briefings'];
+
 export function RBACMatrix({ rules }: { rules: PermissionRule[] }) {
   // Build lookup: rules[role][action] = scope | 'full' | 'none'
   const lookup = buildLookup(rules);
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-xs" style={{ tableLayout: 'fixed' }}>
@@ -537,7 +629,9 @@ export function RBACMatrix({ rules }: { rules: PermissionRule[] }) {
   );
 }
 ```
+
 ### 4.6 AuditTable.tsx (abbreviated)
+
 ```tsx
 // components/admin/audit/AuditTable.tsx
 export function AuditTable({ events, total, filters, onFilterChange }: AuditTableProps) {
@@ -569,7 +663,9 @@ export function AuditTable({ events, total, filters, onFilterChange }: AuditTabl
   );
 }
 ```
+
 ### 4.7 EventTypeBadge.tsx
+
 ```tsx
 // components/admin/audit/EventTypeBadge.tsx
 const EVENT_STYLES: Record<string, string> = {
@@ -581,6 +677,7 @@ const EVENT_STYLES: Record<string, string> = {
   ADMIN:  'bg-purple-500/12 text-purple-400',
   SYSTEM: 'bg-slate-500/15 text-slate-400',
 };
+
 export function EventTypeBadge({ type }: { type: string }) {
   return (
     <span className={`inline-block px-1.5 py-0.5 rounded text-[9px]
@@ -590,17 +687,23 @@ export function EventTypeBadge({ type }: { type: string }) {
   );
 }
 ```
+
 ---
+
 ## 5. Page Components (Next.js App Router)
+
 ### 5.1 Admin shell layout
+
 ```tsx
 // app/admin/layout.tsx
 import { requireAccess } from '@/lib/auth/access';
 import { AdminSidebarSection } from '@/components/admin/AdminSidebarSection';
 import { redirect } from 'next/navigation';
+
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const session = await requireAccess(null, ['global_admin', 'org_admin']);
   if (!session.ok) redirect('/auth/login?reason=unauthorized');
+
   return (
     <div className="flex h-screen overflow-hidden bg-[#111827]">
       {/* The main Sidebar component already renders AdminSidebarSection
@@ -632,12 +735,15 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   );
 }
 ```
+
 ### 5.2 Users page
+
 ```tsx
 // app/admin/users/page.tsx
 import { AdminStatsBar } from '@/components/admin/AdminStatsBar';
 import { UserTable } from '@/components/admin/users/UserTable';
 import { RBACMatrix } from '@/components/admin/rbac/RBACMatrix';
+
 export default async function AdminUsersPage() {
   const [usersRes, permissionsRes] = await Promise.all([
     fetch('/api/admin/users?pageSize=25'),
@@ -645,15 +751,18 @@ export default async function AdminUsersPage() {
   ]);
   const { users, total } = await usersRes.json();
   const { rules } = await permissionsRes.json();
+
   return (
     <div className="space-y-5">
       <AdminStatsBar />
+
       <section>
         <SectionHeading title="RBAC permissions matrix" action="Edit roles" />
         <div className="bg-[#1a2437] rounded-lg overflow-hidden">
           <RBACMatrix rules={rules} />
         </div>
       </section>
+
       <section>
         <SectionHeading title="Users & roles" action="Invite" />
         <div className="bg-[#1a2437] rounded-lg overflow-hidden">
@@ -664,13 +773,17 @@ export default async function AdminUsersPage() {
   );
 }
 ```
+
 ### 5.3 Audit log page
+
 ```tsx
 // app/admin/audit/page.tsx
 import { AuditTable } from '@/components/admin/audit/AuditTable';
+
 export default async function AuditLogPage({ searchParams }: { searchParams: any }) {
   const params = new URLSearchParams(searchParams).toString();
   const { events, total } = await fetch(`/api/admin/audit?${params}`).then(r => r.json());
+
   return (
     <div>
       <SectionHeading title="Audit log" action="Export CSV" />
@@ -681,9 +794,13 @@ export default async function AuditLogPage({ searchParams }: { searchParams: any
   );
 }
 ```
+
 ---
+
 ## 6. Invite Flow & MFA Enforcement
+
 When a user is invited, the flow is:
+
 ```
 Admin sends invite
   → Supabase magic link email to new user
@@ -694,6 +811,7 @@ Admin sends invite
   → JWT custom claims refreshed with role + scope
   → User redirected to getLandingPath(role) — their home screen
 ```
+
 ```ts
 // app/auth/mfa-setup/page.tsx (key logic)
 async function completeMFASetup(totpCode: string) {
@@ -702,21 +820,28 @@ async function completeMFASetup(totpCode: string) {
     factorId, challengeId, code: totpCode
   });
   if (error) throw error;
+
   // 2. Activate user_role row
   await supabase
     .from('user_roles')
     .update({ is_active: true })
     .eq('user_id', session.user.id);
+
   // 3. Log the event
   await logAuditEvent({ event_type: 'AUTH', detail: 'MFA enrolled — account activated' });
+
   // 4. Route to their landing page
   const path = getLandingPath(session.user.role);
   router.push(path);
 }
 ```
+
 ---
+
 ## 7. Stats Bar Component
+
 Shown at the top of the admin panel — four metric cards.
+
 ```tsx
 // components/admin/AdminStatsBar.tsx
 export async function AdminStatsBar() {
@@ -731,12 +856,14 @@ export async function AdminStatsBar() {
     supabaseAdmin.from('audit_log').select('id', { count: 'exact', head: true })
       .gte('created_at', new Date().toISOString().slice(0, 10)),
   ]);
+
   const stats = [
     { label: 'Total users',        value: usersCount.count ?? 0,  color: 'text-cyan-400' },
     { label: 'Active sessions',    value: activeSessions.count ?? 0, color: 'text-white' },
     { label: 'MFA enrolled',       value: mfaCount.count ?? 0,    color: 'text-white' },
     { label: 'Audit events today', value: auditToday.count ?? 0,  color: 'text-amber-400' },
   ];
+
   return (
     <div className="grid grid-cols-4 gap-2.5">
       {stats.map(({ label, value, color }) => (
@@ -749,8 +876,11 @@ export async function AdminStatsBar() {
   );
 }
 ```
+
 ---
+
 ## 8. Open Tickets for Matt
+
 | Ticket | Assignee   | Priority | Description                                                        |
 |--------|------------|----------|--------------------------------------------------------------------|
 | #133   | Matt Tighe | HIGH     | Admin panel UI — all three sections (this spec)                    |
@@ -764,18 +894,32 @@ export async function AdminStatsBar() {
 | #139   | Matt Tighe | MED      | MFA status column — join auth.mfa_factors in user list query       |
 | #140   | Matt Tighe | MED      | Audit export — CSV download with active filters applied            |
 | #141   | Matt Tighe | LOW      | Suspend / unsuspend user — soft delete + audit event               |
+
 ---
+
 ## 9. Key Rules for Claude Code
+
 1. **Admin section is invisible to non-admins.** `AdminSidebarSection` returns `null` for all non-admin roles. No disabled state, no placeholder. It simply does not exist.
+
 2. **Every admin API route calls `requireAccess()` first.** No exceptions. Not a single route under `/api/admin/` may proceed without a verified admin session.
+
 3. **org_admin is scoped.** An `org_admin` user can only see and manage users within their own `org_id`. They cannot elevate themselves or grant roles above their own level.
+
 4. **Every mutation writes an audit event.** Invite, role change, suspend, permission edit — each calls `logAuditEvent()` before returning a response. If the audit write fails, the mutation should still complete but the failure must be logged to server error tracking.
+
 5. **MFA is enforced before `is_active = true`.** A user invited via the admin panel cannot access the platform until they complete MFA enrolment at `/auth/mfa-setup`. Their `user_roles.is_active` stays `false` until that step completes.
+
 6. **Amber = admin context.** The amber colour (`#E8A020`) is used exclusively for Leo (AI) and admin UI. Never use it for operational platform elements.
+
 7. **The RBAC matrix is read from `permission_rules`.** It is not hardcoded in the component. `RBACMatrix` fetches live data from `/api/admin/permissions`. Editing a permission in the UI writes to `permission_rules` and takes effect on the next JWT refresh.
+
 8. **Audit log is append-only.** No route or component may UPDATE or DELETE rows from `audit_log`. The table has no UPDATE or DELETE RLS policy. Even `global_admin` cannot modify audit entries.
+
 9. **IP addresses are always logged.** Every audit event must capture `x-forwarded-for` from the request headers. This is non-negotiable for compliance.
+
 10. **The Polaris logo in the sidebar is a home button.** Wrap the logo mark in `<Link href="/">` in the main Sidebar component. Clicking it navigates to the user's role-appropriate home page via `getLandingPath()`.
+
 ---
+
 *Polaris Admin Panel — Internal · Confidential · v1.0 — June 2026*
 *Authors: Mike Fetton / Matt Tighe — JLS Yachts LLC*
