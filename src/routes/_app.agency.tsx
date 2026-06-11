@@ -5,7 +5,7 @@ import { Globe } from "lucide-react";
 const config: ResourceConfig = {
   table: "agency_contacts",
   title: "Agency Network",
-  breadcrumb: "Superyacht Middle East / Agency",
+  breadcrumb: "Port & Agency / Agency Network",
   singular: "Contact",
   icon: <Globe className="h-4 w-4 text-primary/80" />,
   statusKey: "contact_type",

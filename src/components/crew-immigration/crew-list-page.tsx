@@ -202,7 +202,7 @@ export function CrewListPage() {
       {/* Header */}
       <header className="flex items-center justify-between border-b border-border/70 bg-card/30 px-6 py-3.5">
         <div>
-          <div className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-muted-foreground/60">Superyacht Middle East / Crew & Immigration</div>
+          <div className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-muted-foreground/60">Polaris / Crew & Immigration</div>
           <h1 className="mt-0.5 font-display text-[1.25rem] font-semibold tracking-tight">Crew List</h1>
         </div>
         <div className="flex items-center gap-2.5">
