@@ -119,6 +119,15 @@ export function StepReviewSubmit({ state, onUpdate, onNext, onBack }: Props) {
         if (fieldsError) throw fieldsError
       }
 
+      // Mirror the new application into the SharePoint Excel trackers
+      // (fire-and-forget — never block the UI on the write-back).
+      if (applicationId) {
+        fetch('/api/visa/excel-push', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: applicationId }),
+        }).catch(() => {})
+      }
+
       toast.success('Visa application submitted.')
       navigate({ to: '/crew-immigration/visas' })
     } catch (err: any) {

@@ -10,6 +10,7 @@ import { leoChatHandler } from './routes/api.leo.chat'
 import { visaComplianceHandler } from './routes/api.visa.compliance'
 import { visaMonitorHandler } from './routes/api.visa.monitor'
 import { visaExportHandler } from './routes/api.visa.export'
+import { visaExcelPushHandler } from './routes/api.visa.excel-push'
 
 const handleRequest = createStartHandler(defaultStreamHandler)
 
@@ -133,6 +134,10 @@ export default {
     if ((url.pathname === '/api/visa/export' && request.method === 'GET') ||
         (url.pathname === '/api/visa/export/email' && request.method === 'POST')) {
       return visaExportHandler(request)
+    }
+
+    if (url.pathname === '/api/visa/excel-push' && (request.method === 'GET' || request.method === 'POST')) {
+      return visaExcelPushHandler(request)
     }
 
     return handleRequest(request, env, ctx)
