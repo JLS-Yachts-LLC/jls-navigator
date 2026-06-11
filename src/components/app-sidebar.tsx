@@ -32,16 +32,6 @@ const NAV: NavItem[] = [
       { label: "Vessel Overview",  to: "/yachts",    icon: Ship },
       { label: "My Fleet (Live)",  to: "/my-fleet", icon: Navigation },
       { label: "Crew",             to: "/crew-immigration/crew", icon: Users },
-      {
-        label: "Crew & Immigration",
-        icon: IdCard,
-        children: [
-          { label: "Crew List",        to: "/crew-immigration/crew",        icon: UserCircle2 },
-          { label: "Visas",            to: "/crew-immigration/visas",       icon: FileText },
-          { label: "Sign On / Sign Off", to: "/crew-immigration/sign-on-off", icon: LogIn },
-          { label: "Crew Documents",     to: "/crew-immigration/documents",   icon: ClipboardList },
-        ],
-      },
       { label: "Logistics",   to: "/packages",            icon: Boxes },
       { label: "Operations",  to: "/orbit/defects",       icon: Cog },
       { label: "Maintenance", to: "/orbit/maintenance",   icon: Wrench },
@@ -134,6 +124,16 @@ const NAV: NavItem[] = [
   {
     label: "Port Operations & Agency",
     children: [
+      {
+        label: "Crew & Immigration",
+        icon: IdCard,
+        children: [
+          { label: "Crew List",        to: "/crew-immigration/crew",        icon: UserCircle2 },
+          { label: "Visas",            to: "/crew-immigration/visas",       icon: FileText },
+          { label: "Sign On / Sign Off", to: "/crew-immigration/sign-on-off", icon: LogIn },
+          { label: "Crew Documents",     to: "/crew-immigration/documents",   icon: ClipboardList },
+        ],
+      },
       { label: "Command Centre",        to: "/permits/command-centre",      icon: ShieldCheck },
       { label: "Exit & Entry Permits",  to: "/permits/exit-entry",          icon: LogIn },
       { label: "Sanitation",            to: "/permits/sanitation",          icon: ShieldCheck },
@@ -271,7 +271,9 @@ export function AppSidebar() {
     <aside className="flex h-screen w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
       {/* Polaris logo lockup */}
       <div className="flex items-center px-3 py-3 border-b border-sidebar-border/50">
-        <PolarisLogo className="h-auto w-[208px] max-w-full" />
+        <Link to="/dashboard" aria-label="Go to home" className="flex items-center rounded-md transition-opacity hover:opacity-80">
+          <PolarisLogo className="h-auto w-[208px] max-w-full" />
+        </Link>
       </div>
 
       {/* Active vessel switcher */}

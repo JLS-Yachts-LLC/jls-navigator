@@ -80,12 +80,20 @@ export function StepReviewSubmit({ state, onUpdate, onNext, onBack }: Props) {
       const { data: appData, error: appError } = await (supabase as any)
         .from('visa_applications')
         .insert({
-          crew_member_id: state.crew.id,
-          passport_id:    state.passport.id,
-          country_code:   state.countryCode,
-          status:         'submitted',
-          applied_at:     new Date().toISOString(),
-          yacht_id:       state.crew.yacht_id ?? null,
+          crew_member_id:  state.crew.id,
+          passport_id:     state.passport.id,
+          country_code:    state.countryCode,
+          status:          'submitted',
+          submitted_at:    new Date().toISOString(),
+          yacht_id:        state.crew.yacht_id ?? null,
+          visa_type:       'Crew Visa',
+          // Mirror crew/passport details onto the row so the dashboard and
+          // reports display correctly even for records without a crew join.
+          given_name:      state.crew.first_name ?? null,
+          surname:         state.crew.last_name ?? null,
+          nationality:     state.passport.nationality ?? state.crew.nationality ?? null,
+          passport_number: state.passport.passport_number ?? null,
+          passport_expiry: state.passport.expiry_date ?? null,
         })
         .select('id')
         .single()

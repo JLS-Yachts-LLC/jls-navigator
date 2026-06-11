@@ -197,6 +197,16 @@ export function CrewListPage() {
     });
   }, [crew, q, filterStatus, filterYacht, yachts]);
 
+  // Status filter options: known labels + any other statuses present in the data
+  // (e.g. imported "On Board", "On Signer", "Cancelled" from the crew tracker).
+  const statusLabel = (v: string) =>
+    STATUS_LABELS[v] ?? v.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+  const statusOptions = useMemo(() => {
+    const set = new Set<string>(Object.keys(STATUS_LABELS));
+    crew.forEach(m => { if (m.status) set.add(m.status); });
+    return Array.from(set).sort((a, b) => statusLabel(a).localeCompare(statusLabel(b)));
+  }, [crew]);
+
   const yachtName = (id: string | null) => yachts.find(y => y.id === id)?.vessel_name ?? "—";
   const fmtDate = (d: string | null) => d ? new Date(d + "T00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—";
 
@@ -224,7 +234,7 @@ export function CrewListPage() {
             <SelectTrigger className="h-9 w-36 text-xs"><SelectValue placeholder="All Status" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Status</SelectItem>
-              {Object.entries(STATUS_LABELS).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
+              {statusOptions.map(v => <SelectItem key={v} value={v}>{statusLabel(v)}</SelectItem>)}
             </SelectContent>
           </Select>
 

@@ -139,6 +139,9 @@ export default function StepCountrySelect({ state, onUpdate, onNext }: Props) {
           display: 'flex',
           justifyContent: 'flex-end',
           marginTop: 32,
+          paddingRight: 80, // clear the fixed bottom-right Leo orb so the click lands
+          position: 'relative',
+          zIndex: 20,
         }}
       >
         <button

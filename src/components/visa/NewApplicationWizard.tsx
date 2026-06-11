@@ -237,8 +237,9 @@ export default function NewApplicationWizard({ onClose }: Props) {
         })}
       </div>
 
-      {/* Step Content */}
-      <div style={{ flex: 1, padding: '24px 28px' }}>
+      {/* Step Content — extra bottom padding so footer buttons clear the
+          floating Leo assistant orb fixed in the bottom-right corner */}
+      <div style={{ flex: 1, padding: '24px 28px 96px' }}>
         {state.step === 1 && <StepCountrySelect {...stepProps} />}
         {state.step === 2 && <StepCrewSearch {...stepProps} />}
         {state.step === 3 && <StepPassportSelect {...stepProps} />}

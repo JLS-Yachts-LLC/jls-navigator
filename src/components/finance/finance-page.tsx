@@ -5,7 +5,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   DollarSign, RefreshCw, CheckCircle2, XCircle, FileText, FileCheck,
   Quote, Loader2, ExternalLink, ClipboardList, Search, Check, AlertTriangle,
-  RotateCcw, LayoutGrid, Package, Cpu, ShoppingCart, Car, ChevronRight, Download,
+  RotateCcw, LayoutGrid, Package, Cpu, ShoppingCart, Car, ChevronRight, Download, IdCard,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -90,6 +90,23 @@ type TrackerProcurement = {
   total_amount: number | null;
   status: string;
   requested_date: string | null;
+  billing_status: BillingStatus;
+  invoice_ref: string | null;
+  invoice_amount: number | null;
+  yacht?: { vessel_name: string } | null;
+};
+
+type TrackerVisa = {
+  id: string;
+  given_name: string | null;
+  surname: string | null;
+  nationality: string | null;
+  visa_type: string | null;
+  visa_number: string | null;
+  country_code: string | null;
+  status: string;
+  submitted_at: string | null;
+  created_at: string;
   billing_status: BillingStatus;
   invoice_ref: string | null;
   invoice_amount: number | null;
@@ -1109,9 +1126,212 @@ function ProcurementTracker() {
   );
 }
 
+// ─── Visa Tracker ─────────────────────────────────────────────────────────────
+
+const VISA_STATUS_COLOR: Record<string, string> = {
+  draft: "bg-slate-500/15 text-slate-400",
+  pending_docs: "bg-amber-500/15 text-amber-400",
+  submitted: "bg-blue-500/15 text-blue-400",
+  in_review: "bg-amber-500/15 text-amber-400",
+  processing: "bg-violet-500/15 text-violet-400",
+  approved: "bg-emerald-500/15 text-emerald-400",
+  completed: "bg-emerald-500/15 text-emerald-400",
+  rejected: "bg-red-500/15 text-red-400",
+  cancelled: "bg-slate-500/15 text-slate-400",
+};
+
+function visaName(v: TrackerVisa) {
+  return `${v.given_name ?? ""} ${v.surname ?? ""}`.trim() || "—";
+}
+
+function VisaTracker() {
+  const [items, setItems] = useState<TrackerVisa[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState<string | null>(null);
+  const [q, setQ] = useState("");
+  const [filterYacht, setFilterYacht] = useState("all");
+  const [filterBilling, setFilterBilling] = useState("all");
+  const [filterStatus, setFilterStatus] = useState("all");
+  const [editingRow, setEditingRow] = useState<string | null>(null);
+  const [editRef, setEditRef] = useState("");
+  const [editAmount, setEditAmount] = useState("");
+
+  useEffect(() => { void load(); }, []);
+
+  async function load() {
+    setLoading(true);
+    const { data, error } = await (supabase as any)
+      .from("visa_applications")
+      .select("id, given_name, surname, nationality, visa_type, visa_number, country_code, status, submitted_at, created_at, billing_status, invoice_ref, invoice_amount, yacht:yachts(vessel_name)")
+      .order("created_at", { ascending: false })
+      .limit(2000);
+    if (error) toast.error(error.message);
+    else setItems((data ?? []) as TrackerVisa[]);
+    setLoading(false);
+  }
+
+  const yachts = useMemo(() => {
+    const names = new Set<string>();
+    items.forEach(i => { if (i.yacht?.vessel_name) names.add(i.yacht.vessel_name); });
+    return Array.from(names).sort();
+  }, [items]);
+
+  const statuses = useMemo(() => {
+    const s = new Set<string>();
+    items.forEach(i => { if (i.status) s.add(i.status); });
+    return Array.from(s).sort();
+  }, [items]);
+
+  const filtered = useMemo(() => items.filter(i => {
+    if (filterYacht !== "all" && i.yacht?.vessel_name !== filterYacht) return false;
+    if (filterBilling !== "all" && i.billing_status !== filterBilling) return false;
+    if (filterStatus !== "all" && i.status !== filterStatus) return false;
+    if (q.trim()) {
+      const qq = q.toLowerCase();
+      const hay = [visaName(i), i.nationality, i.visa_number, i.visa_type, i.yacht?.vessel_name, i.invoice_ref].filter(Boolean).join(" ").toLowerCase();
+      if (!hay.includes(qq)) return false;
+    }
+    return true;
+  }), [items, filterYacht, filterBilling, filterStatus, q]);
+
+  async function updateBilling(id: string, billing_status: BillingStatus, invoice_ref?: string, invoice_amount?: number | null) {
+    setSaving(id);
+    const patch: any = { billing_status };
+    if (invoice_ref !== undefined) patch.invoice_ref = invoice_ref || null;
+    if (invoice_amount !== undefined) patch.invoice_amount = invoice_amount;
+    const { error } = await (supabase as any).from("visa_applications").update(patch).eq("id", id);
+    if (error) { toast.error(error.message); setSaving(null); return; }
+    setItems(prev => prev.map(i => i.id === id ? { ...i, ...patch } : i));
+    setEditingRow(null);
+    setSaving(null);
+    toast.success("Updated");
+  }
+
+  function fmtDate(d: string | null) {
+    if (!d) return "—";
+    return new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  }
+
+  return (
+    <div className="space-y-4">
+      <StatsBar items={items} />
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-48">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <Input value={q} onChange={e => setQ(e.target.value)} placeholder="Search crew, passport, visa…" className="pl-8 h-8 text-sm" />
+        </div>
+        <Select value={filterYacht} onValueChange={setFilterYacht}>
+          <SelectTrigger className="h-8 text-xs w-40"><SelectValue placeholder="All yachts" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Yachts</SelectItem>
+            {yachts.map(y => <SelectItem key={y} value={y}>{y}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={filterStatus} onValueChange={setFilterStatus}>
+          <SelectTrigger className="h-8 text-xs w-40"><SelectValue placeholder="All statuses" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Statuses</SelectItem>
+            {statuses.map(s => <SelectItem key={s} value={s}>{s.replace(/_/g, " ")}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={filterBilling} onValueChange={setFilterBilling}>
+          <SelectTrigger className="h-8 text-xs w-40"><SelectValue placeholder="All billing" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Billing</SelectItem>
+            <SelectItem value="pending_review">Pending Review</SelectItem>
+            <SelectItem value="pending_invoice">Needs Invoice</SelectItem>
+            <SelectItem value="invoiced">Invoiced</SelectItem>
+            <SelectItem value="not_billable">Not Billable</SelectItem>
+          </SelectContent>
+        </Select>
+        {(q || filterYacht !== "all" || filterBilling !== "all" || filterStatus !== "all") && (
+          <Button size="sm" variant="ghost" className="h-8 text-xs gap-1" onClick={() => { setQ(""); setFilterYacht("all"); setFilterBilling("all"); setFilterStatus("all"); }}>
+            <RotateCcw className="h-3 w-3" /> Clear
+          </Button>
+        )}
+        <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5 ml-auto" onClick={() => {
+          const rows = filtered.map(v => ({
+            "Given Name": v.given_name ?? "", Surname: v.surname ?? "", Nationality: v.nationality ?? "",
+            "Visa Type": v.visa_type ?? "", "Visa Ref": v.visa_number ?? "", Yacht: v.yacht?.vessel_name ?? "",
+            Status: v.status ?? "", Submitted: v.submitted_at ?? v.created_at ?? "",
+            "Billing Status": v.billing_status ?? "", "Invoice Ref": v.invoice_ref ?? "", "Amount (AED)": v.invoice_amount ?? "",
+          }));
+          downloadCSV(`visa-tracker-${new Date().toISOString().slice(0,10)}.csv`, rows);
+        }} disabled={filtered.length === 0}>
+          <Download className="h-3 w-3" /> Export
+        </Button>
+        <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" onClick={load} disabled={loading}>
+          {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />} Refresh
+        </Button>
+      </div>
+      <div className="rounded-lg border border-border overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[900px]">
+            <thead>
+              <tr className="bg-muted/40 border-b border-border">
+                {["Crew", "Yacht", "Nationality", "Visa Type", "Visa Ref", "Submitted", "Status", "Billing", "Invoice Ref", "Amount", "Actions"].map(col => (
+                  <th key={col} className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap">{col}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/50">
+              {loading ? (
+                <tr><td colSpan={11} className="px-3 py-10 text-center"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></td></tr>
+              ) : filtered.length === 0 ? (
+                <tr><td colSpan={11} className="px-3 py-10 text-center text-sm text-muted-foreground">No visa applications match the current filters.</td></tr>
+              ) : filtered.map(v => {
+                const isEditing = editingRow === v.id;
+                const isSaving = saving === v.id;
+                const bs = (v.billing_status ?? "pending_review") as BillingStatus;
+                return (
+                  <tr key={v.id} className="hover:bg-muted/10 transition-colors">
+                    <td className="px-3 py-2 text-xs font-medium whitespace-nowrap">{visaName(v)}</td>
+                    <td className="px-3 py-2 text-xs whitespace-nowrap">{v.yacht?.vessel_name ?? <span className="text-muted-foreground">—</span>}</td>
+                    <td className="px-3 py-2 text-xs whitespace-nowrap text-muted-foreground">{v.nationality ?? "—"}</td>
+                    <td className="px-3 py-2 text-xs whitespace-nowrap text-muted-foreground">{v.visa_type ?? "—"}</td>
+                    <td className="px-3 py-2 text-xs font-mono text-muted-foreground whitespace-nowrap">{v.visa_number ?? "—"}</td>
+                    <td className="px-3 py-2 text-xs whitespace-nowrap text-muted-foreground">{fmtDate(v.submitted_at ?? v.created_at)}</td>
+                    <td className="px-3 py-2">
+                      <span className={`inline-flex items-center rounded-full px-1.5 py-0 text-[10px] font-semibold uppercase tracking-wide ${VISA_STATUS_COLOR[v.status] ?? "bg-muted/60 text-muted-foreground"}`}>
+                        {(v.status ?? "—").replace(/_/g, " ")}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2"><BillingBadge status={bs} /></td>
+                    <td className="px-3 py-2 text-xs text-muted-foreground">{isEditing ? null : (v.invoice_ref ?? "—")}</td>
+                    <td className="px-3 py-2 text-xs text-muted-foreground">{isEditing ? null : (v.invoice_amount ? `AED ${v.invoice_amount.toLocaleString()}` : "—")}</td>
+                    <td className="px-3 py-2">
+                      <BillingActions
+                        id={v.id} bs={bs} saving={isSaving} isEditing={isEditing}
+                        editRef={editingRow === v.id ? editRef : ""}
+                        editAmount={editingRow === v.id ? editAmount : ""}
+                        onSetEditRef={setEditRef} onSetEditAmount={setEditAmount}
+                        onStartEdit={() => { setEditingRow(v.id); setEditRef(v.invoice_ref ?? ""); setEditAmount(v.invoice_amount ? String(v.invoice_amount) : ""); }}
+                        onCancelEdit={() => setEditingRow(null)}
+                        onSaveInvoiced={() => updateBilling(v.id, "invoiced", editRef, editAmount ? parseFloat(editAmount) : null)}
+                        onFlag={() => updateBilling(v.id, "pending_invoice")}
+                        onNotBillable={() => updateBilling(v.id, "not_billable")}
+                        onReset={() => updateBilling(v.id, "pending_review")}
+                      />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {filtered.length > 0 && (
+          <div className="border-t border-border bg-muted/20 px-3 py-1.5 text-xs text-muted-foreground">
+            Showing {filtered.length} of {items.length} visa applications
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Unified Department Tracker ──────────────────────────────────────────────
 
-type DeptKey = TrackerDept | "orbit";
+type DeptKey = TrackerDept | "orbit" | "visas";
 
 const DEPT_LIST: {
   key: DeptKey;
@@ -1124,6 +1344,7 @@ const DEPT_LIST: {
   { key: "packages",    label: "ShipSync",   shortLabel: "ShipSync",       icon: Package,     available: true  },
   { key: "it",          label: "Yacht IT Solutions",      shortLabel: "Yacht IT",       icon: Cpu,         available: true  },
   { key: "procurement", label: "Procurement",             shortLabel: "Procurement",    icon: ShoppingCart,available: true  },
+  { key: "visas",       label: "Visas & Immigration",     shortLabel: "Visas",          icon: IdCard,      available: true  },
   { key: "orbit",       label: "Orbit (Projects)",        shortLabel: "Orbit",          icon: LayoutGrid,  available: false },
 ];
 
@@ -1175,6 +1396,7 @@ function DeptTracker() {
       {dept === "packages"     && <PackagesTracker />}
       {dept === "it"           && <YachtItTracker />}
       {dept === "procurement"  && <ProcurementTracker />}
+      {dept === "visas"        && <VisaTracker />}
       {dept === "orbit"        && (
         <div className="flex h-40 flex-col items-center justify-center rounded-lg border border-dashed border-border text-center">
           <LayoutGrid className="h-8 w-8 text-muted-foreground/40 mb-2" />
