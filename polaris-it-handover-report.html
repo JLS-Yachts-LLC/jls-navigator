@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Polaris Platform — IT Handover Report — June 2026</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --void:      #080D14;
+    --abyss:     #0D1520;
+    --deep:      #0F2030;
+    --ocean:     #1E4060;
+    --signal:    #00C4CC;
+    --leoAmber:  #E8A020;
+    --warn:      #E87020;
+    --error:     #E87050;
+    --success:   #4CAF80;
+    --info:      #7A9DB8;
+    --frost:     #E8EDF5;
+    --muted:     #4A7090;
+    --steel:     #3A5570;
+  }
+
+  body {
+    font-family: 'Space Grotesk', sans-serif;
+    background: var(--void);
+    color: var(--frost);
+    font-size: 11pt;
+    line-height: 1.5;
+    padding: 0;
+    margin: 0;
+  }
+
+  .page {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 32px 36px 48px;
+  }
+
+  /* HEADER */
+  .report-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--ocean);
+    padding-bottom: 18px;
+    margin-bottom: 24px;
+  }
+  .logo-row { display: flex; align-items: center; gap: 12px; }
+  .logo-mark {
+    width: 38px; height: 38px;
+    background: rgba(0,196,204,0.12);
+    border: 1px solid rgba(0,196,204,0.3);
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .logo-mark svg { width: 20px; height: 20px; stroke: #00C4CC; fill: none; stroke-width: 1.8; }
+  .logo-name { font-size: 18pt; font-weight: 700; color: var(--frost); letter-spacing: 0.06em; }
+  .logo-sub { font-size: 8.5pt; color: var(--muted); letter-spacing: 0.1em; margin-top: 2px; }
+  .report-meta { text-align: right; }
+  .report-date { font-size: 10pt; color: var(--muted); }
+  .report-version { font-size: 9pt; color: var(--steel); margin-top: 3px; }
+  .report-confidential {
+    font-size: 8pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.15em;
+    color: var(--error); background: rgba(232,112,80,0.1);
+    border: 1px solid rgba(232,112,80,0.2);
+    padding: 3px 8px; border-radius: 3px; display: inline-block; margin-top: 5px;
+  }
+
+  /* SECTION TITLES */
+  .section-title {
+    font-size: 8pt; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.2em; color: var(--ocean);
+    margin: 24px 0 10px;
+    padding-bottom: 7px;
+    border-bottom: 1px solid var(--deep);
+  }
+
+  /* STATUS BAR */
+  .status-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 8px; }
+  .status-tile {
+    background: var(--abyss); border: 1px solid var(--deep);
+    border-radius: 6px; padding: 14px;
+  }
+  .status-tile .val { font-size: 26pt; font-weight: 700; line-height: 1; }
+  .status-tile .lbl { font-size: 8pt; font-weight: 600; text-transform: uppercase; letter-spacing: 0.16em; color: var(--steel); margin-top: 5px; }
+
+  /* DONE GRID */
+  .done-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .done-card {
+    background: var(--abyss); border: 1px solid var(--deep);
+    border-radius: 6px; padding: 14px 16px;
+    break-inside: avoid;
+  }
+  .done-card-header { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
+  .done-card-icon {
+    width: 30px; height: 30px; border-radius: 5px;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .done-card-icon svg { width: 16px; height: 16px; stroke-width: 1.8; fill: none; }
+  .done-card-title { font-size: 11pt; font-weight: 700; color: var(--frost); }
+  .done-card-tickets { font-size: 8.5pt; color: var(--muted); margin-top: 2px; }
+  .done-list { list-style: none; display: flex; flex-direction: column; gap: 5px; }
+  .done-list li {
+    font-size: 9.5pt; color: var(--info);
+    display: flex; align-items: flex-start; gap: 7px; line-height: 1.45;
+  }
+  .done-list li::before {
+    content: '';
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--success); flex-shrink: 0; margin-top: 4px;
+  }
+
+  /* ATTENTION ITEMS */
+  .attention-list { display: flex; flex-direction: column; gap: 10px; }
+  .attention-item {
+    background: var(--abyss); border: 1px solid var(--deep);
+    border-radius: 6px; padding: 13px 15px;
+    display: flex; gap: 14px; align-items: flex-start;
+    break-inside: avoid;
+  }
+  .attention-item.critical { border-left: 3px solid #E8274B; }
+  .attention-item.high     { border-left: 3px solid var(--error); }
+  .attention-item.med      { border-left: 3px solid var(--leoAmber); }
+  .attention-num { font-family: 'Courier New', monospace; font-size: 9pt; color: var(--steel); flex-shrink: 0; padding-top: 2px; min-width: 56px; }
+  .attention-body { flex: 1; }
+  .attention-title { font-size: 11pt; font-weight: 700; color: var(--frost); margin-bottom: 4px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .attention-desc { font-size: 9.5pt; color: var(--muted); line-height: 1.55; }
+  .attention-tags { display: flex; gap: 5px; margin-top: 7px; flex-wrap: wrap; }
+  .tag {
+    font-size: 8pt; font-weight: 600; padding: 2px 6px; border-radius: 3px;
+    background: rgba(255,255,255,0.05); color: var(--steel);
+    text-transform: uppercase; letter-spacing: 0.1em;
+  }
+
+  /* PRIORITY BADGES */
+  .pri {
+    font-size: 8pt; font-weight: 700; padding: 2px 7px; border-radius: 3px;
+    text-transform: uppercase; letter-spacing: 0.1em; white-space: nowrap;
+  }
+  .pri-critical { background: rgba(232,39,75,0.15);  color: #E8274B; }
+  .pri-high     { background: rgba(232,112,80,0.15); color: var(--error); }
+  .pri-med      { background: rgba(232,160,32,0.12); color: var(--leoAmber); }
+  .pri-low      { background: rgba(0,196,204,0.1);   color: var(--signal); }
+
+  /* STATUS PILLS */
+  .sp {
+    font-size: 8pt; font-weight: 600; padding: 2px 7px; border-radius: 3px;
+    text-transform: uppercase; letter-spacing: 0.09em; white-space: nowrap;
+  }
+  .sp-spec    { background: rgba(0,196,204,0.1);   color: var(--signal); }
+  .sp-manual  { background: rgba(232,160,32,0.1);  color: var(--leoAmber); }
+  .sp-blocked { background: rgba(232,39,75,0.1);   color: #E8274B; }
+  .sp-built   { background: rgba(76,175,128,0.1);  color: var(--success); }
+
+  /* MANUAL STEPS */
+  .manual-steps { display: flex; flex-direction: column; gap: 8px; }
+  .manual-step {
+    background: rgba(232,160,32,0.04);
+    border: 1px solid rgba(232,160,32,0.15);
+    border-radius: 5px; padding: 12px 14px;
+    display: flex; gap: 12px; align-items: flex-start;
+    break-inside: avoid;
+  }
+  .step-num {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: rgba(232,160,32,0.15); color: var(--leoAmber);
+    font-size: 9pt; font-weight: 700;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .step-body { flex: 1; }
+  .step-title { font-size: 10.5pt; font-weight: 700; color: #C8D8E8; margin-bottom: 3px; }
+  .step-desc  { font-size: 9.5pt; color: var(--muted); line-height: 1.5; }
+
+  /* ENV TABLE */
+  .env-table { width: 100%; border-collapse: collapse; }
+  .env-table td { font-size: 9.5pt; padding: 7px 10px; border-bottom: 1px solid rgba(255,255,255,0.04); vertical-align: top; }
+  .env-table tr:last-child td { border-bottom: none; }
+  .env-key  { font-family: 'Courier New', monospace; font-size: 9pt; color: var(--signal); white-space: nowrap; }
+  .env-desc { color: var(--info); }
+  .env-server { font-size: 8pt; font-weight: 700; color: var(--error);   background: rgba(232,112,80,0.1);  padding: 2px 6px; border-radius: 3px; white-space: nowrap; }
+  .env-public { font-size: 8pt; font-weight: 700; color: var(--success); background: rgba(76,175,128,0.1);  padding: 2px 6px; border-radius: 3px; white-space: nowrap; }
+
+  /* TICKET TABLE */
+  .ticket-table { width: 100%; border-collapse: collapse; }
+  .ticket-table thead tr { border-bottom: 1px solid var(--ocean); }
+  .ticket-table th {
+    font-size: 8pt; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.15em; color: var(--steel);
+    padding: 7px 10px; text-align: left;
+  }
+  .ticket-table td { font-size: 9.5pt; color: var(--info); padding: 7px 10px; border-bottom: 1px solid rgba(255,255,255,0.04); vertical-align: middle; }
+  .ticket-table tr:last-child td { border-bottom: none; }
+  .ticket-id    { font-family: 'Courier New', monospace; font-size: 8.5pt; color: var(--steel); white-space: nowrap; }
+  .ticket-title { color: #C8D8E8; }
+  .ticket-owner { color: var(--muted); white-space: nowrap; font-size: 9pt; }
+
+  /* FOOTER */
+  .report-footer {
+    margin-top: 32px; padding-top: 16px;
+    border-top: 1px solid var(--deep);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .footer-text { font-size: 8.5pt; color: var(--steel); }
+  .footer-pills { display: flex; gap: 6px; }
+
+  /* PRINT */
+  @media print {
+    @page {
+      size: A4;
+      margin: 14mm 14mm 16mm;
+    }
+    body { background: var(--void) !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .page { padding: 0; max-width: 100%; }
+    .done-card, .attention-item, .manual-step { break-inside: avoid; }
+    .done-grid { break-inside: avoid; }
+    .section-title { break-after: avoid; }
+    .ticket-table thead { display: table-header-group; }
+    .ticket-table tr { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- HEADER -->
+  <div class="report-header">
+    <div class="logo-row">
+      <div class="logo-mark">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>
+      </div>
+      <div>
+        <div class="logo-name">POLARIS</div>
+        <div class="logo-sub">Yacht Operations Platform — IT Handover Report</div>
+      </div>
+    </div>
+    <div class="report-meta">
+      <div class="report-date">12 June 2026</div>
+      <div class="report-version">Platform v1.5 &nbsp;·&nbsp; Tickets #118–#165</div>
+      <div class="report-confidential">Internal · Confidential</div>
+    </div>
+  </div>
+
+  <!-- STATUS BAR -->
+  <div class="section-title">Build status at a glance</div>
+  <div class="status-bar">
+    <div class="status-tile"><div class="val" style="color:#4CAF80;">11</div><div class="lbl">Modules spec'd</div></div>
+    <div class="status-tile"><div class="val" style="color:#00C4CC;">19</div><div class="lbl">Migrations written</div></div>
+    <div class="status-tile"><div class="val" style="color:#E87050;">8</div><div class="lbl">Critical tickets open</div></div>
+    <div class="status-tile"><div class="val" style="color:#E8A020;">5</div><div class="lbl">Manual steps needed</div></div>
+  </div>
+
+  <!-- WHAT WAS BUILT -->
+  <div class="section-title">What has been built &amp; specified this sprint</div>
+  <div class="done-grid">
+
+    <div class="done-card">
+      <div class="done-card-header">
+        <div class="done-card-icon" style="background:rgba(0,196,204,0.1);">
+          <svg viewBox="0 0 24 24" style="stroke:#00C4CC;"><path d="M12 2a5 5 0 1 0 0 10A5 5 0 0 0 12 2z"/><path d="M3 21c0-4.418 4.03-8 9-8s9 3.582 9 8"/><line x1="12" y1="16" x2="12" y2="21"/></svg>
+        </div>
+        <div>
+          <div class="done-card-title">Leo AI Briefing Engine</div>
+          <div class="done-card-tickets">Tickets #119, #136, #165</div>
+        </div>
+      </div>
+      <ul class="done-list">
+        <li>Streaming briefing via Anthropic claude-sonnet-4 API</li>
+        <li>Context assembled in parallel — &lt;300ms target</li>
+        <li>Lean / 6 Sigma metrics computed per session</li>
+        <li>&lt;insights&gt; JSON block parsed client-side for insight cards</li>
+        <li>Captain role extension — ≤3 sentences, vessel-scoped</li>
+      </ul>
+    </div>
+
+    <div class="done-card">
+      <div class="done-card-header">
+        <div class="done-card-icon" style="background:rgba(76,175,128,0.1);">
+          <svg viewBox="0 0 24 24" style="stroke:#4CAF80;"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="7" y1="9" x2="17" y2="9"/><line x1="7" y1="13" x2="13" y2="13"/></svg>
+        </div>
+        <div>
+          <div class="done-card-title">Crew &amp; Visa Module</div>
+          <div class="done-card-tickets">Tickets #150, #157, #158</div>
+        </div>
+      </div>
+      <ul class="done-list">
+        <li>7-country config (UAE, Oman, Maldives, KSA, Qatar, Bahrain, Egypt)</li>
+        <li>7-step application wizard with compliance gate</li>
+        <li>Crew deduplication on full name + date of birth</li>
+        <li>Multi-passport support per crew member</li>
+        <li>UAE seaport sign-on / sign-off auto-task on visa approval</li>
+        <li>Unresolved critical alerts surface in Leo login briefing</li>
+      </ul>
+    </div>
+
+    <div class="done-card">
+      <div class="done-card-header">
+        <div class="done-card-icon" style="background:rgba(122,157,184,0.1);">
+          <svg viewBox="0 0 24 24" style="stroke:#7A9DB8;"><path d="M3 17l4-8 4 4 4-6 4 10"/><path d="M3 21h18"/></svg>
+        </div>
+        <div>
+          <div class="done-card-title">Captain Dashboard</div>
+          <div class="done-card-tickets">Tickets #146–#165</div>
+        </div>
+      </div>
+      <ul class="done-list">
+        <li>Vessel banner — berth, ETD, shore power, voyage history</li>
+        <li>getDashboardAlerts utility — sorted red → amber → grey</li>
+        <li>Crew manifest with real-time document expiry badges</li>
+        <li>Visa centre — 5-step pipeline view per application</li>
+        <li>ShipSync panel — 5-dot progress + customs hold flag</li>
+        <li>Request support modal — 8 categories to Port &amp; Agency Team</li>
+        <li>Module grid — 8 tiles with live badge counts</li>
+        <li>5 new DB tables: operations, bunkering, berthing, crew care, incidents</li>
+        <li>All captain API routes under /api/captain/[vesselId]/*</li>
+      </ul>
+    </div>
+
+    <div class="done-card">
+      <div class="done-card-header">
+        <div class="done-card-icon" style="background:rgba(232,112,80,0.1);">
+          <svg viewBox="0 0 24 24" style="stroke:#E87050;"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+        </div>
+        <div>
+          <div class="done-card-title">Seaport Immigration Module</div>
+          <div class="done-card-tickets">Tickets #123–#127</div>
+        </div>
+      </div>
+      <ul class="done-list">
+        <li>Request form — arrivals + departures (up to 15 crew rows each)</li>
+        <li>SLA timer — submitted → acknowledged → completed → report sent</li>
+        <li>Port &amp; Agency Team execution queue view</li>
+        <li>Completion report generation and send to vessel</li>
+        <li>Integration with seaport_events table (migration 004)</li>
+      </ul>
+    </div>
+
+    <div class="done-card">
+      <div class="done-card-header">
+        <div class="done-card-icon" style="background:rgba(232,39,75,0.1);">
+          <svg viewBox="0 0 24 24" style="stroke:#E8274B;"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        </div>
+        <div>
+          <div class="done-card-title">Access Control Layer</div>
+          <div class="done-card-tickets">Tickets #128–#135, #137–#138</div>
+        </div>
+      </div>
+      <ul class="done-list">
+        <li>Migrations 010–014: organisations, roles, modules, permissions, audit_log</li>
+        <li>requireAccess() — first call in every API route (no exceptions)</li>
+        <li>logAuditEvent() — every action written to audit_log</li>
+        <li>JWT custom claims — role, org_id, vessel_ids, module list</li>
+        <li>getLandingPath() — role-driven routing on login</li>
+        <li>MFA enforcement — mandatory TOTP before platform access</li>
+        <li>Workspace selector for multi-workspace users</li>
+      </ul>
+    </div>
+
+    <div class="done-card">
+      <div class="done-card-header">
+        <div class="done-card-icon" style="background:rgba(154,112,232,0.1);">
+          <svg viewBox="0 0 24 24" style="stroke:#9A70E8;"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
+        </div>
+        <div>
+          <div class="done-card-title">Platform Shell &amp; Portals</div>
+          <div class="done-card-tickets">Tickets #139–#145</div>
+        </div>
+      </div>
+      <ul class="done-list">
+        <li>PolarisShell — topbar + sidebar + main content wrapper</li>
+        <li>Sidebar filtered by user's module access at runtime</li>
+        <li>Login page — two-panel layout + security badges</li>
+        <li>13 stakeholder portals specified (crew, owner, supplier, etc.)</li>
+        <li>Admin panel — user management, vessel assignment, RBAC matrix</li>
+        <li>Developer context switcher (dev mode / platform_owner only)</li>
+      </ul>
+    </div>
+
+  </div>
+
+  <!-- ATTENTION -->
+  <div class="section-title">Functions requiring attention — critical &amp; high priority</div>
+  <div class="attention-list">
+
+    <div class="attention-item critical">
+      <span class="attention-num">#128–130</span>
+      <div class="attention-body">
+        <div class="attention-title">Migrations 010–014 not yet run in Supabase <span class="pri pri-critical">Critical</span></div>
+        <div class="attention-desc">The full access control schema (organisations, roles, modules, user_profiles v2, permission_rules, audit_log) is written and committed but has not been executed. Must be run manually in the Supabase SQL editor in order: 010 → 011 → 012 → 013 → 014. Migration 012 ALTERs user_profiles from migration 001. Until these run, JWT custom claims, requireAccess(), and all role-based routing will fail.</div>
+        <div class="attention-tags"><span class="tag">Supabase SQL editor</span><span class="tag">Blocks #129 #130 #131 #132 #134</span><span class="tag">Run before any login testing</span></div>
+      </div>
+    </div>
+
+    <div class="attention-item critical">
+      <span class="attention-num">#129</span>
+      <div class="attention-body">
+        <div class="attention-title">MFA not yet enforced in Supabase Auth <span class="pri pri-critical">Critical</span></div>
+        <div class="attention-desc">TOTP enrolment is mandatory before any user can access the platform. Must be enabled in the Supabase dashboard under Authentication → MFA. The mfa.ts helper enforces this at middleware level but cannot function until the Supabase project-level MFA toggle is switched on. No user should be able to reach any dashboard page without a verified TOTP factor.</div>
+        <div class="attention-tags"><span class="tag">Supabase dashboard</span><span class="tag">Authentication → MFA</span><span class="tag">Manual toggle — cannot be set via code</span></div>
+      </div>
+    </div>
+
+    <div class="attention-item critical">
+      <span class="attention-num">#130</span>
+      <div class="attention-body">
+        <div class="attention-title">JWT custom claims not wired — role, vessel_ids, org_id missing from token <span class="pri pri-critical">Critical</span></div>
+        <div class="attention-desc">All captain dashboard API routes use <code style="font-family:'Courier New';font-size:9pt;color:#00C4CC;">auth.jwt() ->> 'vessel_ids'</code> for RLS vessel scope enforcement. These claims are absent from the JWT until a Supabase Auth hook (Edge Function) writes them on login. The hook must be deployed via Supabase CLI before any captain or role-scoped route works. Without this, vessel_ids is null and all captain RLS policies will deny access.</div>
+        <div class="attention-tags"><span class="tag">Supabase Edge Function</span><span class="tag">Auth hook fires on login</span><span class="tag">Blocks all RLS vessel scope</span></div>
+      </div>
+    </div>
+
+    <div class="attention-item critical">
+      <span class="attention-num">#131 #137 #138</span>
+      <div class="attention-body">
+        <div class="attention-title">Login page + workspace routing not yet built <span class="pri pri-critical">Critical</span></div>
+        <div class="attention-desc">The login page (two-panel layout), MFA setup page, and workspace selector (shown when a user has more than one workspace) are fully specified in POLARIS_PLATFORM_UX.md but not yet coded. getLandingPath() must route each role to the correct landing page. PolarisShell must exist before any dashboard page is testable end-to-end.</div>
+        <div class="attention-tags"><span class="tag">app/auth/login</span><span class="tag">lib/auth/routing.ts</span><span class="tag">components/auth/WorkspaceSelector.tsx</span></div>
+      </div>
+    </div>
+
+    <div class="attention-item critical">
+      <span class="attention-num">#154</span>
+      <div class="attention-body">
+        <div class="attention-title">Migrations 015–019 not yet run (captain dashboard tables) <span class="pri pri-critical">Critical</span></div>
+        <div class="attention-desc">Five new tables — operations_requests, bunkering_requests, berthing_requests, crew_care_requests, incident_reports — are specified in POLARIS_CAPTAIN_DASHBOARD_BUILD.md Phase 1 with full SQL and RLS policies. All captain API routes will return 500 until these tables exist. Run in order in Supabase SQL editor after migrations 001–014.</div>
+        <div class="attention-tags"><span class="tag">POLARIS_CAPTAIN_DASHBOARD_BUILD.md Phase 1</span><span class="tag">Run after 001–014</span><span class="tag">Blocks ticket #155</span></div>
+      </div>
+    </div>
+
+    <div class="attention-item high">
+      <span class="attention-num">#118</span>
+      <div class="attention-body">
+        <div class="attention-title">ISM cert expiry — weekend edge case unhandled <span class="pri pri-high">High</span></div>
+        <div class="attention-desc">The compliance module does not handle expiry on a Saturday or Sunday. UAE government offices are closed Friday–Saturday, so the effective renewal deadline is the preceding Thursday. The uaeCompliance.ts rule must detect weekend expiry dates and bring the alert forward by 2–3 days to avoid crew being stranded.</div>
+        <div class="attention-tags"><span class="tag">lib/visa/uaeCompliance.ts</span><span class="tag">Affects all UAE certificate checks</span></div>
+      </div>
+    </div>
+
+    <div class="attention-item high">
+      <span class="attention-num">#119 #120</span>
+      <div class="attention-body">
+        <div class="attention-title">Leo briefing API not stress tested — connection pool unreviewed <span class="pri pri-high">High</span></div>
+        <div class="attention-desc">The /api/leo/briefing endpoint has not been tested under concurrent load. Target is 50 simultaneous sessions without degradation. The Supabase connection pool config (#120) should be reviewed at the same time — connection exhaustion under load will cause briefing failures silently.</div>
+        <div class="attention-tags"><span class="tag">app/api/leo/briefing/route.ts</span><span class="tag">lib/supabase/client.ts</span></div>
+      </div>
+    </div>
+
+    <div class="attention-item high">
+      <span class="attention-num">#132 #134</span>
+      <div class="attention-body">
+        <div class="attention-title">requireAccess() and logAuditEvent() not wired to existing routes <span class="pri pri-high">High</span></div>
+        <div class="attention-desc">All existing API routes (visa, seaport, Leo briefing) were written before the access control layer was defined. Each must be updated to call requireAccess() as the very first line and logAuditEvent() after every mutation. Currently these routes have no access guard. No unprotected routes are permitted under any circumstances.</div>
+        <div class="attention-tags"><span class="tag">All routes under app/api/</span><span class="tag">lib/auth/access.ts</span><span class="tag">lib/auth/audit.ts</span></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- MANUAL STEPS -->
+  <div class="section-title">Manual steps — cannot be automated by Claude Code</div>
+  <div class="manual-steps">
+
+    <div class="manual-step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <div class="step-title">Run all migrations in Supabase SQL editor</div>
+        <div class="step-desc">In strict order: 001 → 002 → 003 → 004 → 005 → 010 → 011 → 012 → 013 → 014 → 015 → 016 → 017 → 018 → 019. Files are in schema/migrations/. Do not skip any. Migration 012 ALTERs user_profiles from 001 — both must have run successfully first.</div>
+      </div>
+    </div>
+
+    <div class="manual-step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <div class="step-title">Enable MFA in Supabase dashboard</div>
+        <div class="step-desc">Authentication → Sign In / MFA → enable TOTP. This is a project-level toggle — it cannot be set via code or migration. MFA is mandatory for all users. No user should reach any dashboard page without a verified TOTP factor.</div>
+      </div>
+    </div>
+
+    <div class="manual-step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <div class="step-title">Deploy Supabase Edge Function for JWT custom claims</div>
+        <div class="step-desc">An Auth hook Edge Function must write role, org_id, vessel_ids, and module list into the JWT on every login event. Referenced in lib/auth/claims.ts. Deploy via Supabase CLI: <code style="font-family:'Courier New';font-size:8.5pt;color:#00C4CC;">supabase functions deploy</code>. Required before any RLS vessel-scope policy will function correctly.</div>
+      </div>
+    </div>
+
+    <div class="manual-step">
+      <div class="step-num">4</div>
+      <div class="step-body">
+        <div class="step-title">Set all environment variables in the hosting platform</div>
+        <div class="step-desc">ANTHROPIC_API_KEY and SUPABASE_SERVICE_ROLE_KEY are server-only — must never be prefixed NEXT_PUBLIC_. NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, and NEXT_PUBLIC_APP_URL are safe for the client. Confirm .env.local is in .gitignore before any commit.</div>
+      </div>
+    </div>
+
+    <div class="manual-step">
+      <div class="step-num">5</div>
+      <div class="step-body">
+        <div class="step-title">Configure Supabase Storage bucket for documents</div>
+        <div class="step-desc">Create a private bucket named <code style="font-family:'Courier New';font-size:8.5pt;color:#00C4CC;">vessel-documents</code>. Bucket must be private (not public). All document access uses signed URLs with 1-hour expiry — never expose raw Storage paths. Set max file size and allowed MIME types (PDF, JPG, PNG). Every document view must be audit logged with event_type: 'EXPORT'.</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ENV VARS -->
+  <div class="section-title">Environment variables</div>
+  <table class="env-table">
+    <tr><td class="env-key">ANTHROPIC_API_KEY</td><td class="env-desc">Anthropic API — used by Leo briefing and visa compliance routes only</td><td><span class="env-server">Server only</span></td></tr>
+    <tr><td class="env-key">SUPABASE_SERVICE_ROLE_KEY</td><td class="env-desc">Bypasses RLS — used only in server API routes and Edge Functions. Never expose to client.</td><td><span class="env-server">Server only</span></td></tr>
+    <tr><td class="env-key">NEXT_PUBLIC_SUPABASE_URL</td><td class="env-desc">Supabase project URL — scoped by RLS, safe to expose</td><td><span class="env-public">Public</span></td></tr>
+    <tr><td class="env-key">NEXT_PUBLIC_SUPABASE_ANON_KEY</td><td class="env-desc">Supabase anon key — scoped by RLS, safe to expose</td><td><span class="env-public">Public</span></td></tr>
+    <tr><td class="env-key">NEXT_PUBLIC_APP_URL</td><td class="env-desc">Base URL — used by captain dashboard to call internal API routes</td><td><span class="env-public">Public</span></td></tr>
+  </table>
+
+  <!-- TICKET TABLE -->
+  <div class="section-title">All open tickets — full summary</div>
+  <table class="ticket-table">
+    <thead>
+      <tr>
+        <th>Ticket</th>
+        <th>Description</th>
+        <th>Priority</th>
+        <th>Status</th>
+        <th>Owner</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td class="ticket-id">#118</td><td class="ticket-title">ISM cert expiry — weekend edge case unhandled</td><td><span class="pri pri-high">High</span></td><td><span class="sp sp-spec">Spec ready</span></td><td class="ticket-owner">Matt Tighe</td></tr>
+      <tr><td class="ticket-id">#119</td><td class="ticket-title">Stress test /api/leo/briefing at 50 concurrent sessions</td><td><span class="pri pri-high">High</span></td><td><span class="sp sp-spec">Spec ready</span></td><td class="ticket-owner">Matt Tighe</td></tr>
+      <tr><td class="ticket-id">#120</td><td class="ticket-title">Supabase connection pool config — review for production load</td><td><span class="pri pri-med">Med</span></td><td><span class="sp sp-spec">Spec ready</span></td><td class="ticket-owner">Matt Tighe</td></tr>
+      <tr><td class="ticket-id">#121</td><td class="ticket-title">Mobile viewport breakpoints — LeoPanel and insight cards below 768px</td><td><span class="pri pri-med">Med</span></td><td><span class="sp sp-spec">Spec ready</span></td><td class="ticket-owner">Matt Tighe</td></tr>
+      <tr><td class="ticket-id">#122</td><td class="ticket-title">Write CHANGELOG entry for v1.2 Leo briefing deploy</td><td><span class="pri pri-low">Low</span></td><td><span class="sp sp-spec">Spec ready</span></td><td class="ticket-owner">Matt Tighe</td></tr>
+      <tr><td class="ticket-id">#123</td><td class="ticket-title">Build seaport immigration request form</td><td><span class="pri pri-high">High</span></td><td><span class="sp sp-spec">Spec ready</span></td><td class="ticket-owner">Matt Tighe</td></tr>
+      <tr><td class="ticket-id">#124</td><td class="ticket-title">Port &amp; Agency Team queue view and execution detail</td><td><span class="pri pri-high">High</span></td><td><span class="sp sp-spec">Spec ready</span></td><td class="ticket-owner">Matt Tighe</td></tr>
+      <tr><td class="ticket-id">#125</td><td class="ticket-title">SLA timer component + seaport_sla auto-update on status transitions</td><td><span class="pri pri-med">Med</span></td><td><span class="sp sp-spec">Spec ready</span></td><td class="ticket-owner">Matt Tighe</td></tr>
+      <tr><td class="ticket-id">#126</td><td class="ticket-title">Completion report PDF generation and send to vessel</td><td><span class="pri pri-med">Med</span></td><td><span class="sp sp-spec">Spec ready</span></td><td class="ticket-owner">Matt Tighe</td></tr>
+      <tr><td class="ticket-id">#128</td><td class="ticket-title">Migrations 010–014 — access control schema</td><td><span class="pri pri-critical">Critical</span></td><td><span class="sp sp-manual">Manual — Supabase</span></td><td class="ticket-owner">Matt Tighe</td></tr>
+      <tr><td class="ticket-id">#129</td><td class="ticket-title">MFA setup + enforcement — block access until enrolled</td><td><span class="pri pri-critical">Critical</span></td><td><span class="sp sp-manual">Manual — Supabase</span></td><td class="ticket-owner">Matt Tighe</td></tr>
+      <tr><td class="ticket-id">#130</td><td class="ticket-title">JWT custom claims — role, org, vessel list, module list on login</td><td><span class="pri pri-critical">Critical</span></td><td><span class="sp sp-manual">Manual — Edge Fn</span></td><td class="ticket-owner">Matt Tighe</td></tr>
+      <tr><td class="ticket-id">#131</td><td class="ticket-title">Landing page routing — getLandingPath() per role, all portal pages</td><td><span class="pri pri-critical">Critical</span></td><td><span class="sp sp-spec">Spec ready</span></td><td class="ticket-owner">Matt Tighe</td></tr>
+      <tr><td class="ticket-id">#132</td><td class="ticket-title">requireAccess() middleware — wrap all existing API routes</td><td><span class="pri pri-high">High</span></td><td><span class="sp sp-blocked">Needs #128 first</span></td><td class="ticket-owner">Matt Tighe</td></tr>
+      <tr><td class="ticket-id">#133</td><td class="ticket-title">Admin panel — user management, vessel assignment, RBAC</td><td><span class="pri pri-high">High</span></td><td><span class="sp sp-spec">Spec ready</span></td><td class="ticket-owner">Matt Tighe</td></tr>
+      <tr><td class="ticket-id">#134</td><td class="ticket-title">Audit log — logAuditEvent() wired into middleware + all API routes</td><td><span class="pri pri-high">High</span></td><td><span class="sp sp-blocked">Needs #128 first</span></td><td class="ticket-owner">Matt Tighe</td></tr>
+      <tr><td class="ticket-id">#135</td><td class="ticket-title">Branding layer — org/location context on stakeholder landing pages</td><td><span class="pri pri-med">Med</span></td><td><span class="sp sp-spec">Spec ready</span></td><td class="ticket-owner">Matt Tighe</td></tr>
+      <tr><td class="ticket-id">#136</td><td class="ticket-title">Leo access-aware briefings — scope context in system prompt</td><td><span class="pri pri-med">Med</span></td><td><span class="sp sp-spec">Spec ready</span></td><td class="ticket-owner">Matt Tighe</td></tr>
+      <tr><td class="ticket-id">#137</td><td class="ticket-title">Login page — two-panel layout + workspace selector</td><td><span class="pri pri-critical">Critical</span></td><td><span class="sp sp-spec">Spec ready</span></td><td class="ticket-owner">Matt Tighe</td></tr>
+      <tr><td class="ticket-id">#138</td><td class="ticket-title">Workspace routing engine — getLandingPath + workspace context</td><td><span class="pri pri-critical">Critical</span></td><td><span class="sp sp-spec">Spec ready</span></td><td class="ticket-owner">Matt Tighe</td></tr>
+      <tr><td class="ticket-id">#139</td><td class="ticket-title">Captain dashboard — vessel ops overview with Leo panel</td><td><span class="pri pri-high">High</span></td><td><span class="sp sp-spec">Spec ready</span></td><td class="ticket-owner">Matt Tighe</td></tr>
+      <tr><td class="ticket-id">#146–#153</td><td class="ticket-title">Captain dashboard — 8 components (VesselBanner, AlertsPanel, CrewManifest, VisaCentre, ShipSync, RequestSupport, ModuleGrid, DashboardMetrics)</td><td><span class="pri pri-high">High</span></td><td><span class="sp sp-spec">Spec ready</span></td><td class="ticket-owner">Matt Tighe</td></tr>
+      <tr><td class="ticket-id">#154</td><td class="ticket-title">Migrations 015–019 — captain dashboard tables (5 new tables)</td><td><span class="pri pri-high">High</span></td><td><span class="sp sp-manual">Manual — Supabase</span></td><td class="ticket-owner">Matt Tighe</td></tr>
+      <tr><td class="ticket-id">#155</td><td class="ticket-title">Captain API routes — all /api/captain/[vesselId]/* routes</td><td><span class="pri pri-high">High</span></td><td><span class="sp sp-blocked">Needs #154 first</span></td><td class="ticket-owner">Matt Tighe</td></tr>
+      <tr><td class="ticket-id">#156–#165</td><td class="ticket-title">Captain sub-pages (Documents, Crew, Visa, Bunkering, Berthing, Crew Care, Financials, Emergency, UAE Intel, Requests) + Leo prompt extension</td><td><span class="pri pri-med">Med</span></td><td><span class="sp sp-spec">Spec ready</span></td><td class="ticket-owner">Matt Tighe</td></tr>
+    </tbody>
+  </table>
+
+  <!-- FOOTER -->
+  <div class="report-footer">
+    <div class="footer-text">Polaris Platform &nbsp;·&nbsp; JLS Yachts LLC &nbsp;·&nbsp; Internal &nbsp;·&nbsp; Confidential &nbsp;·&nbsp; June 2026</div>
+    <div class="footer-pills">
+      <span class="sp sp-built">v1.5</span>
+      <span class="sp sp-spec">React · Supabase · Anthropic</span>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
