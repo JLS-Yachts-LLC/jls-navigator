@@ -6,7 +6,7 @@ import {
   Route, UserCircle2, Car, MapPin, ScrollText, X, ShoppingCart, Truck,
   GraduationCap, Sparkles, Layers as LayersIcon, UserPlus, LayoutDashboard,
   FileText, Wrench, UtensilsCrossed, Cpu, IdCard, Boxes, Cog, ClipboardList,
-  Globe, Headset, BookOpen, FileSignature, KeyRound,
+  Globe, Headset, BookOpen, FileSignature, KeyRound, Zap,
 } from "lucide-react";
 import { AdminSidebarSection } from "@/components/admin/AdminSidebarSection";
 import { useState, useMemo } from "react";
@@ -113,6 +113,7 @@ const NAV: NavItem[] = [
         ],
       },
       { label: "Documents & e-Sign",     to: "/esign",         icon: FileSignature },
+      { label: "Automations",             to: "/automations",   icon: Zap },
       { label: "Leo",                      to: "/ai-assistant",  icon: Sparkles },
       { label: "Compass",                 to: "/compass",       icon: Compass },
       { label: "Changelog",               to: "/changelog",     icon: ScrollText },
