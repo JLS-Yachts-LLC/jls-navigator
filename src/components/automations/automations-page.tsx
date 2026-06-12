@@ -130,8 +130,8 @@ export function AutomationsPage() {
       <div className="mx-6 mt-4 rounded-lg border border-amber-500/25 bg-amber-500/5 px-4 py-3 flex items-start gap-3">
         <PlugZap className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
         <div className="text-xs text-muted-foreground">
-          <span className="font-semibold text-amber-400">Import from n8n pending.</span> The automations below are the ones already running natively in the platform.
-          To port the n8n workflows here, export them from n8n (each workflow → ⋯ → <em>Download</em>) and add the JSON to the repo, or provide an n8n API key so they can be pulled automatically.
+          <span className="font-semibold text-amber-400">n8n workflows imported as references.</span> Items tagged <span className="font-mono">n8n</span> are live in n8n (pulled from the API) and link straight to their workflow.
+          Items tagged <span className="font-mono">Worker</span> run natively in the platform. Porting the n8n workflows to native edge functions is done per-workflow as a follow-up (each needs its integration credentials — QuickBooks, Lightspeed, Monday, OneDrive).
         </div>
       </div>
 
@@ -169,7 +169,7 @@ export function AutomationsPage() {
                               : <CircleDot className="h-3 w-3 text-muted-foreground/50" />}
                             Last run: {fmtWhen(a.last_run_at)}
                           </span>
-                          {a.endpoint && <a href={a.endpoint} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline"><ExternalLink className="h-3 w-3" /> Run URL</a>}
+                          {a.endpoint && <a href={a.endpoint} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline"><ExternalLink className="h-3 w-3" /> {a.source === "n8n" ? "Open in n8n" : "Run URL"}</a>}
                         </div>
                       </div>
                       {/* Enable toggle */}
