@@ -43,10 +43,10 @@ export default function StepCountrySelect({ state, onUpdate, onNext }: Props) {
       <h2
         style={{
           fontFamily: FONTS.display,
-          fontSize: 20,
+          fontSize: 18,
           fontWeight: 700,
           color: COLORS.frost,
-          marginBottom: 6,
+          marginBottom: 4,
         }}
       >
         Select Destination Country
@@ -54,9 +54,9 @@ export default function StepCountrySelect({ state, onUpdate, onNext }: Props) {
       <p
         style={{
           fontFamily: FONTS.display,
-          fontSize: 14,
+          fontSize: 13,
           color: COLORS.muted,
-          marginBottom: 24,
+          marginBottom: 16,
         }}
       >
         Choose the country you are applying a crew visa for.
@@ -65,8 +65,8 @@ export default function StepCountrySelect({ state, onUpdate, onNext }: Props) {
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(2, 1fr)',
-          gap: 12,
+          gridTemplateColumns: 'repeat(3, 1fr)',
+          gap: 10,
         }}
       >
         {SUPPORTED_COUNTRIES.map((code) => {
@@ -79,53 +79,66 @@ export default function StepCountrySelect({ state, onUpdate, onNext }: Props) {
               onClick={() => onUpdate({ countryCode: code })}
               style={{
                 display: 'flex',
-                flexDirection: 'column',
                 alignItems: 'center',
-                justifyContent: 'center',
-                gap: 10,
-                padding: '20px 12px',
+                gap: 11,
+                padding: '11px 13px',
                 borderRadius: 10,
                 border: `2px solid ${isSelected ? COLORS.signal : COLORS.deep}`,
                 background: isSelected ? 'rgba(0,196,204,0.08)' : COLORS.abyss,
                 cursor: 'pointer',
                 transition: 'border-color 0.15s, background 0.15s',
                 outline: 'none',
-                boxShadow: isSelected
-                  ? `0 0 0 1px ${COLORS.signal}33`
-                  : 'none',
+                textAlign: 'left',
+                boxShadow: isSelected ? `0 0 0 1px ${COLORS.signal}33` : 'none',
               }}
             >
-              <span style={{ fontSize: 32, lineHeight: 1 }}>{config.flag}</span>
-              <span
+              <img
+                src={`https://flagcdn.com/${code.toLowerCase()}.svg`}
+                alt={`${config.countryName} flag`}
+                width={30}
+                height={20}
+                loading="lazy"
                 style={{
-                  fontFamily: FONTS.display,
-                  fontSize: 15,
-                  fontWeight: 700,
-                  color: isSelected ? COLORS.signal : COLORS.frost,
-                  textAlign: 'center',
+                  borderRadius: 3,
+                  objectFit: 'cover',
+                  flexShrink: 0,
+                  boxShadow: '0 0 0 1px rgba(255,255,255,0.1)',
                 }}
-              >
-                {config.countryName}
-              </span>
-              <span
-                style={{
-                  fontFamily: FONTS.display,
-                  fontSize: 12,
-                  color: COLORS.muted,
-                  textAlign: 'center',
-                }}
-              >
-                {COUNTRY_LABELS[code]}
-              </span>
+              />
+              <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
+                <span
+                  style={{
+                    fontFamily: FONTS.display,
+                    fontSize: 13.5,
+                    fontWeight: 700,
+                    color: isSelected ? COLORS.signal : COLORS.frost,
+                    lineHeight: 1.2,
+                  }}
+                >
+                  {config.countryName}
+                  <span style={{ fontSize: 10.5, fontWeight: 600, color: COLORS.muted, marginLeft: 6 }}>{code}</span>
+                </span>
+                <span
+                  style={{
+                    fontFamily: FONTS.display,
+                    fontSize: 11,
+                    color: COLORS.muted,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {COUNTRY_LABELS[code]}
+                </span>
+              </div>
               {isSelected && (
                 <span
                   style={{
-                    display: 'inline-block',
                     width: 8,
                     height: 8,
                     borderRadius: '50%',
                     background: COLORS.signal,
-                    marginTop: 2,
+                    flexShrink: 0,
                   }}
                 />
               )}
@@ -138,7 +151,7 @@ export default function StepCountrySelect({ state, onUpdate, onNext }: Props) {
         style={{
           display: 'flex',
           justifyContent: 'flex-end',
-          marginTop: 32,
+          marginTop: 20,
           paddingRight: 80, // clear the fixed bottom-right Leo orb so the click lands
           position: 'relative',
           zIndex: 20,
