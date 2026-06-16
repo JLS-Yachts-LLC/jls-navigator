@@ -1,6 +1,8 @@
 import React, { useState } from 'react'
 import { COLORS, FONTS } from '@/lib/tokens'
 import { supabase } from '@/integrations/supabase/client'
+import { DateInputDMY } from '@/components/ui/date-input-dmy'
+import { compressImageToMaxKB } from '@/lib/image-compress'
 import { upsertPassport, type CrewMember, type CrewPassport } from '@/lib/visa/crewMatching'
 import { COUNTRY_CONFIGS, type CountryVisaConfig, type CountryCode } from '@/lib/visa/countryConfig'
 import type { ComplianceResult } from '@/lib/visa/complianceChecks'
@@ -80,6 +82,67 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel }: AddPassportF
   const [docFile, setDocFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [scanning, setScanning] = useState(false)
+  const [scanNote, setScanNote] = useState<string | null>(null)
+  const [sizeKB, setSizeKB] = useState<number | null>(null)
+  // Auto checklist flags from OCR (null = unknown until scanned)
+  const [auto, setAuto] = useState<{ colour: boolean | null; noGlare: boolean | null; cover: boolean | null }>({ colour: null, noGlare: null, cover: null })
+  // Manual confirmations for the visual checks
+  const [manual, setManual] = useState<{ cover: boolean; twoPages: boolean }>({ cover: false, twoPages: false })
+
+  // Compress to < 1000 KB (resizing as needed), then OCR-prefill from the image.
+  async function handleFile(file: File | null) {
+    if (!file) { setDocFile(null); setSizeKB(null); setScanNote(null); return }
+    setScanNote(null)
+    try {
+      const c = await compressImageToMaxKB(file, 1000)
+      setDocFile(c.file)
+      setSizeKB(c.sizeKB)
+      if (!c.isImage) { setScanNote('PDF uploaded — auto-scan works on photo/image scans only.'); return }
+      setScanning(true)
+      const res = await fetch('/api/visa/passport-ocr', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64: c.base64, mediaType: c.mediaType }),
+      })
+      const j = await res.json()
+      if (!j.ok) { setScanNote(j.error ?? 'Could not scan passport.'); return }
+      const d = j.data ?? {}
+      if (d.nationality && !nationality) setNationality(d.nationality)
+      if (d.passport_number && !passportNumber) setPassportNumber(d.passport_number)
+      if (d.issue_date && !issueDate) setIssueDate(d.issue_date)
+      if (d.expiry_date && !expiryDate) setExpiryDate(d.expiry_date)
+      if (d.issuing_country && !issuingCountry) setIssuingCountry(d.issuing_country)
+      const cl = d.checklist ?? {}
+      setAuto({
+        colour:  typeof cl.is_colour === 'boolean' ? cl.is_colour : null,
+        noGlare: typeof cl.has_glare_or_reflections === 'boolean' ? !cl.has_glare_or_reflections : null,
+        cover:   typeof cl.is_passport_cover === 'boolean' ? cl.is_passport_cover : null,
+      })
+      setScanNote('Scanned — review the pre-filled details below.')
+    } catch (e: any) {
+      setScanNote('Scan failed: ' + (e?.message ?? 'error'))
+    } finally {
+      setScanning(false)
+    }
+  }
+
+  // Auto-evaluated checks
+  const sixMoOk: boolean | null = (() => {
+    if (!expiryDate) return null
+    const exp = new Date(expiryDate + 'T00:00:00Z')
+    const min = new Date(); min.setMonth(min.getMonth() + 6)
+    return exp >= min
+  })()
+  const sizeOk: boolean | null = sizeKB == null ? null : sizeKB <= 1000
+
+  const checklist: { key: string; label: string; state: 'pass' | 'fail' | 'pending'; manual?: boolean; onToggle?: () => void; hint?: string }[] = [
+    { key: 'cover',    label: 'Passport external cover',   state: (auto.cover === true || manual.cover) ? 'pass' : 'pending', manual: true, onToggle: () => setManual(m => ({ ...m, cover: !m.cover })) },
+    { key: 'twoPages', label: 'Passport copy — 2 pages',   state: manual.twoPages ? 'pass' : 'pending', manual: true, onToggle: () => setManual(m => ({ ...m, twoPages: !m.twoPages })) },
+    { key: 'validity', label: 'Minimum 6 months validity', state: sixMoOk == null ? 'pending' : sixMoOk ? 'pass' : 'fail' },
+    { key: 'glare',    label: 'Clear — no reflections',    state: auto.noGlare == null ? 'pending' : auto.noGlare ? 'pass' : 'fail' },
+    { key: 'colour',   label: 'Colour',                    state: auto.colour == null ? 'pending' : auto.colour ? 'pass' : 'fail' },
+    { key: 'size',     label: 'Under 1000 KB',             state: sizeOk == null ? 'pending' : sizeOk ? 'pass' : 'fail', hint: sizeKB != null ? `${sizeKB} KB` : undefined },
+  ]
 
   const fieldStyle: React.CSSProperties = {
     background: COLORS.deep,
@@ -195,23 +258,11 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel }: AddPassportF
           </div>
           <div>
             <label style={labelStyle}>Issue Date</label>
-            <input
-              type="date"
-              style={fieldStyle}
-              value={issueDate}
-              onChange={e => setIssueDate(e.target.value)}
-              required
-            />
+            <DateInputDMY style={fieldStyle} value={issueDate} onChange={setIssueDate} />
           </div>
           <div>
             <label style={labelStyle}>Expiry Date</label>
-            <input
-              type="date"
-              style={fieldStyle}
-              value={expiryDate}
-              onChange={e => setExpiryDate(e.target.value)}
-              required
-            />
+            <DateInputDMY style={fieldStyle} value={expiryDate} onChange={setExpiryDate} />
           </div>
           <div style={{ gridColumn: '1 / -1' }}>
             <label style={labelStyle}>Issuing Country</label>
@@ -224,7 +275,7 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel }: AddPassportF
             />
           </div>
           <div style={{ gridColumn: '1 / -1' }}>
-            <label style={labelStyle}>Passport Document (optional)</label>
+            <label style={labelStyle}>Passport Document — upload to auto-fill</label>
             <div
               style={{
                 background: COLORS.deep,
@@ -234,9 +285,10 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel }: AddPassportF
                 display: 'flex',
                 alignItems: 'center',
                 gap: 12,
-                cursor: 'pointer',
+                cursor: scanning ? 'wait' : 'pointer',
+                opacity: scanning ? 0.7 : 1,
               }}
-              onClick={() => document.getElementById('passport-doc-upload')?.click()}
+              onClick={() => !scanning && document.getElementById('passport-doc-upload')?.click()}
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={COLORS.muted} strokeWidth="2">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -244,15 +296,54 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel }: AddPassportF
                 <line x1="12" y1="3" x2="12" y2="15" />
               </svg>
               <span style={{ fontFamily: FONTS.display, fontSize: 13, color: docFile ? COLORS.frost : COLORS.muted }}>
-                {docFile ? docFile.name : 'Upload passport scan / photo'}
+                {scanning ? 'Scanning passport…' : docFile ? `${docFile.name}${sizeKB != null ? ` · ${sizeKB} KB` : ''}` : 'Upload passport scan / photo (auto-fills details)'}
               </span>
               <input
                 id="passport-doc-upload"
                 type="file"
                 accept=".pdf,.jpg,.jpeg,.png"
                 style={{ display: 'none' }}
-                onChange={e => setDocFile(e.target.files?.[0] ?? null)}
+                onChange={e => handleFile(e.target.files?.[0] ?? null)}
               />
+            </div>
+            {scanNote && (
+              <p style={{ fontFamily: FONTS.display, fontSize: 12, color: COLORS.muted, margin: '6px 2px 0' }}>{scanNote}</p>
+            )}
+          </div>
+
+          {/* Passport quality checklist */}
+          <div style={{ gridColumn: '1 / -1' }}>
+            <label style={labelStyle}>Passport Checklist</label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 18px' }}>
+              {checklist.map(item => {
+                const color = item.state === 'pass' ? '#30D060' : item.state === 'fail' ? COLORS.warn : COLORS.muted
+                const glyph = item.state === 'pass' ? '✓' : item.state === 'fail' ? '✕' : '○'
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={item.manual ? item.onToggle : undefined}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px',
+                      background: 'transparent', border: 'none', textAlign: 'left',
+                      cursor: item.manual ? 'pointer' : 'default', width: '100%',
+                    }}
+                  >
+                    <span style={{
+                      width: 18, height: 18, borderRadius: 5, flexShrink: 0, display: 'inline-flex',
+                      alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700,
+                      color: item.state === 'pending' ? COLORS.muted : '#0B0F14',
+                      background: item.state === 'pass' ? '#30D060' : item.state === 'fail' ? COLORS.warn : 'transparent',
+                      border: item.state === 'pending' ? `1px solid ${COLORS.ocean}` : 'none',
+                    }}>{glyph}</span>
+                    <span style={{ fontFamily: FONTS.display, fontSize: 12.5, color: item.state === 'pending' ? COLORS.muted : COLORS.frost, flex: 1 }}>
+                      {item.label}
+                      {item.hint && <span style={{ color, marginLeft: 6, fontSize: 11 }}>({item.hint})</span>}
+                      {item.manual && <span style={{ color: COLORS.muted, marginLeft: 6, fontSize: 10 }}>tap to confirm</span>}
+                    </span>
+                  </button>
+                )
+              })}
             </div>
           </div>
         </div>

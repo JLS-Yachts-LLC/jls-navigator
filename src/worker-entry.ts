@@ -11,6 +11,7 @@ import { visaComplianceHandler } from './routes/api.visa.compliance'
 import { visaMonitorHandler } from './routes/api.visa.monitor'
 import { visaExportHandler } from './routes/api.visa.export'
 import { visaExcelPushHandler } from './routes/api.visa.excel-push'
+import { visaPassportOcrHandler } from './routes/api.visa.passport-ocr'
 
 const handleRequest = createStartHandler(defaultStreamHandler)
 
@@ -138,6 +139,10 @@ export default {
 
     if (url.pathname === '/api/visa/excel-push' && (request.method === 'GET' || request.method === 'POST')) {
       return visaExcelPushHandler(request)
+    }
+
+    if (url.pathname === '/api/visa/passport-ocr' && request.method === 'POST') {
+      return visaPassportOcrHandler(request)
     }
 
     return handleRequest(request, env, ctx)
