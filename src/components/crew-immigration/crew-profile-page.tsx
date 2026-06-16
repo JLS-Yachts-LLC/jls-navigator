@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { SignedAnchor, SignedImage } from "@/components/ui/signed-file";
 
 type CrewMember = {
   id: string; yacht_id: string | null;
@@ -192,7 +193,7 @@ export function CrewProfilePage() {
             <div className="rounded-xl border border-border bg-card p-5 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.4)]">
               <div className="flex flex-col items-center text-center">
                 {headshot
-                  ? <img src={headshot} alt="" className="h-24 w-24 rounded-full object-cover ring-2 ring-border" />
+                  ? <SignedImage stored={headshot} alt="" className="h-24 w-24 rounded-full object-cover ring-2 ring-border" />
                   : <div className="flex h-24 w-24 items-center justify-center rounded-full bg-primary/15 text-2xl font-bold text-primary">{crew.first_name[0]}{crew.last_name[0]}</div>}
                 <h2 className="mt-3 font-display text-lg font-semibold">{crew.first_name} {crew.middle_name ? crew.middle_name + " " : ""}{crew.last_name}</h2>
                 <div className="mt-1 text-sm text-muted-foreground">{crew.rank ?? "—"}{crew.department ? ` · ${crew.department}` : ""}</div>
@@ -242,8 +243,8 @@ export function CrewProfilePage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-1.5">
-                        {p.document_url && <DocLink href={p.document_url} label="Scan" />}
-                        {p.seamans_book_url && <DocLink href={p.seamans_book_url} label="Seaman's bk" />}
+                        {p.document_url && <DocLink stored={p.document_url} label="Scan" />}
+                        {p.seamans_book_url && <DocLink stored={p.seamans_book_url} label="Seaman's bk" />}
                       </div>
                     </div>
                   ))}
@@ -311,7 +312,7 @@ export function CrewProfilePage() {
                           {titleCase(d.doc_type)}{d.expiry_date ? <> · Expires <span className={cn(isSoon(d.expiry_date) && "text-amber-400")}>{fmt(d.expiry_date)}</span></> : ""}
                         </div>
                       </div>
-                      {d.file_url && <DocLink href={d.file_url} label="Open" />}
+                      {d.file_url && <DocLink stored={d.file_url} label="Open" />}
                     </div>
                   ))}
                 </div>
@@ -351,11 +352,11 @@ function Empty({ children }: { children: React.ReactNode }) {
   return <p className="py-3 text-sm text-muted-foreground">{children}</p>;
 }
 
-function DocLink({ href, label }: { href: string; label: string }) {
+function DocLink({ stored, label }: { stored: string | null | undefined; label: string }) {
   return (
-    <a href={href} target="_blank" rel="noreferrer"
-      className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/30 px-2 py-1 text-[11px] font-medium text-muted-foreground transition hover:text-foreground">
+    <SignedAnchor stored={stored}
+      className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/30 px-2 py-1 text-[11px] font-medium text-muted-foreground transition hover:text-foreground aria-disabled:opacity-50">
       <ExternalLink className="h-3 w-3" /> {label}
-    </a>
+    </SignedAnchor>
   );
 }

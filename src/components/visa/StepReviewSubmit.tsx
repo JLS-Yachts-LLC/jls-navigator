@@ -6,6 +6,7 @@ import { COLORS } from '@/lib/tokens'
 import type { CrewMember, CrewPassport } from '@/lib/visa/crewMatching'
 import type { CountryVisaConfig } from '@/lib/visa/countryConfig'
 import { COUNTRY_CONFIGS } from '@/lib/visa/countryConfig'
+import { SignedAnchor } from '@/components/ui/signed-file'
 import type { ComplianceResult } from '@/lib/visa/complianceChecks'
 
 interface WizardState {
@@ -232,14 +233,11 @@ export function StepReviewSubmit({ state, onUpdate, onNext, onBack }: Props) {
             {Object.entries(state.uploadedDocs).map(([key, url]) => (
               <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <span style={{ color: COLORS.steel, fontSize: 13, minWidth: 140 }}>{key}</span>
-                <a
-                  href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{ color: COLORS.signal, fontSize: 13, textDecoration: 'underline' }}
-                >
-                  View document
-                </a>
+                <span style={{ color: COLORS.signal, fontSize: 13, textDecoration: 'underline' }}>
+                  <SignedAnchor stored={url}>
+                    View document
+                  </SignedAnchor>
+                </span>
               </div>
             ))}
           </div>

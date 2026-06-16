@@ -5,6 +5,7 @@ import {
   DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { SignedAnchor } from "@/components/ui/signed-file";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -77,15 +78,14 @@ function TdraUploadBox({
               {fileName}
             </span>
             {fileUrl && (
-              <a
-                href={fileUrl}
-                target="_blank"
-                rel="noreferrer"
-                onClick={(e) => e.stopPropagation()}
+              <span onClick={(e) => e.stopPropagation()}>
+              <SignedAnchor
+                stored={fileUrl}
                 className="text-[10px] text-muted-foreground underline hover:text-foreground"
               >
                 View
-              </a>
+              </SignedAnchor>
+              </span>
             )}
             <button
               type="button"

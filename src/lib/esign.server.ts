@@ -53,8 +53,11 @@ async function logEvent(documentId: string, event: string, actor: string | null,
   }]);
 }
 
-function publicUrl(path: string): string {
-  return (supabaseAdmin as any).storage.from(BUCKET).getPublicUrl(path).data.publicUrl as string;
+// esign-documents is a private bucket — mint a short-lived signed URL server-side
+// (the signer is anonymous, so the URL must be generated with the service role).
+async function signedUrl(path: string, expiresIn = 60 * 60): Promise<string> {
+  const { data } = await (supabaseAdmin as any).storage.from(BUCKET).createSignedUrl(path, expiresIn);
+  return (data?.signedUrl as string) ?? "";
 }
 
 function inviteHtml(doc: any, link: string): string {
@@ -133,8 +136,8 @@ export const getSigningDocument = createServerFn({ method: "POST" })
     if (error) throw adminError(error, "Could not load the document");
     if (!doc) throw new Error("This signing link is invalid.");
 
-    if (doc.status === "signed") return responseFor(doc, "signed");
-    if (doc.status === "declined") return responseFor(doc, "declined");
+    if (doc.status === "signed") return await responseFor(doc, "signed");
+    if (doc.status === "declined") return await responseFor(doc, "declined");
     if (doc.status === "voided") throw new Error("This document has been withdrawn.");
     if (doc.token_expires_at && new Date(doc.token_expires_at) < new Date()) {
       await (supabaseAdmin as any).from("esign_documents").update({ status: "expired" }).eq("id", doc.id);
@@ -146,10 +149,10 @@ export const getSigningDocument = createServerFn({ method: "POST" })
         .update({ status: "viewed", viewed_at: new Date().toISOString() }).eq("id", doc.id);
       await logEvent(doc.id, "viewed", doc.signer_email, meta);
     }
-    return responseFor(doc, "viewed");
+    return await responseFor(doc, "viewed");
   });
 
-function responseFor(doc: any, status: string) {
+async function responseFor(doc: any, status: string) {
   return {
     title: doc.title as string,
     description: (doc.description ?? null) as string | null,
@@ -157,8 +160,8 @@ function responseFor(doc: any, status: string) {
     signerName: doc.signer_name as string,
     message: (doc.message ?? null) as string | null,
     status,
-    fileUrl: publicUrl(doc.file_path),
-    signedFileUrl: doc.signed_file_path ? publicUrl(doc.signed_file_path) : null,
+    fileUrl: await signedUrl(doc.file_path),
+    signedFileUrl: doc.signed_file_path ? await signedUrl(doc.signed_file_path) : null,
   };
 }
 
@@ -228,8 +231,9 @@ export const doSubmitSignature = createServerFn({ method: "POST" })
     }).eq("id", doc.id);
     await logEvent(doc.id, "signed", doc.signer_email, meta);
 
-    // Notify signer + sender with the completed copy
-    const url = publicUrl(signedPath);
+    // Notify signer + sender with the completed copy (long-lived link — the
+    // recipient may open it days later).
+    const url = await signedUrl(signedPath, 60 * 60 * 24 * 14);
     try {
       await sendEmail({
         to: [doc.signer_email],

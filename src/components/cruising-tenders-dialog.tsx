@@ -5,6 +5,7 @@ import {
   DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { SignedAnchor } from "@/components/ui/signed-file";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -339,15 +340,14 @@ export function CruisingTendersDialog({ yachts, editing, userId, onSaved }: Prop
                     {fileName}
                   </span>
                   {form.document_url && (
-                    <a
-                      href={form.document_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      onClick={(e) => e.stopPropagation()}
+                    <span onClick={(e) => e.stopPropagation()}>
+                    <SignedAnchor
+                      stored={form.document_url}
                       className="text-xs text-muted-foreground underline hover:text-foreground"
                     >
                       View
-                    </a>
+                    </SignedAnchor>
+                    </span>
                   )}
                   <button
                     type="button"

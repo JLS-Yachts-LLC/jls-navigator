@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { DateInputDMY } from "@/components/ui/date-input-dmy";
+import { SignedAnchor } from "@/components/ui/signed-file";
 import { ArrowLeft, Loader2, Pencil, Trash2, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -152,9 +153,9 @@ export function VisaDetailPage() {
               </div>
             ))}
             {visa.visa_document_url && (
-              <a href={visa.visa_document_url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 px-4 py-2.5 text-sm text-primary hover:underline">
+              <SignedAnchor stored={visa.visa_document_url} className="flex items-center gap-1.5 px-4 py-2.5 text-sm text-primary hover:underline">
                 <ExternalLink className="h-3.5 w-3.5" /> Visa document
-              </a>
+              </SignedAnchor>
             )}
           </div>
 

@@ -3,6 +3,7 @@ import { COLORS, FONTS } from '@/lib/tokens'
 import { supabase } from '@/integrations/supabase/client'
 import { CrewPassport, upsertPassport, setPrimaryPassport } from '@/lib/visa/crewMatching'
 import PassportBadge from './PassportBadge'
+import { SignedAnchor } from '@/components/ui/signed-file'
 
 interface MultiPassportFormProps {
   crewId: string
@@ -359,14 +360,11 @@ export default function MultiPassportForm({
             <label style={labelStyle}>Document Upload</label>
             {form.document_url ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <a
-                  href={form.document_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{ color: COLORS.signal, fontSize: 13, fontFamily: FONTS.display }}
-                >
-                  View uploaded document
-                </a>
+                <span style={{ color: COLORS.signal, fontSize: 13, fontFamily: FONTS.display }}>
+                  <SignedAnchor stored={form.document_url}>
+                    View uploaded document
+                  </SignedAnchor>
+                </span>
                 <button
                   style={{ ...btnSmall, color: COLORS.warn, borderColor: COLORS.warn }}
                   onClick={() => setForm(f => ({ ...f, document_url: null }))}

@@ -13,6 +13,8 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ESIGN_STATUS_LABEL, ESIGN_STATUS_COLOR, ESIGN_EVENT_LABEL } from "./esign-meta";
+import { useSignedUrl } from "@/lib/signed-url";
+import { SignedAnchor } from "@/components/ui/signed-file";
 
 type Doc = {
   id: string; reference: string | null; title: string; description: string | null;
@@ -30,7 +32,6 @@ const EVENT_ICON: Record<string, React.ReactNode> = {
   declined: <XCircle className="h-3.5 w-3.5" />, voided: <Ban className="h-3.5 w-3.5" />,
 };
 const dt = (d: string | null) => d ? new Date(d).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
-const pub = (p: string) => supabase.storage.from("esign-documents").getPublicUrl(p).data.publicUrl;
 
 export function EsignDetailPage() {
   const { documentId } = Route.useParams();
@@ -40,6 +41,8 @@ export function EsignDetailPage() {
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const fileUrl = useSignedUrl(doc?.file_path, "esign-documents");
+  const signedFileUrl = useSignedUrl(doc?.signed_file_path, "esign-documents");
 
   useEffect(() => { void load(); }, [documentId]);
 
@@ -110,13 +113,13 @@ export function EsignDetailPage() {
           {doc.declined_reason && <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-3 text-sm text-red-400">Declined: {doc.declined_reason}</div>}
 
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" asChild className="gap-1.5"><a href={pub(doc.file_path)} target="_blank" rel="noreferrer"><FileText className="h-3.5 w-3.5" /> Original PDF</a></Button>
-            {doc.signed_file_path && <Button variant="outline" size="sm" asChild className="gap-1.5"><a href={pub(doc.signed_file_path)} target="_blank" rel="noreferrer"><Download className="h-3.5 w-3.5" /> Signed PDF</a></Button>}
+            <Button variant="outline" size="sm" asChild className="gap-1.5"><SignedAnchor stored={doc.file_path} bucket="esign-documents"><FileText className="h-3.5 w-3.5" /> Original PDF</SignedAnchor></Button>
+            {doc.signed_file_path && <Button variant="outline" size="sm" asChild className="gap-1.5"><SignedAnchor stored={doc.signed_file_path} bucket="esign-documents"><Download className="h-3.5 w-3.5" /> Signed PDF</SignedAnchor></Button>}
           </div>
 
           {/* Inline preview of the relevant PDF */}
           <div className="overflow-hidden rounded-xl border border-border bg-card">
-            <iframe title="Document" src={pub(doc.signed_file_path ?? doc.file_path)} className="h-[60vh] w-full border-0" />
+            <iframe title="Document" src={(signedFileUrl || fileUrl) || undefined} className="h-[60vh] w-full border-0" />
           </div>
         </div>
 

@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { fetchAllRows } from "@/lib/fetch-all";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
+import { SignedAnchor } from "@/components/ui/signed-file";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -377,7 +378,7 @@ export function VisaWizardPage() {
                           <input type="file" className="hidden" disabled={uploadingIdx !== null}
                             onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadDoc(i, f); }} />
                         </label>
-                        {d.url && <a href={d.url} target="_blank" rel="noopener noreferrer" className="text-[11px] text-primary hover:underline">view</a>}
+                        {d.url && <SignedAnchor stored={d.url} className="text-[11px] text-primary hover:underline">view</SignedAnchor>}
                         <div className="flex items-center gap-1">
                           {(["pending", "uploaded", "approved"] as DocStatus[]).map((s) => (
                             <button

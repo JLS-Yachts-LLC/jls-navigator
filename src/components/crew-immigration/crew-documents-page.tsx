@@ -16,6 +16,7 @@ import { Plus, Search, FileText, Trash2, Loader2, Upload, ExternalLink, Papercli
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { uploadVisaDocToSharePoint } from "@/lib/visa-sharepoint.server";
+import { SignedAnchor } from "@/components/ui/signed-file";
 
 /** Read a File's bytes as a base64 string (no data: prefix). */
 function fileToBase64(file: File): Promise<string> {
@@ -236,9 +237,9 @@ export function CrewDocumentsPage() {
                       </td>
                       <td className="px-4 py-3">
                         {d.file_url ? (
-                          <a href={d.file_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                          <SignedAnchor stored={d.file_url} className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
                             <ExternalLink className="h-3 w-3" /> View
-                          </a>
+                          </SignedAnchor>
                         ) : <span className="text-xs text-muted-foreground/40">—</span>}
                       </td>
                       <td className="px-4 py-3">

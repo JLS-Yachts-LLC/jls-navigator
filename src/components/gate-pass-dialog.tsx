@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { PERMIT_STATUSES, type Permit, type PermitStatus } from "@/lib/permit-types";
 import { Button } from "@/components/ui/button";
+import { SignedAnchor } from "@/components/ui/signed-file";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -251,14 +252,12 @@ export function GatePassDialog({
               <div className="flex items-center justify-between rounded-md border border-border bg-background px-3 py-2 text-sm">
                 <div className="flex items-center gap-2 min-w-0">
                   <Paperclip className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  <a
-                    href={form.document_url ?? "#"}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <SignedAnchor
+                    stored={form.document_url}
                     className="truncate text-primary hover:underline"
                   >
                     {attachmentName}
-                  </a>
+                  </SignedAnchor>
                 </div>
                 <button
                   type="button"
