@@ -40,7 +40,7 @@ type Profile = { id: string; display_name: string | null };
 
 const EMPTY_FORM = {
   subject: "", description: "", vessel: "", queue: "polaris", category: "general",
-  priority: "normal", requested_by: "", assigned_to: "",
+  priority: "normal", requested_by: "", requester_email: "", assigned_to: "",
 };
 
 function fmtWhen(d: string) {
@@ -101,7 +101,7 @@ export function ServiceDeskPage() {
     if (!form.subject.trim()) { toast.error("Subject is required"); return; }
     setBusy(true);
     try {
-      const { error } = await (supabase as any).from("it_tickets").insert([{
+      const { data, error } = await (supabase as any).from("it_tickets").insert([{
         subject: form.subject.trim(),
         description: form.description || null,
         yacht_id: form.vessel.startsWith("fleet:") ? form.vessel.slice(6) : null,
@@ -111,10 +111,13 @@ export function ServiceDeskPage() {
         priority: form.priority,
         status: "open",
         requested_by: form.requested_by || null,
+        requester_email: form.requester_email || null,
         assigned_to: form.assigned_to || null,
         created_by: user?.id ?? null,
-      }]);
+      }]).select("id").single();
       if (error) throw error;
+      // Email notification (support mailbox + requester acknowledgement) via Graph.
+      if (data?.id) fetch("/api/it-tickets/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ticketId: data.id, event: "created" }) }).catch(() => {});
       toast.success("Ticket created");
       setOpen(false); setForm(EMPTY_FORM);
       void load();
@@ -319,9 +322,13 @@ export function ServiceDeskPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="col-span-2 space-y-1.5">
+            <div className="space-y-1.5">
               <Label className="text-xs">Requested by</Label>
               <Input value={form.requested_by} onChange={e => setForm(f => ({ ...f, requested_by: e.target.value }))} placeholder="Crew member / contact name" className="h-8" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Requester email</Label>
+              <Input type="email" value={form.requester_email} onChange={e => setForm(f => ({ ...f, requester_email: e.target.value }))} placeholder="for ticket updates" className="h-8" />
             </div>
           </div>
           <DialogFooter>

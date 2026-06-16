@@ -33,6 +33,7 @@ type Ticket = {
   priority: string | null;
   status: string | null;
   requested_by: string | null;
+  requester_email: string | null;
   assigned_to: string | null;
   resolution: string | null;
   first_response_at: string | null;
@@ -78,6 +79,7 @@ export function TicketDetailPage() {
 
   const [resolution, setResolution] = useState("");
   const [requestedBy, setRequestedBy] = useState("");
+  const [requesterEmail, setRequesterEmail] = useState("");
   const [savingMeta, setSavingMeta] = useState(false);
   const threadEnd = useRef<HTMLDivElement>(null);
 
@@ -102,6 +104,7 @@ export function TicketDetailPage() {
     setTicket(t);
     setResolution(t.resolution ?? "");
     setRequestedBy(t.requested_by ?? "");
+    setRequesterEmail(t.requester_email ?? "");
     setMessages((mRes.data ?? []) as Message[]);
     setYachts((yRes.data ?? []) as Yacht[]);
     setItYachts(((iRes.data ?? []) as any[]).map(y => ({ id: y.id, vessel_name: y.name })));
@@ -129,10 +132,22 @@ export function TicketDetailPage() {
       if (!internal && !ticket.first_response_at) patch.first_response_at = new Date().toISOString();
       await (supabase as any).from("it_tickets").update(patch).eq("id", ticket.id);
 
+      // Public replies email the requester (from itsupport@jlsyachts.com).
+      const replyBody = reply.trim();
+      if (!internal) notify("reply", replyBody);
+
       setReply(""); setInternal(false);
       void load();
     } catch (e: any) { toast.error(e.message ?? "Failed to send"); }
     finally { setSending(false); }
+  }
+
+  // Fire a Graph email notification for this ticket (fire-and-forget).
+  function notify(event: "created" | "reply" | "resolved", message?: string) {
+    fetch("/api/it-tickets/notify", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ticketId, event, message }),
+    }).catch(() => {});
   }
 
   // Inline metadata update — persists immediately.
@@ -143,13 +158,15 @@ export function TicketDetailPage() {
     if (patch.status === "closed" && !ticket.closed_at) next.closed_at = new Date().toISOString();
     setTicket({ ...ticket, ...next });
     const { error } = await (supabase as any).from("it_tickets").update(next).eq("id", ticket.id);
-    if (error) { toast.error(error.message); void load(); }
+    if (error) { toast.error(error.message); void load(); return; }
+    // Email the requester when the ticket is resolved.
+    if (patch.status === "resolved" && ticket.status !== "resolved") notify("resolved");
   }
 
   async function saveResolution() {
     if (!ticket) return;
     setSavingMeta(true);
-    await patchTicket({ resolution: resolution || null, requested_by: requestedBy || null });
+    await patchTicket({ resolution: resolution || null, requested_by: requestedBy || null, requester_email: requesterEmail || null });
     setSavingMeta(false);
     toast.success("Saved");
   }
@@ -332,6 +349,10 @@ export function TicketDetailPage() {
           <div className="space-y-1.5">
             <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">Requested by</Label>
             <Input value={requestedBy} onChange={e => setRequestedBy(e.target.value)} className="h-9 text-sm" placeholder="Contact name" />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">Requester email <span className="normal-case text-muted-foreground/60">(receives updates)</span></Label>
+            <Input type="email" value={requesterEmail} onChange={e => setRequesterEmail(e.target.value)} className="h-9 text-sm" placeholder="name@example.com" />
           </div>
           <div className="space-y-1.5">
             <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">Resolution</Label>

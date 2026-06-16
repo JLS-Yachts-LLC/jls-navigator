@@ -12,6 +12,7 @@ import { visaMonitorHandler } from './routes/api.visa.monitor'
 import { visaExportHandler } from './routes/api.visa.export'
 import { visaExcelPushHandler } from './routes/api.visa.excel-push'
 import { visaPassportOcrHandler } from './routes/api.visa.passport-ocr'
+import { itTicketsNotifyHandler } from './routes/api.it-tickets.notify'
 
 const handleRequest = createStartHandler(defaultStreamHandler)
 
@@ -143,6 +144,10 @@ export default {
 
     if (url.pathname === '/api/visa/passport-ocr' && request.method === 'POST') {
       return visaPassportOcrHandler(request)
+    }
+
+    if (url.pathname === '/api/it-tickets/notify' && request.method === 'POST') {
+      return itTicketsNotifyHandler(request)
     }
 
     return handleRequest(request, env, ctx)
