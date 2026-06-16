@@ -701,7 +701,7 @@ export function StepPassportSelect({ state, onUpdate, onNext, onBack }: StepPass
       {localPassports.length > 0 && !state.passport && (
         <div
           style={{
-            background: `${COLORS.ocean}33`,
+            background: `color-mix(in oklab, ${COLORS.ocean} 20%, transparent)`,
             border: `1px solid ${COLORS.ocean}`,
             borderRadius: 8,
             padding: '10px 14px',

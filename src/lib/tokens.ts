@@ -4,14 +4,18 @@
  * Use CSS variables in Tailwind classes; import these in inline-style components only.
  */
 
+// Backgrounds/text/border resolve to the app's theme CSS variables so inline-style
+// components adapt to BOTH light and dark mode. The .dark values match the original
+// dark-first palette, so dark mode looks unchanged. Brand accents stay fixed hex so
+// existing `${COLORS.signal}33`-style alpha suffixes remain valid CSS.
 export const COLORS = {
-  // Backgrounds
-  void:      '#080D14',   // page background
-  abyss:     '#0D1520',   // panel / card background
-  deep:      '#0F2030',   // borders
-  ocean:     '#1E4060',   // table headers, muted fills
+  // Backgrounds (theme-aware)
+  void:      'var(--background)',  // page background
+  abyss:     'var(--card)',        // panel / card background
+  deep:      'var(--border)',      // borders
+  ocean:     'var(--muted)',       // table headers, muted fills
 
-  // Polaris accent
+  // Polaris accent (fixed brand colours — valid on both themes, alpha-suffixable)
   signal:    '#00C4CC',   // primary interactive, Polaris highlights
   signalMid: '#00838A',   // secondary signal uses
 
@@ -19,10 +23,10 @@ export const COLORS = {
   leoAmber:  '#E8A020',   // Leo UI, AI-origin content
   warn:      '#E87020',   // warnings, high priority
 
-  // Text
-  frost:     '#E8EDF5',   // primary text
-  muted:     '#4A7090',   // body text
-  steel:     '#3A5570',   // labels, secondary text
+  // Text (theme-aware)
+  frost:     'var(--foreground)',        // primary text
+  muted:     'var(--muted-foreground)',  // body text
+  steel:     'var(--muted-foreground)',  // labels, secondary text
 } as const;
 
 export const FONTS = {

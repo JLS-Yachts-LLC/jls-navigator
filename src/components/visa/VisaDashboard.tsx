@@ -385,7 +385,7 @@ export default function VisaDashboard() {
                 style={{
                   display: 'grid', gridTemplateColumns: GRID, padding: '12px 16px', alignItems: 'center',
                   borderBottom: idx < filtered.length - 1 ? `1px solid ${COLORS.deep}` : 'none',
-                  background: idx % 2 === 1 ? `${COLORS.deep}40` : 'transparent',
+                  background: idx % 2 === 1 ? `color-mix(in oklab, ${COLORS.deep} 25%, transparent)` : 'transparent',
                 }}
               >
                 {/* Crew */}

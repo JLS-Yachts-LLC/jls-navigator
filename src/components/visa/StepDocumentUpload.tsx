@@ -121,7 +121,7 @@ export default function StepDocumentUpload({ state, onUpdate, onNext, onBack }: 
       {requiredDocs.length > 0 && (
         <div
           style={{
-            background:   uploadedCount === requiredDocs.length ? `${COLORS.signal}18` : `${COLORS.ocean}55`,
+            background:   uploadedCount === requiredDocs.length ? `${COLORS.signal}18` : `color-mix(in oklab, ${COLORS.ocean} 33%, transparent)`,
             border:       `1px solid ${uploadedCount === requiredDocs.length ? COLORS.signal : COLORS.deep}`,
             borderRadius: 8,
             padding:      '10px 16px',
