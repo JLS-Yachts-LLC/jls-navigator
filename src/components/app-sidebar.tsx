@@ -164,15 +164,17 @@ const NAV: NavItem[] = [
     ],
   },
 
-  // ── GUIDES — knowledge base, one menu item per department (kept separate) ────
-  {
-    label: "Guides",
-    children: [
-      { label: "All Guides", to: "/guides", icon: BookOpen },
-      ...DEPARTMENTS.map(d => ({ label: d.label, to: `/guides/${d.key}`, icon: d.icon })),
-    ],
-  },
+  // ── GUIDES — hidden for now (restore this block to bring it back) ────────────
+  // {
+  //   label: "Guides",
+  //   children: [
+  //     { label: "All Guides", to: "/guides", icon: BookOpen },
+  //     ...DEPARTMENTS.map(d => ({ label: d.label, to: `/guides/${d.key}`, icon: d.icon })),
+  //   ],
+  // },
 ];
+// Referenced only by the (currently hidden) Guides section above.
+void BookOpen; void DEPARTMENTS;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
