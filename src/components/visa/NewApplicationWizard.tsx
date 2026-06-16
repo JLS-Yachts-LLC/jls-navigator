@@ -194,12 +194,25 @@ export default function NewApplicationWizard({ onClose }: Props) {
         style={{
           background: COLORS.deep,
           borderBottom: `1px solid ${COLORS.steel}`,
-          padding: '14px 28px',
+          padding: '12px 28px',
           display: 'flex',
-          alignItems: 'center',
-          gap: 0,
+          flexDirection: 'column',
+          gap: 10,
         }}
       >
+        {/* Battery-style progress */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 12, fontWeight: 700, color: COLORS.frost, whiteSpace: 'nowrap' }}>
+            Step {state.step} of {STEP_LABELS.length}
+          </span>
+          <div style={{ flex: 1, height: 9, borderRadius: 6, background: COLORS.void, border: `1px solid ${COLORS.steel}`, overflow: 'hidden' }}>
+            <div style={{ width: `${Math.round((state.step / STEP_LABELS.length) * 100)}%`, height: '100%', background: COLORS.signal, borderRadius: 6, transition: 'width 0.25s ease' }} />
+          </div>
+          <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 12, fontWeight: 700, color: COLORS.signal, whiteSpace: 'nowrap', minWidth: 34, textAlign: 'right' }}>
+            {Math.round((state.step / STEP_LABELS.length) * 100)}%
+          </span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
         {STEP_LABELS.map((label, i) => {
           const stepNum = i + 1
           const isActive = stepNum === state.step
@@ -279,11 +292,12 @@ export default function NewApplicationWizard({ onClose }: Props) {
             </React.Fragment>
           )
         })}
+        </div>
       </div>
 
-      {/* Step Content — extra bottom padding so footer buttons clear the
+      {/* Step Content — extra right/bottom padding so footer buttons clear the
           floating Leo assistant orb fixed in the bottom-right corner */}
-      <div style={{ flex: 1, padding: '24px 28px 96px' }}>
+      <div style={{ flex: 1, padding: '24px 96px 110px 28px' }}>
         {state.step === 1 && <StepCountrySelect {...stepProps} />}
         {state.step === 2 && <StepCrewSearch {...stepProps} />}
         {state.step === 3 && <StepPassportSelect {...stepProps} />}

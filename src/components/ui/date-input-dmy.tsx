@@ -30,8 +30,18 @@ function displayToIso(text: string): string {
   return `${m[3]}-${m[2]}-${m[1]}`
 }
 
+function clamp2(s: string, max: number): string {
+  const n = parseInt(s, 10)
+  if (isNaN(n)) return s
+  if (n > max) return String(max).padStart(2, '0')
+  return s
+}
+
 function mask(raw: string): string {
-  const digits = raw.replace(/\D/g, '').slice(0, 8)
+  let digits = raw.replace(/\D/g, '').slice(0, 8)
+  // Clamp day (≤31) and month (≤12) as the user types so 86/23/… is impossible.
+  if (digits.length >= 2) digits = clamp2(digits.slice(0, 2), 31) + digits.slice(2)
+  if (digits.length >= 4) digits = digits.slice(0, 2) + clamp2(digits.slice(2, 4), 12) + digits.slice(4)
   if (digits.length > 4) return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`
   if (digits.length > 2) return `${digits.slice(0, 2)}/${digits.slice(2)}`
   return digits
@@ -62,6 +72,7 @@ export function DateInputDMY({ value, onChange, style, placeholder = 'dd/mm/yyyy
     else el.focus()
   }
 
+  const invalid = text.length > 0 && displayToIso(text) === ''
   return (
     <div style={{ position: 'relative' }}>
       <input
@@ -72,7 +83,7 @@ export function DateInputDMY({ value, onChange, style, placeholder = 'dd/mm/yyyy
         placeholder={placeholder}
         value={text}
         onChange={e => handleText(e.target.value)}
-        style={{ ...style, paddingRight: 38 }}
+        style={{ ...style, paddingRight: 38, ...(invalid ? { borderColor: '#E87020' } : {}) }}
       />
       <button
         type="button"

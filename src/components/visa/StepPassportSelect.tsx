@@ -90,6 +90,7 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel }: AddPassportF
   // Auto checklist flags from OCR (null = unknown until scanned)
   const [auto, setAuto] = useState<{ colour: boolean | null; noGlare: boolean | null }>({ colour: null, noGlare: null })
   const [doubleChecked, setDoubleChecked] = useState(false)
+  const [manualChecks, setManualChecks] = useState<Record<string, boolean>>({})
 
   // Compress every attachment to < 1000 KB; the passport data-page slot also
   // runs OCR to self-populate the fields below.
@@ -137,16 +138,29 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel }: AddPassportF
   const allSizes = Object.values(sizes).filter((v): v is number => v != null)
   const sizeOk: boolean | null = allSizes.length === 0 ? null : allSizes.every(v => v <= 1000)
 
-  const checklist: { key: string; label: string; state: 'pass' | 'fail' | 'pending'; hint?: string }[] = [
-    { key: 'cover',    label: 'Passport external cover',     state: files.cover ? 'pass' : 'pending' },
-    { key: 'data',     label: 'Passport — 2 inside pages',   state: files.data ? 'pass' : 'pending' },
-    { key: 'seamans',  label: "Seaman's book",               state: noSeamans || files.seamans ? 'pass' : 'pending', hint: noSeamans ? 'N/A' : undefined },
-    { key: 'headshot', label: 'Headshot photo',              state: files.headshot ? 'pass' : 'pending' },
-    { key: 'validity', label: 'Minimum 6 months validity',   state: sixMoOk == null ? 'pending' : sixMoOk ? 'pass' : 'fail' },
-    { key: 'glare',    label: 'Clear — no reflections',      state: auto.noGlare == null ? 'pending' : auto.noGlare ? 'pass' : 'fail' },
-    { key: 'colour',   label: 'Colour',                      state: auto.colour == null ? 'pending' : auto.colour ? 'pass' : 'fail' },
-    { key: 'size',     label: 'Under 1000 KB each',          state: sizeOk == null ? 'pending' : sizeOk ? 'pass' : 'fail' },
+  // Items auto-satisfied by uploads / OCR / validation; the rest the user ticks.
+  const autoTrue: Record<string, boolean> = {
+    cover:    !!files.cover,
+    data:     !!files.data,
+    seamans:  noSeamans || !!files.seamans,
+    headshot: !!files.headshot,
+    validity: sixMoOk === true,
+    glare:    auto.noGlare === true,
+    colour:   auto.colour === true,
+    size:     sizeOk === true,
+  }
+  const isChecked = (k: string) => !!manualChecks[k] || autoTrue[k]
+  const CHECK_ITEMS: { key: string; label: string; hint?: string }[] = [
+    { key: 'cover',    label: 'Passport external cover' },
+    { key: 'data',     label: 'Passport — 2 inside pages' },
+    { key: 'seamans',  label: "Seaman's book", hint: noSeamans ? 'N/A' : undefined },
+    { key: 'headshot', label: 'Headshot photo' },
+    { key: 'validity', label: 'Minimum 6 months validity' },
+    { key: 'glare',    label: 'Clear — no reflections' },
+    { key: 'colour',   label: 'Colour' },
+    { key: 'size',     label: 'Under 1000 KB each' },
   ]
+  const allChecked = CHECK_ITEMS.every(i => isChecked(i.key))
 
   // The four upload slots, rendered at the top of the form.
   const SLOTS: { key: SlotKey; label: string; hint: string; accept: string }[] = [
@@ -184,8 +198,16 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel }: AddPassportF
     e.preventDefault()
     setError(null)
 
-    if (!nationality.trim() || !passportNumber.trim() || !issueDate || !expiryDate || !issuingCountry.trim()) {
-      setError('Passport details are required (upload the inside pages to auto-fill).')
+    if (!nationality.trim() || !passportNumber.trim() || !issuingCountry.trim()) {
+      setError('Nationality, passport number and issuing country are required.')
+      return
+    }
+    if (!issueDate || !expiryDate) {
+      setError('Enter valid issue and expiry dates (dd/mm/yyyy).')
+      return
+    }
+    if (!allChecked) {
+      setError('Tick every item in the passport checklist first.')
       return
     }
     if (!doubleChecked) {
@@ -353,33 +375,43 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel }: AddPassportF
               required
             />
           </div>
-          {/* Passport quality checklist */}
+          {/* Passport checklist — tick all to enable Save */}
           <div style={{ gridColumn: '1 / -1' }}>
-            <label style={labelStyle}>Passport Checklist</label>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 18px' }}>
-              {checklist.map(item => {
-                const color = item.state === 'pass' ? '#30D060' : item.state === 'fail' ? COLORS.warn : COLORS.muted
-                const glyph = item.state === 'pass' ? '✓' : item.state === 'fail' ? '✕' : '○'
+            <label style={labelStyle}>Passport Checklist — confirm all to save</label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 18px' }}>
+              {CHECK_ITEMS.map(item => {
+                const on = isChecked(item.key)
                 return (
-                  <div
+                  <button
                     key={item.key}
-                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px' }}
+                    type="button"
+                    onClick={() => setManualChecks(m => ({ ...m, [item.key]: !on }))}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 9, padding: '6px 8px',
+                      background: 'transparent', border: 'none', textAlign: 'left', cursor: 'pointer', width: '100%',
+                    }}
                   >
                     <span style={{
-                      width: 18, height: 18, borderRadius: 5, flexShrink: 0, display: 'inline-flex',
-                      alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700,
-                      color: item.state === 'pending' ? COLORS.muted : '#0B0F14',
-                      background: item.state === 'pass' ? '#30D060' : item.state === 'fail' ? COLORS.warn : 'transparent',
-                      border: item.state === 'pending' ? `1px solid ${COLORS.ocean}` : 'none',
-                    }}>{glyph}</span>
-                    <span style={{ fontFamily: FONTS.display, fontSize: 12.5, color: item.state === 'pending' ? COLORS.muted : COLORS.frost, flex: 1 }}>
+                      width: 20, height: 20, borderRadius: 5, flexShrink: 0, display: 'inline-flex',
+                      alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800,
+                      color: on ? '#0B0F14' : 'transparent',
+                      background: on ? '#FFFFFF' : 'transparent',
+                      border: on ? '2px solid #FFFFFF' : '2px solid #FFFFFF',
+                      boxShadow: on ? 'none' : 'inset 0 0 0 2px rgba(0,0,0,0.25)',
+                    }}>✓</span>
+                    <span style={{ fontFamily: FONTS.display, fontSize: 12.5, color: on ? COLORS.frost : '#FFFFFF', flex: 1 }}>
                       {item.label}
-                      {item.hint && <span style={{ color, marginLeft: 6, fontSize: 11 }}>({item.hint})</span>}
+                      {item.hint && <span style={{ color: COLORS.muted, marginLeft: 6, fontSize: 11 }}>({item.hint})</span>}
                     </span>
-                  </div>
+                  </button>
                 )
               })}
             </div>
+            {!allChecked && (
+              <p style={{ fontFamily: FONTS.display, fontSize: 11.5, color: COLORS.warn, margin: '6px 2px 0' }}>
+                Tick every item above to enable Save.
+              </p>
+            )}
           </div>
         </div>
 
@@ -435,8 +467,8 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel }: AddPassportF
           )}
           <button
             type="submit"
-            disabled={uploading || !doubleChecked}
-            title={!doubleChecked ? 'Confirm you have double-checked the information first' : undefined}
+            disabled={uploading || !doubleChecked || !allChecked}
+            title={!allChecked ? 'Tick every checklist item first' : !doubleChecked ? 'Confirm you have double-checked the information first' : undefined}
             style={{
               background: COLORS.signal,
               border: 'none',
@@ -446,8 +478,8 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel }: AddPassportF
               fontSize: 14,
               fontWeight: 600,
               padding: '8px 20px',
-              cursor: (uploading || !doubleChecked) ? 'not-allowed' : 'pointer',
-              opacity: (uploading || !doubleChecked) ? 0.6 : 1,
+              cursor: (uploading || !doubleChecked || !allChecked) ? 'not-allowed' : 'pointer',
+              opacity: (uploading || !doubleChecked || !allChecked) ? 0.6 : 1,
             }}
           >
             {uploading ? 'Saving…' : 'Save Passport'}
