@@ -32,7 +32,6 @@ const NAV: NavItem[] = [
       { label: "Leo",              to: "/dashboard", icon: Sparkles },
       { label: "Vessel Overview",  to: "/yachts",    icon: Ship },
       { label: "My Fleet (Live)",  to: "/my-fleet",  icon: Navigation },
-      { label: "Crew",             to: "/crew-immigration/crew", icon: Users },
 
       // Logistics now parents ShipSync + Transport & Fleet
       {
