@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Plus, Search, UserCircle2, Pencil, Trash2, Loader2, FileText, Table2, LayoutGrid, Rows3, Upload } from "lucide-react";
+import { Plus, Search, UserCircle2, Pencil, Trash2, Loader2, Table2, LayoutGrid, Rows3, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { doPushToSharePoint } from "@/lib/sharepoint-push.server";
 import { Link } from "@tanstack/react-router";
@@ -326,7 +326,10 @@ export function CrewListPage() {
                           {m.first_name[0]}{m.last_name[0]}
                         </div>
                         <div>
-                          <div className="font-semibold text-foreground">{m.first_name} {m.last_name}</div>
+                          <Link to={"/crew-immigration/crew/$id" as any} params={{ id: m.id } as any}
+                            className="font-semibold text-foreground hover:text-primary hover:underline">
+                            {m.first_name} {m.last_name}
+                          </Link>
                           {m.nationality && <div className="text-[11px] text-muted-foreground">{m.nationality}</div>}
                         </div>
                       </div>
@@ -351,8 +354,8 @@ export function CrewListPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1">
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-primary" title="View visas" asChild>
-                          <Link to={"/crew-immigration/visas" as any}><FileText className="h-3.5 w-3.5" /></Link>
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-primary" title="View profile" asChild>
+                          <Link to={"/crew-immigration/crew/$id" as any} params={{ id: m.id } as any}><UserCircle2 className="h-3.5 w-3.5" /></Link>
                         </Button>
                         <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground" onClick={() => openEdit(m)}>
                           <Pencil className="h-3.5 w-3.5" />
