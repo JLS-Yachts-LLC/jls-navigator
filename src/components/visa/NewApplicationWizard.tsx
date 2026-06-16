@@ -1,6 +1,7 @@
-import React, { useState, useCallback, useEffect } from 'react'
+import React, { useState, useCallback, useEffect, useRef } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { COLORS } from '@/lib/tokens'
+import { supabase } from '@/integrations/supabase/client'
 import { loadCrewPassports } from '@/lib/visa/crewMatching'
 import StepCountrySelect from './StepCountrySelect'
 import StepCrewSearch from './StepCrewSearch'
@@ -21,6 +22,31 @@ type WizardState = {
   uploadedDocs: Record<string, string>
   complianceResults: any[]
   complianceAcknowledged: boolean
+  draftId?: string | null
+}
+
+// Persist an in-progress application as a real DB draft so it appears in the
+// Visa Applications "Draft" list and can be resumed. Returns the draft row id.
+async function persistDraft(s: WizardState): Promise<string | null> {
+  if (!s.crew?.id) return s.draftId ?? null
+  const payload: any = {
+    crew_member_id: s.crew.id,
+    yacht_id:       s.crew.yacht_id ?? null,
+    country_code:   s.countryCode,
+    status:         'draft',
+    visa_type:      'Crew Visa',
+    given_name:     s.crew.first_name ?? null,
+    surname:        s.crew.last_name ?? null,
+    nationality:    s.passport?.nationality ?? s.crew.nationality ?? null,
+    passport_id:    s.passport?.id ?? null,
+    passport_number: s.passport?.passport_number ?? null,
+    passport_expiry: s.passport?.expiry_date ?? null,
+    updated_at:     new Date().toISOString(),
+  }
+  const db = supabase as any
+  if (s.draftId) { await db.from('visa_applications').update(payload).eq('id', s.draftId); return s.draftId }
+  const { data } = await db.from('visa_applications').insert(payload).select('id').single()
+  return data?.id ?? null
 }
 
 const STEP_LABELS = [
@@ -71,6 +97,18 @@ export default function NewApplicationWizard({ onClose }: Props) {
       if (state.step > 1 || state.crew) localStorage.setItem(VISA_DRAFT_KEY, JSON.stringify(state))
     } catch { /* ignore */ }
   }, [state])
+
+  // Persist a real DB draft once a crew member is chosen, and keep it updated.
+  const draftBusy = useRef(false)
+  useEffect(() => {
+    if (!state.crew?.id || draftBusy.current) return
+    draftBusy.current = true
+    persistDraft(state)
+      .then(id => { if (id && id !== state.draftId) setState(p => ({ ...p, draftId: id })) })
+      .catch(() => {})
+      .finally(() => { draftBusy.current = false })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.crew?.id, state.countryCode, state.passport?.id])
 
   function resumeDraft() { if (draft) setState(draft); setDraftHandled(true) }
   function startOver() { try { localStorage.removeItem(VISA_DRAFT_KEY) } catch {}; setState(INITIAL_STATE); setDraftHandled(true) }

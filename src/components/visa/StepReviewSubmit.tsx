@@ -76,27 +76,28 @@ export function StepReviewSubmit({ state, onUpdate, onNext, onBack }: Props) {
     }
     setSubmitting(true)
     try {
-      // 1. Insert visa_applications
-      const { data: appData, error: appError } = await (supabase as any)
-        .from('visa_applications')
-        .insert({
-          crew_member_id:  state.crew.id,
-          passport_id:     state.passport.id,
-          country_code:    state.countryCode,
-          status:          'submitted',
-          submitted_at:    new Date().toISOString(),
-          yacht_id:        state.crew.yacht_id ?? null,
-          visa_type:       'Crew Visa',
-          // Mirror crew/passport details onto the row so the dashboard and
-          // reports display correctly even for records without a crew join.
-          given_name:      state.crew.first_name ?? null,
-          surname:         state.crew.last_name ?? null,
-          nationality:     state.passport.nationality ?? state.crew.nationality ?? null,
-          passport_number: state.passport.passport_number ?? null,
-          passport_expiry: state.passport.expiry_date ?? null,
-        })
-        .select('id')
-        .single()
+      // 1. Submit: convert the existing draft to 'submitted', or insert if none.
+      const row = {
+        crew_member_id:  state.crew.id,
+        passport_id:     state.passport.id,
+        country_code:    state.countryCode,
+        status:          'submitted' as const,
+        submitted_at:    new Date().toISOString(),
+        yacht_id:        state.crew.yacht_id ?? null,
+        visa_type:       'Crew Visa',
+        // Mirror crew/passport details onto the row so the dashboard and
+        // reports display correctly even for records without a crew join.
+        given_name:      state.crew.first_name ?? null,
+        surname:         state.crew.last_name ?? null,
+        nationality:     state.passport.nationality ?? state.crew.nationality ?? null,
+        passport_number: state.passport.passport_number ?? null,
+        passport_expiry: state.passport.expiry_date ?? null,
+      }
+      const db = supabase as any
+      const draftId = (state as any).draftId as string | null | undefined
+      const { data: appData, error: appError } = draftId
+        ? await db.from('visa_applications').update(row).eq('id', draftId).select('id').single()
+        : await db.from('visa_applications').insert(row).select('id').single()
 
       if (appError) throw appError
 

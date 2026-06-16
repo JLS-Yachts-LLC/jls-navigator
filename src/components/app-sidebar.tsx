@@ -131,6 +131,15 @@ const NAV: NavItem[] = [
           { label: "Navigation License",    to: "/permits/navigation-license",  icon: Navigation },
           { label: "DMA Permits",           to: "/permits/dma",                 icon: FileBadge },
           { label: "Abu Dhabi Permits",     to: "/permits/abu-dhabi",           icon: Anchor },
+          {
+            label: "Crew Placement",
+            icon: UserPlus,
+            children: [
+              { label: "Candidates", to: "/crew-placement",           icon: UserPlus },
+              { label: "Vacancies",  to: "/crew-placement/vacancies", icon: ClipboardList },
+            ],
+          },
+          { label: "Small Boat Registration", to: "/small-boat-registration", icon: Sailboat },
         ],
       },
 
@@ -145,20 +154,11 @@ const NAV: NavItem[] = [
         ],
       },
       { label: "Agency Network", to: "/agency", icon: Globe },
-      {
-        label: "Crew Placement",
-        icon: UserPlus,
-        children: [
-          { label: "Candidates", to: "/crew-placement",           icon: UserPlus },
-          { label: "Vacancies",  to: "/crew-placement/vacancies", icon: ClipboardList },
-        ],
-      },
       { label: "Documents & e-Sign",     to: "/esign",        icon: FileSignature },
       { label: "Automations",            to: "/automations",  icon: Zap },
       { label: "Leo Assistant",          to: "/ai-assistant", icon: Sparkles },
       { label: "Compass",                to: "/compass",      icon: Compass },
       { label: "Changelog",              to: "/changelog",    icon: ScrollText },
-      { label: "Small Boat Registration", to: "/small-boat-registration", icon: Sailboat },
 
       { label: "Settings", to: "/settings", icon: Settings },
     ],

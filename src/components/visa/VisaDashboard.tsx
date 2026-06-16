@@ -66,6 +66,24 @@ function statusMeta(s: string) {
   return STATUS_META[s] ?? { label: s ? s.replace(/_/g, ' ') : '—', bg: COLORS.steel, text: COLORS.frost }
 }
 
+// Lifecycle progress (battery) per application status.
+function statusProgress(s: string): { pct: number; color: string } {
+  const green = '#30D060', amber = COLORS.leoAmber, red = COLORS.warn, grey = '#9aa5b1'
+  switch (s) {
+    case 'draft':         return { pct: 12,  color: amber }
+    case 'pending_docs':
+    case 'need_to_apply': return { pct: 28,  color: amber }
+    case 'submitted':     return { pct: 50,  color: COLORS.signal }
+    case 'in_review':     return { pct: 65,  color: COLORS.signal }
+    case 'processing':    return { pct: 80,  color: COLORS.signal }
+    case 'approved':      return { pct: 92,  color: green }
+    case 'completed':     return { pct: 100, color: green }
+    case 'rejected':      return { pct: 100, color: red }
+    case 'cancelled':     return { pct: 100, color: grey }
+    default:              return { pct: 8,   color: COLORS.muted }
+  }
+}
+
 function getCrewName(app: VisaApplication): string {
   if (app.given_name || app.surname) return `${app.given_name ?? ''} ${app.surname ?? ''}`.trim()
   if (app.crew_members?.full_name) return app.crew_members.full_name
@@ -283,12 +301,19 @@ export default function VisaDashboard() {
 
       {/* Filter toolbar */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap', alignItems: 'center' }}>
-        <input
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Search name, passport, visa…"
-          style={{ ...ctl, minWidth: 230, flex: '0 1 260px' }}
-        />
+        <div style={{ position: 'relative', flex: '0 1 300px', minWidth: 240 }}>
+          <span style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: COLORS.signal, fontSize: 14, pointerEvents: 'none' }}>⌕</span>
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search name, passport, visa…"
+            style={{
+              ...ctl, width: '100%', height: 38, paddingLeft: 30,
+              border: `1.5px solid ${COLORS.signal}`, background: 'color-mix(in oklab, var(--muted) 50%, transparent)',
+              boxShadow: `0 0 0 3px color-mix(in oklab, ${COLORS.signal} 12%, transparent)`,
+            }}
+          />
+        </div>
         <select value={vessel} onChange={e => setVessel(e.target.value)} style={{ ...ctl, cursor: 'pointer' }}>
           <option value="all">All Vessels</option>
           {vessels.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
@@ -404,14 +429,24 @@ export default function VisaDashboard() {
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{country.name}</span>
                 </span>
 
-                {/* Status pill */}
-                <span style={{
-                  display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20,
-                  background: m.bg, color: m.text, fontFamily: FONTS.display, fontSize: 11, fontWeight: 700,
-                  letterSpacing: '0.04em', width: 'fit-content',
-                }}>
-                  {m.label}
-                </span>
+                {/* Status pill + progress battery */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20,
+                    background: m.bg, color: m.text, fontFamily: FONTS.display, fontSize: 11, fontWeight: 700,
+                    letterSpacing: '0.04em', width: 'fit-content',
+                  }}>
+                    {m.label}
+                  </span>
+                  {(() => {
+                    const p = statusProgress(app.status)
+                    return (
+                      <div title={`${p.pct}% through the pipeline`} style={{ width: 88, height: 5, borderRadius: 4, background: COLORS.void, border: `1px solid ${COLORS.deep}`, overflow: 'hidden' }}>
+                        <div style={{ width: `${p.pct}%`, height: '100%', background: p.color }} />
+                      </div>
+                    )
+                  })()}
+                </div>
 
                 {/* Passport */}
                 <span style={{ fontFamily: FONTS.body, fontSize: 12, color: COLORS.muted }}>
