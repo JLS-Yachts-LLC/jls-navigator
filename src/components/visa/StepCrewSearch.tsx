@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { COLORS, FONTS } from '@/lib/tokens'
+import { DateInputDMY } from '@/components/ui/date-input-dmy'
 import { findCrewMatch, upsertCrewMember, CrewMember } from '@/lib/visa/crewMatching'
 
 interface WizardState {
@@ -24,6 +25,7 @@ interface Props {
 
 interface NewCrewForm {
   first_name: string
+  middle_name: string
   last_name: string
   date_of_birth: string
   email: string
@@ -75,6 +77,7 @@ export default function StepCrewSearch({ state, onUpdate, onNext, onBack }: Prop
 
   const [newForm, setNewForm] = useState<NewCrewForm>({
     first_name: '',
+    middle_name: '',
     last_name: '',
     date_of_birth: '',
     email: '',
@@ -119,10 +122,12 @@ export default function StepCrewSearch({ state, onUpdate, onNext, onBack }: Prop
     setShowCreateForm(true)
     setMatchedCrew(null)
     onUpdate({ crew: null, isNewCrew: true })
+    const parts = searchName.trim().split(/\s+/).filter(Boolean)
     setNewForm(f => ({
       ...f,
-      first_name: searchName.split(' ')[0] ?? '',
-      last_name: searchName.split(' ').slice(1).join(' '),
+      first_name: parts[0] ?? '',
+      middle_name: parts.length > 2 ? parts.slice(1, -1).join(' ') : '',
+      last_name: parts.length > 1 ? parts[parts.length - 1] : '',
       date_of_birth: searchDob,
     }))
   }
@@ -139,6 +144,7 @@ export default function StepCrewSearch({ state, onUpdate, onNext, onBack }: Prop
     try {
       const saved = await upsertCrewMember({
         first_name: newForm.first_name.trim(),
+        middle_name: newForm.middle_name.trim() || null,
         last_name: newForm.last_name.trim(),
         date_of_birth: newForm.date_of_birth,
         email: newForm.email.trim() || null,
@@ -180,11 +186,11 @@ export default function StepCrewSearch({ state, onUpdate, onNext, onBack }: Prop
         </p>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
           <div>
-            <label style={labelStyle}>Full Name</label>
+            <label style={labelStyle}>Full Name (as per passport)</label>
             <input
               style={inputStyle}
               type="text"
-              placeholder="e.g. Jane Smith"
+              placeholder="Full name as per passport — e.g. Jane Anne Smith"
               value={searchName}
               onChange={e => setSearchName(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleSearch()}
@@ -192,12 +198,7 @@ export default function StepCrewSearch({ state, onUpdate, onNext, onBack }: Prop
           </div>
           <div>
             <label style={labelStyle}>Date of Birth</label>
-            <input
-              style={inputStyle}
-              type="date"
-              value={searchDob}
-              onChange={e => setSearchDob(e.target.value)}
-            />
+            <DateInputDMY style={inputStyle} value={searchDob} onChange={setSearchDob} />
           </div>
         </div>
         <button
@@ -302,10 +303,11 @@ export default function StepCrewSearch({ state, onUpdate, onNext, onBack }: Prop
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             {fieldGroup(
               <>
-                <label style={labelStyle}>First Name *</label>
+                <label style={labelStyle}>First Name * (as per passport)</label>
                 <input
                   style={inputStyle}
                   type="text"
+                  placeholder="As per passport"
                   value={newForm.first_name}
                   onChange={e => setNewForm(f => ({ ...f, first_name: e.target.value }))}
                 />
@@ -314,10 +316,24 @@ export default function StepCrewSearch({ state, onUpdate, onNext, onBack }: Prop
             )}
             {fieldGroup(
               <>
-                <label style={labelStyle}>Last Name *</label>
+                <label style={labelStyle}>Middle Name (as per passport)</label>
                 <input
                   style={inputStyle}
                   type="text"
+                  placeholder="As per passport — leave blank if none"
+                  value={newForm.middle_name}
+                  onChange={e => setNewForm(f => ({ ...f, middle_name: e.target.value }))}
+                />
+              </>,
+              'mn'
+            )}
+            {fieldGroup(
+              <>
+                <label style={labelStyle}>Last Name * (as per passport)</label>
+                <input
+                  style={inputStyle}
+                  type="text"
+                  placeholder="As per passport"
                   value={newForm.last_name}
                   onChange={e => setNewForm(f => ({ ...f, last_name: e.target.value }))}
                 />
@@ -327,11 +343,10 @@ export default function StepCrewSearch({ state, onUpdate, onNext, onBack }: Prop
             {fieldGroup(
               <>
                 <label style={labelStyle}>Date of Birth *</label>
-                <input
+                <DateInputDMY
                   style={inputStyle}
-                  type="date"
                   value={newForm.date_of_birth}
-                  onChange={e => setNewForm(f => ({ ...f, date_of_birth: e.target.value }))}
+                  onChange={iso => setNewForm(f => ({ ...f, date_of_birth: iso }))}
                 />
               </>,
               'dob'
