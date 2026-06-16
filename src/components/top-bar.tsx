@@ -3,7 +3,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import {
-  Search, Bell, LogOut, Settings, UserCircle2, Ship, Loader2, ChevronDown, X, Sun, Moon,
+  Search, Bell, LogOut, Settings, UserCircle2, Ship, Loader2, ChevronDown, X, Sun, Moon, Users,
 } from "lucide-react";
 import { useTheme } from "@/lib/theme";
 import {
@@ -18,6 +18,86 @@ type SearchResult = {
   sub: string;
   to: string;
 };
+
+function nameFromEmail(email?: string | null): string {
+  return (email ?? "User").split("@")[0].replace(/[._]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+type OnlineUser = { id: string; name: string; email: string };
+
+// Live "who's online" via Supabase Realtime presence. Each client broadcasts its
+// identity to a shared channel; the count + names update in real time.
+function OnlineUsers() {
+  const { user } = useAuth();
+  const [online, setOnline] = useState<OnlineUser[]>([]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const channel = supabase.channel("presence:online-users", {
+      config: { presence: { key: user.id } },
+    });
+    channel.on("presence", { event: "sync" }, () => {
+      const state = channel.presenceState() as Record<string, Array<{ name?: string; email?: string }>>;
+      const users = Object.entries(state).map(([id, metas]) => ({
+        id,
+        name: metas[0]?.name ?? nameFromEmail(metas[0]?.email),
+        email: metas[0]?.email ?? "",
+      }));
+      users.sort((a, b) => a.name.localeCompare(b.name));
+      setOnline(users);
+    });
+    channel.subscribe(async (status) => {
+      if (status === "SUBSCRIBED") {
+        await channel.track({ name: nameFromEmail(user.email), email: user.email ?? "", online_at: new Date().toISOString() });
+      }
+    });
+    return () => { void supabase.removeChannel(channel); };
+  }, [user?.id, user?.email]);
+
+  const count = online.length;
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          className="relative flex h-9 items-center gap-1.5 rounded-lg px-2 text-muted-foreground hover:bg-accent hover:text-foreground transition"
+          title={`${count} user${count !== 1 ? "s" : ""} online`}
+        >
+          <span className="relative flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+          </span>
+          <Users className="h-[18px] w-[18px]" />
+          <span className="text-xs font-semibold tabular-nums">{count}</span>
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-60">
+        <DropdownMenuLabel className="flex items-center justify-between">
+          <span>Online now</span>
+          <span className="text-xs font-normal text-muted-foreground">{count}</span>
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {online.length === 0 ? (
+          <div className="px-2 py-3 text-center text-xs text-muted-foreground">No one online</div>
+        ) : (
+          <div className="max-h-72 overflow-auto py-1">
+            {online.map((u) => (
+              <div key={u.id} className="flex items-center gap-2.5 px-2 py-1.5">
+                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-medium text-foreground">
+                    {u.name}{u.id === user?.id && <span className="ml-1 text-[10px] font-normal text-muted-foreground">(you)</span>}
+                  </div>
+                  {u.email && <div className="truncate text-[11px] text-muted-foreground">{u.email}</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 export function TopBar() {
   const { user, signOut } = useAuth();
@@ -119,6 +199,9 @@ export function TopBar() {
       </div>
 
       <div className="ml-auto flex items-center gap-1.5">
+        {/* Online users (live presence) */}
+        <OnlineUsers />
+
         {/* Theme toggle */}
         <button
           onClick={toggle}
