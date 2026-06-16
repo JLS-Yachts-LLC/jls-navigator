@@ -106,27 +106,33 @@ const NAV: NavItem[] = [
         ],
       },
 
-      // ── Former Port Operations & Agency ──
+      // ── Port Operations & Agency — parent folder, nested in Overview ──
       {
-        label: "Crew & Immigration",
-        icon: IdCard,
+        label: "Port Operations & Agency",
+        icon: Anchor,
         children: [
-          { label: "Crew List",          to: "/crew-immigration/crew",        icon: UserCircle2 },
-          { label: "Visas",              to: "/crew-immigration/visas",       icon: FileText },
-          { label: "Sign On / Sign Off", to: "/crew-immigration/sign-on-off", icon: LogIn },
-          { label: "Crew Documents",     to: "/crew-immigration/documents",   icon: ClipboardList },
+          {
+            label: "Crew & Immigration",
+            icon: IdCard,
+            children: [
+              { label: "Crew List",          to: "/crew-immigration/crew",        icon: UserCircle2 },
+              { label: "Visas",              to: "/crew-immigration/visas",       icon: FileText },
+              { label: "Sign On / Sign Off", to: "/crew-immigration/sign-on-off", icon: LogIn },
+              { label: "Crew Documents",     to: "/crew-immigration/documents",   icon: ClipboardList },
+            ],
+          },
+          { label: "Command Centre",        to: "/permits/command-centre",      icon: ShieldCheck },
+          { label: "Exit & Entry Permits",  to: "/permits/exit-entry",          icon: LogIn },
+          { label: "Sanitation",            to: "/permits/sanitation",          icon: ShieldCheck },
+          { label: "Cruising — Mothership", to: "/permits/cruising-mothership", icon: Compass },
+          { label: "Cruising — Tenders",    to: "/permits/cruising-tenders",    icon: Anchor },
+          { label: "Gate Pass",             to: "/permits/gate-pass",           icon: DoorOpen },
+          { label: "TDRA",                  to: "/permits/tdra",                icon: Radio },
+          { label: "Navigation License",    to: "/permits/navigation-license",  icon: Navigation },
+          { label: "DMA Permits",           to: "/permits/dma",                 icon: FileBadge },
+          { label: "Abu Dhabi Permits",     to: "/permits/abu-dhabi",           icon: Anchor },
         ],
       },
-      { label: "Command Centre",        to: "/permits/command-centre",      icon: ShieldCheck },
-      { label: "Exit & Entry Permits",  to: "/permits/exit-entry",          icon: LogIn },
-      { label: "Sanitation",            to: "/permits/sanitation",          icon: ShieldCheck },
-      { label: "Cruising — Mothership", to: "/permits/cruising-mothership", icon: Compass },
-      { label: "Cruising — Tenders",    to: "/permits/cruising-tenders",    icon: Anchor },
-      { label: "Gate Pass",             to: "/permits/gate-pass",           icon: DoorOpen },
-      { label: "TDRA",                  to: "/permits/tdra",                icon: Radio },
-      { label: "Navigation License",    to: "/permits/navigation-license",  icon: Navigation },
-      { label: "DMA Permits",           to: "/permits/dma",                 icon: FileBadge },
-      { label: "Abu Dhabi Permits",     to: "/permits/abu-dhabi",           icon: Anchor },
 
       // ── Other former Modules items ──
       { label: "Superyacht Provisioning", to: "/provisioning", icon: UtensilsCrossed },
