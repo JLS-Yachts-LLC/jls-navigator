@@ -25,6 +25,7 @@ type Ticket = {
   ticket_no: string | null;
   subject: string;
   yacht_id: string | null;
+  it_yacht_id: string | null;
   queue: string | null;
   category: string | null;
   priority: string | null;
@@ -38,7 +39,7 @@ type Yacht = { id: string; vessel_name: string };
 type Profile = { id: string; display_name: string | null };
 
 const EMPTY_FORM = {
-  subject: "", description: "", yacht_id: "", queue: "polaris", category: "general",
+  subject: "", description: "", vessel: "", queue: "polaris", category: "general",
   priority: "normal", requested_by: "", assigned_to: "",
 };
 
@@ -59,6 +60,7 @@ export function ServiceDeskPage() {
   const { user } = useAuth();
   const [rows, setRows] = useState<Ticket[]>([]);
   const [yachts, setYachts] = useState<Yacht[]>([]);
+  const [itYachts, setItYachts] = useState<Yacht[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
@@ -75,19 +77,25 @@ export function ServiceDeskPage() {
 
   async function load() {
     setLoading(true);
-    const [tRes, yRes, pRes] = await Promise.all([
+    const [tRes, yRes, iRes, pRes] = await Promise.all([
       fetchAllRows(() => (supabase as any).from("it_tickets").select("*").order("updated_at", { ascending: false })),
       fetchAllRows(() => supabase.from("yachts").select("id, vessel_name").order("vessel_name")),
+      fetchAllRows(() => (supabase as any).from("it_yachts").select("id, name").eq("active", true).order("name")),
       fetchAllRows(() => (supabase as any).from("profiles").select("id, display_name").order("display_name")),
     ]);
     if (tRes.error) toast.error(tRes.error.message);
     setRows((tRes.data ?? []) as Ticket[]);
     setYachts((yRes.data ?? []) as Yacht[]);
+    setItYachts(((iRes.data ?? []) as any[]).map(y => ({ id: y.id, vessel_name: y.name })));
     setProfiles((pRes.data ?? []) as Profile[]);
     setLoading(false);
   }
 
-  const yachtName = (id: string | null) => yachts.find(y => y.id === id)?.vessel_name ?? "—";
+  // Resolve a ticket's vessel from either the main fleet or the IT-yacht registry.
+  const vesselName = (t: { yacht_id: string | null; it_yacht_id: string | null }) =>
+    t.yacht_id ? (yachts.find(y => y.id === t.yacht_id)?.vessel_name ?? "—")
+    : t.it_yacht_id ? (itYachts.find(y => y.id === t.it_yacht_id)?.vessel_name ?? "—")
+    : "—";
 
   async function create() {
     if (!form.subject.trim()) { toast.error("Subject is required"); return; }
@@ -96,7 +104,8 @@ export function ServiceDeskPage() {
       const { error } = await (supabase as any).from("it_tickets").insert([{
         subject: form.subject.trim(),
         description: form.description || null,
-        yacht_id: form.yacht_id || null,
+        yacht_id: form.vessel.startsWith("fleet:") ? form.vessel.slice(6) : null,
+        it_yacht_id: form.vessel.startsWith("it:") ? form.vessel.slice(3) : null,
         queue: form.queue,
         category: form.category,
         priority: form.priority,
@@ -118,14 +127,18 @@ export function ServiceDeskPage() {
     if (filterQueue !== "all" && r.queue !== filterQueue) return false;
     if (filterPriority !== "all" && r.priority !== filterPriority) return false;
     if (filterCategory !== "all" && r.category !== filterCategory) return false;
-    if (filterYacht !== "all" && r.yacht_id !== filterYacht) return false;
+    if (filterYacht !== "all") {
+      const matchId = filterYacht.startsWith("fleet:") ? r.yacht_id : filterYacht.startsWith("it:") ? r.it_yacht_id : null;
+      const wantId = filterYacht.replace(/^(fleet:|it:)/, "");
+      if (matchId !== wantId) return false;
+    }
     if (q.trim()) {
-      const hay = [r.ticket_no, r.subject, r.requested_by, r.assigned_to, yachtName(r.yacht_id)]
+      const hay = [r.ticket_no, r.subject, r.requested_by, r.assigned_to, vesselName(r)]
         .join(" ").toLowerCase();
       if (!hay.includes(q.toLowerCase())) return false;
     }
     return true;
-  }), [rows, q, filterStatus, filterQueue, filterPriority, filterCategory, filterYacht, yachts]);
+  }), [rows, q, filterStatus, filterQueue, filterPriority, filterCategory, filterYacht, yachts, itYachts]);
 
   return (
     <div className="flex h-full flex-col">
@@ -186,7 +199,9 @@ export function ServiceDeskPage() {
             <SelectTrigger className="h-8 w-40 text-xs"><SelectValue placeholder="Vessel" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Vessels</SelectItem>
-              {yachts.map(y => <SelectItem key={y.id} value={y.id}>{y.vessel_name}</SelectItem>)}
+              {yachts.map(y => <SelectItem key={y.id} value={`fleet:${y.id}`}>{y.vessel_name}</SelectItem>)}
+              {itYachts.length > 0 && <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">IT Yachts</div>}
+              {itYachts.map(y => <SelectItem key={y.id} value={`it:${y.id}`}>{y.vessel_name}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
@@ -230,8 +245,8 @@ export function ServiceDeskPage() {
                       </Link>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">
-                      {r.yacht_id
-                        ? <span className="inline-flex items-center gap-1"><Ship className="h-3 w-3" />{yachtName(r.yacht_id)}</span>
+                      {(r.yacht_id || r.it_yacht_id)
+                        ? <span className="inline-flex items-center gap-1"><Ship className="h-3 w-3" />{vesselName(r)}</span>
                         : <span className="text-muted-foreground/40">—</span>}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">{labelFor(QUEUE_LABEL, r.queue)}</td>
@@ -263,11 +278,13 @@ export function ServiceDeskPage() {
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Vessel</Label>
-              <Select value={form.yacht_id || "__none"} onValueChange={v => setForm(f => ({ ...f, yacht_id: v === "__none" ? "" : v }))}>
+              <Select value={form.vessel || "__none"} onValueChange={v => setForm(f => ({ ...f, vessel: v === "__none" ? "" : v }))}>
                 <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="— None —" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none">— None —</SelectItem>
-                  {yachts.map(y => <SelectItem key={y.id} value={y.id}>{y.vessel_name}</SelectItem>)}
+                  {yachts.map(y => <SelectItem key={y.id} value={`fleet:${y.id}`}>{y.vessel_name}</SelectItem>)}
+                  {itYachts.length > 0 && <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">IT Yachts</div>}
+                  {itYachts.map(y => <SelectItem key={y.id} value={`it:${y.id}`}>{y.vessel_name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
