@@ -77,6 +77,18 @@ export function StepReviewSubmit({ state, onUpdate, onNext, onBack }: Props) {
     }
     setSubmitting(true)
     try {
+      const db = supabase as any
+
+      // Resolve the vessel: the user-entered/auto-filled vessel name is stored as
+      // free text, and matched to a yacht row (by name) to also set yacht_id.
+      const enteredVessel = (state.countryFields.vessel_name ?? '').trim()
+      let resolvedYachtId: string | null = state.crew.yacht_id ?? null
+      if (enteredVessel && !resolvedYachtId) {
+        const { data: y } = await db
+          .from('yachts').select('id').ilike('vessel_name', enteredVessel).limit(1).maybeSingle()
+        resolvedYachtId = y?.id ?? null
+      }
+
       // 1. Submit: convert the existing draft to 'submitted', or insert if none.
       const row = {
         crew_member_id:  state.crew.id,
@@ -84,7 +96,8 @@ export function StepReviewSubmit({ state, onUpdate, onNext, onBack }: Props) {
         country_code:    state.countryCode,
         status:          'submitted' as const,
         submitted_at:    new Date().toISOString(),
-        yacht_id:        state.crew.yacht_id ?? null,
+        yacht_id:        resolvedYachtId,
+        vessel_name:     enteredVessel || null,
         visa_type:       'Crew Visa',
         // Mirror crew/passport details onto the row so the dashboard and
         // reports display correctly even for records without a crew join.
@@ -94,7 +107,6 @@ export function StepReviewSubmit({ state, onUpdate, onNext, onBack }: Props) {
         passport_number: state.passport.passport_number ?? null,
         passport_expiry: state.passport.expiry_date ?? null,
       }
-      const db = supabase as any
       const draftId = (state as any).draftId as string | null | undefined
 
       // Resolve the row id: prefer the wizard's tracked draftId, then look up

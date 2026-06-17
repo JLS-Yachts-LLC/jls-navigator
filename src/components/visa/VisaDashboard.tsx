@@ -15,8 +15,10 @@ interface VisaApplication {
   id: string
   crew_member_id: string | null
   yacht_id: string | null
+  vessel_name: string | null
   country_code: string | null
   status: string
+  visa_document_url?: string | null
   passport_number: string | null
   given_name: string | null
   surname: string | null
@@ -128,6 +130,31 @@ export default function VisaDashboard() {
   const [showReport, setShowReport]     = useState(false)
 
   const [cancelling, setCancelling] = useState<string | null>(null)
+  const [attaching, setAttaching]   = useState<string | null>(null)
+
+  // Quick-attach the issued visa document, which moves the application to Approved.
+  async function attachVisa(app: VisaApplication, file: File | null) {
+    if (!file) return
+    setAttaching(app.id)
+    try {
+      const ext  = file.name.split('.').pop() || 'pdf'
+      const path = `visa/${app.id}/visa-document.${ext}`
+      const { error: upErr } = await supabase.storage.from('permit-documents').upload(path, file, { upsert: true })
+      if (upErr) throw upErr
+      const url = supabase.storage.from('permit-documents').getPublicUrl(path).data.publicUrl
+      const { error } = await (supabase as any).from('visa_applications').update({
+        visa_document_url: url, status: 'approved',
+        approved_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+      }).eq('id', app.id)
+      if (error) throw error
+      setApplications(prev => prev.map(a => a.id === app.id ? { ...a, status: 'approved', visa_document_url: url } : a))
+      toast.success('Visa attached — application moved to Approved')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not attach the visa')
+    } finally {
+      setAttaching(null)
+    }
+  }
 
   async function cancelOrDelete(app: VisaApplication) {
     if (!window.confirm(
@@ -461,7 +488,7 @@ export default function VisaDashboard() {
 
                 {/* Vessel */}
                 <span style={{ fontFamily: FONTS.display, fontSize: 12.5, color: COLORS.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: 8 }}>
-                  {app.yachts?.vessel_name ?? '—'}
+                  {app.vessel_name ?? app.yachts?.vessel_name ?? '—'}
                 </span>
 
                 {/* Country — aligned: fixed-width flag + name */}
@@ -500,7 +527,23 @@ export default function VisaDashboard() {
                 </span>
 
                 {/* Actions */}
-                <div style={{ display: 'flex', gap: 6 }}>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {(app.status === 'submitted' || app.status === 'pending_docs') && (
+                    <>
+                      <input
+                        id={`attach-${app.id}`} type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: 'none' }}
+                        onChange={e => attachVisa(app, e.target.files?.[0] ?? null)}
+                      />
+                      <button
+                        onClick={() => document.getElementById(`attach-${app.id}`)?.click()}
+                        disabled={attaching === app.id}
+                        title="Upload the issued visa — moves this application to Approved"
+                        style={{ padding: '4px 10px', borderRadius: 6, border: 'none', background: COLORS.signal, color: COLORS.void, fontFamily: FONTS.display, fontSize: 11, fontWeight: 700, cursor: attaching === app.id ? 'wait' : 'pointer', opacity: attaching === app.id ? 0.6 : 1 }}
+                      >
+                        {attaching === app.id ? 'Attaching…' : 'Attach Visa'}
+                      </button>
+                    </>
+                  )}
                   <button
                     onClick={() => navigate({ to: `/crew-immigration/visas/${app.id}` as any })}
                     style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${COLORS.ocean}`, background: 'transparent', color: COLORS.signal, fontFamily: FONTS.display, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}

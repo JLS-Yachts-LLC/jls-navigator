@@ -38,6 +38,7 @@ export function VisaDetailPage() {
   const navigate = useNavigate();
   const [visa, setVisa] = useState<Visa | null>(null);
   const [vesselName, setVesselName] = useState<string>("—");
+  const [yachtNames, setYachtNames] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [editOpen, setEditOpen] = useState(false);
   const [form, setForm] = useState<Visa>({});
@@ -55,8 +56,11 @@ export function VisaDetailPage() {
       .maybeSingle();
     if (error || !data) { toast.error("Application not found"); navigate({ to: "/crew-immigration/visas" }); return; }
     setVisa(data);
-    setVesselName(data.yachts?.vessel_name ?? "—");
+    setVesselName(data.vessel_name ?? data.yachts?.vessel_name ?? "—");
     setLoading(false);
+    (supabase as any).from("yachts").select("vessel_name").not("vessel_name", "is", null).order("vessel_name")
+      .then(({ data: ys }: { data: { vessel_name: string }[] | null }) =>
+        setYachtNames(Array.from(new Set((ys ?? []).map(y => y.vessel_name).filter(Boolean))) as string[]));
   }
 
   function pushExcel() {
@@ -75,6 +79,7 @@ export function VisaDetailPage() {
 
   function openEdit() {
     setForm({
+      vessel_name: visa?.vessel_name ?? (vesselName !== "—" ? vesselName : ""),
       nationality: visa?.nationality ?? "", passport_number: visa?.passport_number ?? "",
       visa_number: visa?.visa_number ?? "", rank_rating: visa?.rank_rating ?? "",
       visa_issuance_date: visa?.visa_issuance_date ?? "", visa_expiry: visa?.visa_expiry ?? "",
@@ -88,10 +93,19 @@ export function VisaDetailPage() {
     setBusy(true);
     const patch: any = { ...form, updated_at: new Date().toISOString() };
     for (const k of Object.keys(patch)) if (patch[k] === "") patch[k] = null;
+    // Link the typed vessel name to a yacht row when it matches one.
+    if (patch.vessel_name) {
+      const { data: y } = await (supabase as any)
+        .from("yachts").select("id").ilike("vessel_name", patch.vessel_name).limit(1).maybeSingle();
+      patch.yacht_id = y?.id ?? null;
+    }
     const { error } = await (supabase as any).from("visa_applications").update(patch).eq("id", id);
     setBusy(false);
     if (error) { toast.error(error.message); return; }
-    toast.success("Saved"); setEditOpen(false); setVisa(v => ({ ...v!, ...patch })); pushExcel();
+    toast.success("Saved"); setEditOpen(false);
+    setVisa(v => ({ ...v!, ...patch }));
+    setVesselName(patch.vessel_name ?? "—");
+    pushExcel();
   }
 
   async function confirmDelete() {
@@ -182,6 +196,19 @@ export function VisaDetailPage() {
         <DialogContent className="max-w-xl">
           <DialogHeader><DialogTitle>Edit Visa Application</DialogTitle></DialogHeader>
           <div className="grid grid-cols-2 gap-3 py-2">
+            <div className="col-span-2 space-y-1.5">
+              <Label className="text-xs">Vessel</Label>
+              <Input
+                value={form.vessel_name ?? ""}
+                onChange={e => setForm(f => ({ ...f, vessel_name: e.target.value }))}
+                list="visa-edit-vessels"
+                placeholder="Start typing a vessel name…"
+                className="h-9"
+              />
+              <datalist id="visa-edit-vessels">
+                {yachtNames.map(n => <option key={n} value={n} />)}
+              </datalist>
+            </div>
             <div className="space-y-1.5"><Label className="text-xs">Nationality</Label><Input value={form.nationality} onChange={e => setForm(f => ({ ...f, nationality: e.target.value }))} className="h-9" /></div>
             <div className="space-y-1.5"><Label className="text-xs">Passport No.</Label><Input value={form.passport_number} onChange={e => setForm(f => ({ ...f, passport_number: e.target.value }))} className="h-9" /></div>
             <div className="space-y-1.5"><Label className="text-xs">Visa Reference</Label><Input value={form.visa_number} onChange={e => setForm(f => ({ ...f, visa_number: e.target.value }))} className="h-9" /></div>

@@ -33,6 +33,7 @@ async function persistDraft(s: WizardState): Promise<string | null> {
   const payload: any = {
     crew_member_id:  s.crew.id,
     yacht_id:        s.crew.yacht_id ?? null,
+    vessel_name:     (s.countryFields?.vessel_name ?? '').trim() || null,
     country_code:    s.countryCode,
     status:          'draft',
     visa_type:       'Crew Visa',
