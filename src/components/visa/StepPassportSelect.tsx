@@ -129,15 +129,31 @@ function UploadZone({ onFile, fileName, fileKB, scanning, onRemove }: {
   if (fileName) {
     return (
       <div style={{
+        position: 'relative', overflow: 'hidden',
         display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px',
-        background: `#22c55e12`, border: `1px solid #22c55e40`, borderRadius: 8,
+        background: scanning ? `${COLORS.signal}12` : `#22c55e12`,
+        border: `1px solid ${scanning ? COLORS.signal + '55' : '#22c55e40'}`, borderRadius: 8,
       }}>
-        <span style={{
-          fontFamily: FONTS.display, fontSize: 10, fontWeight: 700,
-          letterSpacing: '0.12em', textTransform: 'uppercase',
-          color: '#22c55e', padding: '2px 8px',
-          background: `#22c55e20`, borderRadius: 3,
-        }}>{scanning ? 'Scanning…' : 'Uploaded'}</span>
+        <style>{`@keyframes pp-spin{to{transform:rotate(360deg)}}@keyframes pp-sweep{0%{left:-40%}100%{left:100%}}`}</style>
+        {scanning && (
+          <span aria-hidden="true" style={{ position: 'absolute', bottom: 0, left: '-40%', width: '40%', height: 3, background: COLORS.signal, animation: 'pp-sweep 1.1s ease-in-out infinite' }} />
+        )}
+        {scanning ? (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: FONTS.display, fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: COLORS.signal, padding: '2px 8px', background: `${COLORS.signal}20`, borderRadius: 3 }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" style={{ animation: 'pp-spin 0.8s linear infinite' }}>
+              <circle cx="12" cy="12" r="9" stroke={COLORS.signal} strokeOpacity="0.3" strokeWidth="3" />
+              <path d="M21 12a9 9 0 0 0-9-9" stroke={COLORS.signal} strokeWidth="3" strokeLinecap="round" />
+            </svg>
+            Scanning…
+          </span>
+        ) : (
+          <span style={{
+            fontFamily: FONTS.display, fontSize: 10, fontWeight: 700,
+            letterSpacing: '0.12em', textTransform: 'uppercase',
+            color: '#22c55e', padding: '2px 8px',
+            background: `#22c55e20`, borderRadius: 3,
+          }}>Uploaded</span>
+        )}
         <span style={{ fontFamily: FONTS.display, fontSize: 13, color: COLORS.frost, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {fileName}
         </span>
@@ -229,10 +245,11 @@ function DocThumb({ url, onZoom, size = 56 }: { url: string; onZoom?: (u: string
   )
 }
 
-function SmallUploadCard({ number, label, optional, icon, fileName, fileKB, scanning, onFile, onRemove, disabled, footer, thumbUrl, onZoom }: {
+function SmallUploadCard({ number, label, optional, required, icon, fileName, fileKB, scanning, onFile, onRemove, disabled, footer, thumbUrl, onZoom }: {
   number: number
   label: string
   optional?: boolean
+  required?: boolean
   icon: string
   fileName: string | null
   fileKB: number | null
@@ -263,6 +280,9 @@ function SmallUploadCard({ number, label, optional, icon, fileName, fileKB, scan
         </span>
         {optional && (
           <span style={{ fontFamily: FONTS.display, fontSize: 10, color: COLORS.steel, fontStyle: 'italic' }}>Optional</span>
+        )}
+        {required && (
+          <span style={{ fontFamily: FONTS.display, fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: COLORS.warn, background: `${COLORS.warn}1a`, border: `1px solid ${COLORS.warn}40`, borderRadius: 3, padding: '1px 6px' }}>Required</span>
         )}
       </div>
       {thumbUrl && (
@@ -525,6 +545,11 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
     { key: 'size',     label: 'Under 1000 KB each' },
   ]
   const allChecked = CHECK_ITEMS.every(i => isChecked(i.key))
+  // Inside pages, cover and headshot are mandatory (new file or already on file).
+  const hasRequiredDocs =
+    (!!files.data || !!existingUrls.data) &&
+    (!!files.cover || !!existingUrls.cover) &&
+    (!!files.headshot || !!existingUrls.headshot)
 
   // Document Status reflecting what's uploaded / scanned / validated.
   const docStatus = {
@@ -552,6 +577,10 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
     }
     if (!issueDate || !expiryDate) {
       setError('Enter valid issue and expiry dates (dd/mm/yyyy).')
+      return
+    }
+    if (!hasRequiredDocs) {
+      setError('Passport inside pages, passport cover and headshot photo are all required.')
       return
     }
     if (!allChecked) {
@@ -596,6 +625,17 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
         no_seamans_book: noSeamans,
         double_checked: doubleChecked,
       })
+
+      // Populate the crew member record with the OCR'd personal details.
+      try {
+        await (supabase as any).from('crew_members').update({
+          nationality: nationality.trim() || null,
+          date_of_birth: dateOfBirth || null,
+          place_of_birth: placeOfBirth.trim() || null,
+          gender: gender || null,
+          updated_at: new Date().toISOString(),
+        }).eq('id', crewId)
+      } catch { /* non-fatal — passport is saved regardless */ }
 
       onSaved(saved)
     } catch (err: any) {
@@ -643,7 +683,7 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
 
             {/* Secondary uploads */}
             <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
-              <SmallUploadCard number={1} label="Passport Cover" optional icon="📄"
+              <SmallUploadCard number={1} label="Passport Cover" required icon="📄"
                 fileName={fileNames.cover} fileKB={sizes.cover} thumbUrl={!files.cover ? existingUrls.cover : null} onZoom={setZoomSrc}
                 onFile={(f) => handleSlot('cover', f)} onRemove={() => handleSlot('cover', null)} />
               <SmallUploadCard number={2} label="Seaman's Book" optional icon="📋"
@@ -655,7 +695,7 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
                     No Seaman's book
                   </label>
                 } />
-              <SmallUploadCard number={3} label="Headshot Photo" icon="👤"
+              <SmallUploadCard number={3} label="Headshot Photo" required icon="👤"
                 fileName={fileNames.headshot} fileKB={sizes.headshot} thumbUrl={!files.headshot ? existingUrls.headshot : null} onZoom={setZoomSrc}
                 onFile={(f) => handleSlot('headshot', f)} onRemove={() => handleSlot('headshot', null)} />
             </div>
@@ -846,13 +886,13 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
               )}
               <button
                 type="submit"
-                disabled={uploading || !doubleChecked || !allChecked}
-                title={!allChecked ? 'Tick every checklist item first' : !doubleChecked ? 'Confirm you have double-checked the information first' : undefined}
+                disabled={uploading || !doubleChecked || !allChecked || !hasRequiredDocs}
+                title={!hasRequiredDocs ? 'Upload the passport inside pages, cover and headshot first' : !allChecked ? 'Tick every checklist item first' : !doubleChecked ? 'Confirm you have double-checked the information first' : undefined}
                 style={{
                   background: COLORS.signal, border: 'none', borderRadius: 8, color: COLORS.void,
                   fontFamily: FONTS.display, fontSize: 14, fontWeight: 600, padding: '8px 20px',
-                  cursor: (uploading || !doubleChecked || !allChecked) ? 'not-allowed' : 'pointer',
-                  opacity: (uploading || !doubleChecked || !allChecked) ? 0.6 : 1,
+                  cursor: (uploading || !doubleChecked || !allChecked || !hasRequiredDocs) ? 'not-allowed' : 'pointer',
+                  opacity: (uploading || !doubleChecked || !allChecked || !hasRequiredDocs) ? 0.6 : 1,
                 }}
               >
                 {uploading ? 'Saving…' : 'Save Passport'}

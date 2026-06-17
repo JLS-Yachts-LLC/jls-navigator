@@ -19,6 +19,8 @@ Return ONLY a single JSON object (no prose, no code fences) with EXACTLY these k
   "surname": string|null,
   "given_names": string|null,
   "date_of_birth": string|null,        // YYYY-MM-DD
+  "place_of_birth": string|null,       // town/city (and country if shown), from the visual zone, e.g. "London" or "Dublin"
+  "gender": string|null,               // EXACTLY "Male", "Female", or "Other". Read the Sex field (visual zone) or MRZ sex char (M/F/<). M=Male, F=Female, <=Other.
   "checklist": {
     "is_passport_data_page": boolean,  // the photo/MRZ bio page
     "is_passport_cover": boolean,      // the external cover only
@@ -27,7 +29,7 @@ Return ONLY a single JSON object (no prose, no code fences) with EXACTLY these k
     "full_document_visible": boolean   // page fully in frame, not cropped
   }
 }
-Use null for anything you cannot read confidently. Dates MUST be YYYY-MM-DD.`
+Read place_of_birth and gender from the printed visual zone; cross-check gender against the MRZ sex character. Use null for anything you cannot read confidently. Dates MUST be YYYY-MM-DD.`
 
 export async function visaPassportOcrHandler(request: Request): Promise<Response> {
   const json = (body: unknown, status = 200) =>
