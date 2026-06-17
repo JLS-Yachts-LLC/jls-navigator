@@ -158,13 +158,14 @@ export function StepCountryFields({ state, onUpdate, onNext, onBack }: StepCount
   const config: CountryVisaConfig | undefined =
     COUNTRY_CONFIGS[state.countryCode as keyof typeof COUNTRY_CONFIGS]
 
-  // Auto-populate vessel_name from the yacht record as soon as we have a yacht_id.
-  // Only runs once per wizard session — skips if already populated.
-  const fetchedRef = useRef(false)
+  // Auto-populate vessel_name from the yacht record when we have a yacht_id.
+  // Runs once per crew selection. Does NOT overwrite a value the user has typed.
+  const fetchedRef = useRef<string | null>(null)
+  const [vesselAutoFilled, setVesselAutoFilled] = React.useState(false)
   useEffect(() => {
     const yachtId = (state.crew as any)?.yacht_id
-    if (!yachtId || state.countryFields['vessel_name'] || fetchedRef.current) return
-    fetchedRef.current = true
+    if (!yachtId || fetchedRef.current === yachtId) return
+    fetchedRef.current = yachtId
     ;(async () => {
       const db = supabase as any
       const { data } = await db
@@ -174,6 +175,7 @@ export function StepCountryFields({ state, onUpdate, onNext, onBack }: StepCount
         .maybeSingle()
       if (data?.vessel_name) {
         onUpdate({ countryFields: { ...state.countryFields, vessel_name: data.vessel_name } })
+        setVesselAutoFilled(true)
       }
     })()
   }, [(state.crew as any)?.yacht_id])   // eslint-disable-line react-hooks/exhaustive-deps
@@ -298,37 +300,35 @@ export function StepCountryFields({ state, onUpdate, onNext, onBack }: StepCount
               )}
             </label>
 
-            {/* vessel_name: show confirmed-vessel pill when auto-populated */}
-            {field.key === 'vessel_name' && state.countryFields['vessel_name'] ? (
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 10,
-                padding: '9px 12px',
-                background: `${COLORS.signal}0D`,
-                border: `1px solid ${COLORS.signal}40`,
-                borderRadius: 6,
-              }}>
-                <span style={{
-                  fontFamily: FONTS.display, fontSize: 9, fontWeight: 700,
-                  letterSpacing: '0.16em', textTransform: 'uppercase',
-                  color: COLORS.signal, padding: '2px 8px',
-                  background: `${COLORS.signal}18`, borderRadius: 3, flexShrink: 0,
-                }}>
-                  Vessel
-                </span>
-                <span style={{ fontFamily: FONTS.display, fontSize: 14, fontWeight: 700, color: COLORS.frost, flex: 1 }}>
-                  {state.countryFields['vessel_name']}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => handleChange('vessel_name', '')}
-                  title="Edit vessel name"
-                  style={{
-                    fontFamily: FONTS.display, fontSize: 11, color: COLORS.steel,
-                    background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px',
-                  }}
-                >
-                  ✎ Edit
-                </button>
+            {/* vessel_name: always an editable text input; auto-filled badge when populated from DB */}
+            {field.key === 'vessel_name' ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ position: 'relative' }}>
+                  <FieldInput
+                    field={field}
+                    value={state.countryFields[field.key] ?? ''}
+                    onChange={val => { handleChange(field.key, val); setVesselAutoFilled(false) }}
+                  />
+                </div>
+                {vesselAutoFilled && state.countryFields['vessel_name'] && (
+                  <span style={{
+                    fontFamily: FONTS.display, fontSize: 11, color: COLORS.signal,
+                    display: 'flex', alignItems: 'center', gap: 5,
+                  }}>
+                    <span style={{
+                      fontSize: 9, fontWeight: 700, letterSpacing: '0.14em',
+                      textTransform: 'uppercase', color: COLORS.signal,
+                      padding: '1px 6px', background: `${COLORS.signal}18`,
+                      border: `1px solid ${COLORS.signal}30`, borderRadius: 3,
+                    }}>Auto-filled</span>
+                    from vessel record — edit if incorrect
+                  </span>
+                )}
+                {!state.countryFields['vessel_name'] && (
+                  <span style={{ fontFamily: FONTS.display, fontSize: 11, color: COLORS.steel }}>
+                    No vessel linked to this crew member — enter the vessel name manually
+                  </span>
+                )}
               </div>
             ) : (
               <FieldInput
