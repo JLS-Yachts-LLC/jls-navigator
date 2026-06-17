@@ -10,12 +10,16 @@ import {
   Wallet, Receipt, TrendingUp, PiggyBank, FolderOpen, Award, Download,
   MessageSquare, Lightbulb, BotMessageSquare, PenLine, Fuel,
 } from "lucide-react";
+import { Rocket } from "lucide-react";
 import { AdminSidebarSection } from "@/components/admin/AdminSidebarSection";
 import { useState, useMemo } from "react";
 import { PolarisLogo } from "@/components/polaris-logo";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { VesselSwitcher } from "@/components/vessel-switcher";
+import { useFlagMap, type FlagStage } from "@/lib/release-flags";
+import { useDevAccess } from "@/lib/dev-access";
+import { StageBadge } from "@/components/dev/feature-badge";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -27,6 +31,9 @@ type NavItem = {
   icon?: React.ComponentType<{ className?: string }>;
   roles?: Role[];       // undefined = all roles; array = specific roles only
   children?: NavItem[];
+  flagKey?: string;     // feature-flag key controlling visibility + Beta/Dev badge
+  devOnly?: boolean;    // only visible to viewers with dev access
+  badge?: FlagStage;    // transient — set during flag filtering for badge render
 };
 
 // ─── Nav Config ───────────────────────────────────────────────────────────────
@@ -46,8 +53,8 @@ const NAV: NavItem[] = [
     label: "My Vessel",
     icon: Ship,
     children: [
-      { label: "Vessel Overview",       to: "/yachts",               icon: Ship },
-      { label: "Live Tracking",         to: "/my-fleet",             icon: Navigation },
+      { label: "Vessel Overview",       to: "/yachts",               icon: Ship, flagKey: "vessel-overview" },
+      { label: "Live Tracking",         to: "/my-fleet",             icon: Navigation, flagKey: "my-fleet" },
       { label: "Statutory Documents",   to: "/esign",                icon: FileSignature },
       { label: "Maintenance",           to: "/orbit/maintenance",    icon: Wrench },
       { label: "Compliance",            to: "/orbit/defects",        icon: ShieldCheck },
@@ -89,14 +96,15 @@ const NAV: NavItem[] = [
     label: "Services",
     icon: Boxes,
     children: [
-      { label: "Agency Services",     to: "/agency",              icon: Anchor },
-      { label: "ShipSync Logistics",  to: "/packages",            icon: Package },
-      { label: "Waypoint Chandlery",  to: "/waypoint",            icon: ShoppingCart },
-      { label: "Provisioning",        to: "/provisioning",        icon: UtensilsCrossed },
-      { label: "Training Institute",  to: "/training",            icon: GraduationCap },
+      { label: "Agency Services",     to: "/agency",              icon: Anchor, flagKey: "agency" },
+      { label: "ShipSync Logistics",  to: "/packages",            icon: Package, flagKey: "logistics" },
+      { label: "Waypoint Chandlery",  to: "/waypoint",            icon: ShoppingCart, flagKey: "waypoint" },
+      { label: "Provisioning",        to: "/provisioning",        icon: UtensilsCrossed, flagKey: "provisioning" },
+      { label: "Training Institute",  to: "/training",            icon: GraduationCap, flagKey: "training" },
       {
         label: "IT Solutions",
         icon: Cpu,
+        flagKey: "yacht-it",
         children: [
           { label: "Service Desk",         to: "/it-tickets", icon: Headset },
           { label: "IT Yachts",            to: "/it-yachts",  icon: Ship },
@@ -131,7 +139,7 @@ const NAV: NavItem[] = [
       { label: "Vessel Documents",  to: "/esign",                        icon: Ship },
       { label: "Crew Documents",    to: "/crew-immigration/documents",   icon: Users },
       { label: "Signed Agreements", to: "/esign",                        icon: FileSignature },
-      { label: "e-Sign Documents",  to: "/esign",                        icon: PenLine },
+      { label: "e-Sign Documents",  to: "/esign",                        icon: PenLine, flagKey: "esign" },
       { label: "Certificates",      to: "/training/certifications",      icon: Award },
       { label: "Downloads",         to: "/guides",                       icon: Download },
     ],
@@ -149,7 +157,43 @@ const NAV: NavItem[] = [
       { label: "Search Polaris",   to: "/ai-assistant",   icon: Search },
     ],
   },
+
+  // 9 ─── DEV (only visible to viewers with dev access)
+  {
+    label: "Developer",
+    icon: Rocket,
+    devOnly: true,
+    children: [
+      { label: "Dev Settings", to: "/dev-settings", icon: Rocket },
+    ],
+  },
 ];
+
+/**
+ * Filter the nav tree by feature stage + dev access, annotating kept items with a
+ * `badge` (beta/dev). Dev-stage features and devOnly items are hidden unless the
+ * viewer has dev access; beta/live are shown to everyone.
+ */
+function filterByFlags(
+  items: NavItem[],
+  stageOf: (key: string) => FlagStage | undefined,
+  devAccess: boolean,
+): NavItem[] {
+  const out: NavItem[] = [];
+  for (const item of items) {
+    if (item.devOnly && !devAccess) continue;
+    const stage = item.flagKey ? stageOf(item.flagKey) : undefined;
+    if (stage === "dev" && !devAccess) continue;
+    const badge: FlagStage | undefined = stage === "beta" ? "beta" : stage === "dev" ? "dev" : undefined;
+    if (item.children?.length) {
+      const kids = filterByFlags(item.children, stageOf, devAccess);
+      if (kids.length) out.push({ ...item, children: kids, badge });
+    } else {
+      out.push({ ...item, badge });
+    }
+  }
+  return out;
+}
 
 // ─── Role helpers ─────────────────────────────────────────────────────────────
 
@@ -219,6 +263,7 @@ function NavNode({ item, depth = 0 }: { item: NavItem; depth?: number }) {
         >
           {Icon && <Icon className="h-3.5 w-3.5 shrink-0 text-primary/70" />}
           <span className="flex-1 text-left tracking-tight">{item.label}</span>
+          {item.badge && <StageBadge stage={item.badge} />}
           {childActive && !open && <span className="h-1.5 w-1.5 rounded-full bg-primary/70 mr-1" />}
           {open
             ? <ChevronDown className="h-3 w-3 opacity-40 transition-transform" />
@@ -244,6 +289,7 @@ function NavNode({ item, depth = 0 }: { item: NavItem; depth?: number }) {
     >
       {Icon && <Icon className="h-4 w-4 shrink-0 opacity-60 group-data-[active=true]/navlink:opacity-100 group-data-[active=true]/navlink:text-sidebar-primary" />}
       <span className="truncate">{item.label}</span>
+      {item.badge && <StageBadge stage={item.badge} />}
     </Link>
   );
 }
@@ -274,7 +320,12 @@ export function AppSidebar() {
   const [searchQ, setSearchQ] = useState("");
 
   const role = resolveRole(user);
-  const visibleNav = useMemo(() => filterNav(NAV, role), [role]);
+  const { map: flagMap } = useFlagMap();
+  const devAccess = useDevAccess();
+  const visibleNav = useMemo(
+    () => filterByFlags(filterNav(NAV, role), (k) => flagMap.get(k)?.stage, devAccess),
+    [role, flagMap, devAccess],
+  );
 
   const searchResults = useMemo(
     () => (searchQ.trim().length >= 1 ? flatSearch(visibleNav, searchQ.trim()) : []),
