@@ -94,7 +94,16 @@ const NAV: NavItem[] = [
       { label: "Waypoint Chandlery",  to: "/waypoint",            icon: ShoppingCart },
       { label: "Provisioning",        to: "/provisioning",        icon: UtensilsCrossed },
       { label: "Training Institute",  to: "/training",            icon: GraduationCap },
-      { label: "IT Solutions",        to: "/yacht-it",            icon: Cpu },
+      {
+        label: "IT Solutions",
+        icon: Cpu,
+        children: [
+          { label: "Service Desk",         to: "/it-tickets", icon: Headset },
+          { label: "IT Yachts",            to: "/it-yachts",  icon: Ship },
+          { label: "Licensing",            to: "/licensing",  icon: KeyRound },
+          { label: "Contracts & Services", to: "/yacht-it",   icon: FileText },
+        ],
+      },
       { label: "Agency Network",      to: "/agency",              icon: Globe },
     ],
   },
