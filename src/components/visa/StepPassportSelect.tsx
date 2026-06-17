@@ -30,6 +30,8 @@ interface StepPassportSelectProps {
   onBack: () => void
 }
 
+const ACCEPTED_TYPES = '.pdf,.jpg,.jpeg,.png'
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function getExpiryColor(expiryDate: string): string {
@@ -65,6 +67,311 @@ function getExpiryLabel(expiryDate: string): string {
   return 'Valid'
 }
 
+// Years remaining (rounded) — used for the "Expires in N years" summary box.
+function yearsUntil(expiryDate: string): number {
+  const expiry = new Date(expiryDate)
+  const now = new Date()
+  const ms = expiry.getTime() - now.getTime()
+  return Math.max(0, Math.round(ms / (365.25 * 24 * 60 * 60 * 1000)))
+}
+
+// ─── Presentational sub-components (adapted from PassportDetails) ──────────────
+
+// Document Status row.
+function StatusRow({ label, status, note }: {
+  label: string
+  status: 'uploaded' | 'missing' | 'not_uploaded' | boolean
+  note?: string
+}) {
+  const isOk      = status === 'uploaded' || status === true
+  const isWarn    = status === 'missing'
+  const iconColor = isOk ? '#22c55e' : isWarn ? COLORS.warn : COLORS.steel
+  const noteColor = isOk ? COLORS.muted   : isWarn ? COLORS.warn  : COLORS.steel
+  const icon      = isOk ? '✓' : isWarn ? '!' : '○'
+
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  padding: '6px 0', borderBottom: `1px solid ${COLORS.deep}` }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{
+          width: 18, height: 18, borderRadius: '50%',
+          background: `${iconColor}18`, border: `1px solid ${iconColor}44`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 10, fontWeight: 700, color: iconColor, flexShrink: 0,
+        }} aria-hidden="true">{icon}</span>
+        <span style={{ fontFamily: FONTS.display, fontSize: 12, color: COLORS.frost }}>{label}</span>
+      </div>
+      {note && (
+        <span style={{ fontFamily: FONTS.display, fontSize: 11, color: noteColor }}>{note}</span>
+      )}
+    </div>
+  )
+}
+
+// Large drag-and-drop dropzone for the passport inside pages.
+function UploadZone({ onFile, fileName, fileKB, scanning, onRemove }: {
+  onFile: (f: File) => void
+  fileName: string | null
+  fileKB: number | null
+  scanning: boolean
+  onRemove: () => void
+}) {
+  const inputRef = React.useRef<HTMLInputElement>(null)
+  const [dragging, setDragging] = useState(false)
+
+  const handleDrop = React.useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setDragging(false)
+    const f = e.dataTransfer.files[0]
+    if (f) onFile(f)
+  }, [onFile])
+
+  if (fileName) {
+    return (
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px',
+        background: `#22c55e12`, border: `1px solid #22c55e40`, borderRadius: 8,
+      }}>
+        <span style={{
+          fontFamily: FONTS.display, fontSize: 10, fontWeight: 700,
+          letterSpacing: '0.12em', textTransform: 'uppercase',
+          color: '#22c55e', padding: '2px 8px',
+          background: `#22c55e20`, borderRadius: 3,
+        }}>{scanning ? 'Scanning…' : 'Uploaded'}</span>
+        <span style={{ fontFamily: FONTS.display, fontSize: 13, color: COLORS.frost, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {fileName}
+        </span>
+        {fileKB != null && (
+          <span style={{ fontFamily: FONTS.display, fontSize: 11, color: COLORS.muted }}>
+            {fileKB} KB
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label="Remove uploaded file"
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: COLORS.muted, fontSize: 18, lineHeight: 1, padding: '0 4px' }}
+        >×</button>
+      </div>
+    )
+  }
+
+  return (
+    <div
+      onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={handleDrop}
+      onClick={() => inputRef.current?.click()}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => e.key === 'Enter' && inputRef.current?.click()}
+      aria-label="Upload passport inside pages — drag and drop or browse"
+      style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        gap: 8, padding: '32px 24px',
+        border: `2px dashed ${dragging ? COLORS.signal : COLORS.deep}`,
+        borderRadius: 10, cursor: 'pointer',
+        background: dragging ? `${COLORS.signal}08` : COLORS.void,
+        transition: 'border-color 0.15s, background 0.15s', textAlign: 'center',
+      }}
+    >
+      <input
+        ref={inputRef}
+        type="file"
+        accept={ACCEPTED_TYPES}
+        style={{ display: 'none' }}
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f) }}
+      />
+      <div style={{ fontSize: 28, color: COLORS.signal }} aria-hidden="true">↑</div>
+      <div style={{ fontFamily: FONTS.display, fontSize: 13, fontWeight: 600, color: COLORS.signal }}>
+        Drag &amp; drop passport inside pages here
+      </div>
+      <div style={{ fontFamily: FONTS.display, fontSize: 12, color: COLORS.muted }}>
+        PDF, JPG or PNG — scanned to auto-fill the details
+      </div>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); inputRef.current?.click() }}
+        style={{
+          marginTop: 4, padding: '7px 18px',
+          fontFamily: FONTS.display, fontSize: 12, fontWeight: 600,
+          color: COLORS.signal, background: 'none',
+          border: `1px solid ${COLORS.signal}60`, borderRadius: 6, cursor: 'pointer',
+        }}
+      >
+        Browse Files
+      </button>
+    </div>
+  )
+}
+
+// Smaller upload tile for cover / seaman's book / headshot.
+function SmallUploadCard({ number, label, optional, icon, fileName, fileKB, scanning, onFile, onRemove, disabled, footer }: {
+  number: number
+  label: string
+  optional?: boolean
+  icon: string
+  fileName: string | null
+  fileKB: number | null
+  scanning?: boolean
+  onFile: (f: File) => void
+  onRemove: () => void
+  disabled?: boolean
+  accept?: string
+  footer?: React.ReactNode
+}) {
+  const inputRef = React.useRef<HTMLInputElement>(null)
+
+  return (
+    <div style={{
+      flex: 1, padding: '12px 14px',
+      background: COLORS.abyss, border: `1px solid ${COLORS.deep}`,
+      borderRadius: 8, opacity: disabled ? 0.55 : 1,
+      display: 'flex', flexDirection: 'column', gap: 8,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <span style={{ fontFamily: FONTS.display, fontSize: 12, fontWeight: 700, color: COLORS.muted }}>
+          {number}.
+        </span>
+        <span style={{ fontFamily: FONTS.display, fontSize: 12, fontWeight: 600, color: COLORS.frost, flex: 1 }}>
+          {label}
+        </span>
+        {optional && (
+          <span style={{ fontFamily: FONTS.display, fontSize: 10, color: COLORS.steel, fontStyle: 'italic' }}>Optional</span>
+        )}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 20 }} aria-hidden="true">{icon}</span>
+        {fileName ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
+            <span style={{ fontFamily: FONTS.display, fontSize: 11, color: COLORS.frost, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {scanning ? 'Scanning…' : `${fileName}${fileKB != null ? ` · ${fileKB} KB` : ''}`}
+            </span>
+            <button
+              type="button"
+              onClick={onRemove}
+              aria-label="Remove"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: COLORS.muted, fontSize: 16, padding: 0, lineHeight: 1 }}
+            >×</button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => inputRef.current?.click()}
+            style={{
+              fontFamily: FONTS.display, fontSize: 11, fontWeight: 600,
+              color: disabled ? COLORS.steel : COLORS.signal, background: 'none',
+              border: `1px solid ${disabled ? COLORS.deep : COLORS.signal + '50'}`, borderRadius: 5,
+              padding: '4px 12px', cursor: disabled ? 'not-allowed' : 'pointer',
+            }}
+          >
+            {disabled ? 'Not applicable' : 'Upload ↑'}
+          </button>
+        )}
+      </div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept={ACCEPTED_TYPES}
+        style={{ display: 'none' }}
+        disabled={disabled}
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f) }}
+      />
+      {footer}
+    </div>
+  )
+}
+
+// Extracted-information field card.
+function FieldCard({ label, note, noteColor, children }: {
+  label: string
+  note?: string
+  noteColor?: string
+  children: React.ReactNode
+}) {
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column', gap: 6, padding: '12px 14px',
+      background: COLORS.void, border: `1px solid ${COLORS.deep}`, borderRadius: 8,
+    }}>
+      <span style={{ fontFamily: FONTS.display, fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', color: COLORS.muted }}>
+        {label}
+      </span>
+      <div style={{ fontFamily: FONTS.display, fontSize: 14, fontWeight: 600, color: COLORS.frost }}>
+        {children}
+      </div>
+      {note && (
+        <span style={{ fontFamily: FONTS.display, fontSize: 11, color: noteColor ?? '#22c55e', display: 'flex', alignItems: 'center', gap: 4 }}>
+          ✓ {note}
+        </span>
+      )}
+    </div>
+  )
+}
+
+// Document Status panel — shared between the add-form and existing-passport cards.
+function DocumentStatusPanel({ status, expiryDate }: {
+  status: {
+    insidePages: 'uploaded' | 'missing' | 'not_uploaded'
+    ocrCompleted: boolean
+    minimumValidity: boolean
+    headshot: 'uploaded' | 'missing' | 'not_uploaded'
+    cover: 'uploaded' | 'missing' | 'not_uploaded'
+    seamansBook: 'uploaded' | 'missing' | 'not_uploaded'
+  }
+  expiryDate?: string
+}) {
+  const hasExpiry = !!expiryDate
+  const valid = hasExpiry && getExpiryLabel(expiryDate!) === 'Valid'
+  const years = hasExpiry ? yearsUntil(expiryDate!) : 0
+
+  return (
+    <aside style={{
+      width: 280, flexShrink: 0,
+      background: COLORS.abyss, border: `1px solid ${COLORS.deep}`,
+      borderRadius: 10, padding: '18px 20px', alignSelf: 'flex-start',
+    }} aria-label="Document status">
+      <h2 style={{ fontFamily: FONTS.display, fontSize: 13, fontWeight: 700, color: COLORS.frost, marginBottom: 14 }}>
+        Document Status
+      </h2>
+
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        <StatusRow label="Passport inside pages" status={status.insidePages}
+          note={status.insidePages === 'uploaded' ? 'Uploaded' : status.insidePages === 'missing' ? 'Missing' : 'Not uploaded'} />
+        <StatusRow label="OCR extraction completed" status={status.ocrCompleted} />
+        <StatusRow label="Minimum 6 months validity" status={status.minimumValidity} />
+        <StatusRow label="Headshot photo" status={status.headshot}
+          note={status.headshot === 'uploaded' ? 'Uploaded' : status.headshot === 'missing' ? 'Missing' : 'Not uploaded'} />
+        <StatusRow label="Passport cover" status={status.cover}
+          note={status.cover === 'uploaded' ? 'Uploaded' : 'Not uploaded'} />
+        <StatusRow label="Seaman's book" status={status.seamansBook}
+          note={status.seamansBook === 'uploaded' ? 'Uploaded' : 'Not uploaded'} />
+      </div>
+
+      {hasExpiry && (
+        <div style={{
+          marginTop: 16, padding: '12px 14px',
+          background: valid ? `#22c55e10` : `${COLORS.warn}12`,
+          border: `1px solid ${valid ? '#22c55e30' : COLORS.warn + '40'}`,
+          borderRadius: 8, display: 'flex', gap: 10, alignItems: 'flex-start',
+        }}>
+          <span style={{ fontSize: 20, flexShrink: 0 }} aria-hidden="true">🛡</span>
+          <div>
+            <div style={{ fontFamily: FONTS.display, fontSize: 12, fontWeight: 700, color: valid ? '#22c55e' : COLORS.warn, marginBottom: 3 }}>
+              {valid ? 'Passport is valid' : getExpiryLabel(expiryDate!)}
+            </div>
+            <div style={{ fontFamily: FONTS.display, fontSize: 11, color: COLORS.muted, lineHeight: 1.5 }}>
+              {valid ? `Expires in ${years} ${years === 1 ? 'year' : 'years'}` : 'Check validity before continuing'}<br />
+              Expires {formatDate(expiryDate!)}
+            </div>
+          </div>
+        </div>
+      )}
+    </aside>
+  )
+}
+
 // ─── Add Passport Form ────────────────────────────────────────────────────────
 
 interface AddPassportFormProps {
@@ -80,14 +387,20 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel }: AddPassportF
   const [issueDate, setIssueDate] = useState('')
   const [expiryDate, setExpiryDate] = useState('')
   const [issuingCountry, setIssuingCountry] = useState('')
+  const [dateOfBirth, setDateOfBirth] = useState('')
+  const [placeOfBirth, setPlaceOfBirth] = useState('')
+  const [gender, setGender] = useState('')
   type SlotKey = 'cover' | 'data' | 'seamans' | 'headshot'
   const [files, setFiles] = useState<Record<SlotKey, File | null>>({ cover: null, data: null, seamans: null, headshot: null })
+  const [fileNames, setFileNames] = useState<Record<SlotKey, string | null>>({ cover: null, data: null, seamans: null, headshot: null })
   const [sizes, setSizes] = useState<Record<SlotKey, number | null>>({ cover: null, data: null, seamans: null, headshot: null })
+  const [dataPreview, setDataPreview] = useState<string | null>(null)
   const [noSeamans, setNoSeamans] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [scanning, setScanning] = useState<SlotKey | null>(null)
   const [scanNote, setScanNote] = useState<string | null>(null)
+  const [extracted, setExtracted] = useState(false)
   // Auto checklist flags from OCR (null = unknown until scanned)
   const [auto, setAuto] = useState<{ colour: boolean | null; noGlare: boolean | null }>({ colour: null, noGlare: null })
   const [doubleChecked, setDoubleChecked] = useState(false)
@@ -96,11 +409,19 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel }: AddPassportF
   // Compress every attachment to < 1000 KB; the passport data-page slot also
   // runs OCR to self-populate the fields below.
   async function handleSlot(key: SlotKey, file: File | null) {
-    if (!file) { setFiles(f => ({ ...f, [key]: null })); setSizes(s => ({ ...s, [key]: null })); return }
+    if (!file) {
+      setFiles(f => ({ ...f, [key]: null })); setSizes(s => ({ ...s, [key]: null })); setFileNames(n => ({ ...n, [key]: null }))
+      if (key === 'data') { setDataPreview(null); setExtracted(false) }
+      return
+    }
     try {
       const c = await compressImageToMaxKB(file, 1000)
       setFiles(f => ({ ...f, [key]: c.file }))
       setSizes(s => ({ ...s, [key]: c.sizeKB }))
+      setFileNames(n => ({ ...n, [key]: c.file.name }))
+      if (key === 'data' && c.isImage) {
+        try { setDataPreview(URL.createObjectURL(c.file)) } catch { /* ignore */ }
+      }
       if (key !== 'data') return
       setScanning('data'); setScanNote(c.isImage ? null : 'Reading PDF…')
       const res = await fetch('/api/visa/passport-ocr', {
@@ -115,11 +436,15 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel }: AddPassportF
       if (d.issue_date && !issueDate) setIssueDate(d.issue_date)
       if (d.expiry_date && !expiryDate) setExpiryDate(d.expiry_date)
       if (d.issuing_country && !issuingCountry) setIssuingCountry(d.issuing_country)
+      if (d.date_of_birth && !dateOfBirth) setDateOfBirth(d.date_of_birth)
+      if (d.place_of_birth && !placeOfBirth) setPlaceOfBirth(d.place_of_birth)
+      if (d.gender && !gender) setGender(d.gender)
       const cl = d.checklist ?? {}
       setAuto({
         colour:  typeof cl.is_colour === 'boolean' ? cl.is_colour : null,
         noGlare: typeof cl.has_glare_or_reflections === 'boolean' ? !cl.has_glare_or_reflections : null,
       })
+      setExtracted(true)
       setScanNote('Scanned — details auto-filled below. Please double-check them.')
     } catch (e: any) {
       setScanNote('Scan failed: ' + (e?.message ?? 'error'))
@@ -162,36 +487,20 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel }: AddPassportF
   ]
   const allChecked = CHECK_ITEMS.every(i => isChecked(i.key))
 
-  // The four upload slots, rendered at the top of the form.
-  const SLOTS: { key: SlotKey; label: string; hint: string; accept: string }[] = [
-    { key: 'cover',    label: '1. Passport external cover',   hint: 'Front cover of the passport',                accept: '.pdf,.jpg,.jpeg,.png' },
-    { key: 'data',     label: '2. Passport inside (2 pages)', hint: 'Photo / data pages — used to auto-fill',     accept: '.pdf,.jpg,.jpeg,.png' },
-    { key: 'seamans',  label: "3. Seaman's book (optional)",  hint: 'Tick below if the crew has none',            accept: '.pdf,.jpg,.jpeg,.png' },
-    { key: 'headshot', label: '4. Headshot photo',            hint: 'Clear passport-style headshot',              accept: '.jpg,.jpeg,.png' },
-  ]
-
-  const fieldStyle: React.CSSProperties = {
-    background: COLORS.deep,
-    border: `1px solid ${COLORS.ocean}`,
-    borderRadius: 8,
-    color: COLORS.frost,
-    fontFamily: FONTS.display,
-    fontSize: 14,
-    padding: '8px 12px',
-    width: '100%',
-    outline: 'none',
-    boxSizing: 'border-box',
+  // Document Status reflecting what's uploaded / scanned / validated.
+  const docStatus = {
+    insidePages: (files.data ? 'uploaded' : 'not_uploaded') as 'uploaded' | 'missing' | 'not_uploaded',
+    ocrCompleted: extracted,
+    minimumValidity: sixMoOk === true,
+    headshot: (files.headshot ? 'uploaded' : 'missing') as 'uploaded' | 'missing' | 'not_uploaded',
+    cover: (files.cover ? 'uploaded' : 'not_uploaded') as 'uploaded' | 'missing' | 'not_uploaded',
+    seamansBook: ((noSeamans || files.seamans) ? 'uploaded' : 'not_uploaded') as 'uploaded' | 'missing' | 'not_uploaded',
   }
 
-  const labelStyle: React.CSSProperties = {
-    fontFamily: FONTS.display,
-    fontSize: 12,
-    color: COLORS.muted,
-    marginBottom: 4,
-    display: 'block',
-    fontWeight: 500,
-    letterSpacing: '0.04em',
-    textTransform: 'uppercase',
+  const editInputStyle: React.CSSProperties = {
+    fontFamily: FONTS.display, fontSize: 13, fontWeight: 600, color: COLORS.frost,
+    background: COLORS.abyss, border: `1px solid ${COLORS.signal}60`,
+    borderRadius: 5, padding: '4px 8px', width: '100%', outline: 'none', boxSizing: 'border-box',
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -256,128 +565,151 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel }: AddPassportF
   }
 
   return (
-    <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div
-        style={{
-          background: COLORS.abyss,
-          border: `1px solid ${COLORS.ocean}`,
-          borderRadius: 12,
-          padding: 20,
-        }}
-      >
-        <div
-          style={{
-            fontFamily: FONTS.display,
-            fontSize: 15,
-            fontWeight: 600,
-            color: COLORS.frost,
-            marginBottom: 16,
-          }}
-        >
-          Add Passport
-        </div>
+    <form onSubmit={handleSubmit}>
+      <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
 
-        {/* ── Attachments first ── */}
-        <div style={{
-          background: `${COLORS.signal}14`, border: `1px solid ${COLORS.signal}33`,
-          borderRadius: 8, padding: '10px 14px', marginBottom: 14,
-        }}>
-          <div style={{ fontFamily: FONTS.display, fontSize: 13, fontWeight: 600, color: COLORS.signal, marginBottom: 2 }}>
-            Self-Populate — upload the passport first
-          </div>
-          <div style={{ fontFamily: FONTS.display, fontSize: 12, color: COLORS.muted, lineHeight: 1.45 }}>
-            Tip: upload the <strong>passport inside pages</strong> (PDF or photo) first — we scan it and automatically fill in
-            the nationality, number, dates and issuing country below. Always double-check the result.
-          </div>
-        </div>
+        {/* ── Left column: uploads + preview + extracted info ── */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 20, minWidth: 0 }}>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
-          {SLOTS.map(slot => {
-            const disabled = slot.key === 'seamans' && noSeamans
-            const f = files[slot.key]
-            const kb = sizes[slot.key]
-            const isScanning = scanning === slot.key
-            return (
-              <div key={slot.key}>
-                <label style={labelStyle}>{slot.label}</label>
-                <div
-                  style={{
-                    background: COLORS.deep,
-                    border: `1px dashed ${f ? COLORS.signal : COLORS.ocean}`,
-                    borderRadius: 8, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10,
-                    cursor: disabled ? 'not-allowed' : isScanning ? 'wait' : 'pointer',
-                    opacity: disabled ? 0.5 : isScanning ? 0.7 : 1,
-                  }}
-                  onClick={() => !disabled && !isScanning && document.getElementById(`slot-${slot.key}`)?.click()}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={f ? COLORS.signal : COLORS.muted} strokeWidth="2">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
-                  </svg>
-                  <span style={{ fontFamily: FONTS.display, fontSize: 12.5, color: f ? COLORS.frost : COLORS.muted, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {isScanning ? 'Scanning…' : f ? `${f.name}${kb != null ? ` · ${kb} KB` : ''}` : (disabled ? 'Not applicable' : 'Upload')}
-                  </span>
-                  <input
-                    id={`slot-${slot.key}`} type="file" accept={slot.accept} style={{ display: 'none' }} disabled={disabled}
-                    onChange={e => handleSlot(slot.key, e.target.files?.[0] ?? null)}
-                  />
-                </div>
-                <div style={{ fontFamily: FONTS.display, fontSize: 10.5, color: COLORS.steel, margin: '3px 2px 0' }}>{slot.hint}</div>
-                {slot.key === 'seamans' && (
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, cursor: 'pointer', fontFamily: FONTS.display, fontSize: 12, color: COLORS.muted }}>
+          {/* Section 1: Passport Inside Pages + secondary uploads */}
+          <section style={{ background: COLORS.abyss, border: `1px solid ${COLORS.deep}`, borderRadius: 10, padding: '22px 24px' }}>
+            <h2 style={{ fontFamily: FONTS.display, fontSize: 15, fontWeight: 700, color: COLORS.frost, marginBottom: 6 }}>
+              Passport Inside Pages
+            </h2>
+            <p style={{ fontFamily: FONTS.display, fontSize: 12, color: COLORS.muted, margin: '0 0 14px', lineHeight: 1.45 }}>
+              Upload the <strong>inside pages</strong> (PDF or photo) — we scan them and auto-fill the details below.
+              Always double-check the result.
+            </p>
+
+            <UploadZone
+              onFile={(f) => handleSlot('data', f)}
+              fileName={fileNames.data}
+              fileKB={sizes.data}
+              scanning={scanning === 'data'}
+              onRemove={() => handleSlot('data', null)}
+            />
+
+            {scanning === 'data' && (
+              <p role="status" aria-live="polite" style={{
+                fontFamily: FONTS.display, fontSize: 12, color: COLORS.signal, margin: '10px 0 0',
+              }}>
+                Scanning passport — extracting details…
+              </p>
+            )}
+            {scanNote && scanning !== 'data' && (
+              <p style={{ fontFamily: FONTS.display, fontSize: 12, color: COLORS.muted, margin: '10px 0 0' }}>{scanNote}</p>
+            )}
+
+            {/* Secondary uploads */}
+            <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+              <SmallUploadCard number={1} label="Passport Cover" optional icon="📄"
+                fileName={fileNames.cover} fileKB={sizes.cover}
+                onFile={(f) => handleSlot('cover', f)} onRemove={() => handleSlot('cover', null)} />
+              <SmallUploadCard number={2} label="Seaman's Book" optional icon="📋"
+                fileName={fileNames.seamans} fileKB={sizes.seamans} disabled={noSeamans}
+                onFile={(f) => handleSlot('seamans', f)} onRemove={() => handleSlot('seamans', null)}
+                footer={
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontFamily: FONTS.display, fontSize: 11, color: COLORS.muted }}>
                     <input type="checkbox" checked={noSeamans} onChange={e => { setNoSeamans(e.target.checked); if (e.target.checked) handleSlot('seamans', null) }} />
                     No Seaman's book
                   </label>
-                )}
-              </div>
-            )
-          })}
-        </div>
-        {scanNote && (
-          <p style={{ fontFamily: FONTS.display, fontSize: 12, color: COLORS.muted, margin: '-6px 2px 14px' }}>{scanNote}</p>
-        )}
+                } />
+              <SmallUploadCard number={3} label="Headshot Photo" icon="👤"
+                fileName={fileNames.headshot} fileKB={sizes.headshot}
+                onFile={(f) => handleSlot('headshot', f)} onRemove={() => handleSlot('headshot', null)} />
+            </div>
+          </section>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-          <div>
-            <label style={labelStyle}>Nationality</label>
-            <input
-              style={fieldStyle}
-              value={nationality}
-              onChange={e => setNationality(e.target.value)}
-              placeholder="e.g. British"
-              required
-            />
-          </div>
-          <div>
-            <label style={labelStyle}>Passport Number</label>
-            <input
-              style={{ ...fieldStyle, fontFamily: 'Courier New, monospace', letterSpacing: '0.08em' }}
-              value={passportNumber}
-              onChange={e => setPassportNumber(e.target.value)}
-              placeholder="e.g. 123456789"
-              required
-            />
-          </div>
-          <div>
-            <label style={labelStyle}>Issue Date</label>
-            <DateInputDMY style={fieldStyle} value={issueDate} onChange={setIssueDate} />
-          </div>
-          <div>
-            <label style={labelStyle}>Expiry Date</label>
-            <DateInputDMY style={fieldStyle} value={expiryDate} onChange={setExpiryDate} />
-          </div>
-          <div style={{ gridColumn: '1 / -1' }}>
-            <label style={labelStyle}>Issuing Country</label>
-            <input
-              style={fieldStyle}
-              value={issuingCountry}
-              onChange={e => setIssuingCountry(e.target.value)}
-              placeholder="e.g. United Kingdom"
-              required
-            />
-          </div>
+          {/* Section 2: Passport Preview + Extracted Information */}
+          <section style={{ background: COLORS.abyss, border: `1px solid ${COLORS.deep}`, borderRadius: 10, padding: '22px 24px' }}>
+            <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
+
+              {/* Passport Preview */}
+              <div style={{ width: 200, flexShrink: 0 }}>
+                <span style={{ display: 'block', fontFamily: FONTS.display, fontSize: 11, fontWeight: 600, color: COLORS.muted, marginBottom: 10 }}>
+                  Passport Preview
+                </span>
+                <div style={{ background: COLORS.void, border: `1px solid ${COLORS.deep}`, borderRadius: 8, overflow: 'hidden' }}>
+                  {dataPreview ? (
+                    <img src={dataPreview} alt="Uploaded passport — data page" style={{ width: '100%', display: 'block' }} />
+                  ) : (
+                    <div style={{ padding: '32px 16px', textAlign: 'center', fontFamily: FONTS.display, fontSize: 12, color: COLORS.steel }}>
+                      {files.data ? 'Preview not available for PDF' : 'No preview yet'}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Extracted Information grid */}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                  <span style={{ fontFamily: FONTS.display, fontSize: 15, fontWeight: 700, color: COLORS.frost }}>
+                    Extracted Information
+                  </span>
+                  {extracted && (
+                    <span style={{
+                      fontFamily: FONTS.display, fontSize: 9, fontWeight: 700, letterSpacing: '0.14em',
+                      textTransform: 'uppercase', color: COLORS.leoAmber, padding: '3px 9px',
+                      background: `${COLORS.leoAmber}18`, border: `1px solid ${COLORS.leoAmber}30`, borderRadius: 4,
+                    }}>
+                      Auto-filled
+                    </span>
+                  )}
+                </div>
+
+                {/* Row 1 */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 10 }}>
+                  <FieldCard label="Nationality">
+                    <input style={editInputStyle} value={nationality} onChange={e => setNationality(e.target.value)} placeholder="e.g. British" required />
+                  </FieldCard>
+                  <FieldCard label="Passport Number">
+                    <input style={{ ...editInputStyle, fontFamily: 'Courier New, monospace', letterSpacing: '0.08em' }}
+                      value={passportNumber} onChange={e => setPassportNumber(e.target.value)} placeholder="e.g. 123456789" required />
+                  </FieldCard>
+                  <FieldCard label="Date of Birth">
+                    <DateInputDMY style={editInputStyle} value={dateOfBirth} onChange={setDateOfBirth} />
+                  </FieldCard>
+                </div>
+
+                {/* Row 2 */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 10 }}>
+                  <FieldCard label="Issue Date">
+                    <DateInputDMY style={editInputStyle} value={issueDate} onChange={setIssueDate} />
+                  </FieldCard>
+                  <FieldCard label="Expiry Date"
+                    note={expiryDate ? getExpiryLabel(expiryDate) : undefined}
+                    noteColor={expiryDate ? getExpiryColor(expiryDate) : undefined}>
+                    <DateInputDMY style={editInputStyle} value={expiryDate} onChange={setExpiryDate} />
+                  </FieldCard>
+                  <FieldCard label="Issuing Country">
+                    <input style={editInputStyle} value={issuingCountry} onChange={e => setIssuingCountry(e.target.value)} placeholder="e.g. United Kingdom" required />
+                  </FieldCard>
+                </div>
+
+                {/* Row 3 */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10 }}>
+                  <FieldCard label="Place of Birth">
+                    <input style={editInputStyle} value={placeOfBirth} onChange={e => setPlaceOfBirth(e.target.value)} placeholder="e.g. London" />
+                  </FieldCard>
+                  <FieldCard label="Gender">
+                    <select value={gender} onChange={e => setGender(e.target.value)} style={{ ...editInputStyle, cursor: 'pointer' }}>
+                      <option value="">—</option>
+                      <option>Male</option>
+                      <option>Female</option>
+                      <option>Other</option>
+                    </select>
+                  </FieldCard>
+                  <div />
+                </div>
+              </div>
+            </div>
+          </section>
+
           {/* Passport checklist — tick all to enable Save */}
-          <div style={{ gridColumn: '1 / -1' }}>
-            <label style={labelStyle}>Passport Checklist — confirm all to save</label>
+          <section style={{ background: COLORS.abyss, border: `1px solid ${COLORS.deep}`, borderRadius: 10, padding: '20px 24px' }}>
+            <h2 style={{ fontFamily: FONTS.display, fontSize: 14, fontWeight: 700, color: COLORS.frost, marginBottom: 12 }}>
+              Passport Checklist — confirm all to save
+            </h2>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 18px' }}>
               {CHECK_ITEMS.map(item => {
                 const on = isChecked(item.key)
@@ -396,7 +728,7 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel }: AddPassportF
                       alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800,
                       color: on ? '#0B0F14' : 'transparent',
                       background: on ? '#FFFFFF' : 'transparent',
-                      border: on ? '2px solid #FFFFFF' : '2px solid #FFFFFF',
+                      border: '2px solid #FFFFFF',
                       boxShadow: on ? 'none' : 'inset 0 0 0 2px rgba(0,0,0,0.25)',
                     }}>✓</span>
                     <span style={{ fontFamily: FONTS.display, fontSize: 12.5, color: on ? COLORS.frost : '#FFFFFF', flex: 1 }}>
@@ -412,85 +744,68 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel }: AddPassportF
                 Tick every item above to enable Save.
               </p>
             )}
-          </div>
+
+            {error && (
+              <div style={{
+                marginTop: 12, background: `${COLORS.warn}22`, border: `1px solid ${COLORS.warn}`,
+                borderRadius: 8, padding: '8px 12px', color: COLORS.warn, fontFamily: FONTS.display, fontSize: 13,
+              }}>
+                {error}
+              </div>
+            )}
+
+            {/* Self-attestation */}
+            <label style={{
+              display: 'flex', alignItems: 'flex-start', gap: 9, marginTop: 16, cursor: 'pointer',
+              fontFamily: FONTS.display, fontSize: 13, color: COLORS.frost,
+            }}>
+              <input
+                type="checkbox"
+                checked={doubleChecked}
+                onChange={e => setDoubleChecked(e.target.checked)}
+                style={{ marginTop: 2, width: 16, height: 16, flexShrink: 0, accentColor: COLORS.signal }}
+              />
+              <span>I confirm I have <strong>double-checked</strong> that all details and attachments above are correct and match the passport.</span>
+            </label>
+
+            <div style={{ marginTop: 16, display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              {showCancel && onCancel && (
+                <button
+                  type="button"
+                  onClick={onCancel}
+                  style={{
+                    background: 'transparent', border: `1px solid ${COLORS.steel}`, borderRadius: 8,
+                    color: COLORS.muted, fontFamily: FONTS.display, fontSize: 14, padding: '8px 18px', cursor: 'pointer',
+                  }}
+                >
+                  Cancel
+                </button>
+              )}
+              <button
+                type="submit"
+                disabled={uploading || !doubleChecked || !allChecked}
+                title={!allChecked ? 'Tick every checklist item first' : !doubleChecked ? 'Confirm you have double-checked the information first' : undefined}
+                style={{
+                  background: COLORS.signal, border: 'none', borderRadius: 8, color: COLORS.void,
+                  fontFamily: FONTS.display, fontSize: 14, fontWeight: 600, padding: '8px 20px',
+                  cursor: (uploading || !doubleChecked || !allChecked) ? 'not-allowed' : 'pointer',
+                  opacity: (uploading || !doubleChecked || !allChecked) ? 0.6 : 1,
+                }}
+              >
+                {uploading ? 'Saving…' : 'Save Passport'}
+              </button>
+            </div>
+          </section>
         </div>
 
-        {error && (
-          <div
-            style={{
-              marginTop: 12,
-              background: `${COLORS.warn}22`,
-              border: `1px solid ${COLORS.warn}`,
-              borderRadius: 8,
-              padding: '8px 12px',
-              color: COLORS.warn,
-              fontFamily: FONTS.display,
-              fontSize: 13,
-            }}
-          >
-            {error}
-          </div>
-        )}
-
-        {/* Self-attestation */}
-        <label style={{
-          display: 'flex', alignItems: 'flex-start', gap: 9, marginTop: 16, cursor: 'pointer',
-          fontFamily: FONTS.display, fontSize: 13, color: COLORS.frost,
-        }}>
-          <input
-            type="checkbox"
-            checked={doubleChecked}
-            onChange={e => setDoubleChecked(e.target.checked)}
-            style={{ marginTop: 2, width: 16, height: 16, flexShrink: 0, accentColor: COLORS.signal }}
-          />
-          <span>I confirm I have <strong>double-checked</strong> that all details and attachments above are correct and match the passport.</span>
-        </label>
-
-        <div style={{ marginTop: 16, display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-          {showCancel && onCancel && (
-            <button
-              type="button"
-              onClick={onCancel}
-              style={{
-                background: 'transparent',
-                border: `1px solid ${COLORS.steel}`,
-                borderRadius: 8,
-                color: COLORS.muted,
-                fontFamily: FONTS.display,
-                fontSize: 14,
-                padding: '8px 18px',
-                cursor: 'pointer',
-              }}
-            >
-              Cancel
-            </button>
-          )}
-          <button
-            type="submit"
-            disabled={uploading || !doubleChecked || !allChecked}
-            title={!allChecked ? 'Tick every checklist item first' : !doubleChecked ? 'Confirm you have double-checked the information first' : undefined}
-            style={{
-              background: COLORS.signal,
-              border: 'none',
-              borderRadius: 8,
-              color: COLORS.void,
-              fontFamily: FONTS.display,
-              fontSize: 14,
-              fontWeight: 600,
-              padding: '8px 20px',
-              cursor: (uploading || !doubleChecked || !allChecked) ? 'not-allowed' : 'pointer',
-              opacity: (uploading || !doubleChecked || !allChecked) ? 0.6 : 1,
-            }}
-          >
-            {uploading ? 'Saving…' : 'Save Passport'}
-          </button>
-        </div>
+        {/* ── Right column: Document Status ── */}
+        <DocumentStatusPanel status={docStatus} expiryDate={expiryDate || undefined} />
       </div>
     </form>
   )
 }
 
-// ─── Passport Card ────────────────────────────────────────────────────────────
+// ─── Existing Passport Card (rich style) ───────────────────────────────────────
 
 interface PassportCardProps {
   passport: CrewPassport
@@ -502,157 +817,109 @@ function PassportCard({ passport, selected, onSelect }: PassportCardProps) {
   const expiryColor = getExpiryColor(passport.expiry_date)
   const expiryLabel = getExpiryLabel(passport.expiry_date)
 
+  const docStatus = {
+    insidePages: (passport.document_url ? 'uploaded' : 'not_uploaded') as 'uploaded' | 'missing' | 'not_uploaded',
+    ocrCompleted: !!passport.document_url,
+    minimumValidity: expiryLabel === 'Valid' || expiryLabel === 'Expires < 12 months',
+    headshot: (passport.headshot_url ? 'uploaded' : 'missing') as 'uploaded' | 'missing' | 'not_uploaded',
+    cover: (passport.cover_url ? 'uploaded' : 'not_uploaded') as 'uploaded' | 'missing' | 'not_uploaded',
+    seamansBook: ((passport.no_seamans_book || passport.seamans_book_url) ? 'uploaded' : 'not_uploaded') as 'uploaded' | 'missing' | 'not_uploaded',
+  }
+
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      style={{
-        width: '100%',
-        textAlign: 'left',
-        background: selected ? `${COLORS.signal}18` : COLORS.abyss,
-        border: `2px solid ${selected ? COLORS.signal : COLORS.ocean}`,
-        borderRadius: 12,
-        padding: '16px 20px',
-        cursor: 'pointer',
-        transition: 'border-color 0.15s, background 0.15s',
-        position: 'relative',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 10,
-      }}
-    >
-      {/* Top row: nationality + badges */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+    <div style={{
+      background: selected ? `${COLORS.signal}10` : COLORS.abyss,
+      border: `2px solid ${selected ? COLORS.signal : COLORS.deep}`,
+      borderRadius: 12, padding: 0, overflow: 'hidden',
+      transition: 'border-color 0.15s, background 0.15s',
+    }}>
+      {/* Header row: flag, nationality, badges, select control */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 20px', borderBottom: `1px solid ${COLORS.deep}` }}>
         <span style={{ fontSize: 24, lineHeight: 1 }}>{getFlagEmoji(passport.nationality)}</span>
-        <span
-          style={{
-            fontFamily: FONTS.display,
-            fontSize: 15,
-            fontWeight: 600,
-            color: COLORS.frost,
-            flex: 1,
-          }}
-        >
+        <span style={{ fontFamily: FONTS.display, fontSize: 15, fontWeight: 700, color: COLORS.frost, flex: 1 }}>
           {passport.nationality}
         </span>
         {passport.is_primary && (
-          <span
-            style={{
-              background: `${COLORS.signal}22`,
-              border: `1px solid ${COLORS.signal}`,
-              borderRadius: 4,
-              color: COLORS.signal,
-              fontFamily: FONTS.display,
-              fontSize: 11,
-              fontWeight: 600,
-              letterSpacing: '0.05em',
-              padding: '2px 8px',
-              textTransform: 'uppercase',
-            }}
-          >
+          <span style={{
+            background: `${COLORS.signal}22`, border: `1px solid ${COLORS.signal}`, borderRadius: 4,
+            color: COLORS.signal, fontFamily: FONTS.display, fontSize: 11, fontWeight: 600,
+            letterSpacing: '0.05em', padding: '2px 8px', textTransform: 'uppercase',
+          }}>
             Primary
           </span>
         )}
-        {selected && (
-          <span
-            style={{
-              background: COLORS.signal,
-              borderRadius: '50%',
-              width: 20,
-              height: 20,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-            }}
-          >
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-              <path d="M2 6l3 3 5-5" stroke={COLORS.void} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </span>
-        )}
-      </div>
-
-      {/* Passport number + dates */}
-      <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-        <div>
-          <div style={{ fontFamily: FONTS.display, fontSize: 11, color: COLORS.steel, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 2 }}>
-            Passport No.
-          </div>
-          <div style={{ fontFamily: 'Courier New, monospace', fontSize: 15, color: COLORS.frost, letterSpacing: '0.1em', fontWeight: 600 }}>
-            {passport.passport_number}
-          </div>
-        </div>
-        <div>
-          <div style={{ fontFamily: FONTS.display, fontSize: 11, color: COLORS.steel, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 2 }}>
-            Issued
-          </div>
-          <div style={{ fontFamily: FONTS.display, fontSize: 14, color: COLORS.frost }}>
-            {formatDate(passport.issue_date)}
-          </div>
-        </div>
-        <div>
-          <div style={{ fontFamily: FONTS.display, fontSize: 11, color: COLORS.steel, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 2 }}>
-            Expires
-          </div>
-          <div style={{ fontFamily: FONTS.display, fontSize: 14, color: expiryColor, fontWeight: 600 }}>
-            {formatDate(passport.expiry_date)}
-          </div>
-        </div>
-        <div>
-          <div style={{ fontFamily: FONTS.display, fontSize: 11, color: COLORS.steel, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 2 }}>
-            Status
-          </div>
-          <div
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 5,
-              background: `${expiryColor}18`,
-              border: `1px solid ${expiryColor}55`,
-              borderRadius: 4,
-              padding: '1px 8px',
-              fontFamily: FONTS.display,
-              fontSize: 12,
-              fontWeight: 600,
-              color: expiryColor,
-            }}
-          >
-            {expiryLabel}
-          </div>
-        </div>
-        <div>
-          <div style={{ fontFamily: FONTS.display, fontSize: 11, color: COLORS.steel, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 2 }}>
-            Issued By
-          </div>
-          <div style={{ fontFamily: FONTS.display, fontSize: 14, color: COLORS.frost }}>
-            {passport.issuing_country}
-          </div>
-        </div>
-      </div>
-
-      {passport.document_url && (
-        <span
-          onClick={e => e.stopPropagation()}
+        <button
+          type="button"
+          onClick={onSelect}
+          aria-pressed={selected}
           style={{
-            fontFamily: FONTS.display,
-            fontSize: 12,
-            color: COLORS.signal,
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 4,
+            display: 'inline-flex', alignItems: 'center', gap: 7,
+            fontFamily: FONTS.display, fontSize: 13, fontWeight: 700,
+            padding: '7px 16px', borderRadius: 8,
+            border: selected ? 'none' : `1px solid ${COLORS.signal}`,
+            background: selected ? COLORS.signal : 'transparent',
+            color: selected ? COLORS.void : COLORS.signal, cursor: 'pointer',
           }}
         >
-          <SignedAnchor stored={passport.document_url}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: 4 }}>
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-              <polyline points="14 2 14 8 20 8" />
+          {selected && (
+            <svg width="13" height="13" viewBox="0 0 12 12" fill="none">
+              <path d="M2 6l3 3 5-5" stroke={COLORS.void} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
-            View document
-          </SignedAnchor>
-        </span>
-      )}
-    </button>
+          )}
+          {selected ? 'Selected' : 'Select'}
+        </button>
+      </div>
+
+      {/* Body: preview + extracted info + document status */}
+      <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', padding: '18px 20px' }}>
+
+        {/* Left: preview + extracted-info grid */}
+        <div style={{ flex: 1, display: 'flex', gap: 20, alignItems: 'flex-start', minWidth: 0 }}>
+          {/* Preview */}
+          <div style={{ width: 150, flexShrink: 0 }}>
+            <span style={{ display: 'block', fontFamily: FONTS.display, fontSize: 11, fontWeight: 600, color: COLORS.muted, marginBottom: 8 }}>
+              Passport Preview
+            </span>
+            <div style={{ background: COLORS.void, border: `1px solid ${COLORS.deep}`, borderRadius: 8, overflow: 'hidden', minHeight: 90, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {passport.document_url ? (
+                <SignedAnchor stored={passport.document_url} style={{ display: 'block', width: '100%' }}>
+                  <div style={{ padding: '24px 12px', textAlign: 'center', fontFamily: FONTS.display, fontSize: 12, color: COLORS.signal, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                      <polyline points="14 2 14 8 20 8" />
+                    </svg>
+                    View document
+                  </div>
+                </SignedAnchor>
+              ) : (
+                <div style={{ padding: '24px 12px', textAlign: 'center', fontFamily: FONTS.display, fontSize: 12, color: COLORS.steel }}>
+                  No scan on file
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Extracted-info grid */}
+          <div style={{ flex: 1, minWidth: 0, display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10 }}>
+            <FieldCard label="Passport Number">
+              <span style={{ fontFamily: 'Courier New, monospace', letterSpacing: '0.08em' }}>{passport.passport_number}</span>
+            </FieldCard>
+            <FieldCard label="Issue Date">{formatDate(passport.issue_date)}</FieldCard>
+            <FieldCard label="Expiry Date">
+              <span style={{ color: expiryColor }}>{formatDate(passport.expiry_date)}</span>
+            </FieldCard>
+            <FieldCard label="Issuing Country">{passport.issuing_country}</FieldCard>
+            <FieldCard label="Status">
+              <span style={{ color: expiryColor }}>{expiryLabel}</span>
+            </FieldCard>
+            <div />
+          </div>
+        </div>
+
+        {/* Right: per-passport Document Status */}
+        <DocumentStatusPanel status={docStatus} expiryDate={passport.expiry_date} />
+      </div>
+    </div>
   )
 }
 
@@ -737,25 +1004,10 @@ export function StepPassportSelect({ state, onUpdate, onNext, onBack }: StepPass
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
       {/* Header */}
       <div>
-        <div
-          style={{
-            fontFamily: FONTS.display,
-            fontSize: 20,
-            fontWeight: 700,
-            color: COLORS.frost,
-            marginBottom: 6,
-          }}
-        >
-          Select Passport
+        <div style={{ fontFamily: FONTS.display, fontSize: 20, fontWeight: 700, color: COLORS.frost, marginBottom: 6 }}>
+          Passport Details
         </div>
-        <div
-          style={{
-            fontFamily: FONTS.display,
-            fontSize: 14,
-            color: COLORS.muted,
-            lineHeight: 1.5,
-          }}
-        >
+        <div style={{ fontFamily: FONTS.display, fontSize: 14, color: COLORS.muted, lineHeight: 1.5 }}>
           Select the passport you are using for this{' '}
           <span style={{ color: COLORS.frost }}>
             {countryFlag} {countryName}
@@ -766,19 +1018,10 @@ export function StepPassportSelect({ state, onUpdate, onNext, onBack }: StepPass
 
       {/* Passport list or empty state */}
       {noPassports && !showAddForm ? (
-        <div
-          style={{
-            background: COLORS.abyss,
-            border: `1px solid ${COLORS.ocean}`,
-            borderRadius: 12,
-            padding: 32,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: 14,
-            textAlign: 'center',
-          }}
-        >
+        <div style={{
+          background: COLORS.abyss, border: `1px solid ${COLORS.deep}`, borderRadius: 12,
+          padding: 32, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, textAlign: 'center',
+        }}>
           <div style={{ fontSize: 36 }}>🛂</div>
           <div style={{ fontFamily: FONTS.display, fontSize: 15, fontWeight: 600, color: COLORS.frost }}>
             No passports on file
@@ -790,16 +1033,8 @@ export function StepPassportSelect({ state, onUpdate, onNext, onBack }: StepPass
             type="button"
             onClick={() => setShowAddForm(true)}
             style={{
-              background: COLORS.signal,
-              border: 'none',
-              borderRadius: 8,
-              color: COLORS.void,
-              fontFamily: FONTS.display,
-              fontSize: 14,
-              fontWeight: 600,
-              padding: '10px 22px',
-              cursor: 'pointer',
-              marginTop: 4,
+              background: COLORS.signal, border: 'none', borderRadius: 8, color: COLORS.void,
+              fontFamily: FONTS.display, fontSize: 14, fontWeight: 600, padding: '10px 22px', cursor: 'pointer', marginTop: 4,
             }}
           >
             + Add Passport
@@ -826,17 +1061,9 @@ export function StepPassportSelect({ state, onUpdate, onNext, onBack }: StepPass
               type="button"
               onClick={() => setShowAddForm(true)}
               style={{
-                background: 'transparent',
-                border: `1px dashed ${COLORS.ocean}`,
-                borderRadius: 10,
-                color: COLORS.muted,
-                fontFamily: FONTS.display,
-                fontSize: 14,
-                padding: '12px 20px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
+                background: 'transparent', border: `1px dashed ${COLORS.deep}`, borderRadius: 10,
+                color: COLORS.muted, fontFamily: FONTS.display, fontSize: 14, padding: '12px 20px',
+                cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
                 transition: 'border-color 0.15s, color 0.15s',
               }}
               onMouseEnter={e => {
@@ -844,7 +1071,7 @@ export function StepPassportSelect({ state, onUpdate, onNext, onBack }: StepPass
                 ;(e.currentTarget as HTMLButtonElement).style.color = COLORS.signal
               }}
               onMouseLeave={e => {
-                ;(e.currentTarget as HTMLButtonElement).style.borderColor = COLORS.ocean
+                ;(e.currentTarget as HTMLButtonElement).style.borderColor = COLORS.deep
                 ;(e.currentTarget as HTMLButtonElement).style.color = COLORS.muted
               }}
             >
@@ -870,20 +1097,11 @@ export function StepPassportSelect({ state, onUpdate, onNext, onBack }: StepPass
 
       {/* Selection required notice */}
       {localPassports.length > 0 && !state.passport && (
-        <div
-          style={{
-            background: `color-mix(in oklab, ${COLORS.ocean} 20%, transparent)`,
-            border: `1px solid ${COLORS.ocean}`,
-            borderRadius: 8,
-            padding: '10px 14px',
-            fontFamily: FONTS.display,
-            fontSize: 13,
-            color: COLORS.muted,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-          }}
-        >
+        <div style={{
+          background: `color-mix(in oklab, ${COLORS.ocean} 20%, transparent)`,
+          border: `1px solid ${COLORS.deep}`, borderRadius: 8, padding: '10px 14px',
+          fontFamily: FONTS.display, fontSize: 13, color: COLORS.muted, display: 'flex', alignItems: 'center', gap: 8,
+        }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={COLORS.muted} strokeWidth="2">
             <circle cx="12" cy="12" r="10" />
             <line x1="12" y1="8" x2="12" y2="12" />
@@ -899,14 +1117,8 @@ export function StepPassportSelect({ state, onUpdate, onNext, onBack }: StepPass
           type="button"
           onClick={onBack}
           style={{
-            background: 'transparent',
-            border: `1px solid ${COLORS.steel}`,
-            borderRadius: 8,
-            color: COLORS.muted,
-            fontFamily: FONTS.display,
-            fontSize: 14,
-            padding: '10px 22px',
-            cursor: 'pointer',
+            background: 'transparent', border: `1px solid ${COLORS.steel}`, borderRadius: 8,
+            color: COLORS.muted, fontFamily: FONTS.display, fontSize: 14, padding: '10px 22px', cursor: 'pointer',
           }}
         >
           Back
@@ -916,17 +1128,10 @@ export function StepPassportSelect({ state, onUpdate, onNext, onBack }: StepPass
           onClick={onNext}
           disabled={!canContinue}
           style={{
-            background: canContinue ? COLORS.signal : COLORS.ocean,
-            border: 'none',
-            borderRadius: 8,
-            color: canContinue ? COLORS.void : COLORS.steel,
-            fontFamily: FONTS.display,
-            fontSize: 14,
-            fontWeight: 600,
-            padding: '10px 28px',
-            cursor: canContinue ? 'pointer' : 'not-allowed',
-            opacity: canContinue ? 1 : 0.7,
-            transition: 'background 0.15s, color 0.15s',
+            background: canContinue ? COLORS.signal : COLORS.ocean, border: 'none', borderRadius: 8,
+            color: canContinue ? COLORS.void : COLORS.steel, fontFamily: FONTS.display, fontSize: 14, fontWeight: 600,
+            padding: '10px 28px', cursor: canContinue ? 'pointer' : 'not-allowed',
+            opacity: canContinue ? 1 : 0.7, transition: 'background 0.15s, color 0.15s',
           }}
         >
           Continue
