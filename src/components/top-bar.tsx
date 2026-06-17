@@ -149,6 +149,7 @@ export function TopBar() {
   const { user, signOut } = useAuth();
   const { theme, toggle } = useTheme();
   const navigate = useNavigate();
+  const canSeeOnline = useCanImpersonate();
   const [q, setQ] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
@@ -252,8 +253,8 @@ export function TopBar() {
         {/* View-as / client preview (admin only) */}
         <ViewAsSwitcher />
 
-        {/* Online users (live presence) */}
-        <OnlineUsers />
+        {/* Online users (live presence) — admins/developers only */}
+        {canSeeOnline && <OnlineUsers />}
 
         {/* Theme toggle */}
         <button
