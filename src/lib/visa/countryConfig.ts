@@ -36,8 +36,8 @@ export const COUNTRY_CONFIGS: Record<CountryCode, CountryVisaConfig> = {
       'Crew contract or employment letter',
     ],
     fields: [
-      { key: 'sponsor_name', label: 'Sponsor Name', type: 'text', required: true,
-        helpText: 'Name of UAE sponsor / vessel owner or company' },
+      { key: 'vessel_name', label: 'Vessel Name', type: 'text', required: true,
+        helpText: 'The vessel this visa is allocated to — used on all documents throughout the process' },
     ],
     validationRules: [
       'Passport must be valid for at least 6 months from application date',

@@ -1,9 +1,10 @@
-import React from 'react'
+import React, { useEffect, useRef } from 'react'
 import { COLORS, FONTS } from '@/lib/tokens'
 import { COUNTRY_CONFIGS } from '@/lib/visa/countryConfig'
 import type { CountryVisaConfig, VisaField } from '@/lib/visa/countryConfig'
 import type { CrewMember, CrewPassport } from '@/lib/visa/crewMatching'
 import type { ComplianceResult } from '@/lib/visa/complianceChecks'
+import { supabase } from '@/integrations/supabase/client'
 
 export interface WizardState {
   step: number
@@ -157,6 +158,26 @@ export function StepCountryFields({ state, onUpdate, onNext, onBack }: StepCount
   const config: CountryVisaConfig | undefined =
     COUNTRY_CONFIGS[state.countryCode as keyof typeof COUNTRY_CONFIGS]
 
+  // Auto-populate vessel_name from the yacht record as soon as we have a yacht_id.
+  // Only runs once per wizard session — skips if already populated.
+  const fetchedRef = useRef(false)
+  useEffect(() => {
+    const yachtId = (state.crew as any)?.yacht_id
+    if (!yachtId || state.countryFields['vessel_name'] || fetchedRef.current) return
+    fetchedRef.current = true
+    ;(async () => {
+      const db = supabase as any
+      const { data } = await db
+        .from('yachts')
+        .select('vessel_name')
+        .eq('id', yachtId)
+        .maybeSingle()
+      if (data?.vessel_name) {
+        onUpdate({ countryFields: { ...state.countryFields, vessel_name: data.vessel_name } })
+      }
+    })()
+  }, [(state.crew as any)?.yacht_id])   // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!config) {
     return (
       <div style={{ fontFamily: FONTS.display, color: COLORS.warn, padding: 24 }}>
@@ -244,8 +265,9 @@ export function StepCountryFields({ state, onUpdate, onNext, onBack }: StepCount
           {/* Rules */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingLeft: 2 }}>
             {[
-              { icon: '⚠', color: COLORS.warn,  text: 'Crew must enter the UAE within 30 days of visa issuance. If not used within 30 days, the visa expires and a new application is required.' },
-              { icon: '◆', color: COLORS.info,   text: 'Visa validity (180 days) runs from the date of first entry — not from the date of issuance.' },
+              { icon: '⚠', color: COLORS.warn, text: 'Crew must enter the UAE within 30 days of visa issuance. If not used within 30 days, the visa expires and a new application is required.' },
+              { icon: '◆', color: COLORS.info,  text: 'Visa validity (180 days) runs from the date of first entry — not from the date of issuance.' },
+              { icon: '◆', color: COLORS.info,  text: 'The vessel name below is used on all documents and correspondence throughout this application. Confirm it is correct before continuing.' },
             ].map(({ icon, color, text }) => (
               <div key={text} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
                 <span style={{ color, fontSize: 12, flexShrink: 0, marginTop: 1 }} aria-hidden="true">{icon}</span>
@@ -276,11 +298,45 @@ export function StepCountryFields({ state, onUpdate, onNext, onBack }: StepCount
               )}
             </label>
 
-            <FieldInput
-              field={field}
-              value={state.countryFields[field.key] ?? ''}
-              onChange={val => handleChange(field.key, val)}
-            />
+            {/* vessel_name: show confirmed-vessel pill when auto-populated */}
+            {field.key === 'vessel_name' && state.countryFields['vessel_name'] ? (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '9px 12px',
+                background: `${COLORS.signal}0D`,
+                border: `1px solid ${COLORS.signal}40`,
+                borderRadius: 6,
+              }}>
+                <span style={{
+                  fontFamily: FONTS.display, fontSize: 9, fontWeight: 700,
+                  letterSpacing: '0.16em', textTransform: 'uppercase',
+                  color: COLORS.signal, padding: '2px 8px',
+                  background: `${COLORS.signal}18`, borderRadius: 3, flexShrink: 0,
+                }}>
+                  Vessel
+                </span>
+                <span style={{ fontFamily: FONTS.display, fontSize: 14, fontWeight: 700, color: COLORS.frost, flex: 1 }}>
+                  {state.countryFields['vessel_name']}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleChange('vessel_name', '')}
+                  title="Edit vessel name"
+                  style={{
+                    fontFamily: FONTS.display, fontSize: 11, color: COLORS.steel,
+                    background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px',
+                  }}
+                >
+                  ✎ Edit
+                </button>
+              </div>
+            ) : (
+              <FieldInput
+                field={field}
+                value={state.countryFields[field.key] ?? ''}
+                onChange={val => handleChange(field.key, val)}
+              />
+            )}
 
             {field.helpText && (
               <p style={{ fontSize: 12, color: COLORS.muted, margin: 0 }}>
