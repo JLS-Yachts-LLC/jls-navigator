@@ -75,7 +75,7 @@ const LS_ACTIVE_KEY    = "jls-yachts-active-view";     // string | null
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function loadView(): "list" | "cards" {
-  try { return localStorage.getItem(LS_VIEW_KEY) === "cards" ? "cards" : "list"; }
+  try { return localStorage.getItem(LS_VIEW_KEY) === "list" ? "list" : "cards"; }
   catch { return "list"; }
 }
 
@@ -128,6 +128,7 @@ function YachtsPage() {
 
   const [view, setView] = useState<"list" | "cards">(loadView);
   const [yachts, setYachts] = useState<Yacht[]>([]);
+  const [activityMap, setActivityMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -164,9 +165,26 @@ function YachtsPage() {
       .from("yachts")
       .select("*")
       .order("created_at", { ascending: false });
-    if (error) toast.error(error.message);
-    else setYachts((data ?? []) as Yacht[]);
+    if (error) { toast.error(error.message); setLoading(false); return; }
+    const rows = (data ?? []) as Yacht[];
+    setYachts(rows);
     setLoading(false);
+    // "Last activity" per yacht = newest of the yacht record + any visa activity
+    // linked to it. (Other entities — sign-on, docs, permits — can be folded in later.)
+    const map: Record<string, string> = {};
+    for (const r of rows) {
+      const u = (r.updated_at as string) ?? (r.created_at as string);
+      if (u) map[r.id] = u;
+    }
+    try {
+      const { data: visas } = await (supabase as any)
+        .from("visa_applications").select("yacht_id, updated_at").not("yacht_id", "is", null);
+      for (const v of (visas ?? []) as { yacht_id: string; updated_at: string }[]) {
+        if (!v.yacht_id || !v.updated_at) continue;
+        if (!map[v.yacht_id] || v.updated_at > map[v.yacht_id]) map[v.yacht_id] = v.updated_at;
+      }
+    } catch { /* visa activity is best-effort */ }
+    setActivityMap(map);
   }
 
   async function updateStatus(id: string, status: string) {
@@ -232,6 +250,13 @@ function YachtsPage() {
     change_agency: "change agency",
   };
 
+  const lastActivityOf = (y: Yacht): string =>
+    activityMap[y.id] ?? (y.updated_at as string) ?? (y.created_at as string) ?? "";
+  const isStale = (y: Yacht): boolean => {
+    const la = lastActivityOf(y);
+    return !!la && Date.now() - new Date(la).getTime() > 30 * 86400000;
+  };
+
   const filtered = useMemo(() => {
     let rows = yachts;
     if (statusFilter !== "all") {
@@ -251,9 +276,12 @@ function YachtsPage() {
         const cmp = av.localeCompare(bv, undefined, { numeric: true });
         return sortDir === "asc" ? cmp : -cmp;
       });
+    } else {
+      // Default: most-recently-active yachts first, least-active last.
+      rows = [...rows].sort((a, b) => lastActivityOf(b).localeCompare(lastActivityOf(a)));
     }
     return rows;
-  }, [yachts, q, statusFilter, sortKey, sortDir]);
+  }, [yachts, q, statusFilter, sortKey, sortDir, activityMap]);
 
   function toggleSort(key: YachtColumnKey) {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -483,7 +511,7 @@ function YachtsPage() {
             updateStatus={updateStatus}
           />
         ) : (
-          <CardsView rows={filtered} />
+          <CardsView rows={filtered} staleIds={new Set(filtered.filter(isStale).map((y) => y.id))} />
         )}
       </div>
     </div>
@@ -684,7 +712,7 @@ function ListView({
   );
 }
 
-function CardsView({ rows }: { rows: Yacht[] }) {
+function CardsView({ rows, staleIds }: { rows: Yacht[]; staleIds: Set<string> }) {
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
       {rows.map((y) => (
@@ -694,13 +722,21 @@ function CardsView({ rows }: { rows: Yacht[] }) {
           params={{ id: y.id }}
           className="group overflow-hidden rounded-lg border border-border bg-card transition hover:border-primary/50 hover:shadow-[0_8px_30px_-10px_oklch(0.62_0.18_245/.35)]"
         >
-          <div className="aspect-[16/9] overflow-hidden bg-muted">
+          <div className="relative aspect-[16/9] overflow-hidden bg-muted">
             {typeof y.vessel_image === "string" && /^https?:\/\//.test(y.vessel_image) ? (
               <img src={y.vessel_image} alt="" className="h-full w-full object-cover transition group-hover:scale-105" />
             ) : (
               <div className="flex h-full w-full items-center justify-center">
                 <Ship className="h-10 w-10 text-muted-foreground/40" />
               </div>
+            )}
+            {staleIds.has(y.id) && (
+              <span
+                title="No activity in over 30 days"
+                className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-full bg-amber-500/90 px-2 py-0.5 text-[10px] font-semibold text-black shadow"
+              >
+                ⚠ 30d+ inactive
+              </span>
             )}
           </div>
           <div className="space-y-2 p-4">
