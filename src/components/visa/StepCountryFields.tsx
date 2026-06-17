@@ -154,6 +154,86 @@ function FieldInput({
   )
 }
 
+/** Vessel name input with type-ahead suggestions from the yachts table.
+ *  Free text is still allowed (so crew on an unlisted vessel can type manually). */
+function VesselNameInput({ value, onChange }: { value: string; onChange: (val: string) => void }) {
+  const [names, setNames] = React.useState<string[]>([])
+  const [open, setOpen] = React.useState(false)
+  const [focused, setFocused] = React.useState(false)
+  const wrapRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    let alive = true
+    ;(supabase as any)
+      .from('yachts').select('vessel_name').not('vessel_name', 'is', null).order('vessel_name')
+      .then(({ data }: { data: { vessel_name: string }[] | null }) => {
+        if (!alive) return
+        const uniq = Array.from(new Set((data ?? []).map(y => y.vessel_name).filter(Boolean)))
+        setNames(uniq as string[])
+      })
+    return () => { alive = false }
+  }, [])
+
+  // Close the dropdown on outside click.
+  useEffect(() => {
+    function onDoc(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [])
+
+  const q = value.trim().toLowerCase()
+  const matches = q
+    ? names.filter(n => n.toLowerCase().includes(q)).slice(0, 8)
+    : names.slice(0, 8)
+  // Hide the list once the value exactly equals a known vessel (already chosen).
+  const exact = names.some(n => n.toLowerCase() === q)
+  const showList = open && matches.length > 0 && !(exact && matches.length === 1)
+
+  return (
+    <div ref={wrapRef} style={{ position: 'relative' }}>
+      <input
+        type="text"
+        value={value}
+        onChange={e => { onChange(e.target.value); setOpen(true) }}
+        onFocus={() => { setFocused(true); setOpen(true) }}
+        onBlur={() => setFocused(false)}
+        autoComplete="off"
+        placeholder="Start typing a vessel name…"
+        style={{ ...inputStyle, ...(focused ? focusStyle : {}) }}
+      />
+      {showList && (
+        <ul style={{
+          position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 30,
+          margin: 0, padding: 4, listStyle: 'none', maxHeight: 240, overflowY: 'auto',
+          background: COLORS.abyss, border: `1px solid ${COLORS.ocean}`, borderRadius: 8,
+          boxShadow: '0 8px 30px -8px rgba(0,0,0,0.6)',
+        }}>
+          {matches.map(name => (
+            <li key={name}>
+              <button
+                type="button"
+                // onMouseDown (not onClick) so it fires before the input's blur.
+                onMouseDown={e => { e.preventDefault(); onChange(name); setOpen(false) }}
+                style={{
+                  display: 'block', width: '100%', textAlign: 'left', cursor: 'pointer',
+                  fontFamily: FONTS.display, fontSize: 13.5, color: COLORS.frost,
+                  padding: '7px 10px', borderRadius: 5, border: 'none', background: 'transparent',
+                }}
+                onMouseEnter={e => { (e.currentTarget.style.background = `${COLORS.signal}1a`) }}
+                onMouseLeave={e => { (e.currentTarget.style.background = 'transparent') }}
+              >
+                {name}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 export function StepCountryFields({ state, onUpdate, onNext, onBack }: StepCountryFieldsProps) {
   const config: CountryVisaConfig | undefined =
     COUNTRY_CONFIGS[state.countryCode as keyof typeof COUNTRY_CONFIGS]
@@ -303,13 +383,10 @@ export function StepCountryFields({ state, onUpdate, onNext, onBack }: StepCount
             {/* vessel_name: always an editable text input; auto-filled badge when populated from DB */}
             {field.key === 'vessel_name' ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <div style={{ position: 'relative' }}>
-                  <FieldInput
-                    field={field}
-                    value={state.countryFields[field.key] ?? ''}
-                    onChange={val => { handleChange(field.key, val); setVesselAutoFilled(false) }}
-                  />
-                </div>
+                <VesselNameInput
+                  value={state.countryFields[field.key] ?? ''}
+                  onChange={val => { handleChange(field.key, val); setVesselAutoFilled(false) }}
+                />
                 {vesselAutoFilled && state.countryFields['vessel_name'] && (
                   <span style={{
                     fontFamily: FONTS.display, fontSize: 11, color: COLORS.signal,
