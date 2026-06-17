@@ -1,4 +1,13 @@
-import React from 'react'
+/**
+ * Polaris — Crew Visa Country Selector
+ *
+ * Single click  → selects the card (highlighted state), enables Continue
+ * Second click  → selects AND immediately proceeds (same as clicking Continue)
+ * Double click  → selects AND immediately proceeds
+ * Continue btn  → proceeds with the currently selected country
+ */
+
+import React, { useCallback } from 'react'
 import { COLORS, FONTS } from '@/lib/tokens'
 import { SUPPORTED_COUNTRIES, COUNTRY_CONFIGS } from '@/lib/visa/countryConfig'
 import type { CountryVisaConfig } from '@/lib/visa/countryConfig'
@@ -38,6 +47,27 @@ interface Props {
 export default function StepCountrySelect({ state, onUpdate, onNext }: Props) {
   const selected = state.countryCode || 'AE'
 
+  const handleCardClick = useCallback(
+    (code: string) => {
+      if (selected === code) {
+        // Second click on already-selected card → proceed immediately
+        onNext()
+      } else {
+        onUpdate({ countryCode: code })
+      }
+    },
+    [selected, onUpdate, onNext]
+  )
+
+  const handleCardDoubleClick = useCallback(
+    (code: string) => {
+      // Double-click always selects + proceeds regardless of prior state
+      onUpdate({ countryCode: code })
+      onNext()
+    },
+    [onUpdate, onNext]
+  )
+
   return (
     <div style={{ fontFamily: FONTS.display, color: COLORS.frost }}>
       <h2
@@ -51,15 +81,11 @@ export default function StepCountrySelect({ state, onUpdate, onNext }: Props) {
       >
         Select Destination Country
       </h2>
-      <p
-        style={{
-          fontFamily: FONTS.display,
-          fontSize: 13,
-          color: COLORS.muted,
-          marginBottom: 16,
-        }}
-      >
+      <p style={{ fontFamily: FONTS.display, fontSize: 13, color: COLORS.muted, marginBottom: 4 }}>
         Choose the country you are applying a crew visa for.
+      </p>
+      <p style={{ fontFamily: FONTS.display, fontSize: 11, color: COLORS.steel, marginBottom: 16 }}>
+        Click once to select · Click again or double-click to continue directly.
       </p>
 
       <div
@@ -72,11 +98,16 @@ export default function StepCountrySelect({ state, onUpdate, onNext }: Props) {
         {SUPPORTED_COUNTRIES.map((code) => {
           const config: CountryVisaConfig = COUNTRY_CONFIGS[code]
           const isSelected = selected === code
+
           return (
             <button
               key={code}
               type="button"
-              onClick={() => onUpdate({ countryCode: code })}
+              role="radio"
+              aria-checked={isSelected}
+              aria-label={`${config.countryName} — ${COUNTRY_LABELS[code]}${isSelected ? '. Selected. Click again to continue.' : ''}`}
+              onClick={() => handleCardClick(code)}
+              onDoubleClick={() => handleCardDoubleClick(code)}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -105,6 +136,7 @@ export default function StepCountrySelect({ state, onUpdate, onNext }: Props) {
                   boxShadow: '0 0 0 1px rgba(255,255,255,0.1)',
                 }}
               />
+
               <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
                 <span
                   style={{
@@ -116,23 +148,29 @@ export default function StepCountrySelect({ state, onUpdate, onNext }: Props) {
                   }}
                 >
                   {config.countryName}
-                  <span style={{ fontSize: 10.5, fontWeight: 600, color: COLORS.muted, marginLeft: 6 }}>{code}</span>
+                  <span style={{ fontSize: 10.5, fontWeight: 600, color: COLORS.muted, marginLeft: 6 }}>
+                    {code}
+                  </span>
                 </span>
                 <span
                   style={{
                     fontFamily: FONTS.display,
                     fontSize: 11,
-                    color: COLORS.muted,
+                    color: isSelected ? COLORS.signal : COLORS.muted,
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
+                    opacity: isSelected ? 0.85 : 1,
                   }}
                 >
-                  {COUNTRY_LABELS[code]}
+                  {isSelected ? 'Click again to continue →' : COUNTRY_LABELS[code]}
                 </span>
               </div>
+
+              {/* Selected dot */}
               {isSelected && (
                 <span
+                  aria-hidden="true"
                   style={{
                     width: 8,
                     height: 8,
@@ -152,7 +190,7 @@ export default function StepCountrySelect({ state, onUpdate, onNext }: Props) {
           display: 'flex',
           justifyContent: 'flex-end',
           marginTop: 20,
-          paddingRight: 80, // clear the fixed bottom-right Leo orb so the click lands
+          paddingRight: 80,
           position: 'relative',
           zIndex: 20,
         }}
@@ -161,6 +199,11 @@ export default function StepCountrySelect({ state, onUpdate, onNext }: Props) {
           type="button"
           onClick={onNext}
           disabled={!selected}
+          aria-label={
+            selected
+              ? `Continue with ${COUNTRY_CONFIGS[selected as keyof typeof COUNTRY_CONFIGS]?.countryName}`
+              : 'Select a country to continue'
+          }
           style={{
             fontFamily: FONTS.display,
             fontSize: 14,

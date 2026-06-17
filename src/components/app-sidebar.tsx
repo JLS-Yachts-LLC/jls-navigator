@@ -2,200 +2,172 @@ import { Link, useLocation } from "@tanstack/react-router";
 import {
   Ship, FileCheck2, Sailboat, Users, Package, BarChart3,
   ChevronDown, ChevronRight, LogOut, Settings, Search,
-  LogIn, ShieldCheck, Compass, Anchor, DoorOpen, Radio, Navigation, FileBadge,
+  LogIn, ShieldCheck, Compass, Anchor, DoorOpen, Navigation, FileBadge,
   Route, UserCircle2, Car, MapPin, ScrollText, X, ShoppingCart, Truck,
   GraduationCap, Sparkles, Layers as LayersIcon, UserPlus, LayoutDashboard,
   FileText, Wrench, UtensilsCrossed, Cpu, IdCard, Boxes, Cog, ClipboardList,
-  Globe, Headset, BookOpen, FileSignature, KeyRound, Zap, Rocket,
+  Globe, Headset, BookOpen, FileSignature, KeyRound, Zap, Radio,
+  Wallet, Receipt, TrendingUp, PiggyBank, FolderOpen, Award, Download,
+  MessageSquare, Lightbulb, BotMessageSquare, PenLine, Fuel,
 } from "lucide-react";
-import { useFlagMap, type FlagStage } from "@/lib/release-flags";
-import { useDevAccess } from "@/lib/dev-access";
-import { StageBadge } from "@/components/dev/feature-badge";
 import { AdminSidebarSection } from "@/components/admin/AdminSidebarSection";
-import { useViewAsRole, navAllowedFor, ROLE_LABEL } from "@/lib/view-as";
 import { useState, useMemo } from "react";
-import { DEPARTMENTS } from "@/components/guides/guide-meta";
 import { PolarisLogo } from "@/components/polaris-logo";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { VesselSwitcher } from "@/components/vessel-switcher";
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type Role = "captain" | "crew" | "admin" | "staff";
+
 type NavItem = {
   label: string;
   to?: string;
   icon?: React.ComponentType<{ className?: string }>;
+  roles?: Role[];       // undefined = all roles; array = specific roles only
   children?: NavItem[];
-  /** Feature-flag key controlling visibility + Beta/Dev badge. */
-  flagKey?: string;
-  /** Visible only to viewers with dev access (independent of feature flags). */
-  devOnly?: boolean;
-  /** Transient — set during flag filtering so NavNode can render a badge. */
-  badge?: FlagStage;
 };
 
+// ─── Nav Config ───────────────────────────────────────────────────────────────
+// 8 primary sections. Each maps to existing routes where spec routes don't yet exist.
+// Section-level roles control visibility; child items inherit if not specified.
+
 const NAV: NavItem[] = [
-  // ── One unified area — everything lives under Overview; Guides stays separate ──
+  // 1 ─── DASHBOARD
   {
-    label: "Overview",
+    label: "Dashboard",
+    to: "/dashboard",
+    icon: LayoutDashboard,
+  },
+
+  // 2 ─── MY VESSEL
+  {
+    label: "My Vessel",
+    icon: Ship,
     children: [
-      { label: "Leo",              to: "/dashboard", icon: Sparkles },
-      { label: "Vessel Overview",  to: "/yachts",    icon: Ship, flagKey: "vessel-overview" },
-      { label: "My Fleet (Live)",  to: "/my-fleet",  icon: Navigation, flagKey: "my-fleet" },
-
-      // Logistics now parents ShipSync + Transport & Fleet
-      {
-        label: "Logistics",
-        icon: Boxes,
-        flagKey: "logistics",
-        children: [
-          {
-            label: "ShipSync",
-            icon: Package,
-            children: [
-              { label: "Packages",           to: "/packages",            icon: Package },
-              { label: "Drivers",            to: "/packages/drivers",    icon: UserCircle2 },
-              { label: "Deliveries / Route", to: "/packages/deliveries", icon: Truck },
-              { label: "Ship Spares",        to: "/ship-spares",         icon: Boxes },
-              { label: "Live Tracking",      to: "/fleet-tracking",      icon: Navigation },
-            ],
-          },
-          {
-            label: "Transport & Fleet",
-            icon: Car,
-            children: [
-              { label: "Trips",         to: "/crew-cab/trips",     icon: Route },
-              { label: "Drivers",       to: "/crew-cab/drivers",   icon: UserCircle2 },
-              { label: "Vehicles",      to: "/crew-cab/vehicles",  icon: Car },
-              { label: "Locations",     to: "/crew-cab/locations", icon: MapPin },
-              { label: "Live Tracking", to: "/fleet-tracking",     icon: Navigation },
-              { label: "Maintenance",   to: "/orbit/maintenance",  icon: Wrench },
-            ],
-          },
-        ],
-      },
-
-      // Operations now parents Orbit
-      {
-        label: "Operations",
-        icon: Cog,
-        flagKey: "operations",
-        children: [
-          {
-            label: "Orbit",
-            icon: LayersIcon,
-            children: [
-              { label: "Overview",            to: "/orbit/",            icon: LayoutDashboard },
-              { label: "Planned Maintenance", to: "/orbit/maintenance", icon: Wrench },
-              { label: "Defects & Repairs",   to: "/orbit/defects",     icon: Wrench },
-              { label: "Small Boat Mgmt",     to: "/small-boat-registration", icon: Sailboat },
-            ],
-          },
-        ],
-      },
-
-      // Waypoint as its own area
-      {
-        label: "Waypoint",
-        icon: ShoppingCart,
-        flagKey: "waypoint",
-        children: [
-          { label: "Suppliers",  to: "/waypoint",            icon: Users },
-          { label: "Quotations", to: "/waypoint/quotations", icon: FileText },
-        ],
-      },
-
-      { label: "Finance",     to: "/finance",  icon: BarChart3, flagKey: "finance" },
-      { label: "Reports",     to: "/director", icon: FileText, flagKey: "reports" },
-
-      {
-        label: "Yacht IT Solutions",
-        icon: Cpu,
-        flagKey: "yacht-it",
-        children: [
-          { label: "Service Desk",         to: "/it-tickets", icon: Headset },
-          { label: "IT Yachts",            to: "/it-yachts",  icon: Ship },
-          { label: "Licensing",            to: "/licensing",  icon: KeyRound },
-          { label: "Contracts & Services", to: "/yacht-it",   icon: FileText },
-        ],
-      },
-
-      // ── Port Operations & Agency — parent folder, nested in Overview ──
-      {
-        label: "Port Operations & Agency",
-        icon: Anchor,
-        children: [
-          {
-            label: "Crew & Immigration",
-            icon: IdCard,
-            flagKey: "crew-immigration",
-            children: [
-              { label: "Crew List",          to: "/crew-immigration/crew",        icon: UserCircle2 },
-              { label: "Visas",              to: "/crew-immigration/visas",       icon: FileText },
-              { label: "Sign On / Sign Off", to: "/crew-immigration/sign-on-off", icon: LogIn },
-              { label: "Crew Documents",     to: "/crew-immigration/documents",   icon: ClipboardList },
-            ],
-          },
-          { label: "Command Centre",        to: "/permits/command-centre",      icon: ShieldCheck },
-          { label: "Exit & Entry Permits",  to: "/permits/exit-entry",          icon: LogIn },
-          { label: "Sanitation",            to: "/permits/sanitation",          icon: ShieldCheck },
-          { label: "Cruising — Mothership", to: "/permits/cruising-mothership", icon: Compass },
-          { label: "Cruising — Tenders",    to: "/permits/cruising-tenders",    icon: Anchor },
-          { label: "Gate Pass",             to: "/permits/gate-pass",           icon: DoorOpen },
-          { label: "TDRA",                  to: "/permits/tdra",                icon: Radio },
-          { label: "Navigation License",    to: "/permits/navigation-license",  icon: Navigation },
-          { label: "DMA Permits",           to: "/permits/dma",                 icon: FileBadge },
-          { label: "Abu Dhabi Permits",     to: "/permits/abu-dhabi",           icon: Anchor },
-          {
-            label: "Crew Placement",
-            icon: UserPlus,
-            flagKey: "crew-placement",
-            children: [
-              { label: "Candidates", to: "/crew-placement",           icon: UserPlus },
-              { label: "Vacancies",  to: "/crew-placement/vacancies", icon: ClipboardList },
-            ],
-          },
-          { label: "Small Boat Registration", to: "/small-boat-registration", icon: Sailboat },
-        ],
-      },
-
-      // ── Other former Modules items ──
-      { label: "Superyacht Provisioning", to: "/provisioning", icon: UtensilsCrossed, flagKey: "provisioning" },
-      {
-        label: "JLS Training Institute",
-        icon: GraduationCap,
-        flagKey: "training",
-        children: [
-          { label: "Training Records", to: "/training",                icon: GraduationCap },
-          { label: "Certifications",   to: "/training/certifications", icon: FileCheck2 },
-        ],
-      },
-      { label: "Agency Network", to: "/agency", icon: Globe, flagKey: "agency" },
-      { label: "Documents & e-Sign",     to: "/esign",        icon: FileSignature, flagKey: "esign" },
-      { label: "Automations",            to: "/automations",  icon: Zap, flagKey: "automations" },
-      { label: "Leo Assistant",          to: "/ai-assistant", icon: Sparkles },
-      { label: "Compass",                to: "/compass",      icon: Compass, flagKey: "compass" },
-      { label: "Changelog",              to: "/changelog",    icon: ScrollText },
-
-      { label: "Settings", to: "/settings", icon: Settings },
-      { label: "Dev Settings", to: "/dev-settings", icon: Rocket, devOnly: true },
+      { label: "Vessel Overview",       to: "/yachts",               icon: Ship },
+      { label: "Live Tracking",         to: "/my-fleet",             icon: Navigation },
+      { label: "Statutory Documents",   to: "/esign",                icon: FileSignature },
+      { label: "Maintenance",           to: "/orbit/maintenance",    icon: Wrench },
+      { label: "Compliance",            to: "/orbit/defects",        icon: ShieldCheck },
+      { label: "Emergency Contacts",    to: "/settings",             icon: IdCard },
     ],
   },
 
-  // ── GUIDES — hidden for now (restore this block to bring it back) ────────────
-  // {
-  //   label: "Guides",
-  //   children: [
-  //     { label: "All Guides", to: "/guides", icon: BookOpen },
-  //     ...DEPARTMENTS.map(d => ({ label: d.label, to: `/guides/${d.key}`, icon: d.icon })),
-  //   ],
-  // },
+  // 3 ─── CREW
+  {
+    label: "Crew",
+    icon: Users,
+    children: [
+      { label: "Crew List",    to: "/crew-immigration/crew",        icon: UserCircle2 },
+      { label: "Visas",        to: "/crew-immigration/visas",       icon: FileText },
+      { label: "Sign On / Off", to: "/crew-immigration/sign-on-off", icon: LogIn },
+      { label: "Crew Documents", to: "/crew-immigration/documents", icon: ClipboardList },
+      { label: "Training",     to: "/training",                     icon: GraduationCap },
+      { label: "Crew Benefits", to: "/compass",                     icon: Compass },
+    ],
+  },
+
+  // 4 ─── REQUESTS  (most-used section)
+  {
+    label: "Requests",
+    icon: ClipboardList,
+    children: [
+      { label: "Transport Request",   to: "/crew-cab/trips",       icon: Car },
+      { label: "Gate Pass Request",   to: "/permits/gate-pass",    icon: DoorOpen },
+      { label: "Bunkering Request",   to: "/permits/command-centre", icon: Fuel },
+      { label: "Provisioning Request", to: "/provisioning",        icon: UtensilsCrossed },
+      { label: "Agency Request",      to: "/agency",               icon: Globe },
+      { label: "Technical Support",   to: "/it-tickets",           icon: Headset },
+      { label: "General Request",     to: "/permits/command-centre", icon: MessageSquare },
+    ],
+  },
+
+  // 5 ─── SERVICES  (discovery layer for JLS business units)
+  {
+    label: "Services",
+    icon: Boxes,
+    children: [
+      { label: "Agency Services",     to: "/agency",              icon: Anchor },
+      { label: "ShipSync Logistics",  to: "/packages",            icon: Package },
+      { label: "Waypoint Chandlery",  to: "/waypoint",            icon: ShoppingCart },
+      { label: "Provisioning",        to: "/provisioning",        icon: UtensilsCrossed },
+      { label: "Training Institute",  to: "/training",            icon: GraduationCap },
+      { label: "IT Solutions",        to: "/yacht-it",            icon: Cpu },
+      { label: "Agency Network",      to: "/agency",              icon: Globe },
+    ],
+  },
+
+  // 6 ─── FINANCE  (captain + admin/staff only)
+  {
+    label: "Finance",
+    icon: BarChart3,
+    roles: ["captain", "admin", "staff"],
+    children: [
+      { label: "Outstanding Invoices", to: "/finance",            icon: Receipt },
+      { label: "Statement of Account", to: "/finance",            icon: Wallet },
+      { label: "Quotes",               to: "/finance",            icon: FileText },
+      { label: "Approvals",            to: "/finance",            icon: ShieldCheck },
+      { label: "Cost Reports",         to: "/director",           icon: TrendingUp },
+      { label: "Budgets",              to: "/finance",            icon: PiggyBank },
+    ],
+  },
+
+  // 7 ─── DOCUMENTS
+  {
+    label: "Documents",
+    icon: FolderOpen,
+    children: [
+      { label: "Vessel Documents",  to: "/esign",                        icon: Ship },
+      { label: "Crew Documents",    to: "/crew-immigration/documents",   icon: Users },
+      { label: "Signed Agreements", to: "/esign",                        icon: FileSignature },
+      { label: "e-Sign Documents",  to: "/esign",                        icon: PenLine },
+      { label: "Certificates",      to: "/training/certifications",      icon: Award },
+      { label: "Downloads",         to: "/guides",                       icon: Download },
+    ],
+  },
+
+  // 8 ─── LEO
+  {
+    label: "Leo",
+    icon: Sparkles,
+    children: [
+      { label: "Ask Leo",          to: "/ai-assistant",   icon: BotMessageSquare },
+      { label: "Create Request",   to: "/ai-assistant",   icon: PenLine },
+      { label: "Generate Report",  to: "/ai-assistant",   icon: FileText },
+      { label: "Knowledge Base",   to: "/guides",         icon: BookOpen },
+      { label: "Search Polaris",   to: "/ai-assistant",   icon: Search },
+    ],
+  },
 ];
-// Referenced only by the (currently hidden) Guides section above.
-void BookOpen; void DEPARTMENTS;
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Role helpers ─────────────────────────────────────────────────────────────
 
-/** True if this item or any descendant matches the current pathname */
+function resolveRole(user: any): Role {
+  const raw = user?.app_metadata?.role ?? "";
+  if (raw === "global_admin" || raw === "org_admin") return "admin";
+  if (raw === "staff") return "staff";
+  if (raw === "crew") return "crew";
+  return "captain"; // default for authenticated users
+}
+
+function itemVisible(item: NavItem, role: Role): boolean {
+  if (!item.roles) return true;
+  return item.roles.includes(role);
+}
+
+function filterNav(items: NavItem[], role: Role): NavItem[] {
+  return items
+    .filter(item => itemVisible(item, role))
+    .map(item => ({
+      ...item,
+      children: item.children ? filterNav(item.children, role) : undefined,
+    }));
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
 function containsPath(item: NavItem, pathname: string): boolean {
   if (item.to) {
     return pathname === item.to || pathname.startsWith(item.to.replace(/\/$/, "") + "/");
@@ -203,7 +175,6 @@ function containsPath(item: NavItem, pathname: string): boolean {
   return (item.children ?? []).some(c => containsPath(c, pathname));
 }
 
-/** Flatten the nav tree into leaf items (those with a `to`) that match the query */
 function flatSearch(items: NavItem[], query: string): NavItem[] {
   const q = query.toLowerCase();
   const results: NavItem[] = [];
@@ -217,48 +188,6 @@ function flatSearch(items: NavItem[], query: string): NavItem[] {
   return results;
 }
 
-/** Filter the nav tree to items whose route is allowed for a previewed role. */
-function filterNav(items: NavItem[], allowed: string[]): NavItem[] {
-  const ok = (to?: string) => !!to && allowed.some(p => to === p || to.startsWith(p + "/"));
-  const out: NavItem[] = [];
-  for (const item of items) {
-    if (item.children?.length) {
-      const kids = filterNav(item.children, allowed);
-      if (kids.length) out.push({ ...item, children: kids });
-    } else if (ok(item.to)) {
-      out.push(item);
-    }
-  }
-  return out;
-}
-
-/**
- * Filter the nav tree by feature stage + dev access, annotating each kept item
- * with a `badge` (beta/dev) for rendering. Dev-stage features and `devOnly`
- * items are hidden unless the viewer has dev access; beta/live are always shown.
- */
-function filterByFlags(
-  items: NavItem[],
-  stageOf: (key: string) => FlagStage | undefined,
-  devAccess: boolean,
-): NavItem[] {
-  const out: NavItem[] = [];
-  for (const item of items) {
-    if (item.devOnly && !devAccess) continue;
-    const stage = item.flagKey ? stageOf(item.flagKey) : undefined;
-    if (stage === "dev" && !devAccess) continue;
-    const badge: FlagStage | undefined = stage === "beta" ? "beta" : stage === "dev" ? "dev" : undefined;
-    if (item.children?.length) {
-      const kids = filterByFlags(item.children, stageOf, devAccess);
-      // Keep a parent folder only if it still has visible children.
-      if (kids.length) out.push({ ...item, children: kids, badge });
-    } else {
-      out.push({ ...item, badge });
-    }
-  }
-  return out;
-}
-
 // ─── Nav Node ─────────────────────────────────────────────────────────────────
 
 function NavNode({ item, depth = 0 }: { item: NavItem; depth?: number }) {
@@ -268,7 +197,7 @@ function NavNode({ item, depth = 0 }: { item: NavItem; depth?: number }) {
     ? location.pathname === item.to || location.pathname.startsWith(item.to.replace(/\/$/, "") + "/")
     : false;
   const childActive = hasChildren ? containsPath(item, location.pathname) : false;
-  const [open, setOpen] = useState(depth === 0 || isActiveDeep || childActive);
+  const [open, setOpen] = useState(isActiveDeep || childActive);
   const Icon = item.icon;
 
   if (hasChildren) {
@@ -279,18 +208,15 @@ function NavNode({ item, depth = 0 }: { item: NavItem; depth?: number }) {
           className="flex w-full items-center gap-2 rounded-md py-1.5 text-[13px] font-semibold text-sidebar-foreground/60 transition-colors hover:text-sidebar-foreground/90 hover:bg-sidebar-accent/50"
           style={{ paddingLeft: 10 + depth * 12, paddingRight: 8 }}
         >
-          {Icon && <Icon className={`h-3.5 w-3.5 shrink-0 ${depth === 0 ? "text-sidebar-foreground/40" : "text-primary/70"}`} />}
-          <span className={`flex-1 text-left tracking-tight ${depth === 0 ? "text-[11px] font-semibold uppercase tracking-widest text-sidebar-foreground/40" : ""}`}>
-            {item.label}
-          </span>
-          {item.badge && <StageBadge stage={item.badge} />}
+          {Icon && <Icon className="h-3.5 w-3.5 shrink-0 text-primary/70" />}
+          <span className="flex-1 text-left tracking-tight">{item.label}</span>
           {childActive && !open && <span className="h-1.5 w-1.5 rounded-full bg-primary/70 mr-1" />}
           {open
             ? <ChevronDown className="h-3 w-3 opacity-40 transition-transform" />
             : <ChevronRight className="h-3 w-3 opacity-40 transition-transform" />}
         </button>
         {open && (
-          <div className={`mt-0.5 space-y-px ${depth === 0 ? "border-l border-sidebar-border/50 ml-4" : "border-l border-sidebar-border/30 ml-[18px]"}`}>
+          <div className="mt-0.5 space-y-px border-l border-sidebar-border/30 ml-[18px]">
             {item.children!.map(c => (
               <NavNode key={c.label} item={c} depth={depth + 1} />
             ))}
@@ -309,12 +235,10 @@ function NavNode({ item, depth = 0 }: { item: NavItem; depth?: number }) {
     >
       {Icon && <Icon className="h-4 w-4 shrink-0 opacity-60 group-data-[active=true]/navlink:opacity-100 group-data-[active=true]/navlink:text-sidebar-primary" />}
       <span className="truncate">{item.label}</span>
-      {item.badge && <StageBadge stage={item.badge} />}
     </Link>
   );
 }
 
-/** Flat search result row */
 function SearchResult({ item }: { item: NavItem }) {
   const location = useLocation();
   const isActive = item.to
@@ -339,36 +263,27 @@ function SearchResult({ item }: { item: NavItem }) {
 export function AppSidebar() {
   const { user, signOut } = useAuth();
   const [searchQ, setSearchQ] = useState("");
-  const viewAsRole = useViewAsRole();
 
-  const { map: flagMap } = useFlagMap();
-  const devAccess = useDevAccess();
-
-  // When previewing a client/crew role, scope the nav to that role's allowed routes,
-  // then apply feature-flag staging (hide dev-only modules, badge beta/dev ones).
-  const allowed = navAllowedFor(viewAsRole);
-  const nav = useMemo(() => {
-    const base = allowed ? filterNav(NAV, allowed) : NAV;
-    return filterByFlags(base, (k) => flagMap.get(k)?.stage, devAccess);
-  }, [viewAsRole, flagMap, devAccess]);
+  const role = resolveRole(user);
+  const visibleNav = useMemo(() => filterNav(NAV, role), [role]);
 
   const searchResults = useMemo(
-    () => (searchQ.trim().length >= 1 ? flatSearch(nav, searchQ.trim()) : []),
-    [searchQ, nav],
+    () => (searchQ.trim().length >= 1 ? flatSearch(visibleNav, searchQ.trim()) : []),
+    [searchQ, visibleNav],
   );
 
   const isSearching = searchQ.trim().length >= 1;
 
   return (
     <aside className="flex h-screen w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
-      {/* Polaris logo lockup */}
+      {/* Logo */}
       <div className="flex items-center px-3 py-3 border-b border-sidebar-border/50">
         <Link to="/dashboard" aria-label="Go to home" className="flex items-center rounded-md transition-opacity hover:opacity-80">
           <PolarisLogo className="h-auto w-[208px] max-w-full" />
         </Link>
       </div>
 
-      {/* Active vessel switcher */}
+      {/* Vessel switcher */}
       <VesselSwitcher />
 
       {/* Search */}
@@ -401,24 +316,17 @@ export function AppSidebar() {
             <p className="px-3 py-3 text-[11px] text-sidebar-foreground/40">No results for "{searchQ}"</p>
           )
         ) : (
-          nav.map((item, i) => (
+          visibleNav.map((item, i) => (
             <div key={item.label}>
-              {i > 0 && !item.to && <div className="mx-2 my-1.5 h-px bg-sidebar-border/50" />}
+              {i > 0 && <div className="mx-2 my-1 h-px bg-sidebar-border/30" />}
               <NavNode item={item} />
             </div>
           ))
         )}
       </nav>
 
-      {/* Client-view preview badge */}
-      {viewAsRole && (
-        <div className="mx-2 mb-1 rounded-lg border border-amber-500/25 bg-amber-500/10 px-2.5 py-1.5 text-[10.5px] font-medium text-amber-400">
-          Previewing as {ROLE_LABEL[viewAsRole] ?? viewAsRole}
-        </div>
-      )}
-
-      {/* Admin section — hidden while previewing a client view */}
-      {!viewAsRole && <AdminSidebarSection />}
+      {/* Admin section — renders only for global_admin / org_admin */}
+      <AdminSidebarSection />
 
       {/* User footer */}
       <div className="border-t border-sidebar-border/70 p-2.5 space-y-1">
