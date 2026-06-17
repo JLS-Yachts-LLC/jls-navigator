@@ -33,7 +33,6 @@ export const COUNTRY_CONFIGS: Record<CountryCode, CountryVisaConfig> = {
     requiredDocuments: [
       'Passport copy (colour, all pages)',
       'Passport photo (white background)',
-      'Crew contract or employment letter',
     ],
     fields: [
       { key: 'vessel_name', label: 'Vessel Name', type: 'text', required: true,

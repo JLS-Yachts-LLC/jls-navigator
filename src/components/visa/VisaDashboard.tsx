@@ -127,6 +127,29 @@ export default function VisaDashboard() {
   const [emailing, setEmailing]         = useState(false)
   const [showReport, setShowReport]     = useState(false)
 
+  const [cancelling, setCancelling] = useState<string | null>(null)
+
+  async function cancelOrDelete(app: VisaApplication) {
+    if (!window.confirm(
+      app.status === 'draft'
+        ? `Delete this draft application for ${app.crew_members?.full_name ?? 'this crew member'}? This cannot be undone.`
+        : `Cancel this application for ${app.crew_members?.full_name ?? 'this crew member'}? Status will be set to Cancelled.`
+    )) return
+
+    setCancelling(app.id)
+    const db = supabase as any
+    if (app.status === 'draft') {
+      await db.from('visa_applications').delete().eq('id', app.id)
+    } else {
+      await db.from('visa_applications').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', app.id)
+    }
+    setApplications(prev => app.status === 'draft'
+      ? prev.filter(a => a.id !== app.id)
+      : prev.map(a => a.id === app.id ? { ...a, status: 'cancelled' } : a)
+    )
+    setCancelling(null)
+  }
+
   // Filters
   const [activeStatus, setActiveStatus] = useState<string | null>(null)
   const [search, setSearch]   = useState('')
@@ -490,6 +513,15 @@ export default function VisaDashboard() {
                   >
                     {app.status === 'draft' ? 'Resume' : 'Edit'}
                   </button>
+                  {!['cancelled', 'rejected', 'expired', 'approved'].includes(app.status) && (
+                    <button
+                      onClick={() => cancelOrDelete(app)}
+                      disabled={cancelling === app.id}
+                      style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${COLORS.error}44`, background: 'transparent', color: cancelling === app.id ? COLORS.steel : COLORS.error, fontFamily: FONTS.display, fontSize: 11, fontWeight: 600, cursor: cancelling === app.id ? 'not-allowed' : 'pointer', opacity: cancelling === app.id ? 0.5 : 1 }}
+                    >
+                      {app.status === 'draft' ? 'Delete' : 'Cancel'}
+                    </button>
+                  )}
                 </div>
               </div>
             )

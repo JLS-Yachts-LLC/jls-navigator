@@ -2,6 +2,23 @@ import { useState } from 'react'
 import { COLORS, FONTS } from '@/lib/tokens'
 import { DateInputDMY } from '@/components/ui/date-input-dmy'
 import { findCrewMatch, upsertCrewMember, CrewMember } from '@/lib/visa/crewMatching'
+import { supabase } from '@/integrations/supabase/client'
+
+// Statuses that mean an application is still alive — a second one must be blocked.
+const ACTIVE_STATUSES = ['draft', 'pending_docs', 'submitted', 'in_review', 'approved']
+
+async function findActiveApplication(crewId: string): Promise<{ id: string; status: string } | null> {
+  const db = supabase as any
+  const { data } = await db
+    .from('visa_applications')
+    .select('id, status')
+    .eq('crew_member_id', crewId)
+    .in('status', ACTIVE_STATUSES)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  return data ?? null
+}
 
 interface WizardState {
   step: number
@@ -74,6 +91,7 @@ export default function StepCrewSearch({ state, onUpdate, onNext, onBack }: Prop
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [multiplePassports, setMultiplePassports] = useState(false)
+  const [duplicateApp, setDuplicateApp] = useState<{ id: string; status: string } | null>(null)
 
   const [newForm, setNewForm] = useState<NewCrewForm>({
     first_name: '',
@@ -92,6 +110,7 @@ export default function StepCrewSearch({ state, onUpdate, onNext, onBack }: Prop
     setSearchDone(false)
     setMatchedCrew(null)
     setShowCreateForm(false)
+    setDuplicateApp(null)
     onUpdate({ crew: null, isNewCrew: false })
     try {
       const match = await findCrewMatch(searchName, searchDob)
@@ -113,8 +132,11 @@ export default function StepCrewSearch({ state, onUpdate, onNext, onBack }: Prop
     }
   }
 
-  const handleUseProfile = () => {
+  const handleUseProfile = async () => {
     if (!matchedCrew) return
+    setDuplicateApp(null)
+    const existing = await findActiveApplication(matchedCrew.id)
+    if (existing) { setDuplicateApp(existing); return }
     onUpdate({ crew: matchedCrew, isNewCrew: false })
   }
 
@@ -152,6 +174,9 @@ export default function StepCrewSearch({ state, onUpdate, onNext, onBack }: Prop
         rank: newForm.rank.trim() || null,
         multiple_passports: multiplePassports,
       } as any)
+      // A newly upserted crew member may already have an active application.
+      const existing = await findActiveApplication(saved.id)
+      if (existing) { setDuplicateApp(existing); setSaving(false); return }
       onUpdate({ crew: saved, isNewCrew: true })
     } catch {
       setSaveError('Failed to save crew member. Please try again.')
@@ -283,6 +308,40 @@ export default function StepCrewSearch({ state, onUpdate, onNext, onBack }: Prop
             >
               Create new instead
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Duplicate application block */}
+      {duplicateApp && (
+        <div style={{
+          display: 'flex', gap: 14, alignItems: 'flex-start',
+          padding: '14px 16px', marginBottom: 20,
+          background: '#1A0808',
+          border: `1px solid ${COLORS.error}`,
+          borderRadius: 8,
+        }} role="alert">
+          <span style={{ fontSize: 20, flexShrink: 0, color: COLORS.error }} aria-hidden="true">⊘</span>
+          <div>
+            <p style={{ fontFamily: FONTS.display, fontSize: 13, fontWeight: 700, color: COLORS.error, margin: '0 0 4px' }}>
+              Application already exists for this crew member
+            </p>
+            <p style={{ fontFamily: FONTS.display, fontSize: 12, color: COLORS.muted, margin: '0 0 10px', lineHeight: 1.6 }}>
+              Each crew member can only have one active application at a time.
+              The existing application (status: <strong style={{ color: COLORS.frost }}>{duplicateApp.status.replace('_', ' ')}</strong>) must be
+              cancelled or completed before a new one can be created.
+            </p>
+            <a
+              href={`/crew-immigration/visas/${duplicateApp.id}`}
+              style={{
+                fontFamily: FONTS.display, fontSize: 12, fontWeight: 700,
+                color: COLORS.signal, textDecoration: 'none',
+                borderBottom: `1px solid ${COLORS.signal}50`,
+                paddingBottom: 1,
+              }}
+            >
+              View existing application →
+            </a>
           </div>
         </div>
       )}
