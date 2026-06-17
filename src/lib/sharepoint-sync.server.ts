@@ -354,6 +354,32 @@ export async function pushYachtToSharePoint(yachtId: string): Promise<void> {
 
 // ─── Image download helper ─────────────────────────────────────────────────────
 
+/** Graph sharing token for a full file URL: "u!" + base64url(url), no padding. */
+function encodeShareUrl(u: string): string {
+  const b64 = btoa(unescape(encodeURIComponent(u)))
+  return 'u!' + b64.replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_')
+}
+
+/**
+ * Download a SharePoint file by URL through the Graph /shares endpoint and store
+ * it in vessel-images. Works with the app's existing Graph Sites.Read.All — no
+ * SharePoint-scoped (Files.Read.All) permission needed, unlike a direct file GET.
+ */
+async function fetchViaGraphShares(fullUrl: string, graphToken: string, spItemId: string, tag: string): Promise<{ url: string | null; reason?: string }> {
+  const res = await fetch(`https://graph.microsoft.com/v1.0/shares/${encodeShareUrl(fullUrl)}/driveItem/content`, {
+    headers: { Authorization: `Bearer ${graphToken}` },
+  })
+  if (!res.ok) return { url: null, reason: `Graph shares HTTP ${res.status} (${tag})` }
+  const ab = await res.arrayBuffer()
+  const ct = res.headers.get('content-type') ?? 'image/jpeg'
+  if (ct.includes('text/html')) return { url: null, reason: `Graph shares returned HTML (${tag})` }
+  const ext = ct.split('/')[1]?.split(';')[0]?.replace(/[^a-z0-9]/gi, '') ?? 'jpg'
+  const path = `sharepoint/${spItemId}-${tag}.${ext}`
+  const { error } = await supabaseAdmin.storage.from('vessel-images').upload(path, ab, { upsert: true, contentType: ct })
+  if (error) return { url: null, reason: `Supabase upload failed: ${error.message}` }
+  return { url: supabaseAdmin.storage.from('vessel-images').getPublicUrl(path).data.publicUrl }
+}
+
 async function fetchSpImageToSupabase(
   raw: unknown,
   graphToken: string,
@@ -397,12 +423,12 @@ async function fetchSpImageToSupabase(
   // ── 1. Try serverRelativeUrl (classic Picture column) ───────────────────────
   const serverRelativeUrl: string | undefined = img.serverRelativeUrl
   if (serverRelativeUrl) {
-    const result = await uploadUrlToSupabase(
-      `${serverUrl}${serverRelativeUrl}`,
-      downloadToken,
-      spItemId,
-      img.fileName ?? 'sp-image',
-    )
+    const fullUrl = `${serverUrl}${serverRelativeUrl}`
+    // 1a. Graph /shares — uses the app's existing Graph permission (preferred).
+    const viaGraph = await fetchViaGraphShares(fullUrl, graphToken, spItemId, img.fileName ?? 'sp-image')
+    if (viaGraph.url) return viaGraph
+    // 1b. Direct file GET (needs a SharePoint-scoped Files.Read.All token).
+    const result = await uploadUrlToSupabase(fullUrl, downloadToken, spItemId, img.fileName ?? 'sp-image')
     if (result.url) return result
     // fall through to thumbnail alternatives below
   }
