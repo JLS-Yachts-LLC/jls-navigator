@@ -1,5 +1,5 @@
 import { createStartHandler, defaultStreamHandler } from '@tanstack/react-start/server'
-import { syncFromSharePoint, downloadPendingImages, pushChangedRecords, discoverSharePoint, syncById, getSpSyncs, syncStalestList } from './lib/sharepoint-sync.server'
+import { syncFromSharePoint, downloadPendingImages, pushChangedRecords, discoverSharePoint, syncById, getSpSyncs, syncStalestList, setupSignonList } from './lib/sharepoint-sync.server'
 import { syncAisPositions } from './lib/aisstream.server'
 import { runExpiryAlerts } from './lib/permit-expiry-cron.server'
 import { syncFleetPositions } from './lib/mygps.server'
@@ -45,6 +45,21 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
       ctx.waitUntil(downloadPendingImages().catch(() => 0))
       return new Response(JSON.stringify({ ok: true, results }), {
         status: 200, headers: { 'Content-Type': 'application/json' },
+      })
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), {
+        status: 500, headers: { 'Content-Type': 'application/json' },
+      })
+    }
+  }
+
+  // One-time setup: `?setup=signon-list` creates the "Crew Sign On Off" SharePoint
+  // list and registers its outbound sync config. Safe to call repeatedly.
+  if (url.searchParams.get('setup') === 'signon-list') {
+    try {
+      const r = await setupSignonList()
+      return new Response(JSON.stringify(r), {
+        status: r.ok ? 200 : 500, headers: { 'Content-Type': 'application/json' },
       })
     } catch (e) {
       return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), {

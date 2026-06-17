@@ -15,7 +15,7 @@ import {
 import { Plus, Search, FileText, Trash2, Loader2, Upload, ExternalLink, Paperclip } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { uploadVisaDocToSharePoint } from "@/lib/visa-sharepoint.server";
+import { uploadCrewDocToSharePoint } from "@/lib/visa-sharepoint.server";
 import { SignedAnchor } from "@/components/ui/signed-file";
 
 /** Read a File's bytes as a base64 string (no data: prefix). */
@@ -100,25 +100,22 @@ export function CrewDocumentsPage() {
       const { data: { publicUrl } } = supabase.storage.from("permit-documents").getPublicUrl(path);
       setForm((f) => ({ ...f, file_url: publicUrl, file_name: file.name }));
 
-      // Visa documents are mirrored into the SharePoint Crew Visas folder
+      // All crew documents are mirrored into SharePoint under
+      //   Shared Documents / Yacht / {vessel} / Crew Documents / {crew} / {file}
       // (best-effort — the Supabase copy is the source of truth).
-      if (form.doc_type === "Visa") {
-        try {
-          const member = crew.find((c) => c.id === form.crew_member_id);
-          const vesselName = member?.yacht_id
-            ? (yachts.find((y) => y.id === member.yacht_id)?.vessel_name ?? null)
-            : null;
-          const crewName = member ? `${member.first_name} ${member.last_name}`.trim() : "Unknown Crew";
-          const base64 = await fileToBase64(file);
-          await (uploadVisaDocToSharePoint as any)({
-            data: { vesselName, crewName, fileName: file.name, contentType: file.type, base64 },
-          });
-          toast.success("File attached & synced to SharePoint");
-        } catch (spErr) {
-          toast.warning(`File attached, but SharePoint sync failed: ${spErr instanceof Error ? spErr.message : "unknown error"}`);
-        }
-      } else {
-        toast.success("File attached");
+      try {
+        const member = crew.find((c) => c.id === form.crew_member_id);
+        const vesselName = member?.yacht_id
+          ? (yachts.find((y) => y.id === member.yacht_id)?.vessel_name ?? null)
+          : null;
+        const crewName = member ? `${member.first_name} ${member.last_name}`.trim() : "Unknown Crew";
+        const base64 = await fileToBase64(file);
+        await (uploadCrewDocToSharePoint as any)({
+          data: { vesselName, crewName, fileName: file.name, contentType: file.type, base64 },
+        });
+        toast.success("File attached & synced to SharePoint");
+      } catch (spErr) {
+        toast.warning(`File attached, but SharePoint sync failed: ${spErr instanceof Error ? spErr.message : "unknown error"}`);
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Upload failed");

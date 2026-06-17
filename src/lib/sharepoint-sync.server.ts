@@ -470,6 +470,7 @@ async function uploadUrlToSupabase(
 const TARGET_TABLE: Record<string, string> = {
   yachts: 'yachts', permits: 'permits', small_boats: 'small_boats',
   crew_members: 'crew_members', visa_applications: 'visa_applications',
+  crew_signon_events: 'crew_signon_events',
 };
 // Natural keys used to find an existing SP item when a record has no sharepoint_item_id yet.
 const TARGET_KEY_FIELDS: Record<string, string[]> = {
@@ -478,6 +479,8 @@ const TARGET_KEY_FIELDS: Record<string, string[]> = {
   small_boats: ['boat_name'],
   crew_members: ['passport_number'],
   visa_applications: ['jls_reference'],
+  // Sign-on/off events have no natural key — always create a new SharePoint row.
+  crew_signon_events: [],
 };
 
 /** Push one app record to every enabled SharePoint sync for its target. */
@@ -1165,6 +1168,66 @@ export async function createYachtFolderInSharePoint(vesselName: string): Promise
   )
   const folder = await res.json() as Record<string, any>
   return folder.webUrl ?? null
+}
+
+// ─── One-time setup: create the "Crew Sign On Off" SharePoint list + sync config ─
+// Idempotent. Creates the list with fixed internal column names so the field
+// mapping below is deterministic, then registers an enabled outbound sync config.
+export async function setupSignonList(): Promise<{ ok: boolean; listId?: string; reason?: string }> {
+  const cfg = await getSpConfig().catch(() => null)
+  if (!cfg) return { ok: false, reason: 'SharePoint is not configured in Settings.' }
+
+  const token = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret)
+  const siteId = await resolveSpSite(token, cfg.tenantUrl, cfg.siteUrl)
+  const LIST_NAME = 'Crew Sign On Off'
+
+  // Create the list (ignore "already exists").
+  const res = await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/lists`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      displayName: LIST_NAME,
+      list: { template: 'genericList' },
+      columns: [
+        { name: 'CrewName', text: {} },
+        { name: 'Vessel', text: {} },
+        { name: 'EventType', text: {} },
+        { name: 'EventDate', dateTime: { format: 'dateOnly' } },
+        { name: 'Port', text: {} },
+        { name: 'Notes', text: { allowMultipleLines: true } },
+      ],
+    }),
+  })
+  let listId: string | undefined
+  if (res.ok) {
+    listId = ((await res.json()) as Record<string, any>).id
+  } else {
+    const err = (await res.json().catch(() => ({}))) as Record<string, any>
+    const code = err?.error?.code
+    if (code !== 'nameAlreadyExists') {
+      return { ok: false, reason: `List could not be created: ${err?.error?.message ?? res.statusText}. The Azure app likely needs Sites.Manage.All.` }
+    }
+  }
+
+  // Register the outbound sync config (idempotent on list_name).
+  const fieldMapping = {
+    Title: 'crew_member_name',
+    CrewName: 'crew_member_name',
+    Vessel: 'vessel_name',
+    EventType: 'event_type',
+    EventDate: 'event_date',
+    Port: 'port',
+    Notes: 'notes',
+  }
+  const { data: existing } = await (supabaseAdmin as any)
+    .from('sharepoint_sync_configs').select('id').eq('list_name', LIST_NAME).maybeSingle()
+  if (!existing) {
+    await (supabaseAdmin as any).from('sharepoint_sync_configs').insert({
+      name: LIST_NAME, list_name: LIST_NAME, sync_target: 'crew_signon_events',
+      enabled: true, field_mapping: fieldMapping,
+    })
+  }
+  return { ok: true, listId }
 }
 
 // ─── Background image download (cron phase 2) ─────────────────────────────────

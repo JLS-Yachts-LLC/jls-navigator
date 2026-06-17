@@ -15,6 +15,7 @@ import {
 import { Plus, Search, LogIn, LogOut, Trash2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { doPushToSharePoint } from "@/lib/sharepoint-push.server";
 
 type CrewLite = { id: string; first_name: string; last_name: string; rank: string | null };
 type Yacht = { id: string; vessel_name: string };
@@ -71,7 +72,7 @@ export function SignOnOffPage() {
     if (!form.crew_member_id) { toast.error("Select a crew member"); return; }
     setBusy(true);
     try {
-      const { error } = await (supabase as any).from("crew_signon_events").insert([{
+      const { data: saved, error } = await (supabase as any).from("crew_signon_events").insert([{
         crew_member_id: form.crew_member_id,
         yacht_id: form.yacht_id || null,
         event_type: form.event_type,
@@ -79,8 +80,10 @@ export function SignOnOffPage() {
         port: form.port || null,
         notes: form.notes || null,
         created_by: user?.id,
-      }]);
+      }]).select("id").single();
       if (error) throw error;
+      // Mirror the event to the SharePoint "Crew Sign On Off" list (best-effort).
+      if (saved?.id) doPushToSharePoint({ data: { target: "crew_signon_events", id: saved.id } } as any).catch(() => {});
       // Optionally update crew status
       await (supabase as any).from("crew_members")
         .update({ status: form.event_type === "sign_on" ? "active" : "off_signed", updated_at: new Date().toISOString() })
