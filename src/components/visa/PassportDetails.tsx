@@ -312,19 +312,43 @@ function SmallUploadCard({ number, label, optional, icon, file, onFile, onRemove
   )
 }
 
-// ─── Extracted Field ──────────────────────────────────────────────────────────
+// ─── Extracted Field Card ─────────────────────────────────────────────────────
 
-function ExtractedField({ label, children }: { label: string; children: React.ReactNode }) {
+function FieldCard({ label, note, noteColor, children }: {
+  label: string
+  note?: string
+  noteColor?: string
+  children: React.ReactNode
+}) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+    <div style={{
+      display: 'flex', flexDirection: 'column', gap: 6,
+      padding: '12px 14px',
+      background: COLORS.void, border: `1px solid ${COLORS.deep}`,
+      borderRadius: 8,
+    }}>
       <span style={{
-        fontFamily: FONTS.display, fontSize: 9, fontWeight: 700,
-        letterSpacing: '0.18em', textTransform: 'uppercase', color: COLORS.steel,
+        fontFamily: FONTS.display, fontSize: 10, fontWeight: 600,
+        letterSpacing: '0.06em', color: COLORS.muted,
       }}>
         {label}
       </span>
-      {children}
+      <div style={{ fontFamily: FONTS.display, fontSize: 14, fontWeight: 600, color: COLORS.frost }}>
+        {children}
+      </div>
+      {note && (
+        <span style={{ fontFamily: FONTS.display, fontSize: 11, color: noteColor ?? COLORS.success, display: 'flex', alignItems: 'center', gap: 4 }}>
+          ✓ {note}
+        </span>
+      )}
     </div>
+  )
+}
+
+// Calendar icon for date fields
+function CalendarIcon() {
+  return (
+    <span aria-hidden="true" style={{ fontSize: 13, color: COLORS.steel, marginLeft: 6, verticalAlign: 'middle' }}>📅</span>
   )
 }
 
@@ -455,176 +479,159 @@ export default function PassportDetails({
             </div>
           </section>
 
-          {/* Section 2: Preview + Extracted Info (shown after OCR) */}
+          {/* Section 2: Passport Preview + Extracted Info */}
           {extracted && (
             <section style={{
               background: COLORS.abyss, border: `1px solid ${COLORS.deep}`,
               borderRadius: 10, padding: '22px 24px',
             }}>
-              <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
+              <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
 
-                {/* Passport preview */}
-                <div style={{
-                  width: '38%', flexShrink: 0, background: COLORS.void,
-                  border: `1px solid ${COLORS.deep}`, borderRadius: 8,
-                  overflow: 'hidden',
-                }}>
-                  <div style={{ padding: '10px 14px', borderBottom: `1px solid ${COLORS.deep}` }}>
-                    <span style={{ fontFamily: FONTS.display, fontSize: 11, fontWeight: 700,
-                                    letterSpacing: '0.15em', textTransform: 'uppercase',
-                                    color: COLORS.steel }}>
-                      Passport Preview
-                    </span>
+                {/* ── Passport Preview ── */}
+                <div style={{ width: 220, flexShrink: 0 }}>
+                  <span style={{
+                    display: 'block', fontFamily: FONTS.display, fontSize: 11,
+                    fontWeight: 600, color: COLORS.muted, marginBottom: 10,
+                  }}>
+                    Passport Preview
+                  </span>
+                  <div style={{
+                    background: COLORS.void, border: `1px solid ${COLORS.deep}`,
+                    borderRadius: 8, overflow: 'hidden',
+                  }}>
+                    {extracted.previewImageUrl ? (
+                      <img
+                        src={extracted.previewImageUrl}
+                        alt="Uploaded passport — data page"
+                        style={{ width: '100%', display: 'block' }}
+                      />
+                    ) : (
+                      <div style={{
+                        padding: '32px 16px', textAlign: 'center',
+                        fontFamily: FONTS.display, fontSize: 12, color: COLORS.steel,
+                      }}>
+                        No preview available
+                      </div>
+                    )}
                   </div>
-                  {extracted.previewImageUrl ? (
-                    <img
-                      src={extracted.previewImageUrl}
-                      alt="Uploaded passport — inside pages"
-                      style={{ width: '100%', display: 'block' }}
-                    />
-                  ) : (
-                    <div style={{ padding: 24, textAlign: 'center', fontSize: 12, color: COLORS.steel }}>
-                      No image preview available
-                    </div>
-                  )}
                 </div>
 
-                {/* Extracted data */}
+                {/* ── Extracted Information ── */}
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-                    <span style={{ fontFamily: FONTS.display, fontSize: 14, fontWeight: 700,
-                                    color: COLORS.frost }}>
+                    <span style={{ fontFamily: FONTS.display, fontSize: 15, fontWeight: 700, color: COLORS.frost }}>
                       Extracted Information
                     </span>
                     <span style={{
                       fontFamily: FONTS.display, fontSize: 9, fontWeight: 700,
-                      letterSpacing: '0.12em', textTransform: 'uppercase',
-                      color: COLORS.leoAmber, padding: '2px 8px',
-                      background: `${COLORS.leoAmber}18`, borderRadius: 3,
+                      letterSpacing: '0.14em', textTransform: 'uppercase',
+                      color: COLORS.leoAmber, padding: '3px 9px',
+                      background: `${COLORS.leoAmber}18`,
+                      border: `1px solid ${COLORS.leoAmber}30`,
+                      borderRadius: 4,
                     }}>
                       Auto-filled
                     </span>
                   </div>
 
-                  {/* Grid of fields */}
-                  <div style={{
-                    display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
-                    gap: 14, marginBottom: 16,
-                  }}>
-
-                    {/* Nationality */}
-                    <ExtractedField label="Nationality">
+                  {/* Row 1 */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 10 }}>
+                    <FieldCard label="Nationality">
                       {isEditing ? (
                         <input value={extracted.nationality}
-                          onChange={(e) => setExtracted(prev => prev ? { ...prev, nationality: e.target.value } : prev)}
-                          style={inputStyle} />
+                          onChange={e => setExtracted(p => p ? { ...p, nationality: e.target.value } : p)}
+                          style={editInputStyle} />
                       ) : (
-                        <span style={valueStyle}>{extracted.nationalityFlag} {extracted.nationality}</span>
+                        <>{extracted.nationalityFlag} {extracted.nationality}</>
                       )}
-                    </ExtractedField>
+                    </FieldCard>
 
-                    {/* Passport Number */}
-                    <ExtractedField label="Passport Number">
+                    <FieldCard label="Passport Number">
                       {isEditing ? (
                         <input value={extracted.passportNumber}
-                          onChange={(e) => setExtracted(prev => prev ? { ...prev, passportNumber: e.target.value } : prev)}
-                          style={inputStyle} />
-                      ) : (
-                        <span style={valueStyle}>{extracted.passportNumber}</span>
-                      )}
-                    </ExtractedField>
+                          onChange={e => setExtracted(p => p ? { ...p, passportNumber: e.target.value } : p)}
+                          style={editInputStyle} />
+                      ) : extracted.passportNumber}
+                    </FieldCard>
 
-                    {/* Date of Birth */}
-                    <ExtractedField label="Date of Birth">
+                    <FieldCard label="Date of Birth">
                       {isEditing ? (
                         <input type="date" value={extracted.dateOfBirth}
-                          onChange={(e) => setExtracted(prev => prev ? { ...prev, dateOfBirth: e.target.value } : prev)}
-                          style={inputStyle} />
-                      ) : (
-                        <span style={valueStyle}>{extracted.dateOfBirth}</span>
-                      )}
-                    </ExtractedField>
+                          onChange={e => setExtracted(p => p ? { ...p, dateOfBirth: e.target.value } : p)}
+                          style={{ ...editInputStyle, colorScheme: 'dark' }} />
+                      ) : <>{extracted.dateOfBirth}<CalendarIcon /></>}
+                    </FieldCard>
+                  </div>
 
-                    {/* Issue Date */}
-                    <ExtractedField label="Issue Date">
+                  {/* Row 2 */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 10 }}>
+                    <FieldCard label="Issue Date">
                       {isEditing ? (
                         <input type="date" value={extracted.issueDate}
-                          onChange={(e) => setExtracted(prev => prev ? { ...prev, issueDate: e.target.value } : prev)}
-                          style={inputStyle} />
-                      ) : (
-                        <span style={valueStyle}>{extracted.issueDate}</span>
-                      )}
-                    </ExtractedField>
+                          onChange={e => setExtracted(p => p ? { ...p, issueDate: e.target.value } : p)}
+                          style={{ ...editInputStyle, colorScheme: 'dark' }} />
+                      ) : <>{extracted.issueDate}<CalendarIcon /></>}
+                    </FieldCard>
 
-                    {/* Expiry Date */}
-                    <ExtractedField label="Expiry Date">
+                    <FieldCard label="Expiry Date" note={extracted.validityNote} noteColor={COLORS.success}>
                       {isEditing ? (
                         <input type="date" value={extracted.expiryDate}
-                          onChange={(e) => setExtracted(prev => prev ? { ...prev, expiryDate: e.target.value } : prev)}
-                          style={inputStyle} />
-                      ) : (
-                        <div>
-                          <span style={valueStyle}>{extracted.expiryDate}</span>
-                          <span style={{ display: 'block', fontSize: 11, color: COLORS.signal, marginTop: 2 }}>
-                            {extracted.validityNote}
-                          </span>
-                        </div>
-                      )}
-                    </ExtractedField>
+                          onChange={e => setExtracted(p => p ? { ...p, expiryDate: e.target.value } : p)}
+                          style={{ ...editInputStyle, colorScheme: 'dark' }} />
+                      ) : <>{extracted.expiryDate}<CalendarIcon /></>}
+                    </FieldCard>
 
-                    {/* Issuing Country */}
-                    <ExtractedField label="Issuing Country">
+                    <FieldCard label="Issuing Country">
                       {isEditing ? (
                         <input value={extracted.issuingCountry}
-                          onChange={(e) => setExtracted(prev => prev ? { ...prev, issuingCountry: e.target.value } : prev)}
-                          style={inputStyle} />
-                      ) : (
-                        <span style={valueStyle}>{extracted.issuingCountry}</span>
-                      )}
-                    </ExtractedField>
+                          onChange={e => setExtracted(p => p ? { ...p, issuingCountry: e.target.value } : p)}
+                          style={editInputStyle} />
+                      ) : extracted.issuingCountry}
+                    </FieldCard>
+                  </div>
 
-                    {/* Place of Birth */}
-                    <ExtractedField label="Place of Birth">
+                  {/* Row 3 */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 18 }}>
+                    <FieldCard label="Place of Birth">
                       {isEditing ? (
                         <input value={extracted.placeOfBirth}
-                          onChange={(e) => setExtracted(prev => prev ? { ...prev, placeOfBirth: e.target.value } : prev)}
-                          style={inputStyle} />
-                      ) : (
-                        <span style={valueStyle}>{extracted.placeOfBirth}</span>
-                      )}
-                    </ExtractedField>
+                          onChange={e => setExtracted(p => p ? { ...p, placeOfBirth: e.target.value } : p)}
+                          style={editInputStyle} />
+                      ) : extracted.placeOfBirth}
+                    </FieldCard>
 
-                    {/* Gender */}
-                    <ExtractedField label="Gender">
+                    <FieldCard label="Gender">
                       {isEditing ? (
                         <select value={extracted.gender}
-                          onChange={(e) => setExtracted(prev => prev ? { ...prev, gender: e.target.value } : prev)}
-                          style={{ ...inputStyle, cursor: 'pointer' }}>
+                          onChange={e => setExtracted(p => p ? { ...p, gender: e.target.value } : p)}
+                          style={{ ...editInputStyle, cursor: 'pointer' }}>
                           <option>Male</option>
                           <option>Female</option>
                           <option>Other</option>
                         </select>
-                      ) : (
-                        <span style={valueStyle}>{extracted.gender}</span>
-                      )}
-                    </ExtractedField>
+                      ) : extracted.gender}
+                    </FieldCard>
 
+                    {/* empty cell to keep grid alignment */}
+                    <div />
                   </div>
 
                   <button
                     type="button"
                     onClick={() => setIsEditing(v => !v)}
                     style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 6,
                       fontFamily: FONTS.display, fontSize: 12, fontWeight: 600,
-                      color: isEditing ? COLORS.success : COLORS.signal,
+                      color: isEditing ? COLORS.success : COLORS.frost,
                       background: 'none',
-                      border: `1px solid ${isEditing ? COLORS.success : COLORS.signal}60`,
-                      borderRadius: 6, padding: '6px 16px', cursor: 'pointer',
+                      border: `1px solid ${isEditing ? COLORS.success : COLORS.deep}`,
+                      borderRadius: 7, padding: '7px 16px', cursor: 'pointer',
                     }}
                   >
-                    {isEditing ? '✓  Save changes' : '✎  Edit Information'}
+                    {isEditing ? <>✓ Save changes</> : <>✎ Edit Information</>}
                   </button>
                 </div>
+
               </div>
             </section>
           )}
@@ -712,21 +719,15 @@ export default function PassportDetails({
 
 // ─── Shared style fragments ───────────────────────────────────────────────────
 
-const valueStyle: React.CSSProperties = {
+const editInputStyle: React.CSSProperties = {
   fontFamily: FONTS.display,
   fontSize: 13,
   fontWeight: 600,
   color: COLORS.frost,
-}
-
-const inputStyle: React.CSSProperties = {
-  fontFamily: FONTS.display,
-  fontSize: 13,
-  color: COLORS.frost,
-  background: COLORS.void,
-  border: `1px solid ${COLORS.deep}`,
+  background: COLORS.abyss,
+  border: `1px solid ${COLORS.signal}60`,
   borderRadius: 5,
-  padding: '5px 8px',
+  padding: '4px 8px',
   width: '100%',
   outline: 'none',
 }
