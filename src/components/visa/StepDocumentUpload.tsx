@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react'
+import React, { useRef, useState, useEffect } from 'react'
 import { supabase } from '@/integrations/supabase/client'
 import { COLORS, FONTS } from '@/lib/tokens'
 import type { CrewMember, CrewPassport } from '@/lib/visa/crewMatching'
@@ -31,6 +31,18 @@ function docKey(label: string) {
   return label.replace(/ /g, '_')
 }
 
+/** Match a required-document label to a scan already captured on the passport
+ *  step, so it doesn't have to be uploaded again. Returns the existing URL or null. */
+function passportSourceFor(label: string, p: CrewPassport | null): string | null {
+  if (!p) return null
+  const l = label.toLowerCase()
+  if (l.includes('seaman')) return p.seamans_book_url ?? null
+  if (l.includes('photo') || l.includes('headshot')) return p.headshot_url ?? null
+  if (l.includes('passport') || l.includes('cover') || l.includes('bio') || l.includes('data page'))
+    return p.document_url ?? p.cover_url ?? null
+  return null
+}
+
 export default function StepDocumentUpload({ state, onUpdate, onNext, onBack }: Props) {
   const config: CountryVisaConfig | undefined =
     (COUNTRY_CONFIGS as Record<string, CountryVisaConfig>)[state.countryCode]
@@ -39,6 +51,29 @@ export default function StepDocumentUpload({ state, onUpdate, onNext, onBack }: 
   const [uploading, setUploading] = useState<Record<string, boolean>>({})
   const [errors, setErrors]       = useState<Record<string, string>>({})
   const fileRefs = useRef<Record<string, HTMLInputElement | null>>({})
+
+  // Pre-fill any document already captured on the Passport step (passport copy,
+  // photo, seaman's book) so the crew member isn't asked to upload it twice.
+  useEffect(() => {
+    if (!state.passport) return
+    const updates: Record<string, string> = {}
+    for (const docLabel of requiredDocs) {
+      const key = docKey(docLabel)
+      if (state.uploadedDocs[key]) continue
+      const src = passportSourceFor(docLabel, state.passport)
+      if (src) updates[key] = src
+    }
+    if (Object.keys(updates).length) {
+      onUpdate({ uploadedDocs: { ...state.uploadedDocs, ...updates } })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.passport, state.countryCode])
+
+  // URLs that came from the passport on file (for the "from passport" hint).
+  const passportUrls = new Set(
+    [state.passport?.document_url, state.passport?.cover_url, state.passport?.headshot_url, state.passport?.seamans_book_url]
+      .filter(Boolean) as string[],
+  )
 
   const uploadedCount = requiredDocs.filter(d => !!state.uploadedDocs[docKey(d)]).length
   const canContinue   = uploadedCount >= 1
@@ -178,12 +213,19 @@ export default function StepDocumentUpload({ state, onUpdate, onNext, onBack }: 
 
             {/* Uploaded state */}
             {isUploaded && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingLeft: 30 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingLeft: 30, flexWrap: 'wrap' }}>
                 <span style={{ fontFamily: FONTS.display, fontSize: 12, color: COLORS.signal, textDecoration: 'underline', wordBreak: 'break-all' }}>
                   <SignedAnchor stored={state.uploadedDocs[key]}>
                     {decodeURIComponent(state.uploadedDocs[key].split('/').pop() ?? 'View file')}
                   </SignedAnchor>
                 </span>
+                {passportUrls.has(state.uploadedDocs[key]) && (
+                  <span style={{
+                    fontFamily: FONTS.display, fontSize: 9, fontWeight: 700, letterSpacing: '0.12em',
+                    textTransform: 'uppercase', color: COLORS.signal, padding: '1px 6px',
+                    background: `${COLORS.signal}18`, border: `1px solid ${COLORS.signal}30`, borderRadius: 3,
+                  }}>From passport on file</span>
+                )}
                 <button
                   onClick={() => handleRemove(docLabel)}
                   style={{
