@@ -6,8 +6,11 @@ import {
   Route, UserCircle2, Car, MapPin, ScrollText, X, ShoppingCart, Truck,
   GraduationCap, Sparkles, Layers as LayersIcon, UserPlus, LayoutDashboard,
   FileText, Wrench, UtensilsCrossed, Cpu, IdCard, Boxes, Cog, ClipboardList,
-  Globe, Headset, BookOpen, FileSignature, KeyRound, Zap,
+  Globe, Headset, BookOpen, FileSignature, KeyRound, Zap, Rocket,
 } from "lucide-react";
+import { useFlagMap, type FlagStage } from "@/lib/release-flags";
+import { useDevAccess } from "@/lib/dev-access";
+import { StageBadge } from "@/components/dev/feature-badge";
 import { AdminSidebarSection } from "@/components/admin/AdminSidebarSection";
 import { useViewAsRole, navAllowedFor, ROLE_LABEL } from "@/lib/view-as";
 import { useState, useMemo } from "react";
@@ -22,6 +25,12 @@ type NavItem = {
   to?: string;
   icon?: React.ComponentType<{ className?: string }>;
   children?: NavItem[];
+  /** Feature-flag key controlling visibility + Beta/Dev badge. */
+  flagKey?: string;
+  /** Visible only to viewers with dev access (independent of feature flags). */
+  devOnly?: boolean;
+  /** Transient — set during flag filtering so NavNode can render a badge. */
+  badge?: FlagStage;
 };
 
 const NAV: NavItem[] = [
@@ -30,13 +39,14 @@ const NAV: NavItem[] = [
     label: "Overview",
     children: [
       { label: "Leo",              to: "/dashboard", icon: Sparkles },
-      { label: "Vessel Overview",  to: "/yachts",    icon: Ship },
-      { label: "My Fleet (Live)",  to: "/my-fleet",  icon: Navigation },
+      { label: "Vessel Overview",  to: "/yachts",    icon: Ship, flagKey: "vessel-overview" },
+      { label: "My Fleet (Live)",  to: "/my-fleet",  icon: Navigation, flagKey: "my-fleet" },
 
       // Logistics now parents ShipSync + Transport & Fleet
       {
         label: "Logistics",
         icon: Boxes,
+        flagKey: "logistics",
         children: [
           {
             label: "ShipSync",
@@ -68,6 +78,7 @@ const NAV: NavItem[] = [
       {
         label: "Operations",
         icon: Cog,
+        flagKey: "operations",
         children: [
           {
             label: "Orbit",
@@ -86,18 +97,20 @@ const NAV: NavItem[] = [
       {
         label: "Waypoint",
         icon: ShoppingCart,
+        flagKey: "waypoint",
         children: [
           { label: "Suppliers",  to: "/waypoint",            icon: Users },
           { label: "Quotations", to: "/waypoint/quotations", icon: FileText },
         ],
       },
 
-      { label: "Finance",     to: "/finance",  icon: BarChart3 },
-      { label: "Reports",     to: "/director", icon: FileText },
+      { label: "Finance",     to: "/finance",  icon: BarChart3, flagKey: "finance" },
+      { label: "Reports",     to: "/director", icon: FileText, flagKey: "reports" },
 
       {
         label: "Yacht IT Solutions",
         icon: Cpu,
+        flagKey: "yacht-it",
         children: [
           { label: "Service Desk",         to: "/it-tickets", icon: Headset },
           { label: "IT Yachts",            to: "/it-yachts",  icon: Ship },
@@ -114,6 +127,7 @@ const NAV: NavItem[] = [
           {
             label: "Crew & Immigration",
             icon: IdCard,
+            flagKey: "crew-immigration",
             children: [
               { label: "Crew List",          to: "/crew-immigration/crew",        icon: UserCircle2 },
               { label: "Visas",              to: "/crew-immigration/visas",       icon: FileText },
@@ -134,6 +148,7 @@ const NAV: NavItem[] = [
           {
             label: "Crew Placement",
             icon: UserPlus,
+            flagKey: "crew-placement",
             children: [
               { label: "Candidates", to: "/crew-placement",           icon: UserPlus },
               { label: "Vacancies",  to: "/crew-placement/vacancies", icon: ClipboardList },
@@ -144,23 +159,25 @@ const NAV: NavItem[] = [
       },
 
       // ── Other former Modules items ──
-      { label: "Superyacht Provisioning", to: "/provisioning", icon: UtensilsCrossed },
+      { label: "Superyacht Provisioning", to: "/provisioning", icon: UtensilsCrossed, flagKey: "provisioning" },
       {
         label: "JLS Training Institute",
         icon: GraduationCap,
+        flagKey: "training",
         children: [
           { label: "Training Records", to: "/training",                icon: GraduationCap },
           { label: "Certifications",   to: "/training/certifications", icon: FileCheck2 },
         ],
       },
-      { label: "Agency Network", to: "/agency", icon: Globe },
-      { label: "Documents & e-Sign",     to: "/esign",        icon: FileSignature },
-      { label: "Automations",            to: "/automations",  icon: Zap },
+      { label: "Agency Network", to: "/agency", icon: Globe, flagKey: "agency" },
+      { label: "Documents & e-Sign",     to: "/esign",        icon: FileSignature, flagKey: "esign" },
+      { label: "Automations",            to: "/automations",  icon: Zap, flagKey: "automations" },
       { label: "Leo Assistant",          to: "/ai-assistant", icon: Sparkles },
-      { label: "Compass",                to: "/compass",      icon: Compass },
+      { label: "Compass",                to: "/compass",      icon: Compass, flagKey: "compass" },
       { label: "Changelog",              to: "/changelog",    icon: ScrollText },
 
       { label: "Settings", to: "/settings", icon: Settings },
+      { label: "Dev Settings", to: "/dev-settings", icon: Rocket, devOnly: true },
     ],
   },
 
@@ -215,6 +232,33 @@ function filterNav(items: NavItem[], allowed: string[]): NavItem[] {
   return out;
 }
 
+/**
+ * Filter the nav tree by feature stage + dev access, annotating each kept item
+ * with a `badge` (beta/dev) for rendering. Dev-stage features and `devOnly`
+ * items are hidden unless the viewer has dev access; beta/live are always shown.
+ */
+function filterByFlags(
+  items: NavItem[],
+  stageOf: (key: string) => FlagStage | undefined,
+  devAccess: boolean,
+): NavItem[] {
+  const out: NavItem[] = [];
+  for (const item of items) {
+    if (item.devOnly && !devAccess) continue;
+    const stage = item.flagKey ? stageOf(item.flagKey) : undefined;
+    if (stage === "dev" && !devAccess) continue;
+    const badge: FlagStage | undefined = stage === "beta" ? "beta" : stage === "dev" ? "dev" : undefined;
+    if (item.children?.length) {
+      const kids = filterByFlags(item.children, stageOf, devAccess);
+      // Keep a parent folder only if it still has visible children.
+      if (kids.length) out.push({ ...item, children: kids, badge });
+    } else {
+      out.push({ ...item, badge });
+    }
+  }
+  return out;
+}
+
 // ─── Nav Node ─────────────────────────────────────────────────────────────────
 
 function NavNode({ item, depth = 0 }: { item: NavItem; depth?: number }) {
@@ -239,6 +283,7 @@ function NavNode({ item, depth = 0 }: { item: NavItem; depth?: number }) {
           <span className={`flex-1 text-left tracking-tight ${depth === 0 ? "text-[11px] font-semibold uppercase tracking-widest text-sidebar-foreground/40" : ""}`}>
             {item.label}
           </span>
+          {item.badge && <StageBadge stage={item.badge} />}
           {childActive && !open && <span className="h-1.5 w-1.5 rounded-full bg-primary/70 mr-1" />}
           {open
             ? <ChevronDown className="h-3 w-3 opacity-40 transition-transform" />
@@ -264,6 +309,7 @@ function NavNode({ item, depth = 0 }: { item: NavItem; depth?: number }) {
     >
       {Icon && <Icon className="h-4 w-4 shrink-0 opacity-60 group-data-[active=true]/navlink:opacity-100 group-data-[active=true]/navlink:text-sidebar-primary" />}
       <span className="truncate">{item.label}</span>
+      {item.badge && <StageBadge stage={item.badge} />}
     </Link>
   );
 }
@@ -295,9 +341,16 @@ export function AppSidebar() {
   const [searchQ, setSearchQ] = useState("");
   const viewAsRole = useViewAsRole();
 
-  // When previewing a client/crew role, scope the nav to that role's allowed routes.
+  const { map: flagMap } = useFlagMap();
+  const devAccess = useDevAccess();
+
+  // When previewing a client/crew role, scope the nav to that role's allowed routes,
+  // then apply feature-flag staging (hide dev-only modules, badge beta/dev ones).
   const allowed = navAllowedFor(viewAsRole);
-  const nav = useMemo(() => (allowed ? filterNav(NAV, allowed) : NAV), [viewAsRole]);
+  const nav = useMemo(() => {
+    const base = allowed ? filterNav(NAV, allowed) : NAV;
+    return filterByFlags(base, (k) => flagMap.get(k)?.stage, devAccess);
+  }, [viewAsRole, flagMap, devAccess]);
 
   const searchResults = useMemo(
     () => (searchQ.trim().length >= 1 ? flatSearch(nav, searchQ.trim()) : []),
