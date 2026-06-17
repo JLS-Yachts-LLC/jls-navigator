@@ -75,8 +75,10 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
   if (url.searchParams.get('images')) {
     const n = Math.min(Math.max(parseInt(url.searchParams.get('images') || '10', 10) || 10, 1), 15)
     try {
-      const downloaded = await downloadPendingImages(n)
-      return new Response(JSON.stringify({ ok: true, requested: n, downloaded }), {
+      const { downloaded, results } = await downloadPendingImages(n)
+      // Surface per-vessel failure reasons so image-sync problems are diagnosable.
+      const failures = results.filter((r) => !r.ok).map((r) => r.reason)
+      return new Response(JSON.stringify({ ok: true, requested: n, attempted: results.length, downloaded, failures }), {
         status: 200, headers: { 'Content-Type': 'application/json' },
       })
     } catch (e) {
@@ -224,7 +226,7 @@ export default {
     ctx.waitUntil(
       syncStalestList()
         .then((r) => { if (r) console.log(`[sp-cron] ${r.name}: synced=${r.synced} errors=${r.errors}`); return downloadPendingImages() })
-        .then((imgs) => { if (imgs) console.log(`[sp-cron] images downloaded=${imgs}`) })
+        .then((img) => { if (img.downloaded || img.results.length) console.log(`[sp-cron] images downloaded=${img.downloaded}/${img.results.length}`) })
         .catch((e) => console.error('[sp-cron] error:', e))
     )
 
