@@ -26,25 +26,46 @@ type WizardState = {
 }
 
 // Persist an in-progress application as a real DB draft so it appears in the
-// Visa Applications "Draft" list and can be resumed. Returns the draft row id.
+// Persist wizard progress. Always resolves to a single row per crew member —
+// finds an existing record first, updates it; only inserts if none exists.
 async function persistDraft(s: WizardState): Promise<string | null> {
   if (!s.crew?.id) return s.draftId ?? null
   const payload: any = {
-    crew_member_id: s.crew.id,
-    yacht_id:       s.crew.yacht_id ?? null,
-    country_code:   s.countryCode,
-    status:         'draft',
-    visa_type:      'Crew Visa',
-    given_name:     s.crew.first_name ?? null,
-    surname:        s.crew.last_name ?? null,
-    nationality:    s.passport?.nationality ?? s.crew.nationality ?? null,
-    passport_id:    s.passport?.id ?? null,
+    crew_member_id:  s.crew.id,
+    yacht_id:        s.crew.yacht_id ?? null,
+    country_code:    s.countryCode,
+    status:          'draft',
+    visa_type:       'Crew Visa',
+    given_name:      s.crew.first_name ?? null,
+    surname:         s.crew.last_name ?? null,
+    nationality:     s.passport?.nationality ?? s.crew.nationality ?? null,
+    passport_id:     s.passport?.id ?? null,
     passport_number: s.passport?.passport_number ?? null,
     passport_expiry: s.passport?.expiry_date ?? null,
-    updated_at:     new Date().toISOString(),
+    updated_at:      new Date().toISOString(),
   }
   const db = supabase as any
-  if (s.draftId) { await db.from('visa_applications').update(payload).eq('id', s.draftId); return s.draftId }
+
+  // If we already have the row id, update it directly.
+  if (s.draftId) {
+    await db.from('visa_applications').update(payload).eq('id', s.draftId)
+    return s.draftId
+  }
+
+  // Look for any existing record for this crew member before inserting.
+  const { data: existing } = await db
+    .from('visa_applications')
+    .select('id')
+    .eq('crew_member_id', s.crew.id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (existing?.id) {
+    await db.from('visa_applications').update(payload).eq('id', existing.id)
+    return existing.id
+  }
+
   const { data } = await db.from('visa_applications').insert(payload).select('id').single()
   return data?.id ?? null
 }

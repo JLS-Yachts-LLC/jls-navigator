@@ -96,8 +96,23 @@ export function StepReviewSubmit({ state, onUpdate, onNext, onBack }: Props) {
       }
       const db = supabase as any
       const draftId = (state as any).draftId as string | null | undefined
-      const { data: appData, error: appError } = draftId
-        ? await db.from('visa_applications').update(row).eq('id', draftId).select('id').single()
+
+      // Resolve the row id: prefer the wizard's tracked draftId, then look up
+      // any existing record for this crew member, then insert as last resort.
+      let resolvedId: string | null = draftId ?? null
+      if (!resolvedId) {
+        const { data: existing } = await db
+          .from('visa_applications')
+          .select('id')
+          .eq('crew_member_id', state.crew.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        resolvedId = existing?.id ?? null
+      }
+
+      const { data: appData, error: appError } = resolvedId
+        ? await db.from('visa_applications').update(row).eq('id', resolvedId).select('id').single()
         : await db.from('visa_applications').insert(row).select('id').single()
 
       if (appError) throw appError
