@@ -215,6 +215,47 @@ export function StepCountryFields({ state, onUpdate, onNext, onBack }: StepCount
         Complete the fields below specific to your {config.countryName} visa application.
       </p>
 
+      {/* UAE: fixed visa type notice */}
+      {state.countryCode === 'AE' && (
+        <div style={{
+          display: 'flex', flexDirection: 'column', gap: 10,
+          padding: '14px 16px', marginBottom: 24,
+          background: `${COLORS.signal}0D`,
+          border: `1px solid ${COLORS.signal}30`,
+          borderRadius: 8,
+        }}>
+          {/* Visa type badge */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{
+              fontFamily: FONTS.display, fontSize: 9, fontWeight: 700,
+              letterSpacing: '0.18em', textTransform: 'uppercase',
+              color: COLORS.signal, padding: '3px 10px',
+              background: `${COLORS.signal}18`,
+              border: `1px solid ${COLORS.signal}40`,
+              borderRadius: 4,
+            }}>
+              Visa Type
+            </span>
+            <span style={{ fontFamily: FONTS.display, fontSize: 14, fontWeight: 700, color: COLORS.frost }}>
+              Crew 180-Day Multiple Entry Visa
+            </span>
+          </div>
+
+          {/* Rules */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingLeft: 2 }}>
+            {[
+              { icon: '⚠', color: COLORS.warn,  text: 'Crew must enter the UAE within 30 days of visa issuance. If not used within 30 days, the visa expires and a new application is required.' },
+              { icon: '◆', color: COLORS.info,   text: 'Visa validity (180 days) runs from the date of first entry — not from the date of issuance.' },
+            ].map(({ icon, color, text }) => (
+              <div key={text} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                <span style={{ color, fontSize: 12, flexShrink: 0, marginTop: 1 }} aria-hidden="true">{icon}</span>
+                <span style={{ fontFamily: FONTS.display, fontSize: 12, color: COLORS.muted, lineHeight: 1.6 }}>{text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Fields */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
         {config.fields.map(field => (

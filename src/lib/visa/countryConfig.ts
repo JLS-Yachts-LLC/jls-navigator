@@ -36,16 +36,14 @@ export const COUNTRY_CONFIGS: Record<CountryCode, CountryVisaConfig> = {
       'Crew contract or employment letter',
     ],
     fields: [
-      { key: 'entry_type',    label: 'Entry Type',    type: 'select', required: true,
-        options: ['Single Entry', 'Multiple Entry'] },
-      { key: 'visa_duration', label: 'Visa Duration', type: 'select', required: true,
-        options: ['30 days', '60 days', '90 days'] },
-      { key: 'sponsor_name',  label: 'Sponsor Name',  type: 'text',   required: true,
+      { key: 'sponsor_name', label: 'Sponsor Name', type: 'text', required: true,
         helpText: 'Name of UAE sponsor / vessel owner or company' },
     ],
     validationRules: [
       'Passport must be valid for at least 6 months from application date',
       'Passport photo must be on a white background',
+      'Crew must enter the UAE within 30 days of visa issuance or the visa expires',
+      'Visa validity (180 days) runs from the date of first entry, not from issuance',
     ],
   },
   OM: {
