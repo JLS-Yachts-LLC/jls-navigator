@@ -155,7 +155,8 @@
   --secondary:        oklch(0.140 0.043 250);
   --secondary-foreground: oklch(0.944 0.009 255);
   --muted:            oklch(0.140 0.043 250);
-  --muted-foreground: oklch(0.472 0.054 240);
+  /* Brightened for dark-mode readability — secondary text was too dim at 0.472. */
+  --muted-foreground: oklch(0.760 0.030 245);
   --accent:           oklch(0.256 0.071 240);
   --accent-foreground: oklch(0.944 0.009 255);
   --success:            oklch(0.70 0.15 152);

@@ -395,6 +395,7 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel }: AddPassportF
   const [fileNames, setFileNames] = useState<Record<SlotKey, string | null>>({ cover: null, data: null, seamans: null, headshot: null })
   const [sizes, setSizes] = useState<Record<SlotKey, number | null>>({ cover: null, data: null, seamans: null, headshot: null })
   const [dataPreview, setDataPreview] = useState<string | null>(null)
+  const [zoomSrc, setZoomSrc] = useState<string | null>(null)
   const [noSeamans, setNoSeamans] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -631,13 +632,36 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel }: AddPassportF
                 </span>
                 <div style={{ background: COLORS.void, border: `1px solid ${COLORS.deep}`, borderRadius: 8, overflow: 'hidden' }}>
                   {dataPreview ? (
-                    <img src={dataPreview} alt="Uploaded passport — data page" style={{ width: '100%', display: 'block' }} />
+                    <img
+                      src={dataPreview}
+                      alt="Uploaded passport — data page"
+                      title="Click to enlarge"
+                      onClick={() => setZoomSrc(dataPreview)}
+                      style={{ width: '100%', display: 'block', cursor: 'zoom-in' }}
+                    />
                   ) : (
                     <div style={{ padding: '32px 16px', textAlign: 'center', fontFamily: FONTS.display, fontSize: 12, color: COLORS.steel }}>
                       {files.data ? 'Preview not available for PDF' : 'No preview yet'}
                     </div>
                   )}
                 </div>
+                {dataPreview && (
+                  <button type="button" onClick={() => setZoomSrc(dataPreview)}
+                    style={{ marginTop: 6, background: 'none', border: 'none', cursor: 'zoom-in', fontFamily: FONTS.display, fontSize: 11, color: COLORS.signal, padding: 0 }}>
+                    🔍 Click to enlarge
+                  </button>
+                )}
+                {zoomSrc && (
+                  <div
+                    onClick={() => setZoomSrc(null)}
+                    style={{
+                      position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.85)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out', padding: 24,
+                    }}
+                  >
+                    <img src={zoomSrc} alt="Passport — enlarged" style={{ maxWidth: '95vw', maxHeight: '95vh', objectFit: 'contain', borderRadius: 8, boxShadow: '0 8px 40px rgba(0,0,0,0.6)' }} />
+                  </div>
+                )}
               </div>
 
               {/* Extracted Information grid */}
@@ -727,11 +751,10 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel }: AddPassportF
                       width: 20, height: 20, borderRadius: 5, flexShrink: 0, display: 'inline-flex',
                       alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800,
                       color: on ? '#0B0F14' : 'transparent',
-                      background: on ? '#FFFFFF' : 'transparent',
-                      border: '2px solid #FFFFFF',
-                      boxShadow: on ? 'none' : 'inset 0 0 0 2px rgba(0,0,0,0.25)',
+                      background: on ? COLORS.signal : 'transparent',
+                      border: `2px solid ${on ? COLORS.signal : COLORS.steel}`,
                     }}>✓</span>
-                    <span style={{ fontFamily: FONTS.display, fontSize: 12.5, color: on ? COLORS.frost : '#FFFFFF', flex: 1 }}>
+                    <span style={{ fontFamily: FONTS.display, fontSize: 12.5, color: COLORS.frost, flex: 1 }}>
                       {item.label}
                       {item.hint && <span style={{ color: COLORS.muted, marginLeft: 6, fontSize: 11 }}>({item.hint})</span>}
                     </span>
