@@ -8,8 +8,10 @@
  *   4. Review & Complete
  */
 
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { COLORS, FONTS } from '@/lib/tokens'
+import { VesselField, fetchVesselContext } from '@/components/vessel-field'
+import type { VesselOption, VesselMode } from '@/components/vessel-field'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -42,10 +44,15 @@ interface DocumentStatus {
   seamansBook: 'uploaded' | 'missing' | 'not_uploaded'
 }
 
+export interface ExtractedPassportDataWithVessel extends ExtractedPassportData {
+  vesselId?: string
+}
+
 interface PassportDetailsProps {
   crewMemberId: string
   vesselName?: string
-  onContinue: (data: ExtractedPassportData) => void
+  authToken?: string
+  onContinue: (data: ExtractedPassportDataWithVessel) => void
   onSaveDraft: () => void
   onCancel: () => void
 }
@@ -356,7 +363,8 @@ function CalendarIcon() {
 
 export default function PassportDetails({
   crewMemberId,
-  vesselName = 'M/Y Polaris',
+  vesselName: _vesselNameProp = 'M/Y Polaris',
+  authToken,
   onContinue,
   onSaveDraft,
   onCancel,
@@ -368,6 +376,31 @@ export default function PassportDetails({
   const [isExtracting, setIsExtracting] = useState(false)
   const [extracted, setExtracted]       = useState<ExtractedPassportData | null>(null)
   const [isEditing, setIsEditing]       = useState(false)
+
+  // Vessel selection state
+  const [vesselMode, setVesselMode]         = useState<VesselMode>('dropdown')
+  const [selectedVesselId, setSelectedVesselId] = useState<string | null>(null)
+  const [lockedVessel, setLockedVessel]     = useState<{ id: string; name: string } | null>(null)
+  const [suggestedVessel, setSuggestedVessel] = useState<{ id: string; name: string; reason: string } | null>(null)
+  const [recentVessels, setRecentVessels]   = useState<VesselOption[]>([])
+  const [pinnedVessels, setPinnedVessels]   = useState<VesselOption[]>([])
+  const [allVessels, setAllVessels]         = useState<VesselOption[]>([])
+
+  useEffect(() => {
+    if (!authToken) return
+    void fetchVesselContext(authToken, { crewMemberId, recordType: 'crew_add' })
+      .then((ctx) => {
+        setVesselMode(ctx.mode ?? 'dropdown')
+        setLockedVessel(ctx.locked_vessel ?? null)
+        setSuggestedVessel(ctx.suggested_vessel ?? null)
+        setRecentVessels(ctx.recent_vessels ?? [])
+        setPinnedVessels(ctx.pinned_vessels ?? [])
+        setAllVessels(ctx.all_vessels ?? [])
+        if (ctx.locked_vessel?.id) setSelectedVesselId(ctx.locked_vessel.id)
+        else if (ctx.suggested_vessel?.id) setSelectedVesselId(ctx.suggested_vessel.id)
+      })
+      .catch(() => { /* non-fatal — vessel field stays in manual dropdown */ })
+  }, [authToken, crewMemberId])
 
   const toUploadedFile = (f: File): UploadedFile => ({
     name: f.name,
@@ -420,7 +453,8 @@ export default function PassportDetails({
     seamansBook:     seamansFile  ? 'uploaded'     : 'not_uploaded',
   }
 
-  const canContinue = !!insidePages && !!extracted
+  const vesselReady = vesselMode === 'auto_locked' || !!selectedVesselId
+  const canContinue = !!insidePages && !!extracted && vesselReady
 
   return (
     <div style={{ fontFamily: FONTS.display, color: COLORS.frost,
@@ -639,10 +673,33 @@ export default function PassportDetails({
 
         {/* Right sidebar */}
         <aside style={{
-          width: 280, flexShrink: 0,
-          background: COLORS.abyss, border: `1px solid ${COLORS.deep}`,
-          borderRadius: 10, padding: '18px 20px',
-        }} aria-label="Document status">
+          width: 280, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 14,
+        }} aria-label="Vessel and document status">
+
+          {/* Vessel assignment */}
+          <section style={{
+            background: COLORS.abyss, border: `1px solid ${COLORS.deep}`,
+            borderRadius: 10, padding: '18px 20px',
+          }}>
+            <VesselField
+              mode={vesselMode}
+              lockedVessel={lockedVessel}
+              suggestedVessel={suggestedVessel}
+              recentVessels={recentVessels}
+              pinnedVessels={pinnedVessels}
+              allVessels={allVessels}
+              value={selectedVesselId}
+              onChange={setSelectedVesselId}
+              authToken={authToken}
+              required
+            />
+          </section>
+
+          {/* Document status */}
+          <section style={{
+            background: COLORS.abyss, border: `1px solid ${COLORS.deep}`,
+            borderRadius: 10, padding: '18px 20px',
+          }} aria-label="Document status">
           <h2 style={{ fontFamily: FONTS.display, fontSize: 13, fontWeight: 700,
                         color: COLORS.frost, marginBottom: 14 }}>
             Document Status
@@ -680,6 +737,7 @@ export default function PassportDetails({
               </div>
             </div>
           )}
+          </section>
         </aside>
       </div>
 
@@ -698,7 +756,7 @@ export default function PassportDetails({
           <button
             type="button"
             disabled={!canContinue}
-            onClick={() => extracted && onContinue(extracted)}
+            onClick={() => extracted && onContinue({ ...extracted, vesselId: selectedVesselId ?? undefined })}
             aria-label={canContinue ? 'Continue to verify details' : 'Upload passport inside pages to continue'}
             style={{
               fontFamily: FONTS.display, fontSize: 13, fontWeight: 700,
