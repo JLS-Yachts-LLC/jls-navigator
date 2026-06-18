@@ -156,9 +156,8 @@ export function CrewListPage() {
         rank: form.rank || null,
         department: form.department || null,
         email: form.email.trim() || null,
-        phone: (form.phone as PhoneValue).phoneNumber
-          ? `${(form.phone as PhoneValue).countryCode}${(form.phone as PhoneValue).phoneNumber}`
-          : null,
+        phone_country_code: (form.phone as PhoneValue).phoneNumber ? (form.phone as PhoneValue).countryCode : null,
+        phone_number: (form.phone as PhoneValue).phoneNumber || null,
         status: form.status,
         passport_number: form.passport_number.trim() || null,
         passport_expiry_date: form.passport_expiry_date || null,

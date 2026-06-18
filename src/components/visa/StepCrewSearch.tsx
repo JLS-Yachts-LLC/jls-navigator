@@ -174,9 +174,8 @@ export default function StepCrewSearch({ state, onUpdate, onNext, onBack }: Prop
         last_name: newForm.last_name.trim(),
         date_of_birth: newForm.date_of_birth,
         email: newForm.email.trim() || null,
-        phone: newForm.phone.phoneNumber
-          ? `${newForm.phone.countryCode}${newForm.phone.phoneNumber}`
-          : null,
+        phone_country_code: newForm.phone.phoneNumber ? newForm.phone.countryCode : null,
+        phone_number: newForm.phone.phoneNumber || null,
         rank: newForm.rank.trim() || null,
         multiple_passports: multiplePassports,
       } as any)
