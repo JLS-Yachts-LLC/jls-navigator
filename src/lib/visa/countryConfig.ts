@@ -39,8 +39,6 @@ export const COUNTRY_CONFIGS: Record<CountryCode, CountryVisaConfig> = {
         helpText: 'The vessel this visa is allocated to — used on all documents throughout the process' },
     ],
     validationRules: [
-      'Passport must be valid for at least 6 months from application date',
-      'Passport photo must be on a white background',
       'Crew must enter the UAE within 30 days of visa issuance or the visa expires',
       'Visa validity (180 days) runs from the date of first entry, not from issuance',
     ],

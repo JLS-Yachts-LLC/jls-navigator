@@ -1052,9 +1052,13 @@ interface PassportCardProps {
   selected: boolean
   onSelect: () => void
   onEdit?: () => void
+  crewFirst?: string | null
+  crewMiddle?: string | null
+  crewLast?: string | null
+  crewDob?: string | null
 }
 
-function PassportCard({ passport, selected, onSelect, onEdit }: PassportCardProps) {
+function PassportCard({ passport, selected, onSelect, onEdit, crewFirst, crewMiddle, crewLast, crewDob }: PassportCardProps) {
   const expiryColor = getExpiryColor(passport.expiry_date)
   const expiryLabel = getExpiryLabel(passport.expiry_date)
   const [zoomSrc, setZoomSrc] = useState<string | null>(null)
@@ -1158,18 +1162,21 @@ function PassportCard({ passport, selected, onSelect, onEdit }: PassportCardProp
 
           {/* Extracted-info grid */}
           <div style={{ flex: 1, minWidth: 0, display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10 }}>
+            <FieldCard label="First Name">{crewFirst || '—'}</FieldCard>
+            <FieldCard label="Middle Name">{crewMiddle || '—'}</FieldCard>
+            <FieldCard label="Last Name">{crewLast || '—'}</FieldCard>
+            <FieldCard label="Date of Birth">{crewDob ? formatDate(crewDob) : '—'}</FieldCard>
             <FieldCard label="Passport Number">
               <span style={{ fontFamily: 'Courier New, monospace', letterSpacing: '0.08em' }}>{passport.passport_number}</span>
             </FieldCard>
+            <FieldCard label="Issuing Country">{passport.issuing_country}</FieldCard>
             <FieldCard label="Issue Date">{formatDate(passport.issue_date)}</FieldCard>
             <FieldCard label="Expiry Date">
               <span style={{ color: expiryColor }}>{formatDate(passport.expiry_date)}</span>
             </FieldCard>
-            <FieldCard label="Issuing Country">{passport.issuing_country}</FieldCard>
             <FieldCard label="Status">
               <span style={{ color: expiryColor }}>{expiryLabel}</span>
             </FieldCard>
-            <div />
           </div>
         </div>
 
@@ -1339,6 +1346,10 @@ export function StepPassportSelect({ state, onUpdate, onNext, onBack }: StepPass
                   selected={state.passport?.id === p.id}
                   onSelect={() => handleSelectPassport(p)}
                   onEdit={() => setEditingPassport(p)}
+                  crewFirst={state.crew?.first_name}
+                  crewMiddle={(state.crew as any)?.middle_name}
+                  crewLast={state.crew?.last_name}
+                  crewDob={state.crew?.date_of_birth}
                 />
               ))}
             </div>
