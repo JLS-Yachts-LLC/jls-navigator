@@ -40,6 +40,10 @@ interface Props {
   onBack: () => void
 }
 
+// Capitalise the first letter of each word as the user types (names "as per
+// passport"), without fighting the rest of the input.
+const capWords = (s: string) => s.replace(/(^|\s|-)([a-z])/g, (_, sep, ch) => sep + ch.toUpperCase())
+
 interface NewCrewForm {
   first_name: string
   middle_name: string
@@ -368,7 +372,7 @@ export default function StepCrewSearch({ state, onUpdate, onNext, onBack }: Prop
                   type="text"
                   placeholder="As per passport"
                   value={newForm.first_name}
-                  onChange={e => setNewForm(f => ({ ...f, first_name: e.target.value }))}
+                  onChange={e => setNewForm(f => ({ ...f, first_name: capWords(e.target.value) }))}
                 />
               </>,
               'fn'
@@ -381,7 +385,7 @@ export default function StepCrewSearch({ state, onUpdate, onNext, onBack }: Prop
                   type="text"
                   placeholder="As per passport — leave blank if none"
                   value={newForm.middle_name}
-                  onChange={e => setNewForm(f => ({ ...f, middle_name: e.target.value }))}
+                  onChange={e => setNewForm(f => ({ ...f, middle_name: capWords(e.target.value) }))}
                 />
               </>,
               'mn'
@@ -394,7 +398,7 @@ export default function StepCrewSearch({ state, onUpdate, onNext, onBack }: Prop
                   type="text"
                   placeholder="As per passport"
                   value={newForm.last_name}
-                  onChange={e => setNewForm(f => ({ ...f, last_name: e.target.value }))}
+                  onChange={e => setNewForm(f => ({ ...f, last_name: capWords(e.target.value) }))}
                 />
               </>,
               'ln'
