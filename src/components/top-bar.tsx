@@ -12,6 +12,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { FeedbackWidget } from "@/components/feedback/feedback-widget";
 
 type SearchResult = {
   kind: "yacht" | "crew";
@@ -255,6 +256,9 @@ export function TopBar() {
 
         {/* Online users (live presence) — admins/developers only */}
         {canSeeOnline && <OnlineUsers />}
+
+        {/* Report a bug / suggest a feature */}
+        <FeedbackWidget />
 
         {/* Theme toggle */}
         <button

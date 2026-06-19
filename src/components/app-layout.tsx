@@ -8,6 +8,7 @@ import { LeoBubble } from "@/components/leo-bubble";
 import { WorkingIndicator } from "@/components/working-indicator";
 import { useAuth } from "@/lib/auth";
 import { recordVisit, getLastRoute } from "@/lib/recent-tabs";
+import { recordAction, installErrorCapture } from "@/lib/action-log";
 
 export function AppLayout() {
   const { user, loading } = useAuth();
@@ -29,9 +30,12 @@ export function AppLayout() {
     }
   }, [loading, user, location.pathname, navigate]);
 
-  // Track each visited page for "recent tabs" + last-route memory.
+  // Capture JS errors once, for the bug-report widget's activity log.
+  useEffect(() => { installErrorCapture(); }, []);
+
+  // Track each visited page for "recent tabs" + last-route memory + activity log.
   useEffect(() => {
-    if (user) recordVisit(location.pathname);
+    if (user) { recordVisit(location.pathname); recordAction(`Navigated to ${location.pathname}`); }
   }, [location.pathname, user]);
 
   if (loading) {

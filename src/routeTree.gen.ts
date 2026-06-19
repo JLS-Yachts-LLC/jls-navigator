@@ -31,6 +31,7 @@ import { Route as AppIntegrationsRouteImport } from './routes/_app.integrations'
 import { Route as AppGuidesRouteImport } from './routes/_app.guides'
 import { Route as AppFleetTrackingRouteImport } from './routes/_app.fleet-tracking'
 import { Route as AppFinanceRouteImport } from './routes/_app.finance'
+import { Route as AppFeedbackRouteImport } from './routes/_app.feedback'
 import { Route as AppEsignRouteImport } from './routes/_app.esign'
 import { Route as AppDirectorRouteImport } from './routes/_app.director'
 import { Route as AppDevSettingsRouteImport } from './routes/_app.dev-settings'
@@ -209,6 +210,11 @@ const AppFleetTrackingRoute = AppFleetTrackingRouteImport.update({
 const AppFinanceRoute = AppFinanceRouteImport.update({
   id: '/finance',
   path: '/finance',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppFeedbackRoute = AppFeedbackRouteImport.update({
+  id: '/feedback',
+  path: '/feedback',
   getParentRoute: () => AppRoute,
 } as any)
 const AppEsignRoute = AppEsignRouteImport.update({
@@ -591,6 +597,7 @@ export interface FileRoutesByFullPath {
   '/dev-settings': typeof AppDevSettingsRoute
   '/director': typeof AppDirectorRoute
   '/esign': typeof AppEsignRouteWithChildren
+  '/feedback': typeof AppFeedbackRoute
   '/finance': typeof AppFinanceRoute
   '/fleet-tracking': typeof AppFleetTrackingRoute
   '/guides': typeof AppGuidesRouteWithChildren
@@ -680,6 +687,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof AppDashboardRoute
   '/dev-settings': typeof AppDevSettingsRoute
   '/director': typeof AppDirectorRoute
+  '/feedback': typeof AppFeedbackRoute
   '/finance': typeof AppFinanceRoute
   '/fleet-tracking': typeof AppFleetTrackingRoute
   '/integrations': typeof AppIntegrationsRoute
@@ -766,6 +774,7 @@ export interface FileRoutesById {
   '/_app/dev-settings': typeof AppDevSettingsRoute
   '/_app/director': typeof AppDirectorRoute
   '/_app/esign': typeof AppEsignRouteWithChildren
+  '/_app/feedback': typeof AppFeedbackRoute
   '/_app/finance': typeof AppFinanceRoute
   '/_app/fleet-tracking': typeof AppFleetTrackingRoute
   '/_app/guides': typeof AppGuidesRouteWithChildren
@@ -860,6 +869,7 @@ export interface FileRouteTypes {
     | '/dev-settings'
     | '/director'
     | '/esign'
+    | '/feedback'
     | '/finance'
     | '/fleet-tracking'
     | '/guides'
@@ -949,6 +959,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/dev-settings'
     | '/director'
+    | '/feedback'
     | '/finance'
     | '/fleet-tracking'
     | '/integrations'
@@ -1034,6 +1045,7 @@ export interface FileRouteTypes {
     | '/_app/dev-settings'
     | '/_app/director'
     | '/_app/esign'
+    | '/_app/feedback'
     | '/_app/finance'
     | '/_app/fleet-tracking'
     | '/_app/guides'
@@ -1272,6 +1284,13 @@ declare module '@tanstack/react-router' {
       path: '/finance'
       fullPath: '/finance'
       preLoaderRoute: typeof AppFinanceRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/feedback': {
+      id: '/_app/feedback'
+      path: '/feedback'
+      fullPath: '/feedback'
+      preLoaderRoute: typeof AppFeedbackRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/esign': {
@@ -2004,6 +2023,7 @@ interface AppRouteChildren {
   AppDevSettingsRoute: typeof AppDevSettingsRoute
   AppDirectorRoute: typeof AppDirectorRoute
   AppEsignRoute: typeof AppEsignRouteWithChildren
+  AppFeedbackRoute: typeof AppFeedbackRoute
   AppFinanceRoute: typeof AppFinanceRoute
   AppFleetTrackingRoute: typeof AppFleetTrackingRoute
   AppGuidesRoute: typeof AppGuidesRouteWithChildren
@@ -2051,6 +2071,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppDevSettingsRoute: AppDevSettingsRoute,
   AppDirectorRoute: AppDirectorRoute,
   AppEsignRoute: AppEsignRouteWithChildren,
+  AppFeedbackRoute: AppFeedbackRoute,
   AppFinanceRoute: AppFinanceRoute,
   AppFleetTrackingRoute: AppFleetTrackingRoute,
   AppGuidesRoute: AppGuidesRouteWithChildren,
