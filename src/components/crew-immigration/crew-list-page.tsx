@@ -1,4 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
+import { PhoneInput, EMPTY_PHONE } from "@/components/phone-input";
+import type { PhoneValue } from "@/components/phone-input";
+import { formatName } from "@/lib/formatName";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchAllRows } from "@/lib/fetch-all";
 import { useAuth } from "@/lib/auth";
@@ -31,6 +34,8 @@ type CrewMember = {
   status: string;
   email: string | null;
   phone: string | null;
+  phone_country_code: string | null;
+  phone_number: string | null;
   passport_number: string | null;
   passport_expiry_date: string | null;
   photo_url: string | null;
@@ -60,7 +65,7 @@ const RANKS = [
 const EMPTY_FORM = {
   first_name: "", middle_name: "", last_name: "",
   nationality: "", rank: "", department: "",
-  email: "", phone: "", status: "active",
+  email: "", phone: { ...EMPTY_PHONE } as PhoneValue, status: "active",
   passport_number: "", passport_expiry_date: "",
   yacht_id: "",
 };
@@ -126,7 +131,9 @@ export function CrewListPage() {
       rank: m.rank ?? "",
       department: m.department ?? "",
       email: m.email ?? "",
-      phone: m.phone ?? "",
+      phone: m.phone_country_code && m.phone_number
+        ? { countryCode: m.phone_country_code, phoneNumber: m.phone_number }
+        : { ...EMPTY_PHONE },
       status: m.status,
       passport_number: m.passport_number ?? "",
       passport_expiry_date: m.passport_expiry_date ?? "",
@@ -150,7 +157,8 @@ export function CrewListPage() {
         rank: form.rank || null,
         department: form.department || null,
         email: form.email.trim() || null,
-        phone: form.phone.trim() || null,
+        phone_country_code: (form.phone as PhoneValue).phoneNumber ? (form.phone as PhoneValue).countryCode : null,
+        phone_number: (form.phone as PhoneValue).phoneNumber || null,
         status: form.status,
         passport_number: form.passport_number.trim() || null,
         passport_expiry_date: form.passport_expiry_date || null,
@@ -396,15 +404,33 @@ export function CrewListPage() {
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs">First Name <span className="text-destructive">*</span></Label>
-                <Input value={form.first_name} onChange={e => setForm(f => ({ ...f, first_name: e.target.value }))} placeholder="Mark" className="h-8" />
+                <Input
+                  value={form.first_name}
+                  onChange={e => setForm(f => ({ ...f, first_name: e.target.value.replace(/(^|[ \-'])([a-z])/g, (_, pre, ch) => pre + ch.toUpperCase()) }))}
+                  onBlur={e => setForm(f => ({ ...f, first_name: formatName(e.target.value) }))}
+                  placeholder="Mark"
+                  className="h-8"
+                />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Middle Name</Label>
-                <Input value={form.middle_name} onChange={e => setForm(f => ({ ...f, middle_name: e.target.value }))} placeholder="James" className="h-8" />
+                <Input
+                  value={form.middle_name}
+                  onChange={e => setForm(f => ({ ...f, middle_name: e.target.value.replace(/(^|[ \-'])([a-z])/g, (_, pre, ch) => pre + ch.toUpperCase()) }))}
+                  onBlur={e => setForm(f => ({ ...f, middle_name: formatName(e.target.value) }))}
+                  placeholder="James"
+                  className="h-8"
+                />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Last Name <span className="text-destructive">*</span></Label>
-                <Input value={form.last_name} onChange={e => setForm(f => ({ ...f, last_name: e.target.value }))} placeholder="Jones" className="h-8" />
+                <Input
+                  value={form.last_name}
+                  onChange={e => setForm(f => ({ ...f, last_name: e.target.value.replace(/(^|[ \-'])([a-z])/g, (_, pre, ch) => pre + ch.toUpperCase()) }))}
+                  onBlur={e => setForm(f => ({ ...f, last_name: formatName(e.target.value) }))}
+                  placeholder="Jones"
+                  className="h-8"
+                />
               </div>
             </div>
 
@@ -453,8 +479,11 @@ export function CrewListPage() {
                 <Input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="crew@vessel.com" className="h-8" />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs">Phone</Label>
-                <Input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="+27 82 000 0000" className="h-8" />
+                <PhoneInput
+                  value={form.phone as PhoneValue}
+                  onChange={phone => setForm(f => ({ ...f, phone }))}
+                  label="Phone"
+                />
               </div>
             </div>
 

@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client'
+import { formatName } from '@/lib/formatName'
 
 export interface CrewMember {
   id:                 string
@@ -67,12 +68,19 @@ export async function loadCrewPassports(crewId: string): Promise<CrewPassport[]>
 export async function upsertCrewMember(
   fields: Partial<CrewMember> & { first_name: string; last_name: string },
 ): Promise<CrewMember> {
+  const firstName  = formatName(fields.first_name)
+  const middleName = formatName((fields as any).middle_name)
+  const lastName   = formatName(fields.last_name)
+
   const payload = {
     ...fields,
-    full_name: [fields.first_name, (fields as any).middle_name, fields.last_name]
+    first_name: firstName,
+    last_name:  lastName,
+    full_name: [firstName, middleName, lastName]
       .filter(Boolean).join(' ').replace(/\s+/g, ' ').trim(),
     updated_at: new Date().toISOString(),
   }
+  if (middleName !== undefined) (payload as any).middle_name = middleName
 
   if (fields.id) {
     const { data, error } = await (supabase as any)

@@ -3,6 +3,9 @@ import { COLORS, FONTS } from '@/lib/tokens'
 import { DateInputDMY } from '@/components/ui/date-input-dmy'
 import { findCrewMatch, upsertCrewMember, CrewMember } from '@/lib/visa/crewMatching'
 import { supabase } from '@/integrations/supabase/client'
+import { PhoneInput, EMPTY_PHONE } from '@/components/phone-input'
+import type { PhoneValue } from '@/components/phone-input'
+import { NameInput } from '@/components/name-input'
 
 // Statuses that mean an application is still alive — a second one must be blocked.
 const ACTIVE_STATUSES = ['draft', 'pending_docs', 'submitted', 'in_review', 'approved']
@@ -40,17 +43,13 @@ interface Props {
   onBack: () => void
 }
 
-// Capitalise the first letter of each word as the user types (names "as per
-// passport"), without fighting the rest of the input.
-const capWords = (s: string) => s.replace(/(^|\s|-)([a-z])/g, (_, sep, ch) => sep + ch.toUpperCase())
-
 interface NewCrewForm {
   first_name: string
   middle_name: string
   last_name: string
   date_of_birth: string
   email: string
-  phone: string
+  phone: PhoneValue
   rank: string
 }
 
@@ -103,7 +102,7 @@ export default function StepCrewSearch({ state, onUpdate, onNext, onBack }: Prop
     last_name: '',
     date_of_birth: '',
     email: '',
-    phone: '',
+    phone: { ...EMPTY_PHONE },
     rank: '',
   })
 
@@ -122,10 +121,12 @@ export default function StepCrewSearch({ state, onUpdate, onNext, onBack }: Prop
       setSearchDone(true)
       if (!match) {
         setShowCreateForm(true)
+        const parts = searchName.trim().split(/\s+/).filter(Boolean)
         setNewForm(f => ({
           ...f,
-          first_name: searchName.split(' ')[0] ?? '',
-          last_name: searchName.split(' ').slice(1).join(' '),
+          first_name: parts[0] ?? '',
+          middle_name: parts.length > 2 ? parts.slice(1, -1).join(' ') : '',
+          last_name: parts.length > 1 ? parts[parts.length - 1] : '',
           date_of_birth: searchDob,
         }))
       }
@@ -174,7 +175,8 @@ export default function StepCrewSearch({ state, onUpdate, onNext, onBack }: Prop
         last_name: newForm.last_name.trim(),
         date_of_birth: newForm.date_of_birth,
         email: newForm.email.trim() || null,
-        phone: newForm.phone.trim() || null,
+        phone_country_code: newForm.phone.phoneNumber ? newForm.phone.countryCode : null,
+        phone_number: newForm.phone.phoneNumber || null,
         rank: newForm.rank.trim() || null,
         multiple_passports: multiplePassports,
       } as any)
@@ -365,42 +367,33 @@ export default function StepCrewSearch({ state, onUpdate, onNext, onBack }: Prop
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             {fieldGroup(
-              <>
-                <label style={labelStyle}>First Name * (as per passport)</label>
-                <input
-                  style={inputStyle}
-                  type="text"
-                  placeholder="As per passport"
-                  value={newForm.first_name}
-                  onChange={e => setNewForm(f => ({ ...f, first_name: capWords(e.target.value) }))}
-                />
-              </>,
+              <NameInput
+                label="First Name * (as per passport)"
+                placeholder="As per passport"
+                value={newForm.first_name}
+                onChange={v => setNewForm(f => ({ ...f, first_name: v }))}
+                style={{ width: '100%' }}
+              />,
               'fn'
             )}
             {fieldGroup(
-              <>
-                <label style={labelStyle}>Middle Name (as per passport)</label>
-                <input
-                  style={inputStyle}
-                  type="text"
-                  placeholder="As per passport — leave blank if none"
-                  value={newForm.middle_name}
-                  onChange={e => setNewForm(f => ({ ...f, middle_name: capWords(e.target.value) }))}
-                />
-              </>,
+              <NameInput
+                label="Middle Name (as per passport)"
+                placeholder="As per passport — leave blank if none"
+                value={newForm.middle_name}
+                onChange={v => setNewForm(f => ({ ...f, middle_name: v }))}
+                style={{ width: '100%' }}
+              />,
               'mn'
             )}
             {fieldGroup(
-              <>
-                <label style={labelStyle}>Last Name * (as per passport)</label>
-                <input
-                  style={inputStyle}
-                  type="text"
-                  placeholder="As per passport"
-                  value={newForm.last_name}
-                  onChange={e => setNewForm(f => ({ ...f, last_name: capWords(e.target.value) }))}
-                />
-              </>,
+              <NameInput
+                label="Last Name * (as per passport)"
+                placeholder="As per passport"
+                value={newForm.last_name}
+                onChange={v => setNewForm(f => ({ ...f, last_name: v }))}
+                style={{ width: '100%' }}
+              />,
               'ln'
             )}
             {fieldGroup(
@@ -440,15 +433,10 @@ export default function StepCrewSearch({ state, onUpdate, onNext, onBack }: Prop
               'email'
             )}
             {fieldGroup(
-              <>
-                <label style={labelStyle}>Phone</label>
-                <input
-                  style={inputStyle}
-                  type="tel"
-                  value={newForm.phone}
-                  onChange={e => setNewForm(f => ({ ...f, phone: e.target.value }))}
-                />
-              </>,
+              <PhoneInput
+                value={newForm.phone}
+                onChange={phone => setNewForm(f => ({ ...f, phone }))}
+              />,
               'phone'
             )}
           </div>
