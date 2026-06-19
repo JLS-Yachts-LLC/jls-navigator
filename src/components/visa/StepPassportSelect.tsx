@@ -468,6 +468,7 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
   const [dataPreview, setDataPreview] = useState<string | null>(ex?.document_url ?? null)
   const [dataIsPdf, setDataIsPdf] = useState<boolean>(!!ex?.document_url && /\.pdf(\?|$)/i.test(ex.document_url))
   const [nameMismatch, setNameMismatch] = useState<string | null>(null)
+  const [docWarning, setDocWarning] = useState<string | null>(null)
   const [zoomSrc, setZoomSrc] = useState<string | null>(null)
   const [noSeamans, setNoSeamans] = useState(ex?.no_seamans_book ?? false)
   const [uploading, setUploading] = useState(false)
@@ -485,7 +486,7 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
   async function handleSlot(key: SlotKey, file: File | null) {
     if (!file) {
       setFiles(f => ({ ...f, [key]: null })); setSizes(s => ({ ...s, [key]: null })); setFileNames(n => ({ ...n, [key]: null }))
-      if (key === 'data') { setDataPreview(null); setDataIsPdf(false); setExtracted(false) }
+      if (key === 'data') { setDataPreview(null); setDataIsPdf(false); setExtracted(false); setDocWarning(null) }
       return
     }
     try {
@@ -524,7 +525,19 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
         noGlare: typeof cl.has_glare_or_reflections === 'boolean' ? !cl.has_glare_or_reflections : null,
       })
       setExtracted(true)
-      setScanNote('Scanned — details auto-filled below. Please double-check them.')
+      // Guard rail: warn if the scan yielded no passport details, or doesn't look
+      // like the data page — likely the wrong document/page was uploaded.
+      const gotData = !!(d.passport_number || d.nationality || d.issue_date || d.expiry_date || d.surname || d.given_names || d.date_of_birth)
+      if (!gotData) {
+        setDocWarning("We couldn't read any passport details from this image. Are you sure this is the passport inside (photo/data) page — and that it's clear, in colour, and fully in frame?")
+        setScanNote('No details detected — please double-check the document.')
+      } else if (cl.is_passport_data_page === false) {
+        setDocWarning("This doesn't look like the passport data page. Please confirm you uploaded the inside pages, not the cover or another document.")
+        setScanNote('Scanned — but verify this is the correct page.')
+      } else {
+        setDocWarning(null)
+        setScanNote('Scanned — details auto-filled below. Please double-check them.')
+      }
     } catch (e: any) {
       setScanNote('Scan failed: ' + (e?.message ?? 'error'))
     } finally {
@@ -713,8 +726,17 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
                 Scanning passport — extracting details…
               </p>
             )}
-            {scanNote && scanning !== 'data' && (
+            {scanNote && scanning !== 'data' && !docWarning && (
               <p style={{ fontFamily: FONTS.display, fontSize: 12, color: COLORS.muted, margin: '10px 0 0' }}>{scanNote}</p>
+            )}
+            {docWarning && scanning !== 'data' && (
+              <div style={{
+                display: 'flex', alignItems: 'flex-start', gap: 9, marginTop: 12, padding: '11px 14px',
+                background: `${COLORS.warn}16`, border: `1px solid ${COLORS.warn}66`, borderRadius: 8,
+              }}>
+                <span style={{ fontSize: 15, color: COLORS.warn }} aria-hidden="true">⚠</span>
+                <span style={{ fontFamily: FONTS.display, fontSize: 12.5, color: COLORS.frost, lineHeight: 1.5 }}>{docWarning}</span>
+              </div>
             )}
 
             {/* Secondary uploads */}
