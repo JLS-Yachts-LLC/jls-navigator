@@ -33,6 +33,7 @@ import { Route as AppFleetTrackingRouteImport } from './routes/_app.fleet-tracki
 import { Route as AppFinanceRouteImport } from './routes/_app.finance'
 import { Route as AppFeedbackRouteImport } from './routes/_app.feedback'
 import { Route as AppEsignRouteImport } from './routes/_app.esign'
+import { Route as AppErrorLogRouteImport } from './routes/_app.error-log'
 import { Route as AppDirectorRouteImport } from './routes/_app.director'
 import { Route as AppDevSettingsRouteImport } from './routes/_app.dev-settings'
 import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
@@ -220,6 +221,11 @@ const AppFeedbackRoute = AppFeedbackRouteImport.update({
 const AppEsignRoute = AppEsignRouteImport.update({
   id: '/esign',
   path: '/esign',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppErrorLogRoute = AppErrorLogRouteImport.update({
+  id: '/error-log',
+  path: '/error-log',
   getParentRoute: () => AppRoute,
 } as any)
 const AppDirectorRoute = AppDirectorRouteImport.update({
@@ -596,6 +602,7 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof AppDashboardRoute
   '/dev-settings': typeof AppDevSettingsRoute
   '/director': typeof AppDirectorRoute
+  '/error-log': typeof AppErrorLogRoute
   '/esign': typeof AppEsignRouteWithChildren
   '/feedback': typeof AppFeedbackRoute
   '/finance': typeof AppFinanceRoute
@@ -687,6 +694,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof AppDashboardRoute
   '/dev-settings': typeof AppDevSettingsRoute
   '/director': typeof AppDirectorRoute
+  '/error-log': typeof AppErrorLogRoute
   '/feedback': typeof AppFeedbackRoute
   '/finance': typeof AppFinanceRoute
   '/fleet-tracking': typeof AppFleetTrackingRoute
@@ -773,6 +781,7 @@ export interface FileRoutesById {
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/dev-settings': typeof AppDevSettingsRoute
   '/_app/director': typeof AppDirectorRoute
+  '/_app/error-log': typeof AppErrorLogRoute
   '/_app/esign': typeof AppEsignRouteWithChildren
   '/_app/feedback': typeof AppFeedbackRoute
   '/_app/finance': typeof AppFinanceRoute
@@ -868,6 +877,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/dev-settings'
     | '/director'
+    | '/error-log'
     | '/esign'
     | '/feedback'
     | '/finance'
@@ -959,6 +969,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/dev-settings'
     | '/director'
+    | '/error-log'
     | '/feedback'
     | '/finance'
     | '/fleet-tracking'
@@ -1044,6 +1055,7 @@ export interface FileRouteTypes {
     | '/_app/dashboard'
     | '/_app/dev-settings'
     | '/_app/director'
+    | '/_app/error-log'
     | '/_app/esign'
     | '/_app/feedback'
     | '/_app/finance'
@@ -1298,6 +1310,13 @@ declare module '@tanstack/react-router' {
       path: '/esign'
       fullPath: '/esign'
       preLoaderRoute: typeof AppEsignRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/error-log': {
+      id: '/_app/error-log'
+      path: '/error-log'
+      fullPath: '/error-log'
+      preLoaderRoute: typeof AppErrorLogRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/director': {
@@ -2022,6 +2041,7 @@ interface AppRouteChildren {
   AppDashboardRoute: typeof AppDashboardRoute
   AppDevSettingsRoute: typeof AppDevSettingsRoute
   AppDirectorRoute: typeof AppDirectorRoute
+  AppErrorLogRoute: typeof AppErrorLogRoute
   AppEsignRoute: typeof AppEsignRouteWithChildren
   AppFeedbackRoute: typeof AppFeedbackRoute
   AppFinanceRoute: typeof AppFinanceRoute
@@ -2070,6 +2090,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppDashboardRoute: AppDashboardRoute,
   AppDevSettingsRoute: AppDevSettingsRoute,
   AppDirectorRoute: AppDirectorRoute,
+  AppErrorLogRoute: AppErrorLogRoute,
   AppEsignRoute: AppEsignRouteWithChildren,
   AppFeedbackRoute: AppFeedbackRoute,
   AppFinanceRoute: AppFinanceRoute,

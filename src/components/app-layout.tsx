@@ -9,6 +9,7 @@ import { WorkingIndicator } from "@/components/working-indicator";
 import { useAuth } from "@/lib/auth";
 import { recordVisit, getLastRoute } from "@/lib/recent-tabs";
 import { recordAction, installErrorCapture } from "@/lib/action-log";
+import { installErrorLogging, setLogUser } from "@/lib/error-logger";
 
 export function AppLayout() {
   const { user, loading } = useAuth();
@@ -30,8 +31,12 @@ export function AppLayout() {
     }
   }, [loading, user, location.pathname, navigate]);
 
-  // Capture JS errors once, for the bug-report widget's activity log.
-  useEffect(() => { installErrorCapture(); }, []);
+  // Capture JS errors once, for the bug-report widget's activity log + the
+  // persistent Developer ▸ Error & Warning Log.
+  useEffect(() => { installErrorCapture(); installErrorLogging(); }, []);
+
+  // Keep persisted logs attributable to the signed-in user.
+  useEffect(() => { setLogUser(user ?? null); }, [user]);
 
   // Track each visited page for "recent tabs" + last-route memory + activity log.
   useEffect(() => {
