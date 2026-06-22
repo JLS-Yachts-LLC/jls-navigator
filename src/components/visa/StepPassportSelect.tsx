@@ -527,6 +527,9 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
   const [dateOfBirth, setDateOfBirth] = useState('')
   const [placeOfBirth, setPlaceOfBirth] = useState('')
   const [gender, setGender] = useState('')
+  // Raw OCR snapshot persisted to crew_passports.ocr_raw so the Additional
+  // Personal Info section can pre-fill nationality / place of birth from it.
+  const [ocrRaw, setOcrRaw] = useState<any>((ex as any)?.ocr_raw ?? null)
   const [firstName, setFirstName] = useState((ex as any)?.first_name ?? '')
   const [middleName, setMiddleName] = useState((ex as any)?.middle_name ?? '')
   const [lastName, setLastName] = useState((ex as any)?.last_name ?? '')
@@ -646,6 +649,15 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
       if (d.date_of_birth && !dateOfBirth) setDateOfBirth(d.date_of_birth)
       if (d.place_of_birth && !placeOfBirth) setPlaceOfBirth(d.place_of_birth)
       if (d.gender && !gender) setGender(d.gender)
+      // Snapshot OCR for the Additional Personal Info section (camelCase keys the
+      // /passports/:id/ocr endpoint expects).
+      setOcrRaw({
+        nationality: d.nationality ?? null,
+        placeOfBirth: d.place_of_birth ?? null,
+        gender: d.gender ?? null,
+        countryOfBirth: null, // passports don't carry country of birth
+        ocrCompletedAt: new Date().toISOString(),
+      })
       // Names: surname → Last, first given name → First, remaining given names →
       // recommended Middle (not everyone has one, so we suggest rather than force).
       const given = String(d.given_names ?? '').trim()
@@ -815,7 +827,8 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
         headshot_url: headshotUrl ?? existingUrls.headshot,
         no_seamans_book: noSeamans,
         double_checked: doubleChecked,
-      })
+        ...(ocrRaw ? { ocr_raw: ocrRaw } : {}),
+      } as any)
 
       // Populate the crew member record with the OCR'd personal details.
       try {
