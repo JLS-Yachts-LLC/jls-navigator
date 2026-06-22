@@ -58,7 +58,7 @@ const NAV: NavItem[] = [
       { label: "Statutory Documents",   to: "/esign",                icon: FileSignature },
       { label: "Maintenance",           to: "/orbit/maintenance",    icon: Wrench },
       { label: "Compliance",            to: "/orbit/defects",        icon: ShieldCheck },
-      { label: "Emergency Contacts",    to: "/settings",             icon: IdCard },
+      { label: "Emergency Contacts",    to: "/emergency-contacts",   icon: IdCard },
     ],
   },
 
