@@ -31,20 +31,9 @@ type NavItem = {
   icon?: React.ComponentType<{ className?: string }>;
   roles?: Role[];       // undefined = all roles; array = specific roles only
   children?: NavItem[];
-  flagKey?: string;     // feature-flag key controlling visibility + Beta/Dev badge
+  flagKey?: string;     // feature-flag key (Dev Settings) controlling visibility + badge
   devOnly?: boolean;    // only visible to viewers with dev access
-  stage?: FlagStage;    // explicit release stage override (live | beta | dev)
   badge?: FlagStage;    // transient — set during flag filtering for badge render
-};
-
-// Release stage per nav destination. Everything defaults to `dev` (admins/devs only)
-// — staff see ONLY the items listed here (beta or live). Update as features promote.
-const STAFF_VISIBLE: Record<string, FlagStage> = {
-  "/yachts": "beta",                          // Vessel Overview — Beta
-  "/crew-immigration/dashboard": "live",      // Crew Dashboard
-  "/crew-immigration/crew": "live",           // Crew List
-  "/crew-immigration/visas": "live",          // Visas
-  "/crew-immigration/sign-on-off": "live",    // Sign On / Off
 };
 
 // ─── Nav Config ───────────────────────────────────────────────────────────────
@@ -57,42 +46,44 @@ const NAV: NavItem[] = [
     label: "Dashboard",
     to: "/dashboard",
     icon: LayoutDashboard,
+    flagKey: "dashboard",
   },
 
-  // 2 ─── MY VESSEL
+  // 2 ─── MY VESSEL  (mixed — per-item flags)
   {
     label: "My Vessel",
     icon: Ship,
     children: [
       { label: "Vessel Overview",       to: "/yachts",               icon: Ship, flagKey: "vessel-overview" },
       { label: "Live Tracking",         to: "/my-fleet",             icon: Navigation, flagKey: "my-fleet" },
-      { label: "Statutory Documents",   to: "/esign",                icon: FileSignature },
-      { label: "Maintenance",           to: "/orbit/maintenance",    icon: Wrench },
-      { label: "Compliance",            to: "/orbit/defects",        icon: ShieldCheck },
-      { label: "Emergency Contacts",    to: "/emergency-contacts",   icon: IdCard },
+      { label: "Statutory Documents",   to: "/esign",                icon: FileSignature, flagKey: "statutory-docs" },
+      { label: "Maintenance",           to: "/orbit/maintenance",    icon: Wrench, flagKey: "maintenance" },
+      { label: "Compliance",            to: "/orbit/defects",        icon: ShieldCheck, flagKey: "compliance" },
+      { label: "Emergency Contacts",    to: "/emergency-contacts",   icon: IdCard, flagKey: "emergency-contacts" },
     ],
   },
 
-  // 3 ─── CREW
+  // 3 ─── CREW  (mixed — per-item flags)
   {
     label: "Crew",
     icon: Users,
     children: [
-      { label: "Crew Dashboard", to: "/crew-immigration/dashboard",  icon: LayoutDashboard },
-      { label: "Crew List",    to: "/crew-immigration/crew",        icon: UserCircle2 },
-      { label: "Visas",        to: "/crew-immigration/visas",       icon: FileText },
-      { label: "Sign On / Off", to: "/crew-immigration/sign-on-off", icon: LogIn },
-      { label: "Seaport Immigration", to: "/seaport", icon: Anchor },
-      { label: "Crew Documents", to: "/crew-immigration/documents", icon: ClipboardList },
-      { label: "Training",     to: "/training",                     icon: GraduationCap },
-      { label: "Crew Benefits", to: "/compass",                     icon: Compass },
+      { label: "Crew Dashboard", to: "/crew-immigration/dashboard",  icon: LayoutDashboard, flagKey: "crew-dashboard" },
+      { label: "Crew List",    to: "/crew-immigration/crew",        icon: UserCircle2, flagKey: "crew-list" },
+      { label: "Visas",        to: "/crew-immigration/visas",       icon: FileText, flagKey: "crew-visas" },
+      { label: "Sign On / Off", to: "/crew-immigration/sign-on-off", icon: LogIn, flagKey: "crew-signon" },
+      { label: "Seaport Immigration", to: "/seaport", icon: Anchor, flagKey: "seaport" },
+      { label: "Crew Documents", to: "/crew-immigration/documents", icon: ClipboardList, flagKey: "crew-documents" },
+      { label: "Training",     to: "/training",                     icon: GraduationCap, flagKey: "training" },
+      { label: "Crew Benefits", to: "/compass",                     icon: Compass, flagKey: "compass" },
     ],
   },
 
-  // 4 ─── REQUESTS  (most-used section)
+  // 4 ─── REQUESTS  (uniform — group flag gates the whole section)
   {
     label: "Requests",
     icon: ClipboardList,
+    flagKey: "requests",
     children: [
       { label: "Transport Request",   to: "/crew-cab/trips",       icon: Car },
       { label: "Gate Pass Request",   to: "/permits/gate-pass",    icon: DoorOpen },
@@ -104,20 +95,20 @@ const NAV: NavItem[] = [
     ],
   },
 
-  // 5 ─── SERVICES  (discovery layer for JLS business units)
+  // 5 ─── SERVICES  (uniform — group flag gates the whole section)
   {
     label: "Services",
     icon: Boxes,
+    flagKey: "services",
     children: [
-      { label: "Agency Services",     to: "/agency",              icon: Anchor, flagKey: "agency" },
-      { label: "ShipSync Logistics",  to: "/packages",            icon: Package, flagKey: "logistics" },
-      { label: "Waypoint Chandlery",  to: "/waypoint",            icon: ShoppingCart, flagKey: "waypoint" },
-      { label: "Provisioning",        to: "/provisioning",        icon: UtensilsCrossed, flagKey: "provisioning" },
-      { label: "Training Institute",  to: "/training",            icon: GraduationCap, flagKey: "training" },
+      { label: "Agency Services",     to: "/agency",              icon: Anchor },
+      { label: "ShipSync Logistics",  to: "/packages",            icon: Package },
+      { label: "Waypoint Chandlery",  to: "/waypoint",            icon: ShoppingCart },
+      { label: "Provisioning",        to: "/provisioning",        icon: UtensilsCrossed },
+      { label: "Training Institute",  to: "/training",            icon: GraduationCap },
       {
         label: "IT Solutions",
         icon: Cpu,
-        flagKey: "yacht-it",
         children: [
           { label: "Service Desk",         to: "/it-tickets", icon: Headset },
           { label: "IT Yachts",            to: "/it-yachts",  icon: Ship },
@@ -129,11 +120,12 @@ const NAV: NavItem[] = [
     ],
   },
 
-  // 6 ─── FINANCE  (captain + admin/staff only)
+  // 6 ─── FINANCE  (captain + admin/staff only; uniform — group flag)
   {
     label: "Finance",
     icon: BarChart3,
     roles: ["captain", "admin", "staff"],
+    flagKey: "finance",
     children: [
       { label: "Outstanding Invoices", to: "/finance",            icon: Receipt },
       { label: "Statement of Account", to: "/finance",            icon: Wallet },
@@ -144,24 +136,26 @@ const NAV: NavItem[] = [
     ],
   },
 
-  // 7 ─── DOCUMENTS
+  // 7 ─── DOCUMENTS  (uniform — group flag)
   {
     label: "Documents",
     icon: FolderOpen,
+    flagKey: "documents",
     children: [
       { label: "Vessel Documents",  to: "/esign",                        icon: Ship },
       { label: "Crew Documents",    to: "/crew-immigration/documents",   icon: Users },
       { label: "Signed Agreements", to: "/esign",                        icon: FileSignature },
-      { label: "e-Sign Documents",  to: "/esign",                        icon: PenLine, flagKey: "esign" },
+      { label: "e-Sign Documents",  to: "/esign",                        icon: PenLine },
       { label: "Certificates",      to: "/training/certifications",      icon: Award },
       { label: "Downloads",         to: "/guides",                       icon: Download },
     ],
   },
 
-  // 8 ─── LEO
+  // 8 ─── LEO  (uniform — group flag)
   {
     label: "Leo",
     icon: Sparkles,
+    flagKey: "leo",
     children: [
       { label: "Ask Leo",          to: "/ai-assistant",   icon: BotMessageSquare },
       { label: "Create Request",   to: "/ai-assistant",   icon: PenLine },
@@ -186,9 +180,15 @@ const NAV: NavItem[] = [
 ];
 
 /**
- * Filter the nav tree by feature stage + dev access, annotating kept items with a
- * `badge` (beta/dev). Dev-stage features and devOnly items are hidden unless the
- * viewer has dev access; beta/live are shown to everyone.
+ * Filter the nav tree by feature stage (from the `feature_flags` table, managed in
+ * Settings → Dev Settings) + dev access, annotating kept items with a `badge`
+ * (beta/dev). Every item resolves a stage from its `flagKey`; an item with no flag
+ * — or a flag missing from the DB — defaults to `dev`. Dev-stage items and devOnly
+ * items are hidden from viewers without dev access; beta/live show to everyone.
+ *
+ * Group flags gate the whole section: a dev-stage group is hidden wholesale from
+ * staff (no need to flag every child). Mixed groups (My Vessel, Crew) carry no flag
+ * of their own and simply show iff a child survives.
  */
 function filterByFlags(
   items: NavItem[],
@@ -198,23 +198,20 @@ function filterByFlags(
   const out: NavItem[] = [];
   for (const item of items) {
     if (item.devOnly && !devAccess) continue;
-    if (item.children?.length) {
-      // Groups carry no stage of their own — they show iff any child survives.
-      const kids = filterByFlags(item.children, stageOf, devAccess);
-      if (kids.length) out.push({ ...item, children: kids });
-      continue;
-    }
-    // Leaf: every destination is `dev` (admins/devs only) unless explicitly
-    // promoted — via an inline `stage`, the STAFF_VISIBLE allow-list, or a
-    // configured feature flag. Dev-stage leaves are hidden from non-dev staff.
-    const stage: FlagStage =
-      item.stage ??
-      (item.to ? STAFF_VISIBLE[item.to] : undefined) ??
-      (item.flagKey ? stageOf(item.flagKey) : undefined) ??
-      "dev";
+    const isGroup = !!item.children?.length;
+    // Flagged items use their flag stage (a flag missing from the DB → dev).
+    // Unflagged leaves default to dev; unflagged groups have no stage of their own.
+    const stage: FlagStage | undefined = item.flagKey
+      ? (stageOf(item.flagKey) ?? "dev")
+      : (isGroup ? undefined : "dev");
     if (stage === "dev" && !devAccess) continue;
     const badge: FlagStage | undefined = stage === "beta" ? "beta" : stage === "dev" ? "dev" : undefined;
-    out.push({ ...item, badge });
+    if (isGroup) {
+      const kids = filterByFlags(item.children!, stageOf, devAccess);
+      if (kids.length) out.push({ ...item, children: kids, badge });
+    } else {
+      out.push({ ...item, badge });
+    }
   }
   return out;
 }
