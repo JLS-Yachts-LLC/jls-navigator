@@ -165,3 +165,7 @@ do $$ declare t text; begin
       with check ((select auth.role()) = 'authenticated')$f$, t);
   end loop;
 end $$;
+
+-- Trigger-only functions must not be invocable via PostgREST RPC (triggers still fire).
+revoke execute on function public.seaport_sla_sync() from public, anon, authenticated;
+revoke execute on function public.seaport_sla_first_exec() from public, anon, authenticated;
