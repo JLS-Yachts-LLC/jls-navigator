@@ -1,10 +1,11 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { COLORS, FONTS } from '@/lib/tokens'
 import { COUNTRY_CONFIGS } from '@/lib/visa/countryConfig'
 import type { CountryVisaConfig, VisaField } from '@/lib/visa/countryConfig'
 import type { CrewMember, CrewPassport } from '@/lib/visa/crewMatching'
 import type { ComplianceResult } from '@/lib/visa/complianceChecks'
 import { supabase } from '@/integrations/supabase/client'
+import { AdditionalPersonalInfoSection } from '@/components/visa/AdditionalPersonalInfoSection'
 
 export interface WizardState {
   step: number
@@ -17,6 +18,7 @@ export interface WizardState {
   uploadedDocs: Record<string, string>
   complianceResults: ComplianceResult[]
   complianceAcknowledged: boolean
+  draftId?: string | null
 }
 
 interface StepCountryFieldsProps {
@@ -235,6 +237,13 @@ function VesselNameInput({ value, onChange }: { value: string; onChange: (val: s
 }
 
 export function StepCountryFields({ state, onUpdate, onNext, onBack }: StepCountryFieldsProps) {
+  // Auth token for the Additional Personal Information section (mother's maiden
+  // name etc.) — that component talks to api.crew.personal-info with a bearer token.
+  const [authToken, setAuthToken] = useState('')
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setAuthToken(data.session?.access_token ?? ''))
+  }, [])
+
   const config: CountryVisaConfig | undefined =
     COUNTRY_CONFIGS[state.countryCode as keyof typeof COUNTRY_CONFIGS]
 
@@ -423,6 +432,19 @@ export function StepCountryFields({ state, onUpdate, onNext, onBack }: StepCount
           </div>
         ))}
       </div>
+
+      {/* Additional Personal Information (mother's maiden name, etc.) — Mike's
+          personal-info capture, surfaced in the wizard's Details step. */}
+      {state.crew?.id && authToken && (
+        <div style={{ marginTop: 24 }}>
+          <AdditionalPersonalInfoSection
+            crewId={state.crew.id}
+            applicationId={state.draftId ?? ''}
+            selectedPassportId={state.passport?.id ?? null}
+            authToken={authToken}
+          />
+        </div>
+      )}
 
       {/* Navigation */}
       <div

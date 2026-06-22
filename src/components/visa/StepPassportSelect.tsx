@@ -413,6 +413,8 @@ function DocumentStatusPanel({ status, expiryDate, seamansNotApplicable, downloa
   seamansNotApplicable?: boolean
   /** Saved files available to download (null url = hidden). */
   downloads?: { label: string; url: string | null }[]
+  /** URL of the generated Crew Verification letter, when no Seaman's book. */
+  verificationLetterUrl?: string | null
 }) {
   const dls = (downloads ?? []).filter((d) => d.url)
   const hasExpiry = !!expiryDate
@@ -438,8 +440,13 @@ function DocumentStatusPanel({ status, expiryDate, seamansNotApplicable, downloa
           note={status.headshot === 'uploaded' ? 'Uploaded' : status.headshot === 'missing' ? 'Missing' : 'Not uploaded'} />
         <StatusRow label="Passport cover" status={status.cover}
           note={status.cover === 'uploaded' ? 'Uploaded' : 'Not uploaded'} />
-        <StatusRow label="Seaman's book" status={status.seamansBook}
-          note={seamansNotApplicable ? 'Not Available' : status.seamansBook === 'uploaded' ? 'Uploaded' : 'Not uploaded'} />
+        {seamansNotApplicable ? (
+          <StatusRow label="Verification letter" status={!!verificationLetterUrl}
+            note={verificationLetterUrl ? 'Generated' : 'Pending — auto-generated'} />
+        ) : (
+          <StatusRow label="Seaman's book" status={status.seamansBook}
+            note={status.seamansBook === 'uploaded' ? 'Uploaded' : 'Not uploaded'} />
+        )}
       </div>
 
       {hasExpiry && (
@@ -1149,6 +1156,7 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
 
         {/* ── Right column: Document Status ── */}
         <DocumentStatusPanel status={docStatus} expiryDate={expiryDate || undefined} seamansNotApplicable={noSeamans}
+          verificationLetterUrl={(ex as any)?.crew_verification_letter_url ?? null}
           downloads={[
             { label: 'Passport cover', url: existingUrls.cover },
             { label: 'Passport inside pages', url: existingUrls.data },
@@ -1305,6 +1313,7 @@ function PassportCard({ passport, selected, onSelect, onEdit, crewFirst, crewMid
 
         {/* Right: per-passport Document Status */}
         <DocumentStatusPanel status={docStatus} expiryDate={passport.expiry_date} seamansNotApplicable={!!passport.no_seamans_book}
+          verificationLetterUrl={(passport as any).crew_verification_letter_url ?? null}
           downloads={[
             { label: 'Passport cover', url: (passport as any).cover_url ?? null },
             { label: 'Passport inside pages', url: (passport as any).document_url ?? null },
