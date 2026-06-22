@@ -400,7 +400,7 @@ function FieldCard({ label, note, noteColor, children }: {
 }
 
 // Document Status panel — shared between the add-form and existing-passport cards.
-function DocumentStatusPanel({ status, expiryDate, seamansNotApplicable, downloads }: {
+function DocumentStatusPanel({ status, expiryDate, seamansNotApplicable, downloads, verificationLetterUrl }: {
   status: {
     insidePages: 'uploaded' | 'missing' | 'not_uploaded'
     ocrCompleted: boolean

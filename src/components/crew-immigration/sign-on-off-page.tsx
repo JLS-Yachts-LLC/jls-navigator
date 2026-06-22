@@ -7,12 +7,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Search, LogIn, LogOut, Trash2, Loader2, FileText, Upload, CheckCircle2 } from "lucide-react";
+import { Plus, Search, LogIn, LogOut, Trash2, Loader2, FileText, Upload, CheckCircle2, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { doPushToSharePoint } from "@/lib/sharepoint-push.server";
@@ -39,10 +40,12 @@ export function SignOnOffPage() {
   const [filterType, setFilterType] = useState("all");
   const [filterYacht, setFilterYacht] = useState("all");
   const [filterImm, setFilterImm] = useState("all"); // all | with | missing
-  const [immLists, setImmLists] = useState<{ id: string; yacht_id: string; list_date: string | null; file_url: string | null; file_name: string | null }[]>([]);
+  const [immLists, setImmLists] = useState<{ id: string; yacht_id: string; list_date: string | null; file_url: string | null; file_name: string | null; emirate: string }[]>([]);
   const [immOpen, setImmOpen] = useState(false);
   const [immBusy, setImmBusy] = useState(false);
-  const [immForm, setImmForm] = useState<{ yacht_id: string; list_date: string; notes: string; file: File | null }>({ yacht_id: "", list_date: "", notes: "", file: null });
+  const [immForm, setImmForm] = useState<{ yacht_id: string; list_date: string; notes: string; file: File | null; emirate: "dubai" | "abu_dhabi" }>({ yacht_id: "", list_date: "", notes: "", file: null, emirate: "dubai" });
+  const [editId, setEditId] = useState<string | null>(null);
+  const [selectedEvents, setSelectedEvents] = useState<string[]>([]);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<SignEvent | null>(null);
@@ -70,33 +73,49 @@ export function SignOnOffPage() {
     ]);
     setCrew(c.data ?? []);
     setYachts((y.data ?? []) as Yacht[]);
-    const { data: imm } = await fetchAllRows(() => db.from("immigration_crew_lists").select("id, yacht_id, list_date, file_url, file_name").order("created_at", { ascending: false }));
+    const { data: imm } = await fetchAllRows(() => db.from("immigration_crew_lists").select("id, yacht_id, list_date, file_url, file_name, emirate").order("created_at", { ascending: false }));
     setImmLists((imm ?? []) as any);
   }
 
-  // Latest immigration crew list per yacht.
+  // Latest immigration record per yacht, split by emirate (Dubai = document, Abu Dhabi = confirmation).
   const immByYacht = useMemo(() => {
-    const m = new Map<string, typeof immLists[number]>();
-    for (const l of immLists) if (!m.has(l.yacht_id)) m.set(l.yacht_id, l);
-    return m;
+    const dubai = new Map<string, typeof immLists[number]>();
+    const auh = new Map<string, typeof immLists[number]>();
+    for (const l of immLists) {
+      const m = l.emirate === "abu_dhabi" ? auh : dubai;
+      if (!m.has(l.yacht_id)) m.set(l.yacht_id, l);
+    }
+    return { dubai, auh, has: (y: string | null) => !!y && (dubai.has(y) || auh.has(y)) };
   }, [immLists]);
+
+  const yachtOptions = useMemo(
+    () => [{ value: "all", label: "All Yachts" }, ...yachts.map((y) => ({ value: y.id, label: y.vessel_name }))],
+    [yachts],
+  );
 
   async function saveImmList() {
     if (!immForm.yacht_id) { toast.error("Select a vessel"); return; }
-    if (!immForm.file) { toast.error("Attach the immigration crew list file"); return; }
+    const isDubai = immForm.emirate === "dubai";
+    if (isDubai && !immForm.file) { toast.error("Attach the Dubai immigration crew list file"); return; }
     setImmBusy(true);
     try {
-      const ext = immForm.file.name.split(".").pop();
-      const path = `immigration/${immForm.yacht_id}/crew-list_${Date.now()}.${ext}`;
-      const { error: upErr } = await supabase.storage.from("permit-documents").upload(path, immForm.file, { upsert: true });
-      if (upErr) throw upErr;
-      const fileUrl = supabase.storage.from("permit-documents").getPublicUrl(path).data.publicUrl;
+      let fileUrl: string | null = null;
+      let fileName: string | null = null;
+      if (immForm.file) {
+        const ext = immForm.file.name.split(".").pop();
+        const path = `immigration/${immForm.yacht_id}/${immForm.emirate}_${Date.now()}.${ext}`;
+        const { error: upErr } = await supabase.storage.from("permit-documents").upload(path, immForm.file, { upsert: true });
+        if (upErr) throw upErr;
+        fileUrl = supabase.storage.from("permit-documents").getPublicUrl(path).data.publicUrl;
+        fileName = immForm.file.name;
+      }
       const { error } = await (supabase as any).from("immigration_crew_lists").insert([{
-        yacht_id: immForm.yacht_id, list_date: immForm.list_date || null, port: "Dubai",
-        file_url: fileUrl, file_name: immForm.file.name, notes: immForm.notes || null, created_by: user?.id,
+        yacht_id: immForm.yacht_id, list_date: immForm.list_date || null,
+        port: isDubai ? "Dubai" : "Abu Dhabi", emirate: immForm.emirate, completed: true,
+        file_url: fileUrl, file_name: fileName, notes: immForm.notes || null, created_by: user?.id,
       }]);
       if (error) throw error;
-      toast.success("Immigration crew list added");
+      toast.success(isDubai ? "Dubai immigration crew list added" : "Abu Dhabi immigration confirmed");
       setImmOpen(false);
       void loadRefs();
     } catch (e: any) { toast.error(e.message ?? "Could not save"); }
@@ -104,8 +123,17 @@ export function SignOnOffPage() {
   }
 
   function openNew() {
+    setEditId(null);
     setForm({ yacht_id: "", event_type: "sign_on", event_date: new Date().toISOString().slice(0, 10), port: "", notes: "" });
     setSelectedCrew([]);
+    setCrewQ("");
+    setOpen(true);
+  }
+
+  function openEdit(e: SignEvent) {
+    setEditId(e.id);
+    setForm({ yacht_id: e.yacht_id ?? "", event_type: e.event_type, event_date: e.event_date ?? "", port: e.port ?? "", notes: e.notes ?? "" });
+    setSelectedCrew([e.crew_member_id]);
     setCrewQ("");
     setOpen(true);
   }
@@ -127,6 +155,22 @@ export function SignOnOffPage() {
     if (selectedCrew.length === 0) { toast.error("Select at least one crew member"); return; }
     setBusy(true);
     try {
+      // Edit mode — update the single existing event.
+      if (editId) {
+        const { error } = await (supabase as any).from("crew_signon_events").update({
+          crew_member_id: selectedCrew[0], yacht_id: form.yacht_id || null,
+          event_type: form.event_type, event_date: form.event_date || null,
+          port: form.port || null, notes: form.notes || null,
+        }).eq("id", editId);
+        if (error) throw error;
+        await (supabase as any).from("crew_members")
+          .update({ status: form.event_type === "sign_on" ? "active" : "off_signed", updated_at: new Date().toISOString() })
+          .eq("id", selectedCrew[0]);
+        doPushToSharePoint({ data: { target: "crew_signon_events", id: editId } } as any).catch(() => {});
+        toast.success("Event updated");
+        setOpen(false); setEditId(null); void load();
+        return;
+      }
       const rows = selectedCrew.map((id) => ({
         crew_member_id: id,
         yacht_id: form.yacht_id || null,
@@ -182,6 +226,30 @@ export function SignOnOffPage() {
     return true;
   }), [events, q, filterType, filterYacht, filterImm, immByYacht, crew, yachts]);
 
+  const toggleEvent = (id: string) => setSelectedEvents((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
+  const allSelected = filtered.length > 0 && filtered.every((e) => selectedEvents.includes(e.id));
+  const toggleAll = () => setSelectedEvents(allSelected ? [] : filtered.map((e) => e.id));
+
+  function generateReport() {
+    const rows = events.filter((e) => selectedEvents.includes(e.id));
+    if (rows.length === 0) return;
+    const esc = (v: string) => `"${(v ?? "").replace(/"/g, '""')}"`;
+    const header = ["Event", "Crew Member", "Vessel", "Date", "Port", "Dubai Immigration", "Abu Dhabi Immigration", "Notes"];
+    const lines = rows.map((e) => [
+      e.event_type === "sign_on" ? "Sign On" : "Sign Off",
+      crewName(e.crew_member_id), yachtName(e.yacht_id), fmtDate(e.event_date), e.port ?? "",
+      e.yacht_id && immByYacht.dubai.has(e.yacht_id) ? "Yes" : "No",
+      e.yacht_id && immByYacht.auh.has(e.yacht_id) ? "Yes" : "No",
+      e.notes ?? "",
+    ].map(esc).join(","));
+    const csv = [header.map(esc).join(","), ...lines].join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    const a = document.createElement("a");
+    a.href = url; a.download = `sign-on-off-report-${new Date().toISOString().slice(0, 10)}.csv`; a.click();
+    URL.revokeObjectURL(url);
+    toast.success(`Report generated — ${rows.length} event${rows.length === 1 ? "" : "s"}`);
+  }
+
   return (
     <div className="flex h-full flex-col">
       <header className="flex items-center justify-between border-b border-border/70 bg-card/30 px-6 py-3.5">
@@ -194,13 +262,7 @@ export function SignOnOffPage() {
             <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/50" />
             <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search…" className="h-9 w-56 pl-8 text-sm" />
           </div>
-          <Select value={filterYacht} onValueChange={setFilterYacht}>
-            <SelectTrigger className="h-9 w-40 text-xs"><SelectValue placeholder="All Yachts" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Yachts</SelectItem>
-              {yachts.map((y) => <SelectItem key={y.id} value={y.id}>{y.vessel_name}</SelectItem>)}
-            </SelectContent>
-          </Select>
+          <SearchableSelect value={filterYacht} onValueChange={setFilterYacht} options={yachtOptions} placeholder="All Yachts" className="w-44" />
           <Select value={filterType} onValueChange={setFilterType}>
             <SelectTrigger className="h-9 w-32 text-xs"><SelectValue placeholder="All Events" /></SelectTrigger>
             <SelectContent>
@@ -217,7 +279,8 @@ export function SignOnOffPage() {
               <SelectItem value="missing">Missing immigration crew list</SelectItem>
             </SelectContent>
           </Select>
-          <Button size="sm" variant="outline" onClick={() => { setImmForm({ yacht_id: filterYacht !== "all" ? filterYacht : "", list_date: new Date().toISOString().slice(0, 10), notes: "", file: null }); setImmOpen(true); }} className="h-9 gap-1.5 px-3 text-xs"><FileText className="h-3.5 w-3.5" /> Immigration List</Button>
+          <Button size="sm" variant="outline" onClick={() => { setImmForm({ yacht_id: filterYacht !== "all" ? filterYacht : "", list_date: new Date().toISOString().slice(0, 10), notes: "", file: null, emirate: "dubai" }); setImmOpen(true); }} className="h-9 gap-1.5 px-3 text-xs"><FileText className="h-3.5 w-3.5" /> Dubai Imm.</Button>
+          <Button size="sm" variant="outline" onClick={() => { setImmForm({ yacht_id: filterYacht !== "all" ? filterYacht : "", list_date: new Date().toISOString().slice(0, 10), notes: "", file: null, emirate: "abu_dhabi" }); setImmOpen(true); }} className="h-9 gap-1.5 px-3 text-xs"><FileText className="h-3.5 w-3.5" /> AUH Imm.</Button>
           <Button size="sm" onClick={openNew} className="h-9 gap-1.5 px-3.5 font-medium shadow-sm"><Plus className="h-3.5 w-3.5" /> Record Event</Button>
         </div>
       </header>
@@ -234,15 +297,29 @@ export function SignOnOffPage() {
           </div>
         ) : (
           <div className="overflow-hidden rounded-xl border border-border bg-card shadow-[0_2px_12px_-4px_rgba(0,0,0,0.4)]">
+            {selectedEvents.length > 0 && (
+              <div className="flex items-center justify-between border-b border-border bg-primary/5 px-4 py-2">
+                <span className="text-[12.5px] font-medium">{selectedEvents.length} selected</span>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" className="h-7 gap-1.5 text-xs" onClick={() => setSelectedEvents([])}>Clear</Button>
+                  <Button size="sm" className="h-7 gap-1.5 text-xs" onClick={generateReport}><FileText className="h-3.5 w-3.5" /> Generate report</Button>
+                </div>
+              </div>
+            )}
             <table className="w-full text-sm">
               <thead><tr className="border-b border-border bg-muted/30">
-                {["Event", "Crew Member", "Vessel", "Date", "Port", "Immigration List", ""].map((h) => (
+                <th className="w-10 px-3 py-2.5"><input type="checkbox" checked={allSelected} onChange={toggleAll} className="accent-primary" aria-label="Select all" /></th>
+                {["Event", "Crew Member", "Vessel", "Date", "Port", "Immigration", ""].map((h) => (
                   <th key={h} className="px-4 py-2.5 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">{h}</th>
                 ))}
               </tr></thead>
               <tbody>
-                {filtered.map((e) => (
+                {filtered.map((e) => {
+                  const dxb = e.yacht_id ? immByYacht.dubai.get(e.yacht_id) : undefined;
+                  const auh = e.yacht_id ? immByYacht.auh.get(e.yacht_id) : undefined;
+                  return (
                   <tr key={e.id} className="border-b border-border/40 hover:bg-accent/20 transition-colors">
+                    <td className="px-3 py-3"><input type="checkbox" checked={selectedEvents.includes(e.id)} onChange={() => toggleEvent(e.id)} className="accent-primary" /></td>
                     <td className="px-4 py-3">
                       <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold",
                         e.event_type === "sign_on" ? "bg-emerald-500/15 text-emerald-600" : "bg-amber-500/15 text-amber-600")}>
@@ -255,24 +332,27 @@ export function SignOnOffPage() {
                     <td className="px-4 py-3 tabular-nums text-muted-foreground">{fmtDate(e.event_date)}</td>
                     <td className="px-4 py-3 text-foreground/70">{e.port ?? "—"}</td>
                     <td className="px-4 py-3">
-                      {(() => {
-                        const list = e.yacht_id ? immByYacht.get(e.yacht_id) : undefined;
-                        if (list) return (
-                          <a href={list.file_url ?? "#"} target="_blank" rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 hover:underline">
-                            <CheckCircle2 className="h-3 w-3" /> {list.file_name ? "View list" : "On file"}
-                          </a>
-                        );
-                        return <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10.5px] font-medium text-amber-600">Missing</span>;
-                      })()}
+                      <div className="flex flex-col gap-1">
+                        {dxb ? (
+                          <a href={dxb.file_url ?? "#"} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 hover:underline"><CheckCircle2 className="h-3 w-3" /> DXB list</a>
+                        ) : <span className="text-[10.5px] text-amber-600">DXB: missing</span>}
+                        {auh ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600"><CheckCircle2 className="h-3 w-3" /> AUH done</span>
+                        ) : <span className="text-[10.5px] text-muted-foreground/60">AUH: —</span>}
+                      </div>
                     </td>
                     <td className="px-4 py-3">
-                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground/60 hover:text-destructive" onClick={() => setDeleteTarget(e)}>
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                      <div className="flex justify-end gap-0.5">
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground/60 hover:text-primary" onClick={() => openEdit(e)} title="Edit">
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground/60 hover:text-destructive" onClick={() => setDeleteTarget(e)}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     </td>
                   </tr>
-                ))}
+                );})}
               </tbody>
             </table>
           </div>
@@ -281,7 +361,7 @@ export function SignOnOffPage() {
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Record Sign On / Sign Off</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{editId ? "Edit" : "Record"} Sign On / Sign Off</DialogTitle></DialogHeader>
           <div className="grid gap-3 py-2">
             <div className="space-y-1.5">
               <Label className="text-xs">Event Type</Label>
@@ -386,34 +466,48 @@ export function SignOnOffPage() {
 
       <Dialog open={immOpen} onOpenChange={setImmOpen}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Add Immigration Crew List</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{immForm.emirate === "dubai" ? "Dubai Immigration Crew List" : "Abu Dhabi Immigration"}</DialogTitle></DialogHeader>
           <p className="text-[12px] text-muted-foreground">
-            Dubai immigration crew list for a vessel. Applies to the yacht and is shown against each of its crew. (Dubai only — not required for Abu Dhabi.)
+            {immForm.emirate === "dubai"
+              ? "Upload the Dubai immigration crew list for a vessel — uploading the document marks it complete. Shown against each of the vessel's crew."
+              : "Confirm Abu Dhabi immigration has been completed for this vessel. No document required — just tick to confirm."}
           </p>
           <div className="grid gap-3 py-2">
+            {/* Emirate toggle */}
+            <div className="grid grid-cols-2 gap-2">
+              {(["dubai", "abu_dhabi"] as const).map((em) => (
+                <button key={em} type="button" onClick={() => setImmForm((f) => ({ ...f, emirate: em }))}
+                  className={cn("rounded-lg border py-2 text-sm font-medium transition",
+                    immForm.emirate === em ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-accent")}>
+                  {em === "dubai" ? "Dubai" : "Abu Dhabi"}
+                </button>
+              ))}
+            </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Vessel <span className="text-destructive">*</span></Label>
-              <Select value={immForm.yacht_id || "__none"} onValueChange={(v) => setImmForm((f) => ({ ...f, yacht_id: v === "__none" ? "" : v }))}>
-                <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="— Select vessel —" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none">— Select vessel —</SelectItem>
-                  {yachts.map((y) => <SelectItem key={y.id} value={y.id}>{y.vessel_name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <SearchableSelect value={immForm.yacht_id} onValueChange={(v) => setImmForm((f) => ({ ...f, yacht_id: v }))}
+                options={yachts.map((y) => ({ value: y.id, label: y.vessel_name }))} placeholder="— Select vessel —" triggerClassName="h-8" />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">List date</Label>
+              <Label className="text-xs">Date</Label>
               <Input type="date" value={immForm.list_date} onChange={(e) => setImmForm((f) => ({ ...f, list_date: e.target.value }))} className="h-8" />
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Crew list file <span className="text-destructive">*</span></Label>
-              <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2.5 text-sm hover:bg-accent">
-                <Upload className="h-4 w-4 text-muted-foreground" />
-                <span className="flex-1 truncate text-muted-foreground">{immForm.file ? immForm.file.name : "Choose file (PDF / image / Excel)"}</span>
-                <input type="file" className="hidden" accept=".pdf,.png,.jpg,.jpeg,.xlsx,.xls,.doc,.docx"
-                  onChange={(e) => setImmForm((f) => ({ ...f, file: e.target.files?.[0] ?? null }))} />
-              </label>
-            </div>
+            {immForm.emirate === "dubai" ? (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Crew list file <span className="text-destructive">*</span></Label>
+                <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2.5 text-sm hover:bg-accent">
+                  <Upload className="h-4 w-4 text-muted-foreground" />
+                  <span className="flex-1 truncate text-muted-foreground">{immForm.file ? immForm.file.name : "Choose file (PDF / image / Excel)"}</span>
+                  <input type="file" className="hidden" accept=".pdf,.png,.jpg,.jpeg,.xlsx,.xls,.doc,.docx"
+                    onChange={(e) => setImmForm((f) => ({ ...f, file: e.target.files?.[0] ?? null }))} />
+                </label>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2.5 text-sm">
+                <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                <span>Abu Dhabi immigration completed for this vessel</span>
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label className="text-xs">Notes</Label>
               <Textarea value={immForm.notes} onChange={(e) => setImmForm((f) => ({ ...f, notes: e.target.value }))} rows={2} className="resize-none text-sm" />
