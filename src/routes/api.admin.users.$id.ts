@@ -1,4 +1,3 @@
-import { createAPIFileRoute } from '@tanstack/react-start/api'
 import { createClient } from '@supabase/supabase-js'
 import { requireAdminAccess } from '@/lib/admin/access'
 import { logAuditEvent } from '@/lib/admin/audit'
@@ -12,8 +11,8 @@ function getAdmin() {
   )
 }
 
-export const APIRoute = createAPIFileRoute('/api/admin/users/$id')({
-  PATCH: async ({ request, params }) => {
+const handlers = {
+  PATCH: async ({ request, params }: { request: Request; params: { id: string } }) => {
     const session = await requireAdminAccess(request)
     if (!session.ok) return session.response
 
@@ -74,7 +73,7 @@ export const APIRoute = createAPIFileRoute('/api/admin/users/$id')({
     })
   },
 
-  DELETE: async ({ request, params }) => {
+  DELETE: async ({ request, params }: { request: Request; params: { id: string } }) => {
     const session = await requireAdminAccess(request)
     if (!session.ok) return session.response
 
@@ -99,4 +98,13 @@ export const APIRoute = createAPIFileRoute('/api/admin/users/$id')({
       headers: { 'Content-Type': 'application/json' },
     })
   },
-})
+}
+
+/** Worker-entry dispatcher for /api/admin/users/:id (PATCH role/suspend, DELETE). */
+export async function adminUserByIdHandler(request: Request, id: string): Promise<Response> {
+  if (request.method === 'PATCH')  return handlers.PATCH({ request, params: { id } })
+  if (request.method === 'DELETE') return handlers.DELETE({ request, params: { id } })
+  return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+    status: 405, headers: { 'Content-Type': 'application/json' },
+  })
+}

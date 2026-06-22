@@ -1,4 +1,3 @@
-import { createAPIFileRoute } from '@tanstack/react-start/api'
 import { createClient } from '@supabase/supabase-js'
 import { requireAdminAccess } from '@/lib/admin/access'
 import { logAuditEvent } from '@/lib/admin/audit'
@@ -16,8 +15,8 @@ const ALLOWED_ROLES_FOR_ORG_ADMIN: PolarisRole[] = [
   'captain', 'crew', 'supplier', 'port_agent',
 ]
 
-export const APIRoute = createAPIFileRoute('/api/admin/users')({
-  GET: async ({ request }) => {
+const handlers = {
+  GET: async ({ request }: { request: Request }) => {
     const session = await requireAdminAccess(request)
     if (!session.ok) return session.response
 
@@ -58,7 +57,7 @@ export const APIRoute = createAPIFileRoute('/api/admin/users')({
     })
   },
 
-  POST: async ({ request }) => {
+  POST: async ({ request }: { request: Request }) => {
     const session = await requireAdminAccess(request)
     if (!session.ok) return session.response
 
@@ -122,4 +121,13 @@ export const APIRoute = createAPIFileRoute('/api/admin/users')({
       headers: { 'Content-Type': 'application/json' },
     })
   },
-})
+}
+
+/** Worker-entry dispatcher — TanStack API routes aren't served by the CF handler. */
+export async function adminUsersHandler(request: Request): Promise<Response> {
+  if (request.method === 'GET')  return handlers.GET({ request })
+  if (request.method === 'POST') return handlers.POST({ request })
+  return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+    status: 405, headers: { 'Content-Type': 'application/json' },
+  })
+}

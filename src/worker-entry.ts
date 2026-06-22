@@ -24,6 +24,11 @@ import { crewSearchHandler } from './routes/api.crew.search'
 import { crewPersonalInfoHandler } from './routes/api.crew.personal-info'
 import { visaApplicationActionsHandler } from './routes/api.visa.applicationActions'
 import { visaReportsHandler } from './routes/api.visa.reports'
+import { adminUsersHandler } from './routes/api.admin.users'
+import { adminUserByIdHandler } from './routes/api.admin.users.$id'
+import { adminPermissionsHandler } from './routes/api.admin.permissions'
+import { adminAuditHandler } from './routes/api.admin.audit'
+import { adminAuditExportHandler } from './routes/api.admin.audit.export'
 import { runVisaExpiryFlagJob } from './lib/visa/visaExpiryFlags.server'
 
 const handleRequest = createStartHandler(defaultStreamHandler)
@@ -254,6 +259,25 @@ export default {
     if ((url.pathname === '/api/visa/reports/pipeline' || url.pathname === '/api/visa/reports/expiry') &&
         request.method === 'GET') {
       return visaReportsHandler(request)
+    }
+
+    // ── Admin Panel API (TanStack API routes aren't dispatched by the CF handler,
+    //    so each is wired here). Order: more-specific paths first. ──
+    if (url.pathname === '/api/admin/audit/export' && request.method === 'GET') {
+      return adminAuditExportHandler(request)
+    }
+    if (url.pathname === '/api/admin/audit' && request.method === 'GET') {
+      return adminAuditHandler(request)
+    }
+    if (url.pathname === '/api/admin/permissions') {
+      return adminPermissionsHandler(request)
+    }
+    if (url.pathname === '/api/admin/users') {
+      return adminUsersHandler(request)
+    }
+    if (url.pathname.startsWith('/api/admin/users/')) {
+      const id = decodeURIComponent(url.pathname.slice('/api/admin/users/'.length))
+      if (id) return adminUserByIdHandler(request, id)
     }
 
     return handleRequest(request, env, ctx)

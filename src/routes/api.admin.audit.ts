@@ -1,4 +1,3 @@
-import { createAPIFileRoute } from '@tanstack/react-start/api'
 import { createClient } from '@supabase/supabase-js'
 import { requireAdminAccess } from '@/lib/admin/access'
 
@@ -10,8 +9,8 @@ function getAdmin() {
   )
 }
 
-export const APIRoute = createAPIFileRoute('/api/admin/audit')({
-  GET: async ({ request }) => {
+const handlers = {
+  GET: async ({ request }: { request: Request }) => {
     const session = await requireAdminAccess(request)
     if (!session.ok) return session.response
 
@@ -60,4 +59,12 @@ export const APIRoute = createAPIFileRoute('/api/admin/audit')({
       headers: { 'Content-Type': 'application/json' },
     })
   },
-})
+}
+
+/** Worker-entry dispatcher for /api/admin/audit (GET log). */
+export async function adminAuditHandler(request: Request): Promise<Response> {
+  if (request.method === 'GET') return handlers.GET({ request })
+  return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+    status: 405, headers: { 'Content-Type': 'application/json' },
+  })
+}
