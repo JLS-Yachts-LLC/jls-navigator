@@ -216,8 +216,8 @@ export function LeoPanel({ token, userName, onReady }: LeoPanelProps) {
             <p
               style={{
                 fontFamily:  "'Inter', sans-serif",
-                fontSize:    13,
-                color:       '#C8D8E8',
+                fontSize:    16,
+                color:       COLORS.frost,
                 lineHeight:  1.78,
                 margin:      0,
                 whiteSpace:  'pre-wrap',
@@ -284,9 +284,9 @@ function InsightCard({ label, text, color }: { label: string; text: string; colo
       <div
         style={{
           fontFamily:    "'Space Grotesk', sans-serif",
-          fontSize:      9,
+          fontSize:      14,
           fontWeight:    700,
-          letterSpacing: '0.20em',
+          letterSpacing: '0.12em',
           textTransform: 'uppercase' as const,
           color,
           marginBottom:  6,
@@ -297,8 +297,8 @@ function InsightCard({ label, text, color }: { label: string; text: string; colo
       <div
         style={{
           fontFamily: "'Inter', sans-serif",
-          fontSize:   11,
-          color:      COLORS.muted,
+          fontSize:   14,
+          color:      '#7A9DB8',
           lineHeight: 1.6,
         }}
       >

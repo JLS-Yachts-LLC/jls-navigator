@@ -345,9 +345,9 @@
   /* ── Leo streaming text ── */
   .leo-text {
     font-family: var(--font-body);
-    font-size: 0.8125rem;    /* 13px */
+    font-size: 1rem;         /* 16px */
     line-height: 1.75;
-    color: #C8D8E8;
+    color: var(--foreground);
   }
 
   /* ── Signal button ── */

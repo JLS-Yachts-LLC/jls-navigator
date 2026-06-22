@@ -87,7 +87,7 @@ function DashboardPage() {
           <h1
             style={{
               fontFamily:    "'Space Grotesk', sans-serif",
-              fontSize:      20,
+              fontSize:      22,
               fontWeight:    700,
               color:         COLORS.frost,
               margin:        0,
@@ -99,7 +99,7 @@ function DashboardPage() {
           <p
             style={{
               fontFamily:    "'Space Grotesk', sans-serif",
-              fontSize:      11,
+              fontSize:      14,
               color:         COLORS.steel,
               margin:        '3px 0 0',
               letterSpacing: '0.06em',
@@ -214,9 +214,9 @@ function StatCard({
         <span
           style={{
             fontFamily:    "'Space Grotesk', sans-serif",
-            fontSize:      9,
+            fontSize:      14,
             fontWeight:    700,
-            letterSpacing: '0.18em',
+            letterSpacing: '0.12em',
             textTransform: 'uppercase' as const,
             color:         COLORS.steel,
           }}
@@ -227,7 +227,7 @@ function StatCard({
       <div
         style={{
           fontFamily: "'Space Grotesk', sans-serif",
-          fontSize:   26,
+          fontSize:   28,
           fontWeight: 700,
           color:      urgent ? COLORS.warn : COLORS.frost,
           lineHeight: 1,

@@ -129,9 +129,9 @@ export function LeoChat({ token, userName, briefingText }: LeoChatProps) {
         <div
           style={{
             fontFamily:    "'Space Grotesk', sans-serif",
-            fontSize:      9,
+            fontSize:      14,
             fontWeight:    700,
-            letterSpacing: '0.20em',
+            letterSpacing: '0.12em',
             textTransform: 'uppercase' as const,
             color:         COLORS.steel,
           }}
@@ -148,7 +148,7 @@ export function LeoChat({ token, userName, briefingText }: LeoChatProps) {
         <div
           style={{
             fontFamily: "'Space Grotesk', sans-serif",
-            fontSize:   10,
+            fontSize:   14,
             color:      COLORS.steel,
           }}
         >
@@ -196,7 +196,7 @@ export function LeoChat({ token, userName, briefingText }: LeoChatProps) {
             borderRadius: 6,
             padding:      '8px 12px',
             fontFamily:   "'Inter', sans-serif",
-            fontSize:     13,
+            fontSize:     16,
             color:        COLORS.frost,
             resize:       'none',
             outline:      'none',
@@ -287,7 +287,7 @@ function ChatMessage({ message }: { message: Message }) {
       <p
         style={{
           fontFamily: isUser ? "'Space Grotesk', sans-serif" : "'Inter', sans-serif",
-          fontSize:   isUser ? 13 : 13,
+          fontSize:   16,
           color:      isUser ? COLORS.frost : '#C8D8E8',
           lineHeight: isUser ? 1.55 : 1.78,
           margin:     0,
