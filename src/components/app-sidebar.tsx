@@ -10,7 +10,7 @@ import {
   Wallet, Receipt, TrendingUp, PiggyBank, FolderOpen, Award, Download,
   MessageSquare, Lightbulb, BotMessageSquare, PenLine, Fuel,
 } from "lucide-react";
-import { Rocket, Plug, Lightbulb } from "lucide-react";
+import { Rocket, Plug } from "lucide-react";
 import { AdminSidebarSection } from "@/components/admin/AdminSidebarSection";
 import { useState, useMemo } from "react";
 import { PolarisLogo } from "@/components/polaris-logo";
@@ -33,7 +33,18 @@ type NavItem = {
   children?: NavItem[];
   flagKey?: string;     // feature-flag key controlling visibility + Beta/Dev badge
   devOnly?: boolean;    // only visible to viewers with dev access
+  stage?: FlagStage;    // explicit release stage override (live | beta | dev)
   badge?: FlagStage;    // transient — set during flag filtering for badge render
+};
+
+// Release stage per nav destination. Everything defaults to `dev` (admins/devs only)
+// — staff see ONLY the items listed here (beta or live). Update as features promote.
+const STAFF_VISIBLE: Record<string, FlagStage> = {
+  "/yachts": "beta",                          // Vessel Overview — Beta
+  "/crew-immigration/dashboard": "live",      // Crew Dashboard
+  "/crew-immigration/crew": "live",           // Crew List
+  "/crew-immigration/visas": "live",          // Visas
+  "/crew-immigration/sign-on-off": "live",    // Sign On / Off
 };
 
 // ─── Nav Config ───────────────────────────────────────────────────────────────
@@ -187,15 +198,23 @@ function filterByFlags(
   const out: NavItem[] = [];
   for (const item of items) {
     if (item.devOnly && !devAccess) continue;
-    const stage = item.flagKey ? stageOf(item.flagKey) : undefined;
+    if (item.children?.length) {
+      // Groups carry no stage of their own — they show iff any child survives.
+      const kids = filterByFlags(item.children, stageOf, devAccess);
+      if (kids.length) out.push({ ...item, children: kids });
+      continue;
+    }
+    // Leaf: every destination is `dev` (admins/devs only) unless explicitly
+    // promoted — via an inline `stage`, the STAFF_VISIBLE allow-list, or a
+    // configured feature flag. Dev-stage leaves are hidden from non-dev staff.
+    const stage: FlagStage =
+      item.stage ??
+      (item.to ? STAFF_VISIBLE[item.to] : undefined) ??
+      (item.flagKey ? stageOf(item.flagKey) : undefined) ??
+      "dev";
     if (stage === "dev" && !devAccess) continue;
     const badge: FlagStage | undefined = stage === "beta" ? "beta" : stage === "dev" ? "dev" : undefined;
-    if (item.children?.length) {
-      const kids = filterByFlags(item.children, stageOf, devAccess);
-      if (kids.length) out.push({ ...item, children: kids, badge });
-    } else {
-      out.push({ ...item, badge });
-    }
+    out.push({ ...item, badge });
   }
   return out;
 }
