@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { COLORS, FONTS } from '@/lib/tokens'
 import { supabase } from '@/integrations/supabase/client'
 import { DateInputDMY } from '@/components/ui/date-input-dmy'
@@ -525,6 +525,45 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
   const [lastName, setLastName] = useState((ex as any)?.last_name ?? '')
   // Middle name OCR-detected on the passport but not yet entered — offered as a recommendation.
   const [recommendedMiddle, setRecommendedMiddle] = useState<string | null>(null)
+
+  // ── Draft persistence ──────────────────────────────────────────────────────
+  // The wizard unmounts this step on navigation (step === 3 && <…/>), so typed /
+  // OCR'd values would be lost going forward → back before "Save Passport".
+  // Persist the text fields to sessionStorage and restore on remount.
+  const draftKey = `polaris.passportdraft.${crewId}.${ex?.id ?? 'new'}`
+  const draftRestored = useRef(false)
+  useEffect(() => {
+    if (draftRestored.current) return
+    draftRestored.current = true
+    try {
+      const raw = sessionStorage.getItem(draftKey)
+      if (!raw) return
+      const d = JSON.parse(raw)
+      if (d.firstName) setFirstName(d.firstName)
+      if (d.middleName) setMiddleName(d.middleName)
+      if (d.lastName) setLastName(d.lastName)
+      if (d.nationality) setNationality(d.nationality)
+      if (d.passportNumber) setPassportNumber(d.passportNumber)
+      if (d.issueDate) setIssueDate(d.issueDate)
+      if (d.expiryDate) setExpiryDate(d.expiryDate)
+      if (d.issuingCountry) setIssuingCountry(d.issuingCountry)
+      if (d.dateOfBirth) setDateOfBirth(d.dateOfBirth)
+      if (d.placeOfBirth) setPlaceOfBirth(d.placeOfBirth)
+      if (d.gender) setGender(d.gender)
+      if (d.recommendedMiddle) setRecommendedMiddle(d.recommendedMiddle)
+    } catch { /* ignore corrupt draft */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  useEffect(() => {
+    if (!draftRestored.current) return
+    try {
+      sessionStorage.setItem(draftKey, JSON.stringify({
+        firstName, middleName, lastName, nationality, passportNumber,
+        issueDate, expiryDate, issuingCountry, dateOfBirth, placeOfBirth, gender, recommendedMiddle,
+      }))
+    } catch { /* quota / unavailable — non-fatal */ }
+  }, [draftKey, firstName, middleName, lastName, nationality, passportNumber, issueDate, expiryDate, issuingCountry, dateOfBirth, placeOfBirth, gender, recommendedMiddle])
+  const clearDraft = () => { try { sessionStorage.removeItem(draftKey) } catch { /* noop */ } }
   type SlotKey = 'cover' | 'data' | 'seamans' | 'headshot'
   const [files, setFiles] = useState<Record<SlotKey, File | null>>({ cover: null, data: null, seamans: null, headshot: null })
   const [fileNames, setFileNames] = useState<Record<SlotKey, string | null>>({ cover: null, data: null, seamans: null, headshot: null })
@@ -785,6 +824,7 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
         }).eq('id', crewId)
       } catch { /* non-fatal — passport is saved regardless */ }
 
+      clearDraft()
       onSaved(saved)
     } catch (err: any) {
       setError(err?.message ?? 'Failed to save passport.')
