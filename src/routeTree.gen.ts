@@ -105,6 +105,7 @@ import { Route as AppAdminOrganisationsRouteImport } from './routes/_app.admin.o
 import { Route as AppAdminAuditRouteImport } from './routes/_app.admin.audit'
 import { Route as AppGuidesDepartmentIndexRouteImport } from './routes/_app.guides.$department.index'
 import { Route as AppCrewImmigrationVisasIndexRouteImport } from './routes/_app.crew-immigration.visas.index'
+import { Route as AppCrewImmigrationCrewIndexRouteImport } from './routes/_app.crew-immigration.crew.index'
 import { Route as AppGuidesDepartmentGuideIdRouteImport } from './routes/_app.guides.$department.$guideId'
 import { Route as AppDashboardVesselVesselIdRouteImport } from './routes/_app.dashboard.vessel.$vesselId'
 import { Route as AppDashboardLocationLocationIdRouteImport } from './routes/_app.dashboard.location.$locationId'
@@ -607,6 +608,12 @@ const AppCrewImmigrationVisasIndexRoute =
     path: '/',
     getParentRoute: () => AppCrewImmigrationVisasRoute,
   } as any)
+const AppCrewImmigrationCrewIndexRoute =
+  AppCrewImmigrationCrewIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AppCrewImmigrationCrewRoute,
+  } as any)
 const AppGuidesDepartmentGuideIdRoute =
   AppGuidesDepartmentGuideIdRouteImport.update({
     id: '/$guideId',
@@ -777,6 +784,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/location/$locationId': typeof AppDashboardLocationLocationIdRoute
   '/dashboard/vessel/$vesselId': typeof AppDashboardVesselVesselIdRoute
   '/guides/$department/$guideId': typeof AppGuidesDepartmentGuideIdRoute
+  '/crew-immigration/crew/': typeof AppCrewImmigrationCrewIndexRoute
   '/crew-immigration/visas/': typeof AppCrewImmigrationVisasIndexRoute
   '/guides/$department/': typeof AppGuidesDepartmentIndexRoute
   '/crew-immigration/visas/info/$countryCode': typeof AppCrewImmigrationVisasInfoCountryCodeRoute
@@ -820,7 +828,6 @@ export interface FileRoutesByTo {
   '/crew-cab/locations': typeof AppCrewCabLocationsRoute
   '/crew-cab/trips': typeof AppCrewCabTripsRoute
   '/crew-cab/vehicles': typeof AppCrewCabVehiclesRoute
-  '/crew-immigration/crew': typeof AppCrewImmigrationCrewRouteWithChildren
   '/crew-immigration/dashboard': typeof AppCrewImmigrationDashboardRoute
   '/crew-immigration/documents': typeof AppCrewImmigrationDocumentsRoute
   '/crew-immigration/sign-on-off': typeof AppCrewImmigrationSignOnOffRoute
@@ -873,6 +880,7 @@ export interface FileRoutesByTo {
   '/dashboard/location/$locationId': typeof AppDashboardLocationLocationIdRoute
   '/dashboard/vessel/$vesselId': typeof AppDashboardVesselVesselIdRoute
   '/guides/$department/$guideId': typeof AppGuidesDepartmentGuideIdRoute
+  '/crew-immigration/crew': typeof AppCrewImmigrationCrewIndexRoute
   '/crew-immigration/visas': typeof AppCrewImmigrationVisasIndexRoute
   '/guides/$department': typeof AppGuidesDepartmentIndexRoute
   '/crew-immigration/visas/info/$countryCode': typeof AppCrewImmigrationVisasInfoCountryCodeRoute
@@ -983,6 +991,7 @@ export interface FileRoutesById {
   '/_app/dashboard/location/$locationId': typeof AppDashboardLocationLocationIdRoute
   '/_app/dashboard/vessel/$vesselId': typeof AppDashboardVesselVesselIdRoute
   '/_app/guides/$department/$guideId': typeof AppGuidesDepartmentGuideIdRoute
+  '/_app/crew-immigration/crew/': typeof AppCrewImmigrationCrewIndexRoute
   '/_app/crew-immigration/visas/': typeof AppCrewImmigrationVisasIndexRoute
   '/_app/guides/$department/': typeof AppGuidesDepartmentIndexRoute
   '/_app/crew-immigration/visas/info/$countryCode': typeof AppCrewImmigrationVisasInfoCountryCodeRoute
@@ -1093,6 +1102,7 @@ export interface FileRouteTypes {
     | '/dashboard/location/$locationId'
     | '/dashboard/vessel/$vesselId'
     | '/guides/$department/$guideId'
+    | '/crew-immigration/crew/'
     | '/crew-immigration/visas/'
     | '/guides/$department/'
     | '/crew-immigration/visas/info/$countryCode'
@@ -1136,7 +1146,6 @@ export interface FileRouteTypes {
     | '/crew-cab/locations'
     | '/crew-cab/trips'
     | '/crew-cab/vehicles'
-    | '/crew-immigration/crew'
     | '/crew-immigration/dashboard'
     | '/crew-immigration/documents'
     | '/crew-immigration/sign-on-off'
@@ -1189,6 +1198,7 @@ export interface FileRouteTypes {
     | '/dashboard/location/$locationId'
     | '/dashboard/vessel/$vesselId'
     | '/guides/$department/$guideId'
+    | '/crew-immigration/crew'
     | '/crew-immigration/visas'
     | '/guides/$department'
     | '/crew-immigration/visas/info/$countryCode'
@@ -1298,6 +1308,7 @@ export interface FileRouteTypes {
     | '/_app/dashboard/location/$locationId'
     | '/_app/dashboard/vessel/$vesselId'
     | '/_app/guides/$department/$guideId'
+    | '/_app/crew-immigration/crew/'
     | '/_app/crew-immigration/visas/'
     | '/_app/guides/$department/'
     | '/_app/crew-immigration/visas/info/$countryCode'
@@ -1985,6 +1996,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppCrewImmigrationVisasIndexRouteImport
       parentRoute: typeof AppCrewImmigrationVisasRoute
     }
+    '/_app/crew-immigration/crew/': {
+      id: '/_app/crew-immigration/crew/'
+      path: '/'
+      fullPath: '/crew-immigration/crew/'
+      preLoaderRoute: typeof AppCrewImmigrationCrewIndexRouteImport
+      parentRoute: typeof AppCrewImmigrationCrewRoute
+    }
     '/_app/guides/$department/$guideId': {
       id: '/_app/guides/$department/$guideId'
       path: '/$guideId'
@@ -2106,6 +2124,7 @@ const AppCrewCabRouteWithChildren = AppCrewCabRoute._addFileChildren(
 interface AppCrewImmigrationCrewRouteChildren {
   AppCrewImmigrationCrewIdRoute: typeof AppCrewImmigrationCrewIdRoute
   AppCrewImmigrationCrewNewRoute: typeof AppCrewImmigrationCrewNewRoute
+  AppCrewImmigrationCrewIndexRoute: typeof AppCrewImmigrationCrewIndexRoute
   AppCrewImmigrationCrewAddCrewMemberIdPassportRoute: typeof AppCrewImmigrationCrewAddCrewMemberIdPassportRoute
 }
 
@@ -2113,6 +2132,7 @@ const AppCrewImmigrationCrewRouteChildren: AppCrewImmigrationCrewRouteChildren =
   {
     AppCrewImmigrationCrewIdRoute: AppCrewImmigrationCrewIdRoute,
     AppCrewImmigrationCrewNewRoute: AppCrewImmigrationCrewNewRoute,
+    AppCrewImmigrationCrewIndexRoute: AppCrewImmigrationCrewIndexRoute,
     AppCrewImmigrationCrewAddCrewMemberIdPassportRoute:
       AppCrewImmigrationCrewAddCrewMemberIdPassportRoute,
   }
