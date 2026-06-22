@@ -39,24 +39,26 @@ const handlers = {
       if (!email) return json({ error: 'No email on file for this user' }, 404)
 
       const base = process.env.VITE_APP_URL ?? new URL(request.url).origin
-      const { error: mailErr } = body.action === 'reset_password'
-        ? await sb.auth.resetPasswordForEmail(email, { redirectTo: `${base}/auth` })
-        : await sb.auth.admin.inviteUserByEmail(email, { redirectTo: `${base}/auth/mfa-setup` })
+      const isReset = body.action === 'reset_password'
 
-      // Fallback: if Supabase couldn't send (rate limit / SMTP error), deliver via SES.
-      if (mailErr) {
-        const ok = await sendAuthLinkViaSES(sb, {
-          email,
-          type: 'recovery',
-          redirectTo: `${base}/auth`,
-          subject: body.action === 'reset_password' ? 'Reset your Polaris password' : 'Your Polaris invitation',
-          heading: body.action === 'reset_password' ? 'Reset your password' : 'You have been invited to Polaris',
-          intro: body.action === 'reset_password'
-            ? 'A password reset was requested for your Polaris account. Set a new password using the link below.'
-            : 'An administrator has invited you to the Polaris operational platform. Set your password to activate your account.',
-          cta: body.action === 'reset_password' ? 'Reset my password' : 'Set up my account',
-        })
-        if (!ok) return json({ error: mailErr.message }, 400)
+      // Primary: branded Polaris email via SES. Fallback: Supabase's native send.
+      let sent = await sendAuthLinkViaSES(sb, {
+        email,
+        type: 'recovery',
+        redirectTo: `${base}/auth`,
+        subject: isReset ? 'Reset your Polaris password' : 'Your Polaris invitation',
+        heading: isReset ? 'Reset your password' : 'You have been invited to Polaris',
+        intro: isReset
+          ? 'A password reset was requested for your Polaris account. Set a new password using the link below.'
+          : 'An administrator has invited you to the Polaris operational platform. Set your password to activate your account.',
+        cta: isReset ? 'Reset my password' : 'Set up my account',
+      })
+      if (!sent) {
+        const { error: mailErr } = isReset
+          ? await sb.auth.resetPasswordForEmail(email, { redirectTo: `${base}/auth` })
+          : await sb.auth.admin.inviteUserByEmail(email, { redirectTo: `${base}/auth/mfa-setup` })
+        sent = !mailErr
+        if (!sent) return json({ error: mailErr?.message ?? 'Email send failed' }, 400)
       }
 
       await logAuditEvent({

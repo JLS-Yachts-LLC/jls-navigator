@@ -107,42 +107,36 @@ const handlers = {
     }
 
     const base = process.env.VITE_APP_URL ?? new URL(request.url).origin
-    const { data: inviteData, error: inviteErr } = await sb.auth.admin.inviteUserByEmail(email, {
-      data: { role },
-      redirectTo: `${base}/auth/mfa-setup`,
-    })
 
-    // Resolve the auth user. inviteUserByEmail may have: succeeded (sent email),
-    // failed on the email step (user created, no email), or failed because the
-    // user already exists. Find or create the user so the invite never half-fails.
-    let userId = inviteData?.user?.id
-    let emailSent = !inviteErr
+    // Resolve/create the auth user WITHOUT sending Supabase's default email — we
+    // deliver a branded Polaris invite via SES ourselves (below).
+    let userId: string | undefined
+    const { data: created, error: createErr } = await sb.auth.admin.createUser({
+      email, email_confirm: false, user_metadata: { role },
+    })
+    userId = created?.user?.id
     if (!userId) {
+      // Already registered (or create failed) — find the existing user.
       const { data: list } = await sb.auth.admin.listUsers({ page: 1, perPage: 1000 })
       userId = (list?.users ?? []).find((u: any) => (u.email ?? '').toLowerCase() === email.toLowerCase())?.id
-    }
-    if (!userId) {
-      const { data: created, error: createErr } = await sb.auth.admin.createUser({
-        email, email_confirm: false, user_metadata: { role },
-      })
-      if (createErr || !created?.user) {
-        return json({ error: createErr?.message ?? inviteErr?.message ?? 'Invite failed' }, 400)
-      }
-      userId = created.user.id
+      if (!userId) return json({ error: createErr?.message ?? 'Invite failed' }, 400)
     }
 
-    // Fallback: if Supabase couldn't send the email (rate limit / SMTP error),
-    // deliver the onboarding link ourselves via SES.
+    // Primary: branded Polaris invite via SES. Fallback: Supabase's native invite.
+    let emailSent = await sendAuthLinkViaSES(sb, {
+      email,
+      type: 'recovery',
+      redirectTo: `${base}/auth`,
+      subject: 'Your Polaris invitation',
+      heading: 'You have been invited to Polaris',
+      intro: 'An administrator has invited you to the Polaris operational platform. Set your password to activate your account.',
+      cta: 'Set up my account',
+    })
     if (!emailSent) {
-      emailSent = await sendAuthLinkViaSES(sb, {
-        email,
-        type: 'recovery',
-        redirectTo: `${base}/auth`,
-        subject: 'Your Polaris invitation',
-        heading: 'You have been invited to Polaris',
-        intro: 'An administrator has invited you to the Polaris operational platform. Set your password to activate your account.',
-        cta: 'Set up my account',
+      const { error: inviteErr } = await sb.auth.admin.inviteUserByEmail(email, {
+        data: { role }, redirectTo: `${base}/auth/mfa-setup`,
       })
+      emailSent = !inviteErr
     }
 
     const { error: profileErr } = await sb.from('user_profiles').upsert({

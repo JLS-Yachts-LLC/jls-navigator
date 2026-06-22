@@ -13,7 +13,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Search, LogIn, LogOut, Trash2, Loader2, FileText, Upload, CheckCircle2, Pencil } from "lucide-react";
+import { Plus, Search, LogIn, LogOut, Trash2, Loader2, FileText, Upload, CheckCircle2, Pencil, BarChart3, Download } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { doPushToSharePoint } from "@/lib/sharepoint-push.server";
@@ -71,6 +71,40 @@ export function SignOnOffPage() {
   // Multi-select crew + in-modal search.
   const [selectedCrew, setSelectedCrew] = useState<string[]>([]);
   const [crewQ, setCrewQ] = useState("");
+  // Reports dashboard
+  const [reportsOpen, setReportsOpen] = useState(false);
+  const [reportWeek, setReportWeek] = useState("");
+  const [reportBusy, setReportBusy] = useState("");
+
+  const REPORTS = [
+    { path: "/api/reports/crew-movement", label: "Crew Movement", desc: "All movements — uses the current vessel & type filters", weekly: false },
+    { path: "/api/reports/weekly-sign-on", label: "Weekly Sign-On", desc: "Sign-ons for the selected week", weekly: true },
+    { path: "/api/reports/weekly-sign-off", label: "Weekly Sign-Off", desc: "Sign-offs for the selected week", weekly: true },
+    { path: "/api/reports/crew-onboard", label: "Crew Onboard", desc: "Crew currently onboard, all vessels", weekly: false },
+    { path: "/api/reports/crew-arriving", label: "Crew Arriving", desc: "Confirmed upcoming sign-ons", weekly: false },
+    { path: "/api/reports/crew-departing", label: "Crew Departing", desc: "Confirmed upcoming sign-offs", weekly: false },
+  ];
+
+  async function downloadReport(path: string, format: "csv" | "pdf", weekly: boolean) {
+    setReportBusy(`${path}:${format}`);
+    try {
+      const params = new URLSearchParams({ format });
+      if (path.endsWith("/crew-movement")) {
+        if (filterYacht !== "all") params.set("vessel_id", filterYacht);
+        if (filterType !== "all") params.set("movement_type", filterType);
+      }
+      if (weekly && reportWeek) params.set("week", reportWeek);
+      const res = await fetch(`${path}?${params}`, { headers: { Authorization: `Bearer ${(session as any)?.access_token ?? ""}` } });
+      if (!res.ok) { toast.error("Could not generate report"); return; }
+      const blob = await res.blob();
+      const cd = res.headers.get("Content-Disposition") ?? "";
+      const filename = /filename="([^"]+)"/.exec(cd)?.[1] ?? `report.${format}`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = filename; a.click();
+      URL.revokeObjectURL(url);
+    } catch { toast.error("Could not generate report"); }
+    finally { setReportBusy(""); }
+  }
 
   useEffect(() => { void load(); void loadRefs(); }, []);
 
@@ -333,6 +367,7 @@ export function SignOnOffPage() {
           </Select>
           <Button size="sm" variant="outline" onClick={() => { setImmForm({ yacht_id: filterYacht !== "all" ? filterYacht : "", list_date: new Date().toISOString().slice(0, 10), notes: "", file: null, emirate: "dubai" }); setImmOpen(true); }} className="h-9 gap-1.5 px-3 text-xs"><FileText className="h-3.5 w-3.5" /> Dubai Imm.</Button>
           <Button size="sm" variant="outline" onClick={() => { setImmForm({ yacht_id: filterYacht !== "all" ? filterYacht : "", list_date: new Date().toISOString().slice(0, 10), notes: "", file: null, emirate: "abu_dhabi" }); setImmOpen(true); }} className="h-9 gap-1.5 px-3 text-xs"><FileText className="h-3.5 w-3.5" /> AUH Imm.</Button>
+          <Button size="sm" variant="outline" onClick={() => setReportsOpen(true)} className="h-9 gap-1.5 px-3 text-xs"><BarChart3 className="h-3.5 w-3.5" /> Reports</Button>
           <Button size="sm" onClick={openNew} className="h-9 gap-1.5 px-3.5 font-medium shadow-sm"><Plus className="h-3.5 w-3.5" /> Record Event</Button>
         </div>
       </header>
@@ -625,6 +660,33 @@ export function SignOnOffPage() {
             <Button variant="outline" onClick={() => setImmOpen(false)} disabled={immBusy}>Cancel</Button>
             <Button onClick={saveImmList} disabled={immBusy} className="gap-1.5">{immBusy && <Loader2 className="h-4 w-4 animate-spin" />} Save list</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={reportsOpen} onOpenChange={setReportsOpen}>
+        <DialogContent className="max-w-lg max-h-[88vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Immigration &amp; Movement Reports</DialogTitle></DialogHeader>
+          <div className="space-y-1.5 py-1">
+            <Label className="text-xs">Week (for weekly reports)</Label>
+            <Input type="date" value={reportWeek} onChange={(e) => setReportWeek(e.target.value)} className="h-8 w-48" />
+            <p className="text-[11px] text-muted-foreground">Defaults to the current week. Any date in the week works.</p>
+          </div>
+          <div className="divide-y divide-border">
+            {REPORTS.map((r) => (
+              <div key={r.path} className="flex items-center gap-3 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium">{r.label}</p>
+                  <p className="text-[11px] text-muted-foreground">{r.desc}</p>
+                </div>
+                <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs" disabled={!!reportBusy} onClick={() => downloadReport(r.path, "csv", r.weekly)}>
+                  {reportBusy === `${r.path}:csv` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} CSV
+                </Button>
+                <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs" disabled={!!reportBusy} onClick={() => downloadReport(r.path, "pdf", r.weekly)}>
+                  {reportBusy === `${r.path}:pdf` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />} PDF
+                </Button>
+              </div>
+            ))}
+          </div>
         </DialogContent>
       </Dialog>
 
