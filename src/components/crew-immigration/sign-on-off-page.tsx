@@ -17,7 +17,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { doPushToSharePoint } from "@/lib/sharepoint-push.server";
 
-type CrewLite = { id: string; first_name: string; last_name: string; rank: string | null };
+type CrewLite = { id: string; first_name: string; last_name: string; rank: string | null; yacht_id: string | null };
 type Yacht = { id: string; vessel_name: string };
 type SignEvent = {
   id: string;
@@ -41,8 +41,11 @@ export function SignOnOffPage() {
   const [busy, setBusy] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<SignEvent | null>(null);
   const [form, setForm] = useState({
-    crew_member_id: "", yacht_id: "", event_type: "sign_on", event_date: "", port: "", notes: "",
+    yacht_id: "", event_type: "sign_on", event_date: "", port: "", notes: "",
   });
+  // Multi-select crew + in-modal search.
+  const [selectedCrew, setSelectedCrew] = useState<string[]>([]);
+  const [crewQ, setCrewQ] = useState("");
 
   useEffect(() => { void load(); void loadRefs(); }, []);
 
@@ -56,7 +59,7 @@ export function SignOnOffPage() {
   async function loadRefs() {
     const db = supabase as any;
     const [c, y] = await Promise.all([
-      fetchAllRows(() => db.from("crew_members").select("id, first_name, last_name, rank").order("last_name")),
+      fetchAllRows(() => db.from("crew_members").select("id, first_name, last_name, rank, yacht_id").order("last_name")),
       fetchAllRows(() => supabase.from("yachts").select("id, vessel_name").order("vessel_name")),
     ]);
     setCrew(c.data ?? []);
@@ -64,31 +67,51 @@ export function SignOnOffPage() {
   }
 
   function openNew() {
-    setForm({ crew_member_id: "", yacht_id: "", event_type: "sign_on", event_date: new Date().toISOString().slice(0, 10), port: "", notes: "" });
+    setForm({ yacht_id: "", event_type: "sign_on", event_date: new Date().toISOString().slice(0, 10), port: "", notes: "" });
+    setSelectedCrew([]);
+    setCrewQ("");
     setOpen(true);
   }
 
+  // Crew shown in the picker: filtered by the chosen vessel, then by search text.
+  const modalCrew = useMemo(() => {
+    const s = crewQ.trim().toLowerCase();
+    return crew.filter((c) => {
+      if (form.yacht_id && c.yacht_id !== form.yacht_id) return false;
+      if (s && !`${c.first_name} ${c.last_name} ${c.rank ?? ""}`.toLowerCase().includes(s)) return false;
+      return true;
+    });
+  }, [crew, form.yacht_id, crewQ]);
+
+  const toggleCrew = (id: string) =>
+    setSelectedCrew((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+
   async function save() {
-    if (!form.crew_member_id) { toast.error("Select a crew member"); return; }
+    if (selectedCrew.length === 0) { toast.error("Select at least one crew member"); return; }
     setBusy(true);
     try {
-      const { data: saved, error } = await (supabase as any).from("crew_signon_events").insert([{
-        crew_member_id: form.crew_member_id,
+      const rows = selectedCrew.map((id) => ({
+        crew_member_id: id,
         yacht_id: form.yacht_id || null,
         event_type: form.event_type,
         event_date: form.event_date || null,
         port: form.port || null,
         notes: form.notes || null,
         created_by: user?.id,
-      }]).select("id").single();
+      }));
+      const { data: saved, error } = await (supabase as any)
+        .from("crew_signon_events").insert(rows).select("id");
       if (error) throw error;
-      // Mirror the event to the SharePoint "Crew Sign On Off" list (best-effort).
-      if (saved?.id) doPushToSharePoint({ data: { target: "crew_signon_events", id: saved.id } } as any).catch(() => {});
-      // Optionally update crew status
+      // Bulk-update crew status for everyone in this batch.
       await (supabase as any).from("crew_members")
         .update({ status: form.event_type === "sign_on" ? "active" : "off_signed", updated_at: new Date().toISOString() })
-        .eq("id", form.crew_member_id);
-      toast.success(form.event_type === "sign_on" ? "Sign-on recorded" : "Sign-off recorded");
+        .in("id", selectedCrew);
+      // Mirror each event to the SharePoint "Crew Sign On Off" list (best-effort).
+      (saved ?? []).forEach((s: any) => {
+        if (s?.id) doPushToSharePoint({ data: { target: "crew_signon_events", id: s.id } } as any).catch(() => {});
+      });
+      const verb = form.event_type === "sign_on" ? "signed on" : "signed off";
+      toast.success(`${selectedCrew.length} crew ${verb}`);
       setOpen(false);
       void load();
     } catch (e: any) { toast.error(e.message ?? "Save failed"); }
@@ -202,44 +225,90 @@ export function SignOnOffPage() {
                 ))}
               </div>
             </div>
+            {/* Vessel first — filters the crew list below to that yacht's crew. */}
             <div className="space-y-1.5">
-              <Label className="text-xs">Crew Member <span className="text-destructive">*</span></Label>
-              <Select value={form.crew_member_id || "__none"} onValueChange={(v) => setForm((f) => ({ ...f, crew_member_id: v === "__none" ? "" : v }))}>
-                <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="— Select —" /></SelectTrigger>
+              <Label className="text-xs">Vessel</Label>
+              <Select value={form.yacht_id || "__all"} onValueChange={(v) => { setForm((f) => ({ ...f, yacht_id: v === "__all" ? "" : v })); setSelectedCrew([]); }}>
+                <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="All vessels" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__none">— Select —</SelectItem>
-                  {crew.map((c) => <SelectItem key={c.id} value={c.id}>{c.first_name} {c.last_name}{c.rank ? ` · ${c.rank}` : ""}</SelectItem>)}
+                  <SelectItem value="__all">All vessels</SelectItem>
+                  {yachts.map((y) => <SelectItem key={y.id} value={y.id}>{y.vessel_name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs">Vessel</Label>
-                <Select value={form.yacht_id || "__none"} onValueChange={(v) => setForm((f) => ({ ...f, yacht_id: v === "__none" ? "" : v }))}>
-                  <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="— None —" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none">— None —</SelectItem>
-                    {yachts.map((y) => <SelectItem key={y.id} value={y.id}>{y.vessel_name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+
+            {/* Searchable multi-select crew list. */}
+            <div className="space-y-1.5">
+              <Label className="text-xs">Crew Members <span className="text-destructive">*</span> <span className="text-muted-foreground">— select one or more</span></Label>
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/50" />
+                <Input value={crewQ} onChange={(e) => setCrewQ(e.target.value)} placeholder="Search crew…" className="h-8 pl-8 text-sm" />
               </div>
+              <div className="max-h-44 overflow-auto rounded-lg border border-border">
+                {modalCrew.length === 0 ? (
+                  <p className="px-3 py-4 text-center text-[13px] text-muted-foreground/70">
+                    {form.yacht_id ? "No crew assigned to this vessel." : "No crew match your search."}
+                  </p>
+                ) : (
+                  modalCrew.map((c) => {
+                    const checked = selectedCrew.includes(c.id);
+                    return (
+                      <button key={c.id} type="button" onClick={() => toggleCrew(c.id)}
+                        className={cn("flex w-full items-center gap-2.5 border-b border-border/50 px-3 py-2 text-left text-sm last:border-0 transition",
+                          checked ? "bg-primary/10" : "hover:bg-accent")}>
+                        <span className={cn("flex h-4 w-4 items-center justify-center rounded border", checked ? "border-primary bg-primary text-primary-foreground" : "border-border")}>
+                          {checked && <span className="text-[10px] leading-none">✓</span>}
+                        </span>
+                        <span className="flex-1">{c.first_name} {c.last_name}</span>
+                        {c.rank && <span className="text-[11px] text-muted-foreground">{c.rank}</span>}
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs">Date</Label>
                 <Input type="date" value={form.event_date} onChange={(e) => setForm((f) => ({ ...f, event_date: e.target.value }))} className="h-8" />
               </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Port</Label>
-              <Input value={form.port} onChange={(e) => setForm((f) => ({ ...f, port: e.target.value }))} className="h-8" placeholder="e.g. Port Rashid, Dubai" />
+              <div className="space-y-1.5">
+                <Label className="text-xs">Port</Label>
+                <Input value={form.port} onChange={(e) => setForm((f) => ({ ...f, port: e.target.value }))} className="h-8" placeholder="e.g. Port Rashid, Dubai" />
+              </div>
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Notes</Label>
               <Textarea value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} rows={2} className="resize-none text-sm" />
             </div>
+
+            {/* Summary of the batch about to be recorded. */}
+            {selectedCrew.length > 0 && (
+              <div className="rounded-lg border border-border bg-muted/30 p-3">
+                <div className="mb-1.5 flex items-center justify-between">
+                  <span className="text-xs font-semibold">
+                    {selectedCrew.length} crew to {form.event_type === "sign_on" ? "sign on" : "sign off"}
+                  </span>
+                  <button type="button" onClick={() => setSelectedCrew([])} className="text-[11px] text-muted-foreground hover:text-foreground underline">Clear</button>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {selectedCrew.map((id) => (
+                    <span key={id} className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-[11px] text-primary">
+                      {crewName(id)}
+                      <button type="button" onClick={() => toggleCrew(id)} className="text-primary/60 hover:text-primary">✕</button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)} disabled={busy}>Cancel</Button>
-            <Button onClick={save} disabled={busy} className="gap-1.5">{busy && <Loader2 className="h-4 w-4 animate-spin" />} Record Event</Button>
+            <Button onClick={save} disabled={busy || selectedCrew.length === 0} className="gap-1.5">
+              {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+              {form.event_type === "sign_on" ? "Sign On" : "Sign Off"}{selectedCrew.length > 0 ? ` ${selectedCrew.length}` : ""}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
