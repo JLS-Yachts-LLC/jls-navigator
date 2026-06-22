@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { toast } from 'sonner'
 import { COLORS, FONTS } from '@/lib/tokens'
 import { supabase } from '@/integrations/supabase/client'
 import { DateInputDMY } from '@/components/ui/date-input-dmy'
 import { SignedAnchor } from '@/components/ui/signed-file'
+import { DraggableDocRow } from '@/components/visa/DraggableDocRow'
+import { downloadImmigrationPackage, immigrationPackName, type ExportableDoc } from '@/lib/visa/documentExport'
 import { compressImageToMaxKB } from '@/lib/image-compress'
 import { upsertPassport, type CrewMember, type CrewPassport } from '@/lib/visa/crewMatching'
 import { COUNTRY_CONFIGS, type CountryVisaConfig, type CountryCode } from '@/lib/visa/countryConfig'
@@ -400,7 +403,7 @@ function FieldCard({ label, note, noteColor, children }: {
 }
 
 // Document Status panel — shared between the add-form and existing-passport cards.
-function DocumentStatusPanel({ status, expiryDate, seamansNotApplicable, downloads, verificationLetterUrl }: {
+function DocumentStatusPanel({ status, expiryDate, seamansNotApplicable, downloads, verificationLetterUrl, crewLastName, passportNumber }: {
   status: {
     insidePages: 'uploaded' | 'missing' | 'not_uploaded'
     ocrCompleted: boolean
@@ -415,8 +418,31 @@ function DocumentStatusPanel({ status, expiryDate, seamansNotApplicable, downloa
   downloads?: { label: string; url: string | null }[]
   /** URL of the generated Crew Verification letter, when no Seaman's book. */
   verificationLetterUrl?: string | null
+  /** Used to name the immigration ZIP package. */
+  crewLastName?: string | null
+  passportNumber?: string | null
 }) {
-  const dls = (downloads ?? []).filter((d) => d.url)
+  const dls = (downloads ?? []).filter((d) => d.url) as { label: string; url: string }[]
+  const [packing, setPacking] = useState(false)
+
+  // Core docs for the immigration pack: passport cover + inside, headshot,
+  // verification letter (Seaman's book is optional — not auto-included).
+  const isCore = (label: string) => /cover|inside|headshot|verification letter/i.test(label)
+  const isPassportDoc = (label: string) => /passport|cover|inside/i.test(label)
+
+  async function handleExportPackage() {
+    const docs: ExportableDoc[] = dls.filter((d) => isCore(d.label)).map((d) => ({ label: d.label, stored: d.url }))
+    if (docs.length === 0) { toast('No core documents available to export yet.'); return }
+    setPacking(true)
+    try {
+      const name = immigrationPackName(crewLastName ?? '', passportNumber)
+      const count = await downloadImmigrationPackage(docs, name)
+      if (count > 0) toast(`Immigration package ready — ${count} file${count === 1 ? '' : 's'}`)
+      else toast.error('Could not build the immigration package. Please try again.')
+    } finally {
+      setPacking(false)
+    }
+  }
   const hasExpiry = !!expiryDate
   const valid = hasExpiry && getExpiryLabel(expiryDate!) === 'Valid'
   const years = hasExpiry ? yearsUntil(expiryDate!) : 0
@@ -471,23 +497,37 @@ function DocumentStatusPanel({ status, expiryDate, seamansNotApplicable, downloa
 
       {dls.length > 0 && (
         <div style={{ marginTop: 16, borderTop: `1px solid ${COLORS.deep}`, paddingTop: 14 }}>
-          <h3 style={{ fontFamily: FONTS.display, fontSize: 11, fontWeight: 700, color: COLORS.muted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>
-            Downloads
+          <h3 style={{ fontFamily: FONTS.display, fontSize: 11, fontWeight: 700, color: COLORS.muted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
+            Documents
           </h3>
+          <p style={{ fontFamily: FONTS.display, fontSize: 10, color: COLORS.steel, margin: '0 0 10px', lineHeight: 1.5 }}>
+            Drag a document into an immigration portal, or use Open / Download.
+          </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {dls.map((d) => (
-              <a key={d.label} href={d.url!} target="_blank" rel="noopener noreferrer" download
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px',
-                  background: COLORS.void, border: `1px solid ${COLORS.deep}`, borderRadius: 7,
-                  fontFamily: FONTS.display, fontSize: 12, color: COLORS.frost, textDecoration: 'none',
-                }}>
-                <span aria-hidden="true" style={{ fontSize: 14 }}>📄</span>
-                <span style={{ flex: 1 }}>{d.label}</span>
-                <span aria-hidden="true" style={{ color: COLORS.signal, fontSize: 13 }}>↓</span>
-              </a>
+              <DraggableDocRow
+                key={d.label}
+                label={d.label}
+                stored={d.url}
+                icon={/headshot/i.test(d.label) ? '📷' : '📄'}
+                expiryDate={isPassportDoc(d.label) ? expiryDate : undefined}
+              />
             ))}
           </div>
+
+          <button
+            type="button"
+            onClick={handleExportPackage}
+            disabled={packing}
+            style={{
+              marginTop: 12, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              padding: '9px 12px', borderRadius: 7,
+              background: COLORS.signal, border: 'none', cursor: packing ? 'wait' : 'pointer',
+              fontFamily: FONTS.display, fontSize: 12, fontWeight: 700, color: COLORS.void, opacity: packing ? 0.6 : 1,
+            }}>
+            <span aria-hidden="true">⬇</span>
+            {packing ? 'Building package…' : 'Export immigration package'}
+          </button>
         </div>
       )}
     </aside>
@@ -1170,6 +1210,7 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
         {/* ── Right column: Document Status ── */}
         <DocumentStatusPanel status={docStatus} expiryDate={expiryDate || undefined} seamansNotApplicable={noSeamans}
           verificationLetterUrl={(ex as any)?.crew_verification_letter_url ?? null}
+          crewLastName={lastName} passportNumber={passportNumber}
           downloads={[
             { label: 'Passport cover', url: existingUrls.cover },
             { label: 'Passport inside pages', url: existingUrls.data },
@@ -1327,6 +1368,7 @@ function PassportCard({ passport, selected, onSelect, onEdit, crewFirst, crewMid
         {/* Right: per-passport Document Status */}
         <DocumentStatusPanel status={docStatus} expiryDate={passport.expiry_date} seamansNotApplicable={!!passport.no_seamans_book}
           verificationLetterUrl={(passport as any).crew_verification_letter_url ?? null}
+          crewLastName={crewLast} passportNumber={passport.passport_number}
           downloads={[
             { label: 'Passport cover', url: (passport as any).cover_url ?? null },
             { label: 'Passport inside pages', url: (passport as any).document_url ?? null },
