@@ -22,6 +22,9 @@ import { crewPassportsHandler } from './routes/api.crew.passports'
 import { visaPassportSelectHandler } from './routes/api.visa.passport-select'
 import { crewSearchHandler } from './routes/api.crew.search'
 import { crewPersonalInfoHandler } from './routes/api.crew.personal-info'
+import { visaApplicationActionsHandler } from './routes/api.visa.applicationActions'
+import { visaReportsHandler } from './routes/api.visa.reports'
+import { runVisaExpiryFlagJob } from './lib/visa/visaExpiryFlags.server'
 
 const handleRequest = createStartHandler(defaultStreamHandler)
 
@@ -241,6 +244,18 @@ export default {
       return visaPassportSelectHandler(request)
     }
 
+    // Visa back-office actions: status / amendment / renewal
+    if (url.pathname.match(/^\/api\/visa\/applications\/[^/]+\/(status|amendment|renewal)$/) &&
+        (request.method === 'PATCH' || request.method === 'POST')) {
+      return visaApplicationActionsHandler(request)
+    }
+
+    // Visa reports: pipeline + expiry (with ?format=csv export)
+    if ((url.pathname === '/api/visa/reports/pipeline' || url.pathname === '/api/visa/reports/expiry') &&
+        request.method === 'GET') {
+      return visaReportsHandler(request)
+    }
+
     return handleRequest(request, env, ctx)
   },
 
@@ -312,6 +327,16 @@ export default {
         .then(({ matched, updated }) => console.log(`[vesselfinder-cron] matched=${matched} updated=${updated}`))
         .catch((e) => console.error('[vesselfinder-cron] error:', e))
     )
+
+    // Run UAE visa expiry-flag engine once daily at 03:00 UTC (07:00 UAE time).
+    // Fires 30-calendar-day, 10-working-day and 5-working-day flags + notifications.
+    if (utcHour === 3) {
+      ctx.waitUntil(
+        runVisaExpiryFlagJob()
+          .then(({ processed, flagged }) => console.log(`[visa-expiry-flags] processed=${processed} flagged=${flagged}`))
+          .catch((e) => console.error('[visa-expiry-flags] error:', e))
+      )
+    }
 
     // Run visa compliance monitor once daily at 07:00 UTC
     if (utcHour === 7) {

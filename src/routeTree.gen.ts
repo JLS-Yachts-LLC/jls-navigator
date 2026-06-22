@@ -110,8 +110,10 @@ import { Route as AppGuidesDepartmentGuideIdRouteImport } from './routes/_app.gu
 import { Route as AppDashboardVesselVesselIdRouteImport } from './routes/_app.dashboard.vessel.$vesselId'
 import { Route as AppDashboardLocationLocationIdRouteImport } from './routes/_app.dashboard.location.$locationId'
 import { Route as AppCrewImmigrationVisasSupportingDocsRouteImport } from './routes/_app.crew-immigration.visas.supporting-docs'
+import { Route as AppCrewImmigrationVisasPipelineRouteImport } from './routes/_app.crew-immigration.visas.pipeline'
 import { Route as AppCrewImmigrationVisasPassportDetailsRouteImport } from './routes/_app.crew-immigration.visas.passport-details'
 import { Route as AppCrewImmigrationVisasNewRouteImport } from './routes/_app.crew-immigration.visas.new'
+import { Route as AppCrewImmigrationVisasExpiryRouteImport } from './routes/_app.crew-immigration.visas.expiry'
 import { Route as AppCrewImmigrationVisasIdRouteImport } from './routes/_app.crew-immigration.visas.$id'
 import { Route as AppCrewImmigrationCrewNewRouteImport } from './routes/_app.crew-immigration.crew.new'
 import { Route as AppCrewImmigrationCrewIdRouteImport } from './routes/_app.crew-immigration.crew.$id'
@@ -638,6 +640,12 @@ const AppCrewImmigrationVisasSupportingDocsRoute =
     path: '/supporting-docs',
     getParentRoute: () => AppCrewImmigrationVisasRoute,
   } as any)
+const AppCrewImmigrationVisasPipelineRoute =
+  AppCrewImmigrationVisasPipelineRouteImport.update({
+    id: '/pipeline',
+    path: '/pipeline',
+    getParentRoute: () => AppCrewImmigrationVisasRoute,
+  } as any)
 const AppCrewImmigrationVisasPassportDetailsRoute =
   AppCrewImmigrationVisasPassportDetailsRouteImport.update({
     id: '/passport-details',
@@ -648,6 +656,12 @@ const AppCrewImmigrationVisasNewRoute =
   AppCrewImmigrationVisasNewRouteImport.update({
     id: '/new',
     path: '/new',
+    getParentRoute: () => AppCrewImmigrationVisasRoute,
+  } as any)
+const AppCrewImmigrationVisasExpiryRoute =
+  AppCrewImmigrationVisasExpiryRouteImport.update({
+    id: '/expiry',
+    path: '/expiry',
     getParentRoute: () => AppCrewImmigrationVisasRoute,
   } as any)
 const AppCrewImmigrationVisasIdRoute =
@@ -778,8 +792,10 @@ export interface FileRoutesByFullPath {
   '/crew-immigration/crew/$id': typeof AppCrewImmigrationCrewIdRoute
   '/crew-immigration/crew/new': typeof AppCrewImmigrationCrewNewRoute
   '/crew-immigration/visas/$id': typeof AppCrewImmigrationVisasIdRoute
+  '/crew-immigration/visas/expiry': typeof AppCrewImmigrationVisasExpiryRoute
   '/crew-immigration/visas/new': typeof AppCrewImmigrationVisasNewRoute
   '/crew-immigration/visas/passport-details': typeof AppCrewImmigrationVisasPassportDetailsRoute
+  '/crew-immigration/visas/pipeline': typeof AppCrewImmigrationVisasPipelineRoute
   '/crew-immigration/visas/supporting-docs': typeof AppCrewImmigrationVisasSupportingDocsRoute
   '/dashboard/location/$locationId': typeof AppDashboardLocationLocationIdRoute
   '/dashboard/vessel/$vesselId': typeof AppDashboardVesselVesselIdRoute
@@ -874,8 +890,10 @@ export interface FileRoutesByTo {
   '/crew-immigration/crew/$id': typeof AppCrewImmigrationCrewIdRoute
   '/crew-immigration/crew/new': typeof AppCrewImmigrationCrewNewRoute
   '/crew-immigration/visas/$id': typeof AppCrewImmigrationVisasIdRoute
+  '/crew-immigration/visas/expiry': typeof AppCrewImmigrationVisasExpiryRoute
   '/crew-immigration/visas/new': typeof AppCrewImmigrationVisasNewRoute
   '/crew-immigration/visas/passport-details': typeof AppCrewImmigrationVisasPassportDetailsRoute
+  '/crew-immigration/visas/pipeline': typeof AppCrewImmigrationVisasPipelineRoute
   '/crew-immigration/visas/supporting-docs': typeof AppCrewImmigrationVisasSupportingDocsRoute
   '/dashboard/location/$locationId': typeof AppDashboardLocationLocationIdRoute
   '/dashboard/vessel/$vesselId': typeof AppDashboardVesselVesselIdRoute
@@ -985,8 +1003,10 @@ export interface FileRoutesById {
   '/_app/crew-immigration/crew/$id': typeof AppCrewImmigrationCrewIdRoute
   '/_app/crew-immigration/crew/new': typeof AppCrewImmigrationCrewNewRoute
   '/_app/crew-immigration/visas/$id': typeof AppCrewImmigrationVisasIdRoute
+  '/_app/crew-immigration/visas/expiry': typeof AppCrewImmigrationVisasExpiryRoute
   '/_app/crew-immigration/visas/new': typeof AppCrewImmigrationVisasNewRoute
   '/_app/crew-immigration/visas/passport-details': typeof AppCrewImmigrationVisasPassportDetailsRoute
+  '/_app/crew-immigration/visas/pipeline': typeof AppCrewImmigrationVisasPipelineRoute
   '/_app/crew-immigration/visas/supporting-docs': typeof AppCrewImmigrationVisasSupportingDocsRoute
   '/_app/dashboard/location/$locationId': typeof AppDashboardLocationLocationIdRoute
   '/_app/dashboard/vessel/$vesselId': typeof AppDashboardVesselVesselIdRoute
@@ -1096,8 +1116,10 @@ export interface FileRouteTypes {
     | '/crew-immigration/crew/$id'
     | '/crew-immigration/crew/new'
     | '/crew-immigration/visas/$id'
+    | '/crew-immigration/visas/expiry'
     | '/crew-immigration/visas/new'
     | '/crew-immigration/visas/passport-details'
+    | '/crew-immigration/visas/pipeline'
     | '/crew-immigration/visas/supporting-docs'
     | '/dashboard/location/$locationId'
     | '/dashboard/vessel/$vesselId'
@@ -1192,8 +1214,10 @@ export interface FileRouteTypes {
     | '/crew-immigration/crew/$id'
     | '/crew-immigration/crew/new'
     | '/crew-immigration/visas/$id'
+    | '/crew-immigration/visas/expiry'
     | '/crew-immigration/visas/new'
     | '/crew-immigration/visas/passport-details'
+    | '/crew-immigration/visas/pipeline'
     | '/crew-immigration/visas/supporting-docs'
     | '/dashboard/location/$locationId'
     | '/dashboard/vessel/$vesselId'
@@ -1302,8 +1326,10 @@ export interface FileRouteTypes {
     | '/_app/crew-immigration/crew/$id'
     | '/_app/crew-immigration/crew/new'
     | '/_app/crew-immigration/visas/$id'
+    | '/_app/crew-immigration/visas/expiry'
     | '/_app/crew-immigration/visas/new'
     | '/_app/crew-immigration/visas/passport-details'
+    | '/_app/crew-immigration/visas/pipeline'
     | '/_app/crew-immigration/visas/supporting-docs'
     | '/_app/dashboard/location/$locationId'
     | '/_app/dashboard/vessel/$vesselId'
@@ -2031,6 +2057,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppCrewImmigrationVisasSupportingDocsRouteImport
       parentRoute: typeof AppCrewImmigrationVisasRoute
     }
+    '/_app/crew-immigration/visas/pipeline': {
+      id: '/_app/crew-immigration/visas/pipeline'
+      path: '/pipeline'
+      fullPath: '/crew-immigration/visas/pipeline'
+      preLoaderRoute: typeof AppCrewImmigrationVisasPipelineRouteImport
+      parentRoute: typeof AppCrewImmigrationVisasRoute
+    }
     '/_app/crew-immigration/visas/passport-details': {
       id: '/_app/crew-immigration/visas/passport-details'
       path: '/passport-details'
@@ -2043,6 +2076,13 @@ declare module '@tanstack/react-router' {
       path: '/new'
       fullPath: '/crew-immigration/visas/new'
       preLoaderRoute: typeof AppCrewImmigrationVisasNewRouteImport
+      parentRoute: typeof AppCrewImmigrationVisasRoute
+    }
+    '/_app/crew-immigration/visas/expiry': {
+      id: '/_app/crew-immigration/visas/expiry'
+      path: '/expiry'
+      fullPath: '/crew-immigration/visas/expiry'
+      preLoaderRoute: typeof AppCrewImmigrationVisasExpiryRouteImport
       parentRoute: typeof AppCrewImmigrationVisasRoute
     }
     '/_app/crew-immigration/visas/$id': {
@@ -2144,8 +2184,10 @@ const AppCrewImmigrationCrewRouteWithChildren =
 
 interface AppCrewImmigrationVisasRouteChildren {
   AppCrewImmigrationVisasIdRoute: typeof AppCrewImmigrationVisasIdRoute
+  AppCrewImmigrationVisasExpiryRoute: typeof AppCrewImmigrationVisasExpiryRoute
   AppCrewImmigrationVisasNewRoute: typeof AppCrewImmigrationVisasNewRoute
   AppCrewImmigrationVisasPassportDetailsRoute: typeof AppCrewImmigrationVisasPassportDetailsRoute
+  AppCrewImmigrationVisasPipelineRoute: typeof AppCrewImmigrationVisasPipelineRoute
   AppCrewImmigrationVisasSupportingDocsRoute: typeof AppCrewImmigrationVisasSupportingDocsRoute
   AppCrewImmigrationVisasIndexRoute: typeof AppCrewImmigrationVisasIndexRoute
   AppCrewImmigrationVisasInfoCountryCodeRoute: typeof AppCrewImmigrationVisasInfoCountryCodeRoute
@@ -2154,9 +2196,11 @@ interface AppCrewImmigrationVisasRouteChildren {
 const AppCrewImmigrationVisasRouteChildren: AppCrewImmigrationVisasRouteChildren =
   {
     AppCrewImmigrationVisasIdRoute: AppCrewImmigrationVisasIdRoute,
+    AppCrewImmigrationVisasExpiryRoute: AppCrewImmigrationVisasExpiryRoute,
     AppCrewImmigrationVisasNewRoute: AppCrewImmigrationVisasNewRoute,
     AppCrewImmigrationVisasPassportDetailsRoute:
       AppCrewImmigrationVisasPassportDetailsRoute,
+    AppCrewImmigrationVisasPipelineRoute: AppCrewImmigrationVisasPipelineRoute,
     AppCrewImmigrationVisasSupportingDocsRoute:
       AppCrewImmigrationVisasSupportingDocsRoute,
     AppCrewImmigrationVisasIndexRoute: AppCrewImmigrationVisasIndexRoute,
