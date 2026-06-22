@@ -253,22 +253,34 @@ export function StepReviewSubmit({ state, onUpdate, onNext, onBack }: Props) {
 
       {/* 5. Documents */}
       <SectionCard title="Uploaded Documents">
-        {Object.keys(state.uploadedDocs).length === 0 ? (
-          <span style={{ color: COLORS.muted, fontSize: 13 }}>No documents uploaded.</span>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {Object.entries(state.uploadedDocs).map(([key, url]) => (
-              <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ color: COLORS.steel, fontSize: 13, minWidth: 140 }}>{key}</span>
-                <span style={{ color: COLORS.signal, fontSize: 13, textDecoration: 'underline' }}>
-                  <SignedAnchor stored={url}>
-                    View document
-                  </SignedAnchor>
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
+        {(() => {
+          // Combine the wizard's uploaded docs with the passport's stored files —
+          // including the auto-generated Crew Verification letter (when no Seaman's
+          // book) or the Seaman's book itself.
+          const docs: Record<string, string> = { ...state.uploadedDocs }
+          const p: any = state.passport
+          if (p?.crew_verification_letter_url) docs['crew_verification_letter'] = p.crew_verification_letter_url
+          else if (p?.seamans_book_url) docs['seamans_book'] = p.seamans_book_url
+          const entries = Object.entries(docs).filter(([, url]) => !!url)
+          return entries.length === 0 ? (
+            <span style={{ color: COLORS.muted, fontSize: 13 }}>No documents uploaded.</span>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {entries.map(([key, url]) => (
+                <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ color: COLORS.steel, fontSize: 13, minWidth: 180 }}>
+                    {key === 'crew_verification_letter' ? 'Crew Verification Letter' : key}
+                  </span>
+                  <span style={{ color: COLORS.signal, fontSize: 13, textDecoration: 'underline' }}>
+                    <SignedAnchor stored={url}>
+                      {key === 'crew_verification_letter' ? 'Download PDF' : 'View document'}
+                    </SignedAnchor>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )
+        })()}
       </SectionCard>
 
       {/* 6. Compliance */}
