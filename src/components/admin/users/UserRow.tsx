@@ -20,9 +20,9 @@ interface Props {
 }
 
 const STATUS_META: Record<string, { dot: string; label: string; text: string }> = {
-  active:    { dot: 'bg-emerald-400', label: 'active',    text: 'text-white/50' },
-  invited:   { dot: 'bg-amber-400',   label: 'invited',   text: 'text-amber-400/80' },
-  suspended: { dot: 'bg-red-400',     label: 'suspended', text: 'text-white/50' },
+  active:    { dot: 'bg-emerald-500', label: 'active',    text: 'text-muted-foreground' },
+  invited:   { dot: 'bg-amber-500',   label: 'invited',   text: 'text-amber-600 dark:text-amber-400' },
+  suspended: { dot: 'bg-red-500',     label: 'suspended', text: 'text-muted-foreground' },
 }
 
 export function UserRow({ userRole, roles, onRefresh }: Props) {
@@ -67,21 +67,21 @@ export function UserRow({ userRole, roles, onRefresh }: Props) {
 
   return (
     <>
-      <tr className="border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors">
+      <tr className="border-b border-border hover:bg-muted/40 transition-colors">
         <td className="px-3 py-2.5">
           <div className="flex items-center gap-2">
             <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full
-                            bg-white/5 text-[9px] font-bold text-white/50">
+                            bg-muted text-[9px] font-bold text-muted-foreground">
               {email.slice(0, 2).toUpperCase()}
             </div>
-            <span className="truncate text-[11px] text-white/80">{email}</span>
+            <span className="truncate text-[11px] text-foreground">{email}</span>
           </div>
         </td>
         <td className="px-3 py-2.5">
           <RoleBadge role={userRole.role} />
         </td>
         <td className="px-3 py-2.5">
-          <span className="text-[10px] text-white/40">{scopeLabel}</span>
+          <span className="text-[10px] text-muted-foreground">{scopeLabel}</span>
         </td>
         <td className="px-3 py-2.5">
           <span className={`inline-block h-1.5 w-1.5 rounded-full mr-1.5 ${statusMeta.dot}`} />
@@ -95,13 +95,13 @@ export function UserRow({ userRole, roles, onRefresh }: Props) {
           )}
         </td>
         <td className="px-3 py-2.5">
-          <span className="text-[10px] text-white/35">{relativeTime(lastSeen)}</span>
+          <span className="text-[10px] text-muted-foreground">{relativeTime(lastSeen)}</span>
         </td>
         <td className="px-3 py-2.5">
           <div className="flex flex-wrap items-center gap-1">
             <button
               onClick={() => setEditOpen(true)}
-              className="rounded px-1.5 py-0.5 text-[9px] text-white/40 hover:text-amber-400
+              className="rounded px-1.5 py-0.5 text-[9px] text-muted-foreground hover:text-amber-500
                          hover:bg-amber-500/10 transition-colors"
             >
               Role
@@ -110,7 +110,7 @@ export function UserRow({ userRole, roles, onRefresh }: Props) {
               <button
                 onClick={() => act('resend_invite', 'Invite re-sent')}
                 disabled={busy}
-                className="rounded px-1.5 py-0.5 text-[9px] text-white/40 hover:text-cyan-400
+                className="rounded px-1.5 py-0.5 text-[9px] text-muted-foreground hover:text-cyan-500
                            hover:bg-cyan-500/10 transition-colors disabled:opacity-30"
               >
                 Resend invite
@@ -127,12 +127,12 @@ export function UserRow({ userRole, roles, onRefresh }: Props) {
             <button
               onClick={() => act(userRole.is_active ? 'suspend' : 'unsuspend')}
               disabled={busy}
-              className="rounded px-1.5 py-0.5 text-[9px] text-white/40 hover:text-red-400
+              className="rounded px-1.5 py-0.5 text-[9px] text-muted-foreground hover:text-red-500
                          hover:bg-red-500/10 transition-colors disabled:opacity-30"
             >
               {userRole.is_active ? 'Suspend' : 'Restore'}
             </button>
-            {msg && <span className="text-[9px] text-cyan-400/80">{msg}</span>}
+            {msg && <span className="text-[9px] text-cyan-600 dark:text-cyan-400">{msg}</span>}
           </div>
         </td>
       </tr>

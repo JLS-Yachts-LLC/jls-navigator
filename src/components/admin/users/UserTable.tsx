@@ -27,20 +27,20 @@ export function UserTable({ users, total, roles, onRefresh }: Props) {
 
   return (
     <div>
-      <div className="flex items-center gap-3 p-3 border-b border-white/[0.05]">
+      <div className="flex items-center gap-3 p-3 border-b border-border">
         <input
           placeholder="Search by email…"
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="flex-1 rounded-md border border-white/10 bg-[#0f1d2e] px-3 py-1.5
-                     text-xs text-white placeholder:text-white/25
-                     focus:outline-none focus:ring-1 focus:ring-cyan-500/30"
+          className="flex-1 rounded-md border border-border bg-background px-3 py-1.5
+                     text-xs text-foreground placeholder:text-muted-foreground/60
+                     focus:outline-none focus:ring-1 focus:ring-primary/40"
         />
         <select
           value={roleFilter}
           onChange={e => setRoleFilter(e.target.value)}
-          className="rounded-md border border-white/10 bg-[#0f1d2e] px-3 py-1.5
-                     text-xs text-white focus:outline-none"
+          className="rounded-md border border-border bg-background px-3 py-1.5
+                     text-xs text-foreground focus:outline-none"
         >
           {roleOptions.map(o => (
             <option key={o.value} value={o.value}>{o.label}</option>
@@ -48,7 +48,7 @@ export function UserTable({ users, total, roles, onRefresh }: Props) {
         </select>
         <button
           onClick={() => setInviteOpen(true)}
-          className="rounded-md bg-cyan-500/10 border border-cyan-500/25 text-cyan-400
+          className="rounded-md bg-cyan-500/10 border border-cyan-500/25 text-cyan-600 dark:text-cyan-400
                      text-xs px-3 py-1.5 hover:bg-cyan-500/20 transition-colors whitespace-nowrap"
         >
           + Invite user
@@ -57,7 +57,7 @@ export function UserTable({ users, total, roles, onRefresh }: Props) {
 
       <table className="w-full text-xs" style={{ tableLayout: 'fixed' }}>
         <thead>
-          <tr className="bg-[#0a1220] text-white/35 text-[9px] font-semibold tracking-wider">
+          <tr className="bg-muted text-muted-foreground text-[9px] font-semibold tracking-wider">
             <th className="text-left px-3 py-2 w-52">User</th>
             <th className="text-left px-3 py-2 w-28">Role</th>
             <th className="text-left px-3 py-2 w-28">Scope</th>
@@ -70,7 +70,7 @@ export function UserTable({ users, total, roles, onRefresh }: Props) {
         <tbody>
           {filtered.length === 0 ? (
             <tr>
-              <td colSpan={7} className="px-3 py-6 text-center text-[11px] text-white/25">
+              <td colSpan={7} className="px-3 py-6 text-center text-[11px] text-muted-foreground">
                 {search || roleFilter ? 'No users match the current filter.' : 'No users yet.'}
               </td>
             </tr>
@@ -82,8 +82,8 @@ export function UserTable({ users, total, roles, onRefresh }: Props) {
         </tbody>
       </table>
 
-      <div className="px-3 py-2 border-t border-white/[0.05]">
-        <span className="text-[10px] text-white/25">{total} total users</span>
+      <div className="px-3 py-2 border-t border-border">
+        <span className="text-[10px] text-muted-foreground">{total} total users</span>
       </div>
 
       {inviteOpen && (
