@@ -71,6 +71,7 @@ const NAV: NavItem[] = [
       { label: "Crew List",    to: "/crew-immigration/crew",        icon: UserCircle2 },
       { label: "Visas",        to: "/crew-immigration/visas",       icon: FileText },
       { label: "Sign On / Off", to: "/crew-immigration/sign-on-off", icon: LogIn },
+      { label: "Seaport Immigration", to: "/seaport", icon: Anchor },
       { label: "Crew Documents", to: "/crew-immigration/documents", icon: ClipboardList },
       { label: "Training",     to: "/training",                     icon: GraduationCap },
       { label: "Crew Benefits", to: "/compass",                     icon: Compass },

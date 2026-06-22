@@ -10,6 +10,7 @@ import { StatusPill } from "@/components/status-pill";
 import { YACHT_COLUMNS } from "@/lib/yacht-fields";
 import { ArrowLeft, Trash2, Ship, Pencil, Save, X, Upload, RefreshCw, FileCheck2, Route as RouteIcon, Package, ExternalLink } from "lucide-react";
 import { PERMIT_META } from "@/lib/permit-types";
+import { SeaportImmigrationSection } from "@/components/seaport/SeaportImmigrationSection";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -495,6 +496,9 @@ function YachtRelatedRecords({ yachtId }: { yachtId: string }) {
             </div>
           </div>
         )}
+
+        {/* Seaport Immigration (#127) */}
+        <SeaportImmigrationSection vesselId={yachtId} />
 
       </div>
     </div>

@@ -19,6 +19,7 @@ import { Route as AppTrainingRouteImport } from './routes/_app.training'
 import { Route as AppSmallBoatRegistrationRouteImport } from './routes/_app.small-boat-registration'
 import { Route as AppShipSparesRouteImport } from './routes/_app.ship-spares'
 import { Route as AppSettingsRouteImport } from './routes/_app.settings'
+import { Route as AppSeaportRouteImport } from './routes/_app.seaport'
 import { Route as AppProvisioningRouteImport } from './routes/_app.provisioning'
 import { Route as AppProcurementRouteImport } from './routes/_app.procurement'
 import { Route as AppPackagesRouteImport } from './routes/_app.packages'
@@ -50,6 +51,7 @@ import { Route as AppAdminRouteImport } from './routes/_app.admin'
 import { Route as AppYachtsIndexRouteImport } from './routes/_app.yachts.index'
 import { Route as AppWaypointIndexRouteImport } from './routes/_app.waypoint.index'
 import { Route as AppTrainingIndexRouteImport } from './routes/_app.training.index'
+import { Route as AppSeaportIndexRouteImport } from './routes/_app.seaport.index'
 import { Route as AppPackagesIndexRouteImport } from './routes/_app.packages.index'
 import { Route as AppOrbitIndexRouteImport } from './routes/_app.orbit.index'
 import { Route as AppItTicketsIndexRouteImport } from './routes/_app.it-tickets.index'
@@ -61,6 +63,8 @@ import { Route as AppYachtsNewRouteImport } from './routes/_app.yachts.new'
 import { Route as AppYachtsIdRouteImport } from './routes/_app.yachts.$id'
 import { Route as AppWaypointQuotationsRouteImport } from './routes/_app.waypoint.quotations'
 import { Route as AppTrainingCertificationsRouteImport } from './routes/_app.training.certifications'
+import { Route as AppSeaportNewRouteImport } from './routes/_app.seaport.new'
+import { Route as AppSeaportRequestIdRouteImport } from './routes/_app.seaport.$requestId'
 import { Route as AppPortalTrainingRouteImport } from './routes/_app.portal.training'
 import { Route as AppPortalSupplierRouteImport } from './routes/_app.portal.supplier'
 import { Route as AppPortalShipsyncRouteImport } from './routes/_app.portal.shipsync'
@@ -160,6 +164,11 @@ const AppShipSparesRoute = AppShipSparesRouteImport.update({
 const AppSettingsRoute = AppSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSeaportRoute = AppSeaportRouteImport.update({
+  id: '/seaport',
+  path: '/seaport',
   getParentRoute: () => AppRoute,
 } as any)
 const AppProvisioningRoute = AppProvisioningRouteImport.update({
@@ -317,6 +326,11 @@ const AppTrainingIndexRoute = AppTrainingIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppTrainingRoute,
 } as any)
+const AppSeaportIndexRoute = AppSeaportIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppSeaportRoute,
+} as any)
 const AppPackagesIndexRoute = AppPackagesIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -373,6 +387,16 @@ const AppTrainingCertificationsRoute =
     path: '/certifications',
     getParentRoute: () => AppTrainingRoute,
   } as any)
+const AppSeaportNewRoute = AppSeaportNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => AppSeaportRoute,
+} as any)
+const AppSeaportRequestIdRoute = AppSeaportRequestIdRouteImport.update({
+  id: '/$requestId',
+  path: '/$requestId',
+  getParentRoute: () => AppSeaportRoute,
+} as any)
 const AppPortalTrainingRoute = AppPortalTrainingRouteImport.update({
   id: '/portal/training',
   path: '/portal/training',
@@ -675,6 +699,7 @@ export interface FileRoutesByFullPath {
   '/packages': typeof AppPackagesRouteWithChildren
   '/procurement': typeof AppProcurementRoute
   '/provisioning': typeof AppProvisioningRoute
+  '/seaport': typeof AppSeaportRouteWithChildren
   '/settings': typeof AppSettingsRoute
   '/ship-spares': typeof AppShipSparesRoute
   '/small-boat-registration': typeof AppSmallBoatRegistrationRoute
@@ -719,6 +744,8 @@ export interface FileRoutesByFullPath {
   '/portal/shipsync': typeof AppPortalShipsyncRoute
   '/portal/supplier': typeof AppPortalSupplierRoute
   '/portal/training': typeof AppPortalTrainingRoute
+  '/seaport/$requestId': typeof AppSeaportRequestIdRoute
+  '/seaport/new': typeof AppSeaportNewRoute
   '/training/certifications': typeof AppTrainingCertificationsRoute
   '/waypoint/quotations': typeof AppWaypointQuotationsRoute
   '/yachts/$id': typeof AppYachtsIdRoute
@@ -730,6 +757,7 @@ export interface FileRoutesByFullPath {
   '/it-tickets/': typeof AppItTicketsIndexRoute
   '/orbit/': typeof AppOrbitIndexRoute
   '/packages/': typeof AppPackagesIndexRoute
+  '/seaport/': typeof AppSeaportIndexRoute
   '/training/': typeof AppTrainingIndexRoute
   '/waypoint/': typeof AppWaypointIndexRoute
   '/yachts/': typeof AppYachtsIndexRoute
@@ -811,6 +839,8 @@ export interface FileRoutesByTo {
   '/portal/shipsync': typeof AppPortalShipsyncRoute
   '/portal/supplier': typeof AppPortalSupplierRoute
   '/portal/training': typeof AppPortalTrainingRoute
+  '/seaport/$requestId': typeof AppSeaportRequestIdRoute
+  '/seaport/new': typeof AppSeaportNewRoute
   '/training/certifications': typeof AppTrainingCertificationsRoute
   '/waypoint/quotations': typeof AppWaypointQuotationsRoute
   '/yachts/$id': typeof AppYachtsIdRoute
@@ -822,6 +852,7 @@ export interface FileRoutesByTo {
   '/it-tickets': typeof AppItTicketsIndexRoute
   '/orbit': typeof AppOrbitIndexRoute
   '/packages': typeof AppPackagesIndexRoute
+  '/seaport': typeof AppSeaportIndexRoute
   '/training': typeof AppTrainingIndexRoute
   '/waypoint': typeof AppWaypointIndexRoute
   '/yachts': typeof AppYachtsIndexRoute
@@ -872,6 +903,7 @@ export interface FileRoutesById {
   '/_app/packages': typeof AppPackagesRouteWithChildren
   '/_app/procurement': typeof AppProcurementRoute
   '/_app/provisioning': typeof AppProvisioningRoute
+  '/_app/seaport': typeof AppSeaportRouteWithChildren
   '/_app/settings': typeof AppSettingsRoute
   '/_app/ship-spares': typeof AppShipSparesRoute
   '/_app/small-boat-registration': typeof AppSmallBoatRegistrationRoute
@@ -916,6 +948,8 @@ export interface FileRoutesById {
   '/_app/portal/shipsync': typeof AppPortalShipsyncRoute
   '/_app/portal/supplier': typeof AppPortalSupplierRoute
   '/_app/portal/training': typeof AppPortalTrainingRoute
+  '/_app/seaport/$requestId': typeof AppSeaportRequestIdRoute
+  '/_app/seaport/new': typeof AppSeaportNewRoute
   '/_app/training/certifications': typeof AppTrainingCertificationsRoute
   '/_app/waypoint/quotations': typeof AppWaypointQuotationsRoute
   '/_app/yachts/$id': typeof AppYachtsIdRoute
@@ -927,6 +961,7 @@ export interface FileRoutesById {
   '/_app/it-tickets/': typeof AppItTicketsIndexRoute
   '/_app/orbit/': typeof AppOrbitIndexRoute
   '/_app/packages/': typeof AppPackagesIndexRoute
+  '/_app/seaport/': typeof AppSeaportIndexRoute
   '/_app/training/': typeof AppTrainingIndexRoute
   '/_app/waypoint/': typeof AppWaypointIndexRoute
   '/_app/yachts/': typeof AppYachtsIndexRoute
@@ -977,6 +1012,7 @@ export interface FileRouteTypes {
     | '/packages'
     | '/procurement'
     | '/provisioning'
+    | '/seaport'
     | '/settings'
     | '/ship-spares'
     | '/small-boat-registration'
@@ -1021,6 +1057,8 @@ export interface FileRouteTypes {
     | '/portal/shipsync'
     | '/portal/supplier'
     | '/portal/training'
+    | '/seaport/$requestId'
+    | '/seaport/new'
     | '/training/certifications'
     | '/waypoint/quotations'
     | '/yachts/$id'
@@ -1032,6 +1070,7 @@ export interface FileRouteTypes {
     | '/it-tickets/'
     | '/orbit/'
     | '/packages/'
+    | '/seaport/'
     | '/training/'
     | '/waypoint/'
     | '/yachts/'
@@ -1113,6 +1152,8 @@ export interface FileRouteTypes {
     | '/portal/shipsync'
     | '/portal/supplier'
     | '/portal/training'
+    | '/seaport/$requestId'
+    | '/seaport/new'
     | '/training/certifications'
     | '/waypoint/quotations'
     | '/yachts/$id'
@@ -1124,6 +1165,7 @@ export interface FileRouteTypes {
     | '/it-tickets'
     | '/orbit'
     | '/packages'
+    | '/seaport'
     | '/training'
     | '/waypoint'
     | '/yachts'
@@ -1173,6 +1215,7 @@ export interface FileRouteTypes {
     | '/_app/packages'
     | '/_app/procurement'
     | '/_app/provisioning'
+    | '/_app/seaport'
     | '/_app/settings'
     | '/_app/ship-spares'
     | '/_app/small-boat-registration'
@@ -1217,6 +1260,8 @@ export interface FileRouteTypes {
     | '/_app/portal/shipsync'
     | '/_app/portal/supplier'
     | '/_app/portal/training'
+    | '/_app/seaport/$requestId'
+    | '/_app/seaport/new'
     | '/_app/training/certifications'
     | '/_app/waypoint/quotations'
     | '/_app/yachts/$id'
@@ -1228,6 +1273,7 @@ export interface FileRouteTypes {
     | '/_app/it-tickets/'
     | '/_app/orbit/'
     | '/_app/packages/'
+    | '/_app/seaport/'
     | '/_app/training/'
     | '/_app/waypoint/'
     | '/_app/yachts/'
@@ -1323,6 +1369,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof AppSettingsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/seaport': {
+      id: '/_app/seaport'
+      path: '/seaport'
+      fullPath: '/seaport'
+      preLoaderRoute: typeof AppSeaportRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/provisioning': {
@@ -1542,6 +1595,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppTrainingIndexRouteImport
       parentRoute: typeof AppTrainingRoute
     }
+    '/_app/seaport/': {
+      id: '/_app/seaport/'
+      path: '/'
+      fullPath: '/seaport/'
+      preLoaderRoute: typeof AppSeaportIndexRouteImport
+      parentRoute: typeof AppSeaportRoute
+    }
     '/_app/packages/': {
       id: '/_app/packages/'
       path: '/'
@@ -1618,6 +1678,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/training/certifications'
       preLoaderRoute: typeof AppTrainingCertificationsRouteImport
       parentRoute: typeof AppTrainingRoute
+    }
+    '/_app/seaport/new': {
+      id: '/_app/seaport/new'
+      path: '/new'
+      fullPath: '/seaport/new'
+      preLoaderRoute: typeof AppSeaportNewRouteImport
+      parentRoute: typeof AppSeaportRoute
+    }
+    '/_app/seaport/$requestId': {
+      id: '/_app/seaport/$requestId'
+      path: '/$requestId'
+      fullPath: '/seaport/$requestId'
+      preLoaderRoute: typeof AppSeaportRequestIdRouteImport
+      parentRoute: typeof AppSeaportRoute
     }
     '/_app/portal/training': {
       id: '/_app/portal/training'
@@ -2191,6 +2265,22 @@ const AppPackagesRouteWithChildren = AppPackagesRoute._addFileChildren(
   AppPackagesRouteChildren,
 )
 
+interface AppSeaportRouteChildren {
+  AppSeaportRequestIdRoute: typeof AppSeaportRequestIdRoute
+  AppSeaportNewRoute: typeof AppSeaportNewRoute
+  AppSeaportIndexRoute: typeof AppSeaportIndexRoute
+}
+
+const AppSeaportRouteChildren: AppSeaportRouteChildren = {
+  AppSeaportRequestIdRoute: AppSeaportRequestIdRoute,
+  AppSeaportNewRoute: AppSeaportNewRoute,
+  AppSeaportIndexRoute: AppSeaportIndexRoute,
+}
+
+const AppSeaportRouteWithChildren = AppSeaportRoute._addFileChildren(
+  AppSeaportRouteChildren,
+)
+
 interface AppTrainingRouteChildren {
   AppTrainingCertificationsRoute: typeof AppTrainingCertificationsRoute
   AppTrainingIndexRoute: typeof AppTrainingIndexRoute
@@ -2248,6 +2338,7 @@ interface AppRouteChildren {
   AppPackagesRoute: typeof AppPackagesRouteWithChildren
   AppProcurementRoute: typeof AppProcurementRoute
   AppProvisioningRoute: typeof AppProvisioningRoute
+  AppSeaportRoute: typeof AppSeaportRouteWithChildren
   AppSettingsRoute: typeof AppSettingsRoute
   AppShipSparesRoute: typeof AppShipSparesRoute
   AppSmallBoatRegistrationRoute: typeof AppSmallBoatRegistrationRoute
@@ -2303,6 +2394,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppPackagesRoute: AppPackagesRouteWithChildren,
   AppProcurementRoute: AppProcurementRoute,
   AppProvisioningRoute: AppProvisioningRoute,
+  AppSeaportRoute: AppSeaportRouteWithChildren,
   AppSettingsRoute: AppSettingsRoute,
   AppShipSparesRoute: AppShipSparesRoute,
   AppSmallBoatRegistrationRoute: AppSmallBoatRegistrationRoute,
