@@ -1,32 +1,22 @@
-import { useState, useCallback } from 'react'
-import { useAuth } from '@/lib/auth'
-import { RoleBadge } from './RoleBadge'
+import { useState } from 'react'
 import { UserRow } from './UserRow'
 import { InviteUserModal } from './InviteUserModal'
-import type { UserRole } from '@/lib/admin/types'
-
-const ROLE_OPTIONS = [
-  { value: '',               label: 'All roles' },
-  { value: 'global_admin',   label: 'Global Admin' },
-  { value: 'org_admin',      label: 'Org Admin' },
-  { value: 'jls_staff',      label: 'JLS Staff' },
-  { value: 'captain',        label: 'Captain' },
-  { value: 'vessel_owner',   label: 'Vessel Owner' },
-  { value: 'crew',           label: 'Crew' },
-  { value: 'supplier',       label: 'Supplier' },
-  { value: 'port_agent',     label: 'Port Agent' },
-]
+import type { UserRole, RoleOption } from '@/lib/admin/types'
 
 interface Props {
   users: UserRole[]
   total: number
+  roles: RoleOption[]
   onRefresh: () => void
 }
 
-export function UserTable({ users, total, onRefresh }: Props) {
+export function UserTable({ users, total, roles, onRefresh }: Props) {
   const [inviteOpen,  setInviteOpen]  = useState(false)
   const [search,      setSearch]      = useState('')
   const [roleFilter,  setRoleFilter]  = useState('')
+
+  const roleOptions = [{ value: '', label: 'All roles' },
+    ...roles.map(r => ({ value: r.name, label: r.display_name }))]
 
   const filtered = users.filter(u => {
     const email = ((u as any).user?.email ?? u.user_id ?? '').toLowerCase()
@@ -52,7 +42,7 @@ export function UserTable({ users, total, onRefresh }: Props) {
           className="rounded-md border border-white/10 bg-[#0f1d2e] px-3 py-1.5
                      text-xs text-white focus:outline-none"
         >
-          {ROLE_OPTIONS.map(o => (
+          {roleOptions.map(o => (
             <option key={o.value} value={o.value}>{o.label}</option>
           ))}
         </select>
@@ -86,7 +76,7 @@ export function UserTable({ users, total, onRefresh }: Props) {
             </tr>
           ) : (
             filtered.map(u => (
-              <UserRow key={u.id} userRole={u} onRefresh={onRefresh} />
+              <UserRow key={u.id} userRole={u} roles={roles} onRefresh={onRefresh} />
             ))
           )}
         </tbody>
@@ -98,6 +88,7 @@ export function UserTable({ users, total, onRefresh }: Props) {
 
       {inviteOpen && (
         <InviteUserModal
+          roles={roles}
           onClose={() => setInviteOpen(false)}
           onSuccess={onRefresh}
         />

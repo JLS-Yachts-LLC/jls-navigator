@@ -1,22 +1,18 @@
 'use client'
 import { useState } from 'react'
 import { useAuth } from '@/lib/auth'
-import type { UserRole, PolarisRole } from '@/lib/admin/types'
-
-const ROLES: PolarisRole[] = [
-  'global_admin', 'org_admin', 'jls_staff', 'vessel_owner',
-  'captain', 'crew', 'supplier', 'port_agent', 'training_user', 'placement_user',
-]
+import type { UserRole, RoleOption } from '@/lib/admin/types'
 
 interface Props {
   userRole: UserRole
+  roles: RoleOption[]
   onClose: () => void
   onSuccess: () => void
 }
 
-export function EditRoleModal({ userRole, onClose, onSuccess }: Props) {
+export function EditRoleModal({ userRole, roles, onClose, onSuccess }: Props) {
   const { session } = useAuth()
-  const [role, setRole]     = useState<PolarisRole>(userRole.role)
+  const [role, setRole]     = useState<string>(userRole.role)
   const [saving, setSaving] = useState(false)
   const [error, setError]   = useState('')
 
@@ -54,12 +50,12 @@ export function EditRoleModal({ userRole, onClose, onSuccess }: Props) {
 
         <select
           value={role}
-          onChange={e => setRole(e.target.value as PolarisRole)}
+          onChange={e => setRole(e.target.value)}
           className="w-full rounded-md border border-white/10 bg-[#0f1d2e] px-3 py-2
                      text-xs text-white focus:outline-none focus:ring-1 focus:ring-amber-500/40"
         >
-          {ROLES.map(r => (
-            <option key={r} value={r}>{r.replace(/_/g, ' ')}</option>
+          {roles.map(r => (
+            <option key={r.name} value={r.name}>{r.display_name}</option>
           ))}
         </select>
 

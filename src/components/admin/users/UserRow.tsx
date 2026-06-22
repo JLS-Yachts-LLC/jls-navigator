@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useAuth } from '@/lib/auth'
 import { RoleBadge } from './RoleBadge'
 import { EditRoleModal } from './EditRoleModal'
-import type { UserRole } from '@/lib/admin/types'
+import type { UserRole, RoleOption } from '@/lib/admin/types'
 
 function relativeTime(iso: string | null): string {
   if (!iso) return 'never'
@@ -15,6 +15,7 @@ function relativeTime(iso: string | null): string {
 
 interface Props {
   userRole: UserRole
+  roles: RoleOption[]
   onRefresh: () => void
 }
 
@@ -24,7 +25,7 @@ const STATUS_META: Record<string, { dot: string; label: string; text: string }> 
   suspended: { dot: 'bg-red-400',     label: 'suspended', text: 'text-white/50' },
 }
 
-export function UserRow({ userRole, onRefresh }: Props) {
+export function UserRow({ userRole, roles, onRefresh }: Props) {
   const { session } = useAuth()
   const [editOpen, setEditOpen] = useState(false)
   const [busy, setBusy]         = useState(false)
@@ -139,6 +140,7 @@ export function UserRow({ userRole, onRefresh }: Props) {
       {editOpen && (
         <EditRoleModal
           userRole={userRole}
+          roles={roles}
           onClose={() => setEditOpen(false)}
           onSuccess={onRefresh}
         />

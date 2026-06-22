@@ -1,29 +1,17 @@
 import { useState } from 'react'
 import { useAuth } from '@/lib/auth'
-import type { PolarisRole } from '@/lib/admin/types'
-
-const ROLES: { value: PolarisRole; label: string }[] = [
-  { value: 'global_admin',   label: 'Global Admin' },
-  { value: 'org_admin',      label: 'Org Admin' },
-  { value: 'jls_staff',      label: 'JLS Staff' },
-  { value: 'vessel_owner',   label: 'Vessel Owner' },
-  { value: 'captain',        label: 'Captain' },
-  { value: 'crew',           label: 'Crew' },
-  { value: 'supplier',       label: 'Supplier' },
-  { value: 'port_agent',     label: 'Port Agent' },
-  { value: 'training_user',  label: 'Training User' },
-  { value: 'placement_user', label: 'Placement User' },
-]
+import type { RoleOption } from '@/lib/admin/types'
 
 interface Props {
+  roles: RoleOption[]
   onClose: () => void
   onSuccess: () => void
 }
 
-export function InviteUserModal({ onClose, onSuccess }: Props) {
+export function InviteUserModal({ roles, onClose, onSuccess }: Props) {
   const { session } = useAuth()
   const [email,    setEmail]   = useState('')
-  const [role,     setRole]    = useState<PolarisRole>('crew')
+  const [role,     setRole]    = useState<string>(roles[0]?.name ?? '')
   const [sending,  setSending] = useState(false)
   const [error,    setError]   = useState('')
   const [done,     setDone]    = useState(false)
@@ -85,12 +73,12 @@ export function InviteUserModal({ onClose, onSuccess }: Props) {
                 </label>
                 <select
                   value={role}
-                  onChange={e => setRole(e.target.value as PolarisRole)}
+                  onChange={e => setRole(e.target.value)}
                   className="w-full rounded-md border border-white/10 bg-[#0f1d2e] px-3 py-2
                              text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-500/40"
                 >
-                  {ROLES.map(r => (
-                    <option key={r.value} value={r.value}>{r.label}</option>
+                  {roles.map(r => (
+                    <option key={r.name} value={r.name}>{r.display_name}</option>
                   ))}
                 </select>
               </div>

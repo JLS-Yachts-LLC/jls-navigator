@@ -5,13 +5,14 @@ import { DEVELOPER_EMAILS } from "@/lib/leo-access";
 
 export type DevUser = { user_id: string; note: string | null; granted_at: string };
 
-/** Admin roles that grant dev-stage visibility (see everything). */
-const DEV_ACCESS_ROLES = ["global_admin", "org_admin"];
+/** Admin-tier roles (in the roles catalog) that grant dev-stage visibility. */
+const DEV_ACCESS_ROLES = ["global_admin", "org_admin", "platform_owner", "developer"];
 
 /**
  * Whether the current viewer can see dev-stage features. True when the user is:
  *  - on the built-in developer allow-list (leo-access), OR
- *  - an admin (user_roles.role in global_admin / org_admin), OR
+ *  - assigned an admin-tier role in user_profiles (global_admin / org_admin /
+ *    platform_owner / developer), OR
  *  - explicitly granted the Dev role (dev_users).
  */
 export function useDevAccess(): boolean {
@@ -25,12 +26,12 @@ export function useDevAccess(): boolean {
     staleTime: 5 * 60_000,
     queryFn: async () => {
       const db = supabase as any;
-      const [{ data: role }, { data: dev }] = await Promise.all([
-        db.from("user_roles").select("role")
-          .eq("user_id", user!.id).in("role", DEV_ACCESS_ROLES).maybeSingle(),
+      const [{ data: profile }, { data: dev }] = await Promise.all([
+        db.from("user_profiles").select("roles:role_id(name)").eq("user_id", user!.id).maybeSingle(),
         db.from("dev_users").select("user_id").eq("user_id", user!.id).maybeSingle(),
       ]);
-      return !!role || !!dev;
+      const roleName = (profile as any)?.roles?.name as string | undefined;
+      return (!!roleName && DEV_ACCESS_ROLES.includes(roleName)) || !!dev;
     },
   });
 

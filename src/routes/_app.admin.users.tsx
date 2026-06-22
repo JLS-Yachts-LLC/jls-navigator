@@ -5,7 +5,7 @@ import { AdminStatsBar } from '@/components/admin/AdminStatsBar'
 import { UserTable } from '@/components/admin/users/UserTable'
 import { RBACMatrix } from '@/components/admin/rbac/RBACMatrix'
 import { COLORS } from '@/lib/tokens'
-import type { UserRole, PermissionRule } from '@/lib/admin/types'
+import type { UserRole, PermissionRule, RoleOption } from '@/lib/admin/types'
 
 export const Route = createFileRoute('/_app/admin/users')({
   component: AdminUsersPage,
@@ -37,6 +37,7 @@ function AdminUsersPage() {
 
   const [users,       setUsers]       = useState<UserRole[]>([])
   const [usersTotal,  setUsersTotal]  = useState(0)
+  const [roles,       setRoles]       = useState<RoleOption[]>([])
   const [rules,       setRules]       = useState<PermissionRule[]>([])
   const [loading,     setLoading]     = useState(true)
 
@@ -51,6 +52,7 @@ function AdminUsersPage() {
       const [uData, pData] = await Promise.all([uRes.json(), pRes.json()])
       setUsers(uData.users ?? [])
       setUsersTotal(uData.total ?? 0)
+      setRoles(uData.roles ?? [])
       setRules(pData.rules ?? [])
     } finally {
       setLoading(false)
@@ -98,7 +100,7 @@ function AdminUsersPage() {
               Loading…
             </div>
           ) : (
-            <UserTable users={users} total={usersTotal} onRefresh={fetchData} />
+            <UserTable users={users} total={usersTotal} roles={roles} onRefresh={fetchData} />
           )}
         </div>
       </section>

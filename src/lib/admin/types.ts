@@ -24,7 +24,7 @@ export type AuditResult = 'success' | 'blocked' | 'pending' | 'failed'
 export interface UserRole {
   id: string
   user_id: string
-  role: PolarisRole
+  role: string          // a roles.name value (e.g. "global_admin", "crew_member")
   org_id: string | null
   vessel_id: string | null
   location_id: string | null
@@ -46,6 +46,13 @@ export interface UserRole {
     factor_type: string
     status: string
   }>
+}
+
+/** A role from the `roles` catalog — drives the admin UI dropdowns. */
+export interface RoleOption {
+  name: string
+  display_name: string
+  scope: string
 }
 
 export interface PermissionRule {

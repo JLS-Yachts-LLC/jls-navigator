@@ -1,7 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { requireAdminAccess } from '@/lib/admin/access'
 import { logAuditEvent } from '@/lib/admin/audit'
-import type { PolarisRole } from '@/lib/admin/types'
 
 function getAdmin() {
   return createClient(
@@ -11,6 +10,13 @@ function getAdmin() {
   )
 }
 
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status, headers: { 'Content-Type': 'application/json' },
+  })
+}
+
+// `id` is the user's auth user_id (the user_profiles primary key).
 const handlers = {
   PATCH: async ({ request, params }: { request: Request; params: { id: string } }) => {
     const session = await requireAdminAccess(request)
@@ -19,37 +25,23 @@ const handlers = {
     const { id } = params
     const body = await request.json() as {
       action: 'role' | 'suspend' | 'unsuspend' | 'reset_password' | 'resend_invite'
-      role?: PolarisRole
+      role?: string          // a roles.name value
     }
 
     const sb = getAdmin()
 
-    // Account actions that email the user — resolve their address from auth.users.
+    // Account actions that email the user — email lives on the profile.
     if (body.action === 'reset_password' || body.action === 'resend_invite') {
-      const { data: ur } = await sb.from('user_roles').select('user_id').eq('id', id).single()
-      if (!ur?.user_id) {
-        return new Response(JSON.stringify({ error: 'User not found' }), {
-          status: 404, headers: { 'Content-Type': 'application/json' },
-        })
-      }
-      const { data: au } = await sb.auth.admin.getUserById(ur.user_id)
-      const email = au?.user?.email
-      if (!email) {
-        return new Response(JSON.stringify({ error: 'No email on file for this user' }), {
-          status: 400, headers: { 'Content-Type': 'application/json' },
-        })
-      }
-      const base = process.env.VITE_APP_URL ?? new URL(request.url).origin
+      const { data: profile } = await sb
+        .from('user_profiles').select('email').eq('user_id', id).maybeSingle()
+      const email = profile?.email
+      if (!email) return json({ error: 'No email on file for this user' }, 404)
 
+      const base = process.env.VITE_APP_URL ?? new URL(request.url).origin
       const { error: mailErr } = body.action === 'reset_password'
         ? await sb.auth.resetPasswordForEmail(email, { redirectTo: `${base}/auth` })
         : await sb.auth.admin.inviteUserByEmail(email, { redirectTo: `${base}/auth/mfa-setup` })
-
-      if (mailErr) {
-        return new Response(JSON.stringify({ error: mailErr.message }), {
-          status: 400, headers: { 'Content-Type': 'application/json' },
-        })
-      }
+      if (mailErr) return json({ error: mailErr.message }, 400)
 
       await logAuditEvent({
         event_type:  body.action === 'reset_password' ? 'AUTH' : 'PERM',
@@ -64,17 +56,16 @@ const handlers = {
         ip_address:  request.headers.get('x-forwarded-for'),
         result:      'success',
       })
-
-      return new Response(JSON.stringify({ success: true }), {
-        headers: { 'Content-Type': 'application/json' },
-      })
+      return json({ success: true })
     }
 
     if (body.action === 'role' && body.role) {
-      const { data: existing } = await sb.from('user_roles').select('role').eq('id', id).single()
-      const oldRole = existing?.role ?? 'unknown'
+      const { data: roleRow } = await sb
+        .from('roles').select('role_id').eq('name', body.role).maybeSingle()
+      if (!roleRow) return json({ error: `Unknown role: ${body.role}` }, 400)
 
-      await sb.from('user_roles').update({ role: body.role }).eq('id', id)
+      const { error } = await sb.from('user_profiles').update({ role_id: roleRow.role_id }).eq('user_id', id)
+      if (error) return json({ error: error.message }, 500)
 
       await logAuditEvent({
         event_type:  'PERM',
@@ -83,19 +74,17 @@ const handlers = {
         actor_role:  session.user.role,
         target_type: 'user',
         target_id:   id,
-        detail:      `Role updated → ${body.role} (was: ${oldRole})`,
+        detail:      `Role updated → ${body.role}`,
         ip_address:  request.headers.get('x-forwarded-for'),
         result:      'success',
       })
-
-      return new Response(JSON.stringify({ success: true }), {
-        headers: { 'Content-Type': 'application/json' },
-      })
+      return json({ success: true })
     }
 
     if (body.action === 'suspend' || body.action === 'unsuspend') {
       const active = body.action === 'unsuspend'
-      await sb.from('user_roles').update({ is_active: active }).eq('id', id)
+      const { error } = await sb.from('user_profiles').update({ active }).eq('user_id', id)
+      if (error) return json({ error: error.message }, 500)
 
       await logAuditEvent({
         event_type:  'ADMIN',
@@ -108,15 +97,10 @@ const handlers = {
         ip_address:  request.headers.get('x-forwarded-for'),
         result:      'success',
       })
-
-      return new Response(JSON.stringify({ success: true }), {
-        headers: { 'Content-Type': 'application/json' },
-      })
+      return json({ success: true })
     }
 
-    return new Response(JSON.stringify({ error: 'Unknown action' }), {
-      status: 400, headers: { 'Content-Type': 'application/json' },
-    })
+    return json({ error: 'Unknown action' }, 400)
   },
 
   DELETE: async ({ request, params }: { request: Request; params: { id: string } }) => {
@@ -126,7 +110,8 @@ const handlers = {
     const { id } = params
     const sb = getAdmin()
 
-    await sb.from('user_roles').update({ is_active: false }).eq('id', id)
+    const { error } = await sb.from('user_profiles').update({ active: false }).eq('user_id', id)
+    if (error) return json({ error: error.message }, 500)
 
     await logAuditEvent({
       event_type:  'ADMIN',
@@ -139,10 +124,7 @@ const handlers = {
       ip_address:  request.headers.get('x-forwarded-for'),
       result:      'success',
     })
-
-    return new Response(JSON.stringify({ success: true }), {
-      headers: { 'Content-Type': 'application/json' },
-    })
+    return json({ success: true })
   },
 }
 
@@ -150,7 +132,5 @@ const handlers = {
 export async function adminUserByIdHandler(request: Request, id: string): Promise<Response> {
   if (request.method === 'PATCH')  return handlers.PATCH({ request, params: { id } })
   if (request.method === 'DELETE') return handlers.DELETE({ request, params: { id } })
-  return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-    status: 405, headers: { 'Content-Type': 'application/json' },
-  })
+  return json({ error: 'Method not allowed' }, 405)
 }
