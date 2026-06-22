@@ -10,6 +10,7 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { SignedAnchor, SignedImage } from "@/components/ui/signed-file";
+import { CrewTimeline } from "@/components/crew-immigration/CrewTimeline";
 
 type CrewMember = {
   id: string; yacht_id: string | null;
@@ -69,7 +70,6 @@ export function CrewProfilePage() {
   const [passports, setPassports] = useState<Passport[]>([]);
   const [visas, setVisas] = useState<Visa[]>([]);
   const [docs, setDocs] = useState<Doc[]>([]);
-  const [signon, setSignon] = useState<{ id: string; event_type: string; event_date: string | null; port: string | null; yacht_id: string | null }[]>([]);
   const [yachtName, setYachtName] = useState<string>("");
   const [yachtMap, setYachtMap] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -82,12 +82,11 @@ export function CrewProfilePage() {
     const { data: m } = await db.from("crew_members").select("*").eq("id", id).single();
     setCrew(m ?? null);
 
-    const [{ data: yl }, { data: pp }, { data: linkedVisas }, { data: dd }, { data: so }] = await Promise.all([
+    const [{ data: yl }, { data: pp }, { data: linkedVisas }, { data: dd }] = await Promise.all([
       fetchAllRows(() => supabase.from("yachts").select("id, vessel_name")),
       fetchAllRows(() => db.from("crew_passports").select("*").eq("crew_id", id).order("is_primary", { ascending: false })),
       fetchAllRows(() => db.from("visa_applications").select("*").eq("crew_member_id", id)),
       fetchAllRows(() => db.from("crew_documents").select("*").eq("crew_member_id", id).order("created_at", { ascending: false })),
-      fetchAllRows(() => db.from("crew_signon_events").select("*").eq("crew_member_id", id).order("event_date", { ascending: false })),
     ]);
 
     const ymap = new Map<string, string>((yl ?? []).map((y: any) => [y.id, y.vessel_name]));
@@ -95,7 +94,6 @@ export function CrewProfilePage() {
     if (m?.yacht_id) setYachtName(ymap.get(m.yacht_id) ?? "");
     setPassports((pp ?? []) as Passport[]);
     setDocs((dd ?? []) as Doc[]);
-    setSignon((so ?? []) as any[]);
 
     // Visa applications: directly linked + best-effort matches (passport number / name)
     // surfaced so staff can verify — the visa tracker is largely un-linked to crew.
@@ -134,23 +132,6 @@ export function CrewProfilePage() {
     toast.success("Visa application linked to this crew member");
     setVisas((prev) => prev.map((v) => (v.id === visaId ? { ...v, _match: "linked" } : v)));
   }
-
-  // Sign-on/off timeline: real events table first; otherwise derive a read-only
-  // view from any matched visa applications that carry sign-on/off dates.
-  const movements = useMemo(() => {
-    if (signon.length) {
-      return signon.map((e) => ({
-        type: e.event_type, date: e.event_date,
-        place: e.port, vessel: e.yacht_id ? yachtMap.get(e.yacht_id) ?? "" : "", derived: false,
-      }));
-    }
-    const out: { type: string; date: string | null; place: string | null; vessel: string; derived: boolean }[] = [];
-    for (const v of visas) {
-      if (v.sign_on_date) out.push({ type: "sign_on", date: v.sign_on_date, place: v.destination_country, vessel: "", derived: true });
-      if (v.sign_off_date) out.push({ type: "sign_off", date: v.sign_off_date, place: v.destination_country, vessel: "", derived: true });
-    }
-    return out.sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
-  }, [signon, visas, yachtMap]);
 
   if (loading) {
     return <div className="flex h-full items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
@@ -283,21 +264,9 @@ export function CrewProfilePage() {
               )}
             </Section>
 
-            {/* Sign-on / Sign-off */}
-            <Section icon={ShipWheel} title="Sign-On / Sign-Off History" count={movements.length}
-              note={movements.some((m) => m.derived) ? "Derived from matched visa applications — not confirmed movements." : undefined}>
-              {movements.length === 0 ? <Empty>No sign-on / sign-off events recorded.</Empty> : (
-                <div className="divide-y divide-border/50">
-                  {movements.map((mv, i) => (
-                    <div key={i} className="flex items-center gap-3 py-2.5">
-                      <span className={cn("h-2 w-2 shrink-0 rounded-full", mv.type === "sign_on" ? "bg-emerald-400" : "bg-slate-400")} />
-                      <span className="w-20 text-sm font-medium">{mv.type === "sign_on" ? "Sign-on" : "Sign-off"}</span>
-                      <span className="text-sm">{fmt(mv.date)}</span>
-                      <span className="ml-auto text-[11px] text-muted-foreground">{[mv.vessel, mv.place].filter(Boolean).join(" · ") || "—"}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
+            {/* Unified crew timeline — visa + movement + permit events */}
+            <Section icon={ShipWheel} title="Crew Timeline">
+              <CrewTimeline crewId={id} yachtMap={yachtMap} />
             </Section>
 
             {/* Documents — passport files (from crew_passports) + other crew documents */}
