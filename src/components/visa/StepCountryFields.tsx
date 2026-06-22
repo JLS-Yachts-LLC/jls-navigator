@@ -6,6 +6,7 @@ import type { CrewMember, CrewPassport } from '@/lib/visa/crewMatching'
 import type { ComplianceResult } from '@/lib/visa/complianceChecks'
 import { supabase } from '@/integrations/supabase/client'
 import { AdditionalPersonalInfoSection } from '@/components/visa/AdditionalPersonalInfoSection'
+import { doGenerateCrewVerification } from '@/lib/crew-verification.server'
 
 export interface WizardState {
   step: number
@@ -433,6 +434,11 @@ export function StepCountryFields({ state, onUpdate, onNext, onBack }: StepCount
         ))}
       </div>
 
+      {/* Crew Verification letter — auto-generated when no Seaman's book. */}
+      {state.passport?.no_seamans_book && (
+        <CrewVerificationPanel state={state} onUpdate={onUpdate} />
+      )}
+
       {/* Additional Personal Information (mother's maiden name, etc.) — Mike's
           personal-info capture, surfaced in the wizard's Details step. */}
       {state.crew?.id && authToken && (
@@ -496,6 +502,76 @@ export function StepCountryFields({ state, onUpdate, onNext, onBack }: StepCount
           Continue
         </button>
       </div>
+    </div>
+  )
+}
+
+// ─── Crew Verification letter (auto-generated when no Seaman's book) ──────────
+function CrewVerificationPanel({ state, onUpdate }: { state: WizardState; onUpdate: (p: Partial<WizardState>) => void }) {
+  const passport = state.passport!
+  const vesselName = state.countryFields['vessel_name'] ?? ''
+  const existingUrl: string | null = (passport as any).crew_verification_letter_url ?? null
+  const [status, setStatus] = useState<'idle' | 'running' | 'done' | 'error'>(existingUrl ? 'done' : 'idle')
+  const [url, setUrl] = useState<string | null>(existingUrl)
+  const [err, setErr] = useState<string | null>(null)
+  const ran = useRef(false)
+
+  const fullName = (state.crew as any)?.full_name
+    || [state.crew?.first_name, (state.crew as any)?.middle_name, state.crew?.last_name].filter(Boolean).join(' ')
+
+  async function generate() {
+    if (!vesselName.trim()) { setErr('Enter the vessel name first.'); return }
+    setStatus('running'); setErr(null)
+    try {
+      const res = await (doGenerateCrewVerification as any)({ data: {
+        crewId: state.crew!.id, passportId: passport.id, fullName,
+        passportNumber: passport.passport_number ?? '', nationality: passport.nationality ?? '',
+        vesselName: vesselName.trim(),
+      } })
+      if (!res.ok) throw new Error(res.error ?? 'Generation failed')
+      setUrl(res.pdfUrl); setStatus('done')
+      onUpdate({ passport: { ...passport, crew_verification_letter_url: res.pdfUrl } as any })
+    } catch (e: any) { setErr(e?.message ?? 'Could not generate'); setStatus('error') }
+  }
+
+  // Auto-generate once when the vessel is known and no letter exists yet.
+  useEffect(() => {
+    if (ran.current || existingUrl) return
+    if (!vesselName.trim()) return
+    ran.current = true
+    void generate()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vesselName])
+
+  return (
+    <div style={{ marginTop: 24, padding: '16px 18px', background: COLORS.abyss, border: `1px solid ${COLORS.deep}`, borderRadius: 10 }}>
+      <div style={{ fontFamily: FONTS.display, fontSize: 13, fontWeight: 700, color: COLORS.frost, marginBottom: 6 }}>
+        Crew Verification Letter
+      </div>
+      <p style={{ fontFamily: FONTS.display, fontSize: 12, color: COLORS.muted, margin: '0 0 12px' }}>
+        No Seaman's book provided — a JLS Crew Verification letter is generated automatically (English &amp; Arabic), filed to the crew member's SharePoint folder, and available as a PDF below.
+      </p>
+      {status === 'running' && <span style={{ fontSize: 12, color: COLORS.signal }}>Generating letter…</span>}
+      {status === 'error' && (
+        <div style={{ fontSize: 12, color: COLORS.warn }}>
+          {err}{' '}
+          <button type="button" onClick={generate} style={{ color: COLORS.signal, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Retry</button>
+        </div>
+      )}
+      {status === 'done' && url && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <a href={url} target="_blank" rel="noopener noreferrer" download
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: COLORS.void, border: `1px solid ${COLORS.deep}`, borderRadius: 7, fontFamily: FONTS.display, fontSize: 12, color: COLORS.frost, textDecoration: 'none' }}>
+            📄 Crew Verification Letter (PDF) <span style={{ color: COLORS.signal }}>↓</span>
+          </a>
+          <button type="button" onClick={generate} style={{ fontFamily: FONTS.display, fontSize: 11, color: COLORS.muted, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Regenerate</button>
+        </div>
+      )}
+      {status === 'idle' && (
+        <button type="button" onClick={generate} style={{ fontFamily: FONTS.display, fontSize: 12, fontWeight: 600, color: COLORS.signal, background: `${COLORS.signal}14`, border: `1px solid ${COLORS.signal}44`, borderRadius: 7, padding: '8px 12px', cursor: 'pointer' }}>
+          Generate verification letter
+        </button>
+      )}
     </div>
   )
 }
