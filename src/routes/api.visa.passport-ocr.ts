@@ -77,24 +77,46 @@ export async function visaPassportOcrHandler(request: Request): Promise<Response
     ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: imageBase64 } }
     : { type: 'image', source: { type: 'base64', media_type: mediaType, data: imageBase64 } }
 
-  let res: Response
-  try {
-    res = await fetch(ANTHROPIC_URL, {
-      method: 'POST',
-      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: MODEL,
-        max_tokens: 700,
-        messages: [{ role: 'user', content: [fileBlock, { type: 'text', text: docType === 'visa' ? VISA_PROMPT : PROMPT }] }],
-      }),
-    })
-  } catch (e: any) {
-    return json({ ok: false, error: `Failed to reach Anthropic: ${e?.message ?? 'network error'}` }, 502)
+  const payload = JSON.stringify({
+    model: MODEL,
+    max_tokens: 700,
+    messages: [{ role: 'user', content: [fileBlock, { type: 'text', text: docType === 'visa' ? VISA_PROMPT : PROMPT }] }],
+  })
+
+  // Anthropic enforces an input-tokens-per-minute org cap; bursts (or concurrent
+  // Leo usage on the same key) can return 429 / 529. Retry with backoff, honouring
+  // the Retry-After header, so a transient rate-limit recovers instead of failing.
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+  const MAX_RETRIES = 4
+  let res: Response | null = null
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      res = await fetch(ANTHROPIC_URL, {
+        method: 'POST',
+        headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
+        body: payload,
+      })
+    } catch (e: any) {
+      return json({ ok: false, error: `Failed to reach Anthropic: ${e?.message ?? 'network error'}` }, 502)
+    }
+    if (res.status !== 429 && res.status !== 529) break
+    if (attempt === MAX_RETRIES) {
+      return json({
+        ok: false,
+        rateLimited: true,
+        error: 'Scanning is busy right now (Anthropic rate limit). Wait a minute and try again — or raise the API rate limit to remove this.',
+      }, 429)
+    }
+    const retryAfter = parseInt(res.headers.get('retry-after') ?? '', 10)
+    const waitMs = Number.isFinite(retryAfter) && retryAfter > 0
+      ? Math.min(retryAfter * 1000, 20000)
+      : Math.min(1500 * 2 ** attempt, 12000) // 1.5s, 3s, 6s, 12s
+    await sleep(waitMs)
   }
 
-  if (!res.ok) {
-    const err = await res.text().catch(() => '')
-    return json({ ok: false, error: `Anthropic error ${res.status}: ${err.slice(0, 200)}` }, 502)
+  if (!res || !res.ok) {
+    const err = res ? await res.text().catch(() => '') : ''
+    return json({ ok: false, error: `Anthropic error ${res?.status ?? 'unknown'}: ${err.slice(0, 200)}` }, 502)
   }
 
   const data: any = await res.json()
