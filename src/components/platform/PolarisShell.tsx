@@ -71,15 +71,15 @@ export function MetricCard({
   return (
     <div className="rounded-xl border border-border bg-card p-4 shadow-[0_2px_12px_-6px_rgba(0,0,0,0.4)]">
       <div className="flex items-center justify-between text-muted-foreground">
-        <span className="text-[11px] font-medium uppercase tracking-wide">{label}</span>
+        <span className="text-[14px] font-semibold uppercase tracking-wide">{label}</span>
         {icon}
       </div>
-      <div className="mt-2 font-display text-2xl font-semibold tabular-nums">
+      <div className="mt-2 font-display text-[28px] font-bold tabular-nums leading-tight">
         {locked ? <span className="text-base text-muted-foreground/60">Restricted</span>
           : loading ? <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
           : value}
       </div>
-      {sub && !locked && <div className="mt-0.5 text-[11px] text-muted-foreground">{sub}</div>}
+      {sub && !locked && <div className="mt-0.5 text-[13px] text-muted-foreground">{sub}</div>}
     </div>
   );
 }

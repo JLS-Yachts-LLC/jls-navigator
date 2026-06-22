@@ -73,6 +73,15 @@
 :root {
   --radius: 0.5rem;
 
+  /* ── Readability standard (POLARIS_UI_READABILITY.md) ──
+     Floors: 16px body · 22px headings · 28px widget numbers · 14px small text.
+     Primary text #0F172A, secondary #4B5563 — min 4.5:1 contrast (WCAG AA). */
+  --text-xs:   0.875rem;  /* 14px — timestamps, labels, secondary info */
+  --text-base: 1rem;      /* 16px — body */
+  --text-lg:   1.125rem;  /* 18px — emphasis body */
+  --text-xl:   1.375rem;  /* 22px — headings, titles */
+  --text-2xl:  1.75rem;   /* 28px — widget numbers, key metrics */
+
   /* ── Light theme (default state, no .dark class) ──
      White content surfaces + deep-navy sidebar, per the Polaris brand. The
      dark palette lives in .dark below. */
@@ -97,7 +106,9 @@
 
   /* Muted surfaces */
   --muted:            oklch(0.960 0.005 255);
-  --muted-foreground: oklch(0.515 0.030 250);
+  /* Secondary text — darkened to ~#4B5563 to meet the readability standard
+     (WCAG AA 4.5:1 on white; no light-grey body text). POLARIS_UI_READABILITY.md */
+  --muted-foreground: oklch(0.446 0.030 255);
 
   /* Accent — faint teal tint */
   --accent:           oklch(0.945 0.022 200);
@@ -155,8 +166,8 @@
   --secondary:        oklch(0.140 0.043 250);
   --secondary-foreground: oklch(0.944 0.009 255);
   --muted:            oklch(0.140 0.043 250);
-  /* Brightened for dark-mode readability — secondary text was too dim at 0.472. */
-  --muted-foreground: oklch(0.760 0.030 245);
+  /* Brightened for dark-mode readability (WCAG AA on the dark surfaces). */
+  --muted-foreground: oklch(0.800 0.028 245);
   --accent:           oklch(0.256 0.071 240);
   --accent-foreground: oklch(0.944 0.009 255);
   --success:            oklch(0.70 0.15 152);
@@ -199,6 +210,9 @@
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
+    /* Readability standard: 16px body floor (POLARIS_UI_READABILITY.md). */
+    font-size: 1rem;
+    line-height: 1.5;
     font-feature-settings: "cv02","cv03","cv04","cv11";
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -210,9 +224,9 @@
   /* Uppercase labels — use class="label-caps" */
   .label-caps {
     font-family: var(--font-sans);
-    font-size: 0.5625rem;       /* 9px */
+    font-size: 0.6875rem;       /* 11px (was 9px — readability floor for micro eyebrow labels) */
     font-weight: 600;
-    letter-spacing: 0.20em;
+    letter-spacing: 0.16em;
     text-transform: uppercase;
     color: var(--color-muted-foreground);
   }

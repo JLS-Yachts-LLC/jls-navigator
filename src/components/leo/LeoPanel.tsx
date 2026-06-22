@@ -298,7 +298,7 @@ function InsightCard({ label, text, color }: { label: string; text: string; colo
         style={{
           fontFamily: "'Inter', sans-serif",
           fontSize:   14,
-          color:      '#7A9DB8',
+          color:      '#C8D8E8',
           lineHeight: 1.6,
         }}
       >
