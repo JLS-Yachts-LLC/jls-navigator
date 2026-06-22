@@ -520,6 +520,11 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
   const [dateOfBirth, setDateOfBirth] = useState('')
   const [placeOfBirth, setPlaceOfBirth] = useState('')
   const [gender, setGender] = useState('')
+  const [firstName, setFirstName] = useState((ex as any)?.first_name ?? '')
+  const [middleName, setMiddleName] = useState((ex as any)?.middle_name ?? '')
+  const [lastName, setLastName] = useState((ex as any)?.last_name ?? '')
+  // Middle name OCR-detected on the passport but not yet entered — offered as a recommendation.
+  const [recommendedMiddle, setRecommendedMiddle] = useState<string | null>(null)
   type SlotKey = 'cover' | 'data' | 'seamans' | 'headshot'
   const [files, setFiles] = useState<Record<SlotKey, File | null>>({ cover: null, data: null, seamans: null, headshot: null })
   const [fileNames, setFileNames] = useState<Record<SlotKey, string | null>>({ cover: null, data: null, seamans: null, headshot: null })
@@ -595,6 +600,17 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
       if (d.date_of_birth && !dateOfBirth) setDateOfBirth(d.date_of_birth)
       if (d.place_of_birth && !placeOfBirth) setPlaceOfBirth(d.place_of_birth)
       if (d.gender && !gender) setGender(d.gender)
+      // Names: surname → Last, first given name → First, remaining given names →
+      // recommended Middle (not everyone has one, so we suggest rather than force).
+      const given = String(d.given_names ?? '').trim()
+      const sur = String(d.surname ?? '').trim()
+      if (sur && !lastName) setLastName(sur)
+      if (given) {
+        const parts = given.split(/\s+/)
+        if (!firstName) setFirstName(parts[0])
+        const mid = parts.slice(1).join(' ')
+        if (mid && !middleName) setRecommendedMiddle(mid)
+      }
       // Flag if the passport name differs from the crew profile name.
       const passportName = `${d.given_names ?? ''} ${d.surname ?? ''}`.trim()
       if (crewName && passportName && namesDiffer(crewName, passportName)) setNameMismatch(passportName)
@@ -758,6 +774,9 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
       // Populate the crew member record with the OCR'd personal details.
       try {
         await (supabase as any).from('crew_members').update({
+          ...(firstName.trim() ? { first_name: firstName.trim() } : {}),
+          ...(middleName.trim() ? { middle_name: middleName.trim() } : {}),
+          ...(lastName.trim() ? { last_name: lastName.trim() } : {}),
           nationality: nationality.trim() || null,
           date_of_birth: dateOfBirth || null,
           place_of_birth: placeOfBirth.trim() || null,
@@ -922,6 +941,31 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
                     </span>
                   </div>
                 )}
+
+                {/* Row 0 — Name (OCR fills First/Last; Middle is recommended) */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 10 }}>
+                  <FieldCard label="First Name">
+                    <input style={editInputStyle} value={firstName} onChange={e => setFirstName(e.target.value)} placeholder="e.g. Matthew" required />
+                  </FieldCard>
+                  <FieldCard label="Middle Name"
+                    note={!middleName ? (recommendedMiddle ? 'Recommended from passport' : 'Not on passport — optional') : undefined}
+                    noteColor={!middleName && recommendedMiddle ? COLORS.signal : COLORS.muted}>
+                    <input
+                      style={{ ...editInputStyle, ...(!middleName && recommendedMiddle ? { borderColor: COLORS.signal } : {}) }}
+                      value={middleName} onChange={e => { setMiddleName(e.target.value); setRecommendedMiddle(null) }}
+                      placeholder={recommendedMiddle ? recommendedMiddle : 'If shown on passport'} />
+                    {!middleName && recommendedMiddle && (
+                      <button type="button" onClick={() => { setMiddleName(recommendedMiddle); setRecommendedMiddle(null) }}
+                        style={{ marginTop: 6, fontFamily: FONTS.display, fontSize: 11, fontWeight: 600, color: COLORS.signal,
+                          background: `${COLORS.signal}14`, border: `1px solid ${COLORS.signal}44`, borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}>
+                        Use “{recommendedMiddle}”
+                      </button>
+                    )}
+                  </FieldCard>
+                  <FieldCard label="Last Name">
+                    <input style={editInputStyle} value={lastName} onChange={e => setLastName(e.target.value)} placeholder="e.g. Peeters" required />
+                  </FieldCard>
+                </div>
 
                 {/* Row 1 */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 10 }}>
@@ -1196,7 +1240,13 @@ function PassportCard({ passport, selected, onSelect, onEdit, crewFirst, crewMid
           {/* Extracted-info grid */}
           <div style={{ flex: 1, minWidth: 0, display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10 }}>
             <FieldCard label="First Name">{crewFirst || '—'}</FieldCard>
-            <FieldCard label="Middle Name">{crewMiddle || '—'}</FieldCard>
+            <FieldCard label="Middle Name"
+              note={!crewMiddle ? 'Missing — add via Edit if shown on passport' : undefined}
+              noteColor={!crewMiddle ? COLORS.warn : undefined}>
+              {crewMiddle
+                ? crewMiddle
+                : <span style={{ color: COLORS.warn }}>—</span>}
+            </FieldCard>
             <FieldCard label="Last Name">{crewLast || '—'}</FieldCard>
             <FieldCard label="Date of Birth">{crewDob ? formatDate(crewDob) : '—'}</FieldCard>
             <FieldCard label="Passport Number">
