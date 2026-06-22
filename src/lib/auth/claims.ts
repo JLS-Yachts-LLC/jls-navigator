@@ -172,14 +172,21 @@ export function getLandingPath(claims: PolarisClaims): string {
   return "/dashboard";
 }
 
-/** Routes that actually exist today. Extend as #139–#144 dashboards land. */
-const BUILT_ROUTES = new Set<string>(["/dashboard"]);
+/**
+ * Whether a landing path corresponds to a route that actually exists today.
+ * Extend as the remaining dashboards/portals (#144+) land. Shared by the
+ * workspace engine so both degrade consistently.
+ */
+export function isBuiltRoute(path: string): boolean {
+  if (path === "/dashboard") return true;
+  if (path === "/portal/crew" || path === "/portal/owner") return true;
+  if (/^\/dashboard\/vessel\/[^/]+/.test(path)) return true;
+  if (/^\/dashboard\/location\/[^/]+/.test(path)) return true;
+  return false;
+}
 
 /** getLandingPath, but never returns a route that isn't built yet. */
 export function resolveLandingPath(claims: PolarisClaims): string {
   const target = getLandingPath(claims);
-  if (BUILT_ROUTES.has(target)) return target;
-  // dynamic targets (e.g. /dashboard/vessel/123, /portal/crew) — keep if their
-  // base segment is built, else fall back.
-  return "/dashboard";
+  return isBuiltRoute(target) ? target : "/dashboard";
 }

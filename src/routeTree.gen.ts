@@ -61,6 +61,8 @@ import { Route as AppYachtsNewRouteImport } from './routes/_app.yachts.new'
 import { Route as AppYachtsIdRouteImport } from './routes/_app.yachts.$id'
 import { Route as AppWaypointQuotationsRouteImport } from './routes/_app.waypoint.quotations'
 import { Route as AppTrainingCertificationsRouteImport } from './routes/_app.training.certifications'
+import { Route as AppPortalOwnerRouteImport } from './routes/_app.portal.owner'
+import { Route as AppPortalCrewRouteImport } from './routes/_app.portal.crew'
 import { Route as AppPermitsTdraRouteImport } from './routes/_app.permits.tdra'
 import { Route as AppPermitsSanitationRouteImport } from './routes/_app.permits.sanitation'
 import { Route as AppPermitsNavigationLicenseRouteImport } from './routes/_app.permits.navigation-license'
@@ -96,6 +98,8 @@ import { Route as AppAdminAuditRouteImport } from './routes/_app.admin.audit'
 import { Route as AppGuidesDepartmentIndexRouteImport } from './routes/_app.guides.$department.index'
 import { Route as AppCrewImmigrationVisasIndexRouteImport } from './routes/_app.crew-immigration.visas.index'
 import { Route as AppGuidesDepartmentGuideIdRouteImport } from './routes/_app.guides.$department.$guideId'
+import { Route as AppDashboardVesselVesselIdRouteImport } from './routes/_app.dashboard.vessel.$vesselId'
+import { Route as AppDashboardLocationLocationIdRouteImport } from './routes/_app.dashboard.location.$locationId'
 import { Route as AppCrewImmigrationVisasSupportingDocsRouteImport } from './routes/_app.crew-immigration.visas.supporting-docs'
 import { Route as AppCrewImmigrationVisasPassportDetailsRouteImport } from './routes/_app.crew-immigration.visas.passport-details'
 import { Route as AppCrewImmigrationVisasNewRouteImport } from './routes/_app.crew-immigration.visas.new'
@@ -366,6 +370,16 @@ const AppTrainingCertificationsRoute =
     path: '/certifications',
     getParentRoute: () => AppTrainingRoute,
   } as any)
+const AppPortalOwnerRoute = AppPortalOwnerRouteImport.update({
+  id: '/portal/owner',
+  path: '/portal/owner',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPortalCrewRoute = AppPortalCrewRouteImport.update({
+  id: '/portal/crew',
+  path: '/portal/crew',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppPermitsTdraRoute = AppPermitsTdraRouteImport.update({
   id: '/permits/tdra',
   path: '/permits/tdra',
@@ -551,6 +565,18 @@ const AppGuidesDepartmentGuideIdRoute =
     path: '/$guideId',
     getParentRoute: () => AppGuidesDepartmentRoute,
   } as any)
+const AppDashboardVesselVesselIdRoute =
+  AppDashboardVesselVesselIdRouteImport.update({
+    id: '/vessel/$vesselId',
+    path: '/vessel/$vesselId',
+    getParentRoute: () => AppDashboardRoute,
+  } as any)
+const AppDashboardLocationLocationIdRoute =
+  AppDashboardLocationLocationIdRouteImport.update({
+    id: '/location/$locationId',
+    path: '/location/$locationId',
+    getParentRoute: () => AppDashboardRoute,
+  } as any)
 const AppCrewImmigrationVisasSupportingDocsRoute =
   AppCrewImmigrationVisasSupportingDocsRouteImport.update({
     id: '/supporting-docs',
@@ -612,7 +638,7 @@ export interface FileRoutesByFullPath {
   '/crew-cab': typeof AppCrewCabRouteWithChildren
   '/crew-immigration': typeof AppCrewImmigrationRouteWithChildren
   '/crew-placement': typeof AppCrewPlacementRouteWithChildren
-  '/dashboard': typeof AppDashboardRoute
+  '/dashboard': typeof AppDashboardRouteWithChildren
   '/dev-settings': typeof AppDevSettingsRoute
   '/director': typeof AppDirectorRoute
   '/error-log': typeof AppErrorLogRoute
@@ -670,6 +696,8 @@ export interface FileRoutesByFullPath {
   '/permits/navigation-license': typeof AppPermitsNavigationLicenseRoute
   '/permits/sanitation': typeof AppPermitsSanitationRoute
   '/permits/tdra': typeof AppPermitsTdraRoute
+  '/portal/crew': typeof AppPortalCrewRoute
+  '/portal/owner': typeof AppPortalOwnerRoute
   '/training/certifications': typeof AppTrainingCertificationsRoute
   '/waypoint/quotations': typeof AppWaypointQuotationsRoute
   '/yachts/$id': typeof AppYachtsIdRoute
@@ -690,6 +718,8 @@ export interface FileRoutesByFullPath {
   '/crew-immigration/visas/new': typeof AppCrewImmigrationVisasNewRoute
   '/crew-immigration/visas/passport-details': typeof AppCrewImmigrationVisasPassportDetailsRoute
   '/crew-immigration/visas/supporting-docs': typeof AppCrewImmigrationVisasSupportingDocsRoute
+  '/dashboard/location/$locationId': typeof AppDashboardLocationLocationIdRoute
+  '/dashboard/vessel/$vesselId': typeof AppDashboardVesselVesselIdRoute
   '/guides/$department/$guideId': typeof AppGuidesDepartmentGuideIdRoute
   '/crew-immigration/visas/': typeof AppCrewImmigrationVisasIndexRoute
   '/guides/$department/': typeof AppGuidesDepartmentIndexRoute
@@ -706,7 +736,7 @@ export interface FileRoutesByTo {
   '/compass': typeof AppCompassRoute
   '/crew-cab': typeof AppCrewCabRouteWithChildren
   '/crew-immigration': typeof AppCrewImmigrationRouteWithChildren
-  '/dashboard': typeof AppDashboardRoute
+  '/dashboard': typeof AppDashboardRouteWithChildren
   '/dev-settings': typeof AppDevSettingsRoute
   '/director': typeof AppDirectorRoute
   '/error-log': typeof AppErrorLogRoute
@@ -755,6 +785,8 @@ export interface FileRoutesByTo {
   '/permits/navigation-license': typeof AppPermitsNavigationLicenseRoute
   '/permits/sanitation': typeof AppPermitsSanitationRoute
   '/permits/tdra': typeof AppPermitsTdraRoute
+  '/portal/crew': typeof AppPortalCrewRoute
+  '/portal/owner': typeof AppPortalOwnerRoute
   '/training/certifications': typeof AppTrainingCertificationsRoute
   '/waypoint/quotations': typeof AppWaypointQuotationsRoute
   '/yachts/$id': typeof AppYachtsIdRoute
@@ -775,6 +807,8 @@ export interface FileRoutesByTo {
   '/crew-immigration/visas/new': typeof AppCrewImmigrationVisasNewRoute
   '/crew-immigration/visas/passport-details': typeof AppCrewImmigrationVisasPassportDetailsRoute
   '/crew-immigration/visas/supporting-docs': typeof AppCrewImmigrationVisasSupportingDocsRoute
+  '/dashboard/location/$locationId': typeof AppDashboardLocationLocationIdRoute
+  '/dashboard/vessel/$vesselId': typeof AppDashboardVesselVesselIdRoute
   '/guides/$department/$guideId': typeof AppGuidesDepartmentGuideIdRoute
   '/crew-immigration/visas': typeof AppCrewImmigrationVisasIndexRoute
   '/guides/$department': typeof AppGuidesDepartmentIndexRoute
@@ -795,7 +829,7 @@ export interface FileRoutesById {
   '/_app/crew-cab': typeof AppCrewCabRouteWithChildren
   '/_app/crew-immigration': typeof AppCrewImmigrationRouteWithChildren
   '/_app/crew-placement': typeof AppCrewPlacementRouteWithChildren
-  '/_app/dashboard': typeof AppDashboardRoute
+  '/_app/dashboard': typeof AppDashboardRouteWithChildren
   '/_app/dev-settings': typeof AppDevSettingsRoute
   '/_app/director': typeof AppDirectorRoute
   '/_app/error-log': typeof AppErrorLogRoute
@@ -853,6 +887,8 @@ export interface FileRoutesById {
   '/_app/permits/navigation-license': typeof AppPermitsNavigationLicenseRoute
   '/_app/permits/sanitation': typeof AppPermitsSanitationRoute
   '/_app/permits/tdra': typeof AppPermitsTdraRoute
+  '/_app/portal/crew': typeof AppPortalCrewRoute
+  '/_app/portal/owner': typeof AppPortalOwnerRoute
   '/_app/training/certifications': typeof AppTrainingCertificationsRoute
   '/_app/waypoint/quotations': typeof AppWaypointQuotationsRoute
   '/_app/yachts/$id': typeof AppYachtsIdRoute
@@ -873,6 +909,8 @@ export interface FileRoutesById {
   '/_app/crew-immigration/visas/new': typeof AppCrewImmigrationVisasNewRoute
   '/_app/crew-immigration/visas/passport-details': typeof AppCrewImmigrationVisasPassportDetailsRoute
   '/_app/crew-immigration/visas/supporting-docs': typeof AppCrewImmigrationVisasSupportingDocsRoute
+  '/_app/dashboard/location/$locationId': typeof AppDashboardLocationLocationIdRoute
+  '/_app/dashboard/vessel/$vesselId': typeof AppDashboardVesselVesselIdRoute
   '/_app/guides/$department/$guideId': typeof AppGuidesDepartmentGuideIdRoute
   '/_app/crew-immigration/visas/': typeof AppCrewImmigrationVisasIndexRoute
   '/_app/guides/$department/': typeof AppGuidesDepartmentIndexRoute
@@ -951,6 +989,8 @@ export interface FileRouteTypes {
     | '/permits/navigation-license'
     | '/permits/sanitation'
     | '/permits/tdra'
+    | '/portal/crew'
+    | '/portal/owner'
     | '/training/certifications'
     | '/waypoint/quotations'
     | '/yachts/$id'
@@ -971,6 +1011,8 @@ export interface FileRouteTypes {
     | '/crew-immigration/visas/new'
     | '/crew-immigration/visas/passport-details'
     | '/crew-immigration/visas/supporting-docs'
+    | '/dashboard/location/$locationId'
+    | '/dashboard/vessel/$vesselId'
     | '/guides/$department/$guideId'
     | '/crew-immigration/visas/'
     | '/guides/$department/'
@@ -1036,6 +1078,8 @@ export interface FileRouteTypes {
     | '/permits/navigation-license'
     | '/permits/sanitation'
     | '/permits/tdra'
+    | '/portal/crew'
+    | '/portal/owner'
     | '/training/certifications'
     | '/waypoint/quotations'
     | '/yachts/$id'
@@ -1056,6 +1100,8 @@ export interface FileRouteTypes {
     | '/crew-immigration/visas/new'
     | '/crew-immigration/visas/passport-details'
     | '/crew-immigration/visas/supporting-docs'
+    | '/dashboard/location/$locationId'
+    | '/dashboard/vessel/$vesselId'
     | '/guides/$department/$guideId'
     | '/crew-immigration/visas'
     | '/guides/$department'
@@ -1133,6 +1179,8 @@ export interface FileRouteTypes {
     | '/_app/permits/navigation-license'
     | '/_app/permits/sanitation'
     | '/_app/permits/tdra'
+    | '/_app/portal/crew'
+    | '/_app/portal/owner'
     | '/_app/training/certifications'
     | '/_app/waypoint/quotations'
     | '/_app/yachts/$id'
@@ -1153,6 +1201,8 @@ export interface FileRouteTypes {
     | '/_app/crew-immigration/visas/new'
     | '/_app/crew-immigration/visas/passport-details'
     | '/_app/crew-immigration/visas/supporting-docs'
+    | '/_app/dashboard/location/$locationId'
+    | '/_app/dashboard/vessel/$vesselId'
     | '/_app/guides/$department/$guideId'
     | '/_app/crew-immigration/visas/'
     | '/_app/guides/$department/'
@@ -1533,6 +1583,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppTrainingCertificationsRouteImport
       parentRoute: typeof AppTrainingRoute
     }
+    '/_app/portal/owner': {
+      id: '/_app/portal/owner'
+      path: '/portal/owner'
+      fullPath: '/portal/owner'
+      preLoaderRoute: typeof AppPortalOwnerRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/portal/crew': {
+      id: '/_app/portal/crew'
+      path: '/portal/crew'
+      fullPath: '/portal/crew'
+      preLoaderRoute: typeof AppPortalCrewRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/permits/tdra': {
       id: '/_app/permits/tdra'
       path: '/permits/tdra'
@@ -1778,6 +1842,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppGuidesDepartmentGuideIdRouteImport
       parentRoute: typeof AppGuidesDepartmentRoute
     }
+    '/_app/dashboard/vessel/$vesselId': {
+      id: '/_app/dashboard/vessel/$vesselId'
+      path: '/vessel/$vesselId'
+      fullPath: '/dashboard/vessel/$vesselId'
+      preLoaderRoute: typeof AppDashboardVesselVesselIdRouteImport
+      parentRoute: typeof AppDashboardRoute
+    }
+    '/_app/dashboard/location/$locationId': {
+      id: '/_app/dashboard/location/$locationId'
+      path: '/location/$locationId'
+      fullPath: '/dashboard/location/$locationId'
+      preLoaderRoute: typeof AppDashboardLocationLocationIdRouteImport
+      parentRoute: typeof AppDashboardRoute
+    }
     '/_app/crew-immigration/visas/supporting-docs': {
       id: '/_app/crew-immigration/visas/supporting-docs'
       path: '/supporting-docs'
@@ -1953,6 +2031,20 @@ const AppCrewPlacementRouteChildren: AppCrewPlacementRouteChildren = {
 const AppCrewPlacementRouteWithChildren =
   AppCrewPlacementRoute._addFileChildren(AppCrewPlacementRouteChildren)
 
+interface AppDashboardRouteChildren {
+  AppDashboardLocationLocationIdRoute: typeof AppDashboardLocationLocationIdRoute
+  AppDashboardVesselVesselIdRoute: typeof AppDashboardVesselVesselIdRoute
+}
+
+const AppDashboardRouteChildren: AppDashboardRouteChildren = {
+  AppDashboardLocationLocationIdRoute: AppDashboardLocationLocationIdRoute,
+  AppDashboardVesselVesselIdRoute: AppDashboardVesselVesselIdRoute,
+}
+
+const AppDashboardRouteWithChildren = AppDashboardRoute._addFileChildren(
+  AppDashboardRouteChildren,
+)
+
 interface AppEsignRouteChildren {
   AppEsignDocumentIdRoute: typeof AppEsignDocumentIdRoute
   AppEsignIndexRoute: typeof AppEsignIndexRoute
@@ -2080,7 +2172,7 @@ interface AppRouteChildren {
   AppCrewCabRoute: typeof AppCrewCabRouteWithChildren
   AppCrewImmigrationRoute: typeof AppCrewImmigrationRouteWithChildren
   AppCrewPlacementRoute: typeof AppCrewPlacementRouteWithChildren
-  AppDashboardRoute: typeof AppDashboardRoute
+  AppDashboardRoute: typeof AppDashboardRouteWithChildren
   AppDevSettingsRoute: typeof AppDevSettingsRoute
   AppDirectorRoute: typeof AppDirectorRoute
   AppErrorLogRoute: typeof AppErrorLogRoute
@@ -2115,6 +2207,8 @@ interface AppRouteChildren {
   AppPermitsNavigationLicenseRoute: typeof AppPermitsNavigationLicenseRoute
   AppPermitsSanitationRoute: typeof AppPermitsSanitationRoute
   AppPermitsTdraRoute: typeof AppPermitsTdraRoute
+  AppPortalCrewRoute: typeof AppPortalCrewRoute
+  AppPortalOwnerRoute: typeof AppPortalOwnerRoute
   AppYachtsIdRoute: typeof AppYachtsIdRoute
   AppYachtsNewRoute: typeof AppYachtsNewRoute
   AppYachtsIndexRoute: typeof AppYachtsIndexRoute
@@ -2130,7 +2224,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppCrewCabRoute: AppCrewCabRouteWithChildren,
   AppCrewImmigrationRoute: AppCrewImmigrationRouteWithChildren,
   AppCrewPlacementRoute: AppCrewPlacementRouteWithChildren,
-  AppDashboardRoute: AppDashboardRoute,
+  AppDashboardRoute: AppDashboardRouteWithChildren,
   AppDevSettingsRoute: AppDevSettingsRoute,
   AppDirectorRoute: AppDirectorRoute,
   AppErrorLogRoute: AppErrorLogRoute,
@@ -2165,6 +2259,8 @@ const AppRouteChildren: AppRouteChildren = {
   AppPermitsNavigationLicenseRoute: AppPermitsNavigationLicenseRoute,
   AppPermitsSanitationRoute: AppPermitsSanitationRoute,
   AppPermitsTdraRoute: AppPermitsTdraRoute,
+  AppPortalCrewRoute: AppPortalCrewRoute,
+  AppPortalOwnerRoute: AppPortalOwnerRoute,
   AppYachtsIdRoute: AppYachtsIdRoute,
   AppYachtsNewRoute: AppYachtsNewRoute,
   AppYachtsIndexRoute: AppYachtsIndexRoute,

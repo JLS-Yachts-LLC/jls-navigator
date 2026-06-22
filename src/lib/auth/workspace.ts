@@ -9,7 +9,7 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { PolarisClaims } from "@/lib/auth/claims";
+import { isBuiltRoute, type PolarisClaims } from "@/lib/auth/claims";
 
 export interface WorkspaceContext {
   type: "organisation" | "vessel" | "module";
@@ -55,22 +55,19 @@ export function getModulePath(moduleId: string): string {
 }
 
 /** The intended landing path for a chosen workspace. */
-export function getWorkspaceLandingPath(claims: PolarisClaims, ws: WorkspaceContext): string {
+export function getWorkspaceLandingPath(_claims: PolarisClaims, ws: WorkspaceContext): string {
   switch (ws.type) {
     case "organisation": return `/dashboard/location/${ws.id}`;
-    case "vessel":       return `/dashboard/vessel/${ws.id}/${getDashboardType(claims.roleName)}`;
+    case "vessel":       return `/dashboard/vessel/${ws.id}`;
     case "module":       return getModulePath(ws.id);
     default:             return "/dashboard";
   }
 }
 
-/** Routes that actually exist today — keep in sync with claims.ts BUILT_ROUTES. */
-const BUILT_ROUTES = new Set<string>(["/dashboard"]);
-
-/** getWorkspaceLandingPath, but never returns a not-yet-built route (#139–#144). */
+/** getWorkspaceLandingPath, but never returns a not-yet-built route (#144+). */
 export function resolveWorkspaceLandingPath(claims: PolarisClaims, ws: WorkspaceContext): string {
   const target = getWorkspaceLandingPath(claims, ws);
-  return BUILT_ROUTES.has(target) ? target : "/dashboard";
+  return isBuiltRoute(target) ? target : "/dashboard";
 }
 
 /**
