@@ -202,7 +202,7 @@ export function CrewProfilePage() {
                 </span>
               </div>
               <dl className="mt-5 space-y-2.5 text-sm">
-                <Row label="Vessel" value={yachtName || "—"} />
+                <Row label="Vessel" value={yachtName || "—"} href={crew.yacht_id ? `/yachts/${crew.yacht_id}` : undefined} />
                 <Row label="Nationality" value={crew.nationality ?? "—"} />
                 <Row label="Date of birth" value={fmt(crew.date_of_birth)} />
                 <Row label="Gender" value={titleCase(crew.gender)} />
@@ -217,7 +217,7 @@ export function CrewProfilePage() {
             <div className="rounded-xl border border-border bg-card p-5 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.4)]">
               <h3 className="mb-3 flex items-center gap-2 font-display text-sm font-semibold"><BookUser className="h-4 w-4 text-primary" /> Travel Documents</h3>
               <dl className="space-y-2.5 text-sm">
-                <Row label="Passport no." value={crew.passport_number ?? passports[0]?.passport_number ?? "—"} mono />
+                <Row label="Passport no." value={crew.passport_number ?? passports[0]?.passport_number ?? "—"} mono href={`/crew-immigration/crew/add/${crew.id}/passport`} />
                 <Row label="Passport expiry" value={fmt(crew.passport_expiry_date ?? passports[0]?.expiry_date)} warn={isSoon(crew.passport_expiry_date ?? passports[0]?.expiry_date ?? null)} />
                 <Row label="Seaman's book" value={crew.seamans_book_number ?? "—"} mono />
                 <Row label="Book expiry" value={fmt(crew.seamans_book_expiry)} warn={isSoon(crew.seamans_book_expiry)} />
@@ -300,10 +300,28 @@ export function CrewProfilePage() {
               )}
             </Section>
 
-            {/* Documents */}
-            <Section icon={FileText} title="Documents" count={docs.length}>
-              {docs.length === 0 ? <Empty>No documents uploaded.</Empty> : (
+            {/* Documents — passport files (from crew_passports) + other crew documents */}
+            {(() => {
+              const pp: any = passports[0] ?? {};
+              const passportDocs: { label: string; url: string }[] = [
+                { label: "Passport — inside pages", url: pp.document_url },
+                { label: "Passport — front cover", url: pp.cover_url },
+                { label: "Headshot photo", url: pp.headshot_url },
+                ...(pp.crew_verification_letter_url
+                  ? [{ label: "Crew verification letter", url: pp.crew_verification_letter_url }]
+                  : [{ label: "Seaman's book", url: pp.seamans_book_url }]),
+              ].filter((d) => !!d.url);
+              const total = passportDocs.length + docs.length;
+              return (
+            <Section icon={FileText} title="Documents" count={total}>
+              {total === 0 ? <Empty>No documents uploaded.</Empty> : (
                 <div className="divide-y divide-border/50">
+                  {passportDocs.map((d) => (
+                    <div key={d.label} className="flex items-center gap-4 py-3">
+                      <div className="flex-1 text-sm font-medium">{d.label}</div>
+                      <DocLink stored={d.url} label="Open" />
+                    </div>
+                  ))}
                   {docs.map((d) => (
                     <div key={d.id} className="flex items-center gap-4 py-3">
                       <div className="flex-1">
@@ -318,6 +336,8 @@ export function CrewProfilePage() {
                 </div>
               )}
             </Section>
+              );
+            })()}
           </main>
         </div>
       </div>
@@ -325,11 +345,16 @@ export function CrewProfilePage() {
   );
 }
 
-function Row({ label, value, mono, warn }: { label: string; value: string; mono?: boolean; warn?: boolean }) {
+function Row({ label, value, mono, warn, href }: { label: string; value: string; mono?: boolean; warn?: boolean; href?: string }) {
+  const clickable = href && value && value !== "—";
   return (
     <div className="flex items-baseline justify-between gap-3">
       <dt className="text-[11px] uppercase tracking-wide text-muted-foreground/70">{label}</dt>
-      <dd className={cn("text-right text-sm", mono && "font-mono", warn && "text-amber-400")}>{value}</dd>
+      <dd className={cn("text-right text-sm", mono && "font-mono", warn && "text-amber-400")}>
+        {clickable
+          ? <Link to={href as any} className="text-primary hover:underline">{value}</Link>
+          : value}
+      </dd>
     </div>
   );
 }

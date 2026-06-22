@@ -118,25 +118,32 @@ async function uploadToFolders(
  * with HTTP 406/401). So we intercept the redirect and fetch the location clean.
  */
 async function convertItemToPdf(siteId: string, token: string, itemId: string): Promise<Uint8Array> {
-  const res = await fetch(
-    `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/items/${itemId}/content?format=pdf`,
-    { headers: { Authorization: `Bearer ${token}` }, redirect: "manual" },
-  );
-  if (res.status >= 300 && res.status < 400) {
-    const loc = res.headers.get("location");
-    if (!loc) throw new Error("Graph PDF conversion returned a redirect with no location");
-    const pdfRes = await fetch(loc); // pre-signed URL — no auth header
-    if (!pdfRes.ok) throw new Error(`Graph PDF download failed: HTTP ${pdfRes.status}`);
-    return new Uint8Array(await pdfRes.arrayBuffer());
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const url = `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/items/${itemId}/content?format=pdf`;
+  let lastErr = "";
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: "application/pdf" }, redirect: "manual" });
+    if (res.status >= 300 && res.status < 400) {
+      const loc = res.headers.get("location");
+      if (loc) {
+        const pdfRes = await fetch(loc, { headers: { Accept: "application/pdf" } }); // pre-signed — no auth
+        if (pdfRes.ok) return new Uint8Array(await pdfRes.arrayBuffer());
+        lastErr = `download HTTP ${pdfRes.status}: ${(await pdfRes.text().catch(() => "")).slice(0, 150)}`;
+      } else lastErr = "redirect with no location";
+    } else if (res.ok) {
+      return new Uint8Array(await res.arrayBuffer());
+    } else {
+      lastErr = `convert HTTP ${res.status}: ${(await res.text().catch(() => "")).slice(0, 150)}`;
+    }
+    await sleep(1500); // transient (file not ready / conversion warming up)
   }
-  if (res.ok) return new Uint8Array(await res.arrayBuffer());
-  throw new Error(`Graph PDF conversion failed: HTTP ${res.status}`);
+  throw new Error(`Graph PDF conversion failed — ${lastErr}`);
 }
 
 /** The full generate → upload → convert → store → write-back pipeline. */
 export async function generateCrewVerificationLetter(
   data: CrewVerificationData & { crewId: string; passportId: string },
-): Promise<{ pdfUrl: string }> {
+): Promise<{ pdfUrl: string; pdfWarning: string | null }> {
   const cfg = await getSpConfig();
   const token = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret);
   const siteId = await resolveSpSite(token, cfg.tenantUrl, cfg.siteUrl);
@@ -152,23 +159,36 @@ export async function generateCrewVerificationLetter(
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document", docx,
   );
 
-  // 2. Convert it to PDF via Graph, then 3. write the PDF back to the same folder.
-  const pdf = await convertItemToPdf(siteId, token, docItem.id);
-  const pdfName = `Crew Verification Letter ${stamp}.pdf`;
-  await uploadToFolders(siteId, token, folder, pdfName, "application/pdf", pdf);
+  // 2. Convert to PDF via Graph. If conversion fails (Graph can be picky about the
+  //    re-zipped .docx), fall back to serving the .docx so there's always a working
+  //    downloadable letter — and surface the PDF error for diagnosis.
+  const DOCX_CT = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  let bytes: Uint8Array = docx;
+  let ext = "docx";
+  let contentType = DOCX_CT;
+  let pdfWarning: string | null = null;
+  try {
+    bytes = await convertItemToPdf(siteId, token, docItem.id);
+    ext = "pdf";
+    contentType = "application/pdf";
+    await uploadToFolders(siteId, token, folder, `Crew Verification Letter ${stamp}.pdf`, "application/pdf", bytes);
+  } catch (e: any) {
+    pdfWarning = e?.message ?? "PDF conversion failed";
+    console.error("[crew-verification] PDF conversion failed, serving .docx:", pdfWarning);
+  }
 
-  // 4. Store the PDF in Supabase storage for in-app download.
-  const storagePath = `crew/${data.crewId}/crew-verification-${Date.now()}.pdf`;
+  // 3. Store in Supabase storage for in-app download.
+  const storagePath = `crew/${data.crewId}/crew-verification-${Date.now()}.${ext}`;
   const { error: upErr } = await supabaseAdmin.storage
-    .from("permit-documents").upload(storagePath, pdf, { upsert: true, contentType: "application/pdf" });
+    .from("permit-documents").upload(storagePath, bytes, { upsert: true, contentType });
   if (upErr) throw new Error(`Storage upload failed: ${upErr.message}`);
-  const pdfUrl = supabaseAdmin.storage.from("permit-documents").getPublicUrl(storagePath).data.publicUrl;
+  const fileUrl = supabaseAdmin.storage.from("permit-documents").getPublicUrl(storagePath).data.publicUrl;
 
-  // 5. Save the URL onto the passport so the UI download slot appears.
+  // 4. Save the URL onto the passport so the UI download slot appears.
   await (supabaseAdmin as any).from("crew_passports")
-    .update({ crew_verification_letter_url: pdfUrl }).eq("id", data.passportId);
+    .update({ crew_verification_letter_url: fileUrl }).eq("id", data.passportId);
 
-  return { pdfUrl };
+  return { pdfUrl: fileUrl, pdfWarning };
 }
 
 /**
@@ -198,12 +218,21 @@ export async function crewVerificationHandler(request: Request): Promise<Respons
         .from("yachts").select("official_no").ilike("vessel_name", d.vesselName).maybeSingle();
       officialNo = y?.official_no ?? "";
     }
-    const { pdfUrl } = await generateCrewVerificationLetter({
+    const { pdfUrl, pdfWarning } = await generateCrewVerificationLetter({
       crewId: d.crewId, passportId: d.passportId,
       fullName: d.fullName ?? "", passportNumber: d.passportNumber ?? "", nationality: d.nationality ?? "",
       vesselName: d.vesselName, officialNo,
     });
-    return json({ ok: true, pdfUrl });
+    // If PDF conversion fell back to .docx, log the reason so it's diagnosable.
+    if (pdfWarning) {
+      try {
+        await (supabaseAdmin as any).from("client_logs").insert({
+          level: "warn", message: `Crew verification letter served as .docx (PDF conversion failed): ${pdfWarning}`,
+          source: "api/crew/verification-letter", user_id: user.id, user_email: user.email ?? null,
+        });
+      } catch { /* non-fatal */ }
+    }
+    return json({ ok: true, pdfUrl, pdfWarning });
   } catch (e: any) {
     const msg = e?.message ?? "Generation failed";
     // Surface server-side failures in the Error & Warning Log for diagnosis.
