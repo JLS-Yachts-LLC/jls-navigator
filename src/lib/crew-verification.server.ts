@@ -188,6 +188,30 @@ export async function generateCrewVerificationLetter(
   await (supabaseAdmin as any).from("crew_passports")
     .update({ crew_verification_letter_url: fileUrl }).eq("id", data.passportId);
 
+  // 5. Also file the passport documents into the same SharePoint crew folder, so
+  //    the folder holds the full set (cover, inside pages, headshot, seaman's book).
+  //    Best-effort — never fail the letter over a doc push.
+  try {
+    const { data: pp } = await (supabaseAdmin as any)
+      .from("crew_passports").select("document_url, cover_url, headshot_url, seamans_book_url").eq("id", data.passportId).maybeSingle();
+    const extFromUrl = (u: string) => (u.split("?")[0].split(".").pop() || "bin").slice(0, 5);
+    const pushes: { label: string; url: string | null }[] = [
+      { label: "Passport - Front Cover", url: pp?.cover_url },
+      { label: "Passport - Inside Pages", url: pp?.document_url },
+      { label: "Headshot", url: pp?.headshot_url },
+      { label: "Seamans Book", url: pp?.seamans_book_url },
+    ];
+    for (const p of pushes) {
+      if (!p.url) continue;
+      const r = await fetch(p.url);
+      if (!r.ok) continue;
+      const ct = r.headers.get("content-type") ?? "application/octet-stream";
+      await uploadToFolders(siteId, token, folder, `${p.label}.${extFromUrl(p.url)}`, ct, new Uint8Array(await r.arrayBuffer()));
+    }
+  } catch (e) {
+    console.error("[crew-verification] passport doc push to SharePoint failed:", e);
+  }
+
   return { pdfUrl: fileUrl, pdfWarning };
 }
 
