@@ -30,6 +30,7 @@ import { adminPermissionsHandler } from './routes/api.admin.permissions'
 import { adminAuditHandler } from './routes/api.admin.audit'
 import { adminAuditExportHandler } from './routes/api.admin.audit.export'
 import { movementsNotifyHandler } from './routes/api.movements.notify'
+import { movementReportsHandler, runWeeklyImmigrationReports } from './routes/api.movements.reports'
 import { runVisaExpiryFlagJob } from './lib/visa/visaExpiryFlags.server'
 
 const handleRequest = createStartHandler(defaultStreamHandler)
@@ -283,6 +284,9 @@ export default {
     if (url.pathname === '/api/movements/notify' && request.method === 'POST') {
       return movementsNotifyHandler(request)
     }
+    if (url.pathname.startsWith('/api/reports/') && request.method === 'GET') {
+      return movementReportsHandler(request)
+    }
 
     return handleRequest(request, env, ctx)
   },
@@ -355,6 +359,16 @@ export default {
         .then(({ matched, updated }) => console.log(`[vesselfinder-cron] matched=${matched} updated=${updated}`))
         .catch((e) => console.error('[vesselfinder-cron] error:', e))
     )
+
+    // Weekly immigration digest — Monday 07:00 GST (03:00 UTC). Emails ops/visa
+    // a summary of this week's planned sign-ons / sign-offs + report links.
+    if (utcHour === 3 && new Date().getUTCDay() === 1 && new Date().getUTCMinutes() < 15) {
+      ctx.waitUntil(
+        runWeeklyImmigrationReports()
+          .then((r) => console.log(`[weekly-immigration] on=${r.signOn} off=${r.signOff} sent=${r.sent}`))
+          .catch((e) => console.error('[weekly-immigration] error:', e))
+      )
+    }
 
     // Run UAE visa expiry-flag engine once daily at 03:00 UTC (07:00 UAE time).
     // Fires 30-calendar-day, 10-working-day and 5-working-day flags + notifications.
