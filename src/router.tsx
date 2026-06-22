@@ -1,8 +1,28 @@
 import { createRouter, useRouter } from "@tanstack/react-router";
+import { useEffect } from "react";
 import { routeTree } from "./routeTree.gen";
+import { supabase } from "@/integrations/supabase/client";
+import { getCapturedLog } from "@/lib/action-log";
 
 function DefaultErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   const router = useRouter();
+
+  // Capture render/route crashes (React error boundary) into the Error & Warning
+  // Log — window.onerror doesn't catch these, so they were previously invisible.
+  useEffect(() => {
+    try {
+      const log = getCapturedLog();
+      void (supabase as any).from("client_logs").insert({
+        level: "error",
+        message: `Render error: ${error?.message ?? String(error)}`,
+        stack: error?.stack ? String(error.stack).slice(0, 6000) : null,
+        source: "error-boundary",
+        url: log.url || (typeof window !== "undefined" ? window.location.href : null),
+        user_agent: log.userAgent || null,
+        breadcrumbs: log.actions.slice(-12),
+      });
+    } catch { /* never throw from the error UI */ }
+  }, [error]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -27,7 +47,7 @@ function DefaultErrorComponent({ error, reset }: { error: Error; reset: () => vo
         <p className="mt-2 text-sm text-muted-foreground">
           An unexpected error occurred. Please try again.
         </p>
-        {import.meta.env.DEV && error.message && (
+        {error.message && (
           <pre className="mt-4 max-h-40 overflow-auto rounded-md bg-muted p-3 text-left font-mono text-xs text-destructive">
             {error.message}
           </pre>
