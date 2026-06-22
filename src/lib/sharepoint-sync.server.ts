@@ -137,6 +137,23 @@ export async function deleteSpSync(id: string): Promise<void> {
  * lists at once exceeds it). Self-fetch fan-out isn't an option: Cloudflare
  * blocks a Worker from fetching its own zone.
  */
+/**
+ * Force a full re-pull on the next sync of every enabled list by clearing its
+ * delta token. Used by the daily refresh cron so mapping/data changes (and any
+ * SharePoint edits delta might have missed) are guaranteed to land each day.
+ * The actual re-pull is carried out by the rotating syncStalestList() ticks,
+ * which keeps each invocation within Cloudflare's subrequest budget.
+ */
+export async function resetDeltaTokens(): Promise<number> {
+  const { data, error } = await supabaseAdmin
+    .from('sharepoint_sync_configs')
+    .update({ delta_token: null } as never)
+    .eq('enabled', true)
+    .select('id')
+  if (error) { console.error('[sp] resetDeltaTokens error:', error.message); return 0 }
+  return data?.length ?? 0
+}
+
 export async function syncStalestList(): Promise<{ name: string; synced: number; errors: number } | null> {
   const syncs = (await getSpSyncs()).filter(s => s.enabled)
   if (!syncs.length) return null

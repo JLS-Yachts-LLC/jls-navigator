@@ -1,5 +1,5 @@
 import { createStartHandler, defaultStreamHandler } from '@tanstack/react-start/server'
-import { syncFromSharePoint, downloadPendingImages, pushChangedRecords, discoverSharePoint, syncById, getSpSyncs, syncStalestList, setupSignonList } from './lib/sharepoint-sync.server'
+import { syncFromSharePoint, downloadPendingImages, pushChangedRecords, discoverSharePoint, syncById, getSpSyncs, syncStalestList, setupSignonList, resetDeltaTokens } from './lib/sharepoint-sync.server'
 import { syncAisPositions } from './lib/aisstream.server'
 import { runExpiryAlerts } from './lib/permit-expiry-cron.server'
 import { syncFleetPositions } from './lib/mygps.server'
@@ -269,6 +269,19 @@ export default {
     }
 
     if (!isQuarterly) return;
+
+    // ── Daily full refresh (02:00 UTC tick): clear all delta tokens so every
+    //    enabled list does a complete re-pull today. The rotating syncStalestList()
+    //    ticks below then carry it out one list at a time (subrequest-safe), and
+    //    downloadPendingImages() refreshes any missing vessel images. This guards
+    //    against delta sync never backfilling mapping/data changes. ──
+    if (utcHour === 2 && new Date().getUTCMinutes() < 15) {
+      ctx.waitUntil(
+        resetDeltaTokens()
+          .then((n) => console.log(`[sp-daily-refresh] full re-pull queued for ${n} list(s)`))
+          .catch((e) => console.error('[sp-daily-refresh] error:', e))
+      )
+    }
 
     // ── Every 15 min: pull SharePoint changes IN, ONE list per tick ──
     // All lists at once exceeds Cloudflare's per-invocation subrequest limit, and
