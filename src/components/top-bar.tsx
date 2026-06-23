@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
-import { useViewAsRole, setViewAsRole, useCanImpersonate, VIEW_AS_OPTIONS, ROLE_LABEL } from "@/lib/view-as";
+import { useViewAsRole, useViewAsLabel, setViewAsRole, useCanImpersonate, VIEW_AS_OPTIONS, ROLE_LABEL } from "@/lib/view-as";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
   DropdownMenuSeparator, DropdownMenuTrigger,
@@ -103,47 +103,120 @@ function OnlineUsers() {
   );
 }
 
-// Admin-only "View as" control — preview the app as a client/crew role.
+// Admin-only "View as" control — preview the app as a role, or as a specific user.
 function ViewAsSwitcher() {
   const canImpersonate = useCanImpersonate();
+  const { session } = useAuth();
   const viewAs = useViewAsRole();
+  const viewLabel = useViewAsLabel();
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const [results, setResults] = useState<any[]>([]);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Close on outside click.
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+
+  // Debounced user search via the admin endpoint (RLS blocks client-side listing).
+  useEffect(() => {
+    const term = q.trim();
+    if (!term) { setResults([]); return; }
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/admin/users?search=${encodeURIComponent(term)}&pageSize=8`, {
+          headers: { Authorization: `Bearer ${(session as any)?.access_token ?? ""}` },
+        });
+        const j = await res.json();
+        setResults(j.users ?? []);
+      } catch { setResults([]); }
+    }, 250);
+    return () => clearTimeout(t);
+  }, [q, session]);
+
   if (!canImpersonate) return null;
   const active = !!viewAs;
+
+  function selectRole(role: string | null, label?: string | null) {
+    setViewAsRole(role, label);
+    setOpen(false); setQ(""); setResults([]);
+  }
+
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          className={cn(
-            "flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-sm transition",
-            active
-              ? "bg-amber-500/15 text-amber-500 ring-1 ring-amber-500/30"
-              : "text-muted-foreground hover:bg-accent hover:text-foreground",
-          )}
-          title="Preview the app as a client"
-        >
-          <Eye className="h-[17px] w-[17px]" />
-          <span className="hidden text-xs font-semibold md:inline">{active ? ROLE_LABEL[viewAs] ?? "Client" : "View as"}</span>
-          <ChevronDown className="h-3.5 w-3.5 opacity-60" />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-60">
-        <DropdownMenuLabel>Impersonate view</DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => setViewAsRole(null)} className="gap-2">
-          <ShieldCheck className="h-4 w-4 text-primary" />
-          <span className="flex-1">Admin (full access)</span>
-          {!active && <Check className="h-3.5 w-3.5 text-primary" />}
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        {VIEW_AS_OPTIONS.map((o) => (
-          <DropdownMenuItem key={o.role} onClick={() => setViewAsRole(o.role)} className="gap-2">
-            <UserCircle2 className="h-4 w-4 text-muted-foreground" />
-            <span className="flex-1">{o.label}</span>
-            {viewAs === o.role && <Check className="h-3.5 w-3.5 text-primary" />}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className={cn(
+          "flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-sm transition",
+          active ? "bg-amber-500/15 text-amber-500 ring-1 ring-amber-500/30" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+        )}
+        title="Preview the app as another role or user"
+      >
+        <Eye className="h-[17px] w-[17px]" />
+        <span className="hidden max-w-[160px] truncate text-xs font-semibold md:inline">
+          {active ? (viewLabel ?? ROLE_LABEL[viewAs] ?? "Preview") : "View as"}
+        </span>
+        <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 z-50 mt-1 w-72 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-lg">
+          <div className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Preview as</div>
+
+          <button onClick={() => selectRole(null)} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent">
+            <ShieldCheck className="h-4 w-4 text-primary" />
+            <span className="flex-1 text-left">Admin (full access)</span>
+            {!active && <Check className="h-3.5 w-3.5 text-primary" />}
+          </button>
+
+          <div className="my-1 border-t border-border" />
+          {VIEW_AS_OPTIONS.map((o) => (
+            <button key={o.role} onClick={() => selectRole(o.role)} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent">
+              <UserCircle2 className="h-4 w-4 text-muted-foreground" />
+              <span className="flex-1 text-left">{o.label}</span>
+              {viewAs === o.role && !viewLabel && <Check className="h-3.5 w-3.5 text-primary" />}
+            </button>
+          ))}
+
+          <div className="my-1 border-t border-border" />
+          <div className="px-1 pb-1">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/50" />
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Preview as a specific user…"
+                className="w-full rounded-md border border-border bg-background py-1.5 pl-7 pr-2 text-xs text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-primary/40"
+              />
+            </div>
+            <div className="mt-1 max-h-48 overflow-auto">
+              {results.map((u) => {
+                const label = u.user?.email ?? u.user_id;
+                return (
+                  <button key={u.id} onClick={() => selectRole(u.role, label)} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-accent">
+                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-[9px] font-bold text-muted-foreground">
+                      {String(label).slice(0, 2).toUpperCase()}
+                    </div>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[12px] text-foreground">{label}</span>
+                      <span className="block text-[10px] capitalize text-muted-foreground">{(u.role ?? "").replace(/_/g, " ") || "no role"}</span>
+                    </span>
+                    {viewLabel === label && <Check className="h-3.5 w-3.5 text-primary" />}
+                  </button>
+                );
+              })}
+              {q.trim() && results.length === 0 && (
+                <p className="px-2 py-2 text-center text-[11px] text-muted-foreground">No matching users</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

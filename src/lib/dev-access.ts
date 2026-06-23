@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { DEVELOPER_EMAILS } from "@/lib/leo-access";
+import { useViewAsRole } from "@/lib/view-as";
 
 export type DevUser = { user_id: string; note: string | null; granted_at: string };
 
@@ -17,8 +18,13 @@ const DEV_ACCESS_ROLES = ["global_admin", "org_admin", "platform_owner", "develo
  */
 export function useDevAccess(): boolean {
   const { user } = useAuth();
+  const viewAs = useViewAsRole();
   const email = (user?.email ?? "").toLowerCase().trim();
   const isDevEmail = !!email && DEVELOPER_EMAILS.includes(email);
+
+  // When previewing as a non-admin role, suppress dev access so the preview
+  // matches what that user would actually see (Beta/Live only, no Dev).
+  const previewSuppressesDev = !!viewAs && !DEV_ACCESS_ROLES.includes(viewAs);
 
   const { data: granted = false } = useQuery({
     queryKey: ["dev-access", user?.id],
@@ -35,7 +41,7 @@ export function useDevAccess(): boolean {
     },
   });
 
-  return isDevEmail || granted;
+  return previewSuppressesDev ? false : (isDevEmail || granted);
 }
 
 export function useDevUsers() {
