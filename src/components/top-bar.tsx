@@ -3,7 +3,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import {
-  Search, Bell, LogOut, Settings, UserCircle2, Ship, Loader2, ChevronDown, X, Sun, Moon, Users, Eye, Check, ShieldCheck,
+  Search, LogOut, Settings, UserCircle2, Ship, Loader2, ChevronDown, X, Sun, Moon, Users, Eye, Check, ShieldCheck,
 } from "lucide-react";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
@@ -13,6 +13,7 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { FeedbackWidget } from "@/components/feedback/feedback-widget";
+import { NotificationBell } from "@/components/notifications/NotificationBell";
 
 type SearchResult = {
   kind: "yacht" | "crew";
@@ -270,9 +271,7 @@ export function TopBar() {
         </button>
 
         {/* Notifications */}
-        <button className="relative flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground transition" title="Notifications">
-          <Bell className="h-[18px] w-[18px]" />
-        </button>
+        <NotificationBell />
 
         {/* User menu */}
         <DropdownMenu>
