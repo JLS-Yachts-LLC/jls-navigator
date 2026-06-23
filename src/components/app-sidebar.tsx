@@ -57,6 +57,7 @@ const NAV: NavItem[] = [
       { label: "Vessel Overview",       to: "/yachts",               icon: Ship, flagKey: "vessel-overview" },
       { label: "Live Tracking",         to: "/my-fleet",             icon: Navigation, flagKey: "my-fleet" },
       { label: "Statutory Documents",   to: "/esign",                icon: FileSignature, flagKey: "statutory-docs" },
+      { label: "Service Requests",      to: "/orbit/requests",       icon: Cog, flagKey: "operations" },
       { label: "Maintenance",           to: "/orbit/maintenance",    icon: Wrench, flagKey: "maintenance" },
       { label: "Compliance",            to: "/orbit/defects",        icon: ShieldCheck, flagKey: "compliance" },
       { label: "Emergency Contacts",    to: "/emergency-contacts",   icon: IdCard, flagKey: "emergency-contacts" },

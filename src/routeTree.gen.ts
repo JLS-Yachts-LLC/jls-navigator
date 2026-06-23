@@ -85,6 +85,7 @@ import { Route as AppPermitsCommandCentreRouteImport } from './routes/_app.permi
 import { Route as AppPermitsAbuDhabiRouteImport } from './routes/_app.permits.abu-dhabi'
 import { Route as AppPackagesDriversRouteImport } from './routes/_app.packages.drivers'
 import { Route as AppPackagesDeliveriesRouteImport } from './routes/_app.packages.deliveries'
+import { Route as AppOrbitRequestsRouteImport } from './routes/_app.orbit.requests'
 import { Route as AppOrbitMaintenanceRouteImport } from './routes/_app.orbit.maintenance'
 import { Route as AppOrbitDefectsRouteImport } from './routes/_app.orbit.defects'
 import { Route as AppOrbitProjectIdRouteImport } from './routes/_app.orbit.$projectId'
@@ -105,9 +106,11 @@ import { Route as AppAdminUsersRouteImport } from './routes/_app.admin.users'
 import { Route as AppAdminPermissionsRouteImport } from './routes/_app.admin.permissions'
 import { Route as AppAdminOrganisationsRouteImport } from './routes/_app.admin.organisations'
 import { Route as AppAdminAuditRouteImport } from './routes/_app.admin.audit'
+import { Route as AppOrbitRequestsIndexRouteImport } from './routes/_app.orbit.requests.index'
 import { Route as AppGuidesDepartmentIndexRouteImport } from './routes/_app.guides.$department.index'
 import { Route as AppCrewImmigrationVisasIndexRouteImport } from './routes/_app.crew-immigration.visas.index'
 import { Route as AppCrewImmigrationCrewIndexRouteImport } from './routes/_app.crew-immigration.crew.index'
+import { Route as AppOrbitRequestsIdRouteImport } from './routes/_app.orbit.requests.$id'
 import { Route as AppGuidesDepartmentGuideIdRouteImport } from './routes/_app.guides.$department.$guideId'
 import { Route as AppDashboardVesselVesselIdRouteImport } from './routes/_app.dashboard.vessel.$vesselId'
 import { Route as AppDashboardLocationLocationIdRouteImport } from './routes/_app.dashboard.location.$locationId'
@@ -506,6 +509,11 @@ const AppPackagesDeliveriesRoute = AppPackagesDeliveriesRouteImport.update({
   path: '/deliveries',
   getParentRoute: () => AppPackagesRoute,
 } as any)
+const AppOrbitRequestsRoute = AppOrbitRequestsRouteImport.update({
+  id: '/requests',
+  path: '/requests',
+  getParentRoute: () => AppOrbitRoute,
+} as any)
 const AppOrbitMaintenanceRoute = AppOrbitMaintenanceRouteImport.update({
   id: '/maintenance',
   path: '/maintenance',
@@ -610,6 +618,11 @@ const AppAdminAuditRoute = AppAdminAuditRouteImport.update({
   path: '/audit',
   getParentRoute: () => AppAdminRoute,
 } as any)
+const AppOrbitRequestsIndexRoute = AppOrbitRequestsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppOrbitRequestsRoute,
+} as any)
 const AppGuidesDepartmentIndexRoute =
   AppGuidesDepartmentIndexRouteImport.update({
     id: '/',
@@ -628,6 +641,11 @@ const AppCrewImmigrationCrewIndexRoute =
     path: '/',
     getParentRoute: () => AppCrewImmigrationCrewRoute,
   } as any)
+const AppOrbitRequestsIdRoute = AppOrbitRequestsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AppOrbitRequestsRoute,
+} as any)
 const AppGuidesDepartmentGuideIdRoute =
   AppGuidesDepartmentGuideIdRouteImport.update({
     id: '/$guideId',
@@ -769,6 +787,7 @@ export interface FileRoutesByFullPath {
   '/orbit/$projectId': typeof AppOrbitProjectIdRoute
   '/orbit/defects': typeof AppOrbitDefectsRoute
   '/orbit/maintenance': typeof AppOrbitMaintenanceRoute
+  '/orbit/requests': typeof AppOrbitRequestsRouteWithChildren
   '/packages/deliveries': typeof AppPackagesDeliveriesRoute
   '/packages/drivers': typeof AppPackagesDriversRoute
   '/permits/abu-dhabi': typeof AppPermitsAbuDhabiRoute
@@ -814,9 +833,11 @@ export interface FileRoutesByFullPath {
   '/dashboard/location/$locationId': typeof AppDashboardLocationLocationIdRoute
   '/dashboard/vessel/$vesselId': typeof AppDashboardVesselVesselIdRoute
   '/guides/$department/$guideId': typeof AppGuidesDepartmentGuideIdRoute
+  '/orbit/requests/$id': typeof AppOrbitRequestsIdRoute
   '/crew-immigration/crew/': typeof AppCrewImmigrationCrewIndexRoute
   '/crew-immigration/visas/': typeof AppCrewImmigrationVisasIndexRoute
   '/guides/$department/': typeof AppGuidesDepartmentIndexRoute
+  '/orbit/requests/': typeof AppOrbitRequestsIndexRoute
   '/crew-immigration/visas/info/$countryCode': typeof AppCrewImmigrationVisasInfoCountryCodeRoute
   '/crew-immigration/crew/add/$crewMemberId/passport': typeof AppCrewImmigrationCrewAddCrewMemberIdPassportRoute
 }
@@ -914,9 +935,11 @@ export interface FileRoutesByTo {
   '/dashboard/location/$locationId': typeof AppDashboardLocationLocationIdRoute
   '/dashboard/vessel/$vesselId': typeof AppDashboardVesselVesselIdRoute
   '/guides/$department/$guideId': typeof AppGuidesDepartmentGuideIdRoute
+  '/orbit/requests/$id': typeof AppOrbitRequestsIdRoute
   '/crew-immigration/crew': typeof AppCrewImmigrationCrewIndexRoute
   '/crew-immigration/visas': typeof AppCrewImmigrationVisasIndexRoute
   '/guides/$department': typeof AppGuidesDepartmentIndexRoute
+  '/orbit/requests': typeof AppOrbitRequestsIndexRoute
   '/crew-immigration/visas/info/$countryCode': typeof AppCrewImmigrationVisasInfoCountryCodeRoute
   '/crew-immigration/crew/add/$crewMemberId/passport': typeof AppCrewImmigrationCrewAddCrewMemberIdPassportRoute
 }
@@ -984,6 +1007,7 @@ export interface FileRoutesById {
   '/_app/orbit/$projectId': typeof AppOrbitProjectIdRoute
   '/_app/orbit/defects': typeof AppOrbitDefectsRoute
   '/_app/orbit/maintenance': typeof AppOrbitMaintenanceRoute
+  '/_app/orbit/requests': typeof AppOrbitRequestsRouteWithChildren
   '/_app/packages/deliveries': typeof AppPackagesDeliveriesRoute
   '/_app/packages/drivers': typeof AppPackagesDriversRoute
   '/_app/permits/abu-dhabi': typeof AppPermitsAbuDhabiRoute
@@ -1029,9 +1053,11 @@ export interface FileRoutesById {
   '/_app/dashboard/location/$locationId': typeof AppDashboardLocationLocationIdRoute
   '/_app/dashboard/vessel/$vesselId': typeof AppDashboardVesselVesselIdRoute
   '/_app/guides/$department/$guideId': typeof AppGuidesDepartmentGuideIdRoute
+  '/_app/orbit/requests/$id': typeof AppOrbitRequestsIdRoute
   '/_app/crew-immigration/crew/': typeof AppCrewImmigrationCrewIndexRoute
   '/_app/crew-immigration/visas/': typeof AppCrewImmigrationVisasIndexRoute
   '/_app/guides/$department/': typeof AppGuidesDepartmentIndexRoute
+  '/_app/orbit/requests/': typeof AppOrbitRequestsIndexRoute
   '/_app/crew-immigration/visas/info/$countryCode': typeof AppCrewImmigrationVisasInfoCountryCodeRoute
   '/_app/crew-immigration/crew/add/$crewMemberId/passport': typeof AppCrewImmigrationCrewAddCrewMemberIdPassportRoute
 }
@@ -1099,6 +1125,7 @@ export interface FileRouteTypes {
     | '/orbit/$projectId'
     | '/orbit/defects'
     | '/orbit/maintenance'
+    | '/orbit/requests'
     | '/packages/deliveries'
     | '/packages/drivers'
     | '/permits/abu-dhabi'
@@ -1144,9 +1171,11 @@ export interface FileRouteTypes {
     | '/dashboard/location/$locationId'
     | '/dashboard/vessel/$vesselId'
     | '/guides/$department/$guideId'
+    | '/orbit/requests/$id'
     | '/crew-immigration/crew/'
     | '/crew-immigration/visas/'
     | '/guides/$department/'
+    | '/orbit/requests/'
     | '/crew-immigration/visas/info/$countryCode'
     | '/crew-immigration/crew/add/$crewMemberId/passport'
   fileRoutesByTo: FileRoutesByTo
@@ -1244,9 +1273,11 @@ export interface FileRouteTypes {
     | '/dashboard/location/$locationId'
     | '/dashboard/vessel/$vesselId'
     | '/guides/$department/$guideId'
+    | '/orbit/requests/$id'
     | '/crew-immigration/crew'
     | '/crew-immigration/visas'
     | '/guides/$department'
+    | '/orbit/requests'
     | '/crew-immigration/visas/info/$countryCode'
     | '/crew-immigration/crew/add/$crewMemberId/passport'
   id:
@@ -1313,6 +1344,7 @@ export interface FileRouteTypes {
     | '/_app/orbit/$projectId'
     | '/_app/orbit/defects'
     | '/_app/orbit/maintenance'
+    | '/_app/orbit/requests'
     | '/_app/packages/deliveries'
     | '/_app/packages/drivers'
     | '/_app/permits/abu-dhabi'
@@ -1358,9 +1390,11 @@ export interface FileRouteTypes {
     | '/_app/dashboard/location/$locationId'
     | '/_app/dashboard/vessel/$vesselId'
     | '/_app/guides/$department/$guideId'
+    | '/_app/orbit/requests/$id'
     | '/_app/crew-immigration/crew/'
     | '/_app/crew-immigration/visas/'
     | '/_app/guides/$department/'
+    | '/_app/orbit/requests/'
     | '/_app/crew-immigration/visas/info/$countryCode'
     | '/_app/crew-immigration/crew/add/$crewMemberId/passport'
   fileRoutesById: FileRoutesById
@@ -1906,6 +1940,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppPackagesDeliveriesRouteImport
       parentRoute: typeof AppPackagesRoute
     }
+    '/_app/orbit/requests': {
+      id: '/_app/orbit/requests'
+      path: '/requests'
+      fullPath: '/orbit/requests'
+      preLoaderRoute: typeof AppOrbitRequestsRouteImport
+      parentRoute: typeof AppOrbitRoute
+    }
     '/_app/orbit/maintenance': {
       id: '/_app/orbit/maintenance'
       path: '/maintenance'
@@ -2046,6 +2087,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAdminAuditRouteImport
       parentRoute: typeof AppAdminRoute
     }
+    '/_app/orbit/requests/': {
+      id: '/_app/orbit/requests/'
+      path: '/'
+      fullPath: '/orbit/requests/'
+      preLoaderRoute: typeof AppOrbitRequestsIndexRouteImport
+      parentRoute: typeof AppOrbitRequestsRoute
+    }
     '/_app/guides/$department/': {
       id: '/_app/guides/$department/'
       path: '/'
@@ -2066,6 +2114,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/crew-immigration/crew/'
       preLoaderRoute: typeof AppCrewImmigrationCrewIndexRouteImport
       parentRoute: typeof AppCrewImmigrationCrewRoute
+    }
+    '/_app/orbit/requests/$id': {
+      id: '/_app/orbit/requests/$id'
+      path: '/$id'
+      fullPath: '/orbit/requests/$id'
+      preLoaderRoute: typeof AppOrbitRequestsIdRouteImport
+      parentRoute: typeof AppOrbitRequestsRoute
     }
     '/_app/guides/$department/$guideId': {
       id: '/_app/guides/$department/$guideId'
@@ -2352,10 +2407,24 @@ const AppItTicketsRouteWithChildren = AppItTicketsRoute._addFileChildren(
   AppItTicketsRouteChildren,
 )
 
+interface AppOrbitRequestsRouteChildren {
+  AppOrbitRequestsIdRoute: typeof AppOrbitRequestsIdRoute
+  AppOrbitRequestsIndexRoute: typeof AppOrbitRequestsIndexRoute
+}
+
+const AppOrbitRequestsRouteChildren: AppOrbitRequestsRouteChildren = {
+  AppOrbitRequestsIdRoute: AppOrbitRequestsIdRoute,
+  AppOrbitRequestsIndexRoute: AppOrbitRequestsIndexRoute,
+}
+
+const AppOrbitRequestsRouteWithChildren =
+  AppOrbitRequestsRoute._addFileChildren(AppOrbitRequestsRouteChildren)
+
 interface AppOrbitRouteChildren {
   AppOrbitProjectIdRoute: typeof AppOrbitProjectIdRoute
   AppOrbitDefectsRoute: typeof AppOrbitDefectsRoute
   AppOrbitMaintenanceRoute: typeof AppOrbitMaintenanceRoute
+  AppOrbitRequestsRoute: typeof AppOrbitRequestsRouteWithChildren
   AppOrbitIndexRoute: typeof AppOrbitIndexRoute
 }
 
@@ -2363,6 +2432,7 @@ const AppOrbitRouteChildren: AppOrbitRouteChildren = {
   AppOrbitProjectIdRoute: AppOrbitProjectIdRoute,
   AppOrbitDefectsRoute: AppOrbitDefectsRoute,
   AppOrbitMaintenanceRoute: AppOrbitMaintenanceRoute,
+  AppOrbitRequestsRoute: AppOrbitRequestsRouteWithChildren,
   AppOrbitIndexRoute: AppOrbitIndexRoute,
 }
 
