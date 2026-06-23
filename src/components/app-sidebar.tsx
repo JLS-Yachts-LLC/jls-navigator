@@ -8,7 +8,7 @@ import {
   FileText, Wrench, UtensilsCrossed, Cpu, IdCard, Boxes, Cog, ClipboardList,
   Globe, Headset, BookOpen, FileSignature, KeyRound, Zap, Radio,
   Wallet, Receipt, TrendingUp, PiggyBank, FolderOpen, Award, Download,
-  MessageSquare, Lightbulb, BotMessageSquare, PenLine, Fuel,
+  MessageSquare, Lightbulb, BotMessageSquare, PenLine, Fuel, Contact,
 } from "lucide-react";
 import { Rocket, Plug } from "lucide-react";
 import { AdminSidebarSection } from "@/components/admin/AdminSidebarSection";
@@ -165,7 +165,15 @@ const NAV: NavItem[] = [
     ],
   },
 
-  // 9 ─── DEV (only visible to viewers with dev access)
+  // 9 ─── TEAM DIRECTORY  (visible to all authenticated users once promoted)
+  {
+    label: "Directory",
+    to: "/directory",
+    icon: Contact,
+    flagKey: "directory",
+  },
+
+  // 10 ─── DEV (only visible to viewers with dev access)
   {
     label: "Developer",
     icon: Rocket,

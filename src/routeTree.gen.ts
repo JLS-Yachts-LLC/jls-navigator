@@ -37,6 +37,7 @@ import { Route as AppFeedbackRouteImport } from './routes/_app.feedback'
 import { Route as AppEsignRouteImport } from './routes/_app.esign'
 import { Route as AppErrorLogRouteImport } from './routes/_app.error-log'
 import { Route as AppEmergencyContactsRouteImport } from './routes/_app.emergency-contacts'
+import { Route as AppDirectoryRouteImport } from './routes/_app.directory'
 import { Route as AppDirectorRouteImport } from './routes/_app.director'
 import { Route as AppDevSettingsRouteImport } from './routes/_app.dev-settings'
 import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
@@ -258,6 +259,11 @@ const AppErrorLogRoute = AppErrorLogRouteImport.update({
 const AppEmergencyContactsRoute = AppEmergencyContactsRouteImport.update({
   id: '/emergency-contacts',
   path: '/emergency-contacts',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppDirectoryRoute = AppDirectoryRouteImport.update({
+  id: '/directory',
+  path: '/directory',
   getParentRoute: () => AppRoute,
 } as any)
 const AppDirectorRoute = AppDirectorRouteImport.update({
@@ -710,6 +716,7 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof AppDashboardRouteWithChildren
   '/dev-settings': typeof AppDevSettingsRoute
   '/director': typeof AppDirectorRoute
+  '/directory': typeof AppDirectoryRoute
   '/emergency-contacts': typeof AppEmergencyContactsRoute
   '/error-log': typeof AppErrorLogRoute
   '/esign': typeof AppEsignRouteWithChildren
@@ -819,6 +826,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof AppDashboardRouteWithChildren
   '/dev-settings': typeof AppDevSettingsRoute
   '/director': typeof AppDirectorRoute
+  '/directory': typeof AppDirectoryRoute
   '/emergency-contacts': typeof AppEmergencyContactsRoute
   '/error-log': typeof AppErrorLogRoute
   '/feedback': typeof AppFeedbackRoute
@@ -921,6 +929,7 @@ export interface FileRoutesById {
   '/_app/dashboard': typeof AppDashboardRouteWithChildren
   '/_app/dev-settings': typeof AppDevSettingsRoute
   '/_app/director': typeof AppDirectorRoute
+  '/_app/directory': typeof AppDirectoryRoute
   '/_app/emergency-contacts': typeof AppEmergencyContactsRoute
   '/_app/error-log': typeof AppErrorLogRoute
   '/_app/esign': typeof AppEsignRouteWithChildren
@@ -1034,6 +1043,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/dev-settings'
     | '/director'
+    | '/directory'
     | '/emergency-contacts'
     | '/error-log'
     | '/esign'
@@ -1143,6 +1153,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/dev-settings'
     | '/director'
+    | '/directory'
     | '/emergency-contacts'
     | '/error-log'
     | '/feedback'
@@ -1244,6 +1255,7 @@ export interface FileRouteTypes {
     | '/_app/dashboard'
     | '/_app/dev-settings'
     | '/_app/director'
+    | '/_app/directory'
     | '/_app/emergency-contacts'
     | '/_app/error-log'
     | '/_app/esign'
@@ -1544,6 +1556,13 @@ declare module '@tanstack/react-router' {
       path: '/emergency-contacts'
       fullPath: '/emergency-contacts'
       preLoaderRoute: typeof AppEmergencyContactsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/directory': {
+      id: '/_app/directory'
+      path: '/directory'
+      fullPath: '/directory'
+      preLoaderRoute: typeof AppDirectoryRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/director': {
@@ -2405,6 +2424,7 @@ interface AppRouteChildren {
   AppDashboardRoute: typeof AppDashboardRouteWithChildren
   AppDevSettingsRoute: typeof AppDevSettingsRoute
   AppDirectorRoute: typeof AppDirectorRoute
+  AppDirectoryRoute: typeof AppDirectoryRoute
   AppEmergencyContactsRoute: typeof AppEmergencyContactsRoute
   AppErrorLogRoute: typeof AppErrorLogRoute
   AppEsignRoute: typeof AppEsignRouteWithChildren
@@ -2462,6 +2482,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppDashboardRoute: AppDashboardRouteWithChildren,
   AppDevSettingsRoute: AppDevSettingsRoute,
   AppDirectorRoute: AppDirectorRoute,
+  AppDirectoryRoute: AppDirectoryRoute,
   AppEmergencyContactsRoute: AppEmergencyContactsRoute,
   AppErrorLogRoute: AppErrorLogRoute,
   AppEsignRoute: AppEsignRouteWithChildren,
