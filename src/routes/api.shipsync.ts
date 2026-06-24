@@ -4,6 +4,7 @@
  */
 import { supabaseAdmin } from '@/integrations/supabase/client.server'
 import { generateNotePdf, emailProofOfDelivery } from '@/lib/shipsync/automations.server'
+import { pushShipSyncToSharePoint, importShipSyncFromSharePoint } from '@/lib/shipsync/sharepoint.server'
 
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json' } })
 
@@ -28,6 +29,14 @@ export async function shipsyncApiHandler(request: Request): Promise<Response> {
       if (!body.noteId) return json({ ok: false, error: 'noteId required' }, 400)
       const res = await emailProofOfDelivery(body.noteId, body.to)
       return json({ ok: true, ...res })
+    }
+    if (url.pathname === '/api/shipsync/sp-push') {
+      const res = await pushShipSyncToSharePoint({ dryRun: !!body.dryRun })
+      return json(res)
+    }
+    if (url.pathname === '/api/shipsync/sp-import') {
+      const res = await importShipSyncFromSharePoint({ limit: body.limit })
+      return json(res)
     }
     return json({ ok: false, error: 'Unknown endpoint' }, 404)
   } catch (e: any) {

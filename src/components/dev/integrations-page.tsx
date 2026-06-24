@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   getIntegrationsStatus, getEnabledSyncs, syncOneList, syncImagesBatch, type IntegrationsStatus,
 } from "@/lib/integrations.server";
@@ -140,11 +140,94 @@ export function IntegrationsPage() {
                   </div>
                 )}
               </section>
+
+              {/* ShipSync → SharePoint (outbound push) */}
+              <ShipSyncSyncStatus />
             </>
           ) : null}
         </div>
       </div>
     </div>
+  );
+}
+
+// ── ShipSync outbound sync status ───────────────────────────────────────────
+function ShipSyncSyncStatus() {
+  const [s, setS] = useState<{ total: number; pending: number; notes: number; lastPushAt: string | null; pushed: number; errors: number; detail: string | null } | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  async function load() {
+    const { supabase } = await import("@/integrations/supabase/client");
+    const db = supabase as any;
+    const [{ count: total }, { count: pending }, { count: notes }, { data: state }] = await Promise.all([
+      db.from("shipsync_packages").select("id", { count: "exact", head: true }),
+      db.from("shipsync_packages").select("id", { count: "exact", head: true }).or("sp_synced_at.is.null,updated_at.gt.sp_synced_at"),
+      db.from("shipsync_delivery_notes").select("id", { count: "exact", head: true }),
+      db.from("shipsync_sync_state").select("*").eq("id", 1).maybeSingle(),
+    ]);
+    setS({
+      total: total ?? 0, pending: pending ?? 0, notes: notes ?? 0,
+      lastPushAt: state?.last_push_at ?? null, pushed: state?.pushed ?? 0, errors: state?.errors ?? 0, detail: state?.detail ?? null,
+    });
+  }
+  useEffect(() => { void load(); }, []);
+
+  async function run(dryRun: boolean) {
+    setBusy(dryRun ? "dry" : "push");
+    try {
+      const { supabase } = await import("@/integrations/supabase/client");
+      const { data: { session } } = await supabase.auth.getSession();
+      const r = await fetch("/api/shipsync/sp-push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
+        body: JSON.stringify({ dryRun }),
+      });
+      const j = await r.json();
+      if (j.disabled) toast.message("Push is disabled", { description: j.detail });
+      else if (j.ok) toast.success(`${dryRun ? "Dry run" : "Pushed"}: ${j.pushed} item(s), ${j.errors} error(s)`);
+      else toast.error(j.error ?? "Push failed");
+      await load();
+    } catch (e: any) { toast.error(e?.message ?? "Failed"); } finally { setBusy(null); }
+  }
+
+  return (
+    <section className="rounded-xl border border-border bg-card p-5 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.4)]">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="font-display text-sm font-semibold">ShipSync → SharePoint <span className="text-muted-foreground">(outbound push)</span></h2>
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => run(true)} disabled={!!busy}>
+            {busy === "dry" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Dry run
+          </Button>
+          <Button size="sm" className="h-8 gap-1.5" onClick={() => run(false)} disabled={!!busy}>
+            {busy === "push" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Cloud className="h-3.5 w-3.5" />} Push now
+          </Button>
+        </div>
+      </div>
+      {!s ? (
+        <div className="py-4 text-center"><Loader2 className="mx-auto h-4 w-4 animate-spin text-muted-foreground" /></div>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {[
+              { label: "Packages", value: s.total },
+              { label: "Pending push", value: s.pending, warn: s.pending > 0 },
+              { label: "Delivery notes", value: s.notes },
+              { label: "Last push errors", value: s.errors, warn: s.errors > 0 },
+            ].map((c) => (
+              <div key={c.label} className="rounded-lg border border-border/60 p-3">
+                <div className="text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">{c.label}</div>
+                <div className={cn("mt-1 font-display text-xl font-bold tabular-nums", c.warn ? "text-amber-400" : "")}>{c.value}</div>
+              </div>
+            ))}
+          </div>
+          <p className="mt-3 text-[12px] text-muted-foreground">
+            Last push: <strong>{fmt(s.lastPushAt)}</strong> · pushed {s.pushed}. Supabase is the source of truth; this writes changed packages back to the SharePoint <code className="font-mono">Packages</code> list.
+            {" "}<span className="text-amber-400/80">Gated by <code className="font-mono">SHIPSYNC_SP_PUSH_ENABLED</code> — run a dry run to verify the field map before enabling.</span>
+          </p>
+          {s.detail && <p className="mt-1 text-[11px] text-muted-foreground/70">{s.detail}</p>}
+        </>
+      )}
+    </section>
   );
 }
 
