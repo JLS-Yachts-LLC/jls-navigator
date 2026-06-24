@@ -3,6 +3,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { supabase } from '@/integrations/supabase/client'
 import { COLORS } from '@/lib/tokens'
+import { toDMY } from '@/lib/utils'
 import type { CrewMember, CrewPassport } from '@/lib/visa/crewMatching'
 import type { CountryVisaConfig } from '@/lib/visa/countryConfig'
 import { COUNTRY_CONFIGS } from '@/lib/visa/countryConfig'
@@ -145,7 +146,7 @@ export function StepReviewSubmit({ state, onUpdate, onNext, onBack }: Props) {
         { label: 'First name', value: c.first_name },
         { label: 'Middle name', value: c.middle_name },
         { label: 'Last name', value: c.last_name },
-        { label: 'Date of birth', value: c.date_of_birth },
+        { label: 'Date of birth', value: toDMY(c.date_of_birth) },
         { label: 'Place of birth', value: c.place_of_birth },
         { label: 'Country of birth', value: c.country_of_birth },
         { label: 'Gender', value: c.gender },
@@ -164,8 +165,8 @@ export function StepReviewSubmit({ state, onUpdate, onNext, onBack }: Props) {
         { label: 'Passport nationality', value: p.nationality },
         { label: 'Issuing country', value: p.issuing_country },
         { label: 'Place of issue', value: p.place_of_issue ?? c.passport_place_of_issue },
-        { label: 'Issue date', value: p.issue_date },
-        { label: 'Expiry date', value: p.expiry_date },
+        { label: 'Issue date', value: toDMY(p.issue_date) },
+        { label: 'Expiry date', value: toDMY(p.expiry_date) },
       ]) },
       { title: 'Vessel', rows: clean([
         { label: 'Vessel', value: state.countryFields['vessel_name'] },
@@ -494,7 +495,10 @@ export function StepReviewSubmit({ state, onUpdate, onNext, onBack }: Props) {
 }
 
 function isExpiringSoon(expiryDate: string): boolean {
-  const exp = new Date(expiryDate)
+  // expiryDate may now be dd/mm/yyyy (display format) — parse both.
+  const dmy = expiryDate.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  const exp = dmy ? new Date(`${dmy[3]}-${dmy[2]}-${dmy[1]}`) : new Date(expiryDate)
+  if (isNaN(exp.getTime())) return false
   const sixMonths = new Date()
   sixMonths.setMonth(sixMonths.getMonth() + 6)
   return exp < sixMonths

@@ -11,7 +11,7 @@ import { DateInputDMY } from "@/components/ui/date-input-dmy";
 import { SignedAnchor } from "@/components/ui/signed-file";
 import { ArrowLeft, Loader2, Pencil, Trash2, ExternalLink, Upload, IdCard, FileCheck2 } from "lucide-react";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
+import { cn, toDMY } from "@/lib/utils";
 import { fileToBase64 } from "@/lib/file-to-base64";
 import { uploadCrewDocToSharePoint } from "@/lib/visa-sharepoint.server";
 
@@ -30,9 +30,9 @@ const STATUS_META: Record<string, { label: string; cls: string }> = {
 };
 const STATUSES = ["draft", "submitted", "in_review", "processing", "approved", "completed", "cancelled", "rejected"];
 
+// dd/mm/yyyy to match the UAE immigration portal.
 function fmt(d: string | null) {
-  if (!d) return "—";
-  return new Date(d + "T00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  return toDMY(d);
 }
 
 export function VisaDetailPage() {

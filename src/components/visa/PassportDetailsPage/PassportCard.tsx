@@ -1,15 +1,12 @@
 import { useState } from 'react'
 import { COLORS, FONTS } from '@/lib/tokens'
+import { toDMY } from '@/lib/utils'
 import type { Passport } from './PassportDetailsPage.types'
 
 const GREEN = '#1D9E75'
 
-function formatDate(iso: string): string {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('en-GB', {
-    day: '2-digit', month: 'short', year: 'numeric',
-  })
-}
+// dd/mm/yyyy to match the UAE immigration portal.
+const formatDate = (iso: string): string => toDMY(iso)
 
 function ChevronIcon({ open }: { open: boolean }) {
   return (
