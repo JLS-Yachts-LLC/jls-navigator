@@ -301,16 +301,20 @@ export function InternalServicesPage() {
     } catch { if (!silent) toast.error("Rate lookup failed"); }
     finally { setFxBusy(false); }
   }
-  // Auto-fetch the rate when the currencies / purchase date change (debounced),
-  // but never on the initial open of an existing record.
+  // Auto-fetch the rate when the currencies / purchase date change (debounced).
+  // On the initial open we KEEP a genuine locked rate, but still fetch when the
+  // stored rate is unset or a 1:1 placeholder between two different currencies.
   useEffect(() => {
     if (!open) return;
-    if (justOpenedRef.current) { justOpenedRef.current = false; return; }
+    const opening = justOpenedRef.current;
+    justOpenedRef.current = false;
     const from = (form.currency || "").toUpperCase();
     const to = (form.sell_currency || "").toUpperCase();
     if (!from || !to) return;
     if (from === to) { if (form.fx_rate !== 1) set({ fx_rate: 1 }); return; }
-    const t = setTimeout(() => { void fetchFxRate(true); }, 600);
+    // Different currencies: a stored rate of exactly 1 (or null) is a placeholder.
+    if (opening && form.fx_rate != null && form.fx_rate !== 1) return;
+    const t = setTimeout(() => { void fetchFxRate(true); }, opening ? 0 : 600);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, form.currency, form.sell_currency, form.start_date]);
