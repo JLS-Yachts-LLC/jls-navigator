@@ -55,6 +55,31 @@ export interface CrewVerificationData {
   date?: Date;
 }
 
+/**
+ * Validate that the filled document matches the intended data 100%:
+ *   - no template tokens were left unreplaced, and
+ *   - every supplied value actually appears in the rendered XML.
+ * Returns a list of problems (empty = good). Catches both template drift and
+ * truncated inputs (e.g. a vessel name that arrived as just "A").
+ */
+export function validateFilledDoc(doc: string, data: CrewVerificationData): string[] {
+  const problems: string[] = [];
+  const leftover = doc.match(/\{\{[A-Z_]+\}\}/g);
+  if (leftover) problems.push(`unreplaced token(s): ${Array.from(new Set(leftover)).join(", ")}`);
+  const required: [string, string][] = [
+    ["vessel name", data.vesselName],
+    ["crew name", data.fullName],
+    ["passport number", data.passportNumber],
+    ["nationality", data.nationality],
+  ];
+  for (const [label, value] of required) {
+    const v = (value || "").trim();
+    if (!v) { problems.push(`${label} is empty`); continue; }
+    if (!doc.includes(xmlEscape(v))) problems.push(`${label} ("${v}") is missing from the generated letter`);
+  }
+  return problems;
+}
+
 /** Fill the tokenised template and return the .docx bytes. */
 export function fillCrewVerificationDocx(data: CrewVerificationData): Uint8Array {
   const files = unzipSync(b64ToU8(CREW_VERIFICATION_TEMPLATE_B64));
@@ -68,6 +93,13 @@ export function fillCrewVerificationDocx(data: CrewVerificationData): Uint8Array
     "{{PASSPORT_NO}}": xmlEscape(data.passportNumber || ""),
   };
   for (const [tok, val] of Object.entries(map)) doc = doc.split(tok).join(val);
+
+  // Hard gate: never produce a letter that doesn't fully match the inputs.
+  const problems = validateFilledDoc(doc, data);
+  if (problems.length) {
+    throw new Error(`Crew verification letter failed validation — ${problems.join("; ")}`);
+  }
+
   files["word/document.xml"] = strToU8(doc);
   return zipSync(files, { level: 6 });
 }

@@ -310,6 +310,49 @@ export function StepCountryFields({ state, onUpdate, onNext, onBack }: StepCount
       return v !== undefined && v !== ''
     })
 
+  // UAE visa-type notice — rendered at the BOTTOM of the page (below the vessel
+  // form and the verification letter) per the immigration team's layout.
+  const uaeNotice = state.countryCode === 'AE' ? (
+    <div style={{
+      display: 'flex', flexDirection: 'column', gap: 10,
+      padding: '14px 16px', marginTop: 24,
+      background: `${COLORS.signal}0D`,
+      border: `1px solid ${COLORS.signal}30`,
+      borderRadius: 8,
+    }}>
+      {/* Visa type badge */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{
+          fontFamily: FONTS.display, fontSize: 9, fontWeight: 700,
+          letterSpacing: '0.18em', textTransform: 'uppercase',
+          color: COLORS.signal, padding: '3px 10px',
+          background: `${COLORS.signal}18`,
+          border: `1px solid ${COLORS.signal}40`,
+          borderRadius: 4,
+        }}>
+          Visa Type
+        </span>
+        <span style={{ fontFamily: FONTS.display, fontSize: 14, fontWeight: 700, color: COLORS.frost }}>
+          Crew 180-Day Multiple Entry Visa
+        </span>
+      </div>
+
+      {/* Rules */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingLeft: 2 }}>
+        {[
+          { icon: '⚠', color: COLORS.warn, text: 'Crew must enter the UAE within 30 days of visa issuance. If not used within 30 days, the visa expires and a new application is required.' },
+          { icon: '◆', color: COLORS.signal,  text: 'Visa validity (180 days) runs from the date of first entry — not from the date of issuance.' },
+          { icon: '◆', color: COLORS.signal,  text: 'The vessel name above is used on all documents and correspondence throughout this application. Confirm it is correct before continuing.' },
+        ].map(({ icon, color, text }) => (
+          <div key={text} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+            <span style={{ color, fontSize: 12, flexShrink: 0, marginTop: 1 }} aria-hidden="true">{icon}</span>
+            <span style={{ fontFamily: FONTS.display, fontSize: 12, color: COLORS.muted, lineHeight: 1.6 }}>{text}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  ) : null
+
   return (
     <div
       style={{
@@ -347,47 +390,7 @@ export function StepCountryFields({ state, onUpdate, onNext, onBack }: StepCount
         Complete the fields below specific to your {config.countryName} visa application.
       </p>
 
-      {/* UAE: fixed visa type notice */}
-      {state.countryCode === 'AE' && (
-        <div style={{
-          display: 'flex', flexDirection: 'column', gap: 10,
-          padding: '14px 16px', marginBottom: 24,
-          background: `${COLORS.signal}0D`,
-          border: `1px solid ${COLORS.signal}30`,
-          borderRadius: 8,
-        }}>
-          {/* Visa type badge */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{
-              fontFamily: FONTS.display, fontSize: 9, fontWeight: 700,
-              letterSpacing: '0.18em', textTransform: 'uppercase',
-              color: COLORS.signal, padding: '3px 10px',
-              background: `${COLORS.signal}18`,
-              border: `1px solid ${COLORS.signal}40`,
-              borderRadius: 4,
-            }}>
-              Visa Type
-            </span>
-            <span style={{ fontFamily: FONTS.display, fontSize: 14, fontWeight: 700, color: COLORS.frost }}>
-              Crew 180-Day Multiple Entry Visa
-            </span>
-          </div>
-
-          {/* Rules */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingLeft: 2 }}>
-            {[
-              { icon: '⚠', color: COLORS.warn, text: 'Crew must enter the UAE within 30 days of visa issuance. If not used within 30 days, the visa expires and a new application is required.' },
-              { icon: '◆', color: COLORS.signal,  text: 'Visa validity (180 days) runs from the date of first entry — not from the date of issuance.' },
-              { icon: '◆', color: COLORS.signal,  text: 'The vessel name below is used on all documents and correspondence throughout this application. Confirm it is correct before continuing.' },
-            ].map(({ icon, color, text }) => (
-              <div key={text} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                <span style={{ color, fontSize: 12, flexShrink: 0, marginTop: 1 }} aria-hidden="true">{icon}</span>
-                <span style={{ fontFamily: FONTS.display, fontSize: 12, color: COLORS.muted, lineHeight: 1.6 }}>{text}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* UAE visa-type notice is rendered at the bottom of the page (see uaeNotice). */}
 
       {/* Fields */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -453,11 +456,6 @@ export function StepCountryFields({ state, onUpdate, onNext, onBack }: StepCount
         ))}
       </div>
 
-      {/* Crew Verification letter — auto-generated when no Seaman's book. */}
-      {state.passport?.no_seamans_book && (
-        <CrewVerificationPanel state={state} onUpdate={onUpdate} authToken={authToken} />
-      )}
-
       {/* Additional Personal Information (mother's maiden name, etc.) — Mike's
           personal-info capture, surfaced in the wizard's Details step. */}
       {state.crew?.id && authToken && (
@@ -471,6 +469,17 @@ export function StepCountryFields({ state, onUpdate, onNext, onBack }: StepCount
           />
         </div>
       )}
+
+      {/* Crew Verification letter — auto-generated when no Seaman's book.
+          Sits just above the visa-type notice at the bottom of the page. */}
+      {state.passport?.no_seamans_book && (
+        <div style={{ marginTop: 24 }}>
+          <CrewVerificationPanel state={state} onUpdate={onUpdate} authToken={authToken} />
+        </div>
+      )}
+
+      {/* UAE visa-type notice — bottom of page */}
+      {uaeNotice}
 
       {/* Navigation */}
       <div
@@ -539,8 +548,11 @@ function CrewVerificationPanel({ state, onUpdate, authToken }: { state: WizardSt
   const fullName = (state.crew as any)?.full_name
     || [state.crew?.first_name, (state.crew as any)?.middle_name, state.crew?.last_name].filter(Boolean).join(' ')
 
-  async function generate() {
-    if (!vesselName.trim()) { setErr('Enter the vessel name first.'); return }
+  // Generate with an explicit vessel name so we never capture a stale value
+  // (the auto-trigger used to fire mid-typing, sending just the first letter).
+  async function generate(vesselArg?: string) {
+    const vessel = (vesselArg ?? vesselName).trim()
+    if (!vessel) { setErr('Enter the vessel name first.'); return }
     setStatus('running'); setErr(null)
     try {
       const r = await fetch('/api/crew/verification-letter', {
@@ -549,7 +561,7 @@ function CrewVerificationPanel({ state, onUpdate, authToken }: { state: WizardSt
         body: JSON.stringify({
           crewId: state.crew!.id, passportId: passport.id, fullName,
           passportNumber: passport.passport_number ?? '', nationality: passport.nationality ?? '',
-          vesselName: vesselName.trim(),
+          vesselName: vessel,
         }),
       })
       const res = await r.json()
@@ -559,12 +571,18 @@ function CrewVerificationPanel({ state, onUpdate, authToken }: { state: WizardSt
     } catch (e: any) { setErr(e?.message ?? 'Could not generate'); setStatus('error') }
   }
 
-  // Auto-generate once when the vessel is known and no letter exists yet.
+  // Auto-generate once the vessel name has SETTLED (debounced) and no letter
+  // exists yet — so typing "AQUILA" generates for "AQUILA", not "A". The request
+  // completes server-side and is saved to the passport even if you navigate on.
   useEffect(() => {
     if (ran.current || existingUrl) return
-    if (!vesselName.trim()) return
-    ran.current = true
-    void generate()
+    const vn = vesselName.trim()
+    if (!vn) return
+    const t = setTimeout(() => {
+      ran.current = true
+      void generate(vn)
+    }, 1500)
+    return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vesselName])
 
@@ -580,7 +598,7 @@ function CrewVerificationPanel({ state, onUpdate, authToken }: { state: WizardSt
       {status === 'error' && (
         <div style={{ fontSize: 12, color: COLORS.warn }}>
           {err}{' '}
-          <button type="button" onClick={generate} style={{ color: COLORS.signal, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Retry</button>
+          <button type="button" onClick={() => generate()} style={{ color: COLORS.signal, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Retry</button>
         </div>
       )}
       {status === 'done' && url && (
@@ -589,11 +607,11 @@ function CrewVerificationPanel({ state, onUpdate, authToken }: { state: WizardSt
             style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: COLORS.void, border: `1px solid ${COLORS.deep}`, borderRadius: 7, fontFamily: FONTS.display, fontSize: 12, color: COLORS.frost, textDecoration: 'none' }}>
             📄 Crew Verification Letter (PDF) <span style={{ color: COLORS.signal }}>↓</span>
           </a>
-          <button type="button" onClick={generate} style={{ fontFamily: FONTS.display, fontSize: 11, color: COLORS.muted, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Regenerate</button>
+          <button type="button" onClick={() => generate()} style={{ fontFamily: FONTS.display, fontSize: 11, color: COLORS.muted, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Regenerate</button>
         </div>
       )}
       {status === 'idle' && (
-        <button type="button" onClick={generate} style={{ fontFamily: FONTS.display, fontSize: 12, fontWeight: 600, color: COLORS.signal, background: `${COLORS.signal}14`, border: `1px solid ${COLORS.signal}44`, borderRadius: 7, padding: '8px 12px', cursor: 'pointer' }}>
+        <button type="button" onClick={() => generate()} style={{ fontFamily: FONTS.display, fontSize: 12, fontWeight: 600, color: COLORS.signal, background: `${COLORS.signal}14`, border: `1px solid ${COLORS.signal}44`, borderRadius: 7, padding: '8px 12px', cursor: 'pointer' }}>
           Generate verification letter
         </button>
       )}

@@ -31,6 +31,12 @@ export interface CrewPassport {
   seamans_book_url?:string | null
   no_seamans_book?: boolean
   double_checked?:  boolean
+  // Name + DOB exactly as printed on this passport (may differ from the crew
+  // member's preferred/display name). Populated on save; null for legacy rows.
+  first_name?:      string | null
+  middle_name?:     string | null
+  last_name?:       string | null
+  date_of_birth?:   string | null
 }
 
 /**

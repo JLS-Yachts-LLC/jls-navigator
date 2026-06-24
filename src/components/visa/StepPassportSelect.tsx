@@ -996,6 +996,13 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
         expiry_date: expiryDate,
         issuing_country: issuingCountry.trim(),
         is_primary: ex?.is_primary ?? false,
+        // Name + DOB exactly as printed on this passport — stored on the passport
+        // itself so the card reflects the passport, not the crew member's
+        // (possibly different) preferred name.
+        first_name: firstName.trim() || null,
+        middle_name: middleName.trim() || null,
+        last_name: lastName.trim() || null,
+        date_of_birth: dateOfBirth || null,
         // Keep existing attachments when a slot wasn't re-uploaded (edit mode).
         document_url: dataUrl ?? existingUrls.data,
         cover_url: coverUrl ?? existingUrls.cover,
@@ -1401,6 +1408,12 @@ interface PassportCardProps {
 function PassportCard({ passport, selected, onSelect, onEdit, crewFirst, crewMiddle, crewLast, crewDob }: PassportCardProps) {
   const expiryColor = getExpiryColor(passport.expiry_date)
   const expiryLabel = getExpiryLabel(passport.expiry_date)
+  // Show the name exactly as printed on THIS passport; fall back to the crew
+  // member's name only for legacy passports saved before per-passport names.
+  const nameFirst  = passport.first_name  ?? crewFirst
+  const nameMiddle = passport.middle_name ?? crewMiddle
+  const nameLast   = passport.last_name   ?? crewLast
+  const nameDob    = passport.date_of_birth ?? crewDob
   const [zoomSrc, setZoomSrc] = useState<string | null>(null)
   const thumbs: { url: string; label: string }[] = [
     passport.document_url ? { url: passport.document_url, label: 'Inside pages' } : null,
@@ -1502,16 +1515,16 @@ function PassportCard({ passport, selected, onSelect, onEdit, crewFirst, crewMid
 
           {/* Extracted-info grid */}
           <div style={{ flex: 1, minWidth: 0, display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10 }}>
-            <FieldCard label="First Name">{crewFirst || '—'}</FieldCard>
+            <FieldCard label="First Name">{nameFirst || '—'}</FieldCard>
             <FieldCard label="Middle Name"
-              note={!crewMiddle ? 'Missing — add via Edit if shown on passport' : undefined}
-              noteColor={!crewMiddle ? COLORS.warn : undefined}>
-              {crewMiddle
-                ? crewMiddle
+              note={!nameMiddle ? 'Missing — add via Edit if shown on passport' : undefined}
+              noteColor={!nameMiddle ? COLORS.warn : undefined}>
+              {nameMiddle
+                ? nameMiddle
                 : <span style={{ color: COLORS.warn }}>—</span>}
             </FieldCard>
-            <FieldCard label="Last Name">{crewLast || '—'}</FieldCard>
-            <FieldCard label="Date of Birth">{crewDob ? formatDate(crewDob) : '—'}</FieldCard>
+            <FieldCard label="Last Name">{nameLast || '—'}</FieldCard>
+            <FieldCard label="Date of Birth">{nameDob ? formatDate(nameDob) : '—'}</FieldCard>
             <FieldCard label="Passport Number">
               <span style={{ fontFamily: 'Courier New, monospace', letterSpacing: '0.08em' }}>{passport.passport_number}</span>
             </FieldCard>
@@ -1529,7 +1542,7 @@ function PassportCard({ passport, selected, onSelect, onEdit, crewFirst, crewMid
         {/* Right: per-passport Document Status */}
         <DocumentStatusPanel status={docStatus} expiryDate={passport.expiry_date} seamansNotApplicable={!!passport.no_seamans_book}
           verificationLetterUrl={(passport as any).crew_verification_letter_url ?? null}
-          crewLastName={crewLast} passportNumber={passport.passport_number}
+          crewLastName={nameLast} passportNumber={passport.passport_number}
           downloads={[
             { label: 'Passport cover', url: (passport as any).cover_url ?? null },
             { label: 'Passport inside pages', url: (passport as any).document_url ?? null },
