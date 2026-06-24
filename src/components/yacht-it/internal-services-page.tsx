@@ -32,6 +32,9 @@ type InternalService = {
   notes: string | null;
   // Commercial / invoicing
   sell_price: number | null;
+  sell_currency: string | null;
+  fx_rate: number | null;        // 1 {currency} = fx_rate {sell_currency}, captured at purchase
+  fx_rate_date: string | null;
   commitment_term: string | null;
   jls_invoice_number: string | null;
   yacht_paid: boolean;
@@ -60,7 +63,8 @@ const EMPTY_FORM: FormState = {
   service_name: "", vendor: null, category: "software", cost_amount: null, currency: "AED",
   billing_cycle: "monthly", seats: null, owner: null, account_ref: null,
   start_date: null, renewal_date: null, status: "active", notes: null,
-  sell_price: null, commitment_term: null, jls_invoice_number: null,
+  sell_price: null, sell_currency: "AED", fx_rate: null, fx_rate_date: null,
+  commitment_term: null, jls_invoice_number: null,
   yacht_paid: false, yacht_po: null,
 };
 
@@ -93,6 +97,18 @@ function perMonth(amount: number | null, cycle: string): number {
 }
 function monthly(s: InternalService): number { return perMonth(s.cost_amount, s.billing_cycle); }
 function monthlyRevenue(s: InternalService): number { return perMonth(s.sell_price, s.billing_cycle); }
+/** Effective cost→sell rate: stored purchase rate, or 1 when currencies match. */
+function fxRateOf(s: InternalService): number | null {
+  if (s.fx_rate != null) return s.fx_rate;
+  return (s.sell_currency ?? s.currency) === s.currency ? 1 : null;
+}
+/** Per-period margin in the SELL currency, using the purchase-time FX rate. */
+function serviceMargin(s: InternalService): number | null {
+  if (s.sell_price == null || s.cost_amount == null) return null;
+  const rate = fxRateOf(s);
+  if (rate == null) return null;
+  return s.sell_price - s.cost_amount * rate;
+}
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
@@ -117,6 +133,21 @@ export function InternalServicesPage() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [busy, setBusy] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<InternalService | null>(null);
+
+  // Live rates → AED so the headline roll-up handles mixed buy/sell currencies.
+  // Map is currency → multiplier to AED. Falls back to raw sums if unavailable.
+  const [fxToAed, setFxToAed] = useState<Record<string, number> | null>(null);
+  useEffect(() => {
+    fetch("https://open.er-api.com/v6/latest/AED")
+      .then((r) => r.json())
+      .then((j: any) => {
+        if (!j?.rates) return;
+        const m: Record<string, number> = { AED: 1 };
+        for (const [k, v] of Object.entries(j.rates)) if (typeof v === "number" && v > 0) m[k] = 1 / (v as number);
+        setFxToAed(m);
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => { void load(); }, []);
   // Fire the 90-day renewal check (idempotent server-side) so the alert email
@@ -146,13 +177,25 @@ export function InternalServicesPage() {
     const active = rows.filter((r) => effectiveStatus(r) === "active").length;
     const renewing = rows.filter((r) => effectiveStatus(r) === "expiring_soon").length;
     const activeRows = rows.filter((r) => r.status === "active");
-    // Annualised recurring figures (perMonth already handles each billing cycle).
-    const annualCost = activeRows.reduce((sum, r) => sum + monthly(r) * 12, 0);
-    const annualRev = activeRows.reduce((sum, r) => sum + monthlyRevenue(r) * 12, 0);
+    const toAed = (cur: string | null) => (fxToAed ? (fxToAed[cur || "AED"] ?? null) : null);
+    // Convert each service's annual cost (in its buy currency) and revenue (in its
+    // sell currency) to AED. If any rate is missing, fall back to a raw sum.
+    let annualCost = 0, annualRev = 0, fxConverted = !!fxToAed;
+    for (const r of activeRows) {
+      const cAed = toAed(r.currency);
+      const sAed = toAed(r.sell_currency ?? r.currency);
+      if (cAed == null || sAed == null) { fxConverted = false; break; }
+      annualCost += monthly(r) * 12 * cAed;
+      annualRev += monthlyRevenue(r) * 12 * sAed;
+    }
+    if (!fxConverted) {
+      annualCost = activeRows.reduce((sum, r) => sum + monthly(r) * 12, 0);
+      annualRev = activeRows.reduce((sum, r) => sum + monthlyRevenue(r) * 12, 0);
+    }
     const annualMargin = annualRev - annualCost;
     const marginPct = annualRev > 0 ? (annualMargin / annualRev) * 100 : null;
-    return { total: rows.length, active, renewing, annualCost, annualRev, annualMargin, marginPct };
-  }, [rows]);
+    return { total: rows.length, active, renewing, annualCost, annualRev, annualMargin, marginPct, fxConverted };
+  }, [rows, fxToAed]);
 
   // Services within the 90-day renewal-quotation window (active, not yet lapsed).
   const renewalsDue = useMemo(() => rows.filter((r) => {
@@ -169,7 +212,8 @@ export function InternalServicesPage() {
       currency: r.currency, billing_cycle: r.billing_cycle, seats: r.seats, owner: r.owner,
       account_ref: r.account_ref, start_date: r.start_date, renewal_date: r.renewal_date,
       status: r.status, notes: r.notes,
-      sell_price: r.sell_price, commitment_term: r.commitment_term, jls_invoice_number: r.jls_invoice_number,
+      sell_price: r.sell_price, sell_currency: r.sell_currency ?? r.currency, fx_rate: r.fx_rate, fx_rate_date: r.fx_rate_date,
+      commitment_term: r.commitment_term, jls_invoice_number: r.jls_invoice_number,
       yacht_paid: r.yacht_paid, yacht_po: r.yacht_po,
     });
     setOpen(true);
@@ -206,6 +250,33 @@ export function InternalServicesPage() {
   }
 
   const set = (patch: Partial<FormState>) => setForm((f) => ({ ...f, ...patch }));
+
+  const [fxBusy, setFxBusy] = useState(false);
+  async function fetchFxRate() {
+    const fromCur = (form.currency || "").toUpperCase();
+    const toCur = (form.sell_currency || form.currency || "").toUpperCase();
+    if (!fromCur || !toCur) { toast.error("Set both currencies first"); return; }
+    if (fromCur === toCur) { set({ fx_rate: 1, fx_rate_date: form.start_date ?? null }); return; }
+    setFxBusy(true);
+    try {
+      const d = form.start_date || form.renewal_date || "";
+      const qs = new URLSearchParams({ from: fromCur, to: toCur, ...(d ? { date: d } : {}) });
+      const r = await fetch(`/api/fx-rate?${qs.toString()}`);
+      const j = await r.json();
+      if (j.ok && typeof j.rate === "number") {
+        set({ fx_rate: Number(j.rate.toFixed(6)), fx_rate_date: (j.historical && d) ? d : (form.fx_rate_date ?? null) });
+        toast.success(`${fromCur}→${toCur}: ${j.rate.toFixed(4)} (${j.source})`);
+      } else { toast.error(j.error || "Could not fetch rate"); }
+    } catch { toast.error("Rate lookup failed"); }
+    finally { setFxBusy(false); }
+  }
+  // Live margin preview in the dialog (in the sell currency, at the captured rate).
+  const previewMargin = (() => {
+    if (form.sell_price == null || form.cost_amount == null) return null;
+    const rate = form.fx_rate ?? ((form.sell_currency ?? form.currency) === form.currency ? 1 : null);
+    if (rate == null) return null;
+    return form.sell_price - form.cost_amount * rate;
+  })();
 
   return (
     <div className="flex h-full flex-col">
@@ -268,6 +339,12 @@ export function InternalServicesPage() {
           ))}
         </div>
 
+        {stats.fxConverted && (
+          <p className="-mt-3 mb-4 text-[11px] text-muted-foreground">
+            Cost, revenue &amp; margin totals converted to AED at current rates. Per-service margin uses the exchange rate captured at purchase.
+          </p>
+        )}
+
         {/* Filters */}
         <div className="mb-3 flex flex-wrap items-center gap-2.5">
           <div className="relative">
@@ -307,7 +384,7 @@ export function InternalServicesPage() {
           <div className="overflow-hidden rounded-xl border border-border bg-card">
             <table className="w-full text-sm">
               <thead><tr className="border-b border-border bg-muted/40 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                {["Service", "Vendor", "Category", "Cost", "Price", "Billing", "Seats", "Renewal", "Owner", "Yacht Paid", "Status", ""].map((h) => (
+                {["Service", "Vendor", "Category", "Cost", "Price", "Margin", "Billing", "Seats", "Renewal", "Owner", "Yacht Paid", "Status", ""].map((h) => (
                   <th key={h} className="px-4 py-2.5 whitespace-nowrap">{h}</th>
                 ))}
               </tr></thead>
@@ -318,7 +395,12 @@ export function InternalServicesPage() {
                     <td className="px-4 py-3 text-muted-foreground">{r.vendor ?? "—"}</td>
                     <td className="px-4 py-3 capitalize text-muted-foreground">{r.category}</td>
                     <td className="px-4 py-3 tabular-nums text-foreground/80">{r.cost_amount == null ? "—" : `${r.currency} ${fmtMoney(r.cost_amount)}`}</td>
-                    <td className="px-4 py-3 tabular-nums text-foreground/80">{r.sell_price == null ? "—" : `${r.currency} ${fmtMoney(r.sell_price)}`}</td>
+                    <td className="px-4 py-3 tabular-nums text-foreground/80">{r.sell_price == null ? "—" : `${r.sell_currency ?? r.currency} ${fmtMoney(r.sell_price)}`}</td>
+                    <td className="px-4 py-3 tabular-nums">{(() => {
+                      const m = serviceMargin(r);
+                      if (m == null) return <span className="text-muted-foreground">—</span>;
+                      return <span className={m >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}>{`${r.sell_currency ?? r.currency} ${fmtMoney(m)}`}</span>;
+                    })()}</td>
                     <td className="px-4 py-3 capitalize text-muted-foreground">{r.billing_cycle.replace("_", " ")}</td>
                     <td className="px-4 py-3 tabular-nums text-muted-foreground">{r.seats ?? "—"}</td>
                     <td className="px-4 py-3 tabular-nums text-muted-foreground">
@@ -373,12 +455,40 @@ export function InternalServicesPage() {
                 <Select value={form.billing_cycle} onValueChange={(v) => set({ billing_cycle: v })}><SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
                   <SelectContent>{BILLING_CYCLES.map((c) => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}</SelectContent></Select></div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1.5"><Label className="text-xs">Price <span className="font-normal text-muted-foreground">(sell)</span></Label>
-                <Input type="number" step="0.01" value={form.sell_price ?? ""} onChange={(e) => set({ sell_price: e.target.value === "" ? null : Number(e.target.value) })} className="h-8" placeholder="What we charge the yacht" /></div>
+                <Input type="number" step="0.01" value={form.sell_price ?? ""} onChange={(e) => set({ sell_price: e.target.value === "" ? null : Number(e.target.value) })} className="h-8" placeholder="What we charge" /></div>
+              <div className="space-y-1.5"><Label className="text-xs">Sell currency</Label>
+                <Input value={form.sell_currency ?? ""} onChange={(e) => set({ sell_currency: e.target.value.toUpperCase() || null })} className="h-8" placeholder="e.g. AED" /></div>
               <div className="space-y-1.5"><Label className="text-xs">Commitment term</Label>
                 <Input value={form.commitment_term ?? ""} onChange={(e) => set({ commitment_term: e.target.value || null })} className="h-8" placeholder="e.g. 12 months" /></div>
             </div>
+            {/* Exchange rate at purchase — only relevant when buy ≠ sell currency */}
+            {(form.sell_currency ?? form.currency) !== form.currency && (
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Exchange rate <span className="font-normal text-muted-foreground">(at purchase)</span></Label>
+                  <div className="flex gap-1.5">
+                    <Input type="number" step="0.000001" value={form.fx_rate ?? ""} onChange={(e) => set({ fx_rate: e.target.value === "" ? null : Number(e.target.value) })} className="h-8" placeholder={`1 ${form.currency} = ?`} />
+                    <Button type="button" variant="outline" size="sm" className="h-8 shrink-0 px-2 text-xs" onClick={fetchFxRate} disabled={fxBusy}>
+                      {fxBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Fetch"}
+                    </Button>
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">1 {form.currency} = {form.fx_rate ?? "?"} {form.sell_currency}</div>
+                </div>
+                <div className="space-y-1.5"><Label className="text-xs">Rate date</Label>
+                  <Input type="date" value={form.fx_rate_date ?? ""} onChange={(e) => set({ fx_rate_date: e.target.value || null })} className="h-8" /></div>
+                <div className="space-y-1.5"><Label className="text-xs">Margin</Label>
+                  <div className={`flex h-8 items-center text-sm font-semibold tabular-nums ${previewMargin == null ? "text-muted-foreground" : previewMargin >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
+                    {previewMargin == null ? "—" : `${form.sell_currency} ${fmtMoney(previewMargin)}`}
+                  </div></div>
+              </div>
+            )}
+            {(form.sell_currency ?? form.currency) === form.currency && previewMargin != null && (
+              <div className="text-[12px] text-muted-foreground">
+                Margin: <span className={`font-semibold ${previewMargin >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>{form.sell_currency ?? form.currency} {fmtMoney(previewMargin)}</span>
+              </div>
+            )}
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1.5"><Label className="text-xs">Seats</Label>
                 <Input type="number" value={form.seats ?? ""} onChange={(e) => set({ seats: e.target.value === "" ? null : Number(e.target.value) })} className="h-8" /></div>
