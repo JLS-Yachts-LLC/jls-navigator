@@ -639,6 +639,7 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
   const [issueDate, setIssueDate] = useState(ex?.issue_date ?? '')
   const [expiryDate, setExpiryDate] = useState(ex?.expiry_date ?? '')
   const [issuingCountry, setIssuingCountry] = useState(ex?.issuing_country ?? '')
+  const [placeOfIssue, setPlaceOfIssue] = useState((ex as any)?.place_of_issue ?? '')
   // Pre-fill from the saved passport (+ its OCR snapshot) so re-opening to edit
   // does NOT require re-running OCR — the extracted details persist.
   const [dateOfBirth, setDateOfBirth] = useState(ex?.date_of_birth ?? '')
@@ -676,6 +677,7 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
       if (d.issuingCountry) setIssuingCountry(d.issuingCountry)
       if (d.dateOfBirth) setDateOfBirth(d.dateOfBirth)
       if (d.placeOfBirth) setPlaceOfBirth(d.placeOfBirth)
+      if (d.placeOfIssue) setPlaceOfIssue(d.placeOfIssue)
       if (d.gender) setGender(d.gender)
       if (d.recommendedMiddle) setRecommendedMiddle(d.recommendedMiddle)
     } catch { /* ignore corrupt draft */ }
@@ -686,10 +688,10 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
     try {
       sessionStorage.setItem(draftKey, JSON.stringify({
         firstName, middleName, lastName, nationality, passportNumber,
-        issueDate, expiryDate, issuingCountry, dateOfBirth, placeOfBirth, gender, recommendedMiddle,
+        issueDate, expiryDate, issuingCountry, dateOfBirth, placeOfBirth, placeOfIssue, gender, recommendedMiddle,
       }))
     } catch { /* quota / unavailable — non-fatal */ }
-  }, [draftKey, firstName, middleName, lastName, nationality, passportNumber, issueDate, expiryDate, issuingCountry, dateOfBirth, placeOfBirth, gender, recommendedMiddle])
+  }, [draftKey, firstName, middleName, lastName, nationality, passportNumber, issueDate, expiryDate, issuingCountry, dateOfBirth, placeOfBirth, placeOfIssue, gender, recommendedMiddle])
   const clearDraft = () => { try { sessionStorage.removeItem(draftKey) } catch { /* noop */ } }
   type SlotKey = 'cover' | 'data' | 'seamans' | 'headshot'
   const [files, setFiles] = useState<Record<SlotKey, File | null>>({ cover: null, data: null, seamans: null, headshot: null })
@@ -773,6 +775,7 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
       fill(d.issue_date, issueDate, setIssueDate)
       fill(d.expiry_date, expiryDate, setExpiryDate)
       fill(d.issuing_country, issuingCountry, setIssuingCountry)
+      fill(d.place_of_issue, placeOfIssue, setPlaceOfIssue)
       fill(d.date_of_birth, dateOfBirth, setDateOfBirth)
       fill(d.place_of_birth, placeOfBirth, setPlaceOfBirth)
       fill(d.gender, gender, setGender)
@@ -1009,6 +1012,7 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
         issue_date: issueDate,
         expiry_date: expiryDate,
         issuing_country: issuingCountry.trim(),
+        place_of_issue: placeOfIssue.trim() || null,
         is_primary: ex?.is_primary ?? false,
         // Name + DOB exactly as printed on this passport — stored on the passport
         // itself so the card reflects the passport, not the crew member's
@@ -1293,7 +1297,9 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
                       <option>Other</option>
                     </select>
                   </FieldCard>
-                  <div />
+                  <FieldCard label="Place of Issue / Authority">
+                    <input style={editInputStyle} value={placeOfIssue} onChange={e => setPlaceOfIssue(e.target.value)} placeholder="e.g. HMPO · Authority" />
+                  </FieldCard>
                 </div>
               </div>
             </div>

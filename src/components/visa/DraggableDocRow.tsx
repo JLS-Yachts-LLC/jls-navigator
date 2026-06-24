@@ -36,31 +36,45 @@ function expiryBadge(expiryDate?: string | null): { text: string; color: string 
 
 export function DraggableDocRow({ label, stored, expiryDate, icon = '📄' }: Props) {
   const fileRef = useRef<File | null>(null)
+  const urlRef = useRef<string | null>(null)
+  const mimeRef = useRef<string>('application/octet-stream')
   const [hover, setHover] = useState(false)
   const [busy, setBusy] = useState(false)
   const badge = expiryBadge(expiryDate)
   const doc: ExportableDoc = { label, stored }
 
-  // Pre-fetch the File so it's available synchronously at dragstart.
+  // Pre-fetch the File AND resolve the signed URL on hover so BOTH are available
+  // synchronously at dragstart — dataTransfer is frozen once dragstart returns,
+  // so anything set after an await (as before) is silently dropped, leaving only
+  // the filename text. That was why Outlook pasted the name instead of the file.
   function prefetch() {
-    if (fileRef.current) return
-    void fetchDocumentFile(doc).then((f) => { fileRef.current = f }).catch(() => { /* drag falls back to DownloadURL */ })
+    if (!fileRef.current) {
+      void fetchDocumentFile(doc).then((f) => { fileRef.current = f; if (f.type) mimeRef.current = f.type }).catch(() => { /* fall back to DownloadURL */ })
+    }
+    if (!urlRef.current) {
+      void resolveSignedUrl(stored).then((u) => { urlRef.current = u }).catch(() => { /* ignore */ })
+    }
   }
 
-  async function onDragStart(e: React.DragEvent) {
+  function onDragStart(e: React.DragEvent) {
     e.dataTransfer.effectAllowed = 'copy'
-    e.dataTransfer.setData('text/plain', filenameFor(doc))
     const file = fileRef.current
+    const url = urlRef.current
+    const name = filenameFor(doc)
+    const mime = file?.type || mimeRef.current
+
+    // Real file for web upload fields / apps that read dataTransfer.files.
     if (file) {
       try { e.dataTransfer.items.add(file) } catch { /* older browsers */ }
     }
-    // OS-level drop fallback (Chromium): mime:filename:absolute-url
-    try {
-      const url = await resolveSignedUrl(stored)
-      if (/^https?:\/\//i.test(url)) {
-        e.dataTransfer.setData('DownloadURL', `${file?.type || 'application/octet-stream'}:${filenameFor(doc)}:${url}`)
-      }
-    } catch { /* ignore */ }
+    // OS / Chromium virtual-file drop (Explorer, Outlook attach zone, etc.) — MUST
+    // be set synchronously here. Format: mime:filename:absolute-url
+    if (url && /^https?:\/\//i.test(url)) {
+      e.dataTransfer.setData('DownloadURL', `${mime}:${name}:${url}`)
+      e.dataTransfer.setData('text/uri-list', url)
+      // Worst-case fallback is a usable link, NOT the bare filename.
+      e.dataTransfer.setData('text/plain', url)
+    }
   }
 
   function onDragEnd(e: React.DragEvent) {

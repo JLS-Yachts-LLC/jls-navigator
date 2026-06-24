@@ -411,9 +411,10 @@ export default function NewApplicationWizard({ onClose }: Props) {
         </div>
       </div>
 
-      {/* Step Content — extra right/bottom padding so footer buttons clear the
-          floating Leo assistant orb fixed in the bottom-right corner */}
-      <div style={{ flex: 1, padding: '24px 96px 110px 28px' }}>
+      {/* Step Content — generous bottom padding lifts the footer buttons clear of
+          the floating Leo assistant orb in the bottom-right corner; horizontal
+          padding is symmetric so the Continue button aligns to the right edge. */}
+      <div style={{ flex: 1, padding: '24px 32px 120px' }}>
         {(() => {
           const Comp = STEPS[state.step - 1]?.Comp
           return Comp ? <Comp {...stepProps} /> : null

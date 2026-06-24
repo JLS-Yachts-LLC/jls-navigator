@@ -16,6 +16,7 @@ Return ONLY a single JSON object (no prose, no code fences) with EXACTLY these k
   "issue_date": string|null,           // YYYY-MM-DD
   "expiry_date": string|null,          // YYYY-MM-DD
   "issuing_country": string|null,      // full country name, e.g. "United Kingdom"
+  "place_of_issue": string|null,       // the "Authority" / "Issuing Authority" / "Place of issue" field as printed in the visual zone, e.g. "IPS", "HMPO", "Ministry of Foreign Affairs", "DUBLIN". Null if not shown.
   "surname": string|null,
   "given_names": string|null,          // ALL forenames as printed, space-separated — INCLUDING middle name(s), e.g. "Matthew Niels". Cross-check against the MRZ (given names follow the "<<" after the surname, separated by single "<"). Never drop a second/middle name.
   "date_of_birth": string|null,        // YYYY-MM-DD
