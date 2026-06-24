@@ -30,7 +30,9 @@ type InternalService = {
   renewal_date: string | null;
   status: string;
   notes: string | null;
-  // Commercial / invoicing
+  // Association + commercial / invoicing
+  yacht_name: string | null;
+  payment_method: string | null;
   sell_price: number | null;
   sell_currency: string | null;
   fx_rate: number | null;        // 1 {currency} = fx_rate {sell_currency}, captured at purchase
@@ -59,10 +61,17 @@ const BILLING_CYCLES = [
   { value: "annual", label: "Annual" },
   { value: "one_off", label: "One-off" },
 ];
+const PAYMENT_METHODS = [
+  { value: "card", label: "Card" },
+  { value: "debit", label: "Debit" },
+  { value: "bank_transfer", label: "Bank transfer" },
+  { value: "other", label: "Other" },
+];
 const EMPTY_FORM: FormState = {
   service_name: "", vendor: null, category: "software", cost_amount: null, currency: "AED",
   billing_cycle: "monthly", seats: null, owner: null, account_ref: null,
   start_date: null, renewal_date: null, status: "active", notes: null,
+  yacht_name: null, payment_method: null,
   sell_price: null, sell_currency: "AED", fx_rate: null, fx_rate_date: null,
   commitment_term: null, jls_invoice_number: null,
   yacht_paid: false, yacht_po: null,
@@ -128,6 +137,8 @@ export function InternalServicesPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [yachtFilter, setYachtFilter] = useState("all");
+  const [yachtList, setYachtList] = useState<string[]>([]);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<InternalService | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
@@ -150,6 +161,12 @@ export function InternalServicesPage() {
   }, []);
 
   useEffect(() => { void load(); }, []);
+  // Known yacht names for the Yacht/Client picker (free text still allowed).
+  useEffect(() => {
+    (supabase as any).from("yachts").select("vessel_name").not("vessel_name", "is", null).order("vessel_name")
+      .then(({ data }: { data: { vessel_name: string }[] | null }) =>
+        setYachtList(Array.from(new Set((data ?? []).map((y) => y.vessel_name).filter(Boolean))) as string[]));
+  }, []);
   // Fire the 90-day renewal check (idempotent server-side) so the alert email
   // goes out once a service enters the window, even without a separate cron.
   useEffect(() => {
@@ -166,12 +183,19 @@ export function InternalServicesPage() {
   const filtered = useMemo(() => rows.filter((r) => {
     if (statusFilter !== "all" && effectiveStatus(r) !== statusFilter) return false;
     if (categoryFilter !== "all" && r.category !== categoryFilter) return false;
+    if (yachtFilter !== "all" && (r.yacht_name ?? "") !== yachtFilter) return false;
     if (search.trim()) {
       const s = search.toLowerCase();
-      if (![r.service_name, r.vendor, r.owner].join(" ").toLowerCase().includes(s)) return false;
+      if (![r.service_name, r.vendor, r.owner, r.yacht_name].join(" ").toLowerCase().includes(s)) return false;
     }
     return true;
-  }), [rows, statusFilter, categoryFilter, search]);
+  }), [rows, statusFilter, categoryFilter, yachtFilter, search]);
+
+  // Distinct yacht/client values present, for the filter dropdown.
+  const yachtOptions = useMemo(
+    () => Array.from(new Set(rows.map((r) => r.yacht_name).filter(Boolean) as string[])).sort(),
+    [rows],
+  );
 
   const stats = useMemo(() => {
     const active = rows.filter((r) => effectiveStatus(r) === "active").length;
@@ -212,6 +236,7 @@ export function InternalServicesPage() {
       currency: r.currency, billing_cycle: r.billing_cycle, seats: r.seats, owner: r.owner,
       account_ref: r.account_ref, start_date: r.start_date, renewal_date: r.renewal_date,
       status: r.status, notes: r.notes,
+      yacht_name: r.yacht_name, payment_method: r.payment_method,
       sell_price: r.sell_price, sell_currency: r.sell_currency ?? r.currency, fx_rate: r.fx_rate, fx_rate_date: r.fx_rate_date,
       commitment_term: r.commitment_term, jls_invoice_number: r.jls_invoice_number,
       yacht_paid: r.yacht_paid, yacht_po: r.yacht_po,
@@ -368,6 +393,13 @@ export function InternalServicesPage() {
               {CATEGORIES.map((c) => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
             </SelectContent>
           </Select>
+          <Select value={yachtFilter} onValueChange={setYachtFilter}>
+            <SelectTrigger className="h-9 w-44 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All yachts / clients</SelectItem>
+              {yachtOptions.map((y) => <SelectItem key={y} value={y}>{y}</SelectItem>)}
+            </SelectContent>
+          </Select>
           <span className="ml-auto text-[12px] text-muted-foreground">{filtered.length} of {rows.length}</span>
         </div>
 
@@ -384,7 +416,7 @@ export function InternalServicesPage() {
           <div className="overflow-hidden rounded-xl border border-border bg-card">
             <table className="w-full text-sm">
               <thead><tr className="border-b border-border bg-muted/40 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                {["Service", "Vendor", "Category", "Cost", "Price", "Margin", "Billing", "Seats", "Renewal", "Owner", "Yacht Paid", "Status", ""].map((h) => (
+                {["Service", "Yacht / Client", "Vendor", "Category", "Cost", "Price", "Margin", "Billing", "Seats", "Renewal", "Owner", "Yacht Paid", "Status", ""].map((h) => (
                   <th key={h} className="px-4 py-2.5 whitespace-nowrap">{h}</th>
                 ))}
               </tr></thead>
@@ -392,6 +424,7 @@ export function InternalServicesPage() {
                 {filtered.map((r) => (
                   <tr key={r.id} className="group border-b border-border/40 hover:bg-accent/20">
                     <td className="px-4 py-3 font-medium text-foreground">{r.service_name}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{r.yacht_name ?? "—"}</td>
                     <td className="px-4 py-3 text-muted-foreground">{r.vendor ?? "—"}</td>
                     <td className="px-4 py-3 capitalize text-muted-foreground">{r.category}</td>
                     <td className="px-4 py-3 tabular-nums text-foreground/80">{r.cost_amount == null ? "—" : `${r.currency} ${fmtMoney(r.cost_amount)}`}</td>
@@ -445,6 +478,19 @@ export function InternalServicesPage() {
                   <SelectContent>{CATEGORIES.map((c) => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}</SelectContent></Select></div>
               <div className="space-y-1.5"><Label className="text-xs">Owner / dept</Label>
                 <Input value={form.owner ?? ""} onChange={(e) => set({ owner: e.target.value || null })} className="h-8" placeholder="Responsible person" /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5"><Label className="text-xs">Yacht / Client</Label>
+                <Input value={form.yacht_name ?? ""} onChange={(e) => set({ yacht_name: e.target.value || null })} list="iserv-yachts" className="h-8" placeholder="Yacht or client name" autoComplete="off" />
+                <datalist id="iserv-yachts">{yachtList.map((y) => <option key={y} value={y} />)}</datalist></div>
+              <div className="space-y-1.5"><Label className="text-xs">Payment method</Label>
+                <Select value={form.payment_method ?? "none"} onValueChange={(v) => set({ payment_method: v === "none" ? null : v })}>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">—</SelectItem>
+                    {PAYMENT_METHODS.map((p) => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
+                  </SelectContent>
+                </Select></div>
             </div>
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1.5"><Label className="text-xs">Cost</Label>
