@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
-import { Loader2, Package, Truck, Warehouse, Users, BarChart3 } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { Loader2, Package, Truck, Warehouse, Users, BarChart3, Smartphone } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   loadPackages, loadDrivers, loadNotes, loadDestinations,
@@ -49,6 +50,9 @@ export function ShipSyncPage() {
           <div className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-muted-foreground/60">JLS Yacht Logistics</div>
           <h1 className="mt-0.5 font-display text-[1.25rem] font-semibold tracking-tight">ShipSync</h1>
         </div>
+        <Link to={"/shipsync/driver" as any} className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:border-primary/50">
+          <Smartphone className="h-4 w-4" /> Driver app
+        </Link>
       </header>
 
       {/* Tabs */}

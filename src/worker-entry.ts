@@ -15,6 +15,7 @@ import { visaPassportOcrHandler } from './routes/api.visa.passport-ocr'
 import { itTicketsNotifyHandler } from './routes/api.it-tickets.notify'
 import { internalServicesRenewalCheckHandler } from './routes/api.internal-services.renewal-check'
 import { fxRateHandler } from './routes/api.fx-rate'
+import { shipsyncPwaHandler } from './lib/shipsync/pwa-assets'
 import { feedbackNotifyHandler } from './routes/api.feedback.notify'
 import { vesselHandler } from './routes/api.vessels'
 import { phoneHandler } from './routes/api.phone'
@@ -224,6 +225,12 @@ export default {
 
     if (url.pathname === '/api/fx-rate' && request.method === 'GET') {
       return fxRateHandler(request)
+    }
+
+    // ShipSync driver PWA assets (service worker, manifest, icon).
+    {
+      const pwa = shipsyncPwaHandler(request)
+      if (pwa) return pwa
     }
 
     if (url.pathname === '/api/feedback/notify' && request.method === 'POST') {
