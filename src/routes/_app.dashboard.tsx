@@ -1,12 +1,15 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '@/lib/auth'
 import { getAccessLevel, ACCESS_LABELS } from '@/lib/leo-access'
 import { LeoPanel } from '@/components/leo/LeoPanel'
 import { LeoChat } from '@/components/leo/LeoChat'
 import { COLORS } from '@/lib/tokens'
 import { supabase } from '@/integrations/supabase/client'
-import { Ship, AlertTriangle, ClipboardList, FileSignature } from 'lucide-react'
+import { useFlagMap } from '@/lib/release-flags'
+import { useDevAccess } from '@/lib/dev-access'
+import { DASHBOARD_WIDGETS } from '@/components/dashboard/DashboardWidgets'
+import { Ship, AlertTriangle, ClipboardList, FileSignature, LayoutGrid, Check } from 'lucide-react'
 
 export const Route = createFileRoute('/_app/dashboard')({
   component: DashboardPage,
@@ -61,6 +64,32 @@ function DashboardPage() {
   const accessLevel = getAccessLevel(userEmail)
   const stats       = useDashboardStats(token)
 
+  // Optional department widgets — only offered for modules this user can access
+  // (same gate as the sidebar: beta/live for everyone, dev for dev access).
+  const { map: flagMap } = useFlagMap()
+  const devAccess = useDevAccess()
+  const canSeeModule = (flagKey: string) => {
+    const stage = flagMap.get(flagKey)?.stage ?? 'dev'
+    return stage !== 'dev' || devAccess
+  }
+  const availableWidgets = DASHBOARD_WIDGETS.filter(w => canSeeModule(w.flagKey))
+
+  // Per-user choice of which widgets are shown, persisted locally.
+  const storeKey = `polaris.dashboardWidgets.${user?.id ?? 'anon'}`
+  const [selectedWidgets, setSelectedWidgets] = useState<string[]>([])
+  useEffect(() => {
+    try { const raw = localStorage.getItem(storeKey); setSelectedWidgets(raw ? JSON.parse(raw) : []) }
+    catch { setSelectedWidgets([]) }
+  }, [storeKey])
+  function toggleWidget(key: string) {
+    setSelectedWidgets(prev => {
+      const next = prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
+      try { localStorage.setItem(storeKey, JSON.stringify(next)) } catch { /* ignore */ }
+      return next
+    })
+  }
+  const shownWidgets = availableWidgets.filter(w => selectedWidgets.includes(w.key))
+
   const rawFirst    = (user as any)?.user_metadata?.full_name?.split(' ')[0]
     ?? user?.email?.split('@')[0]?.split('.')[0]
     ?? 'there'
@@ -107,6 +136,14 @@ function DashboardPage() {
             {ACCESS_LABELS[accessLevel]} · {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
           </p>
         </div>
+
+        {availableWidgets.length > 0 && (
+          <DashboardCustomiser
+            available={availableWidgets}
+            selected={selectedWidgets}
+            onToggle={toggleWidget}
+          />
+        )}
       </div>
 
       <div
@@ -158,6 +195,11 @@ function DashboardPage() {
           />
         </div>
 
+        {/* ── Optional department widgets ───────────────────── */}
+        {shownWidgets.map(w => (
+          <w.Component key={w.key} />
+        ))}
+
         {/* ── Leo briefing ──────────────────────────────────── */}
         {token && (
           <LeoPanel
@@ -176,6 +218,83 @@ function DashboardPage() {
           />
         )}
       </div>
+    </div>
+  )
+}
+
+// ── Dashboard customiser dropdown ───────────────────────────────────────────
+function DashboardCustomiser({
+  available, selected, onToggle,
+}: {
+  available: { key: string; label: string }[]
+  selected: string[]
+  onToggle: (key: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    function onDoc(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [])
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 7,
+          background: COLORS.abyss, border: `1px solid ${COLORS.deep}`, borderRadius: 8,
+          color: COLORS.frost, fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600,
+          padding: '8px 14px', cursor: 'pointer',
+        }}
+      >
+        <LayoutGrid size={15} /> Customise
+        {selected.length > 0 && (
+          <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 11, fontWeight: 700, color: COLORS.signal, background: `${COLORS.signal}1a`, borderRadius: 10, padding: '1px 7px' }}>{selected.length}</span>
+        )}
+      </button>
+      {open && (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 40, width: 260,
+          background: COLORS.abyss, border: `1px solid ${COLORS.deep}`, borderRadius: 10,
+          boxShadow: '0 10px 34px -10px rgba(0,0,0,0.6)', padding: 8,
+        }}>
+          <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 10.5, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: COLORS.steel, padding: '6px 8px 8px' }}>
+            Show dashboards
+          </div>
+          {available.map(w => {
+            const on = selected.includes(w.key)
+            return (
+              <button
+                key={w.key}
+                type="button"
+                onClick={() => onToggle(w.key)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left',
+                  background: 'transparent', border: 'none', cursor: 'pointer',
+                  padding: '8px 8px', borderRadius: 7, color: COLORS.frost,
+                  fontFamily: "'Space Grotesk', sans-serif", fontSize: 13,
+                }}
+                onMouseEnter={e => (e.currentTarget.style.background = `${COLORS.signal}12`)}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              >
+                <span style={{
+                  width: 18, height: 18, borderRadius: 5, flexShrink: 0, display: 'inline-flex',
+                  alignItems: 'center', justifyContent: 'center',
+                  background: on ? COLORS.signal : 'transparent',
+                  border: `1.5px solid ${on ? COLORS.signal : COLORS.steel}`,
+                  color: COLORS.void,
+                }}>{on && <Check size={12} strokeWidth={3} />}</span>
+                {w.label}
+              </button>
+            )
+          })}
+          <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 11, color: COLORS.steel, padding: '8px 8px 4px', lineHeight: 1.5 }}>
+            Only dashboards you have access to are listed.
+          </div>
+        </div>
+      )}
     </div>
   )
 }
