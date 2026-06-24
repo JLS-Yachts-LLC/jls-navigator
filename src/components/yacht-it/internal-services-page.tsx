@@ -201,8 +201,15 @@ export function InternalServicesPage() {
 
   const stats = useMemo(() => {
     const active = rows.filter((r) => effectiveStatus(r) === "active").length;
-    const renewing = rows.filter((r) => effectiveStatus(r) === "expiring_soon").length;
     const activeRows = rows.filter((r) => r.status === "active");
+    // Renewal windows: ≤90d is the "start invoicing" window (client takes ~60d to
+    // pay); ≤30d is the urgent / in-trouble window. ≤90 includes the ≤30 ones.
+    const within = (d: number) => activeRows.filter((r) => {
+      const n = daysUntil(r.renewal_date);
+      return n !== null && n >= 0 && n <= d;
+    }).length;
+    const renewing30 = within(30);
+    const renewing90 = within(90);
     const toAed = (cur: string | null) => (fxToAed ? (fxToAed[cur || "AED"] ?? null) : null);
     // Convert each service's annual cost (in its buy currency) and revenue (in its
     // sell currency) to AED. If any rate is missing, fall back to a raw sum.
@@ -220,7 +227,7 @@ export function InternalServicesPage() {
     }
     const annualMargin = annualRev - annualCost;
     const marginPct = annualRev > 0 ? (annualMargin / annualRev) * 100 : null;
-    return { total: rows.length, active, renewing, annualCost, annualRev, annualMargin, marginPct, fxConverted };
+    return { total: rows.length, active, renewing30, renewing90, annualCost, annualRev, annualMargin, marginPct, fxConverted };
   }, [rows, fxToAed]);
 
   // Services within the 90-day renewal-quotation window (active, not yet lapsed).
@@ -363,12 +370,42 @@ export function InternalServicesPage() {
           </div>
         )}
 
-        {/* Stats */}
-        <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-3">
+        {/* Stats — status row */}
+        <div className="mb-3 grid grid-cols-2 gap-3 md:grid-cols-4">
           {[
             { label: "Total services", value: stats.total },
             { label: "Active", value: stats.active },
-            { label: "Renewing ≤30d", value: stats.renewing },
+            {
+              label: "Renewing ≤90d",
+              value: stats.renewing90,
+              sub: "start invoicing",
+              tone: stats.renewing90 > 0 ? "amber" : undefined,
+            },
+            {
+              label: "Renewing ≤30d",
+              value: stats.renewing30,
+              sub: "urgent",
+              tone: stats.renewing30 > 0 ? "red" : undefined,
+            },
+          ].map((s) => {
+            const tone = (s as any).tone as string | undefined;
+            const card = tone === "red" ? "border-red-500/40 bg-red-500/5"
+              : tone === "amber" ? "border-amber-500/40 bg-amber-500/5" : "border-border bg-card";
+            const text = tone === "red" ? "text-red-600 dark:text-red-400"
+              : tone === "amber" ? "text-amber-600 dark:text-amber-400" : "";
+            return (
+              <div key={s.label} className={`rounded-xl border p-4 ${card}`}>
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{s.label}</div>
+                <div className={`mt-1 font-display text-2xl font-bold tabular-nums ${text}`}>{s.value}</div>
+                {(s as any).sub && <div className={`mt-0.5 text-[11px] ${text || "text-muted-foreground"}`}>{(s as any).sub}</div>}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Stats — money row */}
+        <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-3">
+          {[
             { label: "Cost / year", value: `AED ${fmtMoney(stats.annualCost)}`, sub: "what we pay" },
             { label: "Revenue / year", value: `AED ${fmtMoney(stats.annualRev)}`, sub: "what we charge" },
             {
