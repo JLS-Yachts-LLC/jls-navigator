@@ -146,11 +146,12 @@ export function InternalServicesPage() {
     const active = rows.filter((r) => effectiveStatus(r) === "active").length;
     const renewing = rows.filter((r) => effectiveStatus(r) === "expiring_soon").length;
     const activeRows = rows.filter((r) => r.status === "active");
-    const monthlyCost = activeRows.reduce((sum, r) => sum + monthly(r), 0);
-    const monthlyRev = activeRows.reduce((sum, r) => sum + monthlyRevenue(r), 0);
-    const monthlyMargin = monthlyRev - monthlyCost;
-    const marginPct = monthlyRev > 0 ? (monthlyMargin / monthlyRev) * 100 : null;
-    return { total: rows.length, active, renewing, monthlyCost, monthlyRev, monthlyMargin, marginPct };
+    // Annualised recurring figures (perMonth already handles each billing cycle).
+    const annualCost = activeRows.reduce((sum, r) => sum + monthly(r) * 12, 0);
+    const annualRev = activeRows.reduce((sum, r) => sum + monthlyRevenue(r) * 12, 0);
+    const annualMargin = annualRev - annualCost;
+    const marginPct = annualRev > 0 ? (annualMargin / annualRev) * 100 : null;
+    return { total: rows.length, active, renewing, annualCost, annualRev, annualMargin, marginPct };
   }, [rows]);
 
   // Services within the 90-day renewal-quotation window (active, not yet lapsed).
@@ -249,14 +250,14 @@ export function InternalServicesPage() {
             { label: "Total services", value: stats.total },
             { label: "Active", value: stats.active },
             { label: "Renewing ≤30d", value: stats.renewing },
-            { label: "Est. monthly cost", value: `AED ${fmtMoney(stats.monthlyCost)}`, sub: "what we pay" },
-            { label: "Est. monthly revenue", value: `AED ${fmtMoney(stats.monthlyRev)}`, sub: "what we charge" },
+            { label: "Cost / year", value: `AED ${fmtMoney(stats.annualCost)}`, sub: "what we pay" },
+            { label: "Revenue / year", value: `AED ${fmtMoney(stats.annualRev)}`, sub: "what we charge" },
             {
-              label: "Est. monthly margin",
-              value: `AED ${fmtMoney(stats.monthlyMargin)}`,
+              label: "Margin / year",
+              value: `AED ${fmtMoney(stats.annualMargin)}`,
               sub: stats.marginPct == null ? "revenue − cost" : `${stats.marginPct.toFixed(0)}% margin`,
-              accent: stats.monthlyMargin > 0 ? "text-emerald-600 dark:text-emerald-400"
-                : stats.monthlyMargin < 0 ? "text-red-600 dark:text-red-400" : undefined,
+              accent: stats.annualMargin > 0 ? "text-emerald-600 dark:text-emerald-400"
+                : stats.annualMargin < 0 ? "text-red-600 dark:text-red-400" : undefined,
             },
           ].map((s) => (
             <div key={s.label} className="rounded-xl border border-border bg-card p-4">
@@ -306,7 +307,7 @@ export function InternalServicesPage() {
           <div className="overflow-hidden rounded-xl border border-border bg-card">
             <table className="w-full text-sm">
               <thead><tr className="border-b border-border bg-muted/40 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                {["Service", "Vendor", "Category", "Cost", "Price", "Billing", "Seats", "Renewal", "Owner", "Status", ""].map((h) => (
+                {["Service", "Vendor", "Category", "Cost", "Price", "Billing", "Seats", "Renewal", "Owner", "Yacht Paid", "Status", ""].map((h) => (
                   <th key={h} className="px-4 py-2.5 whitespace-nowrap">{h}</th>
                 ))}
               </tr></thead>
@@ -326,6 +327,11 @@ export function InternalServicesPage() {
                         ? <div className="mt-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">Quote due · {d}d</div> : null; })()}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">{r.owner ?? "—"}</td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${r.yacht_paid ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/20" : "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/20"}`}>
+                        {r.yacht_paid ? "Paid" : "Unpaid"}
+                      </span>
+                    </td>
                     <td className="px-4 py-3"><StatusBadge status={effectiveStatus(r)} /></td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-0.5 opacity-0 transition group-hover:opacity-100">
