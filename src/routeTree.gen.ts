@@ -17,6 +17,7 @@ import { Route as AppYachtItRouteImport } from './routes/_app.yacht-it'
 import { Route as AppWaypointRouteImport } from './routes/_app.waypoint'
 import { Route as AppTrainingRouteImport } from './routes/_app.training'
 import { Route as AppSmallBoatRegistrationRouteImport } from './routes/_app.small-boat-registration'
+import { Route as AppShipsyncRouteImport } from './routes/_app.shipsync'
 import { Route as AppShipSparesRouteImport } from './routes/_app.ship-spares'
 import { Route as AppSettingsRouteImport } from './routes/_app.settings'
 import { Route as AppSeaportRouteImport } from './routes/_app.seaport'
@@ -168,6 +169,11 @@ const AppSmallBoatRegistrationRoute =
     path: '/small-boat-registration',
     getParentRoute: () => AppRoute,
   } as any)
+const AppShipsyncRoute = AppShipsyncRouteImport.update({
+  id: '/shipsync',
+  path: '/shipsync',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppShipSparesRoute = AppShipSparesRouteImport.update({
   id: '/ship-spares',
   path: '/ship-spares',
@@ -783,6 +789,7 @@ export interface FileRoutesByFullPath {
   '/seaport': typeof AppSeaportRouteWithChildren
   '/settings': typeof AppSettingsRoute
   '/ship-spares': typeof AppShipSparesRoute
+  '/shipsync': typeof AppShipsyncRoute
   '/small-boat-registration': typeof AppSmallBoatRegistrationRoute
   '/training': typeof AppTrainingRouteWithChildren
   '/waypoint': typeof AppWaypointRouteWithChildren
@@ -894,6 +901,7 @@ export interface FileRoutesByTo {
   '/recycle-bin': typeof AppRecycleBinRoute
   '/settings': typeof AppSettingsRoute
   '/ship-spares': typeof AppShipSparesRoute
+  '/shipsync': typeof AppShipsyncRoute
   '/small-boat-registration': typeof AppSmallBoatRegistrationRoute
   '/yacht-it': typeof AppYachtItRoute
   '/sign/$token': typeof SignTokenRoute
@@ -1009,6 +1017,7 @@ export interface FileRoutesById {
   '/_app/seaport': typeof AppSeaportRouteWithChildren
   '/_app/settings': typeof AppSettingsRoute
   '/_app/ship-spares': typeof AppShipSparesRoute
+  '/_app/shipsync': typeof AppShipsyncRoute
   '/_app/small-boat-registration': typeof AppSmallBoatRegistrationRoute
   '/_app/training': typeof AppTrainingRouteWithChildren
   '/_app/waypoint': typeof AppWaypointRouteWithChildren
@@ -1130,6 +1139,7 @@ export interface FileRouteTypes {
     | '/seaport'
     | '/settings'
     | '/ship-spares'
+    | '/shipsync'
     | '/small-boat-registration'
     | '/training'
     | '/waypoint'
@@ -1241,6 +1251,7 @@ export interface FileRouteTypes {
     | '/recycle-bin'
     | '/settings'
     | '/ship-spares'
+    | '/shipsync'
     | '/small-boat-registration'
     | '/yacht-it'
     | '/sign/$token'
@@ -1355,6 +1366,7 @@ export interface FileRouteTypes {
     | '/_app/seaport'
     | '/_app/settings'
     | '/_app/ship-spares'
+    | '/_app/shipsync'
     | '/_app/small-boat-registration'
     | '/_app/training'
     | '/_app/waypoint'
@@ -1499,6 +1511,13 @@ declare module '@tanstack/react-router' {
       path: '/small-boat-registration'
       fullPath: '/small-boat-registration'
       preLoaderRoute: typeof AppSmallBoatRegistrationRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/shipsync': {
+      id: '/_app/shipsync'
+      path: '/shipsync'
+      fullPath: '/shipsync'
+      preLoaderRoute: typeof AppShipsyncRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/ship-spares': {
@@ -2598,6 +2617,7 @@ interface AppRouteChildren {
   AppSeaportRoute: typeof AppSeaportRouteWithChildren
   AppSettingsRoute: typeof AppSettingsRoute
   AppShipSparesRoute: typeof AppShipSparesRoute
+  AppShipsyncRoute: typeof AppShipsyncRoute
   AppSmallBoatRegistrationRoute: typeof AppSmallBoatRegistrationRoute
   AppTrainingRoute: typeof AppTrainingRouteWithChildren
   AppWaypointRoute: typeof AppWaypointRouteWithChildren
@@ -2659,6 +2679,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppSeaportRoute: AppSeaportRouteWithChildren,
   AppSettingsRoute: AppSettingsRoute,
   AppShipSparesRoute: AppShipSparesRoute,
+  AppShipsyncRoute: AppShipsyncRoute,
   AppSmallBoatRegistrationRoute: AppSmallBoatRegistrationRoute,
   AppTrainingRoute: AppTrainingRouteWithChildren,
   AppWaypointRoute: AppWaypointRouteWithChildren,

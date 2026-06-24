@@ -113,7 +113,7 @@ const NAV: NavItem[] = [
     flagKey: "services",
     children: [
       { label: "Agency Services",     to: "/agency",              icon: Anchor },
-      { label: "ShipSync Logistics",  to: "/packages",            icon: Package },
+      { label: "ShipSync Logistics",  to: "/shipsync",            icon: Package },
       { label: "Waypoint Chandlery",  to: "/waypoint",            icon: ShoppingCart },
       { label: "Provisioning",        to: "/provisioning",        icon: UtensilsCrossed },
       { label: "Training Institute",  to: "/training",            icon: GraduationCap },
