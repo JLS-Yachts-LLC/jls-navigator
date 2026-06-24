@@ -7,6 +7,7 @@ import { fetchAllRows } from '@/lib/fetch-all'
 import { COLORS, FONTS } from '@/lib/tokens'
 import { COUNTRY_CONFIGS } from '@/lib/visa/countryConfig'
 import ComplianceAlertBanner from './ComplianceAlertBanner'
+import { softDeleteEntity } from '@/lib/recycle-bin'
 import { VisaReportView } from './VisaReportView'
 import { VisaBulkUpload } from './VisaBulkUpload'
 
@@ -258,7 +259,12 @@ export default function VisaDashboard() {
     setCancelling(app.id)
     const db = supabase as any
     if (app.status === 'draft') {
-      await db.from('visa_applications').delete().eq('id', app.id)
+      try {
+        await softDeleteEntity('visa_application', app.id, app.crew_members?.full_name ?? app.passport_number ?? undefined)
+        toast.success('Moved to Recycle Bin — restorable for 90 days')
+      } catch (e: any) {
+        toast.error(e?.message ?? 'Delete failed'); setCancelling(null); return
+      }
     } else {
       await db.from('visa_applications').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', app.id)
     }
@@ -597,10 +603,18 @@ export default function VisaDashboard() {
             return (
               <div
                 key={app.id}
+                role="button"
+                tabIndex={0}
+                title="Open application"
+                onClick={() => navigate({ to: `/crew-immigration/visas/${app.id}` as any })}
+                onKeyDown={e => { if (e.key === 'Enter') navigate({ to: `/crew-immigration/visas/${app.id}` as any }) }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = `${COLORS.signal}0F` }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = idx % 2 === 1 ? `color-mix(in oklab, ${COLORS.deep} 25%, transparent)` : 'transparent' }}
                 style={{
-                  display: 'grid', gridTemplateColumns: GRID, padding: '12px 16px', alignItems: 'center',
+                  display: 'grid', gridTemplateColumns: GRID, padding: '12px 16px', alignItems: 'center', cursor: 'pointer',
                   borderBottom: idx < filtered.length - 1 ? `1px solid ${COLORS.deep}` : 'none',
                   background: idx % 2 === 1 ? `color-mix(in oklab, ${COLORS.deep} 25%, transparent)` : 'transparent',
+                  transition: 'background 0.12s',
                 }}
               >
                 {/* Crew */}
@@ -661,8 +675,8 @@ export default function VisaDashboard() {
                   {formatDate(effectiveDate(app))}
                 </span>
 
-                {/* Actions */}
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {/* Actions — stop row-click navigation when using these controls */}
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }} onClick={e => e.stopPropagation()}>
                   {(app.status === 'submitted' || app.status === 'pending_docs') && (
                     <>
                       <input

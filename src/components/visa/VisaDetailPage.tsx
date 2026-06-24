@@ -9,6 +9,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { DateInputDMY } from "@/components/ui/date-input-dmy";
 import { SignedAnchor } from "@/components/ui/signed-file";
+import { DraggableDocRow } from "@/components/visa/DraggableDocRow";
+import { softDeleteEntity } from "@/lib/recycle-bin";
 import { ArrowLeft, Loader2, Pencil, Trash2, ExternalLink, Upload, IdCard, FileCheck2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn, toDMY } from "@/lib/utils";
@@ -210,9 +212,13 @@ export function VisaDetailPage() {
   }
 
   async function confirmDelete() {
-    const { error } = await (supabase as any).from("visa_applications").delete().eq("id", id);
-    if (error) { toast.error(error.message); return; }
-    toast.success("Application deleted"); navigate({ to: "/crew-immigration/visas" });
+    try {
+      await softDeleteEntity("visa_application", id as string, name);
+    } catch (e: any) {
+      toast.error(e?.message ?? "Delete failed"); return;
+    }
+    toast.success("Moved to Recycle Bin — restorable for 90 days");
+    navigate({ to: "/crew-immigration/visas" });
   }
 
   if (loading || !visa) {
@@ -249,7 +255,7 @@ export function VisaDetailPage() {
             <div className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-muted-foreground/60">Visa Application</div>
             <h1 className="mt-0.5 font-display text-[1.2rem] font-semibold tracking-tight">{name}</h1>
           </div>
-          <span className={cn("ml-2 rounded-full px-2.5 py-0.5 text-[11px] font-semibold", sm.cls)}>{sm.label}</span>
+          <span className={cn("ml-2 rounded-full px-4 py-1.5 text-sm font-bold tracking-wide shadow-sm", sm.cls)}>{sm.label}</span>
         </div>
         <div className="flex items-center gap-2">
           <Button size="sm" variant="outline" onClick={openEdit} className="h-8 gap-1.5"><Pencil className="h-3.5 w-3.5" /> Edit</Button>
@@ -287,11 +293,15 @@ export function VisaDetailPage() {
               return (
                 <div className="px-4 py-3">
                   <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">Documents</div>
-                  <div className="flex flex-col gap-1">
+                  <div className="mb-2 text-[11px] text-muted-foreground/70">Drag a document straight into an email or upload field — or use Open / Download.</div>
+                  <div className="flex flex-col gap-1.5">
                     {present.map(([label, u]) => (
-                      <SignedAnchor key={label} stored={u!} className="flex items-center gap-1.5 text-[13px] text-primary hover:underline">
-                        <ExternalLink className="h-3.5 w-3.5" /> {label}
-                      </SignedAnchor>
+                      <DraggableDocRow
+                        key={label}
+                        label={label}
+                        stored={u!}
+                        icon={/headshot/i.test(label) ? '📷' : '📄'}
+                      />
                     ))}
                   </div>
                 </div>
@@ -403,8 +413,12 @@ export function VisaDetailPage() {
       <AlertDialog open={del} onOpenChange={setDel}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete application?</AlertDialogTitle>
-            <AlertDialogDescription>The visa application for <strong>{name}</strong> will be permanently deleted.</AlertDialogDescription>
+            <AlertDialogTitle>Delete this visa application?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The visa application for <strong>{name}</strong> and its attached documents (passport pages, headshot,
+              verification letter, issued visa) will be removed. It will be moved to the <strong>Recycle Bin</strong> and
+              can be restored for 90 days. Are you sure you want to proceed?
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>

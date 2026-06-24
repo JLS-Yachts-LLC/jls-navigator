@@ -10,7 +10,7 @@ import {
   Wallet, Receipt, TrendingUp, PiggyBank, FolderOpen, Award, Download,
   MessageSquare, Lightbulb, BotMessageSquare, PenLine, Fuel, Contact,
 } from "lucide-react";
-import { Rocket, Plug } from "lucide-react";
+import { Rocket, Plug, Trash2 } from "lucide-react";
 import { AdminSidebarSection } from "@/components/admin/AdminSidebarSection";
 import { useState, useMemo } from "react";
 import { PolarisLogo } from "@/components/brand/PolarisLogo";
@@ -77,6 +77,7 @@ const NAV: NavItem[] = [
       { label: "Crew Documents", to: "/crew-immigration/documents", icon: ClipboardList, flagKey: "crew-documents" },
       { label: "Training",     to: "/training",                     icon: GraduationCap, flagKey: "training" },
       { label: "Crew Benefits", to: "/compass",                     icon: Compass, flagKey: "compass" },
+      { label: "Recycle Bin",  to: "/recycle-bin",                  icon: Trash2, flagKey: "recycle-bin" },
     ],
   },
 

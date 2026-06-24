@@ -20,6 +20,7 @@ import { Route as AppSmallBoatRegistrationRouteImport } from './routes/_app.smal
 import { Route as AppShipSparesRouteImport } from './routes/_app.ship-spares'
 import { Route as AppSettingsRouteImport } from './routes/_app.settings'
 import { Route as AppSeaportRouteImport } from './routes/_app.seaport'
+import { Route as AppRecycleBinRouteImport } from './routes/_app.recycle-bin'
 import { Route as AppProvisioningRouteImport } from './routes/_app.provisioning'
 import { Route as AppProcurementRouteImport } from './routes/_app.procurement'
 import { Route as AppPackagesRouteImport } from './routes/_app.packages'
@@ -178,6 +179,11 @@ const AppSettingsRoute = AppSettingsRouteImport.update({
 const AppSeaportRoute = AppSeaportRouteImport.update({
   id: '/seaport',
   path: '/seaport',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppRecycleBinRoute = AppRecycleBinRouteImport.update({
+  id: '/recycle-bin',
+  path: '/recycle-bin',
   getParentRoute: () => AppRoute,
 } as any)
 const AppProvisioningRoute = AppProvisioningRouteImport.update({
@@ -759,6 +765,7 @@ export interface FileRoutesByFullPath {
   '/packages': typeof AppPackagesRouteWithChildren
   '/procurement': typeof AppProcurementRoute
   '/provisioning': typeof AppProvisioningRoute
+  '/recycle-bin': typeof AppRecycleBinRoute
   '/seaport': typeof AppSeaportRouteWithChildren
   '/settings': typeof AppSettingsRoute
   '/ship-spares': typeof AppShipSparesRoute
@@ -868,6 +875,7 @@ export interface FileRoutesByTo {
   '/my-fleet': typeof AppMyFleetRoute
   '/procurement': typeof AppProcurementRoute
   '/provisioning': typeof AppProvisioningRoute
+  '/recycle-bin': typeof AppRecycleBinRoute
   '/settings': typeof AppSettingsRoute
   '/ship-spares': typeof AppShipSparesRoute
   '/small-boat-registration': typeof AppSmallBoatRegistrationRoute
@@ -979,6 +987,7 @@ export interface FileRoutesById {
   '/_app/packages': typeof AppPackagesRouteWithChildren
   '/_app/procurement': typeof AppProcurementRoute
   '/_app/provisioning': typeof AppProvisioningRoute
+  '/_app/recycle-bin': typeof AppRecycleBinRoute
   '/_app/seaport': typeof AppSeaportRouteWithChildren
   '/_app/settings': typeof AppSettingsRoute
   '/_app/ship-spares': typeof AppShipSparesRoute
@@ -1097,6 +1106,7 @@ export interface FileRouteTypes {
     | '/packages'
     | '/procurement'
     | '/provisioning'
+    | '/recycle-bin'
     | '/seaport'
     | '/settings'
     | '/ship-spares'
@@ -1206,6 +1216,7 @@ export interface FileRouteTypes {
     | '/my-fleet'
     | '/procurement'
     | '/provisioning'
+    | '/recycle-bin'
     | '/settings'
     | '/ship-spares'
     | '/small-boat-registration'
@@ -1316,6 +1327,7 @@ export interface FileRouteTypes {
     | '/_app/packages'
     | '/_app/procurement'
     | '/_app/provisioning'
+    | '/_app/recycle-bin'
     | '/_app/seaport'
     | '/_app/settings'
     | '/_app/ship-spares'
@@ -1483,6 +1495,13 @@ declare module '@tanstack/react-router' {
       path: '/seaport'
       fullPath: '/seaport'
       preLoaderRoute: typeof AppSeaportRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/recycle-bin': {
+      id: '/_app/recycle-bin'
+      path: '/recycle-bin'
+      fullPath: '/recycle-bin'
+      preLoaderRoute: typeof AppRecycleBinRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/provisioning': {
@@ -2532,6 +2551,7 @@ interface AppRouteChildren {
   AppPackagesRoute: typeof AppPackagesRouteWithChildren
   AppProcurementRoute: typeof AppProcurementRoute
   AppProvisioningRoute: typeof AppProvisioningRoute
+  AppRecycleBinRoute: typeof AppRecycleBinRoute
   AppSeaportRoute: typeof AppSeaportRouteWithChildren
   AppSettingsRoute: typeof AppSettingsRoute
   AppShipSparesRoute: typeof AppShipSparesRoute
@@ -2591,6 +2611,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppPackagesRoute: AppPackagesRouteWithChildren,
   AppProcurementRoute: AppProcurementRoute,
   AppProvisioningRoute: AppProvisioningRoute,
+  AppRecycleBinRoute: AppRecycleBinRoute,
   AppSeaportRoute: AppSeaportRouteWithChildren,
   AppSettingsRoute: AppSettingsRoute,
   AppShipSparesRoute: AppShipSparesRoute,

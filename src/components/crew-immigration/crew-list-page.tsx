@@ -15,6 +15,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Plus, Search, UserCircle2, Pencil, Trash2, Loader2, Table2, LayoutGrid, Rows3, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { doPushToSharePoint } from "@/lib/sharepoint-push.server";
+import { softDeleteEntity, getCrewDeleteImpact, type DeleteImpact } from "@/lib/recycle-bin";
 import { Link } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
 import { CrewCards, CrewGrid, CsvImportDialog } from "@/components/crew-immigration/crew-list-views";
@@ -82,6 +83,8 @@ export function CrewListPage() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [busy, setBusy] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<CrewMember | null>(null);
+  const [deleteImpact, setDeleteImpact] = useState<DeleteImpact | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [view, setView] = useState<"table" | "grid" | "cards">("table");
   const [csvOpen, setCsvOpen] = useState(false);
 
@@ -180,12 +183,29 @@ export function CrewListPage() {
     }
   }
 
+  // When a delete is queued, check what it would take with it (visas + passports)
+  // so the confirmation can warn the user.
+  useEffect(() => {
+    if (!deleteTarget) { setDeleteImpact(null); return; }
+    let alive = true;
+    getCrewDeleteImpact(deleteTarget.id).then(i => { if (alive) setDeleteImpact(i); }).catch(() => {});
+    return () => { alive = false; };
+  }, [deleteTarget]);
+
   async function confirmDelete() {
     if (!deleteTarget) return;
-    const { error } = await (supabase as any).from("crew_members").delete().eq("id", deleteTarget.id);
-    if (error) toast.error(error.message);
-    else { toast.success("Crew member removed"); void load(); }
-    setDeleteTarget(null);
+    setDeleting(true);
+    try {
+      const name = [deleteTarget.first_name, deleteTarget.last_name].filter(Boolean).join(" ");
+      await softDeleteEntity("crew_member", deleteTarget.id, name);
+      toast.success("Moved to Recycle Bin — restorable for 90 days");
+      void load();
+    } catch (e: any) {
+      toast.error(e?.message ?? "Delete failed");
+    } finally {
+      setDeleting(false);
+      setDeleteTarget(null);
+    }
   }
 
   const filtered = useMemo(() => {
@@ -522,12 +542,16 @@ export function CrewListPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Remove crew member?</AlertDialogTitle>
             <AlertDialogDescription>
-              <strong>{deleteTarget?.first_name} {deleteTarget?.last_name}</strong> will be permanently removed along with all associated records.
+              Deleting <strong>{deleteTarget?.first_name} {deleteTarget?.last_name}</strong> will also remove
+              {deleteImpact
+                ? <> <strong>{deleteImpact.visaApplications}</strong> visa application{deleteImpact.visaApplications === 1 ? '' : 's'} and <strong>{deleteImpact.passports}</strong> passport{deleteImpact.passports === 1 ? '' : 's'} (with their documents) held against this crew member.</>
+                : ' all associated visa applications, passports and documents.'}
+              {' '}It will be moved to the <strong>Recycle Bin</strong> and can be restored for 90 days. Are you sure you want to proceed?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Remove</AlertDialogAction>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete} disabled={deleting} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">{deleting ? 'Removing…' : 'Remove'}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
