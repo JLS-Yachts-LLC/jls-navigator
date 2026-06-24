@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -61,6 +61,7 @@ const BILLING_CYCLES = [
   { value: "annual", label: "Annual" },
   { value: "one_off", label: "One-off" },
 ];
+const CURRENCIES = ["GBP", "USD", "EUR", "AED"];
 const PAYMENT_METHODS = [
   { value: "card", label: "Card" },
   { value: "debit", label: "Debit" },
@@ -229,8 +230,9 @@ export function InternalServicesPage() {
     return d !== null && d >= 0 && d <= 90;
   }).sort((a, b) => (daysUntil(a.renewal_date) ?? 0) - (daysUntil(b.renewal_date) ?? 0)), [rows]);
 
-  function openNew() { setEditing(null); setForm(EMPTY_FORM); setOpen(true); }
+  function openNew() { justOpenedRef.current = true; setEditing(null); setForm(EMPTY_FORM); setOpen(true); }
   function openEdit(r: InternalService) {
+    justOpenedRef.current = true;
     setEditing(r);
     setForm({
       service_name: r.service_name, vendor: r.vendor, category: r.category, cost_amount: r.cost_amount,
@@ -278,10 +280,13 @@ export function InternalServicesPage() {
   const set = (patch: Partial<FormState>) => setForm((f) => ({ ...f, ...patch }));
 
   const [fxBusy, setFxBusy] = useState(false);
-  async function fetchFxRate() {
+  // Skip the first auto-fetch right after opening so an existing service keeps
+  // its locked purchase rate instead of being overwritten with a fresh one.
+  const justOpenedRef = useRef(false);
+  async function fetchFxRate(silent = false) {
     const fromCur = (form.currency || "").toUpperCase();
     const toCur = (form.sell_currency || form.currency || "").toUpperCase();
-    if (!fromCur || !toCur) { toast.error("Set both currencies first"); return; }
+    if (!fromCur || !toCur) { if (!silent) toast.error("Set both currencies first"); return; }
     if (fromCur === toCur) { set({ fx_rate: 1, fx_rate_date: form.start_date ?? null }); return; }
     setFxBusy(true);
     try {
@@ -291,11 +296,24 @@ export function InternalServicesPage() {
       const j = await r.json();
       if (j.ok && typeof j.rate === "number") {
         set({ fx_rate: Number(j.rate.toFixed(6)), fx_rate_date: (j.historical && d) ? d : (form.fx_rate_date ?? null) });
-        toast.success(`${fromCur}→${toCur}: ${j.rate.toFixed(4)} (${j.source})`);
-      } else { toast.error(j.error || "Could not fetch rate"); }
-    } catch { toast.error("Rate lookup failed"); }
+        if (!silent) toast.success(`${fromCur}→${toCur}: ${j.rate.toFixed(4)} (${j.source})`);
+      } else if (!silent) { toast.error(j.error || "Could not fetch rate"); }
+    } catch { if (!silent) toast.error("Rate lookup failed"); }
     finally { setFxBusy(false); }
   }
+  // Auto-fetch the rate when the currencies / purchase date change (debounced),
+  // but never on the initial open of an existing record.
+  useEffect(() => {
+    if (!open) return;
+    if (justOpenedRef.current) { justOpenedRef.current = false; return; }
+    const from = (form.currency || "").toUpperCase();
+    const to = (form.sell_currency || "").toUpperCase();
+    if (!from || !to) return;
+    if (from === to) { if (form.fx_rate !== 1) set({ fx_rate: 1 }); return; }
+    const t = setTimeout(() => { void fetchFxRate(true); }, 600);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, form.currency, form.sell_currency, form.start_date]);
   // Live margin preview in the dialog (in the sell currency, at the captured rate).
   const previewMargin = (() => {
     if (form.sell_price == null || form.cost_amount == null) return null;
@@ -497,7 +515,8 @@ export function InternalServicesPage() {
               <div className="space-y-1.5"><Label className="text-xs">Cost</Label>
                 <Input type="number" step="0.01" value={form.cost_amount ?? ""} onChange={(e) => set({ cost_amount: e.target.value === "" ? null : Number(e.target.value) })} className="h-8" /></div>
               <div className="space-y-1.5"><Label className="text-xs">Currency</Label>
-                <Input value={form.currency} onChange={(e) => set({ currency: e.target.value })} className="h-8" /></div>
+                <Select value={form.currency} onValueChange={(v) => set({ currency: v })}><SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>{CURRENCIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent></Select></div>
               <div className="space-y-1.5"><Label className="text-xs">Billing</Label>
                 <Select value={form.billing_cycle} onValueChange={(v) => set({ billing_cycle: v })}><SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
                   <SelectContent>{BILLING_CYCLES.map((c) => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}</SelectContent></Select></div>
@@ -506,7 +525,8 @@ export function InternalServicesPage() {
               <div className="space-y-1.5"><Label className="text-xs">Price <span className="font-normal text-muted-foreground">(sell)</span></Label>
                 <Input type="number" step="0.01" value={form.sell_price ?? ""} onChange={(e) => set({ sell_price: e.target.value === "" ? null : Number(e.target.value) })} className="h-8" placeholder="What we charge" /></div>
               <div className="space-y-1.5"><Label className="text-xs">Sell currency</Label>
-                <Input value={form.sell_currency ?? ""} onChange={(e) => set({ sell_currency: e.target.value.toUpperCase() || null })} className="h-8" placeholder="e.g. AED" /></div>
+                <Select value={form.sell_currency ?? "AED"} onValueChange={(v) => set({ sell_currency: v })}><SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>{CURRENCIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent></Select></div>
               <div className="space-y-1.5"><Label className="text-xs">Commitment term</Label>
                 <Input value={form.commitment_term ?? ""} onChange={(e) => set({ commitment_term: e.target.value || null })} className="h-8" placeholder="e.g. 12 months" /></div>
             </div>
@@ -515,13 +535,12 @@ export function InternalServicesPage() {
               <div className="grid grid-cols-3 gap-3">
                 <div className="space-y-1.5">
                   <Label className="text-xs">Exchange rate <span className="font-normal text-muted-foreground">(at purchase)</span></Label>
-                  <div className="flex gap-1.5">
-                    <Input type="number" step="0.000001" value={form.fx_rate ?? ""} onChange={(e) => set({ fx_rate: e.target.value === "" ? null : Number(e.target.value) })} className="h-8" placeholder={`1 ${form.currency} = ?`} />
-                    <Button type="button" variant="outline" size="sm" className="h-8 shrink-0 px-2 text-xs" onClick={fetchFxRate} disabled={fxBusy}>
-                      {fxBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Fetch"}
-                    </Button>
+                  <Input type="number" step="0.000001" value={form.fx_rate ?? ""} onChange={(e) => set({ fx_rate: e.target.value === "" ? null : Number(e.target.value) })} className="h-8" placeholder={`1 ${form.currency} = ?`} />
+                  <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                    {fxBusy
+                      ? <><Loader2 className="h-3 w-3 animate-spin" /> Fetching rate…</>
+                      : <>1 {form.currency} = {form.fx_rate ?? "?"} {form.sell_currency} · auto</>}
                   </div>
-                  <div className="text-[10px] text-muted-foreground">1 {form.currency} = {form.fx_rate ?? "?"} {form.sell_currency}</div>
                 </div>
                 <div className="space-y-1.5"><Label className="text-xs">Rate date</Label>
                   <Input type="date" value={form.fx_rate_date ?? ""} onChange={(e) => set({ fx_rate_date: e.target.value || null })} className="h-8" /></div>
