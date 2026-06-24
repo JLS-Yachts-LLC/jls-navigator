@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { getCapturedLog } from "@/lib/action-log";
 import { fileToBase64 } from "@/lib/file-to-base64";
-import { Lightbulb, Bug, Sparkles, X, Loader2, Upload, CheckCircle2, ExternalLink } from "lucide-react";
+import { Lightbulb, Bug, Sparkles, X, Loader2, Upload, CheckCircle2, ExternalLink, Camera } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -18,6 +18,30 @@ export function FeedbackWidget() {
   const [message, setMessage] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
+  const [capturing, setCapturing] = useState(false);
+
+  // Capture the screen via the browser and attach it as the screenshot. The
+  // browser shows a picker (choose "This tab"/window); we grab a single frame.
+  async function takeScreenshot() {
+    const md = navigator.mediaDevices as any;
+    if (!md?.getDisplayMedia) { toast.error("Screenshot capture isn't supported here — use Attach instead."); return; }
+    setCapturing(true);
+    try {
+      const stream: MediaStream = await md.getDisplayMedia({ video: { displaySurface: "browser" }, audio: false });
+      const video = document.createElement("video");
+      video.srcObject = stream;
+      await video.play();
+      await new Promise((r) => setTimeout(r, 250)); // let dimensions settle
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+      canvas.getContext("2d")!.drawImage(video, 0, 0);
+      stream.getTracks().forEach((t) => t.stop());
+      const blob: Blob | null = await new Promise((res) => canvas.toBlob((b) => res(b), "image/png"));
+      if (blob) { setFile(new File([blob], `screenshot-${Date.now()}.png`, { type: "image/png" })); toast.success("Screenshot captured"); }
+    } catch (e: any) {
+      if (e?.name !== "NotAllowedError" && e?.name !== "AbortError") toast.error("Could not capture screenshot");
+    } finally { setCapturing(false); }
+  }
   const [done, setDone] = useState(false);
 
   function reset() {
@@ -116,11 +140,23 @@ export function FeedbackWidget() {
 
                   {tab === "bug" && (
                     <>
-                      <label className="flex cursor-pointer items-center gap-2 rounded-md border border-dashed border-border px-3 py-2.5 text-sm text-muted-foreground hover:border-primary/50">
-                        <Upload className="h-4 w-4" />
-                        {file ? <span className="text-foreground">{file.name}</span> : "Attach a screenshot (optional)"}
-                        <input type="file" accept="image/*" className="hidden" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        <label className="flex flex-1 min-w-[180px] cursor-pointer items-center gap-2 rounded-md border border-dashed border-border px-3 py-2.5 text-sm text-muted-foreground hover:border-primary/50">
+                          <Upload className="h-4 w-4" />
+                          {file ? <span className="truncate text-foreground">{file.name}</span> : "Attach a screenshot (optional)"}
+                          <input type="file" accept="image/*" className="hidden" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+                        </label>
+                        <button type="button" onClick={takeScreenshot} disabled={capturing}
+                          className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-2.5 text-sm font-medium hover:border-primary/50 disabled:opacity-60">
+                          {capturing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />} Take screenshot
+                        </button>
+                      </div>
+                      {file && (
+                        <div className="flex items-center gap-2">
+                          <img src={URL.createObjectURL(file)} alt="" className="h-16 rounded border border-border object-cover" />
+                          <button type="button" onClick={() => setFile(null)} className="text-[12px] text-muted-foreground hover:text-destructive">Remove</button>
+                        </div>
+                      )}
                       <p className="text-[11px] text-muted-foreground">
                         A short activity log (recent actions + any error) is attached automatically to help us diagnose it.
                       </p>
