@@ -72,6 +72,7 @@ const NAV: NavItem[] = [
       { label: "Crew Dashboard", to: "/crew-immigration/dashboard",  icon: LayoutDashboard, flagKey: "crew-dashboard" },
       { label: "Crew List",    to: "/crew-immigration/crew",        icon: UserCircle2, flagKey: "crew-list" },
       { label: "Visas",        to: "/crew-immigration/visas",       icon: FileText, flagKey: "crew-visas" },
+      { label: "Vessel Reports", to: "/crew-immigration/visas/vessel-reports", icon: BarChart3, flagKey: "crew-visas" },
       { label: "Sign On / Off", to: "/crew-immigration/sign-on-off", icon: LogIn, flagKey: "crew-signon" },
       { label: "Seaport Immigration", to: "/seaport", icon: Anchor, flagKey: "seaport" },
       { label: "Crew Documents", to: "/crew-immigration/documents", icon: ClipboardList, flagKey: "crew-documents" },

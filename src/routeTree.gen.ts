@@ -115,6 +115,7 @@ import { Route as AppOrbitRequestsIdRouteImport } from './routes/_app.orbit.requ
 import { Route as AppGuidesDepartmentGuideIdRouteImport } from './routes/_app.guides.$department.$guideId'
 import { Route as AppDashboardVesselVesselIdRouteImport } from './routes/_app.dashboard.vessel.$vesselId'
 import { Route as AppDashboardLocationLocationIdRouteImport } from './routes/_app.dashboard.location.$locationId'
+import { Route as AppCrewImmigrationVisasVesselReportsRouteImport } from './routes/_app.crew-immigration.visas.vessel-reports'
 import { Route as AppCrewImmigrationVisasSupportingDocsRouteImport } from './routes/_app.crew-immigration.visas.supporting-docs'
 import { Route as AppCrewImmigrationVisasPipelineRouteImport } from './routes/_app.crew-immigration.visas.pipeline'
 import { Route as AppCrewImmigrationVisasPassportDetailsRouteImport } from './routes/_app.crew-immigration.visas.passport-details'
@@ -670,6 +671,12 @@ const AppDashboardLocationLocationIdRoute =
     path: '/location/$locationId',
     getParentRoute: () => AppDashboardRoute,
   } as any)
+const AppCrewImmigrationVisasVesselReportsRoute =
+  AppCrewImmigrationVisasVesselReportsRouteImport.update({
+    id: '/vessel-reports',
+    path: '/vessel-reports',
+    getParentRoute: () => AppCrewImmigrationVisasRoute,
+  } as any)
 const AppCrewImmigrationVisasSupportingDocsRoute =
   AppCrewImmigrationVisasSupportingDocsRouteImport.update({
     id: '/supporting-docs',
@@ -837,6 +844,7 @@ export interface FileRoutesByFullPath {
   '/crew-immigration/visas/passport-details': typeof AppCrewImmigrationVisasPassportDetailsRoute
   '/crew-immigration/visas/pipeline': typeof AppCrewImmigrationVisasPipelineRoute
   '/crew-immigration/visas/supporting-docs': typeof AppCrewImmigrationVisasSupportingDocsRoute
+  '/crew-immigration/visas/vessel-reports': typeof AppCrewImmigrationVisasVesselReportsRoute
   '/dashboard/location/$locationId': typeof AppDashboardLocationLocationIdRoute
   '/dashboard/vessel/$vesselId': typeof AppDashboardVesselVesselIdRoute
   '/guides/$department/$guideId': typeof AppGuidesDepartmentGuideIdRoute
@@ -940,6 +948,7 @@ export interface FileRoutesByTo {
   '/crew-immigration/visas/passport-details': typeof AppCrewImmigrationVisasPassportDetailsRoute
   '/crew-immigration/visas/pipeline': typeof AppCrewImmigrationVisasPipelineRoute
   '/crew-immigration/visas/supporting-docs': typeof AppCrewImmigrationVisasSupportingDocsRoute
+  '/crew-immigration/visas/vessel-reports': typeof AppCrewImmigrationVisasVesselReportsRoute
   '/dashboard/location/$locationId': typeof AppDashboardLocationLocationIdRoute
   '/dashboard/vessel/$vesselId': typeof AppDashboardVesselVesselIdRoute
   '/guides/$department/$guideId': typeof AppGuidesDepartmentGuideIdRoute
@@ -1059,6 +1068,7 @@ export interface FileRoutesById {
   '/_app/crew-immigration/visas/passport-details': typeof AppCrewImmigrationVisasPassportDetailsRoute
   '/_app/crew-immigration/visas/pipeline': typeof AppCrewImmigrationVisasPipelineRoute
   '/_app/crew-immigration/visas/supporting-docs': typeof AppCrewImmigrationVisasSupportingDocsRoute
+  '/_app/crew-immigration/visas/vessel-reports': typeof AppCrewImmigrationVisasVesselReportsRoute
   '/_app/dashboard/location/$locationId': typeof AppDashboardLocationLocationIdRoute
   '/_app/dashboard/vessel/$vesselId': typeof AppDashboardVesselVesselIdRoute
   '/_app/guides/$department/$guideId': typeof AppGuidesDepartmentGuideIdRoute
@@ -1178,6 +1188,7 @@ export interface FileRouteTypes {
     | '/crew-immigration/visas/passport-details'
     | '/crew-immigration/visas/pipeline'
     | '/crew-immigration/visas/supporting-docs'
+    | '/crew-immigration/visas/vessel-reports'
     | '/dashboard/location/$locationId'
     | '/dashboard/vessel/$vesselId'
     | '/guides/$department/$guideId'
@@ -1281,6 +1292,7 @@ export interface FileRouteTypes {
     | '/crew-immigration/visas/passport-details'
     | '/crew-immigration/visas/pipeline'
     | '/crew-immigration/visas/supporting-docs'
+    | '/crew-immigration/visas/vessel-reports'
     | '/dashboard/location/$locationId'
     | '/dashboard/vessel/$vesselId'
     | '/guides/$department/$guideId'
@@ -1399,6 +1411,7 @@ export interface FileRouteTypes {
     | '/_app/crew-immigration/visas/passport-details'
     | '/_app/crew-immigration/visas/pipeline'
     | '/_app/crew-immigration/visas/supporting-docs'
+    | '/_app/crew-immigration/visas/vessel-reports'
     | '/_app/dashboard/location/$locationId'
     | '/_app/dashboard/vessel/$vesselId'
     | '/_app/guides/$department/$guideId'
@@ -2162,6 +2175,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppDashboardLocationLocationIdRouteImport
       parentRoute: typeof AppDashboardRoute
     }
+    '/_app/crew-immigration/visas/vessel-reports': {
+      id: '/_app/crew-immigration/visas/vessel-reports'
+      path: '/vessel-reports'
+      fullPath: '/crew-immigration/visas/vessel-reports'
+      preLoaderRoute: typeof AppCrewImmigrationVisasVesselReportsRouteImport
+      parentRoute: typeof AppCrewImmigrationVisasRoute
+    }
     '/_app/crew-immigration/visas/supporting-docs': {
       id: '/_app/crew-immigration/visas/supporting-docs'
       path: '/supporting-docs'
@@ -2301,6 +2321,7 @@ interface AppCrewImmigrationVisasRouteChildren {
   AppCrewImmigrationVisasPassportDetailsRoute: typeof AppCrewImmigrationVisasPassportDetailsRoute
   AppCrewImmigrationVisasPipelineRoute: typeof AppCrewImmigrationVisasPipelineRoute
   AppCrewImmigrationVisasSupportingDocsRoute: typeof AppCrewImmigrationVisasSupportingDocsRoute
+  AppCrewImmigrationVisasVesselReportsRoute: typeof AppCrewImmigrationVisasVesselReportsRoute
   AppCrewImmigrationVisasIndexRoute: typeof AppCrewImmigrationVisasIndexRoute
   AppCrewImmigrationVisasInfoCountryCodeRoute: typeof AppCrewImmigrationVisasInfoCountryCodeRoute
 }
@@ -2315,6 +2336,8 @@ const AppCrewImmigrationVisasRouteChildren: AppCrewImmigrationVisasRouteChildren
     AppCrewImmigrationVisasPipelineRoute: AppCrewImmigrationVisasPipelineRoute,
     AppCrewImmigrationVisasSupportingDocsRoute:
       AppCrewImmigrationVisasSupportingDocsRoute,
+    AppCrewImmigrationVisasVesselReportsRoute:
+      AppCrewImmigrationVisasVesselReportsRoute,
     AppCrewImmigrationVisasIndexRoute: AppCrewImmigrationVisasIndexRoute,
     AppCrewImmigrationVisasInfoCountryCodeRoute:
       AppCrewImmigrationVisasInfoCountryCodeRoute,

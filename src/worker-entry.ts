@@ -34,6 +34,10 @@ import { automationEventHandler } from './routes/api.automations.event'
 import { qbWebhookHandler } from './routes/api.qb.webhook'
 import { movementsNotifyHandler } from './routes/api.movements.notify'
 import { movementReportsHandler, runWeeklyImmigrationReports } from './routes/api.movements.reports'
+import { visaReportGenerateHandler } from './routes/api.visa.report-generate'
+import { visaReportSendHandler } from './routes/api.visa.report-send'
+import { visaVesselPrefsHandler } from './routes/api.visa.vessel-prefs'
+import { runWeeklyVisaReports } from './lib/visa-reporting/runWeeklyVisaReports.server'
 import { runVisaExpiryFlagJob } from './lib/visa/visaExpiryFlags.server'
 
 const handleRequest = createStartHandler(defaultStreamHandler)
@@ -266,6 +270,17 @@ export default {
       return visaReportsHandler(request)
     }
 
+    // Vessel visa reporting: generate / send / comms prefs
+    if (url.pathname === '/api/visa/report-generate' && request.method === 'POST') {
+      return visaReportGenerateHandler(request)
+    }
+    if (url.pathname === '/api/visa/report-send' && request.method === 'POST') {
+      return visaReportSendHandler(request)
+    }
+    if (url.pathname === '/api/visa/vessel-prefs' && (request.method === 'GET' || request.method === 'POST')) {
+      return visaVesselPrefsHandler(request)
+    }
+
     // ── Admin Panel API (TanStack API routes aren't dispatched by the CF handler,
     //    so each is wired here). Order: more-specific paths first. ──
     if (url.pathname === '/api/admin/audit/export' && request.method === 'GET') {
@@ -379,6 +394,16 @@ export default {
         runWeeklyImmigrationReports()
           .then((r) => console.log(`[weekly-immigration] on=${r.signOn} off=${r.signOff} sent=${r.sent}`))
           .catch((e) => console.error('[weekly-immigration] error:', e))
+      )
+    }
+
+    // Weekly visa report — Friday 08:00 GST (04:00 UTC). Generates + emails a
+    // visa-status report to every yacht opted in (send_visa_reports = true).
+    if (utcHour === 4 && new Date().getUTCDay() === 5 && new Date().getUTCMinutes() < 15) {
+      ctx.waitUntil(
+        runWeeklyVisaReports()
+          .then((r) => console.log(`[weekly-visa] vessels=${r.vessels} generated=${r.generated} sent=${r.sent}`))
+          .catch((e) => console.error('[weekly-visa] error:', e))
       )
     }
 
