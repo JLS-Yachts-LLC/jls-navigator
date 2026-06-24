@@ -112,12 +112,17 @@ function StatusRow({ label, status, note }: {
 }
 
 // Large drag-and-drop dropzone for the passport inside pages.
-function UploadZone({ onFile, fileName, fileKB, scanning, onRemove }: {
+function UploadZone({ onFile, fileName, fileKB, scanning, onRemove, previewUrl, isPdf, onRescan }: {
   onFile: (f: File) => void
   fileName: string | null
   fileKB: number | null
   scanning: boolean
   onRemove: () => void
+  /** Stored or freshly-selected document to preview (image src or PDF url). */
+  previewUrl?: string | null
+  isPdf?: boolean
+  /** When provided, shows a "Rescan OCR" button to re-run extraction. */
+  onRescan?: () => void
 }) {
   const inputRef = React.useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
@@ -129,7 +134,12 @@ function UploadZone({ onFile, fileName, fileKB, scanning, onRemove }: {
     if (f) onFile(f)
   }, [onFile])
 
-  if (fileName) {
+  // Show the "uploaded" state whenever there's either a freshly-selected file
+  // or an existing stored document (edit mode) — so it's clear it's on file.
+  const hasDoc = !!fileName || !!previewUrl
+  if (hasDoc) {
+    const showImg = !!previewUrl && !isPdf
+    const label = fileName ?? 'Passport inside pages — on file'
     return (
       <div style={{
         position: 'relative', overflow: 'hidden',
@@ -141,35 +151,65 @@ function UploadZone({ onFile, fileName, fileKB, scanning, onRemove }: {
         {scanning && (
           <span aria-hidden="true" style={{ position: 'absolute', bottom: 0, left: '-40%', width: '40%', height: 3, background: COLORS.signal, animation: 'pp-sweep 1.1s ease-in-out infinite' }} />
         )}
-        {scanning ? (
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: FONTS.display, fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: COLORS.signal, padding: '2px 8px', background: `${COLORS.signal}20`, borderRadius: 3 }}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" style={{ animation: 'pp-spin 0.8s linear infinite' }}>
-              <circle cx="12" cy="12" r="9" stroke={COLORS.signal} strokeOpacity="0.3" strokeWidth="3" />
-              <path d="M21 12a9 9 0 0 0-9-9" stroke={COLORS.signal} strokeWidth="3" strokeLinecap="round" />
-            </svg>
-            Scanning…
+        {/* Thumbnail preview of the uploaded document */}
+        <button
+          type="button"
+          onClick={() => previewUrl && window.open(previewUrl, '_blank', 'noreferrer')}
+          title={previewUrl ? 'Open document' : undefined}
+          style={{
+            width: 46, height: 46, flexShrink: 0, padding: 0,
+            borderRadius: 6, overflow: 'hidden', border: `1px solid ${COLORS.deep}`, background: COLORS.void,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: previewUrl ? 'pointer' : 'default',
+          }}
+        >
+          {showImg
+            ? <img src={previewUrl!} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            : <span style={{ fontSize: 22 }} aria-hidden="true">📄</span>}
+        </button>
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {scanning ? (
+            <span style={{ display: 'inline-flex', alignSelf: 'flex-start', alignItems: 'center', gap: 7, fontFamily: FONTS.display, fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: COLORS.signal, padding: '2px 8px', background: `${COLORS.signal}20`, borderRadius: 3 }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" style={{ animation: 'pp-spin 0.8s linear infinite' }}>
+                <circle cx="12" cy="12" r="9" stroke={COLORS.signal} strokeOpacity="0.3" strokeWidth="3" />
+                <path d="M21 12a9 9 0 0 0-9-9" stroke={COLORS.signal} strokeWidth="3" strokeLinecap="round" />
+              </svg>
+              Scanning…
+            </span>
+          ) : (
+            <span style={{
+              fontFamily: FONTS.display, fontSize: 10, fontWeight: 700, alignSelf: 'flex-start',
+              letterSpacing: '0.12em', textTransform: 'uppercase',
+              color: '#22c55e', padding: '2px 8px',
+              background: `#22c55e20`, borderRadius: 3,
+            }}>Uploaded</span>
+          )}
+          <span style={{ fontFamily: FONTS.display, fontSize: 13, color: COLORS.frost, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {label}{fileKB != null ? ` · ${fileKB} KB` : ''}
           </span>
-        ) : (
-          <span style={{
-            fontFamily: FONTS.display, fontSize: 10, fontWeight: 700,
-            letterSpacing: '0.12em', textTransform: 'uppercase',
-            color: '#22c55e', padding: '2px 8px',
-            background: `#22c55e20`, borderRadius: 3,
-          }}>Uploaded</span>
-        )}
-        <span style={{ fontFamily: FONTS.display, fontSize: 13, color: COLORS.frost, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {fileName}
-        </span>
-        {fileKB != null && (
-          <span style={{ fontFamily: FONTS.display, fontSize: 11, color: COLORS.muted }}>
-            {fileKB} KB
-          </span>
+        </div>
+        {onRescan && (
+          <button
+            type="button"
+            onClick={onRescan}
+            disabled={scanning}
+            title="Re-run OCR extraction on this document"
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0,
+              fontFamily: FONTS.display, fontSize: 11, fontWeight: 700,
+              color: COLORS.signal, background: `${COLORS.signal}14`,
+              border: `1px solid ${COLORS.signal}55`, borderRadius: 6,
+              padding: '6px 12px', cursor: scanning ? 'wait' : 'pointer', opacity: scanning ? 0.6 : 1,
+            }}
+          >
+            <span aria-hidden="true" style={{ fontSize: 13 }}>⟳</span> Rescan OCR
+          </button>
         )}
         <button
           type="button"
           onClick={onRemove}
           aria-label="Remove uploaded file"
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: COLORS.muted, fontSize: 18, lineHeight: 1, padding: '0 4px' }}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: COLORS.muted, fontSize: 18, lineHeight: 1, padding: '0 4px', flexShrink: 0 }}
         >×</button>
       </div>
     )
@@ -229,7 +269,7 @@ const isImageUrl = (u?: string | null) => !!u && /\.(jpe?g|png|webp|gif)(\?|$)/i
 
 // Lightweight client-side check for headshot quality: is it colour (not B&W) and
 // does it have a light/plain background? Samples a downscaled copy on a canvas.
-async function analyzeHeadshot(file: File): Promise<{ isColour: boolean; whiteBackground: boolean }> {
+async function analyzeHeadshot(file: Blob): Promise<{ isColour: boolean; whiteBackground: boolean }> {
   return new Promise((resolve) => {
     const fallback = { isColour: true, whiteBackground: true }
     try {
@@ -266,6 +306,22 @@ async function analyzeHeadshot(file: File): Promise<{ isColour: boolean; whiteBa
   })
 }
 
+// Fetch a stored document and return its base64 + media type, for re-running OCR
+// on an already-uploaded passport (edit mode, where we only have the stored URL).
+async function fetchAsBase64(url: string): Promise<{ base64: string; mediaType: string; isImage: boolean }> {
+  const resp = await fetch(url)
+  const blob = await resp.blob()
+  const mediaType = blob.type || (/\.pdf(\?|$)/i.test(url) ? 'application/pdf' : 'image/jpeg')
+  const isImage = mediaType.startsWith('image/')
+  const base64: string = await new Promise((resolve, reject) => {
+    const r = new FileReader()
+    r.onload = () => { const s = String(r.result); resolve(s.slice(s.indexOf(',') + 1)) }
+    r.onerror = reject
+    r.readAsDataURL(blob)
+  })
+  return { base64, mediaType, isImage }
+}
+
 /** Small clickable document thumbnail (image preview, or a file glyph for PDFs). */
 function DocThumb({ url, onZoom, size = 56 }: { url: string; onZoom?: (u: string) => void; size?: number }) {
   const img = isImageUrl(url)
@@ -287,7 +343,7 @@ function DocThumb({ url, onZoom, size = 56 }: { url: string; onZoom?: (u: string
   )
 }
 
-function SmallUploadCard({ number, label, optional, required, icon, fileName, fileKB, scanning, onFile, onRemove, disabled, footer, thumbUrl, onZoom }: {
+function SmallUploadCard({ number, label, optional, required, icon, fileName, fileKB, scanning, onFile, onRemove, disabled, footer, thumbUrl, onZoom, onRescan }: {
   number: number
   label: string
   optional?: boolean
@@ -303,6 +359,8 @@ function SmallUploadCard({ number, label, optional, required, icon, fileName, fi
   footer?: React.ReactNode
   thumbUrl?: string | null
   onZoom?: (u: string) => void
+  /** When provided, shows a "Rescan" button to re-run the quality check. */
+  onRescan?: () => void
 }) {
   const inputRef = React.useRef<HTMLInputElement>(null)
 
@@ -362,6 +420,23 @@ function SmallUploadCard({ number, label, optional, required, icon, fileName, fi
           </button>
         )}
       </div>
+      {onRescan && (thumbUrl || fileName) && (
+        <button
+          type="button"
+          onClick={onRescan}
+          disabled={scanning}
+          title="Re-check this photo against the guidelines"
+          style={{
+            alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 5,
+            fontFamily: FONTS.display, fontSize: 10.5, fontWeight: 700,
+            color: COLORS.signal, background: `${COLORS.signal}14`,
+            border: `1px solid ${COLORS.signal}55`, borderRadius: 5,
+            padding: '4px 9px', cursor: scanning ? 'wait' : 'pointer', opacity: scanning ? 0.6 : 1,
+          }}
+        >
+          <span aria-hidden="true" style={{ fontSize: 12 }}>⟳</span> {scanning ? 'Checking…' : 'Rescan'}
+        </button>
+      )}
       <input
         ref={inputRef}
         type="file"
@@ -634,6 +709,7 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [scanning, setScanning] = useState<SlotKey | null>(null)
+  const [headshotScanning, setHeadshotScanning] = useState(false)
   const [scanNote, setScanNote] = useState<string | null>(null)
   const [extracted, setExtracted] = useState(false)
   // Auto checklist flags from OCR (null = unknown until scanned)
@@ -662,33 +738,40 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
       }
       // Headshot quality guard: warn if it looks black & white or lacks a plain background.
       if (key === 'headshot' && c.isImage) {
-        const q = await analyzeHeadshot(c.file)
-        const issues: string[] = []
-        if (!q.isColour) issues.push('it appears to be black & white (a colour photo is required)')
-        if (!q.whiteBackground) issues.push('the background may not be plain/white')
-        setHeadshotWarn(issues.length ? `Please check the headshot — ${issues.join(', and ')}.` : null)
+        await runHeadshotCheck(c.file)
       }
       if (key === 'data') {
         // Preview both images and PDFs (PDFs render in an embedded viewer).
         try { setDataPreview(URL.createObjectURL(c.file)); setDataIsPdf(!c.isImage) } catch { /* ignore */ }
       }
       if (key !== 'data') return
-      setScanning('data'); setScanNote(c.isImage ? null : 'Reading PDF…')
+      await scanData(c.base64, c.mediaType, c.isImage, false)
+    } catch (e: any) {
+      setScanNote('Scan failed: ' + (e?.message ?? 'error'))
+    }
+  }
+
+  // Run the passport OCR endpoint and apply the result to the form fields.
+  // force=true overwrites existing values (manual Rescan); force=false only fills blanks.
+  async function scanData(base64: string, mediaType: string, isImage: boolean, force: boolean) {
+    setScanning('data'); setScanNote(isImage ? null : 'Reading PDF…')
+    try {
       const res = await fetch('/api/visa/passport-ocr', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64: c.base64, mediaType: c.mediaType }),
+        body: JSON.stringify({ imageBase64: base64, mediaType }),
       })
       const j = await res.json()
       if (!j.ok) { setScanNote(j.error ?? 'Could not scan passport.'); return }
       const d = j.data ?? {}
-      if (d.nationality && !nationality) setNationality(d.nationality)
-      if (d.passport_number && !passportNumber) setPassportNumber(d.passport_number)
-      if (d.issue_date && !issueDate) setIssueDate(d.issue_date)
-      if (d.expiry_date && !expiryDate) setExpiryDate(d.expiry_date)
-      if (d.issuing_country && !issuingCountry) setIssuingCountry(d.issuing_country)
-      if (d.date_of_birth && !dateOfBirth) setDateOfBirth(d.date_of_birth)
-      if (d.place_of_birth && !placeOfBirth) setPlaceOfBirth(d.place_of_birth)
-      if (d.gender && !gender) setGender(d.gender)
+      const fill = (val: any, cur: string, setter: (v: string) => void) => { if (val && (force || !cur)) setter(val) }
+      fill(d.nationality, nationality, setNationality)
+      fill(d.passport_number, passportNumber, setPassportNumber)
+      fill(d.issue_date, issueDate, setIssueDate)
+      fill(d.expiry_date, expiryDate, setExpiryDate)
+      fill(d.issuing_country, issuingCountry, setIssuingCountry)
+      fill(d.date_of_birth, dateOfBirth, setDateOfBirth)
+      fill(d.place_of_birth, placeOfBirth, setPlaceOfBirth)
+      fill(d.gender, gender, setGender)
       // Snapshot OCR for the Additional Personal Info section (camelCase keys the
       // /passports/:id/ocr endpoint expects).
       setOcrRaw({
@@ -702,12 +785,12 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
       // recommended Middle (not everyone has one, so we suggest rather than force).
       const given = String(d.given_names ?? '').trim()
       const sur = String(d.surname ?? '').trim()
-      if (sur && !lastName) setLastName(sur)
+      if (sur && (force || !lastName)) setLastName(sur)
       if (given) {
         const parts = given.split(/\s+/)
-        if (!firstName) setFirstName(parts[0])
+        if (force || !firstName) setFirstName(parts[0])
         const mid = parts.slice(1).join(' ')
-        if (mid && !middleName) setRecommendedMiddle(mid)
+        if (mid && (force || !middleName)) setRecommendedMiddle(mid)
       }
       // Flag if the passport name differs from the crew profile name.
       const passportName = `${d.given_names ?? ''} ${d.surname ?? ''}`.trim()
@@ -730,12 +813,64 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
         setScanNote('Scanned — but verify this is the correct page.')
       } else {
         setDocWarning(null)
-        setScanNote('Scanned — details auto-filled below. Please double-check them.')
+        setScanNote(force ? 'Rescanned — details refreshed below. Please double-check them.' : 'Scanned — details auto-filled below. Please double-check them.')
       }
     } catch (e: any) {
       setScanNote('Scan failed: ' + (e?.message ?? 'error'))
     } finally {
-      if (key === 'data') setScanning(null)
+      setScanning(null)
+    }
+  }
+
+  // Manual "Rescan OCR" — re-runs extraction on the freshly-selected file, or
+  // (in edit mode) on the document already stored on the passport.
+  async function rescanData() {
+    if (scanning) return
+    try {
+      if (files.data) {
+        const c = await compressImageToMaxKB(files.data, 1000)
+        await scanData(c.base64, c.mediaType, c.isImage, true)
+        return
+      }
+      if (existingUrls.data) {
+        setScanning('data'); setScanNote('Fetching uploaded document…')
+        const { base64, mediaType, isImage } = await fetchAsBase64(existingUrls.data)
+        await scanData(base64, mediaType, isImage, true)
+        return
+      }
+      setScanNote('Upload the passport inside pages first, then scan.')
+    } catch (e: any) {
+      setScanNote('Could not rescan: ' + (e?.message ?? 'error'))
+      setScanning(null)
+    }
+  }
+
+  // Headshot quality check — warns if the photo looks black & white or lacks a
+  // plain/light background. Accepts a freshly-selected file or a stored blob.
+  async function runHeadshotCheck(blob: Blob) {
+    const q = await analyzeHeadshot(blob)
+    const issues: string[] = []
+    if (!q.isColour) issues.push('it appears to be black & white (a colour photo is required)')
+    if (!q.whiteBackground) issues.push('the background may not be plain/white')
+    setHeadshotWarn(issues.length ? `Please check the headshot — ${issues.join(', and ')}.` : null)
+    return issues.length === 0
+  }
+
+  // Manual "Rescan" for the headshot — re-checks the new file or the stored photo.
+  async function rescanHeadshot() {
+    if (headshotScanning) return
+    setHeadshotScanning(true)
+    try {
+      let blob: Blob | null = files.headshot
+      if (!blob && existingUrls.headshot) blob = await (await fetch(existingUrls.headshot)).blob()
+      if (!blob) { setHeadshotWarn('Upload a headshot photo first, then rescan.'); return }
+      if (!blob.type.startsWith('image/')) { setHeadshotWarn(null); return }
+      const ok = await runHeadshotCheck(blob)
+      if (ok) toast.success('Headshot looks good — colour photo with a plain background.')
+    } catch {
+      setHeadshotWarn(null)
+    } finally {
+      setHeadshotScanning(false)
     }
   }
 
@@ -763,10 +898,10 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
 
   // Items auto-satisfied by uploads / OCR / validation; the rest the user ticks.
   const autoTrue: Record<string, boolean> = {
-    cover:    !!files.cover,
-    data:     !!files.data,
-    seamans:  noSeamans || !!files.seamans,
-    headshot: !!files.headshot,
+    cover:    !!files.cover || !!existingUrls.cover,
+    data:     !!files.data || !!existingUrls.data,
+    seamans:  noSeamans || !!files.seamans || !!existingUrls.seamans,
+    headshot: !!files.headshot || !!existingUrls.headshot,
     validity: sixMoOk === true,
     glare:    auto.noGlare === true,
     colour:   auto.colour === true,
@@ -793,12 +928,12 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
 
   // Document Status reflecting what's uploaded / scanned / validated.
   const docStatus = {
-    insidePages: (files.data ? 'uploaded' : 'not_uploaded') as 'uploaded' | 'missing' | 'not_uploaded',
-    ocrCompleted: extracted,
+    insidePages: ((files.data || existingUrls.data) ? 'uploaded' : 'not_uploaded') as 'uploaded' | 'missing' | 'not_uploaded',
+    ocrCompleted: extracted || !!existingUrls.data,
     minimumValidity: sixMoOk === true,
-    headshot: (files.headshot ? 'uploaded' : 'missing') as 'uploaded' | 'missing' | 'not_uploaded',
-    cover: (files.cover ? 'uploaded' : 'not_uploaded') as 'uploaded' | 'missing' | 'not_uploaded',
-    seamansBook: ((noSeamans || files.seamans) ? 'uploaded' : 'not_uploaded') as 'uploaded' | 'missing' | 'not_uploaded',
+    headshot: ((files.headshot || existingUrls.headshot) ? 'uploaded' : 'missing') as 'uploaded' | 'missing' | 'not_uploaded',
+    cover: ((files.cover || existingUrls.cover) ? 'uploaded' : 'not_uploaded') as 'uploaded' | 'missing' | 'not_uploaded',
+    seamansBook: ((noSeamans || files.seamans || existingUrls.seamans) ? 'uploaded' : 'not_uploaded') as 'uploaded' | 'missing' | 'not_uploaded',
   }
 
   const editInputStyle: React.CSSProperties = {
@@ -917,6 +1052,9 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
               fileKB={sizes.data}
               scanning={scanning === 'data'}
               onRemove={() => handleSlot('data', null)}
+              previewUrl={dataPreview}
+              isPdf={dataIsPdf}
+              onRescan={rescanData}
             />
 
             {scanning === 'data' && (
@@ -955,6 +1093,7 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
                 } />
               <SmallUploadCard number={3} label="Headshot Photo" required icon="👤"
                 fileName={fileNames.headshot} fileKB={sizes.headshot} thumbUrl={slotPreviews.headshot ?? existingUrls.headshot} onZoom={setZoomSrc}
+                scanning={headshotScanning} onRescan={rescanHeadshot}
                 onFile={(f) => handleSlot('headshot', f)} onRemove={() => handleSlot('headshot', null)} />
             </div>
             {headshotWarn && (
