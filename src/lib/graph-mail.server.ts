@@ -110,6 +110,35 @@ export function ticketResolvedEmail(t: { ticket_no: string; subject: string; nam
   }
 }
 
+/** 90-day renewal-quotation prompt for internal services & subscriptions. */
+export function serviceRenewalEmail(items: { name: string; vendor?: string | null; renewal_date?: string | null; days?: number | null; seats?: number | null; owner?: string | null }[]) {
+  const rows = items.map(i => {
+    const due = i.renewal_date ? new Date(i.renewal_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'
+    const left = i.days != null ? `${i.days} day${i.days === 1 ? '' : 's'}` : '—'
+    return `<tr>
+      <td style="padding:6px 12px 6px 0;font-weight:600;">${esc(i.name)}</td>
+      <td style="padding:6px 12px 6px 0;color:#555;">${esc(i.vendor ?? '—')}</td>
+      <td style="padding:6px 12px 6px 0;color:#555;">${due}</td>
+      <td style="padding:6px 0;color:#b45309;font-weight:600;">${left}</td>
+    </tr>`
+  }).join('')
+  const n = items.length
+  return {
+    subject: `Renewal due (90 days): ${n} internal service${n === 1 ? '' : 's'} need a quotation`,
+    html: shell(
+      `${h('Renewal quotation required')}
+       ${p(`The following internal service${n === 1 ? ' is' : 's are'} within <strong>90 days</strong> of renewal. Please <strong>seek a quotation from the vendor</strong> and <strong>begin prepping the quotation for the Yacht</strong>.`)}
+       <table style="margin:14px 0;font-size:13px;color:#333;width:100%;">
+         <tr style="text-align:left;color:#7a828a;font-size:11px;text-transform:uppercase;letter-spacing:.04em;">
+           <td style="padding:0 12px 6px 0;">Service</td><td style="padding:0 12px 6px 0;">Vendor</td><td style="padding:0 12px 6px 0;">Renews</td><td style="padding:0 0 6px;">In</td>
+         </tr>
+         ${rows}
+       </table>
+       ${p(`Open <strong>Yacht IT Solutions → Internal Services &amp; Subscriptions</strong> in Polaris to action these.`)}`,
+    ),
+  }
+}
+
 export function ticketStaffNotifyEmail(t: { ticket_no: string; subject: string; name: string; vessel?: string; description?: string; priority?: string }) {
   return {
     subject: `New ticket ${t.ticket_no}: ${t.subject}`,

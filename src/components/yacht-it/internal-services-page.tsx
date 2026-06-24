@@ -30,10 +30,17 @@ type InternalService = {
   renewal_date: string | null;
   status: string;
   notes: string | null;
+  // Commercial / invoicing
+  sell_price: number | null;
+  commitment_term: string | null;
+  jls_invoice_number: string | null;
+  yacht_paid: boolean;
+  yacht_po: string | null;
+  renewal_alert_sent_at: string | null;
   created_at: string;
   updated_at: string;
 };
-type FormState = Omit<InternalService, "id" | "created_at" | "updated_at">;
+type FormState = Omit<InternalService, "id" | "created_at" | "updated_at" | "renewal_alert_sent_at">;
 
 const CATEGORIES = [
   { value: "software", label: "Software" },
@@ -53,6 +60,8 @@ const EMPTY_FORM: FormState = {
   service_name: "", vendor: null, category: "software", cost_amount: null, currency: "AED",
   billing_cycle: "monthly", seats: null, owner: null, account_ref: null,
   start_date: null, renewal_date: null, status: "active", notes: null,
+  sell_price: null, commitment_term: null, jls_invoice_number: null,
+  yacht_paid: false, yacht_po: null,
 };
 
 function fmtDate(d: string | null) {
@@ -108,6 +117,11 @@ export function InternalServicesPage() {
   const [deleteTarget, setDeleteTarget] = useState<InternalService | null>(null);
 
   useEffect(() => { void load(); }, []);
+  // Fire the 90-day renewal check (idempotent server-side) so the alert email
+  // goes out once a service enters the window, even without a separate cron.
+  useEffect(() => {
+    fetch("/api/internal-services/renewal-check", { method: "POST" }).catch(() => {});
+  }, []);
   async function load() {
     setLoading(true);
     const { data, error } = await (supabase as any).from("internal_services").select("*").order("service_name");
@@ -133,6 +147,13 @@ export function InternalServicesPage() {
     return { total: rows.length, active, renewing, monthlyCost };
   }, [rows]);
 
+  // Services within the 90-day renewal-quotation window (active, not yet lapsed).
+  const renewalsDue = useMemo(() => rows.filter((r) => {
+    if (r.status !== "active") return false;
+    const d = daysUntil(r.renewal_date);
+    return d !== null && d >= 0 && d <= 90;
+  }).sort((a, b) => (daysUntil(a.renewal_date) ?? 0) - (daysUntil(b.renewal_date) ?? 0)), [rows]);
+
   function openNew() { setEditing(null); setForm(EMPTY_FORM); setOpen(true); }
   function openEdit(r: InternalService) {
     setEditing(r);
@@ -141,6 +162,8 @@ export function InternalServicesPage() {
       currency: r.currency, billing_cycle: r.billing_cycle, seats: r.seats, owner: r.owner,
       account_ref: r.account_ref, start_date: r.start_date, renewal_date: r.renewal_date,
       status: r.status, notes: r.notes,
+      sell_price: r.sell_price, commitment_term: r.commitment_term, jls_invoice_number: r.jls_invoice_number,
+      yacht_paid: r.yacht_paid, yacht_po: r.yacht_po,
     });
     setOpen(true);
   }
@@ -150,8 +173,12 @@ export function InternalServicesPage() {
     setBusy(true);
     try {
       if (editing) {
+        // If the renewal date moved, clear the alert flag so the new cycle re-alerts.
+        const renewalChanged = (editing.renewal_date ?? null) !== (form.renewal_date ?? null);
+        const patch: any = { ...form, updated_at: new Date().toISOString() };
+        if (renewalChanged) patch.renewal_alert_sent_at = null;
         const { error } = await (supabase as any).from("internal_services")
-          .update({ ...form, updated_at: new Date().toISOString() }).eq("id", editing.id);
+          .update(patch).eq("id", editing.id);
         if (error) throw error;
         toast.success("Service updated");
       } else {
@@ -184,6 +211,32 @@ export function InternalServicesPage() {
       </header>
 
       <div className="flex-1 overflow-auto px-6 py-5">
+        {/* 90-day renewal-quotation alert */}
+        {renewalsDue.length > 0 && (
+          <div className="mb-5 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
+            <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+              <span aria-hidden>⏳</span>
+              <span className="font-display text-sm font-bold">
+                {renewalsDue.length} service{renewalsDue.length === 1 ? "" : "s"} due for renewal within 90 days
+              </span>
+            </div>
+            <p className="mt-1 text-[12.5px] text-muted-foreground">
+              Seek a quotation from the vendor and begin prepping the quotation for the Yacht. An email reminder is sent to the IT support inbox.
+            </p>
+            <div className="mt-2.5 flex flex-wrap gap-2">
+              {renewalsDue.slice(0, 8).map((r) => {
+                const d = daysUntil(r.renewal_date) ?? 0;
+                return (
+                  <button key={r.id} onClick={() => openEdit(r)}
+                    className="rounded-full border border-amber-500/30 bg-background/40 px-2.5 py-1 text-[11.5px] font-medium hover:bg-accent/40">
+                    {r.service_name} · <span className="text-amber-600 dark:text-amber-400">{d}d</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Stats */}
         <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-4">
           {[
@@ -238,7 +291,7 @@ export function InternalServicesPage() {
           <div className="overflow-hidden rounded-xl border border-border bg-card">
             <table className="w-full text-sm">
               <thead><tr className="border-b border-border bg-muted/40 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                {["Service", "Vendor", "Category", "Cost", "Billing", "Seats", "Renewal", "Owner", "Status", ""].map((h) => (
+                {["Service", "Vendor", "Category", "Cost", "Price", "Billing", "Seats", "Renewal", "Owner", "Status", ""].map((h) => (
                   <th key={h} className="px-4 py-2.5 whitespace-nowrap">{h}</th>
                 ))}
               </tr></thead>
@@ -249,9 +302,14 @@ export function InternalServicesPage() {
                     <td className="px-4 py-3 text-muted-foreground">{r.vendor ?? "—"}</td>
                     <td className="px-4 py-3 capitalize text-muted-foreground">{r.category}</td>
                     <td className="px-4 py-3 tabular-nums text-foreground/80">{r.cost_amount == null ? "—" : `${r.currency} ${fmtMoney(r.cost_amount)}`}</td>
+                    <td className="px-4 py-3 tabular-nums text-foreground/80">{r.sell_price == null ? "—" : `${r.currency} ${fmtMoney(r.sell_price)}`}</td>
                     <td className="px-4 py-3 capitalize text-muted-foreground">{r.billing_cycle.replace("_", " ")}</td>
                     <td className="px-4 py-3 tabular-nums text-muted-foreground">{r.seats ?? "—"}</td>
-                    <td className="px-4 py-3 tabular-nums text-muted-foreground">{fmtDate(r.renewal_date)}</td>
+                    <td className="px-4 py-3 tabular-nums text-muted-foreground">
+                      {fmtDate(r.renewal_date)}
+                      {(() => { const d = daysUntil(r.renewal_date); return r.status === "active" && d !== null && d >= 0 && d <= 90
+                        ? <div className="mt-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">Quote due · {d}d</div> : null; })()}
+                    </td>
                     <td className="px-4 py-3 text-muted-foreground">{r.owner ?? "—"}</td>
                     <td className="px-4 py-3"><StatusBadge status={effectiveStatus(r)} /></td>
                     <td className="px-4 py-3">
@@ -294,6 +352,12 @@ export function InternalServicesPage() {
                 <Select value={form.billing_cycle} onValueChange={(v) => set({ billing_cycle: v })}><SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
                   <SelectContent>{BILLING_CYCLES.map((c) => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}</SelectContent></Select></div>
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5"><Label className="text-xs">Price <span className="font-normal text-muted-foreground">(sell)</span></Label>
+                <Input type="number" step="0.01" value={form.sell_price ?? ""} onChange={(e) => set({ sell_price: e.target.value === "" ? null : Number(e.target.value) })} className="h-8" placeholder="What we charge the yacht" /></div>
+              <div className="space-y-1.5"><Label className="text-xs">Commitment term</Label>
+                <Input value={form.commitment_term ?? ""} onChange={(e) => set({ commitment_term: e.target.value || null })} className="h-8" placeholder="e.g. 12 months" /></div>
+            </div>
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1.5"><Label className="text-xs">Seats</Label>
                 <Input type="number" value={form.seats ?? ""} onChange={(e) => set({ seats: e.target.value === "" ? null : Number(e.target.value) })} className="h-8" /></div>
@@ -308,6 +372,15 @@ export function InternalServicesPage() {
               <div className="space-y-1.5"><Label className="text-xs">Status</Label>
                 <Select value={form.status} onValueChange={(v) => set({ status: v })}><SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
                   <SelectContent><SelectItem value="active">Active</SelectItem><SelectItem value="cancelled">Cancelled</SelectItem></SelectContent></Select></div>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5"><Label className="text-xs">JLS invoice no.</Label>
+                <Input value={form.jls_invoice_number ?? ""} onChange={(e) => set({ jls_invoice_number: e.target.value || null })} className="h-8" placeholder="e.g. INV-1042" /></div>
+              <div className="space-y-1.5"><Label className="text-xs">Yacht PO</Label>
+                <Input value={form.yacht_po ?? ""} onChange={(e) => set({ yacht_po: e.target.value || null })} className="h-8" placeholder="Yacht PO ref" /></div>
+              <div className="space-y-1.5"><Label className="text-xs">Yacht paid?</Label>
+                <Select value={form.yacht_paid ? "yes" : "no"} onValueChange={(v) => set({ yacht_paid: v === "yes" })}><SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="no">No</SelectItem><SelectItem value="yes">Yes</SelectItem></SelectContent></Select></div>
             </div>
             <div className="space-y-1.5"><Label className="text-xs">Notes</Label>
               <Textarea value={form.notes ?? ""} onChange={(e) => set({ notes: e.target.value || null })} rows={2} className="resize-none text-sm" /></div>

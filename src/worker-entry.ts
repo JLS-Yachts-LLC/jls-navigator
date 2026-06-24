@@ -13,6 +13,7 @@ import { visaExportHandler } from './routes/api.visa.export'
 import { visaExcelPushHandler } from './routes/api.visa.excel-push'
 import { visaPassportOcrHandler } from './routes/api.visa.passport-ocr'
 import { itTicketsNotifyHandler } from './routes/api.it-tickets.notify'
+import { internalServicesRenewalCheckHandler } from './routes/api.internal-services.renewal-check'
 import { feedbackNotifyHandler } from './routes/api.feedback.notify'
 import { vesselHandler } from './routes/api.vessels'
 import { phoneHandler } from './routes/api.phone'
@@ -216,6 +217,10 @@ export default {
       return itTicketsNotifyHandler(request)
     }
 
+    if (url.pathname === '/api/internal-services/renewal-check' && request.method === 'POST') {
+      return internalServicesRenewalCheckHandler(request)
+    }
+
     if (url.pathname === '/api/feedback/notify' && request.method === 'POST') {
       return feedbackNotifyHandler(request)
     }
@@ -359,6 +364,12 @@ export default {
         resetDeltaTokens()
           .then((n) => console.log(`[sp-daily-refresh] full re-pull queued for ${n} list(s)`))
           .catch((e) => console.error('[sp-daily-refresh] error:', e))
+      )
+      // Daily 90-day renewal-quotation check for internal services (idempotent).
+      ctx.waitUntil(
+        internalServicesRenewalCheckHandler(new Request('http://internal/renewal-check', { method: 'POST' }))
+          .then(async (r) => console.log('[renewal-cron]', JSON.stringify(await r.json().catch(() => ({})))))
+          .catch((e) => console.error('[renewal-cron] error:', e))
       )
     }
 
