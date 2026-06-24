@@ -5,7 +5,7 @@ import type { CountryVisaConfig, VisaField } from '@/lib/visa/countryConfig'
 import type { CrewMember, CrewPassport } from '@/lib/visa/crewMatching'
 import type { ComplianceResult } from '@/lib/visa/complianceChecks'
 import { supabase } from '@/integrations/supabase/client'
-import { AdditionalPersonalInfoSection } from '@/components/visa/AdditionalPersonalInfoSection'
+import { AdditionalPersonalInfoSection, type AdditionalPersonalInfoHandle } from '@/components/visa/AdditionalPersonalInfoSection'
 
 export interface WizardState {
   step: number
@@ -244,6 +244,24 @@ export function StepCountryFields({ state, onUpdate, onNext, onBack }: StepCount
     supabase.auth.getSession().then(({ data }) => setAuthToken(data.session?.access_token ?? ''))
   }, [])
 
+  // The page's single "Continue" saves the Additional Personal Information
+  // (against this crew member) before advancing — no separate Save button.
+  const personalRef = useRef<AdditionalPersonalInfoHandle | null>(null)
+  const [continuing, setContinuing] = useState(false)
+  async function handleContinue() {
+    if (!allRequiredFilled || continuing) return
+    setContinuing(true)
+    try {
+      if (personalRef.current) {
+        const ok = await personalRef.current.save()
+        if (!ok) return // validation/save error is shown inside the section
+      }
+      onNext()
+    } finally {
+      setContinuing(false)
+    }
+  }
+
   // Cross-link crew ↔ vessel globally: when the vessel is set here, resolve the
   // yacht and set crew_members.yacht_id so the association applies everywhere
   // (crew list, sign-on/off, etc.) — no double data entry.
@@ -461,11 +479,12 @@ export function StepCountryFields({ state, onUpdate, onNext, onBack }: StepCount
       {state.crew?.id && authToken && (
         <div style={{ marginTop: 24 }}>
           <AdditionalPersonalInfoSection
+            ref={personalRef}
             crewId={state.crew.id}
             applicationId={state.draftId ?? ''}
             selectedPassportId={state.passport?.id ?? null}
             authToken={authToken}
-            onContinue={onNext}
+            hideFooter
           />
         </div>
       )}
@@ -512,8 +531,8 @@ export function StepCountryFields({ state, onUpdate, onNext, onBack }: StepCount
 
         <button
           type="button"
-          onClick={onNext}
-          disabled={!allRequiredFilled}
+          onClick={handleContinue}
+          disabled={!allRequiredFilled || continuing}
           style={{
             fontFamily: FONTS.display,
             fontSize: 14,
@@ -523,12 +542,12 @@ export function StepCountryFields({ state, onUpdate, onNext, onBack }: StepCount
             border: 'none',
             background: allRequiredFilled ? COLORS.signal : COLORS.ocean,
             color: allRequiredFilled ? COLORS.void : COLORS.muted,
-            cursor: allRequiredFilled ? 'pointer' : 'not-allowed',
+            cursor: allRequiredFilled && !continuing ? 'pointer' : 'not-allowed',
             transition: 'background 0.15s, color 0.15s',
-            opacity: allRequiredFilled ? 1 : 0.6,
+            opacity: allRequiredFilled && !continuing ? 1 : 0.6,
           }}
         >
-          Continue
+          {continuing ? 'Saving…' : 'Continue'}
         </button>
       </div>
     </div>

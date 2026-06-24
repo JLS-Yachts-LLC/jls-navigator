@@ -639,9 +639,11 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
   const [issueDate, setIssueDate] = useState(ex?.issue_date ?? '')
   const [expiryDate, setExpiryDate] = useState(ex?.expiry_date ?? '')
   const [issuingCountry, setIssuingCountry] = useState(ex?.issuing_country ?? '')
-  const [dateOfBirth, setDateOfBirth] = useState('')
-  const [placeOfBirth, setPlaceOfBirth] = useState('')
-  const [gender, setGender] = useState('')
+  // Pre-fill from the saved passport (+ its OCR snapshot) so re-opening to edit
+  // does NOT require re-running OCR — the extracted details persist.
+  const [dateOfBirth, setDateOfBirth] = useState(ex?.date_of_birth ?? '')
+  const [placeOfBirth, setPlaceOfBirth] = useState((ex as any)?.ocr_raw?.placeOfBirth ?? '')
+  const [gender, setGender] = useState((ex as any)?.ocr_raw?.gender ?? '')
   // Raw OCR snapshot persisted to crew_passports.ocr_raw so the Additional
   // Personal Info section can pre-fill nationality / place of birth from it.
   const [ocrRaw, setOcrRaw] = useState<any>((ex as any)?.ocr_raw ?? null)
@@ -704,6 +706,8 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
   const [docWarning, setDocWarning] = useState<string | null>(null)
   const [slotPreviews, setSlotPreviews] = useState<Record<SlotKey, string | null>>({ cover: null, data: null, seamans: null, headshot: null })
   const [headshotWarn, setHeadshotWarn] = useState<string | null>(null)
+  const headshotWarnRef = useRef<HTMLDivElement>(null)
+  const [shakeSave, setShakeSave] = useState(false)
   const [zoomSrc, setZoomSrc] = useState<string | null>(null)
   const [noSeamans, setNoSeamans] = useState(ex?.no_seamans_book ?? false)
   const [uploading, setUploading] = useState(false)
@@ -946,6 +950,16 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
     e.preventDefault()
     setError(null)
 
+    // Hard block: the headshot failed the photo-quality check. Don't advance —
+    // pan to the warning and shake the Save button so the issue is obvious.
+    if (headshotWarn) {
+      setShakeSave(true)
+      setTimeout(() => setShakeSave(false), 600)
+      headshotWarnRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      setError('The headshot photo does not meet the requirements — please replace it (or rescan) before saving.')
+      return
+    }
+
     if (!nationality.trim() || !passportNumber.trim() || !issuingCountry.trim()) {
       setError('Nationality, passport number and issuing country are required.')
       return
@@ -1104,12 +1118,14 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
                 onFile={(f) => handleSlot('headshot', f)} onRemove={() => handleSlot('headshot', null)} />
             </div>
             {headshotWarn && (
-              <div style={{
+              <div ref={headshotWarnRef} style={{
                 display: 'flex', alignItems: 'flex-start', gap: 9, marginTop: 12, padding: '10px 14px',
                 background: `${COLORS.warn}16`, border: `1px solid ${COLORS.warn}66`, borderRadius: 8,
               }}>
                 <span style={{ fontSize: 14, color: COLORS.warn }} aria-hidden="true">⚠</span>
-                <span style={{ fontFamily: FONTS.display, fontSize: 12.5, color: COLORS.frost, lineHeight: 1.5 }}>{headshotWarn}</span>
+                <span style={{ fontFamily: FONTS.display, fontSize: 12.5, color: COLORS.frost, lineHeight: 1.5 }}>
+                  {headshotWarn} <strong>You can't save until this is resolved</strong> — replace the photo or use Rescan.
+                </span>
               </div>
             )}
 
@@ -1358,15 +1374,19 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
                   Cancel
                 </button>
               )}
+              <style>{`@keyframes pp-shake{0%,100%{transform:translateX(0)}15%,55%{transform:translateX(-7px)}35%,75%{transform:translateX(7px)}}`}</style>
               <button
                 type="submit"
+                // Note: NOT disabled on headshotWarn — the click must fire so we can
+                // shake + scroll to the warning. handleSubmit blocks the actual save.
                 disabled={uploading || !doubleChecked || !allChecked || !hasRequiredDocs || expiryInvalid}
-                title={expiryInvalid ? 'Passport fails the minimum 6 months validity rule' : !hasRequiredDocs ? 'Upload the passport inside pages, cover and headshot first' : !allChecked ? 'Tick every checklist item first' : !doubleChecked ? 'Confirm you have double-checked the information first' : undefined}
+                title={headshotWarn ? 'Resolve the headshot photo issue first' : expiryInvalid ? 'Passport fails the minimum 6 months validity rule' : !hasRequiredDocs ? 'Upload the passport inside pages, cover and headshot first' : !allChecked ? 'Tick every checklist item first' : !doubleChecked ? 'Confirm you have double-checked the information first' : undefined}
                 style={{
-                  background: COLORS.signal, border: 'none', borderRadius: 8, color: COLORS.void,
+                  background: headshotWarn ? COLORS.warn : COLORS.signal, border: 'none', borderRadius: 8, color: COLORS.void,
                   fontFamily: FONTS.display, fontSize: 14, fontWeight: 600, padding: '8px 20px',
                   cursor: (uploading || !doubleChecked || !allChecked || !hasRequiredDocs || expiryInvalid) ? 'not-allowed' : 'pointer',
                   opacity: (uploading || !doubleChecked || !allChecked || !hasRequiredDocs || expiryInvalid) ? 0.6 : 1,
+                  animation: shakeSave ? 'pp-shake 0.5s ease' : undefined,
                 }}
               >
                 {uploading ? 'Saving…' : 'Save Passport'}

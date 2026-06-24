@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { COLORS, FONTS } from '@/lib/tokens'
 import { formatName } from '@/lib/formatName'
@@ -89,7 +89,7 @@ function OcrFieldWrapper({ label, field, isUnlocked, onUnlock, children }: OcrFi
     <div>
       <div style={labelStyle}>
         <span>{label}</span>
-        {!edited && <Badge label="OCR" color={GREEN} />}
+        {!edited && <Badge label="Auto populated" color={GREEN} />}
         {!isUnlocked && !edited && (
           <button
             type="button"
@@ -113,7 +113,7 @@ function OcrFieldWrapper({ label, field, isUnlocked, onUnlock, children }: OcrFi
       </div>
       {!isUnlocked && !edited && field.value && (
         <div style={{ fontFamily: FONTS.display, fontSize: 10, color: GREEN, marginTop: 4 }}>
-          Extracted from MRZ · click <EditIcon /> to edit
+          Auto-populated from passport · click <EditIcon /> to edit
         </div>
       )}
     </div>
@@ -185,15 +185,24 @@ export interface AdditionalPersonalInfoSectionProps {
   authToken:         string
   /** When provided (wizard mode), called after save instead of route navigation. */
   onContinue?:       () => void
+  /** Hide the internal footer button — the parent drives saving via the ref. */
+  hideFooter?:       boolean
 }
 
-export function AdditionalPersonalInfoSection({
+/** Imperative handle so a parent's single "Continue" can save this section. */
+export interface AdditionalPersonalInfoHandle {
+  /** Validate + persist. Returns true on success, false if blocked/failed. */
+  save: () => Promise<boolean>
+}
+
+export const AdditionalPersonalInfoSection = forwardRef<AdditionalPersonalInfoHandle, AdditionalPersonalInfoSectionProps>(function AdditionalPersonalInfoSection({
   crewId,
   applicationId,
   selectedPassportId,
   authToken,
   onContinue,
-}: AdditionalPersonalInfoSectionProps) {
+  hideFooter,
+}, ref) {
   const navigate = useNavigate()
 
   const [fields,       setFields]       = useState<AdditionalInfoFields>(EMPTY_FIELDS)
@@ -334,9 +343,11 @@ export function AdditionalPersonalInfoSection({
 
   // ── Save and continue ─────────────────────────────────────────────────────
 
-  async function handleSave() {
+  // Validate + persist to the DB. Returns true on success — does NOT navigate,
+  // so a parent (the wizard's single Continue) can call it and advance itself.
+  async function persist(): Promise<boolean> {
     const err = validate()
-    if (err) { setValidationErr(err); return }
+    if (err) { setValidationErr(err); return false }
 
     setIsSaving(true)
     setSaveError(null)
@@ -393,21 +404,31 @@ export function AdditionalPersonalInfoSection({
         }
       }
 
-      // 3. Continue — advance the wizard step when embedded, else navigate.
-      if (onContinue) {
-        onContinue()
-      } else {
-        void navigate({
-          to:     '/crew-immigration/visas/supporting-docs',
-          search: { applicationId },
-        })
-      }
+      return true
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : 'Save failed. Please try again.')
+      return false
     } finally {
       setIsSaving(false)
     }
   }
+
+  // Footer button (standalone usage): persist then continue/navigate.
+  async function handleSave() {
+    const ok = await persist()
+    if (!ok) return
+    if (onContinue) {
+      onContinue()
+    } else {
+      void navigate({
+        to:     '/crew-immigration/visas/supporting-docs',
+        search: { applicationId },
+      })
+    }
+  }
+
+  // Expose save() so a parent's single Continue can drive this section.
+  useImperativeHandle(ref, () => ({ save: persist }))
 
   // ── Progress ──────────────────────────────────────────────────────────────
 
@@ -486,26 +507,6 @@ export function AdditionalPersonalInfoSection({
               Review and update if anything has changed.
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Legend (only when not pre-filled) */}
-      {!isPreFilled && (
-        <div style={{
-          display: 'flex', gap: 20, flexWrap: 'wrap',
-          padding: '10px 14px', marginBottom: 20, borderRadius: 8,
-          background: COLORS.abyss, border: `1px solid var(--border)`,
-        }}>
-          {[
-            { color: GREEN, label: 'OCR — extracted from passport, read-only' },
-            { color: AMBER, label: 'Confirm — please verify this value' },
-            { color: COLORS.muted, label: 'Manual — enter required information' },
-          ].map(({ color, label }) => (
-            <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }} />
-              <span style={{ fontFamily: FONTS.display, fontSize: 11, color: COLORS.muted }}>{label}</span>
-            </div>
-          ))}
         </div>
       )}
 
@@ -753,41 +754,27 @@ export function AdditionalPersonalInfoSection({
         </div>
       )}
 
-      {/* Save footer */}
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '16px 18px', borderRadius: 8,
-        background: COLORS.abyss, border: `1px solid var(--border)`,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {/* floppy disk icon */}
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-               stroke={COLORS.signal} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z" />
-            <polyline points="17 21 17 13 7 13 7 21" />
-            <polyline points="7 3 7 8 15 8" />
-          </svg>
-          <span style={{ fontFamily: FONTS.display, fontSize: 12, color: COLORS.muted }}>
-            Saved to crew profile — reused for all future visa applications
-          </span>
+      {/* Save footer — only in standalone usage; the wizard drives save via ref. */}
+      {!hideFooter && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={isSaving}
+            style={{
+              fontFamily: FONTS.display, fontSize: 13, fontWeight: 700,
+              color: '#fff', background: isSaving ? COLORS.ocean : COLORS.signal,
+              border: 'none', borderRadius: 7,
+              padding: '9px 26px', cursor: isSaving ? 'not-allowed' : 'pointer',
+              opacity: isSaving ? 0.6 : 1, transition: 'opacity 0.15s',
+              whiteSpace: 'nowrap', flexShrink: 0,
+            }}
+          >
+            {isSaving ? 'Saving…' : 'Continue'}
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={isSaving}
-          style={{
-            fontFamily: FONTS.display, fontSize: 13, fontWeight: 700,
-            color: '#fff', background: isSaving ? COLORS.ocean : COLORS.signal,
-            border: 'none', borderRadius: 7,
-            padding: '9px 26px', cursor: isSaving ? 'not-allowed' : 'pointer',
-            opacity: isSaving ? 0.6 : 1, transition: 'opacity 0.15s',
-            whiteSpace: 'nowrap', flexShrink: 0,
-          }}
-        >
-          {isSaving ? 'Saving…' : 'Save and continue →'}
-        </button>
-      </div>
+      )}
 
     </div>
   )
-}
+})

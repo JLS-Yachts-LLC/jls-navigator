@@ -7,9 +7,9 @@ import StepCountrySelect from './StepCountrySelect'
 import StepCrewSearch from './StepCrewSearch'
 import StepPassportSelect from './StepPassportSelect'
 import StepCountryFields from './StepCountryFields'
-import StepDocumentUpload from './StepDocumentUpload'
 import StepComplianceCheck from './StepComplianceCheck'
 import StepReviewSubmit from './StepReviewSubmit'
+import { useCanImpersonate } from '@/lib/view-as'
 
 type WizardState = {
   step: number
@@ -71,15 +71,17 @@ async function persistDraft(s: WizardState): Promise<string | null> {
   return data?.id ?? null
 }
 
-const STEP_LABELS = [
-  'Country',
-  'Crew',
-  'Passport',
-  'Details',
-  'Documents',
-  'Compliance',
-  'Review',
-]
+// All possible steps. The Documents step is no longer shown (its docs come from
+// the passport on file), and Compliance is client-portal only — hidden for JLS
+// staff. The active list is computed per user below.
+const ALL_STEPS = [
+  { key: 'country',    label: 'Country',    Comp: StepCountrySelect },
+  { key: 'crew',       label: 'Crew',       Comp: StepCrewSearch },
+  { key: 'passport',   label: 'Passport',   Comp: StepPassportSelect },
+  { key: 'details',    label: 'Details',    Comp: StepCountryFields },
+  { key: 'compliance', label: 'Compliance', Comp: StepComplianceCheck },
+  { key: 'review',     label: 'Review',     Comp: StepReviewSubmit },
+] as const
 
 const INITIAL_STATE: WizardState = {
   step: 1,
@@ -102,6 +104,9 @@ export const VISA_DRAFT_KEY = 'polaris.visaDraft'
 
 export default function NewApplicationWizard({ onClose }: Props) {
   const navigate = useNavigate()
+  // Internal/JLS staff skip the client-portal-only Compliance step.
+  const isStaff = useCanImpersonate()
+  const STEPS = ALL_STEPS.filter(s => s.key !== 'compliance' || !isStaff)
   const [state, setState] = useState<WizardState>(INITIAL_STATE)
   // A previously saved, unfinished application (offered for resume on mount).
   const [draft] = useState<WizardState | null>(() => {
@@ -188,8 +193,8 @@ export default function NewApplicationWizard({ onClose }: Props) {
       }
     }
 
-    setState(prev => ({ ...prev, step: Math.min(prev.step + 1, 7) }))
-  }, [state.step, state.crew])
+    setState(prev => ({ ...prev, step: Math.min(prev.step + 1, STEPS.length) }))
+  }, [state.step, state.crew, STEPS.length])
 
   const onBack = useCallback(() => {
     setState(prev => ({ ...prev, step: Math.max(prev.step - 1, 1) }))
@@ -199,6 +204,10 @@ export default function NewApplicationWizard({ onClose }: Props) {
   // step header to any step they've already visited.
   const [maxStep, setMaxStep] = useState(state.step)
   useEffect(() => { setMaxStep(m => Math.max(m, state.step)) }, [state.step])
+  // Clamp if a saved draft (from when there were more steps) exceeds the list.
+  useEffect(() => {
+    setState(p => (p.step > STEPS.length ? { ...p, step: STEPS.length } : p))
+  }, [STEPS.length])
   const goToStep = useCallback((n: number) => {
     setState(prev => (n <= Math.max(maxStep, prev.step) ? { ...prev, step: n } : prev))
   }, [maxStep])
@@ -243,7 +252,7 @@ export default function NewApplicationWizard({ onClose }: Props) {
             )}
           </div>
           <div style={{ color: COLORS.muted, fontSize: 13, marginTop: 2 }}>
-            Step {state.step} of 7 · {STEP_LABELS[state.step - 1]} · progress saves automatically
+            Step {state.step} of {STEPS.length} · {STEPS[state.step - 1]?.label} · progress saves automatically
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -303,17 +312,17 @@ export default function NewApplicationWizard({ onClose }: Props) {
         {/* Battery-style progress */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 12, fontWeight: 700, color: COLORS.frost, whiteSpace: 'nowrap' }}>
-            Step {state.step} of {STEP_LABELS.length}
+            Step {state.step} of {STEPS.length}
           </span>
           <div style={{ flex: 1, height: 9, borderRadius: 6, background: COLORS.void, border: `1px solid ${COLORS.steel}`, overflow: 'hidden' }}>
-            <div style={{ width: `${Math.round((state.step / STEP_LABELS.length) * 100)}%`, height: '100%', background: COLORS.signal, borderRadius: 6, transition: 'width 0.25s ease' }} />
+            <div style={{ width: `${Math.round((state.step / STEPS.length) * 100)}%`, height: '100%', background: COLORS.signal, borderRadius: 6, transition: 'width 0.25s ease' }} />
           </div>
           <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 12, fontWeight: 700, color: COLORS.signal, whiteSpace: 'nowrap', minWidth: 34, textAlign: 'right' }}>
-            {Math.round((state.step / STEP_LABELS.length) * 100)}%
+            {Math.round((state.step / STEPS.length) * 100)}%
           </span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
-        {STEP_LABELS.map((label, i) => {
+        {STEPS.map(({ label }, i) => {
           const stepNum = i + 1
           const isActive = stepNum === state.step
           const isCompleted = stepNum < state.step
@@ -327,7 +336,7 @@ export default function NewApplicationWizard({ onClose }: Props) {
                 tabIndex={reachable && !isActive ? 0 : undefined}
                 onClick={() => reachable && goToStep(stepNum)}
                 onKeyDown={(e) => { if (reachable && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); goToStep(stepNum) } }}
-                title={reachable ? `Go to ${STEP_LABELS[i]}` : undefined}
+                title={reachable ? `Go to ${label}` : undefined}
                 style={{
                   display: 'flex',
                   flexDirection: 'column',
@@ -385,7 +394,7 @@ export default function NewApplicationWizard({ onClose }: Props) {
               </div>
 
               {/* Connector */}
-              {i < STEP_LABELS.length - 1 && (
+              {i < STEPS.length - 1 && (
                 <div
                   style={{
                     flex: 1,
@@ -405,13 +414,10 @@ export default function NewApplicationWizard({ onClose }: Props) {
       {/* Step Content — extra right/bottom padding so footer buttons clear the
           floating Leo assistant orb fixed in the bottom-right corner */}
       <div style={{ flex: 1, padding: '24px 96px 110px 28px' }}>
-        {state.step === 1 && <StepCountrySelect {...stepProps} />}
-        {state.step === 2 && <StepCrewSearch {...stepProps} />}
-        {state.step === 3 && <StepPassportSelect {...stepProps} />}
-        {state.step === 4 && <StepCountryFields {...stepProps} />}
-        {state.step === 5 && <StepDocumentUpload {...stepProps} />}
-        {state.step === 6 && <StepComplianceCheck {...stepProps} />}
-        {state.step === 7 && <StepReviewSubmit {...stepProps} />}
+        {(() => {
+          const Comp = STEPS[state.step - 1]?.Comp
+          return Comp ? <Comp {...stepProps} /> : null
+        })()}
       </div>
     </div>
   )

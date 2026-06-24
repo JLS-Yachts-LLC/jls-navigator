@@ -112,6 +112,9 @@ export function StepReviewSubmit({ state, onUpdate, onNext, onBack }: Props) {
   // of what the wizard threaded through (e.g. the additional personal-info fields).
   const [crewFull, setCrewFull] = useState<any>(state.crew)
   const [passportFull, setPassportFull] = useState<any>(state.passport)
+  // Additional personal info lives in a separate table (api/crew/:id/personal-info),
+  // not on crew_members — fetch it so the summary isn't full of dashes.
+  const [personalInfo, setPersonalInfo] = useState<any>(null)
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -119,6 +122,13 @@ export function StepReviewSubmit({ state, onUpdate, onNext, onBack }: Props) {
       if (state.crew?.id) {
         const { data } = await db.from('crew_members').select('*').eq('id', state.crew.id).maybeSingle()
         if (data && !cancelled) setCrewFull((prev: any) => ({ ...prev, ...data }))
+        try {
+          const { data: { session } } = await supabase.auth.getSession()
+          const r = await fetch(`/api/crew/${state.crew.id}/personal-info`, {
+            headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : undefined,
+          })
+          if (r.ok && !cancelled) setPersonalInfo(await r.json())
+        } catch { /* non-fatal — fall back to crew columns */ }
       }
       if (state.passport?.id) {
         const { data } = await db.from('crew_passports').select('*').eq('id', state.passport.id).maybeSingle()
@@ -133,6 +143,7 @@ export function StepReviewSubmit({ state, onUpdate, onNext, onBack }: Props) {
   const summary = useMemo(() => {
     const c: any = crewFull ?? {}
     const p: any = passportFull ?? {}
+    const pi: any = personalInfo ?? {}
     const fullName = c.full_name || [c.first_name, c.middle_name, c.last_name].filter(Boolean).join(' ') || '—'
     const clean = (rows: { label: string; value: any }[]) =>
       rows.map(r => ({ label: r.label, value: (r.value ?? '') === '' ? '—' : String(r.value) }))
@@ -146,17 +157,17 @@ export function StepReviewSubmit({ state, onUpdate, onNext, onBack }: Props) {
         { label: 'First name', value: c.first_name },
         { label: 'Middle name', value: c.middle_name },
         { label: 'Last name', value: c.last_name },
-        { label: 'Date of birth', value: toDMY(c.date_of_birth) },
-        { label: 'Place of birth', value: c.place_of_birth },
-        { label: 'Country of birth', value: c.country_of_birth },
-        { label: 'Gender', value: c.gender },
-        { label: 'Nationality', value: c.nationality ?? c.nationality_citizenship },
-        { label: 'Marital status', value: c.marital_status },
-        { label: 'Religion', value: c.religion },
-        { label: "Mother's maiden name", value: c.mothers_maiden_name ?? c.mother_name },
-        { label: "Father's full name", value: c.fathers_full_name ?? c.father_name },
-        { label: 'Native language', value: c.native_language },
-        { label: 'Occupation / rank', value: c.occupation ?? c.rank },
+        { label: 'Date of birth', value: toDMY(c.date_of_birth ?? p.date_of_birth) },
+        { label: 'Place of birth', value: pi.placeOfBirth ?? c.place_of_birth },
+        { label: 'Country of birth', value: pi.countryOfBirth ?? c.country_of_birth },
+        { label: 'Gender', value: pi.gender ?? c.gender },
+        { label: 'Nationality', value: pi.nationalityCitizenship ?? c.nationality ?? p.nationality },
+        { label: 'Marital status', value: pi.maritalStatus ?? c.marital_status },
+        { label: 'Religion', value: pi.religion ?? c.religion },
+        { label: "Mother's maiden name", value: pi.mothersMaidenName ?? c.mothers_maiden_name ?? c.mother_name },
+        { label: "Father's full name", value: pi.fathersFullName ?? c.fathers_full_name ?? c.father_name },
+        { label: 'Native language', value: pi.nativeLanguage ?? c.native_language },
+        { label: 'Occupation / rank', value: pi.occupation ?? c.occupation ?? c.rank },
         { label: 'Email', value: c.email },
         { label: 'Phone', value: c.phone_full ?? c.phone },
       ]) },
@@ -177,7 +188,7 @@ export function StepReviewSubmit({ state, onUpdate, onNext, onBack }: Props) {
       .filter(r => r.value != null && r.value !== '')
     if (fieldRows.length) sections.push({ title: 'Application Fields', rows: clean(fieldRows) })
     return sections
-  }, [crewFull, passportFull, config, state.countryCode, state.countryFields])
+  }, [crewFull, passportFull, personalInfo, config, state.countryCode, state.countryFields])
 
   function copySummary() {
     const text = summary.map(s => `${s.title.toUpperCase()}\n` + s.rows.map(r => `${r.label}: ${r.value}`).join('\n')).join('\n\n')
