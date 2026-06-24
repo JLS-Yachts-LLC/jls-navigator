@@ -13,7 +13,7 @@ import {
 import { Rocket, Plug } from "lucide-react";
 import { AdminSidebarSection } from "@/components/admin/AdminSidebarSection";
 import { useState, useMemo } from "react";
-import { PolarisLogo } from "@/components/polaris-logo";
+import { PolarisLogo } from "@/components/brand/PolarisLogo";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { VesselSwitcher } from "@/components/vessel-switcher";
@@ -377,7 +377,7 @@ export function AppSidebar() {
       {/* Logo */}
       <div className="flex items-center px-3 py-3 border-b border-sidebar-border/50">
         <Link to="/dashboard" aria-label="Go to home" className="flex items-center rounded-md transition-opacity hover:opacity-80">
-          <PolarisLogo className="h-auto w-[208px] max-w-full" />
+          <PolarisLogo size="md" theme="dark" className="h-auto w-[208px] max-w-full" />
         </Link>
       </div>
 

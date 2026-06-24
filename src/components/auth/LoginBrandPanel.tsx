@@ -1,4 +1,4 @@
-import { PolarisLogo } from "@/components/polaris-logo";
+import { PolarisLogo } from "@/components/brand/PolarisLogo";
 import { ShieldCheck, Smartphone, ClipboardList, Globe } from "lucide-react";
 
 /** Left branding panel for the two-panel login (POLARIS_PLATFORM_UX.md §1.1). */
@@ -15,7 +15,7 @@ export function LoginBrandPanel() {
       <div className="pointer-events-none absolute inset-0 opacity-60 [background-image:radial-gradient(circle_at_25%_20%,rgba(0,196,204,0.25),transparent_45%),radial-gradient(circle_at_80%_90%,rgba(232,160,32,0.16),transparent_50%)]" />
 
       <div className="relative">
-        <PolarisLogo className="w-48" />
+        <PolarisLogo size="xl" theme="dark" className="h-auto w-full max-w-[300px]" />
         <p className="mt-4 text-sm text-[#3A5570]">The Operating System Behind Yacht Operations</p>
       </div>
 

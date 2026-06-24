@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { PolarisLogo } from "@/components/polaris-logo";
+import { PolarisLogo } from "@/components/brand/PolarisLogo";
 import { LoginBrandPanel } from "@/components/auth/LoginBrandPanel";
 import { WorkspaceSelector } from "@/components/auth/WorkspaceSelector";
 import { deriveClaims, resolveLandingPath, type PolarisClaims } from "@/lib/auth/claims";
@@ -146,7 +146,7 @@ function AuthPage() {
         <div className="w-full max-w-sm">
           {/* logo on small screens (brand panel hidden there) */}
           <div className="mb-7 flex justify-center lg:hidden">
-            <PolarisLogo className="w-52 max-w-full" />
+            <PolarisLogo size="md" theme="dark" className="h-auto w-full max-w-[260px]" />
           </div>
 
           {showWorkspaceStep ? (

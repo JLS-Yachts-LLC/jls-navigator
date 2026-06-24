@@ -1036,3 +1036,100 @@ SUPABASE_SERVICE_ROLE_KEY=...         # server only
 ---
 
 *Polaris / Leo — Internal · Confidential · v1.5 — June 2026*
+
+---
+
+## 16. Logo & Brand Rules
+
+> Author: Captain Mike Fetton (MD sign-off) | Dev: Matt Tighe | Version: 1.0 — June 2026
+> These logo/brand rules are MD-approved and govern the `<PolarisLogo />` component
+> and brand surfaces. Where they touch typography or colour, they apply to brand assets.
+
+### The canonical component
+
+The single source of truth for the logo is `src/components/brand/PolarisLogo.tsx`.
+
+**Always import `<PolarisLogo />`. Never:**
+- Recreate the logo SVG inline in another file
+- Use an `<img>` tag pointing to a PNG or JPEG of the logo
+- Hardcode the wordmark as plain HTML text
+- Modify the star mark polygon coordinates or brand colours without MD sign-off
+
+### Props reference
+
+| Prop | Type | Default | Options |
+|---|---|---|---|
+| `size` | `LogoSize` | `'md'` | `'sm'` `'md'` `'lg'` `'xl'` |
+| `theme` | `LogoTheme` | `'light'` | `'light'` `'dark'` |
+| `variant` | `LogoVariant` | `'full'` | `'full'` `'mark-only'` |
+| `className` | `string` | `''` | Any CSS class string |
+
+### Size enforcement
+
+| Screen / context | `size` | Min rendered width |
+|---|---|---|
+| Login / splash / onboarding | `xl` | 420px |
+| Dashboard page header | `lg` | 320px |
+| Sidebar — expanded | `md` | 240px |
+| Mobile header | `sm` | 160px |
+| Sidebar — collapsed (icon only) | `mark-only` + `sm` | 38px |
+| PDF / email header | `xl` SVG export | 420px |
+
+**Never render the full logo smaller than `sm` (160px wide).**
+
+### Theme rule — dark backgrounds
+
+Any screen, panel, or surface using the platform navy (`#1B2A4A`) or any dark
+background colour **must** use `theme="dark"`. This flips the wordmark and tagline
+to white so they remain legible. This rule takes precedence over the size table's
+generic "login = light" guidance — Polaris is dark-first, so the login brand panel,
+mobile login logo and sidebar all use `theme="dark"`.
+
+The star mark (teal + amber) is identical in both themes — do not alter it.
+
+```tsx
+<PolarisLogo size="md" theme="dark" />   // ✅ navy sidebar
+<PolarisLogo size="lg" theme="light" />  // ✅ white / light-grey page
+<PolarisLogo size="md" />                // ❌ navy bg + default light theme = invisible wordmark
+```
+
+### Google Fonts — required
+
+Loaded in `src/routes/__root.tsx` head before any logo renders:
+`Playfair Display:700` (wordmark) + `Montserrat:400;500;600` (tagline). Without
+these the wordmark falls back to Georgia serif — acceptable but off-brand.
+
+### Brand colours
+
+Defined in `src/lib/tokens.ts` as `BRAND`. Do not introduce new accent colours
+without MD sign-off.
+
+| Token | Hex | Use |
+|---|---|---|
+| `navy` | `#1B2A4A` | Primary text, page backgrounds, sidebar |
+| `teal` | `#5BB8B0` | Star mark NW quadrant, active states, links |
+| `tealLight` | `#8ECFCC` | Star mark muted diagonals, hover fills |
+| `amber` | `#D4845A` | Star mark SE quadrant, warnings, CTAs |
+| `amberLight` | `#E0AA88` | Star mark muted diagonals, soft highlights |
+| `offWhite` | `#F4F6FA` | Page / panel backgrounds |
+
+### Platform-wide readability standards
+
+These apply to every component, page, and modal. The platform has a known history
+of text being too small — do not generate UI below these values.
+
+| Element | Minimum size | Weight |
+|---|---|---|
+| Body text, labels, form fields | `16px` | 400 |
+| Secondary / muted text, captions | `14px` | 400 |
+| Navigation items | `15px` | 500 |
+| Section headings (h2, h3) | `22px` | 600 |
+| Page titles (h1) | `28px` | 700 |
+| Dashboard metric widgets | `28px` | 700 |
+| Buttons | `15px` | 500 |
+| Table cells | `14px` | 400 |
+
+**Font sizes below 14px are forbidden anywhere in the platform.** Line height: body
+text minimum `1.6`, headings minimum `1.2`.
+
+*Polaris Logo Implementation v1.0 — JLS Yachts LLC / Superyacht Middle East · Next migration: 049 | Next ticket: #193*

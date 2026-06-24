@@ -34,3 +34,18 @@ export const FONTS = {
   body:    'Inter',            // body copy, briefing stream text only
   mono:    'Courier New',      // code references only
 } as const;
+
+/**
+ * BRAND — canonical logo & brand palette (POLARIS_LOGO block, Captain Mike Fetton, MD sign-off).
+ * Used by <PolarisLogo /> and brand surfaces. Do not introduce new accent colours
+ * without MD sign-off.
+ */
+export const BRAND = {
+  navy:       '#1B2A4A',   // Primary text, page backgrounds, sidebar
+  teal:       '#5BB8B0',   // Star mark NW quadrant, active states, links
+  tealLight:  '#8ECFCC',   // Star mark muted diagonals, hover fills
+  amber:      '#D4845A',   // Star mark SE quadrant, warnings, CTAs
+  amberLight: '#E0AA88',   // Star mark muted diagonals, soft highlights
+  white:      '#FFFFFF',
+  offWhite:   '#F4F6FA',   // Page / panel backgrounds
+} as const;
