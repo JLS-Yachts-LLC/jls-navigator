@@ -11,23 +11,37 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { COLORS, FONTS } from '@/lib/tokens'
 import { useAuth } from '@/lib/auth'
-import { ExpiryFlagBadge } from '@/components/visa/ExpiryFlagBadge'
 
 export const Route = createFileRoute('/_app/crew-immigration/visas/pipeline')({
   component: VisaPipelinePage,
   head: () => ({ meta: [{ title: 'UAE Visa Pipeline — Polaris' }] }),
 })
 
+// Real columns: `visa_expiry` / `visa_issuance_date`. The flag system (migration
+// 038) is not deployed to this project, so urgency is days-to-expiry derived.
 interface PipelineRow {
   id: string
   status: string
-  visa_issue_date: string | null
-  visa_expiry_date: string | null
-  visa_renewed: boolean
-  expiry_flags_sent: Record<string, string | null> | null
+  visa_issuance_date: string | null
+  visa_expiry: string | null
   vessel_name: string | null
   crew_members: { full_name: string | null } | null
   yachts: { vessel_name: string | null } | null
+}
+
+/** dd/mm/yyyy — immigration display format. */
+function fmtDate(d: string | null): string {
+  if (!d) return '—'
+  const date = new Date(d.length <= 10 ? d + 'T00:00:00' : d)
+  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
+}
+
+function daysLeft(expiry: string | null): string {
+  if (!expiry) return '—'
+  const exp = new Date(expiry + 'T00:00:00').getTime()
+  const base = new Date(new Date().toISOString().split('T')[0] + 'T00:00:00').getTime()
+  const d = Math.round((exp - base) / 86_400_000)
+  return Number.isNaN(d) ? '—' : d < 0 ? `${-d}d overdue` : `${d}d`
 }
 
 const STATUSES = ['', 'submitted', 'in_review', 'approved', 'rejected', 'amendment_required']
@@ -153,7 +167,7 @@ function VisaPipelinePage() {
             <thead>
               <tr>
                 <th style={th}>Crew member</th><th style={th}>Vessel</th><th style={th}>Status</th>
-                <th style={th}>Expiry</th><th style={th}>Flag</th>
+                <th style={th}>Expiry</th><th style={th}>Days left</th>
               </tr>
             </thead>
             <tbody>
@@ -162,8 +176,8 @@ function VisaPipelinePage() {
                   <td style={td}>{r.crew_members?.full_name ?? '—'}</td>
                   <td style={td}>{r.yachts?.vessel_name ?? r.vessel_name ?? '—'}</td>
                   <td style={td}>{STATUS_LABEL[r.status] ?? r.status}</td>
-                  <td style={td}>{r.visa_expiry_date ?? '—'}</td>
-                  <td style={td}><ExpiryFlagBadge visaRenewed={r.visa_renewed} expiryFlagsSent={r.expiry_flags_sent} /></td>
+                  <td style={td}>{fmtDate(r.visa_expiry)}</td>
+                  <td style={td}>{daysLeft(r.visa_expiry)}</td>
                 </tr>
               ))}
             </tbody>

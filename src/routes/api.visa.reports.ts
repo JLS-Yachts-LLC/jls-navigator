@@ -9,6 +9,12 @@
  *
  * Reconciliation notes: country_code 'AE'; crew via crew_member_id; vessel via
  * yacht_id -> yachts(vessel_name). requireAccess gates with module view level.
+ *
+ * Schema note: the real expiry column on visa_applications is `visa_expiry` (the
+ * issue date is `visa_issuance_date`). The visa-expiry-flag system (migration 038:
+ * visa_expiry_date / visa_renewed / expiry_flags_sent / visa_expiry_flags) is NOT
+ * applied to this project, so this report reads `visa_expiry` directly and derives
+ * urgency from days-to-expiry rather than from flag rows.
  */
 
 import { createClient } from '@supabase/supabase-js'
@@ -25,10 +31,24 @@ function admin() {
   })
 }
 
+function todayStr(): string {
+  return new Date().toISOString().split('T')[0]
+}
+
 function addDays(days: number): string {
   const d = new Date()
   d.setUTCDate(d.getUTCDate() + days)
   return d.toISOString().split('T')[0]
+}
+
+/** Days-to-expiry label derived from visa_expiry (replaces the old flag column). */
+function daysLeftLabel(expiry: string | null): string {
+  if (!expiry) return '—'
+  const exp = new Date(expiry + 'T00:00:00').getTime()
+  const base = new Date(todayStr() + 'T00:00:00').getTime()
+  const d = Math.round((exp - base) / 86_400_000)
+  if (Number.isNaN(d)) return '—'
+  return d < 0 ? `${-d}d overdue` : `${d}d`
 }
 
 function csvCell(v: unknown): string {
@@ -44,16 +64,6 @@ function csvResponse(rows: string[][], filename: string): Response {
       'Content-Disposition': `attachment; filename="${filename}"`,
     },
   })
-}
-
-/** Highest-urgency unsuppressed flag label for a row, for the PDF "Flag" column. */
-function flagLabel(a: any): string {
-  const flags = (a.visa_expiry_flags ?? []).filter((f: any) => !f.suppressed).map((f: any) => f.flag_type)
-  if (a.visa_renewed) return 'Renewed'
-  if (flags.includes('5_working_day')) return '5 working days'
-  if (flags.includes('10_working_day')) return '10 working days'
-  if (flags.includes('30_day')) return '30 days'
-  return '—'
 }
 
 /**
@@ -127,11 +137,10 @@ function pdfResponse(bytes: Uint8Array, filename: string): Response {
 }
 
 const SELECT = `
-  id, status, country_code, visa_issue_date, visa_expiry_date, visa_renewed,
-  expiry_flags_sent, vessel_name, created_at, updated_at,
+  id, status, country_code, visa_issuance_date, visa_expiry, visa_number,
+  vessel_name, created_at, updated_at,
   crew_members ( id, full_name ),
-  yachts ( id, vessel_name ),
-  visa_expiry_flags ( flag_type, flagged_at, suppressed )
+  yachts ( id, vessel_name )
 `
 
 export async function visaReportsHandler(request: Request): Promise<Response> {
@@ -158,23 +167,25 @@ export async function visaReportsHandler(request: Request): Promise<Response> {
     if (error) return json({ error: 'Report fetch failed' }, 500)
 
     let rows = (data ?? []) as any[]
+    // Urgency windows derived from days-to-expiry (the flag system isn't deployed):
+    // 5 working days ≈ 7 calendar, 10 working days ≈ 14, 30-day = 30.
     if (expiryFilter) {
-      const wanted = expiryFilter === '5wd' ? '5_working_day'
-        : expiryFilter === '10wd' ? '10_working_day'
-        : expiryFilter === '30d' ? '30_day' : null
-      if (wanted) {
-        rows = rows.filter((a) => (a.visa_expiry_flags ?? []).some((f: any) => !f.suppressed && f.flag_type === wanted))
+      const windowDays = expiryFilter === '5wd' ? 7 : expiryFilter === '10wd' ? 14 : expiryFilter === '30d' ? 30 : null
+      if (windowDays != null) {
+        const today = todayStr()
+        const cutoff = addDays(windowDays)
+        rows = rows.filter((a) => a.visa_expiry && a.visa_expiry >= today && a.visa_expiry <= cutoff)
       }
     }
 
     if (format === 'csv') {
-      const out: string[][] = [['Crew member', 'Vessel', 'Status', 'Issue date', 'Expiry date', 'Renewed']]
+      const out: string[][] = [['Crew member', 'Vessel', 'Status', 'Issue date', 'Expiry date', 'Days left']]
       for (const a of rows) {
         out.push([
           a.crew_members?.full_name ?? '',
           a.yachts?.vessel_name ?? a.vessel_name ?? '',
-          a.status, a.visa_issue_date ?? '', a.visa_expiry_date ?? '',
-          a.visa_renewed ? 'yes' : 'no',
+          a.status, a.visa_issuance_date ?? '', a.visa_expiry ?? '',
+          daysLeftLabel(a.visa_expiry ?? null),
         ])
       }
       return csvResponse(out, 'uae-visa-pipeline.csv')
@@ -184,10 +195,10 @@ export async function visaReportsHandler(request: Request): Promise<Response> {
       const body = rows.map((a) => [
         a.crew_members?.full_name ?? '—',
         a.yachts?.vessel_name ?? a.vessel_name ?? '—',
-        a.status, a.visa_expiry_date ?? '—', flagLabel(a),
+        a.status, a.visa_expiry ?? '—', daysLeftLabel(a.visa_expiry ?? null),
       ])
       const bytes = await buildReportPdf('UAE Visa Pipeline',
-        ['Crew member', 'Vessel', 'Status', 'Expiry', 'Flag'], body, [3, 3, 2, 2, 2.2])
+        ['Crew member', 'Vessel', 'Status', 'Expiry', 'Days left'], body, [3, 3, 2, 2, 2.2])
       return pdfResponse(bytes, 'uae-visa-pipeline.pdf')
     }
 
@@ -197,23 +208,22 @@ export async function visaReportsHandler(request: Request): Promise<Response> {
   // ── expiry ────────────────────────────────────────────────────────────────────
   if (url.pathname.endsWith('/expiry')) {
     const days = Math.max(1, Math.min(365, parseInt(url.searchParams.get('days') ?? '90', 10) || 90))
-    const today = new Date().toISOString().split('T')[0]
+    const today = todayStr()
 
     const { data, error } = await sb.from('visa_applications').select(SELECT)
       .eq('country_code', 'AE')
       .eq('status', 'approved')
-      .eq('visa_renewed', false)
-      .gte('visa_expiry_date', today)
-      .lte('visa_expiry_date', addDays(days))
-      .order('visa_expiry_date', { ascending: true })
+      .gte('visa_expiry', today)
+      .lte('visa_expiry', addDays(days))
+      .order('visa_expiry', { ascending: true })
 
     if (error) return json({ error: 'Expiry report failed' }, 500)
     const rows = (data ?? []) as any[]
 
     if (format === 'csv') {
-      const out: string[][] = [['Crew member', 'Vessel', 'Expiry date']]
+      const out: string[][] = [['Crew member', 'Vessel', 'Expiry date', 'Days left']]
       for (const a of rows) {
-        out.push([a.crew_members?.full_name ?? '', a.yachts?.vessel_name ?? a.vessel_name ?? '', a.visa_expiry_date ?? ''])
+        out.push([a.crew_members?.full_name ?? '', a.yachts?.vessel_name ?? a.vessel_name ?? '', a.visa_expiry ?? '', daysLeftLabel(a.visa_expiry ?? null)])
       }
       return csvResponse(out, 'uae-visa-expiry.csv')
     }
@@ -222,10 +232,10 @@ export async function visaReportsHandler(request: Request): Promise<Response> {
       const body = rows.map((a) => [
         a.crew_members?.full_name ?? '—',
         a.yachts?.vessel_name ?? a.vessel_name ?? '—',
-        a.visa_expiry_date ?? '—', flagLabel(a),
+        a.visa_expiry ?? '—', daysLeftLabel(a.visa_expiry ?? null),
       ])
       const bytes = await buildReportPdf(`Expiring UAE Visas — next ${days} days`,
-        ['Crew member', 'Vessel', 'Expiry', 'Flag'], body, [3.2, 3, 2, 2.2])
+        ['Crew member', 'Vessel', 'Expiry', 'Days left'], body, [3.2, 3, 2, 2.2])
       return pdfResponse(bytes, 'uae-visa-expiry.pdf')
     }
 
