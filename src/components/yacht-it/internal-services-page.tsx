@@ -541,9 +541,8 @@ export function InternalServicesPage() {
                   <Label className="text-xs">Exchange rate <span className="font-normal text-muted-foreground">(at purchase)</span></Label>
                   <Input type="number" step="0.000001" value={form.fx_rate ?? ""} onChange={(e) => set({ fx_rate: e.target.value === "" ? null : Number(e.target.value) })} className="h-8" placeholder={`1 ${form.currency} = ?`} />
                   <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                    {fxBusy
-                      ? <><Loader2 className="h-3 w-3 animate-spin" /> Fetching rate…</>
-                      : <>1 {form.currency} = {form.fx_rate ?? "?"} {form.sell_currency} · auto</>}
+                    {fxBusy && <Loader2 className="h-3 w-3 animate-spin" />}
+                    <span>{fxBusy ? "Fetching rate…" : `1 ${form.currency} = ${form.fx_rate ?? "?"} ${form.sell_currency} · auto`}</span>
                   </div>
                 </div>
                 <div className="space-y-1.5"><Label className="text-xs">Rate date</Label>
