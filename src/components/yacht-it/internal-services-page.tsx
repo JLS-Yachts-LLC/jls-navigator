@@ -161,11 +161,12 @@ export function InternalServicesPage() {
   }, []);
 
   useEffect(() => { void load(); }, []);
-  // Known yacht names for the Yacht/Client picker (free text still allowed).
+  // Yacht/Client picker options come from the IT Solutions client list (it_yachts).
+  // Free text is still allowed for anything not yet on that list.
   useEffect(() => {
-    (supabase as any).from("yachts").select("vessel_name").not("vessel_name", "is", null).order("vessel_name")
-      .then(({ data }: { data: { vessel_name: string }[] | null }) =>
-        setYachtList(Array.from(new Set((data ?? []).map((y) => y.vessel_name).filter(Boolean))) as string[]));
+    (supabase as any).from("it_yachts").select("name").not("name", "is", null).order("name")
+      .then(({ data }: { data: { name: string }[] | null }) =>
+        setYachtList(Array.from(new Set((data ?? []).map((y) => y.name).filter(Boolean))) as string[]));
   }, []);
   // Fire the 90-day renewal check (idempotent server-side) so the alert email
   // goes out once a service enters the window, even without a separate cron.
