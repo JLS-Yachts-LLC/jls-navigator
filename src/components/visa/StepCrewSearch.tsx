@@ -95,7 +95,6 @@ export default function StepCrewSearch({ state, onUpdate, onNext, onBack }: Prop
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
-  const [multiplePassports, setMultiplePassports] = useState(false)
   const [duplicateApp, setDuplicateApp] = useState<{ id: string; status: string } | null>(null)
 
   const [newForm, setNewForm] = useState<NewCrewForm>({
@@ -181,7 +180,6 @@ export default function StepCrewSearch({ state, onUpdate, onNext, onBack }: Prop
         phone_country_code: newForm.phone.phoneNumber ? newForm.phone.countryCode : null,
         phone_number: newForm.phone.phoneNumber || null,
         rank: newForm.rank.trim() || null,
-        multiple_passports: multiplePassports,
       } as any)
       // A newly upserted crew member may already have an active application.
       const existing = await findActiveApplication(saved.id)
@@ -452,62 +450,6 @@ export default function StepCrewSearch({ state, onUpdate, onNext, onBack }: Prop
             )}
           </div>
 
-          {/* Multiple passports toggle */}
-          <div style={{
-            background: COLORS.deep,
-            border: `1px solid ${COLORS.ocean}`,
-            borderRadius: 8,
-            padding: '14px 16px',
-            marginTop: 8,
-            marginBottom: 20,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-          }}>
-            <div>
-              <p style={{ fontFamily: FONTS.display, fontWeight: 600, fontSize: 14, color: COLORS.frost, margin: 0 }}>
-                Multiple passports?
-              </p>
-              <p style={{ fontFamily: FONTS.display, fontSize: 12, color: COLORS.muted, margin: '2px 0 0' }}>
-                Does this crew member hold more than one passport?
-              </p>
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                onClick={() => setMultiplePassports(true)}
-                style={{
-                  background: multiplePassports ? COLORS.signal : COLORS.ocean,
-                  color: multiplePassports ? COLORS.void : COLORS.muted,
-                  border: 'none',
-                  borderRadius: 6,
-                  padding: '6px 16px',
-                  fontFamily: FONTS.display,
-                  fontWeight: 700,
-                  fontSize: 13,
-                  cursor: 'pointer',
-                }}
-              >
-                Yes
-              </button>
-              <button
-                onClick={() => setMultiplePassports(false)}
-                style={{
-                  background: !multiplePassports ? COLORS.signal : COLORS.ocean,
-                  color: !multiplePassports ? COLORS.void : COLORS.muted,
-                  border: 'none',
-                  borderRadius: 6,
-                  padding: '6px 16px',
-                  fontFamily: FONTS.display,
-                  fontWeight: 700,
-                  fontSize: 13,
-                  cursor: 'pointer',
-                }}
-              >
-                No
-              </button>
-            </div>
-          </div>
-
           {saveError && (
             <p style={{ color: COLORS.warn, fontSize: 13, marginBottom: 12 }}>{saveError}</p>
           )}
@@ -529,63 +471,6 @@ export default function StepCrewSearch({ state, onUpdate, onNext, onBack }: Prop
           >
             {saving ? 'Saving…' : 'Save crew member'}
           </button>
-        </div>
-      )}
-
-      {/* Multiple passports toggle for matched profile */}
-      {state.crew && !showCreateForm && (
-        <div style={{
-          background: COLORS.deep,
-          border: `1px solid ${COLORS.ocean}`,
-          borderRadius: 8,
-          padding: '14px 16px',
-          marginBottom: 20,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-        }}>
-          <div>
-            <p style={{ fontFamily: FONTS.display, fontWeight: 600, fontSize: 14, color: COLORS.frost, margin: 0 }}>
-              Multiple passports?
-            </p>
-            <p style={{ fontFamily: FONTS.display, fontSize: 12, color: COLORS.muted, margin: '2px 0 0' }}>
-              Does this crew member hold more than one passport?
-            </p>
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button
-              onClick={() => setMultiplePassports(true)}
-              style={{
-                background: multiplePassports ? COLORS.signal : COLORS.ocean,
-                color: multiplePassports ? COLORS.void : COLORS.muted,
-                border: 'none',
-                borderRadius: 6,
-                padding: '6px 16px',
-                fontFamily: FONTS.display,
-                fontWeight: 700,
-                fontSize: 13,
-                cursor: 'pointer',
-              }}
-            >
-              Yes
-            </button>
-            <button
-              onClick={() => setMultiplePassports(false)}
-              style={{
-                background: !multiplePassports ? COLORS.signal : COLORS.ocean,
-                color: !multiplePassports ? COLORS.void : COLORS.muted,
-                border: 'none',
-                borderRadius: 6,
-                padding: '6px 16px',
-                fontFamily: FONTS.display,
-                fontWeight: 700,
-                fontSize: 13,
-                cursor: 'pointer',
-              }}
-            >
-              No
-            </button>
-          </div>
         </div>
       )}
 
