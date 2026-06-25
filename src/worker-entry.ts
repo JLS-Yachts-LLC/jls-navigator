@@ -133,6 +133,19 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
 
   // Discovery: `?discover=1` returns all user lists + their columns (no row data,
   // no secrets) so syncs can be created with correct field mappings.
+  // Read-only diagnostic: `?peek=<listName>&site=<path>` returns raw item fields.
+  if (url.searchParams.get('peek')) {
+    try {
+      const { peekSpList } = await import('./lib/sharepoint-sync.server')
+      const r = await peekSpList(url.searchParams.get('peek') as string, url.searchParams.get('site') || undefined, 30)
+      return new Response(JSON.stringify(r), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }), {
+        status: 500, headers: { 'Content-Type': 'application/json' },
+      })
+    }
+  }
+
   if (url.searchParams.get('discover') === '1') {
     try {
       const d = await discoverSharePoint(url.searchParams.get('site') || undefined)

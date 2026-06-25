@@ -234,6 +234,21 @@ export async function getSpListId(token: string, siteId: string, listName: strin
   return data.id as string
 }
 
+// ─── Diagnostic: peek raw item fields of a list (read-only) ────────────────────
+// Returns the raw `fields` object of the first `top` items so the exact Graph
+// field keys/values can be inspected when building a field mapping.
+export async function peekSpList(listName: string, sitePath?: string, top = 5): Promise<{ items: Array<Record<string, any>> }> {
+  const cfg = await getSpConfig()
+  const token = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret)
+  const siteId = await resolveSpSite(token, cfg.tenantUrl, sitePath || cfg.siteUrl)
+  const res = await fetch(
+    `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${encodeURIComponent(listName)}/items?$expand=fields&$top=${Math.min(Math.max(top, 1), 50)}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  )
+  const data = await res.json() as Record<string, any>
+  return { items: ((data.value ?? []) as any[]).map((it) => it.fields ?? {}) }
+}
+
 // ─── Discovery: enumerate lists + their columns (for auto-creating syncs) ──────
 
 export async function discoverSharePoint(sitePathOverride?: string): Promise<{
