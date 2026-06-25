@@ -41,6 +41,39 @@ export async function sendTicketEmail(opts: {
   }
 }
 
+/**
+ * Generic Microsoft Graph send (drop-in for the old SES sendEmail shape).
+ * Sends from MAIL_SENDER (or the ticket sender) via /users/{sender}/sendMail.
+ */
+export async function sendGraphEmail(opts: {
+  to: string[]
+  cc?: string[]
+  subject: string
+  html: string
+  text?: string
+  from?: string
+}): Promise<void> {
+  const cfg = await getSpConfig()
+  const token = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret)
+  const sender = opts.from ?? (process.env.MAIL_SENDER as string | undefined) ?? TICKET_MAIL_SENDER
+
+  const message: any = {
+    subject: opts.subject,
+    body: { contentType: 'HTML', content: opts.html },
+    toRecipients: opts.to.filter(Boolean).map((a) => ({ emailAddress: { address: a } })),
+  }
+  if (opts.cc?.length) message.ccRecipients = opts.cc.filter(Boolean).map((a) => ({ emailAddress: { address: a } }))
+
+  const res = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(sender)}/sendMail`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, saveToSentItems: true }),
+  })
+  if (res.status !== 202 && !res.ok) {
+    throw new Error(`Graph sendMail ${res.status}: ${(await res.text()).slice(0, 240)}`)
+  }
+}
+
 // ── Branded email shell + ticket templates ────────────────────────────────────
 
 function shell(content: string): string {

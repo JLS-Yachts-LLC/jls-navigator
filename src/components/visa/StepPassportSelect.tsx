@@ -289,15 +289,18 @@ async function analyzeHeadshot(file: Blob): Promise<{ isColour: boolean; whiteBa
             if (max - min > 28) colourful++
             total++
           }
-          const isColour = total > 0 && colourful / total > 0.05
-          // Background = the four corners: light and near-neutral?
+          // Only flag a genuinely greyscale image (lenient — immigration portals
+          // accept a wide range, so we err toward passing).
+          const isColour = total === 0 || colourful / total > 0.02
+          // Background check: lenient — a single reasonably light corner is enough
+          // to consider it plain. Only a uniformly dark/busy edge gets flagged.
           let lightCorners = 0
           for (const [x, y] of [[0, 0], [W - 1, 0], [0, H - 1], [W - 1, H - 1]] as const) {
             const idx = (y * W + x) * 4
             const r = data[idx], g = data[idx + 1], b = data[idx + 2]
-            if ((r + g + b) / 3 > 195 && Math.max(r, g, b) - Math.min(r, g, b) < 35) lightCorners++
+            if ((r + g + b) / 3 > 150) lightCorners++
           }
-          resolve({ isColour, whiteBackground: lightCorners >= 3 })
+          resolve({ isColour, whiteBackground: lightCorners >= 1 })
         } catch { resolve(fallback) } finally { URL.revokeObjectURL(url) }
       }
       img.onerror = () => { URL.revokeObjectURL(url); resolve(fallback) }
@@ -709,7 +712,6 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
   const [slotPreviews, setSlotPreviews] = useState<Record<SlotKey, string | null>>({ cover: null, data: null, seamans: null, headshot: null })
   const [headshotWarn, setHeadshotWarn] = useState<string | null>(null)
   const headshotWarnRef = useRef<HTMLDivElement>(null)
-  const [shakeSave, setShakeSave] = useState(false)
   const [zoomSrc, setZoomSrc] = useState<string | null>(null)
   const [noSeamans, setNoSeamans] = useState(ex?.no_seamans_book ?? false)
   const [uploading, setUploading] = useState(false)
@@ -857,8 +859,8 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
   async function runHeadshotCheck(blob: Blob) {
     const q = await analyzeHeadshot(blob)
     const issues: string[] = []
-    if (!q.isColour) issues.push('it appears to be black & white (a colour photo is required)')
-    if (!q.whiteBackground) issues.push('the background may not be plain/white')
+    if (!q.isColour) issues.push('it looks black & white (a colour photo is preferred)')
+    if (!q.whiteBackground) issues.push('the background may not be plain')
     setHeadshotWarn(issues.length ? `Please check the headshot — ${issues.join(', and ')}.` : null)
     return issues.length === 0
   }
@@ -953,15 +955,8 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
     e.preventDefault()
     setError(null)
 
-    // Hard block: the headshot failed the photo-quality check. Don't advance —
-    // pan to the warning and shake the Save button so the issue is obvious.
-    if (headshotWarn) {
-      setShakeSave(true)
-      setTimeout(() => setShakeSave(false), 600)
-      headshotWarnRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      setError('The headshot photo does not meet the requirements — please replace it (or rescan) before saving.')
-      return
-    }
+    // The headshot quality check is advisory only — it must never block a save,
+    // since immigration portals accept a wide range of photos.
 
     if (!nationality.trim() || !passportNumber.trim() || !issuingCountry.trim()) {
       setError('Nationality, passport number and issuing country are required.')
@@ -1128,7 +1123,7 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
               }}>
                 <span style={{ fontSize: 14, color: COLORS.warn }} aria-hidden="true">⚠</span>
                 <span style={{ fontFamily: FONTS.display, fontSize: 12.5, color: COLORS.frost, lineHeight: 1.5 }}>
-                  {headshotWarn} <strong>You can't save until this is resolved</strong> — replace the photo or use Rescan.
+                  {headshotWarn} <strong>You can still save</strong> — just double-check it against the guidelines below, or use Rescan.
                 </span>
               </div>
             )}
@@ -1380,19 +1375,15 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
                   Cancel
                 </button>
               )}
-              <style>{`@keyframes pp-shake{0%,100%{transform:translateX(0)}15%,55%{transform:translateX(-7px)}35%,75%{transform:translateX(7px)}}`}</style>
               <button
                 type="submit"
-                // Note: NOT disabled on headshotWarn — the click must fire so we can
-                // shake + scroll to the warning. handleSubmit blocks the actual save.
                 disabled={uploading || !doubleChecked || !allChecked || !hasRequiredDocs || expiryInvalid}
-                title={headshotWarn ? 'Resolve the headshot photo issue first' : expiryInvalid ? 'Passport fails the minimum 6 months validity rule' : !hasRequiredDocs ? 'Upload the passport inside pages, cover and headshot first' : !allChecked ? 'Tick every checklist item first' : !doubleChecked ? 'Confirm you have double-checked the information first' : undefined}
+                title={expiryInvalid ? 'Passport fails the minimum 6 months validity rule' : !hasRequiredDocs ? 'Upload the passport inside pages, cover and headshot first' : !allChecked ? 'Tick every checklist item first' : !doubleChecked ? 'Confirm you have double-checked the information first' : undefined}
                 style={{
-                  background: headshotWarn ? COLORS.warn : COLORS.signal, border: 'none', borderRadius: 8, color: COLORS.void,
+                  background: COLORS.signal, border: 'none', borderRadius: 8, color: COLORS.void,
                   fontFamily: FONTS.display, fontSize: 14, fontWeight: 600, padding: '8px 20px',
                   cursor: (uploading || !doubleChecked || !allChecked || !hasRequiredDocs || expiryInvalid) ? 'not-allowed' : 'pointer',
                   opacity: (uploading || !doubleChecked || !allChecked || !hasRequiredDocs || expiryInvalid) ? 0.6 : 1,
-                  animation: shakeSave ? 'pp-shake 0.5s ease' : undefined,
                 }}
               >
                 {uploading ? 'Saving…' : 'Save Passport'}
