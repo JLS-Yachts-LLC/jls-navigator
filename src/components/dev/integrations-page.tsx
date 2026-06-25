@@ -6,7 +6,7 @@ import {
 import { useDevAccess } from "@/lib/dev-access";
 import { Button } from "@/components/ui/button";
 import {
-  Plug, ShieldOff, CheckCircle2, XCircle, Loader2, Copy, AlertTriangle, Cloud, RefreshCw, Image as ImageIcon,
+  Plug, ShieldOff, CheckCircle2, XCircle, Loader2, Copy, AlertTriangle, Cloud, CloudDownload, RefreshCw, Image as ImageIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -189,11 +189,32 @@ function ShipSyncSyncStatus() {
     } catch (e: any) { toast.error(e?.message ?? "Failed"); } finally { setBusy(null); }
   }
 
+  async function importFromSp() {
+    if (!window.confirm("Import the legacy SharePoint Packages list into Polaris? This is a one-time backfill — run it once to populate ShipSync, after which Polaris is the source of truth.")) return;
+    setBusy("import");
+    try {
+      const { supabase } = await import("@/integrations/supabase/client");
+      const { data: { session } } = await supabase.auth.getSession();
+      const r = await fetch("/api/shipsync/sp-import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
+        body: JSON.stringify({}),
+      });
+      const j = await r.json();
+      if (j.ok) toast.success(`Imported ${j.imported} package(s) from SharePoint`);
+      else toast.error(j.error ?? "Import failed");
+      await load();
+    } catch (e: any) { toast.error(e?.message ?? "Failed"); } finally { setBusy(null); }
+  }
+
   return (
     <section className="rounded-xl border border-border bg-card p-5 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.4)]">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-display text-sm font-semibold">ShipSync → SharePoint <span className="text-muted-foreground">(outbound push)</span></h2>
         <div className="flex gap-2">
+          <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={importFromSp} disabled={!!busy}>
+            {busy === "import" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CloudDownload className="h-3.5 w-3.5" />} Import from SharePoint
+          </Button>
           <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => run(true)} disabled={!!busy}>
             {busy === "dry" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Dry run
           </Button>
