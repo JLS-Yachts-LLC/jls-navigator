@@ -183,8 +183,7 @@ function ShipSyncSyncStatus() {
         body: JSON.stringify({ dryRun }),
       });
       const j = await r.json();
-      if (j.disabled) toast.message("Push is disabled", { description: j.detail });
-      else if (j.ok) toast.success(`${dryRun ? "Dry run" : "Pushed"}: ${j.pushed} item(s), ${j.errors} error(s)`);
+      if (j.ok) toast.success(`${dryRun ? "Dry run" : "Pushed"}: ${j.pushed} item(s), ${j.errors} error(s)`);
       else toast.error(j.error ?? "Push failed");
       await load();
     } catch (e: any) { toast.error(e?.message ?? "Failed"); } finally { setBusy(null); }
@@ -221,8 +220,7 @@ function ShipSyncSyncStatus() {
             ))}
           </div>
           <p className="mt-3 text-[12px] text-muted-foreground">
-            Last push: <strong>{fmt(s.lastPushAt)}</strong> · pushed {s.pushed}. Supabase is the source of truth; this writes changed packages back to the SharePoint <code className="font-mono">Packages</code> list.
-            {" "}<span className="text-amber-400/80">Gated by <code className="font-mono">SHIPSYNC_SP_PUSH_ENABLED</code> — run a dry run to verify the field map before enabling.</span>
+            Last push: <strong>{fmt(s.lastPushAt)}</strong> · pushed {s.pushed}. Supabase is the source of truth; the daily sync writes changed packages back to the SharePoint <code className="font-mono">Packages</code> list (same as the lists above). Use <strong>Dry run</strong> to preview the field mapping.
           </p>
           {s.detail && <p className="mt-1 text-[11px] text-muted-foreground/70">{s.detail}</p>}
         </>

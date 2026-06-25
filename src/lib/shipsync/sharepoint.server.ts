@@ -2,13 +2,11 @@
  * ShipSync ↔ SharePoint sync (outbound push + one-time import).
  *
  * Supabase is the source of truth. On a cron we push changed packages back to the
- * legacy SharePoint "Packages" list so existing trackers/flows keep working.
- *
- * SAFETY: writing to the live SharePoint list is GATED behind
- *   SHIPSYNC_SP_PUSH_ENABLED === 'true'
- * (default OFF) so an unverified column mapping can't corrupt production. Verify
- * the field map with a dry run first, then enable. Column internal names are taken
- * from the exported Power Automate flows but should be confirmed per environment.
+ * legacy SharePoint "Packages" list so existing trackers/flows keep working —
+ * the same two-way pattern as the other SharePoint syncs (yachts, permits, etc.).
+ * Column internal names come from the exported Power Automate flows; a wrong name
+ * surfaces as a per-row error in the Integrations panel (never silent corruption),
+ * and a dry run is available there to preview the mapping.
  */
 import {
   getSpConfig, getGraphToken, resolveSpSite, getSpListId,
@@ -19,7 +17,6 @@ import type { ShipSyncPackage, PackageStatus } from '@/lib/shipsync/model'
 const db = () => supabaseAdmin as any
 const env = (k: string) => (process.env as any)[k] as string | undefined
 
-const PUSH_ENABLED = () => env('SHIPSYNC_SP_PUSH_ENABLED') === 'true'
 const SITE_PATH = () => env('SHIPSYNC_SP_SITE_PATH') ?? '/sites/JLS-DeliveriesApp'
 const LIST_PACKAGES = () => env('SHIPSYNC_SP_PACKAGES_LIST') ?? 'Packages'
 
@@ -60,16 +57,13 @@ async function recordState(pushed: number, errors: number, detail: string) {
   }).eq('id', 1)
 }
 
-export interface PushResult { ok: boolean; disabled?: boolean; pushed: number; errors: number; detail?: string }
+export interface PushResult { ok: boolean; pushed: number; errors: number; detail?: string }
 
 /**
  * Push packages changed since their last sync to SharePoint. dryRun resolves the
- * site/list and maps rows but writes nothing (for verifying config).
+ * site/list and maps rows but writes nothing (for previewing the mapping).
  */
 export async function pushShipSyncToSharePoint(opts: { dryRun?: boolean; limit?: number } = {}): Promise<PushResult> {
-  if (!PUSH_ENABLED() && !opts.dryRun) {
-    return { ok: false, disabled: true, pushed: 0, errors: 0, detail: 'Disabled — set SHIPSYNC_SP_PUSH_ENABLED=true after verifying the field map (run a dry run first).' }
-  }
   const cfg = await getSpConfig()
   const token = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret)
   const siteId = await resolveSpSite(token, cfg.tenantUrl, SITE_PATH())
