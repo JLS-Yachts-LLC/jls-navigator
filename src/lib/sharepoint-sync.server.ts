@@ -1001,6 +1001,12 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
       record[dbField] = raw !== '' && raw !== null && raw !== undefined ? raw : null
     }
 
+    // NOT NULL columns must be set on EVERY row: PostgREST bulk-inserts the batch
+    // as a single statement using the UNION of keys, so a row missing a mapped
+    // value gets an explicit NULL (bypassing the column default) and would fail.
+    if (record.num_packages == null) record.num_packages = 1
+    if (record.status == null) record.status = 'in_office'
+
     const existingId =
       bySpId.get(String(item.id)) ??
       (record.barcode ? byBarcode.get(String(record.barcode).toLowerCase().trim()) : undefined)
@@ -1011,7 +1017,7 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
       updateById.set(existingId, { ...record, id: existingId })
     } else {
       record.extra = { sp_item_id: item.id, imported_at: new Date().toISOString() }
-      insertByKey.set(String(item.id), { ...record, status: record.status ?? 'in_office' })
+      insertByKey.set(String(item.id), { ...record })
     }
   }
 
