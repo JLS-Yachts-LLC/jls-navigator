@@ -1,10 +1,16 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import {
-  FileText, ChevronLeft, Loader2, Download, Mail, PenLine, CheckCircle2,
+  FileText, ChevronLeft, Loader2, Download, Mail, PenLine, CheckCircle2, Ship,
 } from "lucide-react";
 import { ANCHOR_FORMS, type FormDef, type FormField } from "@/lib/anchor-forms/definitions";
+
+// yachts column → form field key (auto-populate vessel data).
+const VESSEL_MAP: Record<string, string> = {
+  vessel_name: "vessel_name", flag: "vessel_flag", imo_no: "imo",
+  length_overall_m: "loa", mmsi: "mmsi",
+};
 
 type Result = { submissionId: string; pdfUrl: string; emailTo: string | null; title: string };
 
@@ -56,7 +62,33 @@ function FillForm({ def, onBack }: { def: FormDef; onBack: () => void }) {
   const [signer, setSigner] = useState({ name: "", email: "" });
 
   const set = (k: string, v: string) => setValues((p) => ({ ...p, [k]: v }));
+  const fieldKeys = new Set(def.sections.flatMap((s) => s.fields).map((f) => f.key));
   const missing = def.sections.flatMap((s) => s.fields).filter((f) => f.required && !values[f.key]?.trim());
+
+  // Vessel auto-populate: forms with a vessel_name field get a vessel picker that
+  // prefills vessel fields from the yachts record.
+  const hasVessel = fieldKeys.has("vessel_name");
+  const [vessels, setVessels] = useState<any[]>([]);
+  useEffect(() => {
+    if (!hasVessel) return;
+    void (async () => {
+      const { data } = await (supabase as any).from("yachts")
+        .select("id, vessel_name, flag, imo_no, length_overall_m, mmsi").order("vessel_name");
+      setVessels(data ?? []);
+    })();
+  }, [hasVessel]);
+  function pickVessel(id: string) {
+    const y = vessels.find((v) => v.id === id);
+    if (!y) return;
+    setValues((p) => {
+      const next = { ...p };
+      for (const [col, key] of Object.entries(VESSEL_MAP)) {
+        if (fieldKeys.has(key) && y[col] != null && y[col] !== "") next[key] = String(y[col]);
+      }
+      return next;
+    });
+    toast.success(`Pre-filled from ${y.vessel_name}`);
+  }
 
   async function generate() {
     if (missing.length) { toast.error(`Required: ${missing.map((f) => f.label).join(", ")}`); return; }
@@ -89,6 +121,17 @@ function FillForm({ def, onBack }: { def: FormDef; onBack: () => void }) {
       </button>
       <h1 className="font-display text-xl font-semibold">{def.title}</h1>
       {def.intro && <p className="mt-1 text-sm text-muted-foreground">{def.intro}</p>}
+
+      {hasVessel && (
+        <div className="mt-4 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card/50 p-3">
+          <Ship className="h-4 w-4 text-primary/70" />
+          <span className="text-xs font-medium text-muted-foreground">Auto-fill from vessel</span>
+          <select onChange={(e) => e.target.value && pickVessel(e.target.value)} className={`${inputCls} max-w-xs`} defaultValue="">
+            <option value="">Select a vessel…</option>
+            {vessels.map((v) => <option key={v.id} value={v.id}>{v.vessel_name ?? "Unnamed"}</option>)}
+          </select>
+        </div>
+      )}
 
       <div className="mt-5 space-y-6">
         {def.sections.map((section, i) => (
@@ -140,8 +183,29 @@ function FillForm({ def, onBack }: { def: FormDef; onBack: () => void }) {
   );
 }
 
+const STATUS_META: Record<string, { label: string; cls: string }> = {
+  completed: { label: "Generated", cls: "bg-muted text-muted-foreground" },
+  emailed: { label: "Emailed", cls: "bg-primary/15 text-primary" },
+  sent_for_signature: { label: "Sent for signature", cls: "bg-amber-500/15 text-amber-500" },
+  signed: { label: "Signed", cls: "bg-emerald-500/15 text-emerald-500" },
+};
+
 export function FormsPage() {
   const [active, setActive] = useState<FormDef | null>(null);
+  const [subs, setSubs] = useState<any[]>([]);
+  const reload = useCallback(async () => {
+    const { data } = await (supabase as any).from("anchor_form_submissions")
+      .select("id, title, status, created_at, pdf_path").order("created_at", { ascending: false }).limit(25);
+    setSubs(data ?? []);
+  }, []);
+  useEffect(() => { void reload(); }, [reload, active]);
+
+  async function viewPdf(path: string) {
+    const { data } = await (supabase as any).storage.from("esign-documents").createSignedUrl(path, 3600);
+    if (data?.signedUrl) window.open(data.signedUrl, "_blank");
+    else toast.error("Could not open the document");
+  }
+
   if (active) return <FillForm def={active} onBack={() => setActive(null)} />;
 
   return (
@@ -159,6 +223,34 @@ export function FormsPage() {
             </div>
           </button>
         ))}
+      </div>
+
+      {/* Document tracking */}
+      <div className="mt-8">
+        <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/70">Recent documents</div>
+        {subs.length === 0 ? (
+          <div className="rounded-xl border border-border bg-card/50 p-6 text-center text-sm text-muted-foreground">No documents generated yet.</div>
+        ) : (
+          <div className="overflow-hidden rounded-xl border border-border">
+            {subs.map((s) => {
+              const m = STATUS_META[s.status] ?? { label: s.status, cls: "bg-muted text-muted-foreground" };
+              return (
+                <div key={s.id} className="flex items-center justify-between gap-3 border-b border-border/50 bg-card px-4 py-2.5 last:border-0">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium text-foreground">{s.title}</div>
+                    <div className="text-[11px] text-muted-foreground">{new Date(s.created_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-3">
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${m.cls}`}>{m.label}</span>
+                    {s.pdf_path && (
+                      <button onClick={() => viewPdf(s.pdf_path)} className="text-xs text-primary hover:underline">View</button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
