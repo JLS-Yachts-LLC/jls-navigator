@@ -117,8 +117,9 @@ function PolarisRedesignApp() {
             onSwitchVessel={() => setSwitcher(true)}
           />
         ) : screen === "immigration" ? (
-          // Real Visa + Sign On/Off pages, tabbed (dark palette for the navy bg).
-          <div className="dark" style={{ height: "100%" }}>
+          // Real Visa + Sign On/Off pages, tabbed; pds-embed remaps their theme
+          // tokens to the Beta teal/blue palette (functionality unchanged).
+          <div className="dark pds-embed" style={{ height: "100%" }}>
             <ImmigrationHub />
           </div>
         ) : screen === "logistics" ? (
@@ -132,9 +133,9 @@ function PolarisRedesignApp() {
         ) : screen === "settings" ? (
           <PolarisSettings />
         ) : screen === "yacht-it" ? (
-          // Embedded app pages use the standard theme tokens; force the dark
-          // palette so their text reads correctly on the Beta's navy background.
-          <div className="dark" style={{ height: "100%" }}>
+          // pds-embed remaps the embedded pages' theme tokens to the Beta
+          // teal/blue palette (functionality unchanged).
+          <div className="dark pds-embed" style={{ height: "100%" }}>
             <YachtItSolutionsPage />
           </div>
         ) : (

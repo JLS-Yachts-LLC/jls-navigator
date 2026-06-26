@@ -389,3 +389,38 @@
   0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, #00C4CC 40%, transparent); }
   50%       { box-shadow: 0 0 0 8px color-mix(in oklab, #00C4CC 0%, transparent); }
 }
+
+/* ── Beta-embedded standard pages ──────────────────────────────────────────────
+   Standard app pages (Visa, Sign On/Off, Yacht IT Solutions) rendered INSIDE the
+   Polaris Beta remap the shadcn theme tokens to the pds teal/blue brand, so they
+   match the Beta look & feel without any change to component code or behaviour.
+   Applied via className="dark pds-embed" (dark enables dark: variants; pds-embed
+   is defined last so it wins the token values). */
+.pds-embed {
+  --background:            #0a2e40;             /* content-area teal */
+  --foreground:            #f0f4f8;             /* light text */
+  --card:                  #0c384f;             /* slightly lifted surface */
+  --card-foreground:       #f0f4f8;
+  --popover:               #0c384f;
+  --popover-foreground:    #f0f4f8;
+  --primary:               #4590ba;             /* Dodger Blue — interactive */
+  --primary-foreground:    #061e2b;
+  --secondary:             rgba(255,255,255,0.06);
+  --secondary-foreground:  #f0f4f8;
+  --muted:                 rgba(255,255,255,0.05);
+  --muted-foreground:      #a8c4ce;             /* light teal-grey */
+  --accent:                rgba(69,144,186,0.18);
+  --accent-foreground:     #96cbc7;             /* Jamaica Bay */
+  --border:                rgba(150,203,199,0.18);
+  --input:                 rgba(150,203,199,0.18);
+  --ring:                  #4590ba;
+  --destructive:           #e24b4a;
+  --destructive-foreground:#ffffff;
+  --sidebar:               #07435e;
+  --sidebar-foreground:    #f0f4f8;
+  --sidebar-accent:        rgba(255,255,255,0.06);
+  --sidebar-accent-foreground: #96cbc7;
+  --sidebar-border:        rgba(150,203,199,0.18);
+  font-family: var(--pds-font-body);
+  background: #0a2e40;
+}
