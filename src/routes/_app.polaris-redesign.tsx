@@ -20,7 +20,6 @@ import {
   PolarisVisaReports,
   PolarisCrew,
   PolarisCompliance,
-  PolarisVessels,
   PolarisSignOnOff,
   PolarisLogistics,
   PolarisTraining,
@@ -31,6 +30,7 @@ import {
 import { useYachts, type YachtOption } from "@/components/polaris-ui/data";
 import { YachtItSolutionsPage } from "@/components/yacht-it/yacht-it-solutions-page";
 import { ImmigrationHub } from "@/components/crew-immigration/immigration-hub";
+import { YachtsPage } from "./_app.yachts.index";
 
 export const Route = createFileRoute("/_app/polaris-redesign")({
   component: PolarisRedesignApp,
@@ -106,11 +106,11 @@ function PolarisRedesignApp() {
             onSwitchVessel={() => setSwitcher(true)}
           />
         ) : screen === "vessels" ? (
-          <PolarisVessels
-            yachts={yachts}
-            selectedId={selectedId}
-            onSelect={pickVessel}
-          />
+          // Real Vessel Overview (incl. SharePoint-synced images); Beta styling
+          // is inherited from the shell's pds-embed content area.
+          <div style={{ height: "100%" }}>
+            <YachtsPage />
+          </div>
         ) : screen === "soso" ? (
           <PolarisSignOnOff
             yacht={yacht}

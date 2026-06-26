@@ -122,7 +122,7 @@ function initViewState() {
 }
 
 // ── Page component ─────────────────────────────────────────────────────────────
-function YachtsPage() {
+export function YachtsPage() {
   // Init from localStorage (runs once)
   const [init] = useState(initViewState);
 
