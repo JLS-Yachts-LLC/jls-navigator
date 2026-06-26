@@ -84,6 +84,37 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
     }
   }
 
+  // Email test: `?test-email=<addr>` sends a test from BOTH senders (polaris@ and
+  // anchor@) to verify Graph Mail.Send + the per-sender access policy. Recipient is
+  // restricted to jlsyachts.com / newhorizon-it.co.uk so this can't be an open relay.
+  const testEmail = url.searchParams.get('test-email')
+  if (testEmail) {
+    if (!/@(jlsyachts\.com|newhorizon-it\.co\.uk)$/i.test(testEmail)) {
+      return new Response(JSON.stringify({ ok: false, error: 'Recipient must be a jlsyachts.com or newhorizon-it.co.uk address' }), {
+        status: 400, headers: { 'Content-Type': 'application/json' },
+      })
+    }
+    const { sendGraphEmail } = await import('./lib/graph-mail.server')
+    const results: Array<{ from: string; ok: boolean; error?: string }> = []
+    for (const from of ['polaris@jlsyachts.com', 'anchor@jlsyachts.com']) {
+      try {
+        await sendGraphEmail({
+          from,
+          to: [testEmail],
+          subject: `Polaris email test — from ${from}`,
+          html: `<p>This is a test message from the Polaris platform, sent as <strong>${from}</strong>.</p><p>If you can read this, Microsoft Graph sending is working for this mailbox.</p>`,
+          text: `Test message from Polaris, sent as ${from}. Graph sending works for this mailbox.`,
+        })
+        results.push({ from, ok: true })
+      } catch (e) {
+        results.push({ from, ok: false, error: e instanceof Error ? e.message : String(e) })
+      }
+    }
+    return new Response(JSON.stringify({ ok: results.every((r) => r.ok), to: testEmail, results }), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    })
+  }
+
   // One-time setup: `?setup=signon-list` creates the "Crew Sign On Off" SharePoint
   // list and registers its outbound sync config. Safe to call repeatedly.
   if (url.searchParams.get('setup') === 'signon-list') {
