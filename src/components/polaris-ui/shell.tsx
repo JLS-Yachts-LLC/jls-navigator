@@ -6,6 +6,10 @@
  */
 import { useEffect, useState, type ReactNode } from "react";
 import { TIcon } from "./primitives";
+import { ViewAsSwitcher, OnlineUsers } from "@/components/top-bar";
+import { FeedbackWidget } from "@/components/feedback/feedback-widget";
+import { NotificationBell } from "@/components/notifications/NotificationBell";
+import { useTheme } from "@/lib/theme";
 
 export type PolarisRole =
   | "global_admin"
@@ -62,6 +66,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: "Logistics", icon: "truck", screen: "logistics" },
       { label: "Training", icon: "certificate", screen: "training" },
       { label: "Yacht IT Solutions", icon: "cpu", screen: "yacht-it" },
+      { label: "Anchor", icon: "signature", screen: "anchor" },
     ],
   },
   {
@@ -97,6 +102,33 @@ function visibleGroups(role: PolarisRole): NavGroup[] {
   })).filter((g) => g.items.length > 0);
 }
 
+/** The label of the currently-selected nav item (shown as the page heading). */
+function labelForScreen(screen: string): string | null {
+  for (const g of NAV_GROUPS) for (const i of g.items) if (i.screen === screen) return i.label;
+  return null;
+}
+
+/** The standard app's top-bar controls (View-as, presence, feedback, theme,
+ *  notifications) reused in the Beta. Wrapped in `dark` so they read on navy. */
+function BetaTopBarControls() {
+  const { theme, toggle } = useTheme();
+  return (
+    <div className="dark flex items-center gap-1.5">
+      <ViewAsSwitcher />
+      <OnlineUsers />
+      <FeedbackWidget />
+      <button
+        onClick={toggle}
+        title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+        className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground transition"
+      >
+        <TIcon name={theme === "dark" ? "sun" : "moon"} size={18} />
+      </button>
+      <NotificationBell />
+    </div>
+  );
+}
+
 export function useIsMobile(breakpoint = 768): boolean {
   const [mobile, setMobile] = useState(false);
   useEffect(() => {
@@ -119,6 +151,7 @@ export function PolarisTopBar({
   onMenuClick,
   showMenu,
   onExitBeta,
+  activeLabel,
 }: {
   vesselName: string;
   userInitials: string;
@@ -128,6 +161,7 @@ export function PolarisTopBar({
   onMenuClick?: () => void;
   showMenu?: boolean;
   onExitBeta?: () => void;
+  activeLabel?: string;
 }) {
   return (
     <header
@@ -168,8 +202,22 @@ export function PolarisTopBar({
         >
           POLARIS
         </span>
-        {/* Vessel switcher removed for now — vessel context will move to
-            Agent/Crew views. */}
+        {/* Selected screen heading (moved out of the per-page tab bars). */}
+        {activeLabel && (
+          <>
+            <span style={{ color: "var(--pds-border-gold)", fontSize: 16 }}>/</span>
+            <span
+              style={{
+                fontFamily: "var(--pds-font-display)",
+                fontSize: "var(--pds-fs-title)",
+                fontWeight: 600,
+                color: "var(--pds-text)",
+              }}
+            >
+              {activeLabel}
+            </span>
+          </>
+        )}
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         {onExitBeta && (
@@ -195,19 +243,7 @@ export function PolarisTopBar({
             Original
           </button>
         )}
-        <button
-          onClick={onBellClick}
-          aria-label="Notifications"
-          style={{
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            padding: 6,
-            display: "flex",
-          }}
-        >
-          <TIcon name="bell" size={20} color="var(--pds-text-secondary)" />
-        </button>
+        <BetaTopBarControls />
         <div
           aria-label={`User: ${userName}`}
           title={userName}
@@ -360,6 +396,7 @@ export function PolarisShell({
         onMenuClick={() => setOverlay(true)}
         onVesselClick={onVesselClick}
         onExitBeta={onExitBeta}
+        activeLabel={labelForScreen(active) ?? undefined}
       />
 
       <div style={{ display: "flex", flex: 1, minHeight: 0 }}>

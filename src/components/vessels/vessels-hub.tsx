@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { Ship, Navigation, Anchor } from "lucide-react";
+import { Ship, Navigation, BarChart3 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { YachtsPage } from "@/routes/_app.yachts.index";
 import { MyFleetPage } from "@/components/my-fleet-page";
+import { VesselReportScreen } from "@/components/visa/VesselReportScreen";
 
 /**
  * Vessels hub — Vessel Overview + Live Tracking as tabs (instead of separate nav
@@ -13,6 +14,7 @@ import { MyFleetPage } from "@/components/my-fleet-page";
 const TABS = [
   { key: "overview", label: "Vessel Overview", icon: Ship, Comp: YachtsPage },
   { key: "tracking", label: "Live Tracking", icon: Navigation, Comp: MyFleetPage },
+  { key: "reports", label: "Vessel Reports", icon: BarChart3, Comp: VesselReportScreen },
 ] as const;
 
 export function VesselsHub() {
@@ -22,9 +24,6 @@ export function VesselsHub() {
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-1 overflow-x-auto border-b border-border/60 bg-card/30 px-4">
-        <span className="mr-3 flex shrink-0 items-center gap-1.5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/70">
-          <Anchor className="h-3.5 w-3.5 text-primary/70" /> Vessels
-        </span>
         {TABS.map((t) => {
           const Icon = t.icon;
           const active = tab === t.key;

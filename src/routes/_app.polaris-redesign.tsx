@@ -18,7 +18,6 @@ import {
 import {
   PolarisDashboard,
   PolarisVisaReports,
-  PolarisCrew,
   PolarisCompliance,
   PolarisSignOnOff,
   PolarisLogistics,
@@ -31,6 +30,8 @@ import { useYachts, type YachtOption } from "@/components/polaris-ui/data";
 import { YachtItSolutionsPage } from "@/components/yacht-it/yacht-it-solutions-page";
 import { ImmigrationHub } from "@/components/crew-immigration/immigration-hub";
 import { VesselsHub } from "@/components/vessels/vessels-hub";
+import { CrewListPage } from "@/components/crew-immigration/crew-list-page";
+import { EsignPage } from "@/components/esign/esign-page";
 
 export const Route = createFileRoute("/_app/polaris-redesign")({
   component: PolarisRedesignApp,
@@ -99,7 +100,9 @@ function PolarisRedesignApp() {
             onOpenReports={() => setScreen("visa-reports")}
           />
         ) : screen === "crew" ? (
-          <PolarisCrew yacht={yacht} onSwitchVessel={() => setSwitcher(true)} />
+          <div style={{ height: "100%" }}>
+            <CrewListPage />
+          </div>
         ) : screen === "compliance" ? (
           <PolarisCompliance
             yacht={yacht}
@@ -136,6 +139,10 @@ function PolarisRedesignApp() {
           // Beta styling comes from the shell's `pds-embed` content area.
           <div style={{ height: "100%" }}>
             <YachtItSolutionsPage />
+          </div>
+        ) : screen === "anchor" ? (
+          <div style={{ height: "100%" }}>
+            <EsignPage />
           </div>
         ) : (
           <EmptyState

@@ -31,7 +31,7 @@ type OnlineUser = { id: string; name: string; email: string };
 
 // Live "who's online" via Supabase Realtime presence. Each client broadcasts its
 // identity to a shared channel; the count + names update in real time.
-function OnlineUsers() {
+export function OnlineUsers() {
   const { user } = useAuth();
   const [online, setOnline] = useState<OnlineUser[]>([]);
 
@@ -104,7 +104,7 @@ function OnlineUsers() {
 }
 
 // Admin-only "View as" control — preview the app as a role, or as a specific user.
-function ViewAsSwitcher() {
+export function ViewAsSwitcher() {
   const canImpersonate = useCanImpersonate();
   const { session } = useAuth();
   const viewAs = useViewAsRole();

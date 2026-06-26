@@ -29,9 +29,6 @@ export function YachtItSolutionsPage() {
     <div className="flex h-full flex-col">
       {/* Tab bar (doubles as the module header) */}
       <div className="flex items-center gap-1 overflow-x-auto border-b border-border/60 bg-card/30 px-4">
-        <span className="mr-3 flex shrink-0 items-center gap-1.5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/70">
-          <Cpu className="h-3.5 w-3.5 text-primary/70" /> Yacht IT Solutions
-        </span>
         {TABS.map((t) => {
           const Icon = t.icon;
           const active = tab === t.key;
