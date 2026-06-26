@@ -53,12 +53,12 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Services",
     items: [
       {
+        // Immigration hub — tabs into Visa + Sign On/Off (the real pages).
         label: "Immigration",
         icon: "id-badge",
         screen: "immigration",
         roles: ["global_admin", "crew_immigration"],
       },
-      { label: "Sign On/Off", icon: "login", screen: "soso" },
       { label: "Logistics", icon: "truck", screen: "logistics" },
       { label: "Training", icon: "certificate", screen: "training" },
       { label: "Yacht IT Solutions", icon: "cpu", screen: "yacht-it" },

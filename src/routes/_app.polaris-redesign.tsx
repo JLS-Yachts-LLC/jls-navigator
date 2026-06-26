@@ -22,7 +22,6 @@ import {
   PolarisCompliance,
   PolarisVessels,
   PolarisSignOnOff,
-  PolarisImmigration,
   PolarisLogistics,
   PolarisTraining,
   PolarisCrewDocuments,
@@ -31,6 +30,7 @@ import {
 } from "@/components/polaris-ui/screens";
 import { useYachts, type YachtOption } from "@/components/polaris-ui/data";
 import { YachtItSolutionsPage } from "@/components/yacht-it/yacht-it-solutions-page";
+import { ImmigrationHub } from "@/components/crew-immigration/immigration-hub";
 
 export const Route = createFileRoute("/_app/polaris-redesign")({
   component: PolarisRedesignApp,
@@ -117,7 +117,10 @@ function PolarisRedesignApp() {
             onSwitchVessel={() => setSwitcher(true)}
           />
         ) : screen === "immigration" ? (
-          <PolarisImmigration yacht={yacht} onSwitchVessel={() => setSwitcher(true)} />
+          // Real Visa + Sign On/Off pages, tabbed (dark palette for the navy bg).
+          <div className="dark" style={{ height: "100%" }}>
+            <ImmigrationHub />
+          </div>
         ) : screen === "logistics" ? (
           <PolarisLogistics yacht={yacht} onSwitchVessel={() => setSwitcher(true)} />
         ) : screen === "training" ? (
