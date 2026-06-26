@@ -18,7 +18,7 @@ import { fxRateHandler } from './routes/api.fx-rate'
 import { shipsyncPwaHandler } from './lib/shipsync/pwa-assets'
 import { shipsyncApiHandler } from './routes/api.shipsync'
 import { anchorFormsHandler } from './routes/api.anchor-forms'
-import { qbInvoiceHandler } from './routes/api.qb.invoice'
+import { qbInvoiceHandler, qbSelftestHandler } from './routes/api.qb.invoice'
 import { qbConnectHandler, qbCallbackHandler } from './routes/api.qb.connect'
 import { feedbackNotifyHandler } from './routes/api.feedback.notify'
 import { vesselHandler } from './routes/api.vessels'
@@ -374,6 +374,9 @@ export default {
     }
     if (url.pathname === '/api/qb/invoice' && (request.method === 'GET' || request.method === 'POST')) {
       return qbInvoiceHandler(request)
+    }
+    if (url.pathname === '/api/qb/selftest' && request.method === 'GET') {
+      return qbSelftestHandler(request)
     }
     if (url.pathname === '/api/qb/connect' && request.method === 'GET') {
       return qbConnectHandler(request)
