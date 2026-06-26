@@ -30,7 +30,7 @@ import {
 import { useYachts, type YachtOption } from "@/components/polaris-ui/data";
 import { YachtItSolutionsPage } from "@/components/yacht-it/yacht-it-solutions-page";
 import { ImmigrationHub } from "@/components/crew-immigration/immigration-hub";
-import { YachtsPage } from "./_app.yachts.index";
+import { VesselsHub } from "@/components/vessels/vessels-hub";
 
 export const Route = createFileRoute("/_app/polaris-redesign")({
   component: PolarisRedesignApp,
@@ -106,10 +106,10 @@ function PolarisRedesignApp() {
             onSwitchVessel={() => setSwitcher(true)}
           />
         ) : screen === "vessels" ? (
-          // Real Vessel Overview (incl. SharePoint-synced images); Beta styling
-          // is inherited from the shell's pds-embed content area.
+          // Vessel Overview (with SharePoint images) + Live Tracking, tabbed.
+          // Beta styling inherited from the shell's pds-embed content area.
           <div style={{ height: "100%" }}>
-            <YachtsPage />
+            <VesselsHub />
           </div>
         ) : screen === "soso" ? (
           <PolarisSignOnOff
