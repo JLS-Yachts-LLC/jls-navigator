@@ -30,6 +30,7 @@ import {
   PolarisSettings,
 } from "@/components/polaris-ui/screens";
 import { useYachts, type YachtOption } from "@/components/polaris-ui/data";
+import { YachtItSolutionsPage } from "@/components/yacht-it/yacht-it-solutions-page";
 
 export const Route = createFileRoute("/_app/polaris-redesign")({
   component: PolarisRedesignApp,
@@ -127,6 +128,8 @@ function PolarisRedesignApp() {
           <PolarisSosoReports yacht={yacht} onSwitchVessel={() => setSwitcher(true)} />
         ) : screen === "settings" ? (
           <PolarisSettings />
+        ) : screen === "yacht-it" ? (
+          <YachtItSolutionsPage />
         ) : (
           <EmptyState
             icon="layout-dashboard"

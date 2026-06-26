@@ -61,6 +61,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: "Sign On/Off", icon: "login", screen: "soso" },
       { label: "Logistics", icon: "truck", screen: "logistics" },
       { label: "Training", icon: "certificate", screen: "training" },
+      { label: "Yacht IT Solutions", icon: "cpu", screen: "yacht-it" },
     ],
   },
   {
