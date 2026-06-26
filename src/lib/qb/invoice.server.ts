@@ -120,6 +120,10 @@ export type VisaInvoiceRequest = {
     includeDate?: boolean
   }>
   placeOfSupply?: string
+  /** Use this QBO customer id directly instead of the vessel link / name match. */
+  customerId?: string
+  /** Build + validate everything but DON'T post to QBO or write back. Returns a preview. */
+  dryRun?: boolean
 }
 
 /** Format a date as DD-MM-YY to match the printed invoice (e.g. "02-06-26"). */
@@ -155,7 +159,7 @@ export async function generateVisaInvoice(req: VisaInvoiceRequest, userId: strin
   if (offVessel.length) throw new InvoiceError('mixed_vessel', 'All selected applications must belong to the same vessel.')
 
   const vesselName: string = apps[0]?.yacht?.vessel_name ?? ''
-  let customerId: string | null = apps[0]?.yacht?.qbo_customer_id ?? null
+  let customerId: string | null = req.customerId ?? apps[0]?.yacht?.qbo_customer_id ?? null
 
   // Resolve the QBO customer if not already linked, then persist the link.
   if (!customerId) {
@@ -210,6 +214,17 @@ export async function generateVisaInvoice(req: VisaInvoiceRequest, userId: strin
     throw new InvoiceError('item_not_found', `These services have no matching QuickBooks Item: ${missing.join('; ')}. Create the Item in QBO (or fix the name) and retry.`)
   }
   if (resolved.length === 0) throw new InvoiceError('empty', 'No invoice lines to create.')
+
+  // Dry run: return the fully-built, validated payload without posting or writing back.
+  if (req.dryRun) {
+    return {
+      dryRun: true,
+      vessel: vesselName,
+      customerId,
+      lines: resolved.map((r) => ({ item: r.itemName, itemId: r.itemId, qty: r.qty, unitPrice: r.unitPrice, amount: round2(r.qty * r.unitPrice), taxCode: r.taxCode, description: r.description })),
+      total: resolved.reduce((s, r) => s + round2(r.qty * r.unitPrice), 0),
+    }
+  }
 
   // Create the invoice in QBO.
   let created: { invoiceId: string; docNumber: string; total: number }
