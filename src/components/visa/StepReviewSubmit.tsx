@@ -129,13 +129,21 @@ export function StepReviewSubmit({ state, onUpdate, onNext, onBack }: Props) {
   // Additional personal info lives in a separate table (api/crew/:id/personal-info),
   // not on crew_members — fetch it so the summary isn't full of dashes.
   const [personalInfo, setPersonalInfo] = useState<any>(null)
+  // Overlay only the DB fields that actually have a value, so a null/empty column
+  // from the re-fetch can't blank a value the wizard already captured (e.g. a
+  // freshly-scanned Place of Issue that hasn't round-tripped to the DB yet).
+  const overlay = (obj: any) => {
+    const out: Record<string, any> = {}
+    for (const [k, v] of Object.entries(obj ?? {})) if (v !== null && v !== undefined && v !== '') out[k] = v
+    return out
+  }
   useEffect(() => {
     let cancelled = false
     ;(async () => {
       const db = supabase as any
       if (state.crew?.id) {
         const { data } = await db.from('crew_members').select('*').eq('id', state.crew.id).maybeSingle()
-        if (data && !cancelled) setCrewFull((prev: any) => ({ ...prev, ...data }))
+        if (data && !cancelled) setCrewFull((prev: any) => ({ ...prev, ...overlay(data) }))
         try {
           const { data: { session } } = await supabase.auth.getSession()
           const r = await fetch(`/api/crew/${state.crew.id}/personal-info`, {
@@ -146,7 +154,7 @@ export function StepReviewSubmit({ state, onUpdate, onNext, onBack }: Props) {
       }
       if (state.passport?.id) {
         const { data } = await db.from('crew_passports').select('*').eq('id', state.passport.id).maybeSingle()
-        if (data && !cancelled) setPassportFull((prev: any) => ({ ...prev, ...data }))
+        if (data && !cancelled) setPassportFull((prev: any) => ({ ...prev, ...overlay(data) }))
       }
     })()
     return () => { cancelled = true }
