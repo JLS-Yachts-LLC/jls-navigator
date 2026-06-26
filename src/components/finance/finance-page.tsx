@@ -98,6 +98,7 @@ type TrackerProcurement = {
 
 type TrackerVisa = {
   id: string;
+  yacht_id?: string | null;
   given_name: string | null;
   surname: string | null;
   nationality: string | null;
@@ -1144,8 +1145,197 @@ function visaName(v: TrackerVisa) {
   return `${v.given_name ?? ""} ${v.surname ?? ""}`.trim() || "—";
 }
 
+async function authToken() {
+  const { data: { session } } = await supabase.auth.getSession();
+  return session?.access_token ?? "";
+}
+
+type CatalogItem = { qbo_item_name: string; unit_price: number | null; tax_code: string | null };
+type DialogLine = { itemName: string; unitPrice: string; crewIds: string[] };
+
+// ─── Generate Invoice (QuickBooks) dialog ─────────────────────────────────────
+// Builds QBO invoice lines from the selected visa applications — each line is a
+// service (an existing QBO Item) with the crew it covers. Mirrors the paper tax
+// invoice (service line + numbered crew names + qty/unit/VAT).
+function GenerateInvoiceDialog({
+  apps, onClose, onDone,
+}: {
+  apps: TrackerVisa[];
+  onClose: () => void;
+  onDone: (docNumber: string) => void;
+}) {
+  const [catalog, setCatalog] = useState<CatalogItem[]>([]);
+  const [configured, setConfigured] = useState(true);
+  const [lines, setLines] = useState<DialogLine[]>([
+    { itemName: "", unitPrice: "", crewIds: apps.map(a => a.id) },
+  ]);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const vessels = useMemo(() => Array.from(new Set(apps.map(a => a.yacht?.vessel_name ?? "—"))), [apps]);
+  const yachtId = (apps[0] as any)?.yacht_id ?? null;
+  const singleVessel = vessels.length === 1;
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/qb/invoice", { headers: { Authorization: `Bearer ${await authToken()}` } });
+        const j = await res.json();
+        if (j.ok) { setCatalog(j.catalog ?? []); setConfigured(!!j.configured); }
+      } catch { /* non-fatal */ }
+    })();
+  }, []);
+
+  function setLine(i: number, patch: Partial<DialogLine>) {
+    setLines(prev => prev.map((l, idx) => idx === i ? { ...l, ...patch } : l));
+  }
+  function pickService(i: number, name: string) {
+    const cat = catalog.find(c => c.qbo_item_name === name);
+    setLine(i, { itemName: name, unitPrice: cat?.unit_price != null ? String(cat.unit_price) : lines[i].unitPrice });
+  }
+  function toggleCrew(i: number, id: string) {
+    setLines(prev => prev.map((l, idx) => {
+      if (idx !== i) return l;
+      const has = l.crewIds.includes(id);
+      return { ...l, crewIds: has ? l.crewIds.filter(x => x !== id) : [...l.crewIds, id] };
+    }));
+  }
+
+  const total = lines.reduce((s, l) => s + (parseFloat(l.unitPrice) || 0) * l.crewIds.length, 0);
+  const canSubmit = singleVessel && yachtId && lines.length > 0 &&
+    lines.every(l => l.itemName.trim() && l.crewIds.length > 0 && parseFloat(l.unitPrice) > 0) && !submitting;
+
+  async function submit() {
+    setSubmitting(true); setError(null);
+    try {
+      const res = await fetch("/api/qb/invoice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${await authToken()}` },
+        body: JSON.stringify({
+          source: "visa",
+          yachtId,
+          lines: lines.map(l => ({ itemName: l.itemName.trim(), visaIds: l.crewIds, unitPrice: parseFloat(l.unitPrice) })),
+        }),
+      });
+      const j = await res.json();
+      if (!j.ok) {
+        setError(j.code === "not_configured"
+          ? "QuickBooks isn’t connected yet. Add the QBO credentials and try again."
+          : (j.error ?? "Failed to create invoice."));
+        setSubmitting(false);
+        return;
+      }
+      toast.success(`Invoice ${j.docNumber} created in QuickBooks (AED ${Number(j.total).toLocaleString()})`);
+      onDone(j.docNumber);
+    } catch (e: any) {
+      setError(String(e?.message ?? e)); setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+      <div className="w-full max-w-2xl max-h-[88vh] overflow-auto rounded-xl border border-border bg-card shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
+          <div>
+            <h2 className="text-base font-semibold flex items-center gap-2"><FileText className="h-4 w-4 text-primary" /> Generate Invoice — QuickBooks</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">{apps.length} application{apps.length === 1 ? "" : "s"} · {vessels.join(", ")}</p>
+          </div>
+          <button onClick={onClose} className="rounded p-1 text-muted-foreground hover:bg-muted/50"><XCircle className="h-5 w-5" /></button>
+        </div>
+
+        <div className="space-y-3 px-5 py-4">
+          {!singleVessel && (
+            <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+              Selected applications span multiple vessels. An invoice is per-customer — select crew from a single vessel.
+            </div>
+          )}
+          {!configured && singleVessel && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
+              QuickBooks isn’t connected yet — you can build the lines, but creating will fail until QBO credentials are set.
+            </div>
+          )}
+
+          {lines.map((line, i) => {
+            const qty = line.crewIds.length;
+            const amt = (parseFloat(line.unitPrice) || 0) * qty;
+            return (
+              <div key={i} className="rounded-lg border border-border bg-background/50 p-3 space-y-2.5">
+                <div className="flex items-center gap-2">
+                  <div className="flex-1">
+                    <label className="text-[10px] uppercase tracking-wide text-muted-foreground">Service (QuickBooks Item)</label>
+                    <input
+                      list="qbo-visa-items"
+                      value={line.itemName}
+                      onChange={e => pickService(i, e.target.value)}
+                      placeholder="e.g. UAE 6 Months Cabin Crew Visa per pax"
+                      className="mt-0.5 w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                    />
+                  </div>
+                  <div className="w-24">
+                    <label className="text-[10px] uppercase tracking-wide text-muted-foreground">Unit (AED)</label>
+                    <input
+                      type="number" step="0.01" value={line.unitPrice}
+                      onChange={e => setLine(i, { unitPrice: e.target.value })}
+                      placeholder="0.00"
+                      className="mt-0.5 w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                    />
+                  </div>
+                  {lines.length > 1 && (
+                    <button onClick={() => setLines(prev => prev.filter((_, idx) => idx !== i))}
+                      title="Remove line" className="mt-4 rounded p-1 text-muted-foreground hover:text-red-400 hover:bg-red-500/10">
+                      <XCircle className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase tracking-wide text-muted-foreground">Crew on this line ({qty})</label>
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    {apps.map(a => {
+                      const on = line.crewIds.includes(a.id);
+                      return (
+                        <button key={a.id} onClick={() => toggleCrew(i, a.id)}
+                          className={`rounded-full border px-2 py-0.5 text-[11px] transition ${on ? "border-primary bg-primary/15 text-foreground" : "border-border bg-muted/30 text-muted-foreground hover:bg-muted/50"}`}>
+                          {visaName(a)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="text-right text-xs text-muted-foreground">Qty {qty} × {line.unitPrice || 0} = <span className="font-semibold text-foreground">AED {amt.toLocaleString("en-AE", { minimumFractionDigits: 2 })}</span></div>
+              </div>
+            );
+          })}
+          <datalist id="qbo-visa-items">
+            {catalog.map(c => <option key={c.qbo_item_name} value={c.qbo_item_name} />)}
+          </datalist>
+
+          <Button variant="outline" size="sm" className="h-7 text-xs gap-1"
+            onClick={() => setLines(prev => [...prev, { itemName: "", unitPrice: "", crewIds: apps.map(a => a.id) }])}>
+            + Add line
+          </Button>
+
+          {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-400">{error}</div>}
+        </div>
+
+        <div className="flex items-center justify-between border-t border-border px-5 py-3.5">
+          <div className="text-sm">Subtotal: <span className="font-semibold">AED {total.toLocaleString("en-AE", { minimumFractionDigits: 2 })}</span> <span className="text-[11px] text-muted-foreground">(+ VAT in QBO)</span></div>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
+            <Button size="sm" className="gap-1.5" disabled={!canSubmit} onClick={submit}>
+              {submitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+              Create in QuickBooks
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function VisaTracker() {
   const [items, setItems] = useState<TrackerVisa[]>([]);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [showGen, setShowGen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
   const [q, setQ] = useState("");
@@ -1162,7 +1352,7 @@ function VisaTracker() {
     setLoading(true);
     const { data, error } = await (supabase as any)
       .from("visa_applications")
-      .select("id, given_name, surname, nationality, visa_type, visa_number, country_code, status, submitted_at, created_at, billing_status, invoice_ref, invoice_amount, yacht:yachts(vessel_name)")
+      .select("id, yacht_id, given_name, surname, nationality, visa_type, visa_number, country_code, status, submitted_at, created_at, billing_status, invoice_ref, invoice_amount, yacht:yachts(vessel_name)")
       .order("created_at", { ascending: false })
       .limit(2000);
     if (error) toast.error(error.message);
@@ -1193,6 +1383,10 @@ function VisaTracker() {
     }
     return true;
   }), [items, filterYacht, filterBilling, filterStatus, q]);
+
+  const pendingFiltered = useMemo(() => filtered.filter(i => (i.billing_status ?? "pending_review") === "pending_invoice"), [filtered]);
+  const selectedApps = useMemo(() => items.filter(i => selected.has(i.id)), [items, selected]);
+  const selectedVessels = useMemo(() => Array.from(new Set(selectedApps.map(a => a.yacht?.vessel_name ?? "—"))), [selectedApps]);
 
   async function updateBilling(id: string, billing_status: BillingStatus, invoice_ref?: string, invoice_amount?: number | null) {
     setSaving(id);
@@ -1264,11 +1458,35 @@ function VisaTracker() {
           {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />} Refresh
         </Button>
       </div>
+      {selected.size > 0 && (
+        <div className="flex items-center gap-3 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2">
+          <span className="text-sm font-medium">{selected.size} selected{selectedVessels.length === 1 ? ` · ${selectedVessels[0]}` : ""}</span>
+          <Button size="sm" className="h-7 text-xs gap-1.5" disabled={selectedVessels.length !== 1}
+            title={selectedVessels.length !== 1 ? "Select crew from a single vessel" : "Generate a QuickBooks invoice"}
+            onClick={() => setShowGen(true)}>
+            <FileText className="h-3.5 w-3.5" /> Generate Invoice
+          </Button>
+          {selectedVessels.length > 1 && <span className="text-xs text-amber-400">One vessel per invoice</span>}
+          <Button size="sm" variant="ghost" className="h-7 text-xs ml-auto" onClick={() => setSelected(new Set())}>Clear</Button>
+        </div>
+      )}
       <div className="rounded-lg border border-border overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[900px]">
             <thead>
               <tr className="bg-muted/40 border-b border-border">
+                <th className="w-8 px-3 py-2.5">
+                  <input type="checkbox" aria-label="Select all billable"
+                    checked={pendingFiltered.length > 0 && pendingFiltered.every(p => selected.has(p.id))}
+                    onChange={e => {
+                      setSelected(prev => {
+                        const next = new Set(prev);
+                        if (e.target.checked) pendingFiltered.forEach(p => next.add(p.id));
+                        else pendingFiltered.forEach(p => next.delete(p.id));
+                        return next;
+                      });
+                    }} />
+                </th>
                 {["Crew", "Yacht", "Nationality", "Visa Type", "Visa Ref", "Submitted", "Status", "Billing", "Invoice Ref", "Amount", "Actions"].map(col => (
                   <th key={col} className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap">{col}</th>
                 ))}
@@ -1276,15 +1494,26 @@ function VisaTracker() {
             </thead>
             <tbody className="divide-y divide-border/50">
               {loading ? (
-                <tr><td colSpan={11} className="px-3 py-10 text-center"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></td></tr>
+                <tr><td colSpan={12} className="px-3 py-10 text-center"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={11} className="px-3 py-10 text-center text-sm text-muted-foreground">No visa applications match the current filters.</td></tr>
+                <tr><td colSpan={12} className="px-3 py-10 text-center text-sm text-muted-foreground">No visa applications match the current filters.</td></tr>
               ) : filtered.map(v => {
                 const isEditing = editingRow === v.id;
                 const isSaving = saving === v.id;
                 const bs = (v.billing_status ?? "pending_review") as BillingStatus;
                 return (
                   <tr key={v.id} className="hover:bg-muted/10 transition-colors">
+                    <td className="px-3 py-2">
+                      {bs === "pending_invoice" ? (
+                        <input type="checkbox" aria-label={`Select ${visaName(v)}`}
+                          checked={selected.has(v.id)}
+                          onChange={() => setSelected(prev => {
+                            const next = new Set(prev);
+                            if (next.has(v.id)) next.delete(v.id); else next.add(v.id);
+                            return next;
+                          })} />
+                      ) : null}
+                    </td>
                     <td className="px-3 py-2 text-xs font-medium whitespace-nowrap">{visaName(v)}</td>
                     <td className="px-3 py-2 text-xs whitespace-nowrap">{v.yacht?.vessel_name ?? <span className="text-muted-foreground">—</span>}</td>
                     <td className="px-3 py-2 text-xs whitespace-nowrap text-muted-foreground">{v.nationality ?? "—"}</td>
@@ -1325,6 +1554,13 @@ function VisaTracker() {
           </div>
         )}
       </div>
+      {showGen && selectedApps.length > 0 && (
+        <GenerateInvoiceDialog
+          apps={selectedApps}
+          onClose={() => setShowGen(false)}
+          onDone={() => { setShowGen(false); setSelected(new Set()); void load(); }}
+        />
+      )}
     </div>
   );
 }

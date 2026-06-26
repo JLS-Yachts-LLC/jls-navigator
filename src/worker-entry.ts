@@ -18,6 +18,7 @@ import { fxRateHandler } from './routes/api.fx-rate'
 import { shipsyncPwaHandler } from './lib/shipsync/pwa-assets'
 import { shipsyncApiHandler } from './routes/api.shipsync'
 import { anchorFormsHandler } from './routes/api.anchor-forms'
+import { qbInvoiceHandler } from './routes/api.qb.invoice'
 import { feedbackNotifyHandler } from './routes/api.feedback.notify'
 import { vesselHandler } from './routes/api.vessels'
 import { phoneHandler } from './routes/api.phone'
@@ -369,6 +370,9 @@ export default {
     }
     if (url.pathname === '/api/qb/webhook' && request.method === 'POST') {
       return qbWebhookHandler(request)
+    }
+    if (url.pathname === '/api/qb/invoice' && (request.method === 'GET' || request.method === 'POST')) {
+      return qbInvoiceHandler(request)
     }
     if (url.pathname.startsWith('/api/reports/') && request.method === 'GET') {
       return movementReportsHandler(request)
