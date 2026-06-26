@@ -42,6 +42,7 @@ import { visaReportGenerateHandler } from './routes/api.visa.report-generate'
 import { visaReportSendHandler } from './routes/api.visa.report-send'
 import { visaVesselPrefsHandler } from './routes/api.visa.vessel-prefs'
 import { runWeeklyVisaReports } from './lib/visa-reporting/runWeeklyVisaReports.server'
+import { trackRun } from './lib/automations.server'
 import { runVisaExpiryFlagJob } from './lib/visa/visaExpiryFlags.server'
 
 const handleRequest = createStartHandler(defaultStreamHandler)
@@ -423,7 +424,8 @@ export default {
     // a summary of this week's planned sign-ons / sign-offs + report links.
     if (utcHour === 3 && new Date().getUTCDay() === 1 && new Date().getUTCMinutes() < 15) {
       ctx.waitUntil(
-        runWeeklyImmigrationReports()
+        trackRun({ key: 'weekly-immigration-report', name: 'Weekly immigration digest', source: 'worker-cron', trigger_type: 'schedule', category: 'Crew' },
+          () => runWeeklyImmigrationReports())
           .then((r) => console.log(`[weekly-immigration] on=${r.signOn} off=${r.signOff} sent=${r.sent}`))
           .catch((e) => console.error('[weekly-immigration] error:', e))
       )
@@ -433,7 +435,8 @@ export default {
     // visa-status report to every yacht opted in (send_visa_reports = true).
     if (utcHour === 4 && new Date().getUTCDay() === 5 && new Date().getUTCMinutes() < 15) {
       ctx.waitUntil(
-        runWeeklyVisaReports()
+        trackRun({ key: 'weekly-visa-report', name: 'Weekly visa report', source: 'worker-cron', trigger_type: 'schedule', category: 'Visa' },
+          () => runWeeklyVisaReports())
           .then((r) => console.log(`[weekly-visa] vessels=${r.vessels} generated=${r.generated} sent=${r.sent}`))
           .catch((e) => console.error('[weekly-visa] error:', e))
       )
