@@ -129,7 +129,11 @@ function PolarisRedesignApp() {
         ) : screen === "settings" ? (
           <PolarisSettings />
         ) : screen === "yacht-it" ? (
-          <YachtItSolutionsPage />
+          // Embedded app pages use the standard theme tokens; force the dark
+          // palette so their text reads correctly on the Beta's navy background.
+          <div className="dark" style={{ height: "100%" }}>
+            <YachtItSolutionsPage />
+          </div>
         ) : (
           <EmptyState
             icon="layout-dashboard"
