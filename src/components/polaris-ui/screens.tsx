@@ -28,9 +28,22 @@ import { ConfirmModal, useToast } from "./feedback";
 import {
   useVesselVisaData,
   useVesselMovements,
+  useVesselImmigration,
+  useVesselLogistics,
+  useVesselTraining,
+  useVesselDocuments,
   type YachtOption,
   type CrewVisaRow,
 } from "./data";
+
+const SWITCH_ICON = "arrows-exchange";
+// Expiry-state → badge for training certs & crew documents.
+const EXP_BADGE: Record<string, { variant: BadgeVariant; label: string }> = {
+  active: { variant: "active", label: "Valid" },
+  expiring_soon: { variant: "expiring", label: "Expiring" },
+  expired: { variant: "expired", label: "Expired" },
+  none: { variant: "grey", label: "No expiry" },
+};
 
 const STATUS_BADGE: Record<
   CrewVisaRow["status"],
@@ -1283,6 +1296,237 @@ export function PolarisSignOnOff({
           ))
         )}
       </PolarisCard>
+    </>
+  );
+}
+
+function SwitchVesselAction({ onSwitchVessel }: { onSwitchVessel: () => void }) {
+  return (
+    <PolarisButton variant="ghost" icon={SWITCH_ICON} label="Switch vessel" onClick={onSwitchVessel} />
+  );
+}
+
+// ── Immigration screen ────────────────────────────────────────────────────────
+export function PolarisImmigration({
+  yacht, onSwitchVessel,
+}: { yacht: YachtOption | null; onSwitchVessel: () => void }) {
+  const { loading, rows, counts } = useVesselImmigration(yacht?.id ?? null);
+  const badgeFor = (s: string): { variant: BadgeVariant; label: string } => {
+    const x = s.toLowerCase();
+    if (x === "approved") return { variant: "active", label: "Approved" };
+    if (x === "rejected" || x === "cancelled") return { variant: "expired", label: x === "cancelled" ? "Cancelled" : "Rejected" };
+    if (x === "draft") return { variant: "grey", label: "Draft" };
+    return { variant: "expiring", label: s.replace(/_/g, " ") || "In progress" };
+  };
+  return (
+    <>
+      <PageHeader title="Immigration" actions={<SwitchVesselAction onSwitchVessel={onSwitchVessel} />} />
+      <SectionLabel>Visa applications — {yacht?.vessel_name ?? "—"}</SectionLabel>
+      <div className="pds-stats-grid" style={{ marginBottom: 16 }}>
+        {loading ? [...Array(5)].map((_, i) => <Skeleton key={i} height={88} radius={12} />) : (
+          <>
+            <StatCard label="Applications" value={counts.total} variant="neutral" />
+            <StatCard label="In progress" value={counts.inProgress} variant="expiring" />
+            <StatCard label="Approved" value={counts.approved} variant="active" />
+            <StatCard label="Rejected" value={counts.rejected} variant="expired" />
+            <StatCard label="Draft" value={counts.draft} variant="neutral" />
+          </>
+        )}
+      </div>
+      <PolarisCard title="Recent applications" icon="id-badge">
+        {loading ? <Skeleton height={120} /> : rows.length === 0 ? (
+          <EmptyState icon="id-badge" message="No visa applications for this vessel." action={{ label: "Switch vessel", onClick: onSwitchVessel }} />
+        ) : rows.slice(0, 40).map((a) => {
+          const b = badgeFor(a.status);
+          return (
+            <CrewRow key={a.id} name={a.name}
+              detail={`${a.visaType ?? "Visa"}${a.destination ? ` · ${a.destination}` : ""}${a.reference ? ` · ${a.reference}` : ""}`}
+              badge={<StatusBadge variant={b.variant} label={b.label} />} />
+          );
+        })}
+      </PolarisCard>
+    </>
+  );
+}
+
+// ── Logistics (ShipSync) screen ───────────────────────────────────────────────
+export function PolarisLogistics({
+  yacht, onSwitchVessel,
+}: { yacht: YachtOption | null; onSwitchVessel: () => void }) {
+  const { loading, rows, counts } = useVesselLogistics(yacht?.vessel_name ?? null);
+  const badgeFor = (s: string): { variant: BadgeVariant; label: string } => {
+    const x = s.toLowerCase();
+    if (["delivered", "collected"].includes(x)) return { variant: "active", label: "Delivered" };
+    if (["assigned", "out_for_delivery"].includes(x)) return { variant: "expiring", label: "In transit" };
+    if (["refused"].includes(x)) return { variant: "expired", label: "Refused" };
+    return { variant: "grey", label: x.replace(/_/g, " ") || "In office" };
+  };
+  return (
+    <>
+      <PageHeader title="Logistics" actions={<SwitchVesselAction onSwitchVessel={onSwitchVessel} />} />
+      <SectionLabel>ShipSync packages — {yacht?.vessel_name ?? "—"}</SectionLabel>
+      <div className="pds-stats-grid" style={{ marginBottom: 16 }}>
+        {loading ? [...Array(4)].map((_, i) => <Skeleton key={i} height={88} radius={12} />) : (
+          <>
+            <StatCard label="Packages" value={counts.total} variant="neutral" />
+            <StatCard label="Awaiting" value={counts.awaiting} variant="neutral" />
+            <StatCard label="In transit" value={counts.inTransit} variant="expiring" />
+            <StatCard label="Delivered" value={counts.delivered} variant="active" />
+          </>
+        )}
+      </div>
+      <PolarisCard title="Recent packages" icon="truck">
+        {loading ? <Skeleton height={120} /> : rows.length === 0 ? (
+          <EmptyState icon="truck" message="No packages for this vessel." action={{ label: "Switch vessel", onClick: onSwitchVessel }} />
+        ) : rows.slice(0, 40).map((p) => {
+          const b = badgeFor(p.status);
+          return (
+            <CrewRow key={p.id} name={p.barcode || p.owner || "Package"}
+              detail={`${p.owner ?? "—"}${p.courier ? ` · ${p.courier}` : ""}${p.receivedAt ? ` · ${formatDateDMY(p.receivedAt)}` : ""}`}
+              badge={<StatusBadge variant={b.variant} label={b.label} />} />
+          );
+        })}
+      </PolarisCard>
+    </>
+  );
+}
+
+// ── Training screen ───────────────────────────────────────────────────────────
+export function PolarisTraining({
+  yacht, onSwitchVessel,
+}: { yacht: YachtOption | null; onSwitchVessel: () => void }) {
+  const { loading, rows, counts } = useVesselTraining(yacht?.id ?? null);
+  return (
+    <>
+      <PageHeader title="Training" actions={<SwitchVesselAction onSwitchVessel={onSwitchVessel} />} />
+      <SectionLabel>Certifications — {yacht?.vessel_name ?? "—"}</SectionLabel>
+      <div className="pds-stats-grid" style={{ marginBottom: 16 }}>
+        {loading ? [...Array(4)].map((_, i) => <Skeleton key={i} height={88} radius={12} />) : (
+          <>
+            <StatCard label="Certificates" value={counts.total} variant="neutral" />
+            <StatCard label="Valid" value={counts.valid} variant="active" />
+            <StatCard label="Expiring" value={counts.expiring} variant="expiring" sub="within 90 days" />
+            <StatCard label="Expired" value={counts.expired} variant="expired" />
+          </>
+        )}
+      </div>
+      <PolarisCard title="Certifications" icon="certificate">
+        {loading ? <Skeleton height={120} /> : rows.length === 0 ? (
+          <EmptyState icon="certificate" message="No certifications for this vessel's crew." action={{ label: "Switch vessel", onClick: onSwitchVessel }} />
+        ) : rows.slice(0, 50).map((c) => {
+          const b = EXP_BADGE[c.state];
+          return (
+            <CrewRow key={c.id} name={`${c.crewName} — ${c.certificate ?? "Certificate"}`}
+              detail={`${c.issuer ?? "—"}${c.expiry ? ` · expires ${formatDateDMY(c.expiry)}` : ""}`}
+              badge={<StatusBadge variant={b.variant} label={b.label} />} />
+          );
+        })}
+      </PolarisCard>
+    </>
+  );
+}
+
+// ── Crew Documents screen ─────────────────────────────────────────────────────
+export function PolarisCrewDocuments({
+  yacht, onSwitchVessel,
+}: { yacht: YachtOption | null; onSwitchVessel: () => void }) {
+  const { loading, rows, counts } = useVesselDocuments(yacht?.id ?? null);
+  return (
+    <>
+      <PageHeader title="Crew Documents" actions={<SwitchVesselAction onSwitchVessel={onSwitchVessel} />} />
+      <SectionLabel>Documents — {yacht?.vessel_name ?? "—"}</SectionLabel>
+      <div className="pds-stats-grid" style={{ marginBottom: 16 }}>
+        {loading ? [...Array(4)].map((_, i) => <Skeleton key={i} height={88} radius={12} />) : (
+          <>
+            <StatCard label="Documents" value={counts.total} variant="neutral" />
+            <StatCard label="Valid" value={counts.valid} variant="active" />
+            <StatCard label="Expiring" value={counts.expiring} variant="expiring" sub="within 90 days" />
+            <StatCard label="Expired" value={counts.expired} variant="expired" />
+          </>
+        )}
+      </div>
+      <PolarisCard title="Crew documents" icon="files">
+        {loading ? <Skeleton height={120} /> : rows.length === 0 ? (
+          <EmptyState icon="files" message="No documents for this vessel's crew." action={{ label: "Switch vessel", onClick: onSwitchVessel }} />
+        ) : rows.slice(0, 50).map((d) => {
+          const b = EXP_BADGE[d.state];
+          return (
+            <CrewRow key={d.id} name={`${d.crewName} — ${d.title ?? d.docType ?? "Document"}`}
+              detail={`${d.docType ?? "Document"}${d.expiry ? ` · expires ${formatDateDMY(d.expiry)}` : ""}`}
+              badge={<StatusBadge variant={b.variant} label={b.label} />} />
+          );
+        })}
+      </PolarisCard>
+    </>
+  );
+}
+
+// ── Sign-On/Off Reports screen ────────────────────────────────────────────────
+export function PolarisSosoReports({
+  yacht, onSwitchVessel,
+}: { yacht: YachtOption | null; onSwitchVessel: () => void }) {
+  const { loading, rows, counts } = useVesselMovements(yacht?.id ?? null);
+  const isOn = (t: string) => t.includes("on");
+  const signOns = rows.filter((m) => isOn(m.eventType));
+  const signOffs = rows.filter((m) => !isOn(m.eventType));
+  const block = (list: typeof rows) =>
+    list.slice(0, 20).map((m) => (
+      <CrewRow key={m.id} name={m.crewName}
+        detail={`${m.eventDate ? formatDateDMY(m.eventDate) : "—"}${m.port ? ` · ${m.port}` : ""}${m.flightNumber ? ` · ${m.flightNumber}` : ""}`}
+        badge={<StatusBadge variant={isOn(m.eventType) ? "active" : "grey"} label={isOn(m.eventType) ? "On" : "Off"} />} />
+    ));
+  return (
+    <>
+      <PageHeader title="Sign-On/Off Reports" actions={<SwitchVesselAction onSwitchVessel={onSwitchVessel} />} />
+      <SectionLabel>Movement reports — {yacht?.vessel_name ?? "—"}</SectionLabel>
+      <div className="pds-stats-grid" style={{ marginBottom: 16 }}>
+        {loading ? [...Array(4)].map((_, i) => <Skeleton key={i} height={88} radius={12} />) : (
+          <>
+            <StatCard label="Onboard now" value={counts.onboard} variant="active" />
+            <StatCard label="Sign-ons (7d)" value={counts.signOns} variant="neutral" />
+            <StatCard label="Sign-offs (7d)" value={counts.signOffs} variant="neutral" />
+            <StatCard label="Upcoming" value={counts.upcoming} variant="expiring" />
+          </>
+        )}
+      </div>
+      <div className="pds-grid-2">
+        <PolarisCard title={`Sign-ons (${signOns.length})`} icon="login">
+          {loading ? <Skeleton height={80} /> : signOns.length === 0 ? (
+            <EmptyState icon="login" message="No sign-on records." />
+          ) : block(signOns)}
+        </PolarisCard>
+        <PolarisCard title={`Sign-offs (${signOffs.length})`} icon="logout">
+          {loading ? <Skeleton height={80} /> : signOffs.length === 0 ? (
+            <EmptyState icon="logout" message="No sign-off records." />
+          ) : block(signOffs)}
+        </PolarisCard>
+      </div>
+    </>
+  );
+}
+
+// ── Settings screen (preview-informational) ───────────────────────────────────
+export function PolarisSettings() {
+  return (
+    <>
+      <PageHeader title="Settings" actions={null} />
+      <SectionLabel>Polaris Beta — preview</SectionLabel>
+      <div className="pds-grid-2" style={{ marginBottom: 16 }}>
+        <PolarisCard title="About this view" icon="sparkles">
+          <p style={{ fontSize: "var(--pds-fs-body)", color: "var(--pds-text-secondary)", margin: 0, lineHeight: 1.6 }}>
+            This is the Polaris Beta experience — a redesigned, mobile-first interface.
+            Use <strong style={{ color: "var(--pds-text)" }}>Original</strong> (top right) to return
+            to the current app at any time. Your data is the same in both.
+          </p>
+        </PolarisCard>
+        <PolarisCard title="Admin & preferences" icon="settings">
+          <p style={{ fontSize: "var(--pds-fs-body)", color: "var(--pds-text-secondary)", margin: "0 0 12px", lineHeight: 1.6 }}>
+            User management, roles, integrations and theme are managed in the original app's
+            Settings &amp; Admin areas.
+          </p>
+          <EmptyState icon="settings" message="Beta settings will live here as the redesign is promoted." />
+        </PolarisCard>
+      </div>
     </>
   );
 }

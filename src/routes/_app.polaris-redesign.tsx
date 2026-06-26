@@ -22,6 +22,12 @@ import {
   PolarisCompliance,
   PolarisVessels,
   PolarisSignOnOff,
+  PolarisImmigration,
+  PolarisLogistics,
+  PolarisTraining,
+  PolarisCrewDocuments,
+  PolarisSosoReports,
+  PolarisSettings,
 } from "@/components/polaris-ui/screens";
 import { useYachts, type YachtOption } from "@/components/polaris-ui/data";
 
@@ -109,6 +115,18 @@ function PolarisRedesignApp() {
             yacht={yacht}
             onSwitchVessel={() => setSwitcher(true)}
           />
+        ) : screen === "immigration" ? (
+          <PolarisImmigration yacht={yacht} onSwitchVessel={() => setSwitcher(true)} />
+        ) : screen === "logistics" ? (
+          <PolarisLogistics yacht={yacht} onSwitchVessel={() => setSwitcher(true)} />
+        ) : screen === "training" ? (
+          <PolarisTraining yacht={yacht} onSwitchVessel={() => setSwitcher(true)} />
+        ) : screen === "documents" ? (
+          <PolarisCrewDocuments yacht={yacht} onSwitchVessel={() => setSwitcher(true)} />
+        ) : screen === "soso-reports" ? (
+          <PolarisSosoReports yacht={yacht} onSwitchVessel={() => setSwitcher(true)} />
+        ) : screen === "settings" ? (
+          <PolarisSettings />
         ) : (
           <EmptyState
             icon="layout-dashboard"
