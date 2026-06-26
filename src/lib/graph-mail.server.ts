@@ -55,7 +55,10 @@ export async function sendGraphEmail(opts: {
 }): Promise<void> {
   const cfg = await getSpConfig()
   const token = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret)
-  const sender = opts.from ?? (process.env.MAIL_SENDER as string | undefined) ?? TICKET_MAIL_SENDER
+  // General platform mail (user invites, visa reports, permits, ShipSync POD, etc.)
+  // sends from polaris@jlsyachts.com unless the caller picks a sender — e.g. Anchor
+  // passes anchor@jlsyachts.com. Service Desk keeps its own itsupport@ identity.
+  const sender = opts.from ?? (process.env.MAIL_SENDER as string | undefined) ?? 'polaris@jlsyachts.com'
 
   const message: any = {
     subject: opts.subject,

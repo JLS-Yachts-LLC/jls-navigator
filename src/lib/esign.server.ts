@@ -12,6 +12,9 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 const BUCKET = "esign-documents";
 const TOKEN_TTL_DAYS = 14;
+// Anchor (the e-Sign system) sends from its own mailbox; everything else defaults
+// to polaris@jlsyachts.com (see sendGraphEmail).
+const ANCHOR_SENDER = process.env.ANCHOR_MAIL_SENDER ?? "anchor@jlsyachts.com";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -107,6 +110,7 @@ export const doSendForSignature = createServerFn({ method: "POST" })
     const link = `${baseUrl(meta.origin)}/sign/${token}`;
 
     await sendEmail({
+      from: ANCHOR_SENDER,
       to: [doc.signer_email],
       cc: senderEmail ? [senderEmail] : [],
       subject: `Signature requested: ${doc.title}${doc.reference ? ` (${doc.reference})` : ""}`,
@@ -236,6 +240,7 @@ export const doSubmitSignature = createServerFn({ method: "POST" })
     const url = await signedUrl(signedPath, 60 * 60 * 24 * 14);
     try {
       await sendEmail({
+        from: ANCHOR_SENDER,
         to: [doc.signer_email],
         subject: `Signed: ${doc.title}${doc.reference ? ` (${doc.reference})` : ""}`,
         html: `<p>Thank you, ${doc.signer_name}. Your signed copy of <strong>${doc.title}</strong> is attached as a link below.</p><p><a href="${url}">Download signed document</a></p><p style="color:#94a3b8;font-size:12px;">JLS Yachts · Aquila One</p>`,

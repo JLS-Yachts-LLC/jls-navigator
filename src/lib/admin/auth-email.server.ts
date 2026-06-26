@@ -52,6 +52,7 @@ export async function sendAuthLinkViaSES(sb: any, opts: {
     const link = data?.properties?.action_link
     if (error || !link) return false
     await sendEmail({
+      from: process.env.POLARIS_MAIL_SENDER ?? 'polaris@jlsyachts.com',
       to: [opts.email],
       subject: opts.subject,
       html: emailHtml(opts.heading, opts.intro, opts.cta, link),
