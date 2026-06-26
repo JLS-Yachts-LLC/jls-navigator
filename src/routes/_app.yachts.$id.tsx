@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { StatusPill } from "@/components/status-pill";
 import { YACHT_COLUMNS } from "@/lib/yacht-fields";
-import { ArrowLeft, Trash2, Ship, Pencil, Save, X, Upload, RefreshCw, FileCheck2, Route as RouteIcon, Package, ExternalLink } from "lucide-react";
+import { ArrowLeft, Trash2, Ship, Pencil, Save, X, Upload, RefreshCw, FileCheck2, Route as RouteIcon, Package, ExternalLink, Archive, ArchiveRestore } from "lucide-react";
 import { PERMIT_META } from "@/lib/permit-types";
 import { SeaportImmigrationSection } from "@/components/seaport/SeaportImmigrationSection";
 import { cn } from "@/lib/utils";
@@ -121,6 +121,7 @@ function YachtDetail() {
   const [imgLoadError, setImgLoadError] = useState(false);
   const [syncingImage, setSyncingImage] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmArchive, setConfirmArchive] = useState(false);
 
   useEffect(() => { void load(); }, [id]);
   async function load() {
@@ -229,6 +230,15 @@ function YachtDetail() {
     navigate({ to: "/yachts" });
   }
 
+  async function toggleArchive() {
+    const next = !y?.archive;
+    const { error } = await supabase.from("yachts").update({ archive: next } as never).eq("id", id);
+    if (error) return toast.error(error.message);
+    setConfirmArchive(false);
+    toast.success(next ? "Yacht archived" : "Yacht restored to active fleet");
+    await load();
+  }
+
   if (loading) return <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">Loading…</div>;
   if (!y) return <div className="p-6 text-sm text-muted-foreground">Not found.</div>;
 
@@ -254,6 +264,11 @@ function YachtDetail() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {Boolean(y.archive) && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-500">
+              <Archive className="h-3 w-3" /> Archived
+            </span>
+          )}
           <StatusPill status={y.status as string | null} />
           {editing ? (
             <>
@@ -269,6 +284,15 @@ function YachtDetail() {
               <Button variant="outline" size="sm" onClick={startEdit} className="gap-1.5">
                 <Pencil className="h-3.5 w-3.5" /> Edit
               </Button>
+              {Boolean(y.archive) ? (
+                <Button variant="outline" size="sm" onClick={toggleArchive} className="gap-1.5">
+                  <ArchiveRestore className="h-3.5 w-3.5" /> Restore
+                </Button>
+              ) : (
+                <Button variant="outline" size="sm" onClick={() => setConfirmArchive(true)} className="gap-1.5 text-amber-500 hover:text-amber-500">
+                  <Archive className="h-3.5 w-3.5" /> Archive
+                </Button>
+              )}
               <Button variant="outline" size="sm" onClick={() => setConfirmDelete(true)} className="gap-1.5 text-destructive hover:text-destructive">
                 <Trash2 className="h-3.5 w-3.5" /> Delete
               </Button>
@@ -360,6 +384,25 @@ function YachtDetail() {
         {/* Related records */}
         {!editing && <YachtRelatedRecords yachtId={id} />}
       </div>
+
+      <AlertDialog open={confirmArchive} onOpenChange={setConfirmArchive}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Archive yacht?</AlertDialogTitle>
+            <AlertDialogDescription>
+              <strong>{yachtName}</strong> will be hidden from the active fleet — it won’t appear in the Yachts
+              list (Active view), the dashboard counts, or vessel pickers across the app. None of its data is
+              deleted, and you can restore it any time from the Archived view.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={toggleArchive} className="bg-amber-500 text-white hover:bg-amber-500/90">
+              Archive
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
         <AlertDialogContent>

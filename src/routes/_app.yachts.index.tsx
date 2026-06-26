@@ -8,13 +8,17 @@ import { YACHT_COLUMNS, DEFAULT_VISIBLE_COLUMNS, type YachtColumnKey } from "@/l
 import {
   Plus, LayoutGrid, List, Search, SlidersHorizontal, Anchor, Ship, MapPin, LogOut, RefreshCcw,
   ChevronUp, ChevronDown, ChevronsUpDown, Pencil, Radar,
-  ChevronLeft, ChevronRight, BookMarked, X, Check, Grid3x3,
+  ChevronLeft, ChevronRight, BookMarked, X, Check, Grid3x3, Archive, ArchiveRestore,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuTrigger, DropdownMenuCheckboxItem,
   DropdownMenuLabel, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export const Route = createFileRoute("/_app/yachts/")({
   component: YachtsPage,
@@ -134,6 +138,8 @@ export function YachtsPage() {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [archiveView, setArchiveView] = useState<"active" | "archived">("active");
+  const [archiveTarget, setArchiveTarget] = useState<Yacht | null>(null);
   const [visible, setVisible] = useState<YachtColumnKey[]>(init.visible);
   const [sortKey, setSortKey] = useState<YachtColumnKey | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
@@ -196,6 +202,23 @@ export function YachtsPage() {
     setQuickEditId(null);
   }
 
+  async function applyArchive(y: Yacht) {
+    const next = !y.archive;
+    const { error } = await supabase.from("yachts").update({ archive: next } as never).eq("id", y.id);
+    if (error) { toast.error(error.message); return; }
+    setYachts((prev) => prev.map((r) => (r.id === y.id ? { ...r, archive: next } : r)));
+    setArchiveTarget(null);
+    toast.success(next ? "Yacht archived" : "Yacht restored to active fleet");
+  }
+
+  const archivedCount = useMemo(() => yachts.filter((y) => y.archive).length, [yachts]);
+
+  // Active vs Archived split — the rest of the page (stats, filters, sort) runs on this base.
+  const baseRows = useMemo(
+    () => yachts.filter((y) => (archiveView === "archived" ? !!y.archive : !y.archive)),
+    [yachts, archiveView],
+  );
+
   // ── View preset functions ────────────────────────────────────────────────────
   const allViews = useMemo(() => [...BUILTIN_VIEWS, ...customViews], [customViews]);
   const activeView = allViews.find((v) => v.id === activeViewId) ?? null;
@@ -239,12 +262,12 @@ export function YachtsPage() {
 
   // ── Stats ────────────────────────────────────────────────────────────────────
   const stats = useMemo(() => {
-    const total      = yachts.length;
-    const inCountry  = yachts.filter((y) => String(y.status ?? "").toLowerCase() === "in country").length;
-    const departed   = yachts.filter((y) => String(y.status ?? "").toLowerCase() === "departed").length;
-    const changeAgency = yachts.filter((y) => String(y.status ?? "").toLowerCase() === "change agency").length;
+    const total      = baseRows.length;
+    const inCountry  = baseRows.filter((y) => String(y.status ?? "").toLowerCase() === "in country").length;
+    const departed   = baseRows.filter((y) => String(y.status ?? "").toLowerCase() === "departed").length;
+    const changeAgency = baseRows.filter((y) => String(y.status ?? "").toLowerCase() === "change agency").length;
     return { total, inCountry, departed, changeAgency };
-  }, [yachts]);
+  }, [baseRows]);
 
   const STATUS_TARGETS: Record<Exclude<StatusFilter, "all">, string> = {
     in_country: "in country",
@@ -260,7 +283,7 @@ export function YachtsPage() {
   };
 
   const filtered = useMemo(() => {
-    let rows = yachts;
+    let rows = baseRows;
     if (statusFilter !== "all") {
       const target = STATUS_TARGETS[statusFilter];
       rows = rows.filter((y) => String(y.status ?? "").toLowerCase() === target);
@@ -283,7 +306,7 @@ export function YachtsPage() {
       rows = [...rows].sort((a, b) => lastActivityOf(b).localeCompare(lastActivityOf(a)));
     }
     return rows;
-  }, [yachts, q, statusFilter, sortKey, sortDir, activityMap]);
+  }, [baseRows, q, statusFilter, sortKey, sortDir, activityMap]);
 
   function toggleSort(key: YachtColumnKey) {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -316,6 +339,23 @@ export function YachtsPage() {
               placeholder="Search yachts…"
               className="h-8 w-56 pl-8"
             />
+          </div>
+
+          {/* Active / Archived toggle */}
+          <div className="flex h-8 rounded-md border border-border bg-card p-0.5">
+            <button
+              onClick={() => setArchiveView("active")}
+              className={`flex items-center gap-1 rounded px-2.5 text-xs ${archiveView === "active" ? "bg-primary/15 text-primary" : "text-muted-foreground"}`}
+            >
+              <Ship className="h-3.5 w-3.5" /> Active
+            </button>
+            <button
+              onClick={() => setArchiveView("archived")}
+              title={`${archivedCount} archived`}
+              className={`flex items-center gap-1 rounded px-2.5 text-xs ${archiveView === "archived" ? "bg-amber-500/15 text-amber-500" : "text-muted-foreground"}`}
+            >
+              <Archive className="h-3.5 w-3.5" /> Archived{archivedCount > 0 ? ` (${archivedCount})` : ""}
+            </button>
           </div>
 
           {/* List / Cards toggle */}
@@ -506,7 +546,7 @@ export function YachtsPage() {
         {loading ? (
           <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">Loading…</div>
         ) : filtered.length === 0 ? (
-          <EmptyState hasFilter={!!q || statusFilter !== "all"} />
+          <EmptyState hasFilter={!!q || statusFilter !== "all" || archiveView === "archived"} />
         ) : view === "list" ? (
           <ListView
             rows={filtered}
@@ -517,11 +557,36 @@ export function YachtsPage() {
             quickEditId={quickEditId}
             setQuickEditId={setQuickEditId}
             updateStatus={updateStatus}
+            onArchive={setArchiveTarget}
           />
         ) : (
-          <CardsView rows={filtered} staleIds={new Set(filtered.filter(isStale).map((y) => y.id))} small={view === "small"} />
+          <CardsView rows={filtered} staleIds={new Set(filtered.filter(isStale).map((y) => y.id))} small={view === "small"} onArchive={setArchiveTarget} />
         )}
       </div>
+
+      <AlertDialog open={!!archiveTarget} onOpenChange={(o) => { if (!o) setArchiveTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{archiveTarget?.archive ? "Restore yacht?" : "Archive yacht?"}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {archiveTarget?.archive ? (
+                <><strong>{String(archiveTarget?.vessel_name ?? "This yacht")}</strong> will return to the active fleet and reappear in lists, dashboards and vessel pickers.</>
+              ) : (
+                <><strong>{String(archiveTarget?.vessel_name ?? "This yacht")}</strong> will be hidden from the active fleet — it won’t appear in the Yachts list, dashboard counts, or vessel pickers. Nothing is deleted, and you can restore it any time from the Archived view.</>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => archiveTarget && applyArchive(archiveTarget)}
+              className={archiveTarget?.archive ? "" : "bg-amber-500 text-white hover:bg-amber-500/90"}
+            >
+              {archiveTarget?.archive ? "Restore" : "Archive"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -609,7 +674,7 @@ function trackUrl(y: Yacht): string {
 }
 
 function ListView({
-  rows, visible, sortKey, sortDir, onSort, quickEditId, setQuickEditId, updateStatus,
+  rows, visible, sortKey, sortDir, onSort, quickEditId, setQuickEditId, updateStatus, onArchive,
 }: {
   rows: Yacht[];
   visible: YachtColumnKey[];
@@ -619,6 +684,7 @@ function ListView({
   quickEditId: string | null;
   setQuickEditId: (id: string | null) => void;
   updateStatus: (id: string, status: string) => Promise<void>;
+  onArchive: (y: Yacht) => void;
 }) {
   const cols = YACHT_COLUMNS.filter((c) => visible.includes(c.key));
   return (
@@ -699,18 +765,27 @@ function ListView({
                   )}
                 </td>
               ))}
-              {/* Fleet tracking button */}
+              {/* Fleet tracking + archive buttons */}
               <td className="px-2 py-1.5">
-                <a
-                  href={trackUrl(y)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title="Track on MarineTraffic"
-                  onClick={(e) => e.stopPropagation()}
-                  className="inline-flex h-6 w-6 items-center justify-center rounded transition hover:bg-primary/10 hover:text-primary text-muted-foreground/50"
-                >
-                  <Radar className="h-3.5 w-3.5" />
-                </a>
+                <div className="flex items-center gap-0.5">
+                  <a
+                    href={trackUrl(y)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Track on MarineTraffic"
+                    onClick={(e) => e.stopPropagation()}
+                    className="inline-flex h-6 w-6 items-center justify-center rounded transition hover:bg-primary/10 hover:text-primary text-muted-foreground/50"
+                  >
+                    <Radar className="h-3.5 w-3.5" />
+                  </a>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onArchive(y); }}
+                    title={y.archive ? "Restore to active fleet" : "Archive yacht"}
+                    className="inline-flex h-6 w-6 items-center justify-center rounded transition hover:bg-amber-500/10 hover:text-amber-500 text-muted-foreground/50"
+                  >
+                    {y.archive ? <ArchiveRestore className="h-3.5 w-3.5" /> : <Archive className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
               </td>
             </tr>
           ))}
@@ -720,7 +795,7 @@ function ListView({
   );
 }
 
-function CardsView({ rows, staleIds, small }: { rows: Yacht[]; staleIds: Set<string>; small?: boolean }) {
+function CardsView({ rows, staleIds, small, onArchive }: { rows: Yacht[]; staleIds: Set<string>; small?: boolean; onArchive: (y: Yacht) => void }) {
   return (
     <div
       className={
@@ -755,6 +830,13 @@ function CardsView({ rows, staleIds, small }: { rows: Yacht[]; staleIds: Set<str
             {staleIds.has(y.id) && small && (
               <span title="No activity in over 30 days" className="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full bg-amber-500/90 shadow" />
             )}
+            <button
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onArchive(y); }}
+              title={y.archive ? "Restore to active fleet" : "Archive yacht"}
+              className={`absolute left-1.5 top-1.5 inline-flex items-center justify-center rounded-md bg-black/45 text-white/90 backdrop-blur transition hover:bg-black/65 ${small ? "h-6 w-6" : "h-7 w-7"}`}
+            >
+              {y.archive ? <ArchiveRestore className={small ? "h-3.5 w-3.5" : "h-4 w-4"} /> : <Archive className={small ? "h-3.5 w-3.5" : "h-4 w-4"} />}
+            </button>
           </div>
           {small ? (
             <div className="space-y-1 p-2.5">
