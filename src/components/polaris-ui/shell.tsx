@@ -395,8 +395,11 @@ export function PolarisShell({
           </aside>
         )}
 
+        {/* `dark pds-embed` makes ANY standard app page ported into the Beta
+            inherit the Beta teal/blue palette automatically — pds-native screens
+            (inline pds vars) are unaffected. */}
         <main
-          className="pds-fade"
+          className="pds-fade dark pds-embed"
           style={{
             flex: 1,
             minWidth: 0,
