@@ -17,6 +17,12 @@ export interface AdditionalInfoFields {
   fathersFullName:        AdditionalInfoField
   religion:               AdditionalInfoField
   religionOther:          AdditionalInfoField  // free text when religion === 'Other'
+  // Country of Residence Address / Contact (optional)
+  residenceAddressLine1:  AdditionalInfoField
+  residenceAddressLine2:  AdditionalInfoField
+  residenceCity:          AdditionalInfoField
+  residenceCountry:       AdditionalInfoField
+  residencePhone:         AdditionalInfoField
 }
 
 export const EMPTY_FIELDS: AdditionalInfoFields = {
@@ -31,6 +37,11 @@ export const EMPTY_FIELDS: AdditionalInfoFields = {
   fathersFullName:        { value: '', state: 'manual' },
   religion:               { value: '', state: 'manual' },
   religionOther:          { value: '', state: 'manual' },
+  residenceAddressLine1:  { value: '', state: 'manual' },
+  residenceAddressLine2:  { value: '', state: 'manual' },
+  residenceCity:          { value: '', state: 'manual' },
+  residenceCountry:       { value: '', state: 'manual' },
+  residencePhone:         { value: '', state: 'manual' },
 }
 
 export interface PersonalInfoApiResponse {
@@ -44,6 +55,11 @@ export interface PersonalInfoApiResponse {
   mothersMaidenName:       string | null
   fathersFullName:         string | null
   religion:                string | null
+  residenceAddressLine1:   string | null
+  residenceAddressLine2:   string | null
+  residenceCity:           string | null
+  residenceCountry:        string | null
+  residencePhone:          string | null
   ocrPopulatedFields:      string[]
   ocrConfirmedFields:      string[]
   personalInfoCompletedAt: string | null

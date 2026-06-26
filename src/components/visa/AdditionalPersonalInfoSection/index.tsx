@@ -271,6 +271,11 @@ export const AdditionalPersonalInfoSection = forwardRef<AdditionalPersonalInfoHa
         fathersFullName:        { value: pi.fathersFullName    ?? '', state: 'manual' },
         religion:               { value: isOtherRelig ? 'Other' : (religionRaw ?? ''), state: 'manual' },
         religionOther:          { value: isOtherRelig ? religionRaw : '', state: 'manual' },
+        residenceAddressLine1:  { value: pi.residenceAddressLine1 ?? '', state: 'manual' },
+        residenceAddressLine2:  { value: pi.residenceAddressLine2 ?? '', state: 'manual' },
+        residenceCity:          { value: pi.residenceCity         ?? '', state: 'manual' },
+        residenceCountry:       { value: pi.residenceCountry      ?? '', state: 'manual' },
+        residencePhone:         { value: pi.residencePhone        ?? '', state: 'manual' },
       })
     } catch {
       // Non-fatal — start from empty
@@ -382,6 +387,11 @@ export const AdditionalPersonalInfoSection = forwardRef<AdditionalPersonalInfoHa
           mothersMaidenName:      fields.mothersMaidenName.value      || null,
           fathersFullName:        fields.fathersFullName.value        || null,
           religion:               religionValue                       || null,
+          residenceAddressLine1:  fields.residenceAddressLine1.value  || null,
+          residenceAddressLine2:  fields.residenceAddressLine2.value  || null,
+          residenceCity:          fields.residenceCity.value          || null,
+          residenceCountry:       fields.residenceCountry.value       || null,
+          residencePhone:         fields.residencePhone.value         || null,
           ocrPopulatedFields,
           ocrConfirmedFields,
         }),
@@ -727,6 +737,77 @@ export const AdditionalPersonalInfoSection = forwardRef<AdditionalPersonalInfoHa
                 placeholder="Please specify…"
               />
             )}
+          </div>
+
+        </div>
+      </div>
+
+      {/* ── Country of Residence Address / Contact (optional) ────────────── */}
+      <div style={{ marginBottom: 24 }}>
+        <p style={{ fontFamily: FONTS.display, fontSize: 10, fontWeight: 700, color: COLORS.muted,
+                    textTransform: 'uppercase', letterSpacing: '0.12em', margin: '0 0 14px' }}>
+          Country of residence address / contact <span style={{ fontWeight: 400, fontSize: 9 }}>(optional)</span>
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 20px' }}>
+
+          {/* Address line 1 */}
+          <div style={{ gridColumn: '1 / -1' }}>
+            <label style={labelStyle}>Address line 1</label>
+            <input
+              style={sectionInputStyle}
+              type="text"
+              value={fields.residenceAddressLine1.value}
+              onChange={e => setField('residenceAddressLine1', e.target.value)}
+              placeholder="e.g. 12 Marina View"
+            />
+          </div>
+
+          {/* Address line 2 */}
+          <div style={{ gridColumn: '1 / -1' }}>
+            <label style={labelStyle}>Address line 2</label>
+            <input
+              style={sectionInputStyle}
+              type="text"
+              value={fields.residenceAddressLine2.value}
+              onChange={e => setField('residenceAddressLine2', e.target.value)}
+              placeholder="Apartment, suite, etc. (optional)"
+            />
+          </div>
+
+          {/* City */}
+          <div>
+            <label style={labelStyle}>City</label>
+            <input
+              style={sectionInputStyle}
+              type="text"
+              value={fields.residenceCity.value}
+              onChange={e => setField('residenceCity', e.target.value)}
+              placeholder="e.g. Dubai"
+            />
+          </div>
+
+          {/* Country */}
+          <div>
+            <label style={labelStyle}>Country</label>
+            <input
+              style={sectionInputStyle}
+              type="text"
+              value={fields.residenceCountry.value}
+              onChange={e => setField('residenceCountry', e.target.value)}
+              placeholder="e.g. United Arab Emirates"
+            />
+          </div>
+
+          {/* Telephone No. */}
+          <div style={{ gridColumn: '1 / -1' }}>
+            <label style={labelStyle}>Telephone No.</label>
+            <input
+              style={sectionInputStyle}
+              type="tel"
+              value={fields.residencePhone.value}
+              onChange={e => setField('residencePhone', e.target.value)}
+              placeholder="e.g. +971 50 123 4567"
+            />
           </div>
 
         </div>

@@ -201,6 +201,13 @@ export function StepReviewSubmit({ state, onUpdate, onNext, onBack }: Props) {
         { label: 'Issue date', value: toDMY(p.issue_date) },
         { label: 'Expiry date', value: toDMY(p.expiry_date) },
       ]) },
+      { title: 'Country of Residence Address / Contact', rows: clean([
+        { label: 'Address line 1', value: pi.residenceAddressLine1 },
+        { label: 'Address line 2', value: pi.residenceAddressLine2 },
+        { label: 'City', value: pi.residenceCity },
+        { label: 'Country', value: pi.residenceCountry },
+        { label: 'Telephone No.', value: pi.residencePhone },
+      ]) },
       { title: 'Vessel', rows: clean([
         { label: 'Vessel', value: state.countryFields['vessel_name'] },
       ]) },
