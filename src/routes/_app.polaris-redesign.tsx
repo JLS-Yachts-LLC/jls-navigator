@@ -18,6 +18,7 @@ import {
 import {
   PolarisDashboard,
   PolarisVisaReports,
+  PolarisCrew,
 } from "@/components/polaris-ui/screens";
 import { useYachts, type YachtOption } from "@/components/polaris-ui/data";
 
@@ -85,6 +86,8 @@ function PolarisRedesignApp() {
             onSwitchVessel={() => setSwitcher(true)}
             onOpenReports={() => setScreen("visa-reports")}
           />
+        ) : screen === "crew" ? (
+          <PolarisCrew yacht={yacht} onSwitchVessel={() => setSwitcher(true)} />
         ) : (
           <EmptyState
             icon="layout-dashboard"

@@ -743,3 +743,195 @@ export function PolarisVisaReports({
     </>
   );
 }
+
+// ── Crew screen ───────────────────────────────────────────────────────────────
+type CrewFilter = "all" | CrewVisaRow["status"];
+
+export function PolarisCrew({
+  yacht,
+  onSwitchVessel,
+}: {
+  yacht: YachtOption | null;
+  onSwitchVessel: () => void;
+}) {
+  const { loading, rows, counts } = useVesselVisaData(yacht?.id ?? null);
+  const [q, setQ] = useState("");
+  const [filter, setFilter] = useState<CrewFilter>("all");
+
+  const term = q.trim().toLowerCase();
+  const filtered = rows.filter((c) => {
+    if (filter !== "all" && c.status !== filter) return false;
+    if (!term) return true;
+    return (
+      c.name.toLowerCase().includes(term) ||
+      (c.rank ?? "").toLowerCase().includes(term) ||
+      (c.nationality ?? "").toLowerCase().includes(term) ||
+      (c.visaType ?? "").toLowerCase().includes(term)
+    );
+  });
+
+  const FILTERS: { key: CrewFilter; label: string; n: number }[] = [
+    { key: "all", label: "All", n: counts.total },
+    { key: "active", label: "Active", n: counts.active },
+    { key: "expiring_soon", label: "Expiring", n: counts.expiring },
+    { key: "expired", label: "Expired", n: counts.expired },
+    { key: "no_visa", label: "No visa", n: counts.noVisa },
+  ];
+
+  const visaDetail = (c: CrewVisaRow) => {
+    if (c.status === "expired")
+      return `${c.visaType ?? "Visa"} · ${c.daysOverdue}d overdue`;
+    if (c.status === "expiring_soon")
+      return `${c.visaType ?? "Visa"} · expires ${formatDateDMY(c.expiry)}`;
+    if (c.status === "no_visa") return "No active visa";
+    return `${c.visaType ?? "Visa"} · ${c.daysRemaining}d left`;
+  };
+
+  return (
+    <>
+      <PageHeader
+        title="Crew"
+        actions={
+          <PolarisButton
+            variant="ghost"
+            icon="arrows-exchange"
+            label="Switch vessel"
+            onClick={onSwitchVessel}
+          />
+        }
+      />
+
+      <SectionLabel>Crew — {yacht?.vessel_name ?? "—"}</SectionLabel>
+      <div className="pds-stats-grid" style={{ marginBottom: 16 }}>
+        {loading ? (
+          [...Array(5)].map((_, i) => (
+            <Skeleton key={i} height={88} radius={12} />
+          ))
+        ) : (
+          <>
+            <StatCard
+              label="Total crew"
+              value={counts.total}
+              variant="neutral"
+              onClick={() => setFilter("all")}
+            />
+            <StatCard
+              label="Active"
+              value={counts.active}
+              variant="active"
+              onClick={() => setFilter("active")}
+            />
+            <StatCard
+              label="Expiring"
+              value={counts.expiring}
+              variant="expiring"
+              sub="within 30 days"
+              onClick={() => setFilter("expiring_soon")}
+            />
+            <StatCard
+              label="Expired"
+              value={counts.expired}
+              variant="expired"
+              onClick={() => setFilter("expired")}
+            />
+            <StatCard
+              label="No visa"
+              value={counts.noVisa}
+              variant="neutral"
+              onClick={() => setFilter("no_visa")}
+            />
+          </>
+        )}
+      </div>
+
+      {/* Search */}
+      <div style={{ position: "relative", marginBottom: 12 }}>
+        <span
+          style={{
+            position: "absolute",
+            left: 12,
+            top: "50%",
+            transform: "translateY(-50%)",
+            display: "flex",
+          }}
+        >
+          <TIcon name="search" size={16} color="var(--pds-text-secondary)" />
+        </span>
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search crew by name, rank, nationality…"
+          style={{
+            width: "100%",
+            boxSizing: "border-box",
+            background: "var(--pds-surface-2)",
+            border: "1px solid var(--pds-border)",
+            borderRadius: "var(--pds-radius-md)",
+            color: "var(--pds-text)",
+            fontSize: "var(--pds-fs-body)",
+            padding: "10px 12px 10px 36px",
+            minHeight: 44,
+            outline: "none",
+          }}
+        />
+      </div>
+
+      {/* Filter pills */}
+      <div
+        style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}
+      >
+        {FILTERS.map((f) => {
+          const on = f.key === filter;
+          return (
+            <button
+              key={f.key}
+              onClick={() => setFilter(f.key)}
+              style={{
+                background: on ? "var(--pds-gold-muted)" : "var(--pds-surface-2)",
+                border: `1px solid ${on ? "var(--pds-border-gold-strong)" : "var(--pds-border)"}`,
+                color: on ? "var(--pds-gold-light)" : "var(--pds-text-secondary)",
+                fontSize: "var(--pds-fs-label)",
+                fontWeight: on ? 600 : 500,
+                padding: "6px 12px",
+                minHeight: 36,
+                borderRadius: "var(--pds-radius-full)",
+                cursor: "pointer",
+              }}
+            >
+              {f.label} ({f.n})
+            </button>
+          );
+        })}
+      </div>
+
+      <PolarisCard title={`Crew list (${filtered.length})`} icon="users">
+        {loading ? (
+          <Skeleton height={120} />
+        ) : rows.length === 0 ? (
+          <EmptyState
+            icon="users"
+            message="No crew on this vessel yet."
+            action={{ label: "Switch vessel", onClick: onSwitchVessel }}
+          />
+        ) : filtered.length === 0 ? (
+          <EmptyState
+            icon="search"
+            message="No crew match your search or filter."
+          />
+        ) : (
+          filtered.map((c) => {
+            const b = STATUS_BADGE[c.status];
+            return (
+              <CrewRow
+                key={c.crewId}
+                name={c.name}
+                detail={`${c.rank ?? "Crew"} · ${c.nationality ?? "—"} · ${visaDetail(c)}`}
+                badge={<StatusBadge variant={b.variant} label={b.label} />}
+              />
+            );
+          })
+        )}
+      </PolarisCard>
+    </>
+  );
+}
