@@ -10,7 +10,8 @@
  *   GET /api/reports/crew-departing   — confirmed upcoming sign-offs
  *
  * Each supports ?format=csv | pdf (default JSON). Reads crew_signon_events joined
- * to crew_members + yachts. Gated by crew_immigration view access.
+ * to crew_members + yachts. Gated by crew_movements view access (Sign-On/Off has
+ * its own permission module, split from crew_immigration).
  */
 import { createClient } from '@supabase/supabase-js'
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
@@ -109,7 +110,9 @@ function addDaysStr(iso: string, n: number): string {
 
 export async function movementReportsHandler(request: Request): Promise<Response> {
   const url = new URL(request.url)
-  const access = await requireAccess(request, { module: 'crew_immigration', level: 'view' })
+  // Sign-On/Off has its own permission module (split from crew_immigration) so the
+  // Crew Care team can have full movements access while Visa stays read-only.
+  const access = await requireAccess(request, { module: 'crew_movements', level: 'view' })
   if (!access.ok) return access.response
 
   const sb = admin()
