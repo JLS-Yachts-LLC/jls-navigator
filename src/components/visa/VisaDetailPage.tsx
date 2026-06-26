@@ -11,11 +11,11 @@ import { DateInputDMY } from "@/components/ui/date-input-dmy";
 import { SignedAnchor } from "@/components/ui/signed-file";
 import { DraggableDocRow } from "@/components/visa/DraggableDocRow";
 import { softDeleteEntity } from "@/lib/recycle-bin";
-import { ArrowLeft, Loader2, Pencil, Trash2, ExternalLink, Upload, IdCard, FileCheck2 } from "lucide-react";
+import { ArrowLeft, Loader2, Pencil, Trash2, ExternalLink, Upload, IdCard, FileCheck2, FolderOpen } from "lucide-react";
 import { toast } from "sonner";
 import { cn, toDMY } from "@/lib/utils";
 import { fileToBase64 } from "@/lib/file-to-base64";
-import { uploadCrewDocToSharePoint } from "@/lib/visa-sharepoint.server";
+import { uploadCrewDocToSharePoint, getCrewSharePointFolderLink } from "@/lib/visa-sharepoint.server";
 
 type Visa = Record<string, any>;
 
@@ -54,6 +54,28 @@ export function VisaDetailPage() {
   const [signOn, setSignOn] = useState<string | null>(null);
   const [signOff, setSignOff] = useState<string | null>(null);
   const [docs, setDocs] = useState<Record<string, string | null> | null>(null);
+  const [spFolderBusy, setSpFolderBusy] = useState(false);
+
+  // Open (creating if needed) the crew member's SharePoint folder in a new tab.
+  // Resolved lazily on click so the page load stays light and no empty folders
+  // are created until someone actually wants the link.
+  async function openCrewSpFolder() {
+    const crewName = [visa?.given_name, visa?.surname].filter(Boolean).join(" ") || "Unknown Crew";
+    setSpFolderBusy(true);
+    const popup = window.open("", "_blank"); // open synchronously so the browser doesn't block it
+    try {
+      const { webUrl } = await (getCrewSharePointFolderLink as any)({
+        data: { vesselName: visa?.vessel_name ?? (vesselName !== "—" ? vesselName : null), crewName },
+      });
+      if (webUrl) { if (popup) popup.location.href = webUrl; else window.open(webUrl, "_blank"); }
+      else { popup?.close(); toast.error("Could not resolve the SharePoint folder."); }
+    } catch (e) {
+      popup?.close();
+      toast.error(`SharePoint folder link failed: ${e instanceof Error ? e.message : "unknown error"}`);
+    } finally {
+      setSpFolderBusy(false);
+    }
+  }
 
   // Attach the issued visa: store it, mark the application Approved, and file the
   // document into the SharePoint crew folder automatically (best-effort).
@@ -292,7 +314,19 @@ export function VisaDetailPage() {
               if (present.length === 0) return null;
               return (
                 <div className="px-4 py-3">
-                  <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">Documents</div>
+                  <div className="mb-1.5 flex items-center justify-between gap-2">
+                    <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">Documents</div>
+                    <button
+                      type="button"
+                      onClick={() => void openCrewSpFolder()}
+                      disabled={spFolderBusy}
+                      title="Open this crew member's folder in SharePoint"
+                      className="inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline disabled:opacity-50"
+                    >
+                      {spFolderBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <FolderOpen className="h-3 w-3" />}
+                      SharePoint folder
+                    </button>
+                  </div>
                   <div className="mb-2 text-[11px] text-muted-foreground/70">Drag a document straight into an email or upload field — or use Open / Download.</div>
                   <div className="flex flex-col gap-1.5">
                     {present.map(([label, u]) => (

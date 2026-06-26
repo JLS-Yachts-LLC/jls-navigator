@@ -9,7 +9,7 @@
  * Keyboard: focus the row and press Enter to download.
  */
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { COLORS, FONTS } from '@/lib/tokens'
 import { SignedAnchor } from '@/components/ui/signed-file'
@@ -56,6 +56,12 @@ export function DraggableDocRow({ label, stored, expiryDate, icon = '📄' }: Pr
     }
   }
 
+  // Eagerly prefetch on mount so the real File is cached BEFORE the user drags.
+  // dragstart is synchronous and dataTransfer freezes once it returns, so a file
+  // fetched only on hover often isn't ready for a quick drag — which left Outlook
+  // with just the URL and it created a tiny ".url" shortcut instead of the file.
+  useEffect(() => { prefetch() }, [stored]) // eslint-disable-line react-hooks/exhaustive-deps
+
   function onDragStart(e: React.DragEvent) {
     e.dataTransfer.effectAllowed = 'copy'
     const file = fileRef.current
@@ -63,16 +69,21 @@ export function DraggableDocRow({ label, stored, expiryDate, icon = '📄' }: Pr
     const name = filenameFor(doc)
     const mime = file?.type || mimeRef.current
 
-    // Real file for web upload fields / apps that read dataTransfer.files.
+    const hasUrl = !!url && /^https?:\/\//i.test(url)
+
     if (file) {
+      // Real file → web upload fields AND a real attachment in the native Outlook
+      // desktop app (which accepts dataTransfer files but ignores DownloadURL).
       try { e.dataTransfer.items.add(file) } catch { /* older browsers */ }
-    }
-    // OS / Chromium virtual-file drop (Explorer, Outlook attach zone, etc.) — MUST
-    // be set synchronously here. Format: mime:filename:absolute-url
-    if (url && /^https?:\/\//i.test(url)) {
+      // DownloadURL still helps OS targets (Explorer); but DON'T set
+      // text/uri-list / text/plain here — when a URL is present Outlook prefers it
+      // and drops a ".url" shortcut instead of attaching the actual file.
+      if (hasUrl) e.dataTransfer.setData('DownloadURL', `${mime}:${name}:${url}`)
+    } else if (hasUrl) {
+      // No file bytes available (fetch failed / not ready) — fall back to the URL
+      // so the drop still yields something usable rather than nothing.
       e.dataTransfer.setData('DownloadURL', `${mime}:${name}:${url}`)
       e.dataTransfer.setData('text/uri-list', url)
-      // Worst-case fallback is a usable link, NOT the bare filename.
       e.dataTransfer.setData('text/plain', url)
     }
   }

@@ -88,6 +88,44 @@ async function uploadIntoFolders(
   return { webUrl: created.webUrl ?? null };
 }
 
+/** Ensure a folder tree exists and return the deepest folder's webUrl (for linking). */
+async function ensureFoldersAndGetUrl(
+  siteId: string, token: string, folderSegments: string[],
+): Promise<string | null> {
+  let accumulated = "";
+  for (const seg of folderSegments) {
+    await ensureFolder(siteId, token, accumulated, seg);
+    accumulated = accumulated ? `${accumulated}/${seg}` : seg;
+  }
+  const res = await fetch(
+    `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root:/${encodeURI(accumulated)}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!res.ok) return null;
+  const item = (await res.json()) as Record<string, any>;
+  return item.webUrl ?? null;
+}
+
+/**
+ * Resolve (creating if needed) the SharePoint folder for a crew member and return
+ * a link to open it: Shared Documents / Yacht / {vessel} / Crew Documents / {crew}.
+ */
+export const getCrewSharePointFolderLink = createServerFn({ method: "POST" })
+  // @ts-expect-error — TanStack Start v1 serverFn type requires explicit ctx typing
+  .handler(async (ctx: {
+    data: { vesselName: string | null; crewName: string };
+  }): Promise<{ webUrl: string | null }> => {
+    const { vesselName, crewName } = ctx.data;
+    const cfg = await getSpConfig();
+    const anyCfg = cfg as unknown as Record<string, any>;
+    const siteUrl = anyCfg.visaSiteUrl ?? DEFAULT_VISA_SITE_URL;
+    const token = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret);
+    const siteId = await resolveSpSite(token, cfg.tenantUrl, siteUrl);
+    const vessel = sanitizeSegment(vesselName, "Unassigned Vessel");
+    const crew = sanitizeSegment(crewName, "Unknown Crew");
+    return { webUrl: await ensureFoldersAndGetUrl(siteId, token, ["Yacht", vessel, "Crew Documents", crew]) };
+  });
+
 /**
  * Mirror ANY crew document into SharePoint under:
  *   Shared Documents / Yacht / {vessel} / Crew Documents / {crew member} / {file}
