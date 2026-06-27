@@ -1662,6 +1662,93 @@ function VisaTracker() {
   );
 }
 
+// ─── Orbit (Projects) billing tracker ────────────────────────────────────────
+function OrbitTracker() {
+  const [rows, setRows] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState<string | null>(null);
+  const [q, setQ] = useState("");
+  const [filterYacht, setFilterYacht] = useState("all");
+  const [filterBilling, setFilterBilling] = useState("all");
+  const [editingRow, setEditingRow] = useState<string | null>(null);
+  const [editRef, setEditRef] = useState("");
+  const [editAmount, setEditAmount] = useState("");
+
+  useEffect(() => { void load(); }, []);
+  async function load() {
+    setLoading(true);
+    const { data, error } = await (supabase as any).from("orbit_projects")
+      .select("id, name, status, priority, due_date, charge_amount, billing_status, invoice_ref, invoice_amount, yacht:yachts(vessel_name)")
+      .order("created_at", { ascending: false }).limit(500);
+    if (error) toast.error(error.message); else setRows((data ?? []).map((r: any) => ({ ...r, billing_status: r.billing_status ?? "pending_review" })));
+    setLoading(false);
+  }
+  const yachts = useMemo(() => Array.from(new Set(rows.map(r => r.yacht?.vessel_name).filter(Boolean))).sort() as string[], [rows]);
+  const filtered = useMemo(() => rows.filter(r => {
+    if (filterYacht !== "all" && r.yacht?.vessel_name !== filterYacht) return false;
+    if (filterBilling !== "all" && r.billing_status !== filterBilling) return false;
+    if (q.trim() && ![r.name, r.yacht?.vessel_name, r.invoice_ref].filter(Boolean).join(" ").toLowerCase().includes(q.toLowerCase())) return false;
+    return true;
+  }), [rows, filterYacht, filterBilling, q]);
+  async function updateBilling(id: string, billing_status: BillingStatus, invoice_ref?: string, invoice_amount?: number | null) {
+    setSaving(id);
+    const patch: any = { billing_status };
+    if (invoice_ref !== undefined) patch.invoice_ref = invoice_ref || null;
+    if (invoice_amount !== undefined) patch.invoice_amount = invoice_amount;
+    const { error } = await (supabase as any).from("orbit_projects").update(patch).eq("id", id);
+    if (error) { toast.error(error.message); setSaving(null); return; }
+    setRows(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r));
+    setEditingRow(null); setSaving(null); toast.success("Updated");
+  }
+  const fmtAed = (n: number | null) => n != null ? `AED ${Number(n).toLocaleString("en-AE", { minimumFractionDigits: 2 })}` : "—";
+
+  return (
+    <div className="space-y-4">
+      <StatsBar items={rows} />
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-48"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" /><Input value={q} onChange={e => setQ(e.target.value)} placeholder="Search projects…" className="pl-8 h-8 text-sm" /></div>
+        <Select value={filterYacht} onValueChange={setFilterYacht}><SelectTrigger className="h-8 text-xs w-40"><SelectValue placeholder="All yachts" /></SelectTrigger><SelectContent><SelectItem value="all">All Yachts</SelectItem>{yachts.map(y => <SelectItem key={y} value={y}>{y}</SelectItem>)}</SelectContent></Select>
+        <Select value={filterBilling} onValueChange={setFilterBilling}><SelectTrigger className="h-8 text-xs w-40"><SelectValue placeholder="All billing" /></SelectTrigger><SelectContent>
+          <SelectItem value="all">All Billing</SelectItem><SelectItem value="pending_review">Pending Review</SelectItem><SelectItem value="pending_invoice">Needs Invoice</SelectItem><SelectItem value="invoiced">Invoiced</SelectItem><SelectItem value="not_billable">Not Billable</SelectItem>
+        </SelectContent></Select>
+      </div>
+      <div className="rounded-lg border border-border overflow-hidden overflow-x-auto">
+        <table className="w-full text-sm min-w-[820px]">
+          <thead><tr className="bg-muted/40 border-b border-border">{["Project", "Yacht", "Status", "Charge", "Billing", "Invoice Ref", "Amount", "Actions"].map(c => <th key={c} className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap">{c}</th>)}</tr></thead>
+          <tbody className="divide-y divide-border/50">
+            {loading ? <tr><td colSpan={8} className="px-3 py-10 text-center"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></td></tr> :
+              filtered.length === 0 ? <tr><td colSpan={8} className="px-3 py-10 text-center text-sm text-muted-foreground">No projects match the filters.</td></tr> :
+              filtered.map(r => {
+                const bs = (r.billing_status ?? "pending_review") as BillingStatus;
+                const isEditing = editingRow === r.id;
+                return (
+                  <tr key={r.id} className="hover:bg-muted/10">
+                    <td className="px-3 py-2 text-xs font-medium">{r.name}</td>
+                    <td className="px-3 py-2 text-xs">{r.yacht?.vessel_name ?? <span className="text-muted-foreground">—</span>}</td>
+                    <td className="px-3 py-2 text-xs text-muted-foreground capitalize">{(r.status ?? "—").replace(/_/g, " ")}</td>
+                    <td className="px-3 py-2 text-xs tabular-nums text-muted-foreground">{fmtAed(r.charge_amount)}</td>
+                    <td className="px-3 py-2"><BillingBadge status={bs} /></td>
+                    <td className="px-3 py-2 text-xs text-muted-foreground">{isEditing ? null : (r.invoice_ref ?? "—")}</td>
+                    <td className="px-3 py-2 text-xs text-muted-foreground">{isEditing ? null : fmtAed(r.invoice_amount)}</td>
+                    <td className="px-3 py-2">
+                      <BillingActions id={r.id} bs={bs} saving={saving === r.id} isEditing={isEditing}
+                        editRef={isEditing ? editRef : ""} editAmount={isEditing ? editAmount : ""}
+                        onSetEditRef={setEditRef} onSetEditAmount={setEditAmount}
+                        onStartEdit={() => { setEditingRow(r.id); setEditRef(r.invoice_ref ?? ""); setEditAmount(r.invoice_amount ? String(r.invoice_amount) : ""); }}
+                        onCancelEdit={() => setEditingRow(null)}
+                        onSaveInvoiced={() => updateBilling(r.id, "invoiced", editRef, editAmount ? parseFloat(editAmount) : null)}
+                        onFlag={() => updateBilling(r.id, "pending_invoice")} onNotBillable={() => updateBilling(r.id, "not_billable")} onReset={() => updateBilling(r.id, "pending_review")} />
+                    </td>
+                  </tr>
+                );
+              })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // ─── Unified Department Tracker ──────────────────────────────────────────────
 
 type DeptKey = TrackerDept | "orbit" | "visas";
@@ -1678,7 +1765,7 @@ const DEPT_LIST: {
   { key: "it",          label: "Yacht IT Solutions",      shortLabel: "Yacht IT",       icon: Cpu,         available: true  },
   { key: "procurement", label: "Procurement",             shortLabel: "Procurement",    icon: ShoppingCart,available: true  },
   { key: "visas",       label: "Visas & Immigration",     shortLabel: "Visas",          icon: IdCard,      available: true  },
-  { key: "orbit",       label: "Orbit (Projects)",        shortLabel: "Orbit",          icon: LayoutGrid,  available: false },
+  { key: "orbit",       label: "Orbit (Projects)",        shortLabel: "Orbit",          icon: LayoutGrid,  available: true  },
 ];
 
 function DeptTracker() {
@@ -1730,13 +1817,7 @@ function DeptTracker() {
       {dept === "it"           && <YachtItTracker />}
       {dept === "procurement"  && <ProcurementTracker />}
       {dept === "visas"        && <VisaTracker />}
-      {dept === "orbit"        && (
-        <div className="flex h-40 flex-col items-center justify-center rounded-lg border border-dashed border-border text-center">
-          <LayoutGrid className="h-8 w-8 text-muted-foreground/40 mb-2" />
-          <p className="text-sm font-medium">Orbit billing tracker</p>
-          <p className="text-xs text-muted-foreground mt-1">Project-level billing coming soon</p>
-        </div>
-      )}
+      {dept === "orbit"        && <OrbitTracker />}
     </div>
   );
 }
@@ -1979,7 +2060,7 @@ function FinanceDashboard() {
   }, [year]);
   const aed = (n: number) => `AED ${Number(n ?? 0).toLocaleString("en-AE", { maximumFractionDigits: 0 })}`;
   if (loading || !d) return <div className="py-16 text-center"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></div>;
-  const collected = (d.invoiced_total ?? 0) - (d.outstanding_total ?? 0);
+  const collected = d.payments_total ?? 0; // actual money received (QBO Payments)
   const pct = d.invoiced_total ? Math.round((collected / d.invoiced_total) * 100) : 0;
   const maxMonth = Math.max(1, ...(d.by_month ?? []).map((m: any) => Number(m.invoiced) || 0));
   return (
@@ -1994,7 +2075,7 @@ function FinanceDashboard() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
           { label: "Invoiced", value: aed(d.invoiced_total), sub: `${d.invoice_count} invoices`, accent: "text-foreground" },
-          { label: "Collected", value: aed(collected), sub: `${pct}% of invoiced`, accent: "text-emerald-400" },
+          { label: "Received", value: aed(collected), sub: `${d.payments_count ?? 0} payments · ${pct}% of invoiced`, accent: "text-emerald-400" },
           { label: "Outstanding", value: aed(d.outstanding_total), sub: `${d.unpaid_count + d.partial_count} open`, accent: "text-amber-400" },
           { label: "Overdue", value: aed(d.overdue_total), sub: `${d.overdue_count} invoices`, accent: "text-red-400" },
         ].map(k => (
@@ -2030,6 +2111,19 @@ function FinanceDashboard() {
               ))}
           </div>
         </div>
+      </div>
+      <div className="rounded-lg border border-border bg-card p-4">
+        <h3 className="text-sm font-semibold mb-3">Recent payments received</h3>
+        {(d.recent_payments ?? []).length === 0 ? <p className="text-xs text-muted-foreground">No payments synced for this period.</p> : (
+          <div className="grid gap-1.5 sm:grid-cols-2">
+            {(d.recent_payments ?? []).map((p: any, i: number) => (
+              <div key={i} className="flex items-center justify-between text-xs border-b border-border/40 pb-1">
+                <span className="truncate pr-2">{p.customer_name ?? "—"} <span className="text-muted-foreground">{p.txn_date ? new Date(p.txn_date).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : ""}</span></span>
+                <span className="tabular-nums font-medium text-emerald-400">{aed(p.total_amt)}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
       {(d.by_month ?? []).length > 0 && (
         <div className="rounded-lg border border-border bg-card p-4">

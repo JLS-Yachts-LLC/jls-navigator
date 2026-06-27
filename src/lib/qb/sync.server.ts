@@ -83,6 +83,35 @@ async function syncEntity(sb: any, entity: 'Invoice' | 'Estimate', where: string
   return count
 }
 
+function buildPaymentRow(doc: any, yachtByCust: Map<string, string>) {
+  const custId = String(doc.CustomerRef?.value ?? '')
+  const applied = (doc.Line ?? []).flatMap((l: any) =>
+    (l.LinkedTxn ?? []).filter((t: any) => t.TxnType === 'Invoice').map((t: any) => ({ invoice_qbo_id: String(t.TxnId), amount: l.Amount })))
+  return {
+    qbo_id: String(doc.Id), txn_date: doc.TxnDate ?? null,
+    customer_ref: custId || null, customer_name: doc.CustomerRef?.name ?? null,
+    yacht_id: yachtByCust.get(custId) ?? null,
+    total_amt: doc.TotalAmt ?? null, unapplied_amt: doc.UnappliedAmt ?? null,
+    currency: doc.CurrencyRef?.value ?? null, applied_to: applied, synced_at: new Date().toISOString(),
+  }
+}
+
+async function syncPayments(sb: any, where: string, yachtByCust: Map<string, string>): Promise<number> {
+  let count = 0
+  const PAGE = 200
+  for (let start = 1; start <= 100000; start += PAGE) {
+    const res = await qboQuery(`select * from Payment ${where} startposition ${start} maxresults ${PAGE}`)
+    const rows = res?.QueryResponse?.Payment ?? []
+    for (let i = 0; i < rows.length; i += 100) {
+      const mapped = rows.slice(i, i + 100).map((d: any) => buildPaymentRow(d, yachtByCust))
+      await sb.from('qbo_payments').upsert(mapped, { onConflict: 'qbo_id' })
+      count += mapped.length
+    }
+    if (rows.length < PAGE) break
+  }
+  return count
+}
+
 async function yachtMap(sb: any): Promise<Map<string, string>> {
   const { data } = await sb.from('yachts').select('id, qbo_customer_id').not('qbo_customer_id', 'is', null)
   return new Map((data ?? []).map((y: any) => [String(y.qbo_customer_id), y.id]))
@@ -126,6 +155,7 @@ export async function syncQboDocuments(opts: { full?: boolean; pdfBatch?: number
     // Land document rows without blocking on PDFs.
     count += await syncEntity(sb, 'Invoice', where, yachtByCust)
     count += await syncEntity(sb, 'Estimate', where, yachtByCust)
+    count += await syncPayments(sb, where, yachtByCust)
     // Skip PDFs on a full backfill (subrequest budget); trickle them in on cron runs.
     const pdfBatch = opts.pdfBatch ?? (opts.full ? 0 : 10)
     const pdfs = pdfBatch > 0 ? await backfillPdfs(sb, pdfBatch) : 0
@@ -156,16 +186,21 @@ export async function backfillChunk(reset = false): Promise<{ done: boolean; cou
   const yachtByCust = await yachtMap(sb)
   let count = 0
   for (let p = 0; p < MAX_PAGES && cursor.entity !== 'done'; p++) {
-    const entity = cursor.entity as 'Invoice' | 'Estimate'
+    const entity = cursor.entity as 'Invoice' | 'Estimate' | 'Payment'
     const res = await qboQuery(`select * from ${entity} where TxnDate >= '${ql(FROM_DATE())}' startposition ${cursor.start} maxresults ${PAGE}`)
     const rows = res?.QueryResponse?.[entity] ?? []
     for (let i = 0; i < rows.length; i += 100) {
-      const mapped = rows.slice(i, i + 100).map((d: any) => buildRow(entity, d, yachtByCust))
-      await sb.from('qbo_invoices').upsert(mapped, { onConflict: 'qbo_id,doc_type' })
-      count += mapped.length
+      const slice = rows.slice(i, i + 100)
+      if (entity === 'Payment') {
+        await sb.from('qbo_payments').upsert(slice.map((d: any) => buildPaymentRow(d, yachtByCust)), { onConflict: 'qbo_id' })
+      } else {
+        await sb.from('qbo_invoices').upsert(slice.map((d: any) => buildRow(entity, d, yachtByCust)), { onConflict: 'qbo_id,doc_type' })
+      }
+      count += slice.length
     }
+    // Chain: Invoice -> Estimate -> Payment -> done.
     cursor = rows.length < PAGE
-      ? (entity === 'Invoice' ? { entity: 'Estimate', start: 1 } : { entity: 'done', start: 0 })
+      ? (entity === 'Invoice' ? { entity: 'Estimate', start: 1 } : entity === 'Estimate' ? { entity: 'Payment', start: 1 } : { entity: 'done', start: 0 })
       : { entity, start: cursor.start + PAGE }
   }
 
@@ -174,6 +209,14 @@ export async function backfillChunk(reset = false): Promise<{ done: boolean; cou
     ...(cursor.entity === 'done' ? { last_full_at: new Date().toISOString() } : {}),
   }, { onConflict: 'id' })
   return { done: cursor.entity === 'done', count, cursor }
+}
+
+/** One-shot full backfill of 2026 payments (chunk if it ever hits limits). */
+export async function backfillPaymentsFull(): Promise<{ count: number }> {
+  if (!qboConfigured()) throw new Error('QBO not configured')
+  const sb = admin() as any
+  const yachtByCust = await yachtMap(sb)
+  return { count: await syncPayments(sb, `where TxnDate >= '${ql(FROM_DATE())}'`, yachtByCust) }
 }
 
 /** Pull a single invoice straight away (used when Polaris creates one). Best-effort,

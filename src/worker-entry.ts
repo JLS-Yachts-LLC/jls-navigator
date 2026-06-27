@@ -20,6 +20,7 @@ import { shipsyncApiHandler } from './routes/api.shipsync'
 import { anchorFormsHandler } from './routes/api.anchor-forms'
 import { qbInvoiceHandler } from './routes/api.qb.invoice'
 import { qbConnectHandler, qbCallbackHandler } from './routes/api.qb.connect'
+import { crewPlacementHandler } from './routes/api.crew-placement'
 import { qbCustomersHandler } from './routes/api.qb.customers'
 import { qbSyncHandler, qbDocPdfHandler } from './routes/api.qb.sync'
 import { syncQboDocuments } from './lib/qb/sync.server'
@@ -386,6 +387,9 @@ export default {
     }
     if (url.pathname === '/api/qb/doc-pdf' && request.method === 'GET') {
       return qbDocPdfHandler(request)
+    }
+    if (url.pathname === '/api/crew-placement' && request.method === 'POST') {
+      return crewPlacementHandler(request)
     }
     if (url.pathname === '/api/qb/connect' && request.method === 'GET') {
       return qbConnectHandler(request)

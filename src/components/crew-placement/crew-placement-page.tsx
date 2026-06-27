@@ -40,6 +40,23 @@ const STATUS_COLOR: Record<string, string> = {
 };
 const db = () => supabase as any;
 const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—";
+
+/** Generate a contract/payslip PDF from its template and open it. */
+async function genPdf(action: "contract-pdf" | "payslip-pdf", id: string): Promise<boolean> {
+  const { data: { session } } = await supabase.auth.getSession();
+  toast.loading("Generating PDF…", { id: "genpdf" });
+  try {
+    const r = await fetch("/api/crew-placement", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token ?? ""}` },
+      body: JSON.stringify({ action, id }),
+    });
+    const j = await r.json();
+    toast.dismiss("genpdf");
+    if (j.ok && j.url) { window.open(j.url, "_blank"); return true; }
+    toast.error(j.error ?? "Failed to generate"); return false;
+  } catch (e: any) { toast.dismiss("genpdf"); toast.error(String(e?.message ?? e)); return false; }
+}
 const daysUntil = (d: string | null) => d ? Math.ceil((new Date(d).getTime() - Date.now()) / 86400000) : null;
 
 // ── Lightweight modal ─────────────────────────────────────────────────────────
@@ -541,9 +558,9 @@ function Contracts({ contracts, crew, yachts, templates, reload }: any) {
       <div className="flex justify-end"><Button size="sm" className="h-8 gap-1.5" onClick={() => setAdd(true)}><Plus className="h-3.5 w-3.5" /> New Contract</Button></div>
       <div className="rounded-lg border border-border overflow-hidden overflow-x-auto">
         <table className="w-full text-sm min-w-[760px]">
-          <thead><tr className="bg-muted/40 border-b border-border">{["Crew", "Vessel", "Type", "Start", "End", "Salary", "Status"].map((h) => <th key={h} className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>)}</tr></thead>
+          <thead><tr className="bg-muted/40 border-b border-border">{["Crew", "Vessel", "Type", "Start", "End", "Salary", "Status", ""].map((h) => <th key={h} className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>)}</tr></thead>
           <tbody className="divide-y divide-border/50">
-            {contracts.length === 0 ? <tr><td colSpan={7} className="px-3 py-10 text-center text-sm text-muted-foreground">No contracts yet.</td></tr> :
+            {contracts.length === 0 ? <tr><td colSpan={8} className="px-3 py-10 text-center text-sm text-muted-foreground">No contracts yet.</td></tr> :
               contracts.map((c: any) => (
                 <tr key={c.id} className="hover:bg-muted/10">
                   <td className="px-3 py-2 text-xs font-medium">{c.crew?.full_name ?? "—"}</td>
@@ -553,6 +570,7 @@ function Contracts({ contracts, crew, yachts, templates, reload }: any) {
                   <td className="px-3 py-2 text-xs text-muted-foreground">{fmtDate(c.end_date)}</td>
                   <td className="px-3 py-2 text-xs tabular-nums">{c.salary != null ? `${Number(c.salary).toLocaleString()} ${c.currency ?? ""}` : "—"}</td>
                   <td className="px-3 py-2"><span className="inline-flex rounded-full px-1.5 py-0 text-[10px] font-semibold uppercase bg-muted/60 text-muted-foreground">{c.status}</span></td>
+                  <td className="px-3 py-2 text-right"><button onClick={() => genPdf("contract-pdf", c.id)} className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-primary hover:bg-primary/10"><FileText className="h-3 w-3" /> PDF</button></td>
                 </tr>
               ))}
           </tbody>
@@ -585,9 +603,9 @@ function Payroll({ payslips, crew, templates, reload }: any) {
       <div className="flex justify-end"><Button size="sm" className="h-8 gap-1.5" onClick={() => setAdd(true)}><Plus className="h-3.5 w-3.5" /> New Payslip</Button></div>
       <div className="rounded-lg border border-border overflow-hidden overflow-x-auto">
         <table className="w-full text-sm min-w-[680px]">
-          <thead><tr className="bg-muted/40 border-b border-border">{["Crew", "Period", "Gross", "Net", "Currency", "Status"].map((h) => <th key={h} className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>)}</tr></thead>
+          <thead><tr className="bg-muted/40 border-b border-border">{["Crew", "Period", "Gross", "Net", "Currency", "Status", ""].map((h) => <th key={h} className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>)}</tr></thead>
           <tbody className="divide-y divide-border/50">
-            {payslips.length === 0 ? <tr><td colSpan={6} className="px-3 py-10 text-center text-sm text-muted-foreground">No payslips yet.</td></tr> :
+            {payslips.length === 0 ? <tr><td colSpan={7} className="px-3 py-10 text-center text-sm text-muted-foreground">No payslips yet.</td></tr> :
               payslips.map((p: any) => (
                 <tr key={p.id} className="hover:bg-muted/10">
                   <td className="px-3 py-2 text-xs font-medium">{p.crew?.full_name ?? "—"}</td>
@@ -596,6 +614,7 @@ function Payroll({ payslips, crew, templates, reload }: any) {
                   <td className="px-3 py-2 text-xs tabular-nums font-medium">{p.net != null ? Number(p.net).toLocaleString() : "—"}</td>
                   <td className="px-3 py-2 text-xs text-muted-foreground">{p.currency}</td>
                   <td className="px-3 py-2"><span className="inline-flex rounded-full px-1.5 py-0 text-[10px] font-semibold uppercase bg-muted/60 text-muted-foreground">{p.status}</span></td>
+                  <td className="px-3 py-2 text-right"><button onClick={() => genPdf("payslip-pdf", p.id).then((ok) => ok && reload())} className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-primary hover:bg-primary/10"><FileText className="h-3 w-3" /> Payslip</button></td>
                 </tr>
               ))}
           </tbody>

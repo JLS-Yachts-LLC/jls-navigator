@@ -6,7 +6,7 @@
  *
  */
 import { supabaseAdmin } from '@/integrations/supabase/client.server'
-import { syncQboDocuments, backfillChunk } from '@/lib/qb/sync.server'
+import { syncQboDocuments, backfillChunk, backfillPaymentsFull } from '@/lib/qb/sync.server'
 import { qboPdf, qboConfigured } from '@/lib/qb/qbo.server'
 
 const db = () => supabaseAdmin as any
@@ -30,6 +30,10 @@ export async function qbSyncHandler(request: Request): Promise<Response> {
     let body: any = {}
     try { body = await request.json() } catch { /* empty */ }
     try {
+      if (body.paymentsBackfill) {
+        const r = await backfillPaymentsFull()
+        return json({ ok: true, ...r })
+      }
       // Resumable full backfill (loop until done); else an incremental sync.
       if (body.backfill || body.full) {
         const r = await backfillChunk(!!body.full || !!body.reset)
