@@ -17,8 +17,11 @@ const TABS = [
   { key: "service-desk", label: "Service Desk", icon: Headset, Comp: ServiceDeskPage },
   { key: "it-yachts", label: "IT Yachts", icon: Ship, Comp: ItYachtsPage },
   { key: "licensing", label: "Licensing", icon: KeyRound, Comp: LicensingPage },
-  { key: "internal", label: "Internal Services", icon: Boxes, Comp: InternalServicesPage },
-  { key: "client", label: "Client Services & Subscriptions", icon: FileText, Comp: YachtItPage },
+  // The richer cost/revenue/margin tracker (internal_services) is actually the
+  // client services & subscriptions register; the simpler yacht_it_contracts page
+  // sits under Internal Services. (Tabs swapped to match the data — no rows moved.)
+  { key: "internal", label: "Internal Services", icon: Boxes, Comp: YachtItPage },
+  { key: "client", label: "Client Services & Subscriptions", icon: FileText, Comp: InternalServicesPage },
 ] as const;
 
 export function YachtItSolutionsPage() {

@@ -15,12 +15,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import {
   Users, BadgeCheck, FileText, Wallet, FolderOpen, LayoutTemplate, Plus, Search,
-  Ship, XCircle, Pencil, Anchor as AnchorIcon, AlertTriangle, ChevronLeft, Loader2,
+  Ship, XCircle, Pencil, Anchor as AnchorIcon, AlertTriangle, ChevronLeft, Loader2, Megaphone,
 } from "lucide-react";
 
-type Tab = "roster" | "certs" | "contracts" | "payroll" | "documents" | "templates";
+type Tab = "roster" | "vacancies" | "certs" | "contracts" | "payroll" | "documents" | "templates";
 const TABS: { key: Tab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { key: "roster", label: "Roster", icon: Users },
+  { key: "vacancies", label: "Vacancies & Pool", icon: Megaphone },
   { key: "certs", label: "Certifications", icon: BadgeCheck },
   { key: "contracts", label: "Contracts", icon: FileText },
   { key: "payroll", label: "Payroll", icon: Wallet },
@@ -71,10 +72,11 @@ export function CrewPlacementPage() {
   const [payslips, setPayslips] = useState<any[]>([]);
   const [docs, setDocs] = useState<any[]>([]);
   const [templates, setTemplates] = useState<any[]>([]);
+  const [vacancies, setVacancies] = useState<any[]>([]);
 
   useEffect(() => { void loadAll(); }, []);
   async function loadAll() {
-    const [c, y, ce, co, pa, dc, te] = await Promise.all([
+    const [c, y, ce, co, pa, dc, te, va] = await Promise.all([
       db().from("placed_crew").select("*, yacht:yachts(vessel_name)").order("full_name"),
       db().from("yachts").select("id, vessel_name, flag").eq("archive", false).order("vessel_name"),
       db().from("crew_placement_certs").select("*, crew:placed_crew(full_name)").order("expiry_date", { ascending: true }),
@@ -82,9 +84,10 @@ export function CrewPlacementPage() {
       db().from("crew_payslips").select("*, crew:placed_crew(full_name)").order("period_month", { ascending: false }),
       db().from("crew_placement_documents").select("*, crew:placed_crew(full_name)").order("created_at", { ascending: false }),
       db().from("crew_placement_templates").select("*").order("kind"),
+      db().from("crew_vacancies").select("*, yacht:yachts(vessel_name), filled:placed_crew!crew_vacancies_filled_by_fkey(full_name)").order("created_at", { ascending: false }),
     ]);
     setCrew(c.data ?? []); setYachts(y.data ?? []); setCerts(ce.data ?? []);
-    setContracts(co.data ?? []); setPayslips(pa.data ?? []); setDocs(dc.data ?? []); setTemplates(te.data ?? []);
+    setContracts(co.data ?? []); setPayslips(pa.data ?? []); setDocs(dc.data ?? []); setTemplates(te.data ?? []); setVacancies(va.data ?? []);
   }
 
   const kpis = useMemo(() => ({
@@ -131,6 +134,7 @@ export function CrewPlacementPage() {
 
           <div className="flex-1 overflow-auto p-6">
             {tab === "roster" && <Roster crew={crew} yachts={yachts} reload={loadAll} onOpen={setOpenCrewId} />}
+            {tab === "vacancies" && <Vacancies vacancies={vacancies} crew={crew} yachts={yachts} reload={loadAll} onOpen={setOpenCrewId} />}
             {tab === "certs" && <Certs certs={certs} crew={crew} reload={loadAll} />}
             {tab === "contracts" && <Contracts contracts={contracts} crew={crew} yachts={yachts} templates={templates} reload={loadAll} />}
             {tab === "payroll" && <Payroll payslips={payslips} crew={crew} templates={templates} reload={loadAll} />}
@@ -265,6 +269,95 @@ function CrewModal({ init, yachts, onClose, onSave }: { init: any; yachts: any[]
         <Labeled label="Currency"><select className={fieldCls} value={f.currency} onChange={(e) => set("currency", e.target.value)}>{CURRENCIES.map((t) => <option key={t} value={t}>{t}</option>)}</select></Labeled>
       </div>
     </Modal>
+  );
+}
+
+// ── Vacancies & Talent Pool ───────────────────────────────────────────────────
+const VAC_STATUS: Record<string, string> = {
+  open: "bg-emerald-500/15 text-emerald-400", filled: "bg-blue-500/15 text-blue-400",
+  on_hold: "bg-amber-500/15 text-amber-400", closed: "bg-slate-500/15 text-slate-400",
+};
+const EMP_TYPES = ["Rotational", "Permanent", "Temporary", "Freelance", "Daywork"];
+
+function Vacancies({ vacancies, crew, yachts, reload, onOpen }: { vacancies: any[]; crew: any[]; yachts: any[]; reload: () => Promise<void>; onOpen: (id: string) => void }) {
+  const [add, setAdd] = useState(false);
+  const pool = useMemo(() => crew.filter((c) => c.placement_type === "pool" || c.status === "available"), [crew]);
+  const open = vacancies.filter((v) => v.status === "open");
+
+  async function save(f: any) {
+    const row = { ...f, yacht_id: f.yacht_id || null }; Object.keys(row).forEach((k) => row[k] === "" && (row[k] = null));
+    const { error } = await db().from("crew_vacancies").insert(row);
+    if (error) return toast.error(error.message);
+    toast.success("Vacancy posted"); setAdd(false); await reload();
+  }
+  async function setStatus(id: string, status: string) {
+    const { error } = await db().from("crew_vacancies").update({ status }).eq("id", id);
+    if (error) return toast.error(error.message);
+    await reload();
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-3 gap-3">
+        {[{ l: "Open vacancies", v: open.length, a: "text-emerald-400" }, { l: "Filled", v: vacancies.filter(v => v.status === "filled").length, a: "text-blue-400" }, { l: "Talent pool", v: pool.length, a: "text-primary" }].map(k => (
+          <div key={k.l} className="rounded-lg border border-border bg-card px-4 py-3"><div className="text-[11px] uppercase tracking-wider text-muted-foreground">{k.l}</div><div className={`font-display text-2xl font-bold ${k.a}`}>{k.v}</div></div>
+        ))}
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex items-center justify-between"><h3 className="text-sm font-semibold flex items-center gap-1.5"><Megaphone className="h-4 w-4 text-primary" /> Vacancies</h3><Button size="sm" className="h-8 gap-1.5" onClick={() => setAdd(true)}><Plus className="h-3.5 w-3.5" /> Post Vacancy</Button></div>
+        <div className="rounded-lg border border-border overflow-hidden overflow-x-auto">
+          <table className="w-full text-sm min-w-[760px]">
+            <thead><tr className="bg-muted/40 border-b border-border">{["Role", "Vessel", "Dept", "Type", "Salary", "Start", "Status", ""].map(h => <th key={h} className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>)}</tr></thead>
+            <tbody className="divide-y divide-border/50">
+              {vacancies.length === 0 ? <tr><td colSpan={8} className="px-3 py-8 text-center text-sm text-muted-foreground">No vacancies posted yet.</td></tr> :
+                vacancies.map(v => (
+                  <tr key={v.id} className="hover:bg-muted/10">
+                    <td className="px-3 py-2 text-xs font-medium">{v.title}{v.rank ? <span className="text-muted-foreground"> · {v.rank}</span> : ""}</td>
+                    <td className="px-3 py-2 text-xs">{v.yacht?.vessel_name ?? v.vessel_name ?? "—"}</td>
+                    <td className="px-3 py-2 text-xs text-muted-foreground">{v.department ?? "—"}</td>
+                    <td className="px-3 py-2 text-xs text-muted-foreground">{v.employment_type ?? "—"}</td>
+                    <td className="px-3 py-2 text-xs text-muted-foreground">{v.salary_range ? `${v.salary_range} ${v.currency ?? ""}` : "—"}</td>
+                    <td className="px-3 py-2 text-xs text-muted-foreground">{fmtDate(v.start_date)}</td>
+                    <td className="px-3 py-2"><span className={`inline-flex rounded-full px-1.5 py-0 text-[10px] font-semibold uppercase ${VAC_STATUS[v.status] ?? "bg-muted/60 text-muted-foreground"}`}>{(v.status ?? "").replace(/_/g, " ")}</span></td>
+                    <td className="px-3 py-2 text-right">
+                      <select value={v.status} onChange={(e) => setStatus(v.id, e.target.value)} className="h-6 rounded border border-border bg-background text-[11px] px-1">
+                        {["open", "filled", "on_hold", "closed"].map(s => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <h3 className="text-sm font-semibold flex items-center gap-1.5"><Users className="h-4 w-4 text-primary" /> Talent Pool <span className="text-[11px] font-normal text-muted-foreground">crew open to work (pool / available)</span></h3>
+        {pool.length === 0 ? <div className="rounded-lg border border-dashed border-border py-8 text-center text-sm text-muted-foreground">No crew in the pool. Set a crew member's type to “pool” or status to “available”.</div> : (
+          <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+            {pool.map(c => (
+              <button key={c.id} onClick={() => onOpen(c.id)} className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-left hover:border-primary/40 transition">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/15 text-xs font-semibold text-primary">{c.full_name?.slice(0, 2).toUpperCase()}</div>
+                <div className="min-w-0"><div className="text-sm font-medium truncate">{c.full_name}</div><div className="text-[11px] text-muted-foreground truncate">{[c.rank, c.nationality].filter(Boolean).join(" · ") || "—"}</div></div>
+                <span className="ml-auto inline-flex rounded-full px-1.5 py-0 text-[10px] font-semibold uppercase bg-amber-500/15 text-amber-400">{c.status === "available" ? "Available" : "Pool"}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {add && <SimpleAdd title="Post Vacancy" onClose={() => setAdd(false)} onSave={save}
+        init={{ title: "", yacht_id: "", vessel_name: "", department: "", rank: "", employment_type: "Rotational", salary_range: "", currency: "EUR", location: "", start_date: "", status: "open", description: "" }}
+        fields={[
+          { k: "title", label: "Role / title" }, { k: "yacht_id", label: "Vessel (tracked)", type: "yacht" },
+          { k: "vessel_name", label: "Vessel (free text)" }, { k: "department", label: "Department", type: "department" },
+          { k: "rank", label: "Rank" }, { k: "employment_type", label: "Type", type: "emptype" },
+          { k: "salary_range", label: "Salary range" }, { k: "currency", label: "Currency", type: "currency" },
+          { k: "location", label: "Location" }, { k: "start_date", label: "Start", type: "date" },
+          { k: "description", label: "Description" },
+        ]} crew={[]} yachts={yachts} required={["title"]} />}
+    </div>
   );
 }
 
@@ -617,6 +710,10 @@ function SimpleAdd({ title, init, fields, crew, yachts, templates, required, onC
               <select className={fieldCls} value={f[fl.k]} onChange={(e) => set(fl.k, e.target.value)}><option value="">— none —</option>{(templates ?? []).filter((t: any) => !fl.templateKind || t.kind === fl.templateKind).map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
             ) : fl.type === "currency" ? (
               <select className={fieldCls} value={f[fl.k]} onChange={(e) => set(fl.k, e.target.value)}>{CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}</select>
+            ) : fl.type === "department" ? (
+              <select className={fieldCls} value={f[fl.k]} onChange={(e) => set(fl.k, e.target.value)}><option value="">—</option>{DEPARTMENTS.map((c) => <option key={c} value={c}>{c}</option>)}</select>
+            ) : fl.type === "emptype" ? (
+              <select className={fieldCls} value={f[fl.k]} onChange={(e) => set(fl.k, e.target.value)}>{EMP_TYPES.map((c) => <option key={c} value={c}>{c}</option>)}</select>
             ) : (
               <input type={fl.type === "number" ? "number" : fl.type === "date" ? "date" : "text"} className={fieldCls} value={f[fl.k]} onChange={(e) => set(fl.k, e.target.value)} />
             )}
