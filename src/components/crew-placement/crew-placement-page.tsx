@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import {
   Users, BadgeCheck, FileText, Wallet, FolderOpen, LayoutTemplate, Plus, Search,
-  Ship, XCircle, Pencil, Anchor as AnchorIcon, AlertTriangle, ChevronLeft, ChevronRight, Loader2, Megaphone,
+  Ship, XCircle, Pencil, Anchor as AnchorIcon, AlertTriangle, ChevronLeft, ChevronRight, ChevronDown, Loader2, Megaphone,
 } from "lucide-react";
 
 type Tab = "roster" | "vacancies" | "certs" | "contracts" | "payroll" | "documents" | "templates";
@@ -614,101 +614,108 @@ function Payroll({ payslips, crew, templates, reload }: any) {
 // ── Documents ────────────────────────────────────────────────────────────────
 const POOL_KEY = "Unassigned / Pool";
 function Documents({ docs, crew, reload }: { docs: any[]; crew: any[]; reload: () => Promise<void> }) {
-  // Folder browser: Vessel → Crew → Documents.
-  const [vessel, setVessel] = useState<string | null>(null);
-  const [crewSel, setCrewSel] = useState<{ id: string; name: string } | null>(null);
+  // Branch-tree explorer: Vessel → Crew → Documents. Left = tree, right = contents.
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [sel, setSel] = useState<{ vessel: string; crewId: string; name: string } | null>(null);
   const [add, setAdd] = useState(false);
 
-  // Build the vessel → crew → docs tree.
   const tree = useMemo(() => {
     const m = new Map<string, Map<string, { name: string; docs: any[] }>>();
     for (const d of docs) {
       const v = d.crew?.yacht?.vessel_name ?? POOL_KEY;
       const cid = d.placed_crew_id;
-      const cname = d.crew?.full_name ?? "Unknown";
       if (!m.has(v)) m.set(v, new Map());
       const cm = m.get(v)!;
-      if (!cm.has(cid)) cm.set(cid, { name: cname, docs: [] });
+      if (!cm.has(cid)) cm.set(cid, { name: d.crew?.full_name ?? "Unknown", docs: [] });
       cm.get(cid)!.docs.push(d);
     }
     return m;
   }, [docs]);
 
+  function toggle(v: string) {
+    setCollapsed((p) => { const n = new Set(p); n.has(v) ? n.delete(v) : n.add(v); return n; });
+  }
   async function save(f: any) {
-    const row = { placed_crew_id: crewSel?.id, doc_type: f.doc_type || null, title: f.title || null };
-    const { error } = await db().from("crew_placement_documents").insert(row);
+    const { error } = await db().from("crew_placement_documents").insert({ placed_crew_id: sel?.crewId, doc_type: f.doc_type || null, title: f.title || null });
     if (error) return toast.error(error.message);
     toast.success("Document added"); setAdd(false); await reload();
   }
 
-  const Crumb = ({ label, onClick, last }: { label: string; onClick?: () => void; last?: boolean }) => (
-    <span className="inline-flex items-center gap-1">
-      <button disabled={last} onClick={onClick} className={last ? "text-foreground font-medium" : "text-muted-foreground hover:text-foreground"}>{label}</button>
-      {!last && <ChevronRight className="h-3 w-3 text-muted-foreground/50" />}
-    </span>
-  );
+  const vessels = Array.from(tree.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  const selDocs = sel ? (tree.get(sel.vessel)?.get(sel.crewId)?.docs ?? []) : [];
 
-  const FolderCard = ({ icon, name, sub, onClick }: { icon: React.ReactNode; name: string; sub: string; onClick: () => void }) => (
-    <button onClick={onClick} className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 text-left transition hover:border-primary/40 hover:bg-card/80">
-      {icon}
-      <div className="min-w-0"><div className="text-sm font-medium truncate">{name}</div><div className="text-[11px] text-muted-foreground">{sub}</div></div>
-    </button>
-  );
+  if (tree.size === 0) return <Empty msg="No documents yet. Open a crew member's profile to add documents." />;
 
   return (
-    <div className="space-y-4">
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-1 text-sm">
-        <Crumb label="All Vessels" onClick={() => { setVessel(null); setCrewSel(null); }} last={!vessel} />
-        {vessel && <Crumb label={vessel} onClick={() => setCrewSel(null)} last={!crewSel} />}
-        {crewSel && <Crumb label={crewSel.name} last />}
-        {crewSel && <Button size="sm" className="h-7 gap-1.5 ml-auto" onClick={() => setAdd(true)}><Plus className="h-3.5 w-3.5" /> Add Document</Button>}
+    <div className="flex gap-4">
+      {/* Branch tree */}
+      <div className="w-72 shrink-0 rounded-lg border border-border bg-card/40 p-2 max-h-[64vh] overflow-auto">
+        <button onClick={() => setSel(null)} className="mb-1 flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-left text-xs font-semibold text-muted-foreground hover:bg-muted/30">
+          <FolderOpen className="h-3.5 w-3.5" /> All Vessels
+        </button>
+        {vessels.map(([v, cm]) => {
+          const open = !collapsed.has(v);
+          const docCount = Array.from(cm.values()).reduce((s, c) => s + c.docs.length, 0);
+          return (
+            <div key={v}>
+              <button onClick={() => toggle(v)} className="flex w-full items-center gap-1 rounded px-1.5 py-1.5 text-left hover:bg-muted/30">
+                {open ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+                <Ship className="h-3.5 w-3.5 text-primary" />
+                <span className="flex-1 truncate text-xs font-medium">{v}</span>
+                <span className="text-[10px] text-muted-foreground">{docCount}</span>
+              </button>
+              {open && (
+                <div className="ml-3 border-l border-border/60 pl-1">
+                  {Array.from(cm.entries()).sort((a, b) => a[1].name.localeCompare(b[1].name)).map(([cid, c]) => {
+                    const active = sel?.crewId === cid;
+                    return (
+                      <button key={cid} onClick={() => setSel({ vessel: v, crewId: cid, name: c.name })}
+                        className={`flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-left text-xs transition ${active ? "bg-primary/15 text-foreground" : "text-muted-foreground hover:bg-muted/30 hover:text-foreground"}`}>
+                        <FolderOpen className={`h-3.5 w-3.5 ${active ? "text-amber-400" : "text-muted-foreground/70"}`} />
+                        <span className="flex-1 truncate">{c.name}</span>
+                        <span className="text-[10px] opacity-70">{c.docs.length}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
-      {/* Level 0: vessels */}
-      {!vessel && (
-        tree.size === 0 ? <Empty msg="No documents yet. Open a crew member's profile, or add documents per vessel here." /> : (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {Array.from(tree.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([v, cm]) => {
-              const docCount = Array.from(cm.values()).reduce((s, c) => s + c.docs.length, 0);
-              return <FolderCard key={v} onClick={() => setVessel(v)}
-                icon={<div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/15"><Ship className="h-5 w-5 text-primary" /></div>}
-                name={v} sub={`${cm.size} crew · ${docCount} document${docCount === 1 ? "" : "s"}`} />;
-            })}
+      {/* Contents */}
+      <div className="flex-1 min-w-0">
+        {!sel ? (
+          <div className="flex h-full min-h-48 items-center justify-center rounded-lg border border-dashed border-border text-sm text-muted-foreground">
+            Select a crew member from the tree to view their documents.
           </div>
-        )
-      )}
+        ) : (
+          <>
+            <div className="mb-3 flex items-center gap-2">
+              <div className="text-sm"><span className="text-muted-foreground">{sel.vessel} / </span><span className="font-semibold">{sel.name}</span></div>
+              <Button size="sm" className="h-7 gap-1.5 ml-auto" onClick={() => setAdd(true)}><Plus className="h-3.5 w-3.5" /> Add Document</Button>
+            </div>
+            <div className="rounded-lg border border-border overflow-hidden">
+              <table className="w-full text-sm">
+                <thead><tr className="bg-muted/40 border-b border-border">{["Type", "Title", "Added"].map((h) => <th key={h} className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>)}</tr></thead>
+                <tbody className="divide-y divide-border/50">
+                  {selDocs.length === 0 ? <tr><td colSpan={3} className="px-3 py-8 text-center text-sm text-muted-foreground">No documents.</td></tr> :
+                    selDocs.map((d) => (
+                      <tr key={d.id} className="hover:bg-muted/10">
+                        <td className="px-3 py-2"><span className="inline-flex items-center gap-1.5 text-xs"><FileText className="h-3.5 w-3.5 text-muted-foreground" /><span className="capitalize">{d.doc_type}</span></span></td>
+                        <td className="px-3 py-2 text-xs">{d.title}</td>
+                        <td className="px-3 py-2 text-xs text-muted-foreground">{fmtDate(d.created_at)}</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </div>
 
-      {/* Level 1: crew within a vessel */}
-      {vessel && !crewSel && (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {Array.from(tree.get(vessel)?.entries() ?? []).sort((a, b) => a[1].name.localeCompare(b[1].name)).map(([cid, c]) => (
-            <FolderCard key={cid} onClick={() => setCrewSel({ id: cid, name: c.name })}
-              icon={<div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/15"><FolderOpen className="h-5 w-5 text-amber-400" /></div>}
-              name={c.name} sub={`${c.docs.length} document${c.docs.length === 1 ? "" : "s"}`} />
-          ))}
-        </div>
-      )}
-
-      {/* Level 2: documents for the crew member */}
-      {crewSel && (
-        <div className="rounded-lg border border-border overflow-hidden">
-          <table className="w-full text-sm">
-            <thead><tr className="bg-muted/40 border-b border-border">{["Type", "Title", "Added"].map((h) => <th key={h} className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>)}</tr></thead>
-            <tbody className="divide-y divide-border/50">
-              {(tree.get(vessel!)?.get(crewSel.id)?.docs ?? []).map((d) => (
-                <tr key={d.id} className="hover:bg-muted/10">
-                  <td className="px-3 py-2"><span className="inline-flex items-center gap-1.5 text-xs"><FileText className="h-3.5 w-3.5 text-muted-foreground" /><span className="capitalize">{d.doc_type}</span></span></td>
-                  <td className="px-3 py-2 text-xs">{d.title}</td>
-                  <td className="px-3 py-2 text-xs text-muted-foreground">{fmtDate(d.created_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {add && crewSel && <SimpleAdd title={`Add Document — ${crewSel.name}`} onClose={() => setAdd(false)} onSave={save}
+      {add && sel && <SimpleAdd title={`Add Document — ${sel.name}`} onClose={() => setAdd(false)} onSave={save}
         init={{ doc_type: "cv", title: "" }} fields={[{ k: "doc_type", label: "Type" }, { k: "title", label: "Title" }]}
         crew={[]} required={["title"]} />}
     </div>
