@@ -499,12 +499,9 @@ function ProfileList({ title, onAdd, cols, rows, empty }: { title: string; onAdd
 // ── Certifications ──────────────────────────────────────────────────────────────
 function Certs({ certs, crew, reload }: { certs: any[]; crew: any[]; reload: () => Promise<void> }) {
   const [add, setAdd] = useState(false);
-  const blank = { placed_crew_id: "", cert_type: "", cert_number: "", issuing_authority: "", issued_date: "", expiry_date: "" };
-  async function save(f: any) {
-    const row = { ...f }; Object.keys(row).forEach((k) => row[k] === "" && (row[k] = null));
-    const { error } = await db().from("crew_placement_certs").insert(row);
-    if (error) return toast.error(error.message);
-    toast.success("Certificate added"); setAdd(false); await reload();
+  async function viewCert(path: string) {
+    const { data } = await db().storage.from("crew-docs").createSignedUrl(path, 3600);
+    if (data?.signedUrl) window.open(data.signedUrl, "_blank"); else toast.error("Could not open file");
   }
   function expiryBadge(d: string | null) {
     const days = daysUntil(d);
@@ -517,9 +514,9 @@ function Certs({ certs, crew, reload }: { certs: any[]; crew: any[]; reload: () 
       <div className="flex justify-end"><Button size="sm" className="h-8 gap-1.5" onClick={() => setAdd(true)}><Plus className="h-3.5 w-3.5" /> Add Certificate</Button></div>
       <div className="rounded-lg border border-border overflow-hidden overflow-x-auto">
         <table className="w-full text-sm min-w-[760px]">
-          <thead><tr className="bg-muted/40 border-b border-border">{["Crew", "Certificate", "Number", "Authority", "Issued", "Expiry"].map((h) => <th key={h} className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>)}</tr></thead>
+          <thead><tr className="bg-muted/40 border-b border-border">{["Crew", "Certificate", "Number", "Authority", "Issued", "Expiry", ""].map((h) => <th key={h} className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>)}</tr></thead>
           <tbody className="divide-y divide-border/50">
-            {certs.length === 0 ? <tr><td colSpan={6} className="px-3 py-10 text-center text-sm text-muted-foreground">No certificates tracked yet.</td></tr> :
+            {certs.length === 0 ? <tr><td colSpan={7} className="px-3 py-10 text-center text-sm text-muted-foreground">No certificates tracked yet.</td></tr> :
               certs.map((c) => (
                 <tr key={c.id} className="hover:bg-muted/10">
                   <td className="px-3 py-2 text-xs font-medium">{c.crew?.full_name ?? "—"}</td>
@@ -528,18 +525,61 @@ function Certs({ certs, crew, reload }: { certs: any[]; crew: any[]; reload: () 
                   <td className="px-3 py-2 text-xs text-muted-foreground">{c.issuing_authority ?? "—"}</td>
                   <td className="px-3 py-2 text-xs text-muted-foreground">{fmtDate(c.issued_date)}</td>
                   <td className="px-3 py-2 text-xs">{expiryBadge(c.expiry_date)}</td>
+                  <td className="px-3 py-2 text-right">{c.document_path
+                    ? <button onClick={() => viewCert(c.document_path)} className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-primary hover:bg-primary/10"><Download className="h-3 w-3" /> View</button>
+                    : <span className="text-[10px] text-muted-foreground/50">no file</span>}</td>
                 </tr>
               ))}
           </tbody>
         </table>
       </div>
-      {add && <SimpleAdd title="Add Certificate" onClose={() => setAdd(false)} onSave={save} init={blank}
-        fields={[
-          { k: "placed_crew_id", label: "Crew", type: "crew" }, { k: "cert_type", label: "Certificate type" },
-          { k: "cert_number", label: "Number" }, { k: "issuing_authority", label: "Issuing authority" },
-          { k: "issued_date", label: "Issued", type: "date" }, { k: "expiry_date", label: "Expiry", type: "date" },
-        ]} crew={crew} required={["placed_crew_id", "cert_type"]} />}
+      {add && <CertUploadDialog crew={crew} onClose={() => setAdd(false)} onDone={() => { setAdd(false); void reload(); }} />}
     </div>
+  );
+}
+
+function CertUploadDialog({ crew, onClose, onDone }: { crew: any[]; onClose: () => void; onDone: () => void }) {
+  const [f, setF] = useState<any>({ placed_crew_id: "", cert_type: "", cert_number: "", issuing_authority: "", issued_date: "", expiry_date: "" });
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const set = (k: string, v: any) => setF((p: any) => ({ ...p, [k]: v }));
+  async function submit() {
+    if (!f.placed_crew_id || !f.cert_type.trim()) { toast.error("Crew and certificate type are required"); return; }
+    setBusy(true);
+    try {
+      let document_path: string | null = null;
+      if (file) {
+        if (file.size > 20 * 1024 * 1024) { toast.error("Max 20 MB"); setBusy(false); return; }
+        const path = `${f.placed_crew_id}/certs/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_")}`;
+        const { error: upErr } = await db().storage.from("crew-docs").upload(path, file);
+        if (upErr) { toast.error(`Upload failed: ${upErr.message}`); setBusy(false); return; }
+        document_path = path;
+      }
+      const row: any = { ...f, document_path };
+      Object.keys(row).forEach((k) => row[k] === "" && (row[k] = null));
+      const { error } = await db().from("crew_placement_certs").insert(row);
+      if (error) { toast.error(error.message); setBusy(false); return; }
+      toast.success("Certificate added"); onDone();
+    } catch (e: any) { toast.error(String(e?.message ?? e)); setBusy(false); }
+  }
+  return (
+    <Modal title="Add Certificate" onClose={onClose}
+      footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={submit} disabled={busy} className="gap-1.5">{busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} Save</Button></>}>
+      <div className="grid grid-cols-2 gap-3">
+        <Labeled label="Crew"><select className={fieldCls} value={f.placed_crew_id} onChange={(e) => set("placed_crew_id", e.target.value)}><option value="">— select —</option>{crew.map((c: any) => <option key={c.id} value={c.id}>{c.full_name}</option>)}</select></Labeled>
+        <Labeled label="Certificate type"><input className={fieldCls} value={f.cert_type} onChange={(e) => set("cert_type", e.target.value)} /></Labeled>
+        <Labeled label="Number"><input className={fieldCls} value={f.cert_number} onChange={(e) => set("cert_number", e.target.value)} /></Labeled>
+        <Labeled label="Issuing authority"><input className={fieldCls} value={f.issuing_authority} onChange={(e) => set("issuing_authority", e.target.value)} /></Labeled>
+        <Labeled label="Issued"><input type="date" className={fieldCls} value={f.issued_date} onChange={(e) => set("issued_date", e.target.value)} /></Labeled>
+        <Labeled label="Expiry"><input type="date" className={fieldCls} value={f.expiry_date} onChange={(e) => set("expiry_date", e.target.value)} /></Labeled>
+      </div>
+      <Labeled label="Certificate file (optional)">
+        <label className="mt-0.5 flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-border bg-background px-3 py-3 text-xs text-muted-foreground hover:border-primary/40">
+          <Download className="h-4 w-4 rotate-180" />{file ? <span className="text-foreground">{file.name}</span> : <span>Click to upload · PDF, JPG, PNG · max 20 MB</span>}
+          <input type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+        </label>
+      </Labeled>
+    </Modal>
   );
 }
 
