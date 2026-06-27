@@ -1692,17 +1692,202 @@ function TrackersSection() { return <DeptTracker />; }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
+// ── Synced QBO documents (Invoices / Pro-Formas / Quotations) ─────────────────
+type QboDoc = {
+  id: string; doc_number: string | null; txn_date: string | null; due_date: string | null;
+  customer_name: string | null; total_amt: number | null; balance: number | null;
+  status: string | null; yacht_id: string | null; line_items: any[] | null;
+  yacht?: { vessel_name: string } | null;
+};
+const DOC_TYPE: Record<"invoices" | "proforma" | "quotations", string> = { invoices: "invoice", proforma: "proforma", quotations: "estimate" };
+const STATUS_COLOR: Record<string, string> = {
+  Paid: "bg-emerald-500/15 text-emerald-400", Unpaid: "bg-amber-500/15 text-amber-400",
+  Partial: "bg-blue-500/15 text-blue-400", Overdue: "bg-red-500/15 text-red-400",
+  Accepted: "bg-emerald-500/15 text-emerald-400", Pending: "bg-amber-500/15 text-amber-400",
+  Closed: "bg-slate-500/15 text-slate-400", Rejected: "bg-red-500/15 text-red-400",
+};
+
+function QboDocsTab({ docType }: { docType: "invoices" | "proforma" | "quotations" }) {
+  const [rows, setRows] = useState<QboDoc[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [q, setQ] = useState("");
+  const [yacht, setYacht] = useState("all");
+  const [year, setYear] = useState("2026");
+  const [status, setStatus] = useState("all");
+  const [expanded, setExpanded] = useState<string | null>(null);
+
+  useEffect(() => { void load(); }, [docType, year]);
+
+  async function load() {
+    setLoading(true);
+    let qy = (supabase as any).from("qbo_invoices")
+      .select("id, doc_number, txn_date, due_date, customer_name, total_amt, balance, status, yacht_id, line_items, yacht:yachts(vessel_name)")
+      .eq("doc_type", DOC_TYPE[docType]).order("txn_date", { ascending: false }).limit(1000);
+    if (year !== "all") qy = qy.gte("txn_date", `${year}-01-01`).lte("txn_date", `${year}-12-31`);
+    const { data, error } = await qy;
+    if (error) toast.error(error.message); else setRows((data ?? []) as QboDoc[]);
+    setLoading(false);
+  }
+
+  const yachts = useMemo(() => Array.from(new Set(rows.map(r => r.yacht?.vessel_name).filter(Boolean))).sort() as string[], [rows]);
+  const statuses = useMemo(() => Array.from(new Set(rows.map(r => r.status).filter(Boolean))).sort() as string[], [rows]);
+
+  const filtered = useMemo(() => rows.filter(r => {
+    if (yacht !== "all" && r.yacht?.vessel_name !== yacht) return false;
+    if (status !== "all" && r.status !== status) return false;
+    if (q.trim()) {
+      const s = q.toLowerCase();
+      if (![r.doc_number, r.customer_name, r.yacht?.vessel_name].filter(Boolean).join(" ").toLowerCase().includes(s)) return false;
+    }
+    return true;
+  }), [rows, yacht, status, q]);
+
+  const totals = useMemo(() => ({
+    count: filtered.length,
+    value: filtered.reduce((s, r) => s + (r.total_amt ?? 0), 0),
+    outstanding: filtered.reduce((s, r) => s + (r.balance ?? 0), 0),
+  }), [filtered]);
+
+  async function viewPdf(id: string) {
+    const t = await authToken();
+    toast.loading("Fetching PDF…", { id: "qbpdf" });
+    try {
+      const r = await fetch(`/api/qb/doc-pdf?id=${id}`, { headers: { Authorization: `Bearer ${t}` } });
+      const j = await r.json();
+      toast.dismiss("qbpdf");
+      if (j.ok && j.url) window.open(j.url, "_blank"); else toast.error(j.error ?? "No PDF");
+    } catch (e: any) { toast.dismiss("qbpdf"); toast.error(String(e?.message ?? e)); }
+  }
+
+  const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—";
+  const fmtAed = (n: number | null) => n != null ? `AED ${n.toLocaleString("en-AE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—";
+  const dueLabel = docType === "invoices" ? "Due Date" : docType === "proforma" ? "Expiry" : "Valid Until";
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-3 gap-2.5">
+        {[
+          { label: "Documents", value: totals.count },
+          { label: "Total Value", value: fmtAed(totals.value) },
+          { label: "Outstanding", value: fmtAed(totals.outstanding) },
+        ].map(s => (
+          <div key={s.label} className="rounded-lg border border-border bg-card/60 px-3 py-2.5">
+            <div className="text-lg font-bold text-foreground tabular-nums">{s.value}</div>
+            <div className="text-xs text-muted-foreground">{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-44">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <Input value={q} onChange={e => setQ(e.target.value)} placeholder="Search #, customer, vessel…" className="pl-8 h-8 text-sm" />
+        </div>
+        <Select value={year} onValueChange={setYear}>
+          <SelectTrigger className="h-8 text-xs w-28"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All years</SelectItem>
+            {["2026", "2025", "2024"].map(y => <SelectItem key={y} value={y}>{y}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={yacht} onValueChange={setYacht}>
+          <SelectTrigger className="h-8 text-xs w-40"><SelectValue placeholder="All vessels" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Vessels</SelectItem>
+            {yachts.map(y => <SelectItem key={y} value={y}>{y}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={status} onValueChange={setStatus}>
+          <SelectTrigger className="h-8 text-xs w-36"><SelectValue placeholder="All statuses" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Statuses</SelectItem>
+            {statuses.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="rounded-lg border border-border overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[820px]">
+            <thead>
+              <tr className="bg-muted/40 border-b border-border">
+                {["#", "Customer / Vessel", "Date", dueLabel, "Amount", "Status", ""].map(c => (
+                  <th key={c} className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap">{c}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/50">
+              {loading ? (
+                <tr><td colSpan={7} className="px-3 py-10 text-center"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></td></tr>
+              ) : filtered.length === 0 ? (
+                <tr><td colSpan={7} className="px-3 py-10 text-center text-sm text-muted-foreground">No {docType === "quotations" ? "quotations" : docType === "proforma" ? "pro-formas" : "invoices"} match the filters.</td></tr>
+              ) : filtered.map(r => (
+                <>
+                  <tr key={r.id} className="hover:bg-muted/10 cursor-pointer" onClick={() => setExpanded(expanded === r.id ? null : r.id)}>
+                    <td className="px-3 py-2 text-xs font-mono whitespace-nowrap">{r.doc_number ?? "—"}</td>
+                    <td className="px-3 py-2 text-xs">
+                      <div className="font-medium">{r.customer_name ?? "—"}</div>
+                      {r.yacht?.vessel_name && <div className="text-[11px] text-muted-foreground">{r.yacht.vessel_name}</div>}
+                    </td>
+                    <td className="px-3 py-2 text-xs whitespace-nowrap text-muted-foreground">{fmtDate(r.txn_date)}</td>
+                    <td className="px-3 py-2 text-xs whitespace-nowrap text-muted-foreground">{fmtDate(r.due_date)}</td>
+                    <td className="px-3 py-2 text-xs whitespace-nowrap font-medium tabular-nums">{fmtAed(r.total_amt)}</td>
+                    <td className="px-3 py-2">
+                      <span className={`inline-flex items-center rounded-full px-1.5 py-0 text-[10px] font-semibold uppercase tracking-wide ${STATUS_COLOR[r.status ?? ""] ?? "bg-muted/60 text-muted-foreground"}`}>{r.status ?? "—"}</span>
+                    </td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap">
+                      <button onClick={(e) => { e.stopPropagation(); viewPdf(r.id); }} title="View QuickBooks PDF"
+                        className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground/60 hover:bg-primary/10 hover:text-primary">
+                        <FileText className="h-3.5 w-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                  {expanded === r.id && (r.line_items?.length ?? 0) > 0 && (
+                    <tr className="bg-muted/20"><td colSpan={7} className="px-6 py-2">
+                      <div className="space-y-0.5">
+                        {r.line_items!.map((li: any, i: number) => (
+                          <div key={i} className="flex justify-between text-[11px] text-muted-foreground">
+                            <span>{li.item ?? li.description ?? "—"}{li.qty ? ` × ${li.qty}` : ""}</span>
+                            <span className="tabular-nums">{fmtAed(li.amount)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </td></tr>
+                  )}
+                </>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {filtered.length > 0 && <div className="border-t border-border bg-muted/20 px-3 py-1.5 text-xs text-muted-foreground">Showing {filtered.length} of {rows.length} (max 1000 / year)</div>}
+      </div>
+    </div>
+  );
+}
+
 export function FinancePage() {
   const [tab, setTab] = useState<FinanceTab>("trackers");
-  const [connected] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [lastSync, setLastSync] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch("/api/qb/sync", { headers: { Authorization: `Bearer ${await authToken()}` } });
+        const j = await r.json();
+        if (j.ok) setLastSync(j.state?.last_run_at ?? null);
+      } catch { /* ignore */ }
+    })();
+  }, []);
 
   async function handleSync() {
-    if (!connected) { toast.error("Connect QuickBooks first"); return; }
     setSyncing(true);
-    await new Promise(r => setTimeout(r, 1000));
-    setSyncing(false);
-    toast.success("Sync complete");
+    try {
+      const r = await fetch("/api/qb/sync", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${await authToken()}` }, body: "{}" });
+      const j = await r.json();
+      if (j.ok) { toast.success(`Synced ${j.count ?? 0} document(s)`); setLastSync(new Date().toISOString()); }
+      else toast.error(j.error ?? "Sync failed");
+    } catch (e: any) { toast.error(String(e?.message ?? e)); } finally { setSyncing(false); }
   }
 
   const isQbTab = tab === "invoices" || tab === "proforma" || tab === "quotations";
@@ -1721,44 +1906,19 @@ export function FinancePage() {
           <h1 className="font-display text-xl font-semibold tracking-tight">Finance</h1>
         </div>
         {isQbTab && (
-          <Button size="sm" variant="outline" onClick={handleSync} disabled={syncing} className="gap-1.5">
-            {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-            Sync from QuickBooks
-          </Button>
+          <div className="flex items-center gap-3">
+            <span className="text-[11px] text-muted-foreground">
+              {lastSync ? `Synced ${new Date(lastSync).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}` : "Not synced yet"}
+            </span>
+            <Button size="sm" variant="outline" onClick={handleSync} disabled={syncing} className="gap-1.5">
+              {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+              Sync from QuickBooks
+            </Button>
+          </div>
         )}
       </header>
 
       <div className="flex-1 overflow-auto p-6 space-y-5">
-        {/* QuickBooks connection card — only for QB tabs */}
-        {isQbTab && (
-          <div className="rounded-lg border border-border bg-card/60 p-4 flex items-center justify-between flex-wrap gap-3">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#2CA01C]/10">
-                <DollarSign className="h-5 w-5 text-[#2CA01C]" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold">QuickBooks Online</p>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  {connected
-                    ? <><CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" /><span className="text-xs text-emerald-400">Connected</span></>
-                    : <><XCircle className="h-3.5 w-3.5 text-muted-foreground" /><span className="text-xs text-muted-foreground">Not connected</span></>}
-                </div>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              {connected && (
-                <Button size="sm" variant="ghost" className="gap-1.5 h-7 text-xs" onClick={() => toast.info("Opening QuickBooks…")}>
-                  <ExternalLink className="h-3.5 w-3.5" /> Open QuickBooks
-                </Button>
-              )}
-              <Button size="sm" variant={connected ? "outline" : "default"} className="h-7 text-xs"
-                onClick={() => toast.info("QuickBooks OAuth integration — coming soon")}>
-                {connected ? "Reconnect" : "Connect QuickBooks"}
-              </Button>
-            </div>
-          </div>
-        )}
-
         {/* Tabs */}
         <div className="flex items-center gap-1 border-b border-border">
           {/* Unified Invoice Tracker (all departments) */}
@@ -1784,30 +1944,9 @@ export function FinancePage() {
 
         {/* Tab content */}
         {(tab === "trackers" || tab === "tracker") && <DeptTracker />}
-        {isQbTab && (
-          <div className="rounded-lg border border-border overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-muted/40 border-b border-border">
-                  {QB_TABS.find(t => t.key === tab)!.cols.map(col => (
-                    <th key={col} className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{col}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td colSpan={QB_TABS.find(t => t.key === tab)!.cols.length} className="px-3 py-12 text-center">
-                    <div className="flex flex-col items-center gap-2 text-muted-foreground">
-                      {(() => { const Icon = QB_TABS.find(t => t.key === tab)!.icon; return <Icon className="h-8 w-8 opacity-30" />; })()}
-                      <p className="text-sm">No {QB_TABS.find(t => t.key === tab)!.label.toLowerCase()} yet.</p>
-                      <p className="text-xs opacity-70">Connect QuickBooks and sync to import records.</p>
-                    </div>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        )}
+        {tab === "invoices" && <QboDocsTab docType="invoices" />}
+        {tab === "proforma" && <QboDocsTab docType="proforma" />}
+        {tab === "quotations" && <QboDocsTab docType="quotations" />}
       </div>
     </div>
   );

@@ -257,6 +257,12 @@ export async function generateVisaInvoice(req: VisaInvoiceRequest, userId: strin
     detail: { realm: qboRealm(), lines: resolved.map((r) => ({ item: r.itemName, qty: r.qty, unitPrice: r.unitPrice })) },
   })
 
+  // Trigger an immediate sync of the new invoice into the Finance cache (best-effort).
+  try {
+    const { syncOneInvoice } = await import('./sync.server')
+    await syncOneInvoice(created.invoiceId)
+  } catch { /* the 5-min cron will pick it up otherwise */ }
+
   return {
     docNumber: created.docNumber,
     invoiceId: created.invoiceId,

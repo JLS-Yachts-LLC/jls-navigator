@@ -95,3 +95,20 @@ export async function qboRequest(method: string, path: string, body?: unknown): 
 export async function qboQuery(query: string): Promise<any> {
   return qboRequest('GET', `/query?query=${encodeURIComponent(query)}&minorversion=73`)
 }
+
+/** Fetch a QBO-rendered PDF (e.g. /invoice/{id}/pdf or /estimate/{id}/pdf) as bytes. */
+export async function qboPdf(path: string): Promise<ArrayBuffer> {
+  if (!qboConfigured()) throw new Error('QBO not configured')
+  const sb = admin()
+  const realm = qboRealm()
+  let token = await getAccessToken(sb, realm)
+  const url = `${API_BASE}/${realm}${path}`
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/pdf' } })
+    if (res.status === 401 && attempt === 0) { token = await getAccessToken(sb, realm, true); continue }
+    if ((res.status === 429 || res.status >= 500) && attempt < 3) { await sleep(500 * (attempt + 1)); continue }
+    if (!res.ok) throw new Error(`QBO PDF ${path} → ${res.status}`)
+    return res.arrayBuffer()
+  }
+  throw new Error(`QBO PDF ${path} failed after retries`)
+}

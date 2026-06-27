@@ -21,6 +21,8 @@ import { anchorFormsHandler } from './routes/api.anchor-forms'
 import { qbInvoiceHandler } from './routes/api.qb.invoice'
 import { qbConnectHandler, qbCallbackHandler } from './routes/api.qb.connect'
 import { qbCustomersHandler } from './routes/api.qb.customers'
+import { qbSyncHandler, qbDocPdfHandler } from './routes/api.qb.sync'
+import { syncQboDocuments } from './lib/qb/sync.server'
 import { feedbackNotifyHandler } from './routes/api.feedback.notify'
 import { vesselHandler } from './routes/api.vessels'
 import { phoneHandler } from './routes/api.phone'
@@ -379,6 +381,12 @@ export default {
     if (url.pathname === '/api/qb/customers' && request.method === 'GET') {
       return qbCustomersHandler(request)
     }
+    if (url.pathname === '/api/qb/sync' && (request.method === 'GET' || request.method === 'POST')) {
+      return qbSyncHandler(request)
+    }
+    if (url.pathname === '/api/qb/doc-pdf' && request.method === 'GET') {
+      return qbDocPdfHandler(request)
+    }
     if (url.pathname === '/api/qb/connect' && request.method === 'GET') {
       return qbConnectHandler(request)
     }
@@ -400,6 +408,17 @@ export default {
     const isHourly = cron === '0 * * * *' || (cron == null && new Date().getUTCMinutes() < 15);
     const isQuarterly = cron === '*/15 * * * *' || cron == null;
     const isAis = cron === '5,20,35,50 * * * *';
+    const isFiveMin = cron === '*/5 * * * *';
+
+    // ── Every 5 min: incremental QBO document sync (invoices / pro-formas / estimates). ──
+    if (isFiveMin) {
+      ctx.waitUntil(
+        syncQboDocuments({})
+          .then((r) => console.log(`[qbo-sync] ${JSON.stringify(r)}`))
+          .catch((e) => console.error('[qbo-sync] error:', e))
+      );
+      return;
+    }
 
     // ── AIS tick: collect live vessel positions in its own invocation (own
     //    subrequest budget) and write them to the yachts table. ──

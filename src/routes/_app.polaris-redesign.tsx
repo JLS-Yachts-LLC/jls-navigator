@@ -32,6 +32,25 @@ import { VesselsHub } from "@/components/vessels/vessels-hub";
 import { CrewListPage } from "@/components/crew-immigration/crew-list-page";
 import { AnchorPage } from "@/components/anchor/anchor-page";
 import { ShipSyncPage } from "@/components/shipsync-page";
+import { FinancePage } from "@/components/finance/finance-page";
+import { DevSettingsPage } from "@/components/dev/dev-settings-page";
+import { ChangelogPage } from "@/components/changelog-page";
+import { AutomationsPage } from "@/components/automations/automations-page";
+import { ErrorLogPage } from "@/components/dev/error-log-page";
+import { IntegrationsPage } from "@/components/dev/integrations-page";
+import { FeedbackPage } from "@/components/feedback/feedback-page";
+
+/** Beta screens that simply embed an existing full app page (Beta styling is inherited
+ *  from the shell's pds-embed content area). */
+const EMBED_SCREENS: Record<string, React.ComponentType> = {
+  finance: FinancePage,
+  "admin-dev": DevSettingsPage,
+  "admin-changelog": ChangelogPage,
+  "admin-automations": AutomationsPage,
+  "admin-errors": ErrorLogPage,
+  "admin-integrations": IntegrationsPage,
+  "admin-feedback": FeedbackPage,
+};
 
 export const Route = createFileRoute("/_app/polaris-redesign")({
   component: PolarisRedesignApp,
@@ -145,6 +164,10 @@ function PolarisRedesignApp() {
         ) : screen === "anchor" ? (
           <div style={{ height: "100%" }}>
             <AnchorPage />
+          </div>
+        ) : EMBED_SCREENS[screen] ? (
+          <div style={{ height: "100%" }}>
+            {(() => { const C = EMBED_SCREENS[screen]; return <C />; })()}
           </div>
         ) : (
           <EmptyState
