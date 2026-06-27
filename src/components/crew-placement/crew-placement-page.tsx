@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import {
   Users, BadgeCheck, FileText, Wallet, FolderOpen, LayoutTemplate, Plus, Search,
-  Ship, XCircle, Pencil, Anchor as AnchorIcon, AlertTriangle, ChevronLeft, Loader2, Megaphone,
+  Ship, XCircle, Pencil, Anchor as AnchorIcon, AlertTriangle, ChevronLeft, ChevronRight, Loader2, Megaphone,
 } from "lucide-react";
 
 type Tab = "roster" | "vacancies" | "certs" | "contracts" | "payroll" | "documents" | "templates";
@@ -82,7 +82,7 @@ export function CrewPlacementPage() {
       db().from("crew_placement_certs").select("*, crew:placed_crew(full_name)").order("expiry_date", { ascending: true }),
       db().from("crew_contracts").select("*, crew:placed_crew(full_name), yacht:yachts(vessel_name)").order("created_at", { ascending: false }),
       db().from("crew_payslips").select("*, crew:placed_crew(full_name)").order("period_month", { ascending: false }),
-      db().from("crew_placement_documents").select("*, crew:placed_crew(full_name)").order("created_at", { ascending: false }),
+      db().from("crew_placement_documents").select("*, crew:placed_crew(full_name, yacht_id, yacht:yachts(vessel_name))").order("created_at", { ascending: false }),
       db().from("crew_placement_templates").select("*").order("kind"),
       db().from("crew_vacancies").select("*, yacht:yachts(vessel_name), filled:placed_crew!crew_vacancies_filled_by_fkey(full_name)").order("created_at", { ascending: false }),
     ]);
@@ -612,40 +612,109 @@ function Payroll({ payslips, crew, templates, reload }: any) {
 }
 
 // ── Documents ────────────────────────────────────────────────────────────────
+const POOL_KEY = "Unassigned / Pool";
 function Documents({ docs, crew, reload }: { docs: any[]; crew: any[]; reload: () => Promise<void> }) {
+  // Folder browser: Vessel → Crew → Documents.
+  const [vessel, setVessel] = useState<string | null>(null);
+  const [crewSel, setCrewSel] = useState<{ id: string; name: string } | null>(null);
   const [add, setAdd] = useState(false);
-  const blank = { placed_crew_id: "", doc_type: "cv", title: "" };
+
+  // Build the vessel → crew → docs tree.
+  const tree = useMemo(() => {
+    const m = new Map<string, Map<string, { name: string; docs: any[] }>>();
+    for (const d of docs) {
+      const v = d.crew?.yacht?.vessel_name ?? POOL_KEY;
+      const cid = d.placed_crew_id;
+      const cname = d.crew?.full_name ?? "Unknown";
+      if (!m.has(v)) m.set(v, new Map());
+      const cm = m.get(v)!;
+      if (!cm.has(cid)) cm.set(cid, { name: cname, docs: [] });
+      cm.get(cid)!.docs.push(d);
+    }
+    return m;
+  }, [docs]);
+
   async function save(f: any) {
-    const row = { ...f }; Object.keys(row).forEach((k) => row[k] === "" && (row[k] = null));
+    const row = { placed_crew_id: crewSel?.id, doc_type: f.doc_type || null, title: f.title || null };
     const { error } = await db().from("crew_placement_documents").insert(row);
     if (error) return toast.error(error.message);
-    toast.success("Document recorded"); setAdd(false); await reload();
+    toast.success("Document added"); setAdd(false); await reload();
   }
+
+  const Crumb = ({ label, onClick, last }: { label: string; onClick?: () => void; last?: boolean }) => (
+    <span className="inline-flex items-center gap-1">
+      <button disabled={last} onClick={onClick} className={last ? "text-foreground font-medium" : "text-muted-foreground hover:text-foreground"}>{label}</button>
+      {!last && <ChevronRight className="h-3 w-3 text-muted-foreground/50" />}
+    </span>
+  );
+
+  const FolderCard = ({ icon, name, sub, onClick }: { icon: React.ReactNode; name: string; sub: string; onClick: () => void }) => (
+    <button onClick={onClick} className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 text-left transition hover:border-primary/40 hover:bg-card/80">
+      {icon}
+      <div className="min-w-0"><div className="text-sm font-medium truncate">{name}</div><div className="text-[11px] text-muted-foreground">{sub}</div></div>
+    </button>
+  );
+
   return (
-    <div className="space-y-3">
-      <div className="flex justify-end"><Button size="sm" className="h-8 gap-1.5" onClick={() => setAdd(true)}><Plus className="h-3.5 w-3.5" /> Add Document</Button></div>
-      <div className="rounded-lg border border-border overflow-hidden overflow-x-auto">
-        <table className="w-full text-sm min-w-[560px]">
-          <thead><tr className="bg-muted/40 border-b border-border">{["Crew", "Type", "Title", "Added"].map((h) => <th key={h} className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>)}</tr></thead>
-          <tbody className="divide-y divide-border/50">
-            {docs.length === 0 ? <tr><td colSpan={4} className="px-3 py-10 text-center text-sm text-muted-foreground">No documents yet. (File upload arrives in Phase 2.)</td></tr> :
-              docs.map((d) => (
+    <div className="space-y-4">
+      {/* Breadcrumb */}
+      <div className="flex items-center gap-1 text-sm">
+        <Crumb label="All Vessels" onClick={() => { setVessel(null); setCrewSel(null); }} last={!vessel} />
+        {vessel && <Crumb label={vessel} onClick={() => setCrewSel(null)} last={!crewSel} />}
+        {crewSel && <Crumb label={crewSel.name} last />}
+        {crewSel && <Button size="sm" className="h-7 gap-1.5 ml-auto" onClick={() => setAdd(true)}><Plus className="h-3.5 w-3.5" /> Add Document</Button>}
+      </div>
+
+      {/* Level 0: vessels */}
+      {!vessel && (
+        tree.size === 0 ? <Empty msg="No documents yet. Open a crew member's profile, or add documents per vessel here." /> : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {Array.from(tree.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([v, cm]) => {
+              const docCount = Array.from(cm.values()).reduce((s, c) => s + c.docs.length, 0);
+              return <FolderCard key={v} onClick={() => setVessel(v)}
+                icon={<div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/15"><Ship className="h-5 w-5 text-primary" /></div>}
+                name={v} sub={`${cm.size} crew · ${docCount} document${docCount === 1 ? "" : "s"}`} />;
+            })}
+          </div>
+        )
+      )}
+
+      {/* Level 1: crew within a vessel */}
+      {vessel && !crewSel && (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from(tree.get(vessel)?.entries() ?? []).sort((a, b) => a[1].name.localeCompare(b[1].name)).map(([cid, c]) => (
+            <FolderCard key={cid} onClick={() => setCrewSel({ id: cid, name: c.name })}
+              icon={<div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/15"><FolderOpen className="h-5 w-5 text-amber-400" /></div>}
+              name={c.name} sub={`${c.docs.length} document${c.docs.length === 1 ? "" : "s"}`} />
+          ))}
+        </div>
+      )}
+
+      {/* Level 2: documents for the crew member */}
+      {crewSel && (
+        <div className="rounded-lg border border-border overflow-hidden">
+          <table className="w-full text-sm">
+            <thead><tr className="bg-muted/40 border-b border-border">{["Type", "Title", "Added"].map((h) => <th key={h} className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>)}</tr></thead>
+            <tbody className="divide-y divide-border/50">
+              {(tree.get(vessel!)?.get(crewSel.id)?.docs ?? []).map((d) => (
                 <tr key={d.id} className="hover:bg-muted/10">
-                  <td className="px-3 py-2 text-xs font-medium">{d.crew?.full_name ?? "—"}</td>
-                  <td className="px-3 py-2 text-xs capitalize">{d.doc_type}</td>
+                  <td className="px-3 py-2"><span className="inline-flex items-center gap-1.5 text-xs"><FileText className="h-3.5 w-3.5 text-muted-foreground" /><span className="capitalize">{d.doc_type}</span></span></td>
                   <td className="px-3 py-2 text-xs">{d.title}</td>
                   <td className="px-3 py-2 text-xs text-muted-foreground">{fmtDate(d.created_at)}</td>
                 </tr>
               ))}
-          </tbody>
-        </table>
-      </div>
-      {add && <SimpleAdd title="Add Document" onClose={() => setAdd(false)} onSave={save} init={blank}
-        fields={[{ k: "placed_crew_id", label: "Crew", type: "crew" }, { k: "doc_type", label: "Type" }, { k: "title", label: "Title" }]}
-        crew={crew} required={["placed_crew_id", "title"]} />}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {add && crewSel && <SimpleAdd title={`Add Document — ${crewSel.name}`} onClose={() => setAdd(false)} onSave={save}
+        init={{ doc_type: "cv", title: "" }} fields={[{ k: "doc_type", label: "Type" }, { k: "title", label: "Title" }]}
+        crew={[]} required={["title"]} />}
     </div>
   );
 }
+function Empty({ msg }: { msg: string }) { return <div className="rounded-lg border border-dashed border-border py-12 text-center text-sm text-muted-foreground">{msg}</div>; }
 
 // ── Templates ────────────────────────────────────────────────────────────────
 function Templates({ templates, reload }: { templates: any[]; reload: () => Promise<void> }) {
