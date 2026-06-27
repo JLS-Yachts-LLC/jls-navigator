@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { Route } from "@/routes/_app.esign.$documentId";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchAllRows } from "@/lib/fetch-all";
 import { useAuth } from "@/lib/auth";
@@ -33,9 +32,9 @@ const EVENT_ICON: Record<string, React.ReactNode> = {
 };
 const dt = (d: string | null) => d ? new Date(d).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
 
-export function EsignDetailPage() {
-  const { documentId } = Route.useParams();
+export function EsignDetailPage({ documentId, onBack }: { documentId: string; onBack?: () => void }) {
   const navigate = useNavigate();
+  const back = onBack ?? (() => navigate({ to: "/esign" }));
   const { user } = useAuth();
   const [doc, setDoc] = useState<Doc | null>(null);
   const [events, setEvents] = useState<Event[]>([]);
@@ -52,7 +51,7 @@ export function EsignDetailPage() {
       (supabase as any).from("esign_documents").select("*").eq("id", documentId).maybeSingle(),
       fetchAllRows(() => (supabase as any).from("esign_events").select("*").eq("document_id", documentId).order("created_at", { ascending: false })),
     ]);
-    if (dRes.error || !dRes.data) { toast.error("Document not found"); navigate({ to: "/esign" }); return; }
+    if (dRes.error || !dRes.data) { toast.error("Document not found"); back(); return; }
     setDoc(dRes.data as Doc);
     setEvents((eRes.data ?? []) as Event[]);
     setLoading(false);
@@ -85,7 +84,7 @@ export function EsignDetailPage() {
     <div className="flex h-full flex-col">
       <header className="border-b border-border bg-card/40 px-6 py-4 space-y-3">
         <div className="flex items-center gap-3 text-sm">
-          <button onClick={() => navigate({ to: "/esign" })} className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition"><ArrowLeft className="h-4 w-4" /> Documents</button>
+          <button onClick={() => back()} className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition"><ArrowLeft className="h-4 w-4" /> Documents</button>
           <span className="text-muted-foreground/40">/</span>
           <span className="font-mono text-xs text-muted-foreground">{doc.reference ?? "—"}</span>
         </div>

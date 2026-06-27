@@ -2,17 +2,28 @@ import { useState } from "react";
 import { FileSignature, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { EsignPage } from "@/components/esign/esign-page";
+import { EsignDetailPage } from "@/components/esign/esign-detail-page";
 import { FormsPage } from "@/components/anchor/forms-page";
 
 /** Anchor — Documents (e-Sign) + Digital Forms, as tabs. */
 const TABS = [
-  { key: "documents", label: "Documents", icon: FileSignature, Comp: EsignPage },
-  { key: "forms", label: "Forms", icon: FileText, Comp: FormsPage },
+  { key: "documents", label: "Documents", icon: FileSignature },
+  { key: "forms", label: "Forms", icon: FileText },
 ] as const;
 
 export function AnchorPage() {
   const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("documents");
-  const Active = TABS.find((t) => t.key === tab)?.Comp ?? EsignPage;
+  const [openDocId, setOpenDocId] = useState<string | null>(null);
+
+  // Document detail renders INLINE (stays in the Beta view instead of routing away).
+  if (openDocId) {
+    return (
+      <div className="flex h-full flex-col">
+        <EsignDetailPage documentId={openDocId} onBack={() => setOpenDocId(null)} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-1 border-b border-border/60 bg-card/30 px-4">
@@ -34,7 +45,7 @@ export function AnchorPage() {
         })}
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
-        <Active />
+        {tab === "documents" ? <EsignPage onOpenDocument={setOpenDocId} /> : <FormsPage />}
       </div>
     </div>
   );

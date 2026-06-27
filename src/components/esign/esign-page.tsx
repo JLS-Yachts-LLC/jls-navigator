@@ -21,7 +21,7 @@ type Doc = {
 const EMPTY = { title: "", description: "", signer_name: "", signer_email: "", message: "" };
 const fmt = (d: string | null) => d ? new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—";
 
-export function EsignPage() {
+export function EsignPage({ onOpenDocument }: { onOpenDocument?: (id: string) => void } = {}) {
   const { user } = useAuth();
   const [rows, setRows] = useState<Doc[]>([]);
   const [loading, setLoading] = useState(true);
@@ -151,8 +151,12 @@ export function EsignPage() {
               <tbody>
                 {filtered.map(d => (
                   <tr key={d.id} className="border-b border-border/40 hover:bg-accent/20 transition-colors">
-                    <td className="px-4 py-3 whitespace-nowrap"><Link to="/esign/$documentId" params={{ documentId: d.id }} className="font-mono text-xs text-primary hover:underline">{d.reference ?? "—"}</Link></td>
-                    <td className="px-4 py-3"><Link to="/esign/$documentId" params={{ documentId: d.id }} className="font-medium hover:text-primary transition-colors line-clamp-1">{d.title}</Link></td>
+                    <td className="px-4 py-3 whitespace-nowrap">{onOpenDocument
+                      ? <button onClick={() => onOpenDocument(d.id)} className="font-mono text-xs text-primary hover:underline">{d.reference ?? "—"}</button>
+                      : <Link to="/esign/$documentId" params={{ documentId: d.id }} className="font-mono text-xs text-primary hover:underline">{d.reference ?? "—"}</Link>}</td>
+                    <td className="px-4 py-3">{onOpenDocument
+                      ? <button onClick={() => onOpenDocument(d.id)} className="font-medium hover:text-primary transition-colors line-clamp-1 text-left">{d.title}</button>
+                      : <Link to="/esign/$documentId" params={{ documentId: d.id }} className="font-medium hover:text-primary transition-colors line-clamp-1">{d.title}</Link>}</td>
                     <td className="px-4 py-3 whitespace-nowrap"><div className="leading-tight">{d.signer_name}</div><div className="text-xs text-muted-foreground">{d.signer_email}</div></td>
                     <td className="px-4 py-3"><span className={cn("rounded-full px-2.5 py-0.5 text-[10.5px] font-semibold", ESIGN_STATUS_COLOR[d.status] ?? "bg-muted text-muted-foreground")}>{ESIGN_STATUS_LABEL[d.status] ?? d.status}</span></td>
                     <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">{fmt(d.sent_at)}</td>
