@@ -30,7 +30,7 @@ function downloadCSV(filename: string, rows: Record<string, unknown>[]) {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type FinanceTab = "invoices" | "proforma" | "quotations" | "tracker" | "trackers";
+type FinanceTab = "dashboard" | "invoices" | "proforma" | "quotations" | "tracker" | "trackers";
 type TrackerDept = "crew" | "packages" | "it" | "procurement";
 
 type BillingStatus = "pending_review" | "pending_invoice" | "invoiced" | "not_billable";
@@ -1388,6 +1388,9 @@ function VisaTracker() {
   const [editingRow, setEditingRow] = useState<string | null>(null);
   const [editRef, setEditRef] = useState("");
   const [editAmount, setEditAmount] = useState("");
+  const [sortKey, setSortKey] = useState<string>("created_at");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [qboPay, setQboPay] = useState<Record<string, { status: string; balance: number }>>({});
 
   useEffect(() => { void load(); }, []);
 
@@ -1401,6 +1404,37 @@ function VisaTracker() {
     if (error) toast.error(error.message);
     else setItems((data ?? []) as TrackerVisa[]);
     setLoading(false);
+    // Match billed rows against the synced QBO invoices → live payment status (kept
+    // current by the 5-min sync). Looks up by the JLS invoice number (doc_number).
+    try {
+      const refs = Array.from(new Set(((data ?? []) as TrackerVisa[]).map(i => i.invoice_ref).filter(Boolean))) as string[];
+      if (refs.length) {
+        const { data: inv } = await (supabase as any).from("qbo_invoices")
+          .select("doc_number, status, balance").in("doc_number", refs);
+        const map: Record<string, { status: string; balance: number }> = {};
+        for (const r of (inv ?? [])) map[r.doc_number] = { status: r.status, balance: Number(r.balance ?? 0) };
+        setQboPay(map);
+      }
+    } catch { /* best-effort */ }
+  }
+
+  function toggleSort(key: string) {
+    if (sortKey === key) setSortDir(d => (d === "asc" ? "desc" : "asc"));
+    else { setSortKey(key); setSortDir("asc"); }
+  }
+  function sortVal(i: TrackerVisa, key: string): string {
+    switch (key) {
+      case "crew": return visaName(i).toLowerCase();
+      case "yacht": return (i.yacht?.vessel_name ?? "").toLowerCase();
+      case "nationality": return (i.nationality ?? "").toLowerCase();
+      case "visa_type": return (i.visa_type ?? "").toLowerCase();
+      case "submitted": return i.submitted_at ?? i.created_at ?? "";
+      case "status": return i.status ?? "";
+      case "billing": return i.billing_status ?? "";
+      case "invoice_ref": return i.invoice_ref ?? "";
+      case "amount": return String(i.invoice_amount ?? 0).padStart(12, "0");
+      default: return i.created_at ?? "";
+    }
   }
 
   const yachts = useMemo(() => {
@@ -1426,6 +1460,12 @@ function VisaTracker() {
     }
     return true;
   }), [items, filterYacht, filterBilling, filterStatus, q]);
+
+  const sorted = useMemo(() => {
+    const arr = [...filtered];
+    arr.sort((a, b) => { const av = sortVal(a, sortKey), bv = sortVal(b, sortKey); return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av); });
+    return arr;
+  }, [filtered, sortKey, sortDir]);
 
   const pendingFiltered = useMemo(() => filtered.filter(i => (i.billing_status ?? "pending_review") === "pending_invoice"), [filtered]);
   const selectedApps = useMemo(() => items.filter(i => selected.has(i.id)), [items, selected]);
@@ -1530,17 +1570,20 @@ function VisaTracker() {
                       });
                     }} />
                 </th>
-                {["Crew", "Yacht", "Nationality", "Visa Type", "Visa Ref", "Submitted", "Status", "Billing", "Invoice Ref", "Amount", "Actions"].map(col => (
-                  <th key={col} className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap">{col}</th>
+                {([["Crew", "crew"], ["Yacht", "yacht"], ["Nationality", "nationality"], ["Visa Type", "visa_type"], ["Visa Ref", null], ["Submitted", "submitted"], ["Status", "status"], ["Billing", "billing"], ["Invoice Ref", "invoice_ref"], ["Amount", "amount"], ["Actions", null]] as [string, string | null][]).map(([col, key]) => (
+                  <th key={col} onClick={() => key && toggleSort(key)}
+                    className={`px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap ${key ? "cursor-pointer select-none hover:text-foreground" : ""}`}>
+                    <span className="inline-flex items-center gap-1">{col}{key && sortKey === key && <span className="text-primary">{sortDir === "asc" ? "▲" : "▼"}</span>}</span>
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
               {loading ? (
                 <tr><td colSpan={12} className="px-3 py-10 text-center"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></td></tr>
-              ) : filtered.length === 0 ? (
+              ) : sorted.length === 0 ? (
                 <tr><td colSpan={12} className="px-3 py-10 text-center text-sm text-muted-foreground">No visa applications match the current filters.</td></tr>
-              ) : filtered.map(v => {
+              ) : sorted.map(v => {
                 const isEditing = editingRow === v.id;
                 const isSaving = saving === v.id;
                 const bs = (v.billing_status ?? "pending_review") as BillingStatus;
@@ -1569,7 +1612,18 @@ function VisaTracker() {
                       </span>
                     </td>
                     <td className="px-3 py-2"><BillingBadge status={bs} /></td>
-                    <td className="px-3 py-2 text-xs text-muted-foreground">{isEditing ? null : (v.invoice_ref ?? "—")}</td>
+                    <td className="px-3 py-2 text-xs text-muted-foreground">
+                      {isEditing ? null : v.invoice_ref ? (
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono">{v.invoice_ref}</span>
+                          {qboPay[v.invoice_ref] && (
+                            <span title="Live QuickBooks status" className={`inline-flex rounded-full px-1.5 py-0 text-[9px] font-semibold uppercase ${STATUS_COLOR[qboPay[v.invoice_ref].status] ?? "bg-muted/60 text-muted-foreground"}`}>
+                              {qboPay[v.invoice_ref].status}
+                            </span>
+                          )}
+                        </div>
+                      ) : "—"}
+                    </td>
                     <td className="px-3 py-2 text-xs text-muted-foreground">{isEditing ? null : (v.invoice_amount ? `AED ${v.invoice_amount.toLocaleString()}` : "—")}</td>
                     <td className="px-3 py-2">
                       <BillingActions
@@ -1707,46 +1761,79 @@ const STATUS_COLOR: Record<string, string> = {
   Closed: "bg-slate-500/15 text-slate-400", Rejected: "bg-red-500/15 text-red-400",
 };
 
+const PAGE_SIZE = 100;
+type SortCol = "doc_number" | "txn_date" | "due_date" | "customer_name" | "total_amt" | "status";
+
 function QboDocsTab({ docType }: { docType: "invoices" | "proforma" | "quotations" }) {
   const [rows, setRows] = useState<QboDoc[]>([]);
   const [loading, setLoading] = useState(true);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(0);
   const [q, setQ] = useState("");
   const [yacht, setYacht] = useState("all");
   const [year, setYear] = useState("2026");
   const [status, setStatus] = useState("all");
+  const [statuses, setStatuses] = useState<string[]>([]);
+  const [yachtOpts, setYachtOpts] = useState<{ id: string; vessel_name: string }[]>([]);
+  const [sortCol, setSortCol] = useState<SortCol>("txn_date");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [agg, setAgg] = useState({ value: 0, outstanding: 0 });
 
-  useEffect(() => { void load(); }, [docType, year]);
+  // Vessel + status filter options (distinct from the whole set, not just the page).
+  useEffect(() => {
+    (async () => {
+      const { data: ys } = await (supabase as any).from("yachts").select("id, vessel_name").eq("archive", false).order("vessel_name");
+      setYachtOpts(ys ?? []);
+      const { data: st } = await (supabase as any).from("qbo_invoices").select("status").eq("doc_type", DOC_TYPE[docType]).limit(2000);
+      setStatuses(Array.from(new Set((st ?? []).map((r: any) => r.status).filter(Boolean))).sort() as string[]);
+    })();
+  }, [docType]);
+
+  // Reset to first page whenever the query shape changes.
+  useEffect(() => { setRows([]); setPage(0); }, [docType, year, yacht, status, q, sortCol, sortDir]);
+  useEffect(() => { void load(); }, [docType, year, yacht, status, q, sortCol, sortDir, page]);
+
+  function applyFilters(qy: any) {
+    qy = qy.eq("doc_type", DOC_TYPE[docType]);
+    if (year !== "all") qy = qy.gte("txn_date", `${year}-01-01`).lte("txn_date", `${year}-12-31`);
+    if (yacht !== "all") qy = qy.eq("yacht_id", yacht);
+    if (status !== "all") qy = qy.eq("status", status);
+    if (q.trim()) qy = qy.or(`doc_number.ilike.%${q.trim()}%,customer_name.ilike.%${q.trim()}%`);
+    return qy;
+  }
 
   async function load() {
     setLoading(true);
-    let qy = (supabase as any).from("qbo_invoices")
-      .select("id, doc_number, txn_date, due_date, customer_name, total_amt, balance, status, yacht_id, line_items, yacht:yachts(vessel_name)")
-      .eq("doc_type", DOC_TYPE[docType]).order("txn_date", { ascending: false }).limit(1000);
-    if (year !== "all") qy = qy.gte("txn_date", `${year}-01-01`).lte("txn_date", `${year}-12-31`);
-    const { data, error } = await qy;
-    if (error) toast.error(error.message); else setRows((data ?? []) as QboDoc[]);
+    if (page === 0) {
+      const { count } = await applyFilters((supabase as any).from("qbo_invoices").select("id", { count: "exact", head: true }));
+      setTotal(count ?? 0);
+      // Totals across the whole filtered set (two columns only — light even for thousands).
+      const { data: sums } = await applyFilters((supabase as any).from("qbo_invoices").select("total_amt, balance")).limit(10000);
+      setAgg({
+        value: (sums ?? []).reduce((s: number, r: any) => s + (Number(r.total_amt) || 0), 0),
+        outstanding: (sums ?? []).reduce((s: number, r: any) => s + (Number(r.balance) || 0), 0),
+      });
+    }
+    const { data, error } = await applyFilters(
+      (supabase as any).from("qbo_invoices")
+        .select("id, doc_number, txn_date, due_date, customer_name, total_amt, balance, status, yacht_id, line_items, yacht:yachts(vessel_name)"))
+      .order(sortCol, { ascending: sortDir === "asc", nullsFirst: false })
+      .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
+    if (error) toast.error(error.message);
+    else setRows((prev) => page === 0 ? (data ?? []) : [...prev, ...(data ?? [])]);
     setLoading(false);
   }
 
-  const yachts = useMemo(() => Array.from(new Set(rows.map(r => r.yacht?.vessel_name).filter(Boolean))).sort() as string[], [rows]);
-  const statuses = useMemo(() => Array.from(new Set(rows.map(r => r.status).filter(Boolean))).sort() as string[], [rows]);
-
-  const filtered = useMemo(() => rows.filter(r => {
-    if (yacht !== "all" && r.yacht?.vessel_name !== yacht) return false;
-    if (status !== "all" && r.status !== status) return false;
-    if (q.trim()) {
-      const s = q.toLowerCase();
-      if (![r.doc_number, r.customer_name, r.yacht?.vessel_name].filter(Boolean).join(" ").toLowerCase().includes(s)) return false;
-    }
-    return true;
-  }), [rows, yacht, status, q]);
+  function toggleSort(col: SortCol) {
+    if (sortCol === col) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortCol(col); setSortDir(col === "customer_name" || col === "doc_number" || col === "status" ? "asc" : "desc"); }
+  }
 
   const totals = useMemo(() => ({
-    count: filtered.length,
-    value: filtered.reduce((s, r) => s + (r.total_amt ?? 0), 0),
-    outstanding: filtered.reduce((s, r) => s + (r.balance ?? 0), 0),
-  }), [filtered]);
+    value: rows.reduce((s, r) => s + (r.total_amt ?? 0), 0),
+    outstanding: rows.reduce((s, r) => s + (r.balance ?? 0), 0),
+  }), [rows]);
 
   async function viewPdf(id: string) {
     const t = await authToken();
@@ -1767,9 +1854,9 @@ function QboDocsTab({ docType }: { docType: "invoices" | "proforma" | "quotation
     <div className="space-y-3">
       <div className="grid grid-cols-3 gap-2.5">
         {[
-          { label: "Documents", value: totals.count },
-          { label: "Total Value", value: fmtAed(totals.value) },
-          { label: "Outstanding", value: fmtAed(totals.outstanding) },
+          { label: "Documents", value: total.toLocaleString() },
+          { label: "Total Value", value: fmtAed(agg.value) },
+          { label: "Outstanding", value: fmtAed(agg.outstanding) },
         ].map(s => (
           <div key={s.label} className="rounded-lg border border-border bg-card/60 px-3 py-2.5">
             <div className="text-lg font-bold text-foreground tabular-nums">{s.value}</div>
@@ -1794,7 +1881,7 @@ function QboDocsTab({ docType }: { docType: "invoices" | "proforma" | "quotation
           <SelectTrigger className="h-8 text-xs w-40"><SelectValue placeholder="All vessels" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Vessels</SelectItem>
-            {yachts.map(y => <SelectItem key={y} value={y}>{y}</SelectItem>)}
+            {yachtOpts.map(y => <SelectItem key={y.id} value={y.id}>{y.vessel_name}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={status} onValueChange={setStatus}>
@@ -1811,17 +1898,21 @@ function QboDocsTab({ docType }: { docType: "invoices" | "proforma" | "quotation
           <table className="w-full text-sm min-w-[820px]">
             <thead>
               <tr className="bg-muted/40 border-b border-border">
-                {["#", "Customer / Vessel", "Date", dueLabel, "Amount", "Status", ""].map(c => (
-                  <th key={c} className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap">{c}</th>
+                {([["doc_number", "#"], ["customer_name", "Customer / Vessel"], ["txn_date", "Date"], ["due_date", dueLabel], ["total_amt", "Amount"], ["status", "Status"]] as [SortCol, string][]).map(([col, label]) => (
+                  <th key={col} onClick={() => toggleSort(col)}
+                    className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap cursor-pointer select-none hover:text-foreground">
+                    <span className="inline-flex items-center gap-1">{label}{sortCol === col && <span className="text-primary">{sortDir === "asc" ? "▲" : "▼"}</span>}</span>
+                  </th>
                 ))}
+                <th className="px-3 py-2.5" />
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
-              {loading ? (
+              {loading && rows.length === 0 ? (
                 <tr><td colSpan={7} className="px-3 py-10 text-center"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></td></tr>
-              ) : filtered.length === 0 ? (
+              ) : rows.length === 0 ? (
                 <tr><td colSpan={7} className="px-3 py-10 text-center text-sm text-muted-foreground">No {docType === "quotations" ? "quotations" : docType === "proforma" ? "pro-formas" : "invoices"} match the filters.</td></tr>
-              ) : filtered.map(r => (
+              ) : rows.map(r => (
                 <>
                   <tr key={r.id} className="hover:bg-muted/10 cursor-pointer" onClick={() => setExpanded(expanded === r.id ? null : r.id)}>
                     <td className="px-3 py-2 text-xs font-mono whitespace-nowrap">{r.doc_number ?? "—"}</td>
@@ -1859,14 +1950,106 @@ function QboDocsTab({ docType }: { docType: "invoices" | "proforma" | "quotation
             </tbody>
           </table>
         </div>
-        {filtered.length > 0 && <div className="border-t border-border bg-muted/20 px-3 py-1.5 text-xs text-muted-foreground">Showing {filtered.length} of {rows.length} (max 1000 / year)</div>}
+        <div className="flex items-center justify-between border-t border-border bg-muted/20 px-3 py-1.5 text-xs text-muted-foreground">
+          <span>Showing {rows.length.toLocaleString()} of {total.toLocaleString()}</span>
+          {rows.length < total && (
+            <button onClick={() => setPage(p => p + 1)} disabled={loading}
+              className="rounded px-2 py-0.5 text-primary hover:bg-primary/10 disabled:opacity-50">
+              {loading ? "Loading…" : `Load more (${Math.min(PAGE_SIZE, total - rows.length)})`}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
+// ── Finance Dashboard (QBO invoice analytics) ─────────────────────────────────
+function FinanceDashboard() {
+  const [year, setYear] = useState("2026");
+  const [d, setD] = useState<any | null>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      const { data, error } = await (supabase as any).rpc("qbo_finance_dashboard", { p_year: year === "all" ? null : Number(year) });
+      if (error) toast.error(error.message); else setD(data);
+      setLoading(false);
+    })();
+  }, [year]);
+  const aed = (n: number) => `AED ${Number(n ?? 0).toLocaleString("en-AE", { maximumFractionDigits: 0 })}`;
+  if (loading || !d) return <div className="py-16 text-center"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></div>;
+  const collected = (d.invoiced_total ?? 0) - (d.outstanding_total ?? 0);
+  const pct = d.invoiced_total ? Math.round((collected / d.invoiced_total) * 100) : 0;
+  const maxMonth = Math.max(1, ...(d.by_month ?? []).map((m: any) => Number(m.invoiced) || 0));
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <h2 className="font-display text-sm font-semibold text-muted-foreground uppercase tracking-wide">Overview</h2>
+        <Select value={year} onValueChange={setYear}>
+          <SelectTrigger className="h-8 text-xs w-28"><SelectValue /></SelectTrigger>
+          <SelectContent><SelectItem value="all">All years</SelectItem>{["2026", "2025", "2024"].map(y => <SelectItem key={y} value={y}>{y}</SelectItem>)}</SelectContent>
+        </Select>
+      </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {[
+          { label: "Invoiced", value: aed(d.invoiced_total), sub: `${d.invoice_count} invoices`, accent: "text-foreground" },
+          { label: "Collected", value: aed(collected), sub: `${pct}% of invoiced`, accent: "text-emerald-400" },
+          { label: "Outstanding", value: aed(d.outstanding_total), sub: `${d.unpaid_count + d.partial_count} open`, accent: "text-amber-400" },
+          { label: "Overdue", value: aed(d.overdue_total), sub: `${d.overdue_count} invoices`, accent: "text-red-400" },
+        ].map(k => (
+          <div key={k.label} className="rounded-lg border border-border bg-card px-4 py-3">
+            <div className="text-[11px] uppercase tracking-wider text-muted-foreground">{k.label}</div>
+            <div className={`font-display text-2xl font-bold tabular-nums ${k.accent}`}>{k.value}</div>
+            <div className="text-[11px] text-muted-foreground mt-0.5">{k.sub}</div>
+          </div>
+        ))}
+      </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-lg border border-border bg-card p-4">
+          <h3 className="text-sm font-semibold mb-3">Status breakdown</h3>
+          {[["Paid", d.paid_count, "bg-emerald-500"], ["Unpaid", d.unpaid_count, "bg-amber-500"], ["Partial", d.partial_count, "bg-blue-500"], ["Overdue", d.overdue_count, "bg-red-500"]].map(([label, n, c]: any) => {
+            const w = d.invoice_count ? Math.round((n / d.invoice_count) * 100) : 0;
+            return (
+              <div key={label} className="mb-2">
+                <div className="flex justify-between text-xs mb-0.5"><span className="text-muted-foreground">{label}</span><span className="tabular-nums">{n} · {w}%</span></div>
+                <div className="h-2 rounded-full bg-muted/40 overflow-hidden"><div className={`h-full ${c}`} style={{ width: `${w}%` }} /></div>
+              </div>
+            );
+          })}
+        </div>
+        <div className="rounded-lg border border-border bg-card p-4">
+          <h3 className="text-sm font-semibold mb-3">Top clients by outstanding</h3>
+          <div className="space-y-1.5">
+            {(d.top_outstanding ?? []).length === 0 ? <p className="text-xs text-muted-foreground">Nothing outstanding 🎉</p> :
+              (d.top_outstanding ?? []).map((c: any) => (
+                <div key={c.customer_name} className="flex items-center justify-between text-xs">
+                  <span className="truncate pr-2">{c.customer_name ?? "—"} <span className="text-muted-foreground">({c.invoices})</span></span>
+                  <span className="tabular-nums font-medium text-amber-400">{aed(c.outstanding)}</span>
+                </div>
+              ))}
+          </div>
+        </div>
+      </div>
+      {(d.by_month ?? []).length > 0 && (
+        <div className="rounded-lg border border-border bg-card p-4">
+          <h3 className="text-sm font-semibold mb-3">Invoiced by month</h3>
+          <div className="flex items-end gap-2 h-32">
+            {(d.by_month ?? []).map((m: any) => (
+              <div key={m.m} className="flex-1 flex flex-col items-center justify-end gap-1" title={`${m.m}: ${aed(m.invoiced)}`}>
+                <div className="w-full rounded-t bg-primary/70" style={{ height: `${Math.max(2, Math.round((Number(m.invoiced) / maxMonth) * 100))}%` }} />
+                <span className="text-[9px] text-muted-foreground">{m.m.slice(5)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function FinancePage() {
-  const [tab, setTab] = useState<FinanceTab>("trackers");
+  const [tab, setTab] = useState<FinanceTab>("dashboard");
   const [syncing, setSyncing] = useState(false);
   const [lastSync, setLastSync] = useState<string | null>(null);
 
@@ -1921,6 +2104,13 @@ export function FinancePage() {
       <div className="flex-1 overflow-auto p-6 space-y-5">
         {/* Tabs */}
         <div className="flex items-center gap-1 border-b border-border">
+          <button
+            onClick={() => setTab("dashboard")}
+            className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition ${tab === "dashboard" ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+          >
+            <LayoutGrid className="h-3.5 w-3.5" />
+            Dashboard
+          </button>
           {/* Unified Invoice Tracker (all departments) */}
           <button
             onClick={() => setTab("trackers")}
@@ -1943,6 +2133,7 @@ export function FinancePage() {
         </div>
 
         {/* Tab content */}
+        {tab === "dashboard" && <FinanceDashboard />}
         {(tab === "trackers" || tab === "tracker") && <DeptTracker />}
         {tab === "invoices" && <QboDocsTab docType="invoices" />}
         {tab === "proforma" && <QboDocsTab docType="proforma" />}
