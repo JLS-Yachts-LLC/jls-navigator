@@ -732,18 +732,31 @@ function Contracts({ contracts, crew, yachts, templates, reload }: any) {
 }
 
 // ── Payroll ────────────────────────────────────────────────────────────────────
+const daysInMonth = (y: number, m: number) => new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+function overlapDays(s: string, e: string, mStart: Date, mEnd: Date): number {
+  const a = new Date(s) > mStart ? new Date(s) : mStart;
+  const b = new Date(e) < mEnd ? new Date(e) : mEnd;
+  return b < a ? 0 : Math.round((b.getTime() - a.getTime()) / 86400000) + 1;
+}
+
 function Payroll({ payslips, crew, templates, reload }: any) {
   const [add, setAdd] = useState(false);
+  const [run, setRun] = useState(false);
+  const [term, setTerm] = useState(false);
   const blank = { placed_crew_id: "", period_month: "", gross: "", net: "", currency: "USD", status: "draft" };
   async function save(f: any) {
     const row = { ...f, gross: f.gross ? Number(f.gross) : null, net: f.net ? Number(f.net) : null }; Object.keys(row).forEach((k) => row[k] === "" && (row[k] = null));
     const { error } = await db().from("crew_payslips").insert(row);
     if (error) return toast.error(error.message);
-    toast.success("Payslip created (PDF generation comes in Phase 2)"); setAdd(false); await reload();
+    toast.success("Payslip created"); setAdd(false); await reload();
   }
   return (
     <div className="space-y-3">
-      <div className="flex justify-end"><Button size="sm" className="h-8 gap-1.5" onClick={() => setAdd(true)}><Plus className="h-3.5 w-3.5" /> New Payslip</Button></div>
+      <div className="flex justify-end gap-2">
+        <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => setTerm(true)}><XCircle className="h-3.5 w-3.5" /> Final Pay</Button>
+        <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => setAdd(true)}><Plus className="h-3.5 w-3.5" /> New Payslip</Button>
+        <Button size="sm" className="h-8 gap-1.5" onClick={() => setRun(true)}><Wallet className="h-3.5 w-3.5" /> Run Payroll</Button>
+      </div>
       <div className="rounded-lg border border-border overflow-hidden overflow-x-auto">
         <table className="w-full text-sm min-w-[680px]">
           <thead><tr className="bg-muted/40 border-b border-border">{["Crew", "Period", "Gross", "Net", "Currency", "Status", ""].map((h) => <th key={h} className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>)}</tr></thead>
@@ -769,7 +782,107 @@ function Payroll({ payslips, crew, templates, reload }: any) {
           { k: "gross", label: "Gross", type: "number" }, { k: "net", label: "Net", type: "number" },
           { k: "currency", label: "Currency", type: "currency" }, { k: "status", label: "Status" },
         ]} crew={crew} templates={templates} required={["placed_crew_id", "period_month"]} />}
+      {run && <RunPayrollDialog crew={crew} payslips={payslips} onClose={() => setRun(false)} onDone={() => { setRun(false); void reload(); }} />}
+      {term && <TerminationDialog crew={crew} onClose={() => setTerm(false)} onDone={() => { setTerm(false); void reload(); }} />}
     </div>
+  );
+}
+
+function RunPayrollDialog({ crew, payslips, onClose, onDone }: { crew: any[]; payslips: any[]; onClose: () => void; onDone: () => void }) {
+  const thisMonth = new Date().toISOString().slice(0, 7);
+  const [month, setMonth] = useState(thisMonth);
+  const [busy, setBusy] = useState(false);
+  const eligible = crew.filter((c) => c.salary != null && ["active", "onboard", "on_leave"].includes(c.status));
+
+  async function execute() {
+    setBusy(true);
+    try {
+      const [y, m] = month.split("-").map(Number);
+      const mStart = new Date(Date.UTC(y, m - 1, 1)), mEnd = new Date(Date.UTC(y, m - 1, daysInMonth(y, m - 1)));
+      const periodIso = `${month}-01`;
+      // Unpaid leave overlapping this month, per crew.
+      const { data: leave } = await db().from("crew_leave").select("placed_crew_id, leave_type, start_date, end_date, status")
+        .eq("leave_type", "unpaid").neq("status", "cancelled").lte("start_date", mEnd.toISOString().slice(0, 10)).gte("end_date", mStart.toISOString().slice(0, 10));
+      const unpaidBy = new Map<string, number>();
+      for (const l of (leave ?? [])) unpaidBy.set(l.placed_crew_id, (unpaidBy.get(l.placed_crew_id) ?? 0) + overlapDays(l.start_date, l.end_date, mStart, mEnd));
+
+      const already = new Set(payslips.filter((p: any) => p.period_month === periodIso).map((p: any) => p.placed_crew_id));
+      const rows: any[] = [];
+      for (const c of eligible) {
+        if (already.has(c.id)) continue;
+        const gross = Number(c.salary);
+        const daily = (gross * 12) / 365;
+        const unpaid = unpaidBy.get(c.id) ?? 0;
+        const deduction = Math.round(daily * unpaid * 100) / 100;
+        rows.push({
+          placed_crew_id: c.id, period_month: periodIso, gross, net: Math.round((gross - deduction) * 100) / 100,
+          currency: c.currency ?? "USD", status: "issued",
+          deductions: unpaid > 0 ? [{ label: `Unpaid leave (${unpaid} day${unpaid === 1 ? "" : "s"})`, amount: deduction }] : [],
+        });
+      }
+      if (!rows.length) { toast.info("No new payslips to create (all eligible crew already have one this month)."); setBusy(false); return; }
+      const { error } = await db().from("crew_payslips").insert(rows);
+      if (error) { toast.error(error.message); setBusy(false); return; }
+      toast.success(`Payroll run — ${rows.length} payslip(s) created for ${month}`); onDone();
+    } catch (e: any) { toast.error(String(e?.message ?? e)); setBusy(false); }
+  }
+  return (
+    <Modal title="Run Payroll" onClose={onClose}
+      footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={execute} disabled={busy}>{busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} Run for {eligible.length} crew</Button></>}>
+      <Labeled label="Pay month"><input type="month" className={fieldCls} value={month} onChange={(e) => setMonth(e.target.value)} /></Labeled>
+      <p className="text-xs text-muted-foreground">Creates an <strong>issued</strong> payslip for each active crew member with a salary: gross = monthly salary, minus a daily-rate deduction for any <strong>unpaid leave</strong> in the month. Crew who already have a payslip this month are skipped. Generate the PDF from each row afterwards.</p>
+    </Modal>
+  );
+}
+
+function TerminationDialog({ crew, onClose, onDone }: { crew: any[]; onClose: () => void; onDone: () => void }) {
+  const [f, setF] = useState<any>({ placed_crew_id: "", term_date: new Date().toISOString().slice(0, 10), leave_days: "", notice_days: "" });
+  const [busy, setBusy] = useState(false);
+  const set = (k: string, v: any) => setF((p: any) => ({ ...p, [k]: v }));
+  const c = crew.find((x) => x.id === f.placed_crew_id);
+  const daily = c?.salary ? (Number(c.salary) * 12) / 365 : 0;
+  const leavePay = Math.round(daily * (Number(f.leave_days) || 0) * 100) / 100;
+  const noticePay = Math.round(daily * (Number(f.notice_days) || 0) * 100) / 100;
+  const total = leavePay + noticePay;
+
+  async function execute() {
+    if (!f.placed_crew_id) { toast.error("Select a crew member"); return; }
+    setBusy(true);
+    try {
+      const period = `${f.term_date.slice(0, 7)}-01`;
+      const { error } = await db().from("crew_payslips").insert({
+        placed_crew_id: f.placed_crew_id, period_month: period, gross: total, net: total,
+        currency: c?.currency ?? "USD", status: "issued",
+        additions: [
+          { label: `Leave payout (${f.leave_days || 0} days)`, amount: leavePay },
+          { label: `Notice payout (${f.notice_days || 0} days)`, amount: noticePay },
+        ],
+      });
+      if (error) { toast.error(error.message); setBusy(false); return; }
+      await db().from("placed_crew").update({ status: "inactive", updated_at: new Date().toISOString() }).eq("id", f.placed_crew_id);
+      toast.success("Final pay recorded · crew set inactive"); onDone();
+    } catch (e: any) { toast.error(String(e?.message ?? e)); setBusy(false); }
+  }
+  const aed = (n: number) => `${n.toLocaleString(undefined, { minimumFractionDigits: 2 })} ${c?.currency ?? ""}`;
+  return (
+    <Modal title="Termination — Final Pay" onClose={onClose}
+      footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={execute} disabled={busy} className="gap-1.5">{busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} Finalise</Button></>}>
+      <div className="grid grid-cols-2 gap-3">
+        <Labeled label="Crew"><select className={fieldCls} value={f.placed_crew_id} onChange={(e) => set("placed_crew_id", e.target.value)}><option value="">— select —</option>{crew.map((x: any) => <option key={x.id} value={x.id}>{x.full_name}</option>)}</select></Labeled>
+        <Labeled label="Termination date"><input type="date" className={fieldCls} value={f.term_date} onChange={(e) => set("term_date", e.target.value)} /></Labeled>
+        <Labeled label="Leave balance (days)"><input type="number" className={fieldCls} value={f.leave_days} onChange={(e) => set("leave_days", e.target.value)} /></Labeled>
+        <Labeled label="Notice (days)"><input type="number" className={fieldCls} value={f.notice_days} onChange={(e) => set("notice_days", e.target.value)} /></Labeled>
+      </div>
+      {c && (
+        <div className="rounded-lg border border-border bg-background divide-y divide-border/60 text-sm">
+          <div className="flex justify-between px-3 py-1.5"><span className="text-muted-foreground">Daily rate</span><span>{aed(Math.round(daily * 100) / 100)}</span></div>
+          <div className="flex justify-between px-3 py-1.5"><span className="text-muted-foreground">Leave payout</span><span>{aed(leavePay)}</span></div>
+          <div className="flex justify-between px-3 py-1.5"><span className="text-muted-foreground">Notice payout</span><span>{aed(noticePay)}</span></div>
+          <div className="flex justify-between px-3 py-2 font-semibold"><span>Final payment</span><span className="text-primary">{aed(total)}</span></div>
+        </div>
+      )}
+      <p className="text-[11px] text-muted-foreground">Records a final-pay payslip and sets the crew member to <strong>inactive</strong>. Generate the payslip PDF from the row afterwards.</p>
+    </Modal>
   );
 }
 
