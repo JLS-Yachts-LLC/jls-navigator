@@ -16,15 +16,16 @@ import { toast } from "sonner";
 import { ContractBuilder } from "@/components/crew-placement/contract-builder";
 import {
   Users, BadgeCheck, FileText, Wallet, FolderOpen, LayoutTemplate, Plus, Search,
-  Ship, XCircle, Pencil, Anchor as AnchorIcon, AlertTriangle, ChevronLeft, ChevronRight, ChevronDown, Loader2, Megaphone, Download,
+  Ship, XCircle, Pencil, Anchor as AnchorIcon, AlertTriangle, ChevronLeft, ChevronRight, ChevronDown, Loader2, Megaphone, Download, CalendarDays,
 } from "lucide-react";
 
-type Tab = "roster" | "vacancies" | "certs" | "contracts" | "payroll" | "documents" | "templates";
+type Tab = "roster" | "vacancies" | "certs" | "contracts" | "leave" | "payroll" | "documents" | "templates";
 const TABS: { key: Tab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { key: "roster", label: "Roster", icon: Users },
   { key: "vacancies", label: "Vacancies & Pool", icon: Megaphone },
   { key: "certs", label: "Certifications", icon: BadgeCheck },
   { key: "contracts", label: "Contracts", icon: FileText },
+  { key: "leave", label: "Leave & Rotation", icon: CalendarDays },
   { key: "payroll", label: "Payroll", icon: Wallet },
   { key: "documents", label: "Documents", icon: FolderOpen },
   { key: "templates", label: "Templates", icon: LayoutTemplate },
@@ -155,6 +156,7 @@ export function CrewPlacementPage() {
             {tab === "vacancies" && <Vacancies vacancies={vacancies} crew={crew} yachts={yachts} reload={loadAll} onOpen={setOpenCrewId} />}
             {tab === "certs" && <Certs certs={certs} crew={crew} reload={loadAll} />}
             {tab === "contracts" && <Contracts contracts={contracts} crew={crew} yachts={yachts} templates={templates} reload={loadAll} />}
+            {tab === "leave" && <LeaveRotation crew={crew} />}
             {tab === "payroll" && <Payroll payslips={payslips} crew={crew} templates={templates} reload={loadAll} />}
             {tab === "documents" && <Documents docs={docs} crew={crew} reload={loadAll} />}
             {tab === "templates" && <Templates templates={templates} reload={loadAll} />}
@@ -494,6 +496,119 @@ function ProfileList({ title, onAdd, cols, rows, empty }: { title: string; onAdd
         </table>
       </div>
     </div>
+  );
+}
+
+// ── Leave & Rotation ──────────────────────────────────────────────────────────
+const LEAVE_TYPES = ["rotation", "paid", "unpaid", "travel", "other"];
+const LEAVE_COLOR: Record<string, string> = {
+  rotation: "bg-violet-500", paid: "bg-emerald-500", unpaid: "bg-slate-500", travel: "bg-blue-500", other: "bg-amber-500",
+};
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function dayOfYear(d: Date) { return (Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) - Date.UTC(d.getUTCFullYear(), 0, 1)) / 86400000; }
+function daysBetween(a: string, b: string) { return Math.max(1, Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86400000) + 1); }
+
+function LeaveRotation({ crew }: { crew: any[] }) {
+  const [year, setYear] = useState(String(new Date().getUTCFullYear()));
+  const [rows, setRows] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [add, setAdd] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    const { data } = await db().from("crew_leave")
+      .select("*, crew:placed_crew(full_name, rank)")
+      .gte("start_date", `${year}-01-01`).lte("start_date", `${year}-12-31`).order("start_date");
+    setRows(data ?? []); setLoading(false);
+  }
+  useEffect(() => { void load(); }, [year]);
+
+  // Group leave by crew for the Gantt.
+  const byCrew = useMemo(() => {
+    const m = new Map<string, { name: string; rank: string; items: any[] }>();
+    for (const r of rows) {
+      if (!m.has(r.placed_crew_id)) m.set(r.placed_crew_id, { name: r.crew?.full_name ?? "Crew", rank: r.crew?.rank ?? "", items: [] });
+      m.get(r.placed_crew_id)!.items.push(r);
+    }
+    return Array.from(m.values());
+  }, [rows]);
+
+  const now = new Date();
+  const onLeaveNow = rows.filter((r) => r.status !== "cancelled" && new Date(r.start_date) <= now && new Date(r.end_date) >= now).length;
+  const totalDays = rows.filter((r) => r.status !== "cancelled").reduce((s, r) => s + (Number(r.days) || daysBetween(r.start_date, r.end_date)), 0);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <div className="grid grid-cols-3 gap-2.5 flex-1 max-w-xl">
+          {[{ l: "On leave now", v: onLeaveNow }, { l: "Leave periods", v: rows.length }, { l: "Total days", v: totalDays }].map((k) => (
+            <div key={k.l} className="rounded-lg border border-border bg-card px-3 py-2"><div className="text-lg font-bold">{k.v}</div><div className="text-[11px] text-muted-foreground">{k.l}</div></div>
+          ))}
+        </div>
+        <select value={year} onChange={(e) => setYear(e.target.value)} className="h-8 rounded-md border border-border bg-background px-2 text-xs ml-auto">
+          {["2027", "2026", "2025"].map((y) => <option key={y}>{y}</option>)}
+        </select>
+        <Button size="sm" className="h-8 gap-1.5" onClick={() => setAdd(true)}><Plus className="h-3.5 w-3.5" /> Schedule Leave</Button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3 text-[11px]">
+        {LEAVE_TYPES.map((t) => <span key={t} className="inline-flex items-center gap-1.5"><span className={`h-2.5 w-2.5 rounded-full ${LEAVE_COLOR[t]}`} /> <span className="capitalize text-muted-foreground">{t}</span></span>)}
+      </div>
+
+      {/* Year Gantt */}
+      <div className="rounded-lg border border-border overflow-hidden">
+        <div className="flex border-b border-border bg-muted/40 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <div className="w-44 shrink-0 px-3 py-2">Crew</div>
+          <div className="flex flex-1">{MONTHS.map((m) => <div key={m} className="flex-1 border-l border-border/40 px-1 py-2 text-center">{m}</div>)}</div>
+        </div>
+        {loading ? <div className="py-10 text-center"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></div> :
+          byCrew.length === 0 ? <div className="py-10 text-center text-sm text-muted-foreground">No leave scheduled for {year}.</div> :
+          byCrew.map((c, i) => (
+            <div key={i} className="flex items-center border-b border-border/40 last:border-0 hover:bg-muted/10">
+              <div className="w-44 shrink-0 px-3 py-2"><div className="text-xs font-medium truncate">{c.name}</div><div className="text-[10px] text-muted-foreground truncate">{c.rank}</div></div>
+              <div className="relative flex-1 h-8">
+                {MONTHS.map((_, mi) => <div key={mi} className="absolute top-0 bottom-0 border-l border-border/30" style={{ left: `${(mi / 12) * 100}%` }} />)}
+                {c.items.filter((it) => it.status !== "cancelled").map((it) => {
+                  const s = new Date(it.start_date), e = new Date(it.end_date);
+                  const left = (dayOfYear(s) / 365) * 100;
+                  const width = Math.max(1.2, ((dayOfYear(e) - dayOfYear(s) + 1) / 365) * 100);
+                  return <div key={it.id} title={`${it.leave_type}: ${it.start_date} → ${it.end_date}`}
+                    className={`absolute top-1.5 h-5 rounded ${LEAVE_COLOR[it.leave_type] ?? "bg-muted"} opacity-80`} style={{ left: `${left}%`, width: `${width}%` }} />;
+                })}
+              </div>
+            </div>
+          ))}
+      </div>
+
+      {add && <ScheduleLeaveDialog crew={crew} onClose={() => setAdd(false)} onDone={() => { setAdd(false); void load(); }} />}
+    </div>
+  );
+}
+function ScheduleLeaveDialog({ crew, onClose, onDone }: { crew: any[]; onClose: () => void; onDone: () => void }) {
+  const [f, setF] = useState<any>({ placed_crew_id: "", leave_type: "rotation", start_date: "", end_date: "", accrues: false, status: "scheduled", note: "" });
+  const [busy, setBusy] = useState(false);
+  const set = (k: string, v: any) => setF((p: any) => ({ ...p, [k]: v }));
+  const days = f.start_date && f.end_date ? daysBetween(f.start_date, f.end_date) : 0;
+  async function submit() {
+    if (!f.placed_crew_id || !f.start_date || !f.end_date) { toast.error("Crew, start and end are required"); return; }
+    setBusy(true);
+    const { error } = await db().from("crew_leave").insert({ ...f, days, note: f.note || null });
+    if (error) { toast.error(error.message); setBusy(false); return; }
+    toast.success("Leave scheduled"); onDone();
+  }
+  return (
+    <Modal title="Schedule Leave" onClose={onClose}
+      footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={submit} disabled={busy}>Schedule{days ? ` · ${days} days` : ""}</Button></>}>
+      <div className="grid grid-cols-2 gap-3">
+        <Labeled label="Crew"><select className={fieldCls} value={f.placed_crew_id} onChange={(e) => set("placed_crew_id", e.target.value)}><option value="">— select —</option>{crew.map((c: any) => <option key={c.id} value={c.id}>{c.full_name}</option>)}</select></Labeled>
+        <Labeled label="Type"><select className={fieldCls} value={f.leave_type} onChange={(e) => set("leave_type", e.target.value)}>{LEAVE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}</select></Labeled>
+        <Labeled label="Start"><input type="date" className={fieldCls} value={f.start_date} onChange={(e) => set("start_date", e.target.value)} /></Labeled>
+        <Labeled label="End"><input type="date" className={fieldCls} value={f.end_date} onChange={(e) => set("end_date", e.target.value)} /></Labeled>
+        <Labeled label="Accrues leave"><select className={fieldCls} value={String(f.accrues)} onChange={(e) => set("accrues", e.target.value === "true")}><option value="false">No</option><option value="true">Yes</option></select></Labeled>
+        <Labeled label="Status"><select className={fieldCls} value={f.status} onChange={(e) => set("status", e.target.value)}>{["scheduled", "taken", "cancelled"].map((s) => <option key={s}>{s}</option>)}</select></Labeled>
+        <div className="col-span-2"><Labeled label="Note"><input className={fieldCls} value={f.note} onChange={(e) => set("note", e.target.value)} /></Labeled></div>
+      </div>
+    </Modal>
   );
 }
 
