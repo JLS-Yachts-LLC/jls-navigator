@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
+import { ContractBuilder } from "@/components/crew-placement/contract-builder";
 import {
   Users, BadgeCheck, FileText, Wallet, FolderOpen, LayoutTemplate, Plus, Search,
   Ship, XCircle, Pencil, Anchor as AnchorIcon, AlertTriangle, ChevronLeft, ChevronRight, ChevronDown, Loader2, Megaphone, Download,
@@ -586,13 +587,7 @@ function CertUploadDialog({ crew, onClose, onDone }: { crew: any[]; onClose: () 
 // ── Contracts ────────────────────────────────────────────────────────────────
 function Contracts({ contracts, crew, yachts, templates, reload }: any) {
   const [add, setAdd] = useState(false);
-  const blank = { placed_crew_id: "", yacht_id: "", template_id: "", contract_type: "SEA", start_date: "", end_date: "", salary: "", currency: "USD", rotation: "", status: "draft" };
-  async function save(f: any) {
-    const row = { ...f, salary: f.salary ? Number(f.salary) : null }; Object.keys(row).forEach((k) => row[k] === "" && (row[k] = null));
-    const { error } = await db().from("crew_contracts").insert(row);
-    if (error) return toast.error(error.message);
-    toast.success("Contract created (PDF generation comes in Phase 2)"); setAdd(false); await reload();
-  }
+  void templates;
   return (
     <div className="space-y-3">
       <div className="flex justify-end"><Button size="sm" className="h-8 gap-1.5" onClick={() => setAdd(true)}><Plus className="h-3.5 w-3.5" /> New Contract</Button></div>
@@ -616,14 +611,7 @@ function Contracts({ contracts, crew, yachts, templates, reload }: any) {
           </tbody>
         </table>
       </div>
-      {add && <SimpleAdd title="New Contract" onClose={() => setAdd(false)} onSave={save} init={blank}
-        fields={[
-          { k: "placed_crew_id", label: "Crew", type: "crew" }, { k: "yacht_id", label: "Vessel", type: "yacht" },
-          { k: "template_id", label: "Template", type: "template", templateKind: "contract" }, { k: "contract_type", label: "Contract type" },
-          { k: "start_date", label: "Start", type: "date" }, { k: "end_date", label: "End", type: "date" },
-          { k: "salary", label: "Salary", type: "number" }, { k: "currency", label: "Currency", type: "currency" },
-          { k: "rotation", label: "Rotation" }, { k: "status", label: "Status" },
-        ]} crew={crew} yachts={yachts} templates={templates} required={["placed_crew_id"]} />}
+      {add && <ContractBuilder crew={crew} yachts={yachts} onClose={() => setAdd(false)} onSaved={() => { setAdd(false); void reload(); }} />}
     </div>
   );
 }
