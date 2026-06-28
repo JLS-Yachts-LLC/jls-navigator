@@ -4,11 +4,14 @@ import { cn } from "@/lib/utils";
 import { EsignPage } from "@/components/esign/esign-page";
 import { EsignDetailPage } from "@/components/esign/esign-detail-page";
 import { FormsPage } from "@/components/anchor/forms-page";
+import { SignatoriesPage } from "@/components/anchor/signatories-page";
+import { PenLine } from "lucide-react";
 
-/** Anchor — Documents (e-Sign) + Digital Forms, as tabs. */
+/** Anchor — Documents (e-Sign) + Digital Forms + Signatories, as tabs. */
 const TABS = [
   { key: "documents", label: "Documents", icon: FileSignature },
   { key: "forms", label: "Forms", icon: FileText },
+  { key: "signatories", label: "Signatories", icon: PenLine },
 ] as const;
 
 export function AnchorPage() {
@@ -45,7 +48,7 @@ export function AnchorPage() {
         })}
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
-        {tab === "documents" ? <EsignPage onOpenDocument={setOpenDocId} /> : <FormsPage />}
+        {tab === "documents" ? <EsignPage onOpenDocument={setOpenDocId} /> : tab === "signatories" ? <SignatoriesPage /> : <FormsPage />}
       </div>
     </div>
   );
