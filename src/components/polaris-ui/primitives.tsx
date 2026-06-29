@@ -141,7 +141,7 @@ export function SectionLabel({
         fontWeight: 600,
         letterSpacing: "0.08em",
         textTransform: "uppercase",
-        color: "rgba(201,168,76,0.7)",
+        color: "rgba(69,144,186,0.70)",
         marginBottom: 8,
         ...style,
       }}
@@ -186,7 +186,7 @@ export function EmptyState({
       <TIcon
         name={icon}
         size={40}
-        color="rgba(201,168,76,0.35)"
+        color="rgba(69,144,186,0.35)"
         style={{ display: "block", margin: "0 auto 12px" }}
       />
       <p
