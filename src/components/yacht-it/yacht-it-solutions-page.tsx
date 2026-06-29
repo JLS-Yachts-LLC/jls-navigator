@@ -1,33 +1,30 @@
 import { useState } from "react";
-import { Headset, Ship, KeyRound, Boxes, FileText, Cpu } from "lucide-react";
+import { Headset, Ship, KeyRound, Boxes, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ServiceDeskPage } from "@/components/service-desk/service-desk-page";
 import { ItYachtsPage } from "@/components/yacht-it/it-yachts-page";
 import { LicensingPage } from "@/components/licensing-page";
 import { InternalServicesPage } from "@/components/yacht-it/internal-services-page";
-import { YachtItPage } from "@/components/yacht-it/yacht-it-page";
 
 /**
- * Yacht IT Solutions — single sidebar entry that surfaces its sections as tabs
- * (instead of expanding the nav with nested lines). Each tab renders the existing
- * page component; the underlying routes (/it-tickets, /licensing, …) still work
- * for deep links. Only the active tab's component mounts (lazy data loads).
+ * Yacht IT Solutions — single sidebar entry that surfaces its sections as tabs.
+ * Each tab renders the existing page component; the underlying routes still work
+ * for deep links. Only the active tab mounts (lazy data loads).
+ *
+ * Subscriptions register (internal_services) is split by scope:
+ *   - Client Subscriptions and Services → subscriptions managed for client yachts
+ *   - JLS Yachts Internal Services       → JLS Yachts LLC's own vendor subscriptions
  */
 const TABS = [
-  { key: "service-desk", label: "Service Desk", icon: Headset, Comp: ServiceDeskPage },
-  { key: "it-yachts", label: "IT Yachts", icon: Ship, Comp: ItYachtsPage },
-  { key: "licensing", label: "Licensing", icon: KeyRound, Comp: LicensingPage },
-  // Client Subscriptions and Services — the client services/subscriptions register
-  // (internal_services table). The former IT-support contracts were migrated here.
-  { key: "client", label: "Client Subscriptions and Services", icon: FileText, Comp: InternalServicesPage },
-  // JLS Yachts Internal Services — JLS Yachts LLC's own bills/subscriptions
-  // (yacht_it_contracts table, now empty after the move).
-  { key: "internal", label: "JLS Yachts Internal Services", icon: Boxes, Comp: YachtItPage },
+  { key: "service-desk", label: "Service Desk", icon: Headset },
+  { key: "it-yachts", label: "IT Yachts", icon: Ship },
+  { key: "licensing", label: "Licensing", icon: KeyRound },
+  { key: "client", label: "Client Subscriptions and Services", icon: FileText },
+  { key: "internal", label: "JLS Yachts Internal Services", icon: Boxes },
 ] as const;
 
 export function YachtItSolutionsPage() {
   const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("service-desk");
-  const Active = TABS.find((t) => t.key === tab)?.Comp ?? ServiceDeskPage;
 
   return (
     <div className="flex h-full flex-col">
@@ -54,7 +51,11 @@ export function YachtItSolutionsPage() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto">
-        <Active />
+        {tab === "service-desk" && <ServiceDeskPage />}
+        {tab === "it-yachts" && <ItYachtsPage />}
+        {tab === "licensing" && <LicensingPage />}
+        {tab === "client" && <InternalServicesPage scope="client" />}
+        {tab === "internal" && <InternalServicesPage scope="internal" />}
       </div>
     </div>
   );

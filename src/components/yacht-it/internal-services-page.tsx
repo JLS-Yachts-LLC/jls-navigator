@@ -131,8 +131,11 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${map[status] ?? map.cancelled}`}>{label[status] ?? status}</span>;
 }
 
-export function InternalServicesPage() {
+export function InternalServicesPage({ scope = "client" }: { scope?: "client" | "internal" } = {}) {
   const { user } = useAuth();
+  // Same subscription register, split by scope: 'client' = subscriptions managed
+  // for client yachts; 'internal' = JLS Yachts LLC's own vendor subscriptions.
+  const isInternal = scope === "internal";
   const [rows, setRows] = useState<InternalService[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -161,7 +164,7 @@ export function InternalServicesPage() {
       .catch(() => {});
   }, []);
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load(); }, [scope]);
   // Yacht/Client picker options come from the IT Solutions client list (it_yachts).
   // Free text is still allowed for anything not yet on that list.
   useEffect(() => {
@@ -176,7 +179,7 @@ export function InternalServicesPage() {
   }, []);
   async function load() {
     setLoading(true);
-    const { data, error } = await (supabase as any).from("internal_services").select("*").order("service_name");
+    const { data, error } = await (supabase as any).from("internal_services").select("*").eq("scope", scope).order("service_name");
     if (error) toast.error(error.message);
     else setRows((data ?? []) as InternalService[]);
     setLoading(false);
@@ -268,7 +271,7 @@ export function InternalServicesPage() {
         if (error) throw error;
         toast.success("Service updated");
       } else {
-        const { error } = await (supabase as any).from("internal_services").insert([{ ...form, created_by: user?.id }]);
+        const { error } = await (supabase as any).from("internal_services").insert([{ ...form, scope, created_by: user?.id }]);
         if (error) throw error;
         toast.success("Service added");
       }
@@ -338,7 +341,7 @@ export function InternalServicesPage() {
       <header className="flex items-center justify-between border-b border-border/70 bg-card/30 px-6 py-3.5">
         <div>
           <div className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-muted-foreground/60">Yacht IT Solutions</div>
-          <h1 className="mt-0.5 font-display text-[1.25rem] font-semibold tracking-tight">Client Subscriptions and Services</h1>
+          <h1 className="mt-0.5 font-display text-[1.25rem] font-semibold tracking-tight">{isInternal ? "JLS Yachts Internal Services" : "Client Subscriptions and Services"}</h1>
         </div>
         <Button size="sm" onClick={openNew} className="h-9 gap-1.5 px-3.5 font-medium shadow-sm"><Plus className="h-3.5 w-3.5" /> Add Service</Button>
       </header>
