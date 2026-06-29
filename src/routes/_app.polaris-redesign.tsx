@@ -7,6 +7,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
+import { LeoPanel } from "@/components/leo/LeoPanel";
 import "@/components/polaris-ui/tokens.css";
 import { PolarisShell, type PolarisRole } from "@/components/polaris-ui/shell";
 import { ToastProvider } from "@/components/polaris-ui/feedback";
@@ -62,7 +63,7 @@ export const Route = createFileRoute("/_app/polaris-redesign")({
 const LAST_VESSEL = "polaris.redesign.lastVessel";
 
 function PolarisRedesignApp() {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const navigate = useNavigate();
   const { yachts, loading } = useYachts();
   const [screen, setScreen] = useState("dashboard");
@@ -115,11 +116,17 @@ function PolarisRedesignApp() {
             onSelect={pickVessel}
           />
         ) : screen === "dashboard" ? (
-          <PolarisDashboard
-            yacht={yacht}
-            onSwitchVessel={() => setSwitcher(true)}
-            onOpenReports={() => setScreen("visa-reports")}
-          />
+          <>
+            <LeoPanel
+              token={session?.access_token ?? ""}
+              userName={user?.email ?? ""}
+            />
+            <PolarisDashboard
+              yacht={yacht}
+              onSwitchVessel={() => setSwitcher(true)}
+              onOpenReports={() => setScreen("visa-reports")}
+            />
+          </>
         ) : screen === "crew" ? (
           <div style={{ height: "100%" }}>
             <CrewListPage />
