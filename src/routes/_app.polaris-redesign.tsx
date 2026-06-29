@@ -117,10 +117,12 @@ function PolarisRedesignApp() {
           />
         ) : screen === "dashboard" ? (
           <>
-            <LeoPanel
-              token={session?.access_token ?? ""}
-              userName={user?.email ?? ""}
-            />
+            {session?.access_token && (
+              <LeoPanel
+                token={session.access_token}
+                userName={user?.email ?? ""}
+              />
+            )}
             <PolarisDashboard
               yacht={yacht}
               onSwitchVessel={() => setSwitcher(true)}
