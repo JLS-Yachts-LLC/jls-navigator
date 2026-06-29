@@ -20,14 +20,15 @@
 import { getSpConfig, getGraphToken, resolveSpSite } from '@/lib/sharepoint-sync.server'
 import { supabaseAdmin } from '@/integrations/supabase/client.server'
 
-const GRAPH = 'https://graph.microsoft.com/v1.0'
+export const GRAPH = 'https://graph.microsoft.com/v1.0'
 
-// The three trackers in PortOperationsandAgency. We resolve each by filename at
-// runtime (drive search), so renames within the same library still work.
+// The three trackers in PortOperationsandAgency. These files get RE-DATED in place
+// (e.g. "…Acc 08June26" → "…Acc as of 28June26"), so we match on a STABLE name
+// prefix (normalized) rather than the full dated filename.
 export const VISA_WORKBOOKS = [
-  'Crew Visa Tracker 2026 10Jun26.xlsx',
-  'Visa Application Tracker 2026 10Jun26.xlsx',
-  '2026 Visa Application Tracker Acc 08June26.xlsx',
+  'Crew Visa Tracker 2026',
+  'Visa Application Tracker 2026',
+  '2026 Visa Application Tracker Acc',
 ]
 
 // Canonical field → header aliases (compared case-insensitively, spaces/punct stripped)
@@ -52,12 +53,12 @@ const FIELDS: FieldSpec[] = [
   { dbKey: 'arrival_date',       aliases: ['ARRIVAL'],                                  kind: 'date' },
   { dbKey: 'first_entry_expiry', aliases: ['1ST ENTRY EXPIRY', 'FIRST ENTRY EXPIRY', '1ST ENTRY'], kind: 'date' },
 ]
-const PASSPORT_ALIASES = ['PASSPORT', 'PASSPORT NO', 'PASSPORT NUMBER']
-const GIVEN_ALIASES = ['GIVEN NAME', 'FIRST NAME', 'NAME']
-const SURNAME_ALIASES = ['SURNAME', 'LAST NAME', 'FAMILY NAME']
+export const PASSPORT_ALIASES = ['PASSPORT', 'PASSPORT NO', 'PASSPORT NUMBER']
+export const GIVEN_ALIASES = ['GIVEN NAME', 'FIRST NAME', 'NAME']
+export const SURNAME_ALIASES = ['SURNAME', 'LAST NAME', 'FAMILY NAME']
 
-const norm = (s: unknown) => String(s ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '')
-const normName = (s: unknown) => String(s ?? '').toUpperCase().replace(/[^A-Z]/g, '')
+export const norm = (s: unknown) => String(s ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+export const normName = (s: unknown) => String(s ?? '').toUpperCase().replace(/[^A-Z]/g, '')
 
 /** YYYY-MM-DD (or ISO) → Excel serial date number (1900 date system). */
 function toExcelSerial(value: string): number | null {
@@ -74,28 +75,31 @@ function colLetters(idx: number): string {
   return s
 }
 
-async function gfetch(token: string, url: string, init?: RequestInit) {
+export async function gfetch(token: string, url: string, init?: RequestInit) {
   return fetch(url, {
     ...init,
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
   })
 }
 
-/** Resolve a workbook's driveItem id by filename within the site's drive. */
-async function resolveWorkbookId(token: string, siteId: string, filename: string): Promise<string | null> {
-  const q = filename.replace(/\.xlsx$/i, '')
-  const res = await gfetch(token, `${GRAPH}/sites/${siteId}/drive/root/search(q='${encodeURIComponent(q)}')?$select=id,name,file`)
+/** Resolve a workbook's driveItem id by a STABLE name prefix within the site's drive.
+ *  Tolerant of re-dating: matches the .xlsx whose normalized name starts with the prefix. */
+async function resolveWorkbookId(token: string, siteId: string, prefix: string): Promise<string | null> {
+  const prefixNorm = norm(prefix)
+  // Search a leading word of the prefix (drive search needs a query term).
+  const q = prefix.split(/\s+/).slice(0, 2).join(' ')
+  const res = await gfetch(token, `${GRAPH}/sites/${siteId}/drive/root/search(q='${encodeURIComponent(q)}')?$select=id,name,file&$top=200`)
   if (!res.ok) return null
-  const json: any = await res.json()
-  const items: any[] = json.value ?? []
-  const exact = items.find(i => norm(i.name) === norm(filename))
-  return (exact ?? items.find(i => i.file))?.id ?? null
+  const items: any[] = ((await res.json()) as any).value ?? []
+  const xlsx = items.filter(i => i.file && /\.xlsx$/i.test(i.name ?? ''))
+  const exact = xlsx.find(i => norm(i.name).startsWith(prefixNorm))
+  return (exact ?? xlsx[0])?.id ?? null
 }
 
-type SheetData = { name: string; headerRow: number; headers: string[]; values: any[][]; address: string }
+export type SheetData = { name: string; headerRow: number; headers: string[]; values: any[][]; address: string }
 
 /** GET a worksheet's used range (raw values). */
-async function readSheet(token: string, siteId: string, itemId: string, sheet: string): Promise<SheetData | null> {
+export async function readSheet(token: string, siteId: string, itemId: string, sheet: string): Promise<SheetData | null> {
   const res = await gfetch(
     token,
     `${GRAPH}/sites/${siteId}/drive/items/${itemId}/workbook/worksheets('${encodeURIComponent(sheet)}')/usedRange(valuesOnly=true)?$select=address,values`,
@@ -115,12 +119,12 @@ async function readSheet(token: string, siteId: string, itemId: string, sheet: s
   return { name: sheet, headerRow, headers: values[headerRow].map(norm), values, address: json.address ?? '' }
 }
 
-function findCol(headers: string[], aliases: string[]): number {
+export function findCol(headers: string[], aliases: string[]): number {
   const wanted = aliases.map(norm)
   return headers.findIndex(h => wanted.includes(h))
 }
 
-async function listSheets(token: string, siteId: string, itemId: string): Promise<string[]> {
+export async function listSheets(token: string, siteId: string, itemId: string): Promise<string[]> {
   const res = await gfetch(token, `${GRAPH}/sites/${siteId}/drive/items/${itemId}/workbook/worksheets?$select=name`)
   if (!res.ok) return []
   const json: any = await res.json()
