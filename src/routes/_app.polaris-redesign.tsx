@@ -97,8 +97,72 @@ function PolarisRedesignApp() {
     yachts.find((y) => y.id === selectedId) ?? null;
   const initials = (user?.email ?? "?").slice(0, 2).toUpperCase();
 
+  const [leoOpen, setLeoOpen] = useState(true);
+  const leoToken = session?.access_token ?? "";
+
   return (
     <ToastProvider>
+      {/* ── Leo floating panel — fixed bottom-right, outside shell flow ── */}
+      {leoToken && (
+        <div
+          style={{
+            position:  "fixed",
+            bottom:    24,
+            right:     24,
+            width:     leoOpen ? 420 : "auto",
+            zIndex:    9999,
+            display:   "flex",
+            flexDirection: "column",
+            alignItems: "flex-end",
+            gap:        0,
+            filter:    "drop-shadow(0 8px 32px rgba(0,0,0,0.55))",
+          }}
+        >
+          {leoOpen && (
+            <div style={{ width: "100%", marginBottom: 0 }}>
+              <LeoPanel
+                token={leoToken}
+                userName={user?.email ?? ""}
+              />
+            </div>
+          )}
+          {/* Toggle pill */}
+          <button
+            onClick={() => setLeoOpen(o => !o)}
+            style={{
+              marginTop:     leoOpen ? 6 : 0,
+              display:       "flex",
+              alignItems:    "center",
+              gap:            6,
+              background:    "#0D1520",
+              border:        "1px solid #1E4060",
+              borderRadius:  20,
+              padding:       "6px 14px 6px 10px",
+              cursor:        "pointer",
+              fontFamily:    "'Space Grotesk', sans-serif",
+              fontSize:      12,
+              fontWeight:    700,
+              color:         "#E8A020",
+              letterSpacing: "0.12em",
+              boxShadow:     "0 2px 12px rgba(0,0,0,0.4)",
+            }}
+          >
+            <span style={{
+              width: 7, height: 7, borderRadius: "50%",
+              background: "#E8A020", display: "inline-block",
+              animation: "pulse 2s ease-in-out infinite",
+            }} />
+            LEO
+            <span style={{
+              fontSize: 10, color: "#3A5570", fontWeight: 400,
+              marginLeft: 2,
+            }}>
+              {leoOpen ? "▾" : "▴"}
+            </span>
+          </button>
+        </div>
+      )}
+
       <PolarisShell
         role={role}
         active={screen}
@@ -116,19 +180,11 @@ function PolarisRedesignApp() {
             onSelect={pickVessel}
           />
         ) : screen === "dashboard" ? (
-          <>
-            {session?.access_token && (
-              <LeoPanel
-                token={session.access_token}
-                userName={user?.email ?? ""}
-              />
-            )}
-            <PolarisDashboard
-              yacht={yacht}
-              onSwitchVessel={() => setSwitcher(true)}
-              onOpenReports={() => setScreen("visa-reports")}
-            />
-          </>
+          <PolarisDashboard
+            yacht={yacht}
+            onSwitchVessel={() => setSwitcher(true)}
+            onOpenReports={() => setScreen("visa-reports")}
+          />
         ) : screen === "crew" ? (
           <div style={{ height: "100%" }}>
             <CrewListPage />
