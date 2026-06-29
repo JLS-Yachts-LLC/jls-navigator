@@ -10,7 +10,7 @@ import {
   Wallet, Receipt, TrendingUp, PiggyBank, FolderOpen, Award, Download,
   MessageSquare, Lightbulb, BotMessageSquare, PenLine, Fuel, Contact,
 } from "lucide-react";
-import { Rocket, Plug, Trash2, History } from "lucide-react";
+import { Rocket, Plug, Trash2, History, RefreshCw } from "lucide-react";
 import { AdminSidebarSection } from "@/components/admin/AdminSidebarSection";
 import { useState, useMemo } from "react";
 import { PolarisLogo } from "@/components/brand/PolarisLogo";
@@ -76,6 +76,7 @@ const NAV: NavItem[] = [
       { label: "Crew List",    to: "/crew-immigration/crew",        icon: UserCircle2, flagKey: "crew-list" },
       { label: "Visas",        to: "/crew-immigration/visas",       icon: FileText, flagKey: "crew-visas" },
       { label: "Vessel Reports", to: "/crew-immigration/visas/vessel-reports", icon: BarChart3, flagKey: "crew-visas" },
+      { label: "Spreadsheet Sync", to: "/crew-immigration/visas/sync", icon: RefreshCw, flagKey: "crew-visas" },
       { label: "Sign On / Off", to: "/crew-immigration/sign-on-off", icon: LogIn, flagKey: "crew-signon" },
       { label: "Seaport Immigration", to: "/seaport", icon: Anchor, flagKey: "seaport" },
       { label: "Crew Documents", to: "/crew-immigration/documents", icon: ClipboardList, flagKey: "crew-documents" },
