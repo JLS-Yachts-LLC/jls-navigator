@@ -98,11 +98,13 @@ const INITIAL_STATE: WizardState = {
 
 type Props = {
   onClose?: () => void
+  /** Resume a specific draft (embedded use; otherwise read from ?draft= in the URL). */
+  draftId?: string | null
 }
 
 export const VISA_DRAFT_KEY = 'polaris.visaDraft'
 
-export default function NewApplicationWizard({ onClose }: Props) {
+export default function NewApplicationWizard({ onClose, draftId: draftIdProp }: Props) {
   const navigate = useNavigate()
   // Internal/JLS staff skip the client-portal-only Compliance step.
   const isStaff = useCanImpersonate()
@@ -121,7 +123,7 @@ export default function NewApplicationWizard({ onClose }: Props) {
   // Resume a specific draft from the list (?draft=<id>): load the saved row +
   // crew (+ passport) into wizard state so editing continues where it left off.
   useEffect(() => {
-    const draftId = new URLSearchParams(window.location.search).get('draft')
+    const draftId = draftIdProp ?? new URLSearchParams(window.location.search).get('draft')
     if (!draftId) return
     setDraftHandled(true)
     ;(async () => {
@@ -171,7 +173,7 @@ export default function NewApplicationWizard({ onClose }: Props) {
 
   function resumeDraft() { if (draft) setState(draft); setDraftHandled(true) }
   function startOver() { try { localStorage.removeItem(VISA_DRAFT_KEY) } catch {}; setState(INITIAL_STATE); setDraftHandled(true) }
-  function saveAndExit() { navigate({ to: '/crew-immigration/visas' }) } // draft already persisted
+  function saveAndExit() { if (onClose) onClose(); else navigate({ to: '/crew-immigration/visas' }) } // draft already persisted
 
   const onUpdate = useCallback((partial: Partial<WizardState>) => {
     setState(prev => ({ ...prev, ...partial }))
@@ -212,7 +214,7 @@ export default function NewApplicationWizard({ onClose }: Props) {
     setState(prev => (n <= Math.max(maxStep, prev.step) ? { ...prev, step: n } : prev))
   }, [maxStep])
 
-  const stepProps = { state, onUpdate, onNext, onBack }
+  const stepProps = { state, onUpdate, onNext, onBack, onDone: onClose }
 
   const countryName =
     state.step >= 2 && state.countryCode
@@ -417,7 +419,7 @@ export default function NewApplicationWizard({ onClose }: Props) {
       <div style={{ flex: 1, padding: '24px 32px 120px' }}>
         {(() => {
           const Comp = STEPS[state.step - 1]?.Comp
-          return Comp ? <Comp {...stepProps} /> : null
+          return Comp ? <Comp {...(stepProps as any)} /> : null
         })()}
       </div>
     </div>

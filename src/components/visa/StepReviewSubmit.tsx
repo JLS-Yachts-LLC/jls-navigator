@@ -29,6 +29,8 @@ interface Props {
   onUpdate: (partial: Partial<WizardState>) => void
   onNext: () => void
   onBack: () => void
+  /** When embedded (Beta), return to the inline list instead of route navigation. */
+  onDone?: () => void
 }
 
 const font = { fontFamily: 'Space Grotesk, sans-serif' }
@@ -71,7 +73,7 @@ const KV: React.FC<{ label: React.ReactNode; value: React.ReactNode }> = ({ labe
   </div>
 )
 
-export function StepReviewSubmit({ state, onUpdate, onNext, onBack }: Props) {
+export function StepReviewSubmit({ state, onUpdate, onNext, onBack, onDone }: Props) {
   const navigate = useNavigate()
   const [submitting, setSubmitting] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
@@ -339,7 +341,7 @@ export function StepReviewSubmit({ state, onUpdate, onNext, onBack }: Props) {
       try { localStorage.removeItem('polaris.visaDraft') } catch { /* ignore */ }
 
       toast.success('Visa application submitted.')
-      navigate({ to: '/crew-immigration/visas' })
+      if (onDone) onDone(); else navigate({ to: '/crew-immigration/visas' })
     } catch (err: any) {
       console.error('Visa submit error:', err)
       toast.error(err?.message ?? 'Failed to submit application.')

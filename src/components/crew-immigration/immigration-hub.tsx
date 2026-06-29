@@ -11,13 +11,12 @@ import { SignOnOffPage } from "@/components/crew-immigration/sign-on-off-page";
  * Only the active tab mounts.
  */
 const TABS = [
-  { key: "visa", label: "Visa", icon: FileText, Comp: VisaDashboard },
-  { key: "soso", label: "Sign On / Off", icon: LogIn, Comp: SignOnOffPage },
+  { key: "visa", label: "Visa", icon: FileText },
+  { key: "soso", label: "Sign On / Off", icon: LogIn },
 ] as const;
 
 export function ImmigrationHub() {
   const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("visa");
-  const Active = TABS.find((t) => t.key === tab)?.Comp ?? VisaDashboard;
 
   return (
     <div className="flex h-full flex-col">
@@ -43,7 +42,9 @@ export function ImmigrationHub() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto">
-        <Active />
+        {/* Embedded: the visa flow (New Application, detail) renders inline so it
+            stays inside the Beta shell instead of navigating to /_app routes. */}
+        {tab === "visa" ? <VisaDashboard embedded /> : <SignOnOffPage />}
       </div>
     </div>
   );

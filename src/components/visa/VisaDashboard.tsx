@@ -10,6 +10,8 @@ import ComplianceAlertBanner from './ComplianceAlertBanner'
 import { softDeleteEntity } from '@/lib/recycle-bin'
 import { VisaReportView } from './VisaReportView'
 import { VisaBulkUpload } from './VisaBulkUpload'
+import NewApplicationWizard from './NewApplicationWizard'
+import { VisaDetailPage } from './VisaDetailPage'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -187,9 +189,19 @@ const GRID = '1.6fr 1.3fr 1.2fr 120px 1.3fr 110px 96px'
 
 // ── Main Component ───────────────────────────────────────────────────────────
 
-export default function VisaDashboard() {
+export default function VisaDashboard({ embedded = false }: { embedded?: boolean } = {}) {
   const navigate = useNavigate()
   const { user } = useAuth()
+
+  // When embedded (e.g. the Beta Immigration screen), the New Application wizard
+  // and the application detail render INLINE here via `view` state instead of
+  // route navigation, so the flow never leaves the Beta shell.
+  const [view, setView] = useState<{ mode: "list" | "new" | "detail"; id?: string; draftId?: string }>({ mode: "list" })
+  const openNew = (draftId?: string) =>
+    embedded ? setView({ mode: "new", draftId }) : navigate({ to: (draftId ? `/crew-immigration/visas/new?draft=${draftId}` : "/crew-immigration/visas/new") as any })
+  const openDetail = (id: string) =>
+    embedded ? setView({ mode: "detail", id }) : navigate({ to: `/crew-immigration/visas/${id}` as any })
+  const backToList = () => { setView({ mode: "list" }); void loadAll() }
 
   const [applications, setApplications] = useState<VisaApplication[]>([])
   const [alerts, setAlerts]             = useState<ComplianceAlert[]>([])
@@ -412,6 +424,14 @@ export default function VisaDashboard() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
+  // Inline (Beta-embedded) New Application + detail — keeps the flow in the shell.
+  if (embedded && view.mode === "new") {
+    return <NewApplicationWizard onClose={backToList} draftId={view.draftId} />
+  }
+  if (embedded && view.mode === "detail" && view.id) {
+    return <VisaDetailPage visaId={view.id} onBack={backToList} onEditDraft={(id) => setView({ mode: "new", draftId: id })} />
+  }
+
   if (showReport) {
     return <VisaReportView applications={applications as any} vessels={vessels} onClose={() => setShowReport(false)} />
   }
@@ -453,7 +473,7 @@ export default function VisaDashboard() {
             ↑ Bulk Upload Visas
           </button>
           <button
-            onClick={() => navigate({ to: '/crew-immigration/visas/new' })}
+            onClick={() => openNew()}
             style={{
               background: COLORS.signal, color: COLORS.void, fontFamily: FONTS.display,
               fontWeight: 700, fontSize: 13, padding: '9px 18px', borderRadius: 8,
@@ -606,8 +626,8 @@ export default function VisaDashboard() {
                 role="button"
                 tabIndex={0}
                 title="Open application"
-                onClick={() => navigate({ to: `/crew-immigration/visas/${app.id}` as any })}
-                onKeyDown={e => { if (e.key === 'Enter') navigate({ to: `/crew-immigration/visas/${app.id}` as any }) }}
+                onClick={() => openDetail(app.id)}
+                onKeyDown={e => { if (e.key === 'Enter') openDetail(app.id) }}
                 onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = `${COLORS.signal}0F` }}
                 onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = idx % 2 === 1 ? `color-mix(in oklab, ${COLORS.deep} 25%, transparent)` : 'transparent' }}
                 style={{
@@ -694,13 +714,13 @@ export default function VisaDashboard() {
                     </>
                   )}
                   <button
-                    onClick={() => navigate({ to: `/crew-immigration/visas/${app.id}` as any })}
+                    onClick={() => openDetail(app.id)}
                     style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${COLORS.ocean}`, background: 'transparent', color: COLORS.signal, fontFamily: FONTS.display, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
                   >
                     View
                   </button>
                   <button
-                    onClick={() => navigate({ to: app.status === 'draft' ? `/crew-immigration/visas/new?draft=${app.id}` as any : `/crew-immigration/visas/${app.id}` as any })}
+                    onClick={() => app.status === 'draft' ? openNew(app.id) : openDetail(app.id)}
                     style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${COLORS.ocean}`, background: 'transparent', color: app.status === 'draft' ? COLORS.signal : COLORS.muted, fontFamily: FONTS.display, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
                   >
                     {app.status === 'draft' ? 'Resume' : 'Edit'}

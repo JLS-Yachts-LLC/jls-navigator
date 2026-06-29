@@ -37,9 +37,14 @@ function fmt(d: string | null) {
   return toDMY(d);
 }
 
-export function VisaDetailPage() {
-  const { id } = useParams({ from: "/_app/crew-immigration/visas/$id" });
+export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: string; onBack?: () => void; onEditDraft?: (id: string) => void } = {}) {
+  // Route-driven by default; when embedded (e.g. the Beta Immigration screen) the
+  // id + back/edit handlers come in as props so the flow stays inside the shell.
+  const params = useParams({ strict: false }) as { id?: string };
+  const id = visaId ?? params.id ?? "";
   const navigate = useNavigate();
+  const goList = () => (onBack ? onBack() : navigate({ to: "/crew-immigration/visas" }));
+  const goEditPassport = () => (onEditDraft ? onEditDraft(id) : navigate({ to: `/crew-immigration/visas/new?draft=${id}` as any }));
   const [visa, setVisa] = useState<Visa | null>(null);
   const [vesselName, setVesselName] = useState<string>("—");
   const [yachtNames, setYachtNames] = useState<string[]>([]);
@@ -161,7 +166,7 @@ export function VisaDetailPage() {
       .select("*, yachts(vessel_name)")
       .eq("id", id)
       .maybeSingle();
-    if (error || !data) { toast.error("Application not found"); navigate({ to: "/crew-immigration/visas" }); return; }
+    if (error || !data) { toast.error("Application not found"); goList(); return; }
     setVisa(data);
     setVesselName(data.vessel_name ?? data.yachts?.vessel_name ?? "—");
     setLoading(false);
@@ -240,7 +245,7 @@ export function VisaDetailPage() {
       toast.error(e?.message ?? "Delete failed"); return;
     }
     toast.success("Moved to Recycle Bin — restorable for 90 days");
-    navigate({ to: "/crew-immigration/visas" });
+    goList();
   }
 
   if (loading || !visa) {
@@ -272,7 +277,7 @@ export function VisaDetailPage() {
     <div className="flex h-full flex-col">
       <header className="flex items-center justify-between border-b border-border/70 bg-card/30 px-6 py-3.5">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" onClick={() => navigate({ to: "/crew-immigration/visas" })} className="h-8 gap-1.5"><ArrowLeft className="h-4 w-4" /> Back</Button>
+          <Button variant="ghost" size="sm" onClick={goList} className="h-8 gap-1.5"><ArrowLeft className="h-4 w-4" /> Back</Button>
           <div>
             <div className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-muted-foreground/60">Visa Application</div>
             <h1 className="mt-0.5 font-display text-[1.2rem] font-semibold tracking-tight">{name}</h1>
@@ -281,7 +286,7 @@ export function VisaDetailPage() {
         </div>
         <div className="flex items-center gap-2">
           <Button size="sm" variant="outline" onClick={openEdit} className="h-8 gap-1.5"><Pencil className="h-3.5 w-3.5" /> Edit</Button>
-          <Button size="sm" variant="outline" onClick={() => navigate({ to: `/crew-immigration/visas/new?draft=${id}` as any })} className="h-8 gap-1.5"><IdCard className="h-3.5 w-3.5" /> Edit Passport</Button>
+          <Button size="sm" variant="outline" onClick={goEditPassport} className="h-8 gap-1.5"><IdCard className="h-3.5 w-3.5" /> Edit Passport</Button>
           <Button size="sm" variant="outline" onClick={() => setDel(true)} className="h-8 gap-1.5 text-destructive hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /> Delete</Button>
         </div>
       </header>
