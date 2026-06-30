@@ -11,7 +11,9 @@ function Index() {
   const navigate = useNavigate();
   useEffect(() => {
     if (loading) return;
-    navigate({ to: user ? "/dashboard" : "/auth" });
+    // Beta (Polaris redesign) is now the default/main view. The Old View remains
+    // reachable at /dashboard via the "Old View" button inside the Beta shell.
+    navigate({ to: user ? "/polaris-redesign" : "/auth" });
   }, [loading, user, navigate]);
   return (
     <div className="flex h-screen items-center justify-center bg-background">

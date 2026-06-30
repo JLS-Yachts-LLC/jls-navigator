@@ -236,7 +236,7 @@ export function PolarisTopBar({
         {onExitBeta && (
           <button
             onClick={onExitBeta}
-            title="Return to the original Polaris"
+            title="Switch to the Old View (legacy Polaris)"
             style={{
               background: "var(--pds-surface-3)",
               border: "1px solid var(--pds-border)",
@@ -253,7 +253,7 @@ export function PolarisTopBar({
             }}
           >
             <TIcon name="arrow-back-up" size={14} />
-            Original
+            Old View
           </button>
         )}
         <BetaTopBarControls />

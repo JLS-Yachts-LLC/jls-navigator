@@ -154,7 +154,8 @@ export function getLandingPath(claims: PolarisClaims): string {
   const modules = claims.moduleNames;
   const onlyModule = (m: string) => modules.length === 1 && modules[0] === m;
 
-  if (role && (GLOBAL_ADMIN_ROLES as readonly string[]).includes(role)) return "/dashboard";
+  // Beta (Polaris redesign) is the default/main view for staff/admins.
+  if (role && (GLOBAL_ADMIN_ROLES as readonly string[]).includes(role)) return "/polaris-redesign";
   if (role === "regional_admin") return claims.locationId ? `/dashboard/location/${claims.locationId}` : "/dashboard";
   if (role === "captain" || role === "vessel_admin") {
     return claims.vesselIds[0] ? `/dashboard/vessel/${claims.vesselIds[0]}` : "/dashboard/vessel/unassigned";
@@ -167,9 +168,9 @@ export function getLandingPath(claims: PolarisClaims): string {
   if (onlyModule("finance")) return "/portal/finance";
   if (onlyModule("agency")) return "/portal/agency";
   if (role === "crew_manager" || role === "technical_mgr") {
-    return claims.vesselIds[0] ? `/dashboard/vessel/${claims.vesselIds[0]}` : "/dashboard";
+    return claims.vesselIds[0] ? `/dashboard/vessel/${claims.vesselIds[0]}` : "/polaris-redesign";
   }
-  return "/dashboard";
+  return "/polaris-redesign";
 }
 
 /**
@@ -178,6 +179,7 @@ export function getLandingPath(claims: PolarisClaims): string {
  * workspace engine so both degrade consistently.
  */
 export function isBuiltRoute(path: string): boolean {
+  if (path === "/polaris-redesign") return true;
   if (path === "/dashboard") return true;
   if (["/portal/crew", "/portal/owner", "/portal/supplier", "/portal/shipsync", "/portal/training"].includes(path)) return true;
   if (/^\/dashboard\/vessel\/[^/]+/.test(path)) return true;

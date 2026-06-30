@@ -1503,9 +1503,9 @@ export function PolarisSettings() {
       <div className="pds-grid-2" style={{ marginBottom: 16 }}>
         <PolarisCard title="About this view" icon="sparkles">
           <p style={{ fontSize: "var(--pds-fs-body)", color: "var(--pds-text-secondary)", margin: 0, lineHeight: 1.6 }}>
-            This is the Polaris Beta experience — a redesigned, mobile-first interface.
-            Use <strong style={{ color: "var(--pds-text)" }}>Original</strong> (top right) to return
-            to the current app at any time. Your data is the same in both.
+            This is the Polaris New View — a redesigned, mobile-first interface, now the
+            default. Use <strong style={{ color: "var(--pds-text)" }}>Old View</strong> (top right)
+            to return to the legacy app at any time. Your data is the same in both.
           </p>
         </PolarisCard>
         <PolarisCard title="Admin & preferences" icon="settings">

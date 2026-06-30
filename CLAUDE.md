@@ -1,6 +1,28 @@
 # CLAUDE.md — Polaris / Leo Platform
 > Claude Code reads this file automatically. Follow every instruction here precisely.
-> Last updated: June 2026 — v1.5 (added Platform UX, Login & Ecosystem spec)
+> Last updated: June 2026 — v1.6 (New View is now the default; build in it by default)
+
+---
+
+## 0. DEFAULT VIEW — Build in the "New View" (Polaris redesign)
+
+**The "New View" (the Polaris redesign, route `/_app/polaris-redesign`, components under
+`src/components/polaris-ui/` + the Beta-embedded module pages) is now the DEFAULT view of
+the platform.** It is what users land on after login.
+
+**For all work, assume you are building in / modifying the New View unless the user
+explicitly says otherwise** (e.g. "do this in the Old View", "grab the X component from the
+old view", "this is an old-view-only fix"). When adding a feature or fixing a module,
+wire it into the New View (the `polaris-redesign` shell + `polaris-ui` screens, or the
+existing app pages it embeds) so it works end-to-end there without breaking out to the
+legacy `/dashboard` chrome.
+
+- **New View** = default. Reached at `/polaris-redesign`; the entry point for new work.
+- **Old View** = legacy. Still reachable at `/dashboard` via the "Old View" button in the
+  New View top bar. Only touch it when explicitly asked.
+- When embedding an existing page into the New View, follow the visa pattern: accept an
+  `embedded` prop + `onBack`/`onOpenX` callbacks instead of `useNavigate`/`Link`, so the
+  flow stays inside the New View shell.
 
 ---
 

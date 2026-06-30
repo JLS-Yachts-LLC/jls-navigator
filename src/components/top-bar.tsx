@@ -325,14 +325,22 @@ export function TopBar() {
       </div>
 
       <div className="ml-auto flex items-center gap-1.5">
-        {/* Beta View — switch to the new Polaris design preview */}
+        {/* You are in the legacy "Old View" — Beta is now the default. */}
+        <span
+          title="You are in the Old View (legacy Polaris). The New View is now the default."
+          className="hidden md:inline-flex h-9 items-center rounded-lg bg-muted/50 px-2.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+        >
+          Old View
+        </span>
+
+        {/* New View — return to the new Polaris design (now the default) */}
         <Link
           to="/polaris-redesign"
-          title="Switch to the new Polaris design (Beta)"
+          title="Switch to the New View (default Polaris)"
           className="flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-amber-500 ring-1 ring-amber-500/30 hover:bg-amber-500/10 transition"
         >
           <Sparkles className="h-[16px] w-[16px]" />
-          <span className="hidden sm:inline">Beta View</span>
+          <span className="hidden sm:inline">New View</span>
         </Link>
 
         {/* View-as / client preview (admin only) */}
