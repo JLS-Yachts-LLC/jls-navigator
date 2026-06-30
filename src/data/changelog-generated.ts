@@ -5,9 +5,1339 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.18.0",
+    "date": "2026-06-30",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "PhoneNumberField component — flag dropdown + intelligent default (ticket #198)"
+      },
+      {
+        "type": "feature",
+        "title": "PersistPhoneSelection — write path for phone country default (ticket #198)"
+      },
+      {
+        "type": "feature",
+        "title": "Migration 055 — phone intelligent default (ticket #198)"
+      },
+      {
+        "type": "feature",
+        "title": "POST /api/native-language/save (ticket #197)"
+      },
+      {
+        "type": "feature",
+        "title": "ResolveNativeLanguageDefault -- 4-tier language resolver (ticket #197)"
+      },
+      {
+        "type": "feature",
+        "title": "GET /api/native-language/resolve-default (ticket #197)"
+      },
+      {
+        "type": "feature",
+        "title": "PersistNativeLanguageSelection -- write path for native language prefs (ticket #197)"
+      },
+      {
+        "type": "feature",
+        "title": "NativeLanguageSelect -- searchable language dropdown with source badge (ticket #197)"
+      },
+      {
+        "type": "feature",
+        "title": "NativeLanguageField — visa form container for language resolution (ticket #197)"
+      },
+      {
+        "type": "feature",
+        "title": "GuestToken utility for native language preference (ticket #197)"
+      },
+      {
+        "type": "feature",
+        "title": "Migration 054 — intelligent native language default (ticket #197)"
+      },
+      {
+        "type": "fix",
+        "title": "Replace native <select> with VisaOccupationSelect in visa form (ticket #196)"
+      },
+      {
+        "type": "feature",
+        "title": "VisaOccupationSelect — themed custom dropdown (ticket #196)"
+      }
+    ]
+  },
+  {
+    "version": "2.17.0",
+    "date": "2026-06-29",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Leo floating panel — fixed bottom-right on beta dashboard (ticket #196)"
+      },
+      {
+        "type": "fix",
+        "title": "Gate LeoPanel on confirmed session token (ticket #196)"
+      },
+      {
+        "type": "fix",
+        "title": "Leo briefing — reset didFetch on unmount to prevent StrictMode duplication"
+      },
+      {
+        "type": "feature",
+        "title": "Wire LeoPanel into beta dashboard view (ticket #196)"
+      },
+      {
+        "type": "fix",
+        "title": "Leo — add beta view diagnostic & fix script (ticket #196)"
+      },
+      {
+        "type": "fix",
+        "title": "Leo briefing — add duplicate text diagnostic & fix script (ticket #196)"
+      },
+      {
+        "type": "feature",
+        "title": "Add Templates - Polaris SharePoint folder with the app's templates"
+      },
+      {
+        "type": "feature",
+        "title": "Always include UAE Arrival Instructions in the visa document bundle"
+      },
+      {
+        "type": "feature",
+        "title": "JLS Internal Services add-form drops client-only fields"
+      },
+      {
+        "type": "feature",
+        "title": "JLS Internal Services is now a subscriptions register (vendor, monthly/annual)"
+      },
+      {
+        "type": "feature",
+        "title": "Rename Yacht IT tabs and move contracts into Client Subscriptions"
+      },
+      {
+        "type": "feature",
+        "title": "Split Yacht IT into Contracts and Internal Services tabs"
+      },
+      {
+        "type": "fix",
+        "title": "Visa New Application, View and Edit now stay in the Beta view"
+      },
+      {
+        "type": "feature",
+        "title": "Visa — add barrel export index for Pass 2 components (ticket #196, migration 053)"
+      },
+      {
+        "type": "feature",
+        "title": "Visa — add VesselReportHistory component (migration 051)"
+      },
+      {
+        "type": "feature",
+        "title": "Visa — add VesselChannelSelector component (migration 050)"
+      },
+      {
+        "type": "feature",
+        "title": "Visa — add VisaCrewTable component (ticket #196, migration 051)"
+      },
+      {
+        "type": "feature",
+        "title": "Visa — add VisaStatCards component (ticket #196, migration 051)"
+      },
+      {
+        "type": "feature",
+        "title": "Add Visa Spreadsheet Sync screen with dry-run preview"
+      },
+      {
+        "type": "feature",
+        "title": "Sync visa records from the SharePoint visa trackers"
+      }
+    ]
+  },
+  {
+    "version": "2.16.0",
+    "date": "2026-06-28",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Add DMA CF12a Visiting Vessel Permit application form"
+      },
+      {
+        "type": "feature",
+        "title": "Crew Placement payroll run + termination/final-pay"
+      },
+      {
+        "type": "feature",
+        "title": "Crew Placement Leave & Rotation (year Gantt + scheduling)"
+      },
+      {
+        "type": "feature",
+        "title": "Crew Contract Builder wizard + reusable contract profiles"
+      },
+      {
+        "type": "feature",
+        "title": "Authority-exact bilingual (EN/AR) DMA Notice of Arrival/Departure PDFs"
+      },
+      {
+        "type": "feature",
+        "title": "DMA approval workflow (chain → auto-signature → email authority)"
+      },
+      {
+        "type": "feature",
+        "title": "Build out the standalone Add Crew Member wizard"
+      },
+      {
+        "type": "feature",
+        "title": "JLS signatories registry (upload signature PNG + approver per signatory)"
+      }
+    ]
+  },
+  {
+    "version": "2.15.0",
+    "date": "2026-06-27",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Upload & view certificate files in Crew Placement"
+      },
+      {
+        "type": "feature",
+        "title": "E-sign signature-field placement (stamped in-place on signing)"
+      },
+      {
+        "type": "fix",
+        "title": "Anchor document detail opens inline (stays in the Beta view)"
+      },
+      {
+        "type": "feature",
+        "title": "Crew contract/payslip PDF generation, QBO payment sync, Orbit billing"
+      },
+      {
+        "type": "feature",
+        "title": "Upload & view crew placement documents (crew-docs storage bucket)"
+      },
+      {
+        "type": "feature",
+        "title": "Documents folder browser as an expandable branch tree"
+      },
+      {
+        "type": "feature",
+        "title": "Crew Placement documents as a Vessel -> Crew -> Documents folder browser"
+      },
+      {
+        "type": "feature",
+        "title": "Vacancies & talent pool + move client services to the right tab"
+      },
+      {
+        "type": "feature",
+        "title": "Crew Placement ship view + per-crew profiles (documents, finance, contracts)"
+      },
+      {
+        "type": "feature",
+        "title": "Finance dashboard, sortable + uncapped invoice tables, live QBO status on visas"
+      },
+      {
+        "type": "feature",
+        "title": "Crew Placement module + JLS invoice numbering + DMA auto-fill"
+      },
+      {
+        "type": "feature",
+        "title": "Finance module syncs QuickBooks invoices, pro-formas & quotations"
+      },
+      {
+        "type": "feature",
+        "title": "Match invoice line format + QuickBooks customer-link manager"
+      },
+      {
+        "type": "fix",
+        "title": "Map visa invoice services to the real QuickBooks Item names"
+      }
+    ]
+  },
+  {
+    "version": "2.14.0",
+    "date": "2026-06-26",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "QuickBooks one-click connect + public legal pages"
+      },
+      {
+        "type": "feature",
+        "title": "Archive yachts with an Active/Archived view toggle"
+      },
+      {
+        "type": "feature",
+        "title": "Generate QuickBooks invoices from the Finance visa tracker"
+      },
+      {
+        "type": "feature",
+        "title": "Anchor Forms — vessel auto-populate + document tracking list"
+      },
+      {
+        "type": "feature",
+        "title": "Anchor Digital Forms — fill DMA Notices + Agency Appointment Letter, generate PDF, email or send for signature"
+      },
+      {
+        "type": "feature",
+        "title": "Beta Logistics now hosts the full ShipSync module"
+      },
+      {
+        "type": "feature",
+        "title": "Beta nav refinements — Crew List, Vessel Reports tab, Anchor, top-bar heading + controls"
+      },
+      {
+        "type": "feature",
+        "title": "Add a Small Cards view to the vessel registry (denser, ~30% smaller)"
+      },
+      {
+        "type": "feature",
+        "title": "Remove the vessel switcher from the Beta View for now"
+      },
+      {
+        "type": "feature",
+        "title": "Beta Vessels combines Vessel Overview + Live Tracking as tabs"
+      },
+      {
+        "type": "feature",
+        "title": "Beta Vessels screen now shows the real Vessel Overview with synced images"
+      },
+      {
+        "type": "feature",
+        "title": "Any page ported into the Beta inherits Beta styling automatically"
+      },
+      {
+        "type": "feature",
+        "title": "Restyle Beta-embedded pages to the Beta teal/blue palette (token remap)"
+      },
+      {
+        "type": "feature",
+        "title": "Beta Immigration tabs into the real Visa and Sign On/Off pages"
+      },
+      {
+        "type": "fix",
+        "title": "Embedded Yacht IT Solutions reads correctly on the Beta's dark background"
+      },
+      {
+        "type": "feature",
+        "title": "Add Yacht IT Solutions to the Beta View Services nav"
+      },
+      {
+        "type": "feature",
+        "title": "Yacht IT Solutions is one sidebar item with tabbed sections"
+      },
+      {
+        "type": "feature",
+        "title": "Complete the redesign preview — Immigration, Logistics, Training, Crew Documents, Sign-On/Off Reports, Settings"
+      },
+      {
+        "type": "feature",
+        "title": "Beta view takes over full screen + add Vessels and Sign On/Off screens"
+      },
+      {
+        "type": "feature",
+        "title": "Beta View / Original toggle in the top bar + Compliance screen in the redesign"
+      },
+      {
+        "type": "feature",
+        "title": "Add the Crew screen to the Polaris redesign preview"
+      },
+      {
+        "type": "fix",
+        "title": "Also read the MAIL_GRAPH_CLIENT_SECRE secret name (Cloudflare naming slip)"
+      },
+      {
+        "type": "feature",
+        "title": "Send email via the dedicated Polaris mail app (Graph)"
+      },
+      {
+        "type": "feature",
+        "title": "Anchor emails send from anchor@, all other app email from polaris@"
+      },
+      {
+        "type": "feature",
+        "title": "Rename the e-Sign documents system to Anchor"
+      },
+      {
+        "type": "feature",
+        "title": "Separate Sign-On/Off access from Visa so each can be granted independently"
+      },
+      {
+        "type": "fix",
+        "title": "Dragging a passport image into an email now embeds the actual picture"
+      },
+      {
+        "type": "feature",
+        "title": "Make country-of-residence address and contact mandatory on visa applications"
+      },
+      {
+        "type": "feature",
+        "title": "Capture country-of-residence address and contact on the visa application"
+      },
+      {
+        "type": "feature",
+        "title": "Training module — POLARIS-TRAINING-001"
+      },
+      {
+        "type": "feature",
+        "title": "Show the weekly visa & immigration reports on the Automations page"
+      },
+      {
+        "type": "fix",
+        "title": "Dragging a crew document into email now attaches the real file"
+      },
+      {
+        "type": "fix",
+        "title": "Visa review no longer blanks scanned passport details like Place of Issue"
+      },
+      {
+        "type": "feature",
+        "title": "Re-skin redesign system + email to official Polaris brand (#195)"
+      }
+    ]
+  },
+  {
+    "version": "2.13.0",
+    "date": "2026-06-25",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "ShipSync delivered-this-month now populates from the delivery scan time"
+      },
+      {
+        "type": "fix",
+        "title": "ShipSync import now captures delivery date and receiver/cargo details"
+      },
+      {
+        "type": "fix",
+        "title": "ShipSync Packages sync no longer fails on rows with no package count"
+      },
+      {
+        "type": "feature",
+        "title": "Pull ShipSync Packages and Drivers from SharePoint like the other lists"
+      },
+      {
+        "type": "feature",
+        "title": "Import legacy SharePoint Packages list into ShipSync (one-time backfill)"
+      },
+      {
+        "type": "feature",
+        "title": "Send all email via Microsoft Graph instead of AWS SES"
+      },
+      {
+        "type": "improvement",
+        "title": "ShipSync SharePoint push works like the other syncs (no kill-switch)"
+      }
+    ]
+  },
+  {
+    "version": "2.12.0",
+    "date": "2026-06-24",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "ShipSync rebuild — phase 5 SharePoint sync (push + import) + tracking panel"
+      },
+      {
+        "type": "feature",
+        "title": "ShipSync rebuild — phase 4 automations (delivery-note PDFs + POD email)"
+      },
+      {
+        "type": "feature",
+        "title": "ShipSync rebuild — phase 3 driver PWA (offline-first) + Google Maps routing"
+      },
+      {
+        "type": "feature",
+        "title": "Add \"Take screenshot\" to the feedback bug report"
+      },
+      {
+        "type": "feature",
+        "title": "ShipSync rebuild — phase 2 office/logistics module"
+      },
+      {
+        "type": "feature",
+        "title": "ShipSync rebuild — phase 1 data model (tables, numbering, storage, types)"
+      },
+      {
+        "type": "feature",
+        "title": "Surface the Changelog in the Developer menu"
+      },
+      {
+        "type": "fix",
+        "title": "Stop login-page flash on refresh/navigation"
+      },
+      {
+        "type": "feature",
+        "title": "Internal services — add Renewing ≤90d stat with colour-coded urgency"
+      },
+      {
+        "type": "feature",
+        "title": "Crew verification letter states correct Arabic designation (Captain/Seaman)"
+      },
+      {
+        "type": "feature",
+        "title": "Open internal service edit by clicking its row"
+      },
+      {
+        "type": "feature",
+        "title": "Leo bubble is now draggable and throwable, with cheeky reactions"
+      },
+      {
+        "type": "fix",
+        "title": "Crash when editing service dates (insertBefore reconciliation error)"
+      },
+      {
+        "type": "fix",
+        "title": "Auto-fetch FX rate when stored rate is a 1:1 placeholder"
+      },
+      {
+        "type": "feature",
+        "title": "Internal services — auto-fetch FX rate + currency dropdowns (GBP/USD/EUR/AED)"
+      },
+      {
+        "type": "feature",
+        "title": "Internal services — Yacht/Client picker pulls from IT Solutions client list"
+      },
+      {
+        "type": "feature",
+        "title": "Internal services — Yacht/Client association, filter, and payment method"
+      },
+      {
+        "type": "feature",
+        "title": "Internal services — separate sell currency + purchase FX rate for margin"
+      },
+      {
+        "type": "feature",
+        "title": "Internal services — Yacht Paid column + annual margin stat"
+      },
+      {
+        "type": "feature",
+        "title": "Add monthly revenue and margin to internal services stats"
+      },
+      {
+        "type": "feature",
+        "title": "Internal services — sell price, commitment/invoicing fields, 90-day renewal alert"
+      },
+      {
+        "type": "fix",
+        "title": "Visa pipeline/expiry reports read real visa_expiry column"
+      },
+      {
+        "type": "feature",
+        "title": "Polaris UI/UX redesign — maritime design system + preview app (#195)"
+      },
+      {
+        "type": "fix",
+        "title": "Vessel visa report generation failing on audit_log foreign key"
+      },
+      {
+        "type": "feature",
+        "title": "Visa Reporting module — generate/send vessel visa reports (#193–#195)"
+      },
+      {
+        "type": "feature",
+        "title": "Customisable dashboard with permission-gated department widgets"
+      },
+      {
+        "type": "feature",
+        "title": "Scan passport Place of Issue/Authority; fix document drag-out and Continue placement"
+      },
+      {
+        "type": "feature",
+        "title": "Edit crew personal details in place + block submit on missing details"
+      },
+      {
+        "type": "feature",
+        "title": "Recycle bin for deleted records + draggable docs and clickable visa rows"
+      },
+      {
+        "type": "feature",
+        "title": "Streamline the visa wizard (single Continue, skip Documents, persist data)"
+      },
+      {
+        "type": "fix",
+        "title": "Crew verification letter now uses the full vessel name, with validation"
+      },
+      {
+        "type": "feature",
+        "title": "Show already-uploaded passport in the dropzone and add manual rescan"
+      },
+      {
+        "type": "feature",
+        "title": "Remove the \"Multiple passports?\" question from the visa crew step"
+      },
+      {
+        "type": "feature",
+        "title": "Canonical PolarisLogo brand component (MD-approved star-mark logo)"
+      },
+      {
+        "type": "fix",
+        "title": "Enable RLS on doc_number_seq (Security Advisor — RLS disabled in public)"
+      },
+      {
+        "type": "feature",
+        "title": "Headshot photo requirements to match the immigration portal"
+      },
+      {
+        "type": "fix",
+        "title": "Display passport / visa / DOB dates as dd/mm/yyyy (immigration format)"
+      }
+    ]
+  },
+  {
+    "version": "2.11.0",
+    "date": "2026-06-23",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "ORBIT service-request hub (dashboard, requests, quotations, activity)"
+      },
+      {
+        "type": "feature",
+        "title": "Native QuickBooks orchestrator + OAuth client + doc-number heal (gated)"
+      },
+      {
+        "type": "feature",
+        "title": "Reliable QuickBooks webhook receiver in front of n8n"
+      },
+      {
+        "type": "feature",
+        "title": "QuickBooks doc-number self-heal backing store"
+      },
+      {
+        "type": "feature",
+        "title": "Developer → Automations tracking (hits / errors / retries) + ingestion endpoint"
+      },
+      {
+        "type": "fix",
+        "title": "Visa Review & Submit — complete overview + Copy/CSV extract"
+      },
+      {
+        "type": "feature",
+        "title": "Yacht IT — Services submenu (Internal JLS services + Client services)"
+      },
+      {
+        "type": "feature",
+        "title": "\"View as\" can preview as a specific user (search by name/email)"
+      },
+      {
+        "type": "feature",
+        "title": "Wire the notification bell to the notifications table"
+      },
+      {
+        "type": "feature",
+        "title": "Team Directory module — departments, staff profiles & smart service routing"
+      }
+    ]
+  },
+  {
+    "version": "2.10.0",
+    "date": "2026-06-22",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Branded SES invites/resets + SOSO reports dashboard"
+      },
+      {
+        "type": "feature",
+        "title": "Populate the RBAC matrix and wire the Admin Panel stat cards"
+      },
+      {
+        "type": "feature",
+        "title": "SOSO Phase 4 — crew movement & immigration reports + weekly digest"
+      },
+      {
+        "type": "feature",
+        "title": "SOSO Phase 3 — flight/logistics fields on movements + email notify"
+      },
+      {
+        "type": "feature",
+        "title": "SOSO Phase 2 — auto-propagation trigger on crew movements"
+      },
+      {
+        "type": "feature",
+        "title": "SOSO Phase 1 — crew movement detail fields + unified crew timeline"
+      },
+      {
+        "type": "feature",
+        "title": "Fall back to SES for invite / reset emails when Supabase send fails"
+      },
+      {
+        "type": "fix",
+        "title": "Make Admin Panel user table readable in light mode"
+      },
+      {
+        "type": "fix",
+        "title": "Repoint Admin Panel user management at user_profiles + roles"
+      },
+      {
+        "type": "feature",
+        "title": "Show pending invites and add password-reset / resend-invite in Admin Panel"
+      },
+      {
+        "type": "fix",
+        "title": "Grant Dev-stage visibility to Global Admin and Org Admin roles"
+      },
+      {
+        "type": "fix",
+        "title": "Wire Admin Panel API endpoints into the worker"
+      },
+      {
+        "type": "feature",
+        "title": "Drive sidebar visibility from Dev Settings feature flags"
+      },
+      {
+        "type": "feature",
+        "title": "Drag crew documents into external portals + immigration ZIP export"
+      },
+      {
+        "type": "feature",
+        "title": "Hide in-development modules from staff (only Beta/Live menus visible)"
+      },
+      {
+        "type": "feature",
+        "title": "PDF export for UAE visa pipeline & expiry reports (#191)"
+      },
+      {
+        "type": "feature",
+        "title": "Apply UI readability standard — darker secondary text, 16px body, 28px widget numbers"
+      },
+      {
+        "type": "feature",
+        "title": "UAE visa release — expiry-flag engine, back-office actions, pipeline/expiry reports (#166–#185, #192)"
+      },
+      {
+        "type": "fix",
+        "title": "Crew Verification letter back to one page — fill table cells in place (keep noWrap)"
+      },
+      {
+        "type": "feature",
+        "title": "Visa attach shows attached-state (view/replace/delete) + name-match safety check"
+      },
+      {
+        "type": "feature",
+        "title": "File passport documents (cover, inside pages, headshot, seamans book) into the SharePoint crew folder"
+      },
+      {
+        "type": "feature",
+        "title": "Visa detail shows documents + live sign-on/off; crew auto-links to vessel from visa"
+      },
+      {
+        "type": "fix",
+        "title": "Crew profile button now opens the profile page (parent route lacked an Outlet)"
+      },
+      {
+        "type": "fix",
+        "title": "Capture + show render/route errors (error boundary now logs to Error Log)"
+      },
+      {
+        "type": "fix",
+        "title": "Graph PDF conversion 406 — handle the redirect without re-sending the auth header"
+      },
+      {
+        "type": "fix",
+        "title": "Generate Crew Verification letter from the Review step + log generation failures"
+      },
+      {
+        "type": "feature",
+        "title": "Sign On/Off — yacht filter, immigration-list filter, and Dubai Immigration Crew List per yacht"
+      },
+      {
+        "type": "feature",
+        "title": "Bulk Sign On/Off — vessel filter + searchable multi-select crew + batch record"
+      },
+      {
+        "type": "feature",
+        "title": "Show Crew Verification letter (and Seamans book) under Uploaded Documents on the review step"
+      },
+      {
+        "type": "fix",
+        "title": "Verification letter via API route (no client crash), crew list opens unfiltered, clickable wizard steps"
+      },
+      {
+        "type": "fix",
+        "title": "Passport OCR now feeds nationality/place-of-birth into Additional Personal Info"
+      },
+      {
+        "type": "fix",
+        "title": "Kill duplicate Supabase client (GoTrue warning + login flash), wizard Save&Continue 404, add Muslim religion option"
+      },
+      {
+        "type": "feature",
+        "title": "Auto-generate Crew Verification letter (Arabic/English) as PDF when no Seamans book"
+      },
+      {
+        "type": "feature",
+        "title": "Surface Verification letter status + wire Additional Personal Info into the Details step"
+      },
+      {
+        "type": "fix",
+        "title": "Persist passport form draft across wizard navigation + OCR captures middle name"
+      },
+      {
+        "type": "feature",
+        "title": "Add Sign On / Sign Off module specification (SOSO)"
+      },
+      {
+        "type": "fix",
+        "title": "Apply UI readability standards across dashboard and Leo components"
+      },
+      {
+        "type": "feature",
+        "title": "Add ORBIT module specification — operations & technical support hub"
+      },
+      {
+        "type": "feature",
+        "title": "First/Middle/Last name fields on passport add-form (OCR-filled) + middle-name recommend/highlight"
+      },
+      {
+        "type": "feature",
+        "title": "Downloadable documents on the passport page (cover, inside pages, seamans book/verification letter, headshot)"
+      },
+      {
+        "type": "fix",
+        "title": "Passport/visa OCR retries on Anthropic 429 rate-limit instead of failing"
+      },
+      {
+        "type": "feature",
+        "title": "Daily full SharePoint refresh — re-pull all lists + images every day"
+      },
+      {
+        "type": "feature",
+        "title": "Sync All controls on Integrations (force all yacht images + re-sync all lists)"
+      },
+      {
+        "type": "feature",
+        "title": "Emergency Contacts directory page (fix broken sidebar link)"
+      },
+      {
+        "type": "feature",
+        "title": "Seaport Immigration module — requests, queue, SLA tracking, completion reports"
+      },
+      {
+        "type": "fix",
+        "title": "Leo insight cards wrap responsively below 768px"
+      },
+      {
+        "type": "feature",
+        "title": "Leo briefings scoped to selected workspace + per-organisation branding layer"
+      },
+      {
+        "type": "feature",
+        "title": "Ecosystem module map, requireAccess() API guard, and ShipSync/Training/Supplier portal stubs"
+      },
+      {
+        "type": "feature",
+        "title": "Polaris shell + role/workspace dashboards (vessel, location, owner, crew portals)"
+      },
+      {
+        "type": "fix",
+        "title": "Apply pending visa migrations (passport limit, supporting-docs columns) + repair invalid SQL"
+      },
+      {
+        "type": "feature",
+        "title": "Two-panel login with post-sign-in workspace selector + routing engine"
+      },
+      {
+        "type": "feature",
+        "title": "Self-service two-factor authentication (TOTP) setup in Settings → Security"
+      },
+      {
+        "type": "feature",
+        "title": "Client-side access/claims layer (useAccess) — role, vessels, modules per user"
+      },
+      {
+        "type": "feature",
+        "title": "Access-control foundation — organisations, roles, modules, user access & audit log"
+      }
+    ]
+  },
+  {
+    "version": "2.9.0",
+    "date": "2026-06-19",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Documents step — always show 4 slots for UAE (POLARIS-DOCS-FIX-001 through 006)"
+      },
+      {
+        "type": "feature",
+        "title": "Additional personal information section — POLARIS-PINFO-001 through 012"
+      },
+      {
+        "type": "fix",
+        "title": "Crew search — wildcard matching, middle name trigger, DOB optional"
+      },
+      {
+        "type": "feature",
+        "title": "Passport details page — POLARIS-PASSPORT-010 through 020"
+      },
+      {
+        "type": "feature",
+        "title": "Built-in Error & Warning log under the Developer menu"
+      },
+      {
+        "type": "feature",
+        "title": "Show crew name + DOB on the passport card; drop redundant UAE compliance warnings"
+      },
+      {
+        "type": "feature",
+        "title": "Headshot preview + colour/plain-background checks on the passport step"
+      },
+      {
+        "type": "feature",
+        "title": "Warn when passport scan detects no details or wrong page (likely wrong document)"
+      },
+      {
+        "type": "feature",
+        "title": "Feedback widget — report bugs (screenshot + activity log) and upvotable feature requests"
+      },
+      {
+        "type": "feature",
+        "title": "Auto-capitalise crew first/middle/last name as you type"
+      },
+      {
+        "type": "feature",
+        "title": "Supporting documents page — POLARIS-DOCS-003 through POLARIS-DOCS-009"
+      }
+    ]
+  },
+  {
+    "version": "2.8.0",
+    "date": "2026-06-18",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Name capitalisation — formatName utility, NameInput component, server-side enforcement"
+      },
+      {
+        "type": "fix",
+        "title": "Restore structured phone columns after migration 025 applied"
+      },
+      {
+        "type": "fix",
+        "title": "Phone save — write to legacy phone column until migration 025 is applied"
+      },
+      {
+        "type": "feature",
+        "title": "Structured phone input — PhoneInput component, API routes, migration, form integration"
+      },
+      {
+        "type": "fix",
+        "title": "Middle name no longer populates last name field in crew search"
+      },
+      {
+        "type": "feature",
+        "title": "Vessel selection — VesselField component, API routes, migration, crew wizard integration"
+      }
+    ]
+  },
+  {
+    "version": "2.7.0",
+    "date": "2026-06-17",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Gate Online Users indicator to admins and developers only"
+      },
+      {
+        "type": "feature",
+        "title": "Crew Dashboard with actionable analytics; colour-code visa alerts red/amber"
+      },
+      {
+        "type": "feature",
+        "title": "Bulk visa upload — OCR each visa, confidence-match to crew, file match or create crew"
+      },
+      {
+        "type": "feature",
+        "title": "Yacht registry defaults to cards sorted by recent activity, with 30-day inactivity warning"
+      },
+      {
+        "type": "feature",
+        "title": "Flag passport-vs-profile name discrepancy, block on invalid expiry, confirm status changes"
+      },
+      {
+        "type": "feature",
+        "title": "PDF passport preview, multi-format OCR dates, Edit Passport, Seaman N/A status; fix compliance contrast; hide vessel switcher"
+      },
+      {
+        "type": "feature",
+        "title": "Visa OCR on attach, 30-day activation countdown, rotating alert banner, status hints"
+      },
+      {
+        "type": "feature",
+        "title": "Passport OCR reads gender & place of birth, mandatory cover/headshot, scan spinner"
+      },
+      {
+        "type": "feature",
+        "title": "Edit an existing passport to add cover/seamans book, with document thumbnails"
+      },
+      {
+        "type": "fix",
+        "title": "Zoomable passport preview, visible checklist labels, and brighter dark-mode text"
+      },
+      {
+        "type": "feature",
+        "title": "Drag-and-drop visa upload that files straight into the SharePoint crew folder"
+      },
+      {
+        "type": "feature",
+        "title": "Attach visa to approve in one step, edit vessel on a visa, and persist the vessel on new applications"
+      },
+      {
+        "type": "feature",
+        "title": "Richer passport step — document status panel, preview, extracted-info grid and upload zones"
+      },
+      {
+        "type": "fix",
+        "title": "Pre-mark passport docs as uploaded from the passport step, and allow document re-uploads"
+      },
+      {
+        "type": "feature",
+        "title": "Vessel name field suggests matching vessels from the system as you type"
+      },
+      {
+        "type": "fix",
+        "title": "Remove redundant Continue button on visa country step (click-to-continue already does it)"
+      },
+      {
+        "type": "fix",
+        "title": "Vessel name field always shows editable input, not a locking pill"
+      },
+      {
+        "type": "feature",
+        "title": "Integrations page under Developer — SharePoint connection, required permissions and sync status"
+      },
+      {
+        "type": "feature",
+        "title": "Restyle passport review area to match design spec"
+      },
+      {
+        "type": "fix",
+        "title": "Enforce one application per crew member — no new inserts if record exists"
+      },
+      {
+        "type": "feature",
+        "title": "Add Delete/Cancel action to visa applications list"
+      },
+      {
+        "type": "feature",
+        "title": "Block duplicate visa applications per crew member"
+      },
+      {
+        "type": "feature",
+        "title": "Remove crew contract requirement from UAE visa documents"
+      },
+      {
+        "type": "feature",
+        "title": "Restore Beta/Dev feature badges and Dev Settings link in the sidebar"
+      },
+      {
+        "type": "feature",
+        "title": "Replace Sponsor Name with Vessel Name on UAE visa step"
+      },
+      {
+        "type": "fix",
+        "title": "Restore Service Desk, IT Yachts and Licensing under IT Solutions"
+      },
+      {
+        "type": "feature",
+        "title": "Fix UAE visa type to Crew 180-Day Multiple Entry only"
+      },
+      {
+        "type": "fix",
+        "title": "Download SharePoint vessel images via Graph shares API (no extra permission needed)"
+      },
+      {
+        "type": "fix",
+        "title": "Vessel image sync reads the Yachts sync config, not the stale legacy config"
+      },
+      {
+        "type": "feature",
+        "title": "Add passport wizard route with crewMemberId param (POLARIS-PASSPORT-001)"
+      },
+      {
+        "type": "feature",
+        "title": "Add PassportDetails component (Add Crew Member wizard step 1)"
+      },
+      {
+        "type": "fix",
+        "title": "Report per-vessel reasons when a SharePoint image download fails"
+      },
+      {
+        "type": "feature",
+        "title": "Sync crew documents and sign-on/off records back to SharePoint"
+      },
+      {
+        "type": "feature",
+        "title": "Upgrade country selector UX — single/double click to proceed"
+      },
+      {
+        "type": "fix",
+        "title": "Vessel images now download reliably and broken image placeholders no longer show"
+      },
+      {
+        "type": "feature",
+        "title": "Dev Settings to stage features as Dev Only / Beta / Live with badges and Dev-user access"
+      }
+    ]
+  },
+  {
+    "version": "2.6.0",
+    "date": "2026-06-16",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Serve passport, visa and permit documents via expiring signed links"
+      },
+      {
+        "type": "feature",
+        "title": "Link visa applications to a crew member from their profile"
+      },
+      {
+        "type": "feature",
+        "title": "Unified crew profile page — passports, visas, sign-on/off and documents in one view"
+      },
+      {
+        "type": "improvement",
+        "title": "Faster row-security checks and indexed foreign keys across the database"
+      },
+      {
+        "type": "feature",
+        "title": "Microsoft Graph email for Service Desk (from itsupport@jlsyachts.com) - graph-mail lib + notify endpoint; ack/staff on create, reply + resolved emails; capture requester email"
+      },
+      {
+        "type": "feature",
+        "title": "Visa gaps closed - immigration-summary Reports view in live dashboard, resume draft in wizard (?draft=id), PDF passport OCR (Anthropic document block), Excel write-back syncs mapped STATUS"
+      },
+      {
+        "type": "fix",
+        "title": "Add visa application detail/edit page - View/Edit buttons were dead (no /visas/$id route); detail view + edit + status pipeline + delete + Excel sync"
+      },
+      {
+        "type": "feature",
+        "title": "Service Desk vessel picker includes IT Yachts (it_yacht_id link) - new ticket, filter, list & detail resolve both fleet + IT yachts"
+      },
+      {
+        "type": "feature",
+        "title": "IT Yachts registry under Yacht IT Solutions (separate from main fleet) - CRUD page + table + nav"
+      },
+      {
+        "type": "feature",
+        "title": "Visa wizard auto-saves a real DB draft (appears in Draft tab, submit converts it); per-row progress battery + prominent search on Visa list; move Small Boat Reg + Crew Placement under Port Operations & Agency"
+      },
+      {
+        "type": "feature",
+        "title": "First n8n->edge-function port (qb-reconcile-logs Deno function) - source, deploy pending creds/target"
+      },
+      {
+        "type": "feature",
+        "title": "Nest Port Operations & Agency as a parent folder under Overview with all its items"
+      },
+      {
+        "type": "feature",
+        "title": "Remember last route on return + recent-tabs breadcrumb bar to hop between pages"
+      },
+      {
+        "type": "feature",
+        "title": "Restructure sidebar into one Overview area (Guides separate) - Logistics parents ShipSync+Transport&Fleet(+Maintenance), Operations parents Orbit, Waypoint & Yacht IT promoted, permits/modules merged in"
+      },
+      {
+        "type": "fix",
+        "title": "Valid dd/mm/yyyy date entry (clamp day/month + invalid highlight), tickable+required passport checklist with white checkboxes, wizard battery progress + global orb clearance for Continue"
+      },
+      {
+        "type": "fix",
+        "title": "Visible top-bar search + global token/full-name crew search; visa wizard part-save (auto-save draft + resume + Save & exit)"
+      },
+      {
+        "type": "feature",
+        "title": "Passport step - 4 attachments (cover/inside/seamans/headshot), upload-first with Self-Populate hint, double-checked confirmation"
+      },
+      {
+        "type": "feature",
+        "title": "Passport OCR auto-fill + quality checklist + <1000KB auto-compress on Add Passport"
+      },
+      {
+        "type": "feature",
+        "title": "Visa crew step - middle name, as-per-passport placeholders, locale-locked dd/mm/yyyy DOB"
+      },
+      {
+        "type": "feature",
+        "title": "Admin View-as-Client preview from the top bar (scopes sidebar to role, banner + exit; UI preview, data access unchanged)"
+      },
+      {
+        "type": "feature",
+        "title": "Show live online-user count and names in the top bar"
+      },
+      {
+        "type": "fix",
+        "title": "Make Polaris inline-style surfaces theme-aware (light & dark)"
+      },
+      {
+        "type": "feature",
+        "title": "Compact visa country-select cards with real flag images"
+      }
+    ]
+  },
+  {
+    "version": "2.5.0",
+    "date": "2026-06-12",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Populate Automations registry from n8n + link out to workflows"
+      },
+      {
+        "type": "feature",
+        "title": "Add Automations menu and registry"
+      }
+    ]
+  },
+  {
+    "version": "2.4.0",
+    "date": "2026-06-11",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Validate MMSIs and widen AIS collection window for fleet tracking"
+      },
+      {
+        "type": "fix",
+        "title": "Remove overflow hidden from admin sidebar wrapper so collapse animation works"
+      },
+      {
+        "type": "feature",
+        "title": "Make admin sidebar section collapsible with chevron toggle"
+      },
+      {
+        "type": "fix",
+        "title": "Do not overwrite tracker STATUS column on visa write-back"
+      },
+      {
+        "type": "feature",
+        "title": "Write visa changes back to the SharePoint Excel trackers"
+      },
+      {
+        "type": "fix",
+        "title": "Remove Superyacht Middle East from user-facing breadcrumbs"
+      },
+      {
+        "type": "fix",
+        "title": "Add md@jlsyachts.com to DEVELOPER_EMAILS for admin access"
+      },
+      {
+        "type": "fix",
+        "title": "Allow admin access for all authenticated users in dev mode"
+      },
+      {
+        "type": "feature",
+        "title": "Build admin panel — users/roles, RBAC matrix, audit log (#133, #134)"
+      },
+      {
+        "type": "fix",
+        "title": "Stop floating Leo orb intercepting the visa wizard Continue button"
+      },
+      {
+        "type": "feature",
+        "title": "Make crew list status filter include imported statuses (On Board, Cancelled, etc.)"
+      },
+      {
+        "type": "feature",
+        "title": "Visa dashboard filters & enriched display, Finance visa tracker, sidebar restructure"
+      },
+      {
+        "type": "feature",
+        "title": "Add visa export (PDF/CSV/email) and reports with immigration summary"
+      },
+      {
+        "type": "feature",
+        "title": "Move permit items to new Port Operations & Agency nav section"
+      },
+      {
+        "type": "feature",
+        "title": "Add ticket queues (Polaris, License, Hardware, Sim Card)"
+      }
+    ]
+  },
+  {
     "version": "2.3.0",
     "date": "2026-06-10",
     "entries": [
+      {
+        "type": "fix",
+        "title": "Strip createAPIFileRoute from all api routes (unresolvable subpath in installed package)"
+      },
+      {
+        "type": "fix",
+        "title": "Remove createAPIFileRoute from Leo handlers (unresolvable in SSR build)"
+      },
+      {
+        "type": "fix",
+        "title": "Leo AI briefing and chat now respond correctly (route via worker-entry)"
+      },
+      {
+        "type": "fix",
+        "title": "Top-level catch on Leo briefing guarantees JSON error response"
+      },
+      {
+        "type": "fix",
+        "title": "Wrap Anthropic fetch in try-catch so errors return JSON not plain-text 500"
+      },
+      {
+        "type": "fix",
+        "title": "Resolve Leo Unknown error from dynamic import in CF Workers"
+      },
+      {
+        "type": "feature",
+        "title": "Replace Leo icon with Canva-generated lion head constellation logo"
+      },
+      {
+        "type": "feature",
+        "title": "Redesign the Leo mark as the Leo constellation (star-map, not a sun)"
+      },
+      {
+        "type": "fix",
+        "title": "Real light theme + hide scrollbars app-wide"
+      },
+      {
+        "type": "feature",
+        "title": "Free live fleet tracking via AISStream on a native map (replaces VesselFinder embed)"
+      },
+      {
+        "type": "fix",
+        "title": "Page through every list query so no view is capped at the 1000-row API limit"
+      },
+      {
+        "type": "fix",
+        "title": "Page through permits so views show all records past the 1000-row API cap"
+      },
+      {
+        "type": "fix",
+        "title": "Cron syncs one SharePoint list per tick (round-robin) to respect subrequest limit"
+      },
+      {
+        "type": "fix",
+        "title": "Run all SharePoint syncs in-process (Cloudflare blocks same-zone self-fetch)"
+      },
+      {
+        "type": "fix",
+        "title": "Permits SharePoint sync matches by sharepoint_item_id first to avoid duplicate collapse"
+      },
+      {
+        "type": "feature",
+        "title": "SharePoint sync fans out one invocation per list to scale past subrequest limit"
+      },
+      {
+        "type": "feature",
+        "title": "Add SharePoint list discovery endpoint to auto-create syncs"
+      },
+      {
+        "type": "fix",
+        "title": "SharePoint inbound sync writes in bulk to stay under Cloudflare subrequest limit"
+      },
+      {
+        "type": "fix",
+        "title": "Stop blank SharePoint Status clobbering crew/visa NOT NULL status + capture real sync error messages"
+      },
+      {
+        "type": "feature",
+        "title": "Auto-update the Changelog from commit history on every deploy"
+      },
       {
         "type": "fix",
         "title": "Yachts SharePoint sync now does a full pull every run"
