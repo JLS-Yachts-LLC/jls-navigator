@@ -6,7 +6,17 @@
       "Bash(Get-Content *)",
       "Bash(Get-Item *)",
       "Bash(npm run)",
-      "Bash(dir *)"
+      "Bash(dir *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(git push)"
+    ]
+  },
+  "autoMode": {
+    "allow": [
+      "$defaults",
+      "Pushing commits directly to the default branch (main) of this repository is authorized — the user has standing approval (2026-06-30) to auto-commit and push to main at the end of every turn."
     ]
   }
 }
