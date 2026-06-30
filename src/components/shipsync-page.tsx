@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "@tanstack/react-router";
-import { Loader2, Package, Truck, Warehouse, Users, BarChart3, Smartphone } from "lucide-react";
+import { Loader2, Package, Truck, Warehouse, Users, BarChart3, Smartphone, ArrowDownToLine, ArrowUpFromLine } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   loadPackages, loadDrivers, loadNotes, loadDestinations,
@@ -13,6 +13,7 @@ import { ShipSyncDispatch } from "@/components/shipsync/ShipSyncDispatch";
 import { ShipSyncWarehouse } from "@/components/shipsync/ShipSyncWarehouse";
 import { ShipSyncDrivers } from "@/components/shipsync/ShipSyncDrivers";
 import { ShipSyncDashboard } from "@/components/shipsync/ShipSyncDashboard";
+import { ModuleStub } from "@/components/module-stub";
 
 export interface ShipSyncData {
   packages: ShipSyncPackage[];
@@ -22,11 +23,13 @@ export interface ShipSyncData {
 }
 
 const TABS = [
-  { key: "packages", label: "Packages", icon: Package },
-  { key: "dispatch", label: "Dispatch", icon: Truck },
-  { key: "warehouse", label: "Warehouse", icon: Warehouse },
-  { key: "drivers", label: "Drivers", icon: Users },
-  { key: "dashboard", label: "Dashboard", icon: BarChart3 },
+  { key: "packages", label: "Local Packages", icon: Package },
+  { key: "import",   label: "Import",         icon: ArrowDownToLine },
+  { key: "export",   label: "Export",         icon: ArrowUpFromLine },
+  { key: "dispatch", label: "Dispatch",       icon: Truck },
+  { key: "warehouse", label: "Warehouse",     icon: Warehouse },
+  { key: "drivers",  label: "Drivers",        icon: Users },
+  { key: "dashboard", label: "Dashboard",     icon: BarChart3 },
 ] as const;
 
 export function ShipSyncPage() {
@@ -78,6 +81,40 @@ export function ShipSyncPage() {
         ) : (
           <>
             {tab === "packages" && <ShipSyncPackages data={data} reload={reload} />}
+            {tab === "import" && (
+              <ModuleStub
+                icon={<ArrowDownToLine />}
+                name="Import"
+                tagline="Inbound shipments from international suppliers"
+                description="Track and manage incoming international cargo, customs clearance, and inbound logistics for vessel deliveries."
+                phase="Coming soon"
+                accentColor="text-primary"
+                features={[
+                  "International shipment tracking",
+                  "Customs clearance documentation",
+                  "Inbound cargo manifests",
+                  "Supplier & freight forwarder management",
+                  "Delivery confirmation and receipt",
+                ]}
+              />
+            )}
+            {tab === "export" && (
+              <ModuleStub
+                icon={<ArrowUpFromLine />}
+                name="Export"
+                tagline="Outbound shipments and returns"
+                description="Manage outbound cargo, export documentation, and return shipments from vessels to suppliers or other destinations."
+                phase="Coming soon"
+                accentColor="text-primary"
+                features={[
+                  "Export declaration and documentation",
+                  "Return shipment management",
+                  "Outbound cargo manifests",
+                  "Courier and freight booking",
+                  "Export compliance tracking",
+                ]}
+              />
+            )}
             {tab === "dispatch" && <ShipSyncDispatch data={data} reload={reload} />}
             {tab === "warehouse" && <ShipSyncWarehouse data={data} reload={reload} />}
             {tab === "drivers" && <ShipSyncDrivers data={data} reload={reload} />}
