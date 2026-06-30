@@ -43,13 +43,13 @@ const CHANNELS: ChannelOption[] = [
   {
     value:       'email',
     label:       'Email only',
-    description: 'Weekly report and visa notifications sent to the vessel's registered email address.',
+    description: "Weekly report and visa notifications sent to the vessel's registered email address.",
     icon:        'ti-mail',
   },
   {
     value:       'whatsapp',
     label:       'WhatsApp only',
-    description: 'Notifications sent via the vessel's registered WhatsApp number through the JLS n8n workflow.',
+    description: "Notifications sent via the vessel's registered WhatsApp number through the JLS n8n workflow.",
     icon:        'ti-brand-whatsapp',
   },
   {

@@ -568,7 +568,7 @@ function RecordDialog({
 }: {
   open: boolean; editing: TrainingRecord | null; onClose: () => void; onSaved: () => void;
 }) {
-  const blank = { crew_name: "", course: "", provider: "", status: "enrolled" as const, start_date: "", completion_date: "", certificate_no: "", notes: "" };
+  const blank = { crew_name: "", course: "", provider: "", status: "enrolled" as TrainingRecord["status"], start_date: "", completion_date: "", certificate_no: "", notes: "" };
   const [form, setForm] = useState(blank);
   const [busy, setBusy] = useState(false);
 
@@ -672,7 +672,7 @@ function CertDialog({
 }: {
   open: boolean; editing: Certification | null; onClose: () => void; onSaved: () => void;
 }) {
-  const blank = { crew_name: "", certificate: "", cert_type: "", issuing_body: "", issue_date: "", expiry_date: "", status: "valid" as const, notes: "" };
+  const blank = { crew_name: "", certificate: "", cert_type: "" as Certification["cert_type"] | "", issuing_body: "", issue_date: "", expiry_date: "", status: "valid" as Certification["status"], notes: "" };
   const [form, setForm] = useState(blank);
   const [busy, setBusy] = useState(false);
 
