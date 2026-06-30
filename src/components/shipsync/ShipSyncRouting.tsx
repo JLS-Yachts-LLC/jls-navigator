@@ -4,16 +4,16 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Ship, Truck, MapPin, Route, X, Package as PackageIcon, Anchor, Search } from "lucide-react";
 import { StatusBadge } from "@/components/shipsync/shared";
-import { createDeliveryNote, assignPackagesToNote, unassignPackage } from "@/lib/shipsync/data";
+import { dispatchRoute, unassignPackage } from "@/lib/shipsync/data";
 import { googleMapsDirectionsUrl, type ShipSyncPackage, type ShipSyncDestination } from "@/lib/shipsync/model";
 import type { ShipSyncData } from "@/components/shipsync-page";
 
 const UNASSIGNED = "—";
 
 export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: () => Promise<void> }) {
-  // Per-boat driver choice + per-boat parcel selection (default: all selected).
-  const [driverByBoat, setDriverByBoat] = useState<Record<string, string>>({});
+  // Per-boat parcel selection (default: nothing selected — you tick what goes on the route).
   const [selected, setSelected] = useState<Record<string, Set<string>>>({});
+  const [routeDriver, setRouteDriver] = useState<string>("");
   const [busy, setBusy] = useState<string | null>(null);
   const [boatFilter, setBoatFilter] = useState<string>("all");
 
@@ -59,39 +59,51 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
 
   const activeDrivers = useMemo(() => data.drivers.filter((d) => d.active), [data.drivers]);
 
+  // ── Selection (default off) ──────────────────────────────────────────────
   function isSelected(boat: string, id: string) {
-    const set = selected[boat];
-    return set ? set.has(id) : true; // default-on
+    return selected[boat]?.has(id) ?? false;
   }
-  function toggle(boat: string, id: string, parcelIds: string[]) {
+  function toggle(boat: string, id: string) {
     setSelected((prev) => {
-      const cur = prev[boat] ?? new Set(parcelIds);
-      const next = new Set(cur);
+      const next = new Set(prev[boat] ?? []);
       next.has(id) ? next.delete(id) : next.add(id);
       return { ...prev, [boat]: next };
     });
   }
-  function selectedIds(boat: string, parcelIds: string[]): string[] {
-    const set = selected[boat];
-    return set ? parcelIds.filter((id) => set.has(id)) : parcelIds;
+  function toggleBoat(boat: string, parcelIds: string[]) {
+    setSelected((prev) => {
+      const cur = prev[boat] ?? new Set<string>();
+      const allOn = parcelIds.every((id) => cur.has(id));
+      return { ...prev, [boat]: allOn ? new Set<string>() : new Set(parcelIds) };
+    });
   }
 
-  async function routeBoat(boat: string, parcels: ShipSyncPackage[]) {
-    const ids = selectedIds(boat, parcels.map((p) => p.id));
-    if (ids.length === 0) { toast.error("Select at least one parcel to route"); return; }
-    const driverId = driverByBoat[boat];
-    if (!driverId) { toast.error("Choose a driver for this boat first"); return; }
-    setBusy(boat);
+  // The route being built: selected parcels across every boat group.
+  const route = useMemo(() => {
+    const ids: string[] = [];
+    const boats = new Set<string>();
+    for (const [boat, parcels] of boatGroups) {
+      const set = selected[boat];
+      if (!set || set.size === 0) continue;
+      for (const p of parcels) if (set.has(p.id)) { ids.push(p.id); boats.add(boat); }
+    }
+    return { ids, boats: Array.from(boats) };
+  }, [boatGroups, selected]);
+
+  async function dispatchSelected() {
+    if (route.ids.length === 0) { toast.error("Tick the parcels you want on this route"); return; }
+    if (!routeDriver) { toast.error("Choose a driver for the route"); return; }
+    setBusy("route");
     try {
-      const note = await createDeliveryNote(boat === UNASSIGNED ? "" : boat, driverId);
-      await assignPackagesToNote(ids, note, driverId);
-      const driver = data.drivers.find((d) => d.id === driverId);
+      const boatLabel = route.boats.length === 1 && route.boats[0] !== UNASSIGNED ? route.boats[0] : null;
+      const note = await dispatchRoute(route.ids, routeDriver, boatLabel);
+      const driver = data.drivers.find((d) => d.id === routeDriver);
       await reload();
-      setSelected((prev) => { const n = { ...prev }; delete n[boat]; return n; });
-      setDriverByBoat((prev) => { const n = { ...prev }; delete n[boat]; return n; });
-      toast.success(`Routed ${ids.length} parcel${ids.length > 1 ? "s" : ""} for ${boat} to ${driver?.name ?? "driver"} (DN-${note.number})`);
+      setSelected({});
+      setRouteDriver("");
+      toast.success(`Dispatched ${route.ids.length} parcel${route.ids.length > 1 ? "s" : ""} across ${route.boats.length} boat${route.boats.length > 1 ? "s" : ""} to ${driver?.name ?? "driver"} (DN-${note.number})`);
     } catch (e: any) {
-      toast.error(e?.message ?? "Routing failed");
+      toast.error(e?.message ?? "Dispatch failed");
     } finally {
       setBusy(null);
     }
@@ -137,6 +149,32 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
           </div>
         </div>
 
+        {/* Route builder — pick boats/parcels, one driver, dispatch as a single run */}
+        <div className="sticky top-0 z-10 mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-primary/30 bg-primary/5 px-4 py-3 backdrop-blur">
+          <div className="flex items-center gap-2">
+            <Truck className="h-4 w-4 text-primary" />
+            <span className="font-display text-sm font-semibold">Build route</span>
+          </div>
+          <span className="text-[12px] text-muted-foreground">
+            {route.boats.length} boat{route.boats.length === 1 ? "" : "s"} · {route.ids.length} parcel{route.ids.length === 1 ? "" : "s"} selected
+          </span>
+          <div className="ml-auto flex items-center gap-2">
+            <Select value={routeDriver} onValueChange={setRouteDriver}>
+              <SelectTrigger className="h-8 w-48 text-xs"><SelectValue placeholder="Choose driver…" /></SelectTrigger>
+              <SelectContent>
+                {activeDrivers.length === 0 && <div className="px-2 py-1.5 text-xs text-muted-foreground">No active drivers</div>}
+                {activeDrivers.map((d) => (
+                  <SelectItem key={d.id} value={d.id}>{d.name}{d.vehicle ? ` · ${d.vehicle}` : ""}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button size="sm" className="h-8 gap-1.5" disabled={busy === "route" || route.ids.length === 0 || !routeDriver} onClick={dispatchSelected}>
+              {busy === "route" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Truck className="h-3.5 w-3.5" />}
+              Dispatch {route.ids.length || ""}
+            </Button>
+          </div>
+        </div>
+
         {boatGroups.length === 0 ? (
           <div className="flex h-48 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border text-sm text-muted-foreground">
             <PackageIcon className="h-6 w-6 opacity-40" />
@@ -150,41 +188,27 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
           <div className="flex flex-col gap-3">
             {visibleGroups.map(([boat, parcels]) => {
               const ids = parcels.map((p) => p.id);
-              const selCount = selectedIds(boat, ids).length;
+              const selSet = selected[boat];
+              const selCount = selSet ? ids.filter((id) => selSet.has(id)).length : 0;
+              const allOn = selCount === ids.length;
               const dest = boat !== UNASSIGNED ? destByBoat.get(boat.toUpperCase()) : undefined;
               return (
-                <div key={boat} className="rounded-xl border border-border bg-card">
-                  <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <Ship className="h-4 w-4 text-muted-foreground" />
-                      <span className="font-display text-sm font-bold">{boat === UNASSIGNED ? "No boat set" : boat}</span>
-                      <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold">{parcels.length} pkg</span>
-                    </div>
+                <div key={boat} className={`rounded-xl border bg-card transition ${selCount > 0 ? "border-primary/50" : "border-border"}`}>
+                  <label className="flex cursor-pointer flex-wrap items-center gap-3 border-b border-border px-4 py-3">
+                    <input type="checkbox" checked={allOn} ref={(el) => { if (el) el.indeterminate = selCount > 0 && !allOn; }}
+                      onChange={() => toggleBoat(boat, ids)} className="h-4 w-4 accent-primary" />
+                    <Ship className="h-4 w-4 text-muted-foreground" />
+                    <span className="font-display text-sm font-bold">{boat === UNASSIGNED ? "No boat set" : boat}</span>
+                    <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold">{parcels.length} pkg</span>
+                    {selCount > 0 && <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary">{selCount} selected</span>}
                     {dest?.address && (
                       <span className="flex items-center gap-1 text-[12px] text-muted-foreground"><Anchor className="h-3 w-3" /> {dest.address}</span>
                     )}
-                    <div className="ml-auto flex items-center gap-2">
-                      <Select value={driverByBoat[boat] ?? ""} onValueChange={(v) => setDriverByBoat((prev) => ({ ...prev, [boat]: v }))}>
-                        <SelectTrigger className="h-8 w-44 text-xs"><SelectValue placeholder="Choose driver…" /></SelectTrigger>
-                        <SelectContent>
-                          {activeDrivers.length === 0 && <div className="px-2 py-1.5 text-xs text-muted-foreground">No active drivers</div>}
-                          {activeDrivers.map((d) => (
-                            <SelectItem key={d.id} value={d.id}>
-                              {d.name}{d.vehicle ? ` · ${d.vehicle}` : ""}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Button size="sm" className="h-8 gap-1.5" disabled={busy === boat || selCount === 0} onClick={() => routeBoat(boat, parcels)}>
-                        {busy === boat ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Truck className="h-3.5 w-3.5" />}
-                        Route {selCount}
-                      </Button>
-                    </div>
-                  </div>
+                  </label>
                   <div className="divide-y divide-border/40">
                     {parcels.map((p) => (
                       <label key={p.id} className="flex cursor-pointer items-center gap-3 px-4 py-2.5 text-sm hover:bg-accent/30">
-                        <input type="checkbox" checked={isSelected(boat, p.id)} onChange={() => toggle(boat, p.id, ids)}
+                        <input type="checkbox" checked={isSelected(boat, p.id)} onChange={() => toggle(boat, p.id)}
                           className="h-4 w-4 accent-primary" />
                         <span className="font-mono text-[12px]">{p.barcode ?? "—"}</span>
                         <span className="text-muted-foreground">{p.package_owner ?? p.description ?? ""}</span>

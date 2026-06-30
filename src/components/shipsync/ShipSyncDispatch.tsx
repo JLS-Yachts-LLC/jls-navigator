@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Plus, MapPin, X, FileText, Mail } from "lucide-react";
+import { Loader2, Plus, MapPin, X, FileText, Mail, Ship } from "lucide-react";
 import { StatusBadge } from "@/components/shipsync/shared";
 import {
   createDeliveryNote, assignPackagesToNote, setNoteDriver, unassignPackage,
@@ -21,6 +21,12 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
   const openNotes = useMemo(() => data.notes.filter((n) => n.status !== "delivered" && n.status !== "cancelled"), [data.notes]);
   const sel = data.notes.find((n) => n.id === selId) ?? null;
   const pkgsOnNote = useMemo(() => data.packages.filter((p) => p.delivery_note_id === selId), [data.packages, selId]);
+  // Per-boat parcel counts for the selected note (a route can span several boats).
+  const pkgsByBoat = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const p of pkgsOnNote) { const k = p.boat_name || "No boat"; m.set(k, (m.get(k) ?? 0) + 1); }
+    return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [pkgsOnNote]);
   const pool = useMemo(() => {
     if (!sel) return [];
     return data.packages.filter((p) => !p.delivery_note_id && ["in_office", "in_storage"].includes(p.status)
@@ -98,7 +104,10 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
         <div className="flex flex-col gap-1.5">
           {openNotes.length === 0 && <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">No open delivery notes.</div>}
           {openNotes.map((n) => {
-            const count = data.packages.filter((p) => p.delivery_note_id === n.id).length;
+            const notePkgs = data.packages.filter((p) => p.delivery_note_id === n.id);
+            const count = notePkgs.length;
+            const noteBoats = Array.from(new Set(notePkgs.map((p) => p.boat_name).filter(Boolean) as string[]));
+            const boatLabel = n.boat_name ?? (noteBoats.length > 1 ? `${noteBoats.length} boats` : noteBoats[0] ?? "—");
             const driver = data.drivers.find((d) => d.id === n.driver_id);
             return (
               <button key={n.id} onClick={() => setSelId(n.id)}
@@ -107,7 +116,7 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
                   <span className="font-display text-sm font-bold">DN-{n.number}</span>
                   <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold">{count} pkg</span>
                 </div>
-                <div className="mt-0.5 text-[12px] text-muted-foreground">{n.boat_name ?? "—"} · {driver?.name ?? "no driver"}</div>
+                <div className="mt-0.5 text-[12px] text-muted-foreground">{boatLabel} · {driver?.name ?? "no driver"}</div>
               </button>
             );
           })}
@@ -122,7 +131,7 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-3">
               <h2 className="font-display text-lg font-semibold">Delivery Note DN-{sel.number}</h2>
-              <span className="text-sm text-muted-foreground">{sel.boat_name}</span>
+              <span className="text-sm text-muted-foreground">{sel.boat_name ?? (pkgsByBoat.length > 1 ? "Multiple boats" : pkgsByBoat[0]?.[0] ?? "—")}</span>
               <div className="ml-auto flex items-center gap-2">
                 <Select value={sel.driver_id ?? "none"} onValueChange={changeDriver}>
                   <SelectTrigger className="h-8 w-44 text-xs"><SelectValue placeholder="Assign driver" /></SelectTrigger>
@@ -170,6 +179,22 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
                   className="mt-2 inline-flex items-center gap-1.5 text-[12px] font-medium text-primary hover:underline"><MapPin className="h-3.5 w-3.5" /> Preview route in Google Maps</a>
               )}
             </div>
+
+            {/* Per-boat breakdown (a route can span several boats) */}
+            {pkgsByBoat.length > 1 && (
+              <div className="rounded-xl border border-border bg-card">
+                <div className="border-b border-border px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Parcels per boat ({pkgsByBoat.length} boats)</div>
+                <div className="divide-y divide-border/40">
+                  {pkgsByBoat.map(([boat, count]) => (
+                    <div key={boat} className="flex items-center gap-2 px-3 py-2 text-sm">
+                      <Ship className="h-3.5 w-3.5 text-muted-foreground/60" />
+                      <span className="font-medium">{boat}</span>
+                      <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold">{count} pkg</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Packages on this note */}
             <div className="rounded-xl border border-border bg-card">

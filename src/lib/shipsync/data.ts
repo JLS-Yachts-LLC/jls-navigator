@@ -97,6 +97,19 @@ export async function assignPackagesToNote(packageIds: string[], note: ShipSyncD
   if (error) throw error
 }
 
+/** Route several boats' parcels into ONE delivery note, assign a driver, and mark
+ *  the note dispatched. Parcels become 'assigned' (driver app then scans them onto
+ *  the van). Pass the boat name for a single-boat route (keeps the saved berth),
+ *  or null for a multi-boat route. */
+export async function dispatchRoute(
+  packageIds: string[], driverId: string, boatLabel: string | null,
+): Promise<ShipSyncDeliveryNote> {
+  const note = await createDeliveryNote(boatLabel ?? '', driverId)
+  await assignPackagesToNote(packageIds, note, driverId)
+  await db().from('shipsync_delivery_notes').update({ status: 'dispatched' }).eq('id', note.id)
+  return { ...note, status: 'dispatched' }
+}
+
 /** Set/replace the driver on a note and all its packages. */
 export async function setNoteDriver(noteId: string, driverId: string | null): Promise<void> {
   await db().from('shipsync_delivery_notes').update({ driver_id: driverId }).eq('id', noteId)
