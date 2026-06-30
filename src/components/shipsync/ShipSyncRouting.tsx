@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Ship, Truck, MapPin, Route, X, Package as PackageIcon, Anchor } from "lucide-react";
+import { Loader2, Ship, Truck, MapPin, Route, X, Package as PackageIcon, Anchor, Search } from "lucide-react";
 import { StatusBadge } from "@/components/shipsync/shared";
 import { createDeliveryNote, assignPackagesToNote, unassignPackage } from "@/lib/shipsync/data";
 import { googleMapsDirectionsUrl, type ShipSyncPackage, type ShipSyncDestination } from "@/lib/shipsync/model";
@@ -15,6 +16,7 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
   const [driverByBoat, setDriverByBoat] = useState<Record<string, string>>({});
   const [selected, setSelected] = useState<Record<string, Set<string>>>({});
   const [busy, setBusy] = useState<string | null>(null);
+  const [boatQuery, setBoatQuery] = useState("");
 
   const destByBoat = useMemo(() => {
     const m = new Map<string, ShipSyncDestination>();
@@ -38,6 +40,13 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
     }
     return Array.from(groups.entries()).sort((a, b) => (a[0] === UNASSIGNED ? 1 : b[0] === UNASSIGNED ? -1 : a[0].localeCompare(b[0])));
   }, [unrouted]);
+
+  // Filter boat groups by the search box (matches the boat name).
+  const visibleGroups = useMemo(() => {
+    const q = boatQuery.trim().toLowerCase();
+    if (!q) return boatGroups;
+    return boatGroups.filter(([boat]) => boat.toLowerCase().includes(q));
+  }, [boatGroups, boatQuery]);
 
   // Driver runs: parcels already routed and out the door, grouped by driver.
   const driverRuns = useMemo(() => {
@@ -111,10 +120,14 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
     <div className="grid gap-5 px-6 py-5 lg:grid-cols-[1fr_minmax(340px,420px)]">
       {/* ── Left: parcels waiting to be routed, grouped by boat ── */}
       <div>
-        <div className="mb-3 flex items-center gap-2">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
           <Route className="h-4 w-4 text-primary" />
           <h2 className="font-display text-base font-semibold">To route</h2>
           <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">{unrouted.length} parcel{unrouted.length === 1 ? "" : "s"}</span>
+          <div className="relative ml-auto w-56">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input value={boatQuery} onChange={(e) => setBoatQuery(e.target.value)} placeholder="Search by boat…" className="h-8 pl-8 text-sm" />
+          </div>
         </div>
 
         {boatGroups.length === 0 ? (
@@ -122,9 +135,13 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
             <PackageIcon className="h-6 w-6 opacity-40" />
             Nothing waiting — every parcel in the office is routed.
           </div>
+        ) : visibleGroups.length === 0 ? (
+          <div className="flex h-32 items-center justify-center rounded-xl border border-dashed border-border text-sm text-muted-foreground">
+            No boats match “{boatQuery}”.
+          </div>
         ) : (
           <div className="flex flex-col gap-3">
-            {boatGroups.map(([boat, parcels]) => {
+            {visibleGroups.map(([boat, parcels]) => {
               const ids = parcels.map((p) => p.id);
               const selCount = selectedIds(boat, ids).length;
               const dest = boat !== UNASSIGNED ? destByBoat.get(boat.toUpperCase()) : undefined;
