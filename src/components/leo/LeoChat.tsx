@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { COLORS } from '@/lib/tokens'
 import { LeoIcon } from './LeoIcon'
+import LeoMascot from './LeoMascot'
+import type { LeoBehaviorState } from './leo.types'
 
 interface Message {
   role:      'user' | 'assistant'
@@ -27,6 +29,7 @@ export function LeoChat({ token, userName, briefingText }: LeoChatProps) {
   ])
   const [input,     setInput]     = useState('')
   const [streaming, setStreaming] = useState(false)
+  const [leoState,  setLeoState]  = useState<LeoBehaviorState>('waiting')
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef  = useRef<HTMLTextAreaElement>(null)
 
@@ -47,6 +50,7 @@ export function LeoChat({ token, userName, briefingText }: LeoChatProps) {
     ]
     setMessages(newMessages)
     setStreaming(true)
+    setLeoState('thinking')
 
     try {
       // Build message list for Anthropic (exclude the empty streaming placeholder)
@@ -73,6 +77,7 @@ export function LeoChat({ token, userName, briefingText }: LeoChatProps) {
         const { done, value } = await reader.read()
         if (done) break
         reply += decoder.decode(value, { stream: true })
+        setLeoState('speaking')
         setMessages(prev => {
           const next = [...prev]
           next[next.length - 1] = { role: 'assistant', content: reply, streaming: true }
@@ -86,6 +91,7 @@ export function LeoChat({ token, userName, briefingText }: LeoChatProps) {
         next[next.length - 1] = { role: 'assistant', content: reply }
         return next
       })
+      setLeoState('waiting')
 
     } catch (e: unknown) {
       const errText = e instanceof Error ? e.message : 'Leo is unavailable'
@@ -94,6 +100,7 @@ export function LeoChat({ token, userName, briefingText }: LeoChatProps) {
         next[next.length - 1] = { role: 'assistant', content: `[${errText}]` }
         return next
       })
+      setLeoState('confused')
     } finally {
       setStreaming(false)
       inputRef.current?.focus()
@@ -125,39 +132,41 @@ export function LeoChat({ token, userName, briefingText }: LeoChatProps) {
         style={{
           background:   COLORS.void,
           borderBottom: `1px solid ${COLORS.deep}`,
-          padding:      '8px 16px',
+          padding:      '6px 14px',
           display:      'flex',
           alignItems:   'center',
-          gap:          8,
+          gap:          10,
         }}
       >
-        <div
-          style={{
-            fontFamily:    "'Space Grotesk', sans-serif",
-            fontSize:      14,
-            fontWeight:    700,
-            letterSpacing: '0.12em',
-            textTransform: 'uppercase' as const,
-            color:         COLORS.steel,
-          }}
-        >
-          Ask Leo
+        {/* Animated Leo mascot — reacts to the chat lifecycle */}
+        <div style={{ flexShrink: 0, marginTop: -2, marginBottom: -2 }}>
+          <LeoMascot state={leoState} size={48} />
         </div>
-        <div
-          style={{
-            width:      1,
-            height:     10,
-            background: COLORS.deep,
-          }}
-        />
-        <div
-          style={{
-            fontFamily: "'Space Grotesk', sans-serif",
-            fontSize:   14,
-            color:      COLORS.steel,
-          }}
-        >
-          Ask anything about the fleet, permits, crew, or operations
+        <div style={{ minWidth: 0 }}>
+          <div
+            style={{
+              fontFamily:    "'Space Grotesk', sans-serif",
+              fontSize:      14,
+              fontWeight:    700,
+              letterSpacing: '0.12em',
+              textTransform: 'uppercase' as const,
+              color:         COLORS.leoAmber,
+            }}
+          >
+            Ask Leo
+          </div>
+          <div
+            style={{
+              fontFamily: "'Space Grotesk', sans-serif",
+              fontSize:   12,
+              color:      COLORS.steel,
+              whiteSpace: 'nowrap',
+              overflow:   'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            Fleet · permits · crew · operations
+          </div>
         </div>
       </div>
 

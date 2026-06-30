@@ -1,0 +1,151 @@
+/**
+ * LeoMascot animations — lifted from the spec's styled-jsx block into a plain
+ * stylesheet (this app is Vite, not Next.js). Class names are unchanged so the
+ * SVG markup in LeoMascot.tsx attaches to these rules without modification.
+ */
+
+.leo-root {
+  position: relative;
+  display: inline-block;
+}
+.leo-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* ---------- Idle: breathing ---------- */
+.leo-animated .leo-part.leo-eyes,
+.leo-animated svg {
+  transform-origin: 170px 195px;
+}
+.leo-animated.leo-state-idle .leo-svg,
+.leo-animated.leo-state-waiting .leo-svg {
+  animation: leoBreathe 4s ease-in-out infinite;
+}
+@keyframes leoBreathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.015); }
+}
+
+/* ---------- Tail ---------- */
+.leo-animated .leo-tail {
+  transform-origin: 235px 175px;
+  animation: leoTailSway 3.2s ease-in-out infinite;
+}
+@keyframes leoTailSway {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(6deg); }
+}
+.leo-animated.leo-state-happy .leo-tail,
+.leo-animated.leo-state-congratulating .leo-tail {
+  animation: leoTailWag 0.5s ease-in-out infinite;
+}
+@keyframes leoTailWag {
+  0%, 100% { transform: rotate(-8deg); }
+  50% { transform: rotate(14deg); }
+}
+.leo-animated.leo-state-listening .leo-tail,
+.leo-animated.leo-state-confused .leo-tail {
+  animation: none;
+}
+
+/* ---------- Ears ---------- */
+.leo-animated .leo-ear {
+  transform-origin: center;
+  animation: leoEarTwitch 5.5s ease-in-out infinite;
+}
+.leo-animated .leo-ear-right { animation-delay: 0.4s; }
+@keyframes leoEarTwitch {
+  0%, 92%, 100% { transform: rotate(0deg); }
+  94% { transform: rotate(-4deg); }
+  96% { transform: rotate(3deg); }
+}
+.leo-animated.leo-state-listening .leo-ear {
+  animation: leoEarPerk 0.4s ease-out forwards;
+}
+@keyframes leoEarPerk {
+  to { transform: translateY(-3px) scale(1.05); }
+}
+
+/* ---------- Head tilt (listening / confused) ---------- */
+.leo-animated.leo-state-listening .leo-svg,
+.leo-animated.leo-expr-curious .leo-svg {
+  animation: leoTilt 0.5s ease-out forwards;
+}
+@keyframes leoTilt {
+  to { transform: rotate(-4deg); }
+}
+
+/* ---------- Thinking: look up + slow blink ---------- */
+.leo-animated.leo-state-thinking .leo-eyes {
+  animation: leoLookUp 1.8s ease-in-out infinite;
+}
+@keyframes leoLookUp {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+.leo-animated.leo-expr-thinking .leo-eyebrow-left,
+.leo-animated.leo-expr-thinking .leo-eyebrow-right {
+  animation: leoBrowRaise 2.4s ease-in-out infinite;
+}
+@keyframes leoBrowRaise {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+
+/* ---------- Speaking: mouth + head bob ---------- */
+.leo-mouth-open { opacity: 0; }
+.leo-animated.leo-state-speaking .leo-mouth-curve { opacity: 0; }
+.leo-animated.leo-state-speaking .leo-mouth-open {
+  animation: leoTalk 0.32s steps(1) infinite;
+}
+@keyframes leoTalk {
+  0%, 100% { opacity: 0; }
+  25% { opacity: 1; }
+  50% { opacity: 0.4; }
+  75% { opacity: 1; }
+}
+.leo-animated.leo-state-speaking .leo-svg {
+  animation: leoHeadBob 0.6s ease-in-out infinite;
+}
+@keyframes leoHeadBob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-1.5px); }
+}
+
+/* ---------- Expression: mouth curve shape ---------- */
+.leo-expr-happy .leo-mouth-curve,
+.leo-expr-excited .leo-mouth-curve,
+.leo-expr-proud .leo-mouth-curve,
+.leo-expr-laughing .leo-mouth-curve {
+  d: path("M82 164 Q91 178 100 164");
+}
+.leo-expr-concerned .leo-mouth-curve {
+  d: path("M84 170 Q91 162 98 170");
+}
+
+/* ---------- Blink ---------- */
+.leo-eyelid {
+  transform: scaleY(0);
+  transform-origin: top;
+  transition: transform 0.08s ease-in;
+}
+.leo-blinking .leo-eyelid {
+  transform: scaleY(1);
+}
+
+/* ---------- Excited bounce / sparkle cue ---------- */
+.leo-animated.leo-state-congratulating .leo-svg,
+.leo-animated.leo-expr-excited .leo-svg {
+  animation: leoBounce 0.7s ease-in-out infinite;
+}
+@keyframes leoBounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+/* ---------- Reduced motion ---------- */
+.leo-static * {
+  animation: none !important;
+}
