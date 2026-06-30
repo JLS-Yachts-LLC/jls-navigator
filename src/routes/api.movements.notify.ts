@@ -17,8 +17,16 @@ function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 }
 
+// TEMPORARILY DISABLED (2026-06-30): crew sign-on/off notification emails are
+// switched off until we're ready to go live. Flip back to `true` to re-enable.
+const MOVEMENT_EMAILS_ENABLED = false
+
 export async function movementsNotifyHandler(request: Request): Promise<Response> {
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+
+  // Kill-switch: short-circuit before doing any work, but report success so the
+  // sign-on/off page's fire-and-forget call stays happy.
+  if (!MOVEMENT_EMAILS_ENABLED) return json({ ok: true, sent: 0, disabled: true })
 
   const auth = request.headers.get('authorization') ?? ''
   if (!auth.startsWith('Bearer ')) return json({ error: 'Unauthorized' }, 401)
