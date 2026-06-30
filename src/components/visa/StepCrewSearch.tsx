@@ -1,10 +1,9 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { COLORS, FONTS } from '@/lib/tokens'
 import { DateInputDMY } from '@/components/ui/date-input-dmy'
 import { findCrewMatch, upsertCrewMember, CrewMember } from '@/lib/visa/crewMatching'
 import { supabase } from '@/integrations/supabase/client'
-import { PhoneInput, EMPTY_PHONE } from '@/components/phone-input'
-import type { PhoneValue } from '@/components/phone-input'
+import { PhoneNumberField, type PhoneNumberFieldHandle } from '@/components/visa/PhoneNumberField'
 import { NameInput } from '@/components/name-input'
 import { useAuth } from '@/lib/auth'
 
@@ -50,7 +49,6 @@ interface NewCrewForm {
   last_name: string
   date_of_birth: string
   email: string
-  phone: PhoneValue
   rank: string
 }
 
@@ -86,6 +84,7 @@ const fieldGroup = (children: React.ReactNode, key?: string) => (
 
 export default function StepCrewSearch({ state, onUpdate, onNext, onBack }: Props) {
   const { session } = useAuth()
+  const phoneRef = useRef<PhoneNumberFieldHandle>(null)
   const [searchName, setSearchName] = useState('')
   const [searchDob, setSearchDob] = useState('')
   const [searching, setSearching] = useState(false)
@@ -103,7 +102,6 @@ export default function StepCrewSearch({ state, onUpdate, onNext, onBack }: Prop
     last_name: '',
     date_of_birth: '',
     email: '',
-    phone: { ...EMPTY_PHONE },
     rank: '',
   })
 
@@ -168,6 +166,11 @@ export default function StepCrewSearch({ state, onUpdate, onNext, onBack }: Prop
 
   const handleSaveNew = async () => {
     if (!newFormValid) return
+    const phone = phoneRef.current?.getValue()
+    if (phone?.localNumber && !phoneRef.current?.isValid()) {
+      setSaveError('Enter a valid phone number for the selected country, or clear it')
+      return
+    }
     setSaving(true)
     setSaveError(null)
     try {
@@ -177,8 +180,8 @@ export default function StepCrewSearch({ state, onUpdate, onNext, onBack }: Prop
         last_name: newForm.last_name.trim(),
         date_of_birth: newForm.date_of_birth,
         email: newForm.email.trim() || null,
-        phone_country_code: newForm.phone.phoneNumber ? newForm.phone.countryCode : null,
-        phone_number: newForm.phone.phoneNumber || null,
+        phone_country_code: phone?.localNumber ? phone.dialCode : null,
+        phone_number: phone?.localNumber || null,
         rank: newForm.rank.trim() || null,
       } as any)
       // A newly upserted crew member may already have an active application.
@@ -442,9 +445,10 @@ export default function StepCrewSearch({ state, onUpdate, onNext, onBack }: Prop
               'email'
             )}
             {fieldGroup(
-              <PhoneInput
-                value={newForm.phone}
-                onChange={phone => setNewForm(f => ({ ...f, phone }))}
+              <PhoneNumberField
+                ref={phoneRef}
+                label="Phone"
+                isAuthenticated
               />,
               'phone'
             )}

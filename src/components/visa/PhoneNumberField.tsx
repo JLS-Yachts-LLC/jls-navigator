@@ -55,6 +55,10 @@ export interface PhoneNumberFieldProps {
   orgLocationCountry?:    string | null;
 
   existingCountryCode?: string | null;
+  /** Existing value stored as a dial code (e.g. '+971'); resolved to ISO once
+   *  the country list loads. Use when the record stores the dial code (migration
+   *  025 semantics) rather than the ISO alpha-2 code. */
+  existingDialCode?: string | null;
   existingLocalNumber?: string | null;
 
   isAuthenticated?: boolean;
@@ -65,7 +69,7 @@ export interface PhoneNumberFieldProps {
 
 export interface PhoneNumberFieldHandle {
   save: () => Promise<{ success: boolean; error?: string }>;
-  getValue: () => { countryCode: string | null; localNumber: string; fullInternational: string | null };
+  getValue: () => { countryCode: string | null; dialCode: string | null; localNumber: string; fullInternational: string | null };
   isValid: () => boolean;
 }
 
@@ -84,6 +88,7 @@ export const PhoneNumberField = forwardRef<PhoneNumberFieldHandle, PhoneNumberFi
       vesselLocationCountry,
       orgLocationCountry,
       existingCountryCode,
+      existingDialCode,
       existingLocalNumber,
       isAuthenticated = false,
       disabled = false,
@@ -97,7 +102,7 @@ export const PhoneNumberField = forwardRef<PhoneNumberFieldHandle, PhoneNumberFi
     const [localNumber, setLocalNumber] = useState<string>(existingLocalNumber ?? '');
     const [defaultSource, setDefaultSource] = useState<PhoneDefaultSource>('none');
     const [suggestedCountry, setSuggestedCountry] = useState<string | null>(existingCountryCode ?? null);
-    const [loading, setLoading] = useState(!existingCountryCode);
+    const [loading, setLoading] = useState(!existingCountryCode && !existingDialCode);
     const [touched, setTouched] = useState(false);
 
     const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -128,7 +133,9 @@ export const PhoneNumberField = forwardRef<PhoneNumberFieldHandle, PhoneNumberFi
     const selectedCountryData = countries.find((c) => c.countryCode === selectedCountry) ?? null;
 
     useEffect(() => {
-      if (existingCountryCode) {
+      // An existing saved value (ISO or dial code) — load the country list only,
+      // never auto-resolve a default that would overwrite the saved selection.
+      if (existingCountryCode || existingDialCode) {
         setLoading(true);
         fetch('/api/phone/resolve-default')
           .then((r) => r.json())
@@ -163,6 +170,15 @@ export const PhoneNumberField = forwardRef<PhoneNumberFieldHandle, PhoneNumberFi
         .finally(() => setLoading(false));
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    // Resolve an existing dial code (e.g. '+971') to its ISO code once the
+    // country list is available, so edit-loads display the saved country.
+    useEffect(() => {
+      if (existingDialCode && !selectedCountry && countries.length) {
+        const match = countries.find((c) => c.dialCode === existingDialCode);
+        if (match) setSelectedCountry(match.countryCode);
+      }
+    }, [existingDialCode, selectedCountry, countries]);
 
     useEffect(() => {
       function handleClick(e: MouseEvent) {
@@ -211,6 +227,7 @@ export const PhoneNumberField = forwardRef<PhoneNumberFieldHandle, PhoneNumberFi
     useImperativeHandle(ref, () => ({
       getValue: () => ({
         countryCode: selectedCountry,
+        dialCode: selectedCountryData?.dialCode ?? null,
         localNumber,
         fullInternational: selectedCountryData
           ? computeFullInternationalNumber(selectedCountryData.dialCode, localNumber)

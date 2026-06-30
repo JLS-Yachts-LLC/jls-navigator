@@ -1,6 +1,5 @@
-import { useState, useEffect, useMemo } from "react";
-import { PhoneInput, EMPTY_PHONE } from "@/components/phone-input";
-import type { PhoneValue } from "@/components/phone-input";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { PhoneNumberField, type PhoneNumberFieldHandle } from "@/components/visa/PhoneNumberField";
 import { formatName } from "@/lib/formatName";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchAllRows } from "@/lib/fetch-all";
@@ -65,7 +64,7 @@ const RANKS = [
 const EMPTY_FORM = {
   first_name: "", middle_name: "", last_name: "",
   nationality: "", rank: "", department: "",
-  email: "", phone: { ...EMPTY_PHONE } as PhoneValue, status: "active",
+  email: "", status: "active",
   passport_number: "", passport_expiry_date: "",
   yacht_id: "",
 };
@@ -87,6 +86,7 @@ export function CrewListPage({ onOpenCrew }: { onOpenCrew?: (id: string) => void
   const [deleting, setDeleting] = useState(false);
   const [view, setView] = useState<"table" | "grid" | "cards">("table");
   const [csvOpen, setCsvOpen] = useState(false);
+  const phoneRef = useRef<PhoneNumberFieldHandle>(null);
 
   useEffect(() => { void load(); void loadYachts(); }, []);
 
@@ -132,9 +132,6 @@ export function CrewListPage({ onOpenCrew }: { onOpenCrew?: (id: string) => void
       rank: m.rank ?? "",
       department: m.department ?? "",
       email: m.email ?? "",
-      phone: m.phone_country_code && m.phone_number
-        ? { countryCode: m.phone_country_code, phoneNumber: m.phone_number }
-        : { ...EMPTY_PHONE },
       status: m.status,
       passport_number: m.passport_number ?? "",
       passport_expiry_date: m.passport_expiry_date ?? "",
@@ -148,6 +145,12 @@ export function CrewListPage({ onOpenCrew }: { onOpenCrew?: (id: string) => void
       toast.error("First and last name are required");
       return;
     }
+    // Phone is optional, but if entered it must be valid for the chosen country.
+    const phone = phoneRef.current?.getValue();
+    if (phone?.localNumber && !phoneRef.current?.isValid()) {
+      toast.error("Enter a valid phone number for the selected country, or clear it");
+      return;
+    }
     setBusy(true);
     try {
       const payload: any = {
@@ -158,8 +161,8 @@ export function CrewListPage({ onOpenCrew }: { onOpenCrew?: (id: string) => void
         rank: form.rank || null,
         department: form.department || null,
         email: form.email.trim() || null,
-        phone_country_code: (form.phone as PhoneValue).phoneNumber ? (form.phone as PhoneValue).countryCode : null,
-        phone_number: (form.phone as PhoneValue).phoneNumber || null,
+        phone_country_code: phone?.localNumber ? phone.dialCode : null,
+        phone_number: phone?.localNumber || null,
         status: form.status,
         passport_number: form.passport_number.trim() || null,
         passport_expiry_date: form.passport_expiry_date || null,
@@ -510,10 +513,14 @@ export function CrewListPage({ onOpenCrew }: { onOpenCrew?: (id: string) => void
                 <Input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="crew@vessel.com" className="h-8" />
               </div>
               <div className="space-y-1.5">
-                <PhoneInput
-                  value={form.phone as PhoneValue}
-                  onChange={phone => setForm(f => ({ ...f, phone }))}
+                <PhoneNumberField
+                  key={editing?.id ?? "new"}
+                  ref={phoneRef}
                   label="Phone"
+                  isAuthenticated
+                  nationalityCountry={form.nationality || null}
+                  existingDialCode={editing?.phone_country_code ?? null}
+                  existingLocalNumber={editing?.phone_number ?? null}
                 />
               </div>
             </div>
