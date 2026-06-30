@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -128,7 +128,29 @@ function initViewState() {
 }
 
 // ── Page component ─────────────────────────────────────────────────────────────
-export function YachtsPage() {
+/** Vessel link that stays in the Beta shell: routes to /yachts/$id normally,
+ *  but calls onOpen (inline detail) when embedded in the New View. */
+function YachtLink({ id, onOpen, className, children }: {
+  id: string; onOpen?: (id: string) => void; className?: string; children: ReactNode;
+}) {
+  if (onOpen) {
+    return (
+      <div
+        role="button"
+        tabIndex={0}
+        className={className}
+        style={{ cursor: "pointer" }}
+        onClick={() => onOpen(id)}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(id); } }}
+      >
+        {children}
+      </div>
+    );
+  }
+  return <Link to="/yachts/$id" params={{ id } as any} className={className}>{children}</Link>;
+}
+
+export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void } = {}) {
   // Init from localStorage (runs once)
   const [init] = useState(initViewState);
 
@@ -501,13 +523,19 @@ export function YachtsPage() {
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <Button asChild variant="outline" size="sm" className="h-8 gap-1.5 text-xs">
-            <Link to="/my-fleet"><Radar className="h-3.5 w-3.5" /> Live Fleet Map</Link>
-          </Button>
+          {/* In the Beta shell, Live Fleet Map is the Tracking tab and adding a
+              yacht routes out — hide both so the hub stays self-contained. */}
+          {!onOpenYacht && (
+            <>
+              <Button asChild variant="outline" size="sm" className="h-8 gap-1.5 text-xs">
+                <Link to="/my-fleet"><Radar className="h-3.5 w-3.5" /> Live Fleet Map</Link>
+              </Button>
 
-          <Button asChild size="sm" className="h-8 gap-1.5 text-xs">
-            <Link to="/yachts/new"><Plus className="h-3.5 w-3.5" /> Add Yacht</Link>
-          </Button>
+              <Button asChild size="sm" className="h-8 gap-1.5 text-xs">
+                <Link to="/yachts/new"><Plus className="h-3.5 w-3.5" /> Add Yacht</Link>
+              </Button>
+            </>
+          )}
         </div>
       </header>
 
@@ -717,13 +745,13 @@ function ListView({
               {cols.map((c) => (
                 <td key={c.key} className="whitespace-nowrap px-3 py-1.5">
                   {c.key === "vessel_name" ? (
-                    <Link
-                      to="/yachts/$id"
-                      params={{ id: y.id }}
+                    <YachtLink
+                      id={y.id}
+                      onOpen={onOpenYacht}
                       className="font-medium text-foreground hover:text-primary"
                     >
                       {fmt(y[c.key])}
-                    </Link>
+                    </YachtLink>
                   ) : c.key === "status" ? (
                     quickEditId === y.id ? (
                       <select
@@ -805,11 +833,11 @@ function CardsView({ rows, staleIds, small, onArchive }: { rows: Yacht[]; staleI
       }
     >
       {rows.map((y) => (
-        <Link
+        <YachtLink
           key={y.id}
-          to="/yachts/$id"
-          params={{ id: y.id }}
-          className="group overflow-hidden rounded-lg border border-border bg-card transition hover:border-primary/50 hover:shadow-[0_8px_30px_-10px_oklch(0.62_0.18_245/.35)]"
+          id={y.id}
+          onOpen={onOpenYacht}
+          className="group block overflow-hidden rounded-lg border border-border bg-card transition hover:border-primary/50 hover:shadow-[0_8px_30px_-10px_oklch(0.62_0.18_245/.35)]"
         >
           <div className="relative aspect-[16/9] overflow-hidden bg-muted">
             {typeof y.vessel_image === "string" && /^https?:\/\//.test(y.vessel_image) ? (
@@ -875,7 +903,7 @@ function CardsView({ rows, staleIds, small, onArchive }: { rows: Yacht[]; staleI
               </div>
             </div>
           )}
-        </Link>
+        </YachtLink>
       ))}
     </div>
   );

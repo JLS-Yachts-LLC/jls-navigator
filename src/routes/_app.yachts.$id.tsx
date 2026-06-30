@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { createServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
@@ -106,8 +106,19 @@ function labelFor(key: string) {
   return YACHT_COLUMNS.find((c) => c.key === key)?.label ?? key;
 }
 
-function YachtDetail() {
-  const { id } = Route.useParams();
+export function YachtDetail({
+  yachtId,
+  embedded = false,
+  onBack,
+}: {
+  /** When provided, used instead of the route param (Beta-embedded mode). */
+  yachtId?: string;
+  embedded?: boolean;
+  onBack?: () => void;
+} = {}) {
+  // strict:false so this works both on its own route and embedded in the Beta shell.
+  const params = useParams({ strict: false }) as { id?: string };
+  const id = yachtId ?? params.id!;
   const { user } = useAuth();
   const navigate = useNavigate();
   const [y, setY] = useState<Record<string, unknown> | null>(null);
@@ -227,7 +238,7 @@ function YachtDetail() {
     const { error } = await supabase.from("yachts").delete().eq("id", id);
     if (error) return toast.error(error.message);
     toast.success("Deleted");
-    navigate({ to: "/yachts" });
+    if (embedded) onBack?.(); else navigate({ to: "/yachts" });
   }
 
   async function toggleArchive() {
@@ -253,9 +264,15 @@ function YachtDetail() {
     <div className="flex h-full flex-col">
       <header className="flex items-center justify-between border-b border-border bg-card/40 px-6 py-3">
         <div className="flex items-center gap-3">
-          <Button asChild variant="ghost" size="sm" className="gap-1.5">
-            <Link to="/yachts"><ArrowLeft className="h-3.5 w-3.5" /> Yachts</Link>
-          </Button>
+          {embedded ? (
+            <Button variant="ghost" size="sm" className="gap-1.5" onClick={onBack}>
+              <ArrowLeft className="h-3.5 w-3.5" /> Yachts
+            </Button>
+          ) : (
+            <Button asChild variant="ghost" size="sm" className="gap-1.5">
+              <Link to="/yachts"><ArrowLeft className="h-3.5 w-3.5" /> Yachts</Link>
+            </Button>
+          )}
           <div>
             <h1 className="font-display text-xl font-semibold">{String(y.vessel_name ?? "")}</h1>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">

@@ -2,24 +2,27 @@ import { useState } from "react";
 import { Ship, Navigation, BarChart3 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { YachtsPage } from "@/routes/_app.yachts.index";
+import { YachtDetail } from "@/routes/_app.yachts.$id";
 import { MyFleetPage } from "@/components/my-fleet-page";
 import { VesselReportScreen } from "@/components/visa/VesselReportScreen";
 
 /**
- * Vessels hub — Vessel Overview + Live Tracking as tabs (instead of separate nav
- * lines). Each tab renders the real page (full functionality incl. SharePoint
- * vessel images on the overview, and the live map on tracking). Only the active
- * tab mounts. Beta styling is inherited from the shell's pds-embed area.
+ * Vessels hub — Vessel Overview + Live Tracking + Vessel Reports as tabs
+ * (instead of separate nav lines). Each tab renders the real page (full
+ * functionality incl. SharePoint vessel images on the overview, and the live
+ * map on tracking). Beta styling is inherited from the shell's pds-embed area.
+ *
+ * Overview keeps vessel detail INSIDE the Beta shell: clicking a vessel opens
+ * it inline (list ↔ detail via state) rather than routing to /yachts/$id.
  */
 const TABS = [
-  { key: "overview", label: "Vessel Overview", icon: Ship, Comp: YachtsPage },
-  { key: "tracking", label: "Live Tracking", icon: Navigation, Comp: MyFleetPage },
-  { key: "reports", label: "Vessel Reports", icon: BarChart3, Comp: VesselReportScreen },
+  { key: "overview", label: "Vessel Overview", icon: Ship },
+  { key: "tracking", label: "Live Tracking", icon: Navigation },
+  { key: "reports", label: "Vessel Reports", icon: BarChart3 },
 ] as const;
 
 export function VesselsHub() {
   const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("overview");
-  const Active = TABS.find((t) => t.key === tab)?.Comp ?? YachtsPage;
 
   return (
     <div className="flex h-full flex-col">
@@ -45,9 +48,25 @@ export function VesselsHub() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto">
-        <Active />
+        {tab === "overview" ? (
+          <BetaVesselOverview />
+        ) : tab === "tracking" ? (
+          <MyFleetPage />
+        ) : (
+          <VesselReportScreen />
+        )}
       </div>
     </div>
+  );
+}
+
+/** Overview tab: vessel list ↔ inline detail, both inside the Beta shell. */
+function BetaVesselOverview() {
+  const [yachtId, setYachtId] = useState<string | null>(null);
+  return yachtId ? (
+    <YachtDetail yachtId={yachtId} embedded onBack={() => setYachtId(null)} />
+  ) : (
+    <YachtsPage onOpenYacht={setYachtId} />
   );
 }
 
