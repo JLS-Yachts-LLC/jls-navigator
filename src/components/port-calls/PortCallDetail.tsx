@@ -140,7 +140,6 @@ export function PortCallDetail({
       {
         p_port_call_id: portCallId,
         p_workflow_code: "inward_clearance",
-        p_performed_by: user.id,
       },
     );
     setStarting(false);
@@ -163,7 +162,6 @@ export function PortCallDetail({
         p_step_code: stepCode,
         p_new_status: newStatus,
         p_notes: null,
-        p_performed_by: user.id,
       },
     );
     if (rpcError) {
@@ -184,7 +182,6 @@ export function PortCallDetail({
         p_document_id: documentId,
         p_validation_status: validationStatus,
         p_approval_status: null,
-        p_performed_by: user.id,
       },
     );
     if (rpcError) {

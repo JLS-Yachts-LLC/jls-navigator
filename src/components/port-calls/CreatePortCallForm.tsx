@@ -85,7 +85,6 @@ export function CreatePortCallForm({
         p_etd: etd ? new Date(etd).toISOString() : null,
         p_assigned_office_id: assignedOfficeId || null,
         p_assigned_agent_id: assignedAgentId || null,
-        p_created_by: user.id,
       },
     );
     setSubmitting(false);
