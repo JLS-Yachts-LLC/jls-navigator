@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Wire ORBIT into the New View (was Old-View-only)"
+      },
+      {
+        "type": "feature",
         "title": "Add Bunkering UI (structured intake, BDN, Master's Declaration)"
       },
       {
