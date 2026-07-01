@@ -10,6 +10,18 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Reimplement FRS rebuild against the real schema"
+      },
+      {
+        "type": "fix",
+        "title": "Close anon RPC access on the rest of the flagged functions"
+      },
+      {
+        "type": "fix",
+        "title": "Close anon RPC access + client-identity trust on Port Calls"
+      },
+      {
+        "type": "feature",
         "title": "Add client/vessel entity foundation for Port Calls"
       },
       {
