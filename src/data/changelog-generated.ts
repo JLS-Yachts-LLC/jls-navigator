@@ -10,6 +10,14 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Add Bunkering vertical slice against the real ORBIT module"
+      },
+      {
+        "type": "feature",
+        "title": "Add Candidates, Pipeline, and Recruitment Dashboard tabs"
+      },
+      {
+        "type": "feature",
         "title": "Reimplement FRS rebuild against the real schema"
       },
       {
