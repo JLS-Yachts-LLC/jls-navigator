@@ -14,12 +14,16 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { ContractBuilder } from "@/components/crew-placement/contract-builder";
+import { PlacementCandidatesTab } from "@/components/crew-placement/placement-candidates-tab";
+import { PlacementPipelineTab } from "@/components/crew-placement/placement-pipeline-tab";
+import { PlacementDashboardTab } from "@/components/crew-placement/placement-dashboard-tab";
 import {
   Users, BadgeCheck, FileText, Wallet, FolderOpen, LayoutTemplate, Plus, Search,
   Ship, XCircle, Pencil, Anchor as AnchorIcon, AlertTriangle, ChevronLeft, ChevronRight, ChevronDown, Loader2, Megaphone, Download, CalendarDays,
+  UserPlus, KanbanSquare, LayoutDashboard,
 } from "lucide-react";
 
-type Tab = "roster" | "vacancies" | "certs" | "contracts" | "leave" | "payroll" | "documents" | "templates";
+type Tab = "roster" | "vacancies" | "certs" | "contracts" | "leave" | "payroll" | "documents" | "templates" | "candidates" | "pipeline" | "recruitment";
 const TABS: { key: Tab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { key: "roster", label: "Roster", icon: Users },
   { key: "vacancies", label: "Vacancies & Pool", icon: Megaphone },
@@ -29,6 +33,9 @@ const TABS: { key: Tab; label: string; icon: React.ComponentType<{ className?: s
   { key: "payroll", label: "Payroll", icon: Wallet },
   { key: "documents", label: "Documents", icon: FolderOpen },
   { key: "templates", label: "Templates", icon: LayoutTemplate },
+  { key: "candidates", label: "Candidates", icon: UserPlus },
+  { key: "pipeline", label: "Pipeline", icon: KanbanSquare },
+  { key: "recruitment", label: "Recruitment Dashboard", icon: LayoutDashboard },
 ];
 
 const DEPARTMENTS = ["Bridge", "Deck", "Engineering", "Interior", "Galley", "Other"];
@@ -160,6 +167,9 @@ export function CrewPlacementPage() {
             {tab === "payroll" && <Payroll payslips={payslips} crew={crew} templates={templates} reload={loadAll} />}
             {tab === "documents" && <Documents docs={docs} crew={crew} reload={loadAll} />}
             {tab === "templates" && <Templates templates={templates} reload={loadAll} />}
+            {tab === "candidates" && <PlacementCandidatesTab />}
+            {tab === "pipeline" && <PlacementPipelineTab />}
+            {tab === "recruitment" && <PlacementDashboardTab />}
           </div>
         </>
       )}
