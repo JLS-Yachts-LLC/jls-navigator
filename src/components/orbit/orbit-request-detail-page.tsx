@@ -11,6 +11,7 @@ import { ArrowLeft, Loader2, Ship, Plus, Check, X, Activity } from "lucide-react
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { CATEGORY_LABEL, STATUS_META, URGENCY_META, SLA_TARGET, NEXT_STATUS, type OrbitStatus } from "./orbit-constants";
+import { BunkerRequestExtensions } from "./bunker-request-extensions";
 
 function fmt(d: string | null) {
   return d ? new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—";
@@ -180,6 +181,8 @@ export function OrbitRequestDetailPage() {
                 </div>
               )}
             </div>
+
+            {req.category === "FUEL_BUNKERING" && <BunkerRequestExtensions requestId={req.id} yachtId={req.yacht_id} />}
           </div>
 
           {/* Right: activity timeline */}

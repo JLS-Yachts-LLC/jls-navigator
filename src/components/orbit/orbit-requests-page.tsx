@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import {
   ORBIT_CATEGORIES, CATEGORY_LABEL, QUICK_ACTIONS, STATUS_META, URGENCY_META,
 } from "./orbit-constants";
+import { BunkerRequestForm } from "./bunker-request-form";
 
 type Yacht = { id: string; vessel_name: string };
 type Request = {
@@ -50,6 +51,7 @@ export function OrbitRequestsPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
+  const [bunkerFormOpen, setBunkerFormOpen] = useState(false);
   const [form, setForm] = useState({ ...EMPTY });
   const [busy, setBusy] = useState(false);
 
@@ -142,7 +144,7 @@ export function OrbitRequestsPage() {
             {QUICK_ACTIONS.map(q => {
               const Icon = q.icon;
               return (
-                <button key={q.label} onClick={() => openNew(q.category, q.emergency)}
+                <button key={q.label} onClick={() => q.category === "FUEL_BUNKERING" ? setBunkerFormOpen(true) : openNew(q.category, q.emergency)}
                   className={cn("flex flex-col items-center justify-center gap-1.5 rounded-xl border p-3 text-center text-xs font-medium transition",
                     q.emergency ? "border-red-500/40 bg-red-500/10 text-red-500 hover:bg-red-500/20" : "border-border bg-card hover:border-primary/40 hover:bg-accent")}>
                   <Icon className="h-5 w-5" />
@@ -252,6 +254,13 @@ export function OrbitRequestsPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <BunkerRequestForm
+        open={bunkerFormOpen}
+        onOpenChange={setBunkerFormOpen}
+        yachts={yachts}
+        onCreated={(id) => navigate({ to: "/orbit/requests/$id", params: { id } }).catch(() => void load())}
+      />
     </div>
   );
 }
