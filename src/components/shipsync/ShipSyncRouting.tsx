@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Ship, Truck, MapPin, Route, X, Plus, ChevronRight, ChevronDown, Anchor } from "lucide-react";
+import { Loader2, Ship, Truck, MapPin, Route, X, Plus, ChevronRight, ChevronDown, Anchor, Calendar } from "lucide-react";
 import { StatusBadge } from "@/components/shipsync/shared";
 import { dispatchRoute, unassignPackage } from "@/lib/shipsync/data";
 import { googleMapsDirectionsUrl, type ShipSyncPackage, type ShipSyncDestination } from "@/lib/shipsync/model";
@@ -14,16 +14,19 @@ interface RouteDraft {
   id: string;
   name: string;
   driverId: string;
+  deliveryDate: string;      // YYYY-MM-DD — day it goes out for delivery
   boats: string[];           // boat names added to this route
   excluded: Set<string>;     // parcel ids unticked
   expanded: Set<string>;     // boat names currently expanded
 }
 
+const today = () => new Date().toISOString().slice(0, 10);
+const newRoute = (id: string, name: string): RouteDraft =>
+  ({ id, name, driverId: "", deliveryDate: today(), boats: [], excluded: new Set(), expanded: new Set() });
+
 export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: () => Promise<void> }) {
   const seq = useRef(1);
-  const [routes, setRoutes] = useState<RouteDraft[]>(() => [
-    { id: "r1", name: "Route 1", driverId: "", boats: [], excluded: new Set(), expanded: new Set() },
-  ]);
+  const [routes, setRoutes] = useState<RouteDraft[]>(() => [newRoute("r1", "Route 1")]);
   const [busy, setBusy] = useState<string | null>(null);
 
   const destByBoat = useMemo(() => {
@@ -91,7 +94,7 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
   }
   function addRoute() {
     seq.current += 1;
-    setRoutes((prev) => [...prev, { id: `r${seq.current}-${prev.length}`, name: `Route ${seq.current}`, driverId: "", boats: [], excluded: new Set(), expanded: new Set() }]);
+    setRoutes((prev) => [...prev, newRoute(`r${seq.current}-${prev.length}`, `Route ${seq.current}`)]);
   }
   function removeRoute(id: string) {
     setRoutes((prev) => (prev.length === 1 ? prev : prev.filter((r) => r.id !== id)));
@@ -124,18 +127,17 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
     const parcels = routeParcels(r);
     if (parcels.length === 0) { toast.error("Add boats/parcels to this route first"); return; }
     if (!r.driverId) { toast.error("Choose a driver for this route"); return; }
+    if (!r.deliveryDate) { toast.error("Set the delivery date for this route"); return; }
     setBusy(r.id);
     try {
       const distinctBoats = Array.from(new Set(parcels.map((p) => p.boat_name || UNASSIGNED)));
       const boatLabel = distinctBoats.length === 1 && distinctBoats[0] !== UNASSIGNED ? distinctBoats[0] : null;
-      const note = await dispatchRoute(parcels.map((p) => p.id), r.driverId, boatLabel);
+      const note = await dispatchRoute(parcels.map((p) => p.id), r.driverId, boatLabel, r.deliveryDate);
       const driver = data.drivers.find((d) => d.id === r.driverId);
       await reload();
       // Drop this card; keep the rest (renumbering is cosmetic — leave names as-is).
-      setRoutes((prev) => (prev.length === 1
-        ? [{ id: "r1", name: "Route 1", driverId: "", boats: [], excluded: new Set(), expanded: new Set() }]
-        : prev.filter((x) => x.id !== r.id)));
-      toast.success(`Dispatched ${parcels.length} parcel${parcels.length > 1 ? "s" : ""} across ${distinctBoats.length} boat${distinctBoats.length > 1 ? "s" : ""} to ${driver?.name ?? "driver"} (DN-${note.number})`);
+      setRoutes((prev) => (prev.length === 1 ? [newRoute("r1", "Route 1")] : prev.filter((x) => x.id !== r.id)));
+      toast.success(`Dispatched ${parcels.length} parcel${parcels.length > 1 ? "s" : ""} across ${distinctBoats.length} boat${distinctBoats.length > 1 ? "s" : ""} to ${driver?.name ?? "driver"} for ${r.deliveryDate} (DN-${note.number})`);
     } catch (e: any) {
       toast.error(e?.message ?? "Dispatch failed");
     } finally {
@@ -185,6 +187,11 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
                   </div>
                   <span className="text-[12px] text-muted-foreground">{r.boats.length} boat{r.boats.length === 1 ? "" : "s"} · {parcels.length} parcel{parcels.length === 1 ? "" : "s"}</span>
                   <div className="ml-auto flex items-center gap-2">
+                    <label className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+                      <Calendar className="h-3.5 w-3.5" />
+                      <input type="date" value={r.deliveryDate} onChange={(e) => patchRoute(r.id, (x) => ({ ...x, deliveryDate: e.target.value }))}
+                        className="h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground" title="Day it goes out for delivery" />
+                    </label>
                     <Select value={r.driverId} onValueChange={(v) => patchRoute(r.id, (x) => ({ ...x, driverId: v }))}>
                       <SelectTrigger className="h-8 w-44 text-xs"><SelectValue placeholder="Choose driver…" /></SelectTrigger>
                       <SelectContent>

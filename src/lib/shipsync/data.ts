@@ -102,10 +102,11 @@ export async function assignPackagesToNote(packageIds: string[], note: ShipSyncD
  *  the van). Pass the boat name for a single-boat route (keeps the saved berth),
  *  or null for a multi-boat route. */
 export async function dispatchRoute(
-  packageIds: string[], driverId: string, boatLabel: string | null,
+  packageIds: string[], driverId: string, boatLabel: string | null, plannedDate?: string | null,
 ): Promise<ShipSyncDeliveryNote> {
   const note = await createDeliveryNote(boatLabel ?? '', driverId)
   await assignPackagesToNote(packageIds, note, driverId)
+  if (plannedDate) await db().from('shipsync_packages').update({ planned_delivery_date: plannedDate }).in('id', packageIds)
   await db().from('shipsync_delivery_notes').update({ status: 'dispatched' }).eq('id', note.id)
   return { ...note, status: 'dispatched' }
 }
