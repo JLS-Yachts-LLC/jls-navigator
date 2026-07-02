@@ -106,8 +106,8 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
           {openNotes.map((n) => {
             const notePkgs = data.packages.filter((p) => p.delivery_note_id === n.id);
             const count = notePkgs.length;
-            const noteBoats = Array.from(new Set(notePkgs.map((p) => p.boat_name).filter(Boolean) as string[]));
-            const boatLabel = n.boat_name ?? (noteBoats.length > 1 ? `${noteBoats.length} boats` : noteBoats[0] ?? "—");
+            const noteBoats = Array.from(new Set(notePkgs.map((p) => p.boat_name).filter(Boolean) as string[])).sort();
+            const boatList = n.boat_name ? [n.boat_name] : (noteBoats.length ? noteBoats : ["—"]);
             const driver = data.drivers.find((d) => d.id === n.driver_id);
             return (
               <button key={n.id} onClick={() => setSelId(n.id)}
@@ -116,7 +116,12 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
                   <span className="font-display text-sm font-bold">DN-{n.number}</span>
                   <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold">{count} pkg</span>
                 </div>
-                <div className="mt-0.5 text-[12px] text-muted-foreground">{boatLabel} · {driver?.name ?? "no driver"}</div>
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  {boatList.map((b) => (
+                    <span key={b} className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-foreground/80">{b}</span>
+                  ))}
+                </div>
+                <div className="mt-1 text-[11px] text-muted-foreground">{driver?.name ?? "no driver"}</div>
               </button>
             );
           })}
