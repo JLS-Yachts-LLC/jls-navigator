@@ -39,12 +39,14 @@ export async function movementsNotifyHandler(request: Request): Promise<Response
     crew_ids?: string[]; yacht_id?: string | null; event_type?: string
     event_date?: string | null; port?: string | null; airline?: string | null; flight_number?: string | null
   }
-  const crewIds = body.crew_ids ?? []
+  const crewIds = [...new Set(body.crew_ids ?? [])] // de-dupe repeated ids
   if (crewIds.length === 0) return json({ ok: true, sent: 0 })
 
-  // Crew names
+  // Crew names — de-duped (guards against duplicate crew records for the same person)
   const { data: crew } = await sb.from('crew_members').select('full_name, first_name, last_name').in('id', crewIds)
-  const names = (crew ?? []).map((c: any) => c.full_name || `${c.first_name ?? ''} ${c.last_name ?? ''}`.trim()).filter(Boolean)
+  const names = [...new Set(
+    (crew ?? []).map((c: any) => (c.full_name || `${c.first_name ?? ''} ${c.last_name ?? ''}`.trim())).filter(Boolean),
+  )]
 
   // Vessel
   let vessel = ''
@@ -55,9 +57,11 @@ export async function movementsNotifyHandler(request: Request): Promise<Response
 
   // Recipients — admin-tier users with an email on file.
   const { data: profiles } = await sb.from('user_profiles').select('email, roles:role_id(name)').not('email', 'is', null)
-  const recipients = (profiles ?? [])
-    .filter((p: any) => ['global_admin', 'org_admin'].includes(p.roles?.name))
-    .map((p: any) => p.email as string)
+  const recipients = [...new Set(
+    (profiles ?? [])
+      .filter((p: any) => ['global_admin', 'org_admin'].includes(p.roles?.name))
+      .map((p: any) => p.email as string),
+  )]
   if (recipients.length === 0) return json({ ok: true, sent: 0 })
 
   const verb = body.event_type === 'sign_off' ? 'Sign Off' : 'Sign On'
