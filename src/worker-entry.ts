@@ -15,6 +15,7 @@ import { visaExportHandler } from './routes/api.visa.export'
 import { visaExcelPushHandler } from './routes/api.visa.excel-push'
 import { visaExcelSyncHandler } from './routes/api.visa.excel-sync'
 import { visaUploadArrivalDocHandler } from './routes/api.visa.upload-arrival-doc'
+import { visaSendToVesselHandler } from './routes/api.visa.send-to-vessel'
 import { seedTemplatesFolderHandler } from './routes/api.admin.seed-templates-folder'
 import { visaPassportOcrHandler } from './routes/api.visa.passport-ocr'
 import { itTicketsNotifyHandler } from './routes/api.it-tickets.notify'
@@ -283,6 +284,10 @@ export default {
 
     if (url.pathname === '/api/visa/upload-arrival-doc' && request.method === 'POST') {
       return visaUploadArrivalDocHandler(request)
+    }
+
+    if (url.pathname === '/api/visa/send-to-vessel' && request.method === 'POST') {
+      return visaSendToVesselHandler(request)
     }
 
     if (url.pathname === '/api/admin/seed-templates-folder' && request.method === 'POST') {

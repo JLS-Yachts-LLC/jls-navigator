@@ -101,6 +101,55 @@ export async function sendGraphEmail(opts: {
   }
 }
 
+/**
+ * Send an email with (potentially large) attachments via the draft-message flow:
+ * create draft → add each attachment in its own request → send. Avoids the 4MB
+ * total-request cap of /sendMail when attachments are big (e.g. the 2.7MB UAE
+ * Arrival Instructions PDF alongside a visa document).
+ */
+export async function sendGraphEmailWithAttachments(opts: {
+  to: string[]
+  cc?: string[]
+  subject: string
+  html: string
+  from?: string
+  attachments: { filename: string; contentBase64: string; contentType: string }[]
+}): Promise<void> {
+  const token = await getMailGraphToken()
+  const sender = opts.from ?? (process.env.MAIL_SENDER as string | undefined) ?? 'polaris@jlsyachts.com'
+  const base = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(sender)}`
+  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+
+  // 1. Create the draft.
+  const draftRes = await fetch(`${base}/messages`, {
+    method: 'POST', headers,
+    body: JSON.stringify({
+      subject: opts.subject,
+      body: { contentType: 'HTML', content: opts.html },
+      toRecipients: opts.to.filter(Boolean).map((a) => ({ emailAddress: { address: a } })),
+      ...(opts.cc?.length ? { ccRecipients: opts.cc.filter(Boolean).map((a) => ({ emailAddress: { address: a } })) } : {}),
+    }),
+  })
+  if (!draftRes.ok) throw new Error(`Graph draft ${draftRes.status}: ${(await draftRes.text()).slice(0, 240)}`)
+  const draft: any = await draftRes.json()
+
+  // 2. Attach each file in its own request (own 4MB budget each).
+  for (const a of opts.attachments) {
+    const attRes = await fetch(`${base}/messages/${draft.id}/attachments`, {
+      method: 'POST', headers,
+      body: JSON.stringify({
+        '@odata.type': '#microsoft.graph.fileAttachment',
+        name: a.filename, contentType: a.contentType, contentBytes: a.contentBase64,
+      }),
+    })
+    if (!attRes.ok) throw new Error(`Graph attach "${a.filename}" ${attRes.status}: ${(await attRes.text()).slice(0, 240)}`)
+  }
+
+  // 3. Send the draft.
+  const sendRes = await fetch(`${base}/messages/${draft.id}/send`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } })
+  if (sendRes.status !== 202 && !sendRes.ok) throw new Error(`Graph send ${sendRes.status}: ${(await sendRes.text()).slice(0, 240)}`)
+}
+
 // ── Branded email shell + ticket templates ────────────────────────────────────
 
 function shell(content: string): string {

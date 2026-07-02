@@ -314,10 +314,15 @@ export async function reconcileCrewVisa(opts: {
           summary.created++
           if (actions.length < ACTION_CAP) actions.push({ vessel: sheetName, given, surname, passport, action: 'create', changes: Object.fromEntries(Object.entries(vals).map(([k, v]) => [k, { from: null, to: v }])) })
           if (!dryRun) {
+            // Fallback status: historical rows without a STATUS import as 'expired'
+            // when their visa expiry is past, so the pipeline isn't flooded with
+            // stale 'submitted' applications.
+            const todayIso = new Date().toISOString().slice(0, 10)
+            const fallback = vals.visa_expiry && String(vals.visa_expiry) < todayIso ? 'expired' : 'submitted'
             toCreate.push({
               ...vals, vessel_name: sheetName, yacht_id: yachtId,
               crew_member_id: passport ? (crewByPassport.get(norm(passport)) ?? null) : null,
-              country_code: 'AE', status: vals.status ?? 'submitted', sharepoint_synced_at: new Date().toISOString(),
+              country_code: 'AE', status: vals.status ?? fallback, sharepoint_synced_at: new Date().toISOString(),
             })
           }
         } else {
