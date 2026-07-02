@@ -133,6 +133,7 @@ export function YachtDetail({
   const [syncingImage, setSyncingImage] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmArchive, setConfirmArchive] = useState(false);
+  const [tab, setTab] = useState<"details" | "finance">("details");
 
   useEffect(() => { void load(); }, [id]);
   async function load() {
@@ -318,6 +319,25 @@ export function YachtDetail({
         </div>
       </header>
 
+      {/* Details / Finance tabs */}
+      <div className="flex items-center gap-1 border-b border-border/60 bg-card/20 px-6">
+        {([["details", "Details"], ["finance", "Finance"]] as const).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            className={cn(
+              "border-b-2 px-3 py-2 text-sm font-medium transition",
+              tab === key ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "finance" ? (
+        <YachtFinance yachtId={String(y.id)} qboCustomerId={(y as any).qbo_customer_id ?? null} />
+      ) : (
       <div className="flex-1 overflow-auto p-6">
         <div className="mx-auto grid max-w-6xl grid-cols-1 gap-6 lg:grid-cols-3">
           <div className="lg:col-span-1 space-y-4">
@@ -402,6 +422,7 @@ export function YachtDetail({
         {/* Related records */}
         {!editing && <YachtRelatedRecords yachtId={id} />}
       </div>
+      )}
 
       <AlertDialog open={confirmArchive} onOpenChange={setConfirmArchive}>
         <AlertDialogContent>
@@ -703,6 +724,153 @@ function EditField({ k, form, set, errors }: { k: string; form: Record<string, s
         className={`h-8 text-xs ${err ? "border-destructive focus-visible:ring-destructive" : ""}`}
       />
       {err && <p className="text-[10px] text-destructive">{err}</p>}
+    </div>
+  );
+}
+
+// ── Finance tab — this yacht's QuickBooks invoices (paid / pending / outstanding) ──
+type QboInvoiceRow = {
+  id: string; doc_number: string | null; txn_date: string | null; due_date: string | null;
+  total_amt: number | null; balance: number | null; status: string | null; currency: string | null;
+};
+
+const INVOICE_STATUS_CLS: Record<string, string> = {
+  Paid: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+  Unpaid: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/20",
+  Overdue: "bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/20",
+};
+
+function YachtFinance({ yachtId, qboCustomerId }: { yachtId: string; qboCustomerId: string | null }) {
+  const { session } = useAuth();
+  const [rows, setRows] = useState<QboInvoiceRow[]>([]);
+  const [busy, setBusy] = useState(true);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+
+  useEffect(() => {
+    setBusy(true);
+    void (async () => {
+      let q = (supabase as any)
+        .from("qbo_invoices")
+        .select("id, doc_number, txn_date, due_date, total_amt, balance, status, currency")
+        .eq("doc_type", "invoice");
+      // Match by direct yacht link, plus by the yacht's QBO customer for older rows.
+      q = qboCustomerId ? q.or(`yacht_id.eq.${yachtId},customer_ref.eq.${qboCustomerId}`) : q.eq("yacht_id", yachtId);
+      const { data } = await q.order("txn_date", { ascending: false }).limit(300);
+      setRows((data ?? []) as QboInvoiceRow[]);
+      setBusy(false);
+    })();
+  }, [yachtId, qboCustomerId]);
+
+  const money = (n: number | null | undefined) =>
+    n == null ? "—" : `AED ${Number(n).toLocaleString("en-AE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const dt = (d: string | null) => (d ? new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—");
+
+  const totals = {
+    invoiced: rows.reduce((s, r) => s + (r.total_amt ?? 0), 0),
+    outstanding: rows.reduce((s, r) => s + (r.balance ?? 0), 0),
+    paid: rows.filter((r) => r.status === "Paid").length,
+    unpaid: rows.filter((r) => r.status === "Unpaid").length,
+    overdue: rows.filter((r) => r.status === "Overdue").length,
+  };
+  const filtered = statusFilter === "all" ? rows : rows.filter((r) => r.status === statusFilter);
+
+  async function viewPdf(id: string) {
+    toast.loading("Fetching PDF…", { id: "yfpdf" });
+    try {
+      const r = await fetch(`/api/qb/doc-pdf?id=${id}`, { headers: { Authorization: `Bearer ${session?.access_token ?? ""}` } });
+      const j = await r.json();
+      toast.dismiss("yfpdf");
+      if (j.ok && j.url) window.open(j.url, "_blank");
+      else toast.error(j.error ?? "No PDF available");
+    } catch (e: any) { toast.dismiss("yfpdf"); toast.error(String(e?.message ?? e)); }
+  }
+
+  return (
+    <div className="flex-1 overflow-auto p-6">
+      <div className="mx-auto max-w-6xl space-y-4">
+        {/* KPI cards */}
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+          {[
+            { label: "Invoiced (total)", value: money(totals.invoiced) },
+            { label: "Outstanding", value: money(totals.outstanding), cls: totals.outstanding > 0 ? "text-red-600 dark:text-red-400" : "text-emerald-600 dark:text-emerald-400" },
+            { label: "Paid", value: String(totals.paid), cls: "text-emerald-600 dark:text-emerald-400" },
+            { label: "Pending (unpaid)", value: String(totals.unpaid), cls: "text-amber-600 dark:text-amber-400" },
+            { label: "Overdue", value: String(totals.overdue), cls: totals.overdue > 0 ? "text-red-600 dark:text-red-400" : "" },
+          ].map((k) => (
+            <div key={k.label} className="rounded-lg border border-border bg-card p-3.5">
+              <div className="text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">{k.label}</div>
+              <div className={cn("mt-1 font-display text-lg font-bold tabular-nums", (k as any).cls)}>{k.value}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Status filter pills */}
+        <div className="flex items-center gap-1.5">
+          {["all", "Paid", "Unpaid", "Overdue"].map((s) => (
+            <button
+              key={s}
+              onClick={() => setStatusFilter(s)}
+              className={cn(
+                "rounded-full border px-3 py-1 text-xs font-medium transition",
+                statusFilter === s ? "border-primary bg-primary/10 text-foreground" : "border-border text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {s === "all" ? `All (${rows.length})` : s}
+            </button>
+          ))}
+        </div>
+
+        {busy ? (
+          <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">Loading invoices…</div>
+        ) : filtered.length === 0 ? (
+          <div className="flex h-40 flex-col items-center justify-center rounded-lg border border-dashed border-border text-center">
+            <FileCheck2 className="mb-2 h-8 w-8 text-muted-foreground/40" />
+            <p className="text-sm text-muted-foreground">
+              {rows.length === 0 ? "No QuickBooks invoices found for this yacht." : "No invoices match this filter."}
+            </p>
+            {rows.length === 0 && !qboCustomerId && (
+              <p className="mt-1 text-xs text-muted-foreground/70">Tip: link the yacht to its QuickBooks customer to pick up older invoices.</p>
+            )}
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-lg border border-border bg-card">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border bg-muted/40 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                  {["Invoice", "Date", "Due", "Total", "Balance", "Status", ""].map((h) => (
+                    <th key={h} className="px-4 py-2.5 whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((r) => (
+                  <tr key={r.id} className="group border-b border-border/40 hover:bg-accent/20">
+                    <td className="px-4 py-2.5 font-medium text-foreground">{r.doc_number ?? "—"}</td>
+                    <td className="px-4 py-2.5 tabular-nums text-muted-foreground">{dt(r.txn_date)}</td>
+                    <td className="px-4 py-2.5 tabular-nums text-muted-foreground">{dt(r.due_date)}</td>
+                    <td className="px-4 py-2.5 tabular-nums text-foreground/80">{money(r.total_amt)}</td>
+                    <td className={cn("px-4 py-2.5 tabular-nums", (r.balance ?? 0) > 0 ? "text-red-600 dark:text-red-400" : "text-muted-foreground")}>{money(r.balance)}</td>
+                    <td className="px-4 py-2.5">
+                      <span className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide", INVOICE_STATUS_CLS[r.status ?? ""] ?? "bg-slate-500/15 text-slate-500 border-slate-500/20")}>
+                        {r.status ?? "—"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-right">
+                      <button
+                        onClick={() => viewPdf(r.id)}
+                        title="View the QuickBooks PDF"
+                        className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[11px] text-muted-foreground opacity-0 transition hover:text-foreground group-hover:opacity-100"
+                      >
+                        <ExternalLink className="h-3 w-3" /> PDF
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
