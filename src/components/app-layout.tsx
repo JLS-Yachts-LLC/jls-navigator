@@ -7,6 +7,7 @@ import { LeoBubble } from "@/components/leo-bubble";
 import { DeployWatcher } from "@/components/deploy-watcher";
 import { WorkingIndicator } from "@/components/working-indicator";
 import { useAuth } from "@/lib/auth";
+import { supabase } from "@/integrations/supabase/client";
 import { recordVisit } from "@/lib/recent-tabs";
 import { recordAction, installErrorCapture } from "@/lib/action-log";
 import { installErrorLogging, setLogUser } from "@/lib/error-logger";
@@ -24,6 +25,21 @@ export function AppLayout() {
   useEffect(() => {
     if (!loading && !user) navigate({ to: "/auth" });
   }, [loading, user, navigate]);
+
+  // Portal captains (client logins) never see the staff app — RLS already
+  // blanks all staff data for them; this just lands them somewhere useful.
+  useEffect(() => {
+    if (!user) return;
+    (supabase as any)
+      .from("captain_accounts")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("active", true)
+      .limit(1)
+      .then(({ data }: any) => {
+        if (data?.length) window.location.assign("/portal");
+      });
+  }, [user]);
 
   // Capture JS errors once, for the bug-report widget's activity log + the
   // persistent Developer ▸ Error & Warning Log.
