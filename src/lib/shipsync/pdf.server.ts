@@ -12,11 +12,19 @@ const LINE = rgb(0.85, 0.87, 0.89)
 
 const UNASSIGNED = '—'
 
+export interface BoatSignature {
+  imageBytes: Uint8Array | null   // PNG bytes of the customer signature
+  receiver: string | null         // who received it
+  date: string | null             // delivered date (ISO or date string)
+}
+
 export interface DeliveryNotePdfOptions {
   /** Driver assigned to the run (note.driver_id resolved to a name). */
   driverName?: string | null
   /** boat_name → saved berth address, for the Destination line per boat. */
   destByBoat?: Map<string, string | null>
+  /** boat_name → captured customer signature (delivery notes only). */
+  sigByBoat?: Map<string, BoatSignature>
 }
 
 /** Format a date-only string (YYYY-MM-DD) or ISO timestamp as en-GB, avoiding the
@@ -49,7 +57,8 @@ export async function buildDeliveryNotePdf(
   const boats = Array.from(groups.keys()).sort((a, b) =>
     a === UNASSIGNED ? 1 : b === UNASSIGNED ? -1 : a.localeCompare(b))
 
-  boats.forEach((boat, boatIndex) => {
+  for (let boatIndex = 0; boatIndex < boats.length; boatIndex++) {
+    const boat = boats[boatIndex]
     const boatPackages = groups.get(boat)!
     // Each boat gets its own note number: single-boat = DN-0001, multi-boat = DN-0001-1, -2, …
     const noteRef = `DN-${note.number ?? UNASSIGNED}${boats.length > 1 ? `-${boatIndex + 1}` : ''}`
@@ -111,18 +120,28 @@ export async function buildDeliveryNotePdf(
       y -= 18
     })
 
-    // Signature block
+    // Signature block — on a delivery note, fill in the captured customer signature.
+    const sig = kind === 'delivery' ? opts.sigByBoat?.get(boat) : undefined
     y = Math.max(y - 30, M + 70)
     page.drawLine({ start: { x: M, y }, end: { x: W - M, y }, thickness: 1, color: LINE })
     y -= 24
     text('Received by:', M, y, 9, bold, GREY)
     text('Signature:', W / 2, y, 9, bold, GREY)
+    if (sig?.receiver) text(sig.receiver, M, y - 20, 11)
+    if (sig?.imageBytes) {
+      try {
+        const png = await doc.embedPng(sig.imageBytes)
+        const maxW = 190, maxH = 44
+        const scale = Math.min(maxW / png.width, maxH / png.height, 1)
+        page.drawImage(png, { x: W / 2, y: y - 46, width: png.width * scale, height: png.height * scale })
+      } catch { /* bad image — leave the signature line blank */ }
+    }
     y -= 40
     page.drawLine({ start: { x: M, y }, end: { x: M + 200, y }, thickness: 0.5, color: LINE })
     page.drawLine({ start: { x: W / 2, y }, end: { x: W / 2 + 200, y }, thickness: 0.5, color: LINE })
     y -= 14
-    text('Name / Designation / Date', M, y, 8, font, GREY)
-  })
+    text(sig ? `${sig.receiver ?? ''}${sig.date ? ` · ${fmtDate(sig.date)}` : ''}` : 'Name / Designation / Date', M, y, 8, font, GREY)
+  }
 
   return doc.save()
 }

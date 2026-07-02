@@ -36,7 +36,28 @@ export async function generateNotePdf(noteId: string, kind: 'predelivery' | 'del
     for (const d of dests ?? []) destByBoat.set(d.boat_name, d.address ?? null)
   }
 
-  const bytes = await buildDeliveryNotePdf(note, packages, kind, { driverName, destByBoat })
+  // For a delivery note, embed the captured customer signature per boat.
+  const sigByBoat = new Map<string, { imageBytes: Uint8Array | null; receiver: string | null; date: string | null }>()
+  if (kind === 'delivery') {
+    const byBoat = new Map<string, typeof packages>()
+    for (const p of packages) {
+      const key = p.boat_name || '—'
+      if (!byBoat.has(key)) byBoat.set(key, [])
+      byBoat.get(key)!.push(p)
+    }
+    for (const [boat, pkgs] of byBoat) {
+      const signed = pkgs.find((p) => p.signature_url)
+      if (!signed) continue
+      let imageBytes: Uint8Array | null = null
+      try {
+        const res = await fetch(signed.signature_url as string)
+        if (res.ok) imageBytes = new Uint8Array(await res.arrayBuffer())
+      } catch { /* leave blank if unreachable */ }
+      sigByBoat.set(boat, { imageBytes, receiver: signed.receiver_full_name ?? null, date: signed.delivered_at ?? null })
+    }
+  }
+
+  const bytes = await buildDeliveryNotePdf(note, packages, kind, { driverName, destByBoat, sigByBoat })
   const path = `delivery-notes/${note.number ?? noteId}/${kind}-${Date.now()}.pdf`
   const up = await supabaseAdmin.storage.from('shipsync').upload(path, bytes, { upsert: true, contentType: 'application/pdf' })
   if (up.error) throw up.error
