@@ -9,6 +9,7 @@ import {
   Plus, LayoutGrid, List, Search, SlidersHorizontal, Anchor, Ship, MapPin, LogOut, RefreshCcw,
   ChevronUp, ChevronDown, ChevronsUpDown, Pencil, Radar,
   ChevronLeft, ChevronRight, BookMarked, X, Check, Grid3x3, Archive, ArchiveRestore,
+  Navigation, Building2, AlertTriangle, CircleDot,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -166,6 +167,9 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  // AIS movement filter — set by clicking a vessel's movement icon or a pill.
+  const [movementFilter, setMovementFilter] = useState<"all" | Movement>("all");
+  const toggleMovementFilter = (m: Movement) => setMovementFilter((cur) => (cur === m ? "all" : m));
   const [archiveView, setArchiveView] = useState<"active" | "archived">("active");
   const [archiveTarget, setArchiveTarget] = useState<Yacht | null>(null);
   const [visible, setVisible] = useState<YachtColumnKey[]>(init.visible);
@@ -337,6 +341,9 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
     if (statusFilter !== "all") {
       rows = rows.filter((y) => String(y.status ?? "").toLowerCase().trim() === statusFilter);
     }
+    if (movementFilter !== "all") {
+      rows = rows.filter((y) => movementOf(y) === movementFilter);
+    }
     if (q.trim()) {
       const s = q.toLowerCase();
       rows = rows.filter((y) =>
@@ -355,7 +362,20 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
       rows = [...rows].sort((a, b) => lastActivityOf(b).localeCompare(lastActivityOf(a)));
     }
     return rows;
-  }, [baseRows, q, statusFilter, sortKey, sortDir, activityMap]);
+  }, [baseRows, q, statusFilter, movementFilter, sortKey, sortDir, activityMap]);
+
+  // Movement counts for the pills (within the current status filter).
+  const movementOptions = useMemo(() => {
+    const m = new Map<Movement, number>();
+    for (const y of baseRows) {
+      if (statusFilter !== "all" && String(y.status ?? "").toLowerCase().trim() !== statusFilter) continue;
+      const mv = movementOf(y);
+      if (mv) m.set(mv, (m.get(mv) ?? 0) + 1);
+    }
+    return (Object.keys(MOVEMENT_META) as Movement[])
+      .filter((k) => m.has(k))
+      .map((k) => [k, m.get(k)!] as const);
+  }, [baseRows, statusFilter]);
 
   function toggleSort(key: YachtColumnKey) {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -604,13 +624,29 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
             {s} ({n})
           </button>
         ))}
+        {/* Live movement pills (AIS-derived) */}
+        {movementOptions.length > 0 && <span className="mx-1 h-4 w-px bg-border" />}
+        {movementOptions.map(([m, n]) => {
+          const meta = MOVEMENT_META[m];
+          return (
+            <button key={m} onClick={() => toggleMovementFilter(m)}
+              title={`${meta.label} — live AIS`}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition",
+                movementFilter === m ? "border-primary bg-primary/10 text-foreground" : "border-border text-muted-foreground hover:text-foreground",
+              )}>
+              <meta.Icon className={cn("shrink-0", meta.cls)} style={{ width: 12, height: 12 }} />
+              {meta.label} ({n})
+            </button>
+          );
+        })}
       </div>
 
       <div className="flex-1 overflow-auto px-5 pb-5">
         {loading ? (
           <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">Loading…</div>
         ) : filtered.length === 0 ? (
-          <EmptyState hasFilter={!!q || statusFilter !== "all" || archiveView === "archived"} />
+          <EmptyState hasFilter={!!q || statusFilter !== "all" || movementFilter !== "all" || archiveView === "archived"} />
         ) : view === "list" ? (
           <ListView
             rows={filtered}
@@ -624,9 +660,10 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
             onArchive={setArchiveTarget}
             onOpenYacht={onOpenYacht}
             outstanding={outstanding}
+            onMovementFilter={toggleMovementFilter}
           />
         ) : (
-          <CardsView rows={filtered} staleIds={new Set(filtered.filter(isStale).map((y) => y.id))} small={view === "small"} onArchive={setArchiveTarget} onOpenYacht={onOpenYacht} />
+          <CardsView rows={filtered} staleIds={new Set(filtered.filter(isStale).map((y) => y.id))} small={view === "small"} onArchive={setArchiveTarget} onOpenYacht={onOpenYacht} onMovementFilter={toggleMovementFilter} />
         )}
       </div>
 
@@ -717,6 +754,46 @@ const NAVSTAT_LABEL: Record<number, string> = {
   4: "Constrained", 5: "Moored", 6: "Aground", 7: "Fishing", 8: "Sailing",
 };
 
+// ── Movement state (derived from live AIS) ────────────────────────────────────
+// AIS has no "dry dock" signal — a long-stationary moored vessel is the closest
+// proxy. Yachts with no AIS position in 48h show no movement icon.
+export type Movement = "underway" | "anchor" | "moored" | "aground" | "stationary";
+const MOVEMENT_META: Record<Movement, { label: string; Icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>; cls: string }> = {
+  underway:   { label: "Under way / at sea", Icon: Navigation,    cls: "text-sky-400" },
+  anchor:     { label: "At anchor",          Icon: Anchor,        cls: "text-amber-400" },
+  moored:     { label: "Moored / berthed",   Icon: Building2,     cls: "text-emerald-400" },
+  aground:    { label: "Aground",            Icon: AlertTriangle, cls: "text-red-400" },
+  stationary: { label: "Stationary",         Icon: CircleDot,     cls: "text-muted-foreground" },
+};
+function movementOf(y: Yacht): Movement | null {
+  const t = y.ais_position_at ? new Date(String(y.ais_position_at)).getTime() : NaN;
+  if (isNaN(t) || Date.now() - t > 48 * 3600_000) return null;
+  const ns = Number(y.ais_navstat);
+  const speed = Number(y.ais_speed ?? 0);
+  if (ns === 1) return "anchor";
+  if (ns === 5) return "moored";
+  if (ns === 6) return "aground";
+  if (ns === 0 || ns === 8 || speed >= 1) return "underway";
+  return "stationary";
+}
+
+/** Small movement icon next to the yacht name; click filters the registry. */
+function MovementBadge({ y, onFilter, size = 14 }: { y: Yacht; onFilter?: (m: Movement) => void; size?: number }) {
+  const m = movementOf(y);
+  if (!m) return null;
+  const meta = MOVEMENT_META[m];
+  return (
+    <button
+      type="button"
+      title={`${meta.label}${onFilter ? " — click to show only these vessels" : ""}`}
+      onClick={(e) => { e.preventDefault(); e.stopPropagation(); onFilter?.(m); }}
+      className={cn("inline-flex shrink-0 items-center justify-center rounded-md p-0.5 transition hover:bg-primary/15", meta.cls)}
+    >
+      <meta.Icon className="shrink-0" style={{ width: size, height: size }} />
+    </button>
+  );
+}
+
 /** Relative "Xm ago / Xh ago / date" for AIS timestamps. */
 function relWhen(v: unknown): string {
   if (!v) return "—";
@@ -740,7 +817,7 @@ function trackUrl(y: Yacht): string {
 }
 
 function ListView({
-  rows, visible, sortKey, sortDir, onSort, quickEditId, setQuickEditId, updateStatus, onArchive, onOpenYacht, outstanding = {},
+  rows, visible, sortKey, sortDir, onSort, quickEditId, setQuickEditId, updateStatus, onArchive, onOpenYacht, outstanding = {}, onMovementFilter,
 }: {
   rows: Yacht[];
   visible: YachtColumnKey[];
@@ -753,6 +830,7 @@ function ListView({
   updateStatus: (id: string, status: string) => Promise<void>;
   onArchive: (y: Yacht) => void;
   onOpenYacht?: (id: string) => void;
+  onMovementFilter?: (m: Movement) => void;
 }) {
   const cols = YACHT_COLUMNS.filter((c) => visible.includes(c.key));
   return (
@@ -786,13 +864,16 @@ function ListView({
               {cols.map((c) => (
                 <td key={c.key} className="whitespace-nowrap px-3 py-1.5">
                   {c.key === "vessel_name" ? (
-                    <YachtLink
-                      id={y.id}
-                      onOpen={onOpenYacht}
-                      className="font-medium text-foreground hover:text-primary"
-                    >
-                      {fmt(y[c.key])}
-                    </YachtLink>
+                    <span className="inline-flex items-center gap-1">
+                      <MovementBadge y={y} onFilter={onMovementFilter} size={13} />
+                      <YachtLink
+                        id={y.id}
+                        onOpen={onOpenYacht}
+                        className="font-medium text-foreground hover:text-primary"
+                      >
+                        {fmt(y[c.key])}
+                      </YachtLink>
+                    </span>
                   ) : c.key === "status" ? (
                     quickEditId === y.id ? (
                       <select
@@ -871,7 +952,7 @@ function ListView({
   );
 }
 
-function CardsView({ rows, staleIds, small, onArchive, onOpenYacht }: { rows: Yacht[]; staleIds: Set<string>; small?: boolean; onArchive: (y: Yacht) => void; onOpenYacht?: (id: string) => void }) {
+function CardsView({ rows, staleIds, small, onArchive, onOpenYacht, onMovementFilter }: { rows: Yacht[]; staleIds: Set<string>; small?: boolean; onArchive: (y: Yacht) => void; onOpenYacht?: (id: string) => void; onMovementFilter?: (m: Movement) => void }) {
   return (
     <div
       className={
@@ -917,7 +998,10 @@ function CardsView({ rows, staleIds, small, onArchive, onOpenYacht }: { rows: Ya
           {small ? (
             <div className="space-y-1 p-2.5">
               <div className="flex items-start justify-between gap-1.5">
-                <h3 className="line-clamp-1 font-display text-[13px] font-semibold leading-tight">{fmt(y.vessel_name)}</h3>
+                <span className="flex min-w-0 items-center gap-1">
+                  <MovementBadge y={y} onFilter={onMovementFilter} size={12} />
+                  <h3 className="line-clamp-1 font-display text-[13px] font-semibold leading-tight">{fmt(y.vessel_name)}</h3>
+                </span>
                 <StatusPill status={y.status as string | null} />
               </div>
               <div className="line-clamp-1 text-[11px] text-muted-foreground">{fmt(y.vessel_type)} · {fmt(y.flag)}</div>
@@ -925,7 +1009,10 @@ function CardsView({ rows, staleIds, small, onArchive, onOpenYacht }: { rows: Ya
           ) : (
             <div className="space-y-2 p-4">
               <div className="flex items-start justify-between gap-2">
-                <h3 className="font-display font-semibold leading-tight">{fmt(y.vessel_name)}</h3>
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <MovementBadge y={y} onFilter={onMovementFilter} />
+                  <h3 className="font-display font-semibold leading-tight">{fmt(y.vessel_name)}</h3>
+                </span>
                 <StatusPill status={y.status as string | null} />
               </div>
               <div className="text-xs text-muted-foreground">{fmt(y.vessel_type)} · {fmt(y.flag)}</div>

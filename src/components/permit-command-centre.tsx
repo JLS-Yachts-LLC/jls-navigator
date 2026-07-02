@@ -112,13 +112,23 @@ function dayLabel(days: number | null): string {
 }
 
 function StatCard({
-  label, value, sub, accent, Icon,
+  label, value, sub, accent, Icon, active, onClick,
 }: {
   label: string; value: number; sub?: string;
   accent: string; Icon: React.ComponentType<{ className?: string }>;
+  active?: boolean; onClick?: () => void;
 }) {
   return (
-    <div className={cn("flex items-center justify-between rounded-xl border bg-card px-4 py-3.5 transition-colors hover:bg-card/80", accent.replace("text-", "border-").replace("/400", "/20").replace("/foreground", "/20").replace("muted", "border"))}>
+    <button
+      type="button"
+      onClick={onClick}
+      title={onClick ? "Click to show only these permits" : undefined}
+      className={cn(
+        "flex items-center justify-between rounded-xl border bg-card px-4 py-3.5 text-left transition-colors hover:bg-card/80",
+        accent.replace("text-", "border-").replace("/400", "/20").replace("/foreground", "/20").replace("muted", "border"),
+        onClick && "cursor-pointer",
+        active && "ring-2 ring-primary/60 bg-primary/5",
+      )}>
       <div>
         <div className="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-muted-foreground/70">{label}</div>
         <div className={cn("mt-1 font-display text-[1.625rem] font-bold leading-none tabular-nums", accent)}>{value}</div>
@@ -127,7 +137,7 @@ function StatCard({
       <div className={cn("flex h-9 w-9 items-center justify-center rounded-lg", accent.replace("text-", "bg-") + "/10")}>
         <Icon className={cn("h-[1.125rem] w-[1.125rem] opacity-80", accent)} />
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -230,6 +240,9 @@ export function PermitCommandCentre({ onOpenType }: { onOpenType?: (t: PermitTyp
   const [q, setQ] = useState("");
   const [vesselFilter, setVesselFilter] = useState("__all");
   const [typeFilter, setTypeFilter] = useState("__all");
+  // Urgency-band filter driven by the stat cards ("__all" | band key).
+  const [bandFilter, setBandFilter] = useState<string>("__all");
+  const toggleBand = (key: string) => setBandFilter((b) => (b === key ? "__all" : key));
 
   useEffect(() => { void load(); }, []);
 
@@ -300,11 +313,12 @@ export function PermitCommandCentre({ onOpenType }: { onOpenType?: (t: PermitTyp
   }, [enriched]);
 
   const banded = useMemo(() =>
-    BANDS.map((band) => ({
-      band,
-      permits: filtered.filter((p) => band.filter(p.days)),
-    })),
-    [filtered],
+    BANDS.filter((band) => bandFilter === "__all" || band.key === bandFilter)
+      .map((band) => ({
+        band,
+        permits: filtered.filter((p) => band.filter(p.days)),
+      })),
+    [filtered, bandFilter],
   );
 
   const urgentCount = summary.overdue + summary.critical;
@@ -333,11 +347,16 @@ export function PermitCommandCentre({ onOpenType }: { onOpenType?: (t: PermitTyp
 
       {/* Stat bar */}
       <div className="grid grid-cols-5 gap-3 border-b border-border/40 px-6 py-4">
-        <StatCard label="Total Permits" value={summary.total} accent="text-primary" Icon={FileCheck2} />
-        <StatCard label="Overdue" value={summary.overdue} accent="text-destructive" Icon={AlertTriangle} sub="already expired" />
-        <StatCard label="Critical" value={summary.critical} accent="text-orange-400" Icon={AlertTriangle} sub="≤ 7 days" />
-        <StatCard label="Expiring Soon" value={summary.warning} accent="text-warning" Icon={Clock} sub="8 – 30 days" />
-        <StatCard label="No Expiry Set" value={summary.noExpiry} accent="text-muted-foreground" Icon={FileCheck2} sub="needs attention" />
+        <StatCard label="Total Permits" value={summary.total} accent="text-primary" Icon={FileCheck2}
+                  active={bandFilter === "__all"} onClick={() => setBandFilter("__all")} />
+        <StatCard label="Overdue" value={summary.overdue} accent="text-destructive" Icon={AlertTriangle} sub="already expired"
+                  active={bandFilter === "overdue"} onClick={() => toggleBand("overdue")} />
+        <StatCard label="Critical" value={summary.critical} accent="text-orange-400" Icon={AlertTriangle} sub="≤ 7 days"
+                  active={bandFilter === "critical"} onClick={() => toggleBand("critical")} />
+        <StatCard label="Expiring Soon" value={summary.warning} accent="text-warning" Icon={Clock} sub="8 – 30 days"
+                  active={bandFilter === "warning"} onClick={() => toggleBand("warning")} />
+        <StatCard label="No Expiry Set" value={summary.noExpiry} accent="text-muted-foreground" Icon={FileCheck2} sub="needs attention"
+                  active={bandFilter === "no-expiry"} onClick={() => toggleBand("no-expiry")} />
       </div>
 
       {/* Filters */}
@@ -371,11 +390,11 @@ export function PermitCommandCentre({ onOpenType }: { onOpenType?: (t: PermitTyp
             ))}
           </SelectContent>
         </Select>
-        {(vesselFilter !== "__all" || typeFilter !== "__all" || q) && (
+        {(vesselFilter !== "__all" || typeFilter !== "__all" || bandFilter !== "__all" || q) && (
           <Button
             variant="ghost" size="sm"
             className="h-8 px-3 text-[13px] text-muted-foreground"
-            onClick={() => { setVesselFilter("__all"); setTypeFilter("__all"); setQ(""); }}
+            onClick={() => { setVesselFilter("__all"); setTypeFilter("__all"); setBandFilter("__all"); setQ(""); }}
           >
             Clear filters
           </Button>
@@ -400,10 +419,10 @@ export function PermitCommandCentre({ onOpenType }: { onOpenType?: (t: PermitTyp
         ) : (
           banded.map(({ band, permits: bandPermits }) => (
             <BandSection
-              key={band.key}
+              key={`${band.key}-${bandFilter}`}
               band={band}
               permits={bandPermits}
-              defaultOpen={band.key === "overdue" || band.key === "critical" || band.key === "warning"}
+              defaultOpen={bandFilter !== "__all" || band.key === "overdue" || band.key === "critical" || band.key === "warning"}
             />
           ))
         )}
