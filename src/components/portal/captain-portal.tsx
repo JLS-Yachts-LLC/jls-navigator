@@ -131,7 +131,7 @@ function Brand({ compact }: { compact?: boolean }) {
       {!compact && (
         <div className="leading-tight">
           <div className="text-[15px] font-bold tracking-wide text-foreground">JLS YACHTS</div>
-          <div className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">Captain's Portal</div>
+          <div className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">Client Portal</div>
         </div>
       )}
     </div>
@@ -221,7 +221,7 @@ function LoginScreen({ onSignedIn }: { onSignedIn: () => void }) {
   return (
     <AuthFrame>
       <h1 className="text-xl font-bold">Welcome aboard</h1>
-      <p className="mt-1 text-sm text-muted-foreground">Sign in to your captain's account.</p>
+      <p className="mt-1 text-sm text-muted-foreground">Sign in to your account.</p>
       <form onSubmit={submit} className="mt-6 space-y-4">
         <div>
           <FieldLabel>Email</FieldLabel>
@@ -247,7 +247,7 @@ function NotCaptainScreen({ email, onSignOut }: { email: string; onSignOut: () =
     <AuthFrame>
       <h1 className="text-xl font-bold">No vessel linked</h1>
       <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-        <span className="text-foreground">{email}</span> isn't set up as a captain's account.
+        <span className="text-foreground">{email}</span> isn't set up as a account.
         If you believe this is a mistake, contact JLS Yachts and we'll link your vessel.
       </p>
       <PrimaryButton onClick={onSignOut} className="mt-6 w-full">

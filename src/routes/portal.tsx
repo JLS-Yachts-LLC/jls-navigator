@@ -6,5 +6,5 @@ import { CaptainPortal } from "@/components/portal/captain-portal";
 // captain's own yacht and requires an MFA-verified (aal2) session.
 export const Route = createFileRoute("/portal")({
   component: CaptainPortal,
-  head: () => ({ meta: [{ title: "Captain's Portal — JLS Yachts" }] }),
+  head: () => ({ meta: [{ title: "Client Portal — JLS Yachts" }] }),
 });

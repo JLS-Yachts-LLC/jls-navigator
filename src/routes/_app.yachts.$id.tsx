@@ -136,7 +136,7 @@ export function YachtDetail({
   const [syncingImage, setSyncingImage] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmArchive, setConfirmArchive] = useState(false);
-  const [tab, setTab] = useState<"details" | "finance">("details");
+  const [tab, setTab] = useState<"details" | "crew" | "permits" | "visas" | "finance">("details");
 
   useEffect(() => { void load(); }, [id]);
   async function load() {
@@ -322,14 +322,14 @@ export function YachtDetail({
         </div>
       </header>
 
-      {/* Details / Finance tabs */}
-      <div className="flex items-center gap-1 border-b border-border/60 bg-card/20 px-6">
-        {([["details", "Details"], ["finance", "Finance"]] as const).map(([key, label]) => (
+      {/* Mini tabs — everything about this vessel in one place */}
+      <div className="flex items-center gap-1 overflow-x-auto border-b border-border/60 bg-card/20 px-6">
+        {([["details", "Details"], ["crew", "Crew"], ["permits", "Permits"], ["visas", "Visas"], ["finance", "Finance"]] as const).map(([key, label]) => (
           <button
             key={key}
             onClick={() => setTab(key)}
             className={cn(
-              "border-b-2 px-3 py-2 text-sm font-medium transition",
+              "shrink-0 border-b-2 px-3 py-2 text-sm font-medium transition",
               tab === key ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
             )}
           >
@@ -340,6 +340,12 @@ export function YachtDetail({
 
       {tab === "finance" ? (
         <YachtFinance yachtId={String(y.id)} qboCustomerId={(y as any).qbo_customer_id ?? null} />
+      ) : tab === "crew" ? (
+        <YachtCrewTab yachtId={String(y.id)} />
+      ) : tab === "permits" ? (
+        <YachtPermitsTab yachtId={String(y.id)} />
+      ) : tab === "visas" ? (
+        <YachtVisasTab yachtId={String(y.id)} />
       ) : (
       <div className="flex-1 overflow-auto p-6">
         <div className="mx-auto grid max-w-6xl grid-cols-1 gap-6 lg:grid-cols-3">
@@ -909,5 +915,134 @@ function YachtFinance({ yachtId, qboCustomerId }: { yachtId: string; qboCustomer
         )}
       </div>
     </div>
+  );
+}
+
+// ── Vessel mini tabs: Crew / Permits / Visas ──────────────────────────────────
+function MiniTabShell({ loading, empty, children }: { loading: boolean; empty: boolean; children: React.ReactNode }) {
+  if (loading) return <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">Loading…</div>;
+  if (empty) return <div className="m-6 flex h-40 items-center justify-center rounded-lg border border-dashed border-border text-sm text-muted-foreground">Nothing on record for this vessel.</div>;
+  return <div className="flex-1 overflow-auto p-6">{children}</div>;
+}
+
+function YachtCrewTab({ yachtId }: { yachtId: string }) {
+  const [rows, setRows] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    (supabase as any).from("crew_members")
+      .select("id, full_name, first_name, last_name, rank, nationality, status, passport_number, passport_expiry_date")
+      .eq("yacht_id", yachtId).order("last_name")
+      .then(({ data }: any) => { setRows(data ?? []); setLoading(false); });
+  }, [yachtId]);
+  return (
+    <MiniTabShell loading={loading} empty={rows.length === 0}>
+      <div className="overflow-x-auto rounded-xl border border-border bg-card">
+        <table className="data-table">
+          <thead><tr><th>Name</th><th>Rank</th><th>Nationality</th><th>Status</th><th>Passport</th><th>Passport expiry</th></tr></thead>
+          <tbody>
+            {rows.map((c) => {
+              const name = c.full_name || [c.first_name, c.last_name].filter(Boolean).join(" ") || "—";
+              const expiring = c.passport_expiry_date && new Date(c.passport_expiry_date).getTime() - Date.now() < 180 * 86400000;
+              return (
+                <tr key={c.id}>
+                  <td className="font-medium">
+                    <Link to="/crew-immigration/crew/$id" params={{ id: c.id }} className="hover:text-primary">{name}</Link>
+                  </td>
+                  <td className="text-foreground/75">{c.rank ?? "—"}</td>
+                  <td className="text-foreground/75">{c.nationality ?? "—"}</td>
+                  <td className="text-foreground/75">{c.status ?? "—"}</td>
+                  <td className="font-mono text-foreground/75">{c.passport_number ?? "—"}</td>
+                  <td className={cn("tabular-nums", expiring ? "text-warning" : "text-foreground/60")}>{c.passport_expiry_date ?? "—"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </MiniTabShell>
+  );
+}
+
+function YachtPermitsTab({ yachtId }: { yachtId: string }) {
+  const [rows, setRows] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    (supabase as any).from("permits")
+      .select("id, permit_type, permit_number, holder_name, issuing_authority, status, issue_date, expiry_date")
+      .eq("yacht_id", yachtId).order("expiry_date", { ascending: false })
+      .then(({ data }: any) => { setRows(data ?? []); setLoading(false); });
+  }, [yachtId]);
+  return (
+    <MiniTabShell loading={loading} empty={rows.length === 0}>
+      <div className="overflow-x-auto rounded-xl border border-border bg-card">
+        <table className="data-table">
+          <thead><tr><th>Type</th><th>Permit #</th><th>Holder</th><th>Authority</th><th>Issued</th><th>Expiry</th><th>Status</th></tr></thead>
+          <tbody>
+            {rows.map((p) => {
+              const days = p.expiry_date ? Math.ceil((new Date(p.expiry_date).getTime() - Date.now()) / 86400000) : null;
+              return (
+                <tr key={p.id}>
+                  <td className="font-medium">{(PERMIT_META as any)[p.permit_type]?.label ?? p.permit_type}</td>
+                  <td className="tabular-nums text-foreground/75">{p.permit_number ?? "—"}</td>
+                  <td className="text-foreground/75">{p.holder_name ?? "—"}</td>
+                  <td className="text-foreground/75">{p.issuing_authority ?? "—"}</td>
+                  <td className="tabular-nums text-foreground/60">{p.issue_date ?? "—"}</td>
+                  <td className="tabular-nums">
+                    <span className={cn(days !== null && days < 0 && "text-destructive", days !== null && days >= 0 && days <= 30 && "text-warning")}>
+                      {p.expiry_date ?? "—"}{days !== null && ` (${days < 0 ? `${Math.abs(days)}d ago` : `${days}d`})`}
+                    </span>
+                  </td>
+                  <td><StatusPill status={p.status} /></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </MiniTabShell>
+  );
+}
+
+function YachtVisasTab({ yachtId }: { yachtId: string }) {
+  const [rows, setRows] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    (supabase as any).from("visa_applications")
+      .select("id, given_name, surname, visa_type, status, destination_country, visa_number, visa_expiry, sign_on_date, visa_dispatched")
+      .eq("yacht_id", yachtId).order("created_at", { ascending: false }).limit(300)
+      .then(({ data }: any) => { setRows(data ?? []); setLoading(false); });
+  }, [yachtId]);
+  return (
+    <MiniTabShell loading={loading} empty={rows.length === 0}>
+      <div className="overflow-x-auto rounded-xl border border-border bg-card">
+        <table className="data-table">
+          <thead><tr><th>Crew member</th><th>Type</th><th>Country</th><th>Visa #</th><th>Status</th><th>Expiry</th><th>Sent to vessel</th></tr></thead>
+          <tbody>
+            {rows.map((v) => {
+              const days = v.visa_expiry ? Math.ceil((new Date(v.visa_expiry).getTime() - Date.now()) / 86400000) : null;
+              return (
+                <tr key={v.id}>
+                  <td className="font-medium">
+                    <Link to="/crew-immigration/visas/$id" params={{ id: v.id }} className="hover:text-primary">
+                      {[v.given_name, v.surname].filter(Boolean).join(" ") || "—"}
+                    </Link>
+                  </td>
+                  <td className="text-foreground/75">{v.visa_type ?? "—"}</td>
+                  <td className="text-foreground/75">{v.destination_country ?? "—"}</td>
+                  <td className="tabular-nums text-foreground/75">{v.visa_number ?? "—"}</td>
+                  <td className="text-foreground/75">{v.status ?? "—"}</td>
+                  <td className="tabular-nums">
+                    <span className={cn(days !== null && days < 0 && "text-destructive", days !== null && days >= 0 && days <= 30 && "text-warning")}>
+                      {v.visa_expiry ?? "—"}
+                    </span>
+                  </td>
+                  <td className="text-foreground/60">{v.visa_dispatched ? "Yes" : "—"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </MiniTabShell>
   );
 }

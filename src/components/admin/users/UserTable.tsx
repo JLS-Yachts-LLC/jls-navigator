@@ -57,7 +57,7 @@ export function UserTable({ users, total, roles, onRefresh }: Props) {
 
       <table className="w-full text-xs" style={{ tableLayout: 'fixed' }}>
         <thead>
-          <tr className="bg-muted text-muted-foreground text-[9px] font-semibold tracking-wider">
+          <tr className="bg-muted text-muted-foreground text-[11px] font-semibold tracking-wider">
             <th className="text-left px-3 py-2 w-52">User</th>
             <th className="text-left px-3 py-2 w-28">Role</th>
             <th className="text-left px-3 py-2 w-28">Scope</th>
@@ -70,7 +70,7 @@ export function UserTable({ users, total, roles, onRefresh }: Props) {
         <tbody>
           {filtered.length === 0 ? (
             <tr>
-              <td colSpan={7} className="px-3 py-6 text-center text-[11px] text-muted-foreground">
+              <td colSpan={7} className="px-3 py-6 text-center text-[13px] text-muted-foreground">
                 {search || roleFilter ? 'No users match the current filter.' : 'No users yet.'}
               </td>
             </tr>
@@ -83,7 +83,7 @@ export function UserTable({ users, total, roles, onRefresh }: Props) {
       </table>
 
       <div className="px-3 py-2 border-t border-border">
-        <span className="text-[10px] text-muted-foreground">{total} total users</span>
+        <span className="text-[12px] text-muted-foreground">{total} total users</span>
       </div>
 
       {inviteOpen && (

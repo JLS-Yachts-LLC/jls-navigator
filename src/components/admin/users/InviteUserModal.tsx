@@ -60,7 +60,7 @@ export function InviteUserModal({ roles, onClose, onSuccess }: Props) {
           <>
             <div className="space-y-3">
               <div>
-                <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-white/40">
+                <label className="mb-1 block text-[12px] font-semibold uppercase tracking-wider text-white/40">
                   Email address
                 </label>
                 <input
@@ -75,7 +75,7 @@ export function InviteUserModal({ roles, onClose, onSuccess }: Props) {
               </div>
 
               <div>
-                <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-white/40">
+                <label className="mb-1 block text-[12px] font-semibold uppercase tracking-wider text-white/40">
                   Role
                 </label>
                 <select
@@ -91,7 +91,7 @@ export function InviteUserModal({ roles, onClose, onSuccess }: Props) {
               </div>
             </div>
 
-            {error && <p className="mt-2 text-[11px] text-red-400">{error}</p>}
+            {error && <p className="mt-2 text-[12.5px] text-red-400">{error}</p>}
 
             <div className="mt-4 flex gap-2 justify-end">
               <button

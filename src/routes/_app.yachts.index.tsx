@@ -570,19 +570,16 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* In the Beta shell, Live Fleet Map is the Tracking tab and adding a
-              yacht routes out — hide both so the hub stays self-contained. */}
+          {/* In the Beta shell, Live Fleet Map is the Tracking tab — hide the
+              duplicate. Add Yacht renders inside the same chrome, keep it. */}
           {!onOpenYacht && (
-            <>
-              <Button asChild variant="outline" size="sm" className="h-8 gap-1.5 text-xs">
-                <Link to="/my-fleet"><Radar className="h-3.5 w-3.5" /> Live Fleet Map</Link>
-              </Button>
-
-              <Button asChild size="sm" className="h-8 gap-1.5 text-xs">
-                <Link to="/yachts/new"><Plus className="h-3.5 w-3.5" /> Add Yacht</Link>
-              </Button>
-            </>
+            <Button asChild variant="outline" size="sm" className="h-8 gap-1.5 text-xs">
+              <Link to="/my-fleet"><Radar className="h-3.5 w-3.5" /> Live Fleet Map</Link>
+            </Button>
           )}
+          <Button asChild size="sm" className="h-8 gap-1.5 text-xs">
+            <Link to="/yachts/new"><Plus className="h-3.5 w-3.5" /> Add Yacht</Link>
+          </Button>
         </div>
       </header>
 

@@ -22,10 +22,13 @@ const db = supabase as any;
 
 type CaptainRow = {
   id: string; user_id: string | null; yacht_id: string; display_name: string | null;
-  email: string | null; active: boolean; created_at: string;
+  email: string | null; active: boolean; position: string; created_at: string;
   yachts?: { vessel_name: string } | null;
 };
 type YachtOpt = { id: string; vessel_name: string };
+
+export const PORTAL_POSITIONS = ["captain", "owner", "representative", "purser", "other"] as const;
+const positionLabel = (p: string) => p.charAt(0).toUpperCase() + p.slice(1);
 
 export function ManageUsers() {
   const [tab, setTab] = useState<"staff" | "vessel">("staff");
@@ -49,7 +52,7 @@ export function ManageUsers() {
             tab === "vessel" ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
           )}
         >
-          <Anchor className="h-4 w-4" /> Vessel Users <span className="text-[10px] text-muted-foreground">(Captain's Portal)</span>
+          <Anchor className="h-4 w-4" /> Client Portal
         </button>
       </div>
       <div className="p-4">
@@ -110,7 +113,7 @@ function VesselUsersPanel() {
     setLoading(true);
     const [{ data: accounts }, { data: ys }] = await Promise.all([
       db.from("captain_accounts")
-        .select("id, user_id, yacht_id, display_name, email, active, created_at, yachts(vessel_name)")
+        .select("id, user_id, yacht_id, display_name, email, active, position, created_at, yachts(vessel_name)")
         .order("created_at", { ascending: false }),
       db.from("yachts").select("id, vessel_name").order("vessel_name"),
     ]);
@@ -173,95 +176,130 @@ function VesselUsersPanel() {
     void load();
   };
 
+  const setPosition = async (r: CaptainRow, position: string) => {
+    await db.from("captain_accounts").update({ position }).eq("id", r.id);
+    void load();
+  };
+
+  // Group by vessel — one section per yacht, alphabetical.
+  const grouped = useMemo(() => {
+    const m = new Map<string, { vessel: string; rows: CaptainRow[] }>();
+    for (const r of rows) {
+      const key = r.yacht_id;
+      if (!m.has(key)) m.set(key, { vessel: r.yachts?.vessel_name ?? "Unknown vessel", rows: [] });
+      m.get(key)!.rows.push(r);
+    }
+    return [...m.values()].sort((a, b) => a.vessel.localeCompare(b.vessel));
+  }, [rows]);
+
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-        <p className="max-w-2xl text-xs text-muted-foreground">
-          Captain logins for the client portal (<span className="font-mono text-foreground/80">/portal</span>).
-          Each account is locked to its own vessel by the database and requires two-factor authentication.
-          You can add a captain now and attach their email/login later.
+        <p className="max-w-2xl text-sm text-muted-foreground">
+          Client Portal logins (<span className="font-mono text-foreground/80">/portal</span>) — captains today; owners,
+          representatives and pursers later. Each account is locked to its own vessel by the database and requires
+          two-factor authentication. You can add a person now and attach their email/login later.
         </p>
-        <Button size="sm" className="gap-1.5" onClick={() => setAddOpen(true)}>
-          <Plus className="h-3.5 w-3.5" /> Add vessel user
-        </Button>
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => window.open("/portal", "_blank")}>
+            <Anchor className="h-3.5 w-3.5" /> Open portal
+          </Button>
+          <Button size="sm" className="gap-1.5" onClick={() => setAddOpen(true)}>
+            <Plus className="h-3.5 w-3.5" /> Add portal user
+          </Button>
+        </div>
       </div>
 
       {loading ? (
         <div className="flex h-32 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
       ) : rows.length === 0 ? (
         <div className="flex h-32 items-center justify-center rounded-lg border border-dashed border-border text-sm text-muted-foreground">
-          No vessel users yet.
+          No portal users yet.
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-border bg-card">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Captain</th><th>Vessel</th><th>Login email</th><th>Login</th><th>Active</th>
-                <th style={{ textAlign: "right" }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.id}>
-                  <td className="font-medium">
-                    <span className="inline-flex items-center gap-2">
-                      <UserRound className="h-3.5 w-3.5 text-muted-foreground" />
-                      {r.display_name ?? "—"}
-                    </span>
-                  </td>
-                  <td className="font-medium">{r.yachts?.vessel_name ?? "—"}</td>
-                  <td className="text-foreground/75">{r.email ?? <span className="text-muted-foreground/50">not set</span>}</td>
-                  <td>
-                    {r.user_id ? (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
-                        <ShieldCheck className="h-3 w-3" /> Linked
-                      </span>
-                    ) : (
-                      <span className="rounded-full border border-border bg-background/40 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">No login</span>
-                    )}
-                  </td>
-                  <td>
-                    <button onClick={() => void toggleActive(r)}
-                            className={cn("rounded-full border px-2 py-0.5 text-[10px] font-semibold transition",
-                                          r.active ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-border text-muted-foreground")}>
-                      {r.active ? "Active" : "Disabled"}
-                    </button>
-                  </td>
-                  <td style={{ textAlign: "right" }}>
-                    <div className="inline-flex items-center gap-1">
-                      {busyId === r.id ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-                      ) : (
-                        <>
-                          {!r.user_id && (
-                            <Button size="sm" variant="ghost" className="h-7 gap-1 px-2 text-[11px] text-primary" onClick={() => void createLogin(r)}>
-                              <Link2 className="h-3 w-3" /> Create login
-                            </Button>
-                          )}
-                          {r.user_id && (
+        <div className="space-y-4">
+          {grouped.map((g) => (
+            <div key={g.vessel} className="overflow-hidden rounded-xl border border-border bg-card">
+              <div className="flex items-center gap-2 border-b border-border/60 bg-card/60 px-4 py-2.5">
+                <Anchor className="h-3.5 w-3.5 text-primary/70" />
+                <span className="text-sm font-semibold">{g.vessel}</span>
+                <span className="text-xs text-muted-foreground">· {g.rows.length} user{g.rows.length === 1 ? "" : "s"}</span>
+              </div>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Name</th><th>Position</th><th>Login email</th><th>Login</th><th>Active</th>
+                    <th style={{ textAlign: "right" }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {g.rows.map((r) => (
+                    <tr key={r.id}>
+                      <td className="font-medium">
+                        <span className="inline-flex items-center gap-2">
+                          <UserRound className="h-3.5 w-3.5 text-muted-foreground" />
+                          {r.display_name ?? "—"}
+                        </span>
+                      </td>
+                      <td>
+                        <select value={r.position ?? "captain"} onChange={(e) => void setPosition(r, e.target.value)}
+                                className="rounded-lg border border-border bg-background/40 px-2 py-1 text-xs outline-none focus:border-primary/50">
+                          {PORTAL_POSITIONS.map((p) => <option key={p} value={p}>{positionLabel(p)}</option>)}
+                        </select>
+                      </td>
+                      <td className="text-foreground/75">{r.email ?? <span className="text-muted-foreground/50">not set</span>}</td>
+                      <td>
+                        {r.user_id ? (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-300">
+                            <ShieldCheck className="h-3 w-3" /> Linked
+                          </span>
+                        ) : (
+                          <span className="rounded-full border border-border bg-background/40 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">No login</span>
+                        )}
+                      </td>
+                      <td>
+                        <button onClick={() => void toggleActive(r)}
+                                className={cn("rounded-full border px-2 py-0.5 text-[11px] font-semibold transition",
+                                              r.active ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-border text-muted-foreground")}>
+                          {r.active ? "Active" : "Disabled"}
+                        </button>
+                      </td>
+                      <td style={{ textAlign: "right" }}>
+                        <div className="inline-flex items-center gap-1">
+                          {busyId === r.id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                          ) : (
                             <>
-                              <Button size="sm" variant="ghost" className="h-7 gap-1 px-2 text-[11px]" title="Reset password"
-                                      onClick={() => void resetPassword(r)}>
-                                <KeyRound className="h-3 w-3" /> Reset
-                              </Button>
-                              <Button size="sm" variant="ghost" className="h-7 gap-1 px-2 text-[11px] text-muted-foreground" title="Deactivate portal access"
-                                      onClick={() => void unlink(r)}>
-                                <X className="h-3 w-3" /> Revoke
+                              {!r.user_id && (
+                                <Button size="sm" variant="ghost" className="h-7 gap-1 px-2 text-xs text-primary" onClick={() => void createLogin(r)}>
+                                  <Link2 className="h-3 w-3" /> Create login
+                                </Button>
+                              )}
+                              {r.user_id && (
+                                <>
+                                  <Button size="sm" variant="ghost" className="h-7 gap-1 px-2 text-xs" title="Reset password"
+                                          onClick={() => void resetPassword(r)}>
+                                    <KeyRound className="h-3 w-3" /> Reset
+                                  </Button>
+                                  <Button size="sm" variant="ghost" className="h-7 gap-1 px-2 text-xs text-muted-foreground" title="Deactivate portal access"
+                                          onClick={() => void unlink(r)}>
+                                    <X className="h-3 w-3" /> Revoke
+                                  </Button>
+                                </>
+                              )}
+                              <Button size="sm" variant="ghost" className="h-7 gap-1 px-2 text-xs text-muted-foreground/60 hover:text-destructive" onClick={() => void removeRow(r)}>
+                                <Trash2 className="h-3 w-3" /> Delete
                               </Button>
                             </>
                           )}
-                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground/60 hover:text-destructive" onClick={() => void removeRow(r)}>
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
         </div>
       )}
 
@@ -281,6 +319,7 @@ function AddVesselUserDialog({ yachts, onClose, onCreated, api }: {
   const [yachtId, setYachtId] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [position, setPosition] = useState("captain");
   const [createNow, setCreateNow] = useState(true);
   const [busy, setBusy] = useState(false);
 
@@ -290,7 +329,7 @@ function AddVesselUserDialog({ yachts, onClose, onCreated, api }: {
     setBusy(true);
     try {
       const { data: inserted, error } = await db.from("captain_accounts")
-        .insert({ yacht_id: yachtId, display_name: name.trim(), email: email.trim() || null, active: true })
+        .insert({ yacht_id: yachtId, display_name: name.trim(), email: email.trim() || null, position, active: true })
         .select("id").single();
       if (error) throw new Error(error.message);
       if (createNow && email.trim()) {
@@ -310,7 +349,7 @@ function AddVesselUserDialog({ yachts, onClose, onCreated, api }: {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <form onSubmit={submit} className="w-full max-w-md space-y-4 rounded-2xl border border-border bg-card p-5">
         <div className="flex items-center justify-between">
-          <h3 className="font-semibold">Add vessel user</h3>
+          <h3 className="font-semibold">Add Client Portal user</h3>
           <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
         </div>
         <div>
@@ -320,9 +359,17 @@ function AddVesselUserDialog({ yachts, onClose, onCreated, api }: {
             {yachts.map((y) => <option key={y.id} value={y.id}>{y.vessel_name}</option>)}
           </select>
         </div>
-        <div>
-          <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Captain name</label>
-          <input className={inputCls} required value={name} onChange={(e) => setName(e.target.value)} placeholder="Captain John Smith" />
+        <div className="grid grid-cols-[1fr_140px] gap-3">
+          <div>
+            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Name</label>
+            <input className={inputCls} required value={name} onChange={(e) => setName(e.target.value)} placeholder="Captain John Smith" />
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Position</label>
+            <select className={inputCls} value={position} onChange={(e) => setPosition(e.target.value)}>
+              {PORTAL_POSITIONS.map((p) => <option key={p} value={p}>{positionLabel(p)}</option>)}
+            </select>
+          </div>
         </div>
         <div>
           <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Login email (optional — can be added later)</label>
@@ -335,7 +382,7 @@ function AddVesselUserDialog({ yachts, onClose, onCreated, api }: {
           </label>
         )}
         <Button type="submit" disabled={busy || !yachtId || !name.trim()} className="w-full gap-1.5">
-          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Add vessel user
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Add portal user
         </Button>
       </form>
     </div>

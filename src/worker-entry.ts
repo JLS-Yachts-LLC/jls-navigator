@@ -257,6 +257,11 @@ export default {
       return handleSharePointWebhook(request, ctx)
     }
 
+    // Captain-portal login admin (kept at the top of the dispatch — see #debug note)
+    if (url.pathname === '/api/admin/portal-users') {
+      return adminPortalUsersHandler(request)
+    }
+
     if (url.pathname === '/api/leo/briefing' && request.method === 'POST') {
       return leoBriefingHandler(request)
     }
@@ -430,9 +435,6 @@ export default {
     }
     if (url.pathname === '/api/admin/users') {
       return adminUsersHandler(request)
-    }
-    if (url.pathname === '/api/admin/portal-users') {
-      return adminPortalUsersHandler(request)
     }
     if (url.pathname.startsWith('/api/admin/users/')) {
       const id = decodeURIComponent(url.pathname.slice('/api/admin/users/'.length))

@@ -69,7 +69,7 @@ export function ClientRequestsPage() {
     <div className="flex h-full flex-col">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-6 py-4">
         <div>
-          <div className="label-caps">Captain's Portal</div>
+          <div className="label-caps">Client Portal</div>
           <h1 className="font-display text-xl font-bold">Client Requests</h1>
         </div>
         <div className="flex items-center gap-2">
