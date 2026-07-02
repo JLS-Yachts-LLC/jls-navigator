@@ -197,7 +197,7 @@
 }
 
 @layer base {
-  * { border-color: var(--color-border); }
+  * { border-color: var(--border); }
 
   /* Hide scrollbars app-wide while keeping scroll/wheel/touch working. */
   * {
@@ -208,8 +208,8 @@
 
   html, body { font-family: var(--font-sans); }
   body {
-    background-color: var(--color-background);
-    color: var(--color-foreground);
+    background-color: var(--background);
+    color: var(--foreground);
     /* Readability standard: 16px body floor (POLARIS_UI_READABILITY.md). */
     font-size: 1rem;
     line-height: 1.5;
@@ -228,7 +228,7 @@
     font-weight: 600;
     letter-spacing: 0.16em;
     text-transform: uppercase;
-    color: var(--color-muted-foreground);
+    color: var(--muted-foreground);
   }
   /* Tabular numbers for finance/data */
   .tabular-nums { font-variant-numeric: tabular-nums; }
@@ -272,7 +272,7 @@
   .pill-muted {
     background: color-mix(in oklab, var(--muted) 80%, transparent);
     color: var(--muted-foreground);
-    border-color: var(--color-border);
+    border-color: var(--border);
   }
   .pill-primary {
     background: color-mix(in oklab, var(--primary) 14%, transparent);
@@ -302,20 +302,20 @@
     transition: background 180ms ease, opacity 180ms ease;
   }
   .nav-link[data-active='true']::before {
-    background: var(--color-primary);   /* signal cyan */
+    background: var(--primary);   /* signal cyan */
   }
 
   /* ── Card / panel surface ── */
   .surface {
-    background: var(--color-card);
-    border: 1px solid var(--color-border);
+    background: var(--card);
+    border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-md);
   }
 
   /* ── Glow surface (signal accent) ── */
   .surface-glow {
-    background: var(--color-card);
+    background: var(--card);
     border: 1px solid color-mix(in oklab, #00C4CC 30%, transparent);
     border-radius: var(--radius-lg);
     box-shadow: 0 0 0 1px color-mix(in oklab, #00C4CC 15%, transparent),
@@ -328,7 +328,7 @@
     font-size: 0.8125rem;
   }
   .data-table thead tr {
-    border-bottom: 1px solid var(--color-border);
+    border-bottom: 1px solid var(--border);
     background: oklch(0.256 0.071 240);  /* ocean #1E4060 */
   }
   .data-table thead th {
@@ -353,7 +353,7 @@
   }
   .data-table tbody td {
     padding: 0.625rem 0.875rem;
-    color: var(--color-foreground);
+    color: var(--foreground);
   }
 
   /* ── Leo streaming text ── */
@@ -421,6 +421,17 @@
   --sidebar-accent:        rgba(255,255,255,0.06);
   --sidebar-accent-foreground: #96cbc7;
   --sidebar-border:        rgba(150,203,199,0.18);
+  /* Font parity with the Beta shell/nav: raw CSS that references
+     --font-sans / --font-display (data-table headers, h1–h4, pills, label-caps)
+     resolves these per-element, so embedded pages render in the shell font. */
+  --font-sans:    var(--pds-font-body);
+  --font-display: var(--pds-font-display);
+  --font-body:    var(--pds-font-body);
   font-family: var(--pds-font-body);
   background: #0a2e40;
 }
+/* @theme inline bakes the Space Grotesk stack into the font-sans/font-display
+   utility classes, so the variable remap above can't reach them — override the
+   classes directly for embedded pages. */
+.pds-embed :is(.font-display) { font-family: var(--pds-font-display); }
+.pds-embed :is(.font-sans, .font-body) { font-family: var(--pds-font-body); }
