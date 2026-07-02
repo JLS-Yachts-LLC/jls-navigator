@@ -83,13 +83,21 @@ function SyncRow({ icon: Icon, name, description, schedule, lastRun, extra, acti
 export function SyncHubPage() {
   const [status, setStatus] = useState<SyncHubStatus | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [imgBusy, setImgBusy] = useState(false);
   const [imgStatus, setImgStatus] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    setLoading(true);
-    try { setStatus(await (getSyncHubStatus as any)()); }
-    catch (e: any) { toast.error(e?.message ?? "Could not load sync status"); }
+    setLoading(true); setLoadError(null);
+    try {
+      const s = await (getSyncHubStatus as any)();
+      if (!s || !Array.isArray(s.spLists)) throw new Error("Empty response from the status endpoint");
+      setStatus(s);
+    }
+    catch (e: any) {
+      setLoadError(e?.message ?? "Could not load sync status");
+      toast.error(e?.message ?? "Could not load sync status");
+    }
     finally { setLoading(false); }
   }, []);
   useEffect(() => { void load(); }, [load]);
@@ -142,6 +150,11 @@ export function SyncHubPage() {
       <div className="flex-1 space-y-5 overflow-auto px-6 py-5">
         {loading && !status ? (
           <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+        ) : loadError && !status ? (
+          <div className="flex h-40 flex-col items-center justify-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 text-sm">
+            <span className="text-red-300">Could not load sync status: {loadError}</span>
+            <Button size="sm" variant="outline" onClick={() => void load()}>Try again</Button>
+          </div>
         ) : status && (
           <>
             {/* Platform syncs */}

@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Ship, Navigation, BarChart3 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { YachtsPage } from "@/routes/_app.yachts.index";
-import { YachtDetail } from "@/routes/_app.yachts.$id";
+import { YachtsPage } from "@/components/vessels/yachts-registry-page";
+import { YachtDetail } from "@/components/vessels/yacht-detail-page";
 import { MyFleetPage } from "@/components/my-fleet-page";
 import { VesselReportScreen } from "@/components/visa/VesselReportScreen";
 

@@ -56,8 +56,11 @@ export function NotificationBell() {
   // (just no live push) if it isn't, since we also refetch on open.
   useEffect(() => {
     if (!user?.id) return;
+    // Unique topic per mount: supabase.channel() returns the EXISTING instance
+    // for a repeated topic, so on remount .on() ran against an already-subscribed
+    // channel → "cannot add postgres_changes callbacks after subscribe()".
     const ch = supabase
-      .channel(`notifications:${user.id}`)
+      .channel(`notifications:${user.id}:${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${user.id}` }, () => void load())
       .subscribe();
     return () => { void supabase.removeChannel(ch); };

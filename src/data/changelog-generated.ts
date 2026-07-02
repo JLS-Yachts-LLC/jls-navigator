@@ -5,9 +5,175 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.20.0",
+    "date": "2026-07-02",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Yacht detail gains Crew, Permits and Visas mini tabs; Add Yacht button restored on the registry; Manage Users — Client Portal tab grouped by vessel with positions (Captain/Owner/Representative/Purser), working Create login, bigger staff-table text and a real Delete; corrected users showing Invited when their login already works"
+      },
+      {
+        "type": "fix",
+        "title": "Full yacht image sync no longer stalls when vessels without a SharePoint photo sit at the front of the queue (batches now skip past failures, and unlinked yachts get matched by IMO/name)"
+      },
+      {
+        "type": "feature",
+        "title": "Manage Users in Settings (Internal Staff invites + Vessel Users for the Captain's Portal with temp passwords), SIM Cards register under Yacht IT Solutions (Etisalat/Du resale), and captains can now be added before their login email is known"
+      },
+      {
+        "type": "feature",
+        "title": "Yacht registry shows a live movement icon (under way, at anchor, moored, aground) next to each vessel name — click it to filter the registry; Permit Command Centre stat cards are now clickable filters"
+      },
+      {
+        "type": "feature",
+        "title": "Captain's View client portal at /portal — MFA-protected self-service for captains (provisioning, uniform, bunkering, permit, IT and visa requests, own-yacht crew & documents, click-to-call directory) with hard per-yacht data isolation, plus a staff Client Requests screen"
+      },
+      {
+        "type": "feature",
+        "title": "Global search in the top bar (Ctrl+K) — find yachts, crew, visa applications, permits and e-sign documents from anywhere"
+      },
+      {
+        "type": "fix",
+        "title": "Permit tables (and other embedded pages) now use the correct light text colour and the Polaris shell font instead of drifting to the old theme"
+      },
+      {
+        "type": "feature",
+        "title": "Permits is now a hub with mini tabs — Command Centre plus a tab for each permit type, with quick links switching tabs"
+      },
+      {
+        "type": "improvement",
+        "title": "Visa list loads only rendered columns — 5.7k-row select * was hanging the screen"
+      },
+      {
+        "type": "feature",
+        "title": "Permits back on the menu — Operations → Permits (Command Centre)"
+      },
+      {
+        "type": "feature",
+        "title": "Weekly Fleet Finance email + templates auto-sync + views keep status filter"
+      },
+      {
+        "type": "feature",
+        "title": "Leo dashboard briefing is on-demand — Generate button instead of auto-run"
+      },
+      {
+        "type": "feature",
+        "title": "Yacht status filter pills + jump-to-map from Actual (live)"
+      },
+      {
+        "type": "feature",
+        "title": "Polish batch — Leo mark, current-visas default, fleet outstanding, quotes toggle"
+      },
+      {
+        "type": "feature",
+        "title": "MMSI lookup assist + drag-to-place signature fields"
+      },
+      {
+        "type": "feature",
+        "title": "Edit signature fields on the document page — client + company signatories"
+      },
+      {
+        "type": "fix",
+        "title": "Bulk import retries failed insert chunks row-by-row and reports errors"
+      },
+      {
+        "type": "fix",
+        "title": "Bulk import respects the visa status check constraint"
+      },
+      {
+        "type": "feature",
+        "title": "Send to Vessel — email the issued visa with UAE arrival instructions"
+      },
+      {
+        "type": "feature",
+        "title": "Yacht Finance tab — QuickBooks invoices with paid/pending/outstanding"
+      },
+      {
+        "type": "feature",
+        "title": "New View everywhere — every route renders in the Polaris chrome; Old View shelved"
+      },
+      {
+        "type": "feature",
+        "title": "Yacht position sync now runs hourly (destination/ETA every 6 hours)"
+      },
+      {
+        "type": "feature",
+        "title": "Yacht detail shows Actual (live) location from the fleet tracker"
+      },
+      {
+        "type": "feature",
+        "title": "Live yacht tracking via MyShipTracking — credit-efficient cron + IMO fallback"
+      },
+      {
+        "type": "feature",
+        "title": "JLS Internal Services is now a Bills register + MyShipTracking AIS prep"
+      },
+      {
+        "type": "feature",
+        "title": "Hourly cron for two-way visa sync (rotating cursor)"
+      },
+      {
+        "type": "feature",
+        "title": "Show Payment method + Paid By columns in the subscriptions table"
+      },
+      {
+        "type": "feature",
+        "title": "Move client subs off Internal tab + add payment method & paid-by"
+      },
+      {
+        "type": "feature",
+        "title": "Dispatched — delete run, remove add-parcels pool"
+      },
+      {
+        "type": "feature",
+        "title": "Driver app — route by boat stops + customer signs delivery note"
+      },
+      {
+        "type": "feature",
+        "title": "Two-way visa sync (snapshot-guarded, newest-wins) — sheet->app pull guard"
+      },
+      {
+        "type": "fix",
+        "title": "De-dupe crew names + recipients in sign-on/off notification"
+      },
+      {
+        "type": "feature",
+        "title": "Per-boat delivery-note numbers on multi-boat notes"
+      },
+      {
+        "type": "feature",
+        "title": "Dispatched note card lists boat names"
+      },
+      {
+        "type": "feature",
+        "title": "Delivery note PDF — driver, planned date, one page per boat"
+      },
+      {
+        "type": "feature",
+        "title": "ShipSync calendar — stack boats vertically, compact + add button"
+      },
+      {
+        "type": "fix",
+        "title": "Floating chat starts collapsed, not open on every page load"
+      },
+      {
+        "type": "feature",
+        "title": "ShipSync Routing — weekly delivery calendar replaces Driver runs"
+      },
+      {
+        "type": "feature",
+        "title": "ShipSync Routing — set delivery date per route"
+      }
+    ]
+  },
+  {
     "version": "2.19.0",
     "date": "2026-07-01",
     "entries": [
+      {
+        "type": "fix",
+        "title": "Assistant chat text unreadable on light theme"
+      },
       {
         "type": "feature",
         "title": "Cross-module chat context + dynamic non-repeating welcome"

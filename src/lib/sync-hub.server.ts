@@ -21,55 +21,66 @@ export type SyncHubStatus = {
   shipsync: { lastRun: string | null; detail: string | null };
 };
 
-/** Best-effort "when did this last run" from whatever timestamp a state table has. */
-function lastStamp(row: Record<string, any> | null | undefined): string | null {
-  if (!row) return null;
-  return row.updated_at ?? row.last_synced_at ?? row.synced_at ?? row.created_at ?? row.run_at ?? null;
+/** Run a query, but never let one failing source blank the whole page. */
+async function safe<T>(p: PromiseLike<T>): Promise<T | null> {
+  try { return await p; } catch { return null; }
 }
 
-export const getSyncHubStatus = createServerFn({ method: "GET" })
+// POST (not GET) — matches the serverFn invocation pattern proven elsewhere in
+// the app; the GET variant resolved empty on the deployed worker.
+export const getSyncHubStatus = createServerFn({ method: "POST" })
   .handler(async (): Promise<SyncHubStatus> => {
     const [lists, imagesCount, qboState, mstLast, mstCount, visaRun, shipsyncState] = await Promise.all([
-      db.from("sharepoint_sync_configs")
+      safe(db.from("sharepoint_sync_configs")
         .select("id, name, list_name, sync_target, enabled, last_synced_at, last_sync_synced, last_sync_errors")
-        .order("sync_target"),
-      db.from("yachts").select("id", { count: "exact", head: true })
-        .or("vessel_image.is.null,vessel_image.like.{*"),
-      db.from("qbo_sync_state").select("*").limit(1).maybeSingle(),
-      db.from("yachts").select("ais_position_at").not("ais_position_at", "is", null)
-        .order("ais_position_at", { ascending: false }).limit(1).maybeSingle(),
-      db.from("yachts").select("id", { count: "exact", head: true }).not("ais_position_at", "is", null),
-      db.from("visa_sync_runs").select("*").order("created_at", { ascending: false }).limit(1).maybeSingle(),
-      db.from("shipsync_sync_state").select("*").limit(1).maybeSingle(),
+        .order("sync_target")),
+      safe(db.from("yachts").select("id", { count: "exact", head: true })
+        .or("vessel_image.is.null,vessel_image.like.{*")),
+      safe(db.from("qbo_sync_state").select("*").limit(1).maybeSingle()),
+      safe(db.from("yachts").select("ais_position_at").not("ais_position_at", "is", null)
+        .order("ais_position_at", { ascending: false }).limit(1).maybeSingle()),
+      safe(db.from("yachts").select("id", { count: "exact", head: true }).not("ais_position_at", "is", null)),
+      safe(db.from("visa_sync_runs").select("started_at, finished_at, summary, error, ok")
+        .order("started_at", { ascending: false }).limit(1).maybeSingle()),
+      safe(db.from("shipsync_sync_state").select("*").limit(1).maybeSingle()),
     ]);
 
-    const qboRow = qboState?.data ?? null;
-    const visaRow = visaRun?.data ?? null;
-    const shipRow = shipsyncState?.data ?? null;
+    const qboRow = (qboState as any)?.data ?? null;
+    const visaRow = (visaRun as any)?.data ?? null;
+    const shipRow = (shipsyncState as any)?.data ?? null;
 
     return {
-      spLists: (lists?.data ?? []).map((s: any) => ({
+      spLists: ((lists as any)?.data ?? []).map((s: any) => ({
         id: s.id ?? null, name: s.name, listName: s.list_name, syncTarget: s.sync_target,
         enabled: !!s.enabled, lastSyncedAt: s.last_synced_at,
         lastSynced: s.last_sync_synced, lastErrors: s.last_sync_errors,
       })),
-      imagesPending: imagesCount?.count ?? 0,
+      imagesPending: (imagesCount as any)?.count ?? 0,
       qbo: {
-        lastRun: lastStamp(qboRow),
-        detail: qboRow ? Object.entries(qboRow)
-          .filter(([k]) => !["id", "created_at", "updated_at"].includes(k))
-          .slice(0, 4).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(" · ") : null,
+        lastRun: qboRow?.last_run_at ?? null,
+        detail: qboRow
+          ? [
+              qboRow.last_count != null ? `last batch: ${qboRow.last_count} document(s)` : null,
+              qboRow.last_full_at ? `full sync: ${qboRow.last_full_at}` : null,
+              qboRow.last_error ? `last error: ${qboRow.last_error}` : null,
+            ].filter(Boolean).join(" · ") || null
+          : null,
       },
-      mst: { lastPosition: mstLast?.data?.ais_position_at ?? null, tracked: mstCount?.count ?? 0 },
+      mst: { lastPosition: (mstLast as any)?.data?.ais_position_at ?? null, tracked: (mstCount as any)?.count ?? 0 },
       visa: {
-        lastRun: lastStamp(visaRow),
-        detail: visaRow?.summary ? JSON.stringify(visaRow.summary) : (visaRow?.error ?? null),
+        lastRun: visaRow?.finished_at ?? visaRow?.started_at ?? null,
+        detail: visaRow
+          ? (visaRow.error ?? (visaRow.summary ? JSON.stringify(visaRow.summary) : null))
+          : null,
       },
       shipsync: {
-        lastRun: lastStamp(shipRow),
-        detail: shipRow ? Object.entries(shipRow)
-          .filter(([k]) => !["id", "created_at", "updated_at"].includes(k))
-          .slice(0, 3).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(" · ") : null,
+        lastRun: shipRow?.last_push_at ?? shipRow?.updated_at ?? null,
+        detail: shipRow
+          ? [
+              shipRow.pushed != null ? `pushed: ${shipRow.pushed}` : null,
+              shipRow.errors ? `errors: ${shipRow.errors}` : null,
+            ].filter(Boolean).join(" · ") || null
+          : null,
       },
     };
   });
