@@ -22,6 +22,9 @@ export interface NavItem {
   icon: string;
   screen: string;
   roles?: PolarisRole[]; // undefined = all roles
+  /** Route-backed item: navigates to this app route (rendered inside the same
+   *  Polaris chrome by AppLayout) instead of switching an in-shell screen. */
+  route?: string;
 }
 export interface NavGroup {
   label: string;
@@ -84,6 +87,13 @@ export const NAV_GROUPS: NavGroup[] = [
       },
       { label: "Sign On/Off", icon: "clipboard-list", screen: "soso-reports" },
       { label: "Crew Documents", icon: "files", screen: "documents" },
+      {
+        label: "Spreadsheet Sync",
+        icon: "refresh",
+        screen: "route-visa-sync",
+        route: "/crew-immigration/visas/sync",
+        roles: ["global_admin", "crew_immigration"],
+      },
     ],
   },
   {
@@ -94,6 +104,13 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: "settings",
         screen: "settings",
         roles: ["global_admin"],
+      },
+      {
+        label: "Recycle Bin",
+        icon: "trash",
+        screen: "route-recycle-bin",
+        route: "/recycle-bin",
+        roles: ["global_admin", "crew_immigration"],
       },
     ],
   },
@@ -121,6 +138,24 @@ function visibleGroups(role: PolarisRole): NavGroup[] {
 function labelForScreen(screen: string): string | null {
   for (const g of NAV_GROUPS) for (const i of g.items) if (i.screen === screen) return i.label;
   return null;
+}
+
+/** Look up a nav item by its screen key (route-backed items carry `route`). */
+export function navItemForScreen(screen: string): NavItem | undefined {
+  for (const g of NAV_GROUPS) for (const i of g.items) if (i.screen === screen) return i;
+  return undefined;
+}
+
+/** The nav screen key that best matches an app route path (for highlighting
+ *  route-backed items when a page renders inside the shared Polaris chrome). */
+export function activeScreenForPath(pathname: string): string {
+  let best: { screen: string; len: number } | null = null;
+  for (const g of NAV_GROUPS) for (const i of g.items) {
+    if (i.route && pathname.startsWith(i.route) && (!best || i.route.length > best.len)) {
+      best = { screen: i.screen, len: i.route.length };
+    }
+  }
+  return best?.screen ?? "";
 }
 
 /** The standard app's top-bar controls (View-as, presence, feedback, theme,

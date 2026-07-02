@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute, Link, Navigate } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '@/lib/auth'
 import { getAccessLevel, ACCESS_LABELS } from '@/lib/leo-access'
@@ -10,9 +10,12 @@ import { useFlagMap } from '@/lib/release-flags'
 import { useDevAccess } from '@/lib/dev-access'
 import { DASHBOARD_WIDGETS } from '@/components/dashboard/DashboardWidgets'
 import { Ship, AlertTriangle, ClipboardList, FileSignature, LayoutGrid, Check } from 'lucide-react'
+import { OLD_VIEW_SHELVED } from '@/components/app-layout'
 
 export const Route = createFileRoute('/_app/dashboard')({
-  component: DashboardPage,
+  // Old View shelved: the legacy dashboard redirects to the Polaris home.
+  // Flip OLD_VIEW_SHELVED (app-layout.tsx) to restore it.
+  component: () => (OLD_VIEW_SHELVED ? <Navigate to="/polaris-redesign" replace /> : <DashboardPage />),
   head: () => ({ meta: [{ title: 'Dashboard — Polaris' }] }),
 })
 

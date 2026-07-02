@@ -9,7 +9,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { LeoChat } from "@/components/leo/LeoChat";
 import "@/components/polaris-ui/tokens.css";
-import { PolarisShell, type PolarisRole } from "@/components/polaris-ui/shell";
+import { PolarisShell, navItemForScreen, type PolarisRole } from "@/components/polaris-ui/shell";
 import { ToastProvider } from "@/components/polaris-ui/feedback";
 import {
   PolarisButton,
@@ -60,7 +60,10 @@ const EMBED_SCREENS: Record<string, React.ComponentType> = {
 
 export const Route = createFileRoute("/_app/polaris-redesign")({
   component: PolarisRedesignApp,
-  head: () => ({ meta: [{ title: "Polaris — Redesign Preview" }] }),
+  // ?screen=<key> deep-opens a specific screen (used by the shared route chrome).
+  validateSearch: (search: Record<string, unknown>): { screen?: string } =>
+    typeof search.screen === "string" ? { screen: search.screen } : {},
+  head: () => ({ meta: [{ title: "Polaris" }] }),
 });
 
 const LAST_VESSEL = "polaris.redesign.lastVessel";
@@ -68,8 +71,14 @@ const LAST_VESSEL = "polaris.redesign.lastVessel";
 function PolarisRedesignApp() {
   const { user, session } = useAuth();
   const navigate = useNavigate();
+  const search = Route.useSearch();
   const { yachts, loading } = useYachts();
-  const [screen, setScreen] = useState("dashboard");
+  const [screen, setScreen] = useState(search.screen ?? "dashboard");
+
+  // Deep-open a screen via ?screen= (nav clicks from route-backed pages).
+  useEffect(() => {
+    if (search.screen) setScreen(search.screen);
+  }, [search.screen]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [switcher, setSwitcher] = useState(false);
 
@@ -173,12 +182,17 @@ function PolarisRedesignApp() {
       <PolarisShell
         role={role}
         active={screen}
-        onNavigate={setScreen}
+        onNavigate={(s) => {
+          // Route-backed nav items (Spreadsheet Sync, Recycle Bin, …) navigate to
+          // their app route — rendered inside the same Polaris chrome by AppLayout.
+          const item = navItemForScreen(s);
+          if (item?.route) navigate({ to: item.route as any });
+          else setScreen(s);
+        }}
         vesselName={yacht?.vessel_name ?? "Select vessel"}
         userInitials={initials}
         userName={user?.email ?? "User"}
         onVesselClick={() => setSwitcher(true)}
-        onExitBeta={() => navigate({ to: "/dashboard" })}
       >
         {screen === "visa-reports" ? (
           <PolarisVisaReports

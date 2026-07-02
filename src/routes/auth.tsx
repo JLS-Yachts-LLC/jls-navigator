@@ -64,7 +64,7 @@ function AuthPage() {
           navigate({ to: resolveLandingPath(c) as any });
         }
       } catch {
-        navigate({ to: "/dashboard" as any });
+        navigate({ to: "/polaris-redesign" as any });
       }
     })();
   }, [loading, user, mode, resolving, workspaces, navigate]);

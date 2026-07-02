@@ -156,7 +156,7 @@ export function getLandingPath(claims: PolarisClaims): string {
 
   // Beta (Polaris redesign) is the default/main view for staff/admins.
   if (role && (GLOBAL_ADMIN_ROLES as readonly string[]).includes(role)) return "/polaris-redesign";
-  if (role === "regional_admin") return claims.locationId ? `/dashboard/location/${claims.locationId}` : "/dashboard";
+  if (role === "regional_admin") return claims.locationId ? `/dashboard/location/${claims.locationId}` : "/polaris-redesign";
   if (role === "captain" || role === "vessel_admin") {
     return claims.vesselIds[0] ? `/dashboard/vessel/${claims.vesselIds[0]}` : "/dashboard/vessel/unassigned";
   }
@@ -190,5 +190,5 @@ export function isBuiltRoute(path: string): boolean {
 /** getLandingPath, but never returns a route that isn't built yet. */
 export function resolveLandingPath(claims: PolarisClaims): string {
   const target = getLandingPath(claims);
-  return isBuiltRoute(target) ? target : "/dashboard";
+  return isBuiltRoute(target) ? target : "/polaris-redesign";
 }

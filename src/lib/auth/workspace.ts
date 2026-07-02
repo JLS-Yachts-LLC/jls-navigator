@@ -51,7 +51,7 @@ export function getDashboardType(role: string | null): string {
 }
 
 export function getModulePath(moduleId: string): string {
-  return MODULE_PORTAL[moduleId] ?? "/dashboard";
+  return MODULE_PORTAL[moduleId] ?? "/polaris-redesign";
 }
 
 /** The intended landing path for a chosen workspace. */
@@ -60,14 +60,14 @@ export function getWorkspaceLandingPath(_claims: PolarisClaims, ws: WorkspaceCon
     case "organisation": return `/dashboard/location/${ws.id}`;
     case "vessel":       return `/dashboard/vessel/${ws.id}`;
     case "module":       return getModulePath(ws.id);
-    default:             return "/dashboard";
+    default:             return "/polaris-redesign";
   }
 }
 
 /** getWorkspaceLandingPath, but never returns a not-yet-built route (#144+). */
 export function resolveWorkspaceLandingPath(claims: PolarisClaims, ws: WorkspaceContext): string {
   const target = getWorkspaceLandingPath(claims, ws);
-  return isBuiltRoute(target) ? target : "/dashboard";
+  return isBuiltRoute(target) ? target : "/polaris-redesign";
 }
 
 /**
