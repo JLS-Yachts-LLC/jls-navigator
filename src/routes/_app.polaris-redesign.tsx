@@ -249,7 +249,7 @@ function PolarisRedesignApp() {
             <OrbitHub />
           </div>
         ) : screen === "captain" ? (
-          <CaptainHub yacht={yacht} onSwitchVessel={() => setSwitcher(true)} />
+          <CaptainHub yacht={yacht} onSwitchVessel={() => setSwitcher(true)} onNavigate={setScreen} />
         ) : EMBED_SCREENS[screen] ? (
           <div style={{ height: "100%" }}>
             {(() => { const C = EMBED_SCREENS[screen]; return <C />; })()}
