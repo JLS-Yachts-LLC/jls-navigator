@@ -134,7 +134,7 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
   // and returns the result (for verifying the API key after `wrangler secret put`).
   if (url.searchParams.get('run-ais') === 'myshiptracking') {
     try {
-      const r = await syncMyShipTracking()
+      const r = await syncMyShipTracking({ extended: url.searchParams.get('extended') === '1' })
       return new Response(JSON.stringify({ ok: true, ...r }), { status: 200, headers: { 'Content-Type': 'application/json' } })
     } catch (e) {
       return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
@@ -547,10 +547,12 @@ export default {
         .catch((e) => console.error('[vesselfinder-cron] error:', e))
     )
 
-    // Sync live MyShipTracking AIS positions onto yachts (no-op until API key set)
+    // Sync live MyShipTracking AIS positions onto yachts (no-op until API key set).
+    // Simple response (1 credit/vessel) every 15 min; the hourly tick upgrades to
+    // extended (3 credits) so destination/ETA refresh without burning credits all day.
     ctx.waitUntil(
-      syncMyShipTracking()
-        .then((r) => console.log(`[myshiptracking-cron] requested=${r.requested} matched=${r.matched} updated=${r.updated}${r.note ? ' note=' + r.note : ''}`))
+      syncMyShipTracking({ extended: isHourly })
+        .then((r) => console.log(`[myshiptracking-cron] ${isHourly ? 'extended' : 'simple'} requested=${r.requested} matched=${r.matched} updated=${r.updated}${r.note ? ' note=' + r.note : ''}`))
         .catch((e) => console.error('[myshiptracking-cron] error:', e))
     )
 

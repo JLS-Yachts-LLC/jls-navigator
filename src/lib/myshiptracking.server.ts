@@ -35,7 +35,13 @@ function toIso(v: any): string | null {
 
 type YachtRow = { id: string; mmsi: string | null; imo_no: string | null; ais_navstat: number | null };
 
-export async function syncMyShipTracking(): Promise<{ requested: number; matched: number; updated: number; note?: string }> {
+/**
+ * @param opts.extended use the extended response (adds destination / ETA / ports;
+ *        3 credits per vessel vs 1). The cron runs `simple` every 15 min and
+ *        `extended` once an hour to keep the credit spend sensible.
+ */
+export async function syncMyShipTracking(opts: { extended?: boolean } = {}): Promise<{ requested: number; matched: number; updated: number; note?: string }> {
+  const extended = opts.extended ?? false;
   const apiKey = process.env.MYSHIPTRACKING_API_KEY as string | undefined;
   if (!apiKey) return { requested: 0, matched: 0, updated: 0, note: "MYSHIPTRACKING_API_KEY not set — skipped" };
 
@@ -43,9 +49,10 @@ export async function syncMyShipTracking(): Promise<{ requested: number; matched
     .from("yachts").select("id, mmsi, imo_no, ais_navstat").eq("archive", false).order("id"));
   const rows = (yachts ?? []) as YachtRow[];
 
-  // Prefer MMSI; fall back to IMO for yachts without one. De-dupe identifiers.
+  // Prefer a valid MMSI; fall back to the IMO when the MMSI is missing OR invalid
+  // (several yachts hold junk like "MAR0070343" or 8-digit numbers). De-dupe ids.
   const mmsis = [...new Set(rows.map(r => (r.mmsi ?? "").trim()).filter(v => /^\d{9}$/.test(v)))];
-  const imosAll = rows.filter(r => !(r.mmsi ?? "").trim()).map(r => (r.imo_no ?? "").trim());
+  const imosAll = rows.filter(r => !/^\d{9}$/.test((r.mmsi ?? "").trim())).map(r => (r.imo_no ?? "").trim());
   const imos = [...new Set(imosAll.filter(v => /^\d{7}$/.test(v)))];
   if (!mmsis.length && !imos.length) return { requested: 0, matched: 0, updated: 0, note: "no yachts with a valid MMSI/IMO" };
 
@@ -63,7 +70,7 @@ export async function syncMyShipTracking(): Promise<{ requested: number; matched
   const byMmsi = new Map<string, any>();
   const byImo = new Map<string, any>();
   for (const b of batches) {
-    const params = new URLSearchParams({ response: "extended" });
+    const params = new URLSearchParams({ response: extended ? "extended" : "simple" });
     if (b.mmsi.length) params.set("mmsi", b.mmsi.join(","));
     if (b.imo.length) params.set("imo", b.imo.join(","));
     const res = await fetch(`${ENDPOINT}?${params.toString()}`, {
@@ -101,11 +108,15 @@ export async function syncMyShipTracking(): Promise<{ requested: number; matched
       ais_course: rec.course != null ? Number(rec.course) : null,
       ais_heading: rec.heading != null ? Number(rec.heading) : (rec.course != null ? Number(rec.course) : null),
       ais_navstat: navstat,
-      ais_destination: rec.destination ? String(rec.destination) : null,
-      ais_eta: rec.eta ? String(rec.eta) : (rec.next_port_eta_utc ? String(rec.next_port_eta_utc) : null),
       ais_position_at: positionAt,
       ais_synced_at: now,
     };
+    // Voyage fields only come in the extended response — a simple run must not
+    // blank the destination/ETA the hourly extended run wrote.
+    if (extended) {
+      patch.ais_destination = rec.destination ? String(rec.destination) : null;
+      patch.ais_eta = rec.eta ? String(rec.eta) : (rec.next_port_eta_utc ? String(rec.next_port_eta_utc) : null);
+    }
 
     // Voyage-state transitions (same rules as the other AIS sources).
     if (movingNow && !movingPrev) {
