@@ -1,4 +1,5 @@
--- ⚠️ NOT YET APPLIED — needs a reviewed, manual apply (large blast radius).
+-- APPLIED 2026-07-02 with Matt's explicit approval (39 functions wrapped;
+-- verified: staff RPC calls unaffected, captain calls raise 42501).
 --
 -- Captain portal lockdown, part 3: guard SECURITY DEFINER RPCs.
 -- These ~43 functions run as their owner and BYPASS row-level security, so a

@@ -43,6 +43,7 @@ import { crewPersonalInfoHandler } from './routes/api.crew.personal-info'
 import { visaApplicationActionsHandler } from './routes/api.visa.applicationActions'
 import { visaReportsHandler } from './routes/api.visa.reports'
 import { adminUsersHandler } from './routes/api.admin.users'
+import { adminPortalUsersHandler } from './routes/api.admin.portal-users'
 import { adminUserByIdHandler } from './routes/api.admin.users.$id'
 import { adminPermissionsHandler } from './routes/api.admin.permissions'
 import { adminAuditHandler } from './routes/api.admin.audit'
@@ -428,6 +429,9 @@ export default {
     }
     if (url.pathname === '/api/admin/users') {
       return adminUsersHandler(request)
+    }
+    if (url.pathname === '/api/admin/portal-users') {
+      return adminPortalUsersHandler(request)
     }
     if (url.pathname.startsWith('/api/admin/users/')) {
       const id = decodeURIComponent(url.pathname.slice('/api/admin/users/'.length))

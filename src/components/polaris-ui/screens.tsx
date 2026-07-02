@@ -26,6 +26,7 @@ import {
 } from "./primitives";
 import { ConfirmModal, useToast } from "./feedback";
 import { LeoPanel } from "@/components/leo/LeoPanel";
+import { ManageUsers } from "@/components/admin/manage-users";
 import {
   useVesselVisaData,
   useVesselMovements,
@@ -1494,12 +1495,11 @@ export function PolarisSosoReports({
   );
 }
 
-// ── Settings screen (preview-informational) ───────────────────────────────────
+// ── Settings screen ────────────────────────────────────────────────────────────
 export function PolarisSettings() {
   return (
     <>
       <PageHeader title="Settings" actions={null} />
-      <SectionLabel>Polaris Beta — preview</SectionLabel>
       <div className="pds-grid-2" style={{ marginBottom: 16 }}>
         <PolarisCard title="About this view" icon="sparkles">
           <p style={{ fontSize: "var(--pds-fs-body)", color: "var(--pds-text-secondary)", margin: 0, lineHeight: 1.6 }}>
@@ -1509,13 +1509,14 @@ export function PolarisSettings() {
           </p>
         </PolarisCard>
         <PolarisCard title="Admin & preferences" icon="settings">
-          <p style={{ fontSize: "var(--pds-fs-body)", color: "var(--pds-text-secondary)", margin: "0 0 12px", lineHeight: 1.6 }}>
-            User management, roles, integrations and theme are managed in the original app's
-            Settings &amp; Admin areas.
+          <p style={{ fontSize: "var(--pds-fs-body)", color: "var(--pds-text-secondary)", margin: 0, lineHeight: 1.6 }}>
+            Manage staff logins and captain-portal (vessel) logins below. Roles, integrations
+            and theme still live in the original app's Settings &amp; Admin areas.
           </p>
-          <EmptyState icon="settings" message="Beta settings will live here as the redesign is promoted." />
         </PolarisCard>
       </div>
+      <SectionLabel>Manage users</SectionLabel>
+      <ManageUsers />
     </>
   );
 }
