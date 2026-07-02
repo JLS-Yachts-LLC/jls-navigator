@@ -58,6 +58,7 @@ import { visaVesselPrefsHandler } from './routes/api.visa.vessel-prefs'
 import { nativeLanguageResolveDefaultHandler } from './routes/api.native-language.resolve-default'
 import { nativeLanguageSaveHandler } from './routes/api.native-language.save'
 import { runWeeklyVisaReports } from './lib/visa-reporting/runWeeklyVisaReports.server'
+import { runWeeklyFleetFinance } from './lib/fleet-finance-report.server'
 import { trackRun } from './lib/automations.server'
 import { runVisaExpiryFlagJob } from './lib/visa/visaExpiryFlags.server'
 import { runTwoWaySyncTick } from './lib/visa/excel-sync.server'
@@ -130,6 +131,18 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
     return new Response(JSON.stringify({ ok: results.every((r) => r.ok), to: testEmail, results }), {
       status: 200, headers: { 'Content-Type': 'application/json' },
     })
+  }
+
+  // Manual test: `?run=fleet-finance` sends the weekly Fleet Finance email now
+  // (respects the toggle + recipients; add `&force=1` to bypass the toggle).
+  if (url.searchParams.get('run') === 'fleet-finance') {
+    try {
+      const { runWeeklyFleetFinance } = await import('./lib/fleet-finance-report.server')
+      const r = await runWeeklyFleetFinance({ force: url.searchParams.get('force') === '1' })
+      return new Response(JSON.stringify({ ok: true, ...r }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
   }
 
   // Manual AIS test: `?run-ais=myshiptracking` runs one MyShipTracking sync pass
@@ -577,6 +590,17 @@ export default {
           () => runWeeklyImmigrationReports())
           .then((r) => console.log(`[weekly-immigration] on=${r.signOn} off=${r.signOff} sent=${r.sent}`))
           .catch((e) => console.error('[weekly-immigration] error:', e))
+      )
+    }
+
+    // Weekly Fleet Finance email — Monday 08:00 GST (04:00 UTC). Outstanding QBO
+    // balances per yacht; toggle + recipients live on the Automations page.
+    if (utcHour === 4 && new Date().getUTCDay() === 1 && new Date().getUTCMinutes() < 15) {
+      ctx.waitUntil(
+        trackRun({ key: 'weekly-fleet-finance', name: 'Weekly Fleet Finance email', source: 'worker-cron', trigger_type: 'schedule', category: 'Finance' },
+          () => runWeeklyFleetFinance())
+          .then((r) => console.log(`[fleet-finance] sent=${r.sent} yachts=${r.yachts} outstanding=${r.outstanding}${r.note ? ' note=' + r.note : ''}`))
+          .catch((e) => console.error('[fleet-finance] error:', e))
       )
     }
 

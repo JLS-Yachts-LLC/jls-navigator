@@ -22,6 +22,7 @@ type Automation = {
   source: string | null;
   endpoint: string | null;
   enabled: boolean;
+  config?: Record<string, any> | null;
   last_run_at: string | null;
   last_status: string | null;
   last_detail: string | null;
@@ -196,6 +197,8 @@ export function AutomationsPage() {
                           </span>
                           {a.endpoint && <a href={a.endpoint} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline"><ExternalLink className="h-3 w-3" /> {a.source === "n8n" ? "Open in n8n" : "Run URL"}</a>}
                         </div>
+                        {/* Per-automation configuration (e.g. email recipients) */}
+                        {a.key === "weekly-fleet-finance" && <RecipientsEditor automation={a} onSaved={(cfg) => setItems(prev => prev.map(x => x.id === a.id ? { ...x, config: cfg } : x))} />}
                         {/* Run metrics — last 30 days */}
                         {rs && rs.runs > 0 && (
                           <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -224,6 +227,46 @@ export function AutomationsPage() {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// Recipients editor for automations that email a configured list (config.recipients).
+function RecipientsEditor({ automation, onSaved }: { automation: Automation; onSaved: (cfg: Record<string, any>) => void }) {
+  const initial = ((automation.config as any)?.recipients ?? []).join(", ");
+  const [value, setValue] = useState<string>(initial);
+  const [saving, setSaving] = useState(false);
+  const dirty = value.trim() !== initial.trim();
+
+  async function save() {
+    const recipients = value.split(/[,;\s]+/).map((s) => s.trim()).filter((s) => /.+@.+\..+/.test(s));
+    setSaving(true);
+    try {
+      const cfg = { ...(automation.config ?? {}), recipients };
+      const { error } = await (supabase as any).from("automations")
+        .update({ config: cfg, updated_at: new Date().toISOString() }).eq("id", automation.id);
+      if (error) throw error;
+      setValue(recipients.join(", "));
+      onSaved(cfg);
+      toast.success(recipients.length ? `Recipients saved (${recipients.length})` : "Recipients cleared — the email won't send until some are set");
+    } catch (e: any) { toast.error(String(e?.message ?? e)); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2">
+      <span className="text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">Recipients</span>
+      <Input
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder="e.g. m.peeters@jlsyachts.com, accounts@jlsyachts.com"
+        className="h-7 w-80 max-w-full text-xs"
+      />
+      {dirty && (
+        <Button size="sm" onClick={save} disabled={saving} className="h-7 gap-1 text-xs">
+          {saving && <Loader2 className="h-3 w-3 animate-spin" />} Save
+        </Button>
+      )}
     </div>
   );
 }

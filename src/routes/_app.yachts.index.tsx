@@ -11,6 +11,7 @@ import {
   ChevronLeft, ChevronRight, BookMarked, X, Check, Grid3x3, Archive, ArchiveRestore,
 } from "lucide-react";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuTrigger, DropdownMenuCheckboxItem,
   DropdownMenuLabel, DropdownMenuSeparator,
@@ -36,6 +37,8 @@ type ViewPreset = {
   name: string;
   columns: YachtColumnKey[];
   builtin?: boolean;
+  /** Saved status-pill filter (lowercase status, or "all"). */
+  statusFilter?: StatusFilter;
 };
 
 // ── Built-in view presets ──────────────────────────────────────────────────────
@@ -270,6 +273,7 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
       YACHT_COLUMNS.some((c) => c.key === k),
     ) as YachtColumnKey[];
     setVisible(validCols);
+    setStatusFilter(v.statusFilter ?? "all");
     setActiveViewId(v.id);
   }
 
@@ -284,11 +288,11 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
     const name = newViewName.trim();
     if (!name) return;
     const id = `custom-${Date.now()}`;
-    const preset: ViewPreset = { id, name, columns: [...visible] };
+    const preset: ViewPreset = { id, name, columns: [...visible], statusFilter };
     setCustomViews((prev) => [...prev, preset]);
     setActiveViewId(id);
     setNewViewName("");
-    toast.success(`View "${name}" saved`);
+    toast.success(`View "${name}" saved${statusFilter !== "all" ? ` (filter: ${statusFilter})` : ""}`);
   }
 
   function deleteCustomView(id: string) {
