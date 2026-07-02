@@ -44,6 +44,7 @@ import { FeedbackPage } from "@/components/feedback/feedback-page";
 import { CrewPlacementPage } from "@/components/crew-placement/crew-placement-page";
 import { PortCallsHub } from "@/components/port-calls/PortCallsHub";
 import { OrbitHub } from "@/components/orbit/orbit-hub";
+import { CaptainHub } from "@/components/captain/captain-hub";
 
 /** Beta screens that simply embed an existing full app page (Beta styling is inherited
  *  from the shell's pds-embed content area). */
@@ -247,6 +248,8 @@ function PolarisRedesignApp() {
           <div style={{ height: "100%" }}>
             <OrbitHub />
           </div>
+        ) : screen === "captain" ? (
+          <CaptainHub yacht={yacht} onSwitchVessel={() => setSwitcher(true)} />
         ) : EMBED_SCREENS[screen] ? (
           <div style={{ height: "100%" }}>
             {(() => { const C = EMBED_SCREENS[screen]; return <C />; })()}

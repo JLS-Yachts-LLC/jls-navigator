@@ -34,6 +34,12 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Dashboard", icon: "layout-dashboard", screen: "dashboard" },
       {
+        label: "Captain",
+        icon: "compass",
+        screen: "captain",
+        roles: ["global_admin", "captain"],
+      },
+      {
         label: "Vessels",
         icon: "ship",
         screen: "vessels",
