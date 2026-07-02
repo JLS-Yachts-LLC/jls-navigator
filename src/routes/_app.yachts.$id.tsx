@@ -381,6 +381,7 @@ export function YachtDetail({
                   <>
                     <Field label="Berth" value={y.berth} />
                     <Field label="Location" value={y.location} />
+                    <LiveLocation y={y as Record<string, any>} />
                     <Field label="ETA" value={y.eta} />
                     <Field label="ETD" value={y.etd} />
                   </>
@@ -581,6 +582,65 @@ function Field({ label, value }: { label: string; value: unknown }) {
     <div className="flex justify-between gap-3">
       <span className="text-xs text-muted-foreground">{label}</span>
       <span className="text-xs font-medium">{value ? String(value) : "—"}</span>
+    </div>
+  );
+}
+
+function liveAgo(d: Date): string {
+  const mins = Math.max(0, Math.round((Date.now() - d.getTime()) / 60000));
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 48) return `${hrs}h ago`;
+  return `${Math.round(hrs / 24)}d ago`;
+}
+
+/** "Actual location" — the yacht's live AIS position from the fleet tracker.
+ *  Reverse-geocoded to a place name (best-effort via OpenStreetMap; falls back
+ *  to coordinates) and linked to the position on a map. */
+function LiveLocation({ y }: { y: Record<string, any> }) {
+  const lat = y.ais_lat != null ? Number(y.ais_lat) : null;
+  const lon = y.ais_lon != null ? Number(y.ais_lon) : null;
+  const [place, setPlace] = useState<string | null>(null);
+  useEffect(() => {
+    setPlace(null);
+    if (lat == null || lon == null) return;
+    const ctrl = new AbortController();
+    fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=14`, {
+      signal: ctrl.signal, headers: { Accept: "application/json" },
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: any) => {
+        if (!j) return;
+        const a = j.address ?? {};
+        const parts = [a.harbour ?? a.suburb ?? a.neighbourhood ?? a.quarter, a.city ?? a.town ?? a.village ?? a.county, a.country].filter(Boolean);
+        setPlace(parts.length ? parts.join(", ") : (j.display_name ?? null));
+      })
+      .catch(() => { /* fall back to coordinates */ });
+    return () => ctrl.abort();
+  }, [lat, lon]);
+
+  if (lat == null || lon == null) return <Field label="Actual (live)" value={null} />;
+
+  const speed = y.ais_speed != null ? Number(y.ais_speed) : null;
+  const moving = (speed ?? 0) > 0.5;
+  const at = y.ais_position_at ? new Date(y.ais_position_at) : null;
+  return (
+    <div className="flex justify-between gap-3">
+      <span className="text-xs text-muted-foreground">Actual (live)</span>
+      <span className="text-right">
+        <a
+          href={`https://www.google.com/maps?q=${lat},${lon}`}
+          target="_blank" rel="noreferrer"
+          title="Open the live position on a map"
+          className="text-xs font-medium text-primary hover:underline"
+        >
+          {place ?? `${lat.toFixed(4)}, ${lon.toFixed(4)}`}
+        </a>
+        <div className="text-[10px] text-muted-foreground">
+          {moving ? `${(speed ?? 0).toFixed(1)} kn${y.ais_destination ? ` → ${y.ais_destination}` : ""}` : "In port / moored"}
+          {at && !isNaN(at.getTime()) ? ` · ${liveAgo(at)}` : ""}
+        </div>
+      </span>
     </div>
   );
 }
