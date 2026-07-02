@@ -27,7 +27,8 @@ export const Route = createFileRoute("/_app/yachts/")({
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type Yacht = Record<string, unknown> & { id: string; vessel_name: string; vessel_image?: string | null };
-type StatusFilter = "all" | "in_country" | "departed" | "change_agency";
+// "all" or the lowercase yacht status (e.g. "in country", "departed", "pending").
+type StatusFilter = "all" | (string & {});
 type SortDir = "asc" | "desc";
 
 type ViewPreset = {
@@ -310,11 +311,15 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
     return { total, inCountry, departed, changeAgency };
   }, [baseRows]);
 
-  const STATUS_TARGETS: Record<Exclude<StatusFilter, "all">, string> = {
-    in_country: "in country",
-    departed: "departed",
-    change_agency: "change agency",
-  };
+  // Every status present in the registry, with counts — drives the filter pills.
+  const statusOptions = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const y of baseRows) {
+      const s = String(y.status ?? "").toLowerCase().trim();
+      if (s) m.set(s, (m.get(s) ?? 0) + 1);
+    }
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  }, [baseRows]);
 
   const lastActivityOf = (y: Yacht): string =>
     activityMap[y.id] ?? (y.updated_at as string) ?? (y.created_at as string) ?? "";
@@ -326,8 +331,7 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
   const filtered = useMemo(() => {
     let rows = baseRows;
     if (statusFilter !== "all") {
-      const target = STATUS_TARGETS[statusFilter];
-      rows = rows.filter((y) => String(y.status ?? "").toLowerCase() === target);
+      rows = rows.filter((y) => String(y.status ?? "").toLowerCase().trim() === statusFilter);
     }
     if (q.trim()) {
       const s = q.toLowerCase();
@@ -566,7 +570,7 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
         />
         <StatCard
           label="In Country" value={stats.inCountry} icon={MapPin} accent="text-success"
-          active={statusFilter === "in_country"} onClick={() => toggleStatFilter("in_country")}
+          active={statusFilter === "in country"} onClick={() => toggleStatFilter("in country")}
         />
         <StatCard
           label="Departed" value={stats.departed} icon={LogOut} accent="text-muted-foreground"
@@ -574,20 +578,29 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
         />
         <StatCard
           label="Change Agency" value={stats.changeAgency} icon={RefreshCcw} accent="text-warning"
-          active={statusFilter === "change_agency"} onClick={() => toggleStatFilter("change_agency")}
+          active={statusFilter === "change agency"} onClick={() => toggleStatFilter("change agency")}
         />
       </div>
 
-      {statusFilter !== "all" && (
-        <div className="px-5 pb-1 flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">
-            Filtering by: <strong className="text-foreground capitalize">{statusFilter.replace("_", " ")}</strong>
-          </span>
-          <button onClick={() => setStatusFilter("all")} className="text-xs text-primary hover:underline">
-            Clear
+      {/* Status filter pills — every status present in the registry */}
+      <div className="flex flex-wrap items-center gap-1.5 px-5 pb-2">
+        <button onClick={() => setStatusFilter("all")}
+          className={cn(
+            "rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition",
+            statusFilter === "all" ? "border-primary bg-primary/10 text-foreground" : "border-border text-muted-foreground hover:text-foreground",
+          )}>
+          All ({stats.total})
+        </button>
+        {statusOptions.map(([s, n]) => (
+          <button key={s} onClick={() => toggleStatFilter(s)}
+            className={cn(
+              "rounded-full border px-2.5 py-0.5 text-[11px] font-medium capitalize transition",
+              statusFilter === s ? "border-primary bg-primary/10 text-foreground" : "border-border text-muted-foreground hover:text-foreground",
+            )}>
+            {s} ({n})
           </button>
-        </div>
-      )}
+        ))}
+      </div>
 
       <div className="flex-1 overflow-auto px-5 pb-5">
         {loading ? (

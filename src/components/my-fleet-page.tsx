@@ -14,7 +14,7 @@ const AisFleetMap = lazy(() => import("@/components/ais-fleet-map"));
 const fmtTime = (iso: string | null) =>
   iso ? new Date(iso).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—";
 
-export function MyFleetPage() {
+export function MyFleetPage({ focusYachtId }: { focusYachtId?: string | null } = {}) {
   const [yachts, setYachts] = useState<AisYacht[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -60,6 +60,17 @@ export function MyFleetPage() {
       setSyncing(false);
     }
   }
+
+  // Deep-focus from the yacht detail's "view on map" button.
+  const focusApplied = useRef<string | null>(null);
+  useEffect(() => {
+    if (!focusYachtId || focusApplied.current === focusYachtId || loading) return;
+    const y = yachts.find(v => v.id === focusYachtId);
+    if (!y) return;
+    focusApplied.current = focusYachtId;
+    if (y.lat != null && y.lon != null) setFocus({ id: y.id, lat: y.lat, lon: y.lon });
+    else toast.message(`${y.vessel_name} has no live position yet`);
+  }, [focusYachtId, yachts, loading]);
 
   const located = useMemo(() => yachts.filter(y => y.lat != null && y.lon != null), [yachts]);
   const withMmsi = useMemo(() => yachts.filter(y => y.mmsi), [yachts]);

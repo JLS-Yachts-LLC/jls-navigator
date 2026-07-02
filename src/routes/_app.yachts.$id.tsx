@@ -110,11 +110,14 @@ export function YachtDetail({
   yachtId,
   embedded = false,
   onBack,
+  onTrack,
 }: {
   /** When provided, used instead of the route param (Beta-embedded mode). */
   yachtId?: string;
   embedded?: boolean;
   onBack?: () => void;
+  /** Jump to Live Tracking focused on this yacht (Vessels hub wires this). */
+  onTrack?: (id: string) => void;
 } = {}) {
   // strict:false so this works both on its own route and embedded in the Beta shell.
   const params = useParams({ strict: false }) as { id?: string };
@@ -401,7 +404,7 @@ export function YachtDetail({
                   <>
                     <Field label="Berth" value={y.berth} />
                     <Field label="Location" value={y.location} />
-                    <LiveLocation y={y as Record<string, any>} />
+                    <LiveLocation y={y as Record<string, any>} onTrack={onTrack ? () => onTrack(id) : undefined} />
                     <Field label="ETA" value={y.eta} />
                     <Field label="ETD" value={y.etd} />
                   </>
@@ -618,7 +621,7 @@ function liveAgo(d: Date): string {
 /** "Actual location" — the yacht's live AIS position from the fleet tracker.
  *  Reverse-geocoded to a place name (best-effort via OpenStreetMap; falls back
  *  to coordinates) and linked to the position on a map. */
-function LiveLocation({ y }: { y: Record<string, any> }) {
+function LiveLocation({ y, onTrack }: { y: Record<string, any>; onTrack?: () => void }) {
   const lat = y.ais_lat != null ? Number(y.ais_lat) : null;
   const lon = y.ais_lon != null ? Number(y.ais_lon) : null;
   const [place, setPlace] = useState<string | null>(null);
@@ -647,7 +650,19 @@ function LiveLocation({ y }: { y: Record<string, any> }) {
   const at = y.ais_position_at ? new Date(y.ais_position_at) : null;
   return (
     <div className="flex justify-between gap-3">
-      <span className="text-xs text-muted-foreground">Actual (live)</span>
+      <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        Actual (live)
+        {onTrack && (
+          <button
+            onClick={onTrack}
+            title="View on the Live Tracking map"
+            className="inline-flex h-4.5 w-4.5 items-center justify-center rounded border border-border text-muted-foreground/70 transition hover:border-primary hover:text-primary"
+            style={{ height: 18, width: 18 }}
+          >
+            <RouteIcon className="h-3 w-3" />
+          </button>
+        )}
+      </span>
       <span className="text-right">
         <a
           href={`https://www.google.com/maps?q=${lat},${lon}`}
