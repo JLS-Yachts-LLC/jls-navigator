@@ -4,10 +4,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Plus, MapPin, X, FileText, Mail, Ship } from "lucide-react";
+import { Loader2, Plus, MapPin, X, FileText, Mail, Ship, Trash2 } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/shipsync/shared";
 import {
-  createDeliveryNote, assignPackagesToNote, setNoteDriver, unassignPackage,
+  createDeliveryNote, setNoteDriver, unassignPackage, deleteRun,
 } from "@/lib/shipsync/data";
 import { supabase } from "@/integrations/supabase/client";
 import { googleMapsDirectionsUrl, type ShipSyncDeliveryNote } from "@/lib/shipsync/model";
@@ -27,12 +28,8 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
     for (const p of pkgsOnNote) { const k = p.boat_name || "No boat"; m.set(k, (m.get(k) ?? 0) + 1); }
     return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   }, [pkgsOnNote]);
-  const pool = useMemo(() => {
-    if (!sel) return [];
-    return data.packages.filter((p) => !p.delivery_note_id && ["in_office", "in_storage"].includes(p.status)
-      && (!sel.boat_name || p.boat_name === sel.boat_name));
-  }, [data.packages, sel]);
   const boats = useMemo(() => Array.from(new Set(data.packages.map((p) => p.boat_name).filter(Boolean) as string[])).sort(), [data.packages]);
+  const [confirmDel, setConfirmDel] = useState(false);
 
   async function makeNote() {
     if (!newBoat.trim()) { toast.error("Pick a boat for the delivery note"); return; }
@@ -40,11 +37,17 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
     try { const n = await createDeliveryNote(newBoat.trim().toUpperCase()); setNewBoat(""); await reload(); setSelId(n.id); toast.success(`Delivery note ${n.number} created`); }
     catch (e: any) { toast.error(e?.message ?? "Failed"); } finally { setBusy(false); }
   }
-  async function addToNote(pkgId: string) {
-    if (!sel) return;
-    await assignPackagesToNote([pkgId], sel, sel.driver_id); await reload();
-  }
   async function removeFromNote(pkgId: string) { await unassignPackage(pkgId); await reload(); }
+  async function doDeleteRun() {
+    if (!sel) return;
+    setBusy(true);
+    try {
+      const num = sel.number;
+      await deleteRun(sel.id);
+      setConfirmDel(false); setSelId(null); await reload();
+      toast.success(`Run DN-${num} deleted — parcels returned to routing`);
+    } catch (e: any) { toast.error(e?.message ?? "Failed to delete run"); } finally { setBusy(false); }
+  }
   async function changeDriver(driverId: string) {
     if (!sel) return;
     await setNoteDriver(sel.id, driverId === "none" ? null : driverId); await reload();
@@ -169,6 +172,9 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
                 {pdfBusy === "email" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />} Email POD
               </Button>
               {sel.delivery_pdf_url && <a href={sel.delivery_pdf_url} target="_blank" rel="noopener noreferrer" className="text-[12px] text-primary hover:underline">View delivery PDF</a>}
+              <Button size="sm" variant="outline" className="ml-auto h-8 gap-1.5 text-destructive hover:bg-destructive/10" onClick={() => setConfirmDel(true)} disabled={busy}>
+                <Trash2 className="h-3.5 w-3.5" /> Delete run
+              </Button>
             </div>
 
             {/* Destination (for routing) */}
@@ -204,7 +210,7 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
             {/* Packages on this note */}
             <div className="rounded-xl border border-border bg-card">
               <div className="border-b border-border px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">On this note ({pkgsOnNote.length})</div>
-              {pkgsOnNote.length === 0 ? <div className="px-3 py-6 text-center text-sm text-muted-foreground">No packages yet — add from the pool below.</div> : (
+              {pkgsOnNote.length === 0 ? <div className="px-3 py-6 text-center text-sm text-muted-foreground">No packages on this note.</div> : (
                 <div className="divide-y divide-border/40">
                   {pkgsOnNote.map((p) => (
                     <div key={p.id} className="flex items-center gap-3 px-3 py-2 text-sm">
@@ -218,25 +224,26 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
               )}
             </div>
 
-            {/* Pool of available packages for this boat */}
-            <div className="rounded-xl border border-border bg-card">
-              <div className="border-b border-border px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Available for {sel.boat_name} ({pool.length})</div>
-              {pool.length === 0 ? <div className="px-3 py-6 text-center text-sm text-muted-foreground">Nothing waiting for this boat.</div> : (
-                <div className="divide-y divide-border/40">
-                  {pool.map((p) => (
-                    <div key={p.id} className="flex items-center gap-3 px-3 py-2 text-sm">
-                      <span className="font-mono text-[12px]">{p.barcode ?? "—"}</span>
-                      <span className="text-muted-foreground">{p.package_owner ?? ""}</span>
-                      <StatusBadge status={p.status} />
-                      <Button variant="outline" size="sm" className="ml-auto h-7 gap-1 text-xs" onClick={() => addToNote(p.id)}><Plus className="h-3.5 w-3.5" /> Add</Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
           </div>
         )}
       </div>
+
+      {sel && (
+        <Dialog open={confirmDel} onOpenChange={(o) => !o && setConfirmDel(false)}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader><DialogTitle>Delete run DN-{sel.number}?</DialogTitle></DialogHeader>
+            <p className="text-sm text-muted-foreground">
+              This removes the run and returns its {pkgsOnNote.length} parcel{pkgsOnNote.length === 1 ? "" : "s"} to the routing pool (back to In office). This can't be undone.
+            </p>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setConfirmDel(false)} disabled={busy}>Cancel</Button>
+              <Button className="gap-1.5 bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={doDeleteRun} disabled={busy}>
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Delete run
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

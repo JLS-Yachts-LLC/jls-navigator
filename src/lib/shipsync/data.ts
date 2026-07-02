@@ -137,6 +137,17 @@ export async function unassignPackage(id: string): Promise<void> {
   await patchPackage(id, { delivery_note_id: null, driver_id: null, status: 'in_office', scan_out_time: null })
 }
 
+/** Delete a dispatched run: send all its parcels back to the routing pool, then
+ *  remove the delivery note. */
+export async function deleteRun(noteId: string): Promise<void> {
+  await db().from('shipsync_packages').update({
+    delivery_note_id: null, driver_id: null, status: 'in_office' as PackageStatus,
+    scan_out_time: null, driver_scanned: false, driver_scan_out_time: null,
+  }).eq('delivery_note_id', noteId)
+  const { error } = await db().from('shipsync_delivery_notes').delete().eq('id', noteId)
+  if (error) throw error
+}
+
 // ── Images ───────────────────────────────────────────────────────────────────
 export async function uploadShipSyncImage(file: File | Blob, path: string): Promise<string> {
   const { error } = await supabase.storage.from('shipsync').upload(path, file, { upsert: true })
