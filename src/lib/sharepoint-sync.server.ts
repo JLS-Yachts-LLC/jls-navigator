@@ -1451,29 +1451,67 @@ async function getYachtImageConfig(cfg: SpConfig): Promise<{ listName: string; m
 // Processes up to 5 yachts per invocation to stay within CF subrequest limits.
 // Run after syncFromSharePoint() in the cron so images trickle in over time.
 
+/** Find a yacht's SharePoint list item by IMO first, then exact vessel name. */
+async function findSpItemIdForYacht(
+  siteId: string,
+  token: string,
+  listName: string,
+  mapping: Record<string, string>,
+  yacht: { vessel_name: string | null; imo_no: string | null },
+): Promise<string | null> {
+  const imoSpField = Object.entries(mapping).find(([, db]) => db === 'imo_no')?.[0]
+  const nameSpField = Object.entries(mapping).find(([, db]) => db === 'vessel_name')?.[0]
+  const esc = (v: string) => v.replace(/'/g, "''")
+
+  if (imoSpField && yacht.imo_no) {
+    const r = await fetch(
+      `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listName}/items?$filter=${encodeURIComponent(`fields/${imoSpField} eq '${esc(yacht.imo_no)}'`)}&$select=id`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    )
+    const d = await r.json() as Record<string, any>
+    if (d.value?.[0]?.id) return d.value[0].id
+  }
+  if (nameSpField && yacht.vessel_name) {
+    const r = await fetch(
+      `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listName}/items?$filter=${encodeURIComponent(`fields/${nameSpField} eq '${esc(yacht.vessel_name)}'`)}&$select=id`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    )
+    const d = await r.json() as Record<string, any>
+    if (d.value?.[0]?.id) return d.value[0].id
+  }
+  return null
+}
+
 export async function downloadPendingImages(
   limit = 10,
-): Promise<{ downloaded: number; results: Array<{ id: string; ok: boolean; reason?: string }> }> {
+  offset = 0,
+): Promise<{ downloaded: number; processed: number; results: Array<{ id: string; ok: boolean; reason?: string }> }> {
   const cfg = await getSpConfig().catch(() => null)
-  if (!cfg) return { downloaded: 0, results: [] }
+  if (!cfg) return { downloaded: 0, processed: 0, results: [] }
 
   // The image field + list live in the multi-sync "Yachts" config, NOT the legacy
   // integration_settings config (which may point at a different list with no image
   // mapping). Fall back to the legacy config only if there's no yachts sync.
-  const { listName, imageSpField } = await getYachtImageConfig(cfg)
-  if (!imageSpField) return { downloaded: 0, results: [] }
+  const { listName, mapping, imageSpField } = await getYachtImageConfig(cfg)
+  if (!imageSpField) return { downloaded: 0, processed: 0, results: [] }
 
-  // Find yachts synced from SP whose image still needs downloading: either no
-  // image yet, OR a legacy raw SharePoint descriptor (JSON starting with "{") was
-  // written into vessel_image instead of a downloaded URL — reclaim both.
+  // Find yachts whose image still needs downloading: either no image yet, OR a
+  // legacy raw SharePoint descriptor (JSON starting with "{") was written into
+  // vessel_image instead of a downloaded URL. Yachts with no sharepoint_item_id
+  // are INCLUDED — we search SharePoint by IMO/name and link them on the fly
+  // (previously only the per-yacht manual sync did this, so bulk runs silently
+  // skipped every unlinked vessel). `offset` lets the caller page past rows that
+  // keep failing, so one bad batch can't block the vessels behind it.
   const { data: pending } = await supabaseAdmin
     .from('yachts')
-    .select('id, sharepoint_item_id')
-    .not('sharepoint_item_id', 'is', null)
+    .select('id, vessel_name, imo_no, sharepoint_item_id')
     .or('vessel_image.is.null,vessel_image.like.{*')
-    .limit(limit) as { data: Array<{ id: string; sharepoint_item_id: string }> | null }
+    .order('vessel_name', { ascending: true })
+    .range(offset, offset + limit - 1) as {
+      data: Array<{ id: string; vessel_name: string | null; imo_no: string | null; sharepoint_item_id: string | null }> | null
+    }
 
-  if (!pending?.length) return { downloaded: 0, results: [] }
+  if (!pending?.length) return { downloaded: 0, processed: 0, results: [] }
 
   const token = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret)
   const siteId = await resolveSpSite(token, cfg.tenantUrl, cfg.siteUrl)
@@ -1482,8 +1520,19 @@ export async function downloadPendingImages(
   const results: Array<{ id: string; ok: boolean; reason?: string }> = []
   for (const yacht of pending) {
     try {
+      // Establish the SharePoint link first if this yacht never got one.
+      let spItemId = yacht.sharepoint_item_id
+      if (!spItemId) {
+        spItemId = await findSpItemIdForYacht(siteId, token, listName, mapping, yacht)
+        if (!spItemId) {
+          results.push({ id: yacht.id, ok: false, reason: 'Not found in the SharePoint list (no IMO or exact-name match)' })
+          continue
+        }
+        await supabaseAdmin.from('yachts').update({ sharepoint_item_id: spItemId } as never).eq('id', yacht.id)
+      }
+
       const res = await fetch(
-        `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listName}/items/${yacht.sharepoint_item_id}?$expand=fields($select=${encodeURIComponent(imageSpField)})`,
+        `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listName}/items/${spItemId}?$expand=fields($select=${encodeURIComponent(imageSpField)})`,
         { headers: { Authorization: `Bearer ${token}` } }
       )
       if (!res.ok) { results.push({ id: yacht.id, ok: false, reason: `SharePoint item fetch HTTP ${res.status}` }); continue }
@@ -1491,7 +1540,7 @@ export async function downloadPendingImages(
       const raw = item.fields?.[imageSpField]
       if (!raw) { results.push({ id: yacht.id, ok: false, reason: 'No image value on the SharePoint item' }); continue }
 
-      const { url, reason } = await fetchSpImageToSupabase(raw, token, cfg.tenantUrl, yacht.sharepoint_item_id, cfg.tenantId, cfg.clientId, cfg.clientSecret)
+      const { url, reason } = await fetchSpImageToSupabase(raw, token, cfg.tenantUrl, spItemId, cfg.tenantId, cfg.clientId, cfg.clientSecret)
       if (url) {
         await supabaseAdmin.from('yachts').update({ vessel_image: url } as never).eq('id', yacht.id)
         downloaded++
@@ -1503,7 +1552,7 @@ export async function downloadPendingImages(
       results.push({ id: yacht.id, ok: false, reason: e instanceof Error ? e.message : String(e) })
     }
   }
-  return { downloaded, results }
+  return { downloaded, processed: pending.length, results }
 }
 
 // Download the SP image for a single yacht by its DB id (on-demand, e.g. from the detail page button).

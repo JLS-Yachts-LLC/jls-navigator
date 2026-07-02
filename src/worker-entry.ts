@@ -178,11 +178,12 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
   // reliably completes — loop it to backfill the whole fleet a batch at a time.
   if (url.searchParams.get('images')) {
     const n = Math.min(Math.max(parseInt(url.searchParams.get('images') || '10', 10) || 10, 1), 15)
+    const offset = Math.max(parseInt(url.searchParams.get('offset') || '0', 10) || 0, 0)
     try {
-      const { downloaded, results } = await downloadPendingImages(n)
+      const { downloaded, results } = await downloadPendingImages(n, offset)
       // Surface per-vessel failure reasons so image-sync problems are diagnosable.
       const failures = results.filter((r) => !r.ok).map((r) => r.reason)
-      return new Response(JSON.stringify({ ok: true, requested: n, attempted: results.length, downloaded, failures }), {
+      return new Response(JSON.stringify({ ok: true, requested: n, offset, attempted: results.length, downloaded, failures }), {
         status: 200, headers: { 'Content-Type': 'application/json' },
       })
     } catch (e) {
@@ -565,7 +566,9 @@ export default {
     // least-recently-synced list, rotating through the whole set over time.
     ctx.waitUntil(
       syncStalestList()
-        .then((r) => { if (r) console.log(`[sp-cron] ${r.name}: synced=${r.synced} errors=${r.errors}`); return downloadPendingImages() })
+        // Rotate the batch window each quarter-hour so pending rows that always
+        // fail (no SharePoint match) can't permanently block the ones behind them.
+        .then((r) => { if (r) console.log(`[sp-cron] ${r.name}: synced=${r.synced} errors=${r.errors}`); return downloadPendingImages(10, (new Date().getUTCMinutes() % 4) * 10) })
         .then((img) => { if (img.downloaded || img.results.length) console.log(`[sp-cron] images downloaded=${img.downloaded}/${img.results.length}`) })
         .catch((e) => console.error('[sp-cron] error:', e))
     )

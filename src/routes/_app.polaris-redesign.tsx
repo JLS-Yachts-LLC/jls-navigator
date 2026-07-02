@@ -46,6 +46,7 @@ import { PortCallsHub } from "@/components/port-calls/PortCallsHub";
 import { OrbitHub } from "@/components/orbit/orbit-hub";
 import { PermitsHub } from "@/components/permits/permits-hub";
 import { ClientRequestsPage } from "@/components/portal/client-requests-page";
+import { SyncHubPage } from "@/components/dev/sync-hub-page";
 
 /** Beta screens that simply embed an existing full app page (Beta styling is inherited
  *  from the shell's pds-embed content area). */
@@ -53,6 +54,7 @@ const EMBED_SCREENS: Record<string, React.ComponentType> = {
   finance: FinancePage,
   permits: PermitsHub,
   "client-requests": ClientRequestsPage,
+  "admin-sync": SyncHubPage,
   "crew-placement": CrewPlacementPage,
   "admin-dev": DevSettingsPage,
   "admin-changelog": ChangelogPage,

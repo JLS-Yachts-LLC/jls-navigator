@@ -85,15 +85,17 @@ export const syncOneList = createServerFn({ method: "POST" })
  */
 export const syncImagesBatch = createServerFn({ method: "POST" })
   // @ts-expect-error — TanStack Start v1 serverFn handler typing
-  .handler(async (): Promise<{ downloaded: number; remaining: number; failures: Array<{ vessel: string; reason: string }> }> => {
-    const res = await downloadPendingImages(12);
+  .handler(async (ctx: { data?: { offset?: number } }): Promise<{ downloaded: number; processed: number; remaining: number; failures: Array<{ vessel: string; reason: string }> }> => {
+    const offset = Math.max(0, Number(ctx?.data?.offset ?? 0));
+    const res = await downloadPendingImages(12, offset);
 
     const db = supabaseAdmin as any;
+    // Pending = anything without a downloaded image — unlinked yachts included
+    // (the batch now links them to SharePoint on the fly).
     const { count } = await db
       .from("yachts")
       .select("id", { count: "exact", head: true })
-      .is("vessel_image", null)
-      .not("sharepoint_item_id", "is", null);
+      .or("vessel_image.is.null,vessel_image.like.{*");
 
     const failIds = res.results.filter((r) => !r.ok).map((r) => r.id);
     let failures: Array<{ vessel: string; reason: string }> = [];
@@ -104,5 +106,5 @@ export const syncImagesBatch = createServerFn({ method: "POST" })
         .filter((r) => !r.ok)
         .map((r) => ({ vessel: (nameById.get(r.id) as string) ?? r.id, reason: r.reason ?? "unknown error" }));
     }
-    return { downloaded: res.downloaded, remaining: count ?? 0, failures };
+    return { downloaded: res.downloaded, processed: res.processed, remaining: count ?? 0, failures };
   });

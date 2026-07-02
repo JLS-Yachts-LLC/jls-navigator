@@ -302,12 +302,14 @@ function SyncAllControls() {
     let total = 0;
     try {
       for (let i = 0; i < 60; i++) { // safety cap: 60×12 ≫ fleet size
-        const r = await (syncImagesBatch as any)();
+        // Skip past rows that already failed this run, so a cluster of vessels
+        // with no usable SharePoint image can't block the ones behind them.
+        const r = await (syncImagesBatch as any)({ data: { offset: fails.size } });
         total += r.downloaded;
         for (const f of r.failures) fails.set(f.vessel, f.reason);
         setStatus(`Downloaded ${total} image${total === 1 ? "" : "s"} · ${r.remaining} remaining…`);
         if (r.remaining === 0) break;
-        if (r.downloaded === 0) break; // no more progress — leftovers have no usable SP image
+        if ((r.processed ?? 0) === 0) break; // nothing left to attempt
       }
       setFailures([...fails].map(([vessel, reason]) => ({ vessel, reason })));
       setStatus(`Image sync complete — ${total} downloaded${fails.size ? `, ${fails.size} skipped` : ""}.`);

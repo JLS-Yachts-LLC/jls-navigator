@@ -138,6 +138,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: "Automations", icon: "bolt", screen: "admin-automations", roles: ["global_admin"] },
       { label: "Error & Warnings", icon: "alert-triangle", screen: "admin-errors", roles: ["global_admin"] },
       { label: "Integrations", icon: "plug", screen: "admin-integrations", roles: ["global_admin"] },
+      { label: "Sync", icon: "refresh", screen: "admin-sync", roles: ["global_admin"] },
       { label: "Feedback", icon: "message-2", screen: "admin-feedback", roles: ["global_admin"] },
     ],
   },
