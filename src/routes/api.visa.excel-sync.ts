@@ -3,7 +3,7 @@
  *   GET /api/visa/excel-sync?mode=inspect   → read-only structure of the 3 trackers (no PII)
  * (reconcile + two-way modes are added on top of this.)
  */
-import { inspectTrackers, peekSheet, reconcileCrewVisa } from '@/lib/visa/excel-sync.server'
+import { inspectTrackers, peekSheet, reconcileCrewVisa, syncCrewVisaTwoWay } from '@/lib/visa/excel-sync.server'
 
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json' } })
 
@@ -26,6 +26,17 @@ export async function visaExcelSyncHandler(request: Request): Promise<Response> 
       vesselLimit: num('limit', 20),
       dryRun: url.searchParams.get('apply') !== '1',
       createMissing: url.searchParams.get('create') !== '0',
+    })
+    return json(r, r.ok ? 200 : 500)
+  }
+
+  // Two-way sync (snapshot-guarded, newest-wins). mode=two-way (dry by default; apply=1 to write).
+  if (mode === 'two-way') {
+    const num = (k: string, d?: number) => { const v = url.searchParams.get(k); return v == null ? d : Number(v) }
+    const r = await syncCrewVisaTwoWay({
+      vesselOffset: num('offset', 0),
+      vesselLimit: num('limit', 20),
+      dryRun: url.searchParams.get('apply') !== '1',
     })
     return json(r, r.ok ? 200 : 500)
   }

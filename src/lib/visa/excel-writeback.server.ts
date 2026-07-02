@@ -37,7 +37,7 @@ type FieldSpec = { dbKey: string; aliases: string[]; kind: 'text' | 'date' | 'st
 
 // App visa-status → label written into the tracker's STATUS column.
 // (Tunable: the trackers also use operational values like "closed"/"on board".)
-const STATUS_MAP: Record<string, string> = {
+export const STATUS_MAP: Record<string, string> = {
   draft: 'Draft', pending_docs: 'Pending Docs', need_to_apply: 'Need to Apply',
   submitted: 'Submitted', in_review: 'In Review', processing: 'Processing',
   approved: 'Approved', completed: 'Approved', rejected: 'Rejected', cancelled: 'Cancelled',
@@ -61,7 +61,7 @@ export const norm = (s: unknown) => String(s ?? '').toUpperCase().replace(/[^A-Z
 export const normName = (s: unknown) => String(s ?? '').toUpperCase().replace(/[^A-Z]/g, '')
 
 /** YYYY-MM-DD (or ISO) → Excel serial date number (1900 date system). */
-function toExcelSerial(value: string): number | null {
+export function toExcelSerial(value: string): number | null {
   const d = new Date(value.length <= 10 ? value + 'T00:00:00Z' : value)
   if (isNaN(d.getTime())) return null
   const ms = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())
@@ -69,7 +69,7 @@ function toExcelSerial(value: string): number | null {
 }
 
 /** 0-based column index → Excel column letters (0→A, 26→AA). */
-function colLetters(idx: number): string {
+export function colLetters(idx: number): string {
   let n = idx, s = ''
   do { s = String.fromCharCode(65 + (n % 26)) + s; n = Math.floor(n / 26) - 1 } while (n >= 0)
   return s
@@ -132,7 +132,7 @@ export async function listSheets(token: string, siteId: string, itemId: string):
 }
 
 /** Parse the top-left cell of an A1-style address (e.g. "Sheet1!B3:P40" → {row:2,col:1}). */
-function parseAnchor(address: string): { row: number; col: number } {
+export function parseAnchor(address: string): { row: number; col: number } {
   const m = /!?\$?([A-Z]+)\$?(\d+)/.exec(address.split(':')[0] ?? '')
   if (!m) return { row: 0, col: 0 }
   let col = 0

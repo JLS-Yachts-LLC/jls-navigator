@@ -351,3 +351,124 @@ export async function reconcileCrewVisa(opts: {
     return { ok: false, mode: dryRun ? 'dry' : 'apply', vesselOffset, vesselLimit, vesselsProcessed: summary.vessels, nextOffset: null, summary, actions, error: e?.message ?? String(e) }
   }
 }
+
+// ───────────── Two-way sync (snapshot-guarded, newest-edit-wins) ─────────────
+// The app->sheet direction already runs on every visa edit (pushVisaToExcel).
+// This adds the sheet->app direction with a per-(visa,workbook) snapshot so a
+// sheet change is only pulled into the app when the app did not change that field
+// more recently. Conflicts (both sides changed) resolve newest-wins using the
+// workbook lastModifiedDateTime vs the record updated_at.
+export type TwoWayResult = {
+  ok: boolean; mode: 'dry' | 'apply'
+  vesselOffset: number; vesselLimit: number; vesselsProcessed: number; nextOffset: number | null
+  summary: Record<string, number>
+  actions: { vessel: string; passport: string; given: string; surname: string; pulled: string[]; conflicts: string[] }[]
+  error?: string
+}
+
+export async function syncCrewVisaTwoWay(opts: { vesselOffset?: number; vesselLimit?: number; dryRun?: boolean } = {}): Promise<TwoWayResult> {
+  const vesselOffset = Math.max(0, opts.vesselOffset ?? 0)
+  const vesselLimit = Math.max(1, Math.min(opts.vesselLimit ?? 20, 40))
+  const dryRun = opts.dryRun ?? true
+  const summary: Record<string, number> = { vessels: 0, sheets_empty: 0, matched: 0, pulled_fields: 0, conflicts: 0, agreed: 0, unmatched: 0 }
+  const actions: TwoWayResult['actions'] = []
+  try {
+    const cfg = await getSpConfig()
+    const token = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret)
+    const siteId = await resolveSpSite(token, cfg.tenantUrl, cfg.siteUrl)
+    const t = TRACKERS.find(x => x.key === 'crew_visa')!
+    const item = await resolveTrackerItem(token, siteId, t.prefix)
+    if (!item) return { ok: false, mode: dryRun ? 'dry' : 'apply', vesselOffset, vesselLimit, vesselsProcessed: 0, nextOffset: null, summary, actions, error: 'Crew Visa Tracker not found' }
+
+    // Workbook last-modified — the best available "sheet changed at" signal.
+    let fileMtime = 0
+    const metaRes = await gfetch(token, `${GRAPH}/sites/${siteId}/drive/items/${item.id}?$select=lastModifiedDateTime`)
+    if (metaRes.ok) { const m: any = await metaRes.json(); fileMtime = Date.parse(m.lastModifiedDateTime ?? '') || 0 }
+
+    const allSheets = await listSheets(token, siteId, item.id)
+    const slice = allSheets.slice(vesselOffset, vesselOffset + vesselLimit)
+    const nextOffset = vesselOffset + vesselLimit < allSheets.length ? vesselOffset + vesselLimit : null
+
+    const { data: visas } = await db().from('visa_applications')
+      .select('id, given_name, surname, passport_number, vessel_name, status, visa_number, visa_issuance_date, visa_expiry, sign_on_date, sign_off_date, arrival_date, first_entry_expiry, updated_at')
+    const byPassport = new Map<string, any[]>()
+    const byNameVessel = new Map<string, any[]>()
+    for (const v of (visas ?? [])) {
+      if (v.passport_number) { const k = norm(v.passport_number); if (!byPassport.has(k)) byPassport.set(k, []); byPassport.get(k)!.push(v) }
+      const nk = normName(v.given_name) + '|' + normName(v.surname) + '|' + normName(v.vessel_name)
+      if (!byNameVessel.has(nk)) byNameVessel.set(nk, []); byNameVessel.get(nk)!.push(v)
+    }
+    const { data: states } = await db().from('visa_excel_sync_state').select('visa_application_id, snapshot').eq('workbook', 'crew_visa')
+    const snapByVisa = new Map<string, Record<string, any>>()
+    for (const s of (states ?? [])) snapByVisa.set(s.visa_application_id, s.snapshot ?? {})
+
+    const appPatches: { id: string; patch: Record<string, any> }[] = []
+    const snapUpserts: any[] = []
+
+    for (const sheetName of slice) {
+      summary.vessels++
+      const sd = await readSheet(token, siteId, item.id, sheetName)
+      if (!sd) { summary.sheets_empty++; continue }
+      const mapped: Record<string, number> = {}
+      for (const [field, aliases] of Object.entries(IMPORT_ALIASES)) { const c = findCol(sd.headers, aliases); if (c >= 0) mapped[field] = c }
+
+      // De-dupe to the latest visa per crew (same rule as the pull).
+      const groups = new Map<string, Record<string, any>>()
+      for (let r = sd.headerRow + 1; r < sd.values.length; r++) {
+        const v = rowToVals(sd.values[r], mapped)
+        if (!v.passport_number && !(v.given_name && v.surname)) continue
+        const key = v.passport_number ? 'P:' + norm(v.passport_number) : 'N:' + normName(v.given_name) + '|' + normName(v.surname)
+        const prev = groups.get(key)
+        if (!prev || (v.visa_issuance_date ?? '') > (prev.visa_issuance_date ?? '')) groups.set(key, prev ? { ...prev, ...v } : v)
+      }
+
+      for (const vals of groups.values()) {
+        const passport = vals.passport_number ?? ''
+        let match: any | undefined
+        if (passport) { const c = byPassport.get(norm(passport)) ?? []; match = c.find(x => normName(x.vessel_name) === normName(sheetName)) ?? c[0] }
+        if (!match && vals.given_name && vals.surname) match = (byNameVessel.get(normName(vals.given_name) + '|' + normName(vals.surname) + '|' + normName(sheetName)) ?? [])[0]
+        if (!match) { summary.unmatched++; continue }
+        summary.matched++
+
+        const snap = snapByVisa.get(match.id) ?? {}
+        const appNewer = (Date.parse(match.updated_at ?? '') || 0) >= fileMtime
+        const patch: Record<string, any> = {}
+        const nextSnap: Record<string, any> = { ...snap }
+        const pulled: string[] = []
+        const conflicts: string[] = []
+
+        for (const f of VISA_SYNC_FIELDS) {
+          const appVal = match[f] ?? null
+          const sheetVal = (vals as any)[f] ?? null
+          if (sheetVal == null || sheetVal === '') { nextSnap[f] = appVal; continue }
+          if (sameVal(f, appVal, sheetVal)) { summary.agreed++; nextSnap[f] = appVal; continue }
+          const snapVal = snap[f] ?? null
+          const appChanged = !sameVal(f, appVal, snapVal)
+          const sheetChanged = !sameVal(f, sheetVal, snapVal)
+          if (sheetChanged && !appChanged) { patch[f] = sheetVal; pulled.push(f); nextSnap[f] = sheetVal }
+          else if (appChanged && !sheetChanged) { nextSnap[f] = appVal } // app newer; auto-push keeps the sheet in step
+          else { conflicts.push(f); if (appNewer) { nextSnap[f] = appVal } else { patch[f] = sheetVal; pulled.push(f); nextSnap[f] = sheetVal } }
+        }
+
+        if (pulled.length) summary.pulled_fields += pulled.length
+        if (conflicts.length) summary.conflicts += conflicts.length
+        if (pulled.length || conflicts.length) actions.push({ vessel: sheetName, passport, given: vals.given_name ?? '', surname: vals.surname ?? '', pulled, conflicts })
+
+        if (!dryRun) {
+          if (Object.keys(patch).length) appPatches.push({ id: match.id, patch })
+          snapUpserts.push({ visa_application_id: match.id, workbook: 'crew_visa', sheet: sheetName, match_passport: passport || null, snapshot: nextSnap, sheet_file_mtime: fileMtime ? new Date(fileMtime).toISOString() : null, app_updated_at: match.updated_at ?? null, last_synced_at: new Date().toISOString() })
+        }
+      }
+    }
+
+    if (!dryRun) {
+      for (const p of appPatches) await db().from('visa_applications').update({ ...p.patch, updated_at: new Date().toISOString() }).eq('id', p.id)
+      for (let i = 0; i < snapUpserts.length; i += 100) {
+        await db().from('visa_excel_sync_state').upsert(snapUpserts.slice(i, i + 100), { onConflict: 'visa_application_id,workbook' })
+      }
+    }
+    return { ok: true, mode: dryRun ? 'dry' : 'apply', vesselOffset, vesselLimit, vesselsProcessed: summary.vessels, nextOffset, summary, actions: actions.slice(0, 100) }
+  } catch (e: any) {
+    return { ok: false, mode: dryRun ? 'dry' : 'apply', vesselOffset, vesselLimit, vesselsProcessed: summary.vessels, nextOffset: null, summary, actions, error: e?.message ?? String(e) }
+  }
+}
