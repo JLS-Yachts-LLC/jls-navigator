@@ -485,6 +485,16 @@ export default {
           .then(({ pushed }) => console.log(`[sp-pushback] pushed=${pushed}`))
           .catch((e) => console.error('[sp-pushback] error:', e))
       )
+
+      // ── Hourly: MyShipTracking live positions (no-op until API key set).
+      //    Simple response (1 credit/vessel); upgraded to extended (3 credits)
+      //    every 6 hours so destination/ETA stay fresh without burning credits. ──
+      const mstExtended = utcHour % 6 === 0
+      ctx.waitUntil(
+        syncMyShipTracking({ extended: mstExtended })
+          .then((r) => console.log(`[myshiptracking-cron] ${mstExtended ? 'extended' : 'simple'} requested=${r.requested} matched=${r.matched} updated=${r.updated}${r.note ? ' note=' + r.note : ''}`))
+          .catch((e) => console.error('[myshiptracking-cron] error:', e))
+      )
     }
 
     if (!isQuarterly) return;
@@ -547,14 +557,7 @@ export default {
         .catch((e) => console.error('[vesselfinder-cron] error:', e))
     )
 
-    // Sync live MyShipTracking AIS positions onto yachts (no-op until API key set).
-    // Simple response (1 credit/vessel) every 15 min; the hourly tick upgrades to
-    // extended (3 credits) so destination/ETA refresh without burning credits all day.
-    ctx.waitUntil(
-      syncMyShipTracking({ extended: isHourly })
-        .then((r) => console.log(`[myshiptracking-cron] ${isHourly ? 'extended' : 'simple'} requested=${r.requested} matched=${r.matched} updated=${r.updated}${r.note ? ' note=' + r.note : ''}`))
-        .catch((e) => console.error('[myshiptracking-cron] error:', e))
-    )
+    // (MyShipTracking positions moved to the hourly block above — see isHourly.)
 
     // Weekly immigration digest — Monday 07:00 GST (03:00 UTC). Emails ops/visa
     // a summary of this week's planned sign-ons / sign-offs + report links.

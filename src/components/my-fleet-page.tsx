@@ -151,7 +151,7 @@ export function MyFleetPage() {
       <div className="flex items-center gap-2 border-t border-border/40 bg-muted/10 px-6 py-2">
         <Info className="h-3 w-3 shrink-0 text-muted-foreground/50" />
         <span className="text-[11px] text-muted-foreground/60">
-          Live AIS via MyShipTracking. Positions refresh automatically every 15&nbsp;minutes (destination &amp; ETA hourly);
+          Live AIS via MyShipTracking. Positions refresh automatically every hour (destination &amp; ETA every 6&nbsp;hours);
           vessels without a valid MMSI or IMO on their record can't be tracked.
         </span>
       </div>
