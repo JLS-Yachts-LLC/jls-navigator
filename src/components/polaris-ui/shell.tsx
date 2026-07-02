@@ -9,6 +9,7 @@ import { TIcon } from "./primitives";
 import { ViewAsSwitcher, OnlineUsers } from "@/components/top-bar";
 import { FeedbackWidget } from "@/components/feedback/feedback-widget";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
+import { GlobalSearch } from "./global-search";
 import { useTheme } from "@/lib/theme";
 
 export type PolarisRole =
@@ -278,6 +279,7 @@ export function PolarisTopBar({
         )}
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <GlobalSearch />
         {onExitBeta && (
           <button
             onClick={onExitBeta}
