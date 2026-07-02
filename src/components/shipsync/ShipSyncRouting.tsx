@@ -2,10 +2,11 @@ import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Ship, Truck, MapPin, Route, X, Plus, ChevronRight, ChevronDown, Anchor, Calendar } from "lucide-react";
+import { Loader2, Ship, Truck, Route, X, Plus, ChevronRight, ChevronDown, Anchor, Calendar } from "lucide-react";
 import { StatusBadge } from "@/components/shipsync/shared";
-import { dispatchRoute, unassignPackage } from "@/lib/shipsync/data";
-import { googleMapsDirectionsUrl, type ShipSyncPackage, type ShipSyncDestination } from "@/lib/shipsync/model";
+import { ShipSyncDeliveryCalendar } from "@/components/shipsync/ShipSyncDeliveryCalendar";
+import { dispatchRoute } from "@/lib/shipsync/data";
+import { type ShipSyncPackage, type ShipSyncDestination } from "@/lib/shipsync/model";
 import type { ShipSyncData } from "@/components/shipsync-page";
 
 const UNASSIGNED = "—";
@@ -67,17 +68,6 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
   }, [parcelsByBoat, assignedBoats]);
 
   const activeDrivers = useMemo(() => data.drivers.filter((d) => d.active), [data.drivers]);
-
-  // Driver runs: parcels already routed and out the door, grouped by driver.
-  const driverRuns = useMemo(() => {
-    const runs = new Map<string, ShipSyncPackage[]>();
-    for (const p of data.packages) {
-      if (!p.driver_id || !["assigned", "out_for_delivery"].includes(p.status)) continue;
-      if (!runs.has(p.driver_id)) runs.set(p.driver_id, []);
-      runs.get(p.driver_id)!.push(p);
-    }
-    return runs;
-  }, [data.packages]);
 
   // Parcels included on a route: all its boats' waiting parcels minus the unticked.
   function routeParcels(r: RouteDraft): ShipSyncPackage[] {
@@ -143,22 +133,6 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
     } finally {
       setBusy(null);
     }
-  }
-
-  async function sendBack(id: string) {
-    setBusy(`back-${id}`);
-    try { await unassignPackage(id); await reload(); toast.success("Parcel sent back to routing"); }
-    catch (e: any) { toast.error(e?.message ?? "Failed"); }
-    finally { setBusy(null); }
-  }
-
-  function runMapUrl(parcels: ShipSyncPackage[]): string | null {
-    const boats = Array.from(new Set(parcels.map((p) => p.boat_name).filter(Boolean) as string[])).sort();
-    const stops = boats
-      .map((b) => destByBoat.get(b.toUpperCase()))
-      .filter(Boolean)
-      .map((d) => ({ address: d!.address, lat: d!.lat, lng: d!.lng }));
-    return stops.length ? googleMapsDirectionsUrl(stops) : null;
   }
 
   return (
@@ -278,64 +252,8 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
         </div>
       </div>
 
-      {/* ── Right: live driver runs ── */}
-      <div>
-        <div className="mb-3 flex items-center gap-2">
-          <Truck className="h-4 w-4 text-primary" />
-          <h2 className="font-display text-base font-semibold">Driver runs</h2>
-        </div>
-
-        {driverRuns.size === 0 ? (
-          <div className="flex h-48 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border text-sm text-muted-foreground">
-            <Truck className="h-6 w-6 opacity-40" />
-            No active runs yet — route some parcels to a driver.
-          </div>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {activeDrivers.concat(data.drivers.filter((d) => !d.active && driverRuns.has(d.id))).map((driver) => {
-              const parcels = driverRuns.get(driver.id);
-              if (!parcels || parcels.length === 0) return null;
-              const boats = Array.from(new Set(parcels.map((p) => p.boat_name || UNASSIGNED))).sort();
-              const mapUrl = runMapUrl(parcels);
-              return (
-                <div key={driver.id} className="rounded-xl border border-border bg-card">
-                  <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-                    <span className="grid h-7 w-7 place-items-center rounded-full bg-primary/10 text-[11px] font-bold text-primary">
-                      {driver.name.split(" ").map((s) => s[0]).slice(0, 2).join("")}
-                    </span>
-                    <div>
-                      <div className="font-display text-sm font-bold">{driver.name}</div>
-                      <div className="text-[11px] text-muted-foreground">{driver.vehicle ?? "—"} · {parcels.length} pkg · {boats.length} stop{boats.length === 1 ? "" : "s"}</div>
-                    </div>
-                    {mapUrl && (
-                      <a href={mapUrl} target="_blank" rel="noopener noreferrer"
-                        className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-[12px] font-medium text-primary hover:bg-primary/5">
-                        <MapPin className="h-3.5 w-3.5" /> Route
-                      </a>
-                    )}
-                  </div>
-                  <div className="divide-y divide-border/40">
-                    {parcels.map((p) => (
-                      <div key={p.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
-                        <Ship className="h-3.5 w-3.5 text-muted-foreground/60" />
-                        <span className="font-medium">{p.boat_name ?? "No boat"}</span>
-                        <span className="font-mono text-[12px] text-muted-foreground">{p.barcode ?? "—"}</span>
-                        <span className="ml-auto flex items-center gap-2">
-                          <StatusBadge status={p.status} />
-                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground/60 hover:text-destructive"
-                            disabled={busy === `back-${p.id}`} onClick={() => sendBack(p.id)} title="Send back to routing">
-                            {busy === `back-${p.id}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
-                          </Button>
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+      {/* ── Right: weekly delivery calendar ── */}
+      <ShipSyncDeliveryCalendar data={data} reload={reload} />
     </div>
   );
 }

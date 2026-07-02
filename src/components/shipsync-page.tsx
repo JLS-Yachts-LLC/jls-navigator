@@ -3,10 +3,10 @@ import { Link } from "@tanstack/react-router";
 import { Loader2, Package, Truck, Warehouse, Users, BarChart3, Smartphone, ArrowDownToLine, ArrowUpFromLine, Route } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
-  loadPackages, loadDrivers, loadNotes, loadDestinations,
+  loadPackages, loadDrivers, loadNotes, loadDestinations, loadDeliverySchedules,
 } from "@/lib/shipsync/data";
 import type {
-  ShipSyncPackage, ShipSyncDriver, ShipSyncDeliveryNote, ShipSyncDestination,
+  ShipSyncPackage, ShipSyncDriver, ShipSyncDeliveryNote, ShipSyncDestination, ShipSyncDeliverySchedule,
 } from "@/lib/shipsync/model";
 import { ShipSyncPackages } from "@/components/shipsync/ShipSyncPackages";
 import { ShipSyncDispatch } from "@/components/shipsync/ShipSyncDispatch";
@@ -21,6 +21,7 @@ export interface ShipSyncData {
   drivers: ShipSyncDriver[];
   notes: ShipSyncDeliveryNote[];
   destinations: ShipSyncDestination[];
+  schedule: ShipSyncDeliverySchedule[];
 }
 
 const TABS = [
@@ -36,14 +37,15 @@ const TABS = [
 
 export function ShipSyncPage() {
   const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("packages");
-  const [data, setData] = useState<ShipSyncData>({ packages: [], drivers: [], notes: [], destinations: [] });
+  const [data, setData] = useState<ShipSyncData>({ packages: [], drivers: [], notes: [], destinations: [], schedule: [] });
   const [loading, setLoading] = useState(true);
 
   const reload = useCallback(async () => {
-    const [packages, drivers, notes, destinations] = await Promise.all([
+    const [packages, drivers, notes, destinations, schedule] = await Promise.all([
       loadPackages(), loadDrivers(), loadNotes(), loadDestinations(),
+      loadDeliverySchedules().catch(() => []),
     ]);
-    setData({ packages, drivers, notes, destinations });
+    setData({ packages, drivers, notes, destinations, schedule });
   }, []);
 
   useEffect(() => { void reload().finally(() => setLoading(false)); }, [reload]);

@@ -41,6 +41,18 @@ export interface ShipSyncDriver {
   user_id: string | null
 }
 
+export interface ShipSyncDeliverySchedule {
+  id: string
+  boat_name: string
+  weekday: number   // 0 = Mon … 6 = Sun
+  created_at: string
+}
+
+/** Weekly delivery calendar days, Monday-first. */
+export const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const
+/** Today's index in the Mon-first WEEKDAYS array (JS getDay() is Sun=0). */
+export const todayWeekday = (): number => (new Date().getDay() + 6) % 7
+
 export interface ShipSyncDestination {
   id: string
   boat_name: string

@@ -6,7 +6,7 @@ import { supabase } from '@/integrations/supabase/client'
 import {
   nextDeliveryNumber,
   type ShipSyncPackage, type ShipSyncDriver, type ShipSyncDeliveryNote, type ShipSyncDestination,
-  type PackageStatus,
+  type ShipSyncDeliverySchedule, type PackageStatus,
 } from './model'
 
 const db = () => supabase as any
@@ -65,6 +65,21 @@ export async function deleteDriver(id: string): Promise<void> {
 // ── Destinations ─────────────────────────────────────────────────────────────
 export async function saveDestination(d: Partial<ShipSyncDestination> & { boat_name: string }): Promise<void> {
   const { error } = await db().from('shipsync_destinations').upsert([d], { onConflict: 'boat_name' })
+  if (error) throw error
+}
+
+// ── Delivery schedule (weekly calendar) ──────────────────────────────────────
+export async function loadDeliverySchedules(): Promise<ShipSyncDeliverySchedule[]> {
+  const { data } = await db().from('shipsync_delivery_schedule').select('*').order('boat_name')
+  return (data ?? []) as ShipSyncDeliverySchedule[]
+}
+export async function addScheduleEntry(boat_name: string, weekday: number): Promise<void> {
+  const { error } = await db().from('shipsync_delivery_schedule')
+    .upsert([{ boat_name, weekday }], { onConflict: 'boat_name,weekday' })
+  if (error) throw error
+}
+export async function removeScheduleEntry(id: string): Promise<void> {
+  const { error } = await db().from('shipsync_delivery_schedule').delete().eq('id', id)
   if (error) throw error
 }
 
