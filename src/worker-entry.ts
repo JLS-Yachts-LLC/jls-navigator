@@ -16,6 +16,7 @@ import { visaExcelPushHandler } from './routes/api.visa.excel-push'
 import { visaExcelSyncHandler } from './routes/api.visa.excel-sync'
 import { visaUploadArrivalDocHandler } from './routes/api.visa.upload-arrival-doc'
 import { visaSendToVesselHandler } from './routes/api.visa.send-to-vessel'
+import { mmsiSuggestHandler } from './routes/api.vessels.mmsi-suggest'
 import { seedTemplatesFolderHandler } from './routes/api.admin.seed-templates-folder'
 import { visaPassportOcrHandler } from './routes/api.visa.passport-ocr'
 import { itTicketsNotifyHandler } from './routes/api.it-tickets.notify'
@@ -331,6 +332,10 @@ export default {
 
     if (url.pathname === '/api/feedback/notify' && request.method === 'POST') {
       return feedbackNotifyHandler(request)
+    }
+
+    if (url.pathname === '/api/vessels/mmsi-suggest' && request.method === 'GET') {
+      return mmsiSuggestHandler(request)
     }
 
     if (url.pathname.startsWith('/api/vessels/')) {

@@ -258,10 +258,19 @@ export const doSubmitSignature = createServerFn({ method: "POST" })
           const sig = isCompany ? entry!.img : clientSig;
           const sw = 130; const sh = (sig.height / sig.width) * sw;
           const { width, height } = p.getSize();
-          const pad = 40;
-          const pos = f.pos ?? "bottom-right";
-          const x = pos.includes("left") ? pad : pos.includes("center") ? (width - sw) / 2 : width - sw - pad;
-          const y = pos.includes("top") ? height - pad - sh : pos.includes("middle") ? (height - sh) / 2 : pad + 12;
+          let x: number; let y: number;
+          const fx = (f as any).x; const fy = (f as any).y;
+          if (typeof fx === "number" && typeof fy === "number") {
+            // Drag-placed field: x/y are fractions of the page (from the top-left),
+            // marking the CENTRE of the signature.
+            x = Math.min(Math.max(fx * width - sw / 2, 4), width - sw - 4);
+            y = Math.min(Math.max((1 - fy) * height - sh / 2, 14), height - sh - 4);
+          } else {
+            const pad = 40;
+            const pos = f.pos ?? "bottom-right";
+            x = pos.includes("left") ? pad : pos.includes("center") ? (width - sw) / 2 : width - sw - pad;
+            y = pos.includes("top") ? height - pad - sh : pos.includes("middle") ? (height - sh) / 2 : pad + 12;
+          }
           p.drawImage(sig, { x, y, width: sw, height: sh });
           const label = isCompany ? `${entry!.name} · JLS Yachts · ${signedAt.toISOString().slice(0, 10)}` : `${doc.signer_name} · ${signedAt.toISOString().slice(0, 10)}`;
           p.drawText(label, { x, y: y - 9, size: 6.5, font, color: rgb(0.45, 0.5, 0.55) });

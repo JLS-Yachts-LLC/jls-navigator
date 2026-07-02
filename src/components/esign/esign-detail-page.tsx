@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchAllRows } from "@/lib/fetch-all";
@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth";
 import { doSendForSignature } from "@/lib/esign.server";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   ArrowLeft, Loader2, FileText, Download, Send, Ban, Mail, Eye, CheckCircle2,
   Clock, FileSignature, Link2, XCircle,
@@ -119,7 +120,7 @@ export function EsignDetailPage({ documentId, onBack }: { documentId: string; on
           </div>
 
           {/* Signature field placement — editable until the document is signed */}
-          <SignatureFieldsEditor doc={doc} onSaved={load} />
+          <SignatureFieldsEditor doc={doc} fileUrl={fileUrl} onSaved={load} />
 
           {/* Inline preview of the relevant PDF */}
           <div className="overflow-hidden rounded-xl border border-border bg-card">
@@ -171,18 +172,20 @@ function Stamp({ icon, label, value }: { icon: React.ReactNode; label: string; v
 }
 
 // ── Signature field editor — place client + company signatures on the document ──
-type SigField = { page: number; pos: string; role: "client" | "company"; signatory_id?: string; signatory_name?: string };
+type SigField = { page: number; pos: string; role: "client" | "company"; signatory_id?: string; signatory_name?: string; x?: number; y?: number };
 const SIG_POSITIONS = ["bottom-right", "bottom-left", "bottom-center", "top-right", "top-left", "middle-center"];
 
-function SignatureFieldsEditor({ doc, onSaved }: { doc: Doc; onSaved: () => void }) {
+function SignatureFieldsEditor({ doc, fileUrl, onSaved }: { doc: Doc; fileUrl?: string | null; onSaved: () => void }) {
   const locked = doc.status === "signed" || doc.status === "voided" || doc.status === "declined";
   const [fields, setFields] = useState<SigField[]>(() =>
     (Array.isArray(doc.signature_fields) ? doc.signature_fields : []).map((f: any) => ({
       page: Number(f.page ?? 1), pos: String(f.pos ?? "bottom-right"),
       role: f.role === "company" ? "company" : "client",
       signatory_id: f.signatory_id, signatory_name: f.signatory_name,
+      x: typeof f.x === "number" ? f.x : undefined, y: typeof f.y === "number" ? f.y : undefined,
     })),
   );
+  const [placerOpen, setPlacerOpen] = useState(false);
   const [signatories, setSignatories] = useState<{ id: string; full_name: string; signature_path: string | null }[]>([]);
   const [addRole, setAddRole] = useState<"client" | "company">("client");
   const [addSignatory, setAddSignatory] = useState("");
@@ -226,12 +229,29 @@ function SignatureFieldsEditor({ doc, onSaved }: { doc: Doc; onSaved: () => void
         <h3 className="flex items-center gap-1.5 text-sm font-semibold">
           <FileSignature className="h-4 w-4 text-primary/70" /> Signature fields
         </h3>
-        {dirty && !locked && (
-          <Button size="sm" onClick={save} disabled={saving} className="h-7 gap-1.5 text-xs">
-            {saving && <Loader2 className="h-3 w-3 animate-spin" />} Save fields
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {!locked && fileUrl && (
+            <Button size="sm" variant="outline" onClick={() => setPlacerOpen(true)} className="h-7 gap-1.5 text-xs">
+              <Eye className="h-3 w-3" /> Place on document
+            </Button>
+          )}
+          {dirty && !locked && (
+            <Button size="sm" onClick={save} disabled={saving} className="h-7 gap-1.5 text-xs">
+              {saving && <Loader2 className="h-3 w-3 animate-spin" />} Save fields
+            </Button>
+          )}
+        </div>
       </div>
+
+      {placerOpen && fileUrl && (
+        <VisualFieldPlacer
+          fileUrl={fileUrl}
+          initialFields={fields}
+          signatories={signatories}
+          onClose={() => setPlacerOpen(false)}
+          onDone={(next) => { setFields(next); setDirty(true); setPlacerOpen(false); }}
+        />
+      )}
       <p className="mb-3 text-[11.5px] text-muted-foreground">
         Where signatures are stamped when the document is signed — the client's drawn signature, and/or a JLS company signatory's stored signature.
         {locked && " (Locked — the document is finalised.)"}
@@ -250,7 +270,9 @@ function SignatureFieldsEditor({ doc, onSaved }: { doc: Doc; onSaved: () => void
                 {f.role === "company" ? `Company · ${f.signatory_name ?? "signatory"}` : "Client"}
               </span>
               <span className="text-muted-foreground">Page {f.page}</span>
-              <span className="capitalize text-muted-foreground">{f.pos.replace("-", " ")}</span>
+              <span className="capitalize text-muted-foreground">
+                {f.x != null && f.y != null ? `placed at ${Math.round(f.x * 100)}%, ${Math.round(f.y * 100)}%` : f.pos.replace("-", " ")}
+              </span>
               {!locked && (
                 <button
                   onClick={() => { setFields((all) => all.filter((_, x) => x !== i)); setDirty(true); }}
@@ -304,5 +326,198 @@ function SignatureFieldsEditor({ doc, onSaved }: { doc: Doc; onSaved: () => void
         </div>
       )}
     </div>
+  );
+}
+
+// ── Visual field placer — render the PDF (pdf.js) and click/drag signature fields ──
+function VisualFieldPlacer({ fileUrl, initialFields, signatories, onClose, onDone }: {
+  fileUrl: string;
+  initialFields: SigField[];
+  signatories: { id: string; full_name: string; signature_path: string | null }[];
+  onClose: () => void;
+  onDone: (fields: SigField[]) => void;
+}) {
+  const [fields, setFields] = useState<SigField[]>(initialFields);
+  const [pageNum, setPageNum] = useState(1);
+  const [numPages, setNumPages] = useState(1);
+  const [rendering, setRendering] = useState(true);
+  const [addMode, setAddMode] = useState<null | { role: "client" | "company"; signatory_id?: string; signatory_name?: string }>(null);
+  const [pickSignatory, setPickSignatory] = useState(false);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const pdfRef = useRef<any>(null);
+  const dragIdx = useRef<number | null>(null);
+
+  // Load the document once, render on page change.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        setRendering(true);
+        if (!pdfRef.current) {
+          const pdfjs: any = await import("pdfjs-dist");
+          // Vite ?url asset import for the pdf.js worker
+          const workerUrl = ((await import("pdfjs-dist/build/pdf.worker.min.mjs?url" as any)) as any).default;
+          pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+          pdfRef.current = await pdfjs.getDocument(fileUrl).promise;
+          if (cancelled) return;
+          setNumPages(pdfRef.current.numPages);
+        }
+        const page = await pdfRef.current.getPage(pageNum);
+        const canvas = canvasRef.current;
+        if (!canvas || cancelled) return;
+        const containerWidth = Math.min(760, window.innerWidth - 140);
+        const base = page.getViewport({ scale: 1 });
+        const scale = containerWidth / base.width;
+        const viewport = page.getViewport({ scale });
+        canvas.width = viewport.width; canvas.height = viewport.height;
+        canvas.style.width = `${viewport.width}px`; canvas.style.height = `${viewport.height}px`;
+        await page.render({ canvasContext: canvas.getContext("2d")!, viewport }).promise;
+      } catch (e: any) {
+        toast.error(`Could not render the PDF: ${e?.message ?? e}`);
+      } finally {
+        if (!cancelled) setRendering(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [fileUrl, pageNum]);
+
+  /** Pointer position → page-fraction coordinates (0–1, from the top-left). */
+  function fracFromEvent(e: React.PointerEvent | React.MouseEvent): { x: number; y: number } | null {
+    const el = overlayRef.current;
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return {
+      x: Math.min(0.98, Math.max(0.02, (e.clientX - r.left) / r.width)),
+      y: Math.min(0.98, Math.max(0.02, (e.clientY - r.top) / r.height)),
+    };
+  }
+
+  function placeNew(e: React.MouseEvent) {
+    if (!addMode || dragIdx.current != null) return;
+    const p = fracFromEvent(e);
+    if (!p) return;
+    setFields((all) => [...all, { page: pageNum, pos: "custom", role: addMode.role, signatory_id: addMode.signatory_id, signatory_name: addMode.signatory_name, x: p.x, y: p.y }]);
+    setAddMode(null);
+  }
+
+  function startDrag(e: React.PointerEvent, idx: number) {
+    e.stopPropagation();
+    dragIdx.current = idx;
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  }
+  function onDrag(e: React.PointerEvent) {
+    if (dragIdx.current == null) return;
+    const p = fracFromEvent(e);
+    if (!p) return;
+    const i = dragIdx.current;
+    setFields((all) => all.map((f, x) => (x === i ? { ...f, page: pageNum, pos: "custom", x: p.x, y: p.y } : f)));
+  }
+  function endDrag() { dragIdx.current = null; }
+
+  // Legacy preset fields shown at approximate spots so they can be dragged into place.
+  const presetFrac = (pos: string): { x: number; y: number } => ({
+    x: pos.includes("left") ? 0.16 : pos.includes("center") ? 0.5 : 0.84,
+    y: pos.includes("top") ? 0.08 : pos.includes("middle") ? 0.5 : 0.92,
+  });
+
+  const pageFields = fields.map((f, i) => ({ f, i })).filter(({ f }) => f.page === pageNum);
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-4xl max-h-[92vh] overflow-y-auto">
+        <DialogHeader><DialogTitle className="flex items-center gap-2"><FileSignature className="h-4 w-4 text-primary" /> Place signature fields</DialogTitle></DialogHeader>
+
+        {/* Toolbar */}
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" variant={addMode?.role === "client" ? "default" : "outline"} className="h-7 gap-1 text-xs"
+            onClick={() => { setAddMode(addMode?.role === "client" ? null : { role: "client" }); setPickSignatory(false); }}>
+            + Client signature
+          </Button>
+          <div className="relative">
+            <Button size="sm" variant={addMode?.role === "company" ? "default" : "outline"} className="h-7 gap-1 text-xs"
+              onClick={() => { setPickSignatory((v) => !v); }}>
+              + Company signature
+            </Button>
+            {pickSignatory && (
+              <div className="absolute z-50 mt-1 w-56 rounded-md border border-border bg-popover p-1 shadow-lg">
+                {signatories.filter((s) => s.signature_path).length === 0 && (
+                  <div className="px-2 py-1.5 text-xs text-muted-foreground">No signatories with a signature image.</div>
+                )}
+                {signatories.filter((s) => s.signature_path).map((s) => (
+                  <button key={s.id} className="block w-full rounded px-2 py-1.5 text-left text-xs hover:bg-accent"
+                    onClick={() => { setAddMode({ role: "company", signatory_id: s.id, signatory_name: s.full_name }); setPickSignatory(false); }}>
+                    {s.full_name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {addMode && (
+            <span className="text-xs text-primary">
+              Click the page to place the {addMode.role === "company" ? `${addMode.signatory_name} (company)` : "client"} signature…
+            </span>
+          )}
+          <div className="ml-auto flex items-center gap-1.5 text-xs">
+            <Button size="sm" variant="outline" className="h-7 px-2 text-xs" disabled={pageNum <= 1} onClick={() => setPageNum((p) => p - 1)}>‹</Button>
+            <span className="tabular-nums text-muted-foreground">Page {pageNum} / {numPages}</span>
+            <Button size="sm" variant="outline" className="h-7 px-2 text-xs" disabled={pageNum >= numPages} onClick={() => setPageNum((p) => p + 1)}>›</Button>
+          </div>
+        </div>
+
+        {/* Canvas + overlay */}
+        <div className="relative mx-auto w-fit rounded-lg border border-border bg-white shadow-sm">
+          <canvas ref={canvasRef} className="block" />
+          <div
+            ref={overlayRef}
+            className={cn("absolute inset-0", addMode ? "cursor-crosshair" : "")}
+            onClick={placeNew}
+            onPointerMove={onDrag}
+            onPointerUp={endDrag}
+          >
+            {pageFields.map(({ f, i }) => {
+              const at = f.x != null && f.y != null ? { x: f.x, y: f.y } : presetFrac(f.pos);
+              return (
+                <div
+                  key={i}
+                  onPointerDown={(e) => startDrag(e, i)}
+                  style={{ left: `${at.x * 100}%`, top: `${at.y * 100}%`, transform: "translate(-50%, -50%)" }}
+                  className={cn(
+                    "absolute flex cursor-grab select-none items-center gap-1 rounded border-2 border-dashed px-2 py-1 text-[10px] font-semibold shadow-sm active:cursor-grabbing",
+                    f.role === "company" ? "border-sky-500 bg-sky-500/15 text-sky-700" : "border-emerald-500 bg-emerald-500/15 text-emerald-700",
+                  )}
+                  title="Drag to move"
+                >
+                  ✒ {f.role === "company" ? (f.signatory_name ?? "Company") : "Client"}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setFields((all) => all.filter((_, x) => x !== i)); }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    className="ml-0.5 rounded px-0.5 hover:bg-black/10"
+                    title="Remove"
+                  >
+                    ×
+                  </button>
+                </div>
+              );
+            })}
+            {rendering && (
+              <div className="absolute inset-0 flex items-center justify-center bg-white/60">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] text-muted-foreground">
+            {fields.length} field{fields.length === 1 ? "" : "s"} across the document · fields show where the ~130pt-wide signature is centred
+          </span>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+            <Button size="sm" onClick={() => onDone(fields)}>Use these positions</Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
