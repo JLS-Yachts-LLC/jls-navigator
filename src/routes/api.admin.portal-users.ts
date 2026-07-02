@@ -74,6 +74,24 @@ export async function adminPortalUsersHandler(request: Request): Promise<Respons
     return json({ success: true, tempPassword: pwd });
   }
 
+  // Change the login email — e.g. the captain lost access to the old mailbox.
+  if (body.action === "change-email") {
+    const email = (body.email ?? "").trim().toLowerCase();
+    if (!email) return json({ error: "A new email address is required" }, 400);
+    const existing = await findUserByEmail(sb, email);
+    if (existing && existing.id !== account.user_id) {
+      return json({ error: `${email} already belongs to another account` }, 400);
+    }
+    if (account.user_id) {
+      const { error } = await sb.auth.admin.updateUserById(account.user_id, { email, email_confirm: true });
+      if (error) return json({ error: error.message }, 500);
+    }
+    const { error: linkErr } = await sb.from("captain_accounts").update({ email }).eq("id", account.id);
+    if (linkErr) return json({ error: linkErr.message }, 500);
+    await audit(`Portal login email changed to ${email}`);
+    return json({ success: true });
+  }
+
   if (body.action === "create-login") {
     const email = (body.email ?? account.email ?? "").trim().toLowerCase();
     if (!email) return json({ error: "An email address is required to create the login" }, 400);

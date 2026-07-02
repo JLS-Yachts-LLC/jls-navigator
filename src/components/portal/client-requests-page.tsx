@@ -11,6 +11,7 @@ import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { REQUEST_CATEGORIES, REQUEST_STATUS_STYLE } from "./captain-portal";
+import { StaffChatsPanel } from "./staff-chat";
 
 const db = supabase as any;
 
@@ -33,6 +34,46 @@ const statusLabel = (s: string) => s.replace(/_/g, " ").replace(/^\w/, (c) => c.
 const fmt = (d: string) => new Date(d).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
 export function ClientRequestsPage() {
+  const [mode, setMode] = useState<"requests" | "chats">("requests");
+  const [chatUnread, setChatUnread] = useState(0);
+
+  // Unread chat badge for the mode switcher (refreshed on mount + every 30s).
+  useEffect(() => {
+    const tick = async () => {
+      const { data } = await db.from("portal_chats").select("staff_unread");
+      setChatUnread((data ?? []).reduce((s: number, c: any) => s + (c.staff_unread ?? 0), 0));
+    };
+    void tick();
+    const t = setInterval(() => void tick(), 30000);
+    return () => clearInterval(t);
+  }, [mode]);
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex items-center gap-1 border-b border-border/60 bg-card/30 px-4">
+        {([["requests", "Requests"], ["chats", "Live Chat"]] as const).map(([key, label]) => (
+          <button key={key} onClick={() => setMode(key)}
+                  className={cn(
+                    "flex shrink-0 items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition",
+                    mode === key ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+                  )}>
+            {label}
+            {key === "chats" && chatUnread > 0 && (
+              <span className="flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
+                {chatUnread > 9 ? "9+" : chatUnread}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto">
+        {mode === "requests" ? <RequestsPanel /> : <StaffChatsPanel />}
+      </div>
+    </div>
+  );
+}
+
+function RequestsPanel() {
   const { user } = useAuth();
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);

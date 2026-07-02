@@ -369,14 +369,23 @@ function MfaVerifyScreen({ onDone, onSignOut }: { onDone: () => void; onSignOut:
 // ═══════════════════════════════════════════════════════════════════════════
 // Portal shell + tabs
 // ═══════════════════════════════════════════════════════════════════════════
-type Tab = "home" | "requests" | "crew" | "documents" | "directory";
+type Tab = "home" | "requests" | "chat" | "crew" | "documents" | "directory";
 const TABS: { key: Tab; label: string; icon: any }[] = [
   { key: "home", label: "Home", icon: Home },
-  { key: "requests", label: "Requests", icon: MessageSquare },
+  { key: "requests", label: "Requests", icon: LifeBuoy },
+  { key: "chat", label: "Chat", icon: MessageSquare },
   { key: "crew", label: "Crew", icon: Users },
   { key: "documents", label: "Documents", icon: FileCheck2 },
   { key: "directory", label: "Directory", icon: Phone },
 ];
+
+type PortalChat = {
+  id: string; captain_account_id: string; claimed_by_name: string | null;
+  last_message_at: string | null; last_sender_role: string | null; portal_unread: number;
+};
+type ChatMessage = {
+  id: string; sender_name: string | null; sender_role: "staff" | "portal"; body: string; created_at: string;
+};
 
 function PortalShell({ link, email, onSignOut }: { link: CaptainLink; email: string; onSignOut: () => void }) {
   const [tab, setTab] = useState<Tab>("home");
@@ -384,6 +393,7 @@ function PortalShell({ link, email, onSignOut }: { link: CaptainLink; email: str
   const [newRequestCat, setNewRequestCat] = useState<string | null>(null);
   const [openRequestId, setOpenRequestId] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [chat, setChat] = useState<PortalChat | null>(null);
 
   useEffect(() => {
     db.from("yachts")
@@ -392,6 +402,21 @@ function PortalShell({ link, email, onSignOut }: { link: CaptainLink; email: str
       .then(({ data }: any) => setYacht(data ?? null));
   }, [link.yacht_id]);
 
+  // Chat thread + unread badge — refreshed every 20s so a staff-initiated chat
+  // surfaces on the dashboard without a reload.
+  const loadChat = useCallback(async () => {
+    const { data } = await db.from("portal_chats")
+      .select("id, captain_account_id, claimed_by_name, last_message_at, last_sender_role, portal_unread")
+      .eq("captain_account_id", link.id).maybeSingle();
+    setChat(data ?? null);
+  }, [link.id]);
+  useEffect(() => {
+    void loadChat();
+    const t = setInterval(() => void loadChat(), 20000);
+    return () => clearInterval(t);
+  }, [loadChat]);
+
+  const unread = chat?.portal_unread ?? 0;
   const openNewRequest = (cat: string) => { setNewRequestCat(cat); };
 
   return (
@@ -416,10 +441,15 @@ function PortalShell({ link, email, onSignOut }: { link: CaptainLink; email: str
           {TABS.map((t) => (
             <button key={t.key} onClick={() => { setTab(t.key); setOpenRequestId(null); }}
                     className={cn(
-                      "flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition",
+                      "relative flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition",
                       tab === t.key ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
                     )}>
               <t.icon className="h-4 w-4" /> {t.label}
+              {t.key === "chat" && unread > 0 && (
+                <span className="flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
+                  {unread > 9 ? "9+" : unread}
+                </span>
+              )}
             </button>
           ))}
         </nav>
@@ -427,11 +457,28 @@ function PortalShell({ link, email, onSignOut }: { link: CaptainLink; email: str
 
       {/* Content */}
       <main className="flex-1 px-4 pb-24 pt-5 sm:px-6 sm:pb-10">
+        {tab === "home" && unread > 0 && (
+          <button onClick={() => setTab("chat")}
+                  className="mb-4 flex w-full items-center gap-3 rounded-2xl border border-primary/40 bg-primary/10 p-4 text-left transition hover:bg-primary/15">
+            <MessageSquare className="h-5 w-5 shrink-0 text-primary" />
+            <span className="flex-1 text-sm">
+              <span className="font-semibold">
+                {chat?.claimed_by_name ? `${chat.claimed_by_name} from JLS Yachts` : "JLS Yachts"} sent you {unread === 1 ? "a message" : `${unread} messages`}
+              </span>
+              <span className="block text-xs text-muted-foreground">Tap to open the conversation.</span>
+            </span>
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          </button>
+        )}
         {tab === "home" && yacht && (
           <HomeTab yacht={yacht} onNewRequest={openNewRequest}
                    onSeeRequests={() => setTab("requests")}
                    onOpenRequest={(id) => { setTab("requests"); setOpenRequestId(id); }}
                    refreshKey={refreshKey} />
+        )}
+        {tab === "chat" && (
+          <PortalChatTab link={link} displayName={link.display_name ?? email}
+                         chat={chat} onChatChanged={loadChat} />
         )}
         {tab === "requests" && (
           <RequestsTab yachtId={link.yacht_id} openRequestId={openRequestId}
@@ -445,13 +492,21 @@ function PortalShell({ link, email, onSignOut }: { link: CaptainLink; email: str
       </main>
 
       {/* Mobile bottom nav */}
-      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-border/60 bg-background/95 backdrop-blur sm:hidden"
+      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-6 border-t border-border/60 bg-background/95 backdrop-blur sm:hidden"
            style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
         {TABS.map((t) => (
           <button key={t.key} onClick={() => { setTab(t.key); setOpenRequestId(null); }}
-                  className={cn("flex flex-col items-center gap-1 py-2.5 text-[10px] font-medium transition",
+                  className={cn("relative flex flex-col items-center gap-1 py-2.5 text-[10px] font-medium transition",
                                 tab === t.key ? "text-primary" : "text-muted-foreground")}>
-            <t.icon className="h-5 w-5" /> {t.label}
+            <span className="relative">
+              <t.icon className="h-5 w-5" />
+              {t.key === "chat" && unread > 0 && (
+                <span className="absolute -right-2 -top-1 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-red-500 px-0.5 text-[8px] font-bold text-white">
+                  {unread > 9 ? "9+" : unread}
+                </span>
+              )}
+            </span>
+            {t.label}
           </button>
         ))}
       </nav>
@@ -1010,6 +1065,118 @@ function DirectoryTab() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Chat (staff ⇄ portal) ─────────────────────────────────────────────────────
+function PortalChatTab({ link, displayName, chat, onChatChanged }: {
+  link: CaptainLink; displayName: string;
+  chat: PortalChat | null; onChatChanged: () => void;
+}) {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const endRef = useRef<HTMLDivElement>(null);
+
+  const loadMessages = useCallback(async () => {
+    if (!chat?.id) { setMessages([]); setLoading(false); return; }
+    const { data } = await db.from("portal_chat_messages")
+      .select("id, sender_name, sender_role, body, created_at")
+      .eq("chat_id", chat.id).order("created_at").limit(500);
+    setMessages(data ?? []);
+    setLoading(false);
+  }, [chat?.id]);
+
+  // Load + poll while the tab is open, and clear our unread counter.
+  useEffect(() => {
+    void loadMessages();
+    const t = setInterval(() => void loadMessages(), 8000);
+    return () => clearInterval(t);
+  }, [loadMessages]);
+
+  useEffect(() => {
+    if (chat?.id && chat.portal_unread > 0) {
+      void db.from("portal_chats").update({ portal_unread: 0 }).eq("id", chat.id).then(() => onChatChanged());
+    }
+  }, [chat?.id, chat?.portal_unread, messages.length]);
+
+  useEffect(() => { endRef.current?.scrollIntoView({ block: "nearest" }); }, [messages.length]);
+
+  const send = async () => {
+    const body = draft.trim();
+    if (!body || sending) return;
+    setSending(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      let chatId = chat?.id;
+      if (!chatId) {
+        const { data: created, error } = await db.from("portal_chats")
+          .insert({ captain_account_id: link.id, yacht_id: link.yacht_id })
+          .select("id").single();
+        if (error || !created) return;
+        chatId = created.id;
+      }
+      await db.from("portal_chat_messages").insert({
+        chat_id: chatId, sender_user_id: user?.id, sender_name: displayName,
+        sender_role: "portal", body,
+      });
+      setDraft("");
+      onChatChanged();
+      await loadMessages();
+    } finally { setSending(false); }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h1 className="text-lg font-bold">Chat with JLS Yachts</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {chat?.claimed_by_name
+            ? `${chat.claimed_by_name} is looking after this conversation.`
+            : "Send us a message — the team will reply here."}
+        </p>
+      </div>
+      <Card className="flex flex-col p-4">
+        <div className="max-h-[55vh] min-h-[200px] space-y-3 overflow-y-auto pr-1">
+          {loading ? (
+            <div className="flex h-32 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+          ) : messages.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              No messages yet. Say hello — we're here to help.
+            </p>
+          ) : (
+            messages.map((m) => (
+              <div key={m.id} className={cn("flex", m.sender_role === "portal" ? "justify-end" : "justify-start")}>
+                <div className={cn(
+                  "max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed",
+                  m.sender_role === "portal"
+                    ? "rounded-br-md bg-primary/20 text-foreground"
+                    : "rounded-bl-md border border-border bg-background/60",
+                )}>
+                  <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    {m.sender_role === "portal" ? "You" : (m.sender_name || "JLS Yachts")} · {fmtDateTime(m.created_at)}
+                  </div>
+                  <div className="whitespace-pre-wrap">{m.body}</div>
+                </div>
+              </div>
+            ))
+          )}
+          <div ref={endRef} />
+        </div>
+        <div className="mt-3 flex items-end gap-2 border-t border-border/60 pt-3">
+          <textarea
+            value={draft} onChange={(e) => setDraft(e.target.value)} rows={2}
+            placeholder="Write a message…"
+            className={cn(inputCls, "resize-none py-2.5")}
+            onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void send(); }}
+          />
+          <PrimaryButton onClick={() => void send()} disabled={sending || !draft.trim()} className="h-11 w-11 shrink-0 rounded-xl px-0">
+            {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          </PrimaryButton>
+        </div>
+      </Card>
     </div>
   );
 }

@@ -149,6 +149,20 @@ function VesselUsersPanel() {
     } catch (e: any) { toast.error(e.message); } finally { setBusyId(null); }
   };
 
+  const changeEmail = async (r: CaptainRow) => {
+    const email = prompt(
+      `New login email for ${r.display_name ?? "this user"}${r.email ? ` (currently ${r.email})` : ""}:`,
+      r.email ?? "",
+    )?.trim();
+    if (!email || email === r.email) return;
+    setBusyId(r.id);
+    try {
+      await api({ action: "change-email", accountId: r.id, email });
+      toast.success(`Login email updated to ${email}`);
+      void load();
+    } catch (e: any) { toast.error(e.message); } finally { setBusyId(null); }
+  };
+
   const resetPassword = async (r: CaptainRow) => {
     if (!confirm(`Reset the portal password for ${r.email}?`)) return;
     setBusyId(r.id);
@@ -247,7 +261,14 @@ function VesselUsersPanel() {
                           {PORTAL_POSITIONS.map((p) => <option key={p} value={p}>{positionLabel(p)}</option>)}
                         </select>
                       </td>
-                      <td className="text-foreground/75">{r.email ?? <span className="text-muted-foreground/50">not set</span>}</td>
+                      <td className="text-foreground/75">
+                        <button onClick={() => void changeEmail(r)}
+                                title="Change the login email (e.g. lost access / new address)"
+                                className="group inline-flex items-center gap-1.5 hover:text-foreground">
+                          {r.email ?? <span className="text-muted-foreground/50">not set</span>}
+                          <KeyRound className="h-3 w-3 opacity-0 transition group-hover:opacity-60" />
+                        </button>
+                      </td>
                       <td>
                         {r.user_id ? (
                           <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-300">
