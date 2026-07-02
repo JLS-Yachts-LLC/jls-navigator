@@ -20,7 +20,23 @@ async function loadNote(noteId: string): Promise<{ note: ShipSyncDeliveryNote; p
 /** Build the note PDF, store it in the shipsync bucket, and save the URL. */
 export async function generateNotePdf(noteId: string, kind: 'predelivery' | 'delivery'): Promise<string> {
   const { note, packages } = await loadNote(noteId)
-  const bytes = await buildDeliveryNotePdf(note, packages, kind)
+
+  // Driver name for the note header.
+  let driverName: string | null = null
+  if (note.driver_id) {
+    const { data: driver } = await db().from('shipsync_drivers').select('name').eq('id', note.driver_id).maybeSingle()
+    driverName = driver?.name ?? null
+  }
+
+  // Saved berth per boat (a multi-boat note has no single destination_address).
+  const boatNames = Array.from(new Set(packages.map((p) => p.boat_name).filter(Boolean) as string[]))
+  const destByBoat = new Map<string, string | null>()
+  if (boatNames.length) {
+    const { data: dests } = await db().from('shipsync_destinations').select('boat_name, address').in('boat_name', boatNames)
+    for (const d of dests ?? []) destByBoat.set(d.boat_name, d.address ?? null)
+  }
+
+  const bytes = await buildDeliveryNotePdf(note, packages, kind, { driverName, destByBoat })
   const path = `delivery-notes/${note.number ?? noteId}/${kind}-${Date.now()}.pdf`
   const up = await supabaseAdmin.storage.from('shipsync').upload(path, bytes, { upsert: true, contentType: 'application/pdf' })
   if (up.error) throw up.error
