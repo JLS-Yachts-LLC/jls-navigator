@@ -10,6 +10,14 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Client Portal live chat — two-way messaging between JLS staff and portal users, with a new-message alert on the portal dashboard, unread badges both sides, and a 'Handled by' claim in the staff app so two people never answer the same client"
+      },
+      {
+        "type": "fix",
+        "title": "Sync Centre now loads its stats (was blank), live-notification and online-presence console errors resolved, and the yacht registry defaults to In Country sorted A–Z with a new sort dropdown (name, activity, status, flag, type, ETA/ETD)"
+      },
+      {
+        "type": "feature",
         "title": "Yacht detail gains Crew, Permits and Visas mini tabs; Add Yacht button restored on the registry; Manage Users — Client Portal tab grouped by vessel with positions (Captain/Owner/Representative/Purser), working Create login, bigger staff-table text and a real Delete; corrected users showing Invited when their login already works"
       },
       {
