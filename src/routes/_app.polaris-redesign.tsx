@@ -100,7 +100,9 @@ function PolarisRedesignApp() {
     yachts.find((y) => y.id === selectedId) ?? null;
   const initials = (user?.email ?? "?").slice(0, 2).toUpperCase();
 
-  const [leoOpen, setLeoOpen] = useState(true);
+  // Start collapsed — Leo's chat opens only when the user clicks the LEO pill,
+  // so it doesn't pop open on every page load / refresh.
+  const [leoOpen, setLeoOpen] = useState(false);
   const leoToken = session?.access_token ?? "";
 
   return (
