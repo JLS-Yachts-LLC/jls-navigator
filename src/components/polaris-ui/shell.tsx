@@ -55,12 +55,11 @@ export const NAV_GROUPS: NavGroup[] = [
         roles: ["global_admin", "crew_immigration", "captain"],
       },
       {
-        // Permit Command Centre + the per-type permit pages (gate pass, cruising,
-        // exit & entry, …) — route-backed, rendered inside this same chrome.
+        // Permits hub — Command Centre + one mini tab per permit type
+        // (gate pass, cruising, exit & entry, …).
         label: "Permits",
         icon: "license",
-        screen: "route-permits",
-        route: "/permits/command-centre",
+        screen: "permits",
         roles: ["global_admin", "crew_immigration", "captain"],
       },
     ],

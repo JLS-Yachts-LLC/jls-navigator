@@ -223,7 +223,7 @@ function BandSection({
 
 const ALL_PERMIT_TYPES = Object.keys(PERMIT_META) as PermitType[];
 
-export function PermitCommandCentre() {
+export function PermitCommandCentre({ onOpenType }: { onOpenType?: (t: PermitType) => void } = {}) {
   const [permits, setPermits] = useState<Permit[]>([]);
   const [yachts, setYachts] = useState<Yacht[]>([]);
   const [loading, setLoading] = useState(true);
@@ -413,13 +413,23 @@ export function PermitCommandCentre() {
       <div className="flex items-center gap-4 border-t border-border/40 bg-card/20 px-6 py-2">
         <span className="text-[11px] text-muted-foreground/50 font-medium uppercase tracking-wider">Quick links:</span>
         {ALL_PERMIT_TYPES.map((t) => (
-          <Link
-            key={t}
-            to={PERMIT_META[t].route as any}
-            className="flex items-center gap-1 text-[11px] text-muted-foreground/60 hover:text-foreground transition-colors"
-          >
-            {PERMIT_META[t].label} <ArrowRight className="h-2.5 w-2.5" />
-          </Link>
+          onOpenType ? (
+            <button
+              key={t}
+              onClick={() => onOpenType(t)}
+              className="flex items-center gap-1 text-[11px] text-muted-foreground/60 hover:text-foreground transition-colors"
+            >
+              {PERMIT_META[t].label} <ArrowRight className="h-2.5 w-2.5" />
+            </button>
+          ) : (
+            <Link
+              key={t}
+              to={PERMIT_META[t].route as any}
+              className="flex items-center gap-1 text-[11px] text-muted-foreground/60 hover:text-foreground transition-colors"
+            >
+              {PERMIT_META[t].label} <ArrowRight className="h-2.5 w-2.5" />
+            </Link>
+          )
         ))}
       </div>
     </div>

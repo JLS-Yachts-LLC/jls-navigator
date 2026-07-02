@@ -44,11 +44,13 @@ import { FeedbackPage } from "@/components/feedback/feedback-page";
 import { CrewPlacementPage } from "@/components/crew-placement/crew-placement-page";
 import { PortCallsHub } from "@/components/port-calls/PortCallsHub";
 import { OrbitHub } from "@/components/orbit/orbit-hub";
+import { PermitsHub } from "@/components/permits/permits-hub";
 
 /** Beta screens that simply embed an existing full app page (Beta styling is inherited
  *  from the shell's pds-embed content area). */
 const EMBED_SCREENS: Record<string, React.ComponentType> = {
   finance: FinancePage,
+  permits: PermitsHub,
   "crew-placement": CrewPlacementPage,
   "admin-dev": DevSettingsPage,
   "admin-changelog": ChangelogPage,
