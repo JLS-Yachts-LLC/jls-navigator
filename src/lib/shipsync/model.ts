@@ -113,6 +113,8 @@ export interface ShipSyncPackage {
   delivery_photo_url: string | null
   item_photo_url: string | null
   office_photo_url: string | null
+  delivery_note_no: string | null
+  documents: { name: string; url: string }[] | null
   boe_no: string | null
   trade_type: string | null
   supplier: string | null

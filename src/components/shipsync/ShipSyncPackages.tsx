@@ -10,7 +10,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Search, Loader2, Trash2, Camera } from "lucide-react";
+import { Plus, Search, Loader2, Trash2, Camera, FileText } from "lucide-react";
 import { StatusBadge, fmtDate } from "@/components/shipsync/shared";
 import { ALL_ZONES, STATUS_META, type PackageStatus, type ShipSyncPackage } from "@/lib/shipsync/model";
 import { createPackage, patchPackage, deletePackage, uploadShipSyncImage } from "@/lib/shipsync/data";
@@ -71,6 +71,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
         local_import: form.local_import ?? null,
         warehouse_zone: form.warehouse_zone ?? null,
         status: form.status ?? "in_office",
+        delivery_note_no: form.delivery_note_no?.trim() || null,
         received_by: form.received_by?.trim() || null,
         planned_delivery_date: form.planned_delivery_date || null,
         description: form.description?.trim() || null,
@@ -121,29 +122,45 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
         <Button size="sm" onClick={openNew} className="ml-auto h-9 gap-1.5"><Plus className="h-4 w-4" /> Check in package</Button>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-border bg-card">
+      <div className="overflow-x-auto rounded-xl border border-border bg-card">
         <table className="w-full text-sm">
           <thead><tr className="border-b border-border bg-muted/40 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-            {["Barcode", "Boat", "Owner", "Courier", "Zone", "Note", "Driver", "Received", "Status", ""].map((h) => (
-              <th key={h} className="px-3 py-2.5 whitespace-nowrap">{h}</th>
+            {["Barcode", "Boat", "Consignee", "Courier", "# Pkgs", "Type", "Delivery Note", "Driver", "Zone", "Received", "Delivered", "Documents", "Status", ""].map((h, i) => (
+              <th key={`${h}-${i}`} className="px-3 py-2.5 whitespace-nowrap">{h}</th>
             ))}
           </tr></thead>
           <tbody>
             {filtered.length === 0 ? (
-              <tr><td colSpan={10} className="px-4 py-12 text-center text-sm text-muted-foreground">No packages match.</td></tr>
+              <tr><td colSpan={14} className="px-4 py-12 text-center text-sm text-muted-foreground">No packages match.</td></tr>
             ) : filtered.map((p) => {
               const note = data.notes.find((n) => n.id === p.delivery_note_id);
               const driver = data.drivers.find((d) => d.id === p.driver_id);
+              const docs = p.documents ?? [];
               return (
                 <tr key={p.id} onClick={() => openEdit(p)} className="group cursor-pointer border-b border-border/40 hover:bg-accent/20">
-                  <td className="px-3 py-2.5 font-mono text-[12px] text-foreground">{p.barcode ?? "—"}</td>
-                  <td className="px-3 py-2.5 font-medium">{p.boat_name ?? "—"}</td>
-                  <td className="px-3 py-2.5 text-muted-foreground">{p.package_owner ?? "—"}</td>
-                  <td className="px-3 py-2.5 text-muted-foreground">{p.courier ?? "—"}</td>
+                  <td className="px-3 py-2.5 font-mono text-[12px] text-foreground whitespace-nowrap">{p.barcode ?? "—"}</td>
+                  <td className="px-3 py-2.5 font-medium whitespace-nowrap">{p.boat_name ?? "—"}</td>
+                  <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{p.package_owner ?? "—"}</td>
+                  <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{p.courier ?? "—"}</td>
+                  <td className="px-3 py-2.5 tabular-nums text-muted-foreground text-center">{p.num_packages ?? 1}</td>
+                  <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{p.local_import ?? "—"}</td>
+                  <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{p.delivery_note_no ?? note?.number ?? "—"}</td>
+                  <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{driver?.name ?? "—"}</td>
                   <td className="px-3 py-2.5 text-muted-foreground">{p.warehouse_zone ?? "—"}</td>
-                  <td className="px-3 py-2.5 tabular-nums text-muted-foreground">{note?.number ?? "—"}</td>
-                  <td className="px-3 py-2.5 text-muted-foreground">{driver?.name ?? "—"}</td>
-                  <td className="px-3 py-2.5 tabular-nums text-muted-foreground">{fmtDate(p.received_at)}</td>
+                  <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{fmtDate(p.received_at)}</td>
+                  <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{fmtDate(p.delivered_at)}</td>
+                  <td className="px-3 py-2.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                    {docs.length === 0 ? <span className="text-muted-foreground">—</span> : (
+                      <div className="flex flex-wrap gap-1.5">
+                        {docs.map((d, i) => (
+                          <a key={i} href={d.url} target="_blank" rel="noopener noreferrer" title={d.name}
+                            className="inline-flex max-w-[120px] items-center gap-1 truncate rounded border border-border px-1.5 py-0.5 text-[11px] text-primary hover:bg-primary/5">
+                            <FileText className="h-3 w-3 shrink-0" /> <span className="truncate">{d.name}</span>
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                  </td>
                   <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
                     <Select value={p.status} onValueChange={(v) => quickStatus(p, v as PackageStatus)}>
                       <SelectTrigger className="h-7 w-[132px] border-none bg-transparent p-0 hover:bg-accent/40"><StatusBadge status={p.status} /></SelectTrigger>
@@ -196,6 +213,8 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
               <Select value={form.status ?? "in_office"} onValueChange={(v) => set({ status: v as PackageStatus })}>
                 <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
                 <SelectContent>{STATUS_OPTIONS.map((s) => <SelectItem key={s} value={s}>{STATUS_META[s].label}</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-1.5"><Label className="text-xs">Delivery note no.</Label>
+              <Input value={form.delivery_note_no ?? ""} onChange={(e) => set({ delivery_note_no: e.target.value })} className="h-9" placeholder="e.g. 1962" /></div>
             <div className="space-y-1.5"><Label className="text-xs">Received by (JLS)</Label>
               <Input value={form.received_by ?? ""} onChange={(e) => set({ received_by: e.target.value })} className="h-9" /></div>
             <div className="space-y-1.5"><Label className="text-xs">Planned delivery</Label>
