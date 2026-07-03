@@ -163,7 +163,7 @@ const LINE_PITCH = 10.2              // 6pt Arial + 3.3pt paragraph spacing
 const LINES_PER_PAGE = 35
 const SUBTOTAL_BAR_Y = 602.4
 const SUBTOTAL_BAR_H = 17.04
-const GRAND_BAR_H = 9.6              // slimmer bar directly under the subtotal bar
+const GRAND_BAR_H = 8.2              // slimmer bar directly under the subtotal bar
 const ITEM_SIZE = 6                  // item rows are 6pt Arial in the template
 const LABEL_SIZE = 7                 // everything else is 7pt
 
@@ -354,11 +354,11 @@ export async function renderInvoicePdf(t: TransformedInvoice, company: Company, 
     if (hasGrandBar) {
       const gTop = SUBTOTAL_BAR_Y + SUBTOTAL_BAR_H
       bar(page, TBL_X, gTop, TBL_W, GRAND_BAR_H)
-      const gY = gTop + GRAND_BAR_H / 2 + 2.2
-      drawCenter(page, `Grand ${barCurrencyLabel}`, (TBL_X + COL_X[3]) / 2, gY, { size: 6, color: WHITE })
-      drawRight(page, fmtNum(grand.amount), COL_X[4] - CELL_PAD, gY, { size: 6, color: WHITE })
-      drawRight(page, fmtNum(grand.vat), COL_X[6] - CELL_PAD, gY, { size: 6, color: WHITE })
-      drawRight(page, fmtNum(grand.total), COL_X[7] - CELL_PAD, gY, { size: 6, color: WHITE })
+      const gY = gTop + GRAND_BAR_H / 2 + 2.1
+      drawCenter(page, `Grand ${barCurrencyLabel}`, (TBL_X + COL_X[3]) / 2, gY, { size: 5.8, color: WHITE })
+      drawRight(page, fmtNum(grand.amount), COL_X[4] - CELL_PAD, gY, { size: 5.8, color: WHITE })
+      drawRight(page, fmtNum(grand.vat), COL_X[6] - CELL_PAD, gY, { size: 5.8, color: WHITE })
+      drawRight(page, fmtNum(grand.total), COL_X[7] - CELL_PAD, gY, { size: 5.8, color: WHITE })
     }
 
     // ── BANK DETAILS (bottom left, every page) ──
