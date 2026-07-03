@@ -193,6 +193,64 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
     }
   }
 
+  // Template importer: `?fetch-template=<driveItemId>` copies one of the QB
+  // document Word templates from the production@jlsyachts.com OneDrive into the
+  // private qb_templates table (service-role only), so the native doc-gen layout
+  // can be matched to the real templates. Locked to the exact file IDs from the
+  // n8n workflows, and no file content is ever returned to the caller — the
+  // response carries only the file name and size.
+  {
+    const tplId = url.searchParams.get('fetch-template')
+    if (tplId) {
+      const QB_TEMPLATE_IDS = new Set([
+        '01TFJIWC222XD5BFRFLJBLNHKEUROOHDUL', '01TFJIWC2IHFQRYQCCZVBLY5THQXT7YGCF',
+        '01TFJIWC2KFEL5MRDMHRBKWUQSF7EV4O3D', '01TFJIWC2P6I4OZULRSRDYOV63C23XQDFC',
+        '01TFJIWC34KJCTESMTQ5H357DC4VIU2EP7', '01TFJIWC3F2U537O35RJEIZS2RUZHFDJP6',
+        '01TFJIWC3IF7IYPZ22KRDKQEOBQKSMECFU', '01TFJIWC3OHXDSIUS3JNB3FHX2QE4EAEBR',
+        '01TFJIWC3PK3QNK6MU3ZFYO2APKQF6QTLT', '01TFJIWC3VSK5BOMM67FFYO4HEMYK2ZUE2',
+        '01TFJIWC4UMQSLUHKIBNCZ3PL2FYD47NIP', '01TFJIWC4X3V3ANN7275BJF3AQMYGHJULY',
+        '01TFJIWC6KIY4IMWQXHBEJKBGPGJRSHVJJ', '01TFJIWC6KKYBO4QSPMNHJT4LMUP25FDCW',
+        '01TFJIWC6YNOVCN5VUEZE3MCY3222WNL6M', '01TFJIWC7E3JZZIO55NNDL76QLTQAK2FTC',
+        '01TFJIWCY7GAIY2S3KBBG2TWYD45VWGWQU', '01TFJIWCYDX3MW3YVBRVHZ4ECDTCA2FVXY',
+      ])
+      if (!QB_TEMPLATE_IDS.has(tplId)) {
+        return new Response(JSON.stringify({ ok: false, error: 'Unknown template id' }), {
+          status: 404, headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      try {
+        const { getSpConfig, getGraphToken } = await import('./lib/sharepoint-sync.server')
+        const { supabaseAdmin } = await import('./integrations/supabase/client.server')
+        const cfg = await getSpConfig()
+        const token = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret)
+        const base = `https://graph.microsoft.com/v1.0/users/production@jlsyachts.com/drive/items/${tplId}`
+        const metaRes = await fetch(base, { headers: { Authorization: `Bearer ${token}` } })
+        if (!metaRes.ok) throw new Error(`Graph metadata ${metaRes.status}: ${(await metaRes.text()).slice(0, 300)}`)
+        const meta: any = await metaRes.json()
+        const fileRes = await fetch(`${base}/content`, { headers: { Authorization: `Bearer ${token}` } })
+        if (!fileRes.ok) throw new Error(`Graph content ${fileRes.status}`)
+        const buf = new Uint8Array(await fileRes.arrayBuffer())
+        let b64 = ''
+        for (let i = 0; i < buf.length; i += 0x8000) {
+          b64 += String.fromCharCode(...buf.subarray(i, i + 0x8000))
+        }
+        b64 = btoa(b64)
+        const { error } = await (supabaseAdmin as any).from('qb_templates').upsert({
+          id: tplId, name: meta.name ?? tplId, size_bytes: buf.length, content_b64: b64,
+          fetched_at: new Date().toISOString(),
+        })
+        if (error) throw new Error(error.message)
+        return new Response(JSON.stringify({ ok: true, name: meta.name, size: buf.length }), {
+          status: 200, headers: { 'Content-Type': 'application/json' },
+        })
+      } catch (e) {
+        return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), {
+          status: 500, headers: { 'Content-Type': 'application/json' },
+        })
+      }
+    }
+  }
+
   // Manual AIS run: `?ais=1` collects live vessel positions from AISStream and
   // writes them to the yachts table, returning the JSON result.
   if (url.searchParams.get('ais') === '1') {
