@@ -164,7 +164,7 @@ export function transformEstimate(estimate: any, extras?: { trnNo?: string }): Q
   return {
     customer: {
       name: estimate.CustomerRef?.name || 'Customer',
-      address: [billAddr.Line1, billAddr.Line2, billAddr.Line3, billAddr.City].filter(Boolean).join(' ').trim(),
+      address: [billAddr.Line1, billAddr.Line2, billAddr.Line3].filter(Boolean).join(' ').trim(),
       emirates: billAddr.City || 'Dubai',
       trnNo: extras?.trnNo ?? '',
       invoiceNo: String(docNumber),
@@ -270,20 +270,23 @@ export async function buildQuotationPdf(q: QuoteData, opts?: { background?: Uint
   const rows: Row[] = []
   for (const it of q.items) {
     const lines = wrap(it.description, descWidth, coords.single.itemRows.cols.description?.size ?? 6)
+    // Word vertically centres the row, so qty/amounts sit on the middle line of
+    // a multi-line description (matches the n8n output).
+    const numLine = Math.floor((lines.length - 1) / 2)
     lines.forEach((ln, i) => {
       rows.push({
         cells: {
-          qty: i === 0 && it.qty !== '' ? String(it.qty) : '',
+          qty: i === numLine && it.qty !== '' ? String(it.qty) : '',
           description: ln,
-          unitRate: i === 0 && !it.isDescriptionOnly ? fmt(it.unitRate) : '',
-          amount: i === 0 && !it.isDescriptionOnly ? fmt(it.amount) : '',
-          vatPercent: i === 0 && !it.isDescriptionOnly ? it.vatPercent : '',
-          vatValue: i === 0 && !it.isDescriptionOnly ? fmt(it.vatValue) : '',
-          totalAmount: i === 0 && !it.isDescriptionOnly ? fmt(it.totalAmount) : '',
+          unitRate: i === numLine && !it.isDescriptionOnly ? fmt(it.unitRate) : '',
+          amount: i === numLine && !it.isDescriptionOnly ? fmt(it.amount) : '',
+          vatPercent: i === numLine && !it.isDescriptionOnly ? it.vatPercent : '',
+          vatValue: i === numLine && !it.isDescriptionOnly ? fmt(it.vatValue) : '',
+          totalAmount: i === numLine && !it.isDescriptionOnly ? fmt(it.totalAmount) : '',
         },
-        subAmount: i === 0 && !it.isDescriptionOnly ? it.amount : 0,
-        subVat: i === 0 && !it.isDescriptionOnly ? it.vatValue : 0,
-        subTotal: i === 0 && !it.isDescriptionOnly ? it.totalAmount : 0,
+        subAmount: i === numLine && !it.isDescriptionOnly ? it.amount : 0,
+        subVat: i === numLine && !it.isDescriptionOnly ? it.vatValue : 0,
+        subTotal: i === numLine && !it.isDescriptionOnly ? it.totalAmount : 0,
       })
     })
   }
@@ -313,13 +316,14 @@ export async function buildQuotationPdf(q: QuoteData, opts?: { background?: Uint
     bank: q.bank.bankName,
     acct: q.bank.accountNumber,
     iban: q.bank.iban,
+    // Zero values render blank, matching the n8n output.
     grandtotalamount: fmtAlways(q.grandAmount),
-    grandtotalvat: fmtAlways(q.grandVat),
+    grandtotalvat: fmt(q.grandVat),
     grandtotalltotal: fmtAlways(q.grandTotal),
-    '5%value': fmtAlways(q.vat5Base),
-    '0%value': fmtAlways(q.vat0Base),
-    nontaxablevalue: fmtAlways(q.nonTaxable),
-    '5%vatvalue': fmtAlways(q.vat5Value),
+    '5%value': fmt(q.vat5Base),
+    '0%value': fmt(q.vat0Base),
+    nontaxablevalue: fmt(q.nonTaxable),
+    '5%vatvalue': fmt(q.vat5Value),
     totalamountfinal: fmtAlways(q.grandTotal),
     sign: variant === 'aedconv' ? q.convertedSign : variant === 'usdeur' ? (CURRENCY_SIGN[q.displayCurrency.toUpperCase()] ?? q.displayCurrency) : '',
     totalamountfinal1: q.convertedTotal != null ? fmtAlways(+q.convertedTotal.toFixed(2)) : '',
@@ -352,7 +356,8 @@ export async function buildQuotationPdf(q: QuoteData, opts?: { background?: Uint
     // Address: wrap up to 3 lines below its anchor.
     const addrField = pc.fields['address']
     if (addrField) {
-      wrap(q.customer.address, 200, addrField.size).slice(0, 3).forEach((ln, i) => {
+      // 170pt keeps the wrap inside the QUOTE TO box border.
+      wrap(q.customer.address, 170, addrField.size).slice(0, 3).forEach((ln, i) => {
         draw(page, { ...addrField, y: addrField.y - i * ADDRESS_LINE_PITCH }, ln)
       })
     }
@@ -372,7 +377,7 @@ export async function buildQuotationPdf(q: QuoteData, opts?: { background?: Uint
     // Page totals bar (black → white text). Mid pages use the "…1" fields.
     const t = (base: string) => pc.fields[base] ?? pc.fields[`${base}1`]
     if (t('totalamount')) draw(page, t('totalamount')!, fmtAlways(subA), true)
-    if (t('totalvat')) draw(page, t('totalvat')!, fmtAlways(subV), true)
+    if (t('totalvat')) draw(page, t('totalvat')!, fmt(subV), true)
     if (t('totalltotalamount')) draw(page, t('totalltotalamount')!, fmtAlways(subT), true)
 
     // Page numbers are baked as "Page 1 of 1" / "Page 1 of 2" / "Page 2 of 2" —
