@@ -5,6 +5,28 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.21.0",
+    "date": "2026-07-03",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "QuickBooks webhook now runs natively on the platform — signature verification, retry-safe dedup, invoice number self-heal, Pro-Forma classification and instant document sync into Finance, with n8n kept in the loop for document generation until those flows are ported"
+      },
+      {
+        "type": "fix",
+        "title": "Local Packages headers match Monday board wording"
+      },
+      {
+        "type": "fix",
+        "title": "Order Local Packages columns to match the Monday board"
+      },
+      {
+        "type": "feature",
+        "title": "Local Packages — Monday columns (# pkgs, type, delivered, DN no, documents)"
+      }
+    ]
+  },
+  {
     "version": "2.20.0",
     "date": "2026-07-02",
     "entries": [

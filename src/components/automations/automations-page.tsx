@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchAllRows } from "@/lib/fetch-all";
 import { Button } from "@/components/ui/button";
@@ -6,9 +6,14 @@ import { Input } from "@/components/ui/input";
 import {
   Zap, Clock, Webhook, MousePointerClick, Activity, Search, Loader2,
   CheckCircle2, XCircle, CircleDot, Calendar, ExternalLink, PlugZap,
+  ListOrdered, History, ChevronDown,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import {
+  getAutomationSteps, getAutomationRuns,
+  type StepsResult, type RunsResult,
+} from "@/lib/automations-hub.server";
 
 type Automation = {
   id: string;
@@ -16,6 +21,7 @@ type Automation = {
   name: string;
   description: string | null;
   category: string | null;
+  department: string | null;
   trigger_type: "schedule" | "webhook" | "event" | "manual";
   schedule: string | null;
   cron: string | null;
@@ -27,6 +33,9 @@ type Automation = {
   last_status: string | null;
   last_detail: string | null;
 };
+
+// Department mini tabs — fixed order; "All" first, Platform last.
+const DEPARTMENTS = ["Finance", "Immigration", "Logistics", "Training", "Yacht IT Solutions", "Operations", "Platform"] as const;
 
 const TRIGGER_META: Record<string, { label: string; icon: typeof Clock; color: string }> = {
   schedule: { label: "Scheduled", icon: Clock,             color: "bg-blue-500/15 text-blue-400" },
@@ -54,6 +63,7 @@ export function AutomationsPage() {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  const [dept, setDept] = useState<string>("All");
 
   useEffect(() => { void load(); }, []);
 
@@ -98,11 +108,20 @@ export function AutomationsPage() {
     setBusy(null);
   }
 
+  const deptOf = (a: Automation) => a.department ?? "Platform";
+
+  const deptCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const a of items) m.set(deptOf(a), (m.get(deptOf(a)) ?? 0) + 1);
+    return m;
+  }, [items]);
+
   const filtered = useMemo(() => items.filter(a => {
+    if (dept !== "All" && deptOf(a) !== dept) return false;
     if (!q.trim()) return true;
     const s = q.toLowerCase();
-    return [a.name, a.description, a.category, a.schedule].filter(Boolean).join(" ").toLowerCase().includes(s);
-  }), [items, q]);
+    return [a.name, a.description, a.category, a.department, a.schedule].filter(Boolean).join(" ").toLowerCase().includes(s);
+  }), [items, q, dept]);
 
   const groups = useMemo(() => {
     const m = new Map<string, Automation[]>();
@@ -148,6 +167,22 @@ export function AutomationsPage() {
             <div className={cn("text-lg font-bold", s.color)}>{s.value}</div>
             <div className="text-xs text-muted-foreground">{s.label}</div>
           </div>
+        ))}
+      </div>
+
+      {/* Department mini tabs */}
+      <div className="flex items-center gap-1 overflow-x-auto border-b border-border/60 bg-card/30 px-4">
+        {["All", ...DEPARTMENTS].map((d) => (
+          <button key={d} onClick={() => setDept(d)}
+                  className={cn(
+                    "flex shrink-0 items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition",
+                    dept === d ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+                  )}>
+            {d}
+            <span className="rounded-full bg-muted/60 px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
+              {d === "All" ? items.length : (deptCounts.get(d) ?? 0)}
+            </span>
+          </button>
         ))}
       </div>
 
@@ -209,6 +244,8 @@ export function AutomationsPage() {
                             {rs.hit > 0 && <span className="rounded-full bg-violet-500/15 px-2 py-0.5 text-[10px] font-medium text-violet-500">{rs.hit} hit{rs.hit !== 1 ? "s" : ""}</span>}
                           </div>
                         )}
+                        {/* Step-by-step + full run log */}
+                        <AutomationDetail automation={a} />
                       </div>
                       {/* Enable toggle */}
                       <button
