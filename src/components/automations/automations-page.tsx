@@ -234,6 +234,7 @@ export function AutomationsPage() {
                         </div>
                         {/* Per-automation configuration (e.g. email recipients) */}
                         {a.key === "weekly-fleet-finance" && <RecipientsEditor automation={a} onSaved={(cfg) => setItems(prev => prev.map(x => x.id === a.id ? { ...x, config: cfg } : x))} />}
+                        {a.key === "qb-invoice-pdf" && <InvoicePdfTester />}
                         {/* Run metrics — last 30 days */}
                         {rs && rs.runs > 0 && (
                           <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -421,6 +422,51 @@ function AutomationDetail({ automation }: { automation: Automation }) {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// Tester for the native QB Invoice PDF: preview the rendered document for any
+// QuickBooks invoice id (no writes), or force a full generate-and-attach run.
+function InvoicePdfTester() {
+  const [id, setId] = useState("");
+  const [busy, setBusy] = useState<"preview" | "attach" | null>(null);
+
+  async function call(mode: "preview" | "attach") {
+    if (!id.trim()) return;
+    setBusy(mode);
+    try {
+      const { data: { session } } = await (supabase as any).auth.getSession();
+      const token = session?.access_token ?? "";
+      const url = `/api/qb/invoice-pdf?id=${encodeURIComponent(id.trim())}${mode === "attach" ? "&force=1" : ""}`;
+      const res = await fetch(url, {
+        method: mode === "preview" ? "GET" : "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (mode === "preview") {
+        if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error ?? `HTTP ${res.status}`);
+        const blob = await res.blob();
+        window.open(URL.createObjectURL(blob), "_blank");
+      } else {
+        const j = await res.json();
+        if (!res.ok || !j.ok) throw new Error(j.detail ?? j.error ?? `HTTP ${res.status}`);
+        toast.success(`${j.detail}${j.deletedOld ? ` — ${j.deletedOld} old attachment(s) replaced` : ""}`);
+      }
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed");
+    } finally { setBusy(null); }
+  }
+
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2">
+      <span className="text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">Test with invoice id</span>
+      <Input value={id} onChange={(e) => setId(e.target.value)} placeholder="QBO invoice id, e.g. 55610" className="h-7 w-48 text-xs" />
+      <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" disabled={!id.trim() || !!busy} onClick={() => void call("preview")}>
+        {busy === "preview" && <Loader2 className="h-3 w-3 animate-spin" />} Preview PDF
+      </Button>
+      <Button size="sm" className="h-7 gap-1 text-xs" disabled={!id.trim() || !!busy} onClick={() => void call("attach")}>
+        {busy === "attach" && <Loader2 className="h-3 w-3 animate-spin" />} Generate & attach now
+      </Button>
     </div>
   );
 }
