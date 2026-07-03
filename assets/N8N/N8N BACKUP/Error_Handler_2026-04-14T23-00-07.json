@@ -1,0 +1,167 @@
+{
+  "updatedAt": "2026-04-08T04:59:47.866Z",
+  "createdAt": "2026-02-25T02:38:38.104Z",
+  "id": "o8tL_ggEgNkEdCHQXehyt",
+  "name": "Error Handler",
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        -592,
+        16
+      ],
+      "id": "ae0f4ba5-8047-4a75-b625-071823d746ba",
+      "name": "Workflow Error Trigger",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "jsCode": "const errorData = $input.first().json;\n\n// Extract error details safely\nconst workflowName = errorData.workflow?.name || 'Unknown Workflow';\nconst workflowId   = errorData.workflow?.id   || 'N/A';\nconst executionId  = errorData.execution?.id  || 'N/A';\nconst lastNode     = errorData.execution?.lastNodeExecuted || 'Unknown Node';\nconst errorMessage = errorData.execution?.error?.message  || 'No error message available';\nconst errorTime    = new Date().toLocaleString('en-US', {\n  timeZone: 'Asia/Dubai',\n  year: 'numeric', month: 'long', day: 'numeric',\n  hour: '2-digit', minute: '2-digit', second: '2-digit'\n});\n\n// ─────────────────────────────────────────────────────────────\n// 🎨 Workflow themes (color + icon per workflow)\n// ─────────────────────────────────────────────────────────────\nconst workflowThemes = {\n  'QB (Receive Payment)':    { color: '#27ae60', icon: '💰', label: 'Receive Payment'    },\n  'QB Invoice':              { color: '#2980b9', icon: '🧾', label: 'Invoice'            },\n  'QB (All)':                { color: '#8e44ad', icon: '📦', label: 'All Records'        },\n  'QB (Purchase Order)':     { color: '#e67e22', icon: '🛒', label: 'Purchase Order'     },\n  'QB (Quotation/Estimate)': { color: '#16a085', icon: '📋', label: 'Quotation/Estimate' }\n};\n\nconst theme = workflowThemes[workflowName] || { color: '#e74c3c', icon: '⚙️', label: workflowName };\n\n// ─────────────────────────────────────────────────────────────\n// 🚨 Severity Logic\n// - WARNING  → shown for ALL node failures by default (🟡)\n// - CRITICAL → only if the error message contains specific keywords\n// ─────────────────────────────────────────────────────────────\nconst criticalKeywords = ['timeout', 'connection refused', 'authentication', 'unauthorized', '500', 'ECONNREFUSED', 'Cannot read', 'null', 'undefined'];\nconst isCritical = criticalKeywords.some(k => errorMessage.toLowerCase().includes(k.toLowerCase()));\n\nconst severity      = isCritical ? '🔴 CRITICAL' : '🟡 WARNING';\nconst severityColor = isCritical ? '#e74c3c'      : '#f39c12';\nconst severityBg    = isCritical ? '#fff5f5'      : '#fffbf0';\nconst severityBorder= isCritical ? '#e74c3c'      : '#f39c12';\n\n// ─────────────────────────────────────────────────────────────\n// 📧 HTML Email Body\n// ─────────────────────────────────────────────────────────────\nconst htmlBody = `\n<!DOCTYPE html>\n<html>\n<head>\n  <style>\n    body { font-family: Arial, sans-serif; background: #f4f4f4; margin: 0; padding: 20px; }\n    .container { background: white; border-radius: 8px; padding: 30px; max-width: 650px; margin: auto; border-top: 5px solid ${theme.color}; }\n    .header { text-align: center; margin-bottom: 25px; }\n    .header h1 { color: ${theme.color}; font-size: 24px; margin: 0; }\n    .header p { color: #666; margin: 5px 0 0; font-size: 14px; }\n    .severity-badge { display: inline-block; background: ${severityColor}; color: white; padding: 4px 12px; border-radius: 20px; font-size: 13px; font-weight: bold; margin-bottom: 20px; }\n    .info-table { width: 100%; border-collapse: collapse; margin: 20px 0; }\n    .info-table tr { border-bottom: 1px solid #eee; }\n    .info-table td { padding: 10px 8px; font-size: 14px; }\n    .info-table td:first-child { font-weight: bold; color: #555; width: 38%; }\n    .info-table td:last-child { color: #333; }\n    .error-box { background: ${isCritical ? '#fff5f5' : '#fffbf0'}; border: 1px solid ${isCritical ? '#fcc' : '#ffe0a0'}; border-left: 4px solid ${isCritical ? '#e74c3c' : '#f39c12'}; border-radius: 4px; padding: 15px; margin: 20px 0; }\n    .error-box h3 { color: ${isCritical ? '#c0392b' : '#d68910'}; margin: 0 0 8px; font-size: 14px; }\n    .error-box pre { margin: 0; color: #333; font-size: 13px; white-space: pre-wrap; word-break: break-word; }\n    .btn { display: inline-block; background: #2c3e50; color: white; padding: 12px 24px; border-radius: 5px; text-decoration: none; font-size: 14px; font-weight: bold; margin-top: 15px; }\n    .footer { margin-top: 30px; padding-top: 15px; border-top: 1px solid #eee; font-size: 12px; color: #999; text-align: center; }\n    .node-highlight { background: #ffeaa7; padding: 2px 8px; border-radius: 3px; font-weight: bold; color: #2d3436; }\n    .wf-strip { background: ${theme.color}15; border-left: 4px solid ${theme.color}; padding: 10px 15px; border-radius: 4px; margin-bottom: 20px; font-size: 14px; color: #333; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n\n    <div class=\"header\">\n      <h1>${theme.icon} Workflow Error Alert</h1>\n      <p>An error occurred in your n8n automation</p>\n    </div>\n\n    <div style=\"text-align:center\">\n      <span class=\"severity-badge\">${severity}</span>\n    </div>\n\n    <div class=\"wf-strip\">\n      ${isCritical ? '🚨' : '⚠️'} The <strong>${workflowName}</strong> workflow failed at node <span class=\"node-highlight\">${lastNode}</span>.\n      ${isCritical ? 'Immediate attention required.' : 'Please review when possible.'}\n    </div>\n\n    <table class=\"info-table\">\n      <tr>\n        <td>🏷️ Workflow Name</td>\n        <td><strong>${workflowName}</strong></td>\n      </tr>\n      <tr>\n        <td>🔖 Workflow ID</td>\n        <td>${workflowId}</td>\n      </tr>\n      <tr>\n        <td>🆔 Execution ID</td>\n        <td>${executionId}</td>\n      </tr>\n      <tr>\n        <td>💥 Failed Node</td>\n        <td><span class=\"node-highlight\">${lastNode}</span></td>\n      </tr>\n      <tr>\n        <td>🕐 Error Time </td>\n        <td>${errorTime}</td>\n      </tr>\n    </table>\n\n    <div class=\"error-box\">\n      <h3>${isCritical ? '❌' : '⚠️'} Error Message</h3>\n      <pre>${errorMessage}</pre>\n    </div>\n\n    <p style=\"font-size:14px; color:#555;\">Please check the execution log in n8n for full details and fix the issue as soon as possible.</p>\n\n    <div style=\"text-align:center\">\n      <a class=\"btn\" href=\"https://n8n.jlsyachts.com/workflow/${workflowId}/executions/${executionId}\" target=\"_blank\">🔍 View Execution in n8n</a>\n    </div>\n\n    <div class=\"footer\">\n      This is an automated error alert from your n8n workflow system.<br/>\n      Workflow: ${workflowName} | Time: ${errorTime}\n    </div>\n\n  </div>\n</body>\n</html>\n`;\n\n// ─────────────────────────────────────────────────────────────\n// 📄 Plain text fallback\n// ─────────────────────────────────────────────────────────────\nconst textBody = `\nWORKFLOW ERROR ALERT\n====================\nSeverity     : ${severity}\nWorkflow     : ${workflowName}\nWorkflow ID  : ${workflowId}\nExecution ID : ${executionId}\nFailed Node  : ${lastNode}\nError Time   : ${errorTime}\n\nERROR MESSAGE:\n${errorMessage}\n\nView in n8n:\nhttps://n8n.jlsyachts.com/workflow/${workflowId}/executions/${executionId}\n`;\n\nreturn [{\n  json: {\n    workflowName,\n    workflowId,\n    executionId,\n    lastNode,\n    errorMessage,\n    errorTime,\n    severity,\n    isCritical,\n    htmlBody,\n    textBody,\n    emailSubject: `${severity} | ${workflowName} | Node: ${lastNode} Failed`\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -368,
+        16
+      ],
+      "id": "ea239fed-93c4-4943-9f9e-11f6135b93f9",
+      "name": "Format Error Details"
+    }
+  ],
+  "connections": {
+    "Workflow Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Format Error Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Error Details": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false,
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {
+    "Workflow Error Trigger": [
+      {
+        "json": {
+          "execution": {
+            "id": "38040",
+            "url": "https://n8n.jlsyachts.com/workflow/CjiiEae8RJpvf2Tn/executions/38040",
+            "error": {
+              "executionId": "38041",
+              "workflowId": "Oh9mx78sghpTd8bT",
+              "message": "invalid syntax",
+              "stack": "Error: invalid syntax\n    at Expression.renderExpression (/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-workflow@file+packages+workflow/node_modules/n8n-workflow/src/expression.ts:467:36)\n    at Expression.resolveSimpleParameterValue (/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-workflow@file+packages+workflow/node_modules/n8n-workflow/src/expression.ts:444:28)\n    at Expression.getParameterValue (/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-workflow@file+packages+workflow/node_modules/n8n-workflow/src/expression.ts:645:16)\n    at ExecuteContext._getNodeParameter (/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-core@file+packages+core_@opentelemetry+api@1.9.0_@opentelemetry+sdk-trace-base@1.30_ec37920eb95917b28efaa783206b20f3/node_modules/n8n-core/src/execution-engine/node-execution-context/node-execution-context.ts:455:37)\n    at ExecuteContext.getNodeParameter (/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-core@file+packages+core_@opentelemetry+api@1.9.0_@opentelemetry+sdk-trace-base@1.30_ec37920eb95917b28efaa783206b20f3/node_modules/n8n-core/src/execution-engine/node-execution-context/execute-context.ts:128:9)\n    at ExecuteContext.execute (/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/nodes/HttpRequest/V3/HttpRequestV3.node.ts:189:22)\n    at WorkflowExecute.executeNode (/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-core@file+packages+core_@opentelemetry+api@1.9.0_@opentelemetry+sdk-trace-base@1.30_ec37920eb95917b28efaa783206b20f3/node_modules/n8n-core/src/execution-engine/workflow-execute.ts:1045:31)\n    at WorkflowExecute.runNode (/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-core@file+packages+core_@opentelemetry+api@1.9.0_@opentelemetry+sdk-trace-base@1.30_ec37920eb95917b28efaa783206b20f3/node_modules/n8n-core/src/execution-engine/workflow-execute.ts:1226:22)\n    at /usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-core@file+packages+core_@opentelemetry+api@1.9.0_@opentelemetry+sdk-trace-base@1.30_ec37920eb95917b28efaa783206b20f3/node_modules/n8n-core/src/execution-engine/workflow-execute.ts:1662:38\n    at /usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-core@file+packages+core_@opentelemetry+api@1.9.0_@opentelemetry+sdk-trace-base@1.30_ec37920eb95917b28efaa783206b20f3/node_modules/n8n-core/src/execution-engine/workflow-execute.ts:2297:11"
+            },
+            "lastNodeExecuted": "Call 'QB Invoice'",
+            "mode": "webhook",
+            "executionContext": {
+              "version": 1,
+              "establishedAt": 1772019074130,
+              "source": "webhook",
+              "triggerNode": {
+                "name": "Webhook",
+                "type": "n8n-nodes-base.webhook"
+              }
+            }
+          },
+          "workflow": {
+            "id": "CjiiEae8RJpvf2Tn",
+            "name": "QB (All)"
+          }
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "versionId": "2d734f11-66a0-4e93-b94f-2786f7862904",
+  "activeVersionId": "2d734f11-66a0-4e93-b94f-2786f7862904",
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-02-25T02:38:38.139Z",
+      "createdAt": "2026-02-25T02:38:38.139Z",
+      "role": "workflow:owner",
+      "workflowId": "o8tL_ggEgNkEdCHQXehyt",
+      "projectId": "7K0b7BEJpzNXLaZY"
+    }
+  ],
+  "activeVersion": {
+    "updatedAt": "2026-04-08T04:59:50.000Z",
+    "createdAt": "2026-04-08T04:59:47.870Z",
+    "versionId": "2d734f11-66a0-4e93-b94f-2786f7862904",
+    "workflowId": "o8tL_ggEgNkEdCHQXehyt",
+    "nodes": [
+      {
+        "parameters": {},
+        "type": "n8n-nodes-base.errorTrigger",
+        "typeVersion": 1,
+        "position": [
+          -592,
+          16
+        ],
+        "id": "ae0f4ba5-8047-4a75-b625-071823d746ba",
+        "name": "Workflow Error Trigger",
+        "notesInFlow": false
+      },
+      {
+        "parameters": {
+          "jsCode": "const errorData = $input.first().json;\n\n// Extract error details safely\nconst workflowName = errorData.workflow?.name || 'Unknown Workflow';\nconst workflowId   = errorData.workflow?.id   || 'N/A';\nconst executionId  = errorData.execution?.id  || 'N/A';\nconst lastNode     = errorData.execution?.lastNodeExecuted || 'Unknown Node';\nconst errorMessage = errorData.execution?.error?.message  || 'No error message available';\nconst errorTime    = new Date().toLocaleString('en-US', {\n  timeZone: 'Asia/Dubai',\n  year: 'numeric', month: 'long', day: 'numeric',\n  hour: '2-digit', minute: '2-digit', second: '2-digit'\n});\n\n// ─────────────────────────────────────────────────────────────\n// 🎨 Workflow themes (color + icon per workflow)\n// ─────────────────────────────────────────────────────────────\nconst workflowThemes = {\n  'QB (Receive Payment)':    { color: '#27ae60', icon: '💰', label: 'Receive Payment'    },\n  'QB Invoice':              { color: '#2980b9', icon: '🧾', label: 'Invoice'            },\n  'QB (All)':                { color: '#8e44ad', icon: '📦', label: 'All Records'        },\n  'QB (Purchase Order)':     { color: '#e67e22', icon: '🛒', label: 'Purchase Order'     },\n  'QB (Quotation/Estimate)': { color: '#16a085', icon: '📋', label: 'Quotation/Estimate' }\n};\n\nconst theme = workflowThemes[workflowName] || { color: '#e74c3c', icon: '⚙️', label: workflowName };\n\n// ─────────────────────────────────────────────────────────────\n// 🚨 Severity Logic\n// - WARNING  → shown for ALL node failures by default (🟡)\n// - CRITICAL → only if the error message contains specific keywords\n// ─────────────────────────────────────────────────────────────\nconst criticalKeywords = ['timeout', 'connection refused', 'authentication', 'unauthorized', '500', 'ECONNREFUSED', 'Cannot read', 'null', 'undefined'];\nconst isCritical = criticalKeywords.some(k => errorMessage.toLowerCase().includes(k.toLowerCase()));\n\nconst severity      = isCritical ? '🔴 CRITICAL' : '🟡 WARNING';\nconst severityColor = isCritical ? '#e74c3c'      : '#f39c12';\nconst severityBg    = isCritical ? '#fff5f5'      : '#fffbf0';\nconst severityBorder= isCritical ? '#e74c3c'      : '#f39c12';\n\n// ─────────────────────────────────────────────────────────────\n// 📧 HTML Email Body\n// ─────────────────────────────────────────────────────────────\nconst htmlBody = `\n<!DOCTYPE html>\n<html>\n<head>\n  <style>\n    body { font-family: Arial, sans-serif; background: #f4f4f4; margin: 0; padding: 20px; }\n    .container { background: white; border-radius: 8px; padding: 30px; max-width: 650px; margin: auto; border-top: 5px solid ${theme.color}; }\n    .header { text-align: center; margin-bottom: 25px; }\n    .header h1 { color: ${theme.color}; font-size: 24px; margin: 0; }\n    .header p { color: #666; margin: 5px 0 0; font-size: 14px; }\n    .severity-badge { display: inline-block; background: ${severityColor}; color: white; padding: 4px 12px; border-radius: 20px; font-size: 13px; font-weight: bold; margin-bottom: 20px; }\n    .info-table { width: 100%; border-collapse: collapse; margin: 20px 0; }\n    .info-table tr { border-bottom: 1px solid #eee; }\n    .info-table td { padding: 10px 8px; font-size: 14px; }\n    .info-table td:first-child { font-weight: bold; color: #555; width: 38%; }\n    .info-table td:last-child { color: #333; }\n    .error-box { background: ${isCritical ? '#fff5f5' : '#fffbf0'}; border: 1px solid ${isCritical ? '#fcc' : '#ffe0a0'}; border-left: 4px solid ${isCritical ? '#e74c3c' : '#f39c12'}; border-radius: 4px; padding: 15px; margin: 20px 0; }\n    .error-box h3 { color: ${isCritical ? '#c0392b' : '#d68910'}; margin: 0 0 8px; font-size: 14px; }\n    .error-box pre { margin: 0; color: #333; font-size: 13px; white-space: pre-wrap; word-break: break-word; }\n    .btn { display: inline-block; background: #2c3e50; color: white; padding: 12px 24px; border-radius: 5px; text-decoration: none; font-size: 14px; font-weight: bold; margin-top: 15px; }\n    .footer { margin-top: 30px; padding-top: 15px; border-top: 1px solid #eee; font-size: 12px; color: #999; text-align: center; }\n    .node-highlight { background: #ffeaa7; padding: 2px 8px; border-radius: 3px; font-weight: bold; color: #2d3436; }\n    .wf-strip { background: ${theme.color}15; border-left: 4px solid ${theme.color}; padding: 10px 15px; border-radius: 4px; margin-bottom: 20px; font-size: 14px; color: #333; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n\n    <div class=\"header\">\n      <h1>${theme.icon} Workflow Error Alert</h1>\n      <p>An error occurred in your n8n automation</p>\n    </div>\n\n    <div style=\"text-align:center\">\n      <span class=\"severity-badge\">${severity}</span>\n    </div>\n\n    <div class=\"wf-strip\">\n      ${isCritical ? '🚨' : '⚠️'} The <strong>${workflowName}</strong> workflow failed at node <span class=\"node-highlight\">${lastNode}</span>.\n      ${isCritical ? 'Immediate attention required.' : 'Please review when possible.'}\n    </div>\n\n    <table class=\"info-table\">\n      <tr>\n        <td>🏷️ Workflow Name</td>\n        <td><strong>${workflowName}</strong></td>\n      </tr>\n      <tr>\n        <td>🔖 Workflow ID</td>\n        <td>${workflowId}</td>\n      </tr>\n      <tr>\n        <td>🆔 Execution ID</td>\n        <td>${executionId}</td>\n      </tr>\n      <tr>\n        <td>💥 Failed Node</td>\n        <td><span class=\"node-highlight\">${lastNode}</span></td>\n      </tr>\n      <tr>\n        <td>🕐 Error Time </td>\n        <td>${errorTime}</td>\n      </tr>\n    </table>\n\n    <div class=\"error-box\">\n      <h3>${isCritical ? '❌' : '⚠️'} Error Message</h3>\n      <pre>${errorMessage}</pre>\n    </div>\n\n    <p style=\"font-size:14px; color:#555;\">Please check the execution log in n8n for full details and fix the issue as soon as possible.</p>\n\n    <div style=\"text-align:center\">\n      <a class=\"btn\" href=\"https://n8n.jlsyachts.com/workflow/${workflowId}/executions/${executionId}\" target=\"_blank\">🔍 View Execution in n8n</a>\n    </div>\n\n    <div class=\"footer\">\n      This is an automated error alert from your n8n workflow system.<br/>\n      Workflow: ${workflowName} | Time: ${errorTime}\n    </div>\n\n  </div>\n</body>\n</html>\n`;\n\n// ─────────────────────────────────────────────────────────────\n// 📄 Plain text fallback\n// ─────────────────────────────────────────────────────────────\nconst textBody = `\nWORKFLOW ERROR ALERT\n====================\nSeverity     : ${severity}\nWorkflow     : ${workflowName}\nWorkflow ID  : ${workflowId}\nExecution ID : ${executionId}\nFailed Node  : ${lastNode}\nError Time   : ${errorTime}\n\nERROR MESSAGE:\n${errorMessage}\n\nView in n8n:\nhttps://n8n.jlsyachts.com/workflow/${workflowId}/executions/${executionId}\n`;\n\nreturn [{\n  json: {\n    workflowName,\n    workflowId,\n    executionId,\n    lastNode,\n    errorMessage,\n    errorTime,\n    severity,\n    isCritical,\n    htmlBody,\n    textBody,\n    emailSubject: `${severity} | ${workflowName} | Node: ${lastNode} Failed`\n  }\n}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -368,
+          16
+        ],
+        "id": "ea239fed-93c4-4943-9f9e-11f6135b93f9",
+        "name": "Format Error Details"
+      }
+    ],
+    "connections": {
+      "Workflow Error Trigger": {
+        "main": [
+          [
+            {
+              "node": "Format Error Details",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Format Error Details": {
+        "main": [
+          []
+        ]
+      }
+    },
+    "authors": "Matthew Peeters",
+    "name": "Version 2d734f11",
+    "description": "",
+    "autosaved": false
+  },
+  "tags": []
+}

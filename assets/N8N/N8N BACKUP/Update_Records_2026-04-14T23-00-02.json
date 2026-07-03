@@ -1,0 +1,2414 @@
+{
+  "updatedAt": "2026-04-10T07:06:26.589Z",
+  "createdAt": "2026-04-07T06:24:48.835Z",
+  "id": "82dDE2nYvTmgE9nrpT3cZ",
+  "name": "Update Records",
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -2320,
+        -480
+      ],
+      "id": "ae598c2c-fd24-4307-9b70-341a77d7c62f",
+      "name": "Schedule Trigger2"
+    },
+    {
+      "parameters": {
+        "url": "https://quickbooks.api.intuit.com/v3/company/9341454112300561/query",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "={{ \n`SELECT * FROM Estimate \nWHERE TxnDate >= '${$json.startDate}' \nAND TxnDate <= '${$json.endDate}' \nSTARTPOSITION 1 MAXRESULTS 1000`\n}}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -1872,
+        -576
+      ],
+      "id": "a6c8e1ad-06be-4b0c-9e67-e2ef969144a2",
+      "name": "HTTP Request - Fetch Page1",
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "6B4pHpkpZuG10ER7",
+          "name": "QuickBooks Online account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get current date in Dubai timezone (UTC+4)\nconst now = new Date();\n\n// Convert to Dubai time manually\nconst dubaiOffset = 4 * 60; // minutes\nconst localOffset = now.getTimezoneOffset();\nconst dubaiTime = new Date(now.getTime() + (dubaiOffset + localOffset) * 60000);\n\n// Format function YYYY-MM-DD\nfunction formatDate(date) {\n  return date.toISOString().split('T')[0];\n}\n\n// End date = today (Dubai)\nconst endDate = new Date(dubaiTime);\n\n// Start date = 1 month ago\nconst startDate = new Date(dubaiTime);\nstartDate.setMonth(startDate.getMonth() - 1);\n\nreturn [\n  {\n    json: {\n      startDate: formatDate(startDate),\n      endDate: formatDate(endDate)\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2096,
+        -480
+      ],
+      "id": "834f4265-7062-4e80-89a4-c9e493dd3dbd",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "QBO Logs",
+        "returnAll": true,
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "DocType",
+              "condition": "eq",
+              "keyValue": "Estimate"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -1872,
+        -384
+      ],
+      "id": "b2f9b0f3-4cb0-4bbc-b130-dea53cf89e4a",
+      "name": "Get many rows",
+      "credentials": {
+        "supabaseApi": {
+          "id": "sUZHtamV8a5MJ4u7",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(item => ({\n  DocID: item.json.DocID\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1648,
+        -384
+      ],
+      "id": "a9c46ea7-42ae-4ad1-bf05-1819633ba082",
+      "name": "Code in JavaScript2"
+    },
+    {
+      "parameters": {
+        "jsCode": "const output = [];\n\nfor (const item of $input.all()) {\n  const estimates = item.json.QueryResponse?.Estimate || [];\n\n  for (const est of estimates) {\n    output.push({\n      json: {\n        EstimateId: est.Id\n      }\n    });\n  }\n}\n\nreturn output;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1648,
+        -576
+      ],
+      "id": "41fc7cbe-f943-4b43-9b04-08fea2b037bd",
+      "name": "DOCID"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -1424,
+        -480
+      ],
+      "id": "c9222c43-6383-4b36-92b8-3c68ece7eec7",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\n// Collect all DocIDs\nconst docIds = items\n  .filter(i => i.json.DocID)\n  .map(i => Number(i.json.DocID));\n\n// Output only EstimateIds that DO NOT match DocIDs\nconst result = items\n  .filter(i => i.json.EstimateId)\n  .filter(i => {\n    const estimate = Number(i.json.EstimateId);\n\n    // if DocID exists and matches → skip\n    if (!isNaN(estimate) && docIds.includes(estimate)) {\n      return false;\n    }\n\n    // otherwise include\n    return true;\n  })\n  .map(i => ({\n    json: {\n      EstimateId: i.json.EstimateId\n    }\n  }));\n\nreturn result;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1200,
+        -480
+      ],
+      "id": "ac5acd3e-103e-4060-8a2c-2d5b207d0823",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -976,
+        -480
+      ],
+      "id": "1ca4411e-063a-40af-b5d0-7c1a69664233",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "tableId": "QBO Logs",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "DocType",
+              "fieldValue": "Estimate"
+            },
+            {
+              "fieldId": "DocID",
+              "fieldValue": "={{ $json.Estimate.Id }}"
+            },
+            {
+              "fieldId": "DocNumber",
+              "fieldValue": "={{ $json.Estimate.DocNumber }}"
+            },
+            {
+              "fieldId": "LastUpdatedTime",
+              "fieldValue": "={{ $json.Estimate.MetaData.LastUpdatedTime }}"
+            },
+            {
+              "fieldId": "id",
+              "fieldValue": "={{ $runIndex + Date.now() }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -528,
+        -544
+      ],
+      "id": "95e1b6a0-208f-4a54-b707-bacb66a96545",
+      "name": "Create a row",
+      "credentials": {
+        "supabaseApi": {
+          "id": "sUZHtamV8a5MJ4u7",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -304,
+        -480
+      ],
+      "id": "65690640-8a6f-4f0a-b4b9-1ed9d48973c3",
+      "name": "Wait",
+      "webhookId": "3a24b397-a58e-4229-b38b-a5237d2da2a1"
+    },
+    {
+      "parameters": {
+        "content": "## ESTIMATE\n",
+        "height": 656,
+        "width": 2416
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -2448,
+        -768
+      ],
+      "typeVersion": 1,
+      "id": "51d76410-5b3f-4bd7-816e-60dff4951436",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -2304,
+        576
+      ],
+      "id": "761e25a8-ab13-43f3-8717-8e6deff1622d",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "url": "https://quickbooks.api.intuit.com/v3/company/9341454112300561/query",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "={{ \n`SELECT * FROM Invoice \nWHERE TxnDate >= '${$json.startDate}' \nAND TxnDate <= '${$json.endDate}' \nSTARTPOSITION 1 MAXRESULTS 1000`\n}}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -1856,
+        480
+      ],
+      "id": "66a3d701-afa7-4016-8e22-75d0beca2810",
+      "name": "HTTP Request - Fetch Page",
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "6B4pHpkpZuG10ER7",
+          "name": "QuickBooks Online account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get current date in Dubai timezone (UTC+4)\nconst now = new Date();\n\n// Convert to Dubai time manually\nconst dubaiOffset = 4 * 60; // minutes\nconst localOffset = now.getTimezoneOffset();\nconst dubaiTime = new Date(now.getTime() + (dubaiOffset + localOffset) * 60000);\n\n// Format function YYYY-MM-DD\nfunction formatDate(date) {\n  return date.toISOString().split('T')[0];\n}\n\n// End date = today (Dubai)\nconst endDate = new Date(dubaiTime);\n\n// Start date = 1 month ago\nconst startDate = new Date(dubaiTime);\nstartDate.setMonth(startDate.getMonth() - 1);\n\nreturn [\n  {\n    json: {\n      startDate: formatDate(startDate),\n      endDate: formatDate(endDate)\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2080,
+        576
+      ],
+      "id": "de2e906c-fce0-4b36-af9f-2538833b6fcf",
+      "name": "Code in JavaScript3"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "QBO Logs",
+        "returnAll": true,
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "DocType",
+              "condition": "eq",
+              "keyValue": "Invoice"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -1856,
+        672
+      ],
+      "id": "5872b0ee-394e-4256-bce3-96496e2703f4",
+      "name": "Get many rows1",
+      "credentials": {
+        "supabaseApi": {
+          "id": "sUZHtamV8a5MJ4u7",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(item => ({\n  DocID: item.json.DocID\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1632,
+        672
+      ],
+      "id": "9499f204-23a8-4b19-9e4a-9fc0c34ac955",
+      "name": "Code in JavaScript4"
+    },
+    {
+      "parameters": {
+        "jsCode": "const output = [];\n\nfor (const item of $input.all()) {\n  const invoices = item.json.QueryResponse?.Invoice || [];\n\n  for (const inv of invoices) {\n    output.push({\n      json: {\n        InvoiceId: inv.Id\n      }\n    });\n  }\n}\n\nreturn output;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1632,
+        480
+      ],
+      "id": "1506a176-4d9a-41b2-9891-0800b884fa30",
+      "name": "DOCID1"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -1408,
+        576
+      ],
+      "id": "375f2499-a329-4b4a-9f31-6cf8e3ed9ff5",
+      "name": "Merge1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\n// Collect all DocIDs\nconst docIds = items\n  .filter(i => i.json.DocID)\n  .map(i => Number(i.json.DocID));\n\n// Output only InvoiceIds that DO NOT match DocIDs\nconst result = items\n  .filter(i => i.json.InvoiceId)\n  .filter(i => {\n    const invoice = Number(i.json.InvoiceId);\n\n    // if DocID exists and matches → skip\n    if (!isNaN(invoice) && docIds.includes(invoice)) {\n      return false;\n    }\n\n    // otherwise include\n    return true;\n  })\n  .map(i => ({\n    json: {\n      InvoiceId: i.json.InvoiceId\n    }\n  }));\n\nreturn result;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1184,
+        576
+      ],
+      "id": "114dee21-adf2-4b60-8ff7-788a33fb65ca",
+      "name": "Code in JavaScript5"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -960,
+        576
+      ],
+      "id": "52a1ef34-af6b-4fae-b87b-8231cd07efc4",
+      "name": "Loop Over Items1"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -288,
+        576
+      ],
+      "id": "075db61d-5f50-41c4-b934-8477e3eb8f93",
+      "name": "Wait1",
+      "webhookId": "3a24b397-a58e-4229-b38b-a5237d2da2a1"
+    },
+    {
+      "parameters": {
+        "content": "## INVOICE\n",
+        "height": 656,
+        "width": 2416
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -2432,
+        288
+      ],
+      "typeVersion": 1,
+      "id": "62bd74d2-1cec-4391-a759-b798fa431e6f",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {}
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -2320,
+        1584
+      ],
+      "id": "da249aae-767d-4ace-ba3b-79c35159a53b",
+      "name": "Schedule Trigger1"
+    },
+    {
+      "parameters": {
+        "url": "https://quickbooks.api.intuit.com/v3/company/9341454112300561/query",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "={{ \n`SELECT * FROM PurchaseOrder \nWHERE TxnDate >= '${$json.startDate}' \nAND TxnDate <= '${$json.endDate}' \nSTARTPOSITION 1 MAXRESULTS 1000`\n}}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -1872,
+        1472
+      ],
+      "id": "a722ab6b-fbd3-4e23-8d99-0f4ef1d6c6ee",
+      "name": "HTTP Request - Fetch Page2",
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "6B4pHpkpZuG10ER7",
+          "name": "QuickBooks Online account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get current date in Dubai timezone (UTC+4)\nconst now = new Date();\n\n// Convert to Dubai time manually\nconst dubaiOffset = 4 * 60; // minutes\nconst localOffset = now.getTimezoneOffset();\nconst dubaiTime = new Date(now.getTime() + (dubaiOffset + localOffset) * 60000);\n\n// Format function YYYY-MM-DD\nfunction formatDate(date) {\n  return date.toISOString().split('T')[0];\n}\n\n// End date = today (Dubai)\nconst endDate = new Date(dubaiTime);\n\n// Start date = 1 month ago\nconst startDate = new Date(dubaiTime);\nstartDate.setMonth(startDate.getMonth() - 1);\n\nreturn [\n  {\n    json: {\n      startDate: formatDate(startDate),\n      endDate: formatDate(endDate)\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2096,
+        1584
+      ],
+      "id": "f7c87ff4-debd-44e4-bb6e-27c157c27ddd",
+      "name": "Code in JavaScript6"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "QBO Logs",
+        "returnAll": true,
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "DocType",
+              "condition": "eq",
+              "keyValue": "PurchaseOrder"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -1872,
+        1680
+      ],
+      "id": "1677091c-1805-4405-97e2-58294ba3ab2a",
+      "name": "Get many rows2",
+      "credentials": {
+        "supabaseApi": {
+          "id": "sUZHtamV8a5MJ4u7",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(item => ({\n  DocID: item.json.DocID\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1648,
+        1680
+      ],
+      "id": "a6fc4d8c-ab43-4463-996f-8133b52caedd",
+      "name": "Code in JavaScript7"
+    },
+    {
+      "parameters": {
+        "jsCode": "const output = [];\n\nfor (const item of $input.all()) {\n  const purchaseOrders = item.json.QueryResponse?.PurchaseOrder || [];\n\n  for (const po of purchaseOrders) {\n    output.push({\n      json: {\n        PurchaseOrderId: po.Id\n      }\n    });\n  }\n}\n\nreturn output;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1648,
+        1472
+      ],
+      "id": "debd6b6e-5d2b-49dd-b729-f4dafc315435",
+      "name": "DOCID2"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -1424,
+        1584
+      ],
+      "id": "9c7b7e28-65e2-4ccf-ac63-fad3e731a378",
+      "name": "Merge2"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\n// Collect all DocIDs\nconst docIds = items\n  .filter(i => i.json.DocID)\n  .map(i => Number(i.json.DocID));\n\n// Output only PurchaseOrderIds that DO NOT match DocIDs\nconst result = items\n  .filter(i => i.json.PurchaseOrderId)\n  .filter(i => {\n    const purchaseorder = Number(i.json.PurchaseOrderId);\n\n    // if DocID exists and matches → skip\n    if (!isNaN(purchaseorder) && docIds.includes(purchaseorder)) {\n      return false;\n    }\n\n    // otherwise include\n    return true;\n  })\n  .map(i => ({\n    json: {\n      PurchaseOrderId: i.json.PurchaseOrderId\n    }\n  }));\n\nreturn result;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1200,
+        1584
+      ],
+      "id": "07e043be-1caf-4028-9dfa-e46e56248f06",
+      "name": "Code in JavaScript8"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -976,
+        1584
+      ],
+      "id": "ad3e9c01-5b7f-4230-beff-023d0d5259cc",
+      "name": "Loop Over Items2"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -304,
+        1584
+      ],
+      "id": "a1acc76b-f02d-4315-a95a-7c7ebb1998b4",
+      "name": "Wait2",
+      "webhookId": "3a24b397-a58e-4229-b38b-a5237d2da2a1"
+    },
+    {
+      "parameters": {
+        "content": "## PURCHASE ORDER\n",
+        "height": 656,
+        "width": 2416
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -2448,
+        1296
+      ],
+      "typeVersion": 1,
+      "id": "01e0ec24-b850-4ec1-95fb-48c6a17d1255",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "url": "=https://quickbooks.api.intuit.com/v3/company/9341454112300561/estimate/{{ $json.EstimateId }}?include=enhancedAllCustomFields",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -752,
+        -544
+      ],
+      "id": "c6ceb0aa-40ab-4d2f-a302-ab5772d6a229",
+      "name": "Get Estimates/Quotations4",
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "6B4pHpkpZuG10ER7",
+          "name": "QuickBooks Online account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://quickbooks.api.intuit.com/v3/company/9341454112300561/invoice/{{ $json.InvoiceId }}?include=enhancedAllCustomFields",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -736,
+        512
+      ],
+      "id": "ffaa545c-d6dd-4278-8343-33304a5ac71c",
+      "name": "Get Invoices",
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "6B4pHpkpZuG10ER7",
+          "name": "QuickBooks Online account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://quickbooks.api.intuit.com/v3/company/9341454112300561/purchaseorder/{{ $json.PurchaseOrderId }}?include=enhancedAllCustomFields",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -752,
+        1520
+      ],
+      "id": "27841ca7-6deb-442f-97ae-140dadebc75f",
+      "name": "Get Purchase Order",
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "6B4pHpkpZuG10ER7",
+          "name": "QuickBooks Online account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "tableId": "QBO Logs",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "DocType",
+              "fieldValue": "PurchaseOrder"
+            },
+            {
+              "fieldId": "DocID",
+              "fieldValue": "={{ $json.PurchaseOrder.Id }}"
+            },
+            {
+              "fieldId": "DocNumber",
+              "fieldValue": "={{ $json.PurchaseOrder.DocNumber }}"
+            },
+            {
+              "fieldId": "LastUpdatedTime",
+              "fieldValue": "={{ $json.PurchaseOrder.MetaData.LastUpdatedTime }}"
+            },
+            {
+              "fieldId": "id",
+              "fieldValue": "={{ $runIndex + Date.now() }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -560,
+        1520
+      ],
+      "id": "0c5a0c4a-7c6b-4f2e-bd3f-eb6006dfa961",
+      "name": "Create a row2",
+      "credentials": {
+        "supabaseApi": {
+          "id": "sUZHtamV8a5MJ4u7",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "tableId": "QBO Logs",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "DocType",
+              "fieldValue": "Invoice"
+            },
+            {
+              "fieldId": "DocID",
+              "fieldValue": "={{ $json.Invoice.Id }}"
+            },
+            {
+              "fieldId": "DocNumber",
+              "fieldValue": "={{ $json.Invoice.DocNumber }}"
+            },
+            {
+              "fieldId": "LastUpdatedTime",
+              "fieldValue": "={{ $json.Invoice.MetaData.LastUpdatedTime }}"
+            },
+            {
+              "fieldId": "id",
+              "fieldValue": "={{ $runIndex + Date.now() }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -560,
+        528
+      ],
+      "id": "dbed0df7-726b-49a0-972a-0572848e692a",
+      "name": "Create a row1",
+      "credentials": {
+        "supabaseApi": {
+          "id": "sUZHtamV8a5MJ4u7",
+          "name": "Supabase account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger2": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request - Fetch Page1": {
+      "main": [
+        [
+          {
+            "node": "DOCID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request - Fetch Page1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get many rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get many rows": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DOCID": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript2": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Get Estimates/Quotations4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create a row": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request - Fetch Page": {
+      "main": [
+        [
+          {
+            "node": "DOCID1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript3": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request - Fetch Page",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get many rows1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get many rows1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript4": {
+      "main": [
+        [
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "DOCID1": {
+      "main": [
+        [
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript5": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items1": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Get Invoices",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request - Fetch Page2": {
+      "main": [
+        [
+          {
+            "node": "DOCID2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript6": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request - Fetch Page2",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get many rows2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get many rows2": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript7": {
+      "main": [
+        [
+          {
+            "node": "Merge2",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "DOCID2": {
+      "main": [
+        [
+          {
+            "node": "Merge2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge2": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript8",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript8": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items2": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Get Purchase Order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait2": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Estimates/Quotations4": {
+      "main": [
+        [
+          {
+            "node": "Create a row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Invoices": {
+      "main": [
+        [
+          {
+            "node": "Create a row1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Purchase Order": {
+      "main": [
+        [
+          {
+            "node": "Create a row2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create a row2": {
+      "main": [
+        [
+          {
+            "node": "Wait2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create a row1": {
+      "main": [
+        [
+          {
+            "node": "Wait1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "c14cdc1a-2778-4059-84cc-9dbe21171846",
+  "activeVersionId": "c14cdc1a-2778-4059-84cc-9dbe21171846",
+  "triggerCount": 3,
+  "shared": [
+    {
+      "updatedAt": "2026-04-07T06:24:48.883Z",
+      "createdAt": "2026-04-07T06:24:48.883Z",
+      "role": "workflow:owner",
+      "workflowId": "82dDE2nYvTmgE9nrpT3cZ",
+      "projectId": "7K0b7BEJpzNXLaZY"
+    }
+  ],
+  "activeVersion": {
+    "updatedAt": "2026-04-10T07:06:31.000Z",
+    "createdAt": "2026-04-10T07:06:26.593Z",
+    "versionId": "c14cdc1a-2778-4059-84cc-9dbe21171846",
+    "workflowId": "82dDE2nYvTmgE9nrpT3cZ",
+    "nodes": [
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "hours"
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.3,
+        "position": [
+          -2320,
+          -480
+        ],
+        "id": "ae598c2c-fd24-4307-9b70-341a77d7c62f",
+        "name": "Schedule Trigger2"
+      },
+      {
+        "parameters": {
+          "url": "https://quickbooks.api.intuit.com/v3/company/9341454112300561/query",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "quickBooksOAuth2Api",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "query",
+                "value": "={{ \n`SELECT * FROM Estimate \nWHERE TxnDate >= '${$json.startDate}' \nAND TxnDate <= '${$json.endDate}' \nSTARTPOSITION 1 MAXRESULTS 1000`\n}}"
+              }
+            ]
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Accept",
+                "value": "application/json"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.3,
+        "position": [
+          -1872,
+          -576
+        ],
+        "id": "a6c8e1ad-06be-4b0c-9e67-e2ef969144a2",
+        "name": "HTTP Request - Fetch Page1",
+        "credentials": {
+          "quickBooksOAuth2Api": {
+            "id": "6B4pHpkpZuG10ER7",
+            "name": "QuickBooks Online account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "// Get current date in Dubai timezone (UTC+4)\nconst now = new Date();\n\n// Convert to Dubai time manually\nconst dubaiOffset = 4 * 60; // minutes\nconst localOffset = now.getTimezoneOffset();\nconst dubaiTime = new Date(now.getTime() + (dubaiOffset + localOffset) * 60000);\n\n// Format function YYYY-MM-DD\nfunction formatDate(date) {\n  return date.toISOString().split('T')[0];\n}\n\n// End date = today (Dubai)\nconst endDate = new Date(dubaiTime);\n\n// Start date = 1 month ago\nconst startDate = new Date(dubaiTime);\nstartDate.setMonth(startDate.getMonth() - 1);\n\nreturn [\n  {\n    json: {\n      startDate: formatDate(startDate),\n      endDate: formatDate(endDate)\n    }\n  }\n];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -2096,
+          -480
+        ],
+        "id": "834f4265-7062-4e80-89a4-c9e493dd3dbd",
+        "name": "Code in JavaScript"
+      },
+      {
+        "parameters": {
+          "operation": "getAll",
+          "tableId": "QBO Logs",
+          "returnAll": true,
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "DocType",
+                "condition": "eq",
+                "keyValue": "Estimate"
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [
+          -1872,
+          -384
+        ],
+        "id": "b2f9b0f3-4cb0-4bbc-b130-dea53cf89e4a",
+        "name": "Get many rows",
+        "credentials": {
+          "supabaseApi": {
+            "id": "sUZHtamV8a5MJ4u7",
+            "name": "Supabase account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "return $input.all().map(item => ({\n  DocID: item.json.DocID\n}));"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -1648,
+          -384
+        ],
+        "id": "a9c46ea7-42ae-4ad1-bf05-1819633ba082",
+        "name": "Code in JavaScript2"
+      },
+      {
+        "parameters": {
+          "jsCode": "const output = [];\n\nfor (const item of $input.all()) {\n  const estimates = item.json.QueryResponse?.Estimate || [];\n\n  for (const est of estimates) {\n    output.push({\n      json: {\n        EstimateId: est.Id\n      }\n    });\n  }\n}\n\nreturn output;"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -1648,
+          -576
+        ],
+        "id": "41fc7cbe-f943-4b43-9b04-08fea2b037bd",
+        "name": "DOCID"
+      },
+      {
+        "parameters": {},
+        "type": "n8n-nodes-base.merge",
+        "typeVersion": 3.2,
+        "position": [
+          -1424,
+          -480
+        ],
+        "id": "c9222c43-6383-4b36-92b8-3c68ece7eec7",
+        "name": "Merge"
+      },
+      {
+        "parameters": {
+          "jsCode": "const items = $input.all();\n\n// Collect all DocIDs\nconst docIds = items\n  .filter(i => i.json.DocID)\n  .map(i => Number(i.json.DocID));\n\n// Output only EstimateIds that DO NOT match DocIDs\nconst result = items\n  .filter(i => i.json.EstimateId)\n  .filter(i => {\n    const estimate = Number(i.json.EstimateId);\n\n    // if DocID exists and matches → skip\n    if (!isNaN(estimate) && docIds.includes(estimate)) {\n      return false;\n    }\n\n    // otherwise include\n    return true;\n  })\n  .map(i => ({\n    json: {\n      EstimateId: i.json.EstimateId\n    }\n  }));\n\nreturn result;"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -1200,
+          -480
+        ],
+        "id": "ac5acd3e-103e-4060-8a2c-2d5b207d0823",
+        "name": "Code in JavaScript1"
+      },
+      {
+        "parameters": {
+          "options": {}
+        },
+        "type": "n8n-nodes-base.splitInBatches",
+        "typeVersion": 3,
+        "position": [
+          -976,
+          -480
+        ],
+        "id": "1ca4411e-063a-40af-b5d0-7c1a69664233",
+        "name": "Loop Over Items"
+      },
+      {
+        "parameters": {
+          "tableId": "QBO Logs",
+          "fieldsUi": {
+            "fieldValues": [
+              {
+                "fieldId": "DocType",
+                "fieldValue": "Estimate"
+              },
+              {
+                "fieldId": "DocID",
+                "fieldValue": "={{ $json.Estimate.Id }}"
+              },
+              {
+                "fieldId": "DocNumber",
+                "fieldValue": "={{ $json.Estimate.DocNumber }}"
+              },
+              {
+                "fieldId": "LastUpdatedTime",
+                "fieldValue": "={{ $json.Estimate.MetaData.LastUpdatedTime }}"
+              },
+              {
+                "fieldId": "id",
+                "fieldValue": "={{ $runIndex + Date.now() }}"
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [
+          -528,
+          -544
+        ],
+        "id": "95e1b6a0-208f-4a54-b707-bacb66a96545",
+        "name": "Create a row",
+        "credentials": {
+          "supabaseApi": {
+            "id": "sUZHtamV8a5MJ4u7",
+            "name": "Supabase account"
+          }
+        }
+      },
+      {
+        "parameters": {},
+        "type": "n8n-nodes-base.wait",
+        "typeVersion": 1.1,
+        "position": [
+          -304,
+          -480
+        ],
+        "id": "65690640-8a6f-4f0a-b4b9-1ed9d48973c3",
+        "name": "Wait",
+        "webhookId": "3a24b397-a58e-4229-b38b-a5237d2da2a1"
+      },
+      {
+        "parameters": {
+          "content": "## ESTIMATE\n",
+          "height": 656,
+          "width": 2416
+        },
+        "type": "n8n-nodes-base.stickyNote",
+        "position": [
+          -2448,
+          -768
+        ],
+        "typeVersion": 1,
+        "id": "51d76410-5b3f-4bd7-816e-60dff4951436",
+        "name": "Sticky Note"
+      },
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "hours"
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.3,
+        "position": [
+          -2304,
+          576
+        ],
+        "id": "761e25a8-ab13-43f3-8717-8e6deff1622d",
+        "name": "Schedule Trigger"
+      },
+      {
+        "parameters": {
+          "url": "https://quickbooks.api.intuit.com/v3/company/9341454112300561/query",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "quickBooksOAuth2Api",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "query",
+                "value": "={{ \n`SELECT * FROM Invoice \nWHERE TxnDate >= '${$json.startDate}' \nAND TxnDate <= '${$json.endDate}' \nSTARTPOSITION 1 MAXRESULTS 1000`\n}}"
+              }
+            ]
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Accept",
+                "value": "application/json"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.3,
+        "position": [
+          -1856,
+          480
+        ],
+        "id": "66a3d701-afa7-4016-8e22-75d0beca2810",
+        "name": "HTTP Request - Fetch Page",
+        "credentials": {
+          "quickBooksOAuth2Api": {
+            "id": "6B4pHpkpZuG10ER7",
+            "name": "QuickBooks Online account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "// Get current date in Dubai timezone (UTC+4)\nconst now = new Date();\n\n// Convert to Dubai time manually\nconst dubaiOffset = 4 * 60; // minutes\nconst localOffset = now.getTimezoneOffset();\nconst dubaiTime = new Date(now.getTime() + (dubaiOffset + localOffset) * 60000);\n\n// Format function YYYY-MM-DD\nfunction formatDate(date) {\n  return date.toISOString().split('T')[0];\n}\n\n// End date = today (Dubai)\nconst endDate = new Date(dubaiTime);\n\n// Start date = 1 month ago\nconst startDate = new Date(dubaiTime);\nstartDate.setMonth(startDate.getMonth() - 1);\n\nreturn [\n  {\n    json: {\n      startDate: formatDate(startDate),\n      endDate: formatDate(endDate)\n    }\n  }\n];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -2080,
+          576
+        ],
+        "id": "de2e906c-fce0-4b36-af9f-2538833b6fcf",
+        "name": "Code in JavaScript3"
+      },
+      {
+        "parameters": {
+          "operation": "getAll",
+          "tableId": "QBO Logs",
+          "returnAll": true,
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "DocType",
+                "condition": "eq",
+                "keyValue": "Invoice"
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [
+          -1856,
+          672
+        ],
+        "id": "5872b0ee-394e-4256-bce3-96496e2703f4",
+        "name": "Get many rows1",
+        "credentials": {
+          "supabaseApi": {
+            "id": "sUZHtamV8a5MJ4u7",
+            "name": "Supabase account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "return $input.all().map(item => ({\n  DocID: item.json.DocID\n}));"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -1632,
+          672
+        ],
+        "id": "9499f204-23a8-4b19-9e4a-9fc0c34ac955",
+        "name": "Code in JavaScript4"
+      },
+      {
+        "parameters": {
+          "jsCode": "const output = [];\n\nfor (const item of $input.all()) {\n  const invoices = item.json.QueryResponse?.Invoice || [];\n\n  for (const inv of invoices) {\n    output.push({\n      json: {\n        InvoiceId: inv.Id\n      }\n    });\n  }\n}\n\nreturn output;"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -1632,
+          480
+        ],
+        "id": "1506a176-4d9a-41b2-9891-0800b884fa30",
+        "name": "DOCID1"
+      },
+      {
+        "parameters": {},
+        "type": "n8n-nodes-base.merge",
+        "typeVersion": 3.2,
+        "position": [
+          -1408,
+          576
+        ],
+        "id": "375f2499-a329-4b4a-9f31-6cf8e3ed9ff5",
+        "name": "Merge1"
+      },
+      {
+        "parameters": {
+          "jsCode": "const items = $input.all();\n\n// Collect all DocIDs\nconst docIds = items\n  .filter(i => i.json.DocID)\n  .map(i => Number(i.json.DocID));\n\n// Output only InvoiceIds that DO NOT match DocIDs\nconst result = items\n  .filter(i => i.json.InvoiceId)\n  .filter(i => {\n    const invoice = Number(i.json.InvoiceId);\n\n    // if DocID exists and matches → skip\n    if (!isNaN(invoice) && docIds.includes(invoice)) {\n      return false;\n    }\n\n    // otherwise include\n    return true;\n  })\n  .map(i => ({\n    json: {\n      InvoiceId: i.json.InvoiceId\n    }\n  }));\n\nreturn result;"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -1184,
+          576
+        ],
+        "id": "114dee21-adf2-4b60-8ff7-788a33fb65ca",
+        "name": "Code in JavaScript5"
+      },
+      {
+        "parameters": {
+          "options": {}
+        },
+        "type": "n8n-nodes-base.splitInBatches",
+        "typeVersion": 3,
+        "position": [
+          -960,
+          576
+        ],
+        "id": "52a1ef34-af6b-4fae-b87b-8231cd07efc4",
+        "name": "Loop Over Items1"
+      },
+      {
+        "parameters": {},
+        "type": "n8n-nodes-base.wait",
+        "typeVersion": 1.1,
+        "position": [
+          -288,
+          576
+        ],
+        "id": "075db61d-5f50-41c4-b934-8477e3eb8f93",
+        "name": "Wait1",
+        "webhookId": "3a24b397-a58e-4229-b38b-a5237d2da2a1"
+      },
+      {
+        "parameters": {
+          "content": "## INVOICE\n",
+          "height": 656,
+          "width": 2416
+        },
+        "type": "n8n-nodes-base.stickyNote",
+        "position": [
+          -2432,
+          288
+        ],
+        "typeVersion": 1,
+        "id": "62bd74d2-1cec-4391-a759-b798fa431e6f",
+        "name": "Sticky Note1"
+      },
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {}
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.3,
+        "position": [
+          -2320,
+          1584
+        ],
+        "id": "da249aae-767d-4ace-ba3b-79c35159a53b",
+        "name": "Schedule Trigger1"
+      },
+      {
+        "parameters": {
+          "url": "https://quickbooks.api.intuit.com/v3/company/9341454112300561/query",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "quickBooksOAuth2Api",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "query",
+                "value": "={{ \n`SELECT * FROM PurchaseOrder \nWHERE TxnDate >= '${$json.startDate}' \nAND TxnDate <= '${$json.endDate}' \nSTARTPOSITION 1 MAXRESULTS 1000`\n}}"
+              }
+            ]
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Accept",
+                "value": "application/json"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.3,
+        "position": [
+          -1872,
+          1472
+        ],
+        "id": "a722ab6b-fbd3-4e23-8d99-0f4ef1d6c6ee",
+        "name": "HTTP Request - Fetch Page2",
+        "credentials": {
+          "quickBooksOAuth2Api": {
+            "id": "6B4pHpkpZuG10ER7",
+            "name": "QuickBooks Online account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "// Get current date in Dubai timezone (UTC+4)\nconst now = new Date();\n\n// Convert to Dubai time manually\nconst dubaiOffset = 4 * 60; // minutes\nconst localOffset = now.getTimezoneOffset();\nconst dubaiTime = new Date(now.getTime() + (dubaiOffset + localOffset) * 60000);\n\n// Format function YYYY-MM-DD\nfunction formatDate(date) {\n  return date.toISOString().split('T')[0];\n}\n\n// End date = today (Dubai)\nconst endDate = new Date(dubaiTime);\n\n// Start date = 1 month ago\nconst startDate = new Date(dubaiTime);\nstartDate.setMonth(startDate.getMonth() - 1);\n\nreturn [\n  {\n    json: {\n      startDate: formatDate(startDate),\n      endDate: formatDate(endDate)\n    }\n  }\n];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -2096,
+          1584
+        ],
+        "id": "f7c87ff4-debd-44e4-bb6e-27c157c27ddd",
+        "name": "Code in JavaScript6"
+      },
+      {
+        "parameters": {
+          "operation": "getAll",
+          "tableId": "QBO Logs",
+          "returnAll": true,
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "DocType",
+                "condition": "eq",
+                "keyValue": "PurchaseOrder"
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [
+          -1872,
+          1680
+        ],
+        "id": "1677091c-1805-4405-97e2-58294ba3ab2a",
+        "name": "Get many rows2",
+        "credentials": {
+          "supabaseApi": {
+            "id": "sUZHtamV8a5MJ4u7",
+            "name": "Supabase account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "return $input.all().map(item => ({\n  DocID: item.json.DocID\n}));"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -1648,
+          1680
+        ],
+        "id": "a6fc4d8c-ab43-4463-996f-8133b52caedd",
+        "name": "Code in JavaScript7"
+      },
+      {
+        "parameters": {
+          "jsCode": "const output = [];\n\nfor (const item of $input.all()) {\n  const purchaseOrders = item.json.QueryResponse?.PurchaseOrder || [];\n\n  for (const po of purchaseOrders) {\n    output.push({\n      json: {\n        PurchaseOrderId: po.Id\n      }\n    });\n  }\n}\n\nreturn output;"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -1648,
+          1472
+        ],
+        "id": "debd6b6e-5d2b-49dd-b729-f4dafc315435",
+        "name": "DOCID2"
+      },
+      {
+        "parameters": {},
+        "type": "n8n-nodes-base.merge",
+        "typeVersion": 3.2,
+        "position": [
+          -1424,
+          1584
+        ],
+        "id": "9c7b7e28-65e2-4ccf-ac63-fad3e731a378",
+        "name": "Merge2"
+      },
+      {
+        "parameters": {
+          "jsCode": "const items = $input.all();\n\n// Collect all DocIDs\nconst docIds = items\n  .filter(i => i.json.DocID)\n  .map(i => Number(i.json.DocID));\n\n// Output only PurchaseOrderIds that DO NOT match DocIDs\nconst result = items\n  .filter(i => i.json.PurchaseOrderId)\n  .filter(i => {\n    const purchaseorder = Number(i.json.PurchaseOrderId);\n\n    // if DocID exists and matches → skip\n    if (!isNaN(purchaseorder) && docIds.includes(purchaseorder)) {\n      return false;\n    }\n\n    // otherwise include\n    return true;\n  })\n  .map(i => ({\n    json: {\n      PurchaseOrderId: i.json.PurchaseOrderId\n    }\n  }));\n\nreturn result;"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -1200,
+          1584
+        ],
+        "id": "07e043be-1caf-4028-9dfa-e46e56248f06",
+        "name": "Code in JavaScript8"
+      },
+      {
+        "parameters": {
+          "options": {}
+        },
+        "type": "n8n-nodes-base.splitInBatches",
+        "typeVersion": 3,
+        "position": [
+          -976,
+          1584
+        ],
+        "id": "ad3e9c01-5b7f-4230-beff-023d0d5259cc",
+        "name": "Loop Over Items2"
+      },
+      {
+        "parameters": {},
+        "type": "n8n-nodes-base.wait",
+        "typeVersion": 1.1,
+        "position": [
+          -304,
+          1584
+        ],
+        "id": "a1acc76b-f02d-4315-a95a-7c7ebb1998b4",
+        "name": "Wait2",
+        "webhookId": "3a24b397-a58e-4229-b38b-a5237d2da2a1"
+      },
+      {
+        "parameters": {
+          "content": "## PURCHASE ORDER\n",
+          "height": 656,
+          "width": 2416
+        },
+        "type": "n8n-nodes-base.stickyNote",
+        "position": [
+          -2448,
+          1296
+        ],
+        "typeVersion": 1,
+        "id": "01e0ec24-b850-4ec1-95fb-48c6a17d1255",
+        "name": "Sticky Note2"
+      },
+      {
+        "parameters": {
+          "url": "=https://quickbooks.api.intuit.com/v3/company/9341454112300561/estimate/{{ $json.EstimateId }}?include=enhancedAllCustomFields",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "quickBooksOAuth2Api",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.3,
+        "position": [
+          -752,
+          -544
+        ],
+        "id": "c6ceb0aa-40ab-4d2f-a302-ab5772d6a229",
+        "name": "Get Estimates/Quotations4",
+        "credentials": {
+          "quickBooksOAuth2Api": {
+            "id": "6B4pHpkpZuG10ER7",
+            "name": "QuickBooks Online account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "url": "=https://quickbooks.api.intuit.com/v3/company/9341454112300561/invoice/{{ $json.InvoiceId }}?include=enhancedAllCustomFields",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "quickBooksOAuth2Api",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.3,
+        "position": [
+          -736,
+          512
+        ],
+        "id": "ffaa545c-d6dd-4278-8343-33304a5ac71c",
+        "name": "Get Invoices",
+        "credentials": {
+          "quickBooksOAuth2Api": {
+            "id": "6B4pHpkpZuG10ER7",
+            "name": "QuickBooks Online account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "url": "=https://quickbooks.api.intuit.com/v3/company/9341454112300561/purchaseorder/{{ $json.PurchaseOrderId }}?include=enhancedAllCustomFields",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "quickBooksOAuth2Api",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.3,
+        "position": [
+          -752,
+          1520
+        ],
+        "id": "27841ca7-6deb-442f-97ae-140dadebc75f",
+        "name": "Get Purchase Order",
+        "credentials": {
+          "quickBooksOAuth2Api": {
+            "id": "6B4pHpkpZuG10ER7",
+            "name": "QuickBooks Online account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "tableId": "QBO Logs",
+          "fieldsUi": {
+            "fieldValues": [
+              {
+                "fieldId": "DocType",
+                "fieldValue": "PurchaseOrder"
+              },
+              {
+                "fieldId": "DocID",
+                "fieldValue": "={{ $json.PurchaseOrder.Id }}"
+              },
+              {
+                "fieldId": "DocNumber",
+                "fieldValue": "={{ $json.PurchaseOrder.DocNumber }}"
+              },
+              {
+                "fieldId": "LastUpdatedTime",
+                "fieldValue": "={{ $json.PurchaseOrder.MetaData.LastUpdatedTime }}"
+              },
+              {
+                "fieldId": "id",
+                "fieldValue": "={{ $runIndex + Date.now() }}"
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [
+          -560,
+          1520
+        ],
+        "id": "0c5a0c4a-7c6b-4f2e-bd3f-eb6006dfa961",
+        "name": "Create a row2",
+        "credentials": {
+          "supabaseApi": {
+            "id": "sUZHtamV8a5MJ4u7",
+            "name": "Supabase account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "tableId": "QBO Logs",
+          "fieldsUi": {
+            "fieldValues": [
+              {
+                "fieldId": "DocType",
+                "fieldValue": "Invoice"
+              },
+              {
+                "fieldId": "DocID",
+                "fieldValue": "={{ $json.Invoice.Id }}"
+              },
+              {
+                "fieldId": "DocNumber",
+                "fieldValue": "={{ $json.Invoice.DocNumber }}"
+              },
+              {
+                "fieldId": "LastUpdatedTime",
+                "fieldValue": "={{ $json.Invoice.MetaData.LastUpdatedTime }}"
+              },
+              {
+                "fieldId": "id",
+                "fieldValue": "={{ $runIndex + Date.now() }}"
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [
+          -560,
+          528
+        ],
+        "id": "dbed0df7-726b-49a0-972a-0572848e692a",
+        "name": "Create a row1",
+        "credentials": {
+          "supabaseApi": {
+            "id": "sUZHtamV8a5MJ4u7",
+            "name": "Supabase account"
+          }
+        }
+      }
+    ],
+    "connections": {
+      "Schedule Trigger2": {
+        "main": [
+          [
+            {
+              "node": "Code in JavaScript",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "HTTP Request - Fetch Page1": {
+        "main": [
+          [
+            {
+              "node": "DOCID",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Code in JavaScript": {
+        "main": [
+          [
+            {
+              "node": "HTTP Request - Fetch Page1",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Get many rows",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get many rows": {
+        "main": [
+          [
+            {
+              "node": "Code in JavaScript2",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "DOCID": {
+        "main": [
+          [
+            {
+              "node": "Merge",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Code in JavaScript2": {
+        "main": [
+          [
+            {
+              "node": "Merge",
+              "type": "main",
+              "index": 1
+            }
+          ]
+        ]
+      },
+      "Merge": {
+        "main": [
+          [
+            {
+              "node": "Code in JavaScript1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Code in JavaScript1": {
+        "main": [
+          [
+            {
+              "node": "Loop Over Items",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Loop Over Items": {
+        "main": [
+          [],
+          [
+            {
+              "node": "Get Estimates/Quotations4",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Create a row": {
+        "main": [
+          [
+            {
+              "node": "Wait",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Wait": {
+        "main": [
+          [
+            {
+              "node": "Loop Over Items",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Schedule Trigger": {
+        "main": [
+          [
+            {
+              "node": "Code in JavaScript3",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "HTTP Request - Fetch Page": {
+        "main": [
+          [
+            {
+              "node": "DOCID1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Code in JavaScript3": {
+        "main": [
+          [
+            {
+              "node": "HTTP Request - Fetch Page",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Get many rows1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get many rows1": {
+        "main": [
+          [
+            {
+              "node": "Code in JavaScript4",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Code in JavaScript4": {
+        "main": [
+          [
+            {
+              "node": "Merge1",
+              "type": "main",
+              "index": 1
+            }
+          ]
+        ]
+      },
+      "DOCID1": {
+        "main": [
+          [
+            {
+              "node": "Merge1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Merge1": {
+        "main": [
+          [
+            {
+              "node": "Code in JavaScript5",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Code in JavaScript5": {
+        "main": [
+          [
+            {
+              "node": "Loop Over Items1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Loop Over Items1": {
+        "main": [
+          [],
+          [
+            {
+              "node": "Get Invoices",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Wait1": {
+        "main": [
+          [
+            {
+              "node": "Loop Over Items1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Schedule Trigger1": {
+        "main": [
+          [
+            {
+              "node": "Code in JavaScript6",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "HTTP Request - Fetch Page2": {
+        "main": [
+          [
+            {
+              "node": "DOCID2",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Code in JavaScript6": {
+        "main": [
+          [
+            {
+              "node": "HTTP Request - Fetch Page2",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Get many rows2",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get many rows2": {
+        "main": [
+          [
+            {
+              "node": "Code in JavaScript7",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Code in JavaScript7": {
+        "main": [
+          [
+            {
+              "node": "Merge2",
+              "type": "main",
+              "index": 1
+            }
+          ]
+        ]
+      },
+      "DOCID2": {
+        "main": [
+          [
+            {
+              "node": "Merge2",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Merge2": {
+        "main": [
+          [
+            {
+              "node": "Code in JavaScript8",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Code in JavaScript8": {
+        "main": [
+          [
+            {
+              "node": "Loop Over Items2",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Loop Over Items2": {
+        "main": [
+          [],
+          [
+            {
+              "node": "Get Purchase Order",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Wait2": {
+        "main": [
+          [
+            {
+              "node": "Loop Over Items2",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Estimates/Quotations4": {
+        "main": [
+          [
+            {
+              "node": "Create a row",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Invoices": {
+        "main": [
+          [
+            {
+              "node": "Create a row1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Purchase Order": {
+        "main": [
+          [
+            {
+              "node": "Create a row2",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Create a row2": {
+        "main": [
+          [
+            {
+              "node": "Wait2",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Create a row1": {
+        "main": [
+          [
+            {
+              "node": "Wait1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "Matthew Peeters",
+    "name": "Version c14cdc1a",
+    "description": "",
+    "autosaved": false
+  },
+  "tags": []
+}

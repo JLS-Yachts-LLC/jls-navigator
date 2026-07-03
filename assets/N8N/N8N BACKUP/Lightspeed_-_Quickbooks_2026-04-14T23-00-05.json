@@ -1,0 +1,853 @@
+{
+  "updatedAt": "2026-01-29T23:56:37.446Z",
+  "createdAt": "2026-01-26T19:18:22.498Z",
+  "id": "UFAYF3aEdku-sS9khKTin",
+  "name": "Lightspeed -> Quickbooks",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -896,
+        -112
+      ],
+      "id": "5f87fee7-fba0-4fe1-88dc-2be1f5588f1e",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "url": "https://superyachtme.retail.lightspeed.app/api/2.0/inventory",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -656,
+        -112
+      ],
+      "id": "0edb2891-c401-4266-98f3-209d60f64305",
+      "name": "Get LS Inventory",
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "WoxCXu4qRHbtqjNE",
+          "name": "Lightspeed Bearer Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://quickbooks.api.intuit.com/v3/company/9341456211763919/query",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "SELECT * FROM Item WHERE Type = 'Inventory' STARTPOSITION 1 MAXRESULTS 1000"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -160,
+        -112
+      ],
+      "id": "002c250f-231e-4fc4-ad4e-4d66ce0cd29a",
+      "name": "Fetch QB Product Details",
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "LzsBKraDvi63Re6a",
+          "name": "Waypoint - Quickbooks - Production"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "dataTableId": {
+          "__rl": true,
+          "value": "5Gcpo75df4gMfHmK",
+          "mode": "list",
+          "cachedResultName": "Lightspeed Inventory",
+          "cachedResultUrl": "/projects/7K0b7BEJpzNXLaZY/datatables/5Gcpo75df4gMfHmK"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "sku",
+              "keyValue": "={{ $json.sku }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "sku": "={{ $json.sku }}",
+            "last_synced_price": "={{ $json.last_synced_price }}",
+            "last_synced_qty": "={{ $json.last_synced_qty }}",
+            "lightspeed_id": "={{ $json.lightspeed_id }}",
+            "last_source": "={{ $json.last_source }}",
+            "last_sync_time": "={{ $json.last_sync_time }}",
+            "quickbooks_id": "={{ $json.quickbooks_id }}",
+            "Image_url": "={{ $json.image_url }}",
+            "Name": "={{ $json.name }}",
+            "last_qb_qty": "={{ $json.last_qb_qty }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "sku",
+              "displayName": "sku",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "last_source",
+              "displayName": "last_source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "last_synced_price",
+              "displayName": "last_synced_price",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "last_synced_qty",
+              "displayName": "last_synced_qty",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "last_sync_time",
+              "displayName": "last_sync_time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "quickbooks_id",
+              "displayName": "quickbooks_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "lightspeed_id",
+              "displayName": "lightspeed_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Name",
+              "displayName": "Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Image_url",
+              "displayName": "Image_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "last_qb_qty",
+              "displayName": "last_qb_qty",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        352,
+        -112
+      ],
+      "id": "1f19bbf2-9dd6-4e9a-a02f-0f8b762c7413",
+      "name": "Upsert row(s)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "320b1168-3533-4dbc-b300-68a1e5652e21",
+              "leftValue": "={{ $json.quickbooks_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "b23dc533-35c9-4013-a47f-116d6aafee5d",
+              "leftValue": "={{ $json.last_synced_qty }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        560,
+        -112
+      ],
+      "id": "4fbdeaaf-c8bd-432b-a048-5680c7dc7ddc",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://quickbooks.api.intuit.com/v3/company/9341456211763919/item",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.ItemAdd }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1536,
+        -176
+      ],
+      "id": "5e10432c-0417-4ff0-b76d-bd1b81909fc7",
+      "name": "Create QuickBooks Item if it does not exist",
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "LzsBKraDvi63Re6a",
+          "name": "Waypoint - Quickbooks - Production"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://quickbooks.api.intuit.com/v3/company/9341456211763919/item",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.ItemAdd }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1552,
+        80
+      ],
+      "id": "0cf4e268-19ac-41b9-8a4c-ed71ae2ed352",
+      "name": "Create QuickBooks Item if it does not exist1",
+      "retryOnFail": false,
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "LzsBKraDvi63Re6a",
+          "name": "Waypoint - Quickbooks - Production"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "batchSize": 30,
+        "options": {
+          "reset": false
+        }
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1152,
+        -256
+      ],
+      "id": "cd11cbca-bd29-404e-a204-94914930ffe6",
+      "name": "Loop Over Create Items"
+    },
+    {
+      "parameters": {
+        "batchSize": 30,
+        "options": {
+          "reset": false
+        }
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1152,
+        -16
+      ],
+      "id": "4a0fc9f5-d473-4ed1-9dcf-2dffeaa8e126",
+      "name": "Loop Over Update Items"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [\n  {\n    json: {\n      ItemAdd: {\n        Name: String($json.Name),\n        Sku: String($json.sku),\n        Type: \"Inventory\",\n        TrackQtyOnHand: true,\n        QtyOnHand: Number($json.last_synced_qty ?? 0),\n        InvStartDate: new Date().toISOString().split(\"T\")[0],\n        UnitPrice: Number($json.last_synced_price ?? 0),\n        IncomeAccountRef: { value: \"85\" },\n        AssetAccountRef: { value: \"87\" },\n        ExpenseAccountRef: { value: \"86\" }\n      }\n    }\n  }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        -176
+      ],
+      "id": "ecbe51b8-5f9c-4eee-b9ab-4bb46d262355",
+      "name": "Prep Data"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [\n  {\n    json: {\n      ItemAdd: {\n        Name: String($json.Name),\n        Sku: String($json.sku),\n        Type: \"Inventory\",\n        TrackQtyOnHand: true,\n        QtyOnHand: Number($json.last_synced_qty ?? 0),\n        InvStartDate: new Date().toISOString().split(\"T\")[0],\n        UnitPrice: Number($json.last_synced_price ?? 0),\n        IncomeAccountRef: { value: \"85\" },\n        AssetAccountRef: { value: \"87\" },\n        ExpenseAccountRef: { value: \"86\" }\n      }\n    }\n  }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        80
+      ],
+      "id": "eddde17f-7f7f-4820-a92d-6ae85966f751",
+      "name": "Prep Data1"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.quickbooks_id }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "c1ce47d5-c9d9-46b6-8c0e-c395f0968b2e"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "c64cc01d-bcee-4de4-9f0e-0db10a2f7860",
+                    "leftValue": "",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        832,
+        -128
+      ],
+      "id": "835be616-1dd1-433d-a780-98f8aac5073a",
+      "name": "Create or Update"
+    },
+    {
+      "parameters": {
+        "url": "=https://superyachtme.retail.lightspeed.app/api/2.0/products/{{ $json.id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -432,
+        -112
+      ],
+      "id": "2a5fcf16-8afe-4a65-a6e0-c62da62952ac",
+      "name": "Get LS Products",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ki6xZZeJ87N5V7fp",
+          "name": "Header Auth account"
+        },
+        "httpBearerAuth": {
+          "id": "WoxCXu4qRHbtqjNE",
+          "name": "Lightspeed Bearer Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// -----------------------------\n// 1. RAW INPUTS\n// -----------------------------\n\n// Raw LS Products response (contains data[])\nconst lsProductsRaw = $node[\"Get LS Products\"].json.data || [];\n\n// Raw LS Inventory response (contains data[])\nconst lsInventoryRaw = $node[\"Get LS Inventory\"].json.data || [];\n\n// QuickBooks items\nconst qbItems = $node[\"Fetch QB Product Details\"].json.QueryResponse?.Item || [];\n\n\n// -----------------------------\n// 2. FLATTEN LS PRODUCTS\n// -----------------------------\nconst lsProducts = lsProductsRaw.map(p => ({\n  ...p,\n  id: p.id // ensure top-level id exists\n}));\n\n\n// -----------------------------\n// 3. FLATTEN LS INVENTORY\n// -----------------------------\nconst lsInventory = lsInventoryRaw.map(inv => ({\n  ...inv,\n  id: inv.product_id // rename product_id → id for matching\n}));\n\n\n// -----------------------------\n// 4. MERGE LS PRODUCTS + INVENTORY + QUICKBOOKS\n// -----------------------------\nconst output = [];\n\nfor (const product of lsProducts) {\n\n  // Match inventory by product_id\n  const invMatch = lsInventory.find(inv => inv.id === product.id);\n\n  // Match QuickBooks by SKU or Name (case-insensitive)\n  const qbMatch = qbItems.find(qb => {\n    const qbSku = (qb.Sku || \"\").toString().trim().toLowerCase();\n    const qbName = (qb.Name || \"\").toString().trim().toLowerCase();\n\n    const lsSku = (product.code || product.sku || \"\").toString().trim().toLowerCase();\n    const lsName = (product.name || \"\").toString().trim().toLowerCase();\n\n    return qbSku === lsSku || qbName === lsName;\n  });\n\n  output.push({\n    json: {\n      sku: product.code || product.sku,\n      name: product.name,\n      lightspeed_id: product.id,\n      quickbooks_id: qbMatch?.Id || null,\n      last_qb_qty: qbMatch?.QtyOnHand ?? 0,\n      last_source: \"Lightspeed\",\n      last_synced_price:\n        product.price ||\n        product.supply_price ||\n        product.price_excluding_tax ||\n        0,\n      last_synced_qty: invMatch?.inventory_level || 0,\n      last_sync_time: new Date().toISOString(),\n      average_cost: invMatch?.average_cost || 0,\n      reorder_point: invMatch?.reorder_point || 0,\n      reorder_amount: invMatch?.reorder_amount || 0,\n      image_url: product.image_thumbnail_url || null\n    }\n  });\n}\n\nreturn output;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        96,
+        -112
+      ],
+      "id": "58106e87-b350-49f6-bc31-a322442766f4",
+      "name": "Flatten Lightspeed Merged Data"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "cb700e64-da69-4a2f-9a59-24939e0f7d15",
+              "leftValue": "={{ $json.error.description }}",
+              "rightValue": "6240",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1760,
+        80
+      ],
+      "id": "8363be79-f04d-4770-b3bf-2a5effc11079",
+      "name": "If1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const detail = $json.error.description;\nconst match = detail.match(/Id=(\\d+)/);\n\nreturn [\n  {\n    json: {\n      ...$json,\n      qb_item_id: match ? match[1] : null\n    }\n  }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        64
+      ],
+      "id": "6755938c-09cc-4280-a169-aeb2988150ac",
+      "name": "Extract the Existing QuickBooks Item ID"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "cb700e64-da69-4a2f-9a59-24939e0f7d15",
+              "leftValue": "={{ $json.error.description }}",
+              "rightValue": "6240",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1760,
+        -176
+      ],
+      "id": "faf43b08-6d79-449b-92ce-f0477ab6d8f3",
+      "name": "If2"
+    },
+    {
+      "parameters": {
+        "jsCode": "const detail = $json.error.description;\nconst match = detail.match(/Id=(\\d+)/);\n\nreturn [\n  {\n    json: {\n      ...$json,\n      qb_item_id: match ? match[1] : null\n    }\n  }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1984,
+        -192
+      ],
+      "id": "b0acdbac-a506-4611-9c8d-258d68a55b61",
+      "name": "Extract the Existing QuickBooks Item ID1"
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get LS Inventory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get LS Inventory": {
+      "main": [
+        [
+          {
+            "node": "Get LS Products",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch QB Product Details": {
+      "main": [
+        [
+          {
+            "node": "Flatten Lightspeed Merged Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert row(s)": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Create or Update",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Create QuickBooks Item if it does not exist": {
+      "main": [
+        [
+          {
+            "node": "If2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Create Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Prep Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Update Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Prep Data1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create QuickBooks Item if it does not exist1": {
+      "main": [
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Data": {
+      "main": [
+        [
+          {
+            "node": "Create QuickBooks Item if it does not exist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create or Update": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Create Items",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Over Update Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get LS Products": {
+      "main": [
+        [
+          {
+            "node": "Fetch QB Product Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Flatten Lightspeed Merged Data": {
+      "main": [
+        [
+          {
+            "node": "Upsert row(s)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Data1": {
+      "main": [
+        [
+          {
+            "node": "Create QuickBooks Item if it does not exist1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If1": {
+      "main": [
+        [
+          {
+            "node": "Extract the Existing QuickBooks Item ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract the Existing QuickBooks Item ID": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Update Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If2": {
+      "main": [
+        [
+          {
+            "node": "Extract the Existing QuickBooks Item ID1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract the Existing QuickBooks Item ID1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Create Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {},
+  "versionId": "56c5a1ea-cfad-48cb-bdeb-1c5b9b81acd3",
+  "activeVersionId": null,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-01-26T19:18:22.512Z",
+      "createdAt": "2026-01-26T19:18:22.512Z",
+      "role": "workflow:owner",
+      "workflowId": "UFAYF3aEdku-sS9khKTin",
+      "projectId": "7K0b7BEJpzNXLaZY"
+    }
+  ],
+  "activeVersion": null,
+  "tags": []
+}

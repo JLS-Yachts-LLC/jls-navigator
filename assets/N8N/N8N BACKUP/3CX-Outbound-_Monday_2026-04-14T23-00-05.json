@@ -1,0 +1,232 @@
+{
+  "updatedAt": "2026-01-09T14:11:02.000Z",
+  "createdAt": "2026-01-08T12:15:08.140Z",
+  "id": "SkW4gd5Petqi1Lvb",
+  "name": "3CX-Outbound->Monday",
+  "active": false,
+  "isArchived": true,
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "filters": {
+          "foldersToInclude": [
+            "AQMkAGIzZThmM2ZkLTIxNjEtNDljZC04M2I5LTY0M2RiMTMyMTllNQAuAAADQmDiP31MCUuhWktzKIx_jAEAB1f20N9MY0OQl9B9AN1BagAAAgEMAAAA"
+          ]
+        },
+        "options": {
+          "downloadAttachments": true
+        }
+      },
+      "type": "n8n-nodes-base.microsoftOutlookTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "1f34b309-eefb-49d6-a49e-d1a37a3e0da5",
+      "name": "Microsoft Outlook Trigger",
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "7IaguepNlbcPCyIE",
+          "name": "Microsoft Outlook account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ef8ab316-c270-4073-96b2-4cc623e4e341",
+              "leftValue": "={{ Object.values($binary || {}).map(a => a.fileName).join(' ') }}",
+              "rightValue": "Outbound",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {
+          "ignoreCase": true
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        416,
+        0
+      ],
+      "id": "eeb2666e-87af-4901-be77-e1eca43070f5",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "binaryPropertyName": "attachment_0",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        624,
+        -96
+      ],
+      "id": "2f92c70f-4c33-4f11-b97b-df61808d48a7",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.monday.com/v2",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjU5MTU3ODE5OCwiYWFpIjoxMSwidWlkIjo5NjQ0Nzc2MywiaWFkIjoiMjAyNS0xMS0yOFQwNTo1OTozMi4wMDBaIiwicGVyIjoibWU6d3JpdGUiLCJhY3RpZCI6Mjc3MzY3MTQsInJnbiI6ImV1YzEifQ.9Wez76_J_cHuK15tNti7hcrZJn455qeq-uDyC66IxKE"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1248,
+        -96
+      ],
+      "id": "85fa1418-2d92-4669-9c02-23cfdfb58d60",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Cleaning CSV data\nreturn items\n  .map(item => {\n    const raw = item.json;\n\n    // Remove BOM and trim keys\n    const cleaned = {};\n    Object.keys(raw).forEach(key => {\n      const cleanKey = key.replace(/^\\uFEFF/, '').trim();\n      cleaned[cleanKey] = raw[key]?.trim();\n    });\n\n    // Skip empty or totals rows\n    if (!cleaned['Call Time'] || cleaned['Call Time'] === 'Totals') return null;\n\n    return {\n      json: {\n        call_time: cleaned['Call Time'] || '',\n        call_id: cleaned['Caller ID'] || '',\n        from: cleaned['Caller Display name'] || '',\n        trunk: cleaned['Trunk'] || '',\n        trunk_number: cleaned['Trunk number'] || '',\n        status: cleaned['Status'] || '',\n        ringing: cleaned['Ringing'] || '',\n        talking: cleaned['Talking'] || '',\n        total_duration: cleaned['Total Duration'] || '',\n        to: cleaned['Destination Callee Id'] || '',\n        destination_name: cleaned['Destination Display Name'] || '',\n        cost: cleaned['Cost'] || '',\n        date: cleaned['Call Time'] ? cleaned['Call Time'].split('T')[0] : ''\n      }\n    };\n  })\n  .filter(item => item !== null);\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        832,
+        -96
+      ],
+      "id": "1c02ff7d-52ca-4775-b2ee-95511a8970a0",
+      "name": "Clean Data"
+    },
+    {
+      "parameters": {
+        "jsCode": "return items\n  .map(item => {\n    const raw = item.json;\n\n    // Skip totals rows if any\n    if (raw.call_time === 'Totals') return null;\n\n    // Build column_values JSON with correct Monday column IDs\n    const columnValues = JSON.stringify({\n      date4: raw.date || '',                     // Date\n      status: raw.status || '',                  // Status\n      text_mkyafhh7: raw.to || '',              // Caller Number\n      text_mkyaaqg3: raw.total_duration || '',  // Call Time\n      text_mkyamd5g: raw.ringing || '',         // Ringing\n      text_mkyaww5v: raw.talking || ''          // Talking\n    });\n\n    return {\n      json: {\n        query: `mutation ($board: ID!, $name: String!, $vals: JSON!) {\n          create_item(board_id: $board, item_name: $name, column_values: $vals) { id }\n        }`,\n        variables: {\n          board: 5088564474,         // Your board ID\n          name: raw.from || '',      // Staff Name (Item Name)\n          vals: columnValues\n        }\n      }\n    };\n  })\n  .filter(item => item !== null); // Remove nulls\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        -96
+      ],
+      "id": "04bbb07e-029a-4803-81f7-80ff1d425c22",
+      "name": "Monday Mutation"
+    }
+  ],
+  "connections": {
+    "Microsoft Outlook Trigger": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Clean Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean Data": {
+      "main": [
+        [
+          {
+            "node": "Monday Mutation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Monday Mutation": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": {
+    "node:Microsoft Outlook Trigger": {
+      "lastTimeChecked": "2026-01-09T14:00:39.003Z"
+    }
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "ad5d604d-c690-40ac-af46-b2f8b112f082",
+  "activeVersionId": null,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-01-08T12:15:08.154Z",
+      "createdAt": "2026-01-08T12:15:08.154Z",
+      "role": "workflow:owner",
+      "workflowId": "SkW4gd5Petqi1Lvb",
+      "projectId": "7K0b7BEJpzNXLaZY"
+    }
+  ],
+  "activeVersion": null,
+  "tags": []
+}

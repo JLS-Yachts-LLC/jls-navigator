@@ -1,0 +1,58 @@
+{
+  "updatedAt": "2026-02-04T12:34:34.000Z",
+  "createdAt": "2026-01-08T16:51:54.700Z",
+  "id": "RDuYVe6pq4JCDUEw",
+  "name": "Lightspeed->Quickbooks->Product_Updated",
+  "active": false,
+  "isArchived": true,
+  "nodes": [
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.lightspeedapp.com/API/Account.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        208,
+        0
+      ],
+      "id": "21a6f630-a493-469a-b3bf-acee4a96ffa5",
+      "name": "HTTP Request",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ki6xZZeJ87N5V7fp",
+          "name": "Header Auth account"
+        },
+        "httpBearerAuth": {
+          "id": "S7aoSt3D7FWWQgi5",
+          "name": "Bearer Auth account"
+        }
+      }
+    }
+  ],
+  "connections": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {},
+  "versionId": "614c4d9d-e9cf-4a83-937e-638b8b6317f4",
+  "activeVersionId": null,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-01-08T16:51:54.707Z",
+      "createdAt": "2026-01-08T16:51:54.707Z",
+      "role": "workflow:owner",
+      "workflowId": "RDuYVe6pq4JCDUEw",
+      "projectId": "7K0b7BEJpzNXLaZY"
+    }
+  ],
+  "activeVersion": null,
+  "tags": []
+}

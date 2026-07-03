@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Quotation PDFs now render on the official JLS Yachts letterhead — the real Word template backgrounds (logo, QUOTE TO box, black bars, division footer, Terms & Conditions page) with values stamped at the exact template positions, per currency variant (AED / AED-to-USD-EUR / USD-EUR), including customer TRN lookup and correct multi-page totals"
+      },
+      {
+        "type": "feature",
         "title": "QB Quotation/Estimate documents now generate fully native on the worker — the Quotation PDF and XLSX (line items, VAT summary, bank details, currency conversion) are built in-platform and attached to the QuickBooks estimate, replacing the n8n workflow, Google Drive templates and ConvertAPI. Toggle 'QB Quotation/Estimate — document generation' under Automations to cut over; superseded attachments are replaced automatically"
       },
       {

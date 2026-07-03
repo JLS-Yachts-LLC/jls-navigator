@@ -1,0 +1,76 @@
+{
+  "updatedAt": "2026-04-10T10:36:13.000Z",
+  "createdAt": "2026-04-10T10:31:37.512Z",
+  "id": "bQhUXmYIzboLfXthTwnvG",
+  "name": "Visa - Status Update - Add to Main",
+  "active": false,
+  "isArchived": true,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "3f770387-b2a7-4b88-8f63-66c20a2ea39e",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "84ce4650-3e16-4739-9b31-5e4d367df78a",
+      "name": "Webhook",
+      "webhookId": "3f770387-b2a7-4b88-8f63-66c20a2ea39e"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"challenge\": \"{{ $json.body.challenge }}\" }",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        208,
+        -112
+      ],
+      "id": "ed7dd084-fc47-42ad-88b5-da08cfb6a4be",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {},
+  "versionId": "6dbf7c88-637e-49c0-8575-04f98d9a93ed",
+  "activeVersionId": null,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-04-10T10:31:37.522Z",
+      "createdAt": "2026-04-10T10:31:37.522Z",
+      "role": "workflow:owner",
+      "workflowId": "bQhUXmYIzboLfXthTwnvG",
+      "projectId": "7K0b7BEJpzNXLaZY"
+    }
+  ],
+  "activeVersion": null,
+  "tags": []
+}

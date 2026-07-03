@@ -1,0 +1,790 @@
+{
+  "updatedAt": "2026-01-27T19:38:07.366Z",
+  "createdAt": "2026-01-26T14:10:48.229Z",
+  "id": "TCb5gJU4_E-2UsymZ6Y8c",
+  "name": "Lightpseed Inventory -> Quickbooks Inventory",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -272,
+        0
+      ],
+      "id": "d9ee4f34-0153-4a69-ae9d-e3c143a0a440",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "url": "https://superyachtme.retail.lightspeed.app/api/2.0/inventory",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -64,
+        0
+      ],
+      "id": "496554d2-4775-4b6d-b8ac-9dca2993e5f8",
+      "name": "Lightspeed Fetch Inventory",
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "uYPEQLJxJ3lYWbta",
+          "name": "Lightspeed Token"
+        },
+        "httpBearerAuth": {
+          "id": "WoxCXu4qRHbtqjNE",
+          "name": "Lightspeed Bearer Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {
+          "reset": false
+        }
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        688,
+        0
+      ],
+      "id": "d9380b43-a9df-434a-a162-76728289e427",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "0f7fb02c-2ffd-4cee-9f2f-46a12eb0d316",
+              "name": "TrackQtyOnHand",
+              "value": "true",
+              "type": "string"
+            },
+            {
+              "id": "3e176ae5-f8e3-412c-a983-63adc318fe8f",
+              "name": "=Name",
+              "value": "={{ $json.data.name }}",
+              "type": "string"
+            },
+            {
+              "id": "01761d10-e1a5-478a-ada3-15b797b70ec5",
+              "name": "Type",
+              "value": "Inventory",
+              "type": "string"
+            },
+            {
+              "id": "6cd7aa0d-ea98-4867-83da-e7a388f5c81c",
+              "name": "=UnitPrice",
+              "value": "={{ $json.data.price_including_tax }}",
+              "type": "number"
+            },
+            {
+              "id": "142ea3d4-7709-490c-9f43-5ca078ba1a3c",
+              "name": "=QtyOnHand",
+              "value": "=",
+              "type": "number"
+            },
+            {
+              "id": "62891386-afa7-455d-9bd0-15c5dd88ebe3",
+              "name": "=PurchaseCost",
+              "value": "={{ $json.data.supply_price }}",
+              "type": "number"
+            },
+            {
+              "id": "7113e104-e43a-4422-8d98-efdba56a22fd",
+              "name": "IncomeAccountRef",
+              "value": "{ \"value\": \"85\" }",
+              "type": "object"
+            },
+            {
+              "id": "bda17f35-2393-4c80-a603-2fc60384db55",
+              "name": "AssetAccountRef",
+              "value": "{ \"value\": \"87\" }",
+              "type": "object"
+            },
+            {
+              "id": "d4272597-60de-440e-b9cd-d83f2254fbd6",
+              "name": "ExpenseAccountRef",
+              "value": "{ \"value\": \"86\" }",
+              "type": "object"
+            },
+            {
+              "id": "ceef839c-0bbe-47bb-8ab3-7f529db67dbd",
+              "name": "InvStartDate",
+              "value": "2026-01-26",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1216,
+        112
+      ],
+      "id": "883a020e-9d0a-48ef-8576-5baec4098934",
+      "name": "StructureData"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "88cfd420-1d9b-44ce-bd0f-d1b1c8a48b45",
+              "leftValue": "={{ $('StructureData').item.json.Name }}",
+              "rightValue": "={{ $('Check if Exists').item.json.QueryResponse.Item[0].Name }}",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            },
+            {
+              "id": "26c75475-c448-4216-9c2e-4700e6060f53",
+              "leftValue": "={{ $('Check if Exists').item.json.QueryResponse.Item[0].Name }}",
+              "rightValue": "0",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1936,
+        112
+      ],
+      "id": "63aab91a-6e27-4079-afcb-933695fdc633",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://quickbooks.api.intuit.com/v3/company/9341456211763919/item",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"Id\": {{ $('Check if Exists').item.json.QueryResponse.Item[0].Id }},\n  \"Name\": {{ $('SafeName').item.json.safeName }},\n  \"Type\": \"Inventory\",\n  \"TrackQtyOnHand\": true,\n  \"QtyOnHand\": {{ $node['StructureData'].json.QtyOnHand }},\n  \"InvStartDate\": {{ $node['StructureData'].json.InvStartDate }},\n  \"UnitPrice\": {{ $node['StructureData'].json.UnitPrice }},\n  \"PurchaseCost\": {{ $node['StructureData'].json.PurchaseCost }},\n  \"IncomeAccountRef\": {\n    \"value\": {{ $node['StructureData'].json.IncomeAccountRef.value }}\n  },\n  \"AssetAccountRef\": {\n    \"value\": {{ $node['StructureData'].json.AssetAccountRef.value }}\n  },\n  \"ExpenseAccountRef\": {\n    \"value\": {{ $node['StructureData'].json.ExpenseAccountRef.value }}\n  }\n}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2192,
+        256
+      ],
+      "id": "aed72e48-7fee-4034-8336-301c8d275645",
+      "name": "Create Quickbooks With Inventory",
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "LzsBKraDvi63Re6a",
+          "name": "Waypoint - Quickbooks - Production"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://quickbooks.api.intuit.com/v3/company/9341456211763919/item?operation=update",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"Id\": \"{{ $('Check if Exists').item.json.QueryResponse.Item[0].Id }}\",\n  \"SyncToken\": \"{{ $('Check if Exists').item.json.QueryResponse.Item[0].SyncToken }}\",\n  \"sparse\": true,\n  \"UnitPrice\": {{ $node[\"StructureData\"].json.UnitPrice}},\n  \"PurchaseCost\": {{ $node[\"StructureData\"].json.PurchaseCost}},\n\n  \"IncomeAccountRef\": {\n    \"value\": \"{{ $node[\"StructureData\"].json.IncomeAccountRef.value}}\"\n  },\n  \"AssetAccountRef\": {\n    \"value\": \"{{ $node[\"StructureData\"].json.AssetAccountRef.value}}\"\n  },\n  \"ExpenseAccountRef\": {\n    \"value\": \"{{ $node[\"StructureData\"].json.ExpenseAccountRef.value}}\"\n  }\n}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2448,
+        752
+      ],
+      "id": "fec0147a-2952-4e83-bd8d-5818c6e9d409",
+      "name": "Update Quickbooks With Inventory",
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "LzsBKraDvi63Re6a",
+          "name": "Waypoint - Quickbooks - Production"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://quickbooks.api.intuit.com/v3/company/9341456211763919/query",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "=SELECT * FROM Item \nWHERE FullyQualifiedName = '{{ $json.safeName }}'"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1568,
+        112
+      ],
+      "id": "987b17da-75a2-4548-818d-31b3f36bd96e",
+      "name": "Check if Exists",
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "LzsBKraDvi63Re6a",
+          "name": "Waypoint - Quickbooks - Production"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// 'items' is an array of incoming items from the previous node\n// Each item has a `json` property\n\nconst output = [];\n\nitems.forEach(item => {\n    // Check if the node output has a 'data' array\n    if (item.json && Array.isArray(item.json.data)) {\n        item.json.data.forEach(innerItem => {\n            output.push({ json: innerItem });\n        });\n    }\n});\n\nreturn output;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        288,
+        0
+      ],
+      "id": "f4c37b6d-aeac-4273-a78b-3733116b2d5e",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "0f6a4be6-34c0-43ab-975a-011791b3ade8",
+              "leftValue": "={{ $json.name }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        848,
+        128
+      ],
+      "id": "ccacb5bb-d418-4ed9-868f-f3f89033b65e",
+      "name": "If1"
+    },
+    {
+      "parameters": {
+        "url": "=https://superyachtme.retail.lightspeed.app/api/2.0/products/{{ $json.product_id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        112,
+        0
+      ],
+      "id": "fc41a192-8d16-41de-90e8-b6a3dea5a255",
+      "name": "Lightspeed Fetch Product from Inventory",
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "WoxCXu4qRHbtqjNE",
+          "name": "Lightspeed Bearer Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://superyachtme.retail.lightspeed.app/api/2.0/products/{{ $json.id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1056,
+        112
+      ],
+      "id": "bda024d9-7fc8-4b59-a7a2-0596e4af8c1a",
+      "name": "Lightspeed Fetch Product from Inventory1",
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "WoxCXu4qRHbtqjNE",
+          "name": "Lightspeed Bearer Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "0f7fb02c-2ffd-4cee-9f2f-46a12eb0d316",
+              "name": "TrackQtyOnHand",
+              "value": "true",
+              "type": "string"
+            },
+            {
+              "id": "3e176ae5-f8e3-412c-a983-63adc318fe8f",
+              "name": "=Name",
+              "value": "={{ $('SafeName').item.json.safeName }}",
+              "type": "string"
+            },
+            {
+              "id": "01761d10-e1a5-478a-ada3-15b797b70ec5",
+              "name": "Type",
+              "value": "Inventory",
+              "type": "string"
+            },
+            {
+              "id": "6cd7aa0d-ea98-4867-83da-e7a388f5c81c",
+              "name": "=UnitPrice",
+              "value": "={{ $json.QueryResponse.Item[0].UnitPrice }}",
+              "type": "number"
+            },
+            {
+              "id": "142ea3d4-7709-490c-9f43-5ca078ba1a3c",
+              "name": "=QtyOnHand",
+              "value": "={{ $json.QueryResponse.Item[0].QtyOnHand }}",
+              "type": "number"
+            },
+            {
+              "id": "62891386-afa7-455d-9bd0-15c5dd88ebe3",
+              "name": "=PurchaseCost",
+              "value": "={{ $json.QueryResponse.Item[0].PurchaseCost }}",
+              "type": "number"
+            },
+            {
+              "id": "7113e104-e43a-4422-8d98-efdba56a22fd",
+              "name": "IncomeAccountRef",
+              "value": "{ \"value\": \"85\" }",
+              "type": "object"
+            },
+            {
+              "id": "bda17f35-2393-4c80-a603-2fc60384db55",
+              "name": "AssetAccountRef",
+              "value": "{ \"value\": \"87\" }",
+              "type": "object"
+            },
+            {
+              "id": "d4272597-60de-440e-b9cd-d83f2254fbd6",
+              "name": "ExpenseAccountRef",
+              "value": "{ \"value\": \"86\" }",
+              "type": "object"
+            },
+            {
+              "id": "384a3dfc-f827-419f-8f2e-0798c9a0a6a6",
+              "name": "InvStartDate",
+              "value": "2026-01-26",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1744,
+        112
+      ],
+      "id": "d24176b6-768c-45f7-ba90-5cbc32cf3e3d",
+      "name": "StructureData With Friendly Name"
+    },
+    {
+      "parameters": {
+        "jsCode": "const name = $json.Name;\n\nif (!name) {\n  return [{ json: { safeName: null } }];\n}\n\nconst safeName = name.replace(/'/g, \"\\\\'\");\n\nreturn [\n  {\n    json: {\n      ...$json,\n      safeName\n    }\n  }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1392,
+        112
+      ],
+      "id": "43de1e80-fcac-4e99-ac99-3029527e1104",
+      "name": "SafeName"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "65b94a51-62c5-4d36-9cd9-1d7dcb24f5d7",
+              "leftValue": "={{ $json.UnitPrice }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "f10a630c-ae99-4bbb-b3c4-af008a4c2fc5",
+              "leftValue": "={{ $json.PurchaseCost }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1952,
+        576
+      ],
+      "id": "329cd58e-44c9-49c4-939e-dbd39ee7b93d",
+      "name": "If2",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://quickbooks.api.intuit.com/v3/company/9341456211763919/item?operation=update",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"Id\": \"{{ $('Check if Exists').item.json.QueryResponse.Item[0].Id }}\",\n  \"SyncToken\": \"{{ $('Check if Exists').item.json.QueryResponse.Item[0].SyncToken }}\",\n  \"sparse\": true,\n  \"IncomeAccountRef\": {\n    \"value\": \"{{ $node[\"StructureData\"].json.IncomeAccountRef.value}}\"\n  },\n  \"AssetAccountRef\": {\n    \"value\": \"{{ $node[\"StructureData\"].json.AssetAccountRef.value}}\"\n  },\n  \"ExpenseAccountRef\": {\n    \"value\": \"{{ $node[\"StructureData\"].json.ExpenseAccountRef.value}}\"\n  }\n}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2464,
+        512
+      ],
+      "id": "6530c801-33b8-4272-9f61-b557b1411c71",
+      "name": "Update Quickbooks With Inventory-WithoutPrice",
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "LzsBKraDvi63Re6a",
+          "name": "Waypoint - Quickbooks - Production"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Lightspeed Fetch Inventory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lightspeed Fetch Inventory": {
+      "main": [
+        [
+          {
+            "node": "Lightspeed Fetch Product from Inventory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "StructureData": {
+      "main": [
+        [
+          {
+            "node": "SafeName",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Create Quickbooks With Inventory",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Quickbooks With Inventory": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if Exists": {
+      "main": [
+        [
+          {
+            "node": "StructureData With Friendly Name",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Quickbooks With Inventory": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If1": {
+      "main": [
+        [
+          {
+            "node": "Lightspeed Fetch Product from Inventory1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lightspeed Fetch Product from Inventory": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lightspeed Fetch Product from Inventory1": {
+      "main": [
+        [
+          {
+            "node": "StructureData",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "StructureData With Friendly Name": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SafeName": {
+      "main": [
+        [
+          {
+            "node": "Check if Exists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If2": {
+      "main": [
+        [
+          {
+            "node": "Update Quickbooks With Inventory-WithoutPrice",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Quickbooks With Inventory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Quickbooks With Inventory-WithoutPrice": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {},
+  "versionId": "a50a1a20-668d-4c78-aca6-cd763bf8ded0",
+  "activeVersionId": null,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-01-26T14:10:48.290Z",
+      "createdAt": "2026-01-26T14:10:48.290Z",
+      "role": "workflow:owner",
+      "workflowId": "TCb5gJU4_E-2UsymZ6Y8c",
+      "projectId": "7K0b7BEJpzNXLaZY"
+    }
+  ],
+  "activeVersion": null,
+  "tags": []
+}

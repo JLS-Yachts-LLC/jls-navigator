@@ -1,0 +1,1067 @@
+{
+  "updatedAt": "2026-01-09T14:31:39.748Z",
+  "createdAt": "2026-01-08T10:51:18.872Z",
+  "id": "7NTNe0A0VdJ5ZpKR",
+  "name": "3CX->Monday",
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "filters": {
+          "foldersToInclude": [
+            "AQMkAGIzZThmM2ZkLTIxNjEtNDljZC04M2I5LTY0M2RiMTMyMTllNQAuAAADQmDiP31MCUuhWktzKIx_jAEAB1f20N9MY0OQl9B9AN1BagAAAgEMAAAA"
+          ]
+        },
+        "options": {
+          "downloadAttachments": true
+        }
+      },
+      "type": "n8n-nodes-base.microsoftOutlookTrigger",
+      "typeVersion": 1,
+      "position": [
+        -48,
+        16
+      ],
+      "id": "9ec5fc88-89da-42f9-8406-cdeddd6f6534",
+      "name": "Microsoft Outlook Trigger",
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "7IaguepNlbcPCyIE",
+          "name": "Microsoft Outlook account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n    const raw = item.json;\n\n    // Clean keys: trim spaces and remove hidden BOM from first header\n    const cleaned = {};\n    Object.keys(raw).forEach(key => {\n        const cleanKey = key.replace(/^\\uFEFF/, '').trim(); // removes BOM and spaces\n        cleaned[cleanKey] = raw[key]?.trim();\n    });\n\n    return {\n        json: {\n            call_time: cleaned['Call Time'] || '',\n            call_id: cleaned['Caller ID'] || '',\n            from: cleaned['Caller Display name'] || '',\n            trunk: cleaned['Trunk'] || '',\n            trunk_number: cleaned['Trunk number'] || '',\n            status: cleaned['Status'] || '',\n            ringing: cleaned['Ringing'] || '',\n            talking: cleaned['Talking'] || '',\n            total_duration: cleaned['Total Duration'] || '',\n            to: cleaned['Destination Callee Id'] || '',\n            destination_name: cleaned['Destination Display Name'] || '',\n            cost: cleaned['Cost'] || '',\n            date: cleaned['Call Time'] ? cleaned['Call Time'].split('T')[0] : ''\n        }\n    };\n}).filter(item => item.json.call_time); // skip empty rows\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        -192
+      ],
+      "id": "0f5650a0-c952-4cc2-a089-e31ac2fc4df5",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.monday.com/v2",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjU5MTU3ODE5OCwiYWFpIjoxMSwidWlkIjo5NjQ0Nzc2MywiaWFkIjoiMjAyNS0xMS0yOFQwNTo1OTozMi4wMDBaIiwicGVyIjoibWU6d3JpdGUiLCJhY3RpZCI6Mjc3MzY3MTQsInJnbiI6ImV1YzEifQ.9Wez76_J_cHuK15tNti7hcrZJn455qeq-uDyC66IxKE"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1456,
+        -192
+      ],
+      "id": "643acef7-3314-4b3d-8cc5-1e8e31810826",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "return items\n  .map(item => {\n    const raw = item.json;\n\n    // Skip totals rows\n    if (raw.call_time === 'Totals') return null;\n\n    // Build column_values JSON string\n    const columnValues = JSON.stringify({\n      text_mkybr5gz: raw.call_id || '',\n      text_mkyb21ay: raw.to || '',\n      text_mkybhahq: raw.direction || '',\n      status: raw.status || '',\n      text_mkybqcer: raw.ringing || '',\n      text_mkybmhy9: raw.talking || '',\n      text_mkybfa4d: raw.cost || '',\n      text_mkybe5w2: raw.activity_details || '',\n      date4: raw.date || ''\n    });\n\n    return {\n      json: {\n        query: `mutation ($board: ID!, $name: String!, $vals: JSON!) {\n          create_item(board_id: $board, item_name: $name, column_values: $vals) { id }\n        }`,\n        variables: {\n          board: 5088632639,\n          name: raw.from || '', // Monday item name\n          vals: columnValues\n        }\n      }\n    };\n  })\n  .filter(item => item !== null); // remove nulls\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1248,
+        -192
+      ],
+      "id": "10c62eea-b41d-47aa-b5c4-62fb02f28690",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "d350eb51-427f-474f-9a7d-16eb1716ebb3",
+                    "leftValue": "={{ Object.values($binary || {}).map(a => a.fileName).join(' ') }}",
+                    "rightValue": "Daily",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "80c13be9-b961-431e-bffd-2e254f3dd809",
+                    "leftValue": "={{ Object.values($binary || {}).map(a => a.fileName).join(' ') }}",
+                    "rightValue": "Outbound",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ Object.values($binary || {}).map(a => a.fileName).join(' ') }}",
+                    "rightValue": "Inbound",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    },
+                    "id": "88fd04df-fd62-4dba-9fc5-a70fe837fe05"
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        416,
+        -16
+      ],
+      "id": "5ef7c145-205d-45ce-ae3a-2c9c9abf6020",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Cleaning CSV data\nreturn items\n  .map(item => {\n    const raw = item.json;\n\n    // Remove BOM and trim keys\n    const cleaned = {};\n    Object.keys(raw).forEach(key => {\n      const cleanKey = key.replace(/^\\uFEFF/, '').trim();\n      cleaned[cleanKey] = raw[key]?.trim();\n    });\n\n    // Skip empty or totals rows\n    if (!cleaned['Call Time'] || cleaned['Call Time'] === 'Totals') return null;\n\n    return {\n      json: {\n        call_time: cleaned['Call Time'] || '',\n        call_id: cleaned['Caller ID'] || '',\n        from: cleaned['Caller Display name'] || '',\n        trunk: cleaned['Trunk'] || '',\n        trunk_number: cleaned['Trunk number'] || '',\n        status: cleaned['Status'] || '',\n        ringing: cleaned['Ringing'] || '',\n        talking: cleaned['Talking'] || '',\n        total_duration: cleaned['Total Duration'] || '',\n        to: cleaned['Destination Callee Id'] || '',\n        destination_name: cleaned['Destination Display Name'] || '',\n        cost: cleaned['Cost'] || '',\n        date: cleaned['Call Time'] ? cleaned['Call Time'].split('T')[0] : ''\n      }\n    };\n  })\n  .filter(item => item !== null);\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        0
+      ],
+      "id": "724c02f1-dfc2-4c45-ae0e-81407680e54c",
+      "name": "Clean Data"
+    },
+    {
+      "parameters": {
+        "jsCode": "return items\n  .map(item => {\n    const raw = item.json;\n\n    // Skip totals rows if any\n    if (raw.call_time === 'Totals') return null;\n\n    // Build column_values JSON with correct Monday column IDs\n    const columnValues = JSON.stringify({\n      date4: raw.date || '',                     // Date\n      status: raw.status || '',                  // Status\n      text_mkyafhh7: raw.to || '',              // Caller Number\n      text_mkyaaqg3: raw.total_duration || '',  // Call Time\n      text_mkyamd5g: raw.ringing || '',         // Ringing\n      text_mkyaww5v: raw.talking || ''          // Talking\n    });\n\n    return {\n      json: {\n        query: `mutation ($board: ID!, $name: String!, $vals: JSON!) {\n          create_item(board_id: $board, item_name: $name, column_values: $vals) { id }\n        }`,\n        variables: {\n          board: 5088564474,         // Your board ID\n          name: raw.from || '',      // Staff Name (Item Name)\n          vals: columnValues\n        }\n      }\n    };\n  })\n  .filter(item => item !== null); // Remove nulls\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1248,
+        0
+      ],
+      "id": "84d58d7a-6a5f-413e-b0ca-e7c8ba19aced",
+      "name": "Monday Mutation"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.monday.com/v2",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjU5MTU3ODE5OCwiYWFpIjoxMSwidWlkIjo5NjQ0Nzc2MywiaWFkIjoiMjAyNS0xMS0yOFQwNTo1OTozMi4wMDBaIiwicGVyIjoibWU6d3JpdGUiLCJhY3RpZCI6Mjc3MzY3MTQsInJnbiI6ImV1YzEifQ.9Wez76_J_cHuK15tNti7hcrZJn455qeq-uDyC66IxKE"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1456,
+        0
+      ],
+      "id": "1c88bf88-c49d-4b5d-8e77-9469b5a05a1a",
+      "name": "HTTP Request1"
+    },
+    {
+      "parameters": {
+        "binaryPropertyName": "attachment_0",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        832,
+        0
+      ],
+      "id": "55e2ab0c-10a8-4b1f-9419-040ec745939a",
+      "name": "Extract Outbound"
+    },
+    {
+      "parameters": {
+        "binaryPropertyName": "attachment_0",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        832,
+        -192
+      ],
+      "id": "4aaaea82-5f4d-415f-ab94-46080388e7ed",
+      "name": "Extract Daily"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.monday.com/v2",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjU5MTU3ODE5OCwiYWFpIjoxMSwidWlkIjo5NjQ0Nzc2MywiaWFkIjoiMjAyNS0xMS0yOFQwNTo1OTozMi4wMDBaIiwicGVyIjoibWU6d3JpdGUiLCJhY3RpZCI6Mjc3MzY3MTQsInJnbiI6ImV1YzEifQ.9Wez76_J_cHuK15tNti7hcrZJn455qeq-uDyC66IxKE"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1456,
+        176
+      ],
+      "id": "4a3b3e45-b7ce-4259-bb72-3f2a7672d6c8",
+      "name": "HTTP Request2"
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n    const raw = item.json;\n\n    // Clean keys: trim spaces and remove hidden BOM\n    const cleaned = {};\n    Object.keys(raw).forEach(key => {\n        const cleanKey = key.replace(/^\\uFEFF/, '').trim();\n        cleaned[cleanKey] = raw[key]?.trim();\n    });\n\n    return {\n        json: {\n            call_time: cleaned['Call Time'] || '',\n            call_id: cleaned['Caller ID'] || '',\n            from: cleaned['Destination'] || '',         // \"Staff Name\" in Monday\n            trunk: cleaned['Trunk'] || '',\n            trunk_number: cleaned['Trunk number'] || '',\n            to: cleaned['Did'] || '',                   // \"Caller Number\" in Monday\n            status: cleaned['Status'] || '',\n            ringing: cleaned['Ringing'] || '',\n            talking: cleaned['Talking'] || '',\n            total_duration: cleaned['Total Duration'] || '',\n            date: cleaned['Call Time'] ? cleaned['Call Time'].split('T')[0] : ''\n        }\n    };\n}).filter(item => item.json.call_time); // skip empty rows\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        176
+      ],
+      "id": "80befec5-fd37-464e-9d72-91ce2847cb3b",
+      "name": "Clean Data1"
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n  const raw = item.json;\n\n  // Skip totals or invalid rows\n  if (!raw.call_time) return null;\n\n  const columnValues = {\n    name: raw.from && raw.from.trim() !== '' ? raw.from : 'Inbound Call',\n    date4: raw.date || '',\n    status: { label: raw.status === 'Answered' ? 'Answered' : 'Unanswered' },\n    text_mky3878e: raw.call_id || '',       // Caller ID\n    text_mky3718k: raw.call_id || '',       // Caller Number\n    text_mky3yh4m: raw.call_time || '',     // Call time\n    text_mky98rqs: raw.trunk || '',         // Trunk\n    numeric_mky9yfdq: Number(raw.trunk_number) || 0,\n    numeric_mky9v3je: Number(raw.to) || 0, // DID\n    text_mky92qps: raw.ringing || '',\n    text_mky9vs9d: raw.talking || '',\n    text_mky9mjrx: raw.total_duration || '',\n    numeric_mkyaqsd2: 0                      // Ring Time Numbers (optional)\n  };\n\n  return {\n    json: {\n      query: `mutation ($board: ID!, $name: String!, $vals: JSON!) {\n        create_item(board_id: $board, item_name: $name, column_values: $vals) { id }\n      }`,\n      variables: {\n        board: 5088250215,\n        name: columnValues.name,\n        vals: JSON.stringify(columnValues)\n      }\n    }\n  };\n}).filter(item => item !== null);\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1248,
+        176
+      ],
+      "id": "625bc39c-aa67-4cc9-8c42-c6f6aa139234",
+      "name": "Monday Mutation1"
+    },
+    {
+      "parameters": {
+        "binaryPropertyName": "attachment_0",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        832,
+        176
+      ],
+      "id": "fe6743b4-7b55-4252-bfa1-3b50d892dc6d",
+      "name": "Extract Inbound"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "8aeca4a2-6994-4082-ba42-7c16b0a6ceb2",
+              "leftValue": "={{ Object.keys($binary || {}).length }}",
+              "rightValue": 1,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        160,
+        16
+      ],
+      "id": "b3e7a376-5070-4066-bf52-f04ddfbb3c28",
+      "name": "If"
+    }
+  ],
+  "connections": {
+    "Microsoft Outlook Trigger": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Extract Daily",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Extract Outbound",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Extract Inbound",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean Data": {
+      "main": [
+        [
+          {
+            "node": "Monday Mutation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Monday Mutation": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Outbound": {
+      "main": [
+        [
+          {
+            "node": "Clean Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Daily": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean Data1": {
+      "main": [
+        [
+          {
+            "node": "Monday Mutation1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Monday Mutation1": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Inbound": {
+      "main": [
+        [
+          {
+            "node": "Clean Data1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": {
+    "node:Microsoft Outlook Trigger": {
+      "lastTimeChecked": "2026-04-14T20:00:29.638Z"
+    }
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "89478f17-b57b-4e16-84c4-c797c56eb0bc",
+  "activeVersionId": "89478f17-b57b-4e16-84c4-c797c56eb0bc",
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-01-08T10:51:18.875Z",
+      "createdAt": "2026-01-08T10:51:18.875Z",
+      "role": "workflow:owner",
+      "workflowId": "7NTNe0A0VdJ5ZpKR",
+      "projectId": "7K0b7BEJpzNXLaZY"
+    }
+  ],
+  "activeVersion": {
+    "updatedAt": "2026-01-09T14:35:41.000Z",
+    "createdAt": "2026-01-09T14:31:39.750Z",
+    "versionId": "89478f17-b57b-4e16-84c4-c797c56eb0bc",
+    "workflowId": "7NTNe0A0VdJ5ZpKR",
+    "nodes": [
+      {
+        "parameters": {
+          "pollTimes": {
+            "item": [
+              {
+                "mode": "everyMinute"
+              }
+            ]
+          },
+          "filters": {
+            "foldersToInclude": [
+              "AQMkAGIzZThmM2ZkLTIxNjEtNDljZC04M2I5LTY0M2RiMTMyMTllNQAuAAADQmDiP31MCUuhWktzKIx_jAEAB1f20N9MY0OQl9B9AN1BagAAAgEMAAAA"
+            ]
+          },
+          "options": {
+            "downloadAttachments": true
+          }
+        },
+        "type": "n8n-nodes-base.microsoftOutlookTrigger",
+        "typeVersion": 1,
+        "position": [
+          -48,
+          16
+        ],
+        "id": "9ec5fc88-89da-42f9-8406-cdeddd6f6534",
+        "name": "Microsoft Outlook Trigger",
+        "credentials": {
+          "microsoftOutlookOAuth2Api": {
+            "id": "7IaguepNlbcPCyIE",
+            "name": "Microsoft Outlook account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "return items.map(item => {\n    const raw = item.json;\n\n    // Clean keys: trim spaces and remove hidden BOM from first header\n    const cleaned = {};\n    Object.keys(raw).forEach(key => {\n        const cleanKey = key.replace(/^\\uFEFF/, '').trim(); // removes BOM and spaces\n        cleaned[cleanKey] = raw[key]?.trim();\n    });\n\n    return {\n        json: {\n            call_time: cleaned['Call Time'] || '',\n            call_id: cleaned['Caller ID'] || '',\n            from: cleaned['Caller Display name'] || '',\n            trunk: cleaned['Trunk'] || '',\n            trunk_number: cleaned['Trunk number'] || '',\n            status: cleaned['Status'] || '',\n            ringing: cleaned['Ringing'] || '',\n            talking: cleaned['Talking'] || '',\n            total_duration: cleaned['Total Duration'] || '',\n            to: cleaned['Destination Callee Id'] || '',\n            destination_name: cleaned['Destination Display Name'] || '',\n            cost: cleaned['Cost'] || '',\n            date: cleaned['Call Time'] ? cleaned['Call Time'].split('T')[0] : ''\n        }\n    };\n}).filter(item => item.json.call_time); // skip empty rows\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1040,
+          -192
+        ],
+        "id": "0f5650a0-c952-4cc2-a089-e31ac2fc4df5",
+        "name": "Code in JavaScript"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.monday.com/v2",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjU5MTU3ODE5OCwiYWFpIjoxMSwidWlkIjo5NjQ0Nzc2MywiaWFkIjoiMjAyNS0xMS0yOFQwNTo1OTozMi4wMDBaIiwicGVyIjoibWU6d3JpdGUiLCJhY3RpZCI6Mjc3MzY3MTQsInJnbiI6ImV1YzEifQ.9Wez76_J_cHuK15tNti7hcrZJn455qeq-uDyC66IxKE"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{$json}}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.3,
+        "position": [
+          1456,
+          -192
+        ],
+        "id": "643acef7-3314-4b3d-8cc5-1e8e31810826",
+        "name": "HTTP Request"
+      },
+      {
+        "parameters": {
+          "jsCode": "return items\n  .map(item => {\n    const raw = item.json;\n\n    // Skip totals rows\n    if (raw.call_time === 'Totals') return null;\n\n    // Build column_values JSON string\n    const columnValues = JSON.stringify({\n      text_mkybr5gz: raw.call_id || '',\n      text_mkyb21ay: raw.to || '',\n      text_mkybhahq: raw.direction || '',\n      status: raw.status || '',\n      text_mkybqcer: raw.ringing || '',\n      text_mkybmhy9: raw.talking || '',\n      text_mkybfa4d: raw.cost || '',\n      text_mkybe5w2: raw.activity_details || '',\n      date4: raw.date || ''\n    });\n\n    return {\n      json: {\n        query: `mutation ($board: ID!, $name: String!, $vals: JSON!) {\n          create_item(board_id: $board, item_name: $name, column_values: $vals) { id }\n        }`,\n        variables: {\n          board: 5088632639,\n          name: raw.from || '', // Monday item name\n          vals: columnValues\n        }\n      }\n    };\n  })\n  .filter(item => item !== null); // remove nulls\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1248,
+          -192
+        ],
+        "id": "10c62eea-b41d-47aa-b5c4-62fb02f28690",
+        "name": "Code in JavaScript1"
+      },
+      {
+        "parameters": {
+          "rules": {
+            "values": [
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 3
+                  },
+                  "conditions": [
+                    {
+                      "id": "d350eb51-427f-474f-9a7d-16eb1716ebb3",
+                      "leftValue": "={{ Object.values($binary || {}).map(a => a.fileName).join(' ') }}",
+                      "rightValue": "Daily",
+                      "operator": {
+                        "type": "string",
+                        "operation": "contains"
+                      }
+                    }
+                  ],
+                  "combinator": "and"
+                }
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 3
+                  },
+                  "conditions": [
+                    {
+                      "id": "80c13be9-b961-431e-bffd-2e254f3dd809",
+                      "leftValue": "={{ Object.values($binary || {}).map(a => a.fileName).join(' ') }}",
+                      "rightValue": "Outbound",
+                      "operator": {
+                        "type": "string",
+                        "operation": "contains"
+                      }
+                    }
+                  ],
+                  "combinator": "and"
+                }
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 3
+                  },
+                  "conditions": [
+                    {
+                      "leftValue": "={{ Object.values($binary || {}).map(a => a.fileName).join(' ') }}",
+                      "rightValue": "Inbound",
+                      "operator": {
+                        "type": "string",
+                        "operation": "contains"
+                      },
+                      "id": "88fd04df-fd62-4dba-9fc5-a70fe837fe05"
+                    }
+                  ],
+                  "combinator": "and"
+                }
+              }
+            ]
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.switch",
+        "typeVersion": 3.4,
+        "position": [
+          416,
+          -16
+        ],
+        "id": "5ef7c145-205d-45ce-ae3a-2c9c9abf6020",
+        "name": "Switch"
+      },
+      {
+        "parameters": {
+          "jsCode": "// Cleaning CSV data\nreturn items\n  .map(item => {\n    const raw = item.json;\n\n    // Remove BOM and trim keys\n    const cleaned = {};\n    Object.keys(raw).forEach(key => {\n      const cleanKey = key.replace(/^\\uFEFF/, '').trim();\n      cleaned[cleanKey] = raw[key]?.trim();\n    });\n\n    // Skip empty or totals rows\n    if (!cleaned['Call Time'] || cleaned['Call Time'] === 'Totals') return null;\n\n    return {\n      json: {\n        call_time: cleaned['Call Time'] || '',\n        call_id: cleaned['Caller ID'] || '',\n        from: cleaned['Caller Display name'] || '',\n        trunk: cleaned['Trunk'] || '',\n        trunk_number: cleaned['Trunk number'] || '',\n        status: cleaned['Status'] || '',\n        ringing: cleaned['Ringing'] || '',\n        talking: cleaned['Talking'] || '',\n        total_duration: cleaned['Total Duration'] || '',\n        to: cleaned['Destination Callee Id'] || '',\n        destination_name: cleaned['Destination Display Name'] || '',\n        cost: cleaned['Cost'] || '',\n        date: cleaned['Call Time'] ? cleaned['Call Time'].split('T')[0] : ''\n      }\n    };\n  })\n  .filter(item => item !== null);\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1040,
+          0
+        ],
+        "id": "724c02f1-dfc2-4c45-ae0e-81407680e54c",
+        "name": "Clean Data"
+      },
+      {
+        "parameters": {
+          "jsCode": "return items\n  .map(item => {\n    const raw = item.json;\n\n    // Skip totals rows if any\n    if (raw.call_time === 'Totals') return null;\n\n    // Build column_values JSON with correct Monday column IDs\n    const columnValues = JSON.stringify({\n      date4: raw.date || '',                     // Date\n      status: raw.status || '',                  // Status\n      text_mkyafhh7: raw.to || '',              // Caller Number\n      text_mkyaaqg3: raw.total_duration || '',  // Call Time\n      text_mkyamd5g: raw.ringing || '',         // Ringing\n      text_mkyaww5v: raw.talking || ''          // Talking\n    });\n\n    return {\n      json: {\n        query: `mutation ($board: ID!, $name: String!, $vals: JSON!) {\n          create_item(board_id: $board, item_name: $name, column_values: $vals) { id }\n        }`,\n        variables: {\n          board: 5088564474,         // Your board ID\n          name: raw.from || '',      // Staff Name (Item Name)\n          vals: columnValues\n        }\n      }\n    };\n  })\n  .filter(item => item !== null); // Remove nulls\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1248,
+          0
+        ],
+        "id": "84d58d7a-6a5f-413e-b0ca-e7c8ba19aced",
+        "name": "Monday Mutation"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.monday.com/v2",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjU5MTU3ODE5OCwiYWFpIjoxMSwidWlkIjo5NjQ0Nzc2MywiaWFkIjoiMjAyNS0xMS0yOFQwNTo1OTozMi4wMDBaIiwicGVyIjoibWU6d3JpdGUiLCJhY3RpZCI6Mjc3MzY3MTQsInJnbiI6ImV1YzEifQ.9Wez76_J_cHuK15tNti7hcrZJn455qeq-uDyC66IxKE"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{$json}}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.3,
+        "position": [
+          1456,
+          0
+        ],
+        "id": "1c88bf88-c49d-4b5d-8e77-9469b5a05a1a",
+        "name": "HTTP Request1"
+      },
+      {
+        "parameters": {
+          "binaryPropertyName": "attachment_0",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.extractFromFile",
+        "typeVersion": 1,
+        "position": [
+          832,
+          0
+        ],
+        "id": "55e2ab0c-10a8-4b1f-9419-040ec745939a",
+        "name": "Extract Outbound"
+      },
+      {
+        "parameters": {
+          "binaryPropertyName": "attachment_0",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.extractFromFile",
+        "typeVersion": 1,
+        "position": [
+          832,
+          -192
+        ],
+        "id": "4aaaea82-5f4d-415f-ab94-46080388e7ed",
+        "name": "Extract Daily"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.monday.com/v2",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjU5MTU3ODE5OCwiYWFpIjoxMSwidWlkIjo5NjQ0Nzc2MywiaWFkIjoiMjAyNS0xMS0yOFQwNTo1OTozMi4wMDBaIiwicGVyIjoibWU6d3JpdGUiLCJhY3RpZCI6Mjc3MzY3MTQsInJnbiI6ImV1YzEifQ.9Wez76_J_cHuK15tNti7hcrZJn455qeq-uDyC66IxKE"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{$json}}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.3,
+        "position": [
+          1456,
+          176
+        ],
+        "id": "4a3b3e45-b7ce-4259-bb72-3f2a7672d6c8",
+        "name": "HTTP Request2"
+      },
+      {
+        "parameters": {
+          "jsCode": "return items.map(item => {\n    const raw = item.json;\n\n    // Clean keys: trim spaces and remove hidden BOM\n    const cleaned = {};\n    Object.keys(raw).forEach(key => {\n        const cleanKey = key.replace(/^\\uFEFF/, '').trim();\n        cleaned[cleanKey] = raw[key]?.trim();\n    });\n\n    return {\n        json: {\n            call_time: cleaned['Call Time'] || '',\n            call_id: cleaned['Caller ID'] || '',\n            from: cleaned['Destination'] || '',         // \"Staff Name\" in Monday\n            trunk: cleaned['Trunk'] || '',\n            trunk_number: cleaned['Trunk number'] || '',\n            to: cleaned['Did'] || '',                   // \"Caller Number\" in Monday\n            status: cleaned['Status'] || '',\n            ringing: cleaned['Ringing'] || '',\n            talking: cleaned['Talking'] || '',\n            total_duration: cleaned['Total Duration'] || '',\n            date: cleaned['Call Time'] ? cleaned['Call Time'].split('T')[0] : ''\n        }\n    };\n}).filter(item => item.json.call_time); // skip empty rows\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1040,
+          176
+        ],
+        "id": "80befec5-fd37-464e-9d72-91ce2847cb3b",
+        "name": "Clean Data1"
+      },
+      {
+        "parameters": {
+          "jsCode": "return items.map(item => {\n  const raw = item.json;\n\n  // Skip totals or invalid rows\n  if (!raw.call_time) return null;\n\n  const columnValues = {\n    name: raw.from && raw.from.trim() !== '' ? raw.from : 'Inbound Call',\n    date4: raw.date || '',\n    status: { label: raw.status === 'Answered' ? 'Answered' : 'Unanswered' },\n    text_mky3878e: raw.call_id || '',       // Caller ID\n    text_mky3718k: raw.call_id || '',       // Caller Number\n    text_mky3yh4m: raw.call_time || '',     // Call time\n    text_mky98rqs: raw.trunk || '',         // Trunk\n    numeric_mky9yfdq: Number(raw.trunk_number) || 0,\n    numeric_mky9v3je: Number(raw.to) || 0, // DID\n    text_mky92qps: raw.ringing || '',\n    text_mky9vs9d: raw.talking || '',\n    text_mky9mjrx: raw.total_duration || '',\n    numeric_mkyaqsd2: 0                      // Ring Time Numbers (optional)\n  };\n\n  return {\n    json: {\n      query: `mutation ($board: ID!, $name: String!, $vals: JSON!) {\n        create_item(board_id: $board, item_name: $name, column_values: $vals) { id }\n      }`,\n      variables: {\n        board: 5088250215,\n        name: columnValues.name,\n        vals: JSON.stringify(columnValues)\n      }\n    }\n  };\n}).filter(item => item !== null);\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1248,
+          176
+        ],
+        "id": "625bc39c-aa67-4cc9-8c42-c6f6aa139234",
+        "name": "Monday Mutation1"
+      },
+      {
+        "parameters": {
+          "binaryPropertyName": "attachment_0",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.extractFromFile",
+        "typeVersion": 1,
+        "position": [
+          832,
+          176
+        ],
+        "id": "fe6743b4-7b55-4252-bfa1-3b50d892dc6d",
+        "name": "Extract Inbound"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 3
+            },
+            "conditions": [
+              {
+                "id": "8aeca4a2-6994-4082-ba42-7c16b0a6ceb2",
+                "leftValue": "={{ Object.keys($binary || {}).length }}",
+                "rightValue": 1,
+                "operator": {
+                  "type": "number",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          160,
+          16
+        ],
+        "id": "b3e7a376-5070-4066-bf52-f04ddfbb3c28",
+        "name": "If"
+      }
+    ],
+    "connections": {
+      "Microsoft Outlook Trigger": {
+        "main": [
+          [
+            {
+              "node": "If",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Code in JavaScript": {
+        "main": [
+          [
+            {
+              "node": "Code in JavaScript1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Code in JavaScript1": {
+        "main": [
+          [
+            {
+              "node": "HTTP Request",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Switch": {
+        "main": [
+          [
+            {
+              "node": "Extract Daily",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Extract Outbound",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Extract Inbound",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Clean Data": {
+        "main": [
+          [
+            {
+              "node": "Monday Mutation",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Monday Mutation": {
+        "main": [
+          [
+            {
+              "node": "HTTP Request1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Extract Outbound": {
+        "main": [
+          [
+            {
+              "node": "Clean Data",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Extract Daily": {
+        "main": [
+          [
+            {
+              "node": "Code in JavaScript",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Clean Data1": {
+        "main": [
+          [
+            {
+              "node": "Monday Mutation1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Monday Mutation1": {
+        "main": [
+          [
+            {
+              "node": "HTTP Request2",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Extract Inbound": {
+        "main": [
+          [
+            {
+              "node": "Clean Data1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "If": {
+        "main": [
+          [
+            {
+              "node": "Switch",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "Matthew Peeters",
+    "name": "1.0",
+    "description": "",
+    "autosaved": false
+  },
+  "tags": []
+}

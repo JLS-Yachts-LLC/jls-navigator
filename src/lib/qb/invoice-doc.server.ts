@@ -7,9 +7,12 @@
  *   3. Transform: custom fields (Yacht.Name/PO, Currency, Conversion Rate, Bank
  *      Detail, Requested By, Customer TRN, Place of Supply), tax-code mapping,
  *      line items incl. description-only rows.
- *   4. Render a branded multi-page A4 PDF with pdf-lib — items table with
- *      proportional text wrapping, per-page subtotals, VAT breakdown (5%/0%/
- *      non-taxable), currency conversion line and the right bank details.
+ *   4. Render the JLS Yachts invoice with pdf-lib as a faithful reproduction of
+ *      the original Word templates (assets/N8N/TAX INVOICE *): every position,
+ *      column width, font size and image was measured from the template files
+ *      and their Word-rendered PDFs. 35 item lines per page, per-page subtotal
+ *      bar, grand-total bar + VAT breakdown on the last page, currency
+ *      conversion row and the matching Emirates NBD bank details.
  *   5. Delete the previous "Invoice - <no>.pdf" attachments on the QBO invoice
  *      and upload the fresh one (IncludeOnSend: false).
  *   6. Record the post-attach LastUpdatedTime so the webhook echo is ignored.
@@ -21,6 +24,7 @@ import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf
 import { createClient } from '@supabase/supabase-js'
 import { qboRequest, qboQuery, qboUpload, qboConfigured } from './qbo.server'
 import { logAutomationRun } from '@/lib/automations.server'
+import { QB_DOC_IMAGES } from './invoice-assets'
 
 const AUTO_KEY = 'qb-invoice-pdf'
 
@@ -137,24 +141,31 @@ export function transformInvoice(invoice: any): TransformedInvoice {
 }
 
 // ── PDF rendering ──────────────────────────────────────────────────────────────
-const A4 = { w: 595.28, h: 841.89 }
-const M = 40 // page margin
-const NAVY = rgb(0.03, 0.16, 0.28)
-const GREY = rgb(0.45, 0.45, 0.45)
-const LINE = rgb(0.8, 0.83, 0.86)
+// Faithful reproduction of the JLS Yachts Word templates. Every constant below
+// was measured from the template document.xml (dxa/20 → pt) and cross-checked
+// against Word-rendered PDFs of the templates, so the output matches what the
+// old n8n + ConvertAPI pipeline produced.
+const A4 = { w: 595.32, h: 841.92 }
+const BLACK = rgb(0, 0, 0)
+const WHITE = rgb(1, 1, 1)
 
-// Items table columns: [x, width, align]
-const COLS = [
-  { x: M, w: 30, label: 'QTY', align: 'left' as const },
-  { x: M + 32, w: 218, label: 'DESCRIPTION', align: 'left' as const },
-  { x: M + 254, w: 52, label: 'UNIT RATE', align: 'right' as const },
-  { x: M + 310, w: 58, label: 'AMOUNT', align: 'right' as const },
-  { x: M + 372, w: 32, label: 'VAT %', align: 'right' as const },
-  { x: M + 408, w: 50, label: 'VAT', align: 'right' as const },
-  { x: M + 462, w: 53, label: 'TOTAL', align: 'right' as const },
-]
-const BODY_SIZE = 7.5
-const ROW_H = 11
+// Main item table (grid 883/4160/1073/1424/793/1003/1548 dxa @ x=25.55, centred)
+const TBL_X = 25.55
+const TBL_W = 544.2
+const COL_W = [44.15, 208, 53.65, 71.2, 39.65, 50.15, 77.4]
+const COL_X = COL_W.reduce<number[]>((acc, w, i) => [...acc, (acc[i] ?? TBL_X) + w], [TBL_X])
+const COL_LABELS = ['QTY', 'DESCRIPTION', 'UNIT RATE', 'AMOUNT', 'VAT%', 'VAT', 'TOTAL AMOUNT']
+const CELL_PAD = 5.4                 // Word TableNormal cell margin (108 dxa)
+const HEADER_Y = 202.6               // black header bar top (from page top)
+const HEADER_H = 21.36
+const LINE0_Y = 224.4                // first item line top
+const LINE_PITCH = 10.2              // 6pt Arial + 3.3pt paragraph spacing
+const LINES_PER_PAGE = 35
+const SUBTOTAL_BAR_Y = 602.4
+const SUBTOTAL_BAR_H = 17.04
+const GRAND_BAR_H = 9.6              // slimmer bar directly under the subtotal bar
+const ITEM_SIZE = 6                  // item rows are 6pt Arial in the template
+const LABEL_SIZE = 7                 // everything else is 7pt
 
 function wrapText(text: string, font: PDFFont, size: number, maxWidth: number): string[] {
   const out: string[] = []
@@ -181,206 +192,232 @@ function wrapText(text: string, font: PDFFont, size: number, maxWidth: number): 
   return out.length ? out : ['']
 }
 
-type Company = { name: string; address: string; trn: string; phone: string; email: string }
+type Company = { name: string; addressLines: string[]; contact: string; website: string; trn: string }
+
+// Letterhead exactly as printed on the Word templates. automations.config.company
+// (for qb-invoice-pdf) can override any part without a deploy.
+const TEMPLATE_LETTERHEAD: Company = {
+  name: 'JLS YACHTS LLC',
+  addressLines: ['Office 58-2 Leader Sport Compound, Plot 598-1000', 'DIP 1, P.O.Box 341766, Dubai, United Arab Emirates'],
+  contact: 'T: +971(0)4 331 3555 | E: info@jlsyachts.com',
+  website: 'Website: www.jlsyachts.com',
+  trn: 'TRN NO: 100293518500003',
+}
 
 async function companyDetails(): Promise<Company> {
-  // Letterhead is config-driven (automations.config for qb-invoice-pdf) with a
-  // QBO CompanyInfo fallback, so it can be refined without a deploy.
   const sb = admin()
   const { data } = await sb.from('automations').select('config').eq('key', AUTO_KEY).maybeSingle()
   const c = (data?.config as any)?.company ?? {}
-  let base: Company = {
-    name: c.name ?? '', address: c.address ?? '', trn: c.trn ?? '', phone: c.phone ?? '', email: c.email ?? '',
+  return {
+    name: c.name || TEMPLATE_LETTERHEAD.name,
+    addressLines: c.address ? String(c.address).split(/\s*\n\s*|\s*\|\s*/).slice(0, 2) : TEMPLATE_LETTERHEAD.addressLines,
+    contact: c.phone || c.email
+      ? `T: ${c.phone ?? '+971(0)4 331 3555'} | E: ${c.email ?? 'info@jlsyachts.com'}`
+      : TEMPLATE_LETTERHEAD.contact,
+    website: c.website ? `Website: ${c.website}` : TEMPLATE_LETTERHEAD.website,
+    trn: c.trn ? `TRN NO: ${c.trn}` : TEMPLATE_LETTERHEAD.trn,
   }
-  if (!base.name) {
-    try {
-      const info = (await qboRequest('GET', `/companyinfo/${process.env.QBO_REALM_ID ?? '9341454112300561'}?minorversion=73`))?.CompanyInfo
-      const a = info?.CompanyAddr ?? {}
-      base = {
-        name: info?.CompanyName ?? 'JLS Yachts LLC',
-        address: base.address || [a.Line1, a.Line2, a.City, a.Country].filter(Boolean).join(', '),
-        trn: base.trn,
-        phone: base.phone || (info?.PrimaryPhone?.FreeFormNumber ?? ''),
-        email: base.email || (info?.Email?.Address ?? ''),
-      }
-    } catch { base.name = 'JLS Yachts LLC' }
-  }
-  return base
 }
 
 export async function renderInvoicePdf(t: TransformedInvoice, company: Company, title = 'TAX INVOICE'): Promise<Uint8Array> {
   const doc = await PDFDocument.create()
-  const font = await doc.embedFont(StandardFonts.Helvetica)
+  const font = await doc.embedFont(StandardFonts.Helvetica)      // metric twin of the template's Arial
   const bold = await doc.embedFont(StandardFonts.HelveticaBold)
+  const logo = await doc.embedPng(QB_DOC_IMAGES.logo)
+  const divisions = await doc.embedPng(QB_DOC_IMAGES.divisions)
+  const badges = await doc.embedPng(QB_DOC_IMAGES.badges)
+  const dirham = await doc.embedPng(QB_DOC_IMAGES.dirham)
 
-  const draw = (page: PDFPage, text: string, x: number, y: number, opts: { size?: number; font?: PDFFont; color?: any } = {}) =>
-    page.drawText(text, { x, y, size: opts.size ?? BODY_SIZE, font: opts.font ?? font, color: opts.color ?? rgb(0.1, 0.1, 0.1) })
-  const drawRight = (page: PDFPage, text: string, xRight: number, y: number, opts: { size?: number; font?: PDFFont; color?: any } = {}) => {
-    const f = opts.font ?? font
-    const s = opts.size ?? BODY_SIZE
-    draw(page, text, xRight - f.widthOfTextAtSize(text, s), y, opts)
+  // All positions are expressed as distance-from-page-top (like the template
+  // measurements); Y() flips to pdf-lib's bottom-origin space.
+  const Y = (fromTop: number) => A4.h - fromTop
+  const draw = (page: PDFPage, text: string, x: number, yTop: number, opts: { size?: number; font?: PDFFont; color?: any } = {}) =>
+    page.drawText(text, { x, y: Y(yTop), size: opts.size ?? LABEL_SIZE, font: opts.font ?? font, color: opts.color ?? BLACK })
+  const drawRight = (page: PDFPage, text: string, xRight: number, yTop: number, opts: { size?: number; font?: PDFFont; color?: any } = {}) => {
+    const f = opts.font ?? font, s = opts.size ?? LABEL_SIZE
+    draw(page, text, xRight - f.widthOfTextAtSize(text, s), yTop, opts)
   }
+  const drawCenter = (page: PDFPage, text: string, xCenter: number, yTop: number, opts: { size?: number; font?: PDFFont; color?: any } = {}) => {
+    const f = opts.font ?? font, s = opts.size ?? LABEL_SIZE
+    draw(page, text, xCenter - f.widthOfTextAtSize(text, s) / 2, yTop, opts)
+  }
+  const bar = (page: PDFPage, x: number, yTop: number, w: number, h: number) =>
+    page.drawRectangle({ x, y: Y(yTop + h), width: w, height: h, color: BLACK })
+  const box = (page: PDFPage, x: number, yTop: number, w: number, h: number) =>
+    page.drawRectangle({ x, y: Y(yTop + h), width: w, height: h, borderColor: BLACK, borderWidth: 0.6 })
+  const vline = (page: PDFPage, x: number, yTop: number, yBottom: number) =>
+    page.drawLine({ start: { x, y: Y(yTop) }, end: { x, y: Y(yBottom) }, thickness: 0.6, color: BLACK })
 
-  // Pre-wrap every item into visual rows so pagination is deterministic.
+  // Pre-wrap every item into visual line slots (the template has 35 per page).
   type Row = { item: InvoiceItem; line: string; first: boolean }
   const rows: Row[] = []
   for (const item of t.items) {
-    const lines = wrapText(item.description, font, BODY_SIZE, COLS[1].w - 4)
+    const lines = wrapText(item.description, font, ITEM_SIZE, COL_W[1] - 2 * CELL_PAD - 1)
     lines.forEach((line, i) => rows.push({ item, line, first: i === 0 }))
   }
+  const pages: Row[][] = []
+  for (let i = 0; i < Math.max(rows.length, 1); i += LINES_PER_PAGE) pages.push(rows.slice(i, i + LINES_PER_PAGE))
+  const pageCount = pages.length
 
   const grand = t.items.reduce((a, i) => ({ amount: a.amount + i.amountN, vat: a.vat + i.vatN, total: a.total + i.totalN }),
     { amount: 0, vat: 0, total: 0 })
   const breakdown = t.items.reduce((a, i) => {
     if (!i.isDataRow) return a
     if (i.taxName.includes('@ 5%') || i.vatRate === 5) { a.t5 += i.amountN; a.v5 += i.vatN }
-    else if (i.taxName.includes('@ 0%')) a.t0 += i.amountN
     else if (i.taxName.includes('Non Taxable')) a.non += i.amountN
-    else if (i.vatRate === 0) a.t0 += i.amountN
+    else a.t0 += i.amountN
     return a
   }, { t5: 0, t0: 0, non: 0, v5: 0 })
 
-  const needsConversion = t.currency.includes('TO') && t.conversionRate && t.conversionRate !== 0
-  const targetCurrency = t.currency.includes('USD') ? 'USD' : t.currency.includes('EUR') ? 'EUR' : ''
+  // Currency variants, exactly like the three template families:
+  //  AED            → "(UAE DIRHAMS)" bar + dirham-icon Total Amount
+  //  USD / EUR      → "( USD )" bar + "Total Amount $" final row
+  //  AED TO USD/EUR → "(UAE DIRHAMS)" bar + AED final row + converted final row
+  const isConversion = t.currency.includes('TO')
+  const directCurrency = !isConversion && (t.currency === 'USD' || t.currency === 'EUR') ? t.currency : ''
+  const targetCurrency = isConversion ? (t.currency.includes('USD') ? 'USD' : 'EUR') : directCurrency
+  const barCurrencyLabel = directCurrency ? `Total Amount ( ${directCurrency} )` : 'Total Amount (UAE DIRHAMS)'
   const bankKey = t.bankDetail.includes('USD') ? 'USD' : (t.bankDetail.includes('EUR') ? 'EUR' : 'AED')
   const bank = BANKS[bankKey]
+  const converted = isConversion && t.conversionRate ? grand.total / t.conversionRate : 0
 
-  const HEADER_BOTTOM = A4.h - 218   // y where the items table starts
-  const PAGE_FLOOR = 88              // reserve for page subtotal + footer
-  const LAST_PAGE_BLOCK = 216        // reserve for grand totals + VAT + bank block
-
-  // Chunk rows into pages.
-  const pages: Row[][] = []
-  let current: Row[] = []
-  let y = HEADER_BOTTOM
-  for (const row of rows) {
-    if (y - ROW_H < PAGE_FLOOR) { pages.push(current); current = []; y = HEADER_BOTTOM }
-    current.push(row)
-    y -= ROW_H
-  }
-  pages.push(current)
-  // If the totals block doesn't fit under the last page's items, give it its own page.
-  if (y - LAST_PAGE_BLOCK < M) pages.push([])
-
-  const pageCount = pages.length
   pages.forEach((pageRows, pi) => {
     const page = doc.addPage([A4.w, A4.h])
-    let py = A4.h - M
+    const isLast = pi === pageCount - 1
 
-    // ── Letterhead ──
-    draw(page, company.name.toUpperCase(), M, py - 12, { size: 15, font: bold, color: NAVY })
-    drawRight(page, title, A4.w - M, py - 12, { size: 15, font: bold, color: NAVY })
-    py -= 26
-    if (company.address) { draw(page, company.address, M, py, { size: 7, color: GREY }); py -= 9 }
-    const contact = [company.phone, company.email].filter(Boolean).join('  ·  ')
-    if (contact) { draw(page, contact, M, py, { size: 7, color: GREY }); py -= 9 }
-    if (company.trn) { draw(page, `TRN: ${company.trn}`, M, py, { size: 7, color: GREY }); py -= 9 }
-    py -= 6
-    page.drawLine({ start: { x: M, y: py }, end: { x: A4.w - M, y: py }, thickness: 1, color: NAVY })
-    py -= 14
+    // ── Letterhead: logo top-left, big title + company block right-aligned ──
+    page.drawImage(logo, { x: 24.5, y: Y(18.1 + 54), width: 204, height: 54 })
+    drawRight(page, title, 566.5, 45, { size: 30.5, font: bold })
+    drawRight(page, company.name, 571.1, 66.5, { size: 10.5, font: bold })
+    const letterhead = [...company.addressLines, company.contact, company.website, company.trn]
+    letterhead.forEach((l, i) => drawRight(page, l, 571.1, 76 + i * 8.6, { size: LABEL_SIZE }))
 
-    // ── Customer + meta blocks ──
-    draw(page, 'BILL TO', M, py, { size: 6.5, font: bold, color: GREY })
-    draw(page, t.customer.name, M, py - 11, { size: 9, font: bold })
-    const addrLines = wrapText(t.customer.address || '—', font, 7.5, 230)
-    addrLines.slice(0, 3).forEach((l, i) => draw(page, l, M, py - 22 - i * 9, { size: 7.5 }))
-    let cy = py - 22 - Math.min(addrLines.length, 3) * 9
-    if (t.customer.trn) draw(page, `TRN: ${t.customer.trn}`, M, cy, { size: 7.5 })
+    // ── INVOICE TO (left) ──
+    const INV_X = 25.92, INV_W = 214.61
+    bar(page, INV_X, 106.2, INV_W, 14.04)
+    drawCenter(page, 'INVOICE TO', INV_X + INV_W / 2, 116, { font: bold, color: WHITE })
+    const invLabelX = INV_X + CELL_PAD, invValueX = INV_X + 38.45 + CELL_PAD
+    draw(page, 'Name', invLabelX, 129.5); draw(page, t.customer.name, invValueX, 129.5)
+    draw(page, 'Address', invLabelX, 142.8)
+    wrapText(t.customer.address, font, LABEL_SIZE, INV_W - 38.45 - 2 * CELL_PAD).slice(0, 3)
+      .forEach((l, i) => draw(page, l, invValueX, 142.8 + i * 8.6))
+    draw(page, 'Emirates', invLabelX, 171.6); draw(page, t.customer.emirates, invValueX, 171.6)
+    draw(page, 'TRN No', invLabelX, 185.9); draw(page, t.customer.trn, invValueX, 185.9)
+    box(page, INV_X, 106.2, INV_W, 84.2)
 
-    const metaX = 330
-    const meta: Array<[string, string]> = [
-      ['Invoice No', t.docNumber],
-      ['Date', t.invoiceDate],
-      ...(t.placeOfSupply ? [['Place of Supply', t.placeOfSupply] as [string, string]] : []),
-      ...(t.yachtName ? [['Yacht', t.yachtName] as [string, string]] : []),
-      ...(t.yachtPO ? [['Yacht PO', t.yachtPO] as [string, string]] : []),
-      ...(t.requestedBy ? [['Requested By', t.requestedBy] as [string, string]] : []),
-      ['Currency', bankKey === 'AED' && !targetCurrency ? 'AED' : t.bankDetail],
+    // ── Date / Invoice No / Place of Supply (right) + page number ──
+    const DX = 379.5
+    const dateRows: Array<[string, string]> = [
+      ['Date', t.invoiceDate], ['Invoice No', t.docNumber], ['Place of Supply', t.placeOfSupply],
     ]
-    meta.forEach(([k, v], i) => {
-      draw(page, k, metaX, py - i * 10.5, { size: 7, color: GREY })
-      drawRight(page, v, A4.w - M, py - i * 10.5, { size: 7.5, font: bold })
+    dateRows.forEach(([k, v], i) => {
+      const yTop = 140.5 + i * 11.35
+      draw(page, k, DX, yTop, { font: bold })
+      draw(page, ':', DX + 66, yTop, { font: bold })
+      draw(page, v, DX + 72, yTop)
     })
+    drawCenter(page, `Page ${pi + 1} of ${pageCount}`, 451.4, 183)
 
-    // ── Items table header ──
-    let ty = HEADER_BOTTOM + 16
-    page.drawRectangle({ x: M - 2, y: ty - 4, width: A4.w - 2 * M + 4, height: 13, color: NAVY })
-    for (const c of COLS) {
-      if (c.align === 'right') drawRight(page, c.label, c.x + c.w, ty, { size: 6.5, font: bold, color: rgb(1, 1, 1) })
-      else draw(page, c.label, c.x, ty, { size: 6.5, font: bold, color: rgb(1, 1, 1) })
-    }
+    // ── Item table: black header bar with white centred labels ──
+    bar(page, TBL_X, HEADER_Y, TBL_W, HEADER_H)
+    COL_LABELS.forEach((label, c) =>
+      drawCenter(page, label, (COL_X[c] + COL_X[c + 1]) / 2, HEADER_Y + HEADER_H / 2 + 2.5, { color: WHITE }))
 
-    // ── Item rows ──
-    let ry = HEADER_BOTTOM
+    // Column separators + outer edges down the item area
+    for (let c = 0; c <= 7; c++) vline(page, COL_X[c], HEADER_Y + HEADER_H, SUBTOTAL_BAR_Y)
+
+    // ── 35 item line slots (6pt, template alignments per column) ──
     const sub = { amount: 0, vat: 0, total: 0 }
-    for (const row of pageRows) {
+    pageRows.forEach((row, i) => {
+      const yTop = LINE0_Y + i * LINE_PITCH + 5.9
       if (row.first) {
-        draw(page, row.item.qty, COLS[0].x, ry)
-        drawRight(page, row.item.unitRate, COLS[2].x + COLS[2].w, ry)
-        drawRight(page, row.item.amount, COLS[3].x + COLS[3].w, ry)
-        drawRight(page, row.item.vatPercent, COLS[4].x + COLS[4].w, ry)
-        drawRight(page, row.item.vatValue, COLS[5].x + COLS[5].w, ry)
-        drawRight(page, row.item.totalAmount, COLS[6].x + COLS[6].w, ry)
+        drawCenter(page, row.item.qty, (COL_X[0] + COL_X[1]) / 2, yTop, { size: ITEM_SIZE })
+        drawRight(page, row.item.unitRate, COL_X[3] - CELL_PAD, yTop, { size: ITEM_SIZE })
+        drawRight(page, row.item.amount, COL_X[4] - CELL_PAD, yTop, { size: ITEM_SIZE })
+        drawCenter(page, row.item.vatPercent, (COL_X[4] + COL_X[5]) / 2, yTop, { size: ITEM_SIZE })
+        drawRight(page, row.item.vatValue, COL_X[6] - CELL_PAD, yTop, { size: ITEM_SIZE })
+        drawRight(page, row.item.totalAmount, COL_X[7] - CELL_PAD, yTop, { size: ITEM_SIZE })
         if (row.item.isDataRow) { sub.amount += row.item.amountN; sub.vat += row.item.vatN; sub.total += row.item.totalN }
       }
-      draw(page, row.line, COLS[1].x, ry, { font: row.item.isDataRow ? font : bold })
-      ry -= ROW_H
+      draw(page, row.line, COL_X[1] + CELL_PAD, yTop, { size: ITEM_SIZE })
+    })
+
+    // ── Per-page subtotal bar (grand totals bar under it on the last page) ──
+    bar(page, TBL_X, SUBTOTAL_BAR_Y, TBL_W, SUBTOTAL_BAR_H)
+    const sbY = SUBTOTAL_BAR_Y + SUBTOTAL_BAR_H / 2 + 2.5
+    drawCenter(page, barCurrencyLabel, (TBL_X + COL_X[3]) / 2, sbY, { color: WHITE })
+    drawRight(page, fmtNum(sub.amount), COL_X[4] - CELL_PAD, sbY, { color: WHITE })
+    drawRight(page, fmtNum(sub.vat), COL_X[6] - CELL_PAD, sbY, { color: WHITE })
+    drawRight(page, fmtNum(sub.total), COL_X[7] - CELL_PAD, sbY, { color: WHITE })
+
+    const hasGrandBar = isLast && pageCount > 1
+    if (hasGrandBar) {
+      const gTop = SUBTOTAL_BAR_Y + SUBTOTAL_BAR_H
+      bar(page, TBL_X, gTop, TBL_W, GRAND_BAR_H)
+      const gY = gTop + GRAND_BAR_H / 2 + 2.2
+      drawCenter(page, `Grand ${barCurrencyLabel}`, (TBL_X + COL_X[3]) / 2, gY, { size: 6, color: WHITE })
+      drawRight(page, fmtNum(grand.amount), COL_X[4] - CELL_PAD, gY, { size: 6, color: WHITE })
+      drawRight(page, fmtNum(grand.vat), COL_X[6] - CELL_PAD, gY, { size: 6, color: WHITE })
+      drawRight(page, fmtNum(grand.total), COL_X[7] - CELL_PAD, gY, { size: 6, color: WHITE })
     }
 
-    // ── Page subtotal ──
-    if (pageRows.length) {
-      page.drawLine({ start: { x: M, y: ry + 4 }, end: { x: A4.w - M, y: ry + 4 }, thickness: 0.6, color: LINE })
-      draw(page, `Page subtotal`, COLS[1].x, ry - 6, { size: 7, font: bold, color: GREY })
-      drawRight(page, fmtMoney(sub.amount), COLS[3].x + COLS[3].w, ry - 6, { size: 7, font: bold })
-      drawRight(page, fmtMoney(sub.vat), COLS[5].x + COLS[5].w, ry - 6, { size: 7, font: bold })
-      drawRight(page, fmtMoney(sub.total), COLS[6].x + COLS[6].w, ry - 6, { size: 7, font: bold })
-      ry -= 20
+    // ── BANK DETAILS (bottom left, every page) ──
+    const BK_X = 26.04, BK_W = 233.21, BK_DIV = BK_X + 44.75
+    bar(page, BK_X, 627.7, BK_W, 14.04)
+    drawCenter(page, `BANK DETAILS ( ${t.bankDetail} )`, BK_X + BK_W / 2, 637.4, { font: bold, color: WHITE })
+    const bankRows: Array<[string, string]> = [
+      ['NAME', 'JLS YACHTS LLC'], ['BANK', bank.bankName], ['ACCT.#', bank.accountNumber],
+      ['IBAN', bank.iban], ['SWIFT', 'EBILAEAD'],
+    ]
+    bankRows.forEach(([k, v], i) => {
+      const yTop = 641.74 + i * 12.3 + 8.8
+      draw(page, k, BK_X + CELL_PAD, yTop)
+      draw(page, v, BK_DIV + CELL_PAD, yTop)
+    })
+    box(page, BK_X, 627.7, BK_W, 14.04 + 5 * 12.3 + 3)
+    vline(page, BK_DIV, 641.74, 627.7 + 14.04 + 5 * 12.3 + 3)
+
+    // ── VAT summary + Total Amount bar(s) (bottom right, last page only) ──
+    if (isLast) {
+      const VX = 352.63, LBL_W = 137.42, VAL_W = 80.05
+      const vTop0 = hasGrandBar ? 629.1 : 626.4
+      const vRows: Array<[string, string, number]> = [
+        ['Taxable Amount @ 5%', fmtNum(breakdown.t5), 14.85],
+        ['Taxable Amount @ 0%', fmtNum(breakdown.t0), 12.75],
+        ['Non Taxable Amount', fmtNum(breakdown.non), 11.45],
+        ['5% VAT', fmtNum(breakdown.v5), 12.35],
+      ]
+      let vy = vTop0
+      for (const [label, value, h] of vRows) {
+        box(page, VX, vy, LBL_W, h)
+        box(page, VX + LBL_W, vy, VAL_W, h)
+        drawCenter(page, label, VX + LBL_W / 2, vy + h / 2 + 2.5, { font: bold })
+        drawRight(page, value, VX + LBL_W + VAL_W - CELL_PAD, vy + h / 2 + 2.5, { font: bold })
+        vy += h
+      }
+      const finalBar = (label: string, value: string, withDirhamIcon: boolean) => {
+        bar(page, VX, vy, LBL_W + VAL_W, 16.92)
+        const byTop = vy + 16.92 / 2 + 2.5
+        // Label and dirham icon are centred together as one unit, like the template.
+        const labelW = bold.widthOfTextAtSize(label, LABEL_SIZE)
+        const unitW = labelW + (withDirhamIcon ? 11.9 : 0)
+        const startX = VX + LBL_W / 2 - unitW / 2
+        draw(page, label, startX, byTop, { font: bold, color: WHITE })
+        if (withDirhamIcon) page.drawImage(dirham, { x: startX + labelW + 3, y: Y(vy + 4.2 + 8.7), width: 8.9, height: 8.7 })
+        drawRight(page, value, VX + LBL_W + VAL_W - CELL_PAD, byTop, { font: bold, color: WHITE })
+        vy += 16.92
+      }
+      if (directCurrency) {
+        finalBar(`Total Amount ${CURRENCY_SIGN[directCurrency] ?? ''}`, fmtNum(grand.total), false)
+      } else {
+        finalBar('Total Amount', fmtNum(grand.total), true)
+        if (isConversion && converted) finalBar(`Total Amount ${CURRENCY_SIGN[targetCurrency] ?? ''}`, fmtNum(converted), false)
+      }
     }
 
-    // ── Last page: grand totals, VAT breakdown, conversion, bank details ──
-    if (pi === pageCount - 1) {
-      let by = Math.max(ry - 6, M + LAST_PAGE_BLOCK - 26)
-      page.drawLine({ start: { x: M, y: by + 10 }, end: { x: A4.w - M, y: by + 10 }, thickness: 1, color: NAVY })
-
-      // Right column: totals
-      const totX = 330
-      const trow = (label: string, value: string, boldRow = false, big = false) => {
-        draw(page, label, totX, by, { size: big ? 8.5 : 7.5, font: boldRow ? bold : font, color: boldRow ? NAVY : GREY })
-        drawRight(page, value, A4.w - M, by, { size: big ? 9 : 7.5, font: boldRow ? bold : font, color: boldRow ? NAVY : undefined })
-        by -= big ? 14 : 11
-      }
-      trow('Total Amount', `AED ${fmtMoney(grand.amount)}`)
-      trow('Total VAT', `AED ${fmtMoney(grand.vat)}`)
-      trow('TOTAL DUE', `AED ${fmtMoney(grand.total)}`, true, true)
-      if (needsConversion && targetCurrency) {
-        const converted = grand.total / t.conversionRate
-        trow(`Total in ${targetCurrency} (rate ${t.conversionRate})`, `${CURRENCY_SIGN[targetCurrency] ?? ''}${fmtMoney(converted)}`, true)
-      }
-
-      // Left column: VAT breakdown
-      let vy = ry - 6 > M + LAST_PAGE_BLOCK - 26 ? ry - 6 : M + LAST_PAGE_BLOCK - 26
-      draw(page, 'VAT SUMMARY', M, vy, { size: 6.5, font: bold, color: GREY }); vy -= 11
-      const vrow = (label: string, value: string) => {
-        draw(page, label, M, vy, { size: 7 })
-        drawRight(page, value ? `AED ${value}` : '—', M + 220, vy, { size: 7 })
-        vy -= 10
-      }
-      vrow('Taxable Amount @ 5%', fmtNum(breakdown.t5))
-      vrow('Taxable Amount @ 0%', fmtNum(breakdown.t0))
-      vrow('Non Taxable Amount', fmtNum(breakdown.non))
-      vrow('VAT @ 5%', fmtNum(breakdown.v5))
-
-      // Bank details
-      vy -= 6
-      draw(page, `BANK DETAILS (${bankKey})`, M, vy, { size: 6.5, font: bold, color: GREY }); vy -= 11
-      draw(page, bank.bankName, M, vy, { size: 7.5, font: bold }); vy -= 10
-      draw(page, `Account: ${bank.accountNumber}`, M, vy, { size: 7.5 }); vy -= 10
-      draw(page, `IBAN: ${bank.iban}`, M, vy, { size: 7.5 })
-    }
-
-    // ── Footer ──
-    drawRight(page, `Page ${pi + 1} of ${pageCount}`, A4.w - M, M - 14, { size: 7, color: GREY })
-    draw(page, company.name, M, M - 14, { size: 7, color: GREY })
+    // ── Footer strip: divisions banner + certification badges (every page) ──
+    page.drawImage(divisions, { x: 21.4, y: Y(735.0 + 66.8), width: 554.3, height: 66.8 })
+    page.drawImage(badges, { x: 377.6, y: Y(801.1 + 39), width: 199.3, height: 39 })
   })
 
   return doc.save()
@@ -441,7 +478,6 @@ export async function generateAndAttachInvoicePdf(qboInvoiceId: string, opts: { 
 
     const company = await companyDetails()
     const pdf = await renderInvoicePdf(t, company)
-    const pages = Math.ceil(1) // real count comes from the doc; recompute cheaply below
     const fileName = `Invoice - ${t.docNumber}.pdf`
 
     if (opts.attach === false) {
@@ -468,7 +504,7 @@ export async function generateAndAttachInvoicePdf(qboInvoiceId: string, opts: { 
       key: AUTO_KEY, name: 'QB Invoice PDF (native)', source: 'worker', trigger_type: 'event', category: 'Finance',
       status: 'success', detail: `${fileName} attached (${deletedOld} old removed, ${ms}ms)`,
     })
-    return { ok: true, action: 'attached', detail: `${fileName} attached`, docNumber: t.docNumber, pages, deletedOld, ms }
+    return { ok: true, action: 'attached', detail: `${fileName} attached`, docNumber: t.docNumber, deletedOld, ms }
   } catch (e: any) {
     const detail = e?.message ?? String(e)
     await logAutomationRun({

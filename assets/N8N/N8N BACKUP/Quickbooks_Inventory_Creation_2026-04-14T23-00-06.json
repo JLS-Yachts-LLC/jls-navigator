@@ -1,0 +1,43 @@
+{
+  "updatedAt": "2026-03-16T09:48:46.000Z",
+  "createdAt": "2026-03-13T15:56:55.865Z",
+  "id": "eKSoUaPvmIIh0WSoIKFI7",
+  "name": "Quickbooks Inventory Creation",
+  "active": false,
+  "isArchived": true,
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "aed0ffef-1bb8-48ac-8a76-d7138c07a30e",
+      "name": "When clicking ‘Execute workflow’"
+    }
+  ],
+  "connections": {},
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {},
+  "versionId": "887749b9-40f0-4fbd-bae6-698190d35ea9",
+  "activeVersionId": null,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-03-13T15:56:55.875Z",
+      "createdAt": "2026-03-13T15:56:55.875Z",
+      "role": "workflow:owner",
+      "workflowId": "eKSoUaPvmIIh0WSoIKFI7",
+      "projectId": "7K0b7BEJpzNXLaZY"
+    }
+  ],
+  "activeVersion": null,
+  "tags": []
+}

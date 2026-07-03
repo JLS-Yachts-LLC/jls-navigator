@@ -1,0 +1,373 @@
+{
+  "updatedAt": "2026-01-30T00:18:08.354Z",
+  "createdAt": "2026-01-29T23:22:31.930Z",
+  "id": "sbarceiVRS-T0DiyIo86J",
+  "name": "Quickbooks -> Lightspeed Inventory Only",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 20
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -112,
+        0
+      ],
+      "id": "9623b89a-bd59-43de-a62a-b08463d75ac1",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "url": "https://quickbooks.api.intuit.com/v3/company/9341456211763919/query",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "SELECT Id, Sku, QtyOnHand, MetaData.LastUpdatedTime FROM Item WHERE Type='Inventory'"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        80,
+        0
+      ],
+      "id": "895f4d1d-3d31-4a2f-8fb1-8ef1e6fa106b",
+      "name": "Fetch QB Product Details",
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "LzsBKraDvi63Re6a",
+          "name": "Waypoint - Quickbooks - Production"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const qbUpdatedAt = new Date($json.MetaData?.LastUpdatedTime);\nconst lightspeedLastSync = new Date($json.lightspeed_last_sync_time || 0); // fallback to epoch\n\n// Default: do NOT sync\nlet shouldSync = false;\n\n// Only sync if QB updated AFTER Lightspeed last sync\nif (\n  qbUpdatedAt instanceof Date &&\n  !isNaN(qbUpdatedAt) &&\n  lightspeedLastSync instanceof Date &&\n  !isNaN(lightspeedLastSync) &&\n  qbUpdatedAt > lightspeedLastSync\n) {\n  shouldSync = true;\n}\n\nreturn [\n  {\n    json: {\n      ...$json,\n      shouldSync,\n      sync_direction: shouldSync ? 'QB_TO_LIGHTSPEED' : 'IGNORE',\n      evaluated_at: new Date().toISOString(),\n    },\n  },\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        496,
+        0
+      ],
+      "id": "7ebe9f58-83fe-475a-bf5d-ae2998e09d2d",
+      "name": "Normalize Output"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "d3517b7d-7e14-41c5-91b2-fe4cd2108822",
+              "leftValue": "={{$json.shouldSync}}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        704,
+        0
+      ],
+      "id": "c8b273a2-fc32-4dd2-a53f-c54648436923",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://superyachtme.retail.lightspeed.app/api/2.0/Item/{{ $json.itemId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "accept",
+              "value": "application/json"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"Item\":{\"quantity\":{{$json.quantity}}}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1616,
+        -16
+      ],
+      "id": "2eec43a3-49d8-408b-aaaf-f0e1c04a87b8",
+      "name": "Lightspeed HTTP PATCH (Inventory Only)",
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "WoxCXu4qRHbtqjNE",
+          "name": "Lightspeed Bearer Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "value": {},
+          "mode": "id"
+        },
+        "filters": {
+          "conditions": [
+            {}
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1824,
+        -16
+      ],
+      "id": "34d8bdbc-1651-4b9b-a54b-0f97140ae2ee",
+      "name": "Update row(s)"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the input\nconst input = $input.all();\n\n// Flatten all items\nlet output = [];\n\ninput.forEach(item => {\n  // Ensure QueryResponse.Item exists\n  if (item.json.QueryResponse && item.json.QueryResponse.Item) {\n    item.json.QueryResponse.Item.forEach(inv => {\n      output.push({\n        json: {\n          id: inv.Id,\n          qty: inv.QtyOnHand,\n          last_updated: inv.MetaData?.LastUpdatedTime || null\n        }\n      });\n    });\n  }\n});\n\nreturn output;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        944,
+        -16
+      ],
+      "id": "6164f25b-1c9d-44d3-9eca-e04333825c4d",
+      "name": "Prepare Lightspeed"
+    },
+    {
+      "parameters": {
+        "jsCode": "const lastSync = new Date($json[\"last_sync_time\"] || \"1970-01-01T00:00:00Z\");\n\nreturn $input.all().filter(item => {\n  const updated = new Date(item.json.last_updated);\n  return updated > lastSync;\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1152,
+        -16
+      ],
+      "id": "b5258b41-86b7-4c2e-b53d-498baa8e9606",
+      "name": "Last Sync"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(item => ({\n  json: {\n    itemId: item.json.id,\n    quantity: item.json.qty\n  }\n}));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1376,
+        -16
+      ],
+      "id": "fa3fc8fd-a251-452c-8e86-a8142a7ed141",
+      "name": "Map for Lightspeed"
+    },
+    {
+      "parameters": {
+        "url": "=https://superyachtme.retail.lightspeed.app/api/2.0/products/{{ $json.id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        272,
+        0
+      ],
+      "id": "9dce6e79-9ae1-4b66-b052-3584c161e8c3",
+      "name": "Get LS Products",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ki6xZZeJ87N5V7fp",
+          "name": "Header Auth account"
+        },
+        "httpBearerAuth": {
+          "id": "WoxCXu4qRHbtqjNE",
+          "name": "Lightspeed Bearer Token"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch QB Product Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch QB Product Details": {
+      "main": [
+        [
+          {
+            "node": "Get LS Products",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Output": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Prepare Lightspeed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Lightspeed HTTP PATCH (Inventory Only)": {
+      "main": [
+        [
+          {
+            "node": "Update row(s)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Lightspeed": {
+      "main": [
+        [
+          {
+            "node": "Last Sync",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Last Sync": {
+      "main": [
+        [
+          {
+            "node": "Map for Lightspeed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map for Lightspeed": {
+      "main": [
+        [
+          {
+            "node": "Lightspeed HTTP PATCH (Inventory Only)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get LS Products": {
+      "main": [
+        [
+          {
+            "node": "Normalize Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {},
+  "versionId": "f1c6c0bb-53ab-4fe9-8b01-5eed116467e8",
+  "activeVersionId": null,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-01-29T23:22:31.984Z",
+      "createdAt": "2026-01-29T23:22:31.984Z",
+      "role": "workflow:owner",
+      "workflowId": "sbarceiVRS-T0DiyIo86J",
+      "projectId": "7K0b7BEJpzNXLaZY"
+    }
+  ],
+  "activeVersion": null,
+  "tags": []
+}

@@ -1,0 +1,306 @@
+{
+  "updatedAt": "2026-01-15T14:38:36.017Z",
+  "createdAt": "2026-01-08T16:35:59.653Z",
+  "id": "dha3u5kPAtmTz0c7",
+  "name": "Lightspeed->Monday.Com",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -128,
+        0
+      ],
+      "id": "05a652a4-162c-43a1-9070-7838db05baf2",
+      "name": "Every 5 Minutes"
+    },
+    {
+      "parameters": {
+        "resource": "boardItem",
+        "boardId": "5088135582",
+        "groupId": "group_mky06080",
+        "name": "={{ $json.item_name }}",
+        "additionalFields": {
+          "columnValues": "={{ $json.column_values }}"
+        }
+      },
+      "type": "n8n-nodes-base.mondayCom",
+      "typeVersion": 1,
+      "position": [
+        1296,
+        0
+      ],
+      "id": "b6d8f3db-f29a-4f69-ad89-f4af601885a9",
+      "name": "Create an item in a board's group",
+      "credentials": {
+        "mondayComApi": {
+          "id": "WLi9vhoOj5ilxUBf",
+          "name": "Monday.com account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\n\n// Prevent multiple updates in the same execution\nif (staticData.__cursor_updated_this_run) {\n  return items;\n}\n\nconst batchMax = Math.max(\n  ...items.map(i => i.json.__batch_version_max || 0)\n);\n\nif (batchMax > (staticData.last_seen_version || 0)) {\n  staticData.last_seen_version = batchMax;\n}\n\nstaticData.__cursor_updated_this_run = true;\n\nreturn items;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1472,
+        0
+      ],
+      "id": "f901c2b8-20ee-4c6b-af42-2dfdce67c4fa",
+      "name": "Save Last Seen Version"
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n  const sale = item.json;\n\n  const saleDate = sale.sale_date ? new Date(sale.sale_date) : new Date();\n  const pad = n => String(n).padStart(2, '0');\n  const saleDateISO = `${saleDate.getFullYear()}-${pad(saleDate.getMonth()+1)}-${pad(saleDate.getDate())}`;\n\n  const columnValues = {\n    date4: { date: saleDateISO },\n    text_mky0p6ft: String(sale.invoice_number ?? 'N/A'),\n    numeric_mky04tna: sale.totals?.total_price ?? sale.total_price ?? 0,\n    text_mky0rpam: sale.status ?? 'Unknown'\n  };\n\n  return {\n    json: {\n      item_name: String(sale.invoice_number ?? 'N/A'),\n      column_values: JSON.stringify(columnValues),\n      __batch_version_max: sale.__batch_version_max\n    }\n  };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        0
+      ],
+      "id": "c4092919-b9f6-4e42-8527-902044946d31",
+      "name": "Monday Mutation"
+    },
+    {
+      "parameters": {
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\n\n// Initialise timestamp cursor\nif (!staticData.last_seen_sale_time) {\n  staticData.last_seen_sale_time = '2023-01-01T00:00:00Z';\n}\n\nreturn [\n  {\n    json: {\n      last_seen_sale_time: staticData.last_seen_sale_time\n    }\n  }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        64,
+        0
+      ],
+      "id": "68a1b881-e88f-4ca8-90d4-1a8b30060fd0",
+      "name": "Get Last Seen Version"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Lightspeed returns { data: [...], meta: {...} }\n// We must explicitly extract data[]\n\nif (!Array.isArray($json.data)) {\n  throw new Error('Expected sales array at $json.data');\n}\n\nreturn $json.data.map(sale => ({\n  json: sale\n}));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        0
+      ],
+      "id": "91920ebd-24c3-4efe-a59e-3a22f572fb6e",
+      "name": "Extract Sales Array"
+    },
+    {
+      "parameters": {
+        "options": {
+          "reset": "={{ $json.continueFetching }}"
+        }
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        336,
+        0
+      ],
+      "id": "5aee5733-7ff4-4794-9a4a-e56042c6d739",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check if we hit the page limit (e.g., 1000 items)\nconst hasNextBatch = $json.data?.length === 1000;\n\nreturn [\n  {\n    json: {\n      continueFetching: hasNextBatch,\n      last_seen_version: $json.data?.[$json.data.length - 1]?.version ?? $json.last_seen_version\n    }\n  }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        96
+      ],
+      "id": "73cfc9fc-b0bc-470e-9673-d93906767fa3",
+      "name": "Another Batch"
+    },
+    {
+      "parameters": {
+        "url": "https://superyachtme.retail.lightspeed.app/api/2.0/sales",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "page_size",
+              "value": "1000"
+            },
+            {
+              "name": "updated_at_min",
+              "value": "={{ $json.last_seen_sale_time }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        464,
+        336
+      ],
+      "id": "a71a89f1-6a84-41a5-9fe8-0e2f5f07bf9b",
+      "name": "Fetch Sales Batch",
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "WoxCXu4qRHbtqjNE",
+          "name": "Lightspeed Bearer Token"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every 5 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Get Last Seen Version",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create an item in a board's group": {
+      "main": [
+        [
+          {
+            "node": "Save Last Seen Version",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Monday Mutation": {
+      "main": [
+        [
+          {
+            "node": "Create an item in a board's group",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Last Seen Version": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Last Seen Version": {
+      "main": [
+        []
+      ]
+    },
+    "Extract Sales Array": {
+      "main": [
+        [
+          {
+            "node": "Monday Mutation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "Extract Sales Array",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Another Batch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Another Batch": {
+      "main": [
+        [
+          {
+            "node": "Fetch Sales Batch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Sales Batch": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": {
+    "node:Every 5 Minutes": {
+      "recurrenceRules": []
+    },
+    "global": {
+      "last_seen_version": 0
+    }
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "c3c2900c-d525-49d4-b198-a4f4938b4a3f",
+  "activeVersionId": null,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-01-08T16:35:59.663Z",
+      "createdAt": "2026-01-08T16:35:59.663Z",
+      "role": "workflow:owner",
+      "workflowId": "dha3u5kPAtmTz0c7",
+      "projectId": "7K0b7BEJpzNXLaZY"
+    }
+  ],
+  "activeVersion": null,
+  "tags": []
+}
