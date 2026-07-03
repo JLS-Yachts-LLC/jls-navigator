@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "QuickBooks native processing is now a toggle on the Automations page — off, the webhook is a pure retry-safe relay to n8n; on, it adds the number self-heal, Pro-Forma classification and instant Finance sync"
+      },
+      {
+        "type": "feature",
         "title": "Automations grouped into department mini tabs (Finance, Immigration, Logistics, Training, Yacht IT Solutions, Operations, Platform) with per-automation step-by-step view and a full run log showing status, duration and failure detail"
       },
       {
