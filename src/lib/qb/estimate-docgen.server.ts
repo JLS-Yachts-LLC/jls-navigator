@@ -19,6 +19,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 import { qboRequest, qboQuery, qboUpload, qboConfigured } from './qbo.server'
+import { QUOTATION_TEMPLATE_COORDS, type QuotationVariant, type StampField, type StampPage } from './quotation-template-coords'
 
 function admin() {
   return createClient(process.env.SUPABASE_URL ?? '', process.env.SUPABASE_SERVICE_ROLE_KEY ?? '', { auth: { persistSession: false } })
@@ -56,7 +57,7 @@ export type QuoteItem = {
 }
 
 export type QuoteData = {
-  customer: { name: string; address: string; emirates: string; invoiceNo: string; estimateId: string }
+  customer: { name: string; address: string; emirates: string; trnNo: string; invoiceNo: string; estimateId: string }
   dateFormatted: string
   yachtName: string
   yachtPO: string
@@ -83,7 +84,7 @@ const fmt = (n: number | null | undefined): string =>
 const fmtAlways = (n: number): string =>
   Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-export function transformEstimate(estimate: any): QuoteData {
+export function transformEstimate(estimate: any, extras?: { trnNo?: string }): QuoteData {
   const docNumber = estimate.DocNumber || estimate.Id || `QB-${estimate.Id}`
   const billAddr = estimate.BillAddr || {}
 
@@ -165,6 +166,7 @@ export function transformEstimate(estimate: any): QuoteData {
       name: estimate.CustomerRef?.name || 'Customer',
       address: [billAddr.Line1, billAddr.Line2, billAddr.Line3, billAddr.City].filter(Boolean).join(' ').trim(),
       emirates: billAddr.City || 'Dubai',
+      trnNo: extras?.trnNo ?? '',
       invoiceNo: String(docNumber),
       estimateId: String(estimate.Id),
     },
@@ -177,12 +179,228 @@ export function transformEstimate(estimate: any): QuoteData {
   }
 }
 
-// ── PDF generation (pdf-lib, replaces DOCX templates + ConvertAPI) ────────────
+// ── PDF generation: stamp values onto the real JLS Quotation template ─────────
+// The blank branded backgrounds (placeholders stripped from the original Word
+// templates) live in public/qb-templates/quotation-bg-<variant>.pdf with pages
+// [single, mid, final, terms]. Values are drawn at the exact coordinates the
+// {{placeholders}} occupied (see quotation-template-coords.ts).
+
+/** Which template variant a quote uses, from its Currency custom field. */
+export function quotationVariant(displayCurrency: string): QuotationVariant {
+  const c = displayCurrency.toUpperCase()
+  if (c.includes('TO')) return 'aedconv'
+  if (c === 'USD' || c === 'EUR') return 'usdeur'
+  return 'aed'
+}
+
+// Fields printed inside the template's black bars (need white text).
+const WHITE_FIELDS = new Set([
+  'totalamount', 'totalvat', 'totalltotalamount',
+  'totalamount1', 'totalvat1', 'totalltotalamount1',
+  'grandtotalamount', 'grandtotalvat', 'grandtotalltotal',
+  'totalamountfinal', 'totalamountfinal1', 'sign',
+  'currency', 'newcurrency', // bank-details box header + totals-bar currency label
+])
+
+const bgCache = new Map<QuotationVariant, Uint8Array>()
+
+async function fetchBackground(variant: QuotationVariant): Promise<Uint8Array | null> {
+  const cached = bgCache.get(variant)
+  if (cached) return cached
+  const base = process.env.VITE_APP_URL || 'https://jls-navigator.m-peeters-4a0.workers.dev'
+  try {
+    const res = await fetch(`${base.replace(/\/$/, '')}/qb-templates/quotation-bg-${variant}.pdf`)
+    if (!res.ok) return null
+    const bytes = new Uint8Array(await res.arrayBuffer())
+    bgCache.set(variant, bytes)
+    return bytes
+  } catch {
+    return null
+  }
+}
+
+const ROWS_PER_PAGE = 35
+const ADDRESS_LINE_PITCH = 13.32
+
+export async function buildQuotationPdf(q: QuoteData, opts?: { background?: Uint8Array }): Promise<Uint8Array> {
+  const variant = quotationVariant(q.displayCurrency)
+  const bg = opts?.background ?? await fetchBackground(variant)
+  if (!bg) return buildQuotationPdfBasic(q)
+  const coords = QUOTATION_TEMPLATE_COORDS[variant]
+
+  const src = await PDFDocument.load(bg)
+  const pdf = await PDFDocument.create()
+  const font = await pdf.embedFont(StandardFonts.Helvetica)
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold)
+  const BLACK = rgb(0, 0, 0)
+  const WHITE = rgb(1, 1, 1)
+
+  const draw = (page: any, f: StampField, value: string, white = false) => {
+    const v = String(value ?? '')
+    if (!v) return
+    const fnt = f.bold ? bold : font
+    const w = fnt.widthOfTextAtSize(v, f.size)
+    const x = f.align === 'right' ? f.x - w : f.align === 'center' ? f.x - w / 2 : f.x
+    page.drawText(v, { x, y: f.y, size: f.size, font: fnt, color: white ? WHITE : BLACK })
+  }
+
+  // Wrap text to a width with real glyph metrics.
+  const wrap = (text: string, width: number, size: number): string[] => {
+    const out: string[] = []
+    for (const hard of String(text).split(/\r?\n/)) {
+      let rest = hard.trim()
+      if (!rest) { out.push(''); continue }
+      while (rest.length) {
+        if (font.widthOfTextAtSize(rest, size) <= width) { out.push(rest); break }
+        let cut = rest.length
+        while (cut > 1 && font.widthOfTextAtSize(rest.slice(0, cut), size) > width) cut--
+        const sp = rest.lastIndexOf(' ', cut)
+        cut = sp > 0 ? sp : cut
+        out.push(rest.slice(0, cut).trim())
+        rest = rest.slice(cut).trim()
+      }
+    }
+    while (out.length && out[out.length - 1] === '') out.pop()
+    return out.length ? out : ['']
+  }
+
+  // Pre-render items into 35-slot visual rows (first row of an item carries the numbers).
+  type Row = { cells: Record<string, string>; subAmount: number; subVat: number; subTotal: number }
+  const descWidth = Math.min(coords.single.itemRows.descWidth, coords.mid.itemRows.descWidth, coords.final.itemRows.descWidth)
+  const rows: Row[] = []
+  for (const it of q.items) {
+    const lines = wrap(it.description, descWidth, coords.single.itemRows.cols.description?.size ?? 6)
+    lines.forEach((ln, i) => {
+      rows.push({
+        cells: {
+          qty: i === 0 && it.qty !== '' ? String(it.qty) : '',
+          description: ln,
+          unitRate: i === 0 && !it.isDescriptionOnly ? fmt(it.unitRate) : '',
+          amount: i === 0 && !it.isDescriptionOnly ? fmt(it.amount) : '',
+          vatPercent: i === 0 && !it.isDescriptionOnly ? it.vatPercent : '',
+          vatValue: i === 0 && !it.isDescriptionOnly ? fmt(it.vatValue) : '',
+          totalAmount: i === 0 && !it.isDescriptionOnly ? fmt(it.totalAmount) : '',
+        },
+        subAmount: i === 0 && !it.isDescriptionOnly ? it.amount : 0,
+        subVat: i === 0 && !it.isDescriptionOnly ? it.vatValue : 0,
+        subTotal: i === 0 && !it.isDescriptionOnly ? it.totalAmount : 0,
+      })
+    })
+  }
+  const pageRows: Row[][] = []
+  for (let i = 0; i < rows.length; i += ROWS_PER_PAGE) pageRows.push(rows.slice(i, i + ROWS_PER_PAGE))
+  if (!pageRows.length) pageRows.push([])
+  const pageCount = pageRows.length
+
+  // Background page indices: [single, mid, final, terms]
+  const kinds: Array<'single' | 'mid' | 'final'> = pageCount === 1
+    ? ['single']
+    : [...Array(pageCount - 1).fill('mid') as 'mid'[], 'final']
+  const BG_INDEX = { single: 0, mid: 1, final: 2 } as const
+
+  // Header / footer / totals values shared by every page kind.
+  const grandFields: Record<string, string> = {
+    name: q.customer.name,
+    emirates: q.customer.emirates,
+    trnno: q.customer.trnNo,
+    date: q.dateFormatted,
+    invoiceno: q.customer.invoiceNo,
+    placeofsupply: q.requestedBy,
+    yachtname: q.yachtName,
+    yachtpo: q.yachtPO,
+    currency: q.bankDetail,
+    newcurrency: q.displayCurrency,
+    bank: q.bank.bankName,
+    acct: q.bank.accountNumber,
+    iban: q.bank.iban,
+    grandtotalamount: fmtAlways(q.grandAmount),
+    grandtotalvat: fmtAlways(q.grandVat),
+    grandtotalltotal: fmtAlways(q.grandTotal),
+    '5%value': fmtAlways(q.vat5Base),
+    '0%value': fmtAlways(q.vat0Base),
+    nontaxablevalue: fmtAlways(q.nonTaxable),
+    '5%vatvalue': fmtAlways(q.vat5Value),
+    totalamountfinal: fmtAlways(q.grandTotal),
+    sign: variant === 'aedconv' ? q.convertedSign : variant === 'usdeur' ? (CURRENCY_SIGN[q.displayCurrency.toUpperCase()] ?? q.displayCurrency) : '',
+    totalamountfinal1: q.convertedTotal != null ? fmtAlways(+q.convertedTotal.toFixed(2)) : '',
+  }
+
+  for (let pi = 0; pi < pageCount; pi++) {
+    const kind = kinds[pi]
+    const pc: StampPage = coords[kind]
+    const [page] = await pdf.copyPages(src, [BG_INDEX[kind]])
+    pdf.addPage(page)
+
+    // Header fields (repeated on every item page in the template).
+    const PAGE_TOTAL_KEYS = new Set(['totalamount', 'totalvat', 'totalltotalamount', 'totalamount1', 'totalvat1', 'totalltotalamount1'])
+    for (const [key, f] of Object.entries(pc.fields)) {
+      if (key === 'address' || PAGE_TOTAL_KEYS.has(key)) continue
+      draw(page, f, grandFields[key] ?? '', WHITE_FIELDS.has(key))
+    }
+    // Centred black-bar labels containing the currency (Word re-centred these
+    // when the placeholders were blanked): black-out and redraw whole.
+    for (const rl of (pc as any).relabels ?? []) {
+      const value = grandFields[rl.key] ?? ''
+      if (!value) continue
+      const label = String(rl.template).replace('%', value)
+      const size = 7
+      const w = bold.widthOfTextAtSize(label, size)
+      page.drawRectangle({ x: rl.centerX - (rl.w + 28) / 2, y: rl.y - 2.5, width: rl.w + 28, height: size + 5, color: BLACK })
+      page.drawText(label, { x: rl.centerX - w / 2, y: rl.y, size, font: bold, color: WHITE })
+    }
+
+    // Address: wrap up to 3 lines below its anchor.
+    const addrField = pc.fields['address']
+    if (addrField) {
+      wrap(q.customer.address, 200, addrField.size).slice(0, 3).forEach((ln, i) => {
+        draw(page, { ...addrField, y: addrField.y - i * ADDRESS_LINE_PITCH }, ln)
+      })
+    }
+
+    // Items.
+    let subA = 0, subV = 0, subT = 0
+    pageRows[pi].forEach((r, ri) => {
+      const y = pc.itemRows.ys[ri]
+      if (y == null) return
+      for (const [key, cf] of Object.entries(pc.itemRows.cols)) {
+        const v = r.cells[key]
+        if (v) draw(page, { ...cf, y }, v)
+      }
+      subA += r.subAmount; subV += r.subVat; subT += r.subTotal
+    })
+
+    // Page totals bar (black → white text). Mid pages use the "…1" fields.
+    const t = (base: string) => pc.fields[base] ?? pc.fields[`${base}1`]
+    if (t('totalamount')) draw(page, t('totalamount')!, fmtAlways(subA), true)
+    if (t('totalvat')) draw(page, t('totalvat')!, fmtAlways(subV), true)
+    if (t('totalltotalamount')) draw(page, t('totalltotalamount')!, fmtAlways(subT), true)
+
+    // Page numbers are baked as "Page 1 of 1" / "Page 1 of 2" / "Page 2 of 2" —
+    // correct for 1- and 2-page quotes; redraw for 3+ item pages.
+    if (pageCount > 2 && pc.pageNo) {
+      const b = pc.pageNo
+      page.drawRectangle({ x: b.x - 1, y: b.y - 1.5, width: b.w + 14, height: b.h + 4, color: WHITE })
+      const label = `Page ${pi + 1} of ${pageCount}`
+      page.drawText('Page ', { x: b.x, y: b.y, size: 5.2, font: bold, color: BLACK })
+      page.drawText(`${pi + 1} of ${pageCount}`, { x: b.x + bold.widthOfTextAtSize('Page ', 5.2), y: b.y, size: 5.2, font, color: BLACK })
+      void label
+    }
+  }
+
+  // Terms & Conditions page (static, last page of the background).
+  const [terms] = await pdf.copyPages(src, [3])
+  pdf.addPage(terms)
+
+  return pdf.save()
+}
+
+// ── Fallback renderer (original native layout, used only if the template
+//    background cannot be loaded) ───────────────────────────────────────────────
 const NAVY = rgb(0.03, 0.16, 0.28)
 const GREY = rgb(0.45, 0.45, 0.45)
 const LINE = rgb(0.75, 0.78, 0.82)
 
-export async function buildQuotationPdf(q: QuoteData): Promise<Uint8Array> {
+export async function buildQuotationPdfBasic(q: QuoteData): Promise<Uint8Array> {
   const pdf = await PDFDocument.create()
   const font = await pdf.embedFont(StandardFonts.Helvetica)
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold)
@@ -535,8 +753,16 @@ export async function runEstimateDocgen(entityId: string, rawType: string): Prom
     return fn.startsWith('Quotation') && fn.includes(docNumber) && (/\.pdf$/i.test(fn) || /\.xlsx$/i.test(fn))
   })
 
+  // Customer TRN (shown in the QUOTE TO box, like the n8n flow's customer lookup).
+  let trnNo = ''
+  const custId = estimate.CustomerRef?.value
+  if (custId) {
+    const cust = await qboRequest('GET', `/customer/${custId}?minorversion=73`).catch(() => null)
+    trnNo = String(cust?.Customer?.PrimaryTaxIdentifier ?? '')
+  }
+
   // Transform + generate + attach.
-  const data = transformEstimate(estimate)
+  const data = transformEstimate(estimate, { trnNo })
   const pdfBytes = await buildQuotationPdf(data)
   const xlsxBytes = buildQuotationXlsx(data)
   await qboUpload(`Quotation - ${docNumber}.pdf`, pdfBytes, 'application/pdf', 'Estimate', String(entityId))
