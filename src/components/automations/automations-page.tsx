@@ -307,3 +307,120 @@ function RecipientsEditor({ automation, onSaved }: { automation: Automation; onS
     </div>
   );
 }
+
+// ── Step-by-step view + full run log (expandable per automation) ──────────────
+function fmtDuration(ms: number | null): string {
+  if (ms == null) return "—";
+  if (ms < 1000) return `${ms} ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)} s`;
+  return `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`;
+}
+
+const RUN_STATUS_CLS: Record<string, string> = {
+  success: "bg-emerald-500/15 text-emerald-400",
+  error: "bg-red-500/15 text-red-400",
+  crashed: "bg-red-500/15 text-red-400",
+  failed: "bg-red-500/15 text-red-400",
+  retry: "bg-amber-500/15 text-amber-400",
+  waiting: "bg-blue-500/15 text-blue-400",
+  running: "bg-blue-500/15 text-blue-400",
+  hit: "bg-violet-500/15 text-violet-400",
+};
+
+function AutomationDetail({ automation }: { automation: Automation }) {
+  const [open, setOpen] = useState<"steps" | "runs" | null>(null);
+  const [steps, setSteps] = useState<StepsResult | null>(null);
+  const [runLog, setRunLog] = useState<RunsResult | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const show = useCallback(async (what: "steps" | "runs") => {
+    if (open === what) { setOpen(null); return; }
+    setOpen(what);
+    setLoading(true);
+    try {
+      if (what === "steps" && !steps) setSteps(await (getAutomationSteps as any)({ data: { key: automation.key } }));
+      if (what === "runs") setRunLog(await (getAutomationRuns as any)({ data: { key: automation.key } }));
+    } catch (e: any) {
+      toast.error(e?.message ?? "Could not load");
+    } finally { setLoading(false); }
+  }, [open, steps, automation.key]);
+
+  return (
+    <div className="mt-2.5">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <button onClick={() => void show("steps")}
+                className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition",
+                              open === "steps" ? "border-primary/50 bg-primary/10 text-foreground" : "border-border text-muted-foreground hover:text-foreground")}>
+          <ListOrdered className="h-3 w-3" /> Steps
+          <ChevronDown className={cn("h-3 w-3 transition-transform", open === "steps" && "rotate-180")} />
+        </button>
+        <button onClick={() => void show("runs")}
+                className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition",
+                              open === "runs" ? "border-primary/50 bg-primary/10 text-foreground" : "border-border text-muted-foreground hover:text-foreground")}>
+          <History className="h-3 w-3" /> Run log
+          <ChevronDown className={cn("h-3 w-3 transition-transform", open === "runs" && "rotate-180")} />
+        </button>
+      </div>
+
+      {open && (
+        <div className="mt-2 rounded-lg border border-border/60 bg-background/40 p-3">
+          {loading ? (
+            <div className="flex h-16 items-center justify-center"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
+          ) : open === "steps" ? (
+            !steps || (!steps.ok && !steps.steps.length) ? (
+              <p className="text-xs text-muted-foreground">{steps?.note ?? "No step data."}</p>
+            ) : (
+              <ol className="space-y-1.5">
+                {steps.steps.map((s, i) => (
+                  <li key={`${s.name}-${i}`} className="flex items-start gap-2.5 text-xs">
+                    <span className="mt-0.5 flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[10px] font-bold tabular-nums text-primary" style={{ width: 18, height: 18 }}>
+                      {i + 1}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="font-medium text-foreground/90">{s.name}</span>
+                      {s.type && <span className="ml-1.5 rounded bg-muted/60 px-1 py-px text-[9px] font-mono text-muted-foreground">{s.type}</span>}
+                      {s.note && <span className="block text-[11px] text-muted-foreground">{s.note}</span>}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            )
+          ) : (
+            !runLog || (!runLog.ok && !runLog.runs.length) ? (
+              <p className="text-xs text-muted-foreground">{runLog?.note ?? "No runs recorded."}</p>
+            ) : runLog.runs.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No runs recorded yet.</p>
+            ) : (
+              <div className="max-h-72 overflow-y-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground/60">
+                      <th className="pb-1.5 pr-3">Started</th>
+                      <th className="pb-1.5 pr-3">Duration</th>
+                      <th className="pb-1.5 pr-3">Status</th>
+                      <th className="pb-1.5">Detail</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {runLog.runs.map((r, i) => (
+                      <tr key={i} className="border-t border-border/40">
+                        <td className="whitespace-nowrap py-1.5 pr-3 tabular-nums text-foreground/80">{fmtWhen(r.started_at)}</td>
+                        <td className="whitespace-nowrap py-1.5 pr-3 tabular-nums text-foreground/70">{fmtDuration(r.duration_ms)}</td>
+                        <td className="py-1.5 pr-3">
+                          <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold", RUN_STATUS_CLS[r.status] ?? "bg-muted/60 text-muted-foreground")}>
+                            {r.status}
+                          </span>
+                        </td>
+                        <td className="max-w-[380px] truncate py-1.5 text-muted-foreground" title={r.detail ?? ""}>{r.detail ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

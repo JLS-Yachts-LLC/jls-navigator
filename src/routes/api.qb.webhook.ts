@@ -41,13 +41,6 @@ async function hmacBase64(key: string, msg: string): Promise<string> {
 export async function qbWebhookHandler(request: Request): Promise<Response> {
   if (request.method !== 'POST') return new Response('Method not allowed', { status: 405 })
 
-  // KILL-SWITCH: the QuickBooks automation runs in n8n for now. This Cloudflare
-  // receiver/orchestrator stays disabled until QB_RECEIVER_ENABLED='true' is set,
-  // so it can never double-process or interfere with the live n8n workflow.
-  if (process.env.QB_RECEIVER_ENABLED !== 'true') {
-    return new Response('QB receiver disabled — QuickBooks automation runs in n8n', { status: 503 })
-  }
-
   const raw = await request.text()
 
   // 1. Signature verification (Intuit signs the raw body with the webhook verifier).
@@ -73,10 +66,15 @@ export async function qbWebhookHandler(request: Request): Promise<Response> {
   }
   if (!existing) await sb.from('qb_webhook_events').insert({ id })
 
-  // 2b. Native orchestration (parse → classify → invoice fetch + doc-number heal)
-  //     when QBO is configured. Document generation (PDF/OneDrive) still runs in
-  //     n8n via the forward below until the per-entity handlers are ported.
-  if (qboConfigured()) {
+  // 2b. Native orchestration (parse → classify → invoice fetch + doc-number heal
+  //     + instant Finance sync) — gated on the in-app toggle: Automations →
+  //     "QuickBooks Webhook (receiver)". Toggle OFF = this endpoint is a pure
+  //     retry-safe relay to n8n (identical to today's behaviour); toggle ON adds
+  //     the native processing. Flip it from the Polaris Automations page.
+  const { data: auto } = await sb.from('automations').select('enabled').eq('key', 'qb-webhook').maybeSingle()
+  const nativeEnabled = !!auto?.enabled
+
+  if (nativeEnabled && qboConfigured()) {
     try {
       const items = await orchestrate(raw)
       const summary = items.map(i =>
