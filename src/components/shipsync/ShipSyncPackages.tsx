@@ -125,7 +125,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
       <div className="overflow-x-auto rounded-xl border border-border bg-card">
         <table className="w-full text-sm">
           <thead><tr className="border-b border-border bg-muted/40 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-            {["Barcode", "Boat", "Received", "Consignee", "# Pkgs", "Courier", "Type", "Delivery Note", "Driver", "Delivered", "Documents", "Zone", "Status", ""].map((h, i) => (
+            {["Air waybill/tracking info", "Client", "Date Received", "Consignee", "Number of Packages", "Courier", "Shipment Type", "Delivery Note Number", "Driver", "Date Delivered", "Documents", "Zone", "Status", ""].map((h, i) => (
               <th key={`${h}-${i}`} className="px-3 py-2.5 whitespace-nowrap">{h}</th>
             ))}
           </tr></thead>
