@@ -127,7 +127,7 @@ export function transformEstimate(estimate: any): QuoteData {
       const qtyRaw = line.Qty ?? sd.Qty
       const qty = qtyRaw === undefined || qtyRaw === null || qtyRaw === '' || isNaN(Number(qtyRaw)) ? '' : Number(qtyRaw)
       const unitRate = Number(sd.UnitPrice || 0)
-      const amount = Number(line.Amount ?? (Number(qty) * unitRate) ?? 0)
+      const amount = Number(line.Amount ?? Number(qty) * unitRate)
       const taxInfo = TAX_CODE_MAP[sd.TaxCodeRef?.value || '19'] || TAX_CODE_MAP['19']
       const vatValue = taxInfo.rate > 0 ? +(amount * (taxInfo.rate / 100)).toFixed(2) : 0
       const description = String(line.Description || sd.ItemRef?.name || 'Item').trim()
