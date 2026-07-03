@@ -125,7 +125,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
       <div className="overflow-x-auto rounded-xl border border-border bg-card">
         <table className="w-full text-sm">
           <thead><tr className="border-b border-border bg-muted/40 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-            {["Barcode", "Boat", "Consignee", "Courier", "# Pkgs", "Type", "Delivery Note", "Driver", "Zone", "Received", "Delivered", "Documents", "Status", ""].map((h, i) => (
+            {["Barcode", "Boat", "Received", "Consignee", "# Pkgs", "Courier", "Type", "Delivery Note", "Driver", "Delivered", "Documents", "Zone", "Status", ""].map((h, i) => (
               <th key={`${h}-${i}`} className="px-3 py-2.5 whitespace-nowrap">{h}</th>
             ))}
           </tr></thead>
@@ -140,14 +140,13 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
                 <tr key={p.id} onClick={() => openEdit(p)} className="group cursor-pointer border-b border-border/40 hover:bg-accent/20">
                   <td className="px-3 py-2.5 font-mono text-[12px] text-foreground whitespace-nowrap">{p.barcode ?? "—"}</td>
                   <td className="px-3 py-2.5 font-medium whitespace-nowrap">{p.boat_name ?? "—"}</td>
+                  <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{fmtDate(p.received_at)}</td>
                   <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{p.package_owner ?? "—"}</td>
-                  <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{p.courier ?? "—"}</td>
                   <td className="px-3 py-2.5 tabular-nums text-muted-foreground text-center">{p.num_packages ?? 1}</td>
+                  <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{p.courier ?? "—"}</td>
                   <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{p.local_import ?? "—"}</td>
                   <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{p.delivery_note_no ?? note?.number ?? "—"}</td>
                   <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{driver?.name ?? "—"}</td>
-                  <td className="px-3 py-2.5 text-muted-foreground">{p.warehouse_zone ?? "—"}</td>
-                  <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{fmtDate(p.received_at)}</td>
                   <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{fmtDate(p.delivered_at)}</td>
                   <td className="px-3 py-2.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                     {docs.length === 0 ? <span className="text-muted-foreground">—</span> : (
@@ -161,6 +160,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
                       </div>
                     )}
                   </td>
+                  <td className="px-3 py-2.5 text-muted-foreground">{p.warehouse_zone ?? "—"}</td>
                   <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
                     <Select value={p.status} onValueChange={(v) => quickStatus(p, v as PackageStatus)}>
                       <SelectTrigger className="h-7 w-[132px] border-none bg-transparent p-0 hover:bg-accent/40"><StatusBadge status={p.status} /></SelectTrigger>
