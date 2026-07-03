@@ -91,6 +91,14 @@ export async function orchestrate(raw: string): Promise<OrchestrationItem[]> {
           }
         }
       }
+      // Native doc-gen (port of the n8n "QB (Quotation/Estimate)" workflow):
+      // render the Quotation PDF + XLSX and attach both to the QBO estimate.
+      // Gated by its own qb-estimate-doc toggle (default OFF) with a loop-guard
+      // in qbo_doc_logs so our own attachment echoes never re-trigger it.
+      if (ev.entity === 'estimate' && qboConfigured()) {
+        const { runEstimateDocgen } = await import('./estimate-docgen.server')
+        item.docgen = await runEstimateDocgen(ev.entityId, ev.rawType)
+      }
       // Native ingest: land the changed document in the app's qbo_* tables now,
       // instead of waiting for the 5-minute poll. (Dynamic import — sync.server
       // imports classifyInvoiceType from this module.)

@@ -10,6 +10,14 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "The QB Invoice PDF automation card has a built-in tester — preview the rendered PDF for any QuickBooks invoice id, or force a full generate-and-attach run"
+      },
+      {
+        "type": "feature",
+        "title": "QB Invoice document generation now runs fully native on the platform — the branded multi-page invoice PDF (item table, VAT summary, currency conversion, Emirates NBD bank details) is rendered in the Worker and attached to the QuickBooks invoice, replacing the n8n workflow, OneDrive templates and ConvertAPI. Toggle 'QB Invoice PDF (native)' under Automations → Finance to cut over; preview any invoice via /api/qb/invoice-pdf?id="
+      },
+      {
+        "type": "feature",
         "title": "QuickBooks webhook toggle now switches the whole pipeline — ON runs everything natively on the worker (n8n is not called), OFF relays untouched to n8n"
       },
       {
