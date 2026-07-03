@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Automations grouped into department mini tabs (Finance, Immigration, Logistics, Training, Yacht IT Solutions, Operations, Platform) with per-automation step-by-step view and a full run log showing status, duration and failure detail"
+      },
+      {
+        "type": "feature",
         "title": "QuickBooks webhook now runs natively on the platform — signature verification, retry-safe dedup, invoice number self-heal, Pro-Forma classification and instant document sync into Finance, with n8n kept in the loop for document generation until those flows are ported"
       },
       {
