@@ -66,27 +66,39 @@ export async function qbWebhookHandler(request: Request): Promise<Response> {
   }
   if (!existing) await sb.from('qb_webhook_events').insert({ id })
 
-  // 2b. Native orchestration (parse → classify → invoice fetch + doc-number heal
-  //     + instant Finance sync) — gated on the in-app toggle: Automations →
-  //     "QuickBooks Webhook (receiver)". Toggle OFF = this endpoint is a pure
-  //     retry-safe relay to n8n (identical to today's behaviour); toggle ON adds
-  //     the native processing. Flip it from the Polaris Automations page.
+  // 3. The in-app toggle (Automations → "QuickBooks Webhook — native processing")
+  //    decides WHO processes the event — never both, so nothing double-fires:
+  //      ON  → the worker handles everything natively (parse → invoice fetch →
+  //            doc-number heal → Pro-Forma classification → instant Finance sync).
+  //            n8n is NOT called at all.
+  //      OFF → pure retry-safe relay to the existing n8n workflow (today's setup).
   const { data: auto } = await sb.from('automations').select('enabled').eq('key', 'qb-webhook').maybeSingle()
   const nativeEnabled = !!auto?.enabled
 
-  if (nativeEnabled && qboConfigured()) {
+  if (nativeEnabled) {
+    if (!qboConfigured()) {
+      await logAutomationRun({ ...AUTO, status: 'error', detail: 'native mode is ON but QBO credentials are not configured' })
+      return new Response('qbo not configured', { status: 500 }) // Intuit re-delivers
+    }
     try {
       const items = await orchestrate(raw)
       const summary = items.map(i =>
         `${i.entity}${i.invoiceType ? '/' + i.invoiceType : ''}${i.heal ? ' heal:' + i.heal.action : ''}${i.ingest ? ' ' + i.ingest : ''}${i.error ? ' ERR:' + i.error : ''}`,
       ).join('; ')
-      await logAutomationRun({ ...AUTO, status: 'success', detail: `orchestrated — ${summary || 'no events'}` })
+      const anyError = items.some(i => i.error)
+      await sb.from('qb_webhook_events')
+        .update({ forwarded: !anyError, attempts: 1, last_status: anyError ? 500 : 200, last_error: anyError ? summary : null, updated_at: new Date().toISOString() })
+        .eq('id', id)
+      await logAutomationRun({ ...AUTO, status: anyError ? 'error' : 'success', detail: `native — ${summary || 'no events'}` })
+      // Per-event errors → 500 so Intuit re-delivers; successes are dedup-safe.
+      return new Response(anyError ? 'partial failure' : 'ok', { status: anyError ? 500 : 200 })
     } catch (e: any) {
-      await logAutomationRun({ ...AUTO, status: 'error', detail: `orchestrate failed: ${e?.message ?? e}` })
+      await logAutomationRun({ ...AUTO, status: 'error', detail: `native processing failed: ${e?.message ?? e}` })
+      return new Response('native processing failed', { status: 500 }) // Intuit re-delivers
     }
   }
 
-  // 3. Retry-forward the exact payload to n8n.
+  // 3b. Toggle OFF: retry-forward the exact payload to n8n.
   const contentType = request.headers.get('content-type') ?? 'application/json'
   let ok = false, attempts = 0, lastStatus: number | null = null, lastErr = ''
   for (let i = 0; i < 3 && !ok; i++) {
