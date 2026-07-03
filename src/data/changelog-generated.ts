@@ -9,6 +9,14 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-07-03",
     "entries": [
       {
+        "type": "fix",
+        "title": "Quotation PDFs match the live n8n output exactly — amounts sit on the middle line of multi-line descriptions, zero VAT-summary values render blank, and the customer address wraps inside the QUOTE TO box without repeating the city"
+      },
+      {
+        "type": "feature",
+        "title": "QB Invoice PDFs now exactly match the official JLS Yachts letterhead template — real logo, division footer, black-bar tables, per-page subtotals, grand total bar and dirham/currency total rows"
+      },
+      {
         "type": "feature",
         "title": "Quotation PDFs now render on the official JLS Yachts letterhead — the real Word template backgrounds (logo, QUOTE TO box, black bars, division footer, Terms & Conditions page) with values stamped at the exact template positions, per currency variant (AED / AED-to-USD-EUR / USD-EUR), including customer TRN lookup and correct multi-page totals"
       },
