@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "QB Quotation/Estimate documents now generate fully native on the worker — the Quotation PDF and XLSX (line items, VAT summary, bank details, currency conversion) are built in-platform and attached to the QuickBooks estimate, replacing the n8n workflow, Google Drive templates and ConvertAPI. Toggle 'QB Quotation/Estimate — document generation' under Automations to cut over; superseded attachments are replaced automatically"
+      },
+      {
+        "type": "feature",
         "title": "The QB Invoice PDF automation card has a built-in tester — preview the rendered PDF for any QuickBooks invoice id, or force a full generate-and-attach run"
       },
       {
