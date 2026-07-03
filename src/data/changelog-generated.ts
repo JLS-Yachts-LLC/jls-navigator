@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "QuickBooks webhook toggle now switches the whole pipeline — ON runs everything natively on the worker (n8n is not called), OFF relays untouched to n8n"
+      },
+      {
+        "type": "feature",
         "title": "QuickBooks native processing is now a toggle on the Automations page — off, the webhook is a pure retry-safe relay to n8n; on, it adds the number self-heal, Pro-Forma classification and instant Finance sync"
       },
       {
