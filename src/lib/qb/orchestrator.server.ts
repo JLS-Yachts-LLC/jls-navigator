@@ -54,7 +54,7 @@ export function classifyInvoiceType(invoice: any): 'Invoice' | 'Pro-Forma' {
   return sv === '2' ? 'Pro-Forma' : 'Invoice'
 }
 
-export type OrchestrationItem = QbEvent & { invoiceType?: 'Invoice' | 'Pro-Forma'; heal?: HealResult; error?: string }
+export type OrchestrationItem = QbEvent & { invoiceType?: 'Invoice' | 'Pro-Forma'; heal?: HealResult; ingest?: string; error?: string }
 
 /** Process a batch: track each event, and for invoices fetch + heal + classify.
  *  Requires QBO credentials; callers should guard with qboConfigured(). */
@@ -79,6 +79,13 @@ export async function orchestrate(raw: string): Promise<OrchestrationItem[]> {
             : invoice
           item.invoiceType = classifyInvoiceType(fresh)
         }
+      }
+      // Native ingest: land the changed document in the app's qbo_* tables now,
+      // instead of waiting for the 5-minute poll. (Dynamic import — sync.server
+      // imports classifyInvoiceType from this module.)
+      if (qboConfigured()) {
+        const { syncOneEntity } = await import('./sync.server')
+        item.ingest = await syncOneEntity(ev.entity, ev.entityId)
       }
     } catch (e: any) {
       item.error = e?.message ?? String(e)

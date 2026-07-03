@@ -9,6 +9,9 @@
     "crons": ["*/15 * * * *", "0 * * * *", "5,20,35,50 * * * *", "*/5 * * * *"]
   },
   "vars": {
+    // QuickBooks webhook receiver is LIVE on the worker (signature verify + dedup +
+    // native heal/ingest, then forwards to n8n for the doc-gen sub-workflows).
+    "QB_RECEIVER_ENABLED": "true",
     "SUPABASE_URL": "https://cqzdroabjcdyncfqwawy.supabase.co",
     "SUPABASE_PUBLISHABLE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxemRyb2FiamNkeW5jZnF3YXd5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg4MjkyNjYsImV4cCI6MjA5NDQwNTI2Nn0.ZHjXFJuUCFa3aRHnUVvSK1pBxwtxZ5nWrdELlsT96-c",
     "VITE_APP_URL": "https://jls-navigator.m-peeters-4a0.workers.dev"
