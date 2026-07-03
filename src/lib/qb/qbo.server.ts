@@ -96,6 +96,48 @@ export async function qboQuery(query: string): Promise<any> {
   return qboRequest('GET', `/query?query=${encodeURIComponent(query)}&minorversion=73`)
 }
 
+/** Upload a file to QBO and link it to an entity (multipart /upload endpoint).
+ *  Returns the created Attachable object. */
+export async function qboUpload(
+  fileName: string,
+  bytes: Uint8Array,
+  contentType: string,
+  entityType: string,
+  entityId: string,
+): Promise<any> {
+  if (!qboConfigured()) throw new Error('QBO not configured')
+  const sb = admin()
+  const realm = qboRealm()
+  let token = await getAccessToken(sb, realm)
+  const url = `${API_BASE}/${realm}/upload?minorversion=73`
+
+  const metadata = JSON.stringify({
+    AttachableRef: [{ IncludeOnSend: false, EntityRef: { type: entityType, value: String(entityId) } }],
+    ContentType: contentType,
+    FileName: fileName,
+  })
+
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const form = new FormData()
+    form.append('file_metadata_01', new Blob([metadata], { type: 'application/json' }), 'attachment.json')
+    form.append('file_content_01', new Blob([bytes as unknown as BlobPart], { type: contentType }), fileName)
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+      body: form,
+    })
+    if (res.status === 401 && attempt === 0) { token = await getAccessToken(sb, realm, true); continue }
+    if ((res.status === 429 || res.status >= 500) && attempt < 3) { await sleep(500 * (attempt + 1)); continue }
+    const j: any = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(`QBO upload ${fileName} → ${res.status}: ${JSON.stringify(j).slice(0, 300)}`)
+    const attachable = j?.AttachableResponse?.[0]?.Attachable
+    const fault = j?.AttachableResponse?.[0]?.Fault
+    if (fault) throw new Error(`QBO upload fault: ${JSON.stringify(fault).slice(0, 300)}`)
+    return attachable
+  }
+  throw new Error(`QBO upload ${fileName} failed after retries`)
+}
+
 /** Fetch a QBO-rendered PDF (e.g. /invoice/{id}/pdf or /estimate/{id}/pdf) as bytes. */
 export async function qboPdf(path: string): Promise<ArrayBuffer> {
   if (!qboConfigured()) throw new Error('QBO not configured')

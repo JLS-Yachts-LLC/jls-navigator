@@ -54,7 +54,7 @@ export function classifyInvoiceType(invoice: any): 'Invoice' | 'Pro-Forma' {
   return sv === '2' ? 'Pro-Forma' : 'Invoice'
 }
 
-export type OrchestrationItem = QbEvent & { invoiceType?: 'Invoice' | 'Pro-Forma'; heal?: HealResult; ingest?: string; error?: string }
+export type OrchestrationItem = QbEvent & { invoiceType?: 'Invoice' | 'Pro-Forma'; heal?: HealResult; ingest?: string; docgen?: string; error?: string }
 
 /** Process a batch: track each event, and for invoices fetch + heal + classify.
  *  Requires QBO credentials; callers should guard with qboConfigured(). */
@@ -78,6 +78,17 @@ export async function orchestrate(raw: string): Promise<OrchestrationItem[]> {
             ? (await qboRequest('GET', `/invoice/${ev.entityId}?include=enhancedAllCustomFields&minorversion=73`))?.Invoice ?? invoice
             : invoice
           item.invoiceType = classifyInvoiceType(fresh)
+
+          // Native doc-gen (port of the n8n "QB Invoice" workflow): render the
+          // branded PDF and attach it to the QBO invoice. Gated by its own
+          // qb-invoice-pdf toggle (default OFF), with an internal attach-echo
+          // guard so our own upload never loops the webhook.
+          if (item.invoiceType === 'Invoice') {
+            const { generateAndAttachInvoicePdf } = await import('./invoice-doc.server')
+            const pdfRes = await generateAndAttachInvoicePdf(ev.entityId)
+            item.docgen = `${pdfRes.action}${pdfRes.action === 'attached' ? ` (${pdfRes.ms}ms)` : ''}`
+            if (pdfRes.action === 'error') item.error = `docgen: ${pdfRes.detail}`
+          }
         }
       }
       // Native ingest: land the changed document in the app's qbo_* tables now,

@@ -262,6 +262,12 @@ export default {
       return adminPortalUsersHandler(request)
     }
 
+    // Native QB Invoice PDF preview / manual run (admin only)
+    if (url.pathname === '/api/qb/invoice-pdf') {
+      const { qbInvoicePdfHandler } = await import('./routes/api.qb.invoice-pdf')
+      return qbInvoicePdfHandler(request)
+    }
+
     if (url.pathname === '/api/leo/briefing' && request.method === 'POST') {
       return leoBriefingHandler(request)
     }
