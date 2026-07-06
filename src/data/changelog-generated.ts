@@ -5,6 +5,16 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.22.0",
+    "date": "2026-07-06",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Google Maps directions & route planning — ShipSync runs get a Route Map with Google-optimized stop order, per-leg distances and ETA plus one-tap navigation; Crew Cab trips get Google Places address search, a live route preview with distance and ETA saved on the trip, a flight number field for airport pickups, and per-trip directions. Configure under Settings → Integrations → Google Maps (paste API key, toggle on)"
+      }
+    ]
+  },
+  {
     "version": "2.21.0",
     "date": "2026-07-03",
     "entries": [
