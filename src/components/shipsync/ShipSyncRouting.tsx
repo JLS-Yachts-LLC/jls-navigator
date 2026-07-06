@@ -2,9 +2,10 @@ import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Ship, Truck, Route, X, Plus, ChevronRight, ChevronDown, Anchor, Calendar } from "lucide-react";
+import { Loader2, Ship, Truck, Route, X, Plus, ChevronRight, ChevronDown, Anchor, Calendar, Map as MapIcon } from "lucide-react";
 import { StatusBadge } from "@/components/shipsync/shared";
 import { ShipSyncDeliveryCalendar } from "@/components/shipsync/ShipSyncDeliveryCalendar";
+import { RouteMapDialog, type RouteStop } from "@/components/shipsync/RouteMapDialog";
 import { dispatchRoute } from "@/lib/shipsync/data";
 import { type ShipSyncPackage, type ShipSyncDestination } from "@/lib/shipsync/model";
 import type { ShipSyncData } from "@/components/shipsync-page";
@@ -29,6 +30,7 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
   const seq = useRef(1);
   const [routes, setRoutes] = useState<RouteDraft[]>(() => [newRoute("r1", "Route 1")]);
   const [busy, setBusy] = useState<string | null>(null);
+  const [mapRoute, setMapRoute] = useState<{ name: string; stops: RouteStop[] } | null>(null);
 
   const destByBoat = useMemo(() => {
     const m = new Map<string, ShipSyncDestination>();
@@ -161,6 +163,22 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
                   </div>
                   <span className="text-[12px] text-muted-foreground">{r.boats.length} boat{r.boats.length === 1 ? "" : "s"} · {parcels.length} parcel{parcels.length === 1 ? "" : "s"}</span>
                   <div className="ml-auto flex items-center gap-2">
+                    <Button
+                      size="sm" variant="outline" className="h-8 gap-1.5"
+                      disabled={r.boats.filter((b) => b !== UNASSIGNED).length === 0}
+                      title="Route map — optimized stop order, distances & ETA"
+                      onClick={() => setMapRoute({
+                        name: r.name,
+                        stops: r.boats
+                          .filter((b) => b !== UNASSIGNED)
+                          .map((b) => {
+                            const d = destByBoat.get(b.toUpperCase());
+                            return { boat: b, address: d?.address, lat: d?.lat, lng: d?.lng };
+                          }),
+                      })}
+                    >
+                      <MapIcon className="h-3.5 w-3.5" /> Map
+                    </Button>
                     <label className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
                       <Calendar className="h-3.5 w-3.5" />
                       <input type="date" value={r.deliveryDate} onChange={(e) => patchRoute(r.id, (x) => ({ ...x, deliveryDate: e.target.value }))}
@@ -254,6 +272,15 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
 
       {/* ── Right: weekly delivery calendar ── */}
       <ShipSyncDeliveryCalendar data={data} reload={reload} />
+
+      {mapRoute && (
+        <RouteMapDialog
+          open
+          onOpenChange={(o) => !o && setMapRoute(null)}
+          title={`${mapRoute.name} — route plan`}
+          stops={mapRoute.stops}
+        />
+      )}
     </div>
   );
 }

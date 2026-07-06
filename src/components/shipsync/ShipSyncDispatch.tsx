@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Plus, MapPin, X, FileText, Mail, Ship, Trash2 } from "lucide-react";
+import { Loader2, Plus, MapPin, X, FileText, Mail, Ship, Trash2, Map as MapIcon } from "lucide-react";
+import { RouteMapDialog, type RouteStop } from "@/components/shipsync/RouteMapDialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/shipsync/shared";
 import {
@@ -30,6 +31,24 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
   }, [pkgsOnNote]);
   const boats = useMemo(() => Array.from(new Set(data.packages.map((p) => p.boat_name).filter(Boolean) as string[])).sort(), [data.packages]);
   const [confirmDel, setConfirmDel] = useState(false);
+  const [showRouteMap, setShowRouteMap] = useState(false);
+
+  // Stops for the selected note: one per boat (from the destinations register),
+  // falling back to the note's own destination when a boat has none.
+  const routeStops = useMemo<RouteStop[]>(() => {
+    if (!sel) return [];
+    const noteBoats = Array.from(new Set(pkgsOnNote.map((p) => p.boat_name).filter(Boolean) as string[])).sort();
+    const names = noteBoats.length ? noteBoats : sel.boat_name ? [sel.boat_name] : [];
+    const stops = names.map((b) => {
+      const d = data.destinations.find((x) => x.boat_name.toUpperCase() === b.toUpperCase());
+      return { boat: b, address: d?.address, lat: d?.lat, lng: d?.lng } as RouteStop;
+    });
+    const usable = stops.filter((s) => (s.lat != null && s.lng != null) || (s.address ?? "").trim());
+    if (usable.length === 0 && (sel.destination_address || (sel.destination_lat != null && sel.destination_lng != null))) {
+      return [{ boat: sel.boat_name ?? "Destination", address: sel.destination_address, lat: sel.destination_lat, lng: sel.destination_lng }];
+    }
+    return stops;
+  }, [sel, pkgsOnNote, data.destinations]);
 
   async function makeNote() {
     if (!newBoat.trim()) { toast.error("Pick a boat for the delivery note"); return; }
@@ -171,6 +190,10 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
               <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={emailPod} disabled={!!pdfBusy}>
                 {pdfBusy === "email" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />} Email POD
               </Button>
+              <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => setShowRouteMap(true)} disabled={routeStops.length === 0}
+                title="Route map — optimized stop order, distances & ETA">
+                <MapIcon className="h-3.5 w-3.5" /> Route map
+              </Button>
               {sel.delivery_pdf_url && <a href={sel.delivery_pdf_url} target="_blank" rel="noopener noreferrer" className="text-[12px] text-primary hover:underline">View delivery PDF</a>}
               <Button size="sm" variant="outline" className="ml-auto h-8 gap-1.5 text-destructive hover:bg-destructive/10" onClick={() => setConfirmDel(true)} disabled={busy}>
                 <Trash2 className="h-3.5 w-3.5" /> Delete run
@@ -227,6 +250,15 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
           </div>
         )}
       </div>
+
+      {sel && showRouteMap && (
+        <RouteMapDialog
+          open
+          onOpenChange={(o) => !o && setShowRouteMap(false)}
+          title={`DN-${sel.number} — route plan`}
+          stops={routeStops}
+        />
+      )}
 
       {sel && (
         <Dialog open={confirmDel} onOpenChange={(o) => !o && setConfirmDel(false)}>

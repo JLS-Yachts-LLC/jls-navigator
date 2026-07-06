@@ -942,6 +942,14 @@ const INTEGRATIONS: {
       { key: 'workspace_id', label: 'Workspace ID', placeholder: 'e.g. 987654' },
     ],
   },
+  {
+    name: 'Google Maps',
+    key: 'google_maps',
+    logo: '🗺️',
+    fields: [
+      { key: 'api_key', label: 'API Key', placeholder: 'Browser key — enable Maps JavaScript, Places & Directions APIs; restrict by HTTP referrer' },
+    ],
+  },
 ]
 
 function IntegrationsPanel() {

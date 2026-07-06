@@ -13,10 +13,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   Plus, Pencil, Trash2, Loader2, Route, MapPin, Navigation,
-  Search, Check, X,
+  Search, Check, X, Plane,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { useGoogleMaps, type GMaps } from "@/lib/google-maps";
+import { GoogleRouteMap } from "@/components/maps/google-route-map";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -35,14 +37,21 @@ type Trip = {
   yacht_id: string | null;
   pickup_location_id: string | null;
   pickup_address: string | null;
+  pickup_lat: number | null;
+  pickup_lng: number | null;
   dropoff_location_id: string | null;
   dropoff_address: string | null;
+  dropoff_lat: number | null;
+  dropoff_lng: number | null;
   pickup_datetime: string | null;
   dropoff_datetime: string | null;
   driver_id: string | null;
   vehicle_id: string | null;
   status: TripStatus;
   notes: string | null;
+  flight_number: string | null;
+  distance_km: number | null;
+  duration_min: number | null;
   driver?: { full_name: string } | null;
   vehicle?: { make: string; model: string; registration: string | null } | null;
   pickup_loc?: { name: string; latitude: number | null; longitude: number | null } | null;
@@ -68,6 +77,9 @@ type FormState = {
   vehicle_id: string;
   status: TripStatus;
   notes: string;
+  flight_number: string;
+  distance_km: number | null;
+  duration_min: number | null;
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -90,6 +102,9 @@ const EMPTY_FORM: FormState = {
   vehicle_id: "__none",
   status: "pending",
   notes: "",
+  flight_number: "",
+  distance_km: null,
+  duration_min: null,
 };
 
 const TYPE_LABEL: Record<TripType, string> = {
@@ -130,6 +145,18 @@ const STATUS_ORDER: TripStatus[] = ["pending", "confirmed", "in_progress", "comp
 function fmtDt(dt: string | null) {
   if (!dt) return "—";
   return new Date(dt).toLocaleString("en-GB", { dateStyle: "short", timeStyle: "short" });
+}
+
+function tripDirectionsUrl(t: Trip): string | null {
+  const pt = (lat: number | null, lng: number | null, loc: { latitude: number | null; longitude: number | null } | null | undefined, addr: string | null, locName?: string | null) => {
+    const la = lat ?? loc?.latitude, ln = lng ?? loc?.longitude;
+    if (la != null && ln != null) return `${la},${ln}`;
+    return (addr ?? locName ?? "").trim();
+  };
+  const origin = pt(t.pickup_lat, t.pickup_lng, t.pickup_loc, t.pickup_address, t.pickup_loc?.name);
+  const destination = pt(t.dropoff_lat, t.dropoff_lng, t.dropoff_loc, t.dropoff_address, t.dropoff_loc?.name);
+  if (!origin || !destination) return null;
+  return `https://www.google.com/maps/dir/?api=1&travelmode=driving&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}`;
 }
 
 function Badge({ label, color }: { label: string; color: string }) {
@@ -186,6 +213,7 @@ function parseCoords(input: string): { lat: number; lng: number } | null {
 type AddressSuggestion =
   | { kind: "saved"; id: string; label: string; sub: string | null; lat: number | null; lng: number | null }
   | { kind: "nominatim"; label: string; sub: string; lat: number; lng: number }
+  | { kind: "google"; label: string; sub: string; placeId: string }
   | { kind: "coords"; label: string; lat: number; lng: number; raw: string };
 
 type AddressValue = {
@@ -196,12 +224,13 @@ type AddressValue = {
 };
 
 function AddressCombobox({
-  value, onChange, savedLocations, placeholder,
+  value, onChange, savedLocations, placeholder, maps,
 }: {
   value: AddressValue;
   onChange: (v: AddressValue) => void;
   savedLocations: SavedLocation[];
   placeholder?: string;
+  maps?: GMaps | null;
 }) {
   const displayLabel =
     value.location_id !== "__none"
@@ -254,9 +283,31 @@ function AddressCombobox({
 
     setSuggestions(savedMatches);
 
-    // ── 3. Nominatim autocomplete (debounced, query clamped to 100 chars) ──
     const searchQ = q.length > 100 ? q.slice(0, 100).replace(/\s\S*$/, "").trim() : q;
 
+    // ── 3a. Google Places autocomplete (when the integration is configured) ─
+    if (maps?.places) {
+      timerRef.current = setTimeout(() => {
+        setFetching(true);
+        const svc = new maps.places.AutocompleteService();
+        svc.getPlacePredictions({ input: searchQ }, (preds, status) => {
+          setFetching(false);
+          if (status !== maps.places.PlacesServiceStatus.OK || !preds) return;
+          setSuggestions([
+            ...savedMatches,
+            ...preds.slice(0, 6).map<AddressSuggestion>((p) => ({
+              kind: "google",
+              label: p.structured_formatting?.main_text ?? p.description,
+              sub: p.structured_formatting?.secondary_text ?? "",
+              placeId: p.place_id,
+            })),
+          ]);
+        });
+      }, 300);
+      return;
+    }
+
+    // ── 3b. Nominatim autocomplete (fallback, debounced) ───────────────────
     timerRef.current = setTimeout(async () => {
       setFetching(true);
       try {
@@ -294,6 +345,17 @@ function AddressCombobox({
     } else if (s.kind === "coords") {
       onChange({ location_id: "__none", address: s.raw, lat: s.lat, lng: s.lng });
       setQuery(s.raw);
+    } else if (s.kind === "google") {
+      const addr = [s.label, s.sub].filter(Boolean).join(", ");
+      // Resolve the place to coordinates, then update.
+      onChange({ location_id: "__none", address: addr, lat: null, lng: null });
+      setQuery(s.label);
+      if (maps) {
+        new maps.Geocoder().geocode({ placeId: s.placeId }, (results, status) => {
+          const loc = status === "OK" ? results?.[0]?.geometry?.location : null;
+          if (loc) onChange({ location_id: "__none", address: addr, lat: +loc.lat().toFixed(7), lng: +loc.lng().toFixed(7) });
+        });
+      }
     } else {
       const addr = [s.label, s.sub].filter(Boolean).join(", ");
       onChange({ location_id: "__none", address: addr, lat: s.lat, lng: s.lng });
@@ -349,7 +411,7 @@ function AddressCombobox({
                 {s.kind === "saved" && s.sub && (
                   <div className="truncate text-muted-foreground">{s.sub}</div>
                 )}
-                {s.kind === "nominatim" && s.sub && (
+                {(s.kind === "nominatim" || s.kind === "google") && s.sub && (
                   <div className="truncate text-muted-foreground">{s.sub}</div>
                 )}
                 {s.kind === "coords" && (
@@ -636,6 +698,18 @@ function BoardRow({
       {/* Actions */}
       <td className="w-20 px-2 py-1">
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity justify-end">
+          {tripDirectionsUrl(trip) && (
+            <a
+              href={tripDirectionsUrl(trip)!}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={e => e.stopPropagation()}
+              title={`Directions${trip.distance_km ? ` — ${trip.distance_km} km · ${trip.duration_min ?? "?"} min` : ""}`}
+              className="rounded p-1 hover:bg-muted transition"
+            >
+              <Navigation className="h-3 w-3 text-primary/70" />
+            </a>
+          )}
           {onEdit && (
             <button
               onClick={e => { e.stopPropagation(); onEdit(trip); }}
@@ -794,6 +868,7 @@ export function TripsPage() {
   const [busy, setBusy] = useState(false);
   const [boardActive, setBoardActive] = useState<{ row: string; field: string } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Trip | null>(null);
+  const { maps } = useGoogleMaps();
 
   useEffect(() => { void loadAll(); }, []);
 
@@ -829,18 +904,21 @@ export function TripsPage() {
       yacht_id: t.yacht_id ?? "__none",
       pickup_location_id: t.pickup_location_id ?? "__none",
       pickup_address: pickupSaved?.name ?? t.pickup_address ?? "",
-      pickup_lat: pickupSaved?.latitude ?? null,
-      pickup_lng: pickupSaved?.longitude ?? null,
+      pickup_lat: t.pickup_lat ?? pickupSaved?.latitude ?? null,
+      pickup_lng: t.pickup_lng ?? pickupSaved?.longitude ?? null,
       dropoff_location_id: t.dropoff_location_id ?? "__none",
       dropoff_address: dropoffSaved?.name ?? t.dropoff_address ?? "",
-      dropoff_lat: dropoffSaved?.latitude ?? null,
-      dropoff_lng: dropoffSaved?.longitude ?? null,
+      dropoff_lat: t.dropoff_lat ?? dropoffSaved?.latitude ?? null,
+      dropoff_lng: t.dropoff_lng ?? dropoffSaved?.longitude ?? null,
       pickup_datetime: t.pickup_datetime ? t.pickup_datetime.slice(0, 16) : "",
       dropoff_datetime: t.dropoff_datetime ? t.dropoff_datetime.slice(0, 16) : "",
       driver_id: t.driver_id ?? "__none",
       vehicle_id: t.vehicle_id ?? "__none",
       status: t.status,
       notes: t.notes ?? "",
+      flight_number: t.flight_number ?? "",
+      distance_km: t.distance_km ?? null,
+      duration_min: t.duration_min ?? null,
     });
     setOpen(true);
   }
@@ -875,14 +953,21 @@ export function TripsPage() {
         yacht_id: form.yacht_id === "__none" ? null : form.yacht_id,
         pickup_location_id: form.pickup_location_id === "__none" ? null : form.pickup_location_id,
         pickup_address: form.pickup_location_id === "__none" ? (form.pickup_address || null) : null,
+        pickup_lat: mapPickupLat ?? null,
+        pickup_lng: mapPickupLng ?? null,
         dropoff_location_id: form.dropoff_location_id === "__none" ? null : form.dropoff_location_id,
         dropoff_address: form.dropoff_location_id === "__none" ? (form.dropoff_address || null) : null,
+        dropoff_lat: mapDropLat ?? null,
+        dropoff_lng: mapDropLng ?? null,
         pickup_datetime: form.pickup_datetime || null,
         dropoff_datetime: form.dropoff_datetime || null,
         driver_id: form.driver_id === "__none" ? null : form.driver_id,
         vehicle_id: form.vehicle_id === "__none" ? null : form.vehicle_id,
         status: form.status,
         notes: form.notes || null,
+        flight_number: form.flight_number || null,
+        distance_km: form.distance_km,
+        duration_min: form.duration_min,
         updated_at: new Date().toISOString(),
       };
       if (editing) {
@@ -1143,6 +1228,19 @@ export function TripsPage() {
                   </Select>
                 </div>
 
+                {/* Flight number (airport runs) */}
+                <div className="col-span-2 space-y-1">
+                  <Label className="text-xs text-muted-foreground flex items-center gap-1">
+                    <Plane className="h-3 w-3 text-sky-400" /> Flight Number <span className="text-muted-foreground/60">(for airport pickups)</span>
+                  </Label>
+                  <Input
+                    value={form.flight_number}
+                    onChange={e => setForm(f => ({ ...f, flight_number: e.target.value }))}
+                    placeholder="e.g. EK 004"
+                    className="h-8 text-xs"
+                  />
+                </div>
+
                 {/* Pickup address */}
                 <div className="col-span-2 space-y-1">
                   <Label className="text-xs text-muted-foreground flex items-center gap-1">
@@ -1150,9 +1248,10 @@ export function TripsPage() {
                   </Label>
                   <AddressCombobox
                     value={pickupValue}
-                    onChange={v => setForm(f => ({ ...f, pickup_location_id: v.location_id, pickup_address: v.address, pickup_lat: v.lat, pickup_lng: v.lng }))}
+                    onChange={v => setForm(f => ({ ...f, pickup_location_id: v.location_id, pickup_address: v.address, pickup_lat: v.lat, pickup_lng: v.lng, distance_km: null, duration_min: null }))}
                     savedLocations={locations}
                     placeholder="Search saved locations or any address…"
+                    maps={maps}
                   />
                 </div>
 
@@ -1163,9 +1262,10 @@ export function TripsPage() {
                   </Label>
                   <AddressCombobox
                     value={dropoffValue}
-                    onChange={v => setForm(f => ({ ...f, dropoff_location_id: v.location_id, dropoff_address: v.address, dropoff_lat: v.lat, dropoff_lng: v.lng }))}
+                    onChange={v => setForm(f => ({ ...f, dropoff_location_id: v.location_id, dropoff_address: v.address, dropoff_lat: v.lat, dropoff_lng: v.lng, distance_km: null, duration_min: null }))}
                     savedLocations={locations}
                     placeholder="Search saved locations or any address…"
+                    maps={maps}
                   />
                 </div>
 
@@ -1210,7 +1310,18 @@ export function TripsPage() {
                 <span className="text-xs font-medium">Route Preview</span>
               </div>
               <div className="flex-1 p-3">
-                {hasMapCoords ? (
+                {maps && (hasMapCoords || (form.pickup_address && form.dropoff_address)) ? (
+                  <GoogleRouteMap
+                    maps={maps}
+                    origin={{ lat: mapPickupLat, lng: mapPickupLng, address: form.pickup_address }}
+                    destination={{ lat: mapDropLat, lng: mapDropLng, address: form.dropoff_address }}
+                    onRoute={r => setForm(f => ({
+                      ...f,
+                      distance_km: +(r.distanceMeters / 1000).toFixed(1),
+                      duration_min: Math.round(r.durationSeconds / 60),
+                    }))}
+                  />
+                ) : hasMapCoords ? (
                   <RouteMap
                     pickupLat={mapPickupLat!}
                     pickupLng={mapPickupLng!}
