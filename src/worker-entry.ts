@@ -326,6 +326,12 @@ export default {
       return qbInvoicePdfHandler(request)
     }
 
+    // QB Excel importer — upload a workbook to create Estimates/Invoices
+    if (url.pathname === '/api/qb/excel-import') {
+      const { qbExcelImportHandler } = await import('./routes/api.qb.excel-import')
+      return qbExcelImportHandler(request)
+    }
+
     if (url.pathname === '/api/leo/briefing' && request.method === 'POST') {
       return leoBriefingHandler(request)
     }
