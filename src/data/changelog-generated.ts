@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "QuickBooks Purchase Order, Pro-Forma and Receive Payment documents now generate fully native on the worker — branded PDF + XLSX for POs and Pro-Formas (line items, VAT summary, bank details, currency conversion) and a Sales Receipt PDF for payments, each attached to its QuickBooks record and replacing prior versions, replacing the n8n workflows, OneDrive templates and ConvertAPI. Toggle each under Automations (QB Purchase Order / Pro-Forma / Receive Payment — default OFF)"
+      },
+      {
+        "type": "feature",
         "title": "The redesigned interface is now the one and only Polaris view — the Old View toggle and legacy chrome are gone, Settings gains Security (MFA), Permissions, Integrations and Email Templates tabs, and the side nav now covers everything (Crew Cab, Agency, Provisioning, Waypoint Chandlery, Seaport Immigration, Knowledge Base, e-Sign, Directory, Crew Benefits, Emergency Contacts)"
       },
       {
