@@ -10,14 +10,15 @@ import { useFlagMap } from '@/lib/release-flags'
 import { useDevAccess } from '@/lib/dev-access'
 import { DASHBOARD_WIDGETS } from '@/components/dashboard/DashboardWidgets'
 import { Ship, AlertTriangle, ClipboardList, FileSignature, LayoutGrid, Check } from 'lucide-react'
-import { OLD_VIEW_SHELVED } from '@/components/app-layout'
 
 export const Route = createFileRoute('/_app/dashboard')({
-  // Old View shelved: the legacy dashboard redirects to the Polaris home.
-  // Flip OLD_VIEW_SHELVED (app-layout.tsx) to restore it.
-  component: () => (OLD_VIEW_SHELVED ? <Navigate to="/polaris-redesign" replace /> : <DashboardPage />),
+  // The legacy dashboard is retired — /dashboard lands on the Polaris home.
+  component: () => <Navigate to="/polaris-redesign" replace />,
   head: () => ({ meta: [{ title: 'Dashboard — Polaris' }] }),
 })
+
+// The legacy dashboard component below is kept for reference but no longer routed.
+void DashboardPage
 
 // ── Quick-stats types ──────────────────────────────────────────────────────
 interface Stats {

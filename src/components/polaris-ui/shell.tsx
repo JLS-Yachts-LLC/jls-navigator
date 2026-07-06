@@ -76,6 +76,11 @@ export const NAV_GROUPS: NavGroup[] = [
         roles: ["global_admin", "crew_immigration"],
       },
       { label: "Logistics", icon: "truck", screen: "logistics" },
+      { label: "Crew Cab", icon: "car", screen: "route-crew-cab", route: "/crew-cab/trips" },
+      { label: "Agency", icon: "world", screen: "route-agency", route: "/agency" },
+      { label: "Provisioning", icon: "tools-kitchen-2", screen: "route-provisioning", route: "/provisioning" },
+      { label: "Waypoint Chandlery", icon: "shopping-cart", screen: "route-waypoint", route: "/waypoint" },
+      { label: "Seaport Immigration", icon: "building-lighthouse", screen: "route-seaport", route: "/seaport", roles: ["global_admin", "crew_immigration"] },
       { label: "Training", icon: "certificate", screen: "training" },
       { label: "Yacht IT Solutions", icon: "cpu", screen: "yacht-it" },
       { label: "Anchor", icon: "signature", screen: "anchor" },
@@ -110,6 +115,16 @@ export const NAV_GROUPS: NavGroup[] = [
         route: "/crew-immigration/visas/sync",
         roles: ["global_admin", "crew_immigration"],
       },
+    ],
+  },
+  {
+    label: "Resources",
+    items: [
+      { label: "Knowledge Base", icon: "book", screen: "route-guides", route: "/guides" },
+      { label: "e-Sign Documents", icon: "writing-sign", screen: "route-esign", route: "/esign" },
+      { label: "Directory", icon: "address-book", screen: "route-directory", route: "/directory" },
+      { label: "Crew Benefits", icon: "compass", screen: "route-compass", route: "/compass" },
+      { label: "Emergency Contacts", icon: "phone", screen: "route-emergency", route: "/emergency-contacts" },
     ],
   },
   {
@@ -175,9 +190,9 @@ export function activeScreenForPath(pathname: string): string {
   return best?.screen ?? "";
 }
 
-/** The standard app's top-bar controls (View-as, presence, feedback, theme,
- *  notifications) reused in the Beta. Wrapped in `dark` so they read on navy. */
-function BetaTopBarControls() {
+/** Top-bar controls (View-as, presence, feedback, theme, notifications).
+ *  Wrapped in `dark` so they read on navy. */
+function TopBarControls() {
   const { theme, toggle } = useTheme();
   return (
     <div className="dark flex items-center gap-1.5">
@@ -217,7 +232,6 @@ export function PolarisTopBar({
   onBellClick,
   onMenuClick,
   showMenu,
-  onExitBeta,
   activeLabel,
 }: {
   vesselName: string;
@@ -227,7 +241,6 @@ export function PolarisTopBar({
   onBellClick?: () => void;
   onMenuClick?: () => void;
   showMenu?: boolean;
-  onExitBeta?: () => void;
   activeLabel?: string;
 }) {
   return (
@@ -288,30 +301,7 @@ export function PolarisTopBar({
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <GlobalSearch />
-        {onExitBeta && (
-          <button
-            onClick={onExitBeta}
-            title="Switch to the Old View (legacy Polaris)"
-            style={{
-              background: "var(--pds-surface-3)",
-              border: "1px solid var(--pds-border)",
-              color: "var(--pds-text-secondary)",
-              fontSize: "var(--pds-fs-label)",
-              fontWeight: 600,
-              padding: "5px 12px",
-              minHeight: 32,
-              borderRadius: "var(--pds-radius-full)",
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              cursor: "pointer",
-            }}
-          >
-            <TIcon name="arrow-back-up" size={14} />
-            Old View
-          </button>
-        )}
-        <BetaTopBarControls />
+        <TopBarControls />
         <div
           aria-label={`User: ${userName}`}
           title={userName}
@@ -418,7 +408,6 @@ export function PolarisShell({
   userInitials,
   userName,
   onVesselClick,
-  onExitBeta,
   children,
 }: {
   role: PolarisRole;
@@ -428,7 +417,6 @@ export function PolarisShell({
   userInitials: string;
   userName: string;
   onVesselClick?: () => void;
-  onExitBeta?: () => void;
   children: ReactNode;
 }) {
   const isMobile = useIsMobile();
@@ -463,7 +451,6 @@ export function PolarisShell({
         showMenu={isMobile}
         onMenuClick={() => setOverlay(true)}
         onVesselClick={onVesselClick}
-        onExitBeta={onExitBeta}
         activeLabel={labelForScreen(active) ?? undefined}
       />
 

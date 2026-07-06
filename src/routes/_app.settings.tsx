@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Navigate } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
@@ -255,9 +255,11 @@ const doGetWebhookStatus = createServerFn({ method: 'GET' })
   })
 
 // ─── Route ────────────────────────────────────────────────────────────────────
+// The standalone settings page is retired: /settings now lands on the main
+// (Polaris) Settings screen, which renders the panels exported from this file.
 
 export const Route = createFileRoute('/_app/settings')({
-  component: SettingsPage,
+  component: () => <Navigate to="/polaris-redesign" search={{ screen: 'settings' } as any} replace />,
   errorComponent: ({ error }) => (
     <div className="p-8 max-w-xl">
       <h2 className="text-lg font-semibold text-destructive mb-2">Settings failed to load</h2>
@@ -2107,3 +2109,6 @@ function SharePointSyncSection() {
     </div>
   )
 }
+
+// Panels consumed by the main (Polaris) Settings screen.
+export { UsersPanel, PermissionsPanel, IntegrationsPanel, EmailTemplatesPanel }

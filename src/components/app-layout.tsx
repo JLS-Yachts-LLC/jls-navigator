@@ -12,10 +12,8 @@ import { recordVisit } from "@/lib/recent-tabs";
 import { recordAction, installErrorCapture } from "@/lib/action-log";
 import { installErrorLogging, setLogUser } from "@/lib/error-logger";
 
-// The Old View (classic sidebar + top bar) is SHELVED, not deleted: every app
-// route now renders inside the Polaris (New View) chrome. Flip this to false to
-// bring the old chrome back (see git history for the previous layout markup).
-export const OLD_VIEW_SHELVED = true;
+// The classic sidebar + top-bar chrome is retired: every app route renders
+// inside the Polaris shell (see git history for the previous layout markup).
 
 export function AppLayout() {
   const { user, loading } = useAuth();
