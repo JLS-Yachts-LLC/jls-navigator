@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Google Maps card on the Integrations screen — paste and test the API key, toggle on, and maps go live on ShipSync routes and Crew Cab trips"
+      },
+      {
+        "type": "feature",
         "title": "Google Maps directions & route planning — ShipSync runs get a Route Map with Google-optimized stop order, per-leg distances and ETA plus one-tap navigation; Crew Cab trips get Google Places address search, a live route preview with distance and ETA saved on the trip, a flight number field for airport pickups, and per-trip directions. Configure under Settings → Integrations → Google Maps (paste API key, toggle on)"
       }
     ]
