@@ -99,6 +99,24 @@ export async function orchestrate(raw: string): Promise<OrchestrationItem[]> {
         const { runEstimateDocgen } = await import('./estimate-docgen.server')
         item.docgen = await runEstimateDocgen(ev.entityId, ev.rawType)
       }
+      // Pro-Forma doc-gen (port of the n8n "QB (PRO-FORMA)" workflow): a
+      // Pro-Forma is an Invoice classified type "2" above. Gated by qb-proforma-doc.
+      if (ev.entity === 'invoice' && item.invoiceType === 'Pro-Forma' && qboConfigured()) {
+        const { runProformaDocgen } = await import('./proforma-docgen.server')
+        item.docgen = await runProformaDocgen(ev.entityId, ev.rawType)
+      }
+      // Purchase Order doc-gen (port of the n8n "QB (Purchase Order)" workflow).
+      // Gated by qb-po-doc.
+      if (ev.entity === 'purchaseorder' && qboConfigured()) {
+        const { runPurchaseOrderDocgen } = await import('./purchase-order-docgen.server')
+        item.docgen = await runPurchaseOrderDocgen(ev.entityId, ev.rawType)
+      }
+      // Receive Payment → Sales Receipt PDF (port of the n8n "QB (Receive
+      // Payment)" workflow). Gated by qb-payment-doc.
+      if (ev.entity === 'payment' && qboConfigured()) {
+        const { runReceivePaymentDocgen } = await import('./receive-payment-docgen.server')
+        item.docgen = await runReceivePaymentDocgen(ev.entityId, ev.rawType)
+      }
       // Native ingest: land the changed document in the app's qbo_* tables now,
       // instead of waiting for the 5-minute poll. (Dynamic import — sync.server
       // imports classifyInvoiceType from this module.)
