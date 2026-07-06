@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "QuickBooks Excel Import — upload a spreadsheet to create Estimates or Invoices in QuickBooks (one per worksheet), auto-creating missing items, matching the customer by name and allocating the next Q26/JLS26 number, replacing the n8n Excel-input workflows. Find it under Services → QuickBooks Import"
+      },
+      {
+        "type": "feature",
         "title": "QuickBooks Purchase Order, Pro-Forma and Receive Payment documents now generate fully native on the worker — branded PDF + XLSX for POs and Pro-Formas (line items, VAT summary, bank details, currency conversion) and a Sales Receipt PDF for payments, each attached to its QuickBooks record and replacing prior versions, replacing the n8n workflows, OneDrive templates and ConvertAPI. Toggle each under Automations (QB Purchase Order / Pro-Forma / Receive Payment — default OFF)"
       },
       {

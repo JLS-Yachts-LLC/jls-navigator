@@ -27,6 +27,7 @@ import { Route as AppShipSparesRouteImport } from './routes/_app.ship-spares'
 import { Route as AppSettingsRouteImport } from './routes/_app.settings'
 import { Route as AppSeaportRouteImport } from './routes/_app.seaport'
 import { Route as AppRecycleBinRouteImport } from './routes/_app.recycle-bin'
+import { Route as AppQbImportRouteImport } from './routes/_app.qb-import'
 import { Route as AppProvisioningRouteImport } from './routes/_app.provisioning'
 import { Route as AppProcurementRouteImport } from './routes/_app.procurement'
 import { Route as AppPolarisRedesignRouteImport } from './routes/_app.polaris-redesign'
@@ -227,6 +228,11 @@ const AppSeaportRoute = AppSeaportRouteImport.update({
 const AppRecycleBinRoute = AppRecycleBinRouteImport.update({
   id: '/recycle-bin',
   path: '/recycle-bin',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppQbImportRoute = AppQbImportRouteImport.update({
+  id: '/qb-import',
+  path: '/qb-import',
   getParentRoute: () => AppRoute,
 } as any)
 const AppProvisioningRoute = AppProvisioningRouteImport.update({
@@ -838,6 +844,7 @@ export interface FileRoutesByFullPath {
   '/polaris-redesign': typeof AppPolarisRedesignRoute
   '/procurement': typeof AppProcurementRoute
   '/provisioning': typeof AppProvisioningRoute
+  '/qb-import': typeof AppQbImportRoute
   '/recycle-bin': typeof AppRecycleBinRoute
   '/seaport': typeof AppSeaportRouteWithChildren
   '/settings': typeof AppSettingsRoute
@@ -959,6 +966,7 @@ export interface FileRoutesByTo {
   '/polaris-redesign': typeof AppPolarisRedesignRoute
   '/procurement': typeof AppProcurementRoute
   '/provisioning': typeof AppProvisioningRoute
+  '/qb-import': typeof AppQbImportRoute
   '/recycle-bin': typeof AppRecycleBinRoute
   '/settings': typeof AppSettingsRoute
   '/ship-spares': typeof AppShipSparesRoute
@@ -1082,6 +1090,7 @@ export interface FileRoutesById {
   '/_app/polaris-redesign': typeof AppPolarisRedesignRoute
   '/_app/procurement': typeof AppProcurementRoute
   '/_app/provisioning': typeof AppProvisioningRoute
+  '/_app/qb-import': typeof AppQbImportRoute
   '/_app/recycle-bin': typeof AppRecycleBinRoute
   '/_app/seaport': typeof AppSeaportRouteWithChildren
   '/_app/settings': typeof AppSettingsRoute
@@ -1212,6 +1221,7 @@ export interface FileRouteTypes {
     | '/polaris-redesign'
     | '/procurement'
     | '/provisioning'
+    | '/qb-import'
     | '/recycle-bin'
     | '/seaport'
     | '/settings'
@@ -1333,6 +1343,7 @@ export interface FileRouteTypes {
     | '/polaris-redesign'
     | '/procurement'
     | '/provisioning'
+    | '/qb-import'
     | '/recycle-bin'
     | '/settings'
     | '/ship-spares'
@@ -1455,6 +1466,7 @@ export interface FileRouteTypes {
     | '/_app/polaris-redesign'
     | '/_app/procurement'
     | '/_app/provisioning'
+    | '/_app/qb-import'
     | '/_app/recycle-bin'
     | '/_app/seaport'
     | '/_app/settings'
@@ -1685,6 +1697,13 @@ declare module '@tanstack/react-router' {
       path: '/recycle-bin'
       fullPath: '/recycle-bin'
       preLoaderRoute: typeof AppRecycleBinRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/qb-import': {
+      id: '/_app/qb-import'
+      path: '/qb-import'
+      fullPath: '/qb-import'
+      preLoaderRoute: typeof AppQbImportRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/provisioning': {
@@ -2788,6 +2807,7 @@ interface AppRouteChildren {
   AppPolarisRedesignRoute: typeof AppPolarisRedesignRoute
   AppProcurementRoute: typeof AppProcurementRoute
   AppProvisioningRoute: typeof AppProvisioningRoute
+  AppQbImportRoute: typeof AppQbImportRoute
   AppRecycleBinRoute: typeof AppRecycleBinRoute
   AppSeaportRoute: typeof AppSeaportRouteWithChildren
   AppSettingsRoute: typeof AppSettingsRoute
@@ -2851,6 +2871,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppPolarisRedesignRoute: AppPolarisRedesignRoute,
   AppProcurementRoute: AppProcurementRoute,
   AppProvisioningRoute: AppProvisioningRoute,
+  AppQbImportRoute: AppQbImportRoute,
   AppRecycleBinRoute: AppRecycleBinRoute,
   AppSeaportRoute: AppSeaportRouteWithChildren,
   AppSettingsRoute: AppSettingsRoute,
