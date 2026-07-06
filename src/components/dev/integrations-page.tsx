@@ -11,6 +11,9 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { QboCustomersPanel } from "@/components/dev/qbo-customers-panel";
+import { supabase } from "@/integrations/supabase/client";
+import { Input } from "@/components/ui/input";
+import { Map as MapIcon } from "lucide-react";
 
 const REQUIRED_PERMS: { perm: string; purpose: string; have?: boolean }[] = [
   { perm: "Sites.Read.All / Files.Read.All", purpose: "Read SharePoint lists & download files (vessel images)", have: true },
@@ -142,6 +145,9 @@ export function IntegrationsPage() {
                 )}
               </section>
 
+              {/* Google Maps (directions & route planning) */}
+              <GoogleMapsCard />
+
               {/* ShipSync → SharePoint (outbound push) */}
               <ShipSyncSyncStatus />
 
@@ -152,6 +158,106 @@ export function IntegrationsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// ── Google Maps (directions & route planning) ────────────────────────────────
+function GoogleMapsCard() {
+  const [enabled, setEnabled] = useState(false);
+  const [apiKey, setApiKey] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [connected, setConnected] = useState(false);
+
+  useEffect(() => {
+    (supabase as any)
+      .from("integration_settings")
+      .select("enabled, config")
+      .eq("integration_name", "google_maps")
+      .maybeSingle()
+      .then(({ data }: any) => {
+        if (data) {
+          setEnabled(!!data.enabled);
+          setApiKey(data.config?.api_key ?? "");
+          setConnected(!!data.enabled && !!data.config?.api_key);
+        }
+        setLoading(false);
+      });
+  }, []);
+
+  async function save() {
+    setSaving(true);
+    const { error } = await (supabase as any)
+      .from("integration_settings")
+      .upsert({ integration_name: "google_maps", enabled, config: { api_key: apiKey.trim() } }, { onConflict: "integration_name" });
+    setSaving(false);
+    if (error) { toast.error(error.message); return; }
+    setConnected(enabled && !!apiKey.trim());
+    toast.success("Google Maps settings saved" + (enabled && apiKey.trim() ? " — maps are live on ShipSync routes & Crew Cab trips" : ""));
+  }
+
+  async function test() {
+    setTesting(true);
+    try {
+      const key = apiKey.trim();
+      if (!key) throw new Error("Enter the API key first");
+      const res = await fetch(`https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly`, { method: "GET" });
+      if (!res.ok) throw new Error(`Google responded ${res.status} — check the key`);
+      const body = await res.text();
+      if (/InvalidKey|ApiNotActivated|RefererNotAllowed/i.test(body)) throw new Error("Key rejected — check API restrictions in the Google Cloud console");
+      toast.success("Key looks valid — save, then reload the app to activate maps");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Test failed");
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-border bg-card p-5 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.4)]">
+      <div className="mb-3 flex items-center gap-2">
+        <MapIcon className="h-4 w-4 text-primary" />
+        <h2 className="font-display text-sm font-semibold">Google Maps</h2>
+        <StatusPill ok={connected} okLabel="Connected" badLabel="Not configured" />
+        <button
+          onClick={() => setEnabled(v => !v)}
+          className={cn("ml-auto relative inline-flex h-5 w-9 items-center rounded-full transition-colors", enabled ? "bg-primary" : "bg-muted-foreground/30")}
+          title={enabled ? "Enabled" : "Disabled"}
+        >
+          <span className={cn("inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform", enabled ? "translate-x-[18px]" : "translate-x-1")} />
+        </button>
+      </div>
+      <p className="mb-3 text-[12px] text-muted-foreground">
+        Powers directions & route planning on ShipSync delivery runs (optimized stop order, distances, ETA) and Crew Cab trips
+        (address search, route preview, journey times for airport pickups).
+      </p>
+      {loading ? (
+        <div className="flex h-10 items-center"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
+      ) : (
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="Google Maps API key (browser key)"
+              className="h-9 max-w-md font-mono text-xs"
+            />
+            <Button size="sm" variant="outline" className="h-9" onClick={test} disabled={testing || !apiKey.trim()}>
+              {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Test key"}
+            </Button>
+            <Button size="sm" className="h-9 min-w-[72px]" onClick={save} disabled={saving}>
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save"}
+            </Button>
+          </div>
+          <p className="mt-2 text-[11px] text-muted-foreground/70">
+            In the Google Cloud console enable <code className="rounded bg-muted px-1 font-mono text-[10px]">Maps JavaScript API</code>,{" "}
+            <code className="rounded bg-muted px-1 font-mono text-[10px]">Places API</code> and{" "}
+            <code className="rounded bg-muted px-1 font-mono text-[10px]">Directions API</code>, and restrict the key by HTTP referrer to this site.
+          </p>
+        </>
+      )}
+    </section>
   );
 }
 
