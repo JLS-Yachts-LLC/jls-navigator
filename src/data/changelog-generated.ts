@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "The redesigned interface is now the one and only Polaris view — the Old View toggle and legacy chrome are gone, Settings gains Security (MFA), Permissions, Integrations and Email Templates tabs, and the side nav now covers everything (Crew Cab, Agency, Provisioning, Waypoint Chandlery, Seaport Immigration, Knowledge Base, e-Sign, Directory, Crew Benefits, Emergency Contacts)"
+      },
+      {
+        "type": "feature",
         "title": "Google Maps card on the Integrations screen — paste and test the API key, toggle on, and maps go live on ShipSync routes and Crew Cab trips"
       },
       {
