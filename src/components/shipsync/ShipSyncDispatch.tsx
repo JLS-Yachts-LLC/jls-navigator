@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Plus, MapPin, X, FileText, Mail, Ship, Trash2, Map as MapIcon } from "lucide-react";
+import { Loader2, Plus, MapPin, X, FileText, Mail, Ship, Trash2, Truck, Map as MapIcon } from "lucide-react";
 import { RouteMapDialog, type RouteStop } from "@/components/shipsync/RouteMapDialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/shipsync/shared";
@@ -12,7 +12,7 @@ import {
   createDeliveryNote, setNoteDriver, unassignPackage, deleteRun,
 } from "@/lib/shipsync/data";
 import { supabase } from "@/integrations/supabase/client";
-import { googleMapsDirectionsUrl, type ShipSyncDeliveryNote } from "@/lib/shipsync/model";
+import { googleMapsDirectionsUrl, vanLabel, type ShipSyncDeliveryNote } from "@/lib/shipsync/model";
 import type { ShipSyncData } from "@/components/shipsync-page";
 
 export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload: () => Promise<void> }) {
@@ -131,6 +131,7 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
             const noteBoats = Array.from(new Set(notePkgs.map((p) => p.boat_name).filter(Boolean) as string[])).sort();
             const boatList = n.boat_name ? [n.boat_name] : (noteBoats.length ? noteBoats : ["—"]);
             const driver = data.drivers.find((d) => d.id === n.driver_id);
+            const van = data.vehicles.find((v) => v.id === n.vehicle_id);
             return (
               <button key={n.id} onClick={() => setSelId(n.id)}
                 className={`rounded-lg border p-3 text-left transition ${selId === n.id ? "border-primary bg-primary/5" : "border-border hover:bg-accent/30"}`}>
@@ -143,7 +144,7 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
                     <span key={b} className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-foreground/80">{b}</span>
                   ))}
                 </div>
-                <div className="mt-1 text-[11px] text-muted-foreground">{driver?.name ?? "no driver"}</div>
+                <div className="mt-1 text-[11px] text-muted-foreground">{driver?.name ?? "no driver"}{van ? ` · ${vanLabel(van)}` : ""}</div>
               </button>
             );
           })}
@@ -159,6 +160,7 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
             <div className="flex flex-wrap items-center gap-3">
               <h2 className="font-display text-lg font-semibold">Delivery Note DN-{sel.number}</h2>
               <span className="text-sm text-muted-foreground">{sel.boat_name ?? (pkgsByBoat.length > 1 ? "Multiple boats" : pkgsByBoat[0]?.[0] ?? "—")}</span>
+              {(() => { const van = data.vehicles.find((v) => v.id === sel.vehicle_id); return van ? <span className="inline-flex items-center gap-1 text-[12px] text-muted-foreground"><Truck className="h-3.5 w-3.5" /> {vanLabel(van)}</span> : null; })()}
               <div className="ml-auto flex items-center gap-2">
                 <Select value={sel.driver_id ?? "none"} onValueChange={changeDriver}>
                   <SelectTrigger className="h-8 w-44 text-xs"><SelectValue placeholder="Assign driver" /></SelectTrigger>

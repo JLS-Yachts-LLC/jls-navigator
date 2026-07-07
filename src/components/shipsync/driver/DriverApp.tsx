@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { SignaturePad, type SignaturePadHandle } from "@/components/shipsync/driver/SignaturePad";
 import { StatusBadge } from "@/components/shipsync/shared";
-import { googleMapsDirectionsUrl, type ShipSyncDriver, type ShipSyncDestination, type ShipSyncPackage, type PackageStatus } from "@/lib/shipsync/model";
+import { googleMapsDirectionsUrl, vanLabel, type ShipSyncDriver, type ShipSyncDestination, type ShipSyncPackage, type PackageStatus } from "@/lib/shipsync/model";
 import { resolveDriver, listActiveDrivers, loadDriverRuns, scanOntoVan, deliverBoat, type DriverRuns } from "@/lib/shipsync/driver-data";
 import { flushQueue, queueCount } from "@/lib/shipsync/offline";
 
@@ -21,7 +21,7 @@ export function DriverApp() {
   const { user } = useAuth();
   const [driver, setDriver] = useState<ShipSyncDriver | null>(null);
   const [pickList, setPickList] = useState<ShipSyncDriver[] | null>(null);
-  const [runs, setRuns] = useState<DriverRuns>({ notes: [], packages: [], destinations: [] });
+  const [runs, setRuns] = useState<DriverRuns>({ notes: [], packages: [], destinations: [], vehicles: [] });
   const [loading, setLoading] = useState(true);
   const [online, setOnline] = useState(typeof navigator === "undefined" ? true : navigator.onLine);
   const [queued, setQueued] = useState(0);
@@ -125,7 +125,7 @@ export function DriverApp() {
       <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-border bg-background/95 px-4 py-2.5 backdrop-blur">
         <Truck className="h-5 w-5 text-primary" />
         <div className="flex-1">
-          <div className="text-sm font-semibold">{driver.name}</div>
+          <div className="text-sm font-semibold">{driver.name}{runs.vehicles[0] ? ` · ${vanLabel(runs.vehicles[0])}` : ""}</div>
           <div className="text-[11px] text-muted-foreground">{stops.length} stop{stops.length === 1 ? "" : "s"} · {runs.packages.length} parcel{runs.packages.length === 1 ? "" : "s"}</div>
         </div>
         {queued > 0 && <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold text-amber-600 dark:text-amber-400"><CloudUpload className="h-3 w-3" /> {queued} queued</span>}

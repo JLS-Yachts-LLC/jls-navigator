@@ -28,6 +28,13 @@ export async function generateNotePdf(noteId: string, kind: 'predelivery' | 'del
     driverName = driver?.name ?? null
   }
 
+  // Van (plate) for the note header.
+  let vanLabel: string | null = null
+  if (note.vehicle_id) {
+    const { data: veh } = await db().from('crew_vehicles').select('registration, make, model').eq('id', note.vehicle_id).maybeSingle()
+    if (veh) vanLabel = (veh.registration?.trim() || [veh.make, veh.model].filter(Boolean).join(' ').trim()) || null
+  }
+
   // Saved berth per boat (a multi-boat note has no single destination_address).
   const boatNames = Array.from(new Set(packages.map((p) => p.boat_name).filter(Boolean) as string[]))
   const destByBoat = new Map<string, string | null>()
@@ -57,7 +64,7 @@ export async function generateNotePdf(noteId: string, kind: 'predelivery' | 'del
     }
   }
 
-  const bytes = await buildDeliveryNotePdf(note, packages, kind, { driverName, destByBoat, sigByBoat })
+  const bytes = await buildDeliveryNotePdf(note, packages, kind, { driverName, vanLabel, destByBoat, sigByBoat })
   const path = `delivery-notes/${note.number ?? noteId}/${kind}-${Date.now()}.pdf`
   const up = await supabaseAdmin.storage.from('shipsync').upload(path, bytes, { upsert: true, contentType: 'application/pdf' })
   if (up.error) throw up.error

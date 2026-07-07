@@ -4,7 +4,7 @@
  */
 import { supabase } from '@/integrations/supabase/client'
 import { isOnline, queueAdd, blobPut, kvSet, kvGet } from './offline'
-import type { ShipSyncDriver, ShipSyncDeliveryNote, ShipSyncPackage, ShipSyncDestination, PackageStatus } from './model'
+import type { ShipSyncDriver, ShipSyncDeliveryNote, ShipSyncPackage, ShipSyncDestination, ShipSyncVehicle, PackageStatus } from './model'
 
 const db = () => supabase as any
 
@@ -12,6 +12,7 @@ export interface DriverRuns {
   notes: ShipSyncDeliveryNote[]
   packages: ShipSyncPackage[]
   destinations: ShipSyncDestination[]
+  vehicles: ShipSyncVehicle[]
 }
 
 /** Match the signed-in user to a driver record (by user_id, then email). */
@@ -47,15 +48,23 @@ export async function loadDriverRuns(driverId: string): Promise<DriverRuns> {
       const { data: dests } = await db().from('shipsync_destinations').select('*').in('boat_name', boatNames)
       destinations = (dests ?? []) as ShipSyncDestination[]
     }
+    // Vans referenced by the run's notes.
+    const vehicleIds = Array.from(new Set(((notes ?? []) as ShipSyncDeliveryNote[]).map((n) => n.vehicle_id).filter(Boolean) as string[]))
+    let vehicles: ShipSyncVehicle[] = []
+    if (vehicleIds.length) {
+      const { data: vs } = await db().from('crew_vehicles').select('id, make, model, registration, status').in('id', vehicleIds)
+      vehicles = (vs ?? []) as ShipSyncVehicle[]
+    }
     const runs: DriverRuns = {
       notes: (notes ?? []) as ShipSyncDeliveryNote[],
       packages: (packages ?? []) as ShipSyncPackage[],
       destinations,
+      vehicles,
     }
     await kvSet(`runs:${driverId}`, runs).catch(() => {})
     return runs
   }
-  return (await kvGet<DriverRuns>(`runs:${driverId}`)) ?? { notes: [], packages: [], destinations: [] }
+  return (await kvGet<DriverRuns>(`runs:${driverId}`)) ?? { notes: [], packages: [], destinations: [], vehicles: [] }
 }
 
 // ── Actions (online → live, offline → queued) ────────────────────────────────

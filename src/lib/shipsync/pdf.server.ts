@@ -21,6 +21,8 @@ export interface BoatSignature {
 export interface DeliveryNotePdfOptions {
   /** Driver assigned to the run (note.driver_id resolved to a name). */
   driverName?: string | null
+  /** Van assigned to the run (note.vehicle_id resolved to a plate/label). */
+  vanLabel?: string | null
   /** boat_name → saved berth address, for the Destination line per boat. */
   destByBoat?: Map<string, string | null>
   /** boat_name → captured customer signature (delivery notes only). */
@@ -88,6 +90,7 @@ export async function buildDeliveryNotePdf(
     const meta: [string, string][] = [
       ['Vessel', boat === UNASSIGNED ? (note.boat_name ?? UNASSIGNED) : boat],
       ['Driver', opts.driverName || UNASSIGNED],
+      ['Van', opts.vanLabel || UNASSIGNED],
       ['Delivery date', deliveryDate],
       ['Destination', opts.destByBoat?.get(boat) || note.destination_address || UNASSIGNED],
       ['Packages', String(boatPackages.length)],

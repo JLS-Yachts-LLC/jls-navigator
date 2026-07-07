@@ -63,12 +63,25 @@ export interface ShipSyncDestination {
   notes: string | null
 }
 
+export interface ShipSyncVehicle {
+  id: string
+  make: string | null
+  model: string | null
+  registration: string | null
+  status: string | null
+}
+
+/** Short label for a van — its plate if set, else make + model. */
+export const vanLabel = (v: ShipSyncVehicle): string =>
+  (v.registration?.trim() || [v.make, v.model].filter(Boolean).join(' ').trim() || 'Van')
+
 export interface ShipSyncDeliveryNote {
   id: string
   number: string | null
   boat_name: string | null
   yacht_id: string | null
   driver_id: string | null
+  vehicle_id: string | null
   destination_address: string | null
   destination_lat: number | null
   destination_lng: number | null
