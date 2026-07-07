@@ -23,12 +23,15 @@ export type RouteStop = { boat: string; address?: string | null; lat?: number | 
 const stopPoint = (s: RouteStop) => (s.lat != null && s.lng != null ? `${s.lat},${s.lng}` : (s.address ?? "").trim());
 
 export function RouteMapDialog({
-  open, onOpenChange, title, stops,
+  open, onOpenChange, title, stops, optimize = true,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   title: string;
   stops: RouteStop[];
+  /** Let Google reorder the stops for the shortest route. When false, the route
+   *  follows the given stop order (e.g. a manually-set first/second stop). */
+  optimize?: boolean;
 }) {
   const { maps, ready } = useGoogleMaps();
   const [route, setRoute] = useState<ComputedRoute | null>(null);
@@ -67,7 +70,7 @@ export function RouteMapDialog({
             {/* Stop list */}
             <div className="w-72 shrink-0 border-r border-border overflow-y-auto">
               <div className="px-4 py-2.5 border-b border-border/60 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                {route ? "Optimized stop order" : "Stops"} ({usable.length})
+                {route ? (optimize ? "Optimized stop order" : "Stop order") : "Stops"} ({usable.length})
               </div>
               <ol className="divide-y divide-border/40">
                 {orderedStops.map((s, i) => {
@@ -104,7 +107,7 @@ export function RouteMapDialog({
                     origin={{ address: JLS_OFFICE_ADDRESS }}
                     destination={{ address: JLS_OFFICE_ADDRESS }}
                     waypoints={usable.map((s) => ({ lat: s.lat, lng: s.lng, address: s.address }))}
-                    optimize
+                    optimize={optimize}
                     onRoute={setRoute}
                     className="h-full"
                   />

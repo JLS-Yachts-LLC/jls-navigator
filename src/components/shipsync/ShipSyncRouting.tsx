@@ -103,6 +103,17 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
       return { ...r, boats: r.boats.filter((b) => b !== boat), excluded, expanded };
     });
   }
+  // Move a boat to a new stop position (0-based) — sets the route's delivery order.
+  function reorderBoat(id: string, boat: string, toIndex: number) {
+    patchRoute(id, (r) => {
+      const from = r.boats.indexOf(boat);
+      if (from < 0 || toIndex === from) return r;
+      const boats = [...r.boats];
+      boats.splice(from, 1);
+      boats.splice(toIndex, 0, boat);
+      return { ...r, boats };
+    });
+  }
   function toggleExpand(id: string, boat: string) {
     patchRoute(id, (r) => {
       const expanded = new Set(r.expanded); expanded.has(boat) ? expanded.delete(boat) : expanded.add(boat);
@@ -235,7 +246,7 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
                   <div className="px-4 py-6 text-center text-sm text-muted-foreground">No boats yet — add one above.</div>
                 ) : (
                   <div className="divide-y divide-border/40">
-                    {r.boats.map((boat) => {
+                    {r.boats.map((boat, boatIndex) => {
                       const all = parcelsByBoat.get(boat) ?? [];
                       const included = all.filter((p) => !r.excluded.has(p.id)).length;
                       const dest = boat !== UNASSIGNED ? destByBoat.get(boat.toUpperCase()) : undefined;
@@ -246,6 +257,12 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
                             <button onClick={() => toggleExpand(r.id, boat)} className="text-muted-foreground/70 hover:text-foreground" title={open ? "Collapse" : "Untick parcels"}>
                               {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                             </button>
+                            <Select value={String(boatIndex + 1)} onValueChange={(v) => reorderBoat(r.id, boat, Number(v) - 1)}>
+                              <SelectTrigger className="h-7 w-14 text-xs" title="Stop order"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                {r.boats.map((_, i) => <SelectItem key={i} value={String(i + 1)}>{i + 1}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
                             <Ship className="h-4 w-4 text-muted-foreground" />
                             <span className="text-sm font-medium">{boat === UNASSIGNED ? "No boat set" : boat}</span>
                             <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold">{included}/{all.length} pkg</span>
@@ -290,6 +307,7 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
           onOpenChange={(o) => !o && setMapRoute(null)}
           title={`${mapRoute.name} — route plan`}
           stops={mapRoute.stops}
+          optimize={false}
         />
       )}
     </div>
