@@ -44,6 +44,7 @@ import { FeedbackPage } from "@/components/feedback/feedback-page";
 import { CrewPlacementPage } from "@/components/crew-placement/crew-placement-page";
 import { PortCallsHub } from "@/components/port-calls/PortCallsHub";
 import { OrbitHub } from "@/components/orbit/orbit-hub";
+import { BerthBillingHub } from "@/components/berth-billing/BerthBillingHub";
 
 /** Beta screens that simply embed an existing full app page (Beta styling is inherited
  *  from the shell's pds-embed content area). */
@@ -242,6 +243,10 @@ function PolarisRedesignApp() {
         ) : screen === "port-calls" ? (
           <div style={{ height: "100%" }}>
             <PortCallsHub />
+          </div>
+        ) : screen === "berth-billing" ? (
+          <div style={{ height: "100%" }}>
+            <BerthBillingHub />
           </div>
         ) : screen === "orbit" ? (
           <div style={{ height: "100%" }}>
