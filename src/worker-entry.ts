@@ -4,6 +4,7 @@ import { syncAisPositions } from './lib/aisstream.server'
 import { runExpiryAlerts } from './lib/permit-expiry-cron.server'
 import { syncFleetPositions } from './lib/mygps.server'
 import { syncVesselPositions } from './lib/vesselfinder.server'
+import { syncMyShipTracking } from './lib/myshiptracking.server'
 import { runDailyComplianceChecks } from './lib/visa/complianceMonitor.server'
 import { leoBriefingHandler } from './routes/api.leo.briefing'
 import { leoChatHandler } from './routes/api.leo.chat'
@@ -14,6 +15,8 @@ import { visaExportHandler } from './routes/api.visa.export'
 import { visaExcelPushHandler } from './routes/api.visa.excel-push'
 import { visaExcelSyncHandler } from './routes/api.visa.excel-sync'
 import { visaUploadArrivalDocHandler } from './routes/api.visa.upload-arrival-doc'
+import { visaSendToVesselHandler } from './routes/api.visa.send-to-vessel'
+import { mmsiSuggestHandler } from './routes/api.vessels.mmsi-suggest'
 import { seedTemplatesFolderHandler } from './routes/api.admin.seed-templates-folder'
 import { visaPassportOcrHandler } from './routes/api.visa.passport-ocr'
 import { itTicketsNotifyHandler } from './routes/api.it-tickets.notify'
@@ -40,6 +43,7 @@ import { crewPersonalInfoHandler } from './routes/api.crew.personal-info'
 import { visaApplicationActionsHandler } from './routes/api.visa.applicationActions'
 import { visaReportsHandler } from './routes/api.visa.reports'
 import { adminUsersHandler } from './routes/api.admin.users'
+import { adminPortalUsersHandler } from './routes/api.admin.portal-users'
 import { adminUserByIdHandler } from './routes/api.admin.users.$id'
 import { adminPermissionsHandler } from './routes/api.admin.permissions'
 import { adminAuditHandler } from './routes/api.admin.audit'
@@ -55,8 +59,10 @@ import { visaVesselPrefsHandler } from './routes/api.visa.vessel-prefs'
 import { nativeLanguageResolveDefaultHandler } from './routes/api.native-language.resolve-default'
 import { nativeLanguageSaveHandler } from './routes/api.native-language.save'
 import { runWeeklyVisaReports } from './lib/visa-reporting/runWeeklyVisaReports.server'
+import { runWeeklyFleetFinance } from './lib/fleet-finance-report.server'
 import { trackRun } from './lib/automations.server'
 import { runVisaExpiryFlagJob } from './lib/visa/visaExpiryFlags.server'
+import { runTwoWaySyncTick } from './lib/visa/excel-sync.server'
 
 const handleRequest = createStartHandler(defaultStreamHandler)
 
@@ -128,6 +134,29 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
     })
   }
 
+  // Manual test: `?run=fleet-finance` sends the weekly Fleet Finance email now
+  // (respects the toggle + recipients; add `&force=1` to bypass the toggle).
+  if (url.searchParams.get('run') === 'fleet-finance') {
+    try {
+      const { runWeeklyFleetFinance } = await import('./lib/fleet-finance-report.server')
+      const r = await runWeeklyFleetFinance({ force: url.searchParams.get('force') === '1' })
+      return new Response(JSON.stringify({ ok: true, ...r }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
+  }
+
+  // Manual AIS test: `?run-ais=myshiptracking` runs one MyShipTracking sync pass
+  // and returns the result (for verifying the API key after `wrangler secret put`).
+  if (url.searchParams.get('run-ais') === 'myshiptracking') {
+    try {
+      const r = await syncMyShipTracking({ extended: url.searchParams.get('extended') === '1' })
+      return new Response(JSON.stringify({ ok: true, ...r }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
+  }
+
   // One-time setup: `?setup=signon-list` creates the "Crew Sign On Off" SharePoint
   // list and registers its outbound sync config. Safe to call repeatedly.
   if (url.searchParams.get('setup') === 'signon-list') {
@@ -149,17 +178,76 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
   // reliably completes — loop it to backfill the whole fleet a batch at a time.
   if (url.searchParams.get('images')) {
     const n = Math.min(Math.max(parseInt(url.searchParams.get('images') || '10', 10) || 10, 1), 15)
+    const offset = Math.max(parseInt(url.searchParams.get('offset') || '0', 10) || 0, 0)
     try {
-      const { downloaded, results } = await downloadPendingImages(n)
+      const { downloaded, results } = await downloadPendingImages(n, offset)
       // Surface per-vessel failure reasons so image-sync problems are diagnosable.
       const failures = results.filter((r) => !r.ok).map((r) => r.reason)
-      return new Response(JSON.stringify({ ok: true, requested: n, attempted: results.length, downloaded, failures }), {
+      return new Response(JSON.stringify({ ok: true, requested: n, offset, attempted: results.length, downloaded, failures }), {
         status: 200, headers: { 'Content-Type': 'application/json' },
       })
     } catch (e) {
       return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), {
         status: 500, headers: { 'Content-Type': 'application/json' },
       })
+    }
+  }
+
+  // Template importer: `?fetch-template=<driveItemId>` copies one of the QB
+  // document Word templates from the production@jlsyachts.com OneDrive into the
+  // private qb_templates table (service-role only), so the native doc-gen layout
+  // can be matched to the real templates. Locked to the exact file IDs from the
+  // n8n workflows, and no file content is ever returned to the caller — the
+  // response carries only the file name and size.
+  {
+    const tplId = url.searchParams.get('fetch-template')
+    if (tplId) {
+      const QB_TEMPLATE_IDS = new Set([
+        '01TFJIWC222XD5BFRFLJBLNHKEUROOHDUL', '01TFJIWC2IHFQRYQCCZVBLY5THQXT7YGCF',
+        '01TFJIWC2KFEL5MRDMHRBKWUQSF7EV4O3D', '01TFJIWC2P6I4OZULRSRDYOV63C23XQDFC',
+        '01TFJIWC34KJCTESMTQ5H357DC4VIU2EP7', '01TFJIWC3F2U537O35RJEIZS2RUZHFDJP6',
+        '01TFJIWC3IF7IYPZ22KRDKQEOBQKSMECFU', '01TFJIWC3OHXDSIUS3JNB3FHX2QE4EAEBR',
+        '01TFJIWC3PK3QNK6MU3ZFYO2APKQF6QTLT', '01TFJIWC3VSK5BOMM67FFYO4HEMYK2ZUE2',
+        '01TFJIWC4UMQSLUHKIBNCZ3PL2FYD47NIP', '01TFJIWC4X3V3ANN7275BJF3AQMYGHJULY',
+        '01TFJIWC6KIY4IMWQXHBEJKBGPGJRSHVJJ', '01TFJIWC6KKYBO4QSPMNHJT4LMUP25FDCW',
+        '01TFJIWC6YNOVCN5VUEZE3MCY3222WNL6M', '01TFJIWC7E3JZZIO55NNDL76QLTQAK2FTC',
+        '01TFJIWCY7GAIY2S3KBBG2TWYD45VWGWQU', '01TFJIWCYDX3MW3YVBRVHZ4ECDTCA2FVXY',
+      ])
+      if (!QB_TEMPLATE_IDS.has(tplId)) {
+        return new Response(JSON.stringify({ ok: false, error: 'Unknown template id' }), {
+          status: 404, headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      try {
+        const { getSpConfig, getGraphToken } = await import('./lib/sharepoint-sync.server')
+        const { supabaseAdmin } = await import('./integrations/supabase/client.server')
+        const cfg = await getSpConfig()
+        const token = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret)
+        const base = `https://graph.microsoft.com/v1.0/users/production@jlsyachts.com/drive/items/${tplId}`
+        const metaRes = await fetch(base, { headers: { Authorization: `Bearer ${token}` } })
+        if (!metaRes.ok) throw new Error(`Graph metadata ${metaRes.status}: ${(await metaRes.text()).slice(0, 300)}`)
+        const meta: any = await metaRes.json()
+        const fileRes = await fetch(`${base}/content`, { headers: { Authorization: `Bearer ${token}` } })
+        if (!fileRes.ok) throw new Error(`Graph content ${fileRes.status}`)
+        const buf = new Uint8Array(await fileRes.arrayBuffer())
+        let b64 = ''
+        for (let i = 0; i < buf.length; i += 0x8000) {
+          b64 += String.fromCharCode(...buf.subarray(i, i + 0x8000))
+        }
+        b64 = btoa(b64)
+        const { error } = await (supabaseAdmin as any).from('qb_templates').upsert({
+          id: tplId, name: meta.name ?? tplId, size_bytes: buf.length, content_b64: b64,
+          fetched_at: new Date().toISOString(),
+        })
+        if (error) throw new Error(error.message)
+        return new Response(JSON.stringify({ ok: true, name: meta.name, size: buf.length }), {
+          status: 200, headers: { 'Content-Type': 'application/json' },
+        })
+      } catch (e) {
+        return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), {
+          status: 500, headers: { 'Content-Type': 'application/json' },
+        })
+      }
     }
   }
 
@@ -227,6 +315,23 @@ export default {
       return handleSharePointWebhook(request, ctx)
     }
 
+    // Captain-portal login admin (kept at the top of the dispatch — see #debug note)
+    if (url.pathname === '/api/admin/portal-users') {
+      return adminPortalUsersHandler(request)
+    }
+
+    // Native QB Invoice PDF preview / manual run (admin only)
+    if (url.pathname === '/api/qb/invoice-pdf') {
+      const { qbInvoicePdfHandler } = await import('./routes/api.qb.invoice-pdf')
+      return qbInvoicePdfHandler(request)
+    }
+
+    // QB Excel importer — upload a workbook to create Estimates/Invoices
+    if (url.pathname === '/api/qb/excel-import') {
+      const { qbExcelImportHandler } = await import('./routes/api.qb.excel-import')
+      return qbExcelImportHandler(request)
+    }
+
     if (url.pathname === '/api/leo/briefing' && request.method === 'POST') {
       return leoBriefingHandler(request)
     }
@@ -272,6 +377,10 @@ export default {
       return visaUploadArrivalDocHandler(request)
     }
 
+    if (url.pathname === '/api/visa/send-to-vessel' && request.method === 'POST') {
+      return visaSendToVesselHandler(request)
+    }
+
     if (url.pathname === '/api/admin/seed-templates-folder' && request.method === 'POST') {
       return seedTemplatesFolderHandler(request)
     }
@@ -313,6 +422,10 @@ export default {
 
     if (url.pathname === '/api/feedback/notify' && request.method === 'POST') {
       return feedbackNotifyHandler(request)
+    }
+
+    if (url.pathname === '/api/vessels/mmsi-suggest' && request.method === 'GET') {
+      return mmsiSuggestHandler(request)
     }
 
     if (url.pathname.startsWith('/api/vessels/')) {
@@ -472,6 +585,16 @@ export default {
           .then(({ pushed }) => console.log(`[sp-pushback] pushed=${pushed}`))
           .catch((e) => console.error('[sp-pushback] error:', e))
       )
+
+      // ── Hourly: MyShipTracking live positions (no-op until API key set).
+      //    Simple response (1 credit/vessel); upgraded to extended (3 credits)
+      //    every 6 hours so destination/ETA stay fresh without burning credits. ──
+      const mstExtended = utcHour % 6 === 0
+      ctx.waitUntil(
+        syncMyShipTracking({ extended: mstExtended })
+          .then((r) => console.log(`[myshiptracking-cron] ${mstExtended ? 'extended' : 'simple'} requested=${r.requested} matched=${r.matched} updated=${r.updated}${r.note ? ' note=' + r.note : ''}`))
+          .catch((e) => console.error('[myshiptracking-cron] error:', e))
+      )
     }
 
     if (!isQuarterly) return;
@@ -499,13 +622,25 @@ export default {
       // on the Integrations page remains for a manual push when needed.
     }
 
+    // ── Hourly: one chunk of the two-way visa ⇄ tracker sync (rotating cursor,
+    // snapshot-guarded newest-wins). Cycles through all vessels over ~8 hours. ──
+    if (isHourly) {
+      ctx.waitUntil(
+        runTwoWaySyncTick()
+          .then((r) => console.log(`[visa-2way-cron] offset=${r.offset} next=${r.nextOffset} ${JSON.stringify(r.summary ?? {})}`))
+          .catch((e) => console.error('[visa-2way-cron] error:', e))
+      )
+    }
+
     // ── Every 15 min: pull SharePoint changes IN, ONE list per tick ──
     // All lists at once exceeds Cloudflare's per-invocation subrequest limit, and
     // a Worker can't self-fetch to fan out — so each tick syncs the single
     // least-recently-synced list, rotating through the whole set over time.
     ctx.waitUntil(
       syncStalestList()
-        .then((r) => { if (r) console.log(`[sp-cron] ${r.name}: synced=${r.synced} errors=${r.errors}`); return downloadPendingImages() })
+        // Rotate the batch window each quarter-hour so pending rows that always
+        // fail (no SharePoint match) can't permanently block the ones behind them.
+        .then((r) => { if (r) console.log(`[sp-cron] ${r.name}: synced=${r.synced} errors=${r.errors}`); return downloadPendingImages(10, (new Date().getUTCMinutes() % 4) * 10) })
         .then((img) => { if (img.downloaded || img.results.length) console.log(`[sp-cron] images downloaded=${img.downloaded}/${img.results.length}`) })
         .catch((e) => console.error('[sp-cron] error:', e))
     )
@@ -524,6 +659,8 @@ export default {
         .catch((e) => console.error('[vesselfinder-cron] error:', e))
     )
 
+    // (MyShipTracking positions moved to the hourly block above — see isHourly.)
+
     // Weekly immigration digest — Monday 07:00 GST (03:00 UTC). Emails ops/visa
     // a summary of this week's planned sign-ons / sign-offs + report links.
     if (utcHour === 3 && new Date().getUTCDay() === 1 && new Date().getUTCMinutes() < 15) {
@@ -532,6 +669,17 @@ export default {
           () => runWeeklyImmigrationReports())
           .then((r) => console.log(`[weekly-immigration] on=${r.signOn} off=${r.signOff} sent=${r.sent}`))
           .catch((e) => console.error('[weekly-immigration] error:', e))
+      )
+    }
+
+    // Weekly Fleet Finance email — Monday 08:00 GST (04:00 UTC). Outstanding QBO
+    // balances per yacht; toggle + recipients live on the Automations page.
+    if (utcHour === 4 && new Date().getUTCDay() === 1 && new Date().getUTCMinutes() < 15) {
+      ctx.waitUntil(
+        trackRun({ key: 'weekly-fleet-finance', name: 'Weekly Fleet Finance email', source: 'worker-cron', trigger_type: 'schedule', category: 'Finance' },
+          () => runWeeklyFleetFinance())
+          .then((r) => console.log(`[fleet-finance] sent=${r.sent} yachts=${r.yachts} outstanding=${r.outstanding}${r.note ? ' note=' + r.note : ''}`))
+          .catch((e) => console.error('[fleet-finance] error:', e))
       )
     }
 

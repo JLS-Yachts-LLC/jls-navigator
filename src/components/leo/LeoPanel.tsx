@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { COLORS } from '@/lib/tokens'
 import { LeoIcon } from './LeoIcon'
 import { getStoredWorkspace } from '@/lib/auth/workspace'
@@ -28,12 +28,8 @@ export function LeoPanel({ token, userName, onReady }: LeoPanelProps) {
   const bufRef = useRef('')
   const didFetch = useRef(false)
 
-  useEffect(() => {
-    if (didFetch.current) return
-    didFetch.current = true
-    streamBriefing()
-    return () => { didFetch.current = false }
-  }, [])
+  // The briefing is generated ON DEMAND (button below) — not on every dashboard
+  // load — to avoid burning AI tokens on each refresh.
 
   async function streamBriefing() {
     setStatus('loading')
@@ -175,7 +171,19 @@ export function LeoPanel({ token, userName, onReady }: LeoPanelProps) {
 
       {/* ── Briefing text ────────────────────────────────────────── */}
       <div style={{ padding: '16px 18px 12px' }}>
-        {status === 'error' ? (
+        {status === 'idle' ? (
+          <button
+            onClick={() => streamBriefing()}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 700,
+              color: COLORS.void, background: COLORS.leoAmber, border: 'none',
+              borderRadius: 8, padding: '9px 18px', cursor: 'pointer',
+            }}
+          >
+            ✦ Generate briefing
+          </button>
+        ) : status === 'error' ? (
           <div
             style={{
               padding:      '12px 14px',

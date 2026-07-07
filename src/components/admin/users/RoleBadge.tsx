@@ -14,7 +14,7 @@ const ROLE_STYLES: Record<string, string> = {
 export function RoleBadge({ role }: { role: string }) {
   return (
     <span
-      className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold tracking-wide
+      className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-bold tracking-wide
                   ${ROLE_STYLES[role] ?? 'bg-gray-500/20 text-gray-400'}`}
     >
       {role.replace(/_/g, ' ')}

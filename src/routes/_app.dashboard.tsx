@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute, Link, Navigate } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '@/lib/auth'
 import { getAccessLevel, ACCESS_LABELS } from '@/lib/leo-access'
@@ -12,9 +12,13 @@ import { DASHBOARD_WIDGETS } from '@/components/dashboard/DashboardWidgets'
 import { Ship, AlertTriangle, ClipboardList, FileSignature, LayoutGrid, Check } from 'lucide-react'
 
 export const Route = createFileRoute('/_app/dashboard')({
-  component: DashboardPage,
+  // The legacy dashboard is retired — /dashboard lands on the Polaris home.
+  component: () => <Navigate to="/polaris-redesign" replace />,
   head: () => ({ meta: [{ title: 'Dashboard — Polaris' }] }),
 })
+
+// The legacy dashboard component below is kept for reference but no longer routed.
+void DashboardPage
 
 // ── Quick-stats types ──────────────────────────────────────────────────────
 interface Stats {

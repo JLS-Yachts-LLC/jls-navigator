@@ -121,15 +121,22 @@ const handlers = {
     return json({ error: 'Unknown action' }, 400)
   },
 
+  // Hard delete: removes the auth login, the profile and any role links.
   DELETE: async ({ request, params }: { request: Request; params: { id: string } }) => {
     const session = await requireAdminAccess(request)
     if (!session.ok) return session.response
 
     const { id } = params
+    if (id === session.user.id) return json({ error: 'You cannot delete your own account' }, 400)
     const sb = getAdmin()
 
-    const { error } = await sb.from('user_profiles').update({ active: false }).eq('user_id', id)
-    if (error) return json({ error: error.message }, 500)
+    const { data: profile } = await sb.from('user_profiles').select('email').eq('user_id', id).maybeSingle()
+
+    await sb.from('user_profiles').delete().eq('user_id', id)
+    await sb.from('user_roles').delete().eq('user_id', id)
+    await sb.from('captain_accounts').delete().eq('user_id', id)
+    const { error: authErr } = await sb.auth.admin.deleteUser(id)
+    if (authErr && !/not found/i.test(authErr.message)) return json({ error: authErr.message }, 500)
 
     await logAuditEvent({
       event_type:  'ADMIN',
@@ -138,7 +145,7 @@ const handlers = {
       actor_role:  session.user.role,
       target_type: 'user',
       target_id:   id,
-      detail:      'User deactivated (soft delete)',
+      detail:      `User deleted: ${profile?.email ?? id}`,
       ip_address:  request.headers.get('x-forwarded-for'),
       result:      'success',
     })

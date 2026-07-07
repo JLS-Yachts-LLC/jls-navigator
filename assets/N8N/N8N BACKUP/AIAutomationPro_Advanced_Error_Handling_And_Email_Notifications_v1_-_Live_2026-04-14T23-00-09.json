@@ -1,0 +1,506 @@
+{
+  "updatedAt": "2026-04-04T15:27:41.109Z",
+  "createdAt": "2026-04-04T15:27:02.600Z",
+  "id": "y12A3SFe0c-zldwc6GVd1",
+  "name": "AIAutomationPro Advanced Error Handling And Email Notifications v1 - Live",
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "eac706b2-14bd-4fab-a20e-40f564307d6a",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "position": [
+        -496,
+        240
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "content": "## Send Error Handling Email",
+        "height": 549,
+        "width": 783
+      },
+      "id": "0c8ad279-6f04-4682-a3d4-02f93dc807e0",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        128,
+        16
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "content": "## Settings",
+        "height": 260,
+        "width": 300
+      },
+      "id": "540f0b65-03ee-4230-aeb2-b975bb799b73",
+      "name": "Sticky Note3",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -288,
+        160
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "53ac5417-db98-41e5-bc6d-acb6dd1fec42",
+              "name": "N8n Url",
+              "type": "string",
+              "value": "={{ $('Error Trigger').first().json.execution.url.split('executions')[0] }}"
+            },
+            {
+              "id": "0f85c65a-80bb-4977-90b9-1b4e741b5f70",
+              "name": "Email Receiver",
+              "type": "string",
+              "value": "support@newhorizon-it.co.uk"
+            },
+            {
+              "id": "138c091f-7cd4-453a-9c75-5d193b617a39",
+              "name": "Email Sender Name",
+              "type": "string",
+              "value": "Error Handling System"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {
+          "dotNotation": true
+        }
+      },
+      "id": "3691f2a5-cd6c-47fb-a242-9c6b31220070",
+      "name": "Settings",
+      "type": "n8n-nodes-base.set",
+      "position": [
+        -192,
+        240
+      ],
+      "typeVersion": 3.4
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2,
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "a757d78d-799b-401b-8c01-3103fddfe757",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "leftValue": "={{ Boolean($('Settings').first().json.execution) }}",
+              "rightValue": "={{ true }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8485efcf-7b6a-4019-9432-0c094b0efe7f",
+      "name": "If Execution Error",
+      "type": "n8n-nodes-base.if",
+      "position": [
+        240,
+        240
+      ],
+      "typeVersion": 2.2
+    },
+    {
+      "parameters": {
+        "html": "<h2>Execution Details</h2>\n<p>Please see execution details at <a href=\"{{ $('Settings').first().json.execution.url }}\">workflow execution url</a></p>\n<h3>DateTime</h3>\n<p>{{ DateTime.fromMillis($json.execution.error.timestamp) }}</p>\n<h3>Last Node Executed</h3>\n<p>{{ $json.execution.lastNodeExecuted }}</p>\n<h3>Mode</h3>\n<p>{{ $json.execution.mode }}</p>\n<h3>Message</h3>\n<p>{{ $json.execution.error.message }}</p>\n<h3>Stack trace</h3>\n<pre>\n{{ $json.execution.error.stack }}\n</pre>"
+      },
+      "id": "8427c430-19a4-484b-bdc8-3920eb64f7ce",
+      "name": "HTML For Execution Error",
+      "type": "n8n-nodes-base.html",
+      "position": [
+        464,
+        112
+      ],
+      "typeVersion": 1.2,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "html": "<h2>Trigger Failure Details</h2>\n<p>A trigger on main workflow has thrown an error.</p>\n<h3>DateTime</h3>\n<p>{{ DateTime.fromMillis($json.trigger.error.timestamp) }}</p>\n<h3>Mode</h3>\n<p>{{ $json.trigger.mode }}</p>\n<h3>Message</h3>\n<p>{{ $json.trigger.error.message }}</p>\n<h3>Name</h3>\n<p>{{ $json.trigger.error.name }}</p>\n<h3>Description</h3>\n<p>{{ $json.trigger.error.description }}</p>\n<h3>Context</h3>\n<pre>{{ JSON.stringify($json.trigger.error.context, null, 2) }}</pre>\n\n<h3>Cause</h3>\n<p>Message: {{ $json.trigger.error.cause.message }}</p>\n<p>Name: {{ $json.trigger.error.cause.name }}</p>\n<p>Code:{{ $json.trigger.error.cause.code }} </p>\n<p>Status: {{ $json.trigger.error.cause.status }}</p>\n<h3>Stack trace</h3>\n<pre>\n{{ $json.trigger.error.cause.stack }}\n</pre>"
+      },
+      "id": "caaec9b1-4015-4bb0-bd4f-a8c22f78cec2",
+      "name": "HTML For Trigger Error",
+      "type": "n8n-nodes-base.html",
+      "position": [
+        464,
+        352
+      ],
+      "typeVersion": 1.2,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "toRecipients": "={{ $('Settings').first().json['Email Receiver'] }}",
+        "subject": "=[N8N Alert] Issue Detected In Workflow ({{ $('Settings').first().json.workflow.name }}) - {{ Boolean($('Settings').first().json.execution) ? \"Execution Error\" : \"Trigger Failure\" }}: {{ $('Settings').first().json.execution.error.message || $('Settings').first().json.trigger.error.message }}",
+        "bodyContent": "={{ $json.html }}\n",
+        "additionalFields": {
+          "from": "={{ $('Settings').first().json['Email Sender Name'] }}",
+          "bodyContentType": "html"
+        }
+      },
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [
+        736,
+        240
+      ],
+      "id": "3864cd4a-53e6-469d-bfe3-7c5cf0633d44",
+      "name": "Send a message",
+      "webhookId": "d474f6d4-e4e7-4681-b08c-cc0d3d4e621c",
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "7IaguepNlbcPCyIE",
+          "name": "Microsoft Outlook account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Settings": {
+      "main": [
+        [
+          {
+            "node": "If Execution Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Execution Error": {
+      "main": [
+        [
+          {
+            "node": "HTML For Execution Error",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HTML For Trigger Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTML For Execution Error": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTML For Trigger Error": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "3258e089-85a1-4188-80e7-8afe89e863b6",
+  "activeVersionId": "3258e089-85a1-4188-80e7-8afe89e863b6",
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-04-04T15:27:02.607Z",
+      "createdAt": "2026-04-04T15:27:02.607Z",
+      "role": "workflow:owner",
+      "workflowId": "y12A3SFe0c-zldwc6GVd1",
+      "projectId": "7K0b7BEJpzNXLaZY"
+    }
+  ],
+  "activeVersion": {
+    "updatedAt": "2026-04-04T15:27:04.000Z",
+    "createdAt": "2026-04-04T15:27:02.609Z",
+    "versionId": "3258e089-85a1-4188-80e7-8afe89e863b6",
+    "workflowId": "y12A3SFe0c-zldwc6GVd1",
+    "nodes": [
+      {
+        "parameters": {},
+        "id": "eac706b2-14bd-4fab-a20e-40f564307d6a",
+        "name": "Error Trigger",
+        "type": "n8n-nodes-base.errorTrigger",
+        "position": [
+          -496,
+          240
+        ],
+        "typeVersion": 1
+      },
+      {
+        "parameters": {
+          "content": "## Send Error Handling Email",
+          "height": 549,
+          "width": 783
+        },
+        "id": "0c8ad279-6f04-4682-a3d4-02f93dc807e0",
+        "name": "Sticky Note",
+        "type": "n8n-nodes-base.stickyNote",
+        "position": [
+          128,
+          16
+        ],
+        "typeVersion": 1
+      },
+      {
+        "parameters": {
+          "content": "## Settings",
+          "height": 260,
+          "width": 300
+        },
+        "id": "540f0b65-03ee-4230-aeb2-b975bb799b73",
+        "name": "Sticky Note3",
+        "type": "n8n-nodes-base.stickyNote",
+        "position": [
+          -288,
+          160
+        ],
+        "typeVersion": 1
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "id": "53ac5417-db98-41e5-bc6d-acb6dd1fec42",
+                "name": "N8n Url",
+                "type": "string",
+                "value": "={{ $('Error Trigger').first().json.execution.url.split('executions')[0] }}"
+              },
+              {
+                "id": "0f85c65a-80bb-4977-90b9-1b4e741b5f70",
+                "name": "Email Receiver",
+                "type": "string",
+                "value": "support@newhorizon-it.co.uk"
+              },
+              {
+                "id": "138c091f-7cd4-453a-9c75-5d193b617a39",
+                "name": "Email Sender Name",
+                "type": "string",
+                "value": "Error Handling System"
+              }
+            ]
+          },
+          "includeOtherFields": true,
+          "options": {
+            "dotNotation": true
+          }
+        },
+        "id": "3691f2a5-cd6c-47fb-a242-9c6b31220070",
+        "name": "Settings",
+        "type": "n8n-nodes-base.set",
+        "position": [
+          -192,
+          240
+        ],
+        "typeVersion": 3.4
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "version": 2,
+              "leftValue": "",
+              "caseSensitive": true,
+              "typeValidation": "strict"
+            },
+            "combinator": "and",
+            "conditions": [
+              {
+                "id": "a757d78d-799b-401b-8c01-3103fddfe757",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                },
+                "leftValue": "={{ Boolean($('Settings').first().json.execution) }}",
+                "rightValue": "={{ true }}"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "8485efcf-7b6a-4019-9432-0c094b0efe7f",
+        "name": "If Execution Error",
+        "type": "n8n-nodes-base.if",
+        "position": [
+          240,
+          240
+        ],
+        "typeVersion": 2.2
+      },
+      {
+        "parameters": {
+          "html": "<h2>Execution Details</h2>\n<p>Please see execution details at <a href=\"{{ $('Settings').first().json.execution.url }}\">workflow execution url</a></p>\n<h3>DateTime</h3>\n<p>{{ DateTime.fromMillis($json.execution.error.timestamp) }}</p>\n<h3>Last Node Executed</h3>\n<p>{{ $json.execution.lastNodeExecuted }}</p>\n<h3>Mode</h3>\n<p>{{ $json.execution.mode }}</p>\n<h3>Message</h3>\n<p>{{ $json.execution.error.message }}</p>\n<h3>Stack trace</h3>\n<pre>\n{{ $json.execution.error.stack }}\n</pre>"
+        },
+        "id": "8427c430-19a4-484b-bdc8-3920eb64f7ce",
+        "name": "HTML For Execution Error",
+        "type": "n8n-nodes-base.html",
+        "position": [
+          464,
+          112
+        ],
+        "typeVersion": 1.2,
+        "alwaysOutputData": true
+      },
+      {
+        "parameters": {
+          "html": "<h2>Trigger Failure Details</h2>\n<p>A trigger on main workflow has thrown an error.</p>\n<h3>DateTime</h3>\n<p>{{ DateTime.fromMillis($json.trigger.error.timestamp) }}</p>\n<h3>Mode</h3>\n<p>{{ $json.trigger.mode }}</p>\n<h3>Message</h3>\n<p>{{ $json.trigger.error.message }}</p>\n<h3>Name</h3>\n<p>{{ $json.trigger.error.name }}</p>\n<h3>Description</h3>\n<p>{{ $json.trigger.error.description }}</p>\n<h3>Context</h3>\n<pre>{{ JSON.stringify($json.trigger.error.context, null, 2) }}</pre>\n\n<h3>Cause</h3>\n<p>Message: {{ $json.trigger.error.cause.message }}</p>\n<p>Name: {{ $json.trigger.error.cause.name }}</p>\n<p>Code:{{ $json.trigger.error.cause.code }} </p>\n<p>Status: {{ $json.trigger.error.cause.status }}</p>\n<h3>Stack trace</h3>\n<pre>\n{{ $json.trigger.error.cause.stack }}\n</pre>"
+        },
+        "id": "caaec9b1-4015-4bb0-bd4f-a8c22f78cec2",
+        "name": "HTML For Trigger Error",
+        "type": "n8n-nodes-base.html",
+        "position": [
+          464,
+          352
+        ],
+        "typeVersion": 1.2,
+        "alwaysOutputData": true
+      },
+      {
+        "parameters": {
+          "toRecipients": "={{ $('Settings').first().json['Email Receiver'] }}",
+          "subject": "=[N8N Alert] Issue Detected In Workflow ({{ $('Settings').first().json.workflow.name }}) - {{ Boolean($('Settings').first().json.execution) ? \"Execution Error\" : \"Trigger Failure\" }}: {{ $('Settings').first().json.execution.error.message || $('Settings').first().json.trigger.error.message }}",
+          "bodyContent": "={{ $json.html }}\n",
+          "additionalFields": {
+            "from": "={{ $('Settings').first().json['Email Sender Name'] }}",
+            "bodyContentType": "html"
+          }
+        },
+        "type": "n8n-nodes-base.microsoftOutlook",
+        "typeVersion": 2,
+        "position": [
+          736,
+          240
+        ],
+        "id": "3864cd4a-53e6-469d-bfe3-7c5cf0633d44",
+        "name": "Send a message",
+        "webhookId": "d474f6d4-e4e7-4681-b08c-cc0d3d4e621c",
+        "credentials": {
+          "microsoftOutlookOAuth2Api": {
+            "id": "7IaguepNlbcPCyIE",
+            "name": "Microsoft Outlook account"
+          }
+        }
+      }
+    ],
+    "connections": {
+      "Error Trigger": {
+        "main": [
+          [
+            {
+              "node": "Settings",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Settings": {
+        "main": [
+          [
+            {
+              "node": "If Execution Error",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "If Execution Error": {
+        "main": [
+          [
+            {
+              "node": "HTML For Execution Error",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "HTML For Trigger Error",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "HTML For Execution Error": {
+        "main": [
+          [
+            {
+              "node": "Send a message",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "HTML For Trigger Error": {
+        "main": [
+          [
+            {
+              "node": "Send a message",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "Matthew Peeters",
+    "name": "Version 3258e089",
+    "description": "",
+    "autosaved": false
+  },
+  "tags": []
+}

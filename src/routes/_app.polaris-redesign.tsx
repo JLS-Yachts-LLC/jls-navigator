@@ -9,7 +9,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { LeoChat } from "@/components/leo/LeoChat";
 import "@/components/polaris-ui/tokens.css";
-import { PolarisShell, type PolarisRole } from "@/components/polaris-ui/shell";
+import { PolarisShell, navItemForScreen, type PolarisRole } from "@/components/polaris-ui/shell";
 import { ToastProvider } from "@/components/polaris-ui/feedback";
 import {
   PolarisButton,
@@ -45,11 +45,17 @@ import { CrewPlacementPage } from "@/components/crew-placement/crew-placement-pa
 import { PortCallsHub } from "@/components/port-calls/PortCallsHub";
 import { OrbitHub } from "@/components/orbit/orbit-hub";
 import { BerthBillingHub } from "@/components/berth-billing/BerthBillingHub";
+import { PermitsHub } from "@/components/permits/permits-hub";
+import { ClientRequestsPage } from "@/components/portal/client-requests-page";
+import { SyncHubPage } from "@/components/dev/sync-hub-page";
 
 /** Beta screens that simply embed an existing full app page (Beta styling is inherited
  *  from the shell's pds-embed content area). */
 const EMBED_SCREENS: Record<string, React.ComponentType> = {
   finance: FinancePage,
+  permits: PermitsHub,
+  "client-requests": ClientRequestsPage,
+  "admin-sync": SyncHubPage,
   "crew-placement": CrewPlacementPage,
   "admin-dev": DevSettingsPage,
   "admin-changelog": ChangelogPage,
@@ -61,7 +67,10 @@ const EMBED_SCREENS: Record<string, React.ComponentType> = {
 
 export const Route = createFileRoute("/_app/polaris-redesign")({
   component: PolarisRedesignApp,
-  head: () => ({ meta: [{ title: "Polaris — Redesign Preview" }] }),
+  // ?screen=<key> deep-opens a specific screen (used by the shared route chrome).
+  validateSearch: (search: Record<string, unknown>): { screen?: string } =>
+    typeof search.screen === "string" ? { screen: search.screen } : {},
+  head: () => ({ meta: [{ title: "Polaris" }] }),
 });
 
 const LAST_VESSEL = "polaris.redesign.lastVessel";
@@ -69,8 +78,14 @@ const LAST_VESSEL = "polaris.redesign.lastVessel";
 function PolarisRedesignApp() {
   const { user, session } = useAuth();
   const navigate = useNavigate();
+  const search = Route.useSearch();
   const { yachts, loading } = useYachts();
-  const [screen, setScreen] = useState("dashboard");
+  const [screen, setScreen] = useState(search.screen ?? "dashboard");
+
+  // Deep-open a screen via ?screen= (nav clicks from route-backed pages).
+  useEffect(() => {
+    if (search.screen) setScreen(search.screen);
+  }, [search.screen]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [switcher, setSwitcher] = useState(false);
 
@@ -101,7 +116,9 @@ function PolarisRedesignApp() {
     yachts.find((y) => y.id === selectedId) ?? null;
   const initials = (user?.email ?? "?").slice(0, 2).toUpperCase();
 
-  const [leoOpen, setLeoOpen] = useState(true);
+  // Start collapsed — Leo's chat opens only when the user clicks the LEO pill,
+  // so it doesn't pop open on every page load / refresh.
+  const [leoOpen, setLeoOpen] = useState(false);
   const leoToken = session?.access_token ?? "";
 
   return (
@@ -172,12 +189,17 @@ function PolarisRedesignApp() {
       <PolarisShell
         role={role}
         active={screen}
-        onNavigate={setScreen}
+        onNavigate={(s) => {
+          // Route-backed nav items (Spreadsheet Sync, Recycle Bin, …) navigate to
+          // their app route — rendered inside the same Polaris chrome by AppLayout.
+          const item = navItemForScreen(s);
+          if (item?.route) navigate({ to: item.route as any });
+          else setScreen(s);
+        }}
         vesselName={yacht?.vessel_name ?? "Select vessel"}
         userInitials={initials}
         userName={user?.email ?? "User"}
         onVesselClick={() => setSwitcher(true)}
-        onExitBeta={() => navigate({ to: "/dashboard" })}
       >
         {screen === "visa-reports" ? (
           <PolarisVisaReports

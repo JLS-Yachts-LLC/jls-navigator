@@ -4,13 +4,15 @@
  */
 import { supabase } from '@/integrations/supabase/client'
 import { isOnline, queueAdd, blobPut, kvSet, kvGet } from './offline'
-import type { ShipSyncDriver, ShipSyncDeliveryNote, ShipSyncPackage, PackageStatus } from './model'
+import type { ShipSyncDriver, ShipSyncDeliveryNote, ShipSyncPackage, ShipSyncDestination, ShipSyncVehicle, PackageStatus } from './model'
 
 const db = () => supabase as any
 
 export interface DriverRuns {
   notes: ShipSyncDeliveryNote[]
   packages: ShipSyncPackage[]
+  destinations: ShipSyncDestination[]
+  vehicles: ShipSyncVehicle[]
 }
 
 /** Match the signed-in user to a driver record (by user_id, then email). */
@@ -32,18 +34,37 @@ export async function listActiveDrivers(): Promise<ShipSyncDriver[]> {
   return (data ?? []) as ShipSyncDriver[]
 }
 
-/** Load a driver's open runs (delivery notes + their packages), caching for offline. */
+/** Load a driver's open runs (delivery notes + their packages + berths), caching for offline. */
 export async function loadDriverRuns(driverId: string): Promise<DriverRuns> {
   if (isOnline()) {
     const [{ data: notes }, { data: packages }] = await Promise.all([
       db().from('shipsync_delivery_notes').select('*').eq('driver_id', driverId).in('status', ['open', 'dispatched']).order('created_at'),
       db().from('shipsync_packages').select('*').eq('driver_id', driverId).in('status', ['assigned', 'out_for_delivery']).order('boat_name'),
     ])
-    const runs: DriverRuns = { notes: (notes ?? []) as ShipSyncDeliveryNote[], packages: (packages ?? []) as ShipSyncPackage[] }
+    // Berths for the boats on this run (a multi-boat note has no single destination_address).
+    const boatNames = Array.from(new Set(((packages ?? []) as ShipSyncPackage[]).map((p) => p.boat_name).filter(Boolean) as string[]))
+    let destinations: ShipSyncDestination[] = []
+    if (boatNames.length) {
+      const { data: dests } = await db().from('shipsync_destinations').select('*').in('boat_name', boatNames)
+      destinations = (dests ?? []) as ShipSyncDestination[]
+    }
+    // Vans referenced by the run's notes.
+    const vehicleIds = Array.from(new Set(((notes ?? []) as ShipSyncDeliveryNote[]).map((n) => n.vehicle_id).filter(Boolean) as string[]))
+    let vehicles: ShipSyncVehicle[] = []
+    if (vehicleIds.length) {
+      const { data: vs } = await db().from('crew_vehicles').select('id, make, model, registration, status').in('id', vehicleIds)
+      vehicles = (vs ?? []) as ShipSyncVehicle[]
+    }
+    const runs: DriverRuns = {
+      notes: (notes ?? []) as ShipSyncDeliveryNote[],
+      packages: (packages ?? []) as ShipSyncPackage[],
+      destinations,
+      vehicles,
+    }
     await kvSet(`runs:${driverId}`, runs).catch(() => {})
     return runs
   }
-  return (await kvGet<DriverRuns>(`runs:${driverId}`)) ?? { notes: [], packages: [] }
+  return (await kvGet<DriverRuns>(`runs:${driverId}`)) ?? { notes: [], packages: [], destinations: [], vehicles: [] }
 }
 
 // ── Actions (online → live, offline → queued) ────────────────────────────────
@@ -99,4 +120,38 @@ export async function deliverPackage(pkg: ShipSyncPackage, proof: DeliveryProof)
   })
   if (proof.photo) await uploadField(pkg.id, 'delivery_photo_url', proof.photo, 'delivery')
   if (proof.signature) await uploadField(pkg.id, 'signature_url', proof.signature, 'signature')
+}
+
+/** Upload a blob once and return its public URL (online only). */
+async function uploadShared(path: string, blob: Blob): Promise<string> {
+  const up = await supabase.storage.from('shipsync').upload(path, blob, { upsert: true })
+  if (up.error) throw up.error
+  return supabase.storage.from('shipsync').getPublicUrl(path).data.publicUrl
+}
+
+/** Deliver a whole boat's parcels with ONE customer signature (the delivery note is
+ *  signed once). Online: uploads photo/signature once and stamps every parcel with the
+ *  shared proof. Offline: falls back to per-parcel queueing so nothing is lost. */
+export async function deliverBoat(packages: ShipSyncPackage[], proof: DeliveryProof): Promise<void> {
+  if (packages.length === 0) return
+  if (!isOnline()) {
+    for (const p of packages) await deliverPackage(p, proof)
+    return
+  }
+  const stamp = Date.now()
+  const base = `deliveries/${packages[0].id}`
+  const photoUrl = proof.photo ? await uploadShared(`${base}/photo_${stamp}.png`, proof.photo) : null
+  const sigUrl = proof.signature ? await uploadShared(`${base}/signature_${stamp}.png`, proof.signature) : null
+  const deliveredAt = new Date().toISOString()
+  for (const p of packages) {
+    await patch('shipsync_packages', p.id, {
+      status: proof.status,
+      delivered_at: deliveredAt,
+      receiver_full_name: proof.receiverName ?? null,
+      receiver_designation: proof.receiverDesignation ?? null,
+      receiver_email: proof.receiverEmail ?? null,
+      ...(photoUrl ? { delivery_photo_url: photoUrl } : {}),
+      ...(sigUrl ? { signature_url: sigUrl } : {}),
+    })
+  }
 }

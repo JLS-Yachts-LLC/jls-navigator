@@ -1,0 +1,171 @@
+{
+  "updatedAt": "2026-02-04T12:34:55.000Z",
+  "createdAt": "2026-01-09T10:36:14.577Z",
+  "id": "MClG5X69L1SU9LNj",
+  "name": "Ligthspeed - Create Products",
+  "active": false,
+  "isArchived": true,
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "40fd564e-1f79-49fe-9c25-956ee1e4dcff",
+      "name": "Start"
+    },
+    {
+      "parameters": {
+        "url": "https://superyachtme.retail.lightspeed.app/api/2.0/inventory",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        208,
+        0
+      ],
+      "id": "197a1016-da34-4aa7-9515-aca0c5c5820f",
+      "name": "GetInventory",
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "S7aoSt3D7FWWQgi5",
+          "name": "Bearer Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://superyachtme.retail.lightspeed.app/api/2.0/products",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        416,
+        0
+      ],
+      "id": "1d62d800-1aee-4ae9-a433-76ebb5f4f1ca",
+      "name": "FetchProductData",
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "uYPEQLJxJ3lYWbta",
+          "name": "Lightspeed Token"
+        },
+        "httpBearerAuth": {
+          "id": "S7aoSt3D7FWWQgi5",
+          "name": "Bearer Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get products from FetchProductData\nconst products = $node[\"FetchProductData\"].json.data || [];\n\nconst qbItems = products.map(product => {\n  return {\n    json: {\n      Name: product.name || \"Unnamed Product\",\n      SKU: product.sku || product.id,\n      QtyOnHand: product.inventory_level || 0, // If FetchProductData includes stock\n      PurchaseCost: product.average_cost || 0, // If FetchProductData includes cost\n      UnitPrice: product.price_including_tax || 0,\n      Type: \"Inventory\"\n    }\n  };\n});\n\nreturn qbItems;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        624,
+        0
+      ],
+      "id": "2a7ad8d8-6da0-47c0-8b3a-4fa6a609522f",
+      "name": "QBMutation-FetchProductData"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://quickbooks.api.intuit.com/v3/company/9341454112300561/upload",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        832,
+        0
+      ],
+      "id": "90a4bf91-e95e-497f-8a03-3119c7eba939",
+      "name": "HTTP Request",
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "6B4pHpkpZuG10ER7",
+          "name": "QuickBooks Online account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "GetInventory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GetInventory": {
+      "main": [
+        [
+          {
+            "node": "FetchProductData",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FetchProductData": {
+      "main": [
+        [
+          {
+            "node": "QBMutation-FetchProductData",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "QBMutation-FetchProductData": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {},
+  "versionId": "ed5e08a9-debf-4c64-b35d-d7a8a33d564c",
+  "activeVersionId": null,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-01-09T10:36:14.586Z",
+      "createdAt": "2026-01-09T10:36:14.586Z",
+      "role": "workflow:owner",
+      "workflowId": "MClG5X69L1SU9LNj",
+      "projectId": "7K0b7BEJpzNXLaZY"
+    }
+  ],
+  "activeVersion": null,
+  "tags": []
+}

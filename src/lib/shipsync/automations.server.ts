@@ -20,7 +20,51 @@ async function loadNote(noteId: string): Promise<{ note: ShipSyncDeliveryNote; p
 /** Build the note PDF, store it in the shipsync bucket, and save the URL. */
 export async function generateNotePdf(noteId: string, kind: 'predelivery' | 'delivery'): Promise<string> {
   const { note, packages } = await loadNote(noteId)
-  const bytes = await buildDeliveryNotePdf(note, packages, kind)
+
+  // Driver name for the note header.
+  let driverName: string | null = null
+  if (note.driver_id) {
+    const { data: driver } = await db().from('shipsync_drivers').select('name').eq('id', note.driver_id).maybeSingle()
+    driverName = driver?.name ?? null
+  }
+
+  // Van (plate) for the note header.
+  let vanLabel: string | null = null
+  if (note.vehicle_id) {
+    const { data: veh } = await db().from('crew_vehicles').select('registration, make, model').eq('id', note.vehicle_id).maybeSingle()
+    if (veh) vanLabel = (veh.registration?.trim() || [veh.make, veh.model].filter(Boolean).join(' ').trim()) || null
+  }
+
+  // Saved berth per boat (a multi-boat note has no single destination_address).
+  const boatNames = Array.from(new Set(packages.map((p) => p.boat_name).filter(Boolean) as string[]))
+  const destByBoat = new Map<string, string | null>()
+  if (boatNames.length) {
+    const { data: dests } = await db().from('shipsync_destinations').select('boat_name, address').in('boat_name', boatNames)
+    for (const d of dests ?? []) destByBoat.set(d.boat_name, d.address ?? null)
+  }
+
+  // For a delivery note, embed the captured customer signature per boat.
+  const sigByBoat = new Map<string, { imageBytes: Uint8Array | null; receiver: string | null; date: string | null }>()
+  if (kind === 'delivery') {
+    const byBoat = new Map<string, typeof packages>()
+    for (const p of packages) {
+      const key = p.boat_name || '—'
+      if (!byBoat.has(key)) byBoat.set(key, [])
+      byBoat.get(key)!.push(p)
+    }
+    for (const [boat, pkgs] of byBoat) {
+      const signed = pkgs.find((p) => p.signature_url)
+      if (!signed) continue
+      let imageBytes: Uint8Array | null = null
+      try {
+        const res = await fetch(signed.signature_url as string)
+        if (res.ok) imageBytes = new Uint8Array(await res.arrayBuffer())
+      } catch { /* leave blank if unreachable */ }
+      sigByBoat.set(boat, { imageBytes, receiver: signed.receiver_full_name ?? null, date: signed.delivered_at ?? null })
+    }
+  }
+
+  const bytes = await buildDeliveryNotePdf(note, packages, kind, { driverName, vanLabel, destByBoat, sigByBoat })
   const path = `delivery-notes/${note.number ?? noteId}/${kind}-${Date.now()}.pdf`
   const up = await supabaseAdmin.storage.from('shipsync').upload(path, bytes, { upsert: true, contentType: 'application/pdf' })
   if (up.error) throw up.error

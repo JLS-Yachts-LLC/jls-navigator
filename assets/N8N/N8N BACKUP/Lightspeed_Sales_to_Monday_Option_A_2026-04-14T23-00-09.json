@@ -1,0 +1,417 @@
+{
+  "updatedAt": "2026-01-21T19:44:45.249Z",
+  "createdAt": "2026-01-15T14:43:28.043Z",
+  "id": "ysdVFdJnnzvsdaRDktFLk",
+  "name": "Lightspeed Sales to Monday (Option A)",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours"
+            }
+          ]
+        }
+      },
+      "id": "0a86ce37-1829-4a1e-a55e-81ed6a806ca7",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        3312,
+        1504
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://superyachtme.retail.lightspeed.app/api/2.0/sales",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "updated_at_min",
+              "value": "={{$getWorkflowStaticData('global').last_seen_sale_time || '2026-01-01T00:00:00Z'}}"
+            },
+            {
+              "name": "page_size",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "faad6c56-77a7-4838-8ee2-d5fec2b5defd",
+      "name": "Fetch Sales",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        3504,
+        1504
+      ],
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "WoxCXu4qRHbtqjNE",
+          "name": "Lightspeed Bearer Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "data",
+        "options": {}
+      },
+      "id": "418c86d2-c64b-417a-a073-57591af67670",
+      "name": "Split Sales",
+      "type": "n8n-nodes-base.itemLists",
+      "typeVersion": 1,
+      "position": [
+        3712,
+        1504
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const sd = $getWorkflowStaticData('global');\n\nconst latest = items\n  .map(i => i.json.updated_at)\n  .filter(Boolean)\n  .sort()\n  .pop();\n\nif (latest) {\n  sd.last_seen_sale_time = latest;\n}\n\nreturn items;\n"
+      },
+      "id": "8e8d782c-4516-4075-b1a8-e0769af7c5c7",
+      "name": "Save Cursor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3904,
+        1504
+      ]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "line_items",
+        "options": {}
+      },
+      "id": "fda1d4e1-75c5-47f7-b091-c06eb73d9f2e",
+      "name": "Split Line Items",
+      "type": "n8n-nodes-base.itemLists",
+      "typeVersion": 1,
+      "position": [
+        4112,
+        1504
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://superyachtme.retail.lightspeed.app/api/2.0/products/{{$json[\"product_id\"]}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "options": {}
+      },
+      "id": "95950d30-b7f2-43c3-abd6-1c99e3ad282b",
+      "name": "Fetch Product",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        4688,
+        1392
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "WoxCXu4qRHbtqjNE",
+          "name": "Lightspeed Bearer Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://superyachtme.retail.lightspeed.app/api/2.0/customers/{{$json[\"customer_id\"]}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "options": {}
+      },
+      "id": "38c2fefc-7bee-4142-b3bd-eb2ddd1ad3ed",
+      "name": "Fetch Customer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        4688,
+        1600
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "WoxCXu4qRHbtqjNE",
+          "name": "Lightspeed Bearer Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const product = $json.data || {};\nconst base = $item(0).$json.base;\n\nreturn [{\n  json: {\n    base,\n    product\n  }\n}];"
+      },
+      "id": "f012fc52-6c16-4735-a1d2-2deb55a134d7",
+      "name": "Normalize Product",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4896,
+        1392
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Base sale + line item context comes from the *input* to Fetch Customer\nconst base = $item(0).$json.base;\n\n// Customer comes directly from the HTTP response body\nconst customer = $json || {};\n\nreturn [{\n  json: {\n    base,\n    customer\n  }\n}];"
+      },
+      "id": "0a9f5e0c-7360-4f04-896f-a0af4cac5427",
+      "name": "Normalize Customer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4896,
+        1600
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "id": "14fd0a90-1994-4524-a3c6-cc1bc83559ab",
+      "name": "Merge Product & Customer",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        5088,
+        1504
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const { base, product, customer } = $json;\n\nconst lineItem = base;\n\n// Product info\nconst productName = product.name || 'Unknown Product';\nconst variantName = product.variant_name || '';\nconst sku = product.sku || 'N/A';\nconst brand = product.brand?.name || 'Unknown';\nconst supplier = product.supplier?.name || 'Unknown';\n\n// Customer info\nconst customerName = [customer.first_name, customer.last_name].filter(Boolean).join(' ') || 'Unknown';\nconst customerCode = customer.customer_code || '';\n\n// Line item info\nconst quantity = Number(lineItem.quantity || 1);\nconst revenue = Number(lineItem.price_total || 0);\nconst cost = Number(lineItem.cost_total || 0);\n\n// Sale date\nconst saleDateRaw = lineItem.sale_date || lineItem.created_at || new Date().toISOString();\nconst saleDate = new Date(saleDateRaw).toISOString().split('T')[0];\n\nconst columnValues = {\n  date4: { date: saleDate },\n  text_mky0p6ft: sku,\n  numeric_mky06p70: quantity,\n  text_mky0rpam: brand,\n  text_mkyfspdg: supplier,\n  text_mkygt1kc: productName,\n  text_mkyf3ak4: variantName,\n  text_mkyfvjyz: customerName,\n  text_mkyfta0k: customerCode,\n  numeric_mky0fbyy: revenue,\n  numeric_mky04tna: cost,\n  numeric_mkyftfs4: revenue - cost\n};\n\nreturn [{\n  json: {\n    item_name: `${productName} – ${customerName}`,\n    column_values: JSON.stringify(columnValues)\n  }\n}];"
+      },
+      "id": "1fbcf628-40d7-4eb1-98df-72cace4274e1",
+      "name": "Build Monday Item",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5296,
+        1504
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "boardItem",
+        "boardId": "5088135582",
+        "groupId": "group_mky06080",
+        "name": "={{ $json.item_name }}",
+        "additionalFields": {
+          "columnValues": "={{ $json.column_values }}"
+        }
+      },
+      "id": "14440f70-847f-4767-a560-2895eb6612af",
+      "name": "Create Monday Item",
+      "type": "n8n-nodes-base.mondayCom",
+      "typeVersion": 1,
+      "position": [
+        5488,
+        1504
+      ],
+      "credentials": {
+        "mondayComApi": {
+          "id": "WLi9vhoOj5ilxUBf",
+          "name": "Monday.com account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n  const base = item.json;\n\n  return {\n    json: {\n      base,\n      product_id: base.product_id,\n      customer_id: base.customer_id || null\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4320,
+        1504
+      ],
+      "id": "80fc5129-ba8e-4790-b752-ef90d97aee63",
+      "name": "Prepare Line Item Context"
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Sales",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Sales": {
+      "main": [
+        [
+          {
+            "node": "Split Sales",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Sales": {
+      "main": [
+        [
+          {
+            "node": "Save Cursor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Cursor": {
+      "main": [
+        [
+          {
+            "node": "Split Line Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Line Items": {
+      "main": [
+        [
+          {
+            "node": "Prepare Line Item Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Product": {
+      "main": [
+        [
+          {
+            "node": "Normalize Product",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Customer": {
+      "main": [
+        [
+          {
+            "node": "Normalize Customer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Product": {
+      "main": [
+        [
+          {
+            "node": "Merge Product & Customer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Customer": {
+      "main": [
+        [
+          {
+            "node": "Merge Product & Customer",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Product & Customer": {
+      "main": [
+        [
+          {
+            "node": "Build Monday Item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Monday Item": {
+      "main": [
+        [
+          {
+            "node": "Create Monday Item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Line Item Context": {
+      "main": [
+        [
+          {
+            "node": "Fetch Product",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Customer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "f5822617-7724-4573-8aa4-4d9e7b73ee62",
+  "activeVersionId": null,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-01-15T14:43:28.088Z",
+      "createdAt": "2026-01-15T14:43:28.088Z",
+      "role": "workflow:owner",
+      "workflowId": "ysdVFdJnnzvsdaRDktFLk",
+      "projectId": "7K0b7BEJpzNXLaZY"
+    }
+  ],
+  "activeVersion": null,
+  "tags": []
+}

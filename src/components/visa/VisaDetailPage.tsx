@@ -11,7 +11,7 @@ import { DateInputDMY } from "@/components/ui/date-input-dmy";
 import { SignedAnchor } from "@/components/ui/signed-file";
 import { DraggableDocRow } from "@/components/visa/DraggableDocRow";
 import { softDeleteEntity } from "@/lib/recycle-bin";
-import { ArrowLeft, Loader2, Pencil, Trash2, ExternalLink, Upload, IdCard, FileCheck2, FolderOpen } from "lucide-react";
+import { ArrowLeft, Loader2, Pencil, Trash2, ExternalLink, Upload, IdCard, FileCheck2, FolderOpen, Send } from "lucide-react";
 import { toast } from "sonner";
 import { cn, toDMY } from "@/lib/utils";
 import { fileToBase64 } from "@/lib/file-to-base64";
@@ -53,6 +53,7 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
   const [form, setForm] = useState<Visa>({});
   const [busy, setBusy] = useState(false);
   const [del, setDel] = useState(false);
+  const [sendOpen, setSendOpen] = useState(false);
   const [attaching, setAttaching] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   // Cross-linked data: latest sign-on/off from crew_signon_events + passport documents.
@@ -163,7 +164,7 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
     setLoading(true);
     const { data, error } = await (supabase as any)
       .from("visa_applications")
-      .select("*, yachts(vessel_name)")
+      .select("*, yachts(vessel_name, visa_report_email), crew_members(email)")
       .eq("id", id)
       .maybeSingle();
     if (error || !data) { toast.error("Application not found"); goList(); return; }
@@ -291,11 +292,34 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
           <span className={cn("ml-2 rounded-full px-4 py-1.5 text-sm font-bold tracking-wide shadow-sm", sm.cls)}>{sm.label}</span>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            onClick={() => setSendOpen(true)}
+            disabled={!visa.visa_document_url}
+            title={visa.visa_document_url ? "Email the visa + UAE arrival instructions to the vessel" : "Attach the issued visa document first"}
+            className="h-8 gap-1.5"
+          >
+            <Send className="h-3.5 w-3.5" /> Send to Vessel
+          </Button>
           <Button size="sm" variant="outline" onClick={openEdit} className="h-8 gap-1.5"><Pencil className="h-3.5 w-3.5" /> Edit</Button>
           <Button size="sm" variant="outline" onClick={goEditPassport} className="h-8 gap-1.5"><IdCard className="h-3.5 w-3.5" /> Edit Passport</Button>
           <Button size="sm" variant="outline" onClick={() => setDel(true)} className="h-8 gap-1.5 text-destructive hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /> Delete</Button>
         </div>
       </header>
+
+      {visa.visa_dispatched && (
+        <div className="border-b border-emerald-500/20 bg-emerald-500/5 px-6 py-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+          ✓ Visa sent to the vessel{visa.visa_dispatched_at ? ` — ${new Date(visa.visa_dispatched_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}` : ""}
+        </div>
+      )}
+
+      {sendOpen && (
+        <SendToVesselDialog
+          visa={visa}
+          onClose={() => setSendOpen(false)}
+          onSent={() => { setSendOpen(false); void load(); }}
+        />
+      )}
 
       <div className="flex-1 overflow-auto p-6">
         <div className="grid max-w-3xl gap-6 md:grid-cols-[1fr_240px]">
@@ -473,5 +497,77 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+// ── Send-to-Vessel dialog — emails the issued visa + UAE Arrival Instructions ──
+function SendToVesselDialog({ visa, onClose, onSent }: { visa: Visa; onClose: () => void; onSent: () => void }) {
+  const crewName = [visa.given_name, visa.surname].filter(Boolean).join(" ") || "Crew member";
+  const suggestions = [visa.yachts?.visa_report_email, visa.crew_members?.email].filter(Boolean) as string[];
+  const [to, setTo] = useState(suggestions.join(", "));
+  const [cc, setCc] = useState("");
+  const [message, setMessage] = useState("");
+  const [sending, setSending] = useState(false);
+
+  async function send() {
+    const toList = to.split(/[,;\s]+/).map((s) => s.trim()).filter((s) => /.+@.+\..+/.test(s));
+    if (!toList.length) { toast.error("Enter at least one recipient email"); return; }
+    setSending(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const r = await fetch("/api/visa/send-to-vessel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token ?? ""}` },
+        body: JSON.stringify({
+          visaId: visa.id,
+          to: toList,
+          cc: cc.split(/[,;\s]+/).map((s) => s.trim()).filter((s) => /.+@.+\..+/.test(s)),
+          message: message.trim() || undefined,
+        }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j.ok) throw new Error(j.error ?? "Send failed");
+      toast.success(`Visa sent to ${toList.length} recipient${toList.length === 1 ? "" : "s"}`);
+      onSent();
+    } catch (e: any) {
+      toast.error(String(e?.message ?? e));
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader><DialogTitle>Send visa to vessel — {crewName}</DialogTitle></DialogHeader>
+        <div className="space-y-3 py-1">
+          <div className="space-y-1.5">
+            <Label className="text-xs">To <span className="font-normal text-muted-foreground">(comma-separated)</span></Label>
+            <Input value={to} onChange={(e) => setTo(e.target.value)} placeholder="captain@vessel.com" className="h-8" />
+            {suggestions.length === 0 && (
+              <p className="text-[11px] text-muted-foreground">No vessel/crew email on file — enter the recipient manually.</p>
+            )}
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">CC <span className="font-normal text-muted-foreground">(optional)</span></Label>
+            <Input value={cc} onChange={(e) => setCc(e.target.value)} placeholder="" className="h-8" />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Message <span className="font-normal text-muted-foreground">(optional, appears above the attachments)</span></Label>
+            <Textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={2} className="resize-none text-sm" />
+          </div>
+          <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-[11.5px] text-muted-foreground">
+            Attaches: <span className="font-medium text-foreground">the issued visa document</span> +{" "}
+            <span className="font-medium text-foreground">UAE Arrival Instructions</span> (always included).
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={sending}>Cancel</Button>
+          <Button onClick={send} disabled={sending} className="gap-1.5">
+            {sending && <Loader2 className="h-4 w-4 animate-spin" />} Send
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

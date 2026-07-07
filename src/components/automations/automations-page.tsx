@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchAllRows } from "@/lib/fetch-all";
 import { Button } from "@/components/ui/button";
@@ -6,9 +6,14 @@ import { Input } from "@/components/ui/input";
 import {
   Zap, Clock, Webhook, MousePointerClick, Activity, Search, Loader2,
   CheckCircle2, XCircle, CircleDot, Calendar, ExternalLink, PlugZap,
+  ListOrdered, History, ChevronDown,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import {
+  getAutomationSteps, getAutomationRuns,
+  type StepsResult, type RunsResult,
+} from "@/lib/automations-hub.server";
 
 type Automation = {
   id: string;
@@ -16,16 +21,21 @@ type Automation = {
   name: string;
   description: string | null;
   category: string | null;
+  department: string | null;
   trigger_type: "schedule" | "webhook" | "event" | "manual";
   schedule: string | null;
   cron: string | null;
   source: string | null;
   endpoint: string | null;
   enabled: boolean;
+  config?: Record<string, any> | null;
   last_run_at: string | null;
   last_status: string | null;
   last_detail: string | null;
 };
+
+// Department mini tabs — fixed order; "All" first, Platform last.
+const DEPARTMENTS = ["Finance", "Immigration", "Logistics", "Training", "Yacht IT Solutions", "Operations", "Platform"] as const;
 
 const TRIGGER_META: Record<string, { label: string; icon: typeof Clock; color: string }> = {
   schedule: { label: "Scheduled", icon: Clock,             color: "bg-blue-500/15 text-blue-400" },
@@ -53,6 +63,7 @@ export function AutomationsPage() {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  const [dept, setDept] = useState<string>("All");
 
   useEffect(() => { void load(); }, []);
 
@@ -97,11 +108,20 @@ export function AutomationsPage() {
     setBusy(null);
   }
 
+  const deptOf = (a: Automation) => a.department ?? "Platform";
+
+  const deptCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const a of items) m.set(deptOf(a), (m.get(deptOf(a)) ?? 0) + 1);
+    return m;
+  }, [items]);
+
   const filtered = useMemo(() => items.filter(a => {
+    if (dept !== "All" && deptOf(a) !== dept) return false;
     if (!q.trim()) return true;
     const s = q.toLowerCase();
-    return [a.name, a.description, a.category, a.schedule].filter(Boolean).join(" ").toLowerCase().includes(s);
-  }), [items, q]);
+    return [a.name, a.description, a.category, a.department, a.schedule].filter(Boolean).join(" ").toLowerCase().includes(s);
+  }), [items, q, dept]);
 
   const groups = useMemo(() => {
     const m = new Map<string, Automation[]>();
@@ -147,6 +167,22 @@ export function AutomationsPage() {
             <div className={cn("text-lg font-bold", s.color)}>{s.value}</div>
             <div className="text-xs text-muted-foreground">{s.label}</div>
           </div>
+        ))}
+      </div>
+
+      {/* Department mini tabs */}
+      <div className="flex items-center gap-1 overflow-x-auto border-b border-border/60 bg-card/30 px-4">
+        {["All", ...DEPARTMENTS].map((d) => (
+          <button key={d} onClick={() => setDept(d)}
+                  className={cn(
+                    "flex shrink-0 items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition",
+                    dept === d ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+                  )}>
+            {d}
+            <span className="rounded-full bg-muted/60 px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
+              {d === "All" ? items.length : (deptCounts.get(d) ?? 0)}
+            </span>
+          </button>
         ))}
       </div>
 
@@ -196,6 +232,9 @@ export function AutomationsPage() {
                           </span>
                           {a.endpoint && <a href={a.endpoint} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline"><ExternalLink className="h-3 w-3" /> {a.source === "n8n" ? "Open in n8n" : "Run URL"}</a>}
                         </div>
+                        {/* Per-automation configuration (e.g. email recipients) */}
+                        {a.key === "weekly-fleet-finance" && <RecipientsEditor automation={a} onSaved={(cfg) => setItems(prev => prev.map(x => x.id === a.id ? { ...x, config: cfg } : x))} />}
+                        {a.key === "qb-invoice-pdf" && <InvoicePdfTester />}
                         {/* Run metrics — last 30 days */}
                         {rs && rs.runs > 0 && (
                           <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -206,6 +245,8 @@ export function AutomationsPage() {
                             {rs.hit > 0 && <span className="rounded-full bg-violet-500/15 px-2 py-0.5 text-[10px] font-medium text-violet-500">{rs.hit} hit{rs.hit !== 1 ? "s" : ""}</span>}
                           </div>
                         )}
+                        {/* Step-by-step + full run log */}
+                        <AutomationDetail automation={a} />
                       </div>
                       {/* Enable toggle */}
                       <button
@@ -224,6 +265,208 @@ export function AutomationsPage() {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// Recipients editor for automations that email a configured list (config.recipients).
+function RecipientsEditor({ automation, onSaved }: { automation: Automation; onSaved: (cfg: Record<string, any>) => void }) {
+  const initial = ((automation.config as any)?.recipients ?? []).join(", ");
+  const [value, setValue] = useState<string>(initial);
+  const [saving, setSaving] = useState(false);
+  const dirty = value.trim() !== initial.trim();
+
+  async function save() {
+    const recipients = value.split(/[,;\s]+/).map((s) => s.trim()).filter((s) => /.+@.+\..+/.test(s));
+    setSaving(true);
+    try {
+      const cfg = { ...(automation.config ?? {}), recipients };
+      const { error } = await (supabase as any).from("automations")
+        .update({ config: cfg, updated_at: new Date().toISOString() }).eq("id", automation.id);
+      if (error) throw error;
+      setValue(recipients.join(", "));
+      onSaved(cfg);
+      toast.success(recipients.length ? `Recipients saved (${recipients.length})` : "Recipients cleared — the email won't send until some are set");
+    } catch (e: any) { toast.error(String(e?.message ?? e)); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2">
+      <span className="text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">Recipients</span>
+      <Input
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder="e.g. m.peeters@jlsyachts.com, accounts@jlsyachts.com"
+        className="h-7 w-80 max-w-full text-xs"
+      />
+      {dirty && (
+        <Button size="sm" onClick={save} disabled={saving} className="h-7 gap-1 text-xs">
+          {saving && <Loader2 className="h-3 w-3 animate-spin" />} Save
+        </Button>
+      )}
+    </div>
+  );
+}
+
+// ── Step-by-step view + full run log (expandable per automation) ──────────────
+function fmtDuration(ms: number | null): string {
+  if (ms == null) return "—";
+  if (ms < 1000) return `${ms} ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)} s`;
+  return `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`;
+}
+
+const RUN_STATUS_CLS: Record<string, string> = {
+  success: "bg-emerald-500/15 text-emerald-400",
+  error: "bg-red-500/15 text-red-400",
+  crashed: "bg-red-500/15 text-red-400",
+  failed: "bg-red-500/15 text-red-400",
+  retry: "bg-amber-500/15 text-amber-400",
+  waiting: "bg-blue-500/15 text-blue-400",
+  running: "bg-blue-500/15 text-blue-400",
+  hit: "bg-violet-500/15 text-violet-400",
+};
+
+function AutomationDetail({ automation }: { automation: Automation }) {
+  const [open, setOpen] = useState<"steps" | "runs" | null>(null);
+  const [steps, setSteps] = useState<StepsResult | null>(null);
+  const [runLog, setRunLog] = useState<RunsResult | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const show = useCallback(async (what: "steps" | "runs") => {
+    if (open === what) { setOpen(null); return; }
+    setOpen(what);
+    setLoading(true);
+    try {
+      if (what === "steps" && !steps) setSteps(await (getAutomationSteps as any)({ data: { key: automation.key } }));
+      if (what === "runs") setRunLog(await (getAutomationRuns as any)({ data: { key: automation.key } }));
+    } catch (e: any) {
+      toast.error(e?.message ?? "Could not load");
+    } finally { setLoading(false); }
+  }, [open, steps, automation.key]);
+
+  return (
+    <div className="mt-2.5">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <button onClick={() => void show("steps")}
+                className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition",
+                              open === "steps" ? "border-primary/50 bg-primary/10 text-foreground" : "border-border text-muted-foreground hover:text-foreground")}>
+          <ListOrdered className="h-3 w-3" /> Steps
+          <ChevronDown className={cn("h-3 w-3 transition-transform", open === "steps" && "rotate-180")} />
+        </button>
+        <button onClick={() => void show("runs")}
+                className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition",
+                              open === "runs" ? "border-primary/50 bg-primary/10 text-foreground" : "border-border text-muted-foreground hover:text-foreground")}>
+          <History className="h-3 w-3" /> Run log
+          <ChevronDown className={cn("h-3 w-3 transition-transform", open === "runs" && "rotate-180")} />
+        </button>
+      </div>
+
+      {open && (
+        <div className="mt-2 rounded-lg border border-border/60 bg-background/40 p-3">
+          {loading ? (
+            <div className="flex h-16 items-center justify-center"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
+          ) : open === "steps" ? (
+            !steps || (!steps.ok && !steps.steps.length) ? (
+              <p className="text-xs text-muted-foreground">{steps?.note ?? "No step data."}</p>
+            ) : (
+              <ol className="space-y-1.5">
+                {steps.steps.map((s, i) => (
+                  <li key={`${s.name}-${i}`} className="flex items-start gap-2.5 text-xs">
+                    <span className="mt-0.5 flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[10px] font-bold tabular-nums text-primary" style={{ width: 18, height: 18 }}>
+                      {i + 1}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="font-medium text-foreground/90">{s.name}</span>
+                      {s.type && <span className="ml-1.5 rounded bg-muted/60 px-1 py-px text-[9px] font-mono text-muted-foreground">{s.type}</span>}
+                      {s.note && <span className="block text-[11px] text-muted-foreground">{s.note}</span>}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            )
+          ) : (
+            !runLog || (!runLog.ok && !runLog.runs.length) ? (
+              <p className="text-xs text-muted-foreground">{runLog?.note ?? "No runs recorded."}</p>
+            ) : runLog.runs.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No runs recorded yet.</p>
+            ) : (
+              <div className="max-h-72 overflow-y-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground/60">
+                      <th className="pb-1.5 pr-3">Started</th>
+                      <th className="pb-1.5 pr-3">Duration</th>
+                      <th className="pb-1.5 pr-3">Status</th>
+                      <th className="pb-1.5">Detail</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {runLog.runs.map((r, i) => (
+                      <tr key={i} className="border-t border-border/40">
+                        <td className="whitespace-nowrap py-1.5 pr-3 tabular-nums text-foreground/80">{fmtWhen(r.started_at)}</td>
+                        <td className="whitespace-nowrap py-1.5 pr-3 tabular-nums text-foreground/70">{fmtDuration(r.duration_ms)}</td>
+                        <td className="py-1.5 pr-3">
+                          <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold", RUN_STATUS_CLS[r.status] ?? "bg-muted/60 text-muted-foreground")}>
+                            {r.status}
+                          </span>
+                        </td>
+                        <td className="max-w-[380px] truncate py-1.5 text-muted-foreground" title={r.detail ?? ""}>{r.detail ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Tester for the native QB Invoice PDF: preview the rendered document for any
+// QuickBooks invoice id (no writes), or force a full generate-and-attach run.
+function InvoicePdfTester() {
+  const [id, setId] = useState("");
+  const [busy, setBusy] = useState<"preview" | "attach" | null>(null);
+
+  async function call(mode: "preview" | "attach") {
+    if (!id.trim()) return;
+    setBusy(mode);
+    try {
+      const { data: { session } } = await (supabase as any).auth.getSession();
+      const token = session?.access_token ?? "";
+      const url = `/api/qb/invoice-pdf?id=${encodeURIComponent(id.trim())}${mode === "attach" ? "&force=1" : ""}`;
+      const res = await fetch(url, {
+        method: mode === "preview" ? "GET" : "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (mode === "preview") {
+        if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error ?? `HTTP ${res.status}`);
+        const blob = await res.blob();
+        window.open(URL.createObjectURL(blob), "_blank");
+      } else {
+        const j = await res.json();
+        if (!res.ok || !j.ok) throw new Error(j.detail ?? j.error ?? `HTTP ${res.status}`);
+        toast.success(`${j.detail}${j.deletedOld ? ` — ${j.deletedOld} old attachment(s) replaced` : ""}`);
+      }
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed");
+    } finally { setBusy(null); }
+  }
+
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2">
+      <span className="text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">Test with invoice id</span>
+      <Input value={id} onChange={(e) => setId(e.target.value)} placeholder="QBO invoice id, e.g. 55610" className="h-7 w-48 text-xs" />
+      <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" disabled={!id.trim() || !!busy} onClick={() => void call("preview")}>
+        {busy === "preview" && <Loader2 className="h-3 w-3 animate-spin" />} Preview PDF
+      </Button>
+      <Button size="sm" className="h-7 gap-1 text-xs" disabled={!id.trim() || !!busy} onClick={() => void call("attach")}>
+        {busy === "attach" && <Loader2 className="h-3 w-3 animate-spin" />} Generate & attach now
+      </Button>
     </div>
   );
 }

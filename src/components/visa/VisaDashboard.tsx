@@ -288,6 +288,9 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
   }
 
   // Filters
+  // Default to CURRENT visas — the full tracker history (~5.7k records) lives
+  // behind the "All history" toggle so the pipeline stays workable.
+  const [scope, setScope] = useState<'current' | 'all'>('current')
   const [activeStatus, setActiveStatus] = useState<string | null>(null)
   const [search, setSearch]   = useState('')
   const [vessel, setVessel]   = useState('all')
@@ -297,10 +300,12 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
 
   async function loadAll() {
     setLoading(true)
+    // Only the columns this screen renders — the table now holds ~5.7k records,
+    // so `select *` (every jsonb/audit column) made the payload painfully slow.
     const [appsRes, alertsRes] = await Promise.all([
       fetchAllRows(() => (supabase as any)
         .from('visa_applications')
-        .select('*, crew_members(full_name, first_name, last_name), yachts(vessel_name)')
+        .select('id, crew_member_id, yacht_id, vessel_name, country_code, status, visa_document_url, passport_number, given_name, surname, nationality, visa_number, visa_expiry, sign_on_date, submitted_at, approved_at, visa_issuance_date, application_notes, created_at, crew_members(full_name, first_name, last_name), yachts(vessel_name)')
         .order('created_at', { ascending: false })),
       (supabase as any)
         .from('compliance_alerts')
@@ -332,15 +337,27 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
     return [...s].sort((a, b) => b.localeCompare(a))
   }, [applications])
 
+  // "Current" = not lapsed: excludes expired/cancelled/rejected/signed-off records
+  // and anything whose visa expiry is already past.
+  const scoped = useMemo(() => {
+    if (scope === 'all') return applications
+    const today = new Date().toISOString().slice(0, 10)
+    return applications.filter(a => {
+      if (['expired', 'cancelled', 'rejected', 'signed off', 'sign off'].includes(a.status)) return false
+      if (a.visa_expiry && String(a.visa_expiry).slice(0, 10) < today) return false
+      return true
+    })
+  }, [applications, scope])
+
   const counts = useMemo(() => {
     const c: Record<string, number> = {}
-    for (const a of applications) c[a.status] = (c[a.status] ?? 0) + 1
+    for (const a of scoped) c[a.status] = (c[a.status] ?? 0) + 1
     return c
-  }, [applications])
+  }, [scoped])
 
   // ── Filtering ────────────────────────────────────────────────────────────────
 
-  const filtered = useMemo(() => applications.filter(a => {
+  const filtered = useMemo(() => scoped.filter(a => {
     if (activeStatus && a.status !== activeStatus) return false
     if (vessel !== 'all' && a.yacht_id !== vessel) return false
     const d = effectiveDate(a)
@@ -357,7 +374,7 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
       if (!hay.includes(q)) return false
     }
     return true
-  }), [applications, activeStatus, vessel, year, dateFrom, dateTo, search])
+  }), [scoped, activeStatus, vessel, year, dateFrom, dateTo, search])
 
   const hasFilters = !!activeStatus || vessel !== 'all' || year !== 'all' || !!dateFrom || !!dateTo || !!search.trim()
 
@@ -448,7 +465,21 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
             Visa Applications
           </h1>
           <p style={{ fontFamily: FONTS.body, color: COLORS.muted, fontSize: 13, margin: '4px 0 0' }}>
-            Crew immigration pipeline · {applications.length} total
+            Crew immigration pipeline · {scoped.length} {scope === 'current' ? 'current' : 'total'}
+            <span style={{ marginLeft: 12, display: 'inline-flex', gap: 2, verticalAlign: 'middle' }}>
+              {(['current', 'all'] as const).map(s => (
+                <button key={s} onClick={() => setScope(s)}
+                  style={{
+                    fontFamily: FONTS.display, fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                    padding: '3px 10px', borderRadius: 6,
+                    border: `1px solid ${scope === s ? COLORS.signal : COLORS.deep}`,
+                    background: scope === s ? `${COLORS.signal}1a` : 'transparent',
+                    color: scope === s ? COLORS.signal : COLORS.muted,
+                  }}>
+                  {s === 'current' ? 'Current' : `All history (${applications.length})`}
+                </button>
+              ))}
+            </span>
           </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as PortalRouteImport } from './routes/portal'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
@@ -26,6 +27,7 @@ import { Route as AppShipSparesRouteImport } from './routes/_app.ship-spares'
 import { Route as AppSettingsRouteImport } from './routes/_app.settings'
 import { Route as AppSeaportRouteImport } from './routes/_app.seaport'
 import { Route as AppRecycleBinRouteImport } from './routes/_app.recycle-bin'
+import { Route as AppQbImportRouteImport } from './routes/_app.qb-import'
 import { Route as AppProvisioningRouteImport } from './routes/_app.provisioning'
 import { Route as AppProcurementRouteImport } from './routes/_app.procurement'
 import { Route as AppPolarisRedesignRouteImport } from './routes/_app.polaris-redesign'
@@ -136,6 +138,11 @@ import { Route as AppCrewImmigrationCrewIdRouteImport } from './routes/_app.crew
 import { Route as AppCrewImmigrationVisasInfoCountryCodeRouteImport } from './routes/_app.crew-immigration.visas.info.$countryCode'
 import { Route as AppCrewImmigrationCrewAddCrewMemberIdPassportRouteImport } from './routes/_app.crew-immigration.crew.add.$crewMemberId.passport'
 
+const PortalRoute = PortalRouteImport.update({
+  id: '/portal',
+  path: '/portal',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
@@ -221,6 +228,11 @@ const AppSeaportRoute = AppSeaportRouteImport.update({
 const AppRecycleBinRoute = AppRecycleBinRouteImport.update({
   id: '/recycle-bin',
   path: '/recycle-bin',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppQbImportRoute = AppQbImportRouteImport.update({
+  id: '/qb-import',
+  path: '/qb-import',
   getParentRoute: () => AppRoute,
 } as any)
 const AppProvisioningRoute = AppProvisioningRouteImport.update({
@@ -798,6 +810,7 @@ const AppCrewImmigrationCrewAddCrewMemberIdPassportRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/portal': typeof PortalRoute
   '/admin': typeof AppAdminRouteWithChildren
   '/agency': typeof AppAgencyRoute
   '/ai-assistant': typeof AppAiAssistantRoute
@@ -831,6 +844,7 @@ export interface FileRoutesByFullPath {
   '/polaris-redesign': typeof AppPolarisRedesignRoute
   '/procurement': typeof AppProcurementRoute
   '/provisioning': typeof AppProvisioningRoute
+  '/qb-import': typeof AppQbImportRoute
   '/recycle-bin': typeof AppRecycleBinRoute
   '/seaport': typeof AppSeaportRouteWithChildren
   '/settings': typeof AppSettingsRoute
@@ -925,6 +939,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/portal': typeof PortalRoute
   '/agency': typeof AppAgencyRoute
   '/ai-assistant': typeof AppAiAssistantRoute
   '/automations': typeof AppAutomationsRoute
@@ -951,6 +966,7 @@ export interface FileRoutesByTo {
   '/polaris-redesign': typeof AppPolarisRedesignRoute
   '/procurement': typeof AppProcurementRoute
   '/provisioning': typeof AppProvisioningRoute
+  '/qb-import': typeof AppQbImportRoute
   '/recycle-bin': typeof AppRecycleBinRoute
   '/settings': typeof AppSettingsRoute
   '/ship-spares': typeof AppShipSparesRoute
@@ -1040,6 +1056,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_app': typeof AppRouteWithChildren
   '/auth': typeof AuthRoute
+  '/portal': typeof PortalRoute
   '/_app/admin': typeof AppAdminRouteWithChildren
   '/_app/agency': typeof AppAgencyRoute
   '/_app/ai-assistant': typeof AppAiAssistantRoute
@@ -1073,6 +1090,7 @@ export interface FileRoutesById {
   '/_app/polaris-redesign': typeof AppPolarisRedesignRoute
   '/_app/procurement': typeof AppProcurementRoute
   '/_app/provisioning': typeof AppProvisioningRoute
+  '/_app/qb-import': typeof AppQbImportRoute
   '/_app/recycle-bin': typeof AppRecycleBinRoute
   '/_app/seaport': typeof AppSeaportRouteWithChildren
   '/_app/settings': typeof AppSettingsRoute
@@ -1169,6 +1187,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/auth'
+    | '/portal'
     | '/admin'
     | '/agency'
     | '/ai-assistant'
@@ -1202,6 +1221,7 @@ export interface FileRouteTypes {
     | '/polaris-redesign'
     | '/procurement'
     | '/provisioning'
+    | '/qb-import'
     | '/recycle-bin'
     | '/seaport'
     | '/settings'
@@ -1296,6 +1316,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/auth'
+    | '/portal'
     | '/agency'
     | '/ai-assistant'
     | '/automations'
@@ -1322,6 +1343,7 @@ export interface FileRouteTypes {
     | '/polaris-redesign'
     | '/procurement'
     | '/provisioning'
+    | '/qb-import'
     | '/recycle-bin'
     | '/settings'
     | '/ship-spares'
@@ -1410,6 +1432,7 @@ export interface FileRouteTypes {
     | '/'
     | '/_app'
     | '/auth'
+    | '/portal'
     | '/_app/admin'
     | '/_app/agency'
     | '/_app/ai-assistant'
@@ -1443,6 +1466,7 @@ export interface FileRouteTypes {
     | '/_app/polaris-redesign'
     | '/_app/procurement'
     | '/_app/provisioning'
+    | '/_app/qb-import'
     | '/_app/recycle-bin'
     | '/_app/seaport'
     | '/_app/settings'
@@ -1539,6 +1563,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRouteWithChildren
   AuthRoute: typeof AuthRoute
+  PortalRoute: typeof PortalRoute
   LegalEulaRoute: typeof LegalEulaRoute
   LegalPrivacyRoute: typeof LegalPrivacyRoute
   LegalQuickbooksConnectedRoute: typeof LegalQuickbooksConnectedRoute
@@ -1548,6 +1573,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/portal': {
+      id: '/portal'
+      path: '/portal'
+      fullPath: '/portal'
+      preLoaderRoute: typeof PortalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/auth': {
       id: '/auth'
       path: '/auth'
@@ -1665,6 +1697,13 @@ declare module '@tanstack/react-router' {
       path: '/recycle-bin'
       fullPath: '/recycle-bin'
       preLoaderRoute: typeof AppRecycleBinRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/qb-import': {
+      id: '/_app/qb-import'
+      path: '/qb-import'
+      fullPath: '/qb-import'
+      preLoaderRoute: typeof AppQbImportRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/provisioning': {
@@ -2768,6 +2807,7 @@ interface AppRouteChildren {
   AppPolarisRedesignRoute: typeof AppPolarisRedesignRoute
   AppProcurementRoute: typeof AppProcurementRoute
   AppProvisioningRoute: typeof AppProvisioningRoute
+  AppQbImportRoute: typeof AppQbImportRoute
   AppRecycleBinRoute: typeof AppRecycleBinRoute
   AppSeaportRoute: typeof AppSeaportRouteWithChildren
   AppSettingsRoute: typeof AppSettingsRoute
@@ -2831,6 +2871,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppPolarisRedesignRoute: AppPolarisRedesignRoute,
   AppProcurementRoute: AppProcurementRoute,
   AppProvisioningRoute: AppProvisioningRoute,
+  AppQbImportRoute: AppQbImportRoute,
   AppRecycleBinRoute: AppRecycleBinRoute,
   AppSeaportRoute: AppSeaportRouteWithChildren,
   AppSettingsRoute: AppSettingsRoute,
@@ -2866,6 +2907,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
   AuthRoute: AuthRoute,
+  PortalRoute: PortalRoute,
   LegalEulaRoute: LegalEulaRoute,
   LegalPrivacyRoute: LegalPrivacyRoute,
   LegalQuickbooksConnectedRoute: LegalQuickbooksConnectedRoute,

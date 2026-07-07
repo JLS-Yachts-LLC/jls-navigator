@@ -1,0 +1,414 @@
+{
+  "updatedAt": "2026-04-10T11:32:13.126Z",
+  "createdAt": "2026-04-01T08:30:01.412Z",
+  "id": "8rZwBuBcBNKiInl3T7FtW",
+  "name": "Visa Application Tracker -> Crew Visa Tracker",
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "9525c2a2-e151-43c3-bddd-480bcef18fc7",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "a43ece87-943d-4104-95b4-64611e97a093",
+      "name": "Webhook",
+      "webhookId": "9525c2a2-e151-43c3-bddd-480bcef18fc7"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"challenge\": \"{{ $json.body.challenge }}\" }",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        224,
+        -160
+      ],
+      "id": "c8fe11d0-8579-419d-a73c-811b6c476f62",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "resource": "boardItem",
+        "operation": "get",
+        "itemId": "={{ String($json.body.event.pulseId) }}"
+      },
+      "type": "n8n-nodes-base.mondayCom",
+      "typeVersion": 1,
+      "position": [
+        224,
+        0
+      ],
+      "id": "7f13033f-8c63-4755-aa40-fab22288525f",
+      "name": "Get an item",
+      "credentials": {
+        "mondayComApi": {
+          "id": "WLi9vhoOj5ilxUBf",
+          "name": "Monday.com account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "boardItem",
+        "boardId": "5088757810",
+        "groupId": "group_mm20gebp",
+        "name": "={{ $json.name }}",
+        "additionalFields": {
+          "columnValues": "={{ $json.columnValuesJson }}"
+        }
+      },
+      "type": "n8n-nodes-base.mondayCom",
+      "typeVersion": 1,
+      "position": [
+        640,
+        0
+      ],
+      "id": "341b17bb-a666-4612-b58c-74ece8edbbe0",
+      "name": "Create an item in a board's group",
+      "credentials": {
+        "mondayComApi": {
+          "id": "WLi9vhoOj5ilxUBf",
+          "name": "Monday.com account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the input item\nconst item = $input.first().json;\n\n// Build column values object - mapping ALL columns\nconst columnValues = {};\n\n// Define the columns you want to copy (based on your input data)\nconst columnsToMap = [\n  'color_mkza96dt',    // STATUS\n  'date_mkza71cn',     // DATE\n  'text_mkzahfaf',     // YACHT\n  'text_mkzaqb5z',     // GIVEN NAME\n  'text_mkzae4xf',     // SURNAME\n  'text_mkzavzhe',     // COMMENTS\n  'multiple_person_mm206tfg', // Assignee\n  'color_mkzavhpg',    // DOB\n  'text_mkzangd3',     // PASSPORT\n  'text_mkzavm6e',     // EXPIRY\n  'text_mkzabybe',     // VISA REF\n  'text_mkza38nk',     // VISA ISSUANCE\n  'text_mkzan5vr',     // 1ST ENTRY EXP\n  'color_mkzab2es',    // PaidOn\n  'color_mkza7ced',    // PaymentRefNumber\n  'color_mkza3ajh',    // TransactionNumber\n  'color_mkzadx6y',    // JLS Invoices\n  'text_mm27qa4j'      // APPLICATION\n];\n\n// Process each column\nitem.column_values.forEach(col => {\n  // Only process columns in our list\n  if (columnsToMap.includes(col.id)) {\n    if (col.value && col.value !== 'null') {\n      try {\n        const parsedValue = JSON.parse(col.value);\n        \n        // Handle different column types\n        if (col.type === 'status') {\n          // Status columns need label format\n          if (col.text) {\n            columnValues[col.id] = { label: col.text };\n          }\n        } else if (col.type === 'date') {\n          // Date columns use the parsed value as-is\n          columnValues[col.id] = parsedValue;\n        } else if (col.type === 'text') {\n          // Text columns are simple strings\n          columnValues[col.id] = parsedValue;\n        } else if (col.type === 'people') {\n          // People columns use the parsed value\n          columnValues[col.id] = parsedValue;\n        } else {\n          // Default: use parsed value\n          columnValues[col.id] = parsedValue;\n        }\n      } catch (e) {\n        // If parsing fails, use the raw value\n        columnValues[col.id] = col.value;\n      }\n    }\n  }\n});\n\nreturn {\n  json: {\n    name: item.name,\n    columnValuesJson: JSON.stringify(columnValues)  // <-- Changed to JSON string\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        432,
+        0
+      ],
+      "id": "c6e4a276-b7bb-4dac-86ad-7ca9f40b3216",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "resource": "boardItem",
+        "operation": "changeMultipleColumnValues"
+      },
+      "type": "n8n-nodes-base.mondayCom",
+      "typeVersion": 1,
+      "position": [
+        848,
+        0
+      ],
+      "id": "4764ba90-9081-44c9-9a7e-20d64e4b74e4",
+      "name": "Change multiple column values for a board item",
+      "credentials": {
+        "mondayComApi": {
+          "id": "WLi9vhoOj5ilxUBf",
+          "name": "Monday.com account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get an item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get an item": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Create an item in a board's group",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create an item in a board's group": {
+      "main": [
+        [
+          {
+            "node": "Change multiple column values for a board item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {
+    "Webhook": [
+      {
+        "json": {
+          "headers": {
+            "host": "n8n.jlsyachts.com",
+            "user-agent": "node-fetch/1.0 (+https://github.com/bitinn/node-fetch)",
+            "content-length": "741",
+            "accept": "*/*",
+            "accept-encoding": "gzip,deflate",
+            "content-type": "application/json",
+            "traceparent": "00-ce753a5996e305889f9cad8ec6f45d9f-1bc3552d23ab0cbc-01",
+            "x-forwarded-for": "185.66.202.3",
+            "x-forwarded-host": "n8n.jlsyachts.com",
+            "x-forwarded-port": "443",
+            "x-forwarded-proto": "https",
+            "x-forwarded-server": "b5b8753f399c",
+            "x-real-ip": "185.66.202.3",
+            "x-request-start": "1775820075309"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "event": {
+              "app": "monday",
+              "type": "update_column_value",
+              "triggerTime": "2026-04-10T11:21:14.947Z",
+              "subscriptionId": 107569534,
+              "isRetry": false,
+              "userId": 71533823,
+              "originalTriggerUuid": null,
+              "boardId": 5089598585,
+              "groupId": "group_mm20f4t7",
+              "pulseId": 2832448106,
+              "pulseName": "MYA",
+              "columnId": "color_mkza96dt",
+              "columnType": "color",
+              "columnTitle": "STATUS",
+              "value": {
+                "label": {
+                  "index": 1,
+                  "text": "approved",
+                  "style": {
+                    "color": "#00c875",
+                    "border": "#00b461",
+                    "var_name": "green-shadow"
+                  },
+                  "is_done": true
+                },
+                "post_id": null
+              },
+              "previousValue": {
+                "label": {
+                  "index": 0,
+                  "text": "cxd",
+                  "style": {
+                    "color": "#fdab3d",
+                    "border": "#e99729",
+                    "var_name": "orange"
+                  },
+                  "is_done": false
+                },
+                "post_id": null
+              },
+              "changedAt": 1775820074.5532079,
+              "isTopGroup": true,
+              "triggerUuid": "24a9feb1a3060cc1238f5d346fed9e27"
+            }
+          },
+          "webhookUrl": "https://n8n.jlsyachts.com/webhook/9525c2a2-e151-43c3-bddd-480bcef18fc7",
+          "executionMode": "production"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "versionId": "c8a348b4-6007-4678-a07a-676beab5c6c6",
+  "activeVersionId": "38032507-8b9f-4474-bb76-b09111b6c0e0",
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-04-01T08:30:01.443Z",
+      "createdAt": "2026-04-01T08:30:01.443Z",
+      "role": "workflow:owner",
+      "workflowId": "8rZwBuBcBNKiInl3T7FtW",
+      "projectId": "7K0b7BEJpzNXLaZY"
+    }
+  ],
+  "activeVersion": {
+    "updatedAt": "2026-04-10T11:31:57.000Z",
+    "createdAt": "2026-04-10T10:42:17.911Z",
+    "versionId": "38032507-8b9f-4474-bb76-b09111b6c0e0",
+    "workflowId": "8rZwBuBcBNKiInl3T7FtW",
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "9525c2a2-e151-43c3-bddd-480bcef18fc7",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.1,
+        "position": [
+          0,
+          0
+        ],
+        "id": "a43ece87-943d-4104-95b4-64611e97a093",
+        "name": "Webhook",
+        "webhookId": "9525c2a2-e151-43c3-bddd-480bcef18fc7"
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={ \"challenge\": \"{{ $json.body.challenge }}\" }",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.4,
+        "position": [
+          224,
+          -160
+        ],
+        "id": "c8fe11d0-8579-419d-a73c-811b6c476f62",
+        "name": "Respond to Webhook"
+      },
+      {
+        "parameters": {
+          "resource": "boardItem",
+          "operation": "get",
+          "itemId": "={{ String($json.body.event.pulseId) }}"
+        },
+        "type": "n8n-nodes-base.mondayCom",
+        "typeVersion": 1,
+        "position": [
+          224,
+          0
+        ],
+        "id": "7f13033f-8c63-4755-aa40-fab22288525f",
+        "name": "Get an item",
+        "credentials": {
+          "mondayComApi": {
+            "id": "WLi9vhoOj5ilxUBf",
+            "name": "Monday.com account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "resource": "boardItem",
+          "boardId": "5088757810",
+          "groupId": "group_mm20gebp",
+          "name": "={{ $json.name }}",
+          "additionalFields": {
+            "columnValues": "={{ $json.columnValuesJson }}"
+          }
+        },
+        "type": "n8n-nodes-base.mondayCom",
+        "typeVersion": 1,
+        "position": [
+          640,
+          0
+        ],
+        "id": "341b17bb-a666-4612-b58c-74ece8edbbe0",
+        "name": "Create an item in a board's group",
+        "credentials": {
+          "mondayComApi": {
+            "id": "WLi9vhoOj5ilxUBf",
+            "name": "Monday.com account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "// Get the input item\nconst item = $input.first().json;\n\n// Build column values object - mapping ALL columns\nconst columnValues = {};\n\n// Define the columns you want to copy (based on your input data)\nconst columnsToMap = [\n  'color_mkza96dt',    // STATUS\n  'date_mkza71cn',     // DATE\n  'text_mkzahfaf',     // YACHT\n  'text_mkzaqb5z',     // GIVEN NAME\n  'text_mkzae4xf',     // SURNAME\n  'text_mkzavzhe',     // COMMENTS\n  'multiple_person_mm206tfg', // Assignee\n  'color_mkzavhpg',    // DOB\n  'text_mkzangd3',     // PASSPORT\n  'text_mkzavm6e',     // EXPIRY\n  'text_mkzabybe',     // VISA REF\n  'text_mkza38nk',     // VISA ISSUANCE\n  'text_mkzan5vr',     // 1ST ENTRY EXP\n  'color_mkzab2es',    // PaidOn\n  'color_mkza7ced',    // PaymentRefNumber\n  'color_mkza3ajh',    // TransactionNumber\n  'color_mkzadx6y',    // JLS Invoices\n  'text_mm27qa4j'      // APPLICATION\n];\n\n// Process each column\nitem.column_values.forEach(col => {\n  // Only process columns in our list\n  if (columnsToMap.includes(col.id)) {\n    if (col.value && col.value !== 'null') {\n      try {\n        const parsedValue = JSON.parse(col.value);\n        \n        // Handle different column types\n        if (col.type === 'status') {\n          // Status columns need label format\n          if (col.text) {\n            columnValues[col.id] = { label: col.text };\n          }\n        } else if (col.type === 'date') {\n          // Date columns use the parsed value as-is\n          columnValues[col.id] = parsedValue;\n        } else if (col.type === 'text') {\n          // Text columns are simple strings\n          columnValues[col.id] = parsedValue;\n        } else if (col.type === 'people') {\n          // People columns use the parsed value\n          columnValues[col.id] = parsedValue;\n        } else {\n          // Default: use parsed value\n          columnValues[col.id] = parsedValue;\n        }\n      } catch (e) {\n        // If parsing fails, use the raw value\n        columnValues[col.id] = col.value;\n      }\n    }\n  }\n});\n\nreturn {\n  json: {\n    name: item.name,\n    columnValuesJson: JSON.stringify(columnValues)  // <-- Changed to JSON string\n  }\n};"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          432,
+          0
+        ],
+        "id": "c6e4a276-b7bb-4dac-86ad-7ca9f40b3216",
+        "name": "Code in JavaScript"
+      }
+    ],
+    "connections": {
+      "Webhook": {
+        "main": [
+          [
+            {
+              "node": "Respond to Webhook",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Get an item",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get an item": {
+        "main": [
+          [
+            {
+              "node": "Code in JavaScript",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Code in JavaScript": {
+        "main": [
+          [
+            {
+              "node": "Create an item in a board's group",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "Matthew Peeters",
+    "name": "Version 38032507",
+    "description": "",
+    "autosaved": false
+  },
+  "tags": []
+}

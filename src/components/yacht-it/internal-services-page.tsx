@@ -33,6 +33,7 @@ type InternalService = {
   // Association + commercial / invoicing
   yacht_name: string | null;
   payment_method: string | null;
+  paid_by: string | null;         // who paid / whose card (e.g. Maddie, Mike)
   sell_price: number | null;
   sell_currency: string | null;
   fx_rate: number | null;        // 1 {currency} = fx_rate {sell_currency}, captured at purchase
@@ -64,15 +65,19 @@ const BILLING_CYCLES = [
 const CURRENCIES = ["GBP", "USD", "EUR", "AED"];
 const PAYMENT_METHODS = [
   { value: "card", label: "Card" },
-  { value: "debit", label: "Debit" },
-  { value: "bank_transfer", label: "Bank transfer" },
+  { value: "direct_debit", label: "Direct Debit" },
+  { value: "standing_order", label: "Standing Order" },
+  { value: "bank_transfer", label: "Bank Transfer" },
+  { value: "invoice", label: "Invoice / Account" },
   { value: "other", label: "Other" },
 ];
+// Common payers/cardholders offered as suggestions (free text still allowed).
+const PAID_BY_SUGGESTIONS = ["Maddie", "Mike", "Matthew", "Hilary"];
 const EMPTY_FORM: FormState = {
   service_name: "", vendor: null, category: "software", cost_amount: null, currency: "AED",
   billing_cycle: "monthly", seats: null, owner: null, account_ref: null,
   start_date: null, renewal_date: null, status: "active", notes: null,
-  yacht_name: null, payment_method: null,
+  yacht_name: null, payment_method: null, paid_by: null,
   sell_price: null, sell_currency: "AED", fx_rate: null, fx_rate_date: null,
   commitment_term: null, jls_invoice_number: null,
   yacht_paid: false, yacht_po: null,
@@ -249,7 +254,7 @@ export function InternalServicesPage({ scope = "client" }: { scope?: "client" | 
       currency: r.currency, billing_cycle: r.billing_cycle, seats: r.seats, owner: r.owner,
       account_ref: r.account_ref, start_date: r.start_date, renewal_date: r.renewal_date,
       status: r.status, notes: r.notes,
-      yacht_name: r.yacht_name, payment_method: r.payment_method,
+      yacht_name: r.yacht_name, payment_method: r.payment_method, paid_by: r.paid_by,
       sell_price: r.sell_price, sell_currency: r.sell_currency ?? r.currency, fx_rate: r.fx_rate, fx_rate_date: r.fx_rate_date,
       commitment_term: r.commitment_term, jls_invoice_number: r.jls_invoice_number,
       yacht_paid: r.yacht_paid, yacht_po: r.yacht_po,
@@ -343,7 +348,7 @@ export function InternalServicesPage({ scope = "client" }: { scope?: "client" | 
           <div className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-muted-foreground/60">Yacht IT Solutions</div>
           <h1 className="mt-0.5 font-display text-[1.25rem] font-semibold tracking-tight">{isInternal ? "JLS Yachts Internal Services" : "Client Subscriptions and Services"}</h1>
         </div>
-        <Button size="sm" onClick={openNew} className="h-9 gap-1.5 px-3.5 font-medium shadow-sm"><Plus className="h-3.5 w-3.5" /> Add Service</Button>
+        <Button size="sm" onClick={openNew} className="h-9 gap-1.5 px-3.5 font-medium shadow-sm"><Plus className="h-3.5 w-3.5" /> {isInternal ? "Add Bill" : "Add Service"}</Button>
       </header>
 
       <div className="flex-1 overflow-auto px-6 py-5">
@@ -353,11 +358,13 @@ export function InternalServicesPage({ scope = "client" }: { scope?: "client" | 
             <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
               <span aria-hidden>⏳</span>
               <span className="font-display text-sm font-bold">
-                {renewalsDue.length} service{renewalsDue.length === 1 ? "" : "s"} due for renewal within 90 days
+                {renewalsDue.length} {isInternal ? "bill" : "service"}{renewalsDue.length === 1 ? "" : "s"} due for renewal within 90 days
               </span>
             </div>
             <p className="mt-1 text-[12.5px] text-muted-foreground">
-              Seek a quotation from the vendor and begin prepping the quotation for the Yacht. An email reminder is sent to the IT support inbox.
+              {isInternal
+                ? "Review the bill before it renews — renegotiate, downgrade, or cancel anything JLS no longer needs."
+                : "Seek a quotation from the vendor and begin prepping the quotation for the Yacht. An email reminder is sent to the IT support inbox."}
             </p>
             <div className="mt-2.5 flex flex-wrap gap-2">
               {renewalsDue.slice(0, 8).map((r) => {
@@ -376,12 +383,12 @@ export function InternalServicesPage({ scope = "client" }: { scope?: "client" | 
         {/* Stats — status row */}
         <div className="mb-3 grid grid-cols-2 gap-3 md:grid-cols-4">
           {[
-            { label: "Total services", value: stats.total },
+            { label: isInternal ? "Total bills" : "Total services", value: stats.total },
             { label: "Active", value: stats.active },
             {
               label: "Renewing ≤90d",
               value: stats.renewing90,
-              sub: "start invoicing",
+              sub: isInternal ? "review / renegotiate" : "start invoicing",
               tone: stats.renewing90 > 0 ? "amber" : undefined,
             },
             {
@@ -406,9 +413,12 @@ export function InternalServicesPage({ scope = "client" }: { scope?: "client" | 
           })}
         </div>
 
-        {/* Stats — money row */}
-        <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-3">
-          {[
+        {/* Stats — money row. Internal = a bills view (what JLS pays); client adds revenue/margin. */}
+        <div className={`mb-5 grid grid-cols-2 gap-3 ${isInternal ? "md:grid-cols-2" : "md:grid-cols-3"}`}>
+          {(isInternal ? [
+            { label: "Cost / year", value: `AED ${fmtMoney(stats.annualCost)}`, sub: "what we pay" },
+            { label: "Cost / month", value: `AED ${fmtMoney(stats.annualCost / 12)}`, sub: "average monthly spend" },
+          ] : [
             { label: "Cost / year", value: `AED ${fmtMoney(stats.annualCost)}`, sub: "what we pay" },
             { label: "Revenue / year", value: `AED ${fmtMoney(stats.annualRev)}`, sub: "what we charge" },
             {
@@ -418,7 +428,7 @@ export function InternalServicesPage({ scope = "client" }: { scope?: "client" | 
               accent: stats.annualMargin > 0 ? "text-emerald-600 dark:text-emerald-400"
                 : stats.annualMargin < 0 ? "text-red-600 dark:text-red-400" : undefined,
             },
-          ].map((s) => (
+          ]).map((s) => (
             <div key={s.label} className="rounded-xl border border-border bg-card p-4">
               <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{s.label}</div>
               <div className={`mt-1 font-display text-2xl font-bold tabular-nums ${(s as any).accent ?? ""}`}>{s.value}</div>
@@ -429,7 +439,9 @@ export function InternalServicesPage({ scope = "client" }: { scope?: "client" | 
 
         {stats.fxConverted && (
           <p className="-mt-3 mb-4 text-[11px] text-muted-foreground">
-            Cost, revenue &amp; margin totals converted to AED at current rates. Per-service margin uses the exchange rate captured at purchase.
+            {isInternal
+              ? "Cost totals converted to AED at current rates."
+              : "Cost, revenue & margin totals converted to AED at current rates. Per-service margin uses the exchange rate captured at purchase."}
           </p>
         )}
 
@@ -456,13 +468,15 @@ export function InternalServicesPage({ scope = "client" }: { scope?: "client" | 
               {CATEGORIES.map((c) => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
             </SelectContent>
           </Select>
-          <Select value={yachtFilter} onValueChange={setYachtFilter}>
-            <SelectTrigger className="h-9 w-44 text-xs"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All yachts / clients</SelectItem>
-              {yachtOptions.map((y) => <SelectItem key={y} value={y}>{y}</SelectItem>)}
-            </SelectContent>
-          </Select>
+          {!isInternal && (
+            <Select value={yachtFilter} onValueChange={setYachtFilter}>
+              <SelectTrigger className="h-9 w-44 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All yachts / clients</SelectItem>
+                {yachtOptions.map((y) => <SelectItem key={y} value={y}>{y}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          )}
           <span className="ml-auto text-[12px] text-muted-foreground">{filtered.length} of {rows.length}</span>
         </div>
 
@@ -471,15 +485,22 @@ export function InternalServicesPage({ scope = "client" }: { scope?: "client" | 
         ) : filtered.length === 0 ? (
           <div className="flex h-64 flex-col items-center justify-center rounded-xl border border-dashed border-border text-center">
             <Boxes className="mb-3 h-10 w-10 text-muted-foreground/40" />
-            <p className="font-display text-base font-semibold">{rows.length === 0 ? "No internal services yet" : "No services match"}</p>
-            <p className="mt-1 text-sm text-muted-foreground">Track JLS's own subscriptions &amp; tools — M365, GitHub, hosting, security, connectivity.</p>
-            {rows.length === 0 && <Button onClick={openNew} className="mt-4 gap-1.5"><Plus className="h-4 w-4" /> Add First Service</Button>}
+            <p className="font-display text-base font-semibold">{rows.length === 0 ? (isInternal ? "No bills yet" : "No services yet") : "Nothing matches"}</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {isInternal
+                ? "Track the bills JLS pays — hosting, software, utilities, insurance, licences, anything recurring."
+                : "Track subscriptions & tools managed for client yachts — M365, connectivity, security, support."}
+            </p>
+            {rows.length === 0 && <Button onClick={openNew} className="mt-4 gap-1.5"><Plus className="h-4 w-4" /> {isInternal ? "Add First Bill" : "Add First Service"}</Button>}
           </div>
         ) : (
           <div className="overflow-hidden rounded-xl border border-border bg-card">
             <table className="w-full text-sm">
               <thead><tr className="border-b border-border bg-muted/40 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                {["Service", "Yacht / Client", "Vendor", "Category", "Cost", "Price", "Margin", "Billing", "Seats", "Renewal", "Owner", "Yacht Paid", "Status", ""].map((h) => (
+                {(isInternal
+                  ? ["Bill", "Vendor", "Category", "Cost", "Billing", "Seats", "Renewal", "Owner", "Payment", "Paid By", "Status", ""]
+                  : ["Service", "Yacht / Client", "Vendor", "Category", "Cost", "Price", "Margin", "Billing", "Seats", "Renewal", "Owner", "Payment", "Paid By", "Yacht Paid", "Status", ""]
+                ).map((h) => (
                   <th key={h} className="px-4 py-2.5 whitespace-nowrap">{h}</th>
                 ))}
               </tr></thead>
@@ -487,29 +508,31 @@ export function InternalServicesPage({ scope = "client" }: { scope?: "client" | 
                 {filtered.map((r) => (
                   <tr key={r.id} onClick={() => openEdit(r)} className="group cursor-pointer border-b border-border/40 hover:bg-accent/20">
                     <td className="px-4 py-3 font-medium text-foreground">{r.service_name}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{r.yacht_name ?? "—"}</td>
+                    {!isInternal && <td className="px-4 py-3 text-muted-foreground">{r.yacht_name ?? "—"}</td>}
                     <td className="px-4 py-3 text-muted-foreground">{r.vendor ?? "—"}</td>
                     <td className="px-4 py-3 capitalize text-muted-foreground">{r.category}</td>
                     <td className="px-4 py-3 tabular-nums text-foreground/80">{r.cost_amount == null ? "—" : `${r.currency} ${fmtMoney(r.cost_amount)}`}</td>
-                    <td className="px-4 py-3 tabular-nums text-foreground/80">{r.sell_price == null ? "—" : `${r.sell_currency ?? r.currency} ${fmtMoney(r.sell_price)}`}</td>
-                    <td className="px-4 py-3 tabular-nums">{(() => {
+                    {!isInternal && <td className="px-4 py-3 tabular-nums text-foreground/80">{r.sell_price == null ? "—" : `${r.sell_currency ?? r.currency} ${fmtMoney(r.sell_price)}`}</td>}
+                    {!isInternal && <td className="px-4 py-3 tabular-nums">{(() => {
                       const m = serviceMargin(r);
                       if (m == null) return <span className="text-muted-foreground">—</span>;
                       return <span className={m >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}>{`${r.sell_currency ?? r.currency} ${fmtMoney(m)}`}</span>;
-                    })()}</td>
+                    })()}</td>}
                     <td className="px-4 py-3 capitalize text-muted-foreground">{r.billing_cycle.replace("_", " ")}</td>
                     <td className="px-4 py-3 tabular-nums text-muted-foreground">{r.seats ?? "—"}</td>
                     <td className="px-4 py-3 tabular-nums text-muted-foreground">
                       {fmtDate(r.renewal_date)}
                       {(() => { const d = daysUntil(r.renewal_date); return r.status === "active" && d !== null && d >= 0 && d <= 90
-                        ? <div className="mt-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">Quote due · {d}d</div> : null; })()}
+                        ? <div className="mt-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">{isInternal ? "Renews" : "Quote due"} · {d}d</div> : null; })()}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">{r.owner ?? "—"}</td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 text-muted-foreground">{PAYMENT_METHODS.find((p) => p.value === r.payment_method)?.label ?? "—"}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{r.paid_by ?? "—"}</td>
+                    {!isInternal && <td className="px-4 py-3">
                       <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${r.yacht_paid ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/20" : "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/20"}`}>
                         {r.yacht_paid ? "Paid" : "Unpaid"}
                       </span>
-                    </td>
+                    </td>}
                     <td className="px-4 py-3"><StatusBadge status={effectiveStatus(r)} /></td>
                     <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                       <div className="flex justify-end gap-0.5 opacity-0 transition group-hover:opacity-100">
@@ -527,7 +550,7 @@ export function InternalServicesPage({ scope = "client" }: { scope?: "client" | 
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-lg max-h-[88vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>{editing ? "Edit" : "Add"} {isInternal ? "Internal Service" : "Client Subscription"}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{editing ? "Edit" : "Add"} {isInternal ? "Bill" : "Client Subscription"}</DialogTitle></DialogHeader>
           <div className="grid gap-3 py-2">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5"><Label className="text-xs">Service name <span className="text-destructive">*</span></Label>
@@ -548,7 +571,7 @@ export function InternalServicesPage({ scope = "client" }: { scope?: "client" | 
                   <Input value={form.yacht_name ?? ""} onChange={(e) => set({ yacht_name: e.target.value || null })} list="iserv-yachts" className="h-8" placeholder="Yacht or client name" autoComplete="off" />
                   <datalist id="iserv-yachts">{yachtList.map((y) => <option key={y} value={y} />)}</datalist></div>
               )}
-              <div className={isInternal ? "space-y-1.5 sm:col-span-2" : "space-y-1.5"}><Label className="text-xs">Payment method</Label>
+              <div className="space-y-1.5"><Label className="text-xs">Payment method</Label>
                 <Select value={form.payment_method ?? "none"} onValueChange={(v) => set({ payment_method: v === "none" ? null : v })}>
                   <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -556,6 +579,9 @@ export function InternalServicesPage({ scope = "client" }: { scope?: "client" | 
                     {PAYMENT_METHODS.map((p) => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
                   </SelectContent>
                 </Select></div>
+              <div className="space-y-1.5"><Label className="text-xs">Paid by <span className="font-normal normal-case text-muted-foreground">(whose card / account)</span></Label>
+                <Input value={form.paid_by ?? ""} onChange={(e) => set({ paid_by: e.target.value || null })} list="iserv-paidby" className="h-8" placeholder="e.g. Maddie" autoComplete="off" />
+                <datalist id="iserv-paidby">{PAID_BY_SUGGESTIONS.map((n) => <option key={n} value={n} />)}</datalist></div>
             </div>
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1.5"><Label className="text-xs">Cost</Label>
@@ -568,11 +594,15 @@ export function InternalServicesPage({ scope = "client" }: { scope?: "client" | 
                   <SelectContent>{BILLING_CYCLES.map((c) => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}</SelectContent></Select></div>
             </div>
             <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-1.5"><Label className="text-xs">Price <span className="font-normal text-muted-foreground">(sell)</span></Label>
-                <Input type="number" step="0.01" value={form.sell_price ?? ""} onChange={(e) => set({ sell_price: e.target.value === "" ? null : Number(e.target.value) })} className="h-8" placeholder="What we charge" /></div>
-              <div className="space-y-1.5"><Label className="text-xs">Sell currency</Label>
-                <Select value={form.sell_currency ?? "AED"} onValueChange={(v) => set({ sell_currency: v })}><SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-                  <SelectContent>{CURRENCIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent></Select></div>
+              {!isInternal && (
+                <>
+                  <div className="space-y-1.5"><Label className="text-xs">Price <span className="font-normal text-muted-foreground">(sell)</span></Label>
+                    <Input type="number" step="0.01" value={form.sell_price ?? ""} onChange={(e) => set({ sell_price: e.target.value === "" ? null : Number(e.target.value) })} className="h-8" placeholder="What we charge" /></div>
+                  <div className="space-y-1.5"><Label className="text-xs">Sell currency</Label>
+                    <Select value={form.sell_currency ?? "AED"} onValueChange={(v) => set({ sell_currency: v })}><SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                      <SelectContent>{CURRENCIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent></Select></div>
+                </>
+              )}
               <div className="space-y-1.5"><Label className="text-xs">Commitment term</Label>
                 <Input value={form.commitment_term ?? ""} onChange={(e) => set({ commitment_term: e.target.value || null })} className="h-8" placeholder="e.g. 12 months" /></div>
             </div>

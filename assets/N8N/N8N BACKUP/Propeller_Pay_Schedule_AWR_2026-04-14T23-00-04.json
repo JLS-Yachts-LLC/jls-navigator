@@ -1,0 +1,642 @@
+{
+  "updatedAt": "2026-02-06T08:31:25.000Z",
+  "createdAt": "2026-02-05T20:42:02.061Z",
+  "id": "KBTbIniEy1FJvvNSIwvrd",
+  "name": "Propeller Pay Schedule & AWR",
+  "active": false,
+  "isArchived": true,
+  "nodes": [
+    {
+      "parameters": {
+        "path": "58b01ac7-ac14-42c0-9221-ea54412390d6",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -416,
+        16
+      ],
+      "id": "80129eb2-e2e5-4482-a95d-41be95f58a8e",
+      "name": "Webhook",
+      "webhookId": "58b01ac7-ac14-42c0-9221-ea54412390d6"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://umfyxaaumhgkovwuovzl.supabase.co/functions/v1/Bullhorn-Get-Placement",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"Placement\": \"{{322662201__Placement}}{{322662201__event__pulseName}}\",\n  \"multiDateFormat\": true,\n  \"Fields\": [\n    \"id\",\n    \"candidate(id,firstName,lastName,dateOfBirth,email,address,mobile)\",\n    \"owner(id,firstName,lastName,email)\",\n     \"customText3\",\n\n    \"dateAdded\",\n    \"vendorClientCorporation(customText3)\",\n    \"customText41\",\n\n    \"customText42\",\n           \"customFloat10\",\n           \"salaryUnit\",\n           \"payRate\",\n           \"clientBillRate\",\n    \"customText20\",\n           \"customFloat15\",\n           \"customText15\",\n           \"customPayRate1\",\n           \"customBillRate1\",\n    \"customText21\",\n           \"customFloat16\",\n           \"customText16\",\n           \"customPayRate2\",\n           \"customBillRate2\",\n    \"customTextBlock5\",\n     \"customTextBlock6\",\n     \"customTextBlock7\",\n\n    \"customFloat19\",\n    \"customText29\",\n    \"salary\",\n    \"fee\",\n    \"flatFee\",\n    \"status\",\n    \"dateBegin\",\n     \"dateEnd\",\n    \"employmentType\",\n    \"employeeType\",\n    \"jobOrder(id,title)\",\n    \"clientCorporation(id,customTextBlock3,customTextBlock4,companyDescription,parentClientCorporation,address)\",\n    \"dateLastModified\",\n    \"customInt1\",\n    \"customText5\",\n    \"customText11\",\n    \"correlatedCustomText2\"\n  ]\n}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -208,
+        16
+      ],
+      "id": "f44a5750-e428-430b-96b9-aa50f206b837",
+      "name": "Bullhorn Get Placement",
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "FYctaE5eCbtCWpRi",
+          "name": "Supabase Bearer"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "//? 🧪 Functions to format the financial data 🧮\n//?_____________________________________________\n\n// Format bill or pay rates into £0.00\nfunction formatPayRateDisplayString(rate) {\n  let rateNumber = Number(rate);\n  if (isNaN(rateNumber)) return undefined;\n  return `£${rateNumber.toFixed(2)}`;\n}\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        16
+      ],
+      "id": "d7e09168-9f79-4bf5-a45b-72f52ec249f4",
+      "name": "STRING: Docupilot"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://umfyxaaumhgkovwuovzl.supabase.co/functions/v1/Monday-Get-Board-Items",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"boardId\": \"9997855553\",\n\n  \"where\": {\n    \"text_mkvndg5j\": { \"operator\": \"exact\", \"value\": \"{{322665531__id}}\" }\n  },\n  \"unpack\": true\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        208,
+        16
+      ],
+      "id": "ddfa2991-6a6b-46ad-bf28-ef54182c69cd",
+      "name": "GET Monday Placement",
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "FYctaE5eCbtCWpRi",
+          "name": "Supabase Bearer"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://umfyxaaumhgkovwuovzl.supabase.co/functions/v1/Monday-Get-Board-Items",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"boardId\": \"9997855546\",\n\n  \"pulseID\": \"{{322791377__items[]columns__board_relation_mkvnvwa3__value__linkedPulseIds[]linkedPulseId}}\",\n    \"fields\": [\"email_mkw2kvmh\"]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        416,
+        16
+      ],
+      "id": "ada17678-b586-4930-ab25-166769570281",
+      "name": "GET Monday Agency Details",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ki6xZZeJ87N5V7fp",
+          "name": "Header Auth account"
+        },
+        "httpBearerAuth": {
+          "id": "FYctaE5eCbtCWpRi",
+          "name": "Supabase Bearer"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{322791377__items[]columns__color_mkw1m0t1__text}}",
+                    "rightValue": "Not Requested",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    },
+                    "id": "18956b89-2ff2-4b09-a98d-1d975afe757b"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Not Requested"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "d4068f96-23bf-4d96-92db-991dcb00bca6",
+                    "leftValue": "={{322791377__items[]columns__color_mkw1m0t1__text}}",
+                    "rightValue": "Request I",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Request I"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "595fc659-cd71-4e4e-a040-22332dcc58c2",
+                    "leftValue": "={{322791377__items[]columns__color_mkw1m0t1__text}}",
+                    "rightValue": "Request II",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Request II"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        1072,
+        -16
+      ],
+      "id": "22c76184-15dc-41de-afd0-26f87d3e5557",
+      "name": "Switch1"
+    },
+    {
+      "parameters": {
+        "toRecipients": "={{322882755__items[]column_values[]text}}",
+        "subject": "Welcome to Propeller Pay Payroll Services",
+        "bodyContent": "=<!DOCTYPE html>\n<html>\n  <body style=\"font-family: Arial, sans-serif; color: #333; line-height: 1.6;\">\n    <p>Dear Talentia Group,</p>\n\n    <p>\n      This is a final reminder regarding our request for information under the \n      <strong>Agency Workers Regulations (AWR)</strong>. We are required to hold accurate \n      details to confirm that temporary workers engaged through your agency receive fair \n      and equal treatment when compared with permanent employees in similar roles at Propeller Pay.\n    </p>\n\n    <p>\n      Specifically, we still require the following information for \n      <strong>{{322665531__candidate__firstName}} {{322665531__candidate__lastName}}, {{322665531__jobOrder__title}}</strong>:\n    </p>\n\n    <ul>\n      <li>Annual Salary</li>\n      <li>Standard Weekly Hours</li>\n      <li>Holiday Entitlement (including bank holidays)</li>\n      <li>Eligibility for Overtime, Bonus, or Benefits (with typical monetary values)</li>\n    </ul>\n\n    <p>\n      Please complete <a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://form.jotform.com/252642929776068?workerName={{322665531__candidate__firstName}} {{322665531__candidate__lastName}}&amp;jobTitle={{322665531__jobOrder__title}}&amp;mondayid={{322791377__items[]id}}\">this form</a> to provide this information. \n    </p>",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        224
+      ],
+      "id": "998890e5-e542-4a92-b7d1-f2c9b0fa4760",
+      "name": "Send a message",
+      "webhookId": "7f1b0be0-fe20-4304-9c24-a46a810adfc2",
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "7IaguepNlbcPCyIE",
+          "name": "Microsoft Outlook account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "toRecipients": "={{322882755__items[]column_values[]text}}",
+        "subject": "Welcome to Propeller Pay Payroll Services",
+        "bodyContent": "=<!DOCTYPE html>\n<html>\n  <head>\n    <meta charset=\"UTF-8\">\n    <title>Second Request: AWR Information</title>\n  </head>\n  <body style=\"font-family: Arial, sans-serif; color: #333; line-height: 1.6;\">\n    <p>Dear Talentia Group,</p>\n\n    <p>\n      We are following up on our previous request regarding the \n      <strong>Agency Workers Regulations (AWR)</strong>. As part of our obligations, \n      we must confirm that temporary workers engaged through your agency receive \n      fair and equal treatment compared with permanent employees in similar roles \n      at Propeller Pay.\n    </p>\n\n    <p>\n      To complete this process for \n      <strong>{{322665531__candidate__firstName}} {{322665531__candidate__lastName}}, {{322665531__jobOrder__title}}</strong>, \n      we kindly remind you to complete <a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://form.jotform.com/252642929776068?workerName={{322665531__candidate__firstName}} {{322665531__candidate__lastName}}&amp;jobTitle={{322665531__jobOrder__title}}&amp;mondayid={{322791377__items[]id}}\">this form</a> provide the following details of the comparable permanent position:\n \n\n    <p>\n      We would be grateful if you could send this information as soon as possible to help us remain compliant. \n      If you require any clarification, please do not hesitate to get in touch.\n    </p>\n\n    <p>\n      Thank you for your prompt attention to this matter.\n    </p>\n\n    <p>Kind regards,<br>\n    <strong>Propeller Pay</strong></p>\n  </body>\n</html>\n",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        0
+      ],
+      "id": "5f228186-d841-42af-ae41-4a78f78ec3b7",
+      "name": "Send a message1",
+      "webhookId": "7f1b0be0-fe20-4304-9c24-a46a810adfc2",
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "7IaguepNlbcPCyIE",
+          "name": "Microsoft Outlook account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://umfyxaaumhgkovwuovzl.supabase.co/functions/v1/Monday-Update-Pulse",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"boardId\": 9997855553,\n \"pulseId\":  {{322791377__items[]id}},\n  \"groupId\": \"topics\",\n\n  \"columnValues\": {\n    \"color_mkw1m0t1\": \"Request II\"\n    \n}\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1568,
+        0
+      ],
+      "id": "6666adfb-274f-47f1-9664-4d901e819152",
+      "name": "Update Monday CRM Placement",
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "FYctaE5eCbtCWpRi",
+          "name": "Supabase Bearer"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://umfyxaaumhgkovwuovzl.supabase.co/functions/v1/Monday-Update-Pulse",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"boardId\": 9997855553,\n \"pulseId\":  {{322791377__items[]id}},\n  \"groupId\": \"topics\",\n\n  \"columnValues\": {\n    \"color_mkw1m0t1\": \"Request III\"\n    \n}\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1568,
+        224
+      ],
+      "id": "8f78c011-57f8-4e44-9387-b32b0890a7b7",
+      "name": "Update Monday CRM Placement1",
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "FYctaE5eCbtCWpRi",
+          "name": "Supabase Bearer"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://umfyxaaumhgkovwuovzl.supabase.co/functions/v1/Monday-Update-Pulse",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"boardId\": 9997855553,\n \"pulseId\":  {{322791377__items[]id}},\n  \"groupId\": \"topics\",\n\n  \"columnValues\": {\n    \"color_mkw1m0t1\": \"Request I\"\n    \n}\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1568,
+        -160
+      ],
+      "id": "ad3ebf35-bd4a-4d70-aa02-3d22a8a0a368",
+      "name": "Update Monday CRM Placement2",
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "FYctaE5eCbtCWpRi",
+          "name": "Supabase Bearer"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "toRecipients": "={{322882755__items[]column_values[]text}}",
+        "subject": "Request for AWR Information – {{322665531__candidate__firstName}} {{322665531__candidate__lastName}} ({{322665531__jobOrder__title}}",
+        "bodyContent": "=<p>\n    Dear Talentia Group,\n</p>\n<p>\n    In line with our responsibilities under the <strong>Agency Workers Regulations (AWR)</strong>, we are required to confirm that temporary workers engaged through your agency receive fair and equal treatment when compared with permanent employees in similar roles at Propeller Pay.\n</p>\n<p>\n    &nbsp;\n</p>\n<p>\n    To support this process, we kindly ask you to complete <a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://form.jotform.com/252642929776068?workerName={{322665531__candidate__firstName}} {{322665531__candidate__lastName}}&amp;jobTitle={{322665531__jobOrder__title}}&amp;mondayid={{322791377__items[]id}}\">this form</a> with details of the comparable permanent position for <strong>{{322665531__candidate__firstName}} {{322665531__candidate__lastName}}, {{322665531__jobOrder__title}}</strong>.&nbsp;\n</p>\n<p>\n    &nbsp;\n</p>\n<p>\n    If there is no directly comparable permanent role, please complete the form accordingly.&nbsp;\n</p>\n<p>\n    &nbsp;\n</p>\n<p>\n    We would appreciate it if the details could be completed and returned at your earliest convenience. Should you have any questions or need further clarification, please do not hesitate to contact us.\n</p>\n<p>\n    &nbsp;\n</p>\n<p>\n    Thank you for your assistance in helping us remain compliant with AWR and ensuring fair treatment for workers.\n</p>\n<p>\n    &nbsp;\n</p>\n<p>\n    Kind regards,<br>\n    <strong>Propeller Pay</strong>\n</p>",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        -160
+      ],
+      "id": "0af379e5-6d3c-40ea-b7d2-9deb2816d0c4",
+      "name": "AWR Email",
+      "webhookId": "7f1b0be0-fe20-4304-9c24-a46a810adfc2",
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "7IaguepNlbcPCyIE",
+          "name": "Microsoft Outlook account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c0a680f6-7353-4066-8a34-e5cf83897230",
+              "leftValue": "={{322662201__event__columnTitle}}",
+              "rightValue": "AWR",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        624,
+        16
+      ],
+      "id": "55283545-93b9-48c9-bc3b-abfd523c3c82",
+      "name": "Is AWR or Welcome"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "3d2a73bd-f760-41f4-b707-c65e5ae71a90",
+              "leftValue": "={{322662201__event__columnTitle}}",
+              "rightValue": "Welcome",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "d1e41194-0b5f-4513-96c6-0af1bace81a3",
+              "leftValue": "={{322662201__Placement}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1088,
+        544
+      ],
+      "id": "31e610e3-fb32-4577-9adc-e89847fee607",
+      "name": "If Welcome or Exists"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Bullhorn Get Placement",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bullhorn Get Placement": {
+      "main": [
+        [
+          {
+            "node": "STRING: Docupilot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "STRING: Docupilot": {
+      "main": [
+        [
+          {
+            "node": "GET Monday Placement",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET Monday Placement": {
+      "main": [
+        [
+          {
+            "node": "GET Monday Agency Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET Monday Agency Details": {
+      "main": [
+        [
+          {
+            "node": "Is AWR or Welcome",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch1": {
+      "main": [
+        [
+          {
+            "node": "AWR Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send a message1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a message1": {
+      "main": [
+        [
+          {
+            "node": "Update Monday CRM Placement",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a message": {
+      "main": [
+        [
+          {
+            "node": "Update Monday CRM Placement1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is AWR or Welcome": {
+      "main": [
+        [
+          {
+            "node": "Switch1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "If Welcome or Exists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AWR Email": {
+      "main": [
+        [
+          {
+            "node": "Update Monday CRM Placement2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "3b1f7b87-0353-4d94-bb96-839a78f009e2",
+  "activeVersionId": null,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-02-05T20:42:02.086Z",
+      "createdAt": "2026-02-05T20:42:02.086Z",
+      "role": "workflow:owner",
+      "workflowId": "KBTbIniEy1FJvvNSIwvrd",
+      "projectId": "7K0b7BEJpzNXLaZY"
+    }
+  ],
+  "activeVersion": null,
+  "tags": []
+}

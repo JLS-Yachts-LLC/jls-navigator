@@ -41,7 +41,7 @@ async function uploadFile(siteId: string, token: string, fileName: string, conte
   const res = await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root:/${encodeURI(path)}:/content`, {
     method: "PUT",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": contentType },
-    body: bytes,
+    body: bytes as unknown as BodyInit,
   });
   if (!res.ok) {
     const err: any = await res.json().catch(() => ({}));
@@ -72,6 +72,24 @@ export async function seedTemplatesFolderHandler(_request: Request): Promise<Res
       { name: "DMA CF12a - Visiting Vessel Permit Application (template).pdf", type: "application/pdf", b64: CF12A_TEMPLATE_B64 },
       ...(arrivalB64 ? [{ name: VISA_ARRIVAL_DOC.filename, type: "application/pdf", b64: arrivalB64 }] : []),
     ];
+
+    // In-app text templates (Crew Placement contracts/payslips) — exported as .txt
+    // so the SharePoint folder mirrors what's editable in the app. Re-run this
+    // endpoint (fired automatically on template save) to refresh them.
+    const { data: cpTemplates } = await (supabaseAdmin as any)
+      .from("crew_placement_templates").select("name, kind, body").order("kind");
+    const sanitize = (s: string) => s.replace(/["*:<>?/\\|]/g, "-").trim().slice(0, 100);
+    for (const t of (cpTemplates ?? [])) {
+      if (!t?.name) continue;
+      const bytes = new TextEncoder().encode(String(t.body ?? ""));
+      let bin = "";
+      for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+      files.push({
+        name: `Crew Placement - ${sanitize(t.name)} (${t.kind ?? "template"}).txt`,
+        type: "text/plain",
+        b64: btoa(bin),
+      });
+    }
 
     const uploaded: { name: string; webUrl: string | null }[] = [];
     for (const f of files) {

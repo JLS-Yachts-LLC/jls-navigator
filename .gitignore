@@ -22,3 +22,6 @@ public/version.json
 .DS_Store
 Thumbs.db
 sp-discover.json
+
+# Local template/workflow archive (n8n exports contain live API credentials)
+assets/N8N/

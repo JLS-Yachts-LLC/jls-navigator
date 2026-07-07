@@ -1,0 +1,231 @@
+{
+  "updatedAt": "2026-04-08T15:51:35.490Z",
+  "createdAt": "2026-04-08T14:55:07.589Z",
+  "id": "E9R2T2debuO7h3Iv1-jhU",
+  "name": "Archive Boats 2024 - In progress",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "6e3657cb-ebd9-4635-a02f-ac0cbc654733",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "resource": "item",
+        "site": {
+          "__rl": true,
+          "value": "jlsyachts.sharepoint.com,3ca82142-88cd-4a7b-b5da-b60a3107fc2b,80f18e34-24eb-49d1-a7a7-e39daa7ff97a",
+          "mode": "list",
+          "cachedResultName": "Port Operations and Agency"
+        },
+        "list": {
+          "__rl": true,
+          "value": "acc0d799-dfb7-4bcb-a0fe-da2653379c38",
+          "mode": "list",
+          "cachedResultName": "Yachts"
+        },
+        "returnAll": true,
+        "options": {},
+        "simplify": false,
+        "requestOptions": {}
+      },
+      "type": "n8n-nodes-base.microsoftSharePoint",
+      "typeVersion": 1,
+      "position": [
+        208,
+        0
+      ],
+      "id": "21fe8eef-89c7-475e-b1f4-8c9e978bc0f5",
+      "name": "Get From Sharepoint",
+      "credentials": {
+        "microsoftSharePointOAuth2Api": {
+          "id": "vW8s9Q1M5VX61OUC",
+          "name": "Microsoft SharePoint account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "item",
+        "operation": "get",
+        "site": {
+          "__rl": true,
+          "value": "jlsyachts.sharepoint.com,3ca82142-88cd-4a7b-b5da-b60a3107fc2b,80f18e34-24eb-49d1-a7a7-e39daa7ff97a",
+          "mode": "list",
+          "cachedResultName": "Port Operations and Agency"
+        },
+        "list": {
+          "__rl": true,
+          "value": "acc0d799-dfb7-4bcb-a0fe-da2653379c38",
+          "mode": "list",
+          "cachedResultName": "Yachts"
+        },
+        "item": {
+          "__rl": true,
+          "value": "={{ $json.id }}",
+          "mode": "id"
+        },
+        "simplify": false,
+        "requestOptions": {}
+      },
+      "type": "n8n-nodes-base.microsoftSharePoint",
+      "typeVersion": 1,
+      "position": [
+        416,
+        0
+      ],
+      "id": "1bfe19c5-b348-4d38-8a34-b46cbe366c91",
+      "name": "Get an item",
+      "credentials": {
+        "microsoftSharePointOAuth2Api": {
+          "id": "vW8s9Q1M5VX61OUC",
+          "name": "Microsoft SharePoint account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "40336501-df78-4502-82b2-41babaad40ae",
+              "leftValue": "={{ $json.fields.ETD }}",
+              "rightValue": "2024-12-31T23:59:59",
+              "operator": {
+                "type": "dateTime",
+                "operation": "beforeOrEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        832,
+        0
+      ],
+      "id": "9cd553ab-51f1-473e-8b25-425d6f354530",
+      "name": "Filter"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "ccb308b3-97da-4b86-b461-09eda96a8656",
+              "leftValue": "={{ $json.fields.ETD }}",
+              "rightValue": "",
+              "operator": {
+                "type": "dateTime",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        624,
+        0
+      ],
+      "id": "eb726078-0435-4655-ac3c-00ec2e09332b",
+      "name": "Filter1"
+    }
+  ],
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Get From Sharepoint",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get From Sharepoint": {
+      "main": [
+        [
+          {
+            "node": "Get an item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get an item": {
+      "main": [
+        [
+          {
+            "node": "Filter1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter1": {
+      "main": [
+        [
+          {
+            "node": "Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "d7b075f5-de39-4b04-8786-30c182d8e1d6",
+  "activeVersionId": null,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-04-08T14:55:07.597Z",
+      "createdAt": "2026-04-08T14:55:07.597Z",
+      "role": "workflow:owner",
+      "workflowId": "E9R2T2debuO7h3Iv1-jhU",
+      "projectId": "7K0b7BEJpzNXLaZY"
+    }
+  ],
+  "activeVersion": null,
+  "tags": []
+}

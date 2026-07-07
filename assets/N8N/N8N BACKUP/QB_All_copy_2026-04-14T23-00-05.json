@@ -1,0 +1,626 @@
+{
+  "updatedAt": "2026-04-06T08:31:45.000Z",
+  "createdAt": "2026-04-06T08:26:43.808Z",
+  "id": "YlfO5y4z0kx3K2S1",
+  "name": "QB (All) copy",
+  "active": false,
+  "isArchived": true,
+  "nodes": [
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.data[1].invoiceType }}",
+                    "rightValue": "Invoice",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    },
+                    "id": "21a45089-1368-432b-9444-fdd67259bf7f"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "1a9016ba-dad0-4417-b716-25b17c838c82",
+                    "leftValue": "={{ $json.type }}",
+                    "rightValue": "estimate",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "9bcdcffd-7549-444f-8f02-ebffc7b59a69",
+                    "leftValue": "={{ $json.type }}",
+                    "rightValue": "purchaseorder",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "e5145d8b-f711-490c-88f1-95f29ae02e76",
+                    "leftValue": "={{ $json.type }}",
+                    "rightValue": "payment",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "4a69dc5a-c40b-417d-8b9c-287c4dbce114",
+                    "leftValue": "={{ $json.data[1].invoiceType }}",
+                    "rightValue": "Pro-Forma",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        624,
+        224
+      ],
+      "id": "80cb9b84-00a0-41c7-90ab-66eed50923c5",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse the outer data\nconst outerData = $input.first().json.data;\n\n// Parse the JSON string inside data\nconst events = JSON.parse(outerData);\n\n// Get the first event\nconst firstEvent = events[0];\n\n// Extract all properties separately\nconst specversion = firstEvent.specversion;\nconst id = firstEvent.id;\nconst source = firstEvent.source;\nconst type = firstEvent.type;\nconst time = firstEvent.time;\nconst intuitentityid = firstEvent.intuitentityid;\nconst intuitaccountid = firstEvent.intuitaccountid;\n\n// Return as n8n expects - array with json object\nreturn [\n  {\n    json: {\n      specversion,\n      id,\n      source,\n      type,\n      time,\n      intuitentityid,\n      intuitaccountid\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -944,
+        272
+      ],
+      "id": "b6e79f01-433b-4ce3-abfd-ecacb3a264b9",
+      "name": "JsonParse"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "b25c7cbd-e103-419d-b6a7-547b8ba39ce6",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1392,
+        272
+      ],
+      "id": "0a91ceb2-0286-45ab-85a2-e97afc490da3",
+      "name": "Webhook",
+      "webhookId": "b25c7cbd-e103-419d-b6a7-547b8ba39ce6",
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "Oh9mx78sghpTd8bT",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/Oh9mx78sghpTd8bT",
+          "cachedResultName": "QB Invoice"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        848,
+        -112
+      ],
+      "id": "81f6fe42-07c9-409c-9735-11c02f7079b5",
+      "name": "Call 'QB Invoice'"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "BJGyDFlfD1t00XMB",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/BJGyDFlfD1t00XMB",
+          "cachedResultName": "QB (Quotation/Estimate)"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        848,
+        80
+      ],
+      "id": "6ea44b35-d8e1-4560-957c-744088ceead4",
+      "name": "Call 'QB Estimate'"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "4ROPIyekX3ebs9LB",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/4ROPIyekX3ebs9LB",
+          "cachedResultName": "QB (Receive Payment)"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        848,
+        464
+      ],
+      "id": "a1c87cca-cd96-443b-86d6-943201335301",
+      "name": "Call 'QB SR'"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "38bea6e8-815a-4d9f-adb7-e7ab8a2db509",
+              "leftValue": "={{ $json.type }}",
+              "rightValue": "invoice",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -688,
+        272
+      ],
+      "id": "84a9f40d-f442-4141-b47e-b6ee4546da54",
+      "name": "If"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        176,
+        352
+      ],
+      "id": "d0d57718-fe06-413c-a82d-ddb8a5630858",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the CustomField value\nconst customField = $input.first().json.Invoice.CustomField[0];\nconst stringValue = customField?.StringValue;\n\n// Determine invoice type\nlet invoiceType;\n\nif (stringValue === '2') {\n  invoiceType = 'Pro-Forma';\n} else {\n  // If value is '1', empty, null, or undefined - default to 'Invoice'\n  invoiceType = 'Invoice';\n}\n\n// Return in n8n format (array of objects with json property)\nreturn [\n  {\n    json: {\n      invoiceType: invoiceType\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -48,
+        544
+      ],
+      "id": "5e7998e7-5632-4cd1-9f43-3fb109866c68",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "fNBKiXQSmEbiQXCz",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/fNBKiXQSmEbiQXCz",
+          "cachedResultName": "QB (PRO-FORMA)"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        848,
+        656
+      ],
+      "id": "665ddde9-3739-4a5e-896a-ee187d3627cc",
+      "name": "Call 'QB (PRO-FORMA)'"
+    },
+    {
+      "parameters": {
+        "operation": "text",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        -1168,
+        272
+      ],
+      "id": "fc6ea0b0-7799-47d3-a9cc-4047a1110a89",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "url": "=https://quickbooks.api.intuit.com/v3/company/9341454112300561/invoice/{{ $json.intuitentityid }}?include=enhancedAllCustomFields",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -336,
+        544
+      ],
+      "id": "0f558d0d-5943-49e4-8fb5-07a048415b90",
+      "name": "HTTP Request4",
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        384,
+        352
+      ],
+      "id": "c32c6046-70f6-47fa-94d1-df4b52dda233",
+      "name": "Aggregate"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "rVDc7DPuag9ySJYT",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/rVDc7DPuag9ySJYT",
+          "cachedResultName": "QB (Purchase Order)"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        848,
+        272
+      ],
+      "id": "fb6ca890-d460-46e7-85b7-bb0619db639d",
+      "name": "Call 'QB (Purchase Order)'"
+    },
+    {
+      "parameters": {
+        "content": "Workflow Overview\nThis is a QuickBooks webhook router that receives notifications from QuickBooks Online and routes different transaction types to specialized sub-workflows.\nStep-by-Step Breakdown\n1. Webhook Trigger\n\nReceives POST requests from QuickBooks at endpoint /841c1c3c-9326-4adf-9565-11c93a7ca72e\nQuickBooks sends notifications when invoices, estimates, purchase orders, or payments are created/updated\n\n2. Extract from File\n\nExtracts the raw text from the webhook payload\n\n3. JsonParse (Code Node)\n\nParses the nested JSON structure from QuickBooks\nExtracts key event properties: specversion, id, source, type, time, intuitentityid, intuitaccountid\nThe type field indicates what kind of transaction it is (invoice, estimate, payment, etc.)\n\n4. If Node - Invoice Check\n\nTRUE path: If type contains \"invoice\" → proceeds to fetch additional invoice details\nFALSE path: All other transaction types → skip directly to Switch\n\n5. HTTP Request4 (TRUE path only)\n\nFetches the full invoice details from QuickBooks API\nURL: https://quickbooks.api.intuit.com/v3/company/9341454112300561/invoice/{intuitentityid}?include=enhancedAllCustomFields\nThis retrieves custom fields to determine if it's a regular invoice or pro-forma\n\n6. Code in JavaScript\n\nExamines the CustomField[0].StringValue from the invoice\nIf value = '2': Sets invoiceType = \"Pro-Forma\"\nIf value = '1' or empty: Sets invoiceType = \"Invoice\"\n\n7. Merge\n\nCombines the original webhook data with the invoice type classification\n\n8. Aggregate\n\nConsolidates all the data into a single item for the Switch node\n\n9. Switch Node - Transaction Router\nRoutes to different sub-workflows based on transaction type:\n\nOutput 0: invoiceType contains \"Invoice\" → Call 'QB Invoice' workflow\nOutput 1: type contains \"estimate\" → Call 'QB Estimate' workflow\nOutput 2: type contains \"purchaseorder\" → Call 'QB (Purchase Order)' workflow\nOutput 3: type contains \"payment\" → Call 'QB SR' (Sales Receipt/Payment) workflow\nOutput 4: invoiceType equals \"Pro-Forma\" → Call 'QB (PRO-FORMA)' workflow\n\nKey Logic\nThe workflow handles a special case for invoices: it distinguishes between regular invoices and pro-forma invoices using a custom field. All other transaction types are routed based solely on their type property from the webhook.\nThis is essentially a smart dispatcher that ensures each QuickBooks transaction type gets processed by its appropriate specialized workflow.",
+        "height": 1120,
+        "width": 864
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -2336,
+        -368
+      ],
+      "id": "cf76fc92-e05b-4521-a9a1-270c705a41a9",
+      "name": "Sticky Note"
+    }
+  ],
+  "connections": {
+    "JsonParse": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Call 'QB Invoice'",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Call 'QB Estimate'",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Call 'QB (Purchase Order)'",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Call 'QB SR'",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Call 'QB (PRO-FORMA)'",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request4",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Aggregate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "JsonParse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request4": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false,
+    "errorWorkflow": "y12A3SFe0c-zldwc6GVd1"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {
+    "Webhook": [
+      {
+        "json": {
+          "headers": {
+            "host": "n8n.jlsyachts.com",
+            "user-agent": "intuit_notification_server/1.0",
+            "content-length": "270",
+            "accept": "application/json",
+            "accept-encoding": "gzip,deflate",
+            "content-type": "application/cloudevents-batch+json; charset=utf-8",
+            "intuit-created-time": "2026-04-04T15:36:14.362Z",
+            "intuit-notification-schema-version": "2.0",
+            "intuit-signature": "vJCrarl2G6OtFdgX0qPiTaJRqgI9HNO7wFYK/fyymkU=",
+            "intuit-signature-algorithm": "HMAC-SHA256",
+            "intuit-signature-id": "98642478-de80-4629-85a6-53d16c69343f",
+            "intuit-t-id": "ad043061-1ade-46e5-b2d4-8fd41d193d0a",
+            "x-forwarded-for": "54.203.162.10",
+            "x-forwarded-host": "n8n.jlsyachts.com",
+            "x-forwarded-port": "443",
+            "x-forwarded-proto": "https",
+            "x-forwarded-server": "b5b8753f399c",
+            "x-real-ip": "54.203.162.10"
+          },
+          "params": {},
+          "query": {},
+          "webhookUrl": "https://n8n.jlsyachts.com/webhook/841c1c3c-9326-4adf-9565-11c93a7ca72e",
+          "executionMode": "production"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "versionId": "cfa1785c-677a-48cc-a429-9a1a3cae7eb7",
+  "activeVersionId": null,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-04-06T08:26:43.821Z",
+      "createdAt": "2026-04-06T08:26:43.821Z",
+      "role": "workflow:owner",
+      "workflowId": "YlfO5y4z0kx3K2S1",
+      "projectId": "7K0b7BEJpzNXLaZY"
+    }
+  ],
+  "activeVersion": null,
+  "tags": []
+}

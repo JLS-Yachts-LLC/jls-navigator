@@ -1,0 +1,147 @@
+{
+  "updatedAt": "2025-11-28T11:59:49.000Z",
+  "createdAt": "2025-11-27T11:07:30.900Z",
+  "id": "1Do337eJnJIASVzS",
+  "name": "My workflow",
+  "active": false,
+  "isArchived": true,
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.id }}",
+          "mode": "id"
+        },
+        "options": {
+          "googleFileConversion": {
+            "conversion": {
+              "docsToFormat": "application/pdf"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        208,
+        -32
+      ],
+      "id": "e780ea77-dbbc-4076-8f0e-946fa756f168",
+      "name": "Download file",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "qmN1NMy0yhaotJmi",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "inputDataFieldName": "form",
+        "name": "={{ $json.form[0].filename }}",
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "root",
+          "cachedResultName": "/ (Root folder)"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -16,
+        -32
+      ],
+      "id": "52d1b656-911b-4d1e-933e-76794e6c8bb1",
+      "name": "Upload file",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "qmN1NMy0yhaotJmi",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "formTitle": "form",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "form",
+              "fieldType": "file"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.3,
+      "position": [
+        -240,
+        -32
+      ],
+      "id": "f6dc471b-c7dd-43fb-9105-d485fd5478bd",
+      "name": "On form submission",
+      "webhookId": "92d80e87-dba3-49a0-85da-68a1b15c5a29"
+    }
+  ],
+  "connections": {
+    "Download file": {
+      "main": [
+        []
+      ]
+    },
+    "Upload file": {
+      "main": [
+        [
+          {
+            "node": "Download file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "On form submission": {
+      "main": [
+        [
+          {
+            "node": "Upload file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "b253c921-e23e-4ee4-b25d-4015729f4636",
+  "activeVersionId": null,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2025-11-27T11:07:30.905Z",
+      "createdAt": "2025-11-27T11:07:30.905Z",
+      "role": "workflow:owner",
+      "workflowId": "1Do337eJnJIASVzS",
+      "projectId": "7K0b7BEJpzNXLaZY"
+    }
+  ],
+  "activeVersion": null,
+  "tags": []
+}

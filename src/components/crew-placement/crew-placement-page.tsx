@@ -1069,6 +1069,9 @@ function Templates({ templates, reload }: { templates: any[]; reload: () => Prom
     const { error } = f.id ? await db().from("crew_placement_templates").update(row).eq("id", f.id) : await db().from("crew_placement_templates").insert(row);
     if (error) return toast.error(error.message);
     toast.success("Template saved"); setEdit(null); await reload();
+    // Mirror all templates into the SharePoint "Templates - Polaris" folder
+    // (fire-and-forget — the app copy is the source of truth).
+    fetch("/api/admin/seed-templates-folder", { method: "POST" }).catch(() => {});
   }
   return (
     <div className="space-y-3">

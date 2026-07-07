@@ -1,0 +1,1554 @@
+{
+  "updatedAt": "2026-04-04T15:28:37.646Z",
+  "createdAt": "2026-01-07T07:19:46.472Z",
+  "id": "QLal9eAJIh7IDOrD",
+  "name": "Update Records in Supabase",
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "resource": "estimate",
+        "operation": "getAll",
+        "returnAll": true,
+        "filters": {}
+      },
+      "type": "n8n-nodes-base.quickbooks",
+      "typeVersion": 1,
+      "position": [
+        -880,
+        -32
+      ],
+      "id": "5aa57cbb-29f1-4258-9211-fe4bcb6e490f",
+      "name": "Get many estimates",
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "6B4pHpkpZuG10ER7",
+          "name": "QuickBooks Online account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const invoiceIds = $input.all().map(item => item.json.invoiceId).filter(id => id);\nconst docIds = $input.all().map(item => item.json.DocID).filter(id => id);\n\nconst notMatching = docIds.filter(id => !invoiceIds.includes(id));\n\nreturn notMatching.map(id => ({ DocID: id }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -208,
+        64
+      ],
+      "id": "9c1d740a-a173-46fe-a638-e229d70f9960",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract all document IDs from all input items\n// Loop through all input items and extract their IDs\nconst items = $input.all().map(item => {\n  return {\n    json: {\n      invoiceId: item.json.Id\n    }\n  };\n});\n\n// Return array of all extracted IDs\nreturn items;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -656,
+        -32
+      ],
+      "id": "d1527b40-cac1-473f-ae44-9fb79b698122",
+      "name": "DOCID"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "QBO Logs",
+        "returnAll": true,
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "DocType",
+              "condition": "eq",
+              "keyValue": "Estimate"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -880,
+        160
+      ],
+      "id": "9ec7b7df-8254-43a6-ad1c-93e3b174fa8a",
+      "name": "ESTIMATE",
+      "credentials": {
+        "supabaseApi": {
+          "id": "sUZHtamV8a5MJ4u7",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -432,
+        64
+      ],
+      "id": "fd2eeab4-ab06-4ad2-82bf-2e4c191a2111",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(item => ({\n  DocID: item.json.DocID\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -656,
+        160
+      ],
+      "id": "5385570e-fbc4-41a3-b6e1-84e49b7224d2",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "tableId": "QBO Logs",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "DocID",
+              "condition": "eq",
+              "keyValue": "={{ $json.DocID }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        16,
+        64
+      ],
+      "id": "1dbfa5cf-dfed-4f67-afaa-1719bdb4bac2",
+      "name": "Delete a row",
+      "credentials": {
+        "supabaseApi": {
+          "id": "sUZHtamV8a5MJ4u7",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1104,
+        64
+      ],
+      "id": "70a4a915-4657-4d25-8828-3e7e15bac2ba",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "const invoiceIds = $input.all().map(item => item.json.invoiceId).filter(id => id);\nconst docIds = $input.all().map(item => item.json.DocID).filter(id => id);\n\nconst notMatching = docIds.filter(id => !invoiceIds.includes(id));\n\nreturn notMatching.map(id => ({ DocID: id }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -208,
+        480
+      ],
+      "id": "25c4eb3c-623a-40f8-a633-e35ac67b288d",
+      "name": "Code in JavaScript2"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract all document IDs from all input items\n// Loop through all input items and extract their IDs\nconst items = $input.all().map(item => {\n  return {\n    json: {\n      invoiceId: item.json.Id\n    }\n  };\n});\n\n// Return array of all extracted IDs\nreturn items;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -656,
+        384
+      ],
+      "id": "786b9875-aca6-4797-a0db-a0e8a45a2be0",
+      "name": "DOCID1"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -432,
+        480
+      ],
+      "id": "b2f8e9b9-8a6f-4598-8254-98d10e1f4f9d",
+      "name": "Merge1"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(item => ({\n  DocID: item.json.DocID\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -656,
+        576
+      ],
+      "id": "9f2394ac-1d3c-4b18-9cd6-ee08b9e3c0c1",
+      "name": "Code in JavaScript3"
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "tableId": "QBO Logs",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "DocID",
+              "condition": "eq",
+              "keyValue": "={{ $json.DocID }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        16,
+        480
+      ],
+      "id": "f1647711-9c46-4228-91e1-8766b26ec3a3",
+      "name": "Delete a row1",
+      "credentials": {
+        "supabaseApi": {
+          "id": "sUZHtamV8a5MJ4u7",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "triggerAtMinute": 10
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1104,
+        480
+      ],
+      "id": "a2ca9bf2-7c1a-4640-8218-3d61155aba70",
+      "name": "Schedule Trigger1"
+    },
+    {
+      "parameters": {
+        "resource": "invoice",
+        "operation": "getAll",
+        "returnAll": true,
+        "filters": {}
+      },
+      "type": "n8n-nodes-base.quickbooks",
+      "typeVersion": 1,
+      "position": [
+        -880,
+        384
+      ],
+      "id": "3eb1a94b-46f8-4c8f-b689-43edc8bd5256",
+      "name": "Get many invoices",
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "6B4pHpkpZuG10ER7",
+          "name": "QuickBooks Online account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "QBO Logs",
+        "returnAll": true,
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "DocType",
+              "condition": "eq",
+              "keyValue": "Invoice"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -880,
+        576
+      ],
+      "id": "0469247c-cc33-4b71-bf1a-b7972cde771e",
+      "name": "INVOICE",
+      "credentials": {
+        "supabaseApi": {
+          "id": "sUZHtamV8a5MJ4u7",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const invoiceIds = $input.all().map(item => item.json.invoiceId).filter(id => id);\nconst docIds = $input.all().map(item => item.json.DocID).filter(id => id);\n\nconst notMatching = docIds.filter(id => !invoiceIds.includes(id));\n\nreturn notMatching.map(id => ({ DocID: id }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -208,
+        896
+      ],
+      "id": "1cd4af56-38e7-4f89-b66c-f2f8b2fceaac",
+      "name": "Code in JavaScript4"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract all document IDs from all input items\n// Loop through all input items and extract their IDs\nconst items = $input.all().map(item => {\n  return {\n    json: {\n      invoiceId: item.json.Id\n    }\n  };\n});\n\n// Return array of all extracted IDs\nreturn items;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -656,
+        800
+      ],
+      "id": "ee60a154-797b-44c8-bf65-28f133e94a0c",
+      "name": "DOCID2"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -432,
+        896
+      ],
+      "id": "987f8c35-64a6-4853-ae20-4fc14f6d48db",
+      "name": "Merge2"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(item => ({\n  DocID: item.json.DocID\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -656,
+        992
+      ],
+      "id": "83102b12-f0a9-4ebd-b812-e99f16da02f9",
+      "name": "Code in JavaScript5"
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "tableId": "QBO Logs",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "DocID",
+              "condition": "eq",
+              "keyValue": "={{ $json.DocID }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        16,
+        896
+      ],
+      "id": "4ed656e1-c265-4752-bf78-2ac2737fe57f",
+      "name": "Delete a row2",
+      "credentials": {
+        "supabaseApi": {
+          "id": "sUZHtamV8a5MJ4u7",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "triggerAtMinute": 20
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1104,
+        896
+      ],
+      "id": "4b3e5732-f183-4516-9ca0-e95e95b1ddcd",
+      "name": "Schedule Trigger2"
+    },
+    {
+      "parameters": {
+        "content": "## ESTIMATE",
+        "height": 384,
+        "width": 1392
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1184,
+        -64
+      ],
+      "typeVersion": 1,
+      "id": "443402ad-9618-455a-9882-4ee6982822cf",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "## INVOICE",
+        "height": 384,
+        "width": 1392
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1184,
+        368
+      ],
+      "typeVersion": 1,
+      "id": "7bae18d5-4f7c-417c-8228-aced5072cf1d",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "## PRO-FORMA",
+        "height": 384,
+        "width": 1392
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1184,
+        784
+      ],
+      "typeVersion": 1,
+      "id": "0aa245d9-7ca6-422a-ae8e-2b5b5046fab0",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "resource": "invoice",
+        "operation": "getAll",
+        "returnAll": true,
+        "filters": {}
+      },
+      "type": "n8n-nodes-base.quickbooks",
+      "typeVersion": 1,
+      "position": [
+        -880,
+        800
+      ],
+      "id": "43c4a87b-83d2-4dc1-a6d9-7650a366a29a",
+      "name": "Get many Pro-forma",
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "6B4pHpkpZuG10ER7",
+          "name": "QuickBooks Online account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "QBO Logs",
+        "returnAll": true,
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "DocType",
+              "condition": "eq",
+              "keyValue": "Pro-Forma"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -880,
+        992
+      ],
+      "id": "8b308b1a-5516-4a92-8360-93098ad607c9",
+      "name": "Pro-Forma",
+      "credentials": {
+        "supabaseApi": {
+          "id": "sUZHtamV8a5MJ4u7",
+          "name": "Supabase account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Get many estimates": {
+      "main": [
+        [
+          {
+            "node": "DOCID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DOCID": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ESTIMATE": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Delete a row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get many estimates",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "ESTIMATE",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript2": {
+      "main": [
+        [
+          {
+            "node": "Delete a row1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DOCID1": {
+      "main": [
+        [
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript3": {
+      "main": [
+        [
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger1": {
+      "main": [
+        [
+          {
+            "node": "Get many invoices",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "INVOICE",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get many invoices": {
+      "main": [
+        [
+          {
+            "node": "DOCID1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "INVOICE": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript4": {
+      "main": [
+        [
+          {
+            "node": "Delete a row2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DOCID2": {
+      "main": [
+        [
+          {
+            "node": "Merge2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge2": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript5": {
+      "main": [
+        [
+          {
+            "node": "Merge2",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger2": {
+      "main": [
+        [
+          {
+            "node": "Get many Pro-forma",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Pro-Forma",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get many Pro-forma": {
+      "main": [
+        [
+          {
+            "node": "DOCID2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pro-Forma": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner",
+    "executionTimeout": 3600,
+    "availableInMCP": false,
+    "errorWorkflow": "y12A3SFe0c-zldwc6GVd1"
+  },
+  "staticData": {
+    "node:Schedule Trigger": {
+      "recurrenceRules": []
+    },
+    "node:Schedule Trigger1": {
+      "recurrenceRules": []
+    },
+    "node:Schedule Trigger2": {
+      "recurrenceRules": []
+    }
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "0bf38ad5-49d0-4803-a1b2-06e2c7c8a1a5",
+  "activeVersionId": "0bf38ad5-49d0-4803-a1b2-06e2c7c8a1a5",
+  "triggerCount": 3,
+  "shared": [
+    {
+      "updatedAt": "2026-01-07T07:19:46.492Z",
+      "createdAt": "2026-01-07T07:19:46.492Z",
+      "role": "workflow:owner",
+      "workflowId": "QLal9eAJIh7IDOrD",
+      "projectId": "7K0b7BEJpzNXLaZY"
+    }
+  ],
+  "activeVersion": {
+    "updatedAt": "2026-01-21T05:47:47.000Z",
+    "createdAt": "2026-01-21T05:47:42.989Z",
+    "versionId": "0bf38ad5-49d0-4803-a1b2-06e2c7c8a1a5",
+    "workflowId": "QLal9eAJIh7IDOrD",
+    "nodes": [
+      {
+        "parameters": {
+          "resource": "estimate",
+          "operation": "getAll",
+          "returnAll": true,
+          "filters": {}
+        },
+        "type": "n8n-nodes-base.quickbooks",
+        "typeVersion": 1,
+        "position": [
+          -880,
+          -32
+        ],
+        "id": "5aa57cbb-29f1-4258-9211-fe4bcb6e490f",
+        "name": "Get many estimates",
+        "credentials": {
+          "quickBooksOAuth2Api": {
+            "id": "6B4pHpkpZuG10ER7",
+            "name": "QuickBooks Online account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "const invoiceIds = $input.all().map(item => item.json.invoiceId).filter(id => id);\nconst docIds = $input.all().map(item => item.json.DocID).filter(id => id);\n\nconst notMatching = docIds.filter(id => !invoiceIds.includes(id));\n\nreturn notMatching.map(id => ({ DocID: id }));"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -208,
+          64
+        ],
+        "id": "9c1d740a-a173-46fe-a638-e229d70f9960",
+        "name": "Code in JavaScript1"
+      },
+      {
+        "parameters": {
+          "jsCode": "// Extract all document IDs from all input items\n// Loop through all input items and extract their IDs\nconst items = $input.all().map(item => {\n  return {\n    json: {\n      invoiceId: item.json.Id\n    }\n  };\n});\n\n// Return array of all extracted IDs\nreturn items;"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -656,
+          -32
+        ],
+        "id": "d1527b40-cac1-473f-ae44-9fb79b698122",
+        "name": "DOCID"
+      },
+      {
+        "parameters": {
+          "operation": "getAll",
+          "tableId": "QBO Logs",
+          "returnAll": true,
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "DocType",
+                "condition": "eq",
+                "keyValue": "Estimate"
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [
+          -880,
+          160
+        ],
+        "id": "9ec7b7df-8254-43a6-ad1c-93e3b174fa8a",
+        "name": "ESTIMATE",
+        "credentials": {
+          "supabaseApi": {
+            "id": "sUZHtamV8a5MJ4u7",
+            "name": "Supabase account"
+          }
+        }
+      },
+      {
+        "parameters": {},
+        "type": "n8n-nodes-base.merge",
+        "typeVersion": 3.2,
+        "position": [
+          -432,
+          64
+        ],
+        "id": "fd2eeab4-ab06-4ad2-82bf-2e4c191a2111",
+        "name": "Merge"
+      },
+      {
+        "parameters": {
+          "jsCode": "return $input.all().map(item => ({\n  DocID: item.json.DocID\n}));"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -656,
+          160
+        ],
+        "id": "5385570e-fbc4-41a3-b6e1-84e49b7224d2",
+        "name": "Code in JavaScript"
+      },
+      {
+        "parameters": {
+          "operation": "delete",
+          "tableId": "QBO Logs",
+          "matchType": "allFilters",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "DocID",
+                "condition": "eq",
+                "keyValue": "={{ $json.DocID }}"
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [
+          16,
+          64
+        ],
+        "id": "1dbfa5cf-dfed-4f67-afaa-1719bdb4bac2",
+        "name": "Delete a row",
+        "credentials": {
+          "supabaseApi": {
+            "id": "sUZHtamV8a5MJ4u7",
+            "name": "Supabase account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "hours"
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.2,
+        "position": [
+          -1104,
+          64
+        ],
+        "id": "70a4a915-4657-4d25-8828-3e7e15bac2ba",
+        "name": "Schedule Trigger"
+      },
+      {
+        "parameters": {
+          "jsCode": "const invoiceIds = $input.all().map(item => item.json.invoiceId).filter(id => id);\nconst docIds = $input.all().map(item => item.json.DocID).filter(id => id);\n\nconst notMatching = docIds.filter(id => !invoiceIds.includes(id));\n\nreturn notMatching.map(id => ({ DocID: id }));"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -208,
+          480
+        ],
+        "id": "25c4eb3c-623a-40f8-a633-e35ac67b288d",
+        "name": "Code in JavaScript2"
+      },
+      {
+        "parameters": {
+          "jsCode": "// Extract all document IDs from all input items\n// Loop through all input items and extract their IDs\nconst items = $input.all().map(item => {\n  return {\n    json: {\n      invoiceId: item.json.Id\n    }\n  };\n});\n\n// Return array of all extracted IDs\nreturn items;"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -656,
+          384
+        ],
+        "id": "786b9875-aca6-4797-a0db-a0e8a45a2be0",
+        "name": "DOCID1"
+      },
+      {
+        "parameters": {},
+        "type": "n8n-nodes-base.merge",
+        "typeVersion": 3.2,
+        "position": [
+          -432,
+          480
+        ],
+        "id": "b2f8e9b9-8a6f-4598-8254-98d10e1f4f9d",
+        "name": "Merge1"
+      },
+      {
+        "parameters": {
+          "jsCode": "return $input.all().map(item => ({\n  DocID: item.json.DocID\n}));"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -656,
+          576
+        ],
+        "id": "9f2394ac-1d3c-4b18-9cd6-ee08b9e3c0c1",
+        "name": "Code in JavaScript3"
+      },
+      {
+        "parameters": {
+          "operation": "delete",
+          "tableId": "QBO Logs",
+          "matchType": "allFilters",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "DocID",
+                "condition": "eq",
+                "keyValue": "={{ $json.DocID }}"
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [
+          16,
+          480
+        ],
+        "id": "f1647711-9c46-4228-91e1-8766b26ec3a3",
+        "name": "Delete a row1",
+        "credentials": {
+          "supabaseApi": {
+            "id": "sUZHtamV8a5MJ4u7",
+            "name": "Supabase account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "hours",
+                "triggerAtMinute": 10
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.2,
+        "position": [
+          -1104,
+          480
+        ],
+        "id": "a2ca9bf2-7c1a-4640-8218-3d61155aba70",
+        "name": "Schedule Trigger1"
+      },
+      {
+        "parameters": {
+          "resource": "invoice",
+          "operation": "getAll",
+          "returnAll": true,
+          "filters": {}
+        },
+        "type": "n8n-nodes-base.quickbooks",
+        "typeVersion": 1,
+        "position": [
+          -880,
+          384
+        ],
+        "id": "3eb1a94b-46f8-4c8f-b689-43edc8bd5256",
+        "name": "Get many invoices",
+        "credentials": {
+          "quickBooksOAuth2Api": {
+            "id": "6B4pHpkpZuG10ER7",
+            "name": "QuickBooks Online account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "operation": "getAll",
+          "tableId": "QBO Logs",
+          "returnAll": true,
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "DocType",
+                "condition": "eq",
+                "keyValue": "Invoice"
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [
+          -880,
+          576
+        ],
+        "id": "0469247c-cc33-4b71-bf1a-b7972cde771e",
+        "name": "INVOICE",
+        "credentials": {
+          "supabaseApi": {
+            "id": "sUZHtamV8a5MJ4u7",
+            "name": "Supabase account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "const invoiceIds = $input.all().map(item => item.json.invoiceId).filter(id => id);\nconst docIds = $input.all().map(item => item.json.DocID).filter(id => id);\n\nconst notMatching = docIds.filter(id => !invoiceIds.includes(id));\n\nreturn notMatching.map(id => ({ DocID: id }));"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -208,
+          896
+        ],
+        "id": "1cd4af56-38e7-4f89-b66c-f2f8b2fceaac",
+        "name": "Code in JavaScript4"
+      },
+      {
+        "parameters": {
+          "jsCode": "// Extract all document IDs from all input items\n// Loop through all input items and extract their IDs\nconst items = $input.all().map(item => {\n  return {\n    json: {\n      invoiceId: item.json.Id\n    }\n  };\n});\n\n// Return array of all extracted IDs\nreturn items;"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -656,
+          800
+        ],
+        "id": "ee60a154-797b-44c8-bf65-28f133e94a0c",
+        "name": "DOCID2"
+      },
+      {
+        "parameters": {},
+        "type": "n8n-nodes-base.merge",
+        "typeVersion": 3.2,
+        "position": [
+          -432,
+          896
+        ],
+        "id": "987f8c35-64a6-4853-ae20-4fc14f6d48db",
+        "name": "Merge2"
+      },
+      {
+        "parameters": {
+          "jsCode": "return $input.all().map(item => ({\n  DocID: item.json.DocID\n}));"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -656,
+          992
+        ],
+        "id": "83102b12-f0a9-4ebd-b812-e99f16da02f9",
+        "name": "Code in JavaScript5"
+      },
+      {
+        "parameters": {
+          "operation": "delete",
+          "tableId": "QBO Logs",
+          "matchType": "allFilters",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "DocID",
+                "condition": "eq",
+                "keyValue": "={{ $json.DocID }}"
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [
+          16,
+          896
+        ],
+        "id": "4ed656e1-c265-4752-bf78-2ac2737fe57f",
+        "name": "Delete a row2",
+        "credentials": {
+          "supabaseApi": {
+            "id": "sUZHtamV8a5MJ4u7",
+            "name": "Supabase account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "hours",
+                "triggerAtMinute": 20
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.2,
+        "position": [
+          -1104,
+          896
+        ],
+        "id": "4b3e5732-f183-4516-9ca0-e95e95b1ddcd",
+        "name": "Schedule Trigger2"
+      },
+      {
+        "parameters": {
+          "content": "## ESTIMATE",
+          "height": 384,
+          "width": 1392
+        },
+        "type": "n8n-nodes-base.stickyNote",
+        "position": [
+          -1184,
+          -64
+        ],
+        "typeVersion": 1,
+        "id": "443402ad-9618-455a-9882-4ee6982822cf",
+        "name": "Sticky Note"
+      },
+      {
+        "parameters": {
+          "content": "## INVOICE",
+          "height": 384,
+          "width": 1392
+        },
+        "type": "n8n-nodes-base.stickyNote",
+        "position": [
+          -1184,
+          368
+        ],
+        "typeVersion": 1,
+        "id": "7bae18d5-4f7c-417c-8228-aced5072cf1d",
+        "name": "Sticky Note1"
+      },
+      {
+        "parameters": {
+          "content": "## PRO-FORMA",
+          "height": 384,
+          "width": 1392
+        },
+        "type": "n8n-nodes-base.stickyNote",
+        "position": [
+          -1184,
+          784
+        ],
+        "typeVersion": 1,
+        "id": "0aa245d9-7ca6-422a-ae8e-2b5b5046fab0",
+        "name": "Sticky Note2"
+      },
+      {
+        "parameters": {
+          "resource": "invoice",
+          "operation": "getAll",
+          "returnAll": true,
+          "filters": {}
+        },
+        "type": "n8n-nodes-base.quickbooks",
+        "typeVersion": 1,
+        "position": [
+          -880,
+          800
+        ],
+        "id": "43c4a87b-83d2-4dc1-a6d9-7650a366a29a",
+        "name": "Get many Pro-forma",
+        "credentials": {
+          "quickBooksOAuth2Api": {
+            "id": "6B4pHpkpZuG10ER7",
+            "name": "QuickBooks Online account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "operation": "getAll",
+          "tableId": "QBO Logs",
+          "returnAll": true,
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "DocType",
+                "condition": "eq",
+                "keyValue": "Pro-Forma"
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [
+          -880,
+          992
+        ],
+        "id": "8b308b1a-5516-4a92-8360-93098ad607c9",
+        "name": "Pro-Forma",
+        "credentials": {
+          "supabaseApi": {
+            "id": "sUZHtamV8a5MJ4u7",
+            "name": "Supabase account"
+          }
+        }
+      }
+    ],
+    "connections": {
+      "Get many estimates": {
+        "main": [
+          [
+            {
+              "node": "DOCID",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "DOCID": {
+        "main": [
+          [
+            {
+              "node": "Merge",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "ESTIMATE": {
+        "main": [
+          [
+            {
+              "node": "Code in JavaScript",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Merge": {
+        "main": [
+          [
+            {
+              "node": "Code in JavaScript1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Code in JavaScript": {
+        "main": [
+          [
+            {
+              "node": "Merge",
+              "type": "main",
+              "index": 1
+            }
+          ]
+        ]
+      },
+      "Code in JavaScript1": {
+        "main": [
+          [
+            {
+              "node": "Delete a row",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Schedule Trigger": {
+        "main": [
+          [
+            {
+              "node": "Get many estimates",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "ESTIMATE",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Code in JavaScript2": {
+        "main": [
+          [
+            {
+              "node": "Delete a row1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "DOCID1": {
+        "main": [
+          [
+            {
+              "node": "Merge1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Merge1": {
+        "main": [
+          [
+            {
+              "node": "Code in JavaScript2",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Code in JavaScript3": {
+        "main": [
+          [
+            {
+              "node": "Merge1",
+              "type": "main",
+              "index": 1
+            }
+          ]
+        ]
+      },
+      "Schedule Trigger1": {
+        "main": [
+          [
+            {
+              "node": "Get many invoices",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "INVOICE",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get many invoices": {
+        "main": [
+          [
+            {
+              "node": "DOCID1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "INVOICE": {
+        "main": [
+          [
+            {
+              "node": "Code in JavaScript3",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Code in JavaScript4": {
+        "main": [
+          [
+            {
+              "node": "Delete a row2",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "DOCID2": {
+        "main": [
+          [
+            {
+              "node": "Merge2",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Merge2": {
+        "main": [
+          [
+            {
+              "node": "Code in JavaScript4",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Code in JavaScript5": {
+        "main": [
+          [
+            {
+              "node": "Merge2",
+              "type": "main",
+              "index": 1
+            }
+          ]
+        ]
+      },
+      "Schedule Trigger2": {
+        "main": [
+          [
+            {
+              "node": "Get many Pro-forma",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Pro-Forma",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get many Pro-forma": {
+        "main": [
+          [
+            {
+              "node": "DOCID2",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Pro-Forma": {
+        "main": [
+          [
+            {
+              "node": "Code in JavaScript5",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "Matthew Peeters",
+    "name": "Version 0bf38ad5",
+    "description": "",
+    "autosaved": false
+  },
+  "tags": []
+}

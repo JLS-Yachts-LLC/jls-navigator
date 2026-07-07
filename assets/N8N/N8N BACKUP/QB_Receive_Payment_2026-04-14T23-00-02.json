@@ -1,0 +1,953 @@
+{
+  "updatedAt": "2026-04-10T05:24:20.209Z",
+  "createdAt": "2025-11-27T06:26:57.993Z",
+  "id": "4ROPIyekX3ebs9LB",
+  "name": "QB (Receive Payment)",
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "sourceKey": "data",
+        "data": "={\n  \"receiptno\": \"{{ $json.PaymentRefNum }}\",\n  \"date\": \"{{ $json.CreateTime }}\",\n  \"receivedfrommr/ms\": \"{{ $json.DisplayName }}\",\n  \"thesumof\": \"{{ $('Code').item.json.TotalAmtInWords }}\",\n  \"cash/chequeno\": \"{{ $json.PaymentRefNum }}\",\n  \"dated\": \"{{ $json.CreateTime }}\",\n  \"dhs\": \"{{ $json.Dhs }}\",\n  \"fils\": {{ $json.Fils }}\n\n}"
+      },
+      "type": "n8n-nodes-generate-report.generateReport",
+      "typeVersion": 1,
+      "position": [
+        2272,
+        -272
+      ],
+      "id": "31079d3a-7559-489d-8ca2-cacfe943e9f7",
+      "name": "Generate SR DOC"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.Files[0].Url }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2752,
+        -272
+      ],
+      "id": "d9a84c02-3ba2-460c-a9a1-6045c3c0d774",
+      "name": "Download PDF"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://quickbooks.api.intuit.com/v3/company/9341454112300561/upload",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "multipart/form-data"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "file_metadata_00",
+              "value": "={\n  \"AttachableRef\": [\n    {\n      \"IncludeOnSend\": false,\n      \"EntityRef\": {\n        \"type\": \"Payment\",\n        \"value\": \"{{ $('Processing-1').item.json.Id }}\"\n      }\n    }\n  ],\n  \"ContentType\": \"application/pdf\",\n  \"FileName\": \"{{ $json.Files[0].FileName }}\"\n}"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "file_content_01",
+              "inputDataFieldName": "=data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3152,
+        -272
+      ],
+      "id": "3dea7721-57a6-4362-9c8d-21123d416ed1",
+      "name": "Upload to QBO",
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "6B4pHpkpZuG10ER7",
+          "name": "QuickBooks Online account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://quickbooks.api.intuit.com/v3/company/9341454112300561/attachable",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"AttachableRef\": [\n    {\n      \"IncludeOnSend\": false,\n      \"EntityRef\": {\n        \"type\": \"Payment\",\n        \"value\": \"{{ $('Processing-1').item.json.Id }}\"\n      }\n    }\n  ],\n  \"FileName\": \"{{ $('DOC TO PDF 1').item.json.Files[0].FileName }}\",\n  \"ContentType\": \"application/pdf\",\n  \"Id\": \"{{ $('Upload to QBO').item.json.AttachableResponse[0].Attachable.Id }}\",\n  \"SyncToken\": \"{{ $('Upload to QBO').item.json.AttachableResponse[0].Attachable.SyncToken }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3376,
+        -272
+      ],
+      "id": "cf006779-916e-4529-98c1-59ef82113724",
+      "name": "Attach",
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "6B4pHpkpZuG10ER7",
+          "name": "QuickBooks Online account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the PaymentRefNum you want to filter by\n// const targetPaymentRefNum = \"$('Get a payment').first().json.PaymentRefNum\"; \nconst targetPaymentRefNum = $('Get a payment').first().json.Id\n\n// Get all input items from n8n\nconst items = $('Get a payment').all();\n\n// Extract payments from all items\nlet payments = [];\nfor (const item of items) {\n  if (item.json) {\n    if (Array.isArray(item.json)) {\n      payments.push(...item.json);\n    } else if (item.json.Id) {\n      // Add PaymentRefNum = Id (fallback)\n      item.json.PaymentRefNum = item.json.Id;\n      payments.push(item.json);\n    } else if (item.json.QueryResponse?.Payment) {\n      const paymentsData = item.json.QueryResponse.Payment;\n      payments.push(...(Array.isArray(paymentsData) ? paymentsData : [paymentsData]));\n    }\n  }\n}\n\n// Filter by PaymentRefNum\nconst filteredPayment = payments.find(payment => \n  String(payment.PaymentRefNum) === String(targetPaymentRefNum)\n);\n\n// If no payment found, return error\nif (!filteredPayment) {\n  return [{\n    json: {\n      error: \"No payment found with PaymentRefNum: \" + targetPaymentRefNum\n    }\n  }];\n}\n\n// Function to format date to YYYY/MM/DD\nconst formatDate = (dateString) => {\n  if (!dateString) return null;\n  const date = new Date(dateString);\n  const year = date.getFullYear();\n  const month = String(date.getMonth() + 1).padStart(2, '0');\n  const day = String(date.getDate()).padStart(2, '0');\n  return `${year}/${month}/${day}`;\n};\n\n// Function to split amount into Dhs and Fils\nconst splitAmount = (amount) => {\n  if (!amount) return { dhs: 0, fils: 0 };\n  const dhs = Math.floor(amount);\n  const fils = Math.round((amount - dhs) * 100);\n  return { dhs, fils };\n};\n\n// Split the total amount\nconst { dhs, fils } = splitAmount(filteredPayment.TotalAmt);\n\n// Extract only the required fields\nconst extractedData = {\n  Id: filteredPayment.Id,\n  SyncToken: filteredPayment.SyncToken,\n  CreateTime: formatDate(filteredPayment.MetaData?.CreateTime),\n  LastUpdatedTime: formatDate(filteredPayment.MetaData?.LastUpdatedTime),\n  TxnDate: formatDate(filteredPayment.TxnDate),\n  PaymentRefNum: filteredPayment.PaymentRefNum,\n  CurrencyRef: {\n    value: filteredPayment.CurrencyRef?.value,\n    name: filteredPayment.CurrencyRef?.name\n  },\n  TotalAmt: filteredPayment.TotalAmt,\n  Dhs: dhs,\n  Fils: fils,\n  UnappliedAmt: filteredPayment.UnappliedAmt,\n  CustomerRef: {\n    value: filteredPayment.CustomerRef?.value,\n    name: $input.first().json.GivenName\n  },\n  DisplayName: $input.first().json.DisplayName,\n  DepositToAccountRef: {\n    value: filteredPayment.DepositToAccountRef?.value\n  },\n  PaymentMethodRef: {\n    value: filteredPayment.PaymentMethodRef?.value\n  }\n};\n\nreturn [{\n  json: extractedData\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        -272
+      ],
+      "id": "233f2f4e-df97-4964-bce9-d3d7a2990ff9",
+      "name": "Processing-1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract all data from previous node (Processing-1)\nconst previousData = $('Processing-1').first().json;\n\n// Get Dhs value from input\nconst dhsValue = $input.first().json.Dhs;\n\n// Function to format number with commas\nfunction formatNumberWithCommas(num) {\n  return num.toString().replace(/\\B(?=(\\d{3})+(?!\\d))/g, \",\");\n}\n\n// Function to convert number to words\nfunction numberToWords(num) {\n  const ones = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];\n  const teens = ['ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];\n  const tens = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];\n  const scales = ['', 'thousand', 'million', 'billion', 'trillion'];\n  \n  if (num === 0) return 'zero';\n  \n  // Split number into integer and decimal parts\n  const parts = num.toString().split('.');\n  let integerPart = parseInt(parts[0]);\n  const decimalPart = parts[1];\n  \n  // Convert integer part\n  function convertLessThanThousand(n) {\n    if (n === 0) return '';\n    \n    let result = '';\n    \n    if (n >= 100) {\n      result += ones[Math.floor(n / 100)] + ' hundred ';\n      n %= 100;\n    }\n    \n    if (n >= 20) {\n      result += tens[Math.floor(n / 10)] + ' ';\n      n %= 10;\n    } else if (n >= 10) {\n      result += teens[n - 10] + ' ';\n      return result.trim();\n    }\n    \n    if (n > 0) {\n      result += ones[n] + ' ';\n    }\n    \n    return result.trim();\n  }\n  \n  let words = '';\n  let scaleIndex = 0;\n  \n  while (integerPart > 0) {\n    const chunk = integerPart % 1000;\n    if (chunk !== 0) {\n      const chunkWords = convertLessThanThousand(chunk);\n      words = chunkWords + (scales[scaleIndex] ? ' ' + scales[scaleIndex] : '') + (words ? ' ' + words : '');\n    }\n    integerPart = Math.floor(integerPart / 1000);\n    scaleIndex++;\n  }\n  \n  // Add decimal part\n  if (decimalPart) {\n    words += ' point';\n    for (let digit of decimalPart) {\n      words += ' ' + ones[parseInt(digit)];\n    }\n  }\n  \n  words += ' only';\n  \n  return words.trim();\n}\n\n// Convert the TotalAmt to words\nlet amountInWords = numberToWords(previousData.TotalAmt);\n\n// Capitalize the first letter of each word\namountInWords = amountInWords\n  .split(' ')\n  .map(word => word.charAt(0).toUpperCase() + word.slice(1))\n  .join(' ');\n\n// Format the Dhs value with commas\nconst formattedDhs = formatNumberWithCommas(dhsValue);\n\n// Return all previous data plus the amount in words and formatted Dhs\nreturn {\n  ...previousData,  // Spread all previous node data\n  Dhs: formattedDhs,  // Add formatted Dhs value\n  TotalAmtInWords: amountInWords\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1824,
+        -272
+      ],
+      "id": "355307e3-c06c-435d-8200-4fa81ca9f38d",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "customerId": "={{ $json.CustomerRef.value }}"
+      },
+      "type": "n8n-nodes-base.quickbooks",
+      "typeVersion": 1,
+      "position": [
+        1376,
+        -272
+      ],
+      "id": "68e25102-58ef-4538-b017-182dc5b3f352",
+      "name": "Get a customer",
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "6B4pHpkpZuG10ER7",
+          "name": "QuickBooks Online account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ba5c5d08-edd8-4122-9d3c-78b14ca6f8a2",
+              "leftValue": "={{ $json.type }}",
+              "rightValue": "qbo.payment.created.v1",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        928,
+        -272
+      ],
+      "id": "308e58ba-054b-4696-af0b-cdaf04231e51",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "resource": "payment",
+        "paymentId": "={{ $json.intuitentityid }}"
+      },
+      "type": "n8n-nodes-base.quickbooks",
+      "typeVersion": 1,
+      "position": [
+        1152,
+        -272
+      ],
+      "id": "51379a37-df5e-4a82-a731-710f04af9835",
+      "name": "Get a payment",
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "6B4pHpkpZuG10ER7",
+          "name": "QuickBooks Online account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        -272
+      ],
+      "id": "8bde6552-b443-44d0-a882-3df7ace9827f",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        704,
+        -272
+      ],
+      "id": "7cfac07f-708e-4ec1-9709-8be5cb2330a0",
+      "name": "Wait7",
+      "webhookId": "15ae4671-40a5-4706-88e3-d7d383694de6"
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": "01TFJIWCYB7HHGKUKAMBGJVWSXOQM263AM"
+      },
+      "type": "n8n-nodes-base.microsoftOneDrive",
+      "typeVersion": 1,
+      "position": [
+        2032,
+        -272
+      ],
+      "id": "27edbecf-1c49-4386-9b34-b83079332277",
+      "name": "Download a file",
+      "credentials": {
+        "microsoftOneDriveOAuth2Api": {
+          "id": "1Aeg8hvi8C90ZAkw",
+          "name": "Microsoft Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "preBuiltAgentsCalloutHttpRequest": "",
+        "httpVariantWarning": "",
+        "curlImport": "",
+        "method": "POST",
+        "": "",
+        "url": "https://v2.convertapi.com/convert/docx/to/pdf",
+        "authentication": "none",
+        "provideSslCertificates": false,
+        "sendQuery": false,
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer  IjE7qi58d2WAZxbg7DkV2uxLpwoYjA1Z"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formData",
+              "name": "StoreFile",
+              "value": "true"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "File",
+              "inputDataFieldName": "=report"
+            },
+            {
+              "parameterType": "formData",
+              "name": "FileName",
+              "value": "=Sales Receipt - SR26-{{ $('Processing-1').item.json.PaymentRefNum }}"
+            }
+          ]
+        },
+        "options": {},
+        "infoMessage": ""
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2496,
+        -272
+      ],
+      "id": "6016f1ca-e23a-4fc0-8343-3086702ec873",
+      "name": "DOC TO PDF 1",
+      "extendsCredential": "convertApi",
+      "credentials": {
+        "convertApi": {
+          "id": "Jvp1mCxVuOxqRjDw",
+          "name": "ConvertAPI account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Generate SR DOC": {
+      "main": [
+        [
+          {
+            "node": "DOC TO PDF 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download PDF": {
+      "main": [
+        [
+          {
+            "node": "Upload to QBO",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to QBO": {
+      "main": [
+        [
+          {
+            "node": "Attach",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processing-1": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Download a file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get a customer": {
+      "main": [
+        [
+          {
+            "node": "Processing-1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Get a payment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get a payment": {
+      "main": [
+        [
+          {
+            "node": "Get a customer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Wait7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait7": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download a file": {
+      "main": [
+        [
+          {
+            "node": "Generate SR DOC",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DOC TO PDF 1": {
+      "main": [
+        [
+          {
+            "node": "Download PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false,
+    "errorWorkflow": "o8tL_ggEgNkEdCHQXehyt"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "7eb6b8f0-0a9d-4116-8bdf-09528db1f30f",
+  "activeVersionId": "7eb6b8f0-0a9d-4116-8bdf-09528db1f30f",
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2025-11-27T06:26:57.996Z",
+      "createdAt": "2025-11-27T06:26:57.996Z",
+      "role": "workflow:owner",
+      "workflowId": "4ROPIyekX3ebs9LB",
+      "projectId": "7K0b7BEJpzNXLaZY"
+    }
+  ],
+  "activeVersion": {
+    "updatedAt": "2026-04-10T05:24:22.000Z",
+    "createdAt": "2026-04-10T05:24:20.212Z",
+    "versionId": "7eb6b8f0-0a9d-4116-8bdf-09528db1f30f",
+    "workflowId": "4ROPIyekX3ebs9LB",
+    "nodes": [
+      {
+        "parameters": {
+          "sourceKey": "data",
+          "data": "={\n  \"receiptno\": \"{{ $json.PaymentRefNum }}\",\n  \"date\": \"{{ $json.CreateTime }}\",\n  \"receivedfrommr/ms\": \"{{ $json.DisplayName }}\",\n  \"thesumof\": \"{{ $('Code').item.json.TotalAmtInWords }}\",\n  \"cash/chequeno\": \"{{ $json.PaymentRefNum }}\",\n  \"dated\": \"{{ $json.CreateTime }}\",\n  \"dhs\": \"{{ $json.Dhs }}\",\n  \"fils\": {{ $json.Fils }}\n\n}"
+        },
+        "type": "n8n-nodes-generate-report.generateReport",
+        "typeVersion": 1,
+        "position": [
+          2272,
+          -272
+        ],
+        "id": "31079d3a-7559-489d-8ca2-cacfe943e9f7",
+        "name": "Generate SR DOC"
+      },
+      {
+        "parameters": {
+          "url": "={{ $json.Files[0].Url }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          2752,
+          -272
+        ],
+        "id": "d9a84c02-3ba2-460c-a9a1-6045c3c0d774",
+        "name": "Download PDF"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://quickbooks.api.intuit.com/v3/company/9341454112300561/upload",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "quickBooksOAuth2Api",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Content-Type",
+                "value": "multipart/form-data"
+              }
+            ]
+          },
+          "sendBody": true,
+          "contentType": "multipart-form-data",
+          "bodyParameters": {
+            "parameters": [
+              {
+                "name": "file_metadata_00",
+                "value": "={\n  \"AttachableRef\": [\n    {\n      \"IncludeOnSend\": false,\n      \"EntityRef\": {\n        \"type\": \"Payment\",\n        \"value\": \"{{ $('Processing-1').item.json.Id }}\"\n      }\n    }\n  ],\n  \"ContentType\": \"application/pdf\",\n  \"FileName\": \"{{ $json.Files[0].FileName }}\"\n}"
+              },
+              {
+                "parameterType": "formBinaryData",
+                "name": "file_content_01",
+                "inputDataFieldName": "=data"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          3152,
+          -272
+        ],
+        "id": "3dea7721-57a6-4362-9c8d-21123d416ed1",
+        "name": "Upload to QBO",
+        "credentials": {
+          "quickBooksOAuth2Api": {
+            "id": "6B4pHpkpZuG10ER7",
+            "name": "QuickBooks Online account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://quickbooks.api.intuit.com/v3/company/9341454112300561/attachable",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "quickBooksOAuth2Api",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Accept",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={\n  \"AttachableRef\": [\n    {\n      \"IncludeOnSend\": false,\n      \"EntityRef\": {\n        \"type\": \"Payment\",\n        \"value\": \"{{ $('Processing-1').item.json.Id }}\"\n      }\n    }\n  ],\n  \"FileName\": \"{{ $('DOC TO PDF 1').item.json.Files[0].FileName }}\",\n  \"ContentType\": \"application/pdf\",\n  \"Id\": \"{{ $('Upload to QBO').item.json.AttachableResponse[0].Attachable.Id }}\",\n  \"SyncToken\": \"{{ $('Upload to QBO').item.json.AttachableResponse[0].Attachable.SyncToken }}\"\n}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          3376,
+          -272
+        ],
+        "id": "cf006779-916e-4529-98c1-59ef82113724",
+        "name": "Attach",
+        "credentials": {
+          "quickBooksOAuth2Api": {
+            "id": "6B4pHpkpZuG10ER7",
+            "name": "QuickBooks Online account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "// Get the PaymentRefNum you want to filter by\n// const targetPaymentRefNum = \"$('Get a payment').first().json.PaymentRefNum\"; \nconst targetPaymentRefNum = $('Get a payment').first().json.Id\n\n// Get all input items from n8n\nconst items = $('Get a payment').all();\n\n// Extract payments from all items\nlet payments = [];\nfor (const item of items) {\n  if (item.json) {\n    if (Array.isArray(item.json)) {\n      payments.push(...item.json);\n    } else if (item.json.Id) {\n      // Add PaymentRefNum = Id (fallback)\n      item.json.PaymentRefNum = item.json.Id;\n      payments.push(item.json);\n    } else if (item.json.QueryResponse?.Payment) {\n      const paymentsData = item.json.QueryResponse.Payment;\n      payments.push(...(Array.isArray(paymentsData) ? paymentsData : [paymentsData]));\n    }\n  }\n}\n\n// Filter by PaymentRefNum\nconst filteredPayment = payments.find(payment => \n  String(payment.PaymentRefNum) === String(targetPaymentRefNum)\n);\n\n// If no payment found, return error\nif (!filteredPayment) {\n  return [{\n    json: {\n      error: \"No payment found with PaymentRefNum: \" + targetPaymentRefNum\n    }\n  }];\n}\n\n// Function to format date to YYYY/MM/DD\nconst formatDate = (dateString) => {\n  if (!dateString) return null;\n  const date = new Date(dateString);\n  const year = date.getFullYear();\n  const month = String(date.getMonth() + 1).padStart(2, '0');\n  const day = String(date.getDate()).padStart(2, '0');\n  return `${year}/${month}/${day}`;\n};\n\n// Function to split amount into Dhs and Fils\nconst splitAmount = (amount) => {\n  if (!amount) return { dhs: 0, fils: 0 };\n  const dhs = Math.floor(amount);\n  const fils = Math.round((amount - dhs) * 100);\n  return { dhs, fils };\n};\n\n// Split the total amount\nconst { dhs, fils } = splitAmount(filteredPayment.TotalAmt);\n\n// Extract only the required fields\nconst extractedData = {\n  Id: filteredPayment.Id,\n  SyncToken: filteredPayment.SyncToken,\n  CreateTime: formatDate(filteredPayment.MetaData?.CreateTime),\n  LastUpdatedTime: formatDate(filteredPayment.MetaData?.LastUpdatedTime),\n  TxnDate: formatDate(filteredPayment.TxnDate),\n  PaymentRefNum: filteredPayment.PaymentRefNum,\n  CurrencyRef: {\n    value: filteredPayment.CurrencyRef?.value,\n    name: filteredPayment.CurrencyRef?.name\n  },\n  TotalAmt: filteredPayment.TotalAmt,\n  Dhs: dhs,\n  Fils: fils,\n  UnappliedAmt: filteredPayment.UnappliedAmt,\n  CustomerRef: {\n    value: filteredPayment.CustomerRef?.value,\n    name: $input.first().json.GivenName\n  },\n  DisplayName: $input.first().json.DisplayName,\n  DepositToAccountRef: {\n    value: filteredPayment.DepositToAccountRef?.value\n  },\n  PaymentMethodRef: {\n    value: filteredPayment.PaymentMethodRef?.value\n  }\n};\n\nreturn [{\n  json: extractedData\n}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1600,
+          -272
+        ],
+        "id": "233f2f4e-df97-4964-bce9-d3d7a2990ff9",
+        "name": "Processing-1"
+      },
+      {
+        "parameters": {
+          "jsCode": "// Extract all data from previous node (Processing-1)\nconst previousData = $('Processing-1').first().json;\n\n// Get Dhs value from input\nconst dhsValue = $input.first().json.Dhs;\n\n// Function to format number with commas\nfunction formatNumberWithCommas(num) {\n  return num.toString().replace(/\\B(?=(\\d{3})+(?!\\d))/g, \",\");\n}\n\n// Function to convert number to words\nfunction numberToWords(num) {\n  const ones = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];\n  const teens = ['ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];\n  const tens = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];\n  const scales = ['', 'thousand', 'million', 'billion', 'trillion'];\n  \n  if (num === 0) return 'zero';\n  \n  // Split number into integer and decimal parts\n  const parts = num.toString().split('.');\n  let integerPart = parseInt(parts[0]);\n  const decimalPart = parts[1];\n  \n  // Convert integer part\n  function convertLessThanThousand(n) {\n    if (n === 0) return '';\n    \n    let result = '';\n    \n    if (n >= 100) {\n      result += ones[Math.floor(n / 100)] + ' hundred ';\n      n %= 100;\n    }\n    \n    if (n >= 20) {\n      result += tens[Math.floor(n / 10)] + ' ';\n      n %= 10;\n    } else if (n >= 10) {\n      result += teens[n - 10] + ' ';\n      return result.trim();\n    }\n    \n    if (n > 0) {\n      result += ones[n] + ' ';\n    }\n    \n    return result.trim();\n  }\n  \n  let words = '';\n  let scaleIndex = 0;\n  \n  while (integerPart > 0) {\n    const chunk = integerPart % 1000;\n    if (chunk !== 0) {\n      const chunkWords = convertLessThanThousand(chunk);\n      words = chunkWords + (scales[scaleIndex] ? ' ' + scales[scaleIndex] : '') + (words ? ' ' + words : '');\n    }\n    integerPart = Math.floor(integerPart / 1000);\n    scaleIndex++;\n  }\n  \n  // Add decimal part\n  if (decimalPart) {\n    words += ' point';\n    for (let digit of decimalPart) {\n      words += ' ' + ones[parseInt(digit)];\n    }\n  }\n  \n  words += ' only';\n  \n  return words.trim();\n}\n\n// Convert the TotalAmt to words\nlet amountInWords = numberToWords(previousData.TotalAmt);\n\n// Capitalize the first letter of each word\namountInWords = amountInWords\n  .split(' ')\n  .map(word => word.charAt(0).toUpperCase() + word.slice(1))\n  .join(' ');\n\n// Format the Dhs value with commas\nconst formattedDhs = formatNumberWithCommas(dhsValue);\n\n// Return all previous data plus the amount in words and formatted Dhs\nreturn {\n  ...previousData,  // Spread all previous node data\n  Dhs: formattedDhs,  // Add formatted Dhs value\n  TotalAmtInWords: amountInWords\n};"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1824,
+          -272
+        ],
+        "id": "355307e3-c06c-435d-8200-4fa81ca9f38d",
+        "name": "Code"
+      },
+      {
+        "parameters": {
+          "customerId": "={{ $json.CustomerRef.value }}"
+        },
+        "type": "n8n-nodes-base.quickbooks",
+        "typeVersion": 1,
+        "position": [
+          1376,
+          -272
+        ],
+        "id": "68e25102-58ef-4538-b017-182dc5b3f352",
+        "name": "Get a customer",
+        "credentials": {
+          "quickBooksOAuth2Api": {
+            "id": "6B4pHpkpZuG10ER7",
+            "name": "QuickBooks Online account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "ba5c5d08-edd8-4122-9d3c-78b14ca6f8a2",
+                "leftValue": "={{ $json.type }}",
+                "rightValue": "qbo.payment.created.v1",
+                "operator": {
+                  "type": "string",
+                  "operation": "equals",
+                  "name": "filter.operator.equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          928,
+          -272
+        ],
+        "id": "308e58ba-054b-4696-af0b-cdaf04231e51",
+        "name": "If"
+      },
+      {
+        "parameters": {
+          "resource": "payment",
+          "paymentId": "={{ $json.intuitentityid }}"
+        },
+        "type": "n8n-nodes-base.quickbooks",
+        "typeVersion": 1,
+        "position": [
+          1152,
+          -272
+        ],
+        "id": "51379a37-df5e-4a82-a731-710f04af9835",
+        "name": "Get a payment",
+        "credentials": {
+          "quickBooksOAuth2Api": {
+            "id": "6B4pHpkpZuG10ER7",
+            "name": "QuickBooks Online account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "inputSource": "passthrough"
+        },
+        "type": "n8n-nodes-base.executeWorkflowTrigger",
+        "typeVersion": 1.1,
+        "position": [
+          480,
+          -272
+        ],
+        "id": "8bde6552-b443-44d0-a882-3df7ace9827f",
+        "name": "When Executed by Another Workflow"
+      },
+      {
+        "parameters": {},
+        "type": "n8n-nodes-base.wait",
+        "typeVersion": 1.1,
+        "position": [
+          704,
+          -272
+        ],
+        "id": "7cfac07f-708e-4ec1-9709-8be5cb2330a0",
+        "name": "Wait7",
+        "webhookId": "15ae4671-40a5-4706-88e3-d7d383694de6"
+      },
+      {
+        "parameters": {
+          "operation": "download",
+          "fileId": "01TFJIWCYB7HHGKUKAMBGJVWSXOQM263AM"
+        },
+        "type": "n8n-nodes-base.microsoftOneDrive",
+        "typeVersion": 1,
+        "position": [
+          2032,
+          -272
+        ],
+        "id": "27edbecf-1c49-4386-9b34-b83079332277",
+        "name": "Download a file",
+        "credentials": {
+          "microsoftOneDriveOAuth2Api": {
+            "id": "1Aeg8hvi8C90ZAkw",
+            "name": "Microsoft Drive account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "preBuiltAgentsCalloutHttpRequest": "",
+          "httpVariantWarning": "",
+          "curlImport": "",
+          "method": "POST",
+          "": "",
+          "url": "https://v2.convertapi.com/convert/docx/to/pdf",
+          "authentication": "none",
+          "provideSslCertificates": false,
+          "sendQuery": false,
+          "sendHeaders": true,
+          "specifyHeaders": "keypair",
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "Bearer  IjE7qi58d2WAZxbg7DkV2uxLpwoYjA1Z"
+              }
+            ]
+          },
+          "sendBody": true,
+          "contentType": "multipart-form-data",
+          "bodyParameters": {
+            "parameters": [
+              {
+                "parameterType": "formData",
+                "name": "StoreFile",
+                "value": "true"
+              },
+              {
+                "parameterType": "formBinaryData",
+                "name": "File",
+                "inputDataFieldName": "=report"
+              },
+              {
+                "parameterType": "formData",
+                "name": "FileName",
+                "value": "=Sales Receipt - SR26-{{ $('Processing-1').item.json.PaymentRefNum }}"
+              }
+            ]
+          },
+          "options": {},
+          "infoMessage": ""
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          2496,
+          -272
+        ],
+        "id": "6016f1ca-e23a-4fc0-8343-3086702ec873",
+        "name": "DOC TO PDF 1",
+        "extendsCredential": "convertApi",
+        "credentials": {
+          "convertApi": {
+            "id": "Jvp1mCxVuOxqRjDw",
+            "name": "ConvertAPI account"
+          }
+        }
+      }
+    ],
+    "connections": {
+      "Generate SR DOC": {
+        "main": [
+          [
+            {
+              "node": "DOC TO PDF 1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Download PDF": {
+        "main": [
+          [
+            {
+              "node": "Upload to QBO",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Upload to QBO": {
+        "main": [
+          [
+            {
+              "node": "Attach",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Processing-1": {
+        "main": [
+          [
+            {
+              "node": "Code",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Code": {
+        "main": [
+          [
+            {
+              "node": "Download a file",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get a customer": {
+        "main": [
+          [
+            {
+              "node": "Processing-1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "If": {
+        "main": [
+          [
+            {
+              "node": "Get a payment",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get a payment": {
+        "main": [
+          [
+            {
+              "node": "Get a customer",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "When Executed by Another Workflow": {
+        "main": [
+          [
+            {
+              "node": "Wait7",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Wait7": {
+        "main": [
+          [
+            {
+              "node": "If",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Download a file": {
+        "main": [
+          [
+            {
+              "node": "Generate SR DOC",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "DOC TO PDF 1": {
+        "main": [
+          [
+            {
+              "node": "Download PDF",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "Matthew Peeters",
+    "name": "Version 7eb6b8f0",
+    "description": "",
+    "autosaved": false
+  },
+  "tags": []
+}

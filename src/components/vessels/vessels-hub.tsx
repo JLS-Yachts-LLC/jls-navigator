@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Ship, Navigation, BarChart3 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { YachtsPage } from "@/routes/_app.yachts.index";
-import { YachtDetail } from "@/routes/_app.yachts.$id";
+import { YachtsPage } from "@/components/vessels/yachts-registry-page";
+import { YachtDetail } from "@/components/vessels/yacht-detail-page";
 import { MyFleetPage } from "@/components/my-fleet-page";
 import { VesselReportScreen } from "@/components/visa/VesselReportScreen";
 
@@ -23,6 +23,9 @@ const TABS = [
 
 export function VesselsHub() {
   const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("overview");
+  // Set when a yacht detail's "view on map" button is clicked — Live Tracking
+  // opens focused on that yacht.
+  const [trackFocusId, setTrackFocusId] = useState<string | null>(null);
 
   return (
     <div className="flex h-full flex-col">
@@ -49,9 +52,9 @@ export function VesselsHub() {
 
       <div className="min-h-0 flex-1 overflow-auto">
         {tab === "overview" ? (
-          <BetaVesselOverview />
+          <BetaVesselOverview onTrack={(id) => { setTrackFocusId(id); setTab("tracking"); }} />
         ) : tab === "tracking" ? (
-          <MyFleetPage />
+          <MyFleetPage focusYachtId={trackFocusId} />
         ) : (
           <VesselReportScreen />
         )}
@@ -61,10 +64,10 @@ export function VesselsHub() {
 }
 
 /** Overview tab: vessel list ↔ inline detail, both inside the Beta shell. */
-function BetaVesselOverview() {
+function BetaVesselOverview({ onTrack }: { onTrack?: (id: string) => void }) {
   const [yachtId, setYachtId] = useState<string | null>(null);
   return yachtId ? (
-    <YachtDetail yachtId={yachtId} embedded onBack={() => setYachtId(null)} />
+    <YachtDetail yachtId={yachtId} embedded onBack={() => setYachtId(null)} onTrack={onTrack} />
   ) : (
     <YachtsPage onOpenYacht={setYachtId} />
   );

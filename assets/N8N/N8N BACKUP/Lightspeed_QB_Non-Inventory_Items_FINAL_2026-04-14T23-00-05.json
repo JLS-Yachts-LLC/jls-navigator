@@ -1,0 +1,644 @@
+{
+  "updatedAt": "2026-04-04T15:01:03.000Z",
+  "createdAt": "2026-03-13T13:45:40.665Z",
+  "id": "_fBG9KopHop2Mt2jbxCf9",
+  "name": "Lightspeed → QB: Non-Inventory Items (FINAL)",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { page: 1 } }];"
+      },
+      "id": "681b50ed-2742-40db-850a-91db8679a7c4",
+      "name": "Init LS Pagination",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6736,
+        -592
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://superyachtme.retail.lightspeed.app/api/2.0/products?page={{ $json.page }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3537953e-e2ff-4a1a-b8bf-b89bb3e12533",
+      "name": "Fetch LS Products Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        6960,
+        -592
+      ],
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "WoxCXu4qRHbtqjNE",
+          "name": "Lightspeed Bearer Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "has-data",
+              "leftValue": "={{ $json.data?.length > 0 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "7d990fab-443f-4cd0-901c-7ceb0aea361d",
+      "name": "More Pages?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        7184,
+        -480
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const currentPage = $json.page || 1;\nreturn [{ json: { page: currentPage + 1 } }];"
+      },
+      "id": "7447b573-5c71-4c74-8295-240499545064",
+      "name": "Update Pagination",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7408,
+        -400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const allProducts = [];\nconst inputItems = $input.all();\n\nfor (const item of inputItems) {\n  if (item.json.data && Array.isArray(item.json.data)) {\n    allProducts.push(...item.json.data);\n  }\n}\n\n// Filter to non-inventory only\nconst nonInventory = allProducts.filter(p => !p.track_inventory);\n\nconsole.log(`Total LS products fetched: ${allProducts.length}, Non-inventory: ${nonInventory.length}`);\nreturn [{ json: { ls_products: nonInventory, ls_count: nonInventory.length } }];"
+      },
+      "id": "4eb89e39-f343-49ac-bb0e-2d14b3215536",
+      "name": "Aggregate LS Products",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7184,
+        -592
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { startPosition: 1 } }];"
+      },
+      "id": "e318289e-41a1-4c64-ac9f-f7b471c32f68",
+      "name": "Init QB Pagination",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6736,
+        -400
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://quickbooks.api.intuit.com/v3/company/9341456211763919/query",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "={{ \"SELECT * FROM Item WHERE Type IN ('Service', 'NonInventory') STARTPOSITION \" + $json.startPosition + \" MAXRESULTS 1000\" }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c6e21ccb-0b47-4d42-852f-1b8b0c851fb2",
+      "name": "Fetch QB Items",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        6960,
+        -400
+      ],
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "LzsBKraDvi63Re6a",
+          "name": "Waypoint - Quickbooks - Production"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "has-more",
+              "leftValue": "={{ $json.QueryResponse?.Item?.length === 1000 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b88fcaf8-c86e-4451-a344-913e10ecdddf",
+      "name": "More QB Pages?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        7184,
+        -272
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const previousStart = $json.startPosition || 1;\nreturn [{ json: { startPosition: previousStart + 1000 } }];"
+      },
+      "id": "05a77722-7a68-424f-929d-a255396e8652",
+      "name": "Update QB Pagination",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7408,
+        -192
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const allItems = [];\nconst inputItems = $input.all();\n\nfor (const item of inputItems) {\n  if (item.json.QueryResponse?.Item) {\n    allItems.push(...item.json.QueryResponse.Item);\n  }\n}\n\nconsole.log(`Total QB items fetched: ${allItems.length}`);\nreturn [{ json: { qb_items: allItems, qb_count: allItems.length } }];"
+      },
+      "id": "3fa997f7-6c49-4c3c-92ae-8a07767c75ba",
+      "name": "Aggregate QB Items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7184,
+        -400
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "id": "1588cc57-3c1c-4435-b1f5-103374d85f82",
+      "name": "Wait for Both Sources",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        7408,
+        -496
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const inputItems = $input.all();\n\nlet lsProducts = [];\nlet qbItems = [];\n\nfor (const item of inputItems) {\n  if (item.json.ls_products) lsProducts = item.json.ls_products;\n  if (item.json.qb_items) qbItems = item.json.qb_items;\n}\n\nconsole.log(`Processing ${lsProducts.length} LS products against ${qbItems.length} QB items`);\n\nconst output = [];\nconst stats = { matched: 0, newItems: 0, invalidData: 0 };\n\nfor (const product of lsProducts) {\n  if (!product || !product.id) {\n    stats.invalidData++;\n    continue;\n  }\n  \n  const sku = (product.code || product.sku || \"\").toString().trim();\n  const name = (product.name || \"\").trim();\n  const description = (product.description || \"\").trim();\n  \n  if (!name) {\n    stats.invalidData++;\n    continue;\n  }\n  \n  const qbMatch = qbItems.find(qb => {\n    const qbSku = (qb.Sku || \"\").toString().trim();\n    const qbName = (qb.Name || \"\").toString().trim();\n    if (sku && qbSku === sku) return true;\n    if (qbName === name) return true;\n    return false;\n  });\n\n  if (qbMatch) {\n    stats.matched++;\n  } else {\n    stats.newItems++;\n  }\n\n  output.push({\n    json: {\n      lightspeed_id: product.id,\n      quickbooks_id: qbMatch?.Id || null,\n      sku: sku || null,\n      name: name,\n      description: description || null,\n      price: parseFloat(product.price || product.supply_price || 0),\n      cost: parseFloat(product.cost || product.supply_price || 0),\n      needs_creation: !qbMatch\n    }\n  });\n}\n\nconsole.log(`Stats - Matched: ${stats.matched}, New: ${stats.newItems}, Invalid: ${stats.invalidData}`);\nreturn output;"
+      },
+      "id": "7f463e6c-c7b8-4117-90fe-08f928ad3bc6",
+      "name": "Merge LS + QB Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7616,
+        -496
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "needs-creation",
+              "leftValue": "={{ $json.needs_creation }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "347a031f-5ece-4356-b976-83561ac252c7",
+      "name": "Filter: Needs Creation",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        7840,
+        -496
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build QB Item matching Excel format\nconst itemData = {\n  Name: $json.name,\n  Type: \"Service\",\n  IncomeAccountRef: { value: \"85\" },  // UPDATE: Your Sales account ID\n  ExpenseAccountRef: { value: \"86\" }  // UPDATE: Your COGS account ID\n};\n\nif ($json.sku) itemData.Sku = $json.sku;\nif ($json.description) {\n  const desc = $json.description.substring(0, 4000);\n  itemData.Description = desc;\n}\nif ($json.price) itemData.UnitPrice = Number($json.price);\nif ($json.cost) itemData.PurchaseCost = Number($json.cost);\n\nreturn [{ json: { ItemData: itemData, lightspeed_id: $json.lightspeed_id, name: $json.name } }];"
+      },
+      "id": "9045ea33-f3cc-457e-a931-f8dec627be75",
+      "name": "Prep QB Item Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        8064,
+        -496
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 10,
+        "options": {}
+      },
+      "id": "6a97f898-948d-4270-995e-4425abae5b3e",
+      "name": "Batch Creates",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        8288,
+        -496
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://quickbooks.api.intuit.com/v3/company/9341456211763919/item",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.ItemData }}",
+        "options": {}
+      },
+      "id": "e735aac9-708b-4324-95e1-0b0fe6c88d2d",
+      "name": "Create QB Item",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        8496,
+        -496
+      ],
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "LzsBKraDvi63Re6a",
+          "name": "Waypoint - Quickbooks - Production"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "op",
+              "name": "operation",
+              "value": "create",
+              "type": "string"
+            },
+            {
+              "id": "ls-id",
+              "name": "lightspeed_id",
+              "value": "={{ $json.lightspeed_id }}",
+              "type": "string"
+            },
+            {
+              "id": "qb-id",
+              "name": "quickbooks_id",
+              "value": "={{ $json.Item?.Id }}",
+              "type": "string"
+            },
+            {
+              "id": "name",
+              "name": "item_name",
+              "value": "={{ $json.name }}",
+              "type": "string"
+            },
+            {
+              "id": "status",
+              "name": "status",
+              "value": "={{ $json.Item ? 'success' : 'failed' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b0f41682-97e2-4536-870d-4ff2e3e39c31",
+      "name": "Log Result",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        8720,
+        -496
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const allResults = $input.all();\nconst stats = { total: allResults.length, created: 0, failed: 0, errors: [] };\n\nfor (const item of allResults) {\n  if (item.json.status === 'success') {\n    stats.created++;\n  } else {\n    stats.failed++;\n    if (item.json.error) {\n      stats.errors.push({ item_name: item.json.item_name, lightspeed_id: item.json.lightspeed_id, error: item.json.error });\n    }\n  }\n}\n\nreturn [{ json: { execution_timestamp: new Date().toISOString(), summary: stats, message: `Non-inventory sync: ${stats.created} created, ${stats.failed} failed of ${stats.total}` } }];"
+      },
+      "id": "0c6d9521-f922-47f9-9568-13b2771d3590",
+      "name": "Generate Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        8944,
+        -496
+      ]
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        6528,
+        -496
+      ],
+      "id": "66c228a8-9dd3-46ad-abca-31e5d831f48e",
+      "name": "When clicking ‘Execute workflow’"
+    }
+  ],
+  "connections": {
+    "Init LS Pagination": {
+      "main": [
+        [
+          {
+            "node": "Fetch LS Products Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch LS Products Page": {
+      "main": [
+        [
+          {
+            "node": "More Pages?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Aggregate LS Products",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "More Pages?": {
+      "main": [
+        [
+          {
+            "node": "Update Pagination",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Pagination": {
+      "main": [
+        [
+          {
+            "node": "Fetch LS Products Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate LS Products": {
+      "main": [
+        [
+          {
+            "node": "Wait for Both Sources",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Init QB Pagination": {
+      "main": [
+        [
+          {
+            "node": "Fetch QB Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch QB Items": {
+      "main": [
+        [
+          {
+            "node": "More QB Pages?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Aggregate QB Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "More QB Pages?": {
+      "main": [
+        [
+          {
+            "node": "Update QB Pagination",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update QB Pagination": {
+      "main": [
+        [
+          {
+            "node": "Fetch QB Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate QB Items": {
+      "main": [
+        [
+          {
+            "node": "Wait for Both Sources",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Wait for Both Sources": {
+      "main": [
+        [
+          {
+            "node": "Merge LS + QB Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge LS + QB Data": {
+      "main": [
+        [
+          {
+            "node": "Filter: Needs Creation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter: Needs Creation": {
+      "main": [
+        [
+          {
+            "node": "Prep QB Item Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep QB Item Data": {
+      "main": [
+        [
+          {
+            "node": "Batch Creates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Batch Creates": {
+      "main": [
+        [
+          {
+            "node": "Create QB Item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create QB Item": {
+      "main": [
+        [
+          {
+            "node": "Log Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Result": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Summary": {
+      "main": [
+        []
+      ]
+    },
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Init LS Pagination",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Init QB Pagination",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {},
+  "versionId": "3d9e618b-7cfc-419e-8bb0-44fa09ef8b7f",
+  "activeVersionId": null,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-03-13T13:45:40.711Z",
+      "createdAt": "2026-03-13T13:45:40.711Z",
+      "role": "workflow:owner",
+      "workflowId": "_fBG9KopHop2Mt2jbxCf9",
+      "projectId": "7K0b7BEJpzNXLaZY"
+    }
+  ],
+  "activeVersion": null,
+  "tags": []
+}

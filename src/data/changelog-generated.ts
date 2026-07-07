@@ -5,9 +5,267 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.22.0",
+    "date": "2026-07-06",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "QuickBooks Excel Import — upload a spreadsheet to create Estimates or Invoices in QuickBooks (one per worksheet), auto-creating missing items, matching the customer by name and allocating the next Q26/JLS26 number, replacing the n8n Excel-input workflows. Find it under Services → QuickBooks Import"
+      },
+      {
+        "type": "feature",
+        "title": "QuickBooks Purchase Order, Pro-Forma and Receive Payment documents now generate fully native on the worker — branded PDF + XLSX for POs and Pro-Formas (line items, VAT summary, bank details, currency conversion) and a Sales Receipt PDF for payments, each attached to its QuickBooks record and replacing prior versions, replacing the n8n workflows, OneDrive templates and ConvertAPI. Toggle each under Automations (QB Purchase Order / Pro-Forma / Receive Payment — default OFF)"
+      },
+      {
+        "type": "feature",
+        "title": "The redesigned interface is now the one and only Polaris view — the Old View toggle and legacy chrome are gone, Settings gains Security (MFA), Permissions, Integrations and Email Templates tabs, and the side nav now covers everything (Crew Cab, Agency, Provisioning, Waypoint Chandlery, Seaport Immigration, Knowledge Base, e-Sign, Directory, Crew Benefits, Emergency Contacts)"
+      },
+      {
+        "type": "feature",
+        "title": "Google Maps card on the Integrations screen — paste and test the API key, toggle on, and maps go live on ShipSync routes and Crew Cab trips"
+      },
+      {
+        "type": "feature",
+        "title": "Google Maps directions & route planning — ShipSync runs get a Route Map with Google-optimized stop order, per-leg distances and ETA plus one-tap navigation; Crew Cab trips get Google Places address search, a live route preview with distance and ETA saved on the trip, a flight number field for airport pickups, and per-trip directions. Configure under Settings → Integrations → Google Maps (paste API key, toggle on)"
+      }
+    ]
+  },
+  {
+    "version": "2.21.0",
+    "date": "2026-07-03",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Quotation PDFs match the live n8n output exactly — amounts sit on the middle line of multi-line descriptions, zero VAT-summary values render blank, and the customer address wraps inside the QUOTE TO box without repeating the city"
+      },
+      {
+        "type": "feature",
+        "title": "QB Invoice PDFs now exactly match the official JLS Yachts letterhead template — real logo, division footer, black-bar tables, per-page subtotals, grand total bar and dirham/currency total rows"
+      },
+      {
+        "type": "feature",
+        "title": "Quotation PDFs now render on the official JLS Yachts letterhead — the real Word template backgrounds (logo, QUOTE TO box, black bars, division footer, Terms & Conditions page) with values stamped at the exact template positions, per currency variant (AED / AED-to-USD-EUR / USD-EUR), including customer TRN lookup and correct multi-page totals"
+      },
+      {
+        "type": "feature",
+        "title": "QB Quotation/Estimate documents now generate fully native on the worker — the Quotation PDF and XLSX (line items, VAT summary, bank details, currency conversion) are built in-platform and attached to the QuickBooks estimate, replacing the n8n workflow, Google Drive templates and ConvertAPI. Toggle 'QB Quotation/Estimate — document generation' under Automations to cut over; superseded attachments are replaced automatically"
+      },
+      {
+        "type": "feature",
+        "title": "The QB Invoice PDF automation card has a built-in tester — preview the rendered PDF for any QuickBooks invoice id, or force a full generate-and-attach run"
+      },
+      {
+        "type": "feature",
+        "title": "QB Invoice document generation now runs fully native on the platform — the branded multi-page invoice PDF (item table, VAT summary, currency conversion, Emirates NBD bank details) is rendered in the Worker and attached to the QuickBooks invoice, replacing the n8n workflow, OneDrive templates and ConvertAPI. Toggle 'QB Invoice PDF (native)' under Automations → Finance to cut over; preview any invoice via /api/qb/invoice-pdf?id="
+      },
+      {
+        "type": "feature",
+        "title": "QuickBooks webhook toggle now switches the whole pipeline — ON runs everything natively on the worker (n8n is not called), OFF relays untouched to n8n"
+      },
+      {
+        "type": "feature",
+        "title": "QuickBooks native processing is now a toggle on the Automations page — off, the webhook is a pure retry-safe relay to n8n; on, it adds the number self-heal, Pro-Forma classification and instant Finance sync"
+      },
+      {
+        "type": "feature",
+        "title": "Automations grouped into department mini tabs (Finance, Immigration, Logistics, Training, Yacht IT Solutions, Operations, Platform) with per-automation step-by-step view and a full run log showing status, duration and failure detail"
+      },
+      {
+        "type": "feature",
+        "title": "QuickBooks webhook now runs natively on the platform — signature verification, retry-safe dedup, invoice number self-heal, Pro-Forma classification and instant document sync into Finance, with n8n kept in the loop for document generation until those flows are ported"
+      },
+      {
+        "type": "fix",
+        "title": "Local Packages headers match Monday board wording"
+      },
+      {
+        "type": "fix",
+        "title": "Order Local Packages columns to match the Monday board"
+      },
+      {
+        "type": "feature",
+        "title": "Local Packages — Monday columns (# pkgs, type, delivered, DN no, documents)"
+      }
+    ]
+  },
+  {
+    "version": "2.20.0",
+    "date": "2026-07-02",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Client Portal live chat — two-way messaging between JLS staff and portal users, with a new-message alert on the portal dashboard, unread badges both sides, and a 'Handled by' claim in the staff app so two people never answer the same client"
+      },
+      {
+        "type": "fix",
+        "title": "Sync Centre now loads its stats (was blank), live-notification and online-presence console errors resolved, and the yacht registry defaults to In Country sorted A–Z with a new sort dropdown (name, activity, status, flag, type, ETA/ETD)"
+      },
+      {
+        "type": "feature",
+        "title": "Yacht detail gains Crew, Permits and Visas mini tabs; Add Yacht button restored on the registry; Manage Users — Client Portal tab grouped by vessel with positions (Captain/Owner/Representative/Purser), working Create login, bigger staff-table text and a real Delete; corrected users showing Invited when their login already works"
+      },
+      {
+        "type": "fix",
+        "title": "Full yacht image sync no longer stalls when vessels without a SharePoint photo sit at the front of the queue (batches now skip past failures, and unlinked yachts get matched by IMO/name)"
+      },
+      {
+        "type": "feature",
+        "title": "Manage Users in Settings (Internal Staff invites + Vessel Users for the Captain's Portal with temp passwords), SIM Cards register under Yacht IT Solutions (Etisalat/Du resale), and captains can now be added before their login email is known"
+      },
+      {
+        "type": "feature",
+        "title": "Yacht registry shows a live movement icon (under way, at anchor, moored, aground) next to each vessel name — click it to filter the registry; Permit Command Centre stat cards are now clickable filters"
+      },
+      {
+        "type": "feature",
+        "title": "Captain's View client portal at /portal — MFA-protected self-service for captains (provisioning, uniform, bunkering, permit, IT and visa requests, own-yacht crew & documents, click-to-call directory) with hard per-yacht data isolation, plus a staff Client Requests screen"
+      },
+      {
+        "type": "feature",
+        "title": "Global search in the top bar (Ctrl+K) — find yachts, crew, visa applications, permits and e-sign documents from anywhere"
+      },
+      {
+        "type": "fix",
+        "title": "Permit tables (and other embedded pages) now use the correct light text colour and the Polaris shell font instead of drifting to the old theme"
+      },
+      {
+        "type": "feature",
+        "title": "Permits is now a hub with mini tabs — Command Centre plus a tab for each permit type, with quick links switching tabs"
+      },
+      {
+        "type": "improvement",
+        "title": "Visa list loads only rendered columns — 5.7k-row select * was hanging the screen"
+      },
+      {
+        "type": "feature",
+        "title": "Permits back on the menu — Operations → Permits (Command Centre)"
+      },
+      {
+        "type": "feature",
+        "title": "Weekly Fleet Finance email + templates auto-sync + views keep status filter"
+      },
+      {
+        "type": "feature",
+        "title": "Leo dashboard briefing is on-demand — Generate button instead of auto-run"
+      },
+      {
+        "type": "feature",
+        "title": "Yacht status filter pills + jump-to-map from Actual (live)"
+      },
+      {
+        "type": "feature",
+        "title": "Polish batch — Leo mark, current-visas default, fleet outstanding, quotes toggle"
+      },
+      {
+        "type": "feature",
+        "title": "MMSI lookup assist + drag-to-place signature fields"
+      },
+      {
+        "type": "feature",
+        "title": "Edit signature fields on the document page — client + company signatories"
+      },
+      {
+        "type": "fix",
+        "title": "Bulk import retries failed insert chunks row-by-row and reports errors"
+      },
+      {
+        "type": "fix",
+        "title": "Bulk import respects the visa status check constraint"
+      },
+      {
+        "type": "feature",
+        "title": "Send to Vessel — email the issued visa with UAE arrival instructions"
+      },
+      {
+        "type": "feature",
+        "title": "Yacht Finance tab — QuickBooks invoices with paid/pending/outstanding"
+      },
+      {
+        "type": "feature",
+        "title": "New View everywhere — every route renders in the Polaris chrome; Old View shelved"
+      },
+      {
+        "type": "feature",
+        "title": "Yacht position sync now runs hourly (destination/ETA every 6 hours)"
+      },
+      {
+        "type": "feature",
+        "title": "Yacht detail shows Actual (live) location from the fleet tracker"
+      },
+      {
+        "type": "feature",
+        "title": "Live yacht tracking via MyShipTracking — credit-efficient cron + IMO fallback"
+      },
+      {
+        "type": "feature",
+        "title": "JLS Internal Services is now a Bills register + MyShipTracking AIS prep"
+      },
+      {
+        "type": "feature",
+        "title": "Hourly cron for two-way visa sync (rotating cursor)"
+      },
+      {
+        "type": "feature",
+        "title": "Show Payment method + Paid By columns in the subscriptions table"
+      },
+      {
+        "type": "feature",
+        "title": "Move client subs off Internal tab + add payment method & paid-by"
+      },
+      {
+        "type": "feature",
+        "title": "Dispatched — delete run, remove add-parcels pool"
+      },
+      {
+        "type": "feature",
+        "title": "Driver app — route by boat stops + customer signs delivery note"
+      },
+      {
+        "type": "feature",
+        "title": "Two-way visa sync (snapshot-guarded, newest-wins) — sheet->app pull guard"
+      },
+      {
+        "type": "fix",
+        "title": "De-dupe crew names + recipients in sign-on/off notification"
+      },
+      {
+        "type": "feature",
+        "title": "Per-boat delivery-note numbers on multi-boat notes"
+      },
+      {
+        "type": "feature",
+        "title": "Dispatched note card lists boat names"
+      },
+      {
+        "type": "feature",
+        "title": "Delivery note PDF — driver, planned date, one page per boat"
+      },
+      {
+        "type": "feature",
+        "title": "ShipSync calendar — stack boats vertically, compact + add button"
+      },
+      {
+        "type": "fix",
+        "title": "Floating chat starts collapsed, not open on every page load"
+      },
+      {
+        "type": "feature",
+        "title": "ShipSync Routing — weekly delivery calendar replaces Driver runs"
+      },
+      {
+        "type": "feature",
+        "title": "ShipSync Routing — set delivery date per route"
+      }
+    ]
+  },
+  {
     "version": "2.19.0",
     "date": "2026-07-01",
     "entries": [
+      {
+        "type": "fix",
+        "title": "Assistant chat text unreadable on light theme"
+      },
       {
         "type": "feature",
         "title": "Cross-module chat context + dynamic non-repeating welcome"

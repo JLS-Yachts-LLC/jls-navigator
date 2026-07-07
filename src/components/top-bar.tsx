@@ -37,25 +37,41 @@ export function OnlineUsers() {
 
   useEffect(() => {
     if (!user?.id) return;
-    const channel = supabase.channel("presence:online-users", {
-      config: { presence: { key: user.id } },
-    });
-    channel.on("presence", { event: "sync" }, () => {
-      const state = channel.presenceState() as Record<string, Array<{ name?: string; email?: string }>>;
-      const users = Object.entries(state).map(([id, metas]) => ({
-        id,
-        name: metas[0]?.name ?? nameFromEmail(metas[0]?.email),
-        email: metas[0]?.email ?? "",
-      }));
-      users.sort((a, b) => a.name.localeCompare(b.name));
-      setOnline(users);
-    });
-    channel.subscribe(async (status) => {
-      if (status === "SUBSCRIBED") {
-        await channel.track({ name: nameFromEmail(user.email), email: user.email ?? "", online_at: new Date().toISOString() });
+    // Presence needs a SHARED topic so everyone meets in one room, but
+    // supabase.channel() re-returns a previous (already-subscribed) instance on
+    // remount → "cannot add presence callbacks after subscribe()". Tear down any
+    // lingering instance for this topic first, then build a fresh one.
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    let cancelled = false;
+    (async () => {
+      for (const c of supabase.getChannels()) {
+        if (c.topic === "realtime:presence:online-users") await supabase.removeChannel(c);
       }
-    });
-    return () => { void supabase.removeChannel(channel); };
+      if (cancelled) return;
+      const ch = supabase.channel("presence:online-users", {
+        config: { presence: { key: user.id } },
+      });
+      channel = ch;
+      ch.on("presence", { event: "sync" }, () => {
+        const state = ch.presenceState() as Record<string, Array<{ name?: string; email?: string }>>;
+        const users = Object.entries(state).map(([id, metas]) => ({
+          id,
+          name: metas[0]?.name ?? nameFromEmail(metas[0]?.email),
+          email: metas[0]?.email ?? "",
+        }));
+        users.sort((a, b) => a.name.localeCompare(b.name));
+        setOnline(users);
+      });
+      ch.subscribe(async (status) => {
+        if (status === "SUBSCRIBED") {
+          await ch.track({ name: nameFromEmail(user.email), email: user.email ?? "", online_at: new Date().toISOString() });
+        }
+      });
+    })();
+    return () => {
+      cancelled = true;
+      if (channel) void supabase.removeChannel(channel);
+    };
   }, [user?.id, user?.email]);
 
   const count = online.length;

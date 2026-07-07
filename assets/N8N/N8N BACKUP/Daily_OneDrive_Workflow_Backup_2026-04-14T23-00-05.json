@@ -1,0 +1,792 @@
+{
+  "updatedAt": "2026-04-14T04:29:11.657Z",
+  "createdAt": "2026-03-16T02:58:29.307Z",
+  "id": "VKztyB6eG8DHC8EELbhsY",
+  "name": "Daily OneDrive Workflow Backup",
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 23 * * *"
+            }
+          ]
+        }
+      },
+      "id": "e45dbcb8-827e-4c04-8e82-36c1b54a0470",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -4448,
+        1280
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://n8n.jlsyachts.com/api/v1/workflows",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "n8nApi",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -4224,
+        1280
+      ],
+      "id": "69bc8542-5175-404a-b5f5-7c556ae7380c",
+      "name": "Fetch All Workflows",
+      "credentials": {
+        "n8nApi": {
+          "id": "Th2R0vP9xkg3vnDD",
+          "name": "n8n account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "data",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        -4000,
+        1280
+      ],
+      "id": "4dd864dd-5e95-4f10-891a-01b7751ab6fc",
+      "name": "Split Into Individual Workflows"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const workflow = $input.item.json;\nconst rawName = workflow.name || 'unnamed_workflow';\nconst cleanName = rawName\n  .replace(/[^a-zA-Z0-9_-]/g, '_')\n  .replace(/_+/g, '_')\n  .replace(/^_|_$/g, '')\n  .substring(0, 80);\n\nconst now = new Date();\nconst date = now.toISOString().split('T')[0];\nconst hours   = String(now.getUTCHours()).padStart(2, '0');\nconst minutes = String(now.getUTCMinutes()).padStart(2, '0');\nconst seconds = String(now.getUTCSeconds()).padStart(2, '0');\nconst timeStr = `${hours}-${minutes}-${seconds}`;\n\nconst filename = `${cleanName}_${date}T${timeStr}.json`;\nconst content  = JSON.stringify(workflow, null, 2);\nconst buffer   = Buffer.from(content, 'utf8');\n\nconst binaryData = await this.helpers.prepareBinaryData(\n  buffer,\n  filename,\n  'application/json'\n);\n\nitem.json = {\n  filename:     filename,\n  workflowName: rawName,\n  workflowId:   String(workflow.id || '')\n};\nitem.binary = { data: binaryData };\nreturn item;"
+      },
+      "id": "a433709c-9026-4d8d-9fe6-aad4b7bffd23",
+      "name": "Prepare Workflow File",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3776,
+        1280
+      ]
+    },
+    {
+      "parameters": {
+        "fileName": "=={{ $json.filename }}",
+        "parentId": "01TFJIWC4YH6PECKKQ2JF3M53MRVMEYLX6",
+        "binaryData": true
+      },
+      "id": "e2958f1c-f13e-4c68-8288-def01a857595",
+      "name": "Upload to OneDrive",
+      "type": "n8n-nodes-base.microsoftOneDrive",
+      "typeVersion": 1,
+      "position": [
+        -3552,
+        1280
+      ],
+      "credentials": {
+        "microsoftOneDriveOAuth2Api": {
+          "id": "1Aeg8hvi8C90ZAkw",
+          "name": "Microsoft Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "options": {}
+      },
+      "id": "b3fe7f54-a8ee-425a-841b-3ade4ec99b5a",
+      "name": "Wait For All Uploads",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        -3328,
+        1280
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "folder",
+        "folderId": "01TFJIWC4YH6PECKKQ2JF3M53MRVMEYLX6"
+      },
+      "id": "4dcb70ca-ef47-4e51-9b55-9d694bba29bf",
+      "name": "List All Backup Files",
+      "type": "n8n-nodes-base.microsoftOneDrive",
+      "typeVersion": 1,
+      "position": [
+        -3104,
+        1280
+      ],
+      "credentials": {
+        "microsoftOneDriveOAuth2Api": {
+          "id": "1Aeg8hvi8C90ZAkw",
+          "name": "Microsoft Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ─────────────────────────────────────────────────────────────────\n// STRATEGY: Keep the NEWEST file per workflow. Delete everything older.\n// Files are only deleted when a newer version of the SAME workflow exists.\n// Safety fallback: also delete files older than KEEP_MINUTES if a newer\n// copy exists — but NEVER delete the only copy of a workflow.\n// ─────────────────────────────────────────────────────────────────\n\nconst KEEP_MINUTES = 60;\nconst now = Date.now();\n\n// ── Parse timestamp embedded in filename ──────────────────────────\nfunction parseFileTime(name) {\n  if (!name || !name.endsWith('.json')) return null;\n  const match = name.match(/(\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2})/);\n  if (!match) return null;\n  const normalized = match[1].replace(/T(\\d{2})-(\\d{2})-(\\d{2})/, 'T$1:$2:$3');\n  const t = new Date(normalized).getTime();\n  return isNaN(t) ? null : t;\n}\n\n// ── Strip timestamp suffix to get the stable workflow identity ────\nfunction getWorkflowKey(name) {\n  return name.replace(/_\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}\\.json$/, '').toLowerCase();\n}\n\n// ── Build map: workflowKey → newest file timestamp ────────────────\nconst newestPerWorkflow = {};\nfor (const item of items) {\n  const name = item.json.name || '';\n  const fileTime = parseFileTime(name);\n  if (fileTime === null) continue;\n  const key = getWorkflowKey(name);\n  if (!newestPerWorkflow[key] || fileTime > newestPerWorkflow[key]) {\n    newestPerWorkflow[key] = fileTime;\n  }\n}\n\n// ── Identify files to delete ──────────────────────────────────────\nconst toDelete = [];\nconst toKeep   = [];\n\nfor (const item of items) {\n  const name     = item.json.name || '';\n  const fileTime = parseFileTime(name);\n\n  // Cannot parse timestamp → treat as old junk and remove\n  if (fileTime === null) {\n    if (name.endsWith('.json')) {\n      toDelete.push({ reason: 'unparseable_timestamp', name, item });\n    }\n    continue;\n  }\n\n  const key        = getWorkflowKey(name);\n  const newestTime = newestPerWorkflow[key];\n  const ageMinutes = (now - fileTime) / (1000 * 60);\n\n  if (newestTime !== null && fileTime < newestTime) {\n    // An newer version of this workflow exists — safe to delete\n    toDelete.push({ reason: 'superseded_by_newer', name, ageMinutes: Math.round(ageMinutes), item });\n  } else if (ageMinutes > KEEP_MINUTES) {\n    // This IS the newest, but it's very old (no recent backup ran) — keep it\n    // Change to toDelete.push(...) if you prefer to purge stale workflows\n    toKeep.push({ reason: 'newest_but_old', name, ageMinutes: Math.round(ageMinutes) });\n  } else {\n    toKeep.push({ reason: 'current', name, ageMinutes: Math.round(ageMinutes) });\n  }\n}\n\nif (toDelete.length === 0) {\n  return [{\n    json: {\n      action:  'skip',\n      message: `Backup complete. All ${toKeep.length} workflow(s) are current. Nothing to delete.`,\n      kept:    toKeep.length,\n      deleted: 0\n    }\n  }];\n}\n\nreturn toDelete.map(({ reason, name, ageMinutes, item }) => ({\n  json: {\n    action:   'delete',\n    fileId:   item.json.id,\n    fileName: name,\n    reason,\n    ageMinutes\n  }\n}));"
+      },
+      "id": "e7529b5f-255a-40c2-882d-278cd3b9465a",
+      "name": "Find Old Backups",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2880,
+        1280
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "cond-delete-check",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "delete",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "48ae0d84-63e7-48c8-92c7-cf2cbf81215c",
+      "name": "Old Backup Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -2656,
+        1280
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "fileId": "={{ $json.fileId }}"
+      },
+      "id": "fee5d59a-bb15-4efe-910e-cc0ae9f41a13",
+      "name": "Delete Old Backup",
+      "type": "n8n-nodes-base.microsoftOneDrive",
+      "typeVersion": 1,
+      "position": [
+        -2192,
+        1200
+      ],
+      "executeOnce": false,
+      "alwaysOutputData": true,
+      "credentials": {
+        "microsoftOneDriveOAuth2Api": {
+          "id": "1Aeg8hvi8C90ZAkw",
+          "name": "Microsoft Drive account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    status:  'done',\n    message: 'Backup complete. No old files to delete.',\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "9388cb19-50f1-41f2-b63e-d4ea7fbb3a94",
+      "name": "No Old Files - Done",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2432,
+        1376
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -2448,
+        1184
+      ],
+      "id": "1a946108-3744-4527-9170-a3fab7fef409",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -1984,
+        1200
+      ],
+      "id": "e4aef50d-1eaf-462b-9a4a-98a65164e6c1",
+      "name": "Wait",
+      "webhookId": "a5a83954-5651-45bc-bafe-003a49746b54"
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch All Workflows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch All Workflows": {
+      "main": [
+        [
+          {
+            "node": "Split Into Individual Workflows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Into Individual Workflows": {
+      "main": [
+        [
+          {
+            "node": "Prepare Workflow File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Workflow File": {
+      "main": [
+        [
+          {
+            "node": "Upload to OneDrive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to OneDrive": {
+      "main": [
+        [
+          {
+            "node": "Wait For All Uploads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait For All Uploads": {
+      "main": [
+        [
+          {
+            "node": "List All Backup Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List All Backup Files": {
+      "main": [
+        [
+          {
+            "node": "Find Old Backups",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Old Backups": {
+      "main": [
+        [
+          {
+            "node": "Old Backup Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Old Backup Exists?": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Old Files - Done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Delete Old Backup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Old Backup": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "d2c80c6c-4d0c-4590-8814-59c4302e54c3",
+  "activeVersionId": "d2c80c6c-4d0c-4590-8814-59c4302e54c3",
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-03-16T02:58:29.341Z",
+      "createdAt": "2026-03-16T02:58:29.341Z",
+      "role": "workflow:owner",
+      "workflowId": "VKztyB6eG8DHC8EELbhsY",
+      "projectId": "7K0b7BEJpzNXLaZY"
+    }
+  ],
+  "activeVersion": {
+    "updatedAt": "2026-04-14T04:17:14.000Z",
+    "createdAt": "2026-04-14T04:17:12.066Z",
+    "versionId": "d2c80c6c-4d0c-4590-8814-59c4302e54c3",
+    "workflowId": "VKztyB6eG8DHC8EELbhsY",
+    "nodes": [
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "cronExpression",
+                "expression": "0 23 * * *"
+              }
+            ]
+          }
+        },
+        "id": "e45dbcb8-827e-4c04-8e82-36c1b54a0470",
+        "name": "Schedule Trigger",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.2,
+        "position": [
+          -4448,
+          1280
+        ]
+      },
+      {
+        "parameters": {
+          "url": "https://n8n.jlsyachts.com/api/v1/workflows",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "n8nApi",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.3,
+        "position": [
+          -4224,
+          1280
+        ],
+        "id": "69bc8542-5175-404a-b5f5-7c556ae7380c",
+        "name": "Fetch All Workflows",
+        "credentials": {
+          "n8nApi": {
+            "id": "Th2R0vP9xkg3vnDD",
+            "name": "n8n account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "fieldToSplitOut": "data",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.splitOut",
+        "typeVersion": 1,
+        "position": [
+          -4000,
+          1280
+        ],
+        "id": "4dd864dd-5e95-4f10-891a-01b7751ab6fc",
+        "name": "Split Into Individual Workflows"
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "const workflow = $input.item.json;\nconst rawName = workflow.name || 'unnamed_workflow';\nconst cleanName = rawName\n  .replace(/[^a-zA-Z0-9_-]/g, '_')\n  .replace(/_+/g, '_')\n  .replace(/^_|_$/g, '')\n  .substring(0, 80);\n\nconst now = new Date();\nconst date = now.toISOString().split('T')[0];\nconst hours   = String(now.getUTCHours()).padStart(2, '0');\nconst minutes = String(now.getUTCMinutes()).padStart(2, '0');\nconst seconds = String(now.getUTCSeconds()).padStart(2, '0');\nconst timeStr = `${hours}-${minutes}-${seconds}`;\n\nconst filename = `${cleanName}_${date}T${timeStr}.json`;\nconst content  = JSON.stringify(workflow, null, 2);\nconst buffer   = Buffer.from(content, 'utf8');\n\nconst binaryData = await this.helpers.prepareBinaryData(\n  buffer,\n  filename,\n  'application/json'\n);\n\nitem.json = {\n  filename:     filename,\n  workflowName: rawName,\n  workflowId:   String(workflow.id || '')\n};\nitem.binary = { data: binaryData };\nreturn item;"
+        },
+        "id": "a433709c-9026-4d8d-9fe6-aad4b7bffd23",
+        "name": "Prepare Workflow File",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -3776,
+          1280
+        ]
+      },
+      {
+        "parameters": {
+          "fileName": "=={{ $json.filename }}",
+          "parentId": "01TFJIWC4YH6PECKKQ2JF3M53MRVMEYLX6",
+          "binaryData": true
+        },
+        "id": "e2958f1c-f13e-4c68-8288-def01a857595",
+        "name": "Upload to OneDrive",
+        "type": "n8n-nodes-base.microsoftOneDrive",
+        "typeVersion": 1,
+        "position": [
+          -3552,
+          1280
+        ],
+        "credentials": {
+          "microsoftOneDriveOAuth2Api": {
+            "id": "1Aeg8hvi8C90ZAkw",
+            "name": "Microsoft Drive account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "aggregate": "aggregateAllItemData",
+          "options": {}
+        },
+        "id": "b3fe7f54-a8ee-425a-841b-3ade4ec99b5a",
+        "name": "Wait For All Uploads",
+        "type": "n8n-nodes-base.aggregate",
+        "typeVersion": 1,
+        "position": [
+          -3328,
+          1280
+        ]
+      },
+      {
+        "parameters": {
+          "resource": "folder",
+          "folderId": "01TFJIWC4YH6PECKKQ2JF3M53MRVMEYLX6"
+        },
+        "id": "4dcb70ca-ef47-4e51-9b55-9d694bba29bf",
+        "name": "List All Backup Files",
+        "type": "n8n-nodes-base.microsoftOneDrive",
+        "typeVersion": 1,
+        "position": [
+          -3104,
+          1280
+        ],
+        "credentials": {
+          "microsoftOneDriveOAuth2Api": {
+            "id": "1Aeg8hvi8C90ZAkw",
+            "name": "Microsoft Drive account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "// ─────────────────────────────────────────────────────────────────\n// STRATEGY: Keep the NEWEST file per workflow. Delete everything older.\n// Files are only deleted when a newer version of the SAME workflow exists.\n// Safety fallback: also delete files older than KEEP_MINUTES if a newer\n// copy exists — but NEVER delete the only copy of a workflow.\n// ─────────────────────────────────────────────────────────────────\n\nconst KEEP_MINUTES = 60;\nconst now = Date.now();\n\n// ── Parse timestamp embedded in filename ──────────────────────────\nfunction parseFileTime(name) {\n  if (!name || !name.endsWith('.json')) return null;\n  const match = name.match(/(\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2})/);\n  if (!match) return null;\n  const normalized = match[1].replace(/T(\\d{2})-(\\d{2})-(\\d{2})/, 'T$1:$2:$3');\n  const t = new Date(normalized).getTime();\n  return isNaN(t) ? null : t;\n}\n\n// ── Strip timestamp suffix to get the stable workflow identity ────\nfunction getWorkflowKey(name) {\n  return name.replace(/_\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}\\.json$/, '').toLowerCase();\n}\n\n// ── Build map: workflowKey → newest file timestamp ────────────────\nconst newestPerWorkflow = {};\nfor (const item of items) {\n  const name = item.json.name || '';\n  const fileTime = parseFileTime(name);\n  if (fileTime === null) continue;\n  const key = getWorkflowKey(name);\n  if (!newestPerWorkflow[key] || fileTime > newestPerWorkflow[key]) {\n    newestPerWorkflow[key] = fileTime;\n  }\n}\n\n// ── Identify files to delete ──────────────────────────────────────\nconst toDelete = [];\nconst toKeep   = [];\n\nfor (const item of items) {\n  const name     = item.json.name || '';\n  const fileTime = parseFileTime(name);\n\n  // Cannot parse timestamp → treat as old junk and remove\n  if (fileTime === null) {\n    if (name.endsWith('.json')) {\n      toDelete.push({ reason: 'unparseable_timestamp', name, item });\n    }\n    continue;\n  }\n\n  const key        = getWorkflowKey(name);\n  const newestTime = newestPerWorkflow[key];\n  const ageMinutes = (now - fileTime) / (1000 * 60);\n\n  if (newestTime !== null && fileTime < newestTime) {\n    // An newer version of this workflow exists — safe to delete\n    toDelete.push({ reason: 'superseded_by_newer', name, ageMinutes: Math.round(ageMinutes), item });\n  } else if (ageMinutes > KEEP_MINUTES) {\n    // This IS the newest, but it's very old (no recent backup ran) — keep it\n    // Change to toDelete.push(...) if you prefer to purge stale workflows\n    toKeep.push({ reason: 'newest_but_old', name, ageMinutes: Math.round(ageMinutes) });\n  } else {\n    toKeep.push({ reason: 'current', name, ageMinutes: Math.round(ageMinutes) });\n  }\n}\n\nif (toDelete.length === 0) {\n  return [{\n    json: {\n      action:  'skip',\n      message: `Backup complete. All ${toKeep.length} workflow(s) are current. Nothing to delete.`,\n      kept:    toKeep.length,\n      deleted: 0\n    }\n  }];\n}\n\nreturn toDelete.map(({ reason, name, ageMinutes, item }) => ({\n  json: {\n    action:   'delete',\n    fileId:   item.json.id,\n    fileName: name,\n    reason,\n    ageMinutes\n  }\n}));"
+        },
+        "id": "e7529b5f-255a-40c2-882d-278cd3b9465a",
+        "name": "Find Old Backups",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -2880,
+          1280
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 1
+            },
+            "conditions": [
+              {
+                "id": "cond-delete-check",
+                "leftValue": "={{ $json.action }}",
+                "rightValue": "delete",
+                "operator": {
+                  "type": "string",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "48ae0d84-63e7-48c8-92c7-cf2cbf81215c",
+        "name": "Old Backup Exists?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2,
+        "position": [
+          -2656,
+          1280
+        ]
+      },
+      {
+        "parameters": {
+          "operation": "delete",
+          "fileId": "={{ $json.fileId }}"
+        },
+        "id": "fee5d59a-bb15-4efe-910e-cc0ae9f41a13",
+        "name": "Delete Old Backup",
+        "type": "n8n-nodes-base.microsoftOneDrive",
+        "typeVersion": 1,
+        "position": [
+          -2192,
+          1200
+        ],
+        "executeOnce": false,
+        "alwaysOutputData": true,
+        "credentials": {
+          "microsoftOneDriveOAuth2Api": {
+            "id": "1Aeg8hvi8C90ZAkw",
+            "name": "Microsoft Drive account"
+          }
+        },
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "return [{\n  json: {\n    status:  'done',\n    message: 'Backup complete. No old files to delete.',\n    timestamp: new Date().toISOString()\n  }\n}];"
+        },
+        "id": "9388cb19-50f1-41f2-b63e-d4ea7fbb3a94",
+        "name": "No Old Files - Done",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -2432,
+          1376
+        ]
+      },
+      {
+        "parameters": {
+          "options": {}
+        },
+        "type": "n8n-nodes-base.splitInBatches",
+        "typeVersion": 3,
+        "position": [
+          -2448,
+          1184
+        ],
+        "id": "1a946108-3744-4527-9170-a3fab7fef409",
+        "name": "Loop Over Items"
+      },
+      {
+        "parameters": {},
+        "type": "n8n-nodes-base.wait",
+        "typeVersion": 1.1,
+        "position": [
+          -1984,
+          1200
+        ],
+        "id": "e4aef50d-1eaf-462b-9a4a-98a65164e6c1",
+        "name": "Wait",
+        "webhookId": "a5a83954-5651-45bc-bafe-003a49746b54"
+      }
+    ],
+    "connections": {
+      "Schedule Trigger": {
+        "main": [
+          [
+            {
+              "node": "Fetch All Workflows",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Fetch All Workflows": {
+        "main": [
+          [
+            {
+              "node": "Split Into Individual Workflows",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Split Into Individual Workflows": {
+        "main": [
+          [
+            {
+              "node": "Prepare Workflow File",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prepare Workflow File": {
+        "main": [
+          [
+            {
+              "node": "Upload to OneDrive",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Upload to OneDrive": {
+        "main": [
+          [
+            {
+              "node": "Wait For All Uploads",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Wait For All Uploads": {
+        "main": [
+          [
+            {
+              "node": "List All Backup Files",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "List All Backup Files": {
+        "main": [
+          [
+            {
+              "node": "Find Old Backups",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Find Old Backups": {
+        "main": [
+          [
+            {
+              "node": "Old Backup Exists?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Old Backup Exists?": {
+        "main": [
+          [
+            {
+              "node": "Loop Over Items",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "No Old Files - Done",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Loop Over Items": {
+        "main": [
+          [],
+          [
+            {
+              "node": "Delete Old Backup",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Delete Old Backup": {
+        "main": [
+          [
+            {
+              "node": "Wait",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Wait": {
+        "main": [
+          [
+            {
+              "node": "Loop Over Items",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "Matthew Peeters",
+    "name": "Version d2c80c6c",
+    "description": "",
+    "autosaved": false
+  },
+  "tags": []
+}

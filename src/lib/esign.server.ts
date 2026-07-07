@@ -224,24 +224,56 @@ export const doSubmitSignature = createServerFn({ method: "POST" })
       x: 56, y: 48, size: 9, font, color: rgb(0.5, 0.55, 0.6),
     });
 
-    // Stamp the signature in-place at the sender-chosen field position(s).
+    // Stamp signatures in-place at the sender-chosen field position(s).
+    // Fields carry a role: 'client' (default) = the signer's drawn signature;
+    // 'company' = the chosen JLS signatory's stored signature image.
     try {
-      const fields: { page?: number; pos?: string }[] = Array.isArray(doc.signature_fields) ? doc.signature_fields : [];
+      const fields: { page?: number; pos?: string; role?: string; signatory_id?: string }[] =
+        Array.isArray(doc.signature_fields) ? doc.signature_fields : [];
       if (fields.length) {
         const b64 = signatureDataUrl.includes(",") ? signatureDataUrl.split(",")[1] : signatureDataUrl;
-        const sig = await pdf.embedPng(b64);
-        const sw = 130; const sh = (sig.height / sig.width) * sw;
+        const clientSig = await pdf.embedPng(b64);
+
+        // Pre-load company signatory signatures (one fetch per distinct signatory).
+        const companyIds = [...new Set(fields.filter(f => f.role === "company" && f.signatory_id).map(f => f.signatory_id!))];
+        const companySigs = new Map<string, { img: any; name: string }>();
+        for (const sid of companyIds) {
+          try {
+            const { data: s } = await (supabaseAdmin as any).from("jls_signatories").select("full_name, signature_path").eq("id", sid).maybeSingle();
+            if (!s?.signature_path) continue;
+            const { data: blob } = await (supabaseAdmin as any).storage.from("signatures").download(s.signature_path);
+            if (!blob) continue;
+            const img = await pdf.embedPng(new Uint8Array(await blob.arrayBuffer()));
+            companySigs.set(sid, { img, name: s.full_name ?? "JLS Yachts" });
+          } catch { /* missing signatory signature — field skipped below */ }
+        }
+
         const pages = pdf.getPages();
         for (const f of fields) {
           const p = pages[Math.max(0, (f.page ?? 1) - 1)];
           if (!p) continue;
+          const isCompany = f.role === "company";
+          const entry = isCompany ? companySigs.get(f.signatory_id ?? "") : null;
+          if (isCompany && !entry) continue; // no stored signature — skip rather than mis-stamp
+          const sig = isCompany ? entry!.img : clientSig;
+          const sw = 130; const sh = (sig.height / sig.width) * sw;
           const { width, height } = p.getSize();
-          const pad = 40;
-          const pos = f.pos ?? "bottom-right";
-          const x = pos.includes("left") ? pad : pos.includes("center") ? (width - sw) / 2 : width - sw - pad;
-          const y = pos.includes("top") ? height - pad - sh : pos.includes("middle") ? (height - sh) / 2 : pad + 12;
+          let x: number; let y: number;
+          const fx = (f as any).x; const fy = (f as any).y;
+          if (typeof fx === "number" && typeof fy === "number") {
+            // Drag-placed field: x/y are fractions of the page (from the top-left),
+            // marking the CENTRE of the signature.
+            x = Math.min(Math.max(fx * width - sw / 2, 4), width - sw - 4);
+            y = Math.min(Math.max((1 - fy) * height - sh / 2, 14), height - sh - 4);
+          } else {
+            const pad = 40;
+            const pos = f.pos ?? "bottom-right";
+            x = pos.includes("left") ? pad : pos.includes("center") ? (width - sw) / 2 : width - sw - pad;
+            y = pos.includes("top") ? height - pad - sh : pos.includes("middle") ? (height - sh) / 2 : pad + 12;
+          }
           p.drawImage(sig, { x, y, width: sw, height: sh });
-          p.drawText(`${doc.signer_name} · ${signedAt.toISOString().slice(0, 10)}`, { x, y: y - 9, size: 6.5, font, color: rgb(0.45, 0.5, 0.55) });
+          const label = isCompany ? `${entry!.name} · JLS Yachts · ${signedAt.toISOString().slice(0, 10)}` : `${doc.signer_name} · ${signedAt.toISOString().slice(0, 10)}`;
+          p.drawText(label, { x, y: y - 9, size: 6.5, font, color: rgb(0.45, 0.5, 0.55) });
         }
       }
     } catch { /* in-place stamp is best-effort; certificate page still carries the signature */ }

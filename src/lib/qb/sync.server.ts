@@ -219,6 +219,34 @@ export async function backfillPaymentsFull(): Promise<{ count: number }> {
   return { count: await syncPayments(sb, `where TxnDate >= '${ql(FROM_DATE())}'`, yachtByCust) }
 }
 
+/** Targeted single-entity ingest for the webhook orchestrator — the changed
+ *  document lands in the app seconds after the QBO event instead of waiting for
+ *  the 5-minute poll. Purchase orders have no app table yet and are skipped. */
+export async function syncOneEntity(entity: string, qboId: string): Promise<string> {
+  if (!qboConfigured()) return 'qbo-not-configured'
+  const sb = admin() as any
+  if (entity === 'invoice') { await syncOneInvoice(qboId); return 'invoice-synced' }
+  if (entity === 'estimate') {
+    const res = await qboQuery(`select * from Estimate where Id = '${ql(qboId)}'`)
+    const doc = res?.QueryResponse?.Estimate?.[0]
+    if (!doc) return 'estimate-not-found'
+    await sb.from('qbo_invoices').upsert(buildRow('Estimate', doc, await yachtMap(sb), true), { onConflict: 'qbo_id,doc_type' })
+    return 'estimate-synced'
+  }
+  if (entity === 'payment') {
+    const res = await qboQuery(`select * from Payment where Id = '${ql(qboId)}'`)
+    const doc = res?.QueryResponse?.Payment?.[0]
+    if (!doc) return 'payment-not-found'
+    await sb.from('qbo_payments').upsert(buildPaymentRow(doc, await yachtMap(sb)), { onConflict: 'qbo_id' })
+    // A payment changes invoice balances — refresh the invoices it applies to.
+    for (const a of (buildPaymentRow(doc, new Map()).applied_to as any[]).slice(0, 5)) {
+      try { await syncOneInvoice(a.invoice_qbo_id) } catch { /* best-effort */ }
+    }
+    return 'payment-synced'
+  }
+  return `${entity}-no-native-ingest`
+}
+
 /** Pull a single invoice straight away (used when Polaris creates one). Best-effort,
  *  and fetches its PDF immediately so it appears complete in the Finance module. */
 export async function syncOneInvoice(qboId: string) {

@@ -6,7 +6,7 @@ import { supabase } from '@/integrations/supabase/client'
 import {
   nextDeliveryNumber,
   type ShipSyncPackage, type ShipSyncDriver, type ShipSyncDeliveryNote, type ShipSyncDestination,
-  type PackageStatus,
+  type ShipSyncDeliverySchedule, type ShipSyncVehicle, type PackageStatus,
 } from './model'
 
 const db = () => supabase as any
@@ -68,10 +68,31 @@ export async function saveDestination(d: Partial<ShipSyncDestination> & { boat_n
   if (error) throw error
 }
 
+// ── Delivery schedule (weekly calendar) ──────────────────────────────────────
+export async function loadDeliverySchedules(): Promise<ShipSyncDeliverySchedule[]> {
+  const { data } = await db().from('shipsync_delivery_schedule').select('*').order('boat_name')
+  return (data ?? []) as ShipSyncDeliverySchedule[]
+}
+export async function addScheduleEntry(boat_name: string, weekday: number): Promise<void> {
+  const { error } = await db().from('shipsync_delivery_schedule')
+    .upsert([{ boat_name, weekday }], { onConflict: 'boat_name,weekday' })
+  if (error) throw error
+}
+export async function removeScheduleEntry(id: string): Promise<void> {
+  const { error } = await db().from('shipsync_delivery_schedule').delete().eq('id', id)
+  if (error) throw error
+}
+
+// ── Vehicles (vans) ──────────────────────────────────────────────────────────
+export async function loadVehicles(): Promise<ShipSyncVehicle[]> {
+  const { data } = await db().from('crew_vehicles').select('id, make, model, registration, status').order('registration')
+  return (data ?? []) as ShipSyncVehicle[]
+}
+
 // ── Delivery notes & dispatch ────────────────────────────────────────────────
 /** Create a delivery note for a boat (auto-numbered), defaulting its destination
  *  from the boat's saved berth. */
-export async function createDeliveryNote(boat_name: string, driver_id?: string | null): Promise<ShipSyncDeliveryNote> {
+export async function createDeliveryNote(boat_name: string, driver_id?: string | null, vehicle_id?: string | null): Promise<ShipSyncDeliveryNote> {
   const number = await nextDeliveryNumber()
   const { data: auth } = await supabase.auth.getUser()
   let dest: Partial<ShipSyncDeliveryNote> = {}
@@ -80,7 +101,7 @@ export async function createDeliveryNote(boat_name: string, driver_id?: string |
     if (d) dest = { destination_address: d.address, destination_lat: d.lat, destination_lng: d.lng }
   }
   const { data, error } = await db().from('shipsync_delivery_notes')
-    .insert([{ number, boat_name: boat_name || null, driver_id: driver_id ?? null, status: 'open',
+    .insert([{ number, boat_name: boat_name || null, driver_id: driver_id ?? null, vehicle_id: vehicle_id ?? null, status: 'open',
                created_by: auth?.user?.id ?? null, ...dest }])
     .select('*').single()
   if (error) throw error
@@ -102,10 +123,11 @@ export async function assignPackagesToNote(packageIds: string[], note: ShipSyncD
  *  the van). Pass the boat name for a single-boat route (keeps the saved berth),
  *  or null for a multi-boat route. */
 export async function dispatchRoute(
-  packageIds: string[], driverId: string, boatLabel: string | null,
+  packageIds: string[], driverId: string, boatLabel: string | null, plannedDate?: string | null, vehicleId?: string | null,
 ): Promise<ShipSyncDeliveryNote> {
-  const note = await createDeliveryNote(boatLabel ?? '', driverId)
+  const note = await createDeliveryNote(boatLabel ?? '', driverId, vehicleId)
   await assignPackagesToNote(packageIds, note, driverId)
+  if (plannedDate) await db().from('shipsync_packages').update({ planned_delivery_date: plannedDate }).in('id', packageIds)
   await db().from('shipsync_delivery_notes').update({ status: 'dispatched' }).eq('id', note.id)
   return { ...note, status: 'dispatched' }
 }
@@ -119,6 +141,17 @@ export async function setNoteDriver(noteId: string, driverId: string | null): Pr
 /** Remove a package from its note (back to in_office, unassigned). */
 export async function unassignPackage(id: string): Promise<void> {
   await patchPackage(id, { delivery_note_id: null, driver_id: null, status: 'in_office', scan_out_time: null })
+}
+
+/** Delete a dispatched run: send all its parcels back to the routing pool, then
+ *  remove the delivery note. */
+export async function deleteRun(noteId: string): Promise<void> {
+  await db().from('shipsync_packages').update({
+    delivery_note_id: null, driver_id: null, status: 'in_office' as PackageStatus,
+    scan_out_time: null, driver_scanned: false, driver_scan_out_time: null,
+  }).eq('delivery_note_id', noteId)
+  const { error } = await db().from('shipsync_delivery_notes').delete().eq('id', noteId)
+  if (error) throw error
 }
 
 // ── Images ───────────────────────────────────────────────────────────────────

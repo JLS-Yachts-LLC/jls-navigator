@@ -26,6 +26,9 @@ import {
 } from "./primitives";
 import { ConfirmModal, useToast } from "./feedback";
 import { LeoPanel } from "@/components/leo/LeoPanel";
+import { ManageUsers } from "@/components/admin/manage-users";
+import { MfaSetup } from "@/components/auth/MfaSetup";
+import { PermissionsPanel, IntegrationsPanel, EmailTemplatesPanel } from "@/routes/_app.settings";
 import {
   useVesselVisaData,
   useVesselMovements,
@@ -1494,28 +1497,51 @@ export function PolarisSosoReports({
   );
 }
 
-// ── Settings screen (preview-informational) ───────────────────────────────────
+// ── Settings screen ────────────────────────────────────────────────────────────
+// One home for everything: user management, MFA, role permissions, integration
+// credentials and email templates (panels shared with routes/_app.settings.tsx).
+const SETTINGS_TABS = [
+  { key: "users", label: "Manage Users", icon: "users" },
+  { key: "security", label: "Security", icon: "shield-lock" },
+  { key: "permissions", label: "Permissions", icon: "shield-check" },
+  { key: "integrations", label: "Integrations", icon: "plug" },
+  { key: "emailTemplates", label: "Email Templates", icon: "mail" },
+] as const;
+type SettingsTabKey = (typeof SETTINGS_TABS)[number]["key"];
+
 export function PolarisSettings() {
+  const [tab, setTab] = useState<SettingsTabKey>("users");
   return (
     <>
       <PageHeader title="Settings" actions={null} />
-      <SectionLabel>Polaris Beta — preview</SectionLabel>
-      <div className="pds-grid-2" style={{ marginBottom: 16 }}>
-        <PolarisCard title="About this view" icon="sparkles">
-          <p style={{ fontSize: "var(--pds-fs-body)", color: "var(--pds-text-secondary)", margin: 0, lineHeight: 1.6 }}>
-            This is the Polaris New View — a redesigned, mobile-first interface, now the
-            default. Use <strong style={{ color: "var(--pds-text)" }}>Old View</strong> (top right)
-            to return to the legacy app at any time. Your data is the same in both.
-          </p>
-        </PolarisCard>
-        <PolarisCard title="Admin & preferences" icon="settings">
-          <p style={{ fontSize: "var(--pds-fs-body)", color: "var(--pds-text-secondary)", margin: "0 0 12px", lineHeight: 1.6 }}>
-            User management, roles, integrations and theme are managed in the original app's
-            Settings &amp; Admin areas.
-          </p>
-          <EmptyState icon="settings" message="Beta settings will live here as the redesign is promoted." />
-        </PolarisCard>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
+        {SETTINGS_TABS.map((t) => {
+          const on = tab === t.key;
+          return (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                padding: "7px 14px", minHeight: 34,
+                borderRadius: "var(--pds-radius-full)",
+                border: `1px solid ${on ? "var(--pds-border-gold)" : "var(--pds-border)"}`,
+                background: on ? "var(--pds-gold-muted)" : "transparent",
+                color: on ? "var(--pds-gold-light)" : "var(--pds-text-secondary)",
+                fontSize: "var(--pds-fs-label)", fontWeight: 600, cursor: "pointer",
+              }}
+            >
+              <TIcon name={t.icon} size={15} color={on ? "var(--pds-gold)" : "var(--pds-text-secondary)"} />
+              {t.label}
+            </button>
+          );
+        })}
       </div>
+      {tab === "users" && <ManageUsers />}
+      {tab === "security" && <MfaSetup />}
+      {tab === "permissions" && <PermissionsPanel />}
+      {tab === "integrations" && <IntegrationsPanel />}
+      {tab === "emailTemplates" && <EmailTemplatesPanel />}
     </>
   );
 }

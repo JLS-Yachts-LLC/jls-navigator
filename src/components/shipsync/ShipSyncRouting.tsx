@@ -2,10 +2,12 @@ import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Ship, Truck, MapPin, Route, X, Plus, ChevronRight, ChevronDown, Anchor } from "lucide-react";
+import { Loader2, Ship, Truck, Route, X, Plus, ChevronRight, ChevronDown, Anchor, Calendar, Map as MapIcon } from "lucide-react";
 import { StatusBadge } from "@/components/shipsync/shared";
-import { dispatchRoute, unassignPackage } from "@/lib/shipsync/data";
-import { googleMapsDirectionsUrl, type ShipSyncPackage, type ShipSyncDestination } from "@/lib/shipsync/model";
+import { ShipSyncDeliveryCalendar } from "@/components/shipsync/ShipSyncDeliveryCalendar";
+import { RouteMapDialog, type RouteStop } from "@/components/shipsync/RouteMapDialog";
+import { dispatchRoute } from "@/lib/shipsync/data";
+import { vanLabel, type ShipSyncPackage, type ShipSyncDestination } from "@/lib/shipsync/model";
 import type { ShipSyncData } from "@/components/shipsync-page";
 
 const UNASSIGNED = "—";
@@ -14,17 +16,22 @@ interface RouteDraft {
   id: string;
   name: string;
   driverId: string;
+  vehicleId: string;         // van assigned to the route
+  deliveryDate: string;      // YYYY-MM-DD — day it goes out for delivery
   boats: string[];           // boat names added to this route
   excluded: Set<string>;     // parcel ids unticked
   expanded: Set<string>;     // boat names currently expanded
 }
 
+const today = () => new Date().toISOString().slice(0, 10);
+const newRoute = (id: string, name: string): RouteDraft =>
+  ({ id, name, driverId: "", vehicleId: "", deliveryDate: today(), boats: [], excluded: new Set(), expanded: new Set() });
+
 export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: () => Promise<void> }) {
   const seq = useRef(1);
-  const [routes, setRoutes] = useState<RouteDraft[]>(() => [
-    { id: "r1", name: "Route 1", driverId: "", boats: [], excluded: new Set(), expanded: new Set() },
-  ]);
+  const [routes, setRoutes] = useState<RouteDraft[]>(() => [newRoute("r1", "Route 1")]);
   const [busy, setBusy] = useState<string | null>(null);
+  const [mapRoute, setMapRoute] = useState<{ name: string; stops: RouteStop[] } | null>(null);
 
   const destByBoat = useMemo(() => {
     const m = new Map<string, ShipSyncDestination>();
@@ -65,17 +72,6 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
 
   const activeDrivers = useMemo(() => data.drivers.filter((d) => d.active), [data.drivers]);
 
-  // Driver runs: parcels already routed and out the door, grouped by driver.
-  const driverRuns = useMemo(() => {
-    const runs = new Map<string, ShipSyncPackage[]>();
-    for (const p of data.packages) {
-      if (!p.driver_id || !["assigned", "out_for_delivery"].includes(p.status)) continue;
-      if (!runs.has(p.driver_id)) runs.set(p.driver_id, []);
-      runs.get(p.driver_id)!.push(p);
-    }
-    return runs;
-  }, [data.packages]);
-
   // Parcels included on a route: all its boats' waiting parcels minus the unticked.
   function routeParcels(r: RouteDraft): ShipSyncPackage[] {
     const out: ShipSyncPackage[] = [];
@@ -91,7 +87,7 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
   }
   function addRoute() {
     seq.current += 1;
-    setRoutes((prev) => [...prev, { id: `r${seq.current}-${prev.length}`, name: `Route ${seq.current}`, driverId: "", boats: [], excluded: new Set(), expanded: new Set() }]);
+    setRoutes((prev) => [...prev, newRoute(`r${seq.current}-${prev.length}`, `Route ${seq.current}`)]);
   }
   function removeRoute(id: string) {
     setRoutes((prev) => (prev.length === 1 ? prev : prev.filter((r) => r.id !== id)));
@@ -124,39 +120,23 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
     const parcels = routeParcels(r);
     if (parcels.length === 0) { toast.error("Add boats/parcels to this route first"); return; }
     if (!r.driverId) { toast.error("Choose a driver for this route"); return; }
+    if (!r.vehicleId) { toast.error("Choose a van for this route"); return; }
+    if (!r.deliveryDate) { toast.error("Set the delivery date for this route"); return; }
     setBusy(r.id);
     try {
       const distinctBoats = Array.from(new Set(parcels.map((p) => p.boat_name || UNASSIGNED)));
       const boatLabel = distinctBoats.length === 1 && distinctBoats[0] !== UNASSIGNED ? distinctBoats[0] : null;
-      const note = await dispatchRoute(parcels.map((p) => p.id), r.driverId, boatLabel);
+      const note = await dispatchRoute(parcels.map((p) => p.id), r.driverId, boatLabel, r.deliveryDate, r.vehicleId);
       const driver = data.drivers.find((d) => d.id === r.driverId);
       await reload();
       // Drop this card; keep the rest (renumbering is cosmetic — leave names as-is).
-      setRoutes((prev) => (prev.length === 1
-        ? [{ id: "r1", name: "Route 1", driverId: "", boats: [], excluded: new Set(), expanded: new Set() }]
-        : prev.filter((x) => x.id !== r.id)));
-      toast.success(`Dispatched ${parcels.length} parcel${parcels.length > 1 ? "s" : ""} across ${distinctBoats.length} boat${distinctBoats.length > 1 ? "s" : ""} to ${driver?.name ?? "driver"} (DN-${note.number})`);
+      setRoutes((prev) => (prev.length === 1 ? [newRoute("r1", "Route 1")] : prev.filter((x) => x.id !== r.id)));
+      toast.success(`Dispatched ${parcels.length} parcel${parcels.length > 1 ? "s" : ""} across ${distinctBoats.length} boat${distinctBoats.length > 1 ? "s" : ""} to ${driver?.name ?? "driver"} for ${r.deliveryDate} (DN-${note.number})`);
     } catch (e: any) {
       toast.error(e?.message ?? "Dispatch failed");
     } finally {
       setBusy(null);
     }
-  }
-
-  async function sendBack(id: string) {
-    setBusy(`back-${id}`);
-    try { await unassignPackage(id); await reload(); toast.success("Parcel sent back to routing"); }
-    catch (e: any) { toast.error(e?.message ?? "Failed"); }
-    finally { setBusy(null); }
-  }
-
-  function runMapUrl(parcels: ShipSyncPackage[]): string | null {
-    const boats = Array.from(new Set(parcels.map((p) => p.boat_name).filter(Boolean) as string[])).sort();
-    const stops = boats
-      .map((b) => destByBoat.get(b.toUpperCase()))
-      .filter(Boolean)
-      .map((d) => ({ address: d!.address, lat: d!.lat, lng: d!.lng }));
-    return stops.length ? googleMapsDirectionsUrl(stops) : null;
   }
 
   return (
@@ -185,8 +165,29 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
                   </div>
                   <span className="text-[12px] text-muted-foreground">{r.boats.length} boat{r.boats.length === 1 ? "" : "s"} · {parcels.length} parcel{parcels.length === 1 ? "" : "s"}</span>
                   <div className="ml-auto flex items-center gap-2">
+                    <Button
+                      size="sm" variant="outline" className="h-8 gap-1.5"
+                      disabled={r.boats.filter((b) => b !== UNASSIGNED).length === 0}
+                      title="Route map — optimized stop order, distances & ETA"
+                      onClick={() => setMapRoute({
+                        name: r.name,
+                        stops: r.boats
+                          .filter((b) => b !== UNASSIGNED)
+                          .map((b) => {
+                            const d = destByBoat.get(b.toUpperCase());
+                            return { boat: b, address: d?.address, lat: d?.lat, lng: d?.lng };
+                          }),
+                      })}
+                    >
+                      <MapIcon className="h-3.5 w-3.5" /> Map
+                    </Button>
+                    <label className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+                      <Calendar className="h-3.5 w-3.5" />
+                      <input type="date" value={r.deliveryDate} onChange={(e) => patchRoute(r.id, (x) => ({ ...x, deliveryDate: e.target.value }))}
+                        className="h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground" title="Day it goes out for delivery" />
+                    </label>
                     <Select value={r.driverId} onValueChange={(v) => patchRoute(r.id, (x) => ({ ...x, driverId: v }))}>
-                      <SelectTrigger className="h-8 w-44 text-xs"><SelectValue placeholder="Choose driver…" /></SelectTrigger>
+                      <SelectTrigger className="h-8 w-40 text-xs"><SelectValue placeholder="Choose driver…" /></SelectTrigger>
                       <SelectContent>
                         {activeDrivers.length === 0 && <div className="px-2 py-1.5 text-xs text-muted-foreground">No active drivers</div>}
                         {activeDrivers.map((d) => (
@@ -194,7 +195,16 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
                         ))}
                       </SelectContent>
                     </Select>
-                    <Button size="sm" className="h-8 gap-1.5" disabled={busy === r.id || parcels.length === 0 || !r.driverId} onClick={() => dispatch(r)}>
+                    <Select value={r.vehicleId} onValueChange={(v) => patchRoute(r.id, (x) => ({ ...x, vehicleId: v }))}>
+                      <SelectTrigger className="h-8 w-40 text-xs"><SelectValue placeholder="Choose van…" /></SelectTrigger>
+                      <SelectContent>
+                        {data.vehicles.length === 0 && <div className="px-2 py-1.5 text-xs text-muted-foreground">No vans</div>}
+                        {data.vehicles.map((v) => (
+                          <SelectItem key={v.id} value={v.id}>{vanLabel(v)}{v.status && v.status !== "available" ? ` · ${v.status}` : ""}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button size="sm" className="h-8 gap-1.5" disabled={busy === r.id || parcels.length === 0 || !r.driverId || !r.vehicleId} onClick={() => dispatch(r)}>
                       {busy === r.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Truck className="h-3.5 w-3.5" />}
                       Dispatch {parcels.length || ""}
                     </Button>
@@ -271,64 +281,17 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
         </div>
       </div>
 
-      {/* ── Right: live driver runs ── */}
-      <div>
-        <div className="mb-3 flex items-center gap-2">
-          <Truck className="h-4 w-4 text-primary" />
-          <h2 className="font-display text-base font-semibold">Driver runs</h2>
-        </div>
+      {/* ── Right: weekly delivery calendar ── */}
+      <ShipSyncDeliveryCalendar data={data} reload={reload} />
 
-        {driverRuns.size === 0 ? (
-          <div className="flex h-48 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border text-sm text-muted-foreground">
-            <Truck className="h-6 w-6 opacity-40" />
-            No active runs yet — route some parcels to a driver.
-          </div>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {activeDrivers.concat(data.drivers.filter((d) => !d.active && driverRuns.has(d.id))).map((driver) => {
-              const parcels = driverRuns.get(driver.id);
-              if (!parcels || parcels.length === 0) return null;
-              const boats = Array.from(new Set(parcels.map((p) => p.boat_name || UNASSIGNED))).sort();
-              const mapUrl = runMapUrl(parcels);
-              return (
-                <div key={driver.id} className="rounded-xl border border-border bg-card">
-                  <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-                    <span className="grid h-7 w-7 place-items-center rounded-full bg-primary/10 text-[11px] font-bold text-primary">
-                      {driver.name.split(" ").map((s) => s[0]).slice(0, 2).join("")}
-                    </span>
-                    <div>
-                      <div className="font-display text-sm font-bold">{driver.name}</div>
-                      <div className="text-[11px] text-muted-foreground">{driver.vehicle ?? "—"} · {parcels.length} pkg · {boats.length} stop{boats.length === 1 ? "" : "s"}</div>
-                    </div>
-                    {mapUrl && (
-                      <a href={mapUrl} target="_blank" rel="noopener noreferrer"
-                        className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-[12px] font-medium text-primary hover:bg-primary/5">
-                        <MapPin className="h-3.5 w-3.5" /> Route
-                      </a>
-                    )}
-                  </div>
-                  <div className="divide-y divide-border/40">
-                    {parcels.map((p) => (
-                      <div key={p.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
-                        <Ship className="h-3.5 w-3.5 text-muted-foreground/60" />
-                        <span className="font-medium">{p.boat_name ?? "No boat"}</span>
-                        <span className="font-mono text-[12px] text-muted-foreground">{p.barcode ?? "—"}</span>
-                        <span className="ml-auto flex items-center gap-2">
-                          <StatusBadge status={p.status} />
-                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground/60 hover:text-destructive"
-                            disabled={busy === `back-${p.id}`} onClick={() => sendBack(p.id)} title="Send back to routing">
-                            {busy === `back-${p.id}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
-                          </Button>
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+      {mapRoute && (
+        <RouteMapDialog
+          open
+          onOpenChange={(o) => !o && setMapRoute(null)}
+          title={`${mapRoute.name} — route plan`}
+          stops={mapRoute.stops}
+        />
+      )}
     </div>
   );
 }

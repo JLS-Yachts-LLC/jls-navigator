@@ -41,6 +41,18 @@ export interface ShipSyncDriver {
   user_id: string | null
 }
 
+export interface ShipSyncDeliverySchedule {
+  id: string
+  boat_name: string
+  weekday: number   // 0 = Mon … 6 = Sun
+  created_at: string
+}
+
+/** Weekly delivery calendar days, Monday-first. */
+export const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const
+/** Today's index in the Mon-first WEEKDAYS array (JS getDay() is Sun=0). */
+export const todayWeekday = (): number => (new Date().getDay() + 6) % 7
+
 export interface ShipSyncDestination {
   id: string
   boat_name: string
@@ -51,12 +63,25 @@ export interface ShipSyncDestination {
   notes: string | null
 }
 
+export interface ShipSyncVehicle {
+  id: string
+  make: string | null
+  model: string | null
+  registration: string | null
+  status: string | null
+}
+
+/** Short label for a van — its plate if set, else make + model. */
+export const vanLabel = (v: ShipSyncVehicle): string =>
+  (v.registration?.trim() || [v.make, v.model].filter(Boolean).join(' ').trim() || 'Van')
+
 export interface ShipSyncDeliveryNote {
   id: string
   number: string | null
   boat_name: string | null
   yacht_id: string | null
   driver_id: string | null
+  vehicle_id: string | null
   destination_address: string | null
   destination_lat: number | null
   destination_lng: number | null
@@ -101,6 +126,8 @@ export interface ShipSyncPackage {
   delivery_photo_url: string | null
   item_photo_url: string | null
   office_photo_url: string | null
+  delivery_note_no: string | null
+  documents: { name: string; url: string }[] | null
   boe_no: string | null
   trade_type: string | null
   supplier: string | null

@@ -1,0 +1,186 @@
+{
+  "updatedAt": "2026-04-10T11:21:32.055Z",
+  "createdAt": "2026-04-10T10:42:29.109Z",
+  "id": "6Uhc7FiCN_1FGxXCWSLae",
+  "name": "Fix Visa Application Tracker Item Name",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        176,
+        0
+      ],
+      "id": "9ee95ba9-4f00-406e-9969-9a12612453a2",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "resource": "boardItem",
+        "operation": "getAll",
+        "boardId": "5089598585",
+        "groupId": "group_mm20f4t7",
+        "returnAll": true
+      },
+      "type": "n8n-nodes-base.mondayCom",
+      "typeVersion": 1,
+      "position": [
+        480,
+        0
+      ],
+      "id": "b8e35230-e166-489f-86b5-b16f2f1c560a",
+      "name": "Get many items",
+      "credentials": {
+        "mondayComApi": {
+          "id": "WLi9vhoOj5ilxUBf",
+          "name": "Monday.com account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        736,
+        0
+      ],
+      "id": "1597ba63-d0c0-4934-b3f5-5989c201962c",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst yachtName = item.column_values.find(col => col.id === 'text_mkzahfaf').text;\n\nconst query = `mutation { change_multiple_column_values(item_id: ${item.id}, board_id: 5089598585, column_values: \"{\\\\\"name\\\\\":\\\\\"${yachtName}\\\\\"}\") { id name } }`;\n\nreturn [{\n  json: {\n    bodyString: JSON.stringify({ query: query })\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        16
+      ],
+      "id": "40857e35-bcfa-4fd7-b7de-c7905cfc3573",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.monday.com/v2",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "mondayComApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.bodyString }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1264,
+        48
+      ],
+      "id": "19e1e4ff-d065-41f3-ad5d-1bf78ab4c5e7",
+      "name": "Post to Monday",
+      "credentials": {
+        "mondayComApi": {
+          "id": "WLi9vhoOj5ilxUBf",
+          "name": "Monday.com account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Get many items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get many items": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Post to Monday",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post to Monday": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "fb77ee15-5b40-4a29-9e6d-ddd78680a2ca",
+  "activeVersionId": null,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-04-10T10:42:29.118Z",
+      "createdAt": "2026-04-10T10:42:29.118Z",
+      "role": "workflow:owner",
+      "workflowId": "6Uhc7FiCN_1FGxXCWSLae",
+      "projectId": "7K0b7BEJpzNXLaZY"
+    }
+  ],
+  "activeVersion": null,
+  "tags": []
+}

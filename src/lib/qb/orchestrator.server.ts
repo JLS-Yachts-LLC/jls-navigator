@@ -54,7 +54,7 @@ export function classifyInvoiceType(invoice: any): 'Invoice' | 'Pro-Forma' {
   return sv === '2' ? 'Pro-Forma' : 'Invoice'
 }
 
-export type OrchestrationItem = QbEvent & { invoiceType?: 'Invoice' | 'Pro-Forma'; heal?: HealResult; error?: string }
+export type OrchestrationItem = QbEvent & { invoiceType?: 'Invoice' | 'Pro-Forma'; heal?: HealResult; ingest?: string; docgen?: string; error?: string }
 
 /** Process a batch: track each event, and for invoices fetch + heal + classify.
  *  Requires QBO credentials; callers should guard with qboConfigured(). */
@@ -78,7 +78,51 @@ export async function orchestrate(raw: string): Promise<OrchestrationItem[]> {
             ? (await qboRequest('GET', `/invoice/${ev.entityId}?include=enhancedAllCustomFields&minorversion=73`))?.Invoice ?? invoice
             : invoice
           item.invoiceType = classifyInvoiceType(fresh)
+
+          // Native doc-gen (port of the n8n "QB Invoice" workflow): render the
+          // branded PDF and attach it to the QBO invoice. Gated by its own
+          // qb-invoice-pdf toggle (default OFF), with an internal attach-echo
+          // guard so our own upload never loops the webhook.
+          if (item.invoiceType === 'Invoice') {
+            const { generateAndAttachInvoicePdf } = await import('./invoice-doc.server')
+            const pdfRes = await generateAndAttachInvoicePdf(ev.entityId)
+            item.docgen = `${pdfRes.action}${pdfRes.action === 'attached' ? ` (${pdfRes.ms}ms)` : ''}`
+            if (pdfRes.action === 'error') item.error = `docgen: ${pdfRes.detail}`
+          }
         }
+      }
+      // Native doc-gen (port of the n8n "QB (Quotation/Estimate)" workflow):
+      // render the Quotation PDF + XLSX and attach both to the QBO estimate.
+      // Gated by its own qb-estimate-doc toggle (default OFF) with a loop-guard
+      // in qbo_doc_logs so our own attachment echoes never re-trigger it.
+      if (ev.entity === 'estimate' && qboConfigured()) {
+        const { runEstimateDocgen } = await import('./estimate-docgen.server')
+        item.docgen = await runEstimateDocgen(ev.entityId, ev.rawType)
+      }
+      // Pro-Forma doc-gen (port of the n8n "QB (PRO-FORMA)" workflow): a
+      // Pro-Forma is an Invoice classified type "2" above. Gated by qb-proforma-doc.
+      if (ev.entity === 'invoice' && item.invoiceType === 'Pro-Forma' && qboConfigured()) {
+        const { runProformaDocgen } = await import('./proforma-docgen.server')
+        item.docgen = await runProformaDocgen(ev.entityId, ev.rawType)
+      }
+      // Purchase Order doc-gen (port of the n8n "QB (Purchase Order)" workflow).
+      // Gated by qb-po-doc.
+      if (ev.entity === 'purchaseorder' && qboConfigured()) {
+        const { runPurchaseOrderDocgen } = await import('./purchase-order-docgen.server')
+        item.docgen = await runPurchaseOrderDocgen(ev.entityId, ev.rawType)
+      }
+      // Receive Payment → Sales Receipt PDF (port of the n8n "QB (Receive
+      // Payment)" workflow). Gated by qb-payment-doc.
+      if (ev.entity === 'payment' && qboConfigured()) {
+        const { runReceivePaymentDocgen } = await import('./receive-payment-docgen.server')
+        item.docgen = await runReceivePaymentDocgen(ev.entityId, ev.rawType)
+      }
+      // Native ingest: land the changed document in the app's qbo_* tables now,
+      // instead of waiting for the 5-minute poll. (Dynamic import — sync.server
+      // imports classifyInvoiceType from this module.)
+      if (qboConfigured()) {
+        const { syncOneEntity } = await import('./sync.server')
+        item.ingest = await syncOneEntity(ev.entity, ev.entityId)
       }
     } catch (e: any) {
       item.error = e?.message ?? String(e)
