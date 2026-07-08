@@ -104,8 +104,8 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
   }
 
   return (
-    <div className="px-6 py-5">
-      <div className="mb-3 flex flex-wrap items-center gap-2.5">
+    <div className="flex h-full flex-col px-6 py-5">
+      <div className="mb-3 flex shrink-0 flex-wrap items-center gap-2.5">
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/50" />
           <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search barcode, boat, owner, courier…" className="h-9 w-72 pl-8 text-sm" />
@@ -122,9 +122,9 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
         <Button size="sm" onClick={openNew} className="ml-auto h-9 gap-1.5"><Plus className="h-4 w-4" /> Check in package</Button>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-border bg-card">
+      <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-card">
         <table className="w-full text-sm">
-          <thead><tr className="border-b border-border bg-muted/40 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+          <thead className="sticky top-0 z-10"><tr className="border-b border-border bg-card text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
             {["Air waybill/tracking info", "Client", "Date Received", "Consignee", "Number of Packages", "Courier", "Shipment Type", "Delivery Note Number", "Driver", "Date Delivered", "Documents", "Zone", "Status", ""].map((h, i) => (
               <th key={`${h}-${i}`} className="px-3 py-2.5 whitespace-nowrap">{h}</th>
             ))}
