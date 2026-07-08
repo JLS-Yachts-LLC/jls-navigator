@@ -39,7 +39,16 @@ export interface ShipSyncDriver {
   vehicle: string | null
   active: boolean
   user_id: string | null
+  work_days: number[] | null   // Mon-first weekday indices the driver works (null ⇒ all)
 }
+
+/** Does this driver work on the given Mon-first weekday index? (null work_days ⇒ all days) */
+export const driverWorks = (d: { work_days?: number[] | null }, weekday: number): boolean =>
+  !d.work_days || d.work_days.includes(weekday)
+
+/** Mon-first weekday index (0=Mon … 6=Sun) for a YYYY-MM-DD date string. */
+export const weekdayOf = (dateStr: string): number =>
+  (new Date(`${dateStr}T00:00:00`).getDay() + 6) % 7
 
 export interface ShipSyncDeliverySchedule {
   id: string

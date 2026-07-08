@@ -10,10 +10,28 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Plus, Pencil, Trash2, Loader2 } from "lucide-react";
 import { saveDriver, deleteDriver } from "@/lib/shipsync/data";
-import type { ShipSyncDriver } from "@/lib/shipsync/model";
+import { WEEKDAYS, type ShipSyncDriver } from "@/lib/shipsync/model";
 import type { ShipSyncData } from "@/components/shipsync-page";
 
 type Form = Partial<ShipSyncDriver>;
+const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
+
+/** Small Mon–Sun toggle row. */
+function WorkDays({ value, onToggle }: { value: number[]; onToggle: (wd: number) => void }) {
+  return (
+    <div className="flex gap-1">
+      {WEEKDAYS.map((label, wd) => {
+        const on = value.includes(wd);
+        return (
+          <button key={wd} type="button" onClick={(e) => { e.stopPropagation(); onToggle(wd); }} title={label}
+            className={`h-6 w-6 rounded text-[10px] font-semibold transition ${on ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground/50 hover:text-foreground"}`}>
+            {label[0]}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 export function ShipSyncDrivers({ data, reload }: { data: ShipSyncData; reload: () => Promise<void> }) {
   const [open, setOpen] = useState(false);
@@ -26,10 +44,17 @@ export function ShipSyncDrivers({ data, reload }: { data: ShipSyncData; reload: 
     if (!form.name?.trim()) { toast.error("Driver name is required"); return; }
     setBusy(true);
     try {
-      await saveDriver({ id: form.id, name: form.name.trim(), email: form.email?.trim() || null, phone: form.phone?.trim() || null, vehicle: form.vehicle?.trim() || null, active: form.active ?? true });
+      await saveDriver({ id: form.id, name: form.name.trim(), email: form.email?.trim() || null, phone: form.phone?.trim() || null, vehicle: form.vehicle?.trim() || null, active: form.active ?? true, work_days: form.work_days ?? ALL_DAYS });
       toast.success(form.id ? "Driver updated" : "Driver added");
       setOpen(false); await reload();
     } catch (e: any) { toast.error(e?.message ?? "Save failed"); } finally { setBusy(false); }
+  }
+  /** Toggle a working day inline (saves immediately). */
+  async function toggleDay(d: ShipSyncDriver, wd: number) {
+    const cur = d.work_days ?? ALL_DAYS;
+    const next = cur.includes(wd) ? cur.filter((x) => x !== wd) : [...cur, wd].sort((a, b) => a - b);
+    try { await saveDriver({ id: d.id, work_days: next }); await reload(); }
+    catch (e: any) { toast.error(e?.message ?? "Failed"); }
   }
   async function confirmDelete() {
     if (!delTarget) return;
@@ -46,17 +71,20 @@ export function ShipSyncDrivers({ data, reload }: { data: ShipSyncData; reload: 
       <div className="overflow-hidden rounded-xl border border-border bg-card">
         <table className="w-full text-sm">
           <thead><tr className="border-b border-border bg-muted/40 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-            {["Name", "Email", "Phone", "Vehicle", "Active", ""].map((h) => <th key={h} className="px-4 py-2.5">{h}</th>)}
+            {["Name", "Email", "Phone", "Vehicle", "Working days", "Active", ""].map((h) => <th key={h} className="px-4 py-2.5">{h}</th>)}
           </tr></thead>
           <tbody>
             {data.drivers.length === 0 ? (
-              <tr><td colSpan={6} className="px-4 py-10 text-center text-sm text-muted-foreground">No drivers yet.</td></tr>
+              <tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-muted-foreground">No drivers yet.</td></tr>
             ) : data.drivers.map((d) => (
               <tr key={d.id} className="group cursor-pointer border-b border-border/40 hover:bg-accent/20" onClick={() => { setForm({ ...d }); setOpen(true); }}>
                 <td className="px-4 py-2.5 font-medium">{d.name}</td>
                 <td className="px-4 py-2.5 text-muted-foreground">{d.email ?? "—"}</td>
                 <td className="px-4 py-2.5 text-muted-foreground">{d.phone ?? "—"}</td>
                 <td className="px-4 py-2.5 text-muted-foreground">{d.vehicle ?? "—"}</td>
+                <td className="px-4 py-2.5" onClick={(e) => e.stopPropagation()}>
+                  <WorkDays value={d.work_days ?? ALL_DAYS} onToggle={(wd) => toggleDay(d, wd)} />
+                </td>
                 <td className="px-4 py-2.5">{d.active ? <span className="text-emerald-600 dark:text-emerald-400">Yes</span> : <span className="text-muted-foreground">No</span>}</td>
                 <td className="px-4 py-2.5" onClick={(e) => e.stopPropagation()}>
                   <div className="flex justify-end gap-0.5 opacity-0 group-hover:opacity-100">
@@ -83,6 +111,11 @@ export function ShipSyncDrivers({ data, reload }: { data: ShipSyncData; reload: 
               <div className="space-y-1.5"><Label className="text-xs">Vehicle</Label><Input value={form.vehicle ?? ""} onChange={(e) => set({ vehicle: e.target.value })} className="h-9" /></div>
               <label className="flex items-center gap-2 text-sm pb-2"><input type="checkbox" checked={form.active ?? true} onChange={(e) => set({ active: e.target.checked })} /> Active</label>
             </div>
+            <div className="space-y-1.5"><Label className="text-xs">Working days</Label>
+              <WorkDays value={form.work_days ?? ALL_DAYS} onToggle={(wd) => {
+                const cur = form.work_days ?? ALL_DAYS;
+                set({ work_days: cur.includes(wd) ? cur.filter((x) => x !== wd) : [...cur, wd].sort((a, b) => a - b) });
+              }} /></div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)} disabled={busy}>Cancel</Button>

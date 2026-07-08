@@ -7,7 +7,7 @@ import { StatusBadge } from "@/components/shipsync/shared";
 import { ShipSyncDeliveryCalendar } from "@/components/shipsync/ShipSyncDeliveryCalendar";
 import { RouteMapDialog, type RouteStop } from "@/components/shipsync/RouteMapDialog";
 import { dispatchRoute } from "@/lib/shipsync/data";
-import { vanLabel, type ShipSyncPackage, type ShipSyncDestination } from "@/lib/shipsync/model";
+import { vanLabel, driverWorks, weekdayOf, WEEKDAYS, type ShipSyncPackage, type ShipSyncDestination } from "@/lib/shipsync/model";
 import type { ShipSyncData } from "@/components/shipsync-page";
 
 const UNASSIGNED = "—";
@@ -133,6 +133,10 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
     if (!r.driverId) { toast.error("Choose a driver for this route"); return; }
     if (!r.vehicleId) { toast.error("Choose a van for this route"); return; }
     if (!r.deliveryDate) { toast.error("Set the delivery date for this route"); return; }
+    const drv = data.drivers.find((d) => d.id === r.driverId);
+    if (drv && !driverWorks(drv, weekdayOf(r.deliveryDate))) {
+      toast.error(`${drv.name} doesn't work ${WEEKDAYS[weekdayOf(r.deliveryDate)]} — pick another day or driver`); return;
+    }
     setBusy(r.id);
     try {
       const distinctBoats = Array.from(new Set(parcels.map((p) => p.boat_name || UNASSIGNED)));
@@ -166,6 +170,9 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
         <div className="flex flex-col gap-3">
           {routes.map((r) => {
             const parcels = routeParcels(r);
+            const routeWeekday = weekdayOf(r.deliveryDate);
+            const selDriver = data.drivers.find((d) => d.id === r.driverId);
+            const driverOff = !!selDriver && !driverWorks(selDriver, routeWeekday);
             return (
               <div key={r.id} className={`rounded-xl border bg-card transition ${parcels.length > 0 ? "border-primary/40" : "border-border"}`}>
                 {/* Route header */}
@@ -201,9 +208,14 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
                       <SelectTrigger className="h-8 w-40 text-xs"><SelectValue placeholder="Choose driver…" /></SelectTrigger>
                       <SelectContent>
                         {activeDrivers.length === 0 && <div className="px-2 py-1.5 text-xs text-muted-foreground">No active drivers</div>}
-                        {activeDrivers.map((d) => (
-                          <SelectItem key={d.id} value={d.id}>{d.name}{d.vehicle ? ` · ${d.vehicle}` : ""}</SelectItem>
-                        ))}
+                        {activeDrivers.map((d) => {
+                          const off = !driverWorks(d, routeWeekday);
+                          return (
+                            <SelectItem key={d.id} value={d.id} disabled={off}>
+                              {d.name}{d.vehicle ? ` · ${d.vehicle}` : ""}{off ? ` · off ${WEEKDAYS[routeWeekday]}` : ""}
+                            </SelectItem>
+                          );
+                        })}
                       </SelectContent>
                     </Select>
                     <Select value={r.vehicleId} onValueChange={(v) => patchRoute(r.id, (x) => ({ ...x, vehicleId: v }))}>
@@ -215,7 +227,7 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
                         ))}
                       </SelectContent>
                     </Select>
-                    <Button size="sm" className="h-8 gap-1.5" disabled={busy === r.id || parcels.length === 0 || !r.driverId || !r.vehicleId} onClick={() => dispatch(r)}>
+                    <Button size="sm" className="h-8 gap-1.5" disabled={busy === r.id || parcels.length === 0 || !r.driverId || !r.vehicleId || driverOff} onClick={() => dispatch(r)}>
                       {busy === r.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Truck className="h-3.5 w-3.5" />}
                       Dispatch {parcels.length || ""}
                     </Button>
