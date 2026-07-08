@@ -82,7 +82,7 @@ export function ShipSyncDeliveryCalendar({ data, reload }: { data: ShipSyncData;
                   {isToday && <span className="text-[9px] font-semibold uppercase tracking-wide text-primary">Today</span>}
                 </div>
 
-                {/* Boats stack vertically, with a small + button at the end */}
+                {/* Boats stack vertically */}
                 <div className="flex flex-1 flex-col items-start gap-1.5">
                   {entries.length === 0 && <span className="py-0.5 text-[12px] italic text-muted-foreground/60">No deliveries</span>}
 
@@ -94,21 +94,22 @@ export function ShipSyncDeliveryCalendar({ data, reload }: { data: ShipSyncData;
                       </button>
                     </span>
                   ))}
-
-                  {available.length > 0 && (
-                    <Select value="" onValueChange={(b) => add(b, wd)} disabled={busy === `add-${wd}`}>
-                      <SelectTrigger
-                        title="Add boat"
-                        className="h-7 w-7 justify-center rounded-full border-dashed p-0 text-muted-foreground hover:text-foreground [&>svg:last-of-type]:hidden"
-                      >
-                        {busy === `add-${wd}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                      </SelectTrigger>
-                      <SelectContent>
-                        {available.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  )}
                 </div>
+
+                {/* Add boat — at the end (right) of the row */}
+                {available.length > 0 && (
+                  <Select value="" onValueChange={(b) => add(b, wd)} disabled={busy === `add-${wd}`}>
+                    <SelectTrigger
+                      title="Add boat"
+                      className="ml-auto h-7 w-7 shrink-0 justify-center rounded-full border-dashed p-0 text-muted-foreground hover:text-foreground [&>svg:last-of-type]:hidden"
+                    >
+                      {busy === `add-${wd}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                    </SelectTrigger>
+                    <SelectContent>
+                      {available.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
             </div>
           );
