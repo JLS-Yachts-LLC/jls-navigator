@@ -24,7 +24,7 @@ function WorkDays({ value, onToggle }: { value: number[]; onToggle: (wd: number)
         const on = value.includes(wd);
         return (
           <button key={wd} type="button" onClick={(e) => { e.stopPropagation(); onToggle(wd); }} title={label}
-            className={`h-6 w-6 rounded text-[10px] font-semibold transition ${on ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground/50 hover:text-foreground"}`}>
+            className={`h-6 w-6 rounded text-[10px] font-semibold transition ${on ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400" : "bg-transparent text-muted-foreground/40 hover:bg-muted/40 hover:text-foreground"}`}>
             {label[0]}
           </button>
         );
