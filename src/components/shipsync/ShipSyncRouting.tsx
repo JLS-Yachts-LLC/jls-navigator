@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -26,13 +26,46 @@ const today = () => new Date().toISOString().slice(0, 10);
 const newRoute = (id: string, name: string): RouteDraft =>
   ({ id, name, driverId: "", vehicleId: "", boats: [], excluded: new Set(), expanded: new Set() });
 
+// Persist the in-progress plan so it survives tab switches / navigation / reload.
+const DRAFT_KEY = "shipsync.routing.draft.v1";
+function loadDraft(): { routes: RouteDraft[]; deliveryDate: string } | null {
+  try {
+    const raw = typeof window !== "undefined" ? localStorage.getItem(DRAFT_KEY) : null;
+    if (!raw) return null;
+    const p = JSON.parse(raw);
+    const routes: RouteDraft[] = (p.routes ?? []).map((r: any) => ({
+      id: String(r.id), name: String(r.name), driverId: r.driverId ?? "", vehicleId: r.vehicleId ?? "",
+      boats: Array.isArray(r.boats) ? r.boats : [],
+      excluded: new Set<string>(r.excluded ?? []), expanded: new Set<string>(r.expanded ?? []),
+    }));
+    return routes.length ? { routes, deliveryDate: p.deliveryDate || today() } : null;
+  } catch { return null; }
+}
+
 export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: () => Promise<void> }) {
   const seq = useRef(1);
-  const [routes, setRoutes] = useState<RouteDraft[]>(() => [newRoute("r1", "Route 1")]);
+  const [routes, setRoutes] = useState<RouteDraft[]>(() => loadDraft()?.routes ?? [newRoute("r1", "Route 1")]);
   const [busy, setBusy] = useState<string | null>(null);
   const [mapRoute, setMapRoute] = useState<{ name: string; stops: RouteStop[] } | null>(null);
   // One delivery date for the whole planning session (applies to every route).
-  const [deliveryDate, setDeliveryDate] = useState<string>(today());
+  const [deliveryDate, setDeliveryDate] = useState<string>(() => loadDraft()?.deliveryDate ?? today());
+
+  // Keep the route-number counter ahead of any restored routes.
+  useEffect(() => {
+    seq.current = routes.reduce((m, r) => { const n = parseInt(r.name.replace(/\D/g, ""), 10); return isNaN(n) ? m : Math.max(m, n); }, 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Persist the draft on every change.
+  useEffect(() => {
+    try {
+      const payload = {
+        deliveryDate,
+        routes: routes.map((r) => ({ id: r.id, name: r.name, driverId: r.driverId, vehicleId: r.vehicleId, boats: r.boats, excluded: [...r.excluded], expanded: [...r.expanded] })),
+      };
+      localStorage.setItem(DRAFT_KEY, JSON.stringify(payload));
+    } catch { /* storage full / unavailable — non-fatal */ }
+  }, [routes, deliveryDate]);
   const deliveryWeekday = weekdayOf(deliveryDate);
   const deliveryDayName = deliveryDate ? new Date(`${deliveryDate}T00:00:00`).toLocaleDateString("en-GB", { weekday: "long" }) : "";
 
