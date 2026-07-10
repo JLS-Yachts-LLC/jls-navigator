@@ -26,46 +26,61 @@ const today = () => new Date().toISOString().slice(0, 10);
 const newRoute = (id: string, name: string): RouteDraft =>
   ({ id, name, driverId: "", vehicleId: "", boats: [], excluded: new Set(), expanded: new Set() });
 
-// Persist the in-progress plan so it survives tab switches / navigation / reload.
-const DRAFT_KEY = "shipsync.routing.draft.v1";
-function loadDraft(): { routes: RouteDraft[]; deliveryDate: string } | null {
-  try {
-    const raw = typeof window !== "undefined" ? localStorage.getItem(DRAFT_KEY) : null;
-    if (!raw) return null;
-    const p = JSON.parse(raw);
-    const routes: RouteDraft[] = (p.routes ?? []).map((r: any) => ({
-      id: String(r.id), name: String(r.name), driverId: r.driverId ?? "", vehicleId: r.vehicleId ?? "",
-      boats: Array.isArray(r.boats) ? r.boats : [],
-      excluded: new Set<string>(r.excluded ?? []), expanded: new Set<string>(r.expanded ?? []),
-    }));
-    return routes.length ? { routes, deliveryDate: p.deliveryDate || today() } : null;
-  } catch { return null; }
+// Persist the in-progress plan PER delivery date, so each day has its own routes
+// and the plan survives tab switches / navigation / reload.
+const DRAFTS_KEY = "shipsync.routing.drafts.v2";
+type StoredRoute = { id: string; name: string; driverId: string; vehicleId: string; boats: string[]; excluded: string[]; expanded: string[] };
+function loadAll(): Record<string, StoredRoute[]> {
+  try { const raw = typeof window !== "undefined" ? localStorage.getItem(DRAFTS_KEY) : null; return raw ? (JSON.parse(raw) ?? {}) : {}; }
+  catch { return {}; }
 }
+function saveAll(map: Record<string, StoredRoute[]>) {
+  try { localStorage.setItem(DRAFTS_KEY, JSON.stringify(map)); } catch { /* storage full/unavailable — non-fatal */ }
+}
+function serializeRoutes(routes: RouteDraft[]): StoredRoute[] {
+  return routes.map((r) => ({ id: r.id, name: r.name, driverId: r.driverId, vehicleId: r.vehicleId, boats: r.boats, excluded: [...r.excluded], expanded: [...r.expanded] }));
+}
+/** Rehydrate a day's stored routes, or start a fresh Route 1 when the day has none. */
+function hydrateRoutes(stored: StoredRoute[] | undefined): RouteDraft[] {
+  const rs: RouteDraft[] = (stored ?? []).map((r) => ({
+    id: String(r.id), name: String(r.name), driverId: r.driverId ?? "", vehicleId: r.vehicleId ?? "",
+    boats: Array.isArray(r.boats) ? r.boats : [],
+    excluded: new Set<string>(r.excluded ?? []), expanded: new Set<string>(r.expanded ?? []),
+  }));
+  return rs.length ? rs : [newRoute("r1", "Route 1")];
+}
+const maxRouteNum = (routes: RouteDraft[]) =>
+  routes.reduce((m, r) => { const n = parseInt(r.name.replace(/\D/g, ""), 10); return isNaN(n) ? m : Math.max(m, n); }, 1);
 
 export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: () => Promise<void> }) {
   const seq = useRef(1);
-  const [routes, setRoutes] = useState<RouteDraft[]>(() => loadDraft()?.routes ?? [newRoute("r1", "Route 1")]);
   const [busy, setBusy] = useState<string | null>(null);
   const [mapRoute, setMapRoute] = useState<{ name: string; stops: RouteStop[] } | null>(null);
-  // One delivery date for the whole planning session (applies to every route).
-  const [deliveryDate, setDeliveryDate] = useState<string>(() => loadDraft()?.deliveryDate ?? today());
+  // The day being planned; each date keeps its own set of routes.
+  const [deliveryDate, setDeliveryDate] = useState<string>(today());
+  const [routes, setRoutes] = useState<RouteDraft[]>(() => hydrateRoutes(loadAll()[today()]));
 
-  // Keep the route-number counter ahead of any restored routes.
-  useEffect(() => {
-    seq.current = routes.reduce((m, r) => { const n = parseInt(r.name.replace(/\D/g, ""), 10); return isNaN(n) ? m : Math.max(m, n); }, 1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Keep the route-number counter ahead of the current day's routes (on mount).
+  useEffect(() => { seq.current = maxRouteNum(routes); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
-  // Persist the draft on every change.
+  // Persist the current day's routes on every change.
   useEffect(() => {
-    try {
-      const payload = {
-        deliveryDate,
-        routes: routes.map((r) => ({ id: r.id, name: r.name, driverId: r.driverId, vehicleId: r.vehicleId, boats: r.boats, excluded: [...r.excluded], expanded: [...r.expanded] })),
-      };
-      localStorage.setItem(DRAFT_KEY, JSON.stringify(payload));
-    } catch { /* storage full / unavailable — non-fatal */ }
+    const all = loadAll();
+    all[deliveryDate] = serializeRoutes(routes);
+    saveAll(all);
   }, [routes, deliveryDate]);
+
+  // Switch the planned day: save the day we're leaving, load the new day's routes.
+  function changeDate(newDate: string) {
+    if (!newDate || newDate === deliveryDate) { if (newDate) setDeliveryDate(newDate); return; }
+    const all = loadAll();
+    all[deliveryDate] = serializeRoutes(routes);
+    saveAll(all);
+    const next = hydrateRoutes(all[newDate]);
+    seq.current = maxRouteNum(next);
+    setRoutes(next);
+    setDeliveryDate(newDate);
+  }
   const deliveryWeekday = weekdayOf(deliveryDate);
   const deliveryDayName = deliveryDate ? new Date(`${deliveryDate}T00:00:00`).toLocaleDateString("en-GB", { weekday: "long" }) : "";
 
@@ -200,7 +215,7 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
           <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">{unrouted.length} parcel{unrouted.length === 1 ? "" : "s"} waiting</span>
           <label className="ml-3 flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground" title="Delivery date for all routes below">
             <Calendar className="h-3.5 w-3.5" />
-            <input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)}
+            <input type="date" value={deliveryDate} onChange={(e) => changeDate(e.target.value)}
               className="h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground" />
             {deliveryDayName && <span className="font-semibold text-foreground">{deliveryDayName}</span>}
           </label>
