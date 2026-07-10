@@ -17,7 +17,6 @@ interface RouteDraft {
   name: string;
   driverId: string;
   vehicleId: string;         // van assigned to the route
-  deliveryDate: string;      // YYYY-MM-DD — day it goes out for delivery
   boats: string[];           // boat names added to this route
   excluded: Set<string>;     // parcel ids unticked
   expanded: Set<string>;     // boat names currently expanded
@@ -25,13 +24,17 @@ interface RouteDraft {
 
 const today = () => new Date().toISOString().slice(0, 10);
 const newRoute = (id: string, name: string): RouteDraft =>
-  ({ id, name, driverId: "", vehicleId: "", deliveryDate: today(), boats: [], excluded: new Set(), expanded: new Set() });
+  ({ id, name, driverId: "", vehicleId: "", boats: [], excluded: new Set(), expanded: new Set() });
 
 export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: () => Promise<void> }) {
   const seq = useRef(1);
   const [routes, setRoutes] = useState<RouteDraft[]>(() => [newRoute("r1", "Route 1")]);
   const [busy, setBusy] = useState<string | null>(null);
   const [mapRoute, setMapRoute] = useState<{ name: string; stops: RouteStop[] } | null>(null);
+  // One delivery date for the whole planning session (applies to every route).
+  const [deliveryDate, setDeliveryDate] = useState<string>(today());
+  const deliveryWeekday = weekdayOf(deliveryDate);
+  const deliveryDayName = deliveryDate ? new Date(`${deliveryDate}T00:00:00`).toLocaleDateString("en-GB", { weekday: "long" }) : "";
 
   const destByBoat = useMemo(() => {
     const m = new Map<string, ShipSyncDestination>();
@@ -132,21 +135,21 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
     if (parcels.length === 0) { toast.error("Add boats/parcels to this route first"); return; }
     if (!r.driverId) { toast.error("Choose a driver for this route"); return; }
     if (!r.vehicleId) { toast.error("Choose a van for this route"); return; }
-    if (!r.deliveryDate) { toast.error("Set the delivery date for this route"); return; }
+    if (!deliveryDate) { toast.error("Set the delivery date at the top first"); return; }
     const drv = data.drivers.find((d) => d.id === r.driverId);
-    if (drv && !driverWorks(drv, weekdayOf(r.deliveryDate))) {
-      toast.error(`${drv.name} doesn't work ${WEEKDAYS[weekdayOf(r.deliveryDate)]} — pick another day or driver`); return;
+    if (drv && !driverWorks(drv, deliveryWeekday)) {
+      toast.error(`${drv.name} doesn't work ${WEEKDAYS[deliveryWeekday]} — pick another day or driver`); return;
     }
     setBusy(r.id);
     try {
       const distinctBoats = Array.from(new Set(parcels.map((p) => p.boat_name || UNASSIGNED)));
       const boatLabel = distinctBoats.length === 1 && distinctBoats[0] !== UNASSIGNED ? distinctBoats[0] : null;
-      const note = await dispatchRoute(parcels.map((p) => p.id), r.driverId, boatLabel, r.deliveryDate, r.vehicleId);
+      const note = await dispatchRoute(parcels.map((p) => p.id), r.driverId, boatLabel, deliveryDate, r.vehicleId);
       const driver = data.drivers.find((d) => d.id === r.driverId);
       await reload();
       // Drop this card; keep the rest (renumbering is cosmetic — leave names as-is).
       setRoutes((prev) => (prev.length === 1 ? [newRoute("r1", "Route 1")] : prev.filter((x) => x.id !== r.id)));
-      toast.success(`Dispatched ${parcels.length} parcel${parcels.length > 1 ? "s" : ""} across ${distinctBoats.length} boat${distinctBoats.length > 1 ? "s" : ""} to ${driver?.name ?? "driver"} for ${r.deliveryDate} (DN-${note.number})`);
+      toast.success(`Dispatched ${parcels.length} parcel${parcels.length > 1 ? "s" : ""} across ${distinctBoats.length} boat${distinctBoats.length > 1 ? "s" : ""} to ${driver?.name ?? "driver"} for ${deliveryDate} (DN-${note.number})`);
     } catch (e: any) {
       toast.error(e?.message ?? "Dispatch failed");
     } finally {
@@ -162,6 +165,12 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
           <Route className="h-4 w-4 text-primary" />
           <h2 className="font-display text-base font-semibold">To route</h2>
           <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">{unrouted.length} parcel{unrouted.length === 1 ? "" : "s"} waiting</span>
+          <label className="ml-3 flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground" title="Delivery date for all routes below">
+            <Calendar className="h-3.5 w-3.5" />
+            <input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)}
+              className="h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground" />
+            {deliveryDayName && <span className="font-semibold text-foreground">{deliveryDayName}</span>}
+          </label>
           <Button size="sm" variant="outline" className="ml-auto h-8 gap-1.5" onClick={addRoute}>
             <Plus className="h-3.5 w-3.5" /> Add route
           </Button>
@@ -170,7 +179,7 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
         <div className="flex flex-col gap-3">
           {routes.map((r) => {
             const parcels = routeParcels(r);
-            const routeWeekday = weekdayOf(r.deliveryDate);
+            const routeWeekday = deliveryWeekday;
             const selDriver = data.drivers.find((d) => d.id === r.driverId);
             const driverOff = !!selDriver && !driverWorks(selDriver, routeWeekday);
             return (
@@ -199,11 +208,6 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
                     >
                       <MapIcon className="h-3.5 w-3.5" /> Map
                     </Button>
-                    <label className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
-                      <Calendar className="h-3.5 w-3.5" />
-                      <input type="date" value={r.deliveryDate} onChange={(e) => patchRoute(r.id, (x) => ({ ...x, deliveryDate: e.target.value }))}
-                        className="h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground" title="Day it goes out for delivery" />
-                    </label>
                     <Select value={r.driverId} onValueChange={(v) => patchRoute(r.id, (x) => ({ ...x, driverId: v }))}>
                       <SelectTrigger className="h-8 w-40 text-xs"><SelectValue placeholder="Choose driver…" /></SelectTrigger>
                       <SelectContent>
