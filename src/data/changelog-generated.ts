@@ -9,6 +9,14 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-07-13",
     "entries": [
       {
+        "type": "fix",
+        "title": "The new-version banner no longer auto-refreshes — it stays put with a Refresh now button so users reload when they're ready (with a dismiss option), instead of the page reloading from under them"
+      },
+      {
+        "type": "fix",
+        "title": "The ShipSync Local Packages table now scrolls horizontally instead of clipping the right-hand columns and Check in button"
+      },
+      {
         "type": "feature",
         "title": "Reorganise the admin menu — Admin Settings now holds Settings, Recycle Bin, Changelog and Feedback, with Dev Settings, Automations, Sync, Error & Warnings and Integrations grouped under a new Settings heading beneath it"
       },
