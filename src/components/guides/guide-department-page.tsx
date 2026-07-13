@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Route } from "@/routes/_app.guides.$department.index";
 import { supabase } from "@/integrations/supabase/client";
@@ -9,9 +9,11 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { ArrowLeft, Plus, Loader2, BookOpen, FileText, Pencil, ChevronRight, Upload, Sparkles } from "lucide-react";
+import { ArrowLeft, Plus, Loader2, BookOpen, FileText, Pencil, ChevronRight, Upload, Sparkles, Heading, Bold, Italic, List, Link2, Youtube, Eye } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { Markdown } from "@/components/ui/markdown";
+import { youtubeId } from "@/lib/youtube";
 import { departmentByKey, departmentLabel, slugify } from "./guide-meta";
 
 type Guide = {

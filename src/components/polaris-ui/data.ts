@@ -28,6 +28,7 @@ export interface CrewVisaRow {
   status: VisaStatus;
   daysRemaining: number | null;
   daysOverdue: number | null;
+  yachtId: string | null;
 }
 
 export interface VesselVisaData {
@@ -351,7 +352,7 @@ export function useVesselVisaData(
     // yachtId === null → GLOBAL: aggregate visa compliance across the whole fleet.
     const crewQ = (supabase as any)
       .from("crew_members")
-      .select("id, full_name, rank, status, nationality")
+      .select("id, full_name, rank, status, nationality, yacht_id")
       .limit(20000);
     const visaQ = (supabase as any)
       .from("visa_applications")
@@ -392,6 +393,7 @@ export function useVesselVisaData(
           status: st.status,
           daysRemaining: st.daysRemaining,
           daysOverdue: st.daysOverdue,
+          yachtId: c.yacht_id ?? null,
         };
       })
       .sort((a, b) => a.name.localeCompare(b.name));

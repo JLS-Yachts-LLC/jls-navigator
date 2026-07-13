@@ -70,20 +70,22 @@ interface ReportLogRow {
   expiring_count: number | null;
 }
 
-function useReportLog(yachtId: string | null) {
+// yachtId === null → fleet-wide (all vessels' reports).
+function useReportLog(yachtId: string | null, global = false) {
   const [rows, setRows] = useState<ReportLogRow[]>([]);
   const load = useCallback(async () => {
-    if (!yachtId) return;
-    const { data } = await (supabase as any)
+    if (!yachtId && !global) return;
+    let q = (supabase as any)
       .from("visa_report_log")
       .select(
         "id, generated_at, sent_at, status, crew_count, expired_count, expiring_count",
       )
-      .eq("yacht_id", yachtId)
       .order("generated_at", { ascending: false })
       .limit(20);
+    if (yachtId) q = q.eq("yacht_id", yachtId);
+    const { data } = await q;
     setRows((data ?? []) as ReportLogRow[]);
-  }, [yachtId]);
+  }, [yachtId, global]);
   useEffect(() => {
     void load();
   }, [load]);
@@ -207,73 +209,73 @@ function PageHeader({
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 export function PolarisDashboard({
-  yacht,
-  onSwitchVessel,
+  yachts,
   onOpenReports,
   leoToken,
   userName,
 }: {
-  yacht: YachtOption | null;
-  onSwitchVessel: () => void;
+  /** All vessels — the dashboard aggregates across the whole fleet. */
+  yachts: YachtOption[];
   onOpenReports: () => void;
-  /** Leo morning-brief greeting on the dashboard (Beta). */
+  /** Leo morning-brief greeting on the dashboard. */
   leoToken?: string;
   userName?: string;
 }) {
-  const { loading, rows, counts } = useVesselVisaData(yacht?.id ?? null);
-  const { rows: reports, reload: reloadReports } = useReportLog(
-    yacht?.id ?? null,
-  );
-  const { generate, send, generating, sending } = useReportActions(
-    yacht?.id ?? null,
-    reloadReports,
-  );
-  const [confirm, setConfirm] = useState(false);
+  // Fleet-wide aggregation (yachtId === null → whole fleet).
+  const { loading, rows, counts } = useVesselVisaData(null);
+  const { rows: reports } = useReportLog(null, true);
 
-  const canSend = !!yacht?.send_visa_reports && !!yacht?.visa_report_email;
-  const alerts = rows.filter(
-    (r) => r.status === "expired" || r.status === "expiring_soon",
-  );
+  const vesselName = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const y of yachts) m.set(y.id, y.vessel_name ?? "—");
+    return m;
+  }, [yachts]);
+  const nameOf = (id: string | null) => (id ? vesselName.get(id) ?? "Unassigned" : "Unassigned");
+
+  const alerts = rows
+    .filter((r) => r.status === "expired" || r.status === "expiring_soon")
+    .sort((a, b) =>
+      a.status === b.status
+        ? (a.status === "expired" ? (b.daysOverdue ?? 0) - (a.daysOverdue ?? 0) : (a.daysRemaining ?? 0) - (b.daysRemaining ?? 0))
+        : a.status === "expired" ? -1 : 1,
+    );
   const upcoming = rows
     .filter((r) => r.status === "expiring_soon")
     .sort((a, b) => (a.daysRemaining ?? 0) - (b.daysRemaining ?? 0));
 
-  async function handleSendLatest() {
-    setConfirm(false);
-    const latest = reports[0]?.id ?? (await generate());
-    if (latest) await send(latest);
-  }
+  // Per-vessel roll-up for the fleet-status card (worst-first).
+  const fleet = useMemo(() => {
+    const m = new Map<string, { active: number; total: number; expired: number; expiring: number }>();
+    for (const r of rows) {
+      const id = r.yachtId ?? "__none";
+      const s = m.get(id) ?? { active: 0, total: 0, expired: 0, expiring: 0 };
+      s.total++;
+      if (r.status === "active") s.active++;
+      else if (r.status === "expired") s.expired++;
+      else if (r.status === "expiring_soon") s.expiring++;
+      m.set(id, s);
+    }
+    return [...m.entries()]
+      .map(([id, s]) => ({ id, name: id === "__none" ? "Unassigned" : nameOf(id), ...s }))
+      .sort((a, b) => b.expired - a.expired || b.expiring - a.expiring || b.total - a.total);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, vesselName]);
 
   return (
     <>
       <PageHeader
         title="Dashboard"
         actions={
-          <>
-            <PolarisButton
-              variant="primary"
-              icon="refresh"
-              label={generating ? "Generating…" : "Generate report"}
-              onClick={() => void generate()}
-              disabled={generating || !yacht}
-            />
-            <PolarisButton
-              variant="ghost"
-              icon="send"
-              label="Send report"
-              onClick={() => setConfirm(true)}
-              disabled={!canSend || sending}
-              title={
-                canSend
-                  ? undefined
-                  : "Enable report emails for this vessel first"
-              }
-            />
-          </>
+          <PolarisButton
+            variant="ghost"
+            icon="file-description"
+            label="Visa reports"
+            onClick={onOpenReports}
+          />
         }
       />
 
-      {/* Leo morning brief — greets the user on the Beta dashboard */}
+      {/* Leo morning brief */}
       {leoToken && (
         <div style={{ marginBottom: 16 }}>
           <LeoPanel token={leoToken} userName={userName ?? ""} />
@@ -281,7 +283,7 @@ export function PolarisDashboard({
       )}
 
       {/* Stat cards */}
-      <SectionLabel>Fleet status — {yacht?.vessel_name ?? "—"}</SectionLabel>
+      <SectionLabel>Fleet status — All vessels</SectionLabel>
       <div className="pds-stats-grid" style={{ marginBottom: 16 }}>
         {loading ? (
           [...Array(6)].map((_, i) => (
@@ -348,7 +350,7 @@ export function PolarisDashboard({
                 <CrewRow
                   key={c.crewId}
                   name={c.name}
-                  detail={`${c.visaType ?? "Visa"} · ${detail}`}
+                  detail={`${nameOf(c.yachtId)} · ${c.visaType ?? "Visa"} · ${detail}`}
                   badge={<StatusBadge variant={b.variant} label={b.label} />}
                 />
               );
@@ -359,22 +361,23 @@ export function PolarisDashboard({
         <PolarisCard title="Fleet status" icon="traffic-lights">
           {loading ? (
             <Skeleton height={60} />
+          ) : fleet.length === 0 ? (
+            <EmptyState icon="ship" message="No vessels with crew yet." />
           ) : (
-            <TrafficLight
-              expired={counts.expired > 0}
-              expiring={counts.expiring > 0}
-              active={counts.active > 0}
-              label={yacht?.vessel_name ?? "Vessel"}
-              count={`${counts.active}/${counts.total}`}
-              countVariant={
-                counts.expired
-                  ? "expired"
-                  : counts.expiring
-                    ? "expiring"
-                    : "active"
-              }
-              onClick={onOpenReports}
-            />
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 340, overflowY: "auto" }}>
+              {fleet.map((v) => (
+                <TrafficLight
+                  key={v.id}
+                  expired={v.expired > 0}
+                  expiring={v.expiring > 0}
+                  active={v.active > 0}
+                  label={v.name}
+                  count={`${v.active}/${v.total}`}
+                  countVariant={v.expired ? "expired" : v.expiring ? "expiring" : "active"}
+                  onClick={onOpenReports}
+                />
+              ))}
+            </div>
           )}
         </PolarisCard>
       </div>
@@ -391,7 +394,7 @@ export function PolarisDashboard({
           ) : rows.length === 0 ? (
             <EmptyState
               icon="users"
-              message="No crew on this vessel yet."
+              message="No crew on the fleet yet."
             />
           ) : (
             rows.slice(0, 6).map((c) => {
@@ -400,7 +403,7 @@ export function PolarisDashboard({
                 <CrewRow
                   key={c.crewId}
                   name={c.name}
-                  detail={`${c.rank ?? "Crew"} · ${c.nationality ?? "—"}`}
+                  detail={`${nameOf(c.yachtId)} · ${c.rank ?? "Crew"}`}
                   badge={<StatusBadge variant={b.variant} label={b.label} />}
                 />
               );
@@ -420,10 +423,7 @@ export function PolarisDashboard({
             <EmptyState
               icon="file-description"
               message="No reports generated yet."
-              action={{
-                label: "Generate report",
-                onClick: () => void generate(),
-              }}
+              action={{ label: "Open Visa Reports", onClick: onOpenReports }}
             />
           ) : (
             reports
@@ -477,27 +477,6 @@ export function PolarisDashboard({
           )}
         </PolarisCard>
       </div>
-
-      {confirm && (
-        <ConfirmModal
-          title="Send visa report"
-          confirmLabel="Confirm & send"
-          confirmIcon="send"
-          busy={sending || generating}
-          onCancel={() => setConfirm(false)}
-          onConfirm={handleSendLatest}
-        >
-          Send the latest visa report for{" "}
-          <strong style={{ color: "var(--pds-text)" }}>
-            {yacht?.vessel_name}
-          </strong>{" "}
-          to{" "}
-          <strong style={{ color: "var(--pds-text)" }}>
-            {yacht?.visa_report_email}
-          </strong>{" "}
-          by email. A fresh report is generated first if none exists.
-        </ConfirmModal>
-      )}
     </>
   );
 }

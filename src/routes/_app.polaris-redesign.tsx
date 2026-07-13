@@ -209,8 +209,7 @@ function PolarisRedesignApp() {
           />
         ) : screen === "dashboard" ? (
           <PolarisDashboard
-            yacht={yacht}
-            onSwitchVessel={() => setSwitcher(true)}
+            yachts={yachts}
             onOpenReports={() => setScreen("visa-reports")}
             leoToken={leoToken}
             userName={user?.email ?? ""}

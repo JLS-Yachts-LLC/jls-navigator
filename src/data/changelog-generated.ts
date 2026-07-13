@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Anchor gains a Templates tab — store ready-to-go PDF templates and create a new document from one in a click (copies the PDF, prefills the title, then send for signature)"
+      },
+      {
+        "type": "feature",
         "title": "The Automations summary figures (count, runs, errors, retries) now reflect the selected tab — All shows platform totals, each department tab shows its own numbers"
       },
       {
