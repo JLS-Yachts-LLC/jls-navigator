@@ -9,13 +9,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Markdown } from "@/components/ui/markdown";
-import { ArrowLeft, Loader2, Pencil, Trash2, Clock } from "lucide-react";
+import { ArrowLeft, Loader2, Pencil, Trash2, Clock, FileDown } from "lucide-react";
 import { toast } from "sonner";
 import { departmentByKey } from "./guide-meta";
 
 type Guide = {
   id: string; department: string; category: string | null; slug: string;
   title: string; summary: string | null; body: string; published: boolean; updated_at: string;
+  pdf_path?: string | null;
 };
 
 export function GuideDetailPage() {
@@ -100,6 +101,17 @@ export function GuideDetailPage() {
             {guide.summary && <p className="mt-0.5 text-sm text-muted-foreground">{guide.summary}</p>}
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            {guide.pdf_path && (
+              <Button
+                variant="outline" size="sm" className="gap-1.5"
+                onClick={() => {
+                  const { data } = (supabase as any).storage.from("esign-documents").getPublicUrl(guide.pdf_path);
+                  if (data?.publicUrl) window.open(data.publicUrl, "_blank");
+                }}
+              >
+                <FileDown className="h-3.5 w-3.5" /> Branded PDF
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={openEdit} className="gap-1.5"><Pencil className="h-3.5 w-3.5" /> Edit</Button>
             <Button variant="ghost" size="sm" onClick={remove} className="gap-1.5 text-destructive/70 hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></Button>
           </div>

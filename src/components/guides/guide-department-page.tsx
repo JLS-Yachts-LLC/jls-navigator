@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { ArrowLeft, Plus, Loader2, BookOpen, FileText, Pencil, ChevronRight } from "lucide-react";
+import { ArrowLeft, Plus, Loader2, BookOpen, FileText, Pencil, ChevronRight, Upload, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { departmentByKey, departmentLabel, slugify } from "./guide-meta";
@@ -42,7 +42,43 @@ export function GuideDepartmentPage() {
   const [form, setForm] = useState(EMPTY);
   const [busy, setBusy] = useState(false);
 
+  // Document import (PDF/Word → AI-extracted guide + branded PDF)
+  const [importOpen, setImportOpen] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importCategory, setImportCategory] = useState("");
+  const [importPublished, setImportPublished] = useState(true);
+  const [importBusy, setImportBusy] = useState(false);
+
   useEffect(() => { void load(); }, [department]);
+
+  async function doImport() {
+    if (!importFile) { toast.error("Choose a PDF or Word document"); return; }
+    setImportBusy(true);
+    try {
+      const buf = await importFile.arrayBuffer();
+      let bin = "";
+      const b = new Uint8Array(buf);
+      for (let i = 0; i < b.length; i += 0x8000) bin += String.fromCharCode(...b.subarray(i, i + 0x8000));
+      const fileBase64 = btoa(bin);
+      const { data: { session } } = await (supabase as any).auth.getSession();
+      const res = await fetch("/api/guides/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token ?? ""}` },
+        body: JSON.stringify({
+          fileBase64, fileName: importFile.name, mimeType: importFile.type,
+          department: departmentLabel(department), category: importCategory.trim() || undefined,
+          published: importPublished,
+        }),
+      });
+      const j = await res.json();
+      if (!res.ok || !j.ok) throw new Error(j.error ?? `Failed (${res.status})`);
+      toast.success(`Imported “${j.title}”`);
+      setImportOpen(false); setImportFile(null); setImportCategory("");
+      void load();
+    } catch (e: any) {
+      toast.error(e?.message ?? "Import failed");
+    } finally { setImportBusy(false); }
+  }
 
   async function load() {
     setLoading(true);
@@ -118,9 +154,14 @@ export function GuideDepartmentPage() {
           <h1 className="flex items-center gap-2 font-display text-[1.25rem] font-semibold tracking-tight">
             <Icon className="h-4 w-4 text-primary/80" /> {dept?.label ?? department} Guides
           </h1>
-          <Button size="sm" onClick={openNew} className="h-9 gap-1.5 px-3.5 font-medium shadow-sm">
-            <Plus className="h-3.5 w-3.5" /> New Guide
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => setImportOpen(true)} className="h-9 gap-1.5 px-3.5 font-medium">
+              <Upload className="h-3.5 w-3.5" /> Import Document
+            </Button>
+            <Button size="sm" onClick={openNew} className="h-9 gap-1.5 px-3.5 font-medium shadow-sm">
+              <Plus className="h-3.5 w-3.5" /> New Guide
+            </Button>
+          </div>
         </div>
       </header>
 
@@ -194,6 +235,51 @@ export function GuideDepartmentPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)} disabled={busy}>Cancel</Button>
             <Button onClick={save} disabled={busy} className="gap-1.5">{busy && <Loader2 className="h-4 w-4 animate-spin" />}{editing ? "Save Changes" : "Create Guide"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Import a PDF/Word document → AI-extracted guide + branded PDF */}
+      <Dialog open={importOpen} onOpenChange={(o) => { if (!importBusy) setImportOpen(o); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-primary" /> Import Document</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            <p className="text-sm text-muted-foreground">
+              Upload a PDF or Word document and Polaris will extract its content into a guide, then attach a Polaris/JLS-branded PDF. You can edit the result afterwards.
+            </p>
+            <label
+              className={cn(
+                "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-6 text-center transition",
+                importFile ? "border-primary/40 bg-primary/5" : "border-border hover:border-primary/40 hover:bg-accent/20",
+              )}
+            >
+              <Upload className="h-6 w-6 text-muted-foreground/50" />
+              {importFile
+                ? <span className="text-sm font-medium">{importFile.name}</span>
+                : <span className="text-sm text-muted-foreground">Click to choose a <span className="font-medium">.pdf</span> or <span className="font-medium">.docx</span></span>}
+              <input
+                type="file"
+                accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) setImportFile(f); }}
+              />
+            </label>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Category <span className="text-muted-foreground">(optional — leave blank to auto-detect)</span></Label>
+              <Input value={importCategory} onChange={(e) => setImportCategory(e.target.value)} placeholder="e.g. Visas" className="h-8" />
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch checked={importPublished} onCheckedChange={setImportPublished} id="imp-pub" />
+              <Label htmlFor="imp-pub" className="text-xs">Publish immediately</Label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setImportOpen(false)} disabled={importBusy}>Cancel</Button>
+            <Button onClick={doImport} disabled={importBusy || !importFile} className="gap-1.5">
+              {importBusy ? <><Loader2 className="h-4 w-4 animate-spin" /> Extracting…</> : <><Sparkles className="h-4 w-4" /> Import & Create</>}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

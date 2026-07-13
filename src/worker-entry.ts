@@ -332,6 +332,12 @@ export default {
       return lightspeedSyncHandler(request)
     }
 
+    // Knowledge Base: import a PDF/Word document into a guide (+ branded PDF)
+    if (url.pathname === '/api/guides/import') {
+      const { guidesImportHandler } = await import('./routes/api.guides.import')
+      return guidesImportHandler(request)
+    }
+
     // QB Excel importer — upload a workbook to create Estimates/Invoices
     if (url.pathname === '/api/qb/excel-import') {
       const { qbExcelImportHandler } = await import('./routes/api.qb.excel-import')
