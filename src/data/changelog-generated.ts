@@ -10,6 +10,14 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "Native Lightspeed and QuickBooks automations register under their own Automations tabs (Lightspeed / Finance) instead of Platform"
+      },
+      {
+        "type": "fix",
+        "title": "Lightspeed supplier sync now actually writes — the lightspeed_id unique index is no longer partial (partial indexes can't be an upsert conflict target), and upsert errors surface instead of silently reporting 0"
+      },
+      {
+        "type": "fix",
         "title": "Lightspeed supplier sync no longer hangs — batches the upserts into chunks instead of one DB call per supplier, times out stalled Lightspeed requests, guards against a non-advancing pagination cursor, and the Sync button now recovers on timeout"
       },
       {
