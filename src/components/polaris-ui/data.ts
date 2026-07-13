@@ -346,19 +346,21 @@ export function useVesselVisaData(
   });
 
   const load = useCallback(async () => {
-    if (!yachtId) return;
     setState((s) => ({ ...s, loading: true }));
 
+    // yachtId === null → GLOBAL: aggregate visa compliance across the whole fleet.
+    const crewQ = (supabase as any)
+      .from("crew_members")
+      .select("id, full_name, rank, status, nationality")
+      .limit(20000);
+    const visaQ = (supabase as any)
+      .from("visa_applications")
+      .select("crew_member_id, visa_type, visa_expiry, status")
+      .eq("status", "approved")
+      .limit(20000);
     const [{ data: crew }, { data: visas }] = await Promise.all([
-      (supabase as any)
-        .from("crew_members")
-        .select("id, full_name, rank, status, nationality")
-        .eq("yacht_id", yachtId),
-      (supabase as any)
-        .from("visa_applications")
-        .select("crew_member_id, visa_type, visa_expiry, status")
-        .eq("yacht_id", yachtId)
-        .eq("status", "approved"),
+      yachtId ? crewQ.eq("yacht_id", yachtId) : crewQ,
+      yachtId ? visaQ.eq("yacht_id", yachtId) : visaQ,
     ]);
 
     // latest approved visa per crew member (by expiry desc)

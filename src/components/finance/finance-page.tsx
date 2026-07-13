@@ -6,8 +6,10 @@ import {
   DollarSign, RefreshCw, CheckCircle2, XCircle, FileText, FileCheck,
   Quote, Loader2, ExternalLink, ClipboardList, Search, Check, AlertTriangle,
   RotateCcw, LayoutGrid, Package, Cpu, ShoppingCart, Car, ChevronRight, Download, IdCard,
+  FileSpreadsheet,
 } from "lucide-react";
 import { toast } from "sonner";
+import { QbExcelImportPage } from "@/components/qb/excel-import-page";
 import { supabase } from "@/integrations/supabase/client";
 
 // ─── CSV export utility ───────────────────────────────────────────────────────
@@ -30,7 +32,7 @@ function downloadCSV(filename: string, rows: Record<string, unknown>[]) {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type FinanceTab = "dashboard" | "invoices" | "proforma" | "quotations" | "tracker" | "trackers";
+type FinanceTab = "dashboard" | "invoices" | "proforma" | "quotations" | "tracker" | "trackers" | "import";
 type TrackerDept = "crew" | "packages" | "it" | "procurement";
 
 // The two QuickBooks companies the Finance module can show. The toggle switches
@@ -2263,6 +2265,13 @@ export function FinancePage() {
               </button>
             );
           })}
+          <button
+            onClick={() => setTab("import")}
+            className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition ${tab === "import" ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+          >
+            <FileSpreadsheet className="h-3.5 w-3.5" />
+            Excel Import
+          </button>
         </div>
 
         {/* Tab content */}
@@ -2271,6 +2280,7 @@ export function FinancePage() {
         {tab === "invoices" && <QboDocsTab docType="invoices" realm={realm} />}
         {tab === "proforma" && <QboDocsTab docType="proforma" realm={realm} />}
         {tab === "quotations" && <QboDocsTab docType="quotations" realm={realm} />}
+        {tab === "import" && <QbExcelImportPage embedded />}
       </div>
     </div>
   );

@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 type Kind = "estimate" | "invoice";
 type Result = { sheet: string; ok: boolean; docNumber?: string; id?: string; error?: string };
 
-export function QbExcelImportPage() {
+export function QbExcelImportPage({ embedded = false }: { embedded?: boolean } = {}) {
   const [kind, setKind] = useState<Kind>("estimate");
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
@@ -40,17 +40,8 @@ export function QbExcelImportPage() {
   const label = kind === "estimate" ? "Quotation / Estimate" : "Invoice";
   const created = results?.filter((r) => r.ok).length ?? 0;
 
-  return (
-    <div className="flex h-full flex-col">
-      <header className="border-b border-border/70 bg-card/30 px-6 py-3.5">
-        <div className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-muted-foreground/60">Polaris / QuickBooks</div>
-        <h1 className="mt-0.5 flex items-center gap-2 font-display text-[1.25rem] font-semibold tracking-tight">
-          <FileSpreadsheet className="h-5 w-5 text-primary" /> Excel Import
-        </h1>
-      </header>
-
-      <div className="flex-1 overflow-auto px-6 py-5">
-        <div className="mx-auto max-w-2xl space-y-5">
+  const body = (
+        <div className={cn("mx-auto max-w-2xl space-y-5", !embedded && "px-6 py-5")}>
           <p className="text-sm text-muted-foreground">
             Upload a filled-in Excel workbook to create QuickBooks documents — one per worksheet. Missing items are created
             automatically, the customer is matched by name, and the next number is allocated
@@ -130,7 +121,19 @@ export function QbExcelImportPage() {
             </div>
           )}
         </div>
-      </div>
+  );
+
+  if (embedded) return body;
+
+  return (
+    <div className="flex h-full flex-col">
+      <header className="border-b border-border/70 bg-card/30 px-6 py-3.5">
+        <div className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-muted-foreground/60">Polaris / QuickBooks</div>
+        <h1 className="mt-0.5 flex items-center gap-2 font-display text-[1.25rem] font-semibold tracking-tight">
+          <FileSpreadsheet className="h-5 w-5 text-primary" /> Excel Import
+        </h1>
+      </header>
+      <div className="flex-1 overflow-auto">{body}</div>
     </div>
   );
 }

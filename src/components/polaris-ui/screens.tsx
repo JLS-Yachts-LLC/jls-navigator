@@ -36,6 +36,7 @@ import {
   useVesselLogistics,
   useVesselTraining,
   useVesselDocuments,
+  useYachts,
   type YachtOption,
   type CrewVisaRow,
 } from "./data";
@@ -965,12 +966,21 @@ export function PolarisCrew({
 // ── Compliance screen ─────────────────────────────────────────────────────────
 export function PolarisCompliance({
   yacht,
-  onSwitchVessel,
 }: {
   yacht: YachtOption | null;
   onSwitchVessel: () => void;
 }) {
-  const { loading, rows, counts } = useVesselVisaData(yacht?.id ?? null);
+  const { yachts } = useYachts();
+  // Scope: "global" (whole fleet, the default) or a specific yacht id. Seeded
+  // from the shell's currently-selected vessel is intentionally NOT done — the
+  // page opens on the fleet-wide picture and the user narrows from there.
+  const [scope, setScope] = useState<string>("global");
+  const activeYachtId = scope === "global" ? null : scope;
+  const { loading, rows, counts } = useVesselVisaData(activeYachtId);
+  const scopeLabel =
+    scope === "global"
+      ? "All vessels"
+      : (yachts.find((y) => y.id === scope)?.vessel_name ?? yacht?.vessel_name ?? "—");
   const pct = counts.total ? Math.round((counts.active / counts.total) * 100) : 0;
   const scoreColour =
     pct >= 70
@@ -1001,7 +1011,57 @@ export function PolarisCompliance({
         actions={null}
       />
 
-      <SectionLabel>Visa compliance — {yacht?.vessel_name ?? "—"}</SectionLabel>
+      {/* Scope selector: Global (whole fleet) vs a specific vessel. */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          marginBottom: 16,
+          flexWrap: "wrap",
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setScope("global")}
+          style={{
+            padding: "7px 16px",
+            borderRadius: 8,
+            fontSize: "var(--pds-fs-label)",
+            fontWeight: 600,
+            cursor: "pointer",
+            border: "1px solid var(--pds-border)",
+            background: scope === "global" ? "var(--pds-accent)" : "transparent",
+            color: scope === "global" ? "#fff" : "var(--pds-text-secondary)",
+          }}
+        >
+          Global
+        </button>
+        <select
+          value={scope === "global" ? "" : scope}
+          onChange={(e) => setScope(e.target.value || "global")}
+          style={{
+            padding: "7px 12px",
+            borderRadius: 8,
+            fontSize: "var(--pds-fs-label)",
+            fontWeight: 500,
+            cursor: "pointer",
+            border: "1px solid var(--pds-border)",
+            background: scope === "global" ? "transparent" : "var(--pds-surface-2)",
+            color: scope === "global" ? "var(--pds-text-secondary)" : "var(--pds-text-primary)",
+            minWidth: 200,
+          }}
+        >
+          <option value="">Choose a vessel…</option>
+          {yachts.map((y) => (
+            <option key={y.id} value={y.id}>
+              {y.vessel_name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <SectionLabel>Visa compliance — {scopeLabel}</SectionLabel>
 
       <div style={{ marginBottom: 16 }}>
         <PolarisCard title="Compliance score" icon="shield-check">

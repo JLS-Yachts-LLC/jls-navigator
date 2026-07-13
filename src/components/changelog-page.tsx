@@ -368,8 +368,19 @@ const CURATED_RELEASES: Release[] = [
   },
 ];
 
-// Auto-generated releases (newest) followed by the curated history.
-const RELEASES: Release[] = [...GENERATED_RELEASES, ...CURATED_RELEASES];
+// Auto-generated releases + curated history, always newest-first by date then
+// version (so the latest deploy's entries lead regardless of source ordering).
+const cmpVersion = (a: string, b: string) => {
+  const pa = a.split(".").map((n) => parseInt(n, 10) || 0);
+  const pb = b.split(".").map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pb[i] ?? 0) - (pa[i] ?? 0);
+  }
+  return 0;
+};
+const RELEASES: Release[] = [...GENERATED_RELEASES, ...CURATED_RELEASES].sort(
+  (a, b) => (b.date ?? "").localeCompare(a.date ?? "") || cmpVersion(a.version, b.version),
+);
 
 // ─── Badge styles ─────────────────────────────────────────────────────────────
 
