@@ -76,13 +76,24 @@ export async function syncLightspeedSuppliers(trigger: 'cron' | 'manual' = 'cron
     }))
 
   let upserted = 0
+  let firstError: string | null = null
   for (let i = 0; i < rows.length; i += 500) {
     const chunk = rows.slice(i, i + 500)
     const { error } = await sb.from('waypoint_suppliers').upsert(chunk, { onConflict: 'lightspeed_id' })
-    if (!error) upserted += chunk.length
+    if (error) { if (!firstError) firstError = error.message; }
+    else upserted += chunk.length
   }
 
-  const result: SupplierSyncResult = { fetched: suppliers.length, upserted }
-  await logAutomationRun({ ...AUTO, trigger_type: trigger === 'manual' ? 'manual' : 'schedule', status: 'success', detail: `fetched ${result.fetched}, upserted ${result.upserted}` })
+  const result: SupplierSyncResult = {
+    fetched: suppliers.length,
+    upserted,
+    ...(firstError && upserted === 0 ? { note: `Upsert failed: ${firstError}` } : {}),
+  }
+  await logAutomationRun({
+    ...AUTO,
+    trigger_type: trigger === 'manual' ? 'manual' : 'schedule',
+    status: firstError && upserted === 0 ? 'error' : 'success',
+    detail: `fetched ${result.fetched}, upserted ${result.upserted}${firstError ? ` · error: ${firstError}` : ''}`,
+  })
   return result
 }
