@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "The Automations summary figures (count, runs, errors, retries) now reflect the selected tab — All shows platform totals, each department tab shows its own numbers"
+      },
+      {
+        "type": "feature",
         "title": "Automations can be deleted from the Automations page — a trash button on each card opens a confirmation prompt before removing it"
       },
       {
