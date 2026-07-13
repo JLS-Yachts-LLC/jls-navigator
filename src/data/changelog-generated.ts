@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-07-13",
     "entries": [
       {
+        "type": "feature",
+        "title": "Every report and vessel screen (Visa Reports, Sign On/Off, Crew Documents, Immigration, Logistics, Training) now has a vessel dropdown — run fleet-wide (All vessels) or scope to any specific yacht, chosen per page"
+      },
+      {
         "type": "fix",
         "title": "Visa Reports vessel picker is now a dropdown listing every vessel (plus fleet-wide) — the old pill row only showed the first 12, so most yachts couldn't be selected"
       },
