@@ -130,33 +130,17 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    label: "Admin Settings",
-    items: [
-      {
-        label: "Settings",
-        icon: "settings",
-        screen: "settings",
-        roles: ["global_admin"],
-      },
-      {
-        label: "Recycle Bin",
-        icon: "trash",
-        screen: "route-recycle-bin",
-        route: "/recycle-bin",
-        roles: ["global_admin", "crew_immigration"],
-      },
-      { label: "Changelog", icon: "news", screen: "admin-changelog", roles: ["global_admin"] },
-      { label: "Feedback", icon: "message-2", screen: "admin-feedback", roles: ["global_admin"] },
-    ],
-  },
-  {
     label: "Settings",
     items: [
+      { label: "Settings", icon: "settings", screen: "settings", roles: ["global_admin"] },
       { label: "Dev Settings", icon: "adjustments", screen: "admin-dev", roles: ["global_admin"] },
       { label: "Automations", icon: "bolt", screen: "admin-automations", roles: ["global_admin"] },
       { label: "Sync", icon: "refresh", screen: "admin-sync", roles: ["global_admin"] },
-      { label: "Error & Warnings", icon: "alert-triangle", screen: "admin-errors", roles: ["global_admin"] },
       { label: "Integrations", icon: "plug", screen: "admin-integrations", roles: ["global_admin"] },
+      { label: "Error & Warnings", icon: "alert-triangle", screen: "admin-errors", roles: ["global_admin"] },
+      { label: "Changelog", icon: "news", screen: "admin-changelog", roles: ["global_admin"] },
+      { label: "Recycle Bin", icon: "trash", screen: "route-recycle-bin", route: "/recycle-bin", roles: ["global_admin", "crew_immigration"] },
+      { label: "Feedback", icon: "message-2", screen: "admin-feedback", roles: ["global_admin"] },
     ],
   },
 ];
