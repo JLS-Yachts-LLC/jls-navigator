@@ -7,10 +7,14 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Zap, Clock, Webhook, MousePointerClick, Activity, Search, Loader2,
   CheckCircle2, XCircle, CircleDot, Calendar, ExternalLink, PlugZap,
-  ListOrdered, History, ChevronDown,
+  ListOrdered, History, ChevronDown, Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   getAutomationSteps, getAutomationRuns,
   type StepsResult, type RunsResult,
@@ -65,8 +69,21 @@ export function AutomationsPage() {
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [dept, setDept] = useState<string>("All");
+  const [deleteTarget, setDeleteTarget] = useState<Automation | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => { void load(); }, []);
+
+  async function doDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    const { error } = await (supabase as any).from("automations").delete().eq("id", deleteTarget.id);
+    setDeleting(false);
+    if (error) { toast.error(error.message); return; }
+    setItems(prev => prev.filter(x => x.id !== deleteTarget.id));
+    toast.success(`Deleted "${deleteTarget.name}"`);
+    setDeleteTarget(null);
+  }
 
   async function load() {
     setLoading(true);
@@ -250,15 +267,24 @@ export function AutomationsPage() {
                         {/* Step-by-step + full run log */}
                         <AutomationDetail automation={a} />
                       </div>
-                      {/* Enable toggle */}
-                      <button
-                        onClick={() => toggle(a)}
-                        disabled={busy === a.id}
-                        title={a.enabled ? "Disable" : "Enable"}
-                        className={cn("relative h-5 w-9 shrink-0 rounded-full transition-colors", a.enabled ? "bg-primary" : "bg-muted")}
-                      >
-                        <span className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all", a.enabled ? "left-[18px]" : "left-0.5")} />
-                      </button>
+                      {/* Actions: enable toggle + delete */}
+                      <div className="flex shrink-0 items-center gap-2">
+                        <button
+                          onClick={() => toggle(a)}
+                          disabled={busy === a.id}
+                          title={a.enabled ? "Disable" : "Enable"}
+                          className={cn("relative h-5 w-9 rounded-full transition-colors", a.enabled ? "bg-primary" : "bg-muted")}
+                        >
+                          <span className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all", a.enabled ? "left-[18px]" : "left-0.5")} />
+                        </button>
+                        <button
+                          onClick={() => setDeleteTarget(a)}
+                          title="Delete automation"
+                          className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-destructive/10 hover:text-destructive"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
@@ -267,6 +293,31 @@ export function AutomationsPage() {
           </div>
         ))}
       </div>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this automation?</AlertDialogTitle>
+            <AlertDialogDescription>
+              <strong>{deleteTarget?.name}</strong> will be permanently removed from the Automations list.
+              {deleteTarget?.source === "n8n"
+                ? " This only removes the reference card here — it does not touch the workflow in n8n itself."
+                : " Its underlying code isn't affected; a worker automation may re-appear the next time it runs."}
+              {" "}This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); void doDelete(); }}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
