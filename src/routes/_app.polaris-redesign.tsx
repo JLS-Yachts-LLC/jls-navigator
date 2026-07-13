@@ -96,9 +96,10 @@ function PolarisRedesignApp() {
   // lives on the API routes. Swap to derived claims when promoting to production.
   const role: PolarisRole = "global_admin";
 
-  function pickVessel(id: string) {
+  function pickVessel(id: string | null) {
     setSelectedId(id);
-    sessionStorage.setItem(LAST_VESSEL, id);
+    if (id) sessionStorage.setItem(LAST_VESSEL, id);
+    else sessionStorage.removeItem(LAST_VESSEL);
     setSwitcher(false);
   }
 

@@ -489,7 +489,7 @@ export function PolarisVisaReports({
 }: {
   yachts: YachtOption[];
   selectedId: string | null;
-  onSelect: (id: string) => void;
+  onSelect: (id: string | null) => void;
 }) {
   const yacht = yachts.find((y) => y.id === selectedId) ?? null;
   const { loading, rows, counts } = useVesselVisaData(selectedId);
@@ -554,41 +554,32 @@ export function PolarisVisaReports({
         }
       />
 
-      {/* Vessel switcher pills */}
+      {/* Vessel selector — every vessel, plus fleet-wide "All vessels". */}
       <SectionLabel>Vessel</SectionLabel>
-      <div
-        style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}
-      >
-        {yachts.slice(0, 12).map((y) => {
-          const on = y.id === selectedId;
-          return (
-            <button
-              key={y.id}
-              onClick={() => onSelect(y.id)}
-              style={{
-                background: on
-                  ? "var(--pds-gold-muted)"
-                  : "var(--pds-surface-2)",
-                border: `1px solid ${on ? "var(--pds-border-gold-strong)" : "var(--pds-border)"}`,
-                color: on
-                  ? "var(--pds-gold-light)"
-                  : "var(--pds-text-secondary)",
-                fontSize: "var(--pds-fs-label)",
-                fontWeight: on ? 600 : 500,
-                padding: "8px 14px",
-                minHeight: 40,
-                borderRadius: "var(--pds-radius-full)",
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-              }}
-            >
-              <TIcon name="ship" size={14} />
-              {y.vessel_name ?? "Unnamed"}
-            </button>
-          );
-        })}
+      <div style={{ marginBottom: 16 }}>
+        <select
+          value={selectedId ?? ""}
+          onChange={(e) => onSelect(e.target.value || null)}
+          style={{
+            width: "100%",
+            maxWidth: 380,
+            padding: "10px 12px",
+            borderRadius: 8,
+            fontSize: "var(--pds-fs-label)",
+            fontWeight: 500,
+            cursor: "pointer",
+            border: "1px solid var(--pds-border)",
+            background: "var(--pds-surface-2)",
+            color: "var(--pds-text-primary)",
+          }}
+        >
+          <option value="">All vessels (fleet-wide)</option>
+          {yachts.map((y) => (
+            <option key={y.id} value={y.id}>
+              {y.vessel_name ?? "Unnamed vessel"}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* Stat cards */}
