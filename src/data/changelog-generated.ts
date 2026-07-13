@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-07-13",
     "entries": [
       {
+        "type": "fix",
+        "title": "Visa Reports vessel picker is now a dropdown listing every vessel (plus fleet-wide) — the old pill row only showed the first 12, so most yachts couldn't be selected"
+      },
+      {
         "type": "feature",
         "title": "Templates can now be opened and edited in place — preview the PDF, drag the signature onto the page, rename, recategorise or swap the file"
       },
