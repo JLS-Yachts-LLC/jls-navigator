@@ -333,46 +333,55 @@ function NavList({
   role,
   active,
   onNavigate,
+  collapsed = false,
 }: {
   role: PolarisRole;
   active: string;
   onNavigate: (s: string) => void;
+  /** Icon-only rail (labels + group headers hidden), for the collapsed desktop nav. */
+  collapsed?: boolean;
 }) {
   return (
     <nav
       style={{
         display: "flex",
         flexDirection: "column",
-        gap: 18,
-        padding: "16px 12px",
+        gap: collapsed ? 8 : 18,
+        padding: collapsed ? "12px 8px" : "16px 12px",
       }}
     >
       {visibleGroups(role).map((g) => (
         <div key={g.label}>
-          <div
-            style={{
-              fontSize: 10,
-              fontWeight: 600,
-              letterSpacing: "0.1em",
-              textTransform: "uppercase",
-              color: "var(--pds-text-hint)",
-              padding: "0 8px 6px",
-            }}
-          >
-            {g.label}
-          </div>
+          {collapsed ? (
+            <div style={{ height: 1, margin: "0 6px 6px", background: "var(--pds-border)" }} />
+          ) : (
+            <div
+              style={{
+                fontSize: 10,
+                fontWeight: 600,
+                letterSpacing: "0.1em",
+                textTransform: "uppercase",
+                color: "var(--pds-text-hint)",
+                padding: "0 8px 6px",
+              }}
+            >
+              {g.label}
+            </div>
+          )}
           {g.items.map((item) => {
             const on = item.screen === active;
             return (
               <button
                 key={item.screen}
                 onClick={() => onNavigate(item.screen)}
+                title={collapsed ? item.label : undefined}
                 style={{
                   width: "100%",
                   display: "flex",
                   alignItems: "center",
-                  gap: 10,
-                  padding: "10px 8px",
+                  justifyContent: collapsed ? "center" : "flex-start",
+                  gap: collapsed ? 0 : 10,
+                  padding: collapsed ? "10px 0" : "10px 8px",
                   minHeight: 44,
                   borderRadius: "var(--pds-radius-md)",
                   border: "none",
@@ -384,6 +393,8 @@ function NavList({
                     : "var(--pds-text-secondary)",
                   fontSize: "var(--pds-fs-nav)",
                   fontWeight: on ? 600 : 500,
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
                 }}
               >
                 <TIcon
@@ -391,13 +402,85 @@ function NavList({
                   size={18}
                   color={on ? "var(--pds-gold)" : "var(--pds-text-secondary)"}
                 />
-                {item.label}
+                {!collapsed && item.label}
               </button>
             );
           })}
         </div>
       ))}
     </nav>
+  );
+}
+
+const NAV_PIN_KEY = "polaris.nav.pinned";
+const RAIL_W = 60;
+
+/** Desktop side nav: pinnable + collapsible to an icon rail. When unpinned the
+ *  rail reclaims the space for content; hovering peeks the full menu as an
+ *  overlay (content stays put); Pin keeps it open and reflows content. */
+function DesktopNav({
+  role,
+  active,
+  onNavigate,
+}: {
+  role: PolarisRole;
+  active: string;
+  onNavigate: (s: string) => void;
+}) {
+  const [pinned, setPinned] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    return window.localStorage.getItem(NAV_PIN_KEY) !== "false";
+  });
+  const [hover, setHover] = useState(false);
+  const expanded = pinned || hover;
+
+  useEffect(() => {
+    try { window.localStorage.setItem(NAV_PIN_KEY, pinned ? "true" : "false"); } catch { /* ignore */ }
+  }, [pinned]);
+
+  const toggle = (
+    <button
+      onClick={() => { setPinned((p) => !p); setHover(false); }}
+      title={pinned ? "Collapse menu" : "Pin menu open"}
+      aria-label={pinned ? "Collapse menu" : "Pin menu open"}
+      style={{
+        display: "flex", alignItems: "center", justifyContent: "center",
+        width: 32, height: 32, borderRadius: "var(--pds-radius-md)",
+        border: "none", cursor: "pointer", background: "transparent",
+        color: "var(--pds-text-secondary)",
+      }}
+    >
+      <TIcon name={pinned ? "chevrons-left" : "pin"} size={18} color="var(--pds-text-secondary)" />
+    </button>
+  );
+
+  return (
+    <div
+      // Flex placeholder: its width is what `main` reflows around. Rail width
+      // when unpinned (content reclaims space), full width when pinned.
+      style={{ width: pinned ? "var(--pds-nav-w)" : RAIL_W, flexShrink: 0, position: "relative", transition: "width 160ms ease" }}
+      onMouseEnter={() => { if (!pinned) setHover(true); }}
+      onMouseLeave={() => setHover(false)}
+    >
+      <aside
+        style={{
+          position: pinned ? "relative" : "absolute",
+          top: 0, left: 0, height: "100%",
+          width: expanded ? "var(--pds-nav-w)" : RAIL_W,
+          background: "var(--pds-navy)",
+          borderRight: "1px solid var(--pds-border)",
+          overflowY: "auto", overflowX: "hidden",
+          zIndex: pinned ? 0 : 60,
+          boxShadow: !pinned && hover ? "6px 0 28px rgba(0,0,0,0.45)" : "none",
+          transition: "width 160ms ease",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: expanded ? "flex-end" : "center", padding: expanded ? "8px 12px 0" : "8px 0 0" }}>
+          {toggle}
+        </div>
+        <NavList role={role} active={active} collapsed={!expanded} onNavigate={(s) => { onNavigate(s); setHover(false); }} />
+      </aside>
+    </div>
   );
 }
 
@@ -457,19 +540,7 @@ export function PolarisShell({
       />
 
       <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
-        {!isMobile && (
-          <aside
-            style={{
-              width: "var(--pds-nav-w)",
-              flexShrink: 0,
-              background: "var(--pds-navy)",
-              borderRight: "1px solid var(--pds-border)",
-              overflowY: "auto",
-            }}
-          >
-            <NavList role={role} active={active} onNavigate={onNavigate} />
-          </aside>
-        )}
+        {!isMobile && <DesktopNav role={role} active={active} onNavigate={onNavigate} />}
 
         {/* `dark pds-embed` makes ANY standard app page ported into the Beta
             inherit the Beta teal/blue palette automatically — pds-native screens
