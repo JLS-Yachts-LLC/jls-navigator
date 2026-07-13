@@ -86,25 +86,15 @@ function PolarisRedesignApp() {
   useEffect(() => {
     if (search.screen) setScreen(search.screen);
   }, [search.screen]);
+  // null = Global (all vessels) — the default view everywhere. A specific vessel
+  // is only ever applied when the user explicitly picks one (per-page dropdowns,
+  // or the visa-reports selector), never auto-selected on load.
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [switcher, setSwitcher] = useState(false);
 
   // Preview runs at the highest role so the whole nav is visible; real enforcement
   // lives on the API routes. Swap to derived claims when promoting to production.
   const role: PolarisRole = "global_admin";
-
-  useEffect(() => {
-    if (loading || selectedId) return;
-    const stored =
-      typeof window !== "undefined"
-        ? sessionStorage.getItem(LAST_VESSEL)
-        : null;
-    const initial =
-      (stored && yachts.some((y) => y.id === stored)
-        ? stored
-        : yachts[0]?.id) ?? null;
-    setSelectedId(initial);
-  }, [loading, yachts, selectedId]);
 
   function pickVessel(id: string) {
     setSelectedId(id);
@@ -196,7 +186,7 @@ function PolarisRedesignApp() {
           if (item?.route) navigate({ to: item.route as any });
           else setScreen(s);
         }}
-        vesselName={yacht?.vessel_name ?? "Select vessel"}
+        vesselName={yacht?.vessel_name ?? "All vessels"}
         userInitials={initials}
         userName={user?.email ?? "User"}
         onVesselClick={() => setSwitcher(true)}

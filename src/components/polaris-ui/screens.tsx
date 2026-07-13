@@ -808,7 +808,7 @@ export function PolarisCrew({
         actions={null}
       />
 
-      <SectionLabel>Crew — {yacht?.vessel_name ?? "—"}</SectionLabel>
+      <SectionLabel>Crew — {yacht?.vessel_name ?? "All vessels"}</SectionLabel>
       <div className="pds-stats-grid" style={{ marginBottom: 16 }}>
         {loading ? (
           [...Array(5)].map((_, i) => (
@@ -959,7 +959,7 @@ export function PolarisCompliance({
   const scopeLabel =
     scope === "global"
       ? "All vessels"
-      : (yachts.find((y) => y.id === scope)?.vessel_name ?? yacht?.vessel_name ?? "—");
+      : (yachts.find((y) => y.id === scope)?.vessel_name ?? yacht?.vessel_name ?? "All vessels");
   const pct = counts.total ? Math.round((counts.active / counts.total) * 100) : 0;
   const scoreColour =
     pct >= 70
@@ -1282,7 +1282,7 @@ export function PolarisSignOnOff({
         actions={null}
       />
 
-      <SectionLabel>Crew movements — {yacht?.vessel_name ?? "—"}</SectionLabel>
+      <SectionLabel>Crew movements — {yacht?.vessel_name ?? "All vessels"}</SectionLabel>
       <div className="pds-stats-grid" style={{ marginBottom: 16 }}>
         {loading ? (
           [...Array(4)].map((_, i) => (
@@ -1352,7 +1352,7 @@ export function PolarisImmigration({
   return (
     <>
       <PageHeader title="Immigration" actions={<SwitchVesselAction onSwitchVessel={onSwitchVessel} />} />
-      <SectionLabel>Visa applications — {yacht?.vessel_name ?? "—"}</SectionLabel>
+      <SectionLabel>Visa applications — {yacht?.vessel_name ?? "All vessels"}</SectionLabel>
       <div className="pds-stats-grid" style={{ marginBottom: 16 }}>
         {loading ? [...Array(5)].map((_, i) => <Skeleton key={i} height={88} radius={12} />) : (
           <>
@@ -1395,7 +1395,7 @@ export function PolarisLogistics({
   return (
     <>
       <PageHeader title="Logistics" actions={<SwitchVesselAction onSwitchVessel={onSwitchVessel} />} />
-      <SectionLabel>ShipSync packages — {yacht?.vessel_name ?? "—"}</SectionLabel>
+      <SectionLabel>ShipSync packages — {yacht?.vessel_name ?? "All vessels"}</SectionLabel>
       <div className="pds-stats-grid" style={{ marginBottom: 16 }}>
         {loading ? [...Array(4)].map((_, i) => <Skeleton key={i} height={88} radius={12} />) : (
           <>
@@ -1430,7 +1430,7 @@ export function PolarisTraining({
   return (
     <>
       <PageHeader title="Training" actions={<SwitchVesselAction onSwitchVessel={onSwitchVessel} />} />
-      <SectionLabel>Certifications — {yacht?.vessel_name ?? "—"}</SectionLabel>
+      <SectionLabel>Certifications — {yacht?.vessel_name ?? "All vessels"}</SectionLabel>
       <div className="pds-stats-grid" style={{ marginBottom: 16 }}>
         {loading ? [...Array(4)].map((_, i) => <Skeleton key={i} height={88} radius={12} />) : (
           <>
@@ -1465,7 +1465,7 @@ export function PolarisCrewDocuments({
   return (
     <>
       <PageHeader title="Crew Documents" actions={<SwitchVesselAction onSwitchVessel={onSwitchVessel} />} />
-      <SectionLabel>Documents — {yacht?.vessel_name ?? "—"}</SectionLabel>
+      <SectionLabel>Documents — {yacht?.vessel_name ?? "All vessels"}</SectionLabel>
       <div className="pds-stats-grid" style={{ marginBottom: 16 }}>
         {loading ? [...Array(4)].map((_, i) => <Skeleton key={i} height={88} radius={12} />) : (
           <>
@@ -1509,7 +1509,7 @@ export function PolarisSosoReports({
   return (
     <>
       <PageHeader title="Sign-On/Off Reports" actions={<SwitchVesselAction onSwitchVessel={onSwitchVessel} />} />
-      <SectionLabel>Movement reports — {yacht?.vessel_name ?? "—"}</SectionLabel>
+      <SectionLabel>Movement reports — {yacht?.vessel_name ?? "All vessels"}</SectionLabel>
       <div className="pds-stats-grid" style={{ marginBottom: 16 }}>
         {loading ? [...Array(4)].map((_, i) => <Skeleton key={i} height={88} radius={12} />) : (
           <>

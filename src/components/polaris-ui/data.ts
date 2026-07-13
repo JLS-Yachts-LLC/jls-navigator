@@ -86,15 +86,15 @@ export function useVesselImmigration(yachtId: string | null): VesselImmigration 
     loading: true, rows: [], counts: { total: 0, draft: 0, inProgress: 0, approved: 0, rejected: 0 },
   });
   useEffect(() => {
-    if (!yachtId) return;
     void (async () => {
       setState((s) => ({ ...s, loading: true }));
-      const { data } = await (supabase as any)
+      let q = (supabase as any)
         .from("visa_applications")
         .select("id, given_name, surname, visa_type, status, destination_country, jls_reference, created_at")
-        .eq("yacht_id", yachtId)
         .order("created_at", { ascending: false })
-        .limit(300);
+        .limit(yachtId ? 300 : 3000);
+      if (yachtId) q = q.eq("yacht_id", yachtId);
+      const { data } = await q;
       const rows: VisaAppRow[] = ((data ?? []) as any[]).map((v) => ({
         id: v.id,
         name: [v.given_name, v.surname].filter(Boolean).join(" ") || "—",
@@ -132,15 +132,15 @@ export function useVesselLogistics(vesselName: string | null): VesselLogistics {
     loading: true, rows: [], counts: { total: 0, awaiting: 0, inTransit: 0, delivered: 0 },
   });
   useEffect(() => {
-    if (!vesselName) return;
     void (async () => {
       setState((s) => ({ ...s, loading: true }));
-      const { data } = await (supabase as any)
+      let q = (supabase as any)
         .from("shipsync_packages")
         .select("id, barcode, package_owner, courier, status, num_packages, received_at, boat_name")
-        .ilike("boat_name", vesselName)
         .order("received_at", { ascending: false })
-        .limit(300);
+        .limit(vesselName ? 300 : 3000);
+      if (vesselName) q = q.ilike("boat_name", vesselName);
+      const { data } = await q;
       const rows: PackageRow[] = ((data ?? []) as any[]).map((p) => ({
         id: p.id, barcode: p.barcode ?? null, owner: p.package_owner ?? null,
         courier: p.courier ?? null, status: String(p.status ?? "in_office"),
@@ -159,9 +159,12 @@ export function useVesselLogistics(vesselName: string | null): VesselLogistics {
   return state;
 }
 
-// Crew ids + names for a vessel (used to scope training / documents to the vessel).
-async function crewForVessel(yachtId: string): Promise<{ ids: string[]; nameById: Map<string, string> }> {
-  const { data } = await (supabase as any).from("crew_members").select("id, full_name").eq("yacht_id", yachtId);
+// Crew ids + names, scoped to a vessel or — when yachtId is null — the whole fleet
+// (used to scope / aggregate training + documents).
+async function crewForVessel(yachtId: string | null): Promise<{ ids: string[]; nameById: Map<string, string> }> {
+  let q = (supabase as any).from("crew_members").select("id, full_name");
+  q = yachtId ? q.eq("yacht_id", yachtId) : q.limit(20000);
+  const { data } = await q;
   const nameById = new Map<string, string>();
   for (const c of (data ?? []) as any[]) nameById.set(c.id, c.full_name ?? "—");
   return { ids: Array.from(nameById.keys()), nameById };
@@ -182,17 +185,18 @@ export function useVesselTraining(yachtId: string | null): VesselTraining {
     loading: true, rows: [], counts: { total: 0, valid: 0, expiring: 0, expired: 0 },
   });
   useEffect(() => {
-    if (!yachtId) return;
     void (async () => {
       setState((s) => ({ ...s, loading: true }));
       const { ids, nameById } = await crewForVessel(yachtId);
-      if (!ids.length) { setState({ loading: false, rows: [], counts: { total: 0, valid: 0, expiring: 0, expired: 0 } }); return; }
-      const { data } = await (supabase as any)
+      // Vessel view with no crew → nothing. Global view → aggregate all certs.
+      if (yachtId && !ids.length) { setState({ loading: false, rows: [], counts: { total: 0, valid: 0, expiring: 0, expired: 0 } }); return; }
+      let q = (supabase as any)
         .from("training_certifications")
         .select("id, crew_member_id, crew_name, certificate, cert_type, issuing_body, expiry_date")
-        .in("crew_member_id", ids)
         .order("expiry_date", { ascending: true })
-        .limit(400);
+        .limit(yachtId ? 400 : 5000);
+      if (yachtId) q = q.in("crew_member_id", ids);
+      const { data } = await q;
       const rows: CertRow[] = ((data ?? []) as any[]).map((c) => ({
         id: c.id,
         crewName: c.crew_name ?? nameById.get(c.crew_member_id) ?? "—",
@@ -228,17 +232,17 @@ export function useVesselDocuments(yachtId: string | null): VesselDocuments {
     loading: true, rows: [], counts: { total: 0, valid: 0, expiring: 0, expired: 0 },
   });
   useEffect(() => {
-    if (!yachtId) return;
     void (async () => {
       setState((s) => ({ ...s, loading: true }));
       const { ids, nameById } = await crewForVessel(yachtId);
-      if (!ids.length) { setState({ loading: false, rows: [], counts: { total: 0, valid: 0, expiring: 0, expired: 0 } }); return; }
-      const { data } = await (supabase as any)
+      if (yachtId && !ids.length) { setState({ loading: false, rows: [], counts: { total: 0, valid: 0, expiring: 0, expired: 0 } }); return; }
+      let q = (supabase as any)
         .from("crew_documents")
         .select("id, crew_member_id, doc_type, title, file_url, expiry_date")
-        .in("crew_member_id", ids)
         .order("expiry_date", { ascending: true })
-        .limit(400);
+        .limit(yachtId ? 400 : 5000);
+      if (yachtId) q = q.in("crew_member_id", ids);
+      const { data } = await q;
       const rows: DocRow[] = ((data ?? []) as any[]).map((d) => ({
         id: d.id,
         crewName: nameById.get(d.crew_member_id) ?? "—",
@@ -285,15 +289,15 @@ export function useVesselMovements(yachtId: string | null): VesselMovements {
   });
 
   useEffect(() => {
-    if (!yachtId) return;
     void (async () => {
       setState((s) => ({ ...s, loading: true }));
-      const { data: events } = await (supabase as any)
+      let mq = (supabase as any)
         .from("crew_signon_events")
         .select("id, crew_member_id, event_type, event_date, port, flight_number, status")
-        .eq("yacht_id", yachtId)
         .order("event_date", { ascending: false })
-        .limit(200);
+        .limit(yachtId ? 200 : 1000);
+      if (yachtId) mq = mq.eq("yacht_id", yachtId);
+      const { data: events } = await mq;
       const evs = (events ?? []) as any[];
 
       const ids = Array.from(new Set(evs.map((e) => e.crew_member_id).filter(Boolean)));
