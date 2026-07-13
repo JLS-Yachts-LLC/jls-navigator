@@ -9,20 +9,19 @@ import { RefreshCw, X } from "lucide-react";
  * How it works: every build writes public/version.json with a unique buildId,
  * and vite injects that same id into the bundle as __BUILD_ID__. This component
  * polls /version.json; when the served id differs from the running id, a new
- * deploy has landed. It then counts down and auto-refreshes — unless the user
- * hits Stop, in which case a persistent "Refresh now" bar remains.
+ * deploy has landed. It then shows a persistent banner with a "Refresh now"
+ * button; it never reloads the page on its own. Users click to refresh (or
+ * dismiss the banner and refresh later).
  */
 
 declare const __BUILD_ID__: string;
 
 const POLL_MS = 60_000;        // re-check every 60s
-const COUNTDOWN_SECS = 30;     // auto-refresh countdown once a new build is seen
 
 export function DeployWatcher() {
   const runningId = typeof __BUILD_ID__ !== "undefined" ? __BUILD_ID__ : "dev";
   const [newBuild, setNewBuild] = useState<string | null>(null);
-  const [secs, setSecs] = useState(COUNTDOWN_SECS);
-  const [stopped, setStopped] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
   const seenRef = useRef(false);
 
   const check = useCallback(async () => {
@@ -54,18 +53,7 @@ export function DeployWatcher() {
     };
   }, [check]);
 
-  // Countdown → auto-refresh, unless the user pressed Stop.
-  useEffect(() => {
-    if (!newBuild || stopped) return;
-    if (secs <= 0) {
-      window.location.reload();
-      return;
-    }
-    const t = setTimeout(() => setSecs((s) => s - 1), 1000);
-    return () => clearTimeout(t);
-  }, [newBuild, stopped, secs]);
-
-  if (!newBuild) return null;
+  if (!newBuild || dismissed) return null;
 
   return (
     <div
@@ -89,17 +77,12 @@ export function DeployWatcher() {
         fontSize: 13.5,
       }}
     >
-      <RefreshCw
-        size={15}
-        style={{ color: "#E8A020", animation: stopped ? "none" : "spin 2s linear infinite" }}
-      />
+      <RefreshCw size={15} style={{ color: "#E8A020" }} />
       <span style={{ fontWeight: 600 }}>
         A new version of Polaris has been deployed.
-        {!stopped && (
-          <span style={{ color: "#00C4CC", marginLeft: 6 }}>
-            Refreshing in {secs}s…
-          </span>
-        )}
+        <span style={{ color: "#7A9DB8", marginLeft: 6, fontWeight: 500 }}>
+          Refresh when you&rsquo;re ready.
+        </span>
       </span>
 
       <button
@@ -122,28 +105,24 @@ export function DeployWatcher() {
         <RefreshCw size={13} /> Refresh now
       </button>
 
-      {!stopped && (
-        <button
-          onClick={() => setStopped(true)}
-          title="Stop the automatic refresh"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 5,
-            background: "transparent",
-            color: "#7A9DB8",
-            border: "1px solid rgba(122,157,184,0.4)",
-            borderRadius: 7,
-            padding: "5px 11px",
-            fontSize: 12.5,
-            fontWeight: 600,
-            cursor: "pointer",
-            fontFamily: "'Space Grotesk', sans-serif",
-          }}
-        >
-          <X size={13} /> Stop
-        </button>
-      )}
+      <button
+        onClick={() => setDismissed(true)}
+        title="Dismiss (you can refresh later)"
+        aria-label="Dismiss"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "transparent",
+          color: "#7A9DB8",
+          border: "1px solid rgba(122,157,184,0.4)",
+          borderRadius: 7,
+          padding: "5px 8px",
+          cursor: "pointer",
+        }}
+      >
+        <X size={13} />
+      </button>
     </div>
   );
 }
