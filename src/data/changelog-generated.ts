@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-07-13",
     "entries": [
       {
+        "type": "feature",
+        "title": "The sidebar is now collapsible and pinnable — collapse it to a slim icon rail to give pages more room, hover to peek the full menu without moving anything, or pin it open so content shifts alongside it; your choice is remembered"
+      },
+      {
         "type": "fix",
         "title": "Lightspeed sales sync uses a single Sale-updated webhook — one /api/lightspeed/sale endpoint now routes returns to credit memos and everything else to invoices, matching Lightspeed's single Sale updated event"
       },

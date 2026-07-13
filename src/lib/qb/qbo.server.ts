@@ -142,11 +142,12 @@ export async function qboUpload(
   throw new Error(`QBO upload ${fileName} failed after retries`)
 }
 
-/** Fetch a QBO-rendered PDF (e.g. /invoice/{id}/pdf or /estimate/{id}/pdf) as bytes. */
-export async function qboPdf(path: string): Promise<ArrayBuffer> {
+/** Fetch a QBO-rendered PDF (e.g. /invoice/{id}/pdf or /estimate/{id}/pdf) as bytes.
+ *  Pass realmOverride for a secondary company (e.g. the Waypoint retail realm). */
+export async function qboPdf(path: string, realmOverride?: string): Promise<ArrayBuffer> {
   if (!qboConfigured()) throw new Error('QBO not configured')
   const sb = admin()
-  const realm = qboRealm()
+  const realm = realmOverride ?? qboRealm()
   let token = await getAccessToken(sb, realm)
   const url = `${API_BASE}/${realm}${path}`
   for (let attempt = 0; attempt < 4; attempt++) {
