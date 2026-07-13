@@ -332,6 +332,12 @@ export default {
       return qbExcelImportHandler(request)
     }
 
+    // Lightspeed (Vend) → QuickBooks retail sync webhooks
+    if (url.pathname.startsWith('/api/lightspeed/')) {
+      const { lightspeedWebhookHandler } = await import('./routes/api.lightspeed.webhook')
+      return lightspeedWebhookHandler(request)
+    }
+
     if (url.pathname === '/api/leo/briefing' && request.method === 'POST') {
       return leoBriefingHandler(request)
     }

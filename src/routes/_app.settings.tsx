@@ -952,6 +952,18 @@ const INTEGRATIONS: {
       { key: 'api_key', label: 'API Key', placeholder: 'Browser key — enable Maps JavaScript, Places & Directions APIs; restrict by HTTP referrer' },
     ],
   },
+  {
+    name: 'Lightspeed (Retail POS)',
+    key: 'lightspeed',
+    logo: '🛒',
+    fields: [
+      { key: 'api_token', label: 'API Token', type: 'password', placeholder: 'Lightspeed X-Series personal token (for product lookups)' },
+      { key: 'domain_prefix', label: 'Store Prefix', placeholder: 'superyachtme' },
+      { key: 'retailer_id', label: 'Retailer ID', placeholder: 'Optional — reject webhooks from other retailers' },
+      { key: 'webhook_key', label: 'Webhook Key', type: 'password', placeholder: 'Optional — register Vend webhooks with ?key=<value>' },
+      { key: 'qbo_realm', label: 'QBO Realm ID', placeholder: '9341456599242940 (Superyacht ME retail company)' },
+    ],
+  },
 ]
 
 function IntegrationsPanel() {

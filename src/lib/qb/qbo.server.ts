@@ -32,8 +32,10 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 /** Exchange the stored (or seed) refresh token for a fresh access token; persist rotation. */
 async function refreshAccessToken(sb: any, realm: string): Promise<string> {
   const { data: row } = await sb.from('qbo_tokens').select('refresh_token').eq('realm_id', realm).maybeSingle()
-  const refreshToken = row?.refresh_token ?? process.env.QBO_REFRESH_TOKEN
-  if (!refreshToken) throw new Error('QBO not configured: no refresh token (set QBO_REFRESH_TOKEN secret)')
+  // The env seed token belongs to the DEFAULT realm only — a secondary realm
+  // (e.g. Superyacht ME retail) must be connected via /api/qb/connect.
+  const refreshToken = row?.refresh_token ?? (realm === qboRealm() ? process.env.QBO_REFRESH_TOKEN : undefined)
+  if (!refreshToken) throw new Error(`QBO realm ${realm} is not connected — connect it via /api/qb/connect`)
 
   const basic = btoa(`${process.env.QBO_CLIENT_ID}:${process.env.QBO_CLIENT_SECRET}`)
   const res = await fetch(TOKEN_URL, {
@@ -65,11 +67,13 @@ async function getAccessToken(sb: any, realm: string, force = false): Promise<st
   return refreshAccessToken(sb, realm)
 }
 
-/** Make an authenticated QBO request. Path is relative to /v3/company/{realm}. */
-export async function qboRequest(method: string, path: string, body?: unknown): Promise<any> {
+/** Make an authenticated QBO request. Path is relative to /v3/company/{realm}.
+ *  Pass realmOverride to talk to a secondary company (e.g. the Superyacht ME
+ *  retail realm) — its tokens must exist in qbo_tokens (via /api/qb/connect). */
+export async function qboRequest(method: string, path: string, body?: unknown, realmOverride?: string): Promise<any> {
   if (!qboConfigured()) throw new Error('QBO not configured (QBO_CLIENT_ID/SECRET/REFRESH_TOKEN missing)')
   const sb = admin()
-  const realm = qboRealm()
+  const realm = realmOverride ?? qboRealm()
   let token = await getAccessToken(sb, realm)
   const url = `${API_BASE}/${realm}${path}`
 
@@ -92,8 +96,8 @@ export async function qboRequest(method: string, path: string, body?: unknown): 
 }
 
 /** Run a QBO SQL-ish query (read). */
-export async function qboQuery(query: string): Promise<any> {
-  return qboRequest('GET', `/query?query=${encodeURIComponent(query)}&minorversion=73`)
+export async function qboQuery(query: string, realmOverride?: string): Promise<any> {
+  return qboRequest('GET', `/query?query=${encodeURIComponent(query)}&minorversion=73`, undefined, realmOverride)
 }
 
 /** Upload a file to QBO and link it to an entity (multipart /upload endpoint).
