@@ -1,6 +1,7 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import { useSignedUrl } from "@/lib/signed-url";
 import { doSendForSignature } from "@/lib/esign.server";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,7 +12,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { FileStack, Plus, Search, Loader2, Send, Upload, UploadCloud, FileText, Download, Trash2, Wand2 } from "lucide-react";
+import { FileStack, Plus, Search, Loader2, Send, Upload, UploadCloud, FileText, Download, Trash2, Wand2, Pencil, ChevronLeft, ChevronRight, PenLine } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -43,6 +44,9 @@ export function EsignTemplatesPage() {
 
   const [deleteTarget, setDeleteTarget] = useState<Template | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // View / edit a template — see the PDF and interact with it.
+  const [editTarget, setEditTarget] = useState<Template | null>(null);
 
   useEffect(() => { void load(); }, []);
 
@@ -188,16 +192,17 @@ export function EsignTemplatesPage() {
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {list.map(t => (
                     <div key={t.id} className="group flex flex-col rounded-xl border border-border bg-card p-4 transition-all hover:border-primary/30 hover:shadow-sm">
-                      <div className="flex items-start gap-3">
+                      <button type="button" onClick={() => setEditTarget(t)} className="flex items-start gap-3 text-left" title="Open — view & edit">
                         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10"><FileText className="h-4 w-4 text-primary/80" /></div>
                         <div className="min-w-0 flex-1">
-                          <div className="font-medium leading-tight line-clamp-2">{t.name}</div>
+                          <div className="font-medium leading-tight line-clamp-2 group-hover:text-primary">{t.name}</div>
                           {t.description && <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{t.description}</div>}
                           <div className="mt-1 truncate text-[11px] text-muted-foreground/70">{t.file_name}</div>
                         </div>
-                      </div>
+                      </button>
                       <div className="mt-3 flex items-center gap-1.5 border-t border-border/40 pt-3">
                         <Button size="sm" className="h-7 flex-1 gap-1.5 text-xs" onClick={() => openUse(t)}><Wand2 className="h-3 w-3" /> Use</Button>
+                        <Button variant="outline" size="sm" className="h-7 gap-1.5 px-2 text-xs" title="View & edit template" onClick={() => setEditTarget(t)}><Pencil className="h-3 w-3" /> Edit</Button>
                         <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground" title="Download" onClick={() => download(t)}><Download className="h-3.5 w-3.5" /></Button>
                         <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive/70 hover:text-destructive" title="Delete" onClick={() => setDeleteTarget(t)}><Trash2 className="h-3.5 w-3.5" /></Button>
                       </div>
@@ -290,6 +295,15 @@ export function EsignTemplatesPage() {
         </DialogContent>
       </Dialog>
 
+      {/* View & edit template — see the PDF and interact with it */}
+      {editTarget && (
+        <TemplateEditDialog
+          template={editTarget}
+          onClose={() => setEditTarget(null)}
+          onSaved={() => void load()}
+        />
+      )}
+
       <AlertDialog open={!!deleteTarget} onOpenChange={(o) => { if (!o && !deleting) setDeleteTarget(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -305,5 +319,222 @@ export function EsignTemplatesPage() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+// ── View & edit a template: live PDF preview + click/drag signature placement + metadata ──
+type SigMark = { page: number; pos: string; x?: number; y?: number };
+
+function TemplateEditDialog({ template, onClose, onSaved }: {
+  template: Template;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const storedUrl = useSignedUrl(template.file_path, "esign-documents");
+
+  const [form, setForm] = useState({
+    name: template.name,
+    category: template.category ?? "",
+    description: template.description ?? "",
+  });
+  const first = Array.isArray(template.signature_fields) ? template.signature_fields[0] : null;
+  const [sig, setSig] = useState<SigMark>(
+    first ? { page: Number(first.page) || 1, pos: first.pos ?? "bottom-right", x: first.x, y: first.y }
+          : { page: 1, pos: "bottom-right" },
+  );
+  const [replaceFile, setReplaceFile] = useState<File | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  // Preview the replacement locally before it's uploaded; otherwise the stored file.
+  const [localUrl, setLocalUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!replaceFile) { setLocalUrl(null); return; }
+    const u = URL.createObjectURL(replaceFile);
+    setLocalUrl(u);
+    return () => URL.revokeObjectURL(u);
+  }, [replaceFile]);
+  const renderUrl = localUrl || storedUrl;
+
+  const [pageNum, setPageNum] = useState(1);
+  const [numPages, setNumPages] = useState(1);
+  const [rendering, setRendering] = useState(true);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const pdfRef = useRef<any>(null);
+  const dragging = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!renderUrl) return;
+    void (async () => {
+      try {
+        setRendering(true);
+        const pdfjs: any = await import("pdfjs-dist");
+        const workerUrl = ((await import("pdfjs-dist/build/pdf.worker.min.mjs?url" as any)) as any).default;
+        pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+        if (!pdfRef.current || pdfRef.current.__url !== renderUrl) {
+          pdfRef.current = await pdfjs.getDocument(renderUrl).promise;
+          pdfRef.current.__url = renderUrl;
+          if (cancelled) return;
+          setNumPages(pdfRef.current.numPages);
+        }
+        const page = await pdfRef.current.getPage(pageNum);
+        const canvas = canvasRef.current;
+        if (!canvas || cancelled) return;
+        const containerWidth = 460;
+        const base = page.getViewport({ scale: 1 });
+        const scale = containerWidth / base.width;
+        const viewport = page.getViewport({ scale });
+        canvas.width = viewport.width; canvas.height = viewport.height;
+        canvas.style.width = `${viewport.width}px`; canvas.style.height = `${viewport.height}px`;
+        await page.render({ canvasContext: canvas.getContext("2d")!, viewport }).promise;
+      } catch (e: any) {
+        toast.error(`Could not render the PDF: ${e?.message ?? e}`);
+      } finally {
+        if (!cancelled) setRendering(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [renderUrl, pageNum]);
+
+  function fracFromEvent(e: React.PointerEvent | React.MouseEvent): { x: number; y: number } | null {
+    const el = overlayRef.current;
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return {
+      x: Math.min(0.98, Math.max(0.02, (e.clientX - r.left) / r.width)),
+      y: Math.min(0.98, Math.max(0.02, (e.clientY - r.top) / r.height)),
+    };
+  }
+  function place(e: React.MouseEvent) {
+    if (dragging.current) return;
+    const p = fracFromEvent(e);
+    if (!p) return;
+    setSig({ page: pageNum, pos: "custom", x: p.x, y: p.y });
+  }
+  function startDrag(e: React.PointerEvent) {
+    e.stopPropagation();
+    dragging.current = true;
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  }
+  function onDrag(e: React.PointerEvent) {
+    if (!dragging.current) return;
+    const p = fracFromEvent(e);
+    if (!p) return;
+    setSig({ page: pageNum, pos: "custom", x: p.x, y: p.y });
+  }
+  function endDrag() { dragging.current = false; }
+
+  // Where to draw the marker on the current page (custom x/y, else a preset corner).
+  const presetFrac = (pos: string) => ({
+    x: pos.includes("left") ? 0.16 : pos.includes("center") ? 0.5 : 0.84,
+    y: pos.includes("top") ? 0.08 : pos.includes("middle") ? 0.5 : 0.92,
+  });
+  const markPage = sig.x != null && sig.y != null ? sig.page : 1;
+  const markFrac = sig.x != null && sig.y != null ? { x: sig.x, y: sig.y } : presetFrac(sig.pos);
+  const showMark = markPage === pageNum;
+
+  async function save() {
+    if (!form.name.trim()) { toast.error("Template name is required"); return; }
+    setSaving(true);
+    try {
+      let file_path = template.file_path;
+      let file_name = template.file_name;
+      if (replaceFile) {
+        const path = `templates/${crypto.randomUUID()}-${replaceFile.name.replace(/[^\w.\-]+/g, "_")}`;
+        const up = await supabase.storage.from("esign-documents").upload(path, replaceFile, { contentType: replaceFile.type || "application/pdf" });
+        if (up.error) throw up.error;
+        file_path = path; file_name = replaceFile.name;
+        await (supabase.storage.from("esign-documents") as any).remove([template.file_path]).catch(() => {});
+      }
+      const { error } = await (supabase as any).from("esign_templates").update({
+        name: form.name.trim(),
+        category: form.category.trim() || null,
+        description: form.description.trim() || null,
+        signature_fields: [sig],
+        file_path,
+        file_name,
+        updated_at: new Date().toISOString(),
+      }).eq("id", template.id);
+      if (error) throw error;
+      toast.success("Template updated");
+      onSaved();
+      onClose();
+    } catch (e: any) { toast.error(e.message ?? "Failed to update template"); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o && !saving) onClose(); }}>
+      <DialogContent className="max-w-4xl max-h-[92vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><Pencil className="h-4 w-4 text-primary" /> Edit template — {template.name}</DialogTitle>
+        </DialogHeader>
+
+        <div className="grid gap-5 md:grid-cols-[minmax(0,480px)_1fr]">
+          {/* PDF preview + signature placement */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/60">Document</div>
+              <div className="flex items-center gap-1.5">
+                <Button variant="ghost" size="sm" className="h-6 w-6 p-0" disabled={pageNum <= 1} onClick={() => setPageNum(p => Math.max(1, p - 1))}><ChevronLeft className="h-3.5 w-3.5" /></Button>
+                <span className="text-xs text-muted-foreground tabular-nums">{pageNum} / {numPages}</span>
+                <Button variant="ghost" size="sm" className="h-6 w-6 p-0" disabled={pageNum >= numPages} onClick={() => setPageNum(p => Math.min(numPages, p + 1))}><ChevronRight className="h-3.5 w-3.5" /></Button>
+              </div>
+            </div>
+            <div className="relative overflow-hidden rounded-lg border border-border bg-muted/20">
+              <div ref={overlayRef} className="relative cursor-crosshair" onClick={place}>
+                <canvas ref={canvasRef} className="block w-full" />
+                {rendering && <div className="absolute inset-0 flex items-center justify-center bg-background/40"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>}
+                {showMark && (
+                  <div
+                    className="absolute flex -translate-x-1/2 -translate-y-1/2 select-none items-center gap-1 rounded border border-primary bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary shadow-sm"
+                    style={{ left: `${markFrac.x * 100}%`, top: `${markFrac.y * 100}%`, cursor: "grab", touchAction: "none" }}
+                    onPointerDown={startDrag} onPointerMove={onDrag} onPointerUp={endDrag}
+                    title="Drag to reposition the signature"
+                  >
+                    <PenLine className="h-3 w-3" /> Signature
+                  </div>
+                )}
+              </div>
+            </div>
+            <p className="text-[11px] text-muted-foreground/70">Click anywhere on the page to place the signature, or drag the marker to fine-tune. This is where signers sign documents created from this template.</p>
+          </div>
+
+          {/* Metadata */}
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Template name <span className="text-destructive">*</span></Label>
+              <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className="h-8" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Category</Label>
+              <Input value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} className="h-8" placeholder="e.g. Charter, HR, IT Support" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Description</Label>
+              <Textarea rows={2} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} className="resize-none text-sm" placeholder="Optional one-line note" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Replace PDF</Label>
+              <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-dashed border-border bg-muted/20 px-3 py-2.5 text-sm hover:bg-muted/40 transition">
+                <UploadCloud className="h-4 w-4 text-muted-foreground" />
+                <span className="min-w-0 flex-1 truncate text-muted-foreground">{replaceFile ? replaceFile.name : template.file_name}</span>
+                <input type="file" accept="application/pdf,.pdf" className="hidden" onChange={e => { setReplaceFile(e.target.files?.[0] ?? null); setPageNum(1); }} />
+              </label>
+              {replaceFile && <button className="text-[11px] text-primary hover:underline" onClick={() => { setReplaceFile(null); setPageNum(1); }}>Keep current PDF</button>}
+            </div>
+            <a className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground" href={storedUrl || undefined} target="_blank" rel="noreferrer">
+              <Download className="h-3.5 w-3.5" /> Open current PDF in new tab
+            </a>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button onClick={save} disabled={saving} className="gap-1.5">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-3.5 w-3.5" />} Save changes</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
