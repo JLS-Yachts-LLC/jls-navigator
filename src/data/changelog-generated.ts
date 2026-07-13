@@ -9,6 +9,14 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-07-13",
     "entries": [
       {
+        "type": "feature",
+        "title": "Templates can now be opened and edited in place — preview the PDF, drag the signature onto the page, rename, recategorise or swap the file"
+      },
+      {
+        "type": "feature",
+        "title": "Single Settings menu — removed the separate Admin Settings group; Settings, Dev Settings, Automations, Sync, Integrations, Error & Warnings, Changelog, Recycle Bin and Feedback now all sit under one Settings heading"
+      },
+      {
         "type": "fix",
         "title": "The new-version banner no longer auto-refreshes — it stays put with a Refresh now button so users reload when they're ready (with a dismiss option), instead of the page reloading from under them"
       },
