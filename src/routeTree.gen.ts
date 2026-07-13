@@ -52,6 +52,7 @@ import { Route as AppDirectoryRouteImport } from './routes/_app.directory'
 import { Route as AppDirectorRouteImport } from './routes/_app.director'
 import { Route as AppDevSettingsRouteImport } from './routes/_app.dev-settings'
 import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
+import { Route as AppCrmLookupRouteImport } from './routes/_app.crm-lookup'
 import { Route as AppCrewPlacementRouteImport } from './routes/_app.crew-placement'
 import { Route as AppCrewImmigrationRouteImport } from './routes/_app.crew-immigration'
 import { Route as AppCrewCabRouteImport } from './routes/_app.crew-cab'
@@ -353,6 +354,11 @@ const AppDevSettingsRoute = AppDevSettingsRouteImport.update({
 const AppDashboardRoute = AppDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppCrmLookupRoute = AppCrmLookupRouteImport.update({
+  id: '/crm-lookup',
+  path: '/crm-lookup',
   getParentRoute: () => AppRoute,
 } as any)
 const AppCrewPlacementRoute = AppCrewPlacementRouteImport.update({
@@ -820,6 +826,7 @@ export interface FileRoutesByFullPath {
   '/crew-cab': typeof AppCrewCabRouteWithChildren
   '/crew-immigration': typeof AppCrewImmigrationRouteWithChildren
   '/crew-placement': typeof AppCrewPlacementRouteWithChildren
+  '/crm-lookup': typeof AppCrmLookupRoute
   '/dashboard': typeof AppDashboardRouteWithChildren
   '/dev-settings': typeof AppDevSettingsRoute
   '/director': typeof AppDirectorRoute
@@ -947,6 +954,7 @@ export interface FileRoutesByTo {
   '/compass': typeof AppCompassRoute
   '/crew-cab': typeof AppCrewCabRouteWithChildren
   '/crew-immigration': typeof AppCrewImmigrationRouteWithChildren
+  '/crm-lookup': typeof AppCrmLookupRoute
   '/dashboard': typeof AppDashboardRouteWithChildren
   '/dev-settings': typeof AppDevSettingsRoute
   '/director': typeof AppDirectorRoute
@@ -1066,6 +1074,7 @@ export interface FileRoutesById {
   '/_app/crew-cab': typeof AppCrewCabRouteWithChildren
   '/_app/crew-immigration': typeof AppCrewImmigrationRouteWithChildren
   '/_app/crew-placement': typeof AppCrewPlacementRouteWithChildren
+  '/_app/crm-lookup': typeof AppCrmLookupRoute
   '/_app/dashboard': typeof AppDashboardRouteWithChildren
   '/_app/dev-settings': typeof AppDevSettingsRoute
   '/_app/director': typeof AppDirectorRoute
@@ -1197,6 +1206,7 @@ export interface FileRouteTypes {
     | '/crew-cab'
     | '/crew-immigration'
     | '/crew-placement'
+    | '/crm-lookup'
     | '/dashboard'
     | '/dev-settings'
     | '/director'
@@ -1324,6 +1334,7 @@ export interface FileRouteTypes {
     | '/compass'
     | '/crew-cab'
     | '/crew-immigration'
+    | '/crm-lookup'
     | '/dashboard'
     | '/dev-settings'
     | '/director'
@@ -1442,6 +1453,7 @@ export interface FileRouteTypes {
     | '/_app/crew-cab'
     | '/_app/crew-immigration'
     | '/_app/crew-placement'
+    | '/_app/crm-lookup'
     | '/_app/dashboard'
     | '/_app/dev-settings'
     | '/_app/director'
@@ -1872,6 +1884,13 @@ declare module '@tanstack/react-router' {
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof AppDashboardRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/crm-lookup': {
+      id: '/_app/crm-lookup'
+      path: '/crm-lookup'
+      fullPath: '/crm-lookup'
+      preLoaderRoute: typeof AppCrmLookupRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/crew-placement': {
@@ -2783,6 +2802,7 @@ interface AppRouteChildren {
   AppCrewCabRoute: typeof AppCrewCabRouteWithChildren
   AppCrewImmigrationRoute: typeof AppCrewImmigrationRouteWithChildren
   AppCrewPlacementRoute: typeof AppCrewPlacementRouteWithChildren
+  AppCrmLookupRoute: typeof AppCrmLookupRoute
   AppDashboardRoute: typeof AppDashboardRouteWithChildren
   AppDevSettingsRoute: typeof AppDevSettingsRoute
   AppDirectorRoute: typeof AppDirectorRoute
@@ -2847,6 +2867,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppCrewCabRoute: AppCrewCabRouteWithChildren,
   AppCrewImmigrationRoute: AppCrewImmigrationRouteWithChildren,
   AppCrewPlacementRoute: AppCrewPlacementRouteWithChildren,
+  AppCrmLookupRoute: AppCrmLookupRoute,
   AppDashboardRoute: AppDashboardRouteWithChildren,
   AppDevSettingsRoute: AppDevSettingsRoute,
   AppDirectorRoute: AppDirectorRoute,
