@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Add a Lightspeed automations tab — a form-based tool that reads SKUs, pulls each product from Lightspeed and creates or updates the matching item description in QuickBooks (runs natively, no n8n)"
+      },
+      {
+        "type": "feature",
         "title": "Lightspeed retail sync now runs fully native — Lightspeed customer, product, return and sale webhooks create/update the matching QuickBooks retail customers, inventory items, credit memos and invoices directly on the platform (deduplicated by document number), replacing the n8n workflows. Configure under Settings → Integrations → Lightspeed; each flow has its own Automations toggle"
       }
     ]
