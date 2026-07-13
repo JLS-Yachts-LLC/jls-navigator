@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { ArrowLeft, Plus, Loader2, BookOpen, FileText, Pencil, ChevronRight, Upload, Sparkles, Heading, Bold, Italic, List, Link2, Youtube, Eye } from "lucide-react";
+import { ArrowLeft, Plus, Loader2, BookOpen, FileText, Pencil, ChevronRight, Upload, Sparkles, Heading, Bold, Italic, List, Link2, Youtube, Eye, Image as ImageIcon } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/components/ui/markdown";
@@ -81,6 +81,31 @@ export function GuideDepartmentPage() {
     insertBlock(`https://youtu.be/${id}`);
     setYtUrl(""); setYtOpen(false);
     toast.success("Video added — it plays inline in the guide");
+  }
+
+  // ── Image upload (Supabase Storage → inserted at the cursor) ─────────────────
+  const imageRef = useRef<HTMLInputElement>(null);
+  const [uploadingImg, setUploadingImg] = useState(false);
+
+  async function uploadImage(file: File) {
+    if (!file.type.startsWith("image/")) { toast.error("Please choose an image file"); return; }
+    if (file.size > 10 * 1024 * 1024) { toast.error("Image must be under 10 MB"); return; }
+    setUploadingImg(true);
+    try {
+      const ext = (file.name.split(".").pop() || "png").toLowerCase();
+      const safe = file.name.replace(/\.[^.]+$/, "").replace(/[^a-z0-9]+/gi, "-").slice(0, 40).toLowerCase() || "image";
+      const path = `${department}/${Date.now()}-${safe}.${ext}`;
+      const { error } = await supabase.storage.from("guide-images").upload(path, file, { cacheControl: "31536000", upsert: false });
+      if (error) throw error;
+      const { data } = supabase.storage.from("guide-images").getPublicUrl(path);
+      insertBlock(`![${safe}](${data.publicUrl})`);
+      toast.success("Image added");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Image upload failed");
+    } finally {
+      setUploadingImg(false);
+      if (imageRef.current) imageRef.current.value = "";
+    }
   }
 
   // Document import (PDF/Word → AI-extracted guide + branded PDF)
@@ -296,10 +321,16 @@ export function GuideDepartmentPage() {
                       </button>
                     ))}
                     <div className="mx-0.5 h-4 w-px bg-border" />
+                    <button type="button" title="Upload image" onClick={() => imageRef.current?.click()} disabled={uploadingImg}
+                      className="flex h-7 items-center gap-1.5 rounded px-2 text-[11px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition disabled:opacity-60">
+                      {uploadingImg ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="h-3.5 w-3.5" />} Image
+                    </button>
                     <button type="button" title="Insert YouTube video" onClick={() => setYtOpen(o => !o)}
                       className={cn("flex h-7 items-center gap-1.5 rounded px-2 text-[11px] font-medium transition", ytOpen ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-accent hover:text-foreground")}>
                       <Youtube className="h-3.5 w-3.5" /> YouTube
                     </button>
+                    <input ref={imageRef} type="file" accept="image/*" className="hidden"
+                      onChange={e => { const f = e.target.files?.[0]; if (f) void uploadImage(f); }} />
                   </div>
 
                   {/* YouTube inline inserter */}

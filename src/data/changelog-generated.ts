@@ -10,6 +10,14 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "The top-bar 'View as' menu now previews as an existing user — the fixed Captain / Client / Crew role shortcuts are gone; search and pick any created user (Admin (full access) still exits preview)"
+      },
+      {
+        "type": "feature",
+        "title": "Friendlier Knowledge Base editor with inline YouTube videos — the guide editor gains a formatting toolbar (heading, bold, italic, list, link), a Write/Preview toggle, and an Insert YouTube control that drops a video at the cursor; any YouTube link on its own line renders as an embedded player exactly where it sits in the guide"
+      },
+      {
+        "type": "feature",
         "title": "Anchor gains a Templates tab — store ready-to-go PDF templates and create a new document from one in a click (copies the PDF, prefills the title, then send for signature)"
       },
       {

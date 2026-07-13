@@ -23,6 +23,7 @@ const COMPONENTS = {
   hr: () => <hr className="my-5 border-border/60" />,
   blockquote: ({ node, ...p }: any) => <blockquote className="my-3 border-l-2 border-primary/40 pl-4 italic text-muted-foreground" {...p} />,
   code: ({ node, ...p }: any) => <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[0.85em]" {...p} />,
+  img: ({ node, ...p }: any) => <img className="my-3 max-w-full rounded-lg border border-border" loading="lazy" {...p} />,
   table: ({ node, ...p }: any) => <div className="my-3 overflow-x-auto"><table className="w-full border-collapse text-sm" {...p} /></div>,
   th: ({ node, ...p }: any) => <th className="border border-border bg-muted/40 px-3 py-1.5 text-left font-semibold" {...p} />,
   td: ({ node, ...p }: any) => <td className="border border-border px-3 py-1.5" {...p} />,
