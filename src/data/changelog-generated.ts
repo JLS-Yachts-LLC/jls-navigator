@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-07-13",
     "entries": [
       {
+        "type": "feature",
+        "title": "Add a 3CX caller screen-pop — when a call rings, 3CX can open Polaris to show who's calling (matched across crew, staff, suppliers, agency, emergency and directory contacts) with one-tap call-back and WhatsApp"
+      },
+      {
         "type": "fix",
         "title": "Native Lightspeed and QuickBooks automations register under their own Automations tabs (Lightspeed / Finance) instead of Platform"
       },
