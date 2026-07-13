@@ -55,7 +55,7 @@ export function ShipSyncPage() {
   useEffect(() => { void reload().finally(() => setLoading(false)); }, [reload]);
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-w-0 flex-col">
       <header className="flex items-center justify-between border-b border-border/70 bg-card/30 px-6 py-3.5">
         <div>
           <div className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-muted-foreground/60">JLS Yacht Logistics</div>
@@ -83,7 +83,7 @@ export function ShipSyncPage() {
         })}
       </div>
 
-      <div className="flex-1 overflow-auto">
+      <div className="min-w-0 flex-1 overflow-auto">
         {loading ? (
           <div className="flex h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
         ) : (
