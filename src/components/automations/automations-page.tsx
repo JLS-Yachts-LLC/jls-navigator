@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Zap, Clock, Webhook, MousePointerClick, Activity, Search, Loader2,
   CheckCircle2, XCircle, CircleDot, Calendar, ExternalLink, PlugZap,
-  ListOrdered, History, ChevronDown, Trash2,
+  ListOrdered, History, ChevronDown, Trash2, RotateCcw, RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -15,6 +15,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { LightspeedSkuSyncPanel } from "@/components/lightspeed/sku-sync-panel";
 import {
   getAutomationSteps, getAutomationRuns,
   type StepsResult, type RunsResult,
@@ -41,6 +42,8 @@ type Automation = {
 
 // Department mini tabs — fixed order; "All" first, Platform last.
 const DEPARTMENTS = ["Finance", "Immigration", "Logistics", "Training", "Yacht IT Solutions", "Operations", "Lightspeed", "Platform"] as const;
+// Sentinel dept value for the cross-automation Executions log tab.
+const EXECUTIONS_TAB = "__executions";
 
 const TRIGGER_META: Record<string, { label: string; icon: typeof Clock; color: string }> = {
   schedule: { label: "Scheduled", icon: Clock,             color: "bg-blue-500/15 text-blue-400" },
@@ -59,7 +62,7 @@ function fmtWhen(iso: string | null) {
   return d.toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
-type RunRow = { automation_key: string; status: string; started_at: string };
+type RunRow = { automation_key: string; status: string; started_at: string; finished_at?: string | null; detail?: string | null };
 type KeyStats = { runs: number; success: number; error: number; retry: number; hit: number; lastRun: string | null };
 
 export function AutomationsPage() {
@@ -90,7 +93,7 @@ export function AutomationsPage() {
     const since = new Date(Date.now() - 30 * 86400000).toISOString();
     const [{ data, error }, { data: runData }] = await Promise.all([
       fetchAllRows(() => (supabase as any).from("automations").select("*").order("category").order("name")),
-      fetchAllRows(() => (supabase as any).from("automation_runs").select("automation_key, status, started_at").gte("started_at", since)),
+      fetchAllRows(() => (supabase as any).from("automation_runs").select("automation_key, status, started_at, finished_at, detail").gte("started_at", since)),
     ]);
     if (error) toast.error(error.message);
     else setItems((data ?? []) as Automation[]);
@@ -135,7 +138,7 @@ export function AutomationsPage() {
   }, [items]);
 
   const filtered = useMemo(() => items.filter(a => {
-    if (dept !== "All" && deptOf(a) !== dept) return false;
+    if (dept !== "All" && dept !== EXECUTIONS_TAB && deptOf(a) !== dept) return false;
     if (!q.trim()) return true;
     const s = q.toLowerCase();
     return [a.name, a.description, a.category, a.department, a.schedule].filter(Boolean).join(" ").toLowerCase().includes(s);
@@ -207,6 +210,20 @@ export function AutomationsPage() {
             </span>
           </button>
         ))}
+        <button
+          onClick={() => setDept(EXECUTIONS_TAB)}
+          className={cn(
+            "flex shrink-0 items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition",
+            dept === EXECUTIONS_TAB ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+          )}
+        >
+          Executions
+          {runs.filter(r => r.status === "error").length > 0 && (
+            <span className="rounded-full bg-red-500/15 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-red-400">
+              {runs.filter(r => r.status === "error").length}
+            </span>
+          )}
+        </button>
       </div>
 
       {/* n8n import notice */}
@@ -220,7 +237,9 @@ export function AutomationsPage() {
 
       {/* List */}
       <div className="flex-1 overflow-auto p-6 space-y-6">
-        {loading ? (
+        {dept === EXECUTIONS_TAB ? (
+          <ExecutionsLog runs={runs} items={items} q={q} onReload={load} />
+        ) : loading ? (
           <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
         ) : groups.length === 0 ? (
           <div className="text-center text-sm text-muted-foreground py-16">No automations match your search.</div>
@@ -258,7 +277,7 @@ export function AutomationsPage() {
                         {/* Per-automation configuration (e.g. email recipients) */}
                         {a.key === "weekly-fleet-finance" && <RecipientsEditor automation={a} onSaved={(cfg) => setItems(prev => prev.map(x => x.id === a.id ? { ...x, config: cfg } : x))} />}
                         {a.key === "qb-invoice-pdf" && <InvoicePdfTester />}
-                        {a.key === "lightspeed-item-sync" && <LightspeedSyncForm />}
+                        {a.key === "lightspeed-item-sync" && <LightspeedSkuSyncPanel />}
                         {/* Run metrics — last 30 days */}
                         {rs && rs.runs > 0 && (
                           <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -323,6 +342,148 @@ export function AutomationsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </div>
+  );
+}
+
+// ── Executions log — cross-automation run history for troubleshooting ─────────
+function ExecutionsLog({
+  runs, items, q, onReload,
+}: {
+  runs: RunRow[];
+  items: Automation[];
+  q: string;
+  onReload: () => void;
+}) {
+  const [errorsOnly, setErrorsOnly] = useState(true);
+  const [retrying, setRetrying] = useState<string | null>(null);
+
+  const byKey = useMemo(() => {
+    const m = new Map<string, Automation>();
+    for (const a of items) m.set(a.key, a);
+    return m;
+  }, [items]);
+
+  const rows = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    return [...runs]
+      .sort((a, b) => (a.started_at > b.started_at ? -1 : 1))
+      .filter((r) => (!errorsOnly || r.status === "error"))
+      .filter((r) => {
+        if (!s) return true;
+        const name = byKey.get(r.automation_key)?.name ?? r.automation_key;
+        return `${name} ${r.detail ?? ""} ${r.automation_key}`.toLowerCase().includes(s);
+      })
+      .slice(0, 300);
+  }, [runs, errorsOnly, q, byKey]);
+
+  async function retry(r: RunRow) {
+    const a = byKey.get(r.automation_key);
+    if (!a?.endpoint || a.source === "n8n") return;
+    const id = r.started_at + r.automation_key;
+    setRetrying(id);
+    try {
+      const { data: { session } } = await (supabase as any).auth.getSession();
+      const res = await fetch(a.endpoint, { method: "POST", headers: { Authorization: `Bearer ${session?.access_token ?? ""}` } });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      toast.success(`Re-ran ${a.name}`);
+      setTimeout(onReload, 800);
+    } catch (e: any) {
+      toast.error(e?.message ?? "Retry failed");
+    } finally {
+      setRetrying(null);
+    }
+  }
+
+  const dur = (r: RunRow) => {
+    if (!r.finished_at) return "—";
+    const ms = new Date(r.finished_at).getTime() - new Date(r.started_at).getTime();
+    if (ms < 0) return "—";
+    return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
+  };
+
+  return (
+    <div>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => setErrorsOnly(true)}
+            className={cn("rounded-full px-3 py-1 text-xs font-semibold transition", errorsOnly ? "bg-red-500/15 text-red-400" : "text-muted-foreground hover:bg-accent")}
+          >Errors only</button>
+          <button
+            onClick={() => setErrorsOnly(false)}
+            className={cn("rounded-full px-3 py-1 text-xs font-semibold transition", !errorsOnly ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-accent")}
+          >All executions</button>
+        </div>
+        <button onClick={onReload} className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground hover:bg-accent">
+          <RefreshCw className="h-3.5 w-3.5" /> Refresh
+        </button>
+      </div>
+
+      {rows.length === 0 ? (
+        <div className="py-16 text-center text-sm text-muted-foreground">
+          {errorsOnly ? "No errors in the last 30 days 🎉" : "No executions recorded."}
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-xl border border-border">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/20 text-left text-[10.5px] uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 font-semibold">When</th>
+                <th className="px-3 py-2 font-semibold">Automation</th>
+                <th className="px-3 py-2 font-semibold">Status</th>
+                <th className="px-3 py-2 font-semibold">Detail</th>
+                <th className="px-3 py-2 font-semibold">Duration</th>
+                <th className="px-3 py-2 font-semibold text-right">Retry</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => {
+                const a = byKey.get(r.automation_key);
+                const canRetry = !!a?.endpoint && a.source !== "n8n";
+                const id = r.started_at + r.automation_key;
+                return (
+                  <tr key={i} className="border-t border-border/40 align-top">
+                    <td className="whitespace-nowrap px-3 py-2 text-[12px] text-muted-foreground">{fmtWhen(r.started_at)}</td>
+                    <td className="px-3 py-2 font-medium">{a?.name ?? r.automation_key}</td>
+                    <td className="px-3 py-2">
+                      <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                        r.status === "success" ? "bg-emerald-500/15 text-emerald-400"
+                          : r.status === "error" ? "bg-red-500/15 text-red-400"
+                          : r.status === "retry" ? "bg-amber-500/15 text-amber-500"
+                          : "bg-violet-500/15 text-violet-400")}>
+                        {r.status === "success" ? <CheckCircle2 className="h-3 w-3" /> : r.status === "error" ? <XCircle className="h-3 w-3" /> : <CircleDot className="h-3 w-3" />}
+                        {r.status}
+                      </span>
+                    </td>
+                    <td className="max-w-[520px] px-3 py-2 text-[12px] text-muted-foreground">
+                      <span className={cn(r.status === "error" && "text-red-400/90")}>{r.detail || "—"}</span>
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-[12px] text-muted-foreground tabular-nums">{dur(r)}</td>
+                    <td className="px-3 py-2 text-right">
+                      {canRetry ? (
+                        <button
+                          onClick={() => void retry(r)}
+                          disabled={retrying === id}
+                          className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] text-foreground/80 hover:bg-accent disabled:opacity-50"
+                        >
+                          {retrying === id ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />} Re-run
+                        </button>
+                      ) : a?.source === "n8n" && a.endpoint ? (
+                        <a href={a.endpoint} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline">
+                          <ExternalLink className="h-3 w-3" /> n8n
+                        </a>
+                      ) : (
+                        <span className="text-[10px] text-muted-foreground/50" title="Event-driven — re-runs automatically on the next trigger">auto</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

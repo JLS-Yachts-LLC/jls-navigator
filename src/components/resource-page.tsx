@@ -45,6 +45,9 @@ export interface ResourceConfig {
   emptyHint?: string;
   /** Optional header button that POSTs to an authenticated endpoint then reloads. */
   syncAction?: { label: string; path: string };
+  /** Optional header button that opens a dialog with custom content (e.g. a
+   *  Lightspeed → QuickBooks SKU sync panel). */
+  extraAction?: { label: string; title?: string; icon?: ReactNode; panel: ReactNode };
 }
 
 type Row = Record<string, any>;
@@ -62,6 +65,7 @@ export function ResourcePage({ config }: { config: ResourceConfig }) {
   const [fieldFilters, setFieldFilters] = useState<Record<string, string>>({});
   const [sortCol, setSortCol] = useState<string>(config.orderBy?.col ?? config.fields.find((f) => f.table)?.key ?? "name");
   const [sortAsc, setSortAsc] = useState<boolean>(config.orderBy?.asc ?? true);
+  const [extraOpen, setExtraOpen] = useState(false);
 
   // Select-type columns (other than the status field) become quick filters.
   const filterFields = config.fields.filter(
@@ -267,6 +271,11 @@ export function ResourcePage({ config }: { config: ResourceConfig }) {
               {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} {config.syncAction.label}
             </Button>
           )}
+          {config.extraAction && (
+            <Button size="sm" variant="outline" onClick={() => setExtraOpen(true)} className="h-9 gap-1.5 text-xs">
+              {config.extraAction.icon ?? <RefreshCw className="h-3.5 w-3.5" />} {config.extraAction.label}
+            </Button>
+          )}
           <Button size="sm" variant="outline" onClick={exportCSV} disabled={!filtered.length} className="h-9 gap-1.5 text-xs"><Download className="h-3.5 w-3.5" /> Export</Button>
           <Button size="sm" onClick={openNew} className="h-9 gap-1.5 px-3.5 font-medium shadow-sm"><Plus className="h-3.5 w-3.5" /> Add {config.singular}</Button>
         </div>
@@ -321,6 +330,16 @@ export function ResourcePage({ config }: { config: ResourceConfig }) {
           </div>
         )}
       </div>
+
+      {/* Custom extra action (e.g. Lightspeed SKU → QuickBooks sync) */}
+      {config.extraAction && (
+        <Dialog open={extraOpen} onOpenChange={setExtraOpen}>
+          <DialogContent className="max-w-xl">
+            <DialogHeader><DialogTitle>{config.extraAction.title ?? config.extraAction.label}</DialogTitle></DialogHeader>
+            <div className="py-1">{config.extraAction.panel}</div>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* Add / Edit */}
       <Dialog open={open} onOpenChange={setOpen}>

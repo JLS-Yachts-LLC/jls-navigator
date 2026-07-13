@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ResourcePage, type ResourceConfig } from "@/components/resource-page";
-import { Users } from "lucide-react";
+import { LightspeedSkuSyncPanel } from "@/components/lightspeed/sku-sync-panel";
+import { Users, Boxes } from "lucide-react";
 
 const config: ResourceConfig = {
   table: "waypoint_suppliers",
@@ -12,6 +13,12 @@ const config: ResourceConfig = {
   emptyHint: "Your approved vendor network for chandlery, parts, provisions and technical services.",
   orderBy: { col: "name", asc: true },
   syncAction: { label: "Sync from Lightspeed", path: "/api/lightspeed/suppliers-sync" },
+  extraAction: {
+    label: "SKU → QuickBooks",
+    title: "Create items from Lightspeed SKUs",
+    icon: <Boxes className="h-3.5 w-3.5" />,
+    panel: <LightspeedSkuSyncPanel compact />,
+  },
   statusLabels: { active: "Active", preferred: "Preferred", inactive: "Inactive" },
   statusColors: {
     active: "bg-emerald-500/15 text-emerald-500", preferred: "bg-blue-500/15 text-blue-500", inactive: "bg-slate-500/15 text-slate-400",
