@@ -12,7 +12,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Search, Pencil, Trash2, Loader2, Download } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, Loader2, Download, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -43,6 +43,8 @@ export interface ResourceConfig {
   statusLabels?: Record<string, string>;
   orderBy?: { col: string; asc?: boolean };
   emptyHint?: string;
+  /** Optional header button that POSTs to an authenticated endpoint then reloads. */
+  syncAction?: { label: string; path: string };
 }
 
 type Row = Record<string, any>;
@@ -61,7 +63,28 @@ export function ResourcePage({ config }: { config: ResourceConfig }) {
   const [editing, setEditing] = useState<Row | null>(null);
   const [form, setForm] = useState<Row>({});
   const [busy, setBusy] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Row | null>(null);
+
+  async function runSyncAction() {
+    if (!config.syncAction) return;
+    setSyncing(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const r = await fetch(config.syncAction.path, {
+        method: "POST",
+        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+      });
+      const j = await r.json();
+      if (!r.ok || !j.ok) throw new Error(j.error ?? `Failed (${r.status})`);
+      toast.success(j.note ? j.note : `Synced ${j.upserted ?? 0} of ${j.fetched ?? 0}`);
+      await load();
+    } catch (e: any) {
+      toast.error(e?.message ?? "Sync failed");
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   const hasYacht = config.fields.some((f) => f.type === "yacht") || config.fields.some((f) => f.key === "yacht_id");
   const hasOrg = config.fields.some((f) => f.type === "org") || config.fields.some((f) => f.key === "org_id");
@@ -190,6 +213,11 @@ export function ResourcePage({ config }: { config: ResourceConfig }) {
                 {Object.entries(config.statusLabels).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
               </SelectContent>
             </Select>
+          )}
+          {config.syncAction && (
+            <Button size="sm" variant="outline" onClick={runSyncAction} disabled={syncing} className="h-9 gap-1.5 text-xs">
+              {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} {config.syncAction.label}
+            </Button>
           )}
           <Button size="sm" variant="outline" onClick={exportCSV} disabled={!filtered.length} className="h-9 gap-1.5 text-xs"><Download className="h-3.5 w-3.5" /> Export</Button>
           <Button size="sm" onClick={openNew} className="h-9 gap-1.5 px-3.5 font-medium shadow-sm"><Plus className="h-3.5 w-3.5" /> Add {config.singular}</Button>

@@ -11,6 +11,7 @@ const config: ResourceConfig = {
   statusKey: "status",
   emptyHint: "Your approved vendor network for chandlery, parts, provisions and technical services.",
   orderBy: { col: "name", asc: true },
+  syncAction: { label: "Sync from Lightspeed", path: "/api/lightspeed/suppliers-sync" },
   statusLabels: { active: "Active", preferred: "Preferred", inactive: "Inactive" },
   statusColors: {
     active: "bg-emerald-500/15 text-emerald-500", preferred: "bg-blue-500/15 text-blue-500", inactive: "bg-slate-500/15 text-slate-400",

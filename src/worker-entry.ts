@@ -338,6 +338,12 @@ export default {
       return qbExcelImportHandler(request)
     }
 
+    // Lightspeed → Waypoint suppliers manual sync (authenticated)
+    if (url.pathname === '/api/lightspeed/suppliers-sync') {
+      const { lightspeedSuppliersSyncHandler } = await import('./routes/api.lightspeed.suppliers-sync')
+      return lightspeedSuppliersSyncHandler(request)
+    }
+
     // Lightspeed (Vend) → QuickBooks retail sync webhooks
     if (url.pathname.startsWith('/api/lightspeed/')) {
       const { lightspeedWebhookHandler } = await import('./routes/api.lightspeed.webhook')
@@ -608,6 +614,17 @@ export default {
           .then((r) => console.log(`[myshiptracking-cron] ${mstExtended ? 'extended' : 'simple'} requested=${r.requested} matched=${r.matched} updated=${r.updated}${r.note ? ' note=' + r.note : ''}`))
           .catch((e) => console.error('[myshiptracking-cron] error:', e))
       )
+
+      // ── Daily (03:00 UTC): pull the Lightspeed supplier list into Waypoint.
+      //    No-ops until the Lightspeed API token is set. ──
+      if (utcHour === 3) {
+        ctx.waitUntil(
+          import('./lib/lightspeed/suppliers.server')
+            .then(({ syncLightspeedSuppliers }) => syncLightspeedSuppliers('cron'))
+            .then((r) => console.log(`[ls-suppliers-cron] fetched=${r.fetched} upserted=${r.upserted}${r.note ? ' note=' + r.note : ''}`))
+            .catch((e) => console.error('[ls-suppliers-cron] error:', e))
+        )
+      }
     }
 
     if (!isQuarterly) return;
