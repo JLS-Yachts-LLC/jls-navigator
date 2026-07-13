@@ -421,7 +421,16 @@
    (dialogs, selects, dropdowns, popovers, tooltips) — which would otherwise
    escape `.pds-embed` on <main> and fall back to the base black/cyan theme.
    `.pds-embed` = these tokens PLUS the content-area background + font. */
-.pds-embed, .pds-theme {
+.pds-embed, .pds-theme,
+/* Portaled Radix / Vaul / Sonner surfaces render at <body>, escaping the
+   `.pds-embed` on <main>, so without this they fell back to the old base
+   (near-black + cyan) theme "every now and then". Re-theme every portal type at
+   its root and the Polaris palette inherits down into the popup. */
+[data-radix-popper-content-wrapper],
+[data-sonner-toaster],
+[role="dialog"],
+[role="alertdialog"],
+[vaul-drawer] {
   --background:            #0a2e40;             /* content-area teal */
   --foreground:            #f0f4f8;             /* light text */
   --card:                  #0c384f;             /* slightly lifted surface */
@@ -458,5 +467,13 @@
 /* @theme inline bakes the Space Grotesk stack into the font-sans/font-display
    utility classes, so the variable remap above can't reach them — override the
    classes directly for embedded pages and portaled surfaces. */
-.pds-embed :is(.font-display), .pds-theme :is(.font-display) { font-family: var(--pds-font-display); }
-.pds-embed :is(.font-sans, .font-body), .pds-theme :is(.font-sans, .font-body) { font-family: var(--pds-font-body); }
+.pds-embed :is(.font-display), .pds-theme :is(.font-display),
+[data-radix-popper-content-wrapper] :is(.font-display),
+[role="dialog"] :is(.font-display), [role="alertdialog"] :is(.font-display) { font-family: var(--pds-font-display); }
+.pds-embed :is(.font-sans, .font-body), .pds-theme :is(.font-sans, .font-body),
+[data-radix-popper-content-wrapper] :is(.font-sans, .font-body),
+[role="dialog"] :is(.font-sans, .font-body), [role="alertdialog"] :is(.font-sans, .font-body) { font-family: var(--pds-font-body); }
+
+/* Portaled surfaces should also carry the Beta shell font on their own root. */
+[data-radix-popper-content-wrapper], [data-sonner-toaster],
+[role="dialog"], [role="alertdialog"], [vaul-drawer] { font-family: var(--pds-font-body); }
