@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-07-13",
     "entries": [
       {
+        "type": "fix",
+        "title": "Remove the duplicate e-Sign Documents nav entry — it opened the same Anchor module (Documents, Forms, Signatories) already reachable via Anchor"
+      },
+      {
         "type": "feature",
         "title": "The sidebar is now collapsible and pinnable — collapse it to a slim icon rail to give pages more room, hover to peek the full menu without moving anything, or pin it open so content shifts alongside it; your choice is remembered"
       },

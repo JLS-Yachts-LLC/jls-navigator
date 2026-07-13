@@ -7,7 +7,7 @@
  */
 import { supabaseAdmin } from '@/integrations/supabase/client.server'
 import { syncQboDocuments, backfillChunk, backfillPaymentsFull } from '@/lib/qb/sync.server'
-import { qboPdf, qboConfigured } from '@/lib/qb/qbo.server'
+import { qboPdf, qboConfigured, qboRealm } from '@/lib/qb/qbo.server'
 
 const db = () => supabaseAdmin as any
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json' } })
@@ -22,24 +22,32 @@ async function authed(request: Request): Promise<boolean> {
 export async function qbSyncHandler(request: Request): Promise<Response> {
   if (!(await authed(request))) return json({ ok: false, error: 'Unauthorized' }, 401)
 
+  // Company selector: ?realm=<id> on GET, { realm } on POST. Defaults to JLS.
+  const WAYPOINT_REALM = '9341456599242940'
+  const JLS_REALM = '9341454112300561'
+  const resolveRealm = (v: unknown) => (String(v ?? '') === WAYPOINT_REALM ? WAYPOINT_REALM : JLS_REALM)
+  const stateId = (realm: string) => (realm === WAYPOINT_REALM ? 2 : 1)
+
   if (request.method === 'GET') {
-    const { data } = await db().from('qbo_sync_state').select('*').eq('id', 1).maybeSingle()
-    return json({ ok: true, state: data ?? null })
+    const realm = resolveRealm(new URL(request.url).searchParams.get('realm'))
+    const { data } = await db().from('qbo_sync_state').select('*').eq('id', stateId(realm)).maybeSingle()
+    return json({ ok: true, realm, state: data ?? null })
   }
   if (request.method === 'POST') {
     let body: any = {}
     try { body = await request.json() } catch { /* empty */ }
+    const realm = resolveRealm(body.realm)
     try {
       if (body.paymentsBackfill) {
-        const r = await backfillPaymentsFull()
-        return json({ ok: true, ...r })
+        const r = await backfillPaymentsFull(realm)
+        return json({ ok: true, realm, ...r })
       }
       // Resumable full backfill (loop until done); else an incremental sync.
       if (body.backfill || body.full) {
-        const r = await backfillChunk(!!body.full || !!body.reset)
-        return json({ ok: true, ...r })
+        const r = await backfillChunk(!!body.full || !!body.reset, realm)
+        return json({ ok: true, realm, ...r })
       }
-      const r = await syncQboDocuments({})
+      const r = await syncQboDocuments({ realm })
       return json(r)
     } catch (e: any) {
       return json({ ok: false, error: String(e?.message ?? e) }, 502)
@@ -53,16 +61,17 @@ export async function qbDocPdfHandler(request: Request): Promise<Response> {
   const id = new URL(request.url).searchParams.get('id')
   if (!id) return json({ ok: false, error: 'id required' }, 400)
   const sb = db()
-  const { data: doc } = await sb.from('qbo_invoices').select('id, qbo_id, doc_type, doc_number, pdf_path').eq('id', id).maybeSingle()
+  const { data: doc } = await sb.from('qbo_invoices').select('id, qbo_id, doc_type, doc_number, pdf_path, realm_id').eq('id', id).maybeSingle()
   if (!doc) return json({ ok: false, error: 'Document not found' }, 404)
 
   let path = doc.pdf_path as string | null
-  // Fetch-on-demand: most historical PDFs aren't pre-fetched — grab it from QBO now.
+  // Fetch-on-demand: most historical PDFs aren't pre-fetched — grab it from QBO now,
+  // from the company (realm) the document belongs to.
   if (!path) {
     if (!qboConfigured()) return json({ ok: false, error: 'QuickBooks not connected' }, 503)
     try {
       const ep = doc.doc_type === 'estimate' ? 'estimate' : 'invoice'
-      const bytes = await qboPdf(`/${ep}/${doc.qbo_id}/pdf`)
+      const bytes = await qboPdf(`/${ep}/${doc.qbo_id}/pdf`, doc.realm_id ?? qboRealm())
       path = `qbo/${doc.doc_type}-${doc.qbo_id}.pdf`
       await sb.storage.from('esign-documents').upload(path, new Uint8Array(bytes), { contentType: 'application/pdf', upsert: true })
       await sb.from('qbo_invoices').update({ pdf_path: path, pdf_synced_at: new Date().toISOString() }).eq('id', doc.id)

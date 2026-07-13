@@ -198,13 +198,14 @@ export async function syncAllRealms(opts: { full?: boolean; pdfBatch?: number } 
 /** Resumable full backfill: process a few pages per call (cursor in qbo_sync_state),
  *  so a large year of history lands across several invocations without hitting the
  *  Worker subrequest limit. Loop until { done: true }. PDFs trickle in via the cron. */
-export async function backfillChunk(reset = false): Promise<{ done: boolean; count: number; cursor: any }> {
+export async function backfillChunk(reset = false, realm: string = qboRealm()): Promise<{ done: boolean; count: number; cursor: any }> {
   if (!qboConfigured()) throw new Error('QBO not configured')
   const sb = admin() as any
   const MAX_PAGES = 3
   const PAGE = 200
+  const sid = stateId(realm)
 
-  const { data: st } = await sb.from('qbo_sync_state').select('backfill_cursor').eq('id', 1).maybeSingle()
+  const { data: st } = await sb.from('qbo_sync_state').select('backfill_cursor').eq('id', sid).maybeSingle()
   let cursor = (!reset && st?.backfill_cursor) ? st.backfill_cursor : { entity: 'Invoice', start: 1 }
   if (cursor.entity === 'done') return { done: true, count: 0, cursor }
 
@@ -212,14 +213,14 @@ export async function backfillChunk(reset = false): Promise<{ done: boolean; cou
   let count = 0
   for (let p = 0; p < MAX_PAGES && cursor.entity !== 'done'; p++) {
     const entity = cursor.entity as 'Invoice' | 'Estimate' | 'Payment'
-    const res = await qboQuery(`select * from ${entity} where TxnDate >= '${ql(FROM_DATE())}' startposition ${cursor.start} maxresults ${PAGE}`)
+    const res = await qboQuery(`select * from ${entity} where TxnDate >= '${ql(FROM_DATE())}' startposition ${cursor.start} maxresults ${PAGE}`, realm)
     const rows = res?.QueryResponse?.[entity] ?? []
     for (let i = 0; i < rows.length; i += 100) {
       const slice = rows.slice(i, i + 100)
       if (entity === 'Payment') {
-        await sb.from('qbo_payments').upsert(slice.map((d: any) => buildPaymentRow(d, yachtByCust)), { onConflict: 'qbo_id' })
+        await sb.from('qbo_payments').upsert(slice.map((d: any) => buildPaymentRow(d, yachtByCust, realm)), { onConflict: 'qbo_id,realm_id' })
       } else {
-        await sb.from('qbo_invoices').upsert(slice.map((d: any) => buildRow(entity, d, yachtByCust)), { onConflict: 'qbo_id,doc_type' })
+        await sb.from('qbo_invoices').upsert(slice.map((d: any) => buildRow(entity, d, yachtByCust, realm)), { onConflict: 'qbo_id,doc_type,realm_id' })
       }
       count += slice.length
     }
@@ -230,18 +231,18 @@ export async function backfillChunk(reset = false): Promise<{ done: boolean; cou
   }
 
   await sb.from('qbo_sync_state').upsert({
-    id: 1, backfill_cursor: cursor, last_run_at: new Date().toISOString(),
+    id: sid, realm_id: realm, backfill_cursor: cursor, last_run_at: new Date().toISOString(),
     ...(cursor.entity === 'done' ? { last_full_at: new Date().toISOString() } : {}),
   }, { onConflict: 'id' })
   return { done: cursor.entity === 'done', count, cursor }
 }
 
 /** One-shot full backfill of 2026 payments (chunk if it ever hits limits). */
-export async function backfillPaymentsFull(): Promise<{ count: number }> {
+export async function backfillPaymentsFull(realm: string = qboRealm()): Promise<{ count: number }> {
   if (!qboConfigured()) throw new Error('QBO not configured')
   const sb = admin() as any
   const yachtByCust = await yachtMap(sb)
-  return { count: await syncPayments(sb, `where TxnDate >= '${ql(FROM_DATE())}'`, yachtByCust) }
+  return { count: await syncPayments(sb, `where TxnDate >= '${ql(FROM_DATE())}'`, yachtByCust, realm) }
 }
 
 /** Targeted single-entity ingest for the webhook orchestrator — the changed
@@ -255,16 +256,16 @@ export async function syncOneEntity(entity: string, qboId: string): Promise<stri
     const res = await qboQuery(`select * from Estimate where Id = '${ql(qboId)}'`)
     const doc = res?.QueryResponse?.Estimate?.[0]
     if (!doc) return 'estimate-not-found'
-    await sb.from('qbo_invoices').upsert(buildRow('Estimate', doc, await yachtMap(sb), true), { onConflict: 'qbo_id,doc_type' })
+    await sb.from('qbo_invoices').upsert(buildRow('Estimate', doc, await yachtMap(sb), qboRealm(), true), { onConflict: 'qbo_id,doc_type,realm_id' })
     return 'estimate-synced'
   }
   if (entity === 'payment') {
     const res = await qboQuery(`select * from Payment where Id = '${ql(qboId)}'`)
     const doc = res?.QueryResponse?.Payment?.[0]
     if (!doc) return 'payment-not-found'
-    await sb.from('qbo_payments').upsert(buildPaymentRow(doc, await yachtMap(sb)), { onConflict: 'qbo_id' })
+    await sb.from('qbo_payments').upsert(buildPaymentRow(doc, await yachtMap(sb), qboRealm()), { onConflict: 'qbo_id,realm_id' })
     // A payment changes invoice balances — refresh the invoices it applies to.
-    for (const a of (buildPaymentRow(doc, new Map()).applied_to as any[]).slice(0, 5)) {
+    for (const a of (buildPaymentRow(doc, new Map(), qboRealm()).applied_to as any[]).slice(0, 5)) {
       try { await syncOneInvoice(a.invoice_qbo_id) } catch { /* best-effort */ }
     }
     return 'payment-synced'
@@ -280,13 +281,13 @@ export async function syncOneInvoice(qboId: string) {
   const res = await qboQuery(`select * from Invoice where Id = '${ql(qboId)}'`)
   const doc = res?.QueryResponse?.Invoice?.[0]
   if (!doc) return
-  const row = buildRow('Invoice', doc, await yachtMap(sb), true)
-  await sb.from('qbo_invoices').upsert(row, { onConflict: 'qbo_id,doc_type' })
+  const row = buildRow('Invoice', doc, await yachtMap(sb), qboRealm(), true)
+  await sb.from('qbo_invoices').upsert(row, { onConflict: 'qbo_id,doc_type,realm_id' })
   try {
     const bytes = await qboPdf(`/invoice/${doc.Id}/pdf`)
     const path = `qbo/${row.doc_type}-${doc.Id}.pdf`
     await sb.storage.from(BUCKET).upload(path, new Uint8Array(bytes), { contentType: 'application/pdf', upsert: true })
     await sb.from('qbo_invoices').update({ pdf_path: path, pdf_synced_at: new Date().toISOString() })
-      .eq('qbo_id', String(doc.Id)).eq('doc_type', row.doc_type)
+      .eq('qbo_id', String(doc.Id)).eq('doc_type', row.doc_type).eq('realm_id', qboRealm())
   } catch { /* PDF best-effort */ }
 }

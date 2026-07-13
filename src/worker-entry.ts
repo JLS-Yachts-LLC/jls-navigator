@@ -30,7 +30,7 @@ import { qbConnectHandler, qbCallbackHandler } from './routes/api.qb.connect'
 import { crewPlacementHandler } from './routes/api.crew-placement'
 import { qbCustomersHandler } from './routes/api.qb.customers'
 import { qbSyncHandler, qbDocPdfHandler } from './routes/api.qb.sync'
-import { syncQboDocuments } from './lib/qb/sync.server'
+import { syncAllRealms } from './lib/qb/sync.server'
 import { feedbackNotifyHandler } from './routes/api.feedback.notify'
 import { vesselHandler } from './routes/api.vessels'
 import { phoneHandler } from './routes/api.phone'
@@ -569,10 +569,11 @@ export default {
     const isAis = cron === '5,20,35,50 * * * *';
     const isFiveMin = cron === '*/5 * * * *';
 
-    // ── Every 5 min: incremental QBO document sync (invoices / pro-formas / estimates). ──
+    // ── Every 5 min: incremental QBO document sync (invoices / pro-formas /
+    //    estimates) for every connected company — JLS + Waypoint retail. ──
     if (isFiveMin) {
       ctx.waitUntil(
-        syncQboDocuments({})
+        syncAllRealms({})
           .then((r) => console.log(`[qbo-sync] ${JSON.stringify(r)}`))
           .catch((e) => console.error('[qbo-sync] error:', e))
       );
