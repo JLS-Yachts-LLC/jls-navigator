@@ -449,7 +449,7 @@ export async function attachAndLog(opts: {
 export async function docgenToggle(sb: any, key: string, name: string, description: string): Promise<boolean | 'seeded'> {
   const { data: auto } = await sb.from('automations').select('enabled').eq('key', key).maybeSingle()
   if (!auto) {
-    await sb.from('automations').insert({ key, name, description, category: 'QuickBooks / Finance', source: 'worker', trigger_type: 'webhook', enabled: false })
+    await sb.from('automations').insert({ key, name, description, category: 'QuickBooks / Finance', department: 'Finance', source: 'worker', trigger_type: 'webhook', enabled: false })
     return 'seeded'
   }
   return !!auto.enabled

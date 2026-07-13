@@ -55,7 +55,7 @@ async function flowEnabled(key: string, name: string, description: string): Prom
   const sb = admin() as any
   const { data } = await sb.from('automations').select('enabled').eq('key', key).maybeSingle()
   if (!data) {
-    await sb.from('automations').insert({ key, name, description, category: 'Lightspeed', source: 'worker', trigger_type: 'webhook', enabled: false })
+    await sb.from('automations').insert({ key, name, description, category: 'Lightspeed', department: 'Lightspeed', source: 'worker', trigger_type: 'webhook', enabled: false })
     return false
   }
   return !!data.enabled
