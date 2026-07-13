@@ -180,14 +180,21 @@ export async function syncQboDocuments(opts: { full?: boolean; pdfBatch?: number
   }
 }
 
-/** Sync every connected company in turn — used by the cron. A realm with no
- *  tokens (never connected) throws inside syncQboDocuments; we swallow that so
- *  one unconnected company can't stop the others syncing. */
+/** Sync every connected company in turn — used by the cron.
+ *  - A company that has never been fully synced (no last_full_at) is imported
+ *    via the resumable backfill (a few pages per tick) so a large first import
+ *    can't blow the Worker subrequest limit; it flips to incremental once done.
+ *  - A company with no tokens (never connected) throws inside the sync; we
+ *    swallow that so one unconnected company can't stop the others. */
 export async function syncAllRealms(opts: { full?: boolean; pdfBatch?: number } = {}) {
+  const sb = admin() as any
   const results: Record<string, unknown> = {}
   for (const realm of SYNC_REALMS) {
     try {
-      results[realm] = await syncQboDocuments({ ...opts, realm })
+      const { data: st } = await sb.from('qbo_sync_state').select('last_full_at').eq('id', stateId(realm)).maybeSingle()
+      results[realm] = st?.last_full_at
+        ? await syncQboDocuments({ ...opts, realm })
+        : { ok: true, mode: 'backfill', ...(await backfillChunk(false, realm)) }
     } catch (e: any) {
       results[realm] = { ok: false, error: String(e?.message ?? e) }
     }
