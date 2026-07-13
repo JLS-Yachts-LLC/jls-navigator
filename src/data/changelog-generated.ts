@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-07-13",
     "entries": [
       {
+        "type": "fix",
+        "title": "Lightspeed supplier sync no longer hangs — batches the upserts into chunks instead of one DB call per supplier, times out stalled Lightspeed requests, guards against a non-advancing pagination cursor, and the Sync button now recovers on timeout"
+      },
+      {
         "type": "feature",
         "title": "Knowledge Base can import a PDF or Word document — Polaris extracts the content into a formatted guide and attaches a Polaris/JLS-branded PDF you can download from the guide"
       },
