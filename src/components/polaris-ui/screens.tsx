@@ -207,6 +207,44 @@ function PageHeader({
   );
 }
 
+// Reusable per-page vessel scope: fleet-wide "All vessels" by default, or a
+// specific yacht. Each report / vessel screen owns its own scope so it can be
+// run globally or narrowed independently (the old shell switcher was a no-op).
+function useVesselScope() {
+  const { yachts } = useYachts();
+  const [scope, setScope] = useState<string>("global");
+  const yacht = scope === "global" ? null : (yachts.find((y) => y.id === scope) ?? null);
+  return { yachts, scope, setScope, yacht };
+}
+
+function VesselPicker({
+  scope, setScope, yachts,
+}: { scope: string; setScope: (v: string) => void; yachts: YachtOption[] }) {
+  return (
+    <select
+      value={scope === "global" ? "" : scope}
+      onChange={(e) => setScope(e.target.value || "global")}
+      aria-label="Vessel"
+      style={{
+        padding: "8px 12px",
+        borderRadius: 8,
+        fontSize: "var(--pds-fs-label)",
+        fontWeight: 500,
+        cursor: "pointer",
+        border: "1px solid var(--pds-border)",
+        background: "var(--pds-surface-2)",
+        color: "var(--pds-text-primary)",
+        minWidth: 200,
+      }}
+    >
+      <option value="">All vessels</option>
+      {yachts.map((y) => (
+        <option key={y.id} value={y.id}>{y.vessel_name ?? "Unnamed vessel"}</option>
+      ))}
+    </select>
+  );
+}
+
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 export function PolarisDashboard({
   yachts,
@@ -1256,13 +1294,11 @@ export function PolarisVessels({
 }
 
 // ── Sign On / Off screen ──────────────────────────────────────────────────────
-export function PolarisSignOnOff({
-  yacht,
-  onSwitchVessel,
-}: {
-  yacht: YachtOption | null;
-  onSwitchVessel: () => void;
+export function PolarisSignOnOff(_props: {
+  yacht?: YachtOption | null;
+  onSwitchVessel?: () => void;
 }) {
+  const { yachts, scope, setScope, yacht } = useVesselScope();
   const { loading, rows, counts } = useVesselMovements(yacht?.id ?? null);
   const isOn = (t: string) => t.includes("on");
 
@@ -1270,7 +1306,7 @@ export function PolarisSignOnOff({
     <>
       <PageHeader
         title="Sign On / Off"
-        actions={null}
+        actions={<VesselPicker scope={scope} setScope={setScope} yachts={yachts} />}
       />
 
       <SectionLabel>Crew movements — {yacht?.vessel_name ?? "All vessels"}</SectionLabel>
@@ -1324,14 +1360,10 @@ export function PolarisSignOnOff({
 
 // Vessel switching is disabled in the Beta for now (the vessel context will move
 // to Agent/Crew views). Kept as a no-op so screen signatures are unchanged.
-function SwitchVesselAction(_: { onSwitchVessel: () => void }) {
-  return null;
-}
 
 // ── Immigration screen ────────────────────────────────────────────────────────
-export function PolarisImmigration({
-  yacht, onSwitchVessel,
-}: { yacht: YachtOption | null; onSwitchVessel: () => void }) {
+export function PolarisImmigration(_props: { yacht?: YachtOption | null; onSwitchVessel?: () => void }) {
+  const { yachts, scope, setScope, yacht } = useVesselScope();
   const { loading, rows, counts } = useVesselImmigration(yacht?.id ?? null);
   const badgeFor = (s: string): { variant: BadgeVariant; label: string } => {
     const x = s.toLowerCase();
@@ -1342,7 +1374,7 @@ export function PolarisImmigration({
   };
   return (
     <>
-      <PageHeader title="Immigration" actions={<SwitchVesselAction onSwitchVessel={onSwitchVessel} />} />
+      <PageHeader title="Immigration" actions={<VesselPicker scope={scope} setScope={setScope} yachts={yachts} />} />
       <SectionLabel>Visa applications — {yacht?.vessel_name ?? "All vessels"}</SectionLabel>
       <div className="pds-stats-grid" style={{ marginBottom: 16 }}>
         {loading ? [...Array(5)].map((_, i) => <Skeleton key={i} height={88} radius={12} />) : (
@@ -1372,9 +1404,8 @@ export function PolarisImmigration({
 }
 
 // ── Logistics (ShipSync) screen ───────────────────────────────────────────────
-export function PolarisLogistics({
-  yacht, onSwitchVessel,
-}: { yacht: YachtOption | null; onSwitchVessel: () => void }) {
+export function PolarisLogistics(_props: { yacht?: YachtOption | null; onSwitchVessel?: () => void }) {
+  const { yachts, scope, setScope, yacht } = useVesselScope();
   const { loading, rows, counts } = useVesselLogistics(yacht?.vessel_name ?? null);
   const badgeFor = (s: string): { variant: BadgeVariant; label: string } => {
     const x = s.toLowerCase();
@@ -1385,7 +1416,7 @@ export function PolarisLogistics({
   };
   return (
     <>
-      <PageHeader title="Logistics" actions={<SwitchVesselAction onSwitchVessel={onSwitchVessel} />} />
+      <PageHeader title="Logistics" actions={<VesselPicker scope={scope} setScope={setScope} yachts={yachts} />} />
       <SectionLabel>ShipSync packages — {yacht?.vessel_name ?? "All vessels"}</SectionLabel>
       <div className="pds-stats-grid" style={{ marginBottom: 16 }}>
         {loading ? [...Array(4)].map((_, i) => <Skeleton key={i} height={88} radius={12} />) : (
@@ -1414,13 +1445,12 @@ export function PolarisLogistics({
 }
 
 // ── Training screen ───────────────────────────────────────────────────────────
-export function PolarisTraining({
-  yacht, onSwitchVessel,
-}: { yacht: YachtOption | null; onSwitchVessel: () => void }) {
+export function PolarisTraining(_props: { yacht?: YachtOption | null; onSwitchVessel?: () => void }) {
+  const { yachts, scope, setScope, yacht } = useVesselScope();
   const { loading, rows, counts } = useVesselTraining(yacht?.id ?? null);
   return (
     <>
-      <PageHeader title="Training" actions={<SwitchVesselAction onSwitchVessel={onSwitchVessel} />} />
+      <PageHeader title="Training" actions={<VesselPicker scope={scope} setScope={setScope} yachts={yachts} />} />
       <SectionLabel>Certifications — {yacht?.vessel_name ?? "All vessels"}</SectionLabel>
       <div className="pds-stats-grid" style={{ marginBottom: 16 }}>
         {loading ? [...Array(4)].map((_, i) => <Skeleton key={i} height={88} radius={12} />) : (
@@ -1449,13 +1479,12 @@ export function PolarisTraining({
 }
 
 // ── Crew Documents screen ─────────────────────────────────────────────────────
-export function PolarisCrewDocuments({
-  yacht, onSwitchVessel,
-}: { yacht: YachtOption | null; onSwitchVessel: () => void }) {
+export function PolarisCrewDocuments(_props: { yacht?: YachtOption | null; onSwitchVessel?: () => void }) {
+  const { yachts, scope, setScope, yacht } = useVesselScope();
   const { loading, rows, counts } = useVesselDocuments(yacht?.id ?? null);
   return (
     <>
-      <PageHeader title="Crew Documents" actions={<SwitchVesselAction onSwitchVessel={onSwitchVessel} />} />
+      <PageHeader title="Crew Documents" actions={<VesselPicker scope={scope} setScope={setScope} yachts={yachts} />} />
       <SectionLabel>Documents — {yacht?.vessel_name ?? "All vessels"}</SectionLabel>
       <div className="pds-stats-grid" style={{ marginBottom: 16 }}>
         {loading ? [...Array(4)].map((_, i) => <Skeleton key={i} height={88} radius={12} />) : (
@@ -1484,9 +1513,8 @@ export function PolarisCrewDocuments({
 }
 
 // ── Sign-On/Off Reports screen ────────────────────────────────────────────────
-export function PolarisSosoReports({
-  yacht, onSwitchVessel,
-}: { yacht: YachtOption | null; onSwitchVessel: () => void }) {
+export function PolarisSosoReports(_props: { yacht?: YachtOption | null; onSwitchVessel?: () => void }) {
+  const { yachts, scope, setScope, yacht } = useVesselScope();
   const { loading, rows, counts } = useVesselMovements(yacht?.id ?? null);
   const isOn = (t: string) => t.includes("on");
   const signOns = rows.filter((m) => isOn(m.eventType));
@@ -1499,7 +1527,7 @@ export function PolarisSosoReports({
     ));
   return (
     <>
-      <PageHeader title="Sign-On/Off Reports" actions={<SwitchVesselAction onSwitchVessel={onSwitchVessel} />} />
+      <PageHeader title="Sign-On/Off Reports" actions={<VesselPicker scope={scope} setScope={setScope} yachts={yachts} />} />
       <SectionLabel>Movement reports — {yacht?.vessel_name ?? "All vessels"}</SectionLabel>
       <div className="pds-stats-grid" style={{ marginBottom: 16 }}>
         {loading ? [...Array(4)].map((_, i) => <Skeleton key={i} height={88} radius={12} />) : (
