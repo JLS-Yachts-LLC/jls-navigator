@@ -396,7 +396,12 @@
    match the Beta look & feel without any change to component code or behaviour.
    Applied via className="dark pds-embed" (dark enables dark: variants; pds-embed
    is defined last so it wins the token values). */
-.pds-embed {
+/* `.pds-theme` carries ONLY the token remap (no forced background/font on the
+   element), so it can be attached to Radix surfaces that PORTAL to <body>
+   (dialogs, selects, dropdowns, popovers, tooltips) — which would otherwise
+   escape `.pds-embed` on <main> and fall back to the base black/cyan theme.
+   `.pds-embed` = these tokens PLUS the content-area background + font. */
+.pds-embed, .pds-theme {
   --background:            #0a2e40;             /* content-area teal */
   --foreground:            #f0f4f8;             /* light text */
   --card:                  #0c384f;             /* slightly lifted surface */
@@ -428,10 +433,10 @@
   --font-display: var(--pds-font-display);
   --font-body:    var(--pds-font-body);
   font-family: var(--pds-font-body);
-  background: #0a2e40;
 }
+.pds-embed { background: #0a2e40; }
 /* @theme inline bakes the Space Grotesk stack into the font-sans/font-display
    utility classes, so the variable remap above can't reach them — override the
-   classes directly for embedded pages. */
-.pds-embed :is(.font-display) { font-family: var(--pds-font-display); }
-.pds-embed :is(.font-sans, .font-body) { font-family: var(--pds-font-body); }
+   classes directly for embedded pages and portaled surfaces. */
+.pds-embed :is(.font-display), .pds-theme :is(.font-display) { font-family: var(--pds-font-display); }
+.pds-embed :is(.font-sans, .font-body), .pds-theme :is(.font-sans, .font-body) { font-family: var(--pds-font-body); }

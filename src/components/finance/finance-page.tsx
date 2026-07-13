@@ -33,6 +33,15 @@ function downloadCSV(filename: string, rows: Record<string, unknown>[]) {
 type FinanceTab = "dashboard" | "invoices" | "proforma" | "quotations" | "tracker" | "trackers";
 type TrackerDept = "crew" | "packages" | "it" | "procurement";
 
+// The two QuickBooks companies the Finance module can show. The toggle switches
+// the QBO-sourced views (Dashboard + Invoices/Pro-Forma/Quotations) between them.
+const QBO_COMPANIES = [
+  { realm: "9341454112300561", label: "JLS Yachts", short: "JLS" },
+  { realm: "9341456599242940", label: "Waypoint", short: "Waypoint" },
+] as const;
+const DEFAULT_REALM = QBO_COMPANIES[0].realm;
+const REALM_STORAGE_KEY = "polaris.finance.realm";
+
 type BillingStatus = "pending_review" | "pending_invoice" | "invoiced" | "not_billable";
 
 type TrackerTrip = {
@@ -1845,7 +1854,7 @@ const STATUS_COLOR: Record<string, string> = {
 const PAGE_SIZE = 100;
 type SortCol = "doc_number" | "txn_date" | "due_date" | "customer_name" | "total_amt" | "status";
 
-function QboDocsTab({ docType }: { docType: "invoices" | "proforma" | "quotations" }) {
+function QboDocsTab({ docType, realm }: { docType: "invoices" | "proforma" | "quotations"; realm: string }) {
   const [rows, setRows] = useState<QboDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
@@ -1866,17 +1875,17 @@ function QboDocsTab({ docType }: { docType: "invoices" | "proforma" | "quotation
     (async () => {
       const { data: ys } = await (supabase as any).from("yachts").select("id, vessel_name").eq("archive", false).order("vessel_name");
       setYachtOpts(ys ?? []);
-      const { data: st } = await (supabase as any).from("qbo_invoices").select("status").eq("doc_type", DOC_TYPE[docType]).limit(2000);
+      const { data: st } = await (supabase as any).from("qbo_invoices").select("status").eq("doc_type", DOC_TYPE[docType]).eq("realm_id", realm).limit(2000);
       setStatuses(Array.from(new Set((st ?? []).map((r: any) => r.status).filter(Boolean))).sort() as string[]);
     })();
-  }, [docType]);
+  }, [docType, realm]);
 
   // Reset to first page whenever the query shape changes.
-  useEffect(() => { setRows([]); setPage(0); }, [docType, year, yacht, status, q, sortCol, sortDir]);
-  useEffect(() => { void load(); }, [docType, year, yacht, status, q, sortCol, sortDir, page]);
+  useEffect(() => { setRows([]); setPage(0); }, [docType, realm, year, yacht, status, q, sortCol, sortDir]);
+  useEffect(() => { void load(); }, [docType, realm, year, yacht, status, q, sortCol, sortDir, page]);
 
   function applyFilters(qy: any) {
-    qy = qy.eq("doc_type", DOC_TYPE[docType]);
+    qy = qy.eq("doc_type", DOC_TYPE[docType]).eq("realm_id", realm);
     if (year !== "all") qy = qy.gte("txn_date", `${year}-01-01`).lte("txn_date", `${year}-12-31`);
     if (yacht !== "all") qy = qy.eq("yacht_id", yacht);
     if (status !== "all") qy = qy.eq("status", status);
@@ -2046,18 +2055,18 @@ function QboDocsTab({ docType }: { docType: "invoices" | "proforma" | "quotation
 }
 
 // ── Finance Dashboard (QBO invoice analytics) ─────────────────────────────────
-function FinanceDashboard() {
+function FinanceDashboard({ realm }: { realm: string }) {
   const [year, setYear] = useState("2026");
   const [d, setD] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const { data, error } = await (supabase as any).rpc("qbo_finance_dashboard", { p_year: year === "all" ? null : Number(year) });
+      const { data, error } = await (supabase as any).rpc("qbo_finance_dashboard", { p_year: year === "all" ? null : Number(year), p_realm: realm });
       if (error) toast.error(error.message); else setD(data);
       setLoading(false);
     })();
-  }, [year]);
+  }, [year, realm]);
   const aed = (n: number) => `AED ${Number(n ?? 0).toLocaleString("en-AE", { maximumFractionDigits: 0 })}`;
   if (loading || !d) return <div className="py-16 text-center"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></div>;
   const collected = d.payments_total ?? 0; // actual money received (QBO Payments)
@@ -2146,28 +2155,43 @@ export function FinancePage() {
   const [tab, setTab] = useState<FinanceTab>("dashboard");
   const [syncing, setSyncing] = useState(false);
   const [lastSync, setLastSync] = useState<string | null>(null);
+  const [realm, setRealm] = useState<string>(() => {
+    if (typeof window === "undefined") return DEFAULT_REALM;
+    const saved = window.localStorage.getItem(REALM_STORAGE_KEY);
+    return QBO_COMPANIES.some(c => c.realm === saved) ? saved! : DEFAULT_REALM;
+  });
+  const company = QBO_COMPANIES.find(c => c.realm === realm) ?? QBO_COMPANIES[0];
 
+  function chooseRealm(next: string) {
+    setRealm(next);
+    if (typeof window !== "undefined") window.localStorage.setItem(REALM_STORAGE_KEY, next);
+  }
+
+  // Show the last-synced time for the currently selected company.
   useEffect(() => {
     (async () => {
+      setLastSync(null);
       try {
-        const r = await fetch("/api/qb/sync", { headers: { Authorization: `Bearer ${await authToken()}` } });
+        const r = await fetch(`/api/qb/sync?realm=${realm}`, { headers: { Authorization: `Bearer ${await authToken()}` } });
         const j = await r.json();
         if (j.ok) setLastSync(j.state?.last_run_at ?? null);
       } catch { /* ignore */ }
     })();
-  }, []);
+  }, [realm]);
 
   async function handleSync() {
     setSyncing(true);
     try {
-      const r = await fetch("/api/qb/sync", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${await authToken()}` }, body: "{}" });
+      const r = await fetch("/api/qb/sync", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${await authToken()}` }, body: JSON.stringify({ realm }) });
       const j = await r.json();
-      if (j.ok) { toast.success(`Synced ${j.count ?? 0} document(s)`); setLastSync(new Date().toISOString()); }
+      if (j.ok) { toast.success(`Synced ${j.count ?? 0} ${company.label} document(s)`); setLastSync(new Date().toISOString()); }
       else toast.error(j.error ?? "Sync failed");
     } catch (e: any) { toast.error(String(e?.message ?? e)); } finally { setSyncing(false); }
   }
 
   const isQbTab = tab === "invoices" || tab === "proforma" || tab === "quotations";
+  // The company toggle is only meaningful on the QBO-sourced views.
+  const showCompanyToggle = isQbTab || tab === "dashboard";
 
   const QB_TABS: { key: "invoices" | "proforma" | "quotations"; label: string; icon: React.ComponentType<{ className?: string }>; cols: string[] }[] = [
     { key: "invoices",   label: "Invoices",   icon: FileText,  cols: ["#", "Customer / Vessel", "Date", "Due Date", "Amount", "Status"] },
@@ -2182,17 +2206,32 @@ export function FinancePage() {
           <div className="text-xs text-muted-foreground">Finance</div>
           <h1 className="font-display text-xl font-semibold tracking-tight">Finance</h1>
         </div>
-        {isQbTab && (
-          <div className="flex items-center gap-3">
-            <span className="text-[11px] text-muted-foreground">
-              {lastSync ? `Synced ${new Date(lastSync).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}` : "Not synced yet"}
-            </span>
-            <Button size="sm" variant="outline" onClick={handleSync} disabled={syncing} className="gap-1.5">
-              {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-              Sync from QuickBooks
-            </Button>
-          </div>
-        )}
+        <div className="flex items-center gap-3 flex-wrap">
+          {showCompanyToggle && (
+            <div className="inline-flex items-center rounded-lg border border-border bg-muted/30 p-0.5" title="Which QuickBooks company to show">
+              {QBO_COMPANIES.map(c => (
+                <button
+                  key={c.realm}
+                  onClick={() => chooseRealm(c.realm)}
+                  className={`rounded-md px-3 py-1 text-xs font-semibold transition ${realm === c.realm ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          )}
+          {isQbTab && (
+            <>
+              <span className="text-[11px] text-muted-foreground">
+                {lastSync ? `Synced ${new Date(lastSync).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}` : "Not synced yet"}
+              </span>
+              <Button size="sm" variant="outline" onClick={handleSync} disabled={syncing} className="gap-1.5">
+                {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                Sync {company.short}
+              </Button>
+            </>
+          )}
+        </div>
       </header>
 
       <div className="flex-1 overflow-auto p-6 space-y-5">
@@ -2227,11 +2266,11 @@ export function FinancePage() {
         </div>
 
         {/* Tab content */}
-        {tab === "dashboard" && <FinanceDashboard />}
+        {tab === "dashboard" && <FinanceDashboard realm={realm} />}
         {(tab === "trackers" || tab === "tracker") && <DeptTracker />}
-        {tab === "invoices" && <QboDocsTab docType="invoices" />}
-        {tab === "proforma" && <QboDocsTab docType="proforma" />}
-        {tab === "quotations" && <QboDocsTab docType="quotations" />}
+        {tab === "invoices" && <QboDocsTab docType="invoices" realm={realm} />}
+        {tab === "proforma" && <QboDocsTab docType="proforma" realm={realm} />}
+        {tab === "quotations" && <QboDocsTab docType="quotations" realm={realm} />}
       </div>
     </div>
   );
