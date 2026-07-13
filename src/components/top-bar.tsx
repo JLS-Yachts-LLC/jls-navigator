@@ -190,22 +190,14 @@ export function ViewAsSwitcher() {
           </button>
 
           <div className="my-1 border-t border-border" />
-          {VIEW_AS_OPTIONS.map((o) => (
-            <button key={o.role} onClick={() => selectRole(o.role)} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent">
-              <UserCircle2 className="h-4 w-4 text-muted-foreground" />
-              <span className="flex-1 text-left">{o.label}</span>
-              {viewAs === o.role && !viewLabel && <Check className="h-3.5 w-3.5 text-primary" />}
-            </button>
-          ))}
-
-          <div className="my-1 border-t border-border" />
           <div className="px-1 pb-1">
             <div className="relative">
               <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/50" />
               <input
+                autoFocus
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder="Preview as a specific user…"
+                placeholder="Search a user to preview as…"
                 className="w-full rounded-md border border-border bg-background py-1.5 pl-7 pr-2 text-xs text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-primary/40"
               />
             </div>
@@ -227,6 +219,9 @@ export function ViewAsSwitcher() {
               })}
               {q.trim() && results.length === 0 && (
                 <p className="px-2 py-2 text-center text-[11px] text-muted-foreground">No matching users</p>
+              )}
+              {!q.trim() && (
+                <p className="px-2 py-2 text-center text-[11px] text-muted-foreground/70">Start typing a name or email to preview as that user.</p>
               )}
             </div>
           </div>
