@@ -44,6 +44,45 @@ export function GuideDepartmentPage() {
   const [form, setForm] = useState(EMPTY);
   const [busy, setBusy] = useState(false);
 
+  // ── Content editor (toolbar + preview + YouTube embeds) ──────────────────────
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const [contentTab, setContentTab] = useState<"write" | "preview">("write");
+  const [ytOpen, setYtOpen] = useState(false);
+  const [ytUrl, setYtUrl] = useState("");
+
+  /** Wrap the current selection with `before`/`after` (for bold, italic, links). */
+  function surround(before: string, after: string, placeholder = "") {
+    const ta = bodyRef.current;
+    if (!ta) { setForm(f => ({ ...f, body: f.body + before + placeholder + after })); return; }
+    const { selectionStart: s, selectionEnd: e, value } = ta;
+    const sel = value.slice(s, e) || placeholder;
+    const next = value.slice(0, s) + before + sel + after + value.slice(e);
+    setForm(f => ({ ...f, body: next }));
+    requestAnimationFrame(() => { ta.focus(); const p = s + before.length + sel.length; ta.setSelectionRange(p, p); });
+  }
+
+  /** Insert a block on its own lines at the cursor (headings, lists, videos). */
+  function insertBlock(text: string) {
+    const ta = bodyRef.current;
+    const value = form.body;
+    const at = ta ? ta.selectionStart : value.length;
+    const pre = value.slice(0, at);
+    const post = value.slice(at);
+    const lead = pre && !pre.endsWith("\n\n") ? (pre.endsWith("\n") ? "\n" : "\n\n") : "";
+    const trail = post && !post.startsWith("\n") ? "\n\n" : "";
+    const next = pre + lead + text + trail + post;
+    setForm(f => ({ ...f, body: next }));
+    requestAnimationFrame(() => { if (ta) { ta.focus(); const p = (pre + lead + text).length; ta.setSelectionRange(p, p); } });
+  }
+
+  function insertYouTube() {
+    const id = youtubeId(ytUrl);
+    if (!id) { toast.error("Enter a valid YouTube link"); return; }
+    insertBlock(`https://youtu.be/${id}`);
+    setYtUrl(""); setYtOpen(false);
+    toast.success("Video added — it plays inline in the guide");
+  }
+
   // Document import (PDF/Word → AI-extracted guide + branded PDF)
   const [importOpen, setImportOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -226,8 +265,69 @@ export function GuideDepartmentPage() {
               <Input value={form.summary} onChange={e => setForm(f => ({ ...f, summary: e.target.value }))} placeholder="One-line description" className="h-8" />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Content <span className="text-muted-foreground">(Markdown)</span></Label>
-              <Textarea value={form.body} onChange={e => setForm(f => ({ ...f, body: e.target.value }))} rows={12} className="resize-y font-mono text-xs" placeholder={"## Section\n\n- Point one\n- Point two"} />
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Content</Label>
+                <div className="flex rounded-md border border-border p-0.5">
+                  <button type="button" onClick={() => setContentTab("write")}
+                    className={cn("rounded px-2.5 py-1 text-[11px] font-medium transition", contentTab === "write" ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground")}>
+                    <Pencil className="mr-1 inline h-3 w-3" /> Write
+                  </button>
+                  <button type="button" onClick={() => setContentTab("preview")}
+                    className={cn("rounded px-2.5 py-1 text-[11px] font-medium transition", contentTab === "preview" ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground")}>
+                    <Eye className="mr-1 inline h-3 w-3" /> Preview
+                  </button>
+                </div>
+              </div>
+
+              {contentTab === "write" ? (
+                <>
+                  {/* Formatting toolbar */}
+                  <div className="flex flex-wrap items-center gap-1 rounded-md border border-border bg-muted/20 p-1">
+                    {[
+                      { icon: Heading, title: "Heading", fn: () => insertBlock("## Heading") },
+                      { icon: Bold, title: "Bold", fn: () => surround("**", "**", "bold text") },
+                      { icon: Italic, title: "Italic", fn: () => surround("*", "*", "italic text") },
+                      { icon: List, title: "Bullet list", fn: () => insertBlock("- ") },
+                      { icon: Link2, title: "Link", fn: () => surround("[", "](https://)", "link text") },
+                    ].map(({ icon: Icon, title, fn }) => (
+                      <button key={title} type="button" title={title} onClick={fn}
+                        className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground transition">
+                        <Icon className="h-3.5 w-3.5" />
+                      </button>
+                    ))}
+                    <div className="mx-0.5 h-4 w-px bg-border" />
+                    <button type="button" title="Insert YouTube video" onClick={() => setYtOpen(o => !o)}
+                      className={cn("flex h-7 items-center gap-1.5 rounded px-2 text-[11px] font-medium transition", ytOpen ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-accent hover:text-foreground")}>
+                      <Youtube className="h-3.5 w-3.5" /> YouTube
+                    </button>
+                  </div>
+
+                  {/* YouTube inline inserter */}
+                  {ytOpen && (
+                    <div className="flex items-center gap-2 rounded-md border border-primary/30 bg-primary/5 p-2">
+                      <Youtube className="h-4 w-4 shrink-0 text-primary" />
+                      <Input
+                        value={ytUrl}
+                        onChange={e => setYtUrl(e.target.value)}
+                        onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); insertYouTube(); } }}
+                        placeholder="Paste a YouTube link (youtube.com/watch?v=… or youtu.be/…)"
+                        className="h-8 text-xs"
+                        autoFocus
+                      />
+                      <Button size="sm" className="h-8 shrink-0" onClick={insertYouTube}>Insert at cursor</Button>
+                    </div>
+                  )}
+
+                  <Textarea ref={bodyRef} value={form.body} onChange={e => setForm(f => ({ ...f, body: e.target.value }))} rows={12} className="resize-y font-mono text-xs" placeholder={"## Section\n\n- Point one\n- Point two\n\nPaste a YouTube link on its own line to embed a video."} />
+                  <p className="text-[10.5px] text-muted-foreground">Supports Markdown. A YouTube link on its own line becomes an embedded player where you place it.</p>
+                </>
+              ) : (
+                <div className="pds-scroll max-h-[380px] min-h-[220px] overflow-auto rounded-md border border-border bg-card p-4">
+                  {form.body.trim()
+                    ? <Markdown>{form.body}</Markdown>
+                    : <p className="text-sm text-muted-foreground italic">Nothing to preview yet.</p>}
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <Switch checked={form.published} onCheckedChange={v => setForm(f => ({ ...f, published: v }))} id="pub" />
