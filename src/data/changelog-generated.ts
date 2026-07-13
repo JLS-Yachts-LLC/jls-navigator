@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Automations can be deleted from the Automations page — a trash button on each card opens a confirmation prompt before removing it"
+      },
+      {
+        "type": "feature",
         "title": "List pages (Suppliers, etc.) get a Sort by control, quick category-style filters, and an on-brand themed scrollbar — the app-wide hidden scrollbar is replaced with a palette-matched one on the list, and every table column is sortable ascending/descending with select fields as filters"
       },
       {
