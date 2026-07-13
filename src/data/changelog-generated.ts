@@ -10,6 +10,14 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Reorganise the admin menu — Admin Settings now holds Settings, Recycle Bin, Changelog and Feedback, with Dev Settings, Automations, Sync, Error & Warnings and Integrations grouped under a new Settings heading beneath it"
+      },
+      {
+        "type": "feature",
+        "title": "Automations gains an Executions tab (cross-automation run history with error detail, an errors-only filter and Re-run for re-runnable jobs) for easy troubleshooting; and the Waypoint Chandlery suppliers screen gains a 'SKU → QuickBooks' action to create/update items in QuickBooks from Lightspeed SKUs on demand"
+      },
+      {
+        "type": "feature",
         "title": "Add images to Knowledge Base guides — an Image button in the editor uploads to storage and drops the picture at the cursor, and guide images render responsively inline"
       },
       {
