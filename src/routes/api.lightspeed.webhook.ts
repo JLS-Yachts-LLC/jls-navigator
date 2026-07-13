@@ -10,7 +10,7 @@
  */
 import { handleLightspeedWebhook, lsConfig, type LsKind } from '@/lib/lightspeed/sync.server'
 
-const KINDS = new Set(['customer', 'product', 'credit', 'invoice'])
+const KINDS = new Set(['customer', 'product', 'sale', 'credit', 'invoice'])
 
 export async function lightspeedWebhookHandler(request: Request): Promise<Response> {
   if (request.method !== 'POST') return new Response('Method not allowed', { status: 405 })

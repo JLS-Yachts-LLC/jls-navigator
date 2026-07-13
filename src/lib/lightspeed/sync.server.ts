@@ -293,9 +293,13 @@ export async function syncInvoice(payload: any, cfg: LsConfig, realm: string): P
 }
 
 // ── Dispatcher ─────────────────────────────────────────────────────────────────
-export type LsKind = 'customer' | 'product' | 'credit' | 'invoice'
+// 'sale' is the single Lightspeed "Sale updated" event — we inspect the payload
+// and route returns → credit memo, everything else → invoice (Lightspeed has no
+// separate return webhook). 'credit'/'invoice' remain for direct/legacy use.
+export type LsKind = 'customer' | 'product' | 'sale' | 'credit' | 'invoice'
+type LsFlow = 'customer' | 'product' | 'credit' | 'invoice'
 
-const FLOWS: Record<LsKind, { key: string; name: string; description: string }> = {
+const FLOWS: Record<LsFlow, { key: string; name: string; description: string }> = {
   customer: { key: 'ls-customer-sync', name: 'Lightspeed → QBO Customers', description: 'Native port of the n8n Lightspeed customer sync: on a Lightspeed customer update, creates or updates the matching QuickBooks retail customer (walk-in customers are skipped).' },
   product: { key: 'ls-product-sync', name: 'Lightspeed → QBO Inventory', description: 'Native port of the n8n Lightspeed product sync: on a Lightspeed product update, creates or updates the matching QuickBooks inventory item by SKU (accounts 80/267/224).' },
   credit: { key: 'ls-credit-sync', name: 'Lightspeed → QBO Credit Memos', description: 'Native port of the n8n Lightspeed returns sync: return sales become QuickBooks credit memos — linked returns copy the original invoice (DocNumber-CR), standalone returns are rebuilt from the sale lines. Deduplicated by DocNumber.' },
@@ -303,17 +307,11 @@ const FLOWS: Record<LsKind, { key: string; name: string; description: string }> 
 }
 
 export async function handleLightspeedWebhook(kind: LsKind, body: URLSearchParams): Promise<{ status: number; result: string }> {
-  const flow = FLOWS[kind]
-  await logAutomationRun({ key: flow.key, name: flow.name, source: 'worker', trigger_type: 'webhook', category: 'Lightspeed', status: 'hit' })
-
   const cfg = await lsConfig()
   const retailerId = body.get('retailer_id') ?? ''
   if (cfg.retailerId && retailerId && cfg.retailerId !== retailerId) {
     return { status: 200, result: 'skip-unknown-retailer' } // 200 so Vend doesn't retry forever
   }
-
-  const enabled = await flowEnabled(flow.key, flow.name, flow.description)
-  if (!enabled) return { status: 200, result: 'disabled (toggle in Automations)' }
 
   let payload: any
   try {
@@ -322,10 +320,25 @@ export async function handleLightspeedWebhook(kind: LsKind, body: URLSearchParam
     return { status: 400, result: 'bad-payload' }
   }
 
+  // Resolve the single "Sale updated" event to the correct flow.
+  let flowKind: LsFlow
+  if (kind === 'sale') {
+    const sale = parseSale(payload)
+    flowKind = (sale.lineItems.some((i) => i.is_return) || sale.returnFor) ? 'credit' : 'invoice'
+  } else {
+    flowKind = kind
+  }
+
+  const flow = FLOWS[flowKind]
+  await logAutomationRun({ key: flow.key, name: flow.name, source: 'worker', trigger_type: 'webhook', category: 'Lightspeed', status: 'hit' })
+
+  const enabled = await flowEnabled(flow.key, flow.name, flow.description)
+  if (!enabled) return { status: 200, result: 'disabled (toggle in Automations)' }
+
   try {
-    const result = kind === 'customer' ? await syncCustomer(payload, cfg.realm)
-      : kind === 'product' ? await syncProduct(payload, cfg.realm)
-      : kind === 'credit' ? await syncCredit(payload, cfg, cfg.realm)
+    const result = flowKind === 'customer' ? await syncCustomer(payload, cfg.realm)
+      : flowKind === 'product' ? await syncProduct(payload, cfg.realm)
+      : flowKind === 'credit' ? await syncCredit(payload, cfg, cfg.realm)
       : await syncInvoice(payload, cfg, cfg.realm)
     await logAutomationRun({ key: flow.key, name: flow.name, source: 'worker', trigger_type: 'webhook', category: 'Lightspeed', status: 'success', detail: result })
     return { status: 200, result }
