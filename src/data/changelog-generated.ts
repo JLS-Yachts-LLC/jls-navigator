@@ -5,6 +5,82 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.26.0",
+    "date": "2026-07-13",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Lightspeed retail sync now runs fully native — Lightspeed customer, product, return and sale webhooks create/update the matching QuickBooks retail customers, inventory items, credit memos and invoices directly on the platform (deduplicated by document number), replacing the n8n workflows. Configure under Settings → Integrations → Lightspeed; each flow has its own Automations toggle"
+      }
+    ]
+  },
+  {
+    "version": "2.25.0",
+    "date": "2026-07-10",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Route plans are per delivery date"
+      },
+      {
+        "type": "feature",
+        "title": "Persist the in-progress route plan across tab switches"
+      },
+      {
+        "type": "feature",
+        "title": "Single delivery date in the To-route header with weekday"
+      }
+    ]
+  },
+  {
+    "version": "2.24.0",
+    "date": "2026-07-08",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Force Local Packages table to overflow so it scrolls horizontally"
+      },
+      {
+        "type": "fix",
+        "title": "Local Packages table scrolls horizontally in a bounded box"
+      },
+      {
+        "type": "fix",
+        "title": "Working-day chips green when on, blank when off"
+      },
+      {
+        "type": "feature",
+        "title": "Driver working-days schedule + block routing on off-days"
+      },
+      {
+        "type": "fix",
+        "title": "Delivery calendar — move the + add button to the end of the row"
+      }
+    ]
+  },
+  {
+    "version": "2.23.0",
+    "date": "2026-07-07",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Set stop order per boat on a route (1st, 2nd…)"
+      },
+      {
+        "type": "feature",
+        "title": "Add marina berth billing module"
+      },
+      {
+        "type": "feature",
+        "title": "Assign a van to a route + show it through dispatch/PDF/driver app"
+      },
+      {
+        "type": "feature",
+        "title": "Add Van Tracking tab (live fleet map)"
+      }
+    ]
+  },
+  {
     "version": "2.22.0",
     "date": "2026-07-06",
     "entries": [
