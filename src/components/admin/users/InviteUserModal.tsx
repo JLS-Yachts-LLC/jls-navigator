@@ -45,7 +45,7 @@ export function InviteUserModal({ roles, onClose, onSuccess }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-      <div className="w-96 rounded-xl border border-white/10 bg-[#0d1520] p-5 shadow-2xl">
+      <div className="w-96 rounded-xl border border-white/10 bg-popover p-5 shadow-2xl">
         <h3 className="mb-4 text-sm font-semibold text-white">Invite user</h3>
 
         {done ? (
@@ -68,7 +68,7 @@ export function InviteUserModal({ roles, onClose, onSuccess }: Props) {
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   placeholder="name@example.com"
-                  className="w-full rounded-md border border-white/10 bg-[#0f1d2e] px-3 py-2
+                  className="w-full rounded-md border border-white/10 bg-input px-3 py-2
                              text-xs text-white placeholder:text-white/25
                              focus:outline-none focus:ring-1 focus:ring-cyan-500/40"
                 />
@@ -81,7 +81,7 @@ export function InviteUserModal({ roles, onClose, onSuccess }: Props) {
                 <select
                   value={role}
                   onChange={e => setRole(e.target.value)}
-                  className="w-full rounded-md border border-white/10 bg-[#0f1d2e] px-3 py-2
+                  className="w-full rounded-md border border-white/10 bg-input px-3 py-2
                              text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-500/40"
                 >
                   {roles.map(r => (

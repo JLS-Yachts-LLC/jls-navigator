@@ -17,7 +17,7 @@ export function AuditTable({ events, total, filters, onFilterChange }: Props) {
 
       <table className="w-full text-xs" style={{ tableLayout: 'fixed' }}>
         <thead>
-          <tr className="bg-[#0a1220] text-white/35 text-[9px] font-semibold tracking-wider">
+          <tr className="bg-muted text-white/35 text-[9px] font-semibold tracking-wider">
             <th className="text-left px-3 py-2 w-28">Timestamp</th>
             <th className="text-left px-3 py-2 w-16">Type</th>
             <th className="text-left px-3 py-2 w-36">Actor</th>

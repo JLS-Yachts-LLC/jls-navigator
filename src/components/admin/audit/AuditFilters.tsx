@@ -24,7 +24,7 @@ export function AuditFilters({ filters, onChange }: Props) {
       <select
         value={filters.event_type}
         onChange={e => set('event_type', e.target.value)}
-        className="rounded-md border border-white/10 bg-[#0f1d2e] px-2.5 py-1.5
+        className="rounded-md border border-white/10 bg-input px-2.5 py-1.5
                    text-[11px] text-white focus:outline-none"
       >
         {EVENT_TYPES.map(t => (
@@ -35,7 +35,7 @@ export function AuditFilters({ filters, onChange }: Props) {
       <select
         value={filters.result}
         onChange={e => set('result', e.target.value)}
-        className="rounded-md border border-white/10 bg-[#0f1d2e] px-2.5 py-1.5
+        className="rounded-md border border-white/10 bg-input px-2.5 py-1.5
                    text-[11px] text-white focus:outline-none"
       >
         {RESULTS.map(r => (
@@ -47,7 +47,7 @@ export function AuditFilters({ filters, onChange }: Props) {
         placeholder="Filter by actor email…"
         value={filters.actor}
         onChange={e => set('actor', e.target.value)}
-        className="rounded-md border border-white/10 bg-[#0f1d2e] px-2.5 py-1.5
+        className="rounded-md border border-white/10 bg-input px-2.5 py-1.5
                    text-[11px] text-white placeholder:text-white/25
                    focus:outline-none focus:ring-1 focus:ring-cyan-500/30 w-44"
       />
@@ -56,7 +56,7 @@ export function AuditFilters({ filters, onChange }: Props) {
         type="date"
         value={filters.from}
         onChange={e => set('from', e.target.value)}
-        className="rounded-md border border-white/10 bg-[#0f1d2e] px-2.5 py-1.5
+        className="rounded-md border border-white/10 bg-input px-2.5 py-1.5
                    text-[11px] text-white focus:outline-none"
       />
 
@@ -66,7 +66,7 @@ export function AuditFilters({ filters, onChange }: Props) {
         type="date"
         value={filters.to}
         onChange={e => set('to', e.target.value)}
-        className="rounded-md border border-white/10 bg-[#0f1d2e] px-2.5 py-1.5
+        className="rounded-md border border-white/10 bg-input px-2.5 py-1.5
                    text-[11px] text-white focus:outline-none"
       />
     </div>

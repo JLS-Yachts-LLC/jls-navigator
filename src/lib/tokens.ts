@@ -15,9 +15,11 @@ export const COLORS = {
   deep:      'var(--border)',      // borders
   ocean:     'var(--muted)',       // table headers, muted fills
 
-  // Polaris accent (fixed brand colours — valid on both themes, alpha-suffixable)
-  signal:    '#00C4CC',   // primary interactive, Polaris highlights
-  signalMid: '#00838A',   // secondary signal uses
+  // Polaris accent (fixed brand colours — valid on both themes, alpha-suffixable).
+  // Aligned to the Polaris interactive blue (matches --primary in the pds-embed
+  // theme) so inline COLORS.signal usages read on-brand instead of the old cyan.
+  signal:    '#4590ba',   // primary interactive, Polaris highlights
+  signalMid: '#2f6d92',   // secondary signal uses
 
   // Leo accent
   leoAmber:  '#E8A020',   // Leo UI, AI-origin content

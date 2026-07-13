@@ -44,14 +44,14 @@ export function EditRoleModal({ userRole, roles, onClose, onSuccess }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-      <div className="w-80 rounded-xl border border-white/10 bg-[#0d1520] p-5 shadow-2xl">
+      <div className="w-80 rounded-xl border border-white/10 bg-popover p-5 shadow-2xl">
         <h3 className="mb-4 text-sm font-semibold text-white">Change role</h3>
         <p className="mb-3 text-[11px] text-white/50">{(userRole as any).user?.email ?? userRole.user_id}</p>
 
         <select
           value={role}
           onChange={e => setRole(e.target.value)}
-          className="w-full rounded-md border border-white/10 bg-[#0f1d2e] px-3 py-2
+          className="w-full rounded-md border border-white/10 bg-input px-3 py-2
                      text-xs text-white focus:outline-none focus:ring-1 focus:ring-amber-500/40"
         >
           {roles.map(r => (
