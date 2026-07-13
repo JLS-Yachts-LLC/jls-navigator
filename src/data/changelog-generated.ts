@@ -9,6 +9,14 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-07-13",
     "entries": [
       {
+        "type": "feature",
+        "title": "Finance can switch between the JLS Yachts and Waypoint QuickBooks companies — a company toggle on the dashboard and document tabs, with each company's invoices, payments and totals synced and shown separately"
+      },
+      {
+        "type": "fix",
+        "title": "Dialogs, dropdowns, selects and other pop-ups now inherit the Polaris theme — they portal outside the page container, so they were falling back to the old black/cyan styling; they now carry the navy/blue theme wherever they open (e.g. the New Ticket dialog)"
+      },
+      {
         "type": "fix",
         "title": "Remove the duplicate e-Sign Documents nav entry — it opened the same Anchor module (Documents, Forms, Signatories) already reachable via Anchor"
       },

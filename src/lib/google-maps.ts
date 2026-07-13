@@ -47,7 +47,7 @@ export function loadGoogleMaps(): Promise<GMaps | null> {
       const cb = "__polarisGmapsReady";
       w[cb] = () => resolve();
       const s = document.createElement("script");
-      s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly&libraries=places,geometry&callback=${cb}`;
+      s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly&loading=async&libraries=places,geometry&callback=${cb}`;
       s.async = true;
       s.onerror = () => reject(new Error("Google Maps failed to load"));
       document.head.appendChild(s);
