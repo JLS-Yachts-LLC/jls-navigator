@@ -10,6 +10,14 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Add images to Knowledge Base guides — an Image button in the editor uploads to storage and drops the picture at the cursor, and guide images render responsively inline"
+      },
+      {
+        "type": "fix",
+        "title": "Stop the old black/cyan theme bleeding through pop-ups — every portaled surface (dropdowns, selects, popovers, tooltips, menus, sheets, drawers, toasts) now inherits the Polaris theme instead of falling back to the base palette when it renders outside the page container"
+      },
+      {
+        "type": "feature",
         "title": "The top-bar 'View as' menu now previews as an existing user — the fixed Captain / Client / Crew role shortcuts are gone; search and pick any created user (Admin (full access) still exits preview)"
       },
       {
