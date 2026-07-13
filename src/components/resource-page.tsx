@@ -12,7 +12,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Search, Pencil, Trash2, Loader2, Download, RefreshCw } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, Loader2, Download, RefreshCw, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -59,6 +59,15 @@ export function ResourcePage({ config }: { config: ResourceConfig }) {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
+  const [fieldFilters, setFieldFilters] = useState<Record<string, string>>({});
+  const [sortCol, setSortCol] = useState<string>(config.orderBy?.col ?? config.fields.find((f) => f.table)?.key ?? "name");
+  const [sortAsc, setSortAsc] = useState<boolean>(config.orderBy?.asc ?? true);
+
+  // Select-type columns (other than the status field) become quick filters.
+  const filterFields = config.fields.filter(
+    (f) => f.type === "select" && f.table && f.key !== config.statusKey && (f.options?.length ?? 0) > 0,
+  );
+  const sortableCols = config.fields.filter((f) => f.table);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Row | null>(null);
   const [form, setForm] = useState<Row>({});
@@ -176,15 +185,30 @@ export function ResourcePage({ config }: { config: ResourceConfig }) {
 
   const tableCols = config.fields.filter((f) => f.table);
 
-  const filtered = useMemo(() => rows.filter((r) => {
-    if (filterStatus !== "all" && config.statusKey && r[config.statusKey] !== filterStatus) return false;
-    if (q.trim()) {
-      const s = q.toLowerCase();
-      const hay = config.fields.map((f) => f.type === "yacht" ? yachtName(r[f.key]) : f.type === "org" ? orgName(r[f.key]) : r[f.key]).join(" ").toLowerCase();
-      if (!hay.includes(s)) return false;
-    }
-    return true;
-  }), [rows, q, filterStatus, yachts, orgs]);
+  const filtered = useMemo(() => {
+    const out = rows.filter((r) => {
+      if (filterStatus !== "all" && config.statusKey && r[config.statusKey] !== filterStatus) return false;
+      for (const [key, val] of Object.entries(fieldFilters)) {
+        if (val && val !== "all" && String(r[key] ?? "") !== val) return false;
+      }
+      if (q.trim()) {
+        const s = q.toLowerCase();
+        const hay = config.fields.map((f) => f.type === "yacht" ? yachtName(r[f.key]) : f.type === "org" ? orgName(r[f.key]) : r[f.key]).join(" ").toLowerCase();
+        if (!hay.includes(s)) return false;
+      }
+      return true;
+    });
+    const field = config.fields.find((f) => f.key === sortCol);
+    out.sort((a, b) => {
+      let av = a[sortCol], bv = b[sortCol];
+      if (field?.type === "yacht") { av = yachtName(av); bv = yachtName(bv); }
+      else if (field?.type === "org") { av = orgName(av); bv = orgName(bv); }
+      if (field?.type === "number") { av = Number(av) || 0; bv = Number(bv) || 0; return sortAsc ? av - bv : bv - av; }
+      const cmp = String(av ?? "").localeCompare(String(bv ?? ""), undefined, { numeric: true, sensitivity: "base" });
+      return sortAsc ? cmp : -cmp;
+    });
+    return out;
+  }, [rows, q, filterStatus, fieldFilters, sortCol, sortAsc, yachts, orgs]);
 
   function exportCSV() {
     const cols = config.fields;
@@ -218,6 +242,26 @@ export function ResourcePage({ config }: { config: ResourceConfig }) {
               </SelectContent>
             </Select>
           )}
+          {filterFields.map((f) => (
+            <Select key={f.key} value={fieldFilters[f.key] ?? "all"} onValueChange={(v) => setFieldFilters((p) => ({ ...p, [f.key]: v }))}>
+              <SelectTrigger className="h-9 w-40 text-xs"><SelectValue placeholder={`All ${f.label}`} /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All {f.label}</SelectItem>
+                {f.options!.map((o) => <SelectItem key={o} value={o} className="capitalize">{o}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          ))}
+          <div className="flex items-center">
+            <Select value={sortCol} onValueChange={setSortCol}>
+              <SelectTrigger className="h-9 w-36 rounded-r-none border-r-0 text-xs"><span className="flex items-center gap-1.5"><ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground/60" /><SelectValue /></span></SelectTrigger>
+              <SelectContent>
+                {sortableCols.map((c) => <SelectItem key={c.key} value={c.key}>{c.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Button size="sm" variant="outline" onClick={() => setSortAsc((a) => !a)} title={sortAsc ? "Ascending" : "Descending"} className="h-9 rounded-l-none px-2.5 text-xs">
+              {sortAsc ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />}
+            </Button>
+          </div>
           {config.syncAction && (
             <Button size="sm" variant="outline" onClick={runSyncAction} disabled={syncing} className="h-9 gap-1.5 text-xs">
               {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} {config.syncAction.label}
@@ -241,7 +285,7 @@ export function ResourcePage({ config }: { config: ResourceConfig }) {
         </div>
       )}
 
-      <div className="flex-1 overflow-auto px-6 py-5">
+      <div className="pds-scroll flex-1 overflow-auto px-6 py-5">
         {loading ? (
           <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
         ) : filtered.length === 0 ? (
