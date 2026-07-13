@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { fetchAllRows } from "@/lib/fetch-all";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Zap, Clock, Webhook, MousePointerClick, Activity, Search, Loader2,
   CheckCircle2, XCircle, CircleDot, Calendar, ExternalLink, PlugZap,
@@ -35,7 +36,7 @@ type Automation = {
 };
 
 // Department mini tabs — fixed order; "All" first, Platform last.
-const DEPARTMENTS = ["Finance", "Immigration", "Logistics", "Training", "Yacht IT Solutions", "Operations", "Platform"] as const;
+const DEPARTMENTS = ["Finance", "Immigration", "Logistics", "Training", "Yacht IT Solutions", "Operations", "Lightspeed", "Platform"] as const;
 
 const TRIGGER_META: Record<string, { label: string; icon: typeof Clock; color: string }> = {
   schedule: { label: "Scheduled", icon: Clock,             color: "bg-blue-500/15 text-blue-400" },
@@ -235,6 +236,7 @@ export function AutomationsPage() {
                         {/* Per-automation configuration (e.g. email recipients) */}
                         {a.key === "weekly-fleet-finance" && <RecipientsEditor automation={a} onSaved={(cfg) => setItems(prev => prev.map(x => x.id === a.id ? { ...x, config: cfg } : x))} />}
                         {a.key === "qb-invoice-pdf" && <InvoicePdfTester />}
+                        {a.key === "lightspeed-item-sync" && <LightspeedSyncForm />}
                         {/* Run metrics — last 30 days */}
                         {rs && rs.runs > 0 && (
                           <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -467,6 +469,97 @@ function InvoicePdfTester() {
       <Button size="sm" className="h-7 gap-1 text-xs" disabled={!id.trim() || !!busy} onClick={() => void call("attach")}>
         {busy === "attach" && <Loader2 className="h-3 w-3 animate-spin" />} Generate & attach now
       </Button>
+    </div>
+  );
+}
+
+// Form-based runner for the Lightspeed → QuickBooks item-description sync: paste
+// one or more SKUs, hit Run, and each is looked up in Lightspeed and
+// created/updated in the retail QuickBooks company. Shows a per-SKU result list.
+type LsSkuResult = { sku: string; action: "created" | "updated" | "not-found" | "error"; detail: string };
+type LsSyncResult = { ok: boolean; processed: number; created: number; updated: number; notFound: number; errors: number; results: LsSkuResult[] };
+
+const LS_ACTION_CLS: Record<string, string> = {
+  created: "bg-emerald-500/15 text-emerald-500",
+  updated: "bg-blue-500/15 text-blue-400",
+  "not-found": "bg-amber-500/15 text-amber-500",
+  error: "bg-red-500/15 text-red-500",
+};
+
+function LightspeedSyncForm() {
+  const [skus, setSkus] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<LsSyncResult | null>(null);
+
+  async function run() {
+    if (!skus.trim()) return;
+    setBusy(true);
+    setResult(null);
+    try {
+      const { data: { session } } = await (supabase as any).auth.getSession();
+      const token = session?.access_token ?? "";
+      const res = await fetch("/api/lightspeed/sync", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ skus }),
+      });
+      const j = await res.json();
+      if (!res.ok && !j.results) throw new Error(j.error ?? `HTTP ${res.status}`);
+      setResult(j as LsSyncResult);
+      const j2 = j as LsSyncResult;
+      if (j2.errors) toast.error(`${j2.created + j2.updated} done, ${j2.errors} error(s)`);
+      else toast.success(`${j2.created} created, ${j2.updated} updated${j2.notFound ? `, ${j2.notFound} not found` : ""}`);
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed");
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="mt-2.5 rounded-lg border border-border/60 bg-background/40 p-3">
+      <div className="text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">
+        Update item & invoice descriptions — enter SKUs
+      </div>
+      <Textarea
+        value={skus}
+        onChange={(e) => setSkus(e.target.value)}
+        placeholder={"One or more SKUs, separated by commas or new lines\ne.g. SY-10432, SY-10433"}
+        rows={3}
+        className="text-xs font-mono"
+      />
+      <div className="mt-2 flex items-center gap-2">
+        <Button size="sm" className="h-7 gap-1 text-xs" disabled={!skus.trim() || busy} onClick={() => void run()}>
+          {busy && <Loader2 className="h-3 w-3 animate-spin" />} Run sync
+        </Button>
+        <span className="text-[11px] text-muted-foreground">
+          Looks up each SKU in Lightspeed, then updates or creates the matching item in the retail QuickBooks company.
+        </span>
+      </div>
+      {result && (
+        <div className="mt-2.5 max-h-64 overflow-y-auto rounded-md border border-border/50">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground/60">
+                <th className="px-2 py-1.5">SKU</th>
+                <th className="px-2 py-1.5">Result</th>
+                <th className="px-2 py-1.5">Detail</th>
+              </tr>
+            </thead>
+            <tbody>
+              {result.results.map((r, i) => (
+                <tr key={`${r.sku}-${i}`} className="border-t border-border/40">
+                  <td className="whitespace-nowrap px-2 py-1.5 font-mono text-foreground/80">{r.sku}</td>
+                  <td className="px-2 py-1.5">
+                    <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold", LS_ACTION_CLS[r.action] ?? "bg-muted/60 text-muted-foreground")}>
+                      {r.action}
+                    </span>
+                  </td>
+                  <td className="max-w-[360px] truncate px-2 py-1.5 text-muted-foreground" title={r.detail}>{r.detail}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
