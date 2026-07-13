@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-07-13",
     "entries": [
       {
+        "type": "fix",
+        "title": "Retire the off-brand cyan accent app-wide — the Polaris interactive colour is now the navy-blue used everywhere else (visa wizard, dashboards, Leo), and the custom admin user/permission modals use themed panels instead of hardcoded near-black"
+      },
+      {
         "type": "feature",
         "title": "Finance can switch between the JLS Yachts and Waypoint QuickBooks companies — a company toggle on the dashboard and document tabs, with each company's invoices, payments and totals synced and shown separately"
       },
