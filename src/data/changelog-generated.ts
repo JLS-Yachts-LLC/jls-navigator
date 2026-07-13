@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-07-13",
     "entries": [
       {
+        "type": "fix",
+        "title": "Lightspeed sales sync uses a single Sale-updated webhook — one /api/lightspeed/sale endpoint now routes returns to credit memos and everything else to invoices, matching Lightspeed's single Sale updated event"
+      },
+      {
         "type": "feature",
         "title": "Add a Lightspeed automations tab — a form-based tool that reads SKUs, pulls each product from Lightspeed and creates or updates the matching item description in QuickBooks (runs natively, no n8n)"
       },
