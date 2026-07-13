@@ -151,11 +151,16 @@ export function AutomationsPage() {
     return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }, [filtered]);
 
+  // Figures reflect the active tab (and search) — "All" shows the platform totals.
   const stats = useMemo(() => {
     let runs = 0, errors = 0, retries = 0;
-    for (const s of statsByKey.values()) { runs += s.runs; errors += s.error; retries += s.retry; }
-    return { total: items.length, runs, errors, retries };
-  }, [items, statsByKey]);
+    for (const a of filtered) {
+      const s = statsByKey.get(a.key);
+      if (!s) continue;
+      runs += s.runs; errors += s.error; retries += s.retry;
+    }
+    return { total: filtered.length, runs, errors, retries };
+  }, [filtered, statsByKey]);
 
   return (
     <div className="flex h-full flex-col">
