@@ -69,19 +69,23 @@ export function ResourcePage({ config }: { config: ResourceConfig }) {
   async function runSyncAction() {
     if (!config.syncAction) return;
     setSyncing(true);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 120_000);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const r = await fetch(config.syncAction.path, {
         method: "POST",
         headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+        signal: ctrl.signal,
       });
       const j = await r.json();
       if (!r.ok || !j.ok) throw new Error(j.error ?? `Failed (${r.status})`);
       toast.success(j.note ? j.note : `Synced ${j.upserted ?? 0} of ${j.fetched ?? 0}`);
       await load();
     } catch (e: any) {
-      toast.error(e?.message ?? "Sync failed");
+      toast.error(e?.name === "AbortError" ? "Sync timed out — try again" : (e?.message ?? "Sync failed"));
     } finally {
+      clearTimeout(timer);
       setSyncing(false);
     }
   }
