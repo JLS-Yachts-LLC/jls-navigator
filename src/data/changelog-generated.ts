@@ -9,6 +9,14 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-07-13",
     "entries": [
       {
+        "type": "feature",
+        "title": "Knowledge Base can import a PDF or Word document — Polaris extracts the content into a formatted guide and attaches a Polaris/JLS-branded PDF you can download from the guide"
+      },
+      {
+        "type": "feature",
+        "title": "Compliance opens on a fleet-wide (Global) visa score with a vessel picker to drill into one yacht; Excel Import now lives as a tab inside Finance instead of its own menu; changelog always lists newest releases first"
+      },
+      {
         "type": "fix",
         "title": "Retire the off-brand cyan accent app-wide — the Polaris interactive colour is now the navy-blue used everywhere else (visa wizard, dashboards, Leo), and the custom admin user/permission modals use themed panels instead of hardcoded near-black"
       },
