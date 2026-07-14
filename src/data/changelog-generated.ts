@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Client Portal navigation is now tailored to the login's position — Owner/Representative hide operational PMS & ISM sections and Purser gets a finance/paperwork-focused menu, while Captains see everything; a hidden section can't be reached directly"
+      },
+      {
+        "type": "feature",
         "title": "Preview a client's portal from View as — choosing a captain/portal account now opens their client portal read-only (MFA skipped, a banner shows whose portal it is, and requests/chat submissions are blocked) instead of a staff-role preview; captain accounts are flagged in the switcher and only staff can open a preview"
       },
       {
