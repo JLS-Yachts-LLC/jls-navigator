@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Preview a client's portal from View as — choosing a captain/portal account now opens their client portal read-only (MFA skipped, a banner shows whose portal it is, and requests/chat submissions are blocked) instead of a staff-role preview; captain accounts are flagged in the switcher and only staff can open a preview"
+      },
+      {
+        "type": "feature",
         "title": "Client portal is now a \"My Yacht\" management app — left sidebar navigation with Alerts, Positions, Crew, Documents, PMS, Balances, Invoices, Charter and ISM sections (Alerts aggregates expiring docs, overdue invoices and pending deliveries; Positions shows live AIS/voyage; Balances is a QuickBooks account statement)"
       },
       {
