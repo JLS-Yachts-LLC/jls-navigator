@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Client portal is now a \"My Yacht\" management app — left sidebar navigation with Alerts, Positions, Crew, Documents, PMS, Balances, Invoices, Charter and ISM sections (Alerts aggregates expiring docs, overdue invoices and pending deliveries; Positions shows live AIS/voyage; Balances is a QuickBooks account statement)"
+      },
+      {
+        "type": "feature",
         "title": "Client Portal home is now a module launcher — a DeepBlue-style grid of module tiles (Service Requests, Crew/Visas/Permits, Finance, Logistics, Documents & e-Sign, Support & Directory) that opens each area, with live unread badges; reflows 2-up on mobile and 3-up on desktop"
       },
       {
