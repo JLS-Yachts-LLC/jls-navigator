@@ -320,6 +320,16 @@ export default {
       return adminPortalUsersHandler(request)
     }
 
+    // Client portal — vessel-scoped Finances (QuickBooks) & Logistics (ShipSync)
+    if (url.pathname === '/api/portal/finance') {
+      const { portalFinanceHandler } = await import('./routes/api.portal.finance')
+      return portalFinanceHandler(request)
+    }
+    if (url.pathname === '/api/portal/logistics') {
+      const { portalLogisticsHandler } = await import('./routes/api.portal.logistics')
+      return portalLogisticsHandler(request)
+    }
+
     // Native QB Invoice PDF preview / manual run (admin only)
     if (url.pathname === '/api/qb/invoice-pdf') {
       const { qbInvoicePdfHandler } = await import('./routes/api.qb.invoice-pdf')

@@ -13,7 +13,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Anchor, ArrowLeft, ChevronRight, FileCheck2, Fuel, Home, Laptop, LifeBuoy,
   Loader2, LogOut, Mail, MessageSquare, Phone, Plane, Plus, Send,
-  Shield, Shirt, ShoppingCart, Users, X,
+  Shield, Shirt, ShoppingCart, Users, X, Wallet, Truck, Package,
+  MapPin, FileText, Download, ExternalLink, Clock, CheckCircle2,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
@@ -369,13 +370,15 @@ function MfaVerifyScreen({ onDone, onSignOut }: { onDone: () => void; onSignOut:
 // ═══════════════════════════════════════════════════════════════════════════
 // Portal shell + tabs
 // ═══════════════════════════════════════════════════════════════════════════
-type Tab = "home" | "requests" | "chat" | "crew" | "documents" | "directory";
+type Tab = "home" | "requests" | "chat" | "crew" | "documents" | "finances" | "logistics" | "directory";
 const TABS: { key: Tab; label: string; icon: any }[] = [
   { key: "home", label: "Home", icon: Home },
   { key: "requests", label: "Requests", icon: LifeBuoy },
   { key: "chat", label: "Chat", icon: MessageSquare },
   { key: "crew", label: "Crew", icon: Users },
   { key: "documents", label: "Documents", icon: FileCheck2 },
+  { key: "finances", label: "Finances", icon: Wallet },
+  { key: "logistics", label: "Logistics", icon: Truck },
   { key: "directory", label: "Directory", icon: Phone },
 ];
 
@@ -488,11 +491,13 @@ function PortalShell({ link, email, onSignOut }: { link: CaptainLink; email: str
         )}
         {tab === "crew" && <CrewTab yachtId={link.yacht_id} />}
         {tab === "documents" && <DocumentsTab yachtId={link.yacht_id} />}
+        {tab === "finances" && <FinancesTab />}
+        {tab === "logistics" && <LogisticsTab />}
         {tab === "directory" && <DirectoryTab />}
       </main>
 
       {/* Mobile bottom nav */}
-      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-6 border-t border-border/60 bg-background/95 backdrop-blur sm:hidden"
+      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-8 border-t border-border/60 bg-background/95 backdrop-blur sm:hidden"
            style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
         {TABS.map((t) => (
           <button key={t.key} onClick={() => { setTab(t.key); setOpenRequestId(null); }}
@@ -1063,6 +1068,325 @@ function DirectoryTab() {
               </div>
             </Card>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Finances (QuickBooks, vessel-scoped) ─────────────────────────────────────
+async function authedFetch(path: string): Promise<Response> {
+  const { data: { session } } = await supabase.auth.getSession();
+  return fetch(path, { headers: { Authorization: `Bearer ${session?.access_token ?? ""}` } });
+}
+const money = (n: number, ccy: string) =>
+  `${ccy} ${Number(n || 0).toLocaleString("en-AE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+type FinanceData = {
+  vessel: string; linked: boolean;
+  invoices: { id: string; docNumber: string | null; date: string | null; dueDate: string | null; total: number; balance: number; currency: string; status: "paid" | "overdue" | "open" }[];
+  quotations: { id: string; docNumber: string | null; date: string | null; expiryDate: string | null; total: number; currency: string; status: string }[];
+  summary: { outstanding: number; currency: string; invoiceCount: number; quotationCount: number };
+};
+
+const INV_BADGE: Record<string, string> = {
+  paid: "bg-emerald-500/15 text-emerald-400",
+  open: "bg-amber-500/15 text-amber-400",
+  overdue: "bg-red-500/15 text-red-400",
+};
+const QUOTE_BADGE: Record<string, string> = {
+  accepted: "bg-emerald-500/15 text-emerald-400",
+  pending: "bg-sky-500/15 text-sky-400",
+  closed: "bg-slate-500/15 text-slate-300",
+  rejected: "bg-red-500/15 text-red-400",
+};
+
+function FinancesTab() {
+  const [data, setData] = useState<FinanceData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+  const [view, setView] = useState<"invoices" | "quotations">("invoices");
+
+  useEffect(() => {
+    void (async () => {
+      setLoading(true); setErr(null);
+      try {
+        const res = await authedFetch("/api/portal/finance");
+        const j = await res.json();
+        if (!res.ok) throw new Error(j.error ?? "Could not load finances");
+        setData(j);
+      } catch (e: any) { setErr(e.message ?? "Could not load finances"); }
+      finally { setLoading(false); }
+    })();
+  }, []);
+
+  async function openInvoicePdf(id: string) {
+    const res = await authedFetch(`/api/portal/finance?invoicePdf=${encodeURIComponent(id)}`);
+    if (!res.ok) return;
+    const blob = await res.blob();
+    window.open(URL.createObjectURL(blob), "_blank");
+  }
+
+  if (loading) return <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
+  if (err) return <div className="rounded-2xl border border-red-500/30 bg-red-500/5 p-4 text-sm text-red-300">{err}</div>;
+  if (!data) return null;
+
+  const list = view === "invoices" ? data.invoices : data.quotations;
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h1 className="text-lg font-bold">Finances</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Invoices and quotations for {data.vessel}.</p>
+      </div>
+
+      {!data.linked ? (
+        <Card className="p-6 text-center text-sm text-muted-foreground">
+          <Wallet className="mx-auto mb-3 h-7 w-7 text-muted-foreground/40" />
+          No billing account is linked to your vessel yet. Please contact Accounts &amp; Finance.
+        </Card>
+      ) : (
+        <>
+          {/* Summary */}
+          <div className="grid grid-cols-3 gap-3">
+            <Card className="p-4"><div className="text-[11px] uppercase tracking-wide text-muted-foreground">Outstanding</div><div className="mt-1 text-lg font-bold text-primary">{money(data.summary.outstanding, data.summary.currency)}</div></Card>
+            <Card className="p-4"><div className="text-[11px] uppercase tracking-wide text-muted-foreground">Invoices</div><div className="mt-1 text-lg font-bold">{data.summary.invoiceCount}</div></Card>
+            <Card className="p-4"><div className="text-[11px] uppercase tracking-wide text-muted-foreground">Quotations</div><div className="mt-1 text-lg font-bold">{data.summary.quotationCount}</div></Card>
+          </div>
+
+          {/* Toggle */}
+          <div className="inline-flex rounded-xl border border-border p-1 text-sm">
+            {(["invoices", "quotations"] as const).map((v) => (
+              <button key={v} onClick={() => setView(v)}
+                      className={cn("rounded-lg px-4 py-1.5 font-medium capitalize transition", view === v ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")}>
+                {v}
+              </button>
+            ))}
+          </div>
+
+          {list.length === 0 ? (
+            <Card className="p-6 text-center text-sm text-muted-foreground">No {view} yet.</Card>
+          ) : (
+            <div className="space-y-2">
+              {view === "invoices" && data.invoices.map((i) => (
+                <Card key={i.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 p-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold">Invoice {i.docNumber ?? i.id}</span>
+                      <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase", INV_BADGE[i.status])}>{i.status}</span>
+                    </div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">Issued {fmtDate(i.date)}{i.status !== "paid" && i.dueDate ? ` · Due ${fmtDate(i.dueDate)}` : ""}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-semibold">{money(i.total, i.currency)}</div>
+                    {i.status !== "paid" && <div className="text-xs text-amber-400">{money(i.balance, i.currency)} due</div>}
+                  </div>
+                  <button onClick={() => void openInvoicePdf(i.id)} title="View PDF"
+                          className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-border px-3 text-xs font-medium transition hover:border-primary/50">
+                    <FileText className="h-3.5 w-3.5" /> PDF
+                  </button>
+                </Card>
+              ))}
+              {view === "quotations" && data.quotations.map((q) => (
+                <Card key={q.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 p-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold">Quotation {q.docNumber ?? q.id}</span>
+                      <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase", QUOTE_BADGE[q.status] ?? "bg-slate-500/15 text-slate-300")}>{q.status}</span>
+                    </div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">Dated {fmtDate(q.date)}{q.expiryDate ? ` · Valid to ${fmtDate(q.expiryDate)}` : ""}</div>
+                  </div>
+                  <div className="text-right font-semibold">{money(q.total, q.currency)}</div>
+                </Card>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Logistics (ShipSync packages & deliveries, vessel-scoped) ─────────────────
+type LogisticsData = {
+  vessel: string;
+  packages: {
+    active: LogPackage[]; done: LogPackage[];
+  };
+  deliveries: {
+    id: string; number: string | null; status: string; destination: string | null;
+    createdAt: string | null; deliveredAt: string | null; podUrl: string | null;
+    driver: { name: string; phone: string | null } | null;
+    vehicle: { label: string } | null;
+    location: { lat: number; lng: number; updatedAt: string | null } | null;
+  }[];
+};
+type LogPackage = { id: string; barcode: string | null; courier: string | null; count: number; description: string | null; status: string; zone: string | null; receivedAt: string | null; plannedDate: string | null; deliveredAt: string | null };
+
+const PKG_LABEL: Record<string, string> = {
+  in_office: "In office", in_storage: "In storage", assigned: "Assigned",
+  out_for_delivery: "Out for delivery", delivered: "Delivered",
+  to_collect: "To collect", collected: "Collected", refused: "Refused",
+};
+const PKG_BADGE: Record<string, string> = {
+  out_for_delivery: "bg-orange-500/15 text-orange-400",
+  delivered: "bg-emerald-500/15 text-emerald-400",
+  collected: "bg-emerald-500/15 text-emerald-400",
+  assigned: "bg-amber-500/15 text-amber-400",
+  refused: "bg-red-500/15 text-red-400",
+};
+const relAgo = (s: string | null) => {
+  if (!s) return "";
+  const mins = Math.round((Date.now() - new Date(s).getTime()) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  const h = Math.round(mins / 60);
+  return h < 24 ? `${h} h ago` : `${Math.round(h / 24)} d ago`;
+};
+
+function PackageRow({ p }: { p: LogPackage }) {
+  return (
+    <Card className="flex flex-wrap items-center gap-x-4 gap-y-1 p-3.5">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="font-medium">{p.description || p.barcode || "Package"}</span>
+          <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase", PKG_BADGE[p.status] ?? "bg-sky-500/15 text-sky-400")}>{PKG_LABEL[p.status] ?? p.status}</span>
+        </div>
+        <div className="mt-0.5 text-xs text-muted-foreground">
+          {p.courier ? `${p.courier} · ` : ""}{p.count} {p.count === 1 ? "package" : "packages"}
+          {p.barcode ? ` · ${p.barcode}` : ""}
+        </div>
+      </div>
+      <div className="text-right text-xs text-muted-foreground">
+        {p.deliveredAt ? `Delivered ${fmtDate(p.deliveredAt)}` : p.plannedDate ? `Planned ${fmtDate(p.plannedDate)}` : p.receivedAt ? `Received ${fmtDate(p.receivedAt)}` : ""}
+      </div>
+    </Card>
+  );
+}
+
+function LogisticsTab() {
+  const [data, setData] = useState<LogisticsData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+  const [showDone, setShowDone] = useState(false);
+
+  const loadLogistics = useCallback(async () => {
+    try {
+      const res = await authedFetch("/api/portal/logistics");
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error ?? "Could not load logistics");
+      setData(j);
+    } catch (e: any) { setErr(e.message ?? "Could not load logistics"); }
+    finally { setLoading(false); }
+  }, []);
+
+  // Refresh live driver positions periodically while the tab is open.
+  useEffect(() => {
+    void loadLogistics();
+    const t = setInterval(() => void loadLogistics(), 30000);
+    return () => clearInterval(t);
+  }, [loadLogistics]);
+
+  if (loading) return <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
+  if (err) return <div className="rounded-2xl border border-red-500/30 bg-red-500/5 p-4 text-sm text-red-300">{err}</div>;
+  if (!data) return null;
+
+  const liveDeliveries = data.deliveries.filter((d) => d.status !== "delivered" && d.status !== "cancelled");
+  const pastDeliveries = data.deliveries.filter((d) => d.status === "delivered" || d.status === "cancelled");
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-lg font-bold">Logistics</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Packages and deliveries for {data.vessel}.</p>
+      </div>
+
+      {/* Active deliveries + live driver tracking */}
+      {liveDeliveries.length > 0 && (
+        <div className="space-y-2">
+          <h2 className="text-sm font-semibold text-muted-foreground">Out for delivery</h2>
+          {liveDeliveries.map((d) => (
+            <Card key={d.id} className="overflow-hidden">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 p-4">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <Truck className="h-4 w-4 text-primary" />
+                    <span className="font-semibold">Delivery {d.number ?? ""}</span>
+                  </div>
+                  <div className="mt-0.5 text-xs text-muted-foreground">
+                    {d.driver ? `Driver: ${d.driver.name}` : "Driver: unassigned"}
+                    {d.vehicle ? ` · ${d.vehicle.label}` : ""}
+                    {d.destination ? ` · ${d.destination}` : ""}
+                  </div>
+                </div>
+                {d.driver?.phone && (
+                  <a href={`tel:${d.driver.phone.replace(/\s+/g, "")}`} className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-border px-3 text-xs font-medium transition hover:border-primary/50">
+                    <Phone className="h-3.5 w-3.5" /> Call
+                  </a>
+                )}
+              </div>
+              {d.location ? (
+                <div>
+                  <iframe
+                    title={`Driver location ${d.number ?? d.id}`}
+                    className="h-52 w-full border-0"
+                    loading="lazy"
+                    src={`https://www.openstreetmap.org/export/embed.html?bbox=${d.location.lng - 0.008}%2C${d.location.lat - 0.006}%2C${d.location.lng + 0.008}%2C${d.location.lat + 0.006}&layer=mapnik&marker=${d.location.lat}%2C${d.location.lng}`}
+                  />
+                  <div className="flex items-center justify-between px-4 py-2 text-[11px] text-muted-foreground">
+                    <span className="inline-flex items-center gap-1"><MapPin className="h-3 w-3" /> Updated {relAgo(d.location.updatedAt)}</span>
+                    <a href={`https://www.google.com/maps?q=${d.location.lat},${d.location.lng}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
+                      Open in Maps <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </div>
+                </div>
+              ) : (
+                <div className="border-t border-border/40 px-4 py-2.5 text-[11px] text-muted-foreground">
+                  <Clock className="mr-1 inline h-3 w-3" /> Live location will appear here once the driver is en route.
+                </div>
+              )}
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Incoming / in-warehouse packages */}
+      <div className="space-y-2">
+        <h2 className="text-sm font-semibold text-muted-foreground">Packages ({data.packages.active.length} active)</h2>
+        {data.packages.active.length === 0 ? (
+          <Card className="p-6 text-center text-sm text-muted-foreground">
+            <Package className="mx-auto mb-3 h-7 w-7 text-muted-foreground/40" />
+            No packages currently in transit or awaiting delivery.
+          </Card>
+        ) : (
+          data.packages.active.map((p) => <PackageRow key={p.id} p={p} />)
+        )}
+      </div>
+
+      {/* History */}
+      {(data.packages.done.length > 0 || pastDeliveries.length > 0) && (
+        <div className="space-y-2">
+          <button onClick={() => setShowDone((v) => !v)} className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground">
+            <CheckCircle2 className="h-4 w-4" /> {showDone ? "Hide" : "Show"} completed ({data.packages.done.length})
+          </button>
+          {showDone && (
+            <div className="space-y-2">
+              {data.packages.done.map((p) => <PackageRow key={p.id} p={p} />)}
+              {pastDeliveries.map((d) => (
+                <Card key={d.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 p-3.5">
+                  <div className="min-w-0 flex-1">
+                    <span className="font-medium">Delivery {d.number ?? ""}</span>
+                    <span className="ml-2 text-xs text-muted-foreground">{d.status === "cancelled" ? "Cancelled" : `Delivered ${fmtDate(d.deliveredAt)}`}</span>
+                  </div>
+                  {d.podUrl && (
+                    <a href={d.podUrl} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-border px-3 text-xs font-medium transition hover:border-primary/50">
+                      <Download className="h-3.5 w-3.5" /> POD
+                    </a>
+                  )}
+                </Card>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
