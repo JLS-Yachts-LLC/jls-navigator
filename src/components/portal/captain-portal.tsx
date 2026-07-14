@@ -9,13 +9,13 @@
  * Laptop / tablet / phone friendly: top tabs on desktop, bottom tab bar on
  * mobile, big touch targets, click-to-call directory.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Anchor, ArrowLeft, ChevronRight, FileCheck2, Fuel, Home, Laptop, LifeBuoy,
   Loader2, LogOut, Mail, MessageSquare, Phone, Plane, Plus, Send,
   Shield, Shirt, ShoppingCart, Users, X, Wallet, Truck, Package,
   MapPin, FileText, Download, ExternalLink, Clock, CheckCircle2,
-  Bell, Compass, Wrench, CalendarRange, ShieldCheck, Menu, AlertTriangle,
+  Bell, Compass, Wrench, CalendarRange, ShieldCheck, Menu, AlertTriangle, Eye,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
@@ -24,6 +24,11 @@ import { cn } from "@/lib/utils";
 import "@/components/polaris-ui/tokens.css";
 
 const db = supabase as any;
+
+// Admin "preview as captain" mode: an admin opens /portal?previewCaptain=<id> to
+// see a captain's portal read-only. Writes are blocked (this isn't their session).
+const PreviewContext = createContext(false);
+const usePreview = () => useContext(PreviewContext);
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type CaptainLink = { id: string; yacht_id: string; display_name: string | null };
@@ -149,11 +154,27 @@ export function CaptainPortal() {
   const [stage, setStage] = useState<Stage>("loading");
   const [link, setLink] = useState<CaptainLink | null>(null);
   const [userEmail, setUserEmail] = useState<string>("");
+  const [preview, setPreview] = useState(false);
 
   const bootstrap = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) { setStage("signed-out"); return; }
     setUserEmail(session.user.email ?? "");
+
+    // Admin preview: /portal?previewCaptain=<captain_account_id>. Loads that
+    // captain's portal read-only, skipping MFA. Only returns data the caller's
+    // own RLS allows (staff/admin can read the client tables; a captain can't
+    // reach another vessel), so this can't leak beyond existing staff access.
+    const previewId = typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("previewCaptain")
+      : null;
+    if (previewId) {
+      const { data: cap } = await db.from("captain_accounts")
+        .select("id, yacht_id, display_name")
+        .eq("id", previewId).eq("active", true).maybeSingle();
+      if (cap) { setLink(cap); setPreview(true); setStage("ready"); return; }
+      setStage("not-captain"); return;
+    }
 
     const { data: links } = await db.from("captain_accounts")
       .select("id, yacht_id, display_name")
@@ -186,7 +207,11 @@ export function CaptainPortal() {
       {stage === "not-captain" && <NotCaptainScreen email={userEmail} onSignOut={signOut} />}
       {stage === "mfa-enroll" && <MfaEnrollScreen onDone={bootstrap} onSignOut={signOut} />}
       {stage === "mfa-verify" && <MfaVerifyScreen onDone={bootstrap} onSignOut={signOut} />}
-      {stage === "ready" && link && <PortalShell link={link} email={userEmail} onSignOut={signOut} />}
+      {stage === "ready" && link && (
+        <PreviewContext.Provider value={preview}>
+          <PortalShell link={link} email={userEmail} onSignOut={signOut} preview={preview} />
+        </PreviewContext.Provider>
+      )}
     </div>
   );
 }
@@ -418,7 +443,7 @@ type ChatMessage = {
   id: string; sender_name: string | null; sender_role: "staff" | "portal"; body: string; created_at: string;
 };
 
-function PortalShell({ link, email, onSignOut }: { link: CaptainLink; email: string; onSignOut: () => void }) {
+function PortalShell({ link, email, onSignOut, preview = false }: { link: CaptainLink; email: string; onSignOut: () => void; preview?: boolean }) {
   const [tab, setTab] = useState<Tab>("home");
   const [yacht, setYacht] = useState<Yacht | null>(null);
   const [newRequestCat, setNewRequestCat] = useState<string | null>(null);
@@ -455,6 +480,14 @@ function PortalShell({ link, email, onSignOut }: { link: CaptainLink; email: str
 
   return (
     <div className="flex min-h-screen w-full">
+      {/* Admin preview banner — read-only view of a captain's portal. */}
+      {preview && (
+        <div className="fixed inset-x-0 top-0 z-[60] flex items-center justify-center gap-3 bg-amber-500 px-4 py-1.5 text-[12px] font-semibold text-black">
+          <Eye className="h-3.5 w-3.5" />
+          Previewing {link.display_name ?? "captain"}’s portal — read only
+          <button onClick={() => window.location.assign("/polaris-redesign")} className="rounded bg-black/15 px-2 py-0.5 hover:bg-black/25">Exit preview</button>
+        </div>
+      )}
       {/* Mobile drawer backdrop */}
       {navOpen && <div className="fixed inset-0 z-40 bg-black/50 sm:hidden" onClick={() => setNavOpen(false)} />}
 
@@ -824,9 +857,10 @@ function RequestDetail({ requestId, displayName, onBack }: { requestId: string; 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { endRef.current?.scrollIntoView({ block: "nearest" }); }, [messages.length]);
 
+  const readOnly = usePreview();
   const send = async () => {
     const body = draft.trim();
-    if (!body) return;
+    if (!body || readOnly) return;
     setSending(true);
     const { data: { user } } = await supabase.auth.getUser();
     const { error } = await db.from("captain_request_messages").insert({
@@ -928,8 +962,10 @@ function NewRequestSheet({ yachtId, initialCategory, onClose, onCreated }: {
   const [error, setError] = useState<string | null>(null);
   const cat = REQUEST_CATEGORIES.find((c) => c.key === category);
 
+  const readOnly = usePreview();
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (readOnly) { setError("Read-only preview — sign in as the captain to submit."); return; }
     setBusy(true); setError(null);
     const { data: { user } } = await supabase.auth.getUser();
     const { data, error } = await db.from("captain_requests").insert({
@@ -1797,9 +1833,10 @@ function PortalChatTab({ link, displayName, chat, onChatChanged }: {
 
   useEffect(() => { endRef.current?.scrollIntoView({ block: "nearest" }); }, [messages.length]);
 
+  const readOnly = usePreview();
   const send = async () => {
     const body = draft.trim();
-    if (!body || sending) return;
+    if (!body || sending || readOnly) return;
     setSending(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();

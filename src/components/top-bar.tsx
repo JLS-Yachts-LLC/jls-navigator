@@ -204,8 +204,12 @@ export function ViewAsSwitcher() {
             <div className="mt-1 max-h-48 overflow-auto">
               {results.map((u) => {
                 const label = u.user?.email ?? u.user_id;
+                const captainId = u.captainAccountId as string | undefined;
+                const onPick = captainId
+                  ? () => { window.location.assign(`/portal?previewCaptain=${captainId}`); }
+                  : () => selectRole(u.role, label);
                 return (
-                  <button key={u.id} onClick={() => selectRole(u.role, label)} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-accent">
+                  <button key={u.id} onClick={onPick} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-accent">
                     <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-[9px] font-bold text-muted-foreground">
                       {String(label).slice(0, 2).toUpperCase()}
                     </div>
@@ -213,7 +217,9 @@ export function ViewAsSwitcher() {
                       <span className="block truncate text-[12px] text-foreground">{label}</span>
                       <span className="block text-[10px] capitalize text-muted-foreground">{(u.role ?? "").replace(/_/g, " ") || "no role"}</span>
                     </span>
-                    {viewLabel === label && <Check className="h-3.5 w-3.5 text-primary" />}
+                    {captainId
+                      ? <span className="shrink-0 rounded-full bg-primary/15 px-1.5 py-0.5 text-[9px] font-semibold text-primary">Client Portal</span>
+                      : (viewLabel === label && <Check className="h-3.5 w-3.5 text-primary" />)}
                   </button>
                 );
               })}

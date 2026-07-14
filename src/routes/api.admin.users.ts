@@ -75,6 +75,21 @@ const handlers = {
       }
     })
 
+    // Flag which of these users are client-portal (captain) accounts, so the
+    // "View as" switcher can open their portal in read-only preview.
+    const ids = users.map((u) => u.user_id).filter(Boolean)
+    if (ids.length) {
+      const { data: caps } = await sb
+        .from('captain_accounts')
+        .select('id, user_id, display_name')
+        .in('user_id', ids).eq('active', true)
+      const capByUser = new Map((caps ?? []).map((c: any) => [c.user_id, c]))
+      for (const u of users) {
+        const c = capByUser.get(u.user_id)
+        if (c) { (u as any).captainAccountId = c.id; (u as any).captainName = c.display_name }
+      }
+    }
+
     return json({ users, total: count ?? 0, page, pageSize, roles: roleRows ?? [] })
   },
 
