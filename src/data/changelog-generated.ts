@@ -5,6 +5,20 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.27.0",
+    "date": "2026-07-14",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Client Portal home is now a module launcher — a DeepBlue-style grid of module tiles (Service Requests, Crew/Visas/Permits, Finance, Logistics, Documents & e-Sign, Support & Directory) that opens each area, with live unread badges; reflows 2-up on mobile and 3-up on desktop"
+      },
+      {
+        "type": "feature",
+        "title": "Client portal gains Finances (QuickBooks invoices, quotations & outstanding balance) and Logistics (package tracking + live driver location) tabs, each scoped to the signed-in vessel"
+      }
+    ]
+  },
+  {
     "version": "2.26.0",
     "date": "2026-07-13",
     "entries": [
