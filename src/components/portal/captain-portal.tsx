@@ -477,6 +477,8 @@ function PortalShell({ link, email, onSignOut }: { link: CaptainLink; email: str
           <HomeTab yacht={yacht} onNewRequest={openNewRequest}
                    onSeeRequests={() => setTab("requests")}
                    onOpenRequest={(id) => { setTab("requests"); setOpenRequestId(id); }}
+                   onOpenModule={(t) => { setTab(t); setOpenRequestId(null); }}
+                   unread={unread}
                    refreshKey={refreshKey} />
         )}
         {tab === "chat" && (
@@ -528,10 +530,55 @@ function PortalShell({ link, email, onSignOut }: { link: CaptainLink; email: str
   );
 }
 
+// ── Modules ──────────────────────────────────────────────────────────────────
+// The portal's "front door": the Bridge home shows a grid of module tiles
+// (DeepBlue-style). Each tile opens one of the tabs. Tiles reflow 2-up on mobile
+// and 3-up on desktop; the tab bar / bottom bar remain for quick switching.
+type ModuleDef = { key: Tab; label: string; blurb: string; icon: any; accent: string };
+const MODULES: ModuleDef[] = [
+  { key: "requests",  label: "Service Requests",     blurb: "Provisioning, uniform, permits & more", icon: LifeBuoy,     accent: "text-sky-400 bg-sky-500/10 border-sky-500/25" },
+  { key: "crew",      label: "Crew, Visas & Permits", blurb: "Roster, visa status & compliance",      icon: Users,        accent: "text-violet-400 bg-violet-500/10 border-violet-500/25" },
+  { key: "finances",  label: "Finance",              blurb: "Invoices, quotes & statements",         icon: Wallet,       accent: "text-emerald-400 bg-emerald-500/10 border-emerald-500/25" },
+  { key: "logistics", label: "Logistics & Deliveries", blurb: "Parcels, shipments & ETAs",           icon: Truck,        accent: "text-amber-400 bg-amber-500/10 border-amber-500/25" },
+  { key: "documents", label: "Documents & e-Sign",   blurb: "Shared documents & signing",            icon: FileCheck2,   accent: "text-teal-400 bg-teal-500/10 border-teal-500/25" },
+  { key: "chat",      label: "Support & Directory",  blurb: "Chat with JLS + key contacts",          icon: MessageSquare, accent: "text-primary bg-primary/10 border-primary/25" },
+];
+
+function ModuleLauncher({ onOpen, unread }: { onOpen: (t: Tab) => void; unread: number }) {
+  return (
+    <section>
+      <h2 className="mb-3 text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">Modules</h2>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+        {MODULES.map((m) => (
+          <button
+            key={m.key}
+            onClick={() => onOpen(m.key)}
+            className="group relative flex flex-col rounded-2xl border border-border bg-card/60 p-4 text-left transition hover:border-primary/50 hover:bg-card"
+          >
+            <div className={cn("flex h-11 w-11 items-center justify-center rounded-xl border", m.accent)}>
+              <m.icon className="h-5 w-5" />
+            </div>
+            {m.key === "chat" && unread > 0 && (
+              <span className="absolute right-3 top-3 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+                {unread > 9 ? "9+" : unread}
+              </span>
+            )}
+            <div className="mt-3 flex items-center gap-1 text-sm font-semibold">
+              {m.label}
+              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50 transition group-hover:translate-x-0.5 group-hover:text-primary" />
+            </div>
+            <div className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{m.blurb}</div>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 // ── Home ─────────────────────────────────────────────────────────────────────
-function HomeTab({ yacht, onNewRequest, onSeeRequests, onOpenRequest, refreshKey }: {
+function HomeTab({ yacht, onNewRequest, onSeeRequests, onOpenRequest, onOpenModule, unread, refreshKey }: {
   yacht: Yacht; onNewRequest: (cat: string) => void; onSeeRequests: () => void;
-  onOpenRequest: (id: string) => void; refreshKey: number;
+  onOpenRequest: (id: string) => void; onOpenModule: (t: Tab) => void; unread: number; refreshKey: number;
 }) {
   const [recent, setRecent] = useState<PortalRequest[]>([]);
   useEffect(() => {
@@ -579,6 +626,9 @@ function HomeTab({ yacht, onNewRequest, onSeeRequests, onOpenRequest, refreshKey
           </div>
         </div>
       </Card>
+
+      {/* Module launcher — the DeepBlue-style front door */}
+      <ModuleLauncher onOpen={onOpenModule} unread={unread} />
 
       {/* Quick requests */}
       <section>
