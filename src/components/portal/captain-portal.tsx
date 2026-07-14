@@ -31,7 +31,7 @@ const PreviewContext = createContext(false);
 const usePreview = () => useContext(PreviewContext);
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-type CaptainLink = { id: string; yacht_id: string; display_name: string | null };
+type CaptainLink = { id: string; yacht_id: string; display_name: string | null; position: string | null };
 type Yacht = {
   id: string; vessel_name: string; vessel_type: string | null; flag: string | null;
   status: string | null; berth: string | null; location: string | null;
@@ -170,14 +170,14 @@ export function CaptainPortal() {
       : null;
     if (previewId) {
       const { data: cap } = await db.from("captain_accounts")
-        .select("id, yacht_id, display_name")
+        .select("id, yacht_id, display_name, position")
         .eq("id", previewId).eq("active", true).maybeSingle();
       if (cap) { setLink(cap); setPreview(true); setStage("ready"); return; }
       setStage("not-captain"); return;
     }
 
     const { data: links } = await db.from("captain_accounts")
-      .select("id, yacht_id, display_name")
+      .select("id, yacht_id, display_name, position")
       .eq("user_id", session.user.id).eq("active", true).limit(1);
     if (!links?.length) { setStage("not-captain"); return; }
     setLink(links[0]);
@@ -435,6 +435,22 @@ const NAV_GROUPS: NavGroup[] = [
 ];
 const ALL_NAV_ITEMS: NavItem[] = NAV_GROUPS.flatMap((g) => g.items);
 
+// Per-position module visibility. The Captain (and any unknown/blank position)
+// sees the whole app; Owner / Representative / Purser get a tailored subset —
+// operational sections (PMS, ISM) are hidden for non-operational roles, and the
+// Purser is finance/paperwork-focused. Tweak these lists to taste.
+const HIDDEN_BY_POSITION: Record<string, Tab[]> = {
+  Owner: ["pms", "ism"],
+  Representative: ["pms", "ism"],
+  Purser: ["pms", "ism", "positions", "charter"],
+};
+function navGroupsFor(position: string | null): NavGroup[] {
+  const hide = new Set(HIDDEN_BY_POSITION[position ?? ""] ?? []);
+  return NAV_GROUPS
+    .map((g) => ({ ...g, items: g.items.filter((i) => !hide.has(i.key)) }))
+    .filter((g) => g.items.length > 0);
+}
+
 type PortalChat = {
   id: string; captain_account_id: string; claimed_by_name: string | null;
   last_message_at: string | null; last_sender_role: string | null; portal_unread: number;
@@ -476,6 +492,14 @@ function PortalShell({ link, email, onSignOut, preview = false }: { link: Captai
   const unread = chat?.portal_unread ?? 0;
   const openNewRequest = (cat: string) => { setNewRequestCat(cat); };
 
+  // Modules this position may see (Captain / unknown = all).
+  const navGroups = navGroupsFor(link.position);
+  const allowedKeys = new Set(navGroups.flatMap((g) => g.items.map((i) => i.key)));
+  // If the current tab isn't visible for this position, fall back to Home.
+  useEffect(() => {
+    if (tab !== "home" && tab !== "finances" && !allowedKeys.has(tab)) setTab("home");
+  }, [tab, allowedKeys]);
+
   const activeItem = ALL_NAV_ITEMS.find((i) => i.key === tab);
 
   return (
@@ -513,7 +537,7 @@ function PortalShell({ link, email, onSignOut, preview = false }: { link: Captai
         </div>
 
         <nav className="flex-1 space-y-4 overflow-y-auto px-3 pb-4">
-          {NAV_GROUPS.map((g, gi) => (
+          {navGroups.map((g, gi) => (
             <div key={gi}>
               {g.title && <div className="px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/60">{g.title}</div>}
               <div className="space-y-0.5">
