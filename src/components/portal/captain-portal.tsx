@@ -15,6 +15,7 @@ import {
   Loader2, LogOut, Mail, MessageSquare, Phone, Plane, Plus, Send,
   Shield, Shirt, ShoppingCart, Users, X, Wallet, Truck, Package,
   MapPin, FileText, Download, ExternalLink, Clock, CheckCircle2,
+  Bell, Compass, Wrench, CalendarRange, ShieldCheck, Menu, AlertTriangle,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
@@ -370,17 +371,44 @@ function MfaVerifyScreen({ onDone, onSignOut }: { onDone: () => void; onSignOut:
 // ═══════════════════════════════════════════════════════════════════════════
 // Portal shell + tabs
 // ═══════════════════════════════════════════════════════════════════════════
-type Tab = "home" | "requests" | "chat" | "crew" | "documents" | "finances" | "logistics" | "directory";
-const TABS: { key: Tab; label: string; icon: any }[] = [
-  { key: "home", label: "Home", icon: Home },
-  { key: "requests", label: "Requests", icon: LifeBuoy },
-  { key: "chat", label: "Chat", icon: MessageSquare },
-  { key: "crew", label: "Crew", icon: Users },
-  { key: "documents", label: "Documents", icon: FileCheck2 },
-  { key: "finances", label: "Finances", icon: Wallet },
-  { key: "logistics", label: "Logistics", icon: Truck },
-  { key: "directory", label: "Directory", icon: Phone },
+type Tab =
+  | "home"
+  | "alerts" | "positions" | "crew" | "documents" | "pms" | "balances" | "invoices" | "charter" | "ism"
+  | "requests" | "logistics" | "chat" | "directory"
+  | "finances"; // legacy alias used by the Home module launcher → routes to Invoices/Finance
+
+type NavItem = { key: Tab; label: string; icon: any };
+type NavGroup = { title?: string; items: NavItem[] };
+
+// Left "My Yacht" navigation — the Yacht Management App shell. The MY YACHT group is
+// the vessel's operational record; SUPPORT is how the client reaches JLS.
+const NAV_GROUPS: NavGroup[] = [
+  { items: [{ key: "home", label: "Home", icon: Home }] },
+  {
+    title: "My Yacht",
+    items: [
+      { key: "alerts", label: "Alerts", icon: Bell },
+      { key: "positions", label: "Positions", icon: Compass },
+      { key: "crew", label: "Crew", icon: Users },
+      { key: "documents", label: "Documents", icon: FileCheck2 },
+      { key: "pms", label: "PMS", icon: Wrench },
+      { key: "balances", label: "Balances", icon: Wallet },
+      { key: "invoices", label: "Invoices", icon: FileText },
+      { key: "charter", label: "Charter", icon: CalendarRange },
+      { key: "ism", label: "ISM", icon: ShieldCheck },
+    ],
+  },
+  {
+    title: "Support",
+    items: [
+      { key: "requests", label: "Requests", icon: LifeBuoy },
+      { key: "logistics", label: "Logistics", icon: Truck },
+      { key: "chat", label: "Chat", icon: MessageSquare },
+      { key: "directory", label: "Directory", icon: Phone },
+    ],
+  },
 ];
+const ALL_NAV_ITEMS: NavItem[] = NAV_GROUPS.flatMap((g) => g.items);
 
 type PortalChat = {
   id: string; captain_account_id: string; claimed_by_name: string | null;
@@ -397,6 +425,7 @@ function PortalShell({ link, email, onSignOut }: { link: CaptainLink; email: str
   const [openRequestId, setOpenRequestId] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [chat, setChat] = useState<PortalChat | null>(null);
+  const [navOpen, setNavOpen] = useState(false); // mobile sidebar drawer
 
   useEffect(() => {
     db.from("yachts")
@@ -422,44 +451,87 @@ function PortalShell({ link, email, onSignOut }: { link: CaptainLink; email: str
   const unread = chat?.portal_unread ?? 0;
   const openNewRequest = (cat: string) => { setNewRequestCat(cat); };
 
+  const activeItem = ALL_NAV_ITEMS.find((i) => i.key === tab);
+
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-5xl flex-col">
-      {/* Header */}
-      <header className="sticky top-0 z-30 border-b border-border/60 bg-background/90 backdrop-blur">
-        <div className="flex items-center justify-between px-4 py-3 sm:px-6">
+    <div className="flex min-h-screen w-full">
+      {/* Mobile drawer backdrop */}
+      {navOpen && <div className="fixed inset-0 z-40 bg-black/50 sm:hidden" onClick={() => setNavOpen(false)} />}
+
+      {/* ── Left "My Yacht" sidebar ── */}
+      <aside className={cn(
+        "fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-border/60 bg-card/40 backdrop-blur transition-transform duration-200",
+        "sm:sticky sm:top-0 sm:z-30 sm:h-screen sm:translate-x-0",
+        navOpen ? "translate-x-0" : "-translate-x-full",
+      )}>
+        <div className="flex items-center justify-between px-4 py-4">
           <Brand />
-          <div className="flex items-center gap-3">
-            <div className="hidden text-right sm:block">
-              <div className="text-sm font-semibold">{yacht?.vessel_name ?? "…"}</div>
-              <div className="text-[11px] text-muted-foreground">{link.display_name ?? email}</div>
-            </div>
-            <button onClick={onSignOut} title="Sign out"
-                    className="flex h-10 w-10 items-center justify-center rounded-xl border border-border text-muted-foreground transition hover:text-foreground">
-              <LogOut className="h-4 w-4" />
-            </button>
-          </div>
+          <button onClick={() => setNavOpen(false)} title="Close menu"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground sm:hidden">
+            <X className="h-4 w-4" />
+          </button>
         </div>
-        {/* Desktop / tablet tabs */}
-        <nav className="hidden items-center gap-1 px-4 sm:flex sm:px-6">
-          {TABS.map((t) => (
-            <button key={t.key} onClick={() => { setTab(t.key); setOpenRequestId(null); }}
-                    className={cn(
-                      "relative flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition",
-                      tab === t.key ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
-                    )}>
-              <t.icon className="h-4 w-4" /> {t.label}
-              {t.key === "chat" && unread > 0 && (
-                <span className="flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
-                  {unread > 9 ? "9+" : unread}
-                </span>
-              )}
-            </button>
+
+        {/* Vessel identity */}
+        <div className="mx-3 mb-3 rounded-xl border border-border/60 bg-background/40 p-3">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/70">Your vessel</div>
+          <div className="mt-0.5 truncate text-sm font-bold">{yacht?.vessel_name ?? "…"}</div>
+          <div className="truncate text-[11px] text-muted-foreground">{link.display_name ?? email}</div>
+        </div>
+
+        <nav className="flex-1 space-y-4 overflow-y-auto px-3 pb-4">
+          {NAV_GROUPS.map((g, gi) => (
+            <div key={gi}>
+              {g.title && <div className="px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/60">{g.title}</div>}
+              <div className="space-y-0.5">
+                {g.items.map((t) => (
+                  <button key={t.key} onClick={() => { setTab(t.key); setOpenRequestId(null); setNavOpen(false); }}
+                          className={cn(
+                            "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition",
+                            tab === t.key ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-background/60 hover:text-foreground",
+                          )}>
+                    <t.icon className="h-4 w-4 shrink-0" />
+                    <span className="flex-1 text-left">{t.label}</span>
+                    {t.key === "chat" && unread > 0 && (
+                      <span className="flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
+                        {unread > 9 ? "9+" : unread}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
           ))}
         </nav>
-      </header>
 
-      {/* Content */}
-      <main className="flex-1 px-4 pb-24 pt-5 sm:px-6 sm:pb-10">
+        <button onClick={onSignOut}
+                className="m-3 flex items-center justify-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium text-muted-foreground transition hover:text-foreground">
+          <LogOut className="h-4 w-4" /> Sign out
+        </button>
+      </aside>
+
+      {/* ── Main column ── */}
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* Mobile top bar */}
+        <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-border/60 bg-background/90 px-4 py-3 backdrop-blur sm:hidden">
+          <button onClick={() => setNavOpen(true)} title="Menu"
+                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-muted-foreground">
+            <Menu className="h-4 w-4" />
+          </button>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-semibold">{activeItem?.label ?? "Home"}</div>
+            <div className="truncate text-[11px] text-muted-foreground">{yacht?.vessel_name ?? ""}</div>
+          </div>
+          {unread > 0 && (
+            <button onClick={() => setTab("chat")} className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-border text-muted-foreground">
+              <MessageSquare className="h-4 w-4" />
+              <span className="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">{unread > 9 ? "9+" : unread}</span>
+            </button>
+          )}
+        </header>
+
+        {/* Content */}
+        <main className="mx-auto w-full max-w-5xl flex-1 px-4 pb-16 pt-5 sm:px-8 sm:pb-10">
         {tab === "home" && unread > 0 && (
           <button onClick={() => setTab("chat")}
                   className="mb-4 flex w-full items-center gap-3 rounded-2xl border border-primary/40 bg-primary/10 p-4 text-left transition hover:bg-primary/15">
@@ -493,30 +565,26 @@ function PortalShell({ link, email, onSignOut }: { link: CaptainLink; email: str
         )}
         {tab === "crew" && <CrewTab yachtId={link.yacht_id} />}
         {tab === "documents" && <DocumentsTab yachtId={link.yacht_id} />}
-        {tab === "finances" && <FinancesTab />}
+        {(tab === "invoices" || tab === "finances") && <FinancesTab />}
+        {tab === "balances" && <BalancesTab />}
         {tab === "logistics" && <LogisticsTab />}
+        {tab === "alerts" && <AlertsTab onOpen={(t) => { setTab(t); setOpenRequestId(null); }} />}
+        {tab === "positions" && yacht && <PositionsTab yacht={yacht} />}
+        {tab === "pms" && (
+          <ComingSoonTab icon={Wrench} title="Planned Maintenance (PMS)"
+            blurb="Your vessel's planned-maintenance schedule, running hours and job history will appear here, kept in step with the technical team." />
+        )}
+        {tab === "charter" && (
+          <ComingSoonTab icon={CalendarRange} title="Charter"
+            blurb="Upcoming and past charter bookings, itineraries and charter paperwork for your vessel." />
+        )}
+        {tab === "ism" && (
+          <ComingSoonTab icon={ShieldCheck} title="ISM & Safety"
+            blurb="ISM documentation, drills, audits and safety certificates — your vessel's safety-management record, in one place." />
+        )}
         {tab === "directory" && <DirectoryTab />}
-      </main>
-
-      {/* Mobile bottom nav */}
-      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-8 border-t border-border/60 bg-background/95 backdrop-blur sm:hidden"
-           style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
-        {TABS.map((t) => (
-          <button key={t.key} onClick={() => { setTab(t.key); setOpenRequestId(null); }}
-                  className={cn("relative flex flex-col items-center gap-1 py-2.5 text-[10px] font-medium transition",
-                                tab === t.key ? "text-primary" : "text-muted-foreground")}>
-            <span className="relative">
-              <t.icon className="h-5 w-5" />
-              {t.key === "chat" && unread > 0 && (
-                <span className="absolute -right-2 -top-1 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-red-500 px-0.5 text-[8px] font-bold text-white">
-                  {unread > 9 ? "9+" : unread}
-                </span>
-              )}
-            </span>
-            {t.label}
-          </button>
-        ))}
-      </nav>
+        </main>
+      </div>
 
       {newRequestCat && (
         <NewRequestSheet
@@ -1439,6 +1507,257 @@ function LogisticsTab() {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Alerts (aggregated, vessel-scoped) ───────────────────────────────────────
+type PortalAlert = { id: string; severity: "high" | "medium"; icon: any; title: string; detail?: string; go?: Tab };
+const daysTo = (d: string) => Math.ceil((new Date(d).getTime() - Date.now()) / 86400000);
+const expiringWithin = (d: string | null | undefined, days: number) => {
+  if (!d) return false;
+  const n = daysTo(d);
+  return n <= days && n >= -3650; // upcoming or recently lapsed, not ancient records
+};
+
+function AlertsTab({ onOpen }: { onOpen: (t: Tab) => void }) {
+  const [alerts, setAlerts] = useState<PortalAlert[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    void (async () => {
+      setLoading(true);
+      const [reqR, crewR, visaR, permitR, finR, logR] = await Promise.allSettled([
+        db.from("captain_requests").select("id, reference, title, status"),
+        db.from("crew_members").select("id, full_name, first_name, last_name, passport_expiry_date"),
+        db.from("visa_applications").select("id, given_name, surname, visa_expiry"),
+        db.from("permits").select("id, permit_type, expiry_date"),
+        authedFetch("/api/portal/finance").then((r) => r.json()).catch(() => null),
+        authedFetch("/api/portal/logistics").then((r) => r.json()).catch(() => null),
+      ]);
+      const out: PortalAlert[] = [];
+
+      // Overdue / outstanding invoices
+      if (finR.status === "fulfilled" && finR.value?.invoices) {
+        const overdue = finR.value.invoices.filter((i: any) => i.status === "overdue");
+        if (overdue.length) out.push({ id: "fin-overdue", severity: "high", icon: Wallet, title: `${overdue.length} overdue invoice${overdue.length > 1 ? "s" : ""}`, detail: `${money(overdue.reduce((s: number, i: any) => s + i.balance, 0), finR.value.summary?.currency ?? "AED")} past due`, go: "invoices" });
+        else if (finR.value.summary?.outstanding > 0) out.push({ id: "fin-out", severity: "medium", icon: Wallet, title: "Outstanding balance", detail: money(finR.value.summary.outstanding, finR.value.summary.currency), go: "balances" });
+      }
+
+      // Expiring crew passports
+      if (crewR.status === "fulfilled") for (const c of (crewR.value.data ?? [])) {
+        if (expiringWithin(c.passport_expiry_date, 90)) {
+          const n = daysTo(c.passport_expiry_date);
+          const name = c.full_name || [c.first_name, c.last_name].filter(Boolean).join(" ") || "Crew";
+          out.push({ id: `pp-${c.id}`, severity: n <= 30 ? "high" : "medium", icon: Users, title: `${name} — passport ${n < 0 ? "expired" : `expires in ${n}d`}`, detail: fmtDate(c.passport_expiry_date), go: "crew" });
+        }
+      }
+      // Expiring visas
+      if (visaR.status === "fulfilled") for (const v of (visaR.value.data ?? [])) {
+        if (expiringWithin(v.visa_expiry, 90)) {
+          const n = daysTo(v.visa_expiry);
+          const name = [v.given_name, v.surname].filter(Boolean).join(" ") || "Crew";
+          out.push({ id: `visa-${v.id}`, severity: n <= 30 ? "high" : "medium", icon: Plane, title: `${name} — visa ${n < 0 ? "expired" : `expires in ${n}d`}`, detail: fmtDate(v.visa_expiry), go: "documents" });
+        }
+      }
+      // Expiring permits
+      if (permitR.status === "fulfilled") for (const p of (permitR.value.data ?? [])) {
+        if (expiringWithin(p.expiry_date, 60)) {
+          const n = daysTo(p.expiry_date);
+          out.push({ id: `permit-${p.id}`, severity: n <= 21 ? "high" : "medium", icon: Shield, title: `${(p.permit_type ?? "Permit").replace(/_/g, " ")} ${n < 0 ? "expired" : `expires in ${n}d`}`, detail: fmtDate(p.expiry_date), go: "documents" });
+        }
+      }
+
+      // Logistics — packages out for delivery / awaiting
+      if (logR.status === "fulfilled" && logR.value?.packages) {
+        const active = logR.value.packages.active ?? [];
+        const outForDelivery = active.filter((p: any) => p.status === "out_for_delivery").length;
+        if (outForDelivery) out.push({ id: "log-ofd", severity: "medium", icon: Truck, title: `${outForDelivery} package${outForDelivery > 1 ? "s" : ""} out for delivery`, go: "logistics" });
+        else if (active.length) out.push({ id: "log-active", severity: "medium", icon: Package, title: `${active.length} package${active.length > 1 ? "s" : ""} awaiting delivery`, go: "logistics" });
+      }
+
+      // Open service requests
+      if (reqR.status === "fulfilled") {
+        const open = (reqR.value.data ?? []).filter((r: any) => !["closed", "cancelled", "completed", "resolved"].includes((r.status ?? "").toLowerCase()));
+        if (open.length) out.push({ id: "req-open", severity: "medium", icon: LifeBuoy, title: `${open.length} open service request${open.length > 1 ? "s" : ""}`, go: "requests" });
+      }
+
+      const rank = { high: 0, medium: 1 };
+      out.sort((a, b) => rank[a.severity] - rank[b.severity]);
+      setAlerts(out);
+      setLoading(false);
+    })();
+  }, []);
+
+  if (loading) return <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h1 className="text-lg font-bold">Alerts</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Everything that needs your attention across the vessel.</p>
+      </div>
+      {alerts.length === 0 ? (
+        <Card className="flex flex-col items-center justify-center px-6 py-14 text-center">
+          <CheckCircle2 className="mb-3 h-8 w-8 text-emerald-400" />
+          <p className="font-semibold">All clear</p>
+          <p className="mt-1 max-w-sm text-sm text-muted-foreground">No expiring documents, overdue invoices or pending deliveries right now.</p>
+        </Card>
+      ) : (
+        <div className="space-y-2">
+          {alerts.map((a) => (
+            <button key={a.id} onClick={() => a.go && onOpen(a.go)} disabled={!a.go}
+                    className={cn("flex w-full items-center gap-3 rounded-2xl border p-4 text-left transition",
+                      a.severity === "high" ? "border-red-500/30 bg-red-500/5 hover:bg-red-500/10" : "border-amber-500/25 bg-amber-500/5 hover:bg-amber-500/10",
+                      !a.go && "cursor-default")}>
+              <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", a.severity === "high" ? "bg-red-500/15 text-red-400" : "bg-amber-500/15 text-amber-400")}>
+                <a.icon className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="font-semibold">{a.title}</div>
+                {a.detail && <div className="mt-0.5 text-xs text-muted-foreground">{a.detail}</div>}
+              </div>
+              {a.go && <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Positions (vessel AIS / voyage) ───────────────────────────────────────────
+function PositionsTab({ yacht }: { yacht: Yacht }) {
+  const posAge = yacht.ais_position_at ? relAgo(yacht.ais_position_at) : null;
+  const mt = yacht.mmsi
+    ? `https://www.marinetraffic.com/en/ais/details/ships/mmsi:${yacht.mmsi}`
+    : yacht.imo_no ? `https://www.marinetraffic.com/en/ais/details/ships/imo:${yacht.imo_no}` : null;
+
+  const Row = ({ label, value }: { label: string; value: React.ReactNode }) => (
+    <div className="flex items-center justify-between border-b border-border/30 py-2 last:border-0">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className="text-sm font-medium">{value || "—"}</span>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h1 className="text-lg font-bold">Positions</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Live voyage &amp; AIS status for {yacht.vessel_name}.</p>
+      </div>
+      <Card className="p-5">
+        <Row label="Status" value={yacht.status} />
+        <Row label="Berth / location" value={yacht.berth || yacht.location} />
+        <Row label="Destination" value={yacht.ais_destination} />
+        <Row label="Speed" value={yacht.ais_speed != null ? `${yacht.ais_speed} kn` : ""} />
+        <Row label="Last position" value={posAge ? `${posAge}` : ""} />
+      </Card>
+      <Card className="p-5">
+        <Row label="Flag" value={yacht.flag} />
+        <Row label="Port of registry" value={yacht.port_of_registry} />
+        <Row label="Call sign" value={yacht.radio_call_sign} />
+        <Row label="MMSI" value={yacht.mmsi} />
+        <Row label="IMO" value={yacht.imo_no} />
+        <Row label="Length overall" value={yacht.length_overall_m != null ? `${yacht.length_overall_m} m` : ""} />
+      </Card>
+      {mt ? (
+        <a href={mt} target="_blank" rel="noreferrer"
+           className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition hover:opacity-90">
+          <Compass className="h-4 w-4" /> View live on MarineTraffic <ExternalLink className="h-3.5 w-3.5" />
+        </a>
+      ) : (
+        <p className="text-xs text-muted-foreground">Live tracking becomes available once an MMSI or IMO number is on file for your vessel.</p>
+      )}
+    </div>
+  );
+}
+
+// ── Balances (QuickBooks summary) ─────────────────────────────────────────────
+function BalancesTab() {
+  const [data, setData] = useState<FinanceData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await authedFetch("/api/portal/finance");
+        const j = await res.json();
+        if (!res.ok) throw new Error(j.error ?? "Could not load balances");
+        setData(j);
+      } catch (e: any) { setErr(e.message ?? "Could not load balances"); }
+      finally { setLoading(false); }
+    })();
+  }, []);
+
+  if (loading) return <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
+  if (err) return <div className="rounded-2xl border border-red-500/30 bg-red-500/5 p-4 text-sm text-red-300">{err}</div>;
+  if (!data) return null;
+
+  const ccy = data.summary.currency;
+  const unpaid = data.invoices.filter((i) => i.status !== "paid");
+  const overdue = data.invoices.filter((i) => i.status === "overdue");
+  const totalInvoiced = data.invoices.reduce((s, i) => s + i.total, 0);
+  const totalPaid = totalInvoiced - data.invoices.reduce((s, i) => s + i.balance, 0);
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h1 className="text-lg font-bold">Balances</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Account statement for {data.vessel}.</p>
+      </div>
+      {!data.linked ? (
+        <Card className="p-6 text-center text-sm text-muted-foreground">
+          <Wallet className="mx-auto mb-3 h-7 w-7 text-muted-foreground/40" />
+          No billing account is linked to your vessel yet. Please contact Accounts &amp; Finance.
+        </Card>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Card className="p-4"><div className="text-[11px] uppercase tracking-wide text-muted-foreground">Outstanding</div><div className="mt-1 text-lg font-bold text-primary">{money(data.summary.outstanding, ccy)}</div></Card>
+            <Card className="p-4"><div className="text-[11px] uppercase tracking-wide text-muted-foreground">Overdue</div><div className={cn("mt-1 text-lg font-bold", overdue.length ? "text-red-400" : "")}>{money(overdue.reduce((s, i) => s + i.balance, 0), ccy)}</div></Card>
+            <Card className="p-4"><div className="text-[11px] uppercase tracking-wide text-muted-foreground">Paid to date</div><div className="mt-1 text-lg font-bold text-emerald-400">{money(totalPaid, ccy)}</div></Card>
+            <Card className="p-4"><div className="text-[11px] uppercase tracking-wide text-muted-foreground">Total invoiced</div><div className="mt-1 text-lg font-bold">{money(totalInvoiced, ccy)}</div></Card>
+          </div>
+
+          <h2 className="pt-1 text-sm font-semibold text-muted-foreground">Unpaid invoices</h2>
+          {unpaid.length === 0 ? (
+            <Card className="p-6 text-center text-sm text-muted-foreground">Nothing outstanding — your account is fully settled.</Card>
+          ) : (
+            <div className="space-y-2">
+              {unpaid.map((i) => (
+                <Card key={i.id} className="flex items-center gap-4 p-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold">Invoice {i.docNumber ?? i.id}</span>
+                      <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase", INV_BADGE[i.status])}>{i.status}</span>
+                    </div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">Issued {fmtDate(i.date)}{i.dueDate ? ` · Due ${fmtDate(i.dueDate)}` : ""}</div>
+                  </div>
+                  <div className="text-right font-semibold text-amber-400">{money(i.balance, i.currency)}</div>
+                </Card>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Coming-soon scaffold (PMS / Charter / ISM) ────────────────────────────────
+function ComingSoonTab({ icon: Icon, title, blurb }: { icon: any; title: string; blurb: string }) {
+  return (
+    <div className="space-y-4">
+      <h1 className="text-lg font-bold">{title}</h1>
+      <Card className="flex flex-col items-center justify-center px-6 py-16 text-center">
+        <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-border bg-background/40">
+          <Icon className="h-6 w-6 text-muted-foreground" />
+        </div>
+        <p className="max-w-sm text-sm text-muted-foreground">{blurb}</p>
+        <span className="mt-4 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-primary">Coming soon</span>
+      </Card>
     </div>
   );
 }
