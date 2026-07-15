@@ -360,6 +360,12 @@ export default {
       return guidesImportHandler(request)
     }
 
+    // TEMPORARY one-off: external email recipients (90d) CSV export (admin only).
+    if (url.pathname === '/api/admin/mail-export') {
+      const { mailExportHandler } = await import('./routes/api.admin.mail-export')
+      return mailExportHandler(request)
+    }
+
     // QB Excel importer — upload a workbook to create Estimates/Invoices
     if (url.pathname === '/api/qb/excel-import') {
       const { qbExcelImportHandler } = await import('./routes/api.qb.excel-import')
