@@ -20,6 +20,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { qboRequest, qboQuery } from '@/lib/qb/qbo.server'
 import { logAutomationRun } from '@/lib/automations.server'
+import { productDescription } from '@/lib/lightspeed/item-sync.server'
 
 export const LS_RETAIL_REALM_DEFAULT = '9341456599242940'
 
@@ -193,8 +194,14 @@ async function resolveLines(cfg: LsConfig, realm: string, sale: ParsedSale) {
     const qbo = sku ? (await qboQuery(`SELECT * FROM Item WHERE Name = '${esc(sku)}'`, realm))?.QueryResponse?.Item?.[0] : null
     if (!qbo) { missing.push(sku || li.product_id); continue }
     totalTax += Math.abs(li.tax_total)
+    // Line description = the Lightspeed variant name (falling back to name/v1/v2) —
+    // matching the n8n "Update Item and Invoice Descriptions" workflow. Falls back to
+    // the QBO item's own description if the Lightspeed product yields nothing.
+    const p = product?.data ?? product
+    const description = productDescription(p) || String(qbo.Description ?? '')
     lines.push({
       Amount: Math.abs(li.price_total),
+      Description: description || undefined,
       DetailType: 'SalesItemLineDetail',
       SalesItemLineDetail: {
         ItemRef: { value: qbo.Id },

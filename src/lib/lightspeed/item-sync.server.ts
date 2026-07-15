@@ -89,7 +89,7 @@ async function fetchLightspeedProduct(domain: string, sku: string): Promise<any 
 
 /** The description written into QBO: the Lightspeed variant name, falling back
  *  to Name/VariantOne/VariantTwo when the variant name is blank. */
-function productDescription(p: any): string {
+export function productDescription(p: any): string {
   const variantName = String(p?.variant_name ?? '').trim()
   if (variantName) return variantName.slice(0, 4000)
   const parts = [p?.name, p?.variant_option_one_value, p?.variant_option_two_value]
