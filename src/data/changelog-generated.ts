@@ -5,6 +5,20 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.27.1",
+    "date": "2026-07-15",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Lightspeed → QuickBooks invoices (and credit memos) now carry a line description — the Lightspeed variant name (falling back to product name / options, then the item's own description), matching what the old n8n workflow wrote"
+      },
+      {
+        "type": "fix",
+        "title": "Bulletproof horizontal scroll for Local Packages table"
+      }
+    ]
+  },
+  {
     "version": "2.27.0",
     "date": "2026-07-14",
     "entries": [
