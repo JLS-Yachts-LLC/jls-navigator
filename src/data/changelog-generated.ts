@@ -5,9 +5,13 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
-    "version": "2.27.1",
+    "version": "2.28.0",
     "date": "2026-07-15",
     "entries": [
+      {
+        "type": "feature",
+        "title": "Add a Contacts directory — an internal, staff-only address book of industry contacts grouped into Networks, Managers and Yacht Captains (search, filter by group, sort, add/edit/export); seeded with 157 contacts imported from the master list"
+      },
       {
         "type": "fix",
         "title": "Lightspeed → QuickBooks invoices (and credit memos) now carry a line description — the Lightspeed variant name (falling back to product name / options, then the item's own description), matching what the old n8n workflow wrote"
