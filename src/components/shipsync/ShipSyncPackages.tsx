@@ -122,7 +122,8 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
         <Button size="sm" onClick={openNew} className="ml-auto h-9 gap-1.5"><Plus className="h-4 w-4" /> Check in package</Button>
       </div>
 
-      <div className="min-h-0 min-w-0 flex-1 overflow-auto rounded-xl border border-border bg-card">
+      <div className="relative min-h-0 min-w-0 flex-1">
+        <div className="absolute inset-0 overflow-auto rounded-xl border border-border bg-card">
         <table className="w-full min-w-[1400px] text-sm">
           <thead className="sticky top-0 z-10"><tr className="border-b border-border bg-card text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
             {["Air waybill/tracking info", "Client", "Date Received", "Consignee", "Number of Packages", "Courier", "Shipment Type", "Delivery Note Number", "Driver", "Date Delivered", "Documents", "Zone", "Status", ""].map((h, i) => (
@@ -177,6 +178,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
             })}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Check-in / edit dialog */}
