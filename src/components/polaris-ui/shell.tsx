@@ -125,6 +125,7 @@ export const NAV_GROUPS: NavGroup[] = [
       // e-Sign Documents removed — it renders the same AnchorPage as "Anchor"
       // (Services). The /esign route still resolves for existing links.
       { label: "Directory", icon: "address-book", screen: "route-directory", route: "/directory" },
+      { label: "Contacts", icon: "notebook", screen: "route-contacts", route: "/contacts" },
       { label: "Crew Benefits", icon: "compass", screen: "route-compass", route: "/compass" },
       { label: "Emergency Contacts", icon: "phone", screen: "route-emergency", route: "/emergency-contacts" },
     ],
