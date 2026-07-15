@@ -9,6 +9,7 @@ import type {
   ShipSyncPackage, ShipSyncDriver, ShipSyncDeliveryNote, ShipSyncDestination, ShipSyncDeliverySchedule, ShipSyncVehicle,
 } from "@/lib/shipsync/model";
 import { ShipSyncPackages } from "@/components/shipsync/ShipSyncPackages";
+import { ShipSyncImport } from "@/components/shipsync/ShipSyncImport";
 import { ShipSyncDispatch } from "@/components/shipsync/ShipSyncDispatch";
 import { ShipSyncRouting } from "@/components/shipsync/ShipSyncRouting";
 import { ShipSyncWarehouse } from "@/components/shipsync/ShipSyncWarehouse";
@@ -89,23 +90,7 @@ export function ShipSyncPage() {
         ) : (
           <>
             {tab === "packages" && <ShipSyncPackages data={data} reload={reload} />}
-            {tab === "import" && (
-              <ModuleStub
-                icon={<ArrowDownToLine />}
-                name="Import"
-                tagline="Inbound shipments from international suppliers"
-                description="Track and manage incoming international cargo, customs clearance, and inbound logistics for vessel deliveries."
-                phase="Coming soon"
-                accentColor="text-primary"
-                features={[
-                  "International shipment tracking",
-                  "Customs clearance documentation",
-                  "Inbound cargo manifests",
-                  "Supplier & freight forwarder management",
-                  "Delivery confirmation and receipt",
-                ]}
-              />
-            )}
+            {tab === "import" && <ShipSyncImport />}
             {tab === "export" && (
               <ModuleStub
                 icon={<ArrowUpFromLine />}

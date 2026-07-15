@@ -12,8 +12,20 @@ import {
 const db = () => supabase as any
 
 // ── Reads ────────────────────────────────────────────────────────────────────
+// Local Packages excludes Import rows (those live in the Import tab, mirrored
+// from Monday.com) so the two tabs stay distinct.
 export async function loadPackages(): Promise<ShipSyncPackage[]> {
-  const { data, error } = await db().from('shipsync_packages').select('*').order('received_at', { ascending: false })
+  const { data, error } = await db().from('shipsync_packages').select('*')
+    .or('local_import.is.null,local_import.neq.Import')
+    .order('received_at', { ascending: false })
+  if (error) throw error
+  return (data ?? []) as ShipSyncPackage[]
+}
+/** Import-tab packages — the Monday.com "Import" board mirror. */
+export async function loadImportPackages(): Promise<ShipSyncPackage[]> {
+  const { data, error } = await db().from('shipsync_packages').select('*')
+    .eq('local_import', 'Import')
+    .order('received_at', { ascending: false })
   if (error) throw error
   return (data ?? []) as ShipSyncPackage[]
 }

@@ -134,6 +134,18 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
     })
   }
 
+  // Manual ShipSync import: `?run=monday-import` pulls the Monday.com Import
+  // board into shipsync_packages now (no-op error if Monday isn't configured).
+  if (url.searchParams.get('run') === 'monday-import') {
+    try {
+      const { importMondayShipments } = await import('./lib/shipsync/monday.server')
+      const r = await importMondayShipments({})
+      return new Response(JSON.stringify(r), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
+  }
+
   // Manual test: `?run=fleet-finance` sends the weekly Fleet Finance email now
   // (respects the toggle + recipients; add `&force=1` to bypass the toggle).
   if (url.searchParams.get('run') === 'fleet-finance') {
@@ -629,6 +641,15 @@ export default {
         syncMyShipTracking({ extended: mstExtended })
           .then((r) => console.log(`[myshiptracking-cron] ${mstExtended ? 'extended' : 'simple'} requested=${r.requested} matched=${r.matched} updated=${r.updated}${r.note ? ' note=' + r.note : ''}`))
           .catch((e) => console.error('[myshiptracking-cron] error:', e))
+      )
+
+      // ── Hourly: mirror the Monday.com ShipSync Import board into the app
+      //    (read-only). No-ops silently until the Monday token + board id are set. ──
+      ctx.waitUntil(
+        import('./lib/shipsync/monday.server')
+          .then(({ importMondayShipments }) => importMondayShipments({}))
+          .then((r) => console.log(`[monday-import-cron] synced=${r.synced} errors=${r.errors}`))
+          .catch((e) => console.error('[monday-import-cron] error:', e instanceof Error ? e.message : String(e)))
       )
 
       // ── Daily (03:00 UTC): pull the Lightspeed supplier list into Waypoint.

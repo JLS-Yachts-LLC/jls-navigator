@@ -136,6 +136,11 @@ export const runSyncNow = createServerFn({ method: "POST" })
           const { pushShipSyncToSharePoint } = await import("@/lib/shipsync/sharepoint.server");
           return { ok: true, detail: summarise(await pushShipSyncToSharePoint({})) };
         }
+        case "monday-import": {
+          const { importMondayShipments } = await import("@/lib/shipsync/monday.server");
+          const r = await importMondayShipments({});
+          return { ok: r.ok, detail: summarise(r.detail) };
+        }
         default:
           return { ok: false, detail: `Unknown sync: ${key}` };
       }

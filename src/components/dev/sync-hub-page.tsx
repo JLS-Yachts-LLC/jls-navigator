@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import {
-  Cloud, Database, FileSpreadsheet, Image as ImageIcon, Loader2, Play,
+  ArrowDownToLine, Cloud, Database, FileSpreadsheet, Image as ImageIcon, Loader2, Play,
   Radar, RefreshCw, Ship, Upload,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -227,6 +227,17 @@ export function SyncHubPage() {
                        description="Manual only by design — SharePoint stays the source of truth for ShipSync."
                        schedule="manual" lastRun={undefined}
                        action={<RunButton onRun={() => run("shipsync-push")} label="Push now" />} />
+            </section>
+
+            {/* ShipSync Import ⇄ Monday.com */}
+            <section className="overflow-hidden rounded-xl border border-border bg-card">
+              <div className="border-b border-border/60 bg-card/60 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                ShipSync Import ⇄ Monday.com
+              </div>
+              <SyncRow icon={ArrowDownToLine} name="Import board (Monday → app)"
+                       description="Inbound shipments mirrored from the Monday.com Import board into the ShipSync Import tab (read-only). Configure the API token + board ID in Settings → Integrations."
+                       schedule="hourly · read-only" lastRun={undefined}
+                       action={<RunButton onRun={() => run("monday-import")} label="Import now" />} />
             </section>
           </>
         )}
