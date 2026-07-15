@@ -51,11 +51,12 @@ export function EditRoleModal({ userRole, roles, onClose, onSuccess }: Props) {
         <select
           value={role}
           onChange={e => setRole(e.target.value)}
-          className="w-full rounded-md border border-white/10 bg-input px-3 py-2
+          className="w-full rounded-md border border-white/10 px-3 py-2
                      text-xs text-white focus:outline-none focus:ring-1 focus:ring-amber-500/40"
+          style={{ backgroundColor: "#0e1c26", color: "#e6edf3" }}
         >
           {roles.map(r => (
-            <option key={r.name} value={r.name}>{r.display_name}</option>
+            <option key={r.name} value={r.name} style={{ backgroundColor: "#0e1c26", color: "#e6edf3" }}>{r.display_name}</option>
           ))}
         </select>
 

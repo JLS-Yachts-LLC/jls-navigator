@@ -39,11 +39,12 @@ export function UserTable({ users, total, roles, onRefresh }: Props) {
         <select
           value={roleFilter}
           onChange={e => setRoleFilter(e.target.value)}
-          className="rounded-md border border-border bg-background px-3 py-1.5
+          className="rounded-md border border-border px-3 py-1.5
                      text-xs text-foreground focus:outline-none"
+          style={{ backgroundColor: "#0e1c26", color: "#e6edf3" }}
         >
           {roleOptions.map(o => (
-            <option key={o.value} value={o.value}>{o.label}</option>
+            <option key={o.value} value={o.value} style={{ backgroundColor: "#0e1c26", color: "#e6edf3" }}>{o.label}</option>
           ))}
         </select>
         <button
