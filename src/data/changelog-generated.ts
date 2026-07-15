@@ -9,6 +9,18 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-07-15",
     "entries": [
       {
+        "type": "fix",
+        "title": "Manage Users role dropdowns are readable again — the native select option lists were rendering dark-on-dark; give the options a solid background and light text (invite dialog, edit-role dialog, and the All roles filter)"
+      },
+      {
+        "type": "fix",
+        "title": "Import tab shows real shipment data, not blank rows"
+      },
+      {
+        "type": "feature",
+        "title": "Import tab mirrors the Monday.com Import board"
+      },
+      {
         "type": "feature",
         "title": "Add a Contacts directory — an internal, staff-only address book of industry contacts grouped into Networks, Managers and Yacht Captains (search, filter by group, sort, add/edit/export); seeded with 157 contacts imported from the master list"
       },
