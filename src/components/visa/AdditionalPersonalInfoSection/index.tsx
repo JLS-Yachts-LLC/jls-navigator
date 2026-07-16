@@ -4,6 +4,22 @@ import { useNavigate } from '@tanstack/react-router'
 import { COLORS, FONTS } from '@/lib/tokens'
 import { VisaOccupationSelect } from '@/components/visa/VisaOccupationSelect'
 import { formatName } from '@/lib/formatName'
+import { COUNTRY_NAMES } from '@/lib/countries'
+
+// Country <option> list: placeholder + a fallback for a stored value that isn't
+// in the canonical list (so existing free-text entries aren't lost), then all
+// countries. Options carry solid colours so the native dropdown is readable.
+function countryOptionEls(current: string) {
+  const opt: React.CSSProperties = { backgroundColor: '#0e1c26', color: '#e6edf3' }
+  const inList = !!current && COUNTRY_NAMES.includes(current)
+  return (
+    <>
+      <option value="" style={opt}>Select country…</option>
+      {current && !inList && <option value={current} style={opt}>{current}</option>}
+      {COUNTRY_NAMES.map(c => <option key={c} value={c} style={opt}>{c}</option>)}
+    </>
+  )
+}
 import type {
   AdditionalInfoFields, AdditionalInfoField, FieldState,
   PersonalInfoApiResponse, OcrApiResponse,
@@ -597,14 +613,14 @@ export const AdditionalPersonalInfoSection = forwardRef<AdditionalPersonalInfoHa
             isUnlocked={isOcrFieldUnlocked('countryOfBirth')}
             onUnlock={() => unlockField('countryOfBirth')}
           >
-            <input
-              style={inputStyle(fields.countryOfBirth, !isOcrFieldUnlocked('countryOfBirth') && fields.countryOfBirth.state === 'ocr_auto')}
-              type="text"
+            <select
+              style={{ ...inputStyle(fields.countryOfBirth, !isOcrFieldUnlocked('countryOfBirth') && fields.countryOfBirth.state === 'ocr_auto'), appearance: 'none' }}
               value={fields.countryOfBirth.value}
-              readOnly={!isOcrFieldUnlocked('countryOfBirth') && fields.countryOfBirth.state === 'ocr_auto'}
+              disabled={!isOcrFieldUnlocked('countryOfBirth') && fields.countryOfBirth.state === 'ocr_auto'}
               onChange={e => setField('countryOfBirth', e.target.value, 'ocr_edited')}
-              placeholder="e.g. Ireland"
-            />
+            >
+              {countryOptionEls(fields.countryOfBirth.value)}
+            </select>
           </OcrFieldWrapper>
 
           {/* Gender */}
@@ -807,13 +823,13 @@ export const AdditionalPersonalInfoSection = forwardRef<AdditionalPersonalInfoHa
           {/* Country */}
           <div>
             <label style={labelStyle}>Country <span style={{ color: COLORS.warn }}>*</span></label>
-            <input
-              style={sectionInputStyle}
-              type="text"
+            <select
+              style={{ ...sectionInputStyle, appearance: 'none' }}
               value={fields.residenceCountry.value}
               onChange={e => setField('residenceCountry', e.target.value)}
-              placeholder="e.g. United Arab Emirates"
-            />
+            >
+              {countryOptionEls(fields.residenceCountry.value)}
+            </select>
           </div>
 
           {/* Telephone No. */}
