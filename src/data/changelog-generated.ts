@@ -5,6 +5,16 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.29.0",
+    "date": "2026-07-16",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Visa status lifecycle is now Draft → Submitted → In Review → Approved → On Board → Signed Off, plus Cancelled / Rejected / Expired (tracker-imported statuses like \"signed off\" / \"on signer\" still display correctly); and the edit dialog can now edit Visa Use By Date and Arrival (previously only Grant Date / Expiry were editable)"
+      }
+    ]
+  },
+  {
     "version": "2.28.0",
     "date": "2026-07-15",
     "entries": [
