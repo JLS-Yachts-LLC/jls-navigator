@@ -20,17 +20,27 @@ import { uploadCrewDocToSharePoint, getCrewSharePointFolderLink } from "@/lib/vi
 type Visa = Record<string, any>;
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
+  // ── Canonical lifecycle ──
   draft:        { label: "Draft",       cls: "bg-slate-500/15 text-slate-400" },
-  pending_docs: { label: "Pending Docs",cls: "bg-amber-500/15 text-amber-400" },
   submitted:    { label: "Submitted",   cls: "bg-blue-500/15 text-blue-400" },
   in_review:    { label: "In Review",   cls: "bg-amber-500/15 text-amber-400" },
-  processing:   { label: "Processing",  cls: "bg-violet-500/15 text-violet-400" },
   approved:     { label: "Approved",    cls: "bg-emerald-500/15 text-emerald-400" },
-  completed:    { label: "Completed",   cls: "bg-teal-500/15 text-teal-400" },
-  rejected:     { label: "Rejected",    cls: "bg-red-500/15 text-red-400" },
+  on_board:     { label: "On Board",    cls: "bg-teal-500/15 text-teal-400" },
+  signed_off:   { label: "Signed Off",  cls: "bg-slate-500/15 text-slate-300" },
   cancelled:    { label: "Cancelled",   cls: "bg-slate-500/15 text-slate-300" },
+  rejected:     { label: "Rejected",    cls: "bg-red-500/15 text-red-400" },
+  expired:      { label: "Expired",     cls: "bg-orange-500/15 text-orange-400" },
+  // ── Legacy / tracker-imported aliases (render nicely, not as raw text) ──
+  pending_docs: { label: "Pending Docs",cls: "bg-amber-500/15 text-amber-400" },
+  processing:   { label: "Processing",  cls: "bg-violet-500/15 text-violet-400" },
+  completed:    { label: "Completed",   cls: "bg-teal-500/15 text-teal-400" },
+  amendment_required: { label: "Amendment Required", cls: "bg-amber-500/15 text-amber-400" },
+  "signed off": { label: "Signed Off",  cls: "bg-slate-500/15 text-slate-300" },
+  "sign off":   { label: "Signed Off",  cls: "bg-slate-500/15 text-slate-300" },
+  "on signer":  { label: "On Board",    cls: "bg-teal-500/15 text-teal-400" },
 };
-const STATUSES = ["draft", "submitted", "in_review", "processing", "approved", "completed", "cancelled", "rejected"];
+// The status-transition buttons offer the canonical lifecycle.
+const STATUSES = ["draft", "submitted", "in_review", "approved", "on_board", "signed_off", "cancelled", "rejected", "expired"];
 
 // dd/mm/yyyy to match the UAE immigration portal.
 function fmt(d: string | null) {
@@ -215,6 +225,7 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
       visa_number: visa?.visa_number ?? "", visa_application_no: visa?.visa_application_no ?? "",
       rank_rating: visa?.rank_rating ?? "",
       visa_issuance_date: visa?.visa_issuance_date ?? "", visa_expiry: visa?.visa_expiry ?? "",
+      first_entry_expiry: visa?.first_entry_expiry ?? "", arrival_date: visa?.arrival_date ?? "",
       sign_on_date: visa?.sign_on_date ?? "", sign_off_date: visa?.sign_off_date ?? "",
       application_notes: visa?.application_notes ?? "",
     });
@@ -255,7 +266,7 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
   }
 
   const name = [visa.given_name, visa.surname].filter(Boolean).join(" ") || visa.application_notes?.split("\n")[0] || "—";
-  const sm = STATUS_META[visa.status] ?? STATUS_META.draft;
+  const sm = STATUS_META[visa.status] ?? { label: visa.status ?? "—", cls: "bg-slate-500/15 text-slate-400" };
 
   const rows: [string, React.ReactNode][] = [
     ["Crew Member", name],
@@ -469,6 +480,8 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
             <div className="space-y-1.5"><Label className="text-xs">Rank / Rating</Label><Input value={form.rank_rating} onChange={e => setForm(f => ({ ...f, rank_rating: e.target.value }))} className="h-9" /></div>
             <div className="space-y-1.5"><Label className="text-xs">Visa Grant Date</Label><DateInputDMY value={form.visa_issuance_date} onChange={v => setForm(f => ({ ...f, visa_issuance_date: v }))} style={{ height: 36, width: "100%", borderRadius: 8, border: "1px solid var(--border)", background: "var(--background)", color: "var(--foreground)", padding: "0 10px", fontSize: 14 }} /></div>
             <div className="space-y-1.5"><Label className="text-xs">Visa Expiry</Label><DateInputDMY value={form.visa_expiry} onChange={v => setForm(f => ({ ...f, visa_expiry: v }))} style={{ height: 36, width: "100%", borderRadius: 8, border: "1px solid var(--border)", background: "var(--background)", color: "var(--foreground)", padding: "0 10px", fontSize: 14 }} /></div>
+            <div className="space-y-1.5"><Label className="text-xs">Visa Use By Date</Label><DateInputDMY value={form.first_entry_expiry} onChange={v => setForm(f => ({ ...f, first_entry_expiry: v }))} style={{ height: 36, width: "100%", borderRadius: 8, border: "1px solid var(--border)", background: "var(--background)", color: "var(--foreground)", padding: "0 10px", fontSize: 14 }} /></div>
+            <div className="space-y-1.5"><Label className="text-xs">Arrival</Label><DateInputDMY value={form.arrival_date} onChange={v => setForm(f => ({ ...f, arrival_date: v }))} style={{ height: 36, width: "100%", borderRadius: 8, border: "1px solid var(--border)", background: "var(--background)", color: "var(--foreground)", padding: "0 10px", fontSize: 14 }} /></div>
             <div className="space-y-1.5"><Label className="text-xs">Sign On</Label><DateInputDMY value={form.sign_on_date} onChange={v => setForm(f => ({ ...f, sign_on_date: v }))} style={{ height: 36, width: "100%", borderRadius: 8, border: "1px solid var(--border)", background: "var(--background)", color: "var(--foreground)", padding: "0 10px", fontSize: 14 }} /></div>
             <div className="space-y-1.5"><Label className="text-xs">Sign Off</Label><DateInputDMY value={form.sign_off_date} onChange={v => setForm(f => ({ ...f, sign_off_date: v }))} style={{ height: 36, width: "100%", borderRadius: 8, border: "1px solid var(--border)", background: "var(--background)", color: "var(--foreground)", padding: "0 10px", fontSize: 14 }} /></div>
             <div className="col-span-2 space-y-1.5"><Label className="text-xs">Notes</Label><Textarea rows={2} value={form.application_notes} onChange={e => setForm(f => ({ ...f, application_notes: e.target.value }))} className="resize-none text-sm" /></div>
