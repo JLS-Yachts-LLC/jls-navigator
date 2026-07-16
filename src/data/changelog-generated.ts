@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Country of Birth and Country of Residence are now searchable dropdowns (full country list) instead of free-text — Country of Birth keeps its OCR lock/unlock, and any existing free-text value is preserved as a selectable option"
+      },
+      {
+        "type": "feature",
         "title": "Visa status lifecycle is now Draft → Submitted → In Review → Approved → On Board → Signed Off, plus Cancelled / Rejected / Expired (tracker-imported statuses like \"signed off\" / \"on signer\" still display correctly); and the edit dialog can now edit Visa Use By Date and Arrival (previously only Grant Date / Expiry were editable)"
       }
     ]
