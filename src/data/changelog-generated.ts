@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "ShipSync driver/office barcode scanning + Parcel Checker + email pre-delivery note — camera & handheld barcode scanning on the driver load-onto-van and package check-in flows, a Parcel Checker screen (scan/type to find a parcel's status, boat, note & dates), and a one-click \"Email pre-delivery note\" to notify the client ahead of the run (mirrors the PowerApps flow)"
+      },
+      {
+        "type": "feature",
         "title": "ShipSync now lists every vessel at package check-in (not only ones with existing packages, so pickups can be logged against any yacht), and adds a Locations tab to manage hotels/marinas/suppliers as pickup/drop-off points that appear in the destination picker"
       }
     ]
