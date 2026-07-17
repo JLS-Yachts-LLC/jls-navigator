@@ -10,6 +10,18 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Migrate route mapping off the deprecated DirectionsService/DirectionsRenderer to Google's current Routes API — computes the route via routes.googleapis.com and draws the returned polyline directly, removing the legacy-API deprecation warnings"
+      },
+      {
+        "type": "fix",
+        "title": "Driver app + checker were rendering the office page"
+      },
+      {
+        "type": "fix",
+        "title": "Never trap the module on an infinite loading spinner"
+      },
+      {
+        "type": "feature",
         "title": "ShipSync routing can add Locations (hotels/marinas/suppliers from the Locations list) as route stops, not just boats with waiting parcels — they appear under a Locations group in the \"Add to route\" picker and resolve to their address on the route map"
       },
       {
