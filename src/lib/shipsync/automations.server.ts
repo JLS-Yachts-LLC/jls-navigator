@@ -75,10 +75,11 @@ export async function generateNotePdf(noteId: string, kind: 'predelivery' | 'del
 }
 
 /** Email proof of delivery — links to the delivery-note PDF + a short summary. */
-export async function emailProofOfDelivery(noteId: string, toOverride?: string): Promise<{ to: string }> {
+export async function emailProofOfDelivery(noteId: string, toOverride?: string, kind: 'predelivery' | 'delivery' = 'delivery'): Promise<{ to: string }> {
   const { note, packages } = await loadNote(noteId)
-  let pdfUrl = note.delivery_pdf_url
-  if (!pdfUrl) pdfUrl = await generateNotePdf(noteId, 'delivery')
+  const pre = kind === 'predelivery'
+  let pdfUrl = pre ? note.predelivery_pdf_url : note.delivery_pdf_url
+  if (!pdfUrl) pdfUrl = await generateNotePdf(noteId, kind)
 
   const to = toOverride
     ?? packages.map((p) => p.receiver_email).find(Boolean)
@@ -86,16 +87,22 @@ export async function emailProofOfDelivery(noteId: string, toOverride?: string):
   if (!to) throw new Error('No recipient email — set a receiver email on a package or pass one explicitly.')
 
   const ref = `DN-${note.number ?? noteId}`
-  const subject = `Proof of delivery — ${note.boat_name ?? ''} (${ref})`
+  const boat = esc(note.boat_name ?? '')
   const rows = packages.map((p) => `<tr><td style="padding:4px 10px 4px 0;font-family:monospace">${esc(p.barcode ?? '—')}</td><td style="padding:4px 0;color:#555">${esc(p.package_owner ?? '')}</td></tr>`).join('')
+  const heading = pre ? `Delivery scheduled — ${boat}` : `Delivery complete — ${boat}`
+  const intro = pre
+    ? `The packages below for delivery note <strong>${ref}</strong> are scheduled for delivery to <strong>${boat}</strong>.`
+    : `The packages below for delivery note <strong>${ref}</strong> have been delivered.`
+  const btn = pre ? 'View pre-delivery note (PDF)' : 'View delivery note (PDF)'
+  const subject = pre ? `Delivery scheduled — ${note.boat_name ?? ''} (${ref})` : `Proof of delivery — ${note.boat_name ?? ''} (${ref})`
   const html = shell(
-    `<h1 style="margin:0 0 10px;font-size:18px;color:#0d1520">Delivery complete — ${esc(note.boat_name ?? '')}</h1>
-     <p style="margin:8px 0;font-size:14px;color:#333">The packages below for delivery note <strong>${ref}</strong> have been delivered.</p>
+    `<h1 style="margin:0 0 10px;font-size:18px;color:#0d1520">${heading}</h1>
+     <p style="margin:8px 0;font-size:14px;color:#333">${intro}</p>
      <table style="margin:12px 0;font-size:13px;color:#333">${rows}</table>
-     <p style="margin:14px 0"><a href="${pdfUrl}" style="display:inline-block;background:#0d6efd;color:#fff;text-decoration:none;padding:9px 16px;border-radius:7px;font-size:13px">View delivery note (PDF)</a></p>
+     <p style="margin:14px 0"><a href="${pdfUrl}" style="display:inline-block;background:#0d6efd;color:#fff;text-decoration:none;padding:9px 16px;border-radius:7px;font-size:13px">${btn}</a></p>
      <p style="margin:8px 0;font-size:12px;color:#7a828a">JLS Yachts Logistics</p>`,
   )
-  const txt = `Delivery complete for ${note.boat_name ?? ''} (${ref}). Delivery note: ${pdfUrl}`
+  const txt = pre ? `Delivery scheduled for ${note.boat_name ?? ''} (${ref}). Pre-delivery note: ${pdfUrl}` : `Delivery complete for ${note.boat_name ?? ''} (${ref}). Delivery note: ${pdfUrl}`
   await sendEmail({ to: [to], cc: [LOGISTICS], subject, html, text: txt })
   return { to }
 }

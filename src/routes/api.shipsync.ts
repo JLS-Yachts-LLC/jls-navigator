@@ -27,7 +27,7 @@ export async function shipsyncApiHandler(request: Request): Promise<Response> {
     }
     if (url.pathname === '/api/shipsync/email-pod') {
       if (!body.noteId) return json({ ok: false, error: 'noteId required' }, 400)
-      const res = await emailProofOfDelivery(body.noteId, body.to)
+      const res = await emailProofOfDelivery(body.noteId, body.to, body.kind === 'predelivery' ? 'predelivery' : 'delivery')
       return json({ ok: true, ...res })
     }
     if (url.pathname === '/api/shipsync/sp-push') {

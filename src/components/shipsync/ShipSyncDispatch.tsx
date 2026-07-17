@@ -104,12 +104,12 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
       await reload();
     } catch (e: any) { toast.error(e?.message ?? "PDF failed"); } finally { setPdfBusy(null); }
   }
-  async function emailPod() {
+  async function emailPod(kind: "predelivery" | "delivery" = "delivery") {
     if (!sel) return;
-    setPdfBusy("email");
+    setPdfBusy(kind === "predelivery" ? "email-pre" : "email");
     try {
-      const j = await callApi("/api/shipsync/email-pod", { noteId: sel.id });
-      toast.success(`Proof of delivery emailed to ${j.to}`);
+      const j = await callApi("/api/shipsync/email-pod", { noteId: sel.id, kind });
+      toast.success(kind === "predelivery" ? `Pre-delivery note emailed to ${j.to}` : `Proof of delivery emailed to ${j.to}`);
       await reload();
     } catch (e: any) { toast.error(e?.message ?? "Email failed"); } finally { setPdfBusy(null); }
   }
@@ -189,7 +189,10 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
               <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => genPdf("delivery")} disabled={!!pdfBusy}>
                 {pdfBusy === "delivery" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />} Delivery note
               </Button>
-              <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={emailPod} disabled={!!pdfBusy}>
+              <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => emailPod("predelivery")} disabled={!!pdfBusy}>
+                {pdfBusy === "email-pre" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />} Email pre-delivery
+              </Button>
+              <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => emailPod("delivery")} disabled={!!pdfBusy}>
                 {pdfBusy === "email" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />} Email POD
               </Button>
               <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => setShowRouteMap(true)} disabled={routeStops.length === 0}
