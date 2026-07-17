@@ -6,6 +6,7 @@
  */
 import { useEffect, useState, type ReactNode } from "react";
 import { TIcon } from "./primitives";
+import { useFeatureBadges, BADGE_META } from "@/lib/feature-badges";
 import { ViewAsSwitcher, OnlineUsers } from "@/components/top-bar";
 import { FeedbackWidget } from "@/components/feedback/feedback-widget";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
@@ -326,6 +327,7 @@ function NavList({
   /** Icon-only rail (labels + group headers hidden), for the collapsed desktop nav. */
   collapsed?: boolean;
 }) {
+  const badges = useFeatureBadges();
   return (
     <nav
       style={{

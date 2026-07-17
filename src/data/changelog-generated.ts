@@ -10,6 +10,18 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Pin-drop and coordinates on ShipSync & Crew Cab locations — search an address, click the map, or drag the marker to set the exact delivery/pickup point"
+      },
+      {
+        "type": "feature",
+        "title": "Main Menu landing — Driver + Logistics as two apps"
+      },
+      {
+        "type": "feature",
+        "title": "Parity with PowerApps app — checker rack move, office/warehouse check-in, report link"
+      },
+      {
+        "type": "feature",
         "title": "Migrate route mapping off the deprecated DirectionsService/DirectionsRenderer to Google's current Routes API — computes the route via routes.googleapis.com and draws the returned polyline directly, removing the legacy-API deprecation warnings"
       },
       {
