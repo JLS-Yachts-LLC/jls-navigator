@@ -9,6 +9,14 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-07-17",
     "entries": [
       {
+        "type": "feature",
+        "title": "Anchor forms can prefill the signatory from the signatory registry — pick a registered signatory to fill their name and title on the Agency Appointment letter"
+      },
+      {
+        "type": "feature",
+        "title": "Professional crew payslips and contracts — payslips now render as a proper earnings/deductions table with a net-pay total and the crew member's bank details, and contracts print on a JLS letterhead with a signature block"
+      },
+      {
         "type": "fix",
         "title": "Clearer QuickBooks error when a company's saved login is stale — the run log now says to reconnect that company instead of showing Intuit's cryptic invalid_grant message"
       },
