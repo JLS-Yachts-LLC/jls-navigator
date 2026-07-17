@@ -4,8 +4,38 @@ import { routeTree } from "./routeTree.gen";
 import { supabase } from "@/integrations/supabase/client";
 import { getCapturedLog } from "@/lib/action-log";
 
+// A lazily-loaded JS chunk 404'ing (Vite's `vite:preloadError`) almost always
+// means the browser is on a stale build after a new deploy — the hashed chunk
+// filename it wants no longer exists. Reload once to pull the fresh index +
+// chunks instead of dead-ending on the error screen. Guarded against reload loops.
+const isChunkError = (msg: string | undefined) =>
+  /dynamically imported module|importing a module script failed|failed to fetch dynamically|ChunkLoadError|error loading dynamically imported/i.test(msg ?? "");
+
+function reloadOnceForStaleChunk() {
+  try {
+    const KEY = "polaris.staleChunkReloadAt";
+    const last = Number(sessionStorage.getItem(KEY) || 0);
+    if (Date.now() - last > 15000) {
+      sessionStorage.setItem(KEY, String(Date.now()));
+      window.location.reload();
+    }
+  } catch { window.location.reload(); }
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("vite:preloadError", (e) => {
+    e.preventDefault();
+    reloadOnceForStaleChunk();
+  });
+}
+
 function DefaultErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   const router = useRouter();
+  const chunkError = isChunkError(error?.message);
+
+  // If a stale-chunk error reaches the boundary (didn't fire vite:preloadError),
+  // reload automatically to recover onto the new build.
+  useEffect(() => { if (chunkError) reloadOnceForStaleChunk(); }, [chunkError]);
 
   // Capture render/route crashes (React error boundary) into the Error & Warning
   // Log — window.onerror doesn't catch these, so they were previously invisible.
@@ -43,11 +73,11 @@ function DefaultErrorComponent({ error, reset }: { error: Error; reset: () => vo
             />
           </svg>
         </div>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">Something went wrong</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">{chunkError ? "A new version is available" : "Something went wrong"}</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          An unexpected error occurred. Please try again.
+          {chunkError ? "Polaris was updated while this tab was open. Reload to get the latest version." : "An unexpected error occurred. Please try again."}
         </p>
-        {error.message && (
+        {!chunkError && error.message && (
           <pre className="mt-4 max-h-40 overflow-auto rounded-md bg-muted p-3 text-left font-mono text-xs text-destructive">
             {error.message}
           </pre>
@@ -55,12 +85,13 @@ function DefaultErrorComponent({ error, reset }: { error: Error; reset: () => vo
         <div className="mt-6 flex items-center justify-center gap-3">
           <button
             onClick={() => {
+              if (chunkError) { window.location.reload(); return; }
               router.invalidate();
               reset();
             }}
             className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
-            Try again
+            {chunkError ? "Reload" : "Try again"}
           </button>
           <a
             href="/"
