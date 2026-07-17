@@ -29,6 +29,7 @@ import { LeoPanel } from "@/components/leo/LeoPanel";
 import { ManageUsers } from "@/components/admin/manage-users";
 import { MfaSetup } from "@/components/auth/MfaSetup";
 import { PermissionsPanel, IntegrationsPanel, EmailTemplatesPanel } from "@/routes/_app.settings";
+import { FeatureReleasePanel } from "@/components/admin/feature-release-panel";
 import {
   useVesselVisaData,
   useVesselMovements,
@@ -1564,6 +1565,7 @@ const SETTINGS_TABS = [
   { key: "permissions", label: "Permissions", icon: "shield-check" },
   { key: "integrations", label: "Integrations", icon: "plug" },
   { key: "emailTemplates", label: "Email Templates", icon: "mail" },
+  { key: "featureRelease", label: "Feature Release", icon: "rocket" },
 ] as const;
 type SettingsTabKey = (typeof SETTINGS_TABS)[number]["key"];
 
@@ -1600,6 +1602,7 @@ export function PolarisSettings() {
       {tab === "permissions" && <PermissionsPanel />}
       {tab === "integrations" && <IntegrationsPanel />}
       {tab === "emailTemplates" && <EmailTemplatesPanel />}
+      {tab === "featureRelease" && <FeatureReleasePanel />}
     </>
   );
 }

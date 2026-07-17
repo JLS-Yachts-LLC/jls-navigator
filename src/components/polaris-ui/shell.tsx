@@ -384,12 +384,33 @@ function NavList({
                   overflow: "hidden",
                 }}
               >
-                <TIcon
-                  name={item.icon}
-                  size={18}
-                  color={on ? "var(--pds-gold)" : "var(--pds-text-secondary)"}
-                />
+                <span style={{ position: "relative", display: "flex", alignItems: "center" }}>
+                  <TIcon
+                    name={item.icon}
+                    size={18}
+                    color={on ? "var(--pds-gold)" : "var(--pds-text-secondary)"}
+                  />
+                  {/* Collapsed rail: a tiny dot in the icon's corner marks a badged feature. */}
+                  {collapsed && badges[item.screen] && (
+                    <span style={{
+                      position: "absolute", top: -2, right: -3, width: 7, height: 7, borderRadius: "50%",
+                      background: BADGE_META[badges[item.screen]].color, border: "1px solid var(--pds-surface-1, #0d1520)",
+                    }} />
+                  )}
+                </span>
                 {!collapsed && item.label}
+                {!collapsed && badges[item.screen] && (
+                  <span style={{
+                    marginLeft: "auto",
+                    fontSize: 9, fontWeight: 700, lineHeight: 1, letterSpacing: "0.04em",
+                    padding: "2px 5px", borderRadius: 5, textTransform: "uppercase",
+                    background: BADGE_META[badges[item.screen]].bg,
+                    color: BADGE_META[badges[item.screen]].color,
+                    border: `1px solid ${BADGE_META[badges[item.screen]].border}`,
+                  }}>
+                    {BADGE_META[badges[item.screen]].label}
+                  </span>
+                )}
               </button>
             );
           })}
