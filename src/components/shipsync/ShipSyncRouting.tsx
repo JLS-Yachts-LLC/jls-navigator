@@ -121,6 +121,18 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
       .sort((a, b) => (a === UNASSIGNED ? 1 : b === UNASSIGNED ? -1 : a.localeCompare(b)));
   }, [parcelsByBoat, assignedBoats]);
 
+  // Pickup / drop-off Locations (hotels, marinas, suppliers) from the Locations
+  // tab — selectable as route stops even when they have no waiting parcels.
+  const availableLocations = useMemo(() => {
+    const boatSet = new Set(availableBoats);
+    return data.destinations
+      .filter((d) => (d as any).type === "location" && d.boat_name)
+      .map((d) => d.boat_name)
+      .filter((n) => !assignedBoats.has(n) && !boatSet.has(n))
+      .filter((n, i, a) => a.indexOf(n) === i)
+      .sort((a, b) => a.localeCompare(b));
+  }, [data.destinations, assignedBoats, availableBoats]);
+
   const activeDrivers = useMemo(() => data.drivers.filter((d) => d.active), [data.drivers]);
 
   // Parcels included on a route: all its boats' waiting parcels minus the unticked.
@@ -296,11 +308,23 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
                   <Select value="" onValueChange={(v) => addBoat(r.id, v)}>
                     <SelectTrigger className="h-8 w-64 text-xs"><span className="flex items-center gap-2"><Plus className="h-3.5 w-3.5 text-muted-foreground" /><SelectValue placeholder="Add boat to this route…" /></span></SelectTrigger>
                     <SelectContent>
-                      {availableBoats.length === 0
-                        ? <div className="px-2 py-1.5 text-xs text-muted-foreground">No boats left to add</div>
-                        : availableBoats.map((b) => (
-                          <SelectItem key={b} value={b}>{b === UNASSIGNED ? "No boat set" : b} ({(parcelsByBoat.get(b) ?? []).length})</SelectItem>
-                        ))}
+                      {availableBoats.length === 0 && availableLocations.length === 0 ? (
+                        <div className="px-2 py-1.5 text-xs text-muted-foreground">No boats or locations left to add</div>
+                      ) : (
+                        <>
+                          {availableBoats.map((b) => (
+                            <SelectItem key={b} value={b}>{b === UNASSIGNED ? "No boat set" : b} ({(parcelsByBoat.get(b) ?? []).length})</SelectItem>
+                          ))}
+                          {availableLocations.length > 0 && (
+                            <>
+                              <div className="px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/60">Locations</div>
+                              {availableLocations.map((b) => (
+                                <SelectItem key={`loc-${b}`} value={b}>📍 {b}</SelectItem>
+                              ))}
+                            </>
+                          )}
+                        </>
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
