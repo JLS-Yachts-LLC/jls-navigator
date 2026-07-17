@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "QB invoice PDF lookup accepts the invoice number (DocNumber, e.g. JLS26-22917), not only the internal QBO Id — resolves a DocNumber to the internal Id first, so the tester and webhook both work with the human-readable number"
+      },
+      {
+        "type": "fix",
         "title": "Disable QB invoice doc-number self-heal in the webhook orchestrator — it wrote back to the invoice, re-triggering the webhook and causing a processing loop; classification now reads the invoice as-is"
       },
       {
