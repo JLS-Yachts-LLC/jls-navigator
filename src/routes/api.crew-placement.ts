@@ -5,13 +5,12 @@
  * PDFs are stored in the crew-docs bucket (generated/) and returned as a signed URL.
  */
 import { supabaseAdmin } from '@/integrations/supabase/client.server'
-import { buildTextPdf, fillTemplate } from '@/lib/crew-placement/pdf.server'
+import { buildContractPdf, buildPayslipPdf, fillTemplate } from '@/lib/crew-placement/pdf.server'
 
 const db = () => supabaseAdmin as any
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json' } })
 const money = (n: any) => n == null ? '' : Number(n).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const sumLines = (arr: any) => Array.isArray(arr) ? arr.reduce((s: number, l: any) => s + (Number(l?.amount) || 0), 0) : 0
-const listLines = (arr: any) => Array.isArray(arr) && arr.length ? arr.map((l: any) => `  - ${l.label ?? 'Item'}: ${money(l.amount)}`).join('\n') : '  - none'
 
 const DEFAULT_CONTRACT = `SEAFARER EMPLOYMENT AGREEMENT
 
@@ -23,19 +22,6 @@ Contract type: {{contract_type}}
 
 This agreement is made between the Employer (JLS Yachts LLC) and the Seafarer named
 above under the terms of the MLC 2006.`
-
-const DEFAULT_PAYSLIP = `PAYSLIP — {{period}}
-
-Crew: {{crew_name}}    Rank: {{rank}}
-Vessel: {{vessel_name}}
-
-Gross: {{gross}} {{currency}}
-Additions:
-{{additions}}
-Deductions:
-{{deductions}}
-
-NET PAY: {{net}} {{currency}}`
 
 async function signedUrl(path: string): Promise<string> {
   const { data } = await db().storage.from('crew-docs').createSignedUrl(path, 60 * 60)
@@ -66,7 +52,11 @@ export async function crewPlacementHandler(request: Request): Promise<Response> 
         salary: money(c.salary), currency: c.currency ?? '', contract_type: c.contract_type ?? '',
       }
       const text = fillTemplate(c.template?.body || DEFAULT_CONTRACT, values)
-      const pdf = await buildTextPdf(c.template?.name || 'Crew Contract', text)
+      const pdf = await buildContractPdf(c.template?.name || 'Seafarer Employment Agreement', text, {
+        docRef: c.contract_type ? `Ref: ${String(c.contract_type).toUpperCase()}` : undefined,
+        date: c.start_date ? `Dated: ${new Date(c.start_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}` : undefined,
+        signature: true,
+      })
       const path = `generated/contract-${c.id}.pdf`
       await sb.storage.from('crew-docs').upload(path, pdf, { contentType: 'application/pdf', upsert: true })
       await sb.from('crew_contracts').update({ pdf_path: path }).eq('id', c.id)
@@ -75,20 +65,33 @@ export async function crewPlacementHandler(request: Request): Promise<Response> 
 
     if (action === 'payslip-pdf') {
       const { data: p } = await sb.from('crew_payslips')
-        .select('*, crew:placed_crew(full_name, rank, yacht:yachts(vessel_name)), template:crew_placement_templates(name, body)')
+        .select('*, crew:placed_crew(id, full_name, rank, department, nationality, yacht:yachts(vessel_name))')
         .eq('id', id).maybeSingle()
       if (!p) return json({ ok: false, error: 'Payslip not found' }, 404)
       // Payroll calculation: net = gross + additions − deductions.
       const gross = Number(p.gross) || 0
-      const net = gross + sumLines(p.additions) - sumLines(p.deductions)
+      const additions = Array.isArray(p.additions) ? p.additions : []
+      const deductions = Array.isArray(p.deductions) ? p.deductions : []
+      const net = gross + sumLines(additions) - sumLines(deductions)
       const period = p.period_month ? new Date(p.period_month).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }) : ''
-      const values = {
-        crew_name: p.crew?.full_name, rank: p.crew?.rank, vessel_name: p.crew?.yacht?.vessel_name,
-        period, gross: money(gross), net: money(net), currency: p.currency ?? '',
-        additions: listLines(p.additions), deductions: listLines(p.deductions),
-      }
-      const text = fillTemplate(p.template?.body || DEFAULT_PAYSLIP, values)
-      const pdf = await buildTextPdf(p.template?.name || 'Payslip', text)
+      // Bank details for the payment block (best-effort).
+      const { data: bank } = await sb.from('placed_crew_bank')
+        .select('account_holder, bank_name, bank_country, iban, bic')
+        .eq('placed_crew_id', p.crew?.id).maybeSingle()
+      const pdf = await buildPayslipPdf({
+        crewName: p.crew?.full_name ?? 'Crew',
+        rank: p.crew?.rank ?? undefined,
+        department: p.crew?.department ?? undefined,
+        nationality: p.crew?.nationality ?? undefined,
+        vesselName: p.crew?.yacht?.vessel_name ?? undefined,
+        period,
+        currency: p.currency ?? 'USD',
+        issuedDate: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }),
+        basic: gross,
+        additions: additions.map((l: any) => ({ label: String(l?.label ?? 'Addition'), amount: Number(l?.amount) || 0 })),
+        deductions: deductions.map((l: any) => ({ label: String(l?.label ?? 'Deduction'), amount: Number(l?.amount) || 0 })),
+        bank: bank ? { holder: bank.account_holder, bankName: bank.bank_name, country: bank.bank_country, iban: bank.iban, bic: bank.bic } : undefined,
+      })
       const path = `generated/payslip-${p.id}.pdf`
       await sb.storage.from('crew-docs').upload(path, pdf, { contentType: 'application/pdf', upsert: true })
       await sb.from('crew_payslips').update({ pdf_path: path, net, status: p.status === 'draft' ? 'issued' : p.status }).eq('id', p.id)
