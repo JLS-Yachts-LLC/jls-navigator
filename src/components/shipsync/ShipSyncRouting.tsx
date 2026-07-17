@@ -2,9 +2,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Ship, Truck, Route, X, Plus, ChevronRight, ChevronDown, Anchor, Calendar, Map as MapIcon } from "lucide-react";
+import { Loader2, Ship, Truck, Route, X, Plus, ChevronRight, ChevronDown, Anchor, Calendar, Map as MapIcon, ScanLine } from "lucide-react";
 import { StatusBadge } from "@/components/shipsync/shared";
 import { ShipSyncDeliveryCalendar } from "@/components/shipsync/ShipSyncDeliveryCalendar";
+import { BarcodeScannerDialog } from "@/components/shipsync/BarcodeScanner";
 import { RouteMapDialog, type RouteStop } from "@/components/shipsync/RouteMapDialog";
 import { dispatchRoute } from "@/lib/shipsync/data";
 import { vanLabel, driverWorks, weekdayOf, WEEKDAYS, type ShipSyncPackage, type ShipSyncDestination } from "@/lib/shipsync/model";
@@ -56,6 +57,7 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
   const seq = useRef(1);
   const [busy, setBusy] = useState<string | null>(null);
   const [mapRoute, setMapRoute] = useState<{ name: string; stops: RouteStop[] } | null>(null);
+  const [scanRouteId, setScanRouteId] = useState<string | null>(null);
   // The day being planned; each date keeps its own set of routes.
   const [deliveryDate, setDeliveryDate] = useState<string>(today());
   const [routes, setRoutes] = useState<RouteDraft[]>(() => hydrateRoutes(loadAll()[today()]));
@@ -189,6 +191,24 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
       return { ...r, excluded };
     });
   }
+  // Scan a parcel's barcode to check it out onto this route (PowerApps "Check Out
+  // Parcel"): find the waiting parcel, add its boat to the route and include it.
+  function handleScan(routeId: string, raw: string) {
+    const code = raw.trim().toUpperCase();
+    if (!code) return;
+    const p = unrouted.find((x) => (x.barcode ?? "").toUpperCase() === code);
+    if (!p) { toast.error(`No waiting parcel matches “${raw.trim()}” (already routed or not checked in)`); return; }
+    const boat = p.boat_name || UNASSIGNED;
+    const onOther = routes.some((r) => r.id !== routeId && r.boats.includes(boat));
+    if (onOther) { toast.error(`${boat === UNASSIGNED ? "That parcel’s group" : boat} is already on another route`); return; }
+    patchRoute(routeId, (r) => {
+      const boats = r.boats.includes(boat) ? r.boats : [...r.boats, boat];
+      const excluded = new Set(r.excluded); excluded.delete(p.id);
+      const expanded = new Set(r.expanded); expanded.add(boat);
+      return { ...r, boats, excluded, expanded };
+    });
+    toast.success(`Scanned ${p.barcode} → added ${boat === UNASSIGNED ? "parcel" : boat} to the route`);
+  }
 
   async function dispatch(r: RouteDraft) {
     const parcels = routeParcels(r);
@@ -267,6 +287,9 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
                       })}
                     >
                       <MapIcon className="h-3.5 w-3.5" /> Map
+                    </Button>
+                    <Button size="sm" variant="outline" className="h-8 gap-1.5" title="Scan a parcel to check it out onto this route" onClick={() => setScanRouteId(r.id)}>
+                      <ScanLine className="h-3.5 w-3.5" /> Scan
                     </Button>
                     <Select value={r.driverId} onValueChange={(v) => patchRoute(r.id, (x) => ({ ...x, driverId: v }))}>
                       <SelectTrigger className="h-8 w-40 text-xs"><SelectValue placeholder="Choose driver…" /></SelectTrigger>
@@ -398,6 +421,13 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
           optimize={false}
         />
       )}
+
+      <BarcodeScannerDialog
+        open={!!scanRouteId}
+        onClose={() => setScanRouteId(null)}
+        onDetected={(v) => { const id = scanRouteId; setScanRouteId(null); if (id) handleScan(id, v); }}
+        title="Scan a parcel to check out"
+      />
     </div>
   );
 }

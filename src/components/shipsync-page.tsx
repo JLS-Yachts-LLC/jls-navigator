@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Loader2, Package, Truck, Warehouse, Users, BarChart3, Smartphone, ArrowDownToLine, ArrowUpFromLine, Route, Navigation, MapPin, LifeBuoy, Boxes } from "lucide-react";
+import { Loader2, Package, Truck, Warehouse, Users, BarChart3, Smartphone, ArrowDownToLine, ArrowUpFromLine, Route, Navigation, MapPin, LifeBuoy, Boxes, ScanLine } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   loadPackages, loadDrivers, loadNotes, loadDestinations, loadDeliverySchedules, loadVehicles, loadYachtNames,
@@ -15,6 +15,7 @@ import { ShipSyncRouting } from "@/components/shipsync/ShipSyncRouting";
 import { ShipSyncWarehouse } from "@/components/shipsync/ShipSyncWarehouse";
 import { ShipSyncDrivers } from "@/components/shipsync/ShipSyncDrivers";
 import { ShipSyncDashboard } from "@/components/shipsync/ShipSyncDashboard";
+import { ParcelChecker } from "@/components/shipsync/ParcelChecker";
 import { FleetTrackingPage } from "@/components/fleet-tracking-page";
 
 export interface ShipSyncData {
@@ -34,6 +35,7 @@ const TABS = [
   { key: "routing",  label: "Routing",        icon: Route },
   { key: "dispatch", label: "Dispatched",     icon: Truck },
   { key: "warehouse", label: "Warehouse",     icon: Warehouse },
+  { key: "checker",  label: "Parcel Checker", icon: ScanLine },
   { key: "locations", label: "Locations",     icon: MapPin },
   { key: "drivers",  label: "Drivers",        icon: Users },
   { key: "tracking", label: "Van Tracking",   icon: Navigation },
@@ -133,6 +135,7 @@ export function ShipSyncPage() {
             {tab === "dispatch" && <ShipSyncDispatch data={data} reload={reload} />}
             {tab === "routing" && <ShipSyncRouting data={data} reload={reload} />}
             {tab === "warehouse" && <ShipSyncWarehouse data={data} reload={reload} />}
+            {tab === "checker" && <ParcelChecker />}
             {tab === "locations" && <ShipSyncLocations data={data} reload={reload} />}
             {tab === "drivers" && <ShipSyncDrivers data={data} reload={reload} />}
             {tab === "tracking" && <FleetTrackingPage />}
