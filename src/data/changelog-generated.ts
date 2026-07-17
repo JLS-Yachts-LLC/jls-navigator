@@ -10,6 +10,22 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "Disable QB invoice doc-number self-heal in the webhook orchestrator — it wrote back to the invoice, re-triggering the webhook and causing a processing loop; classification now reads the invoice as-is"
+      },
+      {
+        "type": "feature",
+        "title": "Standalone driver + logistics apps use the new Polaris theme"
+      },
+      {
+        "type": "feature",
+        "title": "Build the Logistics app from the folder"
+      },
+      {
+        "type": "feature",
+        "title": "Logistics as a standalone app (like the driver app)"
+      },
+      {
+        "type": "fix",
         "title": "Auto-recover from stale-chunk errors after a deploy — a lazily-loaded page failing to fetch (e.g. Live Tracking on an old tab) now reloads onto the new build automatically instead of showing \"Something went wrong\"; the error screen also offers a proper Reload for version mismatches"
       },
       {
