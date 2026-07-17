@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "QBO attachment linking now ALWAYS runs the /attachable bind after upload (the upload response echoes an AttachableRef without actually linking, so the conditional skipped it) — exact parity with the working n8n flow; also trim whitespace on the Intuit webhook verifier comparison"
+      },
+      {
+        "type": "fix",
         "title": "QBO attachments now actually link to their invoice — the upload alone often stores the file unlinked, so follow up with an /attachable update (Id + SyncToken + AttachableRef) exactly like the proven n8n flow; applies to all native doc-gen (invoices, quotations, pro-formas, POs, receipts)"
       },
       {
