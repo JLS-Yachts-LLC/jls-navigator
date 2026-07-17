@@ -450,6 +450,18 @@ export type InvoicePdfResult = {
 }
 
 /** Full pipeline for one invoice. `force` bypasses the toggle + dedup (manual runs). */
+/** Accept either a QBO internal invoice Id (numeric) OR a DocNumber like
+ *  "JLS26-22917" — resolve a DocNumber to the internal Id so the tester/UI can
+ *  use the human-readable invoice number the finance team actually knows. */
+async function resolveInvoiceId(idOrDocNumber: string): Promise<string> {
+  const v = String(idOrDocNumber).trim()
+  if (/^\d+$/.test(v)) return v // already the internal Id
+  const res = await qboQuery(`SELECT Id FROM Invoice WHERE DocNumber = '${v.replace(/'/g, "\\'")}'`)
+  const id = res?.QueryResponse?.Invoice?.[0]?.Id
+  if (!id) throw new Error(`No invoice found with number "${v}" — enter the QuickBooks invoice number or its internal Id.`)
+  return id
+}
+
 export async function generateAndAttachInvoicePdf(qboInvoiceId: string, opts: { force?: boolean; attach?: boolean } = {}): Promise<InvoicePdfResult> {
   const started = Date.now()
   const sb = admin()
@@ -463,7 +475,8 @@ export async function generateAndAttachInvoicePdf(qboInvoiceId: string, opts: { 
   }
 
   try {
-    const invoice = (await qboRequest('GET', `/invoice/${qboInvoiceId}?include=enhancedAllCustomFields&minorversion=73`))?.Invoice
+    const invId = await resolveInvoiceId(qboInvoiceId)
+    const invoice = (await qboRequest('GET', `/invoice/${invId}?include=enhancedAllCustomFields&minorversion=73`))?.Invoice
     if (!invoice) return { ok: false, action: 'error', detail: `Invoice ${qboInvoiceId} not found` }
 
     const t = transformInvoice(invoice)
@@ -491,7 +504,7 @@ export async function generateAndAttachInvoicePdf(qboInvoiceId: string, opts: { 
     // Re-fetch to capture the post-attach LastUpdatedTime → the echo webhook is a no-op.
     let finalStamp = t.lastUpdatedTime
     try {
-      const after = (await qboRequest('GET', `/invoice/${qboInvoiceId}?minorversion=73`))?.Invoice
+      const after = (await qboRequest('GET', `/invoice/${t.qboId}?minorversion=73`))?.Invoice
       finalStamp = String(after?.MetaData?.LastUpdatedTime ?? finalStamp)
     } catch { /* keep pre-attach stamp */ }
     await sb.from('qbo_invoice_pdf_state').upsert({
@@ -518,7 +531,8 @@ export async function generateAndAttachInvoicePdf(qboInvoiceId: string, opts: { 
 /** Render only — used by the preview endpoint so the layout can be checked
  *  against a real invoice without touching QBO. */
 export async function renderInvoicePdfById(qboInvoiceId: string): Promise<{ bytes: Uint8Array; fileName: string }> {
-  const invoice = (await qboRequest('GET', `/invoice/${qboInvoiceId}?include=enhancedAllCustomFields&minorversion=73`))?.Invoice
+  const invId = await resolveInvoiceId(qboInvoiceId)
+  const invoice = (await qboRequest('GET', `/invoice/${invId}?include=enhancedAllCustomFields&minorversion=73`))?.Invoice
   if (!invoice) throw new Error(`Invoice ${qboInvoiceId} not found`)
   const t = transformInvoice(invoice)
   const bytes = await renderInvoicePdf(t, await companyDetails())
