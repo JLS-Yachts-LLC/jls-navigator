@@ -74,8 +74,16 @@ export function AutomationsPage() {
   const [dept, setDept] = useState<string>("All");
   const [deleteTarget, setDeleteTarget] = useState<Automation | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => { void load(); }, []);
+
+  // Live view: silently re-pull automations + run log every minute so new
+  // executions (webhooks, crons) appear without a manual reload.
+  useEffect(() => {
+    const t = setInterval(() => void load({ silent: true }), 60_000);
+    return () => clearInterval(t);
+  }, []);
 
   async function doDelete() {
     if (!deleteTarget) return;
@@ -88,17 +96,19 @@ export function AutomationsPage() {
     setDeleteTarget(null);
   }
 
-  async function load() {
-    setLoading(true);
+  async function load(opts: { silent?: boolean } = {}) {
+    if (!opts.silent) setLoading(true);
+    setRefreshing(true);
     const since = new Date(Date.now() - 30 * 86400000).toISOString();
     const [{ data, error }, { data: runData }] = await Promise.all([
       fetchAllRows(() => (supabase as any).from("automations").select("*").order("category").order("name")),
       fetchAllRows(() => (supabase as any).from("automation_runs").select("automation_key, status, started_at, finished_at, detail").gte("started_at", since)),
     ]);
-    if (error) toast.error(error.message);
+    if (error) { if (!opts.silent) toast.error(error.message); }
     else setItems((data ?? []) as Automation[]);
     setRuns((runData ?? []) as RunRow[]);
     setLoading(false);
+    setRefreshing(false);
   }
 
   // Per-automation run metrics over the last 30 days (hits / success / errors / retries).
@@ -175,9 +185,19 @@ export function AutomationsPage() {
             <Zap className="h-5 w-5 text-primary" /> Automations
           </h1>
         </div>
-        <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/50" />
-          <Input value={q} onChange={e => setQ(e.target.value)} placeholder="Search automations…" className="h-9 w-56 pl-8 text-sm" />
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/50" />
+            <Input value={q} onChange={e => setQ(e.target.value)} placeholder="Search automations…" className="h-9 w-56 pl-8 text-sm" />
+          </div>
+          <button
+            onClick={() => void load({ silent: true })}
+            disabled={refreshing}
+            title="Refresh now (auto-refreshes every minute)"
+            className="flex h-9 items-center gap-1.5 rounded-md border border-border px-3 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:opacity-60"
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} /> Refresh
+          </button>
         </div>
       </header>
 
