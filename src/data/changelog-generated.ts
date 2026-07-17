@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "Sales Receipts now generate when a payment is received (the event-type check never matched QuickBooks' real events), and Pro-Forma/PO/Receipt attachments no longer leave duplicate copies behind"
+      },
+      {
+        "type": "fix",
         "title": "Replacing a Quotation/Invoice attachment in QuickBooks no longer leaves a duplicate — old copies are removed after the new upload, so the previous run's file can't slip through"
       },
       {
