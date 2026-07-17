@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "QBO attachments now actually link to their invoice — the upload alone often stores the file unlinked, so follow up with an /attachable update (Id + SyncToken + AttachableRef) exactly like the proven n8n flow; applies to all native doc-gen (invoices, quotations, pro-formas, POs, receipts)"
+      },
+      {
+        "type": "fix",
         "title": "QB invoice PDF lookup accepts the invoice number (DocNumber, e.g. JLS26-22917), not only the internal QBO Id — resolves a DocNumber to the internal Id first, so the tester and webhook both work with the human-readable number"
       },
       {
