@@ -61,14 +61,26 @@ export function AppLayout() {
   if (!user) return null;
 
   // The Polaris home screen ships its own shell (screen switching lives inside it).
-  // The ShipSync driver PWA and the parcel checker are standalone, full-screen
-  // tools (phone / scan-gun) — they render bare, without the office chrome.
-  const STANDALONE = ["/polaris-redesign", "/shipsync/driver", "/shipsync/checker", "/shipsync/logistics"];
-  if (STANDALONE.some((p) => location.pathname.startsWith(p))) {
+  if (location.pathname.startsWith("/polaris-redesign")) {
     return (
       <>
         <DeployWatcher />
         <Outlet />
+      </>
+    );
+  }
+  // The ShipSync standalone apps (driver PWA, parcel checker, logistics app) render
+  // full-screen without the office chrome, but in the new Polaris theme — the
+  // `pds dark pds-embed` scope remaps the tokens to the brand navy/teal (same as
+  // the captain portal), so they match the shell instead of the base black theme.
+  const SHIPSYNC_STANDALONE = ["/shipsync/driver", "/shipsync/checker", "/shipsync/logistics"];
+  if (SHIPSYNC_STANDALONE.some((p) => location.pathname.startsWith(p))) {
+    return (
+      <>
+        <DeployWatcher />
+        <div className="pds dark pds-embed h-screen overflow-y-auto bg-background text-foreground" style={{ colorScheme: "dark" }}>
+          <Outlet />
+        </div>
       </>
     );
   }
