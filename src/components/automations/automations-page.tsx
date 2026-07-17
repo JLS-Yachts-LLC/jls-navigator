@@ -8,6 +8,7 @@ import {
   Zap, Clock, Webhook, MousePointerClick, Activity, Search, Loader2,
   CheckCircle2, XCircle, CircleDot, Calendar, ExternalLink, PlugZap,
   ListOrdered, History, ChevronDown, Trash2, RotateCcw, RefreshCw,
+  ArrowUpDown, ChevronLeft, ChevronRight, Download, FileText,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -63,6 +64,34 @@ function fmtWhen(iso: string | null) {
 }
 
 type RunRow = { automation_key: string; status: string; started_at: string; finished_at?: string | null; detail?: string | null };
+
+// Parse document references (invoice / quotation / pro-forma / receipt / PO numbers)
+// out of a run's free-text detail so All Runs can be searched & filtered by them.
+type EntityHit = { type: string; ref: string; color: string };
+const ENTITY_PATTERNS: { type: string; re: RegExp; color: string }[] = [
+  { type: "Invoice",        re: /\bJLS\d{2}-\d{3,}\b/gi, color: "bg-blue-500/15 text-blue-400" },
+  { type: "Quotation",      re: /\bQ\d{2}-\d{3,}\b/gi,   color: "bg-teal-500/15 text-teal-400" },
+  { type: "Pro-Forma",      re: /\bPI\d{2}-\d{3,}\b/gi,  color: "bg-fuchsia-500/15 text-fuchsia-400" },
+  { type: "Sales Receipt",  re: /\bSR\d{2}-\d{3,}\b/gi,  color: "bg-emerald-500/15 text-emerald-400" },
+  { type: "Purchase Order", re: /\bPO\d{2}-\d{3,}\b/gi,  color: "bg-amber-500/15 text-amber-400" },
+];
+const ENTITY_TYPES = ENTITY_PATTERNS.map((p) => p.type);
+function extractEntities(detail?: string | null): EntityHit[] {
+  if (!detail) return [];
+  const out: EntityHit[] = [];
+  const seen = new Set<string>();
+  for (const p of ENTITY_PATTERNS) {
+    const matches = detail.match(p.re);
+    if (!matches) continue;
+    for (const m of matches) {
+      const key = m.toUpperCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ type: p.type, ref: m.toUpperCase(), color: p.color });
+    }
+  }
+  return out;
+}
 type KeyStats = { runs: number; success: number; error: number; retry: number; hit: number; lastRun: string | null };
 
 export function AutomationsPage() {
@@ -237,7 +266,7 @@ export function AutomationsPage() {
             dept === EXECUTIONS_TAB ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
           )}
         >
-          Executions
+          All Runs
           {runs.filter(r => r.status === "error").length > 0 && (
             <span className="rounded-full bg-red-500/15 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-red-400">
               {runs.filter(r => r.status === "error").length}
@@ -258,7 +287,7 @@ export function AutomationsPage() {
       {/* List */}
       <div className="flex-1 overflow-auto p-6 space-y-6">
         {dept === EXECUTIONS_TAB ? (
-          <ExecutionsLog runs={runs} items={items} q={q} onReload={load} />
+          <AllRunsLog items={items} globalSearch={q} />
         ) : loading ? (
           <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
         ) : groups.length === 0 ? (
@@ -366,17 +395,27 @@ export function AutomationsPage() {
   );
 }
 
-// ── Executions log — cross-automation run history for troubleshooting ─────────
-function ExecutionsLog({
-  runs, items, q, onReload,
-}: {
-  runs: RunRow[];
-  items: Automation[];
-  q: string;
-  onReload: () => void;
-}) {
-  const [errorsOnly, setErrorsOnly] = useState(true);
+// ── All Runs — n8n-style execution history: search / filter / sort every run ───
+const RANGE_MS: Record<string, number> = { "24h": 86400000, "7d": 7 * 86400000, "30d": 30 * 86400000, "90d": 90 * 86400000 };
+const RANGE_LABEL: Record<string, string> = { "24h": "Last 24 hours", "7d": "Last 7 days", "30d": "Last 30 days", "90d": "Last 90 days" };
+const STATUS_ORDER = ["success", "error", "retry", "hit"] as const;
+const RUN_CAP = 3000;
+
+type SortKey = "when" | "automation" | "status" | "duration";
+
+function AllRunsLog({ items, globalSearch }: { items: Automation[]; globalSearch: string }) {
+  const [rawRuns, setRawRuns] = useState<RunRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [range, setRange] = useState<keyof typeof RANGE_MS>("7d");
+  const [statuses, setStatuses] = useState<Set<string>>(new Set());
+  const [autoKey, setAutoKey] = useState("all");
+  const [entityType, setEntityType] = useState("all");
+  const [localSearch, setLocalSearch] = useState("");
+  const [sortKey, setSortKey] = useState<SortKey>("when");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [page, setPage] = useState(0);
   const [retrying, setRetrying] = useState<string | null>(null);
+  const PAGE_SIZE = 100;
 
   const byKey = useMemo(() => {
     const m = new Map<string, Automation>();
@@ -384,18 +423,70 @@ function ExecutionsLog({
     return m;
   }, [items]);
 
-  const rows = useMemo(() => {
-    const s = q.trim().toLowerCase();
-    return [...runs]
-      .sort((a, b) => (a.started_at > b.started_at ? -1 : 1))
-      .filter((r) => (!errorsOnly || r.status === "error"))
-      .filter((r) => {
-        if (!s) return true;
-        const name = byKey.get(r.automation_key)?.name ?? r.automation_key;
-        return `${name} ${r.detail ?? ""} ${r.automation_key}`.toLowerCase().includes(s);
+  const nameOf = useCallback((k: string) => byKey.get(k)?.name ?? k, [byKey]);
+  const search = (globalSearch || localSearch).trim().toLowerCase();
+
+  const fetchRuns = useCallback(async () => {
+    setLoading(true);
+    const since = new Date(Date.now() - RANGE_MS[range]).toISOString();
+    const { data, error } = await (supabase as any)
+      .from("automation_runs")
+      .select("automation_key, status, started_at, finished_at, detail")
+      .gte("started_at", since)
+      .order("started_at", { ascending: false })
+      .limit(RUN_CAP);
+    if (error) toast.error(error.message);
+    setRawRuns((data ?? []) as RunRow[]);
+    setLoading(false);
+  }, [range]);
+
+  useEffect(() => { void fetchRuns(); }, [fetchRuns]);
+  useEffect(() => { setPage(0); }, [range, statuses, autoKey, entityType, search]);
+
+  // Automations that actually appear in the loaded window (for the dropdown).
+  const presentKeys = useMemo(() => {
+    const s = new Set<string>();
+    for (const r of rawRuns) s.add(r.automation_key);
+    return [...s].sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
+  }, [rawRuns, nameOf]);
+
+  const statusCounts = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const r of rawRuns) m[r.status] = (m[r.status] ?? 0) + 1;
+    return m;
+  }, [rawRuns]);
+
+  const filtered = useMemo(() => {
+    const dirMul = sortDir === "asc" ? 1 : -1;
+    const durMs = (r: RunRow) => (r.finished_at ? new Date(r.finished_at).getTime() - new Date(r.started_at).getTime() : -1);
+    return rawRuns
+      .map((r) => ({ r, entities: extractEntities(r.detail) }))
+      .filter(({ r }) => statuses.size === 0 || statuses.has(r.status))
+      .filter(({ r }) => autoKey === "all" || r.automation_key === autoKey)
+      .filter(({ entities }) => entityType === "all" || entities.some((e) => e.type === entityType))
+      .filter(({ r, entities }) => {
+        if (!search) return true;
+        const hay = `${nameOf(r.automation_key)} ${r.automation_key} ${r.detail ?? ""} ${entities.map((e) => e.ref).join(" ")}`.toLowerCase();
+        return hay.includes(search);
       })
-      .slice(0, 300);
-  }, [runs, errorsOnly, q, byKey]);
+      .sort((a, b) => {
+        switch (sortKey) {
+          case "automation": return dirMul * nameOf(a.r.automation_key).localeCompare(nameOf(b.r.automation_key));
+          case "status": return dirMul * a.r.status.localeCompare(b.r.status);
+          case "duration": return dirMul * (durMs(a.r) - durMs(b.r));
+          default: return dirMul * (a.r.started_at > b.r.started_at ? 1 : a.r.started_at < b.r.started_at ? -1 : 0);
+        }
+      });
+  }, [rawRuns, statuses, autoKey, entityType, search, sortKey, sortDir, nameOf]);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageRows = filtered.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+
+  const toggleStatus = (s: string) =>
+    setStatuses((prev) => { const n = new Set(prev); n.has(s) ? n.delete(s) : n.add(s); return n; });
+
+  const setSort = (k: SortKey) =>
+    setSortKey((prev) => { if (prev === k) { setSortDir((d) => (d === "asc" ? "desc" : "asc")); return prev; } setSortDir(k === "automation" ? "asc" : "desc"); return k; });
 
   async function retry(r: RunRow) {
     const a = byKey.get(r.automation_key);
@@ -407,7 +498,7 @@ function ExecutionsLog({
       const res = await fetch(a.endpoint, { method: "POST", headers: { Authorization: `Bearer ${session?.access_token ?? ""}` } });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       toast.success(`Re-ran ${a.name}`);
-      setTimeout(onReload, 800);
+      setTimeout(fetchRuns, 800);
     } catch (e: any) {
       toast.error(e?.message ?? "Retry failed");
     } finally {
@@ -422,87 +513,199 @@ function ExecutionsLog({
     return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
   };
 
+  function exportCsv() {
+    const esc = (v: string) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const header = ["When", "Automation", "Status", "Entities", "Detail", "Duration"];
+    const lines = filtered.map(({ r, entities }) =>
+      [new Date(r.started_at).toISOString(), nameOf(r.automation_key), r.status,
+       entities.map((e) => `${e.type}:${e.ref}`).join(" "), r.detail ?? "", dur(r)].map(esc).join(","));
+    const blob = new Blob([[header.map(esc).join(","), ...lines].join("\n")], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `all-runs-${range}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  const selectCls = "h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary";
+  const SortHead = ({ k, label, className }: { k: SortKey; label: string; className?: string }) => (
+    <th className={cn("px-3 py-2 font-semibold", className)}>
+      <button onClick={() => setSort(k)} className="inline-flex items-center gap-1 hover:text-foreground">
+        {label}
+        <ArrowUpDown className={cn("h-3 w-3", sortKey === k ? "text-primary" : "text-muted-foreground/40")} />
+      </button>
+    </th>
+  );
+
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5">
-          <button
-            onClick={() => setErrorsOnly(true)}
-            className={cn("rounded-full px-3 py-1 text-xs font-semibold transition", errorsOnly ? "bg-red-500/15 text-red-400" : "text-muted-foreground hover:bg-accent")}
-          >Errors only</button>
-          <button
-            onClick={() => setErrorsOnly(false)}
-            className={cn("rounded-full px-3 py-1 text-xs font-semibold transition", !errorsOnly ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-accent")}
-          >All executions</button>
+      {/* Filter bar */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/50" />
+          <Input
+            value={localSearch}
+            onChange={(e) => setLocalSearch(e.target.value)}
+            placeholder="Search invoice / quotation / detail…"
+            className="h-8 w-64 pl-8 text-xs"
+            disabled={!!globalSearch}
+            title={globalSearch ? "Using the header search box" : undefined}
+          />
         </div>
-        <button onClick={onReload} className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground hover:bg-accent">
-          <RefreshCw className="h-3.5 w-3.5" /> Refresh
-        </button>
+
+        <select className={selectCls} value={range} onChange={(e) => setRange(e.target.value as keyof typeof RANGE_MS)}>
+          {Object.keys(RANGE_MS).map((r) => <option key={r} value={r}>{RANGE_LABEL[r]}</option>)}
+        </select>
+
+        <select className={selectCls} value={autoKey} onChange={(e) => setAutoKey(e.target.value)}>
+          <option value="all">All automations</option>
+          {presentKeys.map((k) => <option key={k} value={k}>{nameOf(k)}</option>)}
+        </select>
+
+        <select className={selectCls} value={entityType} onChange={(e) => setEntityType(e.target.value)}>
+          <option value="all">All document types</option>
+          {ENTITY_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+
+        {/* Status chips */}
+        <div className="flex items-center gap-1">
+          {STATUS_ORDER.map((s) => (
+            <button
+              key={s}
+              onClick={() => toggleStatus(s)}
+              className={cn(
+                "rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize transition",
+                statuses.has(s)
+                  ? s === "success" ? "bg-emerald-500/20 text-emerald-400"
+                    : s === "error" ? "bg-red-500/20 text-red-400"
+                    : s === "retry" ? "bg-amber-500/20 text-amber-500"
+                    : "bg-violet-500/20 text-violet-400"
+                  : "text-muted-foreground hover:bg-accent",
+              )}
+            >
+              {s}{statusCounts[s] ? <span className="ml-1 opacity-60 tabular-nums">{statusCounts[s]}</span> : null}
+            </button>
+          ))}
+        </div>
+
+        <div className="ml-auto flex items-center gap-2">
+          <button onClick={exportCsv} disabled={!filtered.length} className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-accent disabled:opacity-50">
+            <Download className="h-3.5 w-3.5" /> Export CSV
+          </button>
+          <button onClick={() => void fetchRuns()} className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-accent">
+            <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} /> Refresh
+          </button>
+        </div>
       </div>
 
-      {rows.length === 0 ? (
-        <div className="py-16 text-center text-sm text-muted-foreground">
-          {errorsOnly ? "No errors in the last 30 days 🎉" : "No executions recorded."}
-        </div>
+      <div className="mb-2 text-[11px] text-muted-foreground">
+        {loading ? "Loading…" : (
+          <>
+            {filtered.length.toLocaleString()} run{filtered.length !== 1 ? "s" : ""}
+            {filtered.length !== rawRuns.length && ` of ${rawRuns.length.toLocaleString()}`}
+            {" "}· {RANGE_LABEL[range].toLowerCase()}
+            {rawRuns.length >= RUN_CAP && ` · capped at ${RUN_CAP.toLocaleString()} — narrow the range for older runs`}
+          </>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+      ) : filtered.length === 0 ? (
+        <div className="py-16 text-center text-sm text-muted-foreground">No runs match these filters.</div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-border">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/20 text-left text-[10.5px] uppercase tracking-wide text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2 font-semibold">When</th>
-                <th className="px-3 py-2 font-semibold">Automation</th>
-                <th className="px-3 py-2 font-semibold">Status</th>
-                <th className="px-3 py-2 font-semibold">Detail</th>
-                <th className="px-3 py-2 font-semibold">Duration</th>
-                <th className="px-3 py-2 font-semibold text-right">Retry</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, i) => {
-                const a = byKey.get(r.automation_key);
-                const canRetry = !!a?.endpoint && a.source !== "n8n";
-                const id = r.started_at + r.automation_key;
-                return (
-                  <tr key={i} className="border-t border-border/40 align-top">
-                    <td className="whitespace-nowrap px-3 py-2 text-[12px] text-muted-foreground">{fmtWhen(r.started_at)}</td>
-                    <td className="px-3 py-2 font-medium">{a?.name ?? r.automation_key}</td>
-                    <td className="px-3 py-2">
-                      <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                        r.status === "success" ? "bg-emerald-500/15 text-emerald-400"
-                          : r.status === "error" ? "bg-red-500/15 text-red-400"
-                          : r.status === "retry" ? "bg-amber-500/15 text-amber-500"
-                          : "bg-violet-500/15 text-violet-400")}>
-                        {r.status === "success" ? <CheckCircle2 className="h-3 w-3" /> : r.status === "error" ? <XCircle className="h-3 w-3" /> : <CircleDot className="h-3 w-3" />}
-                        {r.status}
-                      </span>
-                    </td>
-                    <td className="max-w-[520px] px-3 py-2 text-[12px] text-muted-foreground">
-                      <span className={cn(r.status === "error" && "text-red-400/90")}>{r.detail || "—"}</span>
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-[12px] text-muted-foreground tabular-nums">{dur(r)}</td>
-                    <td className="px-3 py-2 text-right">
-                      {canRetry ? (
-                        <button
-                          onClick={() => void retry(r)}
-                          disabled={retrying === id}
-                          className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] text-foreground/80 hover:bg-accent disabled:opacity-50"
-                        >
-                          {retrying === id ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />} Re-run
-                        </button>
-                      ) : a?.source === "n8n" && a.endpoint ? (
-                        <a href={a.endpoint} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline">
-                          <ExternalLink className="h-3 w-3" /> n8n
-                        </a>
-                      ) : (
-                        <span className="text-[10px] text-muted-foreground/50" title="Event-driven — re-runs automatically on the next trigger">auto</span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <>
+          <div className="overflow-x-auto rounded-xl border border-border">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/20 text-left text-[10.5px] uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <SortHead k="when" label="When" className="whitespace-nowrap" />
+                  <SortHead k="automation" label="Automation" />
+                  <SortHead k="status" label="Status" />
+                  <th className="px-3 py-2 font-semibold">Document</th>
+                  <th className="px-3 py-2 font-semibold">Detail</th>
+                  <SortHead k="duration" label="Duration" className="whitespace-nowrap" />
+                  <th className="px-3 py-2 font-semibold text-right">Retry</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pageRows.map(({ r, entities }, i) => {
+                  const a = byKey.get(r.automation_key);
+                  const canRetry = !!a?.endpoint && a.source !== "n8n";
+                  const id = r.started_at + r.automation_key + i;
+                  return (
+                    <tr key={id} className="border-t border-border/40 align-top">
+                      <td className="whitespace-nowrap px-3 py-2 text-[12px] text-muted-foreground">{fmtWhen(r.started_at)}</td>
+                      <td className="px-3 py-2 font-medium">{a?.name ?? r.automation_key}</td>
+                      <td className="px-3 py-2">
+                        <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                          r.status === "success" ? "bg-emerald-500/15 text-emerald-400"
+                            : r.status === "error" ? "bg-red-500/15 text-red-400"
+                            : r.status === "retry" ? "bg-amber-500/15 text-amber-500"
+                            : "bg-violet-500/15 text-violet-400")}>
+                          {r.status === "success" ? <CheckCircle2 className="h-3 w-3" /> : r.status === "error" ? <XCircle className="h-3 w-3" /> : <CircleDot className="h-3 w-3" />}
+                          {r.status}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2">
+                        {entities.length ? (
+                          <div className="flex flex-wrap gap-1">
+                            {entities.map((e) => (
+                              <button
+                                key={e.ref}
+                                onClick={() => setLocalSearch(e.ref)}
+                                title={`${e.type} — click to filter`}
+                                className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium", e.color)}
+                              >
+                                <FileText className="h-2.5 w-2.5" /> {e.ref}
+                              </button>
+                            ))}
+                          </div>
+                        ) : <span className="text-[11px] text-muted-foreground/40">—</span>}
+                      </td>
+                      <td className="max-w-[420px] px-3 py-2 text-[12px] text-muted-foreground">
+                        <span className={cn(r.status === "error" && "text-red-400/90")}>{r.detail || "—"}</span>
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 text-[12px] text-muted-foreground tabular-nums">{dur(r)}</td>
+                      <td className="px-3 py-2 text-right">
+                        {canRetry ? (
+                          <button
+                            onClick={() => void retry(r)}
+                            disabled={retrying === (r.started_at + r.automation_key)}
+                            className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] text-foreground/80 hover:bg-accent disabled:opacity-50"
+                          >
+                            {retrying === (r.started_at + r.automation_key) ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />} Re-run
+                          </button>
+                        ) : a?.source === "n8n" && a.endpoint ? (
+                          <a href={a.endpoint} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline">
+                            <ExternalLink className="h-3 w-3" /> n8n
+                          </a>
+                        ) : (
+                          <span className="text-[10px] text-muted-foreground/50" title="Event-driven — re-runs automatically on the next trigger">auto</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {pageCount > 1 && (
+            <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+              <span>Page {page + 1} of {pageCount}</span>
+              <div className="flex items-center gap-1">
+                <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0}
+                        className="flex items-center gap-1 rounded-md border border-border px-2 py-1 hover:bg-accent disabled:opacity-40">
+                  <ChevronLeft className="h-3.5 w-3.5" /> Prev
+                </button>
+                <button onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))} disabled={page >= pageCount - 1}
+                        className="flex items-center gap-1 rounded-md border border-border px-2 py-1 hover:bg-accent disabled:opacity-40">
+                  Next <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
