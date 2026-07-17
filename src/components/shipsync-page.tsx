@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Loader2, Package, Truck, Warehouse, Users, BarChart3, Smartphone, ArrowDownToLine, ArrowUpFromLine, Route, Navigation, MapPin, LifeBuoy, Boxes, ChevronLeft } from "lucide-react";
+import { Loader2, Package, Truck, Warehouse, Users, BarChart3, Smartphone, ArrowDownToLine, ArrowUpFromLine, Route, Navigation, MapPin, LifeBuoy } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   loadPackages, loadDrivers, loadNotes, loadDestinations, loadDeliverySchedules, loadVehicles, loadYachtNames,
@@ -49,38 +49,7 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   ]);
 }
 
-/** ShipSync Main Menu — the two apps side by side (mirrors the PowerApps landing):
- *  Driver opens the standalone driver PWA; Logistics enters the office module. */
-function ShipSyncMenu({ onLogistics }: { onLogistics: () => void }) {
-  const tile = "group flex aspect-square w-40 flex-col items-center justify-center gap-3 rounded-2xl border border-border bg-card/50 text-foreground transition hover:border-primary hover:bg-primary/5";
-  return (
-    <div className="flex h-full flex-col items-center justify-center px-6 py-10">
-      <div className="text-center">
-        <h1 className="font-display text-4xl font-bold tracking-tight">ShipSync</h1>
-        <div className="mt-1 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground/70">By Superyacht Middle East</div>
-      </div>
-
-      <div className="mt-12 flex flex-wrap items-center justify-center gap-6">
-        <a href="/shipsync/driver" target="_blank" rel="noopener noreferrer" className={tile}>
-          <Truck className="h-12 w-12 text-primary" />
-          <span className="text-sm font-semibold uppercase tracking-[0.14em]">Driver</span>
-        </a>
-        <button onClick={onLogistics} className={tile}>
-          <Boxes className="h-12 w-12 text-primary" />
-          <span className="text-sm font-semibold uppercase tracking-[0.14em]">Logistics</span>
-        </button>
-      </div>
-
-      <a href="mailto:support@newhorizon-it.co.uk?subject=ShipSync%20problem%20report"
-         className="mt-14 inline-flex items-center gap-1.5 rounded-lg border border-border px-4 py-2 text-sm font-medium text-muted-foreground hover:border-primary/50 hover:text-foreground">
-        <LifeBuoy className="h-4 w-4" /> Report a problem with the app
-      </a>
-    </div>
-  );
-}
-
 export function ShipSyncPage() {
-  const [view, setView] = useState<"menu" | "logistics">("menu");
   const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("packages");
   const [data, setData] = useState<ShipSyncData>({ packages: [], drivers: [], notes: [], destinations: [], schedule: [], vehicles: [], yachts: [] });
   const [loading, setLoading] = useState(true);
@@ -110,20 +79,12 @@ export function ShipSyncPage() {
 
   useEffect(() => { runReload(); }, [runReload]);
 
-  if (view === "menu") return <ShipSyncMenu onLogistics={() => setView("logistics")} />;
-
   return (
     <div className="flex h-full min-w-0 flex-col">
       <header className="flex items-center justify-between border-b border-border/70 bg-card/30 px-6 py-3.5">
-        <div className="flex items-center gap-3">
-          <button onClick={() => setView("menu")} title="ShipSync menu"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border text-muted-foreground hover:border-primary/50 hover:text-foreground">
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-          <div>
-            <div className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-muted-foreground/60">JLS Yacht Logistics</div>
-            <h1 className="mt-0.5 font-display text-[1.25rem] font-semibold tracking-tight">ShipSync — Logistics</h1>
-          </div>
+        <div>
+          <div className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-muted-foreground/60">JLS Yacht Logistics</div>
+          <h1 className="mt-0.5 font-display text-[1.25rem] font-semibold tracking-tight">ShipSync</h1>
         </div>
         <div className="flex items-center gap-2">
           <a href="mailto:support@newhorizon-it.co.uk?subject=ShipSync%20problem%20report" className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium text-muted-foreground hover:border-primary/50 hover:text-foreground">
