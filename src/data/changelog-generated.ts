@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-07-17",
     "entries": [
       {
+        "type": "feature",
+        "title": "All Runs execution log — search and filter every automation run by invoice/quotation/document number, status, automation and date range, with sortable columns, pagination and CSV export"
+      },
+      {
         "type": "fix",
         "title": "Sales Receipts now generate when a payment is received (the event-type check never matched QuickBooks' real events), and Pro-Forma/PO/Receipt attachments no longer leave duplicate copies behind"
       },
