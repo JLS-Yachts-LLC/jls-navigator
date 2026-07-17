@@ -137,6 +137,22 @@ export async function qboUpload(
     const attachable = j?.AttachableResponse?.[0]?.Attachable
     const fault = j?.AttachableResponse?.[0]?.Fault
     if (fault) throw new Error(`QBO upload fault: ${JSON.stringify(fault).slice(0, 300)}`)
+
+    // QBO often stores the uploaded file WITHOUT applying the AttachableRef from the
+    // multipart metadata — the file lands in Attachments but isn't linked to the
+    // entity. Mirror the proven n8n flow: follow up with an /attachable update
+    // (Id + SyncToken + AttachableRef) so the PDF actually shows on the invoice.
+    const linked = Array.isArray(attachable?.AttachableRef) && attachable.AttachableRef.length > 0
+    if (attachable?.Id && !linked) {
+      const upd = await qboRequest('POST', `/attachable?minorversion=73`, {
+        Id: attachable.Id,
+        SyncToken: attachable.SyncToken ?? '0',
+        FileName: fileName,
+        ContentType: contentType,
+        AttachableRef: [{ IncludeOnSend: false, EntityRef: { type: entityType, value: String(entityId) } }],
+      })
+      return upd?.Attachable ?? attachable
+    }
     return attachable
   }
   throw new Error(`QBO upload ${fileName} failed after retries`)
