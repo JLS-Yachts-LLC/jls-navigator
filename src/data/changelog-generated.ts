@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-07-17",
     "entries": [
       {
+        "type": "fix",
+        "title": "Clearer QuickBooks error when a company's saved login is stale — the run log now says to reconnect that company instead of showing Intuit's cryptic invalid_grant message"
+      },
+      {
         "type": "feature",
         "title": "All Runs execution log — search and filter every automation run by invoice/quotation/document number, status, automation and date range, with sortable columns, pagination and CSV export"
       },
