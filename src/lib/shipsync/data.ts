@@ -12,23 +12,28 @@ import {
 const db = () => supabase as any
 
 // ── Reads ────────────────────────────────────────────────────────────────────
-// Local Packages excludes Import rows (those live in the Import tab, mirrored
-// from Monday.com) so the two tabs stay distinct.
+// Local Packages excludes Import and Export rows — those have their own tabs, so
+// the three views stay distinct.
 export async function loadPackages(): Promise<ShipSyncPackage[]> {
   const { data, error } = await db().from('shipsync_packages').select('*')
-    .or('local_import.is.null,local_import.neq.Import')
+    .or('local_import.is.null,and(local_import.neq.Import,local_import.neq.Export)')
     .order('received_at', { ascending: false })
   if (error) throw error
   return (data ?? []) as ShipSyncPackage[]
 }
-/** Import-tab packages — the Monday.com "Import" board mirror. */
-export async function loadImportPackages(): Promise<ShipSyncPackage[]> {
+/** Packages of a given trade type (local_import), newest first. Used by the
+ *  Import and Export tabs. */
+export async function loadPackagesByType(type: string): Promise<ShipSyncPackage[]> {
   const { data, error } = await db().from('shipsync_packages').select('*')
-    .eq('local_import', 'Import')
+    .eq('local_import', type)
     .order('received_at', { ascending: false })
   if (error) throw error
   return (data ?? []) as ShipSyncPackage[]
 }
+/** Import-tab packages. */
+export const loadImportPackages = () => loadPackagesByType('Import')
+/** Export-tab packages. */
+export const loadExportPackages = () => loadPackagesByType('Export')
 export async function loadDrivers(): Promise<ShipSyncDriver[]> {
   const { data } = await db().from('shipsync_drivers').select('*').order('name')
   return (data ?? []) as ShipSyncDriver[]

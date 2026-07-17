@@ -10,14 +10,13 @@ import type {
   ShipSyncPackage, ShipSyncDriver, ShipSyncDeliveryNote, ShipSyncDestination, ShipSyncDeliverySchedule, ShipSyncVehicle,
 } from "@/lib/shipsync/model";
 import { ShipSyncPackages } from "@/components/shipsync/ShipSyncPackages";
-import { ShipSyncImport } from "@/components/shipsync/ShipSyncImport";
+import { ShipSyncShipments } from "@/components/shipsync/ShipSyncShipments";
 import { ShipSyncDispatch } from "@/components/shipsync/ShipSyncDispatch";
 import { ShipSyncRouting } from "@/components/shipsync/ShipSyncRouting";
 import { ShipSyncWarehouse } from "@/components/shipsync/ShipSyncWarehouse";
 import { ShipSyncDrivers } from "@/components/shipsync/ShipSyncDrivers";
 import { ShipSyncDashboard } from "@/components/shipsync/ShipSyncDashboard";
 import { FleetTrackingPage } from "@/components/fleet-tracking-page";
-import { ModuleStub } from "@/components/module-stub";
 
 export interface ShipSyncData {
   packages: ShipSyncPackage[];
@@ -94,24 +93,8 @@ export function ShipSyncPage() {
         ) : (
           <>
             {tab === "packages" && <ShipSyncPackages data={data} reload={reload} />}
-            {tab === "import" && <ShipSyncImport />}
-            {tab === "export" && (
-              <ModuleStub
-                icon={<ArrowUpFromLine />}
-                name="Export"
-                tagline="Outbound shipments and returns"
-                description="Manage outbound cargo, export documentation, and return shipments from vessels to suppliers or other destinations."
-                phase="Coming soon"
-                accentColor="text-primary"
-                features={[
-                  "Export declaration and documentation",
-                  "Return shipment management",
-                  "Outbound cargo manifests",
-                  "Courier and freight booking",
-                  "Export compliance tracking",
-                ]}
-              />
-            )}
+            {tab === "import" && <ShipSyncShipments kind="Import" />}
+            {tab === "export" && <ShipSyncShipments kind="Export" />}
             {tab === "dispatch" && <ShipSyncDispatch data={data} reload={reload} />}
             {tab === "routing" && <ShipSyncRouting data={data} reload={reload} />}
             {tab === "warehouse" && <ShipSyncWarehouse data={data} reload={reload} />}
