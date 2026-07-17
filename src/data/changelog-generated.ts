@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-07-17",
     "entries": [
       {
+        "type": "feature",
+        "title": "The Automations page live-refreshes every minute (silently, no spinner flash) and gains a Refresh button in the header for an instant manual update"
+      },
+      {
         "type": "fix",
         "title": "QBO attachment linking now ALWAYS runs the /attachable bind after upload (the upload response echoes an AttachableRef without actually linking, so the conditional skipped it) — exact parity with the working n8n flow; also trim whitespace on the Intuit webhook verifier comparison"
       },
