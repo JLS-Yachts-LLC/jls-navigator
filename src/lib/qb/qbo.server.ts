@@ -43,7 +43,16 @@ async function refreshAccessToken(sb: any, realm: string): Promise<string> {
     headers: { Authorization: `Basic ${basic}`, 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
     body: `grant_type=refresh_token&refresh_token=${encodeURIComponent(refreshToken)}`,
   })
-  if (!res.ok) throw new Error(`QBO token refresh failed (${res.status}): ${await res.text().catch(() => '')}`)
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    // invalid_grant means the stored refresh token is no longer valid for the
+    // current app — almost always because it was minted by a PREVIOUS Intuit app
+    // (different client id) and never re-connected under the new one. Say so.
+    if (/invalid_grant/.test(body)) {
+      throw new Error(`QBO realm ${realm} refresh token is invalid — reconnect this company via /api/qb/connect (its token was likely issued by a previous Intuit app). Raw: ${body}`)
+    }
+    throw new Error(`QBO token refresh failed (${res.status}): ${body}`)
+  }
   const j: any = await res.json()
   const now = Date.now()
   await sb.from('qbo_tokens').upsert({
