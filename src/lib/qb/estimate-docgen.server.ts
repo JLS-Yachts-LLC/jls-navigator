@@ -756,14 +756,14 @@ export async function runEstimateDocgen(entityId: string, rawType: string): Prom
   )) return 'skip-own-echo'
 
   // Existing "Quotation - …" attachments (to supersede after the new upload).
-  const existingRes = await qboQuery(
-    `SELECT * FROM Attachable WHERE AttachableRef.EntityRef.Type = 'Estimate' AND AttachableRef.EntityRef.value = '${String(entityId).replace(/'/g, "''")}'`,
-  )
+  const attachQuery = `SELECT * FROM Attachable WHERE AttachableRef.EntityRef.Type = 'Estimate' AND AttachableRef.EntityRef.value = '${String(entityId).replace(/'/g, "''")}'`
+  const existingRes = await qboQuery(attachQuery)
   const docNumber = String(estimate.DocNumber || estimate.Id)
-  const old = ((existingRes?.QueryResponse?.Attachable ?? []) as any[]).filter((a) => {
+  const isOurQuotationFile = (a: any) => {
     const fn = String(a.FileName ?? '')
     return fn.startsWith('Quotation') && fn.includes(docNumber) && (/\.pdf$/i.test(fn) || /\.xlsx$/i.test(fn))
-  })
+  }
+  const old = ((existingRes?.QueryResponse?.Attachable ?? []) as any[]).filter(isOurQuotationFile)
 
   // Customer TRN (shown in the QUOTE TO box, like the n8n flow's customer lookup).
   let trnNo = ''
@@ -777,12 +777,22 @@ export async function runEstimateDocgen(entityId: string, rawType: string): Prom
   const data = transformEstimate(estimate, { trnNo })
   const pdfBytes = await buildQuotationPdf(data)
   const xlsxBytes = buildQuotationXlsx(data)
-  await qboUpload(`Quotation - ${docNumber}.pdf`, pdfBytes, 'application/pdf', 'Estimate', String(entityId))
-  await qboUpload(`Quotation - ${docNumber}.xlsx`, xlsxBytes, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Estimate', String(entityId))
+  const newPdf = await qboUpload(`Quotation - ${docNumber}.pdf`, pdfBytes, 'application/pdf', 'Estimate', String(entityId))
+  const newXlsx = await qboUpload(`Quotation - ${docNumber}.xlsx`, xlsxBytes, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Estimate', String(entityId))
+  const keepIds = new Set([newPdf?.Id, newXlsx?.Id].filter(Boolean).map(String))
 
-  // Delete superseded attachments (best-effort).
+  // Delete superseded attachments (best-effort). QBO's Attachable query index is
+  // eventually consistent: the file the PREVIOUS run uploaded last (the xlsx) can
+  // still be missing from the pre-upload snapshot and would survive as a duplicate.
+  // Re-query after the upload, union both snapshots, and delete everything that
+  // matches except the two files we just uploaded.
+  const afterRes = await qboQuery(attachQuery).catch(() => null)
+  const supersede = new Map<string, any>()
+  for (const a of [...old, ...(((afterRes?.QueryResponse?.Attachable ?? []) as any[]).filter(isOurQuotationFile))]) {
+    if (a?.Id && !keepIds.has(String(a.Id))) supersede.set(String(a.Id), a)
+  }
   let deleted = 0
-  for (const a of old) {
+  for (const a of supersede.values()) {
     try {
       await qboRequest('POST', '/attachable?operation=delete&minorversion=73', {
         Id: String(a.Id), SyncToken: String(a.SyncToken), domain: 'QBO',

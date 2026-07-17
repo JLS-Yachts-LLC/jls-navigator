@@ -425,10 +425,11 @@ export async function renderInvoicePdf(t: TransformedInvoice, company: Company, 
 
 // ── Attachment cycle + orchestration entry point ──────────────────────────────
 
-async function deleteOldPdfs(qboId: string, docNumber: string): Promise<number> {
+async function deleteOldPdfs(qboId: string, docNumber: string, excludeId?: string): Promise<number> {
   const res = await qboQuery(`SELECT * FROM Attachable WHERE AttachableRef.EntityRef.Type = 'Invoice' AND AttachableRef.EntityRef.value = '${qboId}'`)
   const old = (res?.QueryResponse?.Attachable ?? []).filter((a: any) => {
     const f = String(a.FileName ?? '')
+    if (excludeId && String(a.Id) === excludeId) return false
     return f.startsWith('Invoice -') && f.includes(docNumber) && f.toLowerCase().endsWith('.pdf')
   })
   let deleted = 0
@@ -498,8 +499,12 @@ export async function generateAndAttachInvoicePdf(qboInvoiceId: string, opts: { 
       return { ok: true, action: 'skipped', detail: 'preview only', docNumber: t.docNumber, ms: Date.now() - started }
     }
 
-    const deletedOld = await deleteOldPdfs(t.qboId, t.docNumber)
+    // Upload FIRST, then clean up: QBO's Attachable query index is eventually
+    // consistent, so deleting from a pre-upload snapshot can miss the previous
+    // run's file and leave a duplicate. Post-upload, everything older is indexed —
+    // delete all matching PDFs except the one just uploaded.
     const att = await qboUpload(fileName, pdf, 'application/pdf', 'Invoice', t.qboId)
+    const deletedOld = await deleteOldPdfs(t.qboId, t.docNumber, String(att?.Id ?? ''))
     // Diagnostic: what did QBO actually return for the link?
     const linkedTo = (Array.isArray(att?.AttachableRef) && att.AttachableRef[0]?.EntityRef?.value) || 'NONE'
 
