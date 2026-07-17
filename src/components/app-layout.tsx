@@ -63,7 +63,7 @@ export function AppLayout() {
   // The Polaris home screen ships its own shell (screen switching lives inside it).
   // The ShipSync driver PWA and the parcel checker are standalone, full-screen
   // tools (phone / scan-gun) — they render bare, without the office chrome.
-  const STANDALONE = ["/polaris-redesign", "/shipsync/driver", "/shipsync/checker"];
+  const STANDALONE = ["/polaris-redesign", "/shipsync/driver", "/shipsync/checker", "/shipsync/logistics"];
   if (STANDALONE.some((p) => location.pathname.startsWith(p))) {
     return (
       <>

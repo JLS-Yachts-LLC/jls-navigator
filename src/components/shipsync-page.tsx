@@ -92,10 +92,10 @@ export function ShipSyncPage() {
           <a href="mailto:support@newhorizon-it.co.uk?subject=ShipSync%20problem%20report" className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium text-muted-foreground hover:border-primary/50 hover:text-foreground">
             <LifeBuoy className="h-4 w-4" /> Report a problem
           </a>
-          {/* The two apps as a pair — Logistics (active, this view) + Driver app. */}
-          <button onClick={() => setTab("packages")} className="inline-flex items-center gap-1.5 rounded-lg border border-primary bg-primary/10 px-3 py-2 text-sm font-medium text-primary">
-            <Boxes className="h-4 w-4" /> Logistics
-          </button>
+          {/* The two standalone apps, launched side by side (each opens full-screen). */}
+          <a href="/shipsync/logistics" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:border-primary/50">
+            <Boxes className="h-4 w-4" /> Logistics app
+          </a>
           <a href="/shipsync/driver" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:border-primary/50">
             <Smartphone className="h-4 w-4" /> Driver app
           </a>
