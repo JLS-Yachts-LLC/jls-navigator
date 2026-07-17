@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-07-17",
     "entries": [
       {
+        "type": "fix",
+        "title": "QuickBooks webhook now processes each event against its OWN company"
+      },
+      {
         "type": "feature",
         "title": "QB webhook run log now shows the PDF/doc-gen outcome per event (pdf:attached/skipped/disabled) — previously only the Finance-sync result was logged, hiding whether the attach ran"
       },

@@ -20,6 +20,7 @@ import { createClient } from '@supabase/supabase-js'
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 import { qboRequest, qboQuery, qboUpload, qboConfigured } from './qbo.server'
 import { QUOTATION_TEMPLATE_COORDS, type QuotationVariant, type StampField, type StampPage } from './quotation-template-coords'
+import { logAutomationRun } from '@/lib/automations.server'
 
 function admin() {
   return createClient(process.env.SUPABASE_URL ?? '', process.env.SUPABASE_SERVICE_ROLE_KEY ?? '', { auth: { persistSession: false } })
@@ -794,5 +795,13 @@ export async function runEstimateDocgen(entityId: string, rawType: string): Prom
     create_last_updated_time: createTime, updated_at: new Date().toISOString(),
   }, { onConflict: 'doc_type,doc_id' })
 
-  return `docgen-ok pdf+xlsx attached${deleted ? `, ${deleted} old removed` : ''}`
+  const result = `docgen-ok pdf+xlsx attached${deleted ? `, ${deleted} old removed` : ''}`
+  // Stamp this automation's own card so it reflects real activity (rather than
+  // being folded only into the qb-webhook summary and reading "Last run: Never").
+  await logAutomationRun({
+    key: 'qb-estimate-doc', name: 'QB Quotation/Estimate — document generation',
+    source: 'worker', trigger_type: 'webhook', category: 'Finance',
+    status: 'success', detail: `Q ${docNumber}: ${result}`,
+  })
+  return result
 }
