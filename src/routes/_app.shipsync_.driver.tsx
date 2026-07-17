@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { DriverApp } from "@/components/shipsync/driver/DriverApp";
 
-export const Route = createFileRoute("/_app/shipsync/driver")({
+export const Route = createFileRoute("/_app/shipsync_/driver")({
   component: DriverApp,
   head: () => ({
     meta: [

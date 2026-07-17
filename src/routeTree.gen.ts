@@ -79,8 +79,8 @@ import { Route as AppYachtsNewRouteImport } from './routes/_app.yachts.new'
 import { Route as AppYachtsIdRouteImport } from './routes/_app.yachts.$id'
 import { Route as AppWaypointQuotationsRouteImport } from './routes/_app.waypoint.quotations'
 import { Route as AppTrainingCertificationsRouteImport } from './routes/_app.training.certifications'
-import { Route as AppShipsyncDriverRouteImport } from './routes/_app.shipsync.driver'
-import { Route as AppShipsyncCheckerRouteImport } from './routes/_app.shipsync.checker'
+import { Route as AppShipsyncDriverRouteImport } from './routes/_app.shipsync_.driver'
+import { Route as AppShipsyncCheckerRouteImport } from './routes/_app.shipsync_.checker'
 import { Route as AppSeaportNewRouteImport } from './routes/_app.seaport.new'
 import { Route as AppSeaportRequestIdRouteImport } from './routes/_app.seaport.$requestId'
 import { Route as AppPortalTrainingRouteImport } from './routes/_app.portal.training'
@@ -496,14 +496,14 @@ const AppTrainingCertificationsRoute =
     getParentRoute: () => AppTrainingRoute,
   } as any)
 const AppShipsyncDriverRoute = AppShipsyncDriverRouteImport.update({
-  id: '/driver',
-  path: '/driver',
-  getParentRoute: () => AppShipsyncRoute,
+  id: '/shipsync_/driver',
+  path: '/shipsync/driver',
+  getParentRoute: () => AppRoute,
 } as any)
 const AppShipsyncCheckerRoute = AppShipsyncCheckerRouteImport.update({
-  id: '/checker',
-  path: '/checker',
-  getParentRoute: () => AppShipsyncRoute,
+  id: '/shipsync_/checker',
+  path: '/shipsync/checker',
+  getParentRoute: () => AppRoute,
 } as any)
 const AppSeaportNewRoute = AppSeaportNewRouteImport.update({
   id: '/new',
@@ -876,7 +876,7 @@ export interface FileRoutesByFullPath {
   '/seaport': typeof AppSeaportRouteWithChildren
   '/settings': typeof AppSettingsRoute
   '/ship-spares': typeof AppShipSparesRoute
-  '/shipsync': typeof AppShipsyncRouteWithChildren
+  '/shipsync': typeof AppShipsyncRoute
   '/small-boat-registration': typeof AppSmallBoatRegistrationRoute
   '/training': typeof AppTrainingRouteWithChildren
   '/waypoint': typeof AppWaypointRouteWithChildren
@@ -1001,7 +1001,7 @@ export interface FileRoutesByTo {
   '/recycle-bin': typeof AppRecycleBinRoute
   '/settings': typeof AppSettingsRoute
   '/ship-spares': typeof AppShipSparesRoute
-  '/shipsync': typeof AppShipsyncRouteWithChildren
+  '/shipsync': typeof AppShipsyncRoute
   '/small-boat-registration': typeof AppSmallBoatRegistrationRoute
   '/yacht-it': typeof AppYachtItRoute
   '/legal/eula': typeof LegalEulaRoute
@@ -1130,7 +1130,7 @@ export interface FileRoutesById {
   '/_app/seaport': typeof AppSeaportRouteWithChildren
   '/_app/settings': typeof AppSettingsRoute
   '/_app/ship-spares': typeof AppShipSparesRoute
-  '/_app/shipsync': typeof AppShipsyncRouteWithChildren
+  '/_app/shipsync': typeof AppShipsyncRoute
   '/_app/small-boat-registration': typeof AppSmallBoatRegistrationRoute
   '/_app/training': typeof AppTrainingRouteWithChildren
   '/_app/waypoint': typeof AppWaypointRouteWithChildren
@@ -1180,8 +1180,8 @@ export interface FileRoutesById {
   '/_app/portal/training': typeof AppPortalTrainingRoute
   '/_app/seaport/$requestId': typeof AppSeaportRequestIdRoute
   '/_app/seaport/new': typeof AppSeaportNewRoute
-  '/_app/shipsync/checker': typeof AppShipsyncCheckerRoute
-  '/_app/shipsync/driver': typeof AppShipsyncDriverRoute
+  '/_app/shipsync_/checker': typeof AppShipsyncCheckerRoute
+  '/_app/shipsync_/driver': typeof AppShipsyncDriverRoute
   '/_app/training/certifications': typeof AppTrainingCertificationsRoute
   '/_app/waypoint/quotations': typeof AppWaypointQuotationsRoute
   '/_app/yachts/$id': typeof AppYachtsIdRoute
@@ -1568,8 +1568,8 @@ export interface FileRouteTypes {
     | '/_app/portal/training'
     | '/_app/seaport/$requestId'
     | '/_app/seaport/new'
-    | '/_app/shipsync/checker'
-    | '/_app/shipsync/driver'
+    | '/_app/shipsync_/checker'
+    | '/_app/shipsync_/driver'
     | '/_app/training/certifications'
     | '/_app/waypoint/quotations'
     | '/_app/yachts/$id'
@@ -2111,19 +2111,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppTrainingCertificationsRouteImport
       parentRoute: typeof AppTrainingRoute
     }
-    '/_app/shipsync/driver': {
-      id: '/_app/shipsync/driver'
-      path: '/driver'
+    '/_app/shipsync_/driver': {
+      id: '/_app/shipsync_/driver'
+      path: '/shipsync/driver'
       fullPath: '/shipsync/driver'
       preLoaderRoute: typeof AppShipsyncDriverRouteImport
-      parentRoute: typeof AppShipsyncRoute
+      parentRoute: typeof AppRoute
     }
-    '/_app/shipsync/checker': {
-      id: '/_app/shipsync/checker'
-      path: '/checker'
+    '/_app/shipsync_/checker': {
+      id: '/_app/shipsync_/checker'
+      path: '/shipsync/checker'
       fullPath: '/shipsync/checker'
       preLoaderRoute: typeof AppShipsyncCheckerRouteImport
-      parentRoute: typeof AppShipsyncRoute
+      parentRoute: typeof AppRoute
     }
     '/_app/seaport/new': {
       id: '/_app/seaport/new'
@@ -2809,20 +2809,6 @@ const AppSeaportRouteWithChildren = AppSeaportRoute._addFileChildren(
   AppSeaportRouteChildren,
 )
 
-interface AppShipsyncRouteChildren {
-  AppShipsyncCheckerRoute: typeof AppShipsyncCheckerRoute
-  AppShipsyncDriverRoute: typeof AppShipsyncDriverRoute
-}
-
-const AppShipsyncRouteChildren: AppShipsyncRouteChildren = {
-  AppShipsyncCheckerRoute: AppShipsyncCheckerRoute,
-  AppShipsyncDriverRoute: AppShipsyncDriverRoute,
-}
-
-const AppShipsyncRouteWithChildren = AppShipsyncRoute._addFileChildren(
-  AppShipsyncRouteChildren,
-)
-
 interface AppTrainingRouteChildren {
   AppTrainingCertificationsRoute: typeof AppTrainingCertificationsRoute
   AppTrainingIndexRoute: typeof AppTrainingIndexRoute
@@ -2893,7 +2879,7 @@ interface AppRouteChildren {
   AppSeaportRoute: typeof AppSeaportRouteWithChildren
   AppSettingsRoute: typeof AppSettingsRoute
   AppShipSparesRoute: typeof AppShipSparesRoute
-  AppShipsyncRoute: typeof AppShipsyncRouteWithChildren
+  AppShipsyncRoute: typeof AppShipsyncRoute
   AppSmallBoatRegistrationRoute: typeof AppSmallBoatRegistrationRoute
   AppTrainingRoute: typeof AppTrainingRouteWithChildren
   AppWaypointRoute: typeof AppWaypointRouteWithChildren
@@ -2913,6 +2899,8 @@ interface AppRouteChildren {
   AppPortalShipsyncRoute: typeof AppPortalShipsyncRoute
   AppPortalSupplierRoute: typeof AppPortalSupplierRoute
   AppPortalTrainingRoute: typeof AppPortalTrainingRoute
+  AppShipsyncCheckerRoute: typeof AppShipsyncCheckerRoute
+  AppShipsyncDriverRoute: typeof AppShipsyncDriverRoute
   AppYachtsIdRoute: typeof AppYachtsIdRoute
   AppYachtsNewRoute: typeof AppYachtsNewRoute
   AppYachtsIndexRoute: typeof AppYachtsIndexRoute
@@ -2960,7 +2948,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppSeaportRoute: AppSeaportRouteWithChildren,
   AppSettingsRoute: AppSettingsRoute,
   AppShipSparesRoute: AppShipSparesRoute,
-  AppShipsyncRoute: AppShipsyncRouteWithChildren,
+  AppShipsyncRoute: AppShipsyncRoute,
   AppSmallBoatRegistrationRoute: AppSmallBoatRegistrationRoute,
   AppTrainingRoute: AppTrainingRouteWithChildren,
   AppWaypointRoute: AppWaypointRouteWithChildren,
@@ -2980,6 +2968,8 @@ const AppRouteChildren: AppRouteChildren = {
   AppPortalShipsyncRoute: AppPortalShipsyncRoute,
   AppPortalSupplierRoute: AppPortalSupplierRoute,
   AppPortalTrainingRoute: AppPortalTrainingRoute,
+  AppShipsyncCheckerRoute: AppShipsyncCheckerRoute,
+  AppShipsyncDriverRoute: AppShipsyncDriverRoute,
   AppYachtsIdRoute: AppYachtsIdRoute,
   AppYachtsNewRoute: AppYachtsNewRoute,
   AppYachtsIndexRoute: AppYachtsIndexRoute,
