@@ -747,7 +747,7 @@ export async function runEstimateDocgen(entityId: string, rawType: string): Prom
     .select('id, last_updated_time, del_last_updated_time, create_last_updated_time')
     .eq('doc_type', 'Estimate').eq('doc_id', String(entityId)).maybeSingle()
 
-  const isCreate = rawType.includes('.created')
+  const isCreate = rawType.includes('.create') // Intuit event types are present-tense ('.create'); tolerate '.created' too
   if (isCreate && log) return 'skip-already-created'
   if (!isCreate && log && (
     log.last_updated_time === lastUpdated ||

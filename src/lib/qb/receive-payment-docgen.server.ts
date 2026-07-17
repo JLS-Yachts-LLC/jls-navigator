@@ -124,7 +124,9 @@ async function buildSalesReceiptPdf(r: ReceiptData): Promise<Uint8Array> {
 export async function runReceivePaymentDocgen(entityId: string, rawType: string): Promise<string> {
   if (!qboConfigured()) return 'qbo-not-configured'
   // The n8n workflow handles payment CREATE only.
-  if (!rawType.includes('.created')) return 'payment-skip-non-create'
+  // Intuit sends present-tense event types ('qbo.payment.create'); accept the
+  // past-tense form too so the gate can't silently skip every real payment.
+  if (!rawType.includes('.create')) return 'payment-skip-non-create'
   const sb = admin() as any
 
   const toggle = await docgenToggle(sb, 'qb-payment-doc', 'QB Receive Payment — Sales Receipt',

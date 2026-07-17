@@ -390,7 +390,7 @@ export async function docgenGuard(
   const { data: log } = await sb.from('qbo_doc_logs')
     .select('id, last_updated_time, del_last_updated_time, create_last_updated_time')
     .eq('doc_type', docType).eq('doc_id', String(entityId)).maybeSingle()
-  const isCreate = rawType.includes('.created')
+  const isCreate = rawType.includes('.create') // Intuit event types are present-tense ('.create'); tolerate '.created' too
   if (isCreate && log) return 'skip-already-created'
   if (!isCreate && log && (
     log.last_updated_time === lastUpdated ||
@@ -416,20 +416,33 @@ export async function attachAndLog(opts: {
 }): Promise<string> {
   const { sb, entity, entityId, docType, docNumber, filenamePrefix, files, createTime, fetchPath, stampField } = opts
 
-  const existingRes = await qboQuery(
-    `SELECT * FROM Attachable WHERE AttachableRef.EntityRef.Type = '${entity}' AND AttachableRef.EntityRef.value = '${String(entityId).replace(/'/g, "''")}'`,
-  )
-  const old = ((existingRes?.QueryResponse?.Attachable ?? []) as any[]).filter((a) => {
+  const attachQuery = `SELECT * FROM Attachable WHERE AttachableRef.EntityRef.Type = '${entity}' AND AttachableRef.EntityRef.value = '${String(entityId).replace(/'/g, "''")}'`
+  const isOurFile = (a: any) => {
     const fn = String(a.FileName ?? '')
     return fn.startsWith(filenamePrefix.split(' - ')[0]) && fn.includes(docNumber)
-  })
+  }
+  const existingRes = await qboQuery(attachQuery)
+  const old = ((existingRes?.QueryResponse?.Attachable ?? []) as any[]).filter(isOurFile)
 
-  for (const f of files) await qboUpload(f.name, f.bytes, f.contentType, entity, String(entityId))
+  const keepIds = new Set<string>()
+  for (const f of files) {
+    const att = await qboUpload(f.name, f.bytes, f.contentType, entity, String(entityId))
+    if (att?.Id) keepIds.add(String(att.Id))
+  }
 
+  // Delete superseded copies AFTER the upload, from the union of both snapshots:
+  // QBO's Attachable query index is eventually consistent, so the previous run's
+  // last-uploaded file can be missing from the pre-upload snapshot and would
+  // otherwise survive as a duplicate. Never touches the files just uploaded.
+  const afterRes2 = await qboQuery(attachQuery).catch(() => null)
+  const supersede = new Map<string, any>()
+  for (const a of [...old, ...(((afterRes2?.QueryResponse?.Attachable ?? []) as any[]).filter(isOurFile))]) {
+    if (a?.Id && !keepIds.has(String(a.Id))) supersede.set(String(a.Id), a)
+  }
   let deleted = 0
-  for (const a of old) {
+  for (const a of supersede.values()) {
     try {
-      await qboRequest('POST', '/attachable?operation=delete&minorversion=65', { Id: String(a.Id), SyncToken: String(a.SyncToken), domain: 'QBO', AttachableRef: a.AttachableRef })
+      await qboRequest('POST', '/attachable?operation=delete&minorversion=73', { Id: String(a.Id), SyncToken: String(a.SyncToken), domain: 'QBO', AttachableRef: a.AttachableRef })
       deleted++
     } catch { /* best-effort */ }
   }
