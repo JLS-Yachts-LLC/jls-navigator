@@ -9,6 +9,18 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-07-17",
     "entries": [
       {
+        "type": "fix",
+        "title": "Auto-recover from stale-chunk errors after a deploy — a lazily-loaded page failing to fetch (e.g. Live Tracking on an old tab) now reloads onto the new build automatically instead of showing \"Something went wrong\"; the error screen also offers a proper Reload for version mismatches"
+      },
+      {
+        "type": "feature",
+        "title": "Logistics scanning + Parcel Checker tab (PowerApps parity)"
+      },
+      {
+        "type": "feature",
+        "title": "Logistics + Driver app buttons paired in the header"
+      },
+      {
         "type": "feature",
         "title": "Feature Release settings — tag any menu item with a Beta / In Development / Active badge that shows as a small pill on the left sidebar (Settings → Feature Release); changes apply live"
       },
