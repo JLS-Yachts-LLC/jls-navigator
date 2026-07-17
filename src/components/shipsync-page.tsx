@@ -40,22 +40,44 @@ const TABS = [
   { key: "dashboard", label: "Dashboard",     icon: BarChart3 },
 ] as const;
 
+/** Resolve a promise, or reject after `ms` — so one wedged request can't trap the
+ *  whole page on a spinner forever (surfaces an error + Retry instead). */
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`${label} timed out`)), ms)),
+  ]);
+}
+
 export function ShipSyncPage() {
   const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("packages");
   const [data, setData] = useState<ShipSyncData>({ packages: [], drivers: [], notes: [], destinations: [], schedule: [], vehicles: [], yachts: [] });
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
+    // allSettled + per-source fallbacks: one failing/slow query degrades that
+    // section gracefully instead of blanking or hanging the whole module.
     const [packages, drivers, notes, destinations, schedule, vehicles, yachts] = await Promise.all([
-      loadPackages(), loadDrivers(), loadNotes(), loadDestinations(),
-      loadDeliverySchedules().catch(() => []),
-      loadVehicles().catch(() => []),
-      loadYachtNames().catch(() => []),
+      withTimeout(loadPackages(), 20000, "Packages").catch(() => [] as ShipSyncData["packages"]),
+      withTimeout(loadDrivers(), 20000, "Drivers").catch(() => [] as ShipSyncData["drivers"]),
+      withTimeout(loadNotes(), 20000, "Notes").catch(() => [] as ShipSyncData["notes"]),
+      withTimeout(loadDestinations(), 20000, "Destinations").catch(() => [] as ShipSyncData["destinations"]),
+      withTimeout(loadDeliverySchedules(), 20000, "Schedule").catch(() => [] as ShipSyncData["schedule"]),
+      withTimeout(loadVehicles(), 20000, "Vehicles").catch(() => [] as ShipSyncData["vehicles"]),
+      withTimeout(loadYachtNames(), 20000, "Yachts").catch(() => [] as string[]),
     ]);
     setData({ packages, drivers, notes, destinations, schedule, vehicles, yachts });
   }, []);
 
-  useEffect(() => { void reload().finally(() => setLoading(false)); }, [reload]);
+  const runReload = useCallback(() => {
+    setLoading(true); setError(null);
+    reload()
+      .catch((e) => setError(e?.message ?? "Could not load ShipSync data"))
+      .finally(() => setLoading(false));
+  }, [reload]);
+
+  useEffect(() => { runReload(); }, [runReload]);
 
   return (
     <div className="flex h-full min-w-0 flex-col">
@@ -89,6 +111,11 @@ export function ShipSyncPage() {
       <div className="min-w-0 flex-1 overflow-auto">
         {loading ? (
           <div className="flex h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+        ) : error ? (
+          <div className="flex h-64 flex-col items-center justify-center gap-3 text-center">
+            <p className="text-sm text-muted-foreground">Couldn’t load ShipSync data.<br /><span className="text-xs text-muted-foreground/70">{error}</span></p>
+            <button onClick={runReload} className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:border-primary/50">Retry</button>
+          </div>
         ) : (
           <>
             {tab === "packages" && <ShipSyncPackages data={data} reload={reload} />}
