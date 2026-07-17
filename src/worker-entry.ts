@@ -321,6 +321,11 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
 
 export default {
   async fetch(request: Request, env: Record<string, unknown>, ctx: { waitUntil: (p: Promise<unknown>) => void }): Promise<Response> {
+    // Expose the Worker env (incl. the static ASSETS binding) to server libs.
+    // A Worker cannot HTTP-fetch its own hostname, so anything needing a file
+    // from public/ (e.g. the branded Quotation template backgrounds) must go
+    // through env.ASSETS instead of a URL fetch.
+    ;(globalThis as Record<string, unknown>).__CF_ENV = env
     const url = new URL(request.url)
 
     if (url.pathname === '/sp-hook' || url.pathname === '/api/sharepoint-webhook' || url.pathname === '/api/sharepoint-webhook/') {
@@ -602,6 +607,7 @@ export default {
   // Cron triggers: "0 * * * *" (hourly) → SharePoint inbound sync of all lists;
   // "*/15 * * * *" (every 15 min) → live vehicle/vessel tracking + daily alert checks.
   async scheduled(_event: unknown, _env: Record<string, unknown>, ctx: { waitUntil: (p: Promise<unknown>) => void }): Promise<void> {
+    ;(globalThis as Record<string, unknown>).__CF_ENV = _env
     const utcHour = new Date().getUTCHours();
     const cron = (_event as { cron?: string } | undefined)?.cron;
     const isHourly = cron === '0 * * * *' || (cron == null && new Date().getUTCMinutes() < 15);

@@ -5,6 +5,10 @@
   "compatibility_date": "2025-09-24",
   "compatibility_flags": ["nodejs_compat"],
   "main": "src/worker-entry.ts",
+  // Expose the static assets as an env binding: a Worker can't HTTP-fetch its own
+  // hostname, so server code reads files from public/ via env.ASSETS.fetch(...)
+  // (e.g. the branded Quotation template backgrounds in public/qb-templates/).
+  "assets": { "binding": "ASSETS" },
   "triggers": {
     "crons": ["*/15 * * * *", "0 * * * *", "5,20,35,50 * * * *", "*/5 * * * *"]
   },

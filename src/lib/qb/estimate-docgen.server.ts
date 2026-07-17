@@ -209,8 +209,14 @@ async function fetchBackground(variant: QuotationVariant): Promise<Uint8Array | 
   const cached = bgCache.get(variant)
   if (cached) return cached
   const base = process.env.VITE_APP_URL || 'https://jls-navigator.m-peeters-4a0.workers.dev'
+  const url = `${base.replace(/\/$/, '')}/qb-templates/quotation-bg-${variant}.pdf`
   try {
-    const res = await fetch(`${base.replace(/\/$/, '')}/qb-templates/quotation-bg-${variant}.pdf`)
+    // In production a Worker CANNOT fetch its own hostname (Cloudflare blocks
+    // self-requests), which silently dropped us to the unbranded fallback layout.
+    // Read the file from the static ASSETS binding instead; plain fetch remains
+    // as the dev-server fallback.
+    const assets = (globalThis as Record<string, any>).__CF_ENV?.ASSETS
+    const res = assets?.fetch ? await assets.fetch(url) : await fetch(url)
     if (!res.ok) return null
     const bytes = new Uint8Array(await res.arrayBuffer())
     bgCache.set(variant, bytes)
