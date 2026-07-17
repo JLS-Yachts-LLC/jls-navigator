@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -7,9 +8,10 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
-  Loader2, MapPin, Truck, Camera, CheckCircle2, ChevronLeft, ScanLine, Wifi, WifiOff, CloudUpload,
+  Loader2, MapPin, Truck, Camera, CheckCircle2, ChevronLeft, ScanLine, Wifi, WifiOff, CloudUpload, PackageSearch,
 } from "lucide-react";
 import { SignaturePad, type SignaturePadHandle } from "@/components/shipsync/driver/SignaturePad";
+import { BarcodeScannerDialog } from "@/components/shipsync/BarcodeScanner";
 import { StatusBadge } from "@/components/shipsync/shared";
 import { googleMapsDirectionsUrl, vanLabel, type ShipSyncDriver, type ShipSyncDestination, type ShipSyncPackage, type PackageStatus } from "@/lib/shipsync/model";
 import { resolveDriver, listActiveDrivers, loadDriverRuns, scanOntoVan, deliverBoat, type DriverRuns } from "@/lib/shipsync/driver-data";
@@ -128,6 +130,7 @@ export function DriverApp() {
           <div className="text-sm font-semibold">{driver.name}{runs.vehicles[0] ? ` · ${vanLabel(runs.vehicles[0])}` : ""}</div>
           <div className="text-[11px] text-muted-foreground">{stops.length} stop{stops.length === 1 ? "" : "s"} · {runs.packages.length} parcel{runs.packages.length === 1 ? "" : "s"}</div>
         </div>
+        <Link to={"/shipsync/checker" as any} title="Parcel Checker" className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"><PackageSearch className="h-4 w-4" /></Link>
         {queued > 0 && <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold text-amber-600 dark:text-amber-400"><CloudUpload className="h-3 w-3" /> {queued} queued</span>}
         <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${online ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : "bg-red-500/15 text-red-600 dark:text-red-400"}`}>
           {online ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />} {online ? "Online" : "Offline"}
@@ -184,6 +187,7 @@ function BoatDetail({ boat, dnRef, berth, packages, online, onBack, onChanged }:
 }) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [signing, setSigning] = useState(false);
+  const [scanOpen, setScanOpen] = useState(false);
   const navUrl = googleMapsDirectionsUrl([{ address: berth?.address, lat: berth?.lat, lng: berth?.lng }]);
   const label = boat === "—" ? "No boat set" : boat;
 
@@ -191,6 +195,17 @@ function BoatDetail({ boat, dnRef, berth, packages, online, onBack, onChanged }:
     setBusyId(p.id);
     try { await scanOntoVan(p); toast.success("Loaded onto van"); onChanged(); }
     catch (e: any) { toast.error(e?.message ?? "Failed"); } finally { setBusyId(null); }
+  }
+
+  // Barcode scan → match a parcel on this stop and load it onto the van.
+  async function onScan(code: string) {
+    setScanOpen(false);
+    const norm = code.trim().toLowerCase();
+    const p = packages.find((x) => (x.barcode ?? "").trim().toLowerCase() === norm)
+      ?? packages.find((x) => (x.barcode ?? "").trim().toLowerCase().includes(norm) && norm.length >= 4);
+    if (!p) { toast.error(`Barcode ${code} isn't on this stop`); return; }
+    if (p.driver_scanned) { toast.info("Already loaded onto the van"); return; }
+    await scan(p);
   }
 
   return (
@@ -204,6 +219,12 @@ function BoatDetail({ boat, dnRef, berth, packages, online, onBack, onChanged }:
         <a href={navUrl} target="_blank" rel="noopener noreferrer" className="mt-2 flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground">
           <MapPin className="h-4 w-4" /> Navigate to {label}
         </a>
+      )}
+
+      {packages.some((p) => !p.driver_scanned) && (
+        <Button variant="outline" className="mt-3 h-11 w-full gap-2 text-base" onClick={() => setScanOpen(true)}>
+          <ScanLine className="h-5 w-5" /> Scan parcel to load
+        </Button>
       )}
 
       <div className="mt-3 flex flex-col gap-2">
@@ -235,6 +256,8 @@ function BoatDetail({ boat, dnRef, berth, packages, online, onBack, onChanged }:
         <SignSheet boat={label} packages={packages} online={online}
           onClose={() => setSigning(false)} onDone={() => { setSigning(false); onChanged(); }} />
       )}
+
+      <BarcodeScannerDialog open={scanOpen} onClose={() => setScanOpen(false)} onDetected={onScan} title={`Scan parcel — ${label}`} />
     </div>
   );
 }

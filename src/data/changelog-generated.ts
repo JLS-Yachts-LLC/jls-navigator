@@ -5,6 +5,16 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.30.0",
+    "date": "2026-07-17",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "ShipSync now lists every vessel at package check-in (not only ones with existing packages, so pickups can be logged against any yacht), and adds a Locations tab to manage hotels/marinas/suppliers as pickup/drop-off points that appear in the destination picker"
+      }
+    ]
+  },
+  {
     "version": "2.29.0",
     "date": "2026-07-16",
     "entries": [

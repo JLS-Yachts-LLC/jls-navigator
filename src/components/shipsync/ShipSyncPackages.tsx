@@ -10,7 +10,8 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Search, Loader2, Trash2, Camera, FileText } from "lucide-react";
+import { Plus, Search, Loader2, Trash2, Camera, FileText, ScanLine } from "lucide-react";
+import { BarcodeScannerDialog } from "@/components/shipsync/BarcodeScanner";
 import { StatusBadge, fmtDate } from "@/components/shipsync/shared";
 import { ALL_ZONES, STATUS_META, type PackageStatus, type ShipSyncPackage } from "@/lib/shipsync/model";
 import { createPackage, patchPackage, deletePackage, uploadShipSyncImage } from "@/lib/shipsync/data";
@@ -30,6 +31,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
   const [photo, setPhoto] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [delTarget, setDelTarget] = useState<ShipSyncPackage | null>(null);
+  const [scanOpen, setScanOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const set = (p: Form) => setForm((f) => ({ ...f, ...p }));
 
@@ -191,7 +193,10 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
           <DialogHeader><DialogTitle>{form.id ? "Edit package" : "Check in package"}</DialogTitle></DialogHeader>
           <div className="grid grid-cols-2 gap-3 py-1">
             <div className="space-y-1.5"><Label className="text-xs">Barcode / AWB</Label>
-              <Input value={form.barcode ?? ""} onChange={(e) => set({ barcode: e.target.value })} className="h-9 font-mono" placeholder="Scan or type" autoFocus /></div>
+              <div className="flex gap-2">
+                <Input value={form.barcode ?? ""} onChange={(e) => set({ barcode: e.target.value })} className="h-9 font-mono" placeholder="Scan or type" autoFocus />
+                <Button type="button" variant="outline" size="sm" className="h-9 shrink-0 gap-1.5" onClick={() => setScanOpen(true)}><ScanLine className="h-4 w-4" /> Scan</Button>
+              </div></div>
             <div className="space-y-1.5"><Label className="text-xs">Boat / vessel</Label>
               <Input value={form.boat_name ?? ""} onChange={(e) => set({ boat_name: e.target.value })} list="ss-boats" className="h-9" placeholder="Vessel name" autoComplete="off" />
               <datalist id="ss-boats">{boats.map((b) => <option key={b} value={b} />)}</datalist></div>
@@ -244,6 +249,8 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <BarcodeScannerDialog open={scanOpen} onClose={() => setScanOpen(false)} onDetected={(v) => { set({ barcode: v }); setScanOpen(false); }} title="Scan package barcode" />
 
       <AlertDialog open={!!delTarget} onOpenChange={(o) => !o && setDelTarget(null)}>
         <AlertDialogContent>
