@@ -7,7 +7,7 @@
  * is handled by per-entity handlers — built next; until then the webhook forwards
  * to n8n for that step.
  */
-import { qboRequest, qboConfigured } from './qbo.server'
+import { qboRequest, qboConfigured, qboRealm } from './qbo.server'
 import { type HealResult } from './heal.server'
 import { logAutomationRun } from '@/lib/automations.server'
 
@@ -56,6 +56,16 @@ export function classifyInvoiceType(invoice: any): 'Invoice' | 'Pro-Forma' {
 
 export type OrchestrationItem = QbEvent & { invoiceType?: 'Invoice' | 'Pro-Forma'; heal?: HealResult; ingest?: string; docgen?: string; error?: string }
 
+/** QBO returns 400/404 "Object Not Found" (fault code 610) for a deleted or
+ *  inactivated entity — e.g. a `.delete`/`.merge` webhook, or a doc removed before
+ *  we processed the event. Such an event can NEVER succeed, so it must be skipped,
+ *  not errored: otherwise one dead entity fails the whole batch, the handler returns
+ *  500, and Intuit re-delivers the same batch forever (re-firing every sibling event
+ *  on each retry). */
+function isDeletedObjectError(msg: string): boolean {
+  return /object not found/i.test(msg) || /"code":\s*"?610"?/.test(msg) || /→\s*40[04]\b/.test(msg)
+}
+
 /** Process a batch: track each event, and for invoices fetch + heal + classify.
  *  Requires QBO credentials; callers should guard with qboConfigured(). */
 export async function orchestrate(raw: string): Promise<OrchestrationItem[]> {
@@ -67,9 +77,30 @@ export async function orchestrate(raw: string): Promise<OrchestrationItem[]> {
     await logAutomationRun({ key: meta.key, name: meta.name, source: 'worker', trigger_type: 'webhook', category: 'Finance', status: 'hit' })
 
     const item: OrchestrationItem = { ...ev }
+
+    // Thread the event's OWN realm through every QBO call. The single webhook URL
+    // receives events for BOTH connected companies (JLS + the Waypoint retail
+    // realm); querying a Waypoint invoice id against the default JLS realm returns
+    // "Object Not Found" and used to fail the whole batch. `accountId` is the realm
+    // Intuit stamped on the event; fall back to the default (JLS) realm.
+    const realm = ev.accountId ?? qboRealm()
+    // The branded document templates (Invoice/Quotation/Pro-Forma/PO/Receipt) are
+    // JLS-specific and attach via the JLS realm — only run doc-gen for the primary
+    // realm. Secondary realms (Waypoint retail) get ingest only.
+    const isPrimaryRealm = realm === qboRealm()
+
+    // A delete/merge event can't be fetched (the object is gone) and never needs a
+    // document generated — skip it cleanly so it can't poison the batch. (Any other
+    // "Object Not Found" is caught below.)
+    if (/\.(delete|merge)\b/.test(ev.rawType)) {
+      item.docgen = 'skipped (deleted)'
+      results.push(item)
+      continue
+    }
+
     try {
       if (ev.entity === 'invoice' && qboConfigured()) {
-        const fetched = await qboRequest('GET', `/invoice/${ev.entityId}?include=enhancedAllCustomFields&minorversion=73`)
+        const fetched = await qboRequest('GET', `/invoice/${ev.entityId}?include=enhancedAllCustomFields&minorversion=73`, undefined, realm)
         const invoice = fetched?.Invoice
         if (invoice) {
           // Doc-number self-heal is DISABLED for now: it wrote back to the invoice,
@@ -81,11 +112,13 @@ export async function orchestrate(raw: string): Promise<OrchestrationItem[]> {
           // branded PDF and attach it to the QBO invoice. Gated by its own
           // qb-invoice-pdf toggle (default OFF), with an internal attach-echo
           // guard so our own upload never loops the webhook.
-          if (item.invoiceType === 'Invoice') {
+          if (item.invoiceType === 'Invoice' && isPrimaryRealm) {
             const { generateAndAttachInvoicePdf } = await import('./invoice-doc.server')
             const pdfRes = await generateAndAttachInvoicePdf(ev.entityId)
             item.docgen = `${pdfRes.action}${pdfRes.action === 'attached' ? ` (${pdfRes.ms}ms)` : ''}`
             if (pdfRes.action === 'error') item.error = `docgen: ${pdfRes.detail}`
+          } else if (item.invoiceType === 'Invoice') {
+            item.docgen = 'skipped (secondary realm)'
           }
         }
       }
@@ -93,38 +126,44 @@ export async function orchestrate(raw: string): Promise<OrchestrationItem[]> {
       // render the Quotation PDF + XLSX and attach both to the QBO estimate.
       // Gated by its own qb-estimate-doc toggle (default OFF) with a loop-guard
       // in qbo_doc_logs so our own attachment echoes never re-trigger it.
-      if (ev.entity === 'estimate' && qboConfigured()) {
+      if (ev.entity === 'estimate' && qboConfigured() && isPrimaryRealm) {
         const { runEstimateDocgen } = await import('./estimate-docgen.server')
         item.docgen = await runEstimateDocgen(ev.entityId, ev.rawType)
       }
       // Pro-Forma doc-gen (port of the n8n "QB (PRO-FORMA)" workflow): a
       // Pro-Forma is an Invoice classified type "2" above. Gated by qb-proforma-doc.
-      if (ev.entity === 'invoice' && item.invoiceType === 'Pro-Forma' && qboConfigured()) {
+      if (ev.entity === 'invoice' && item.invoiceType === 'Pro-Forma' && qboConfigured() && isPrimaryRealm) {
         const { runProformaDocgen } = await import('./proforma-docgen.server')
         item.docgen = await runProformaDocgen(ev.entityId, ev.rawType)
       }
       // Purchase Order doc-gen (port of the n8n "QB (Purchase Order)" workflow).
       // Gated by qb-po-doc.
-      if (ev.entity === 'purchaseorder' && qboConfigured()) {
+      if (ev.entity === 'purchaseorder' && qboConfigured() && isPrimaryRealm) {
         const { runPurchaseOrderDocgen } = await import('./purchase-order-docgen.server')
         item.docgen = await runPurchaseOrderDocgen(ev.entityId, ev.rawType)
       }
       // Receive Payment → Sales Receipt PDF (port of the n8n "QB (Receive
       // Payment)" workflow). Gated by qb-payment-doc.
-      if (ev.entity === 'payment' && qboConfigured()) {
+      if (ev.entity === 'payment' && qboConfigured() && isPrimaryRealm) {
         const { runReceivePaymentDocgen } = await import('./receive-payment-docgen.server')
         item.docgen = await runReceivePaymentDocgen(ev.entityId, ev.rawType)
       }
       // Native ingest: land the changed document in the app's qbo_* tables now,
       // instead of waiting for the 5-minute poll. (Dynamic import — sync.server
-      // imports classifyInvoiceType from this module.)
+      // imports classifyInvoiceType from this module.) Runs for BOTH realms.
       if (qboConfigured()) {
         const { syncOneEntity } = await import('./sync.server')
-        item.ingest = await syncOneEntity(ev.entity, ev.entityId)
+        item.ingest = await syncOneEntity(ev.entity, ev.entityId, realm)
       }
     } catch (e: any) {
-      item.error = e?.message ?? String(e)
-      await logAutomationRun({ key: meta.key, name: meta.name, source: 'worker', trigger_type: 'webhook', category: 'Finance', status: 'error', detail: item.error })
+      const msg = e?.message ?? String(e)
+      if (isDeletedObjectError(msg)) {
+        // Terminal, not a failure — skip so it doesn't force a 500 + retry storm.
+        item.docgen = 'skipped (deleted/inactive)'
+      } else {
+        item.error = msg
+        await logAutomationRun({ key: meta.key, name: meta.name, source: 'worker', trigger_type: 'webhook', category: 'Finance', status: 'error', detail: item.error })
+      }
     }
     results.push(item)
   }

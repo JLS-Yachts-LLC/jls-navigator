@@ -255,25 +255,25 @@ export async function backfillPaymentsFull(realm: string = qboRealm()): Promise<
 /** Targeted single-entity ingest for the webhook orchestrator — the changed
  *  document lands in the app seconds after the QBO event instead of waiting for
  *  the 5-minute poll. Purchase orders have no app table yet and are skipped. */
-export async function syncOneEntity(entity: string, qboId: string): Promise<string> {
+export async function syncOneEntity(entity: string, qboId: string, realm: string = qboRealm()): Promise<string> {
   if (!qboConfigured()) return 'qbo-not-configured'
   const sb = admin() as any
-  if (entity === 'invoice') { await syncOneInvoice(qboId); return 'invoice-synced' }
+  if (entity === 'invoice') { await syncOneInvoice(qboId, realm); return 'invoice-synced' }
   if (entity === 'estimate') {
-    const res = await qboQuery(`select * from Estimate where Id = '${ql(qboId)}'`)
+    const res = await qboQuery(`select * from Estimate where Id = '${ql(qboId)}'`, realm)
     const doc = res?.QueryResponse?.Estimate?.[0]
     if (!doc) return 'estimate-not-found'
-    await sb.from('qbo_invoices').upsert(buildRow('Estimate', doc, await yachtMap(sb), qboRealm(), true), { onConflict: 'qbo_id,doc_type,realm_id' })
+    await sb.from('qbo_invoices').upsert(buildRow('Estimate', doc, await yachtMap(sb), realm, true), { onConflict: 'qbo_id,doc_type,realm_id' })
     return 'estimate-synced'
   }
   if (entity === 'payment') {
-    const res = await qboQuery(`select * from Payment where Id = '${ql(qboId)}'`)
+    const res = await qboQuery(`select * from Payment where Id = '${ql(qboId)}'`, realm)
     const doc = res?.QueryResponse?.Payment?.[0]
     if (!doc) return 'payment-not-found'
-    await sb.from('qbo_payments').upsert(buildPaymentRow(doc, await yachtMap(sb), qboRealm()), { onConflict: 'qbo_id,realm_id' })
+    await sb.from('qbo_payments').upsert(buildPaymentRow(doc, await yachtMap(sb), realm), { onConflict: 'qbo_id,realm_id' })
     // A payment changes invoice balances — refresh the invoices it applies to.
-    for (const a of (buildPaymentRow(doc, new Map(), qboRealm()).applied_to as any[]).slice(0, 5)) {
-      try { await syncOneInvoice(a.invoice_qbo_id) } catch { /* best-effort */ }
+    for (const a of (buildPaymentRow(doc, new Map(), realm).applied_to as any[]).slice(0, 5)) {
+      try { await syncOneInvoice(a.invoice_qbo_id, realm) } catch { /* best-effort */ }
     }
     return 'payment-synced'
   }
@@ -282,19 +282,19 @@ export async function syncOneEntity(entity: string, qboId: string): Promise<stri
 
 /** Pull a single invoice straight away (used when Polaris creates one). Best-effort,
  *  and fetches its PDF immediately so it appears complete in the Finance module. */
-export async function syncOneInvoice(qboId: string) {
+export async function syncOneInvoice(qboId: string, realm: string = qboRealm()) {
   if (!qboConfigured()) return
   const sb = admin() as any
-  const res = await qboQuery(`select * from Invoice where Id = '${ql(qboId)}'`)
+  const res = await qboQuery(`select * from Invoice where Id = '${ql(qboId)}'`, realm)
   const doc = res?.QueryResponse?.Invoice?.[0]
   if (!doc) return
-  const row = buildRow('Invoice', doc, await yachtMap(sb), qboRealm(), true)
+  const row = buildRow('Invoice', doc, await yachtMap(sb), realm, true)
   await sb.from('qbo_invoices').upsert(row, { onConflict: 'qbo_id,doc_type,realm_id' })
   try {
-    const bytes = await qboPdf(`/invoice/${doc.Id}/pdf`)
+    const bytes = await qboPdf(`/invoice/${doc.Id}/pdf`, realm)
     const path = `qbo/${row.doc_type}-${doc.Id}.pdf`
     await sb.storage.from(BUCKET).upload(path, new Uint8Array(bytes), { contentType: 'application/pdf', upsert: true })
     await sb.from('qbo_invoices').update({ pdf_path: path, pdf_synced_at: new Date().toISOString() })
-      .eq('qbo_id', String(doc.Id)).eq('doc_type', row.doc_type).eq('realm_id', qboRealm())
+      .eq('qbo_id', String(doc.Id)).eq('doc_type', row.doc_type).eq('realm_id', realm)
   } catch { /* PDF best-effort */ }
 }
