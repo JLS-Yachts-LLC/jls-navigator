@@ -101,14 +101,26 @@ export async function computeRoute(
   optimize = false,
 ): Promise<ComputedRoute> {
   const svc = new maps.DirectionsService();
-  const result = await svc.route({
-    origin: toDirectionsPlace(origin),
-    destination: toDirectionsPlace(destination),
-    waypoints: waypoints.map((w) => ({ location: toDirectionsPlace(w) as any, stopover: true })),
-    optimizeWaypoints: optimize,
-    travelMode: maps.TravelMode.DRIVING,
-  });
-  const route = result.routes[0];
+  let result: google.maps.DirectionsResult | undefined;
+  try {
+    result = await svc.route({
+      origin: toDirectionsPlace(origin),
+      destination: toDirectionsPlace(destination),
+      waypoints: waypoints.map((w) => ({ location: toDirectionsPlace(w) as any, stopover: true })),
+      optimizeWaypoints: optimize,
+      travelMode: maps.TravelMode.DRIVING,
+    });
+  } catch (e: any) {
+    const s = String(e?.code ?? e?.message ?? e);
+    if (/REQUEST_DENIED|ApiNotActivated|RefererNotAllowed|ApiTargetBlocked/i.test(s))
+      throw new Error("Map isn't authorised for this site — add this domain to the Google Maps key's allowed referrers and enable the Directions API.");
+    if (/ZERO_RESULTS/i.test(s)) throw new Error("No driving route found between these stops.");
+    if (/OVER_QUERY_LIMIT|OVER_DAILY_LIMIT/i.test(s)) throw new Error("Google Maps quota reached — try again later.");
+    throw new Error("Couldn't calculate the route.");
+  }
+  // A failed auth can resolve without a usable result — guard rather than crash.
+  const route = result?.routes?.[0];
+  if (!route) throw new Error("Map isn't authorised for this site — add this domain to the Google Maps key's allowed referrers.");
   const legs = (route?.legs ?? []).map((l) => ({
     distanceMeters: l.distance?.value ?? 0,
     durationSeconds: l.duration?.value ?? 0,
