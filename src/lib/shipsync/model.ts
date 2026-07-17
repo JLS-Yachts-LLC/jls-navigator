@@ -70,6 +70,8 @@ export interface ShipSyncDestination {
   lat: number | null
   lng: number | null
   notes: string | null
+  type: string            // 'vessel' | 'location'
+  category: string | null // for locations: hotel / marina / supplier / other
 }
 
 export interface ShipSyncVehicle {

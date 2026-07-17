@@ -33,10 +33,14 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
   const fileRef = useRef<HTMLInputElement>(null);
   const set = (p: Form) => setForm((f) => ({ ...f, ...p }));
 
+  // Every active vessel + saved destinations/locations (hotels etc.) + any boat
+  // already on a package — so you can check a package in against any of them,
+  // including pickups from vessels that have never had a package.
   const boats = useMemo(
     () => Array.from(new Set([
+      ...data.yachts,
       ...data.destinations.map((d) => d.boat_name),
-      ...data.packages.map((p) => p.boat_name).filter(Boolean) as string[],
+      ...(data.packages.map((p) => p.boat_name).filter(Boolean) as string[]),
     ])).sort(),
     [data],
   );

@@ -42,6 +42,13 @@ export async function loadDestinations(): Promise<ShipSyncDestination[]> {
   return (data ?? []) as ShipSyncDestination[]
 }
 
+/** All active vessel names — so every yacht is selectable at check-in, even ones
+ *  that have never had a package or a saved destination (we also do pickups). */
+export async function loadYachtNames(): Promise<string[]> {
+  const { data } = await db().from('yachts').select('vessel_name').eq('archive', false).order('vessel_name')
+  return (data ?? []).map((y: any) => y.vessel_name).filter(Boolean) as string[]
+}
+
 // ── Packages ─────────────────────────────────────────────────────────────────
 export async function createPackage(p: Partial<ShipSyncPackage>): Promise<ShipSyncPackage> {
   const { data: auth } = await supabase.auth.getUser()
@@ -77,6 +84,10 @@ export async function deleteDriver(id: string): Promise<void> {
 // ── Destinations ─────────────────────────────────────────────────────────────
 export async function saveDestination(d: Partial<ShipSyncDestination> & { boat_name: string }): Promise<void> {
   const { error } = await db().from('shipsync_destinations').upsert([d], { onConflict: 'boat_name' })
+  if (error) throw error
+}
+export async function deleteDestination(id: string): Promise<void> {
+  const { error } = await db().from('shipsync_destinations').delete().eq('id', id)
   if (error) throw error
 }
 

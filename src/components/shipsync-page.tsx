@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "@tanstack/react-router";
-import { Loader2, Package, Truck, Warehouse, Users, BarChart3, Smartphone, ArrowDownToLine, ArrowUpFromLine, Route, Navigation } from "lucide-react";
+import { Loader2, Package, Truck, Warehouse, Users, BarChart3, Smartphone, ArrowDownToLine, ArrowUpFromLine, Route, Navigation, MapPin } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
-  loadPackages, loadDrivers, loadNotes, loadDestinations, loadDeliverySchedules, loadVehicles,
+  loadPackages, loadDrivers, loadNotes, loadDestinations, loadDeliverySchedules, loadVehicles, loadYachtNames,
 } from "@/lib/shipsync/data";
+import { ShipSyncLocations } from "@/components/shipsync/ShipSyncLocations";
 import type {
   ShipSyncPackage, ShipSyncDriver, ShipSyncDeliveryNote, ShipSyncDestination, ShipSyncDeliverySchedule, ShipSyncVehicle,
 } from "@/lib/shipsync/model";
@@ -25,6 +26,7 @@ export interface ShipSyncData {
   destinations: ShipSyncDestination[];
   schedule: ShipSyncDeliverySchedule[];
   vehicles: ShipSyncVehicle[];
+  yachts: string[]; // all active vessel names — selectable at check-in even without packages
 }
 
 const TABS = [
@@ -34,6 +36,7 @@ const TABS = [
   { key: "routing",  label: "Routing",        icon: Route },
   { key: "dispatch", label: "Dispatched",     icon: Truck },
   { key: "warehouse", label: "Warehouse",     icon: Warehouse },
+  { key: "locations", label: "Locations",     icon: MapPin },
   { key: "drivers",  label: "Drivers",        icon: Users },
   { key: "tracking", label: "Van Tracking",   icon: Navigation },
   { key: "dashboard", label: "Dashboard",     icon: BarChart3 },
@@ -41,16 +44,17 @@ const TABS = [
 
 export function ShipSyncPage() {
   const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("packages");
-  const [data, setData] = useState<ShipSyncData>({ packages: [], drivers: [], notes: [], destinations: [], schedule: [], vehicles: [] });
+  const [data, setData] = useState<ShipSyncData>({ packages: [], drivers: [], notes: [], destinations: [], schedule: [], vehicles: [], yachts: [] });
   const [loading, setLoading] = useState(true);
 
   const reload = useCallback(async () => {
-    const [packages, drivers, notes, destinations, schedule, vehicles] = await Promise.all([
+    const [packages, drivers, notes, destinations, schedule, vehicles, yachts] = await Promise.all([
       loadPackages(), loadDrivers(), loadNotes(), loadDestinations(),
       loadDeliverySchedules().catch(() => []),
       loadVehicles().catch(() => []),
+      loadYachtNames().catch(() => []),
     ]);
-    setData({ packages, drivers, notes, destinations, schedule, vehicles });
+    setData({ packages, drivers, notes, destinations, schedule, vehicles, yachts });
   }, []);
 
   useEffect(() => { void reload().finally(() => setLoading(false)); }, [reload]);
@@ -111,6 +115,7 @@ export function ShipSyncPage() {
             {tab === "dispatch" && <ShipSyncDispatch data={data} reload={reload} />}
             {tab === "routing" && <ShipSyncRouting data={data} reload={reload} />}
             {tab === "warehouse" && <ShipSyncWarehouse data={data} reload={reload} />}
+            {tab === "locations" && <ShipSyncLocations data={data} reload={reload} />}
             {tab === "drivers" && <ShipSyncDrivers data={data} reload={reload} />}
             {tab === "tracking" && <FleetTrackingPage />}
             {tab === "dashboard" && <ShipSyncDashboard data={data} />}
