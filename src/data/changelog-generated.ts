@@ -9,6 +9,14 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-07-17",
     "entries": [
       {
+        "type": "feature",
+        "title": "ShipSync routing can add Locations (hotels/marinas/suppliers from the Locations list) as route stops, not just boats with waiting parcels — they appear under a Locations group in the \"Add to route\" picker and resolve to their address on the route map"
+      },
+      {
+        "type": "fix",
+        "title": "Driver app + parcel checker launch standalone"
+      },
+      {
         "type": "fix",
         "title": "Route map fails gracefully with a clear message instead of a raw 'reading routes' crash when the Google Maps key isn't authorised for the domain or the Directions API is off"
       },
