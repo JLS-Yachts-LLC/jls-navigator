@@ -13,6 +13,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Plus, Pencil, Trash2, Loader2, MapPin, ExternalLink, Search } from "lucide-react";
 import { toast } from "sonner";
+import { useGoogleMaps } from "@/lib/google-maps";
+import { LocationPickerMap } from "@/components/maps/location-picker-map";
 
 type Location = {
   id: string;
@@ -57,6 +59,7 @@ export function LocationsPage() {
   const [busy, setBusy] = useState(false);
   const [geocoding, setGeocoding] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Location | null>(null);
+  const { maps, ready } = useGoogleMaps();
 
   useEffect(() => { void load(); }, []);
 
@@ -254,7 +257,7 @@ export function LocationsPage() {
 
       {/* Edit / Add dialog */}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editing ? "Edit" : "Add"} Location</DialogTitle>
           </DialogHeader>
@@ -276,6 +279,28 @@ export function LocationsPage() {
               <div className="space-y-1.5"><Label>Latitude</Label><Input type="number" step="0.000001" value={form.latitude} onChange={set("latitude")} placeholder="25.2532" /></div>
               <div className="space-y-1.5"><Label>Longitude</Label><Input type="number" step="0.000001" value={form.longitude} onChange={set("longitude")} placeholder="55.3657" /></div>
             </div>
+            {maps ? (
+              <div className="space-y-1.5">
+                <Label>Drop a pin</Label>
+                <LocationPickerMap
+                  maps={maps}
+                  value={{ lat: form.latitude ? Number(form.latitude) : null, lng: form.longitude ? Number(form.longitude) : null }}
+                  onChange={(p) =>
+                    setForm((f) => ({
+                      ...f,
+                      latitude: p.lat.toFixed(6),
+                      longitude: p.lng.toFixed(6),
+                      address: p.address && (p.source === "search" || !f.address.trim()) ? p.address : f.address,
+                    }))
+                  }
+                  onClear={() => setForm((f) => ({ ...f, latitude: "", longitude: "" }))}
+                />
+              </div>
+            ) : ready ? (
+              <p className="text-[11px] text-muted-foreground">
+                Tip: add the Google Maps API key under Settings → Integrations → Google Maps to drop a pin on a map instead of geocoding.
+              </p>
+            ) : null}
             <div className="space-y-1.5">
               <Label>Category</Label>
               <Select value={form.category} onValueChange={(v) => setForm((f) => ({ ...f, category: v }))}>

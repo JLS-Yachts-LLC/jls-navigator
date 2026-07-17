@@ -14,10 +14,12 @@ import { Plus, Search, Loader2, Trash2, Pencil, MapPin } from "lucide-react";
 import { saveDestination, deleteDestination } from "@/lib/shipsync/data";
 import type { ShipSyncDestination } from "@/lib/shipsync/model";
 import type { ShipSyncData } from "@/components/shipsync-page";
+import { useGoogleMaps } from "@/lib/google-maps";
+import { LocationPickerMap } from "@/components/maps/location-picker-map";
 
 const CATEGORIES = ["Hotel", "Marina", "Supplier", "Airport", "Office", "Other"];
-type Form = { id?: string; name: string; category: string; address: string; notes: string };
-const EMPTY: Form = { name: "", category: "Hotel", address: "", notes: "" };
+type Form = { id?: string; name: string; category: string; address: string; notes: string; lat: number | null; lng: number | null };
+const EMPTY: Form = { name: "", category: "Hotel", address: "", notes: "", lat: null, lng: null };
 
 /** Manage ad-hoc pickup / drop-off locations (hotels, marinas, suppliers…).
  *  Stored as type='location' destinations so they appear in the check-in picker
@@ -28,6 +30,7 @@ export function ShipSyncLocations({ data, reload }: { data: ShipSyncData; reload
   const [form, setForm] = useState<Form>(EMPTY);
   const [busy, setBusy] = useState(false);
   const [delTarget, setDelTarget] = useState<ShipSyncDestination | null>(null);
+  const { maps, ready } = useGoogleMaps();
 
   const locations = useMemo(
     () => data.destinations
@@ -41,7 +44,7 @@ export function ShipSyncLocations({ data, reload }: { data: ShipSyncData; reload
 
   function openNew() { setForm(EMPTY); setOpen(true); }
   function openEdit(d: ShipSyncDestination) {
-    setForm({ id: d.id, name: d.boat_name, category: d.category ?? "Other", address: d.address ?? "", notes: d.notes ?? "" });
+    setForm({ id: d.id, name: d.boat_name, category: d.category ?? "Other", address: d.address ?? "", notes: d.notes ?? "", lat: d.lat ?? null, lng: d.lng ?? null });
     setOpen(true);
   }
 
@@ -55,6 +58,8 @@ export function ShipSyncLocations({ data, reload }: { data: ShipSyncData; reload
         category: form.category,
         address: form.address.trim() || null,
         notes: form.notes.trim() || null,
+        lat: form.lat,
+        lng: form.lng,
         yacht_id: null,
       });
       toast.success(form.id ? "Location updated" : "Location added");
@@ -103,6 +108,11 @@ export function ShipSyncLocations({ data, reload }: { data: ShipSyncData; reload
                   <div className="flex items-center gap-2">
                     <span className="truncate font-semibold">{d.boat_name}</span>
                     {d.category && <span className="rounded-full bg-muted/60 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">{d.category}</span>}
+                    {d.lat != null && d.lng != null && (
+                      <span className="flex items-center gap-0.5 rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-500" title={`Pinned at ${d.lat.toFixed(5)}, ${d.lng.toFixed(5)}`}>
+                        <MapPin className="h-2.5 w-2.5" /> Pinned
+                      </span>
+                    )}
                   </div>
                   {d.address && <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{d.address}</div>}
                   {d.notes && <div className="mt-1 line-clamp-2 text-[11px] text-muted-foreground/70">{d.notes}</div>}
@@ -118,7 +128,7 @@ export function ShipSyncLocations({ data, reload }: { data: ShipSyncData; reload
       )}
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>{form.id ? "Edit location" : "Add location"}</DialogTitle></DialogHeader>
           <div className="space-y-3 py-1">
             <div className="grid grid-cols-2 gap-3">
@@ -138,6 +148,57 @@ export function ShipSyncLocations({ data, reload }: { data: ShipSyncData; reload
               <Label className="text-xs">Address</Label>
               <Textarea rows={2} value={form.address} onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))} className="resize-none text-sm" placeholder="Full address (used for routing / maps)" />
             </div>
+
+            {/* Exact location — pin drop / coordinates */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Exact location {form.lat != null && form.lng != null && <span className="text-emerald-500">· pinned</span>}</Label>
+              </div>
+              {maps ? (
+                <LocationPickerMap
+                  maps={maps}
+                  value={{ lat: form.lat, lng: form.lng }}
+                  onChange={(p) =>
+                    setForm((f) => ({
+                      ...f,
+                      lat: p.lat,
+                      lng: p.lng,
+                      // A search result is an explicit address choice; a dropped
+                      // pin only fills the address when one isn't set yet.
+                      address: p.address && (p.source === "search" || !f.address.trim()) ? p.address : f.address,
+                    }))
+                  }
+                  onClear={() => setForm((f) => ({ ...f, lat: null, lng: null }))}
+                />
+              ) : (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-[11px] text-muted-foreground">Latitude</Label>
+                      <Input
+                        value={form.lat ?? ""} inputMode="decimal" placeholder="25.197200"
+                        onChange={(e) => setForm((f) => ({ ...f, lat: e.target.value.trim() === "" ? null : Number(e.target.value) }))}
+                        className="h-9 font-mono text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[11px] text-muted-foreground">Longitude</Label>
+                      <Input
+                        value={form.lng ?? ""} inputMode="decimal" placeholder="55.274400"
+                        onChange={(e) => setForm((f) => ({ ...f, lng: e.target.value.trim() === "" ? null : Number(e.target.value) }))}
+                        className="h-9 font-mono text-sm"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    {ready
+                      ? "Add the Google Maps API key under Settings → Integrations → Google Maps to drop a pin on a map. For now, paste latitude/longitude (e.g. from Google Maps → right-click a spot → copy coordinates)."
+                      : "Loading map…"}
+                  </p>
+                </div>
+              )}
+            </div>
+
             <div className="space-y-1.5">
               <Label className="text-xs">Notes</Label>
               <Input value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} className="h-9" placeholder="e.g. Deliver to concierge, ask for…" />
