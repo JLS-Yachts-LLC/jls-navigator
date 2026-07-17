@@ -1,11 +1,14 @@
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, ScanLine, Search, PackageSearch, MapPin } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Loader2, ScanLine, Search, PackageSearch, Check } from "lucide-react";
 import { BarcodeScannerDialog } from "@/components/shipsync/BarcodeScanner";
 import { StatusBadge, fmtDate } from "@/components/shipsync/shared";
-import { STATUS_META, type ShipSyncPackage } from "@/lib/shipsync/model";
+import { patchPackage } from "@/lib/shipsync/data";
+import { ALL_ZONES, STATUS_META, type ShipSyncPackage } from "@/lib/shipsync/model";
 
 const db = supabase as any;
 
@@ -21,6 +24,18 @@ export function ParcelChecker() {
   const [results, setResults] = useState<ShipSyncPackage[] | null>(null);
   const [driverNames, setDriverNames] = useState<Record<string, string>>({});
   const [noteNumbers, setNoteNumbers] = useState<Record<string, string>>({});
+  const [savingZone, setSavingZone] = useState<string | null>(null);
+
+  async function reassignZone(p: ShipSyncPackage, zone: string) {
+    setSavingZone(p.id);
+    try {
+      await patchPackage(p.id, { warehouse_zone: zone });
+      setResults((rs) => rs?.map((r) => (r.id === p.id ? { ...r, warehouse_zone: zone } : r)) ?? rs);
+      toast.success(`Moved ${p.barcode ?? p.boat_name ?? "parcel"} to ${zone}`);
+    } catch (e: any) {
+      toast.error(e?.message ?? "Could not move parcel");
+    } finally { setSavingZone(null); }
+  }
 
   async function lookup(raw: string) {
     const q = raw.trim();
@@ -86,13 +101,22 @@ export function ParcelChecker() {
                 <Field label="Owner" value={p.package_owner} />
                 <Field label="Courier" value={p.courier} />
                 <Field label="Packages" value={String(p.num_packages ?? 1)} />
-                <Field label="Zone" value={p.warehouse_zone} />
+                <Field label="Priority" value={p.priority ? String(p.priority) : null} />
                 <Field label="Delivery note" value={p.delivery_note_id ? `DN-${noteNumbers[p.delivery_note_id] ?? "…"}` : null} />
                 <Field label="Driver" value={p.driver_id ? driverNames[p.driver_id] ?? "…" : null} />
                 <Field label="Status" value={STATUS_META[p.status]?.label ?? p.status} />
                 <Field label="Received" value={p.received_at ? fmtDate(p.received_at) : null} />
                 <Field label="Planned" value={p.planned_delivery_date ? fmtDate(p.planned_delivery_date) : null} />
                 <Field label="Delivered" value={p.delivered_at ? fmtDate(p.delivered_at) : null} />
+              </div>
+              {/* Move to rack — mirrors the PowerApps Parcel Checker zone reassignment */}
+              <div className="mt-3 flex items-center gap-2 border-t border-border/40 pt-3">
+                <span className="text-[10px] uppercase tracking-wide text-muted-foreground/60">Warehouse zone</span>
+                <Select value={p.warehouse_zone ?? ""} onValueChange={(v) => void reassignZone(p, v)} disabled={savingZone === p.id}>
+                  <SelectTrigger className="h-8 w-28 text-sm"><SelectValue placeholder="Unracked" /></SelectTrigger>
+                  <SelectContent className="max-h-64">{ALL_ZONES.map((z) => <SelectItem key={z} value={z}>{z}</SelectItem>)}</SelectContent>
+                </Select>
+                {savingZone === p.id ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> : p.warehouse_zone && <Check className="h-4 w-4 text-emerald-500" />}
               </div>
               {p.description && <div className="mt-2 border-t border-border/40 pt-2 text-xs text-muted-foreground">{p.description}</div>}
             </div>

@@ -57,7 +57,13 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
     return true;
   }), [data.packages, statusFilter, search]);
 
-  function openNew() { setForm(EMPTY); setPhoto(null); setOpen(true); }
+  // Office vs Warehouse check-in (mirrors the two PowerApps check-in screens):
+  // Office defaults the parcel to "In office"; Warehouse defaults it to "In storage"
+  // and prompts for a rack. Same form either way.
+  function openNew(mode: "office" | "warehouse" = "office") {
+    setForm({ ...EMPTY, status: mode === "warehouse" ? "in_storage" : "in_office" });
+    setPhoto(null); setOpen(true);
+  }
   function openEdit(p: ShipSyncPackage) { setForm({ ...p }); setPhoto(null); setOpen(true); }
 
   async function save() {
@@ -125,7 +131,10 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
           </SelectContent>
         </Select>
         <span className="text-[12px] text-muted-foreground">{filtered.length} of {data.packages.length}</span>
-        <Button size="sm" onClick={openNew} className="ml-auto h-9 gap-1.5"><Plus className="h-4 w-4" /> Check in package</Button>
+        <div className="ml-auto flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={() => openNew("office")} className="h-9 gap-1.5"><Plus className="h-4 w-4" /> Office check-in</Button>
+          <Button size="sm" onClick={() => openNew("warehouse")} className="h-9 gap-1.5"><Plus className="h-4 w-4" /> Warehouse check-in</Button>
+        </div>
       </div>
 
       <div className="relative min-h-0 min-w-0 flex-1">
@@ -190,7 +199,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
       {/* Check-in / edit dialog */}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-2xl max-h-[88vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>{form.id ? "Edit package" : "Check in package"}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{form.id ? "Edit package" : form.status === "in_storage" ? "Warehouse check-in" : "Office check-in"}</DialogTitle></DialogHeader>
           <div className="grid grid-cols-2 gap-3 py-1">
             <div className="space-y-1.5"><Label className="text-xs">Barcode / AWB</Label>
               <div className="flex gap-2">
