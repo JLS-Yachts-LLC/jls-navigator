@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "Quotation PDFs attached to QuickBooks now use the branded JLS template — the worker couldn't load its own template backgrounds in production and silently fell back to a plain layout"
+      },
+      {
+        "type": "fix",
         "title": "QuickBooks webhook now processes each event against its OWN company"
       },
       {
