@@ -123,6 +123,31 @@ function FillForm({ def, onBack }: { def: FormDef; onBack: () => void }) {
     toast.success(`Pre-filled from ${y.vessel_name}`);
   }
 
+  // Signatory auto-populate: forms with a signatory_name field get a picker that
+  // prefills the signatory's name + title from the JLS signatory registry (the same
+  // registry that stamps signatures on DMA approval).
+  const hasSignatory = fieldKeys.has("signatory_name");
+  const [signatories, setSignatories] = useState<any[]>([]);
+  useEffect(() => {
+    if (!hasSignatory) return;
+    void (async () => {
+      const { data } = await (supabase as any).from("jls_signatories")
+        .select("id, full_name, title").eq("active", true).order("full_name");
+      setSignatories(data ?? []);
+    })();
+  }, [hasSignatory]);
+  function pickSignatory(id: string) {
+    const s = signatories.find((x) => x.id === id);
+    if (!s) return;
+    setValues((p) => {
+      const next = { ...p };
+      if (fieldKeys.has("signatory_name")) next.signatory_name = s.full_name ?? "";
+      if (fieldKeys.has("signatory_title") && s.title) next.signatory_title = s.title;
+      return next;
+    });
+    toast.success(`Signatory set to ${s.full_name}`);
+  }
+
   async function generate() {
     if (missing.length) { toast.error(`Required: ${missing.map((f) => f.label).join(", ")}`); return; }
     setBusy("generate");
@@ -155,14 +180,28 @@ function FillForm({ def, onBack }: { def: FormDef; onBack: () => void }) {
       <h1 className="font-display text-xl font-semibold">{def.title}</h1>
       {def.intro && <p className="mt-1 text-sm text-muted-foreground">{def.intro}</p>}
 
-      {hasVessel && (
+      {(hasVessel || hasSignatory) && (
         <div className="mt-4 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card/50 p-3">
-          <Ship className="h-4 w-4 text-primary/70" />
-          <span className="text-xs font-medium text-muted-foreground">Auto-fill from vessel</span>
-          <select onChange={(e) => e.target.value && pickVessel(e.target.value)} className={`${inputCls} max-w-xs`} defaultValue="">
-            <option value="">Select a vessel…</option>
-            {vessels.map((v) => <option key={v.id} value={v.id}>{v.vessel_name ?? "Unnamed"}</option>)}
-          </select>
+          {hasVessel && (
+            <>
+              <Ship className="h-4 w-4 text-primary/70" />
+              <span className="text-xs font-medium text-muted-foreground">Auto-fill from vessel</span>
+              <select onChange={(e) => e.target.value && pickVessel(e.target.value)} className={`${inputCls} max-w-xs`} defaultValue="">
+                <option value="">Select a vessel…</option>
+                {vessels.map((v) => <option key={v.id} value={v.id}>{v.vessel_name ?? "Unnamed"}</option>)}
+              </select>
+            </>
+          )}
+          {hasSignatory && (
+            <>
+              <PenLine className="h-4 w-4 text-primary/70" />
+              <span className="text-xs font-medium text-muted-foreground">Signatory</span>
+              <select onChange={(e) => e.target.value && pickSignatory(e.target.value)} className={`${inputCls} max-w-xs`} defaultValue="">
+                <option value="">Select a signatory…</option>
+                {signatories.map((s) => <option key={s.id} value={s.id}>{s.full_name}{s.title ? ` — ${s.title}` : ""}</option>)}
+              </select>
+            </>
+          )}
         </div>
       )}
 
