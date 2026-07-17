@@ -499,7 +499,9 @@ export async function generateAndAttachInvoicePdf(qboInvoiceId: string, opts: { 
     }
 
     const deletedOld = await deleteOldPdfs(t.qboId, t.docNumber)
-    await qboUpload(fileName, pdf, 'application/pdf', 'Invoice', t.qboId)
+    const att = await qboUpload(fileName, pdf, 'application/pdf', 'Invoice', t.qboId)
+    // Diagnostic: what did QBO actually return for the link?
+    const linkedTo = (Array.isArray(att?.AttachableRef) && att.AttachableRef[0]?.EntityRef?.value) || 'NONE'
 
     // Re-fetch to capture the post-attach LastUpdatedTime → the echo webhook is a no-op.
     let finalStamp = t.lastUpdatedTime
@@ -515,7 +517,7 @@ export async function generateAndAttachInvoicePdf(qboInvoiceId: string, opts: { 
     const ms = Date.now() - started
     await logAutomationRun({
       key: AUTO_KEY, name: 'QB Invoice PDF (native)', source: 'worker', trigger_type: 'event', category: 'Finance',
-      status: 'success', detail: `${fileName} attached (${deletedOld} old removed, ${ms}ms)`,
+      status: 'success', detail: `${fileName} attached → linkedTo=${linkedTo} (${deletedOld} old removed, ${ms}ms)`,
     })
     return { ok: true, action: 'attached', detail: `${fileName} attached`, docNumber: t.docNumber, deletedOld, ms }
   } catch (e: any) {
