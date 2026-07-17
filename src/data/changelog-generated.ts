@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "Replacing a Quotation/Invoice attachment in QuickBooks no longer leaves a duplicate — old copies are removed after the new upload, so the previous run's file can't slip through"
+      },
+      {
+        "type": "fix",
         "title": "Quotation PDFs attached to QuickBooks now use the branded JLS template — the worker couldn't load its own template backgrounds in production and silently fell back to a plain layout"
       },
       {
