@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Feature Release settings — tag any menu item with a Beta / In Development / Active badge that shows as a small pill on the left sidebar (Settings → Feature Release); changes apply live"
+      },
+      {
+        "type": "feature",
         "title": "Pin-drop and coordinates on ShipSync & Crew Cab locations — search an address, click the map, or drag the marker to set the exact delivery/pickup point"
       },
       {
