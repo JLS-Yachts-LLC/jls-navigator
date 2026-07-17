@@ -8,7 +8,7 @@
  * to n8n for that step.
  */
 import { qboRequest, qboConfigured } from './qbo.server'
-import { healInvoiceDocNumber, type HealResult } from './heal.server'
+import { type HealResult } from './heal.server'
 import { logAutomationRun } from '@/lib/automations.server'
 
 export type QbEvent = { entity: string; entityId: string; accountId?: string; rawType: string }
@@ -72,12 +72,10 @@ export async function orchestrate(raw: string): Promise<OrchestrationItem[]> {
         const fetched = await qboRequest('GET', `/invoice/${ev.entityId}?include=enhancedAllCustomFields&minorversion=73`)
         const invoice = fetched?.Invoice
         if (invoice) {
-          item.heal = await healInvoiceDocNumber(invoice)
-          // Re-fetch after a heal so downstream classification sees the new number.
-          const fresh = item.heal?.action === 'bumped'
-            ? (await qboRequest('GET', `/invoice/${ev.entityId}?include=enhancedAllCustomFields&minorversion=73`))?.Invoice ?? invoice
-            : invoice
-          item.invoiceType = classifyInvoiceType(fresh)
+          // Doc-number self-heal is DISABLED for now: it wrote back to the invoice,
+          // which re-triggered the webhook and caused a processing loop. Classify
+          // straight from the fetched invoice instead.
+          item.invoiceType = classifyInvoiceType(invoice)
 
           // Native doc-gen (port of the n8n "QB Invoice" workflow): render the
           // branded PDF and attach it to the QBO invoice. Gated by its own
