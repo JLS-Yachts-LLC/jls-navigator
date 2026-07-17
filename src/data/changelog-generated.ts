@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "QB webhook run log now shows the PDF/doc-gen outcome per event (pdf:attached/skipped/disabled) — previously only the Finance-sync result was logged, hiding whether the attach ran"
+      },
+      {
+        "type": "feature",
         "title": "The Automations page live-refreshes every minute (silently, no spinner flash) and gains a Refresh button in the header for an instant manual update"
       },
       {
