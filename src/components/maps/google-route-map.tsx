@@ -28,7 +28,7 @@ export function GoogleRouteMap({
 }) {
   const holder = useRef<HTMLDivElement>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
-  const rendererRef = useRef<google.maps.DirectionsRenderer | null>(null);
+  const lineRef = useRef<google.maps.Polyline | null>(null);
   const [summary, setSummary] = useState<{ km: string; time: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(true);
@@ -48,15 +48,28 @@ export function GoogleRouteMap({
         streetViewControl: false,
         fullscreenControl: true,
       });
-      rendererRef.current = new maps.DirectionsRenderer({ map: mapRef.current });
     }
     let alive = true;
     setBusy(true);
     setError(null);
     computeRoute(maps, origin, destination, waypoints, optimize)
       .then((r) => {
-        if (!alive) return;
-        rendererRef.current?.setDirections(r.result);
+        if (!alive || !mapRef.current) return;
+        // Draw the route polyline ourselves (Routes API returns the geometry).
+        lineRef.current?.setMap(null);
+        const line = new maps.Polyline({
+          path: r.path,
+          map: mapRef.current,
+          strokeColor: "#00C4CC",
+          strokeOpacity: 0.9,
+          strokeWeight: 5,
+        });
+        lineRef.current = line;
+        if (r.path.length) {
+          const bounds = new maps.LatLngBounds();
+          for (const p of r.path) bounds.extend(p);
+          mapRef.current.fitBounds(bounds, 48);
+        }
         setSummary({ km: fmtKm(r.distanceMeters), time: fmtDuration(r.durationSeconds) });
         onRouteRef.current?.(r);
       })

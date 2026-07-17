@@ -17,8 +17,10 @@ import { supabase } from "@/integrations/supabase/client";
 export type GMaps = typeof google.maps;
 
 let loadPromise: Promise<GMaps | null> | null = null;
+let mapsKey: string | null = null; // cached for the Routes API REST calls
 
 async function fetchApiKey(): Promise<string | null> {
+  if (mapsKey) return mapsKey;
   try {
     const { data } = await (supabase as any)
       .from("integration_settings")
@@ -27,7 +29,8 @@ async function fetchApiKey(): Promise<string | null> {
       .maybeSingle();
     if (!data?.enabled) return null;
     const key = data?.config?.api_key;
-    return typeof key === "string" && key.trim() ? key.trim() : null;
+    mapsKey = typeof key === "string" && key.trim() ? key.trim() : null;
+    return mapsKey;
   } catch {
     return null;
   }
@@ -79,12 +82,16 @@ export function useGoogleMaps(): { maps: GMaps | null; ready: boolean } {
 
 export type RoutePoint = { lat?: number | null; lng?: number | null; address?: string | null; label?: string };
 
-function toDirectionsPlace(p: RoutePoint): string | google.maps.LatLngLiteral {
-  return p.lat != null && p.lng != null ? { lat: Number(p.lat), lng: Number(p.lng) } : String(p.address ?? "");
+// Routes API waypoint: coordinates when we have them, else a plain address.
+function toRoutesWaypoint(p: RoutePoint): Record<string, unknown> {
+  return p.lat != null && p.lng != null
+    ? { location: { latLng: { latitude: Number(p.lat), longitude: Number(p.lng) } } }
+    : { address: String(p.address ?? "") };
 }
 
 export type ComputedRoute = {
-  result: google.maps.DirectionsResult;
+  /** decoded polyline for the whole route (drawn as a Polyline) */
+  path: google.maps.LatLngLiteral[];
   /** stop order (indices into the waypoints array as passed in) */
   waypointOrder: number[];
   distanceMeters: number;
@@ -100,37 +107,62 @@ export async function computeRoute(
   waypoints: RoutePoint[] = [],
   optimize = false,
 ): Promise<ComputedRoute> {
-  const svc = new maps.DirectionsService();
-  let result: google.maps.DirectionsResult | undefined;
+  // Google Routes API (v2) — the current replacement for the legacy
+  // DirectionsService. Uses the same browser key (HTTP-referrer restricted); the
+  // project must have the "Routes API" enabled.
+  const key = await fetchApiKey();
+  if (!key) throw new Error("Google Maps isn't configured.");
+
+  const durSec = (d: unknown) => Number(String(d ?? "0").replace(/s$/, "")) || 0; // Routes durations look like "123s"
+  let data: any;
   try {
-    result = await svc.route({
-      origin: toDirectionsPlace(origin),
-      destination: toDirectionsPlace(destination),
-      waypoints: waypoints.map((w) => ({ location: toDirectionsPlace(w) as any, stopover: true })),
-      optimizeWaypoints: optimize,
-      travelMode: maps.TravelMode.DRIVING,
+    const res = await fetch("https://routes.googleapis.com/directions/v2:computeRoutes", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": key,
+        "X-Goog-FieldMask": [
+          "routes.distanceMeters", "routes.duration", "routes.polyline.encodedPolyline",
+          "routes.legs.distanceMeters", "routes.legs.duration", "routes.optimizedIntermediateWaypointIndex",
+        ].join(","),
+      },
+      body: JSON.stringify({
+        origin: toRoutesWaypoint(origin),
+        destination: toRoutesWaypoint(destination),
+        intermediates: waypoints.map(toRoutesWaypoint),
+        travelMode: "DRIVE",
+        optimizeWaypointOrder: optimize,
+        polylineEncoding: "ENCODED_POLYLINE",
+      }),
     });
+    const text = await res.text();
+    if (!res.ok) {
+      if (res.status === 403 || /PERMISSION_DENIED|not authorized|referer|API key not valid|SERVICE_DISABLED|not been used|is disabled/i.test(text))
+        throw new Error("Map isn't authorised — enable the Routes API on the Google Maps project and allow this domain on the key.");
+      throw new Error("Couldn't calculate the route.");
+    }
+    data = JSON.parse(text);
   } catch (e: any) {
-    const s = String(e?.code ?? e?.message ?? e);
-    if (/REQUEST_DENIED|ApiNotActivated|RefererNotAllowed|ApiTargetBlocked/i.test(s))
-      throw new Error("Map isn't authorised for this site — add this domain to the Google Maps key's allowed referrers and enable the Directions API.");
-    if (/ZERO_RESULTS/i.test(s)) throw new Error("No driving route found between these stops.");
-    if (/OVER_QUERY_LIMIT|OVER_DAILY_LIMIT/i.test(s)) throw new Error("Google Maps quota reached — try again later.");
+    if (e instanceof Error && e.message.startsWith("Map isn't") ) throw e;
     throw new Error("Couldn't calculate the route.");
   }
-  // A failed auth can resolve without a usable result — guard rather than crash.
-  const route = result?.routes?.[0];
-  if (!route) throw new Error("Map isn't authorised for this site — add this domain to the Google Maps key's allowed referrers.");
-  const legs = (route?.legs ?? []).map((l) => ({
-    distanceMeters: l.distance?.value ?? 0,
-    durationSeconds: l.duration?.value ?? 0,
-    endAddress: l.end_address ?? "",
+
+  const route = data?.routes?.[0];
+  if (!route) throw new Error("No driving route found between these stops.");
+  const encoded: string | undefined = route.polyline?.encodedPolyline;
+  const path = encoded
+    ? maps.geometry.encoding.decodePath(encoded).map((ll) => ({ lat: ll.lat(), lng: ll.lng() }))
+    : [];
+  const legs = (route.legs ?? []).map((l: any) => ({
+    distanceMeters: l.distanceMeters ?? 0,
+    durationSeconds: durSec(l.duration),
+    endAddress: "",
   }));
   return {
-    result,
-    waypointOrder: route?.waypoint_order ?? waypoints.map((_, i) => i),
-    distanceMeters: legs.reduce((s, l) => s + l.distanceMeters, 0),
-    durationSeconds: legs.reduce((s, l) => s + l.durationSeconds, 0),
+    path,
+    waypointOrder: route.optimizedIntermediateWaypointIndex ?? waypoints.map((_, i) => i),
+    distanceMeters: route.distanceMeters ?? legs.reduce((s: number, l: any) => s + l.distanceMeters, 0),
+    durationSeconds: durSec(route.duration) || legs.reduce((s: number, l: any) => s + l.durationSeconds, 0),
     legs,
   };
 }
