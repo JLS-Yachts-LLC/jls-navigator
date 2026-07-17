@@ -83,7 +83,7 @@ export async function qbWebhookHandler(request: Request): Promise<Response> {
     try {
       const items = await orchestrate(raw)
       const summary = items.map(i =>
-        `${i.entity}${i.invoiceType ? '/' + i.invoiceType : ''}${i.heal ? ' heal:' + i.heal.action : ''}${i.ingest ? ' ' + i.ingest : ''}${i.error ? ' ERR:' + i.error : ''}`,
+        `${i.entity}${i.invoiceType ? '/' + i.invoiceType : ''}${i.docgen ? ' pdf:' + i.docgen : ''}${i.ingest ? ' ' + i.ingest : ''}${i.error ? ' ERR:' + i.error : ''}`,
       ).join('; ')
       const anyError = items.some(i => i.error)
       await sb.from('qb_webhook_events')
