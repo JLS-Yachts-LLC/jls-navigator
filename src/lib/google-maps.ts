@@ -137,9 +137,15 @@ export async function computeRoute(
     });
     const text = await res.text();
     if (!res.ok) {
-      if (res.status === 403 || /PERMISSION_DENIED|not authorized|referer|API key not valid|SERVICE_DISABLED|not been used|is disabled/i.test(text))
-        throw new Error("Map isn't authorised — enable the Routes API on the Google Maps project and allow this domain on the key.");
-      throw new Error("Couldn't calculate the route.");
+      let reason = "";
+      try { reason = JSON.parse(text)?.error?.message ?? ""; } catch { /* non-JSON */ }
+      // Surface the real cause to the console for diagnosis.
+      console.error(`Routes API ${res.status}:`, reason || text.slice(0, 400));
+      if (/SERVICE_DISABLED|has not been used|is disabled|not been used in project/i.test(text))
+        throw new Error("Enable the Routes API on the Google Maps project (APIs & Services → Library → Routes API), then retry.");
+      if (/referer|referrer|API keys with referer/i.test(text))
+        throw new Error("The Maps key's referrer restriction is blocking the Routes API — confirm this domain is on the key's allowed referrers.");
+      throw new Error(reason ? `Route error: ${reason}` : "Couldn't calculate the route.");
     }
     data = JSON.parse(text);
   } catch (e: any) {
