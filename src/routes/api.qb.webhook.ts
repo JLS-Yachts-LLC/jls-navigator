@@ -44,12 +44,12 @@ export async function qbWebhookHandler(request: Request): Promise<Response> {
   const raw = await request.text()
 
   // 1. Signature verification (Intuit signs the raw body with the webhook verifier).
-  const verifier = process.env.INTUIT_WEBHOOK_VERIFIER
+  const verifier = (process.env.INTUIT_WEBHOOK_VERIFIER ?? '').trim()
   if (verifier) {
-    const provided = request.headers.get('intuit-signature') ?? ''
+    const provided = (request.headers.get('intuit-signature') ?? '').trim()
     const expected = await hmacBase64(verifier, raw)
     if (!provided || provided !== expected) {
-      await logAutomationRun({ ...AUTO, status: 'error', detail: 'Invalid Intuit signature — rejected' })
+      await logAutomationRun({ ...AUTO, status: 'error', detail: 'Invalid Intuit signature — rejected (check INTUIT_WEBHOOK_VERIFIER matches the PRODUCTION verifier token in Intuit Developer → Webhooks)' })
       return new Response('invalid signature', { status: 401 })
     }
   }

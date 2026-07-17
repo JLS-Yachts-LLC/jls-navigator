@@ -138,12 +138,11 @@ export async function qboUpload(
     const fault = j?.AttachableResponse?.[0]?.Fault
     if (fault) throw new Error(`QBO upload fault: ${JSON.stringify(fault).slice(0, 300)}`)
 
-    // QBO often stores the uploaded file WITHOUT applying the AttachableRef from the
-    // multipart metadata — the file lands in Attachments but isn't linked to the
-    // entity. Mirror the proven n8n flow: follow up with an /attachable update
-    // (Id + SyncToken + AttachableRef) so the PDF actually shows on the invoice.
-    const linked = Array.isArray(attachable?.AttachableRef) && attachable.AttachableRef.length > 0
-    if (attachable?.Id && !linked) {
+    // QBO often stores the uploaded file WITHOUT actually linking it to the entity,
+    // even when the response echoes an AttachableRef. Mirror the proven n8n flow:
+    // ALWAYS follow up with an /attachable update (Id + SyncToken + AttachableRef)
+    // so the PDF genuinely shows on the invoice/estimate/PO.
+    if (attachable?.Id) {
       const upd = await qboRequest('POST', `/attachable?minorversion=73`, {
         Id: attachable.Id,
         SyncToken: attachable.SyncToken ?? '0',
@@ -151,7 +150,9 @@ export async function qboUpload(
         ContentType: contentType,
         AttachableRef: [{ IncludeOnSend: false, EntityRef: { type: entityType, value: String(entityId) } }],
       })
-      return upd?.Attachable ?? attachable
+      const bound = upd?.Attachable
+      if (!bound?.Id) throw new Error(`QBO attach-link for ${fileName} returned no Attachable: ${JSON.stringify(upd ?? {}).slice(0, 300)}`)
+      return bound
     }
     return attachable
   }
