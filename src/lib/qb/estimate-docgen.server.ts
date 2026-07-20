@@ -334,11 +334,9 @@ export async function buildQuotationPdf(q: QuoteData, opts?: { background?: Uint
     nontaxablevalue: fmt(q.nonTaxable),
     '5%vatvalue': fmt(q.vat5Value),
     totalamountfinal: fmtAlways(q.grandTotal),
-    // The conversion sign only prints WITH a converted amount — a missing
-    // Conversion Rate custom field previously left a stray "$"/"€" on the page.
-    sign: variant === 'aedconv'
-      ? (q.convertedTotal != null ? q.convertedSign : '')
-      : variant === 'usdeur' ? (CURRENCY_SIGN[q.displayCurrency.toUpperCase()] ?? q.displayCurrency) : '',
+    // The sign is part of the template's design (per Matt) — always print it on
+    // the conversion variants.
+    sign: variant === 'aedconv' ? q.convertedSign : variant === 'usdeur' ? (CURRENCY_SIGN[q.displayCurrency.toUpperCase()] ?? q.displayCurrency) : '',
     totalamountfinal1: q.convertedTotal != null ? fmtAlways(+q.convertedTotal.toFixed(2)) : '',
   }
 
