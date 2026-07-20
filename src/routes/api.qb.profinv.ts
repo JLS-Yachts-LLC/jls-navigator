@@ -68,6 +68,61 @@ export async function qbProfinvHandler(request: Request): Promise<Response> {
 
   const url = new URL(request.url)
 
+  // ── Regenerate one Prof Inv on the CURRENT template (same number) ────────────
+  // Re-renders from the quotation, replaces the stored copy AND swaps the
+  // attachments on the quotation. (The Sales Order copy must be re-attached via
+  // the extension — the QBO API cannot address Sales Orders.)
+  const regen = url.searchParams.get('regenerate')
+  if (regen) {
+    const { data: row } = await sb.from('qb_proforma_docs').select('*').eq('doc_number', regen).maybeSingle()
+    if (!row) return json({ error: `No Prof Inv ${regen}` }, 404)
+
+    const { qboRequest, qboQuery, qboUpload } = await import('@/lib/qb/qbo.server')
+    const { transformProforma, buildProformaPdf } = await import('@/lib/qb/proforma-docgen.server')
+    const { buildDocXlsx } = await import('@/lib/qb/doc-common.server')
+
+    const estId = String(row.estimate_qbo_id)
+    const est = (await qboRequest('GET', `/estimate/${estId}?include=enhancedAllCustomFields&minorversion=73`))?.Estimate
+    if (!est) return json({ error: 'Quotation no longer exists in QuickBooks' }, 404)
+    let trnNo = ''
+    const custId = est.CustomerRef?.value
+    if (custId) {
+      const cust = await qboRequest('GET', `/customer/${custId}?minorversion=73`).catch(() => null)
+      trnNo = String(cust?.Customer?.PrimaryTaxIdentifier ?? '')
+    }
+    const data = transformProforma(est, { trnNo })
+    data.party.docNumber = row.doc_number
+    const fileName = `Prof Inv ${row.doc_number} ${row.client_name ?? ''}`.trim()
+    const pdfBytes = await buildProformaPdf(data)
+    const xlsxBytes = buildDocXlsx(data, { title: 'PROFORMA INVOICE', partyLabel: 'TO' })
+
+    // Snapshot the superseded attachments BEFORE uploading the fresh ones.
+    const existing = await qboQuery(
+      `SELECT * FROM Attachable WHERE AttachableRef.EntityRef.Type = 'Estimate' AND AttachableRef.EntityRef.value = '${estId.replace(/'/g, "''")}'`,
+    )
+    const old = ((existing?.QueryResponse?.Attachable ?? []) as any[])
+      .filter((a) => String(a.FileName ?? '').startsWith(`Prof Inv ${row.doc_number}`))
+
+    const newPdf = await qboUpload(`${fileName}.pdf`, pdfBytes, 'application/pdf', 'Estimate', estId)
+    const newXlsx = await qboUpload(`${fileName}.xlsx`, xlsxBytes, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Estimate', estId)
+    const keep = new Set([newPdf?.Id, newXlsx?.Id].filter(Boolean).map(String))
+    let removed = 0
+    for (const a of old) {
+      if (keep.has(String(a.Id))) continue
+      try {
+        await qboRequest('POST', '/attachable?operation=delete&minorversion=73', {
+          Id: String(a.Id), SyncToken: String(a.SyncToken), domain: 'QBO', AttachableRef: a.AttachableRef,
+        })
+        removed++
+      } catch { /* best-effort */ }
+    }
+
+    const storagePath = `qbo/profinv/${row.doc_number}.pdf`
+    await sb.storage.from('esign-documents').upload(storagePath, pdfBytes, { contentType: 'application/pdf', upsert: true })
+    await sb.from('qb_proforma_docs').update({ pdf_path: storagePath }).eq('estimate_qbo_id', estId)
+    return json({ ok: true, regenerated: fileName, quotationAttachmentsReplaced: true, oldRemoved: removed })
+  }
+
   // ── Download one Prof Inv PDF ────────────────────────────────────────────────
   const download = url.searchParams.get('download')
   if (download) {
