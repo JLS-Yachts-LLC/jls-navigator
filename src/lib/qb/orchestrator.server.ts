@@ -98,6 +98,19 @@ export async function orchestrate(raw: string): Promise<OrchestrationItem[]> {
       continue
     }
 
+    // Per-entity lock: when Intuit dumps a backlog, several concurrent invocations
+    // carry events for the SAME document — processing it once is enough (we always
+    // fetch its current state), and processing it many times in parallel causes
+    // 429 rate-limit storms. Skipping while another invocation holds the lock is
+    // safe: the holder does the full job, and the 5-min backstop mops up any gap.
+    const { tryEntityLock, releaseEntityLock } = await import('./locks.server')
+    const lockKey = `${realm}:${ev.entity}:${ev.entityId}`
+    if (!(await tryEntityLock(lockKey))) {
+      item.docgen = 'skipped (already processing)'
+      results.push(item)
+      continue
+    }
+
     try {
       if (ev.entity === 'invoice' && qboConfigured()) {
         const fetched = await qboRequest('GET', `/invoice/${ev.entityId}?include=enhancedAllCustomFields&minorversion=73`, undefined, realm)
@@ -175,6 +188,8 @@ export async function orchestrate(raw: string): Promise<OrchestrationItem[]> {
         item.error = msg
         await logAutomationRun({ key: meta.key, name: meta.name, source: 'worker', trigger_type: 'webhook', category: 'Finance', status: 'error', detail: item.error })
       }
+    } finally {
+      await releaseEntityLock(lockKey).catch(() => { /* stale locks self-expire */ })
     }
     results.push(item)
   }

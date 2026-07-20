@@ -29,6 +29,17 @@ function admin() {
 const enc = new TextEncoder()
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
+/** Backoff for a retryable response. 429 (rate limit) honours Retry-After and
+ *  backs off much harder than transient 5xx — a webhook-backlog burst can put
+ *  the realm over QBO's per-minute quota and short retries just feed the storm. */
+function retryDelay(res: Response, attempt: number): number {
+  if (res.status === 429) {
+    const ra = Number(res.headers.get('retry-after')) || 0
+    return Math.max(ra * 1000, 3000 * (attempt + 1))
+  }
+  return 500 * (attempt + 1)
+}
+
 /** Exchange the stored (or seed) refresh token for a fresh access token; persist rotation. */
 async function refreshAccessToken(sb: any, realm: string): Promise<string> {
   const { data: row } = await sb.from('qbo_tokens').select('refresh_token').eq('realm_id', realm).maybeSingle()
@@ -97,7 +108,7 @@ export async function qboRequest(method: string, path: string, body?: unknown, r
       ...(body ? { body: JSON.stringify(body) } : {}),
     })
     if (res.status === 401 && attempt === 0) { token = await getAccessToken(sb, realm, true); continue } // expired → refresh once
-    if ((res.status === 429 || res.status >= 500) && attempt < 3) { await sleep(500 * (attempt + 1)); continue }
+    if ((res.status === 429 || res.status >= 500) && attempt < 3) { await sleep(retryDelay(res, attempt)); continue }
     if (!res.ok) throw new Error(`QBO ${method} ${path} → ${res.status}: ${await res.text().catch(() => '')}`)
     return res.json()
   }
@@ -140,7 +151,7 @@ export async function qboUpload(
       body: form,
     })
     if (res.status === 401 && attempt === 0) { token = await getAccessToken(sb, realm, true); continue }
-    if ((res.status === 429 || res.status >= 500) && attempt < 3) { await sleep(500 * (attempt + 1)); continue }
+    if ((res.status === 429 || res.status >= 500) && attempt < 3) { await sleep(retryDelay(res, attempt)); continue }
     const j: any = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(`QBO upload ${fileName} → ${res.status}: ${JSON.stringify(j).slice(0, 300)}`)
     const attachable = j?.AttachableResponse?.[0]?.Attachable
@@ -193,7 +204,7 @@ export async function qboPdf(path: string, realmOverride?: string): Promise<Arra
   for (let attempt = 0; attempt < 4; attempt++) {
     const res = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/pdf' } })
     if (res.status === 401 && attempt === 0) { token = await getAccessToken(sb, realm, true); continue }
-    if ((res.status === 429 || res.status >= 500) && attempt < 3) { await sleep(500 * (attempt + 1)); continue }
+    if ((res.status === 429 || res.status >= 500) && attempt < 3) { await sleep(retryDelay(res, attempt)); continue }
     if (!res.ok) throw new Error(`QBO PDF ${path} → ${res.status}`)
     return res.arrayBuffer()
   }
