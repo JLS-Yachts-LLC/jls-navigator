@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-07-20",
     "entries": [
       {
+        "type": "feature",
+        "title": "Pro-Forma invoices now print on the official JLS letterhead — the generated PDF stamps the real Word templates (all three currency variants), matching the quotation quality"
+      },
+      {
         "type": "fix",
         "title": "Invoice PDFs now print the Place of Supply name for all options — Maldives, Oman and Outside UAE previously appeared as their raw code number"
       },
