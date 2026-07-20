@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "QuickBooks pipeline now monitors and heals itself — a safety-net reconciler generates any document every other layer missed, and an hourly health monitor emails an alert when a company connection breaks, a sync errors, or Intuit stops delivering webhooks"
+      },
+      {
+        "type": "feature",
         "title": "Branded document PDFs no longer depend on QuickBooks webhook delivery — the 5-minute sync now detects changed invoices, pro-formas and quotations itself and generates/attaches their documents, so a webhook outage can no longer stop document generation"
       },
       {
