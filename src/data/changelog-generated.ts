@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Edge Add-ons submission package for the Sales Order extension — store icons, privacy policy page, listing copy and publish guide; the QB Extension tab gains a copy-the-extensions-address chip and Edge-first install steps"
+      },
+      {
+        "type": "feature",
         "title": "QB Extension tab in Finance — download and set up the Sales Order attachment extension from inside Polaris, manage its access token, and see who has it installed plus any errors it reports; the extension button now sits beside the attachment box and can be dragged anywhere"
       },
       {
