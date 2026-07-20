@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "QuickBooks event bursts no longer overload the API — when Intuit delivers a backlog all at once, each document is processed exactly once (concurrent duplicates skip) and rate-limit responses back off properly instead of hammering"
+      },
+      {
+        "type": "fix",
         "title": "Document safety-net runs strictly after the sync (no concurrent processing of the same invoice) and its own failures now show in the run log instead of being silent"
       },
       {
