@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-07-20",
     "entries": [
       {
+        "type": "feature",
+        "title": "Existing Prof Inv documents can be regenerated on the current template keeping their number — replaces the stored copy and the quotation's attachments in one step"
+      },
+      {
         "type": "fix",
         "title": "Pro-Forma documents no longer show the Signed & Accepted / Date block — removed from all three template variants"
       },
