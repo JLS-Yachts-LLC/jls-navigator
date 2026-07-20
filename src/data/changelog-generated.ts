@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "QuickBooks events can no longer be lost — every webhook is accepted instantly and stored, processing happens in the background, and a 5-minute sweeper automatically retries anything that failed (repeated errors previously made Intuit stop delivering events altogether)"
+      },
+      {
+        "type": "fix",
         "title": "Document PDFs no longer fail when a name or description contains special letters (e.g. Turkish İ, Polish ł) — quotations, invoices, pro-formas, receipts, contracts and payslips now transliterate characters the PDF font can't display instead of erroring"
       }
     ]
