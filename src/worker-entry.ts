@@ -50,7 +50,7 @@ import { adminAuditHandler } from './routes/api.admin.audit'
 import { adminAuditExportHandler } from './routes/api.admin.audit.export'
 import { adminStatsHandler } from './routes/api.admin.stats'
 import { automationEventHandler } from './routes/api.automations.event'
-import { qbWebhookHandler } from './routes/api.qb.webhook'
+import { qbWebhookHandler, retryPendingQbWebhookEvents } from './routes/api.qb.webhook'
 import { movementsNotifyHandler } from './routes/api.movements.notify'
 import { movementReportsHandler, runWeeklyImmigrationReports } from './routes/api.movements.reports'
 import { visaReportGenerateHandler } from './routes/api.visa.report-generate'
@@ -574,7 +574,7 @@ export default {
       return automationEventHandler(request)
     }
     if (url.pathname === '/api/qb/webhook' && request.method === 'POST') {
-      return qbWebhookHandler(request)
+      return qbWebhookHandler(request, ctx)
     }
     if (url.pathname === '/api/qb/invoice' && (request.method === 'GET' || request.method === 'POST')) {
       return qbInvoiceHandler(request)
@@ -622,6 +622,13 @@ export default {
         syncAllRealms({})
           .then((r) => console.log(`[qbo-sync] ${JSON.stringify(r)}`))
           .catch((e) => console.error('[qbo-sync] error:', e))
+      );
+      // Reliability sweeper: re-process any QuickBooks webhook event that hasn't
+      // fully succeeded (per-document failure, deploy mid-request, transient QBO
+      // error). Events are ACKed + stored on receipt, so nothing is ever lost.
+      ctx.waitUntil(
+        retryPendingQbWebhookEvents()
+          .catch((e) => console.error('[qb-webhook-sweeper] error:', e))
       );
       return;
     }

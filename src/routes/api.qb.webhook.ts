@@ -38,7 +38,55 @@ async function hmacBase64(key: string, msg: string): Promise<string> {
   return btoa(bin)
 }
 
-export async function qbWebhookHandler(request: Request): Promise<Response> {
+/** Process one stored event batch natively; updates its row + the run log.
+ *  Never throws — failures are recorded and re-tried by the 5-minute sweeper. */
+async function processNativeEvent(id: string, raw: string, attempt: number): Promise<boolean> {
+  const sb = admin()
+  try {
+    const items = await orchestrate(raw)
+    const summary = items.map(i =>
+      `${i.entity}${i.invoiceType ? '/' + i.invoiceType : ''}${i.docgen ? ' pdf:' + i.docgen : ''}${i.ingest ? ' ' + i.ingest : ''}${i.error ? ' ERR:' + i.error : ''}`,
+    ).join('; ')
+    const anyError = items.some(i => i.error)
+    await sb.from('qb_webhook_events')
+      .update({ forwarded: !anyError, attempts: attempt, last_status: anyError ? 500 : 200, last_error: anyError ? summary.slice(0, 2000) : null, updated_at: new Date().toISOString() })
+      .eq('id', id)
+    await logAutomationRun({
+      ...AUTO, status: anyError ? 'error' : 'success',
+      detail: `native — ${summary || 'no events'}${anyError ? ' (will retry via 5-min sweeper)' : ''}${attempt > 1 ? ` [attempt ${attempt}]` : ''}`,
+    })
+    return !anyError
+  } catch (e: any) {
+    const msg = e?.message ?? String(e)
+    await sb.from('qb_webhook_events')
+      .update({ forwarded: false, attempts: attempt, last_status: 500, last_error: String(msg).slice(0, 2000), updated_at: new Date().toISOString() })
+      .eq('id', id)
+    await logAutomationRun({ ...AUTO, status: 'error', detail: `native processing failed: ${msg} (will retry via 5-min sweeper)${attempt > 1 ? ` [attempt ${attempt}]` : ''}` })
+    return false
+  }
+}
+
+/** 5-minute cron sweeper: re-process any stored event that hasn't fully succeeded.
+ *  This is the reliability backstop — a bad document, a deploy mid-request or a
+ *  transient QBO error can never lose an event; it retries until done (max 12
+ *  attempts ≈ 1 hour, then it stays visible in the run log as failed). */
+export async function retryPendingQbWebhookEvents(): Promise<void> {
+  if (!qboConfigured()) return
+  const sb = admin()
+  const { data: auto } = await sb.from('automations').select('enabled').eq('key', 'qb-webhook').maybeSingle()
+  if (!auto?.enabled) return
+  const since = new Date(Date.now() - 7 * 86400000).toISOString()
+  const { data: pending } = await sb.from('qb_webhook_events')
+    .select('id, raw, attempts')
+    .eq('forwarded', false).not('raw', 'is', null)
+    .lt('attempts', 12).gte('received_at', since)
+    .order('received_at', { ascending: true }).limit(10)
+  for (const ev of pending ?? []) {
+    await processNativeEvent(ev.id, ev.raw, (ev.attempts ?? 0) + 1)
+  }
+}
+
+export async function qbWebhookHandler(request: Request, ctx?: { waitUntil: (p: Promise<unknown>) => void }): Promise<Response> {
   if (request.method !== 'POST') return new Response('Method not allowed', { status: 405 })
 
   const raw = await request.text()
@@ -59,43 +107,33 @@ export async function qbWebhookHandler(request: Request): Promise<Response> {
   const sb = admin()
   const id = await sha256Hex(raw)
 
-  // 2. De-dup Intuit retries.
-  const { data: existing } = await sb.from('qb_webhook_events').select('forwarded').eq('id', id).maybeSingle()
+  // 2. De-dup Intuit retries; persist the raw payload so the sweeper can always
+  //    re-process (a stored event can never be lost).
+  const { data: existing } = await sb.from('qb_webhook_events').select('forwarded, attempts').eq('id', id).maybeSingle()
   if (existing?.forwarded) {
     return new Response('duplicate ignored', { status: 200 })
   }
-  if (!existing) await sb.from('qb_webhook_events').insert({ id })
+  if (!existing) await sb.from('qb_webhook_events').insert({ id, raw })
+  else await sb.from('qb_webhook_events').update({ raw }).eq('id', id)
 
   // 3. The in-app toggle (Automations → "QuickBooks Webhook — native processing")
   //    decides WHO processes the event — never both, so nothing double-fires:
-  //      ON  → the worker handles everything natively (parse → invoice fetch →
-  //            doc-number heal → Pro-Forma classification → instant Finance sync).
-  //            n8n is NOT called at all.
-  //      OFF → pure retry-safe relay to the existing n8n workflow (today's setup).
+  //      ON  → the worker handles everything natively (invoice/estimate/PO/payment
+  //            doc-gen + instant Finance sync). n8n is NOT called at all.
+  //      OFF → pure retry-safe relay to the existing n8n workflow.
   const { data: auto } = await sb.from('automations').select('enabled').eq('key', 'qb-webhook').maybeSingle()
   const nativeEnabled = !!auto?.enabled
 
   if (nativeEnabled) {
-    if (!qboConfigured()) {
-      await logAutomationRun({ ...AUTO, status: 'error', detail: 'native mode is ON but QBO credentials are not configured' })
-      return new Response('qbo not configured', { status: 500 }) // Intuit re-delivers
-    }
-    try {
-      const items = await orchestrate(raw)
-      const summary = items.map(i =>
-        `${i.entity}${i.invoiceType ? '/' + i.invoiceType : ''}${i.docgen ? ' pdf:' + i.docgen : ''}${i.ingest ? ' ' + i.ingest : ''}${i.error ? ' ERR:' + i.error : ''}`,
-      ).join('; ')
-      const anyError = items.some(i => i.error)
-      await sb.from('qb_webhook_events')
-        .update({ forwarded: !anyError, attempts: 1, last_status: anyError ? 500 : 200, last_error: anyError ? summary : null, updated_at: new Date().toISOString() })
-        .eq('id', id)
-      await logAutomationRun({ ...AUTO, status: anyError ? 'error' : 'success', detail: `native — ${summary || 'no events'}` })
-      // Per-event errors → 500 so Intuit re-delivers; successes are dedup-safe.
-      return new Response(anyError ? 'partial failure' : 'ok', { status: anyError ? 500 : 200 })
-    } catch (e: any) {
-      await logAutomationRun({ ...AUTO, status: 'error', detail: `native processing failed: ${e?.message ?? e}` })
-      return new Response('native processing failed', { status: 500 }) // Intuit re-delivers
-    }
+    // ACK-first: the event is persisted, so tell Intuit 200 IMMEDIATELY and do the
+    // heavy work in the background. Intuit's backoff only reacts to our response
+    // code — returning 5xx for per-document errors made it stop delivering
+    // entirely. Our own 5-minute sweeper retries anything that fails.
+    const attempt = (existing?.attempts ?? 0) + 1
+    const work = processNativeEvent(id, raw, attempt)
+    if (ctx?.waitUntil) ctx.waitUntil(work)
+    else await work.catch(() => { /* recorded in the event row; sweeper retries */ })
+    return new Response('accepted', { status: 200 })
   }
 
   // 3b. Toggle OFF: retry-forward the exact payload to n8n.
