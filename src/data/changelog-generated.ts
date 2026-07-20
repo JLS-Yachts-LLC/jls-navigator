@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Chrome extension attaches the Prof Inv PDF directly onto the QuickBooks Sales Order — one click on the Sales Order page fetches the matching Polaris document and drops it into QuickBooks' own attachment box (the API cannot address Sales Orders, so this rides the signed-in session)"
+      },
+      {
+        "type": "feature",
         "title": "Marking a quotation Accepted (when converting it to a Sales Order) now auto-generates a branded Prof Inv NNNN-YY Client Name document and attaches it to the quotation — numbering starts at 0001-26 and restarts each year; this replaces the old custom-field Pro-Forma trigger"
       },
       {
