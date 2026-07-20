@@ -638,12 +638,6 @@ export default {
         retryPendingQbWebhookEvents()
           .catch((e) => console.error('[qb-webhook-sweeper] error:', e))
       );
-      // TEMP: one-shot Sales Order visibility probe (self-guarded, runs once).
-      ctx.waitUntil(
-        import('./lib/qb/health.server')
-          .then((m) => m.soReportProbe())
-          .catch((e) => console.error('[qb-so-probe] error:', e))
-      );
       return;
     }
 
