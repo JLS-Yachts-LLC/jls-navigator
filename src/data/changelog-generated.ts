@@ -5,6 +5,16 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.30.1",
+    "date": "2026-07-20",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Document PDFs no longer fail when a name or description contains special letters (e.g. Turkish İ, Polish ł) — quotations, invoices, pro-formas, receipts, contracts and payslips now transliterate characters the PDF font can't display instead of erroring"
+      }
+    ]
+  },
+  {
     "version": "2.30.0",
     "date": "2026-07-17",
     "entries": [
