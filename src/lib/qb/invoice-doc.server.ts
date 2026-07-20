@@ -21,6 +21,7 @@
  * double-attach while the n8n workflow is still live).
  */
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib'
+import { deepWinAnsiSafe } from '@/lib/pdf-winansi'
 import { createClient } from '@supabase/supabase-js'
 import { qboRequest, qboQuery, qboUpload, qboConfigured } from './qbo.server'
 import { logAutomationRun } from '@/lib/automations.server'
@@ -220,6 +221,7 @@ async function companyDetails(): Promise<Company> {
 }
 
 export async function renderInvoicePdf(t: TransformedInvoice, company: Company, title = 'TAX INVOICE'): Promise<Uint8Array> {
+  t = deepWinAnsiSafe(t); company = deepWinAnsiSafe(company) // stop pdf-lib crashing on non-WinAnsi chars
   const doc = await PDFDocument.create()
   const font = await doc.embedFont(StandardFonts.Helvetica)      // metric twin of the template's Arial
   const bold = await doc.embedFont(StandardFonts.HelveticaBold)

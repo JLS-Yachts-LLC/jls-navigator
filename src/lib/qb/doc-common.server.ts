@@ -12,6 +12,7 @@
  */
 import { createClient } from '@supabase/supabase-js'
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
+import { deepWinAnsiSafe } from '@/lib/pdf-winansi'
 import { qboRequest, qboQuery, qboUpload } from './qbo.server'
 
 export function admin() {
@@ -122,6 +123,7 @@ export async function buildDocPdf(
   opts: { title: string; partyLabel: string; currencyLabel?: string },
   background?: Uint8Array | null,
 ): Promise<Uint8Array> {
+  q = deepWinAnsiSafe(q) // stop pdf-lib crashing on non-WinAnsi chars in names/descriptions
   const pdf = background ? await PDFDocument.load(background) : await PDFDocument.create()
   const font = await pdf.embedFont(StandardFonts.Helvetica)
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold)

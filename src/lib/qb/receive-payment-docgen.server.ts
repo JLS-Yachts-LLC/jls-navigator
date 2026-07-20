@@ -8,6 +8,7 @@
  * dropped; the receipt is drawn directly with pdf-lib.
  */
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
+import { deepWinAnsiSafe } from '@/lib/pdf-winansi'
 import { qboRequest, qboConfigured } from './qbo.server'
 import { admin, fmtAlways, docgenGuard, attachAndLog, docgenToggle } from './doc-common.server'
 
@@ -59,6 +60,7 @@ type ReceiptData = {
 }
 
 async function buildSalesReceiptPdf(r: ReceiptData): Promise<Uint8Array> {
+  r = deepWinAnsiSafe(r) // stop pdf-lib crashing on non-WinAnsi chars
   const pdf = await PDFDocument.create()
   const font = await pdf.embedFont(StandardFonts.Helvetica)
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold)

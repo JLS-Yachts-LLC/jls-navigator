@@ -18,6 +18,7 @@
  */
 import { createClient } from '@supabase/supabase-js'
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
+import { deepWinAnsiSafe } from '@/lib/pdf-winansi'
 import { qboRequest, qboQuery, qboUpload, qboConfigured } from './qbo.server'
 import { QUOTATION_TEMPLATE_COORDS, type QuotationVariant, type StampField, type StampPage } from './quotation-template-coords'
 import { logAutomationRun } from '@/lib/automations.server'
@@ -230,6 +231,7 @@ const ROWS_PER_PAGE = 35
 const ADDRESS_LINE_PITCH = 13.32
 
 export async function buildQuotationPdf(q: QuoteData, opts?: { background?: Uint8Array }): Promise<Uint8Array> {
+  q = deepWinAnsiSafe(q) // stop pdf-lib crashing on names/descriptions with non-WinAnsi chars
   const variant = quotationVariant(q.displayCurrency)
   const bg = opts?.background ?? await fetchBackground(variant)
   if (!bg) return buildQuotationPdfBasic(q)
@@ -413,6 +415,7 @@ const GREY = rgb(0.45, 0.45, 0.45)
 const LINE = rgb(0.75, 0.78, 0.82)
 
 export async function buildQuotationPdfBasic(q: QuoteData): Promise<Uint8Array> {
+  q = deepWinAnsiSafe(q)
   const pdf = await PDFDocument.create()
   const font = await pdf.embedFont(StandardFonts.Helvetica)
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold)

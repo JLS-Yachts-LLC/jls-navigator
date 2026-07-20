@@ -4,6 +4,7 @@
  * letterhead with a signature block; payslips render a proper tabular layout.
  */
 import { PDFDocument, StandardFonts, rgb, type PDFPage, type PDFFont } from 'pdf-lib'
+import { winAnsiSafe, deepWinAnsiSafe } from '@/lib/pdf-winansi'
 
 const A4 = { w: 595.28, h: 841.89 }
 const MARGIN = 56
@@ -50,6 +51,7 @@ export async function buildContractPdf(
   text: string,
   opts: { docRef?: string; date?: string; signature?: boolean } = {},
 ): Promise<Uint8Array> {
+  title = winAnsiSafe(title); text = winAnsiSafe(text)
   const doc = await PDFDocument.create()
   const font = await doc.embedFont(StandardFonts.Helvetica)
   const bold = await doc.embedFont(StandardFonts.HelveticaBold)
@@ -132,6 +134,7 @@ export type PayslipData = {
 }
 
 export async function buildPayslipPdf(d: PayslipData): Promise<Uint8Array> {
+  d = deepWinAnsiSafe(d) // stop pdf-lib crashing on non-WinAnsi chars in names/labels
   const doc = await PDFDocument.create()
   const font = await doc.embedFont(StandardFonts.Helvetica)
   const bold = await doc.embedFont(StandardFonts.HelveticaBold)
