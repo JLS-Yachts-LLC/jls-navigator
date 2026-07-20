@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-07-20",
     "entries": [
       {
+        "type": "fix",
+        "title": "Pro-Forma documents no longer show the Signed & Accepted / Date block — removed from all three template variants"
+      },
+      {
         "type": "feature",
         "title": "Edge Add-ons submission package for the Sales Order extension — store icons, privacy policy page, listing copy and publish guide; the QB Extension tab gains a copy-the-extensions-address chip and Edge-first install steps"
       },
