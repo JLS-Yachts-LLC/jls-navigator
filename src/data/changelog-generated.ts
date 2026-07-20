@@ -9,6 +9,18 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-07-20",
     "entries": [
       {
+        "type": "fix",
+        "title": "Quotation currency-conversion layouts corrected — totals and VAT summary values now sit inside their boxes on the AED-to-USD/EUR and USD/EUR templates, the converted-total line prints properly, and a missing conversion rate no longer leaves a stray currency sign; USD/EUR page totals that had gone missing are restored"
+      },
+      {
+        "type": "feature",
+        "title": "Warehouse rack cells — green when empty, light red when occupied"
+      },
+      {
+        "type": "feature",
+        "title": "Warehouse — Available locations + Search by boat"
+      },
+      {
         "type": "feature",
         "title": "Existing Prof Inv documents can be regenerated on the current template keeping their number — replaces the stored copy and the quotation's attachments in one step"
       },
