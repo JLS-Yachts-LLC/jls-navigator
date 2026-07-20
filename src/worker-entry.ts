@@ -630,6 +630,13 @@ export default {
         retryPendingQbWebhookEvents()
           .catch((e) => console.error('[qb-webhook-sweeper] error:', e))
       );
+      // Durable reconciler: compare synced docs against doc-gen state and generate
+      // anything every other layer missed — no time window to fall out of.
+      ctx.waitUntil(
+        import('./lib/qb/health.server')
+          .then((m) => m.docgenReconcile())
+          .catch((e) => console.error('[qb-docgen-reconcile] error:', e))
+      );
       return;
     }
 
@@ -669,6 +676,16 @@ export default {
           .then(({ importMondayShipments }) => importMondayShipments({}))
           .then((r) => console.log(`[monday-import-cron] synced=${r.synced} errors=${r.errors}`))
           .catch((e) => console.error('[monday-import-cron] error:', e instanceof Error ? e.message : String(e)))
+      )
+
+      // ── Hourly: QuickBooks pipeline health monitor — broken/expiring company
+      //    connections, sync errors, exhausted webhook retries, webhook silence.
+      //    Problems land in the run log and email an alert (max one per 6h). ──
+      ctx.waitUntil(
+        import('./lib/qb/health.server')
+          .then((m) => m.qbHealthCheck())
+          .then((p) => console.log(`[qb-health] ${p.length ? p.length + ' issue(s)' : 'ok'}`))
+          .catch((e) => console.error('[qb-health] error:', e))
       )
 
       // ── Daily (03:00 UTC): pull the Lightspeed supplier list into Waypoint.
