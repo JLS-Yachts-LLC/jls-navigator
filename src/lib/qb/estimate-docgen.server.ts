@@ -782,7 +782,12 @@ async function maybeSalesOrderProforma(sb: any, estimate: any): Promise<void> {
     const xlsxBytes = buildDocXlsx(data, { title: 'PROFORMA INVOICE', partyLabel: 'TO' })
     await qboUpload(`${fileName}.pdf`, pdfBytes, 'application/pdf', 'Estimate', estId)
     await qboUpload(`${fileName}.xlsx`, xlsxBytes, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Estimate', estId)
-    await sb.from('qb_proforma_docs').update({ pdf_path: `${fileName}.pdf` }).eq('estimate_qbo_id', estId)
+    // Keep a copy in storage so the QBO browser extension (and Polaris itself)
+    // can retrieve the exact document later — e.g. to attach it to the Sales
+    // Order, which the QuickBooks API cannot address.
+    const storagePath = `qbo/profinv/${docNumber}.pdf`
+    await sb.storage.from('esign-documents').upload(storagePath, pdfBytes, { contentType: 'application/pdf', upsert: true })
+    await sb.from('qb_proforma_docs').update({ pdf_path: storagePath }).eq('estimate_qbo_id', estId)
     await logAutomationRun({
       key: 'qb-salesorder-proforma', name: 'Sales Order → Prof Inv', source: 'worker', trigger_type: 'event', category: 'Finance',
       status: 'success', detail: `${fileName}.pdf + .xlsx generated from ${estimate.DocNumber ?? estId} and attached to the quotation`,

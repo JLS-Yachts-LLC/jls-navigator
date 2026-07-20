@@ -347,6 +347,12 @@ export default {
       return portalLogisticsHandler(request)
     }
 
+    // Prof Inv registry for the QuickBooks browser extension (token-protected)
+    if (url.pathname === '/api/qb/profinv') {
+      const { qbProfinvHandler } = await import('./routes/api.qb.profinv')
+      return qbProfinvHandler(request)
+    }
+
     // Native QB Invoice PDF preview / manual run (admin only)
     if (url.pathname === '/api/qb/invoice-pdf') {
       const { qbInvoicePdfHandler } = await import('./routes/api.qb.invoice-pdf')
