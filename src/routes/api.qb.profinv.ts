@@ -19,22 +19,54 @@ const db = () => supabaseAdmin as any
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'Authorization, Content-Type',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 }
 const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json', ...CORS } })
 
+/** The extension token lives in integration_settings ('qbo_extension' → config.token,
+ *  manageable from Finance → QB Extension) with the POLARIS_EXT_TOKEN Wrangler
+ *  secret accepted as an alternative. */
+async function validToken(sb: any, provided: string): Promise<boolean> {
+  if (!provided) return false
+  const envSecret = (process.env.POLARIS_EXT_TOKEN ?? '').trim()
+  if (envSecret && provided === envSecret) return true
+  const { data } = await sb.from('integration_settings').select('config').eq('integration_name', 'qbo_extension').maybeSingle()
+  const dbToken = String(data?.config?.token ?? '').trim()
+  return !!dbToken && provided === dbToken
+}
+
 export async function qbProfinvHandler(request: Request): Promise<Response> {
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS })
-  if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405)
+  if (request.method !== 'GET' && request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
 
-  const secret = (process.env.POLARIS_EXT_TOKEN ?? '').trim()
-  if (!secret) return json({ error: 'Extension access is not configured (POLARIS_EXT_TOKEN secret missing)' }, 503)
+  const sb = db()
   const provided = (request.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '').trim()
-  if (!provided || provided !== secret) return json({ error: 'Unauthorized' }, 401)
+  if (!(await validToken(sb, provided))) return json({ error: 'Unauthorized — set the token in Polaris → Finance → QB Extension and paste it into the extension options' }, 401)
+
+  // ── Telemetry (POST): installs, heartbeats, attach results, errors ──────────
+  if (request.method === 'POST') {
+    let body: any = {}
+    try { body = await request.json() } catch { /* empty */ }
+    const name = String(body.name ?? 'unknown').slice(0, 120)
+    const version = String(body.version ?? '').slice(0, 20)
+    const event = String(body.event ?? '').slice(0, 30)
+    const ua = String(request.headers.get('user-agent') ?? '').slice(0, 300)
+    if (!event) return json({ error: 'event required' }, 400)
+    await sb.from('qb_ext_installs').upsert({
+      name, version, ua, last_seen: new Date().toISOString(),
+    }, { onConflict: 'name', ignoreDuplicates: false })
+    if (event !== 'heartbeat') {
+      await sb.from('qb_ext_events').insert({
+        name, version, event,
+        message: body.message ? String(body.message).slice(0, 1000) : null,
+        page: body.page ? String(body.page).slice(0, 300) : null,
+      })
+    }
+    return json({ ok: true })
+  }
 
   const url = new URL(request.url)
-  const sb = db()
 
   // ── Download one Prof Inv PDF ────────────────────────────────────────────────
   const download = url.searchParams.get('download')

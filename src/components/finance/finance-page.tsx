@@ -7,9 +7,11 @@ import {
   Quote, Loader2, ExternalLink, ClipboardList, Search, Check, AlertTriangle,
   RotateCcw, LayoutGrid, Package, Cpu, ShoppingCart, Car, ChevronRight, Download, IdCard,
   FileSpreadsheet,
+  Puzzle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { QbExcelImportPage } from "@/components/qb/excel-import-page";
+import { QbExtensionTab } from "@/components/finance/qb-extension-tab";
 import { supabase } from "@/integrations/supabase/client";
 
 // ─── CSV export utility ───────────────────────────────────────────────────────
@@ -32,7 +34,7 @@ function downloadCSV(filename: string, rows: Record<string, unknown>[]) {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type FinanceTab = "dashboard" | "invoices" | "proforma" | "quotations" | "tracker" | "trackers" | "import";
+type FinanceTab = "dashboard" | "invoices" | "proforma" | "quotations" | "tracker" | "trackers" | "import" | "extension";
 type TrackerDept = "crew" | "packages" | "it" | "procurement";
 
 // The two QuickBooks companies the Finance module can show. The toggle switches
@@ -2272,6 +2274,13 @@ export function FinancePage() {
             <FileSpreadsheet className="h-3.5 w-3.5" />
             Excel Import
           </button>
+          <button
+            onClick={() => setTab("extension")}
+            className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition ${tab === "extension" ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+          >
+            <Puzzle className="h-3.5 w-3.5" />
+            QB Extension
+          </button>
         </div>
 
         {/* Tab content */}
@@ -2281,6 +2290,7 @@ export function FinancePage() {
         {tab === "proforma" && <QboDocsTab docType="proforma" realm={realm} />}
         {tab === "quotations" && <QboDocsTab docType="quotations" realm={realm} />}
         {tab === "import" && <QbExcelImportPage embedded />}
+        {tab === "extension" && <QbExtensionTab />}
       </div>
     </div>
   );

@@ -1,11 +1,16 @@
 // Content script: shows an "Attach Prof Inv" button on QuickBooks Sales Order
-// pages. On click it finds the matching Polaris Prof Inv (by the customer name
-// on the form), fetches the PDF via the background worker, and hands it to the
-// page's OWN attachment control (file input or drag-drop zone) — so QuickBooks
+// pages, ANCHORED next to the Attachments box (drag it anywhere to override —
+// the position is remembered). On click it finds the matching Polaris Prof Inv
+// (by the customer name on the form), fetches the PDF via the background
+// worker, and hands it to the page's OWN attachment control — QuickBooks
 // itself performs the upload inside the user's session.
 (() => {
   const BTN_ID = 'polaris-profinv-btn'
   const TOAST_ID = 'polaris-profinv-toast'
+
+  function report(event, message) {
+    try { chrome.runtime.sendMessage({ action: 'telemetry', event, message, page: location.pathname + location.search }) } catch { /* best-effort */ }
+  }
 
   // ── UI helpers ───────────────────────────────────────────────────────────────
   function toast(text, kind = 'info', ms = 6000) {
@@ -28,13 +33,11 @@
   function isSalesOrderPage() {
     const path = location.pathname + location.search
     if (/salesorder/i.test(path)) return true
-    // Fallback: header text like "Sales order #1003"
     const h = document.querySelector('h1, [class*="pageTitle"], [data-testid*="title"]')
     return !!h && /sales\s*order\s*#/i.test(h.textContent || '')
   }
 
   function customerName() {
-    // The SO form's "Customer name" combobox input carries the display name.
     const candidates = [
       'input[aria-label*="Customer" i]',
       'input[placeholder*="customer" i]',
@@ -52,7 +55,6 @@
   function findFileInput() {
     const inputs = [...document.querySelectorAll('input[type="file"]')]
     if (!inputs.length) return null
-    // Prefer one near an "attachment" affordance; else take the first.
     const scored = inputs.map((el) => {
       let node = el, score = 0
       for (let d = 0; d < 6 && node; d++, node = node.parentElement) {
@@ -65,15 +67,17 @@
   }
 
   function findDropZone() {
-    // The "Add attachment / Max file size" box.
     const all = [...document.querySelectorAll('div, section, label')]
-    return all.find((el) => /add attachment/i.test(el.textContent || '') && el.getBoundingClientRect().height < 220 && el.getBoundingClientRect().height > 20) ?? null
+    return all.find((el) => {
+      if (!/add attachment/i.test(el.textContent || '')) return false
+      const r = el.getBoundingClientRect()
+      return r.height > 20 && r.height < 220 && r.width > 100
+    }) ?? null
   }
 
   function deliverFile(file) {
     const dt = new DataTransfer()
     dt.items.add(file)
-
     const input = findFileInput()
     if (input) {
       input.files = dt.files
@@ -99,6 +103,9 @@
     const btn = document.getElementById(BTN_ID)
     if (btn) btn.textContent = 'Working…'
     try {
+      // Make sure the attachments section is rendered before we hunt for it.
+      findDropZone()?.scrollIntoView({ block: 'center', behavior: 'instant' })
+
       const client = customerName()
       toast(client ? `Looking up Prof Inv for “${client}”…` : 'Looking up the latest Prof Inv…')
 
@@ -115,9 +122,12 @@
 
       const via = deliverFile(file)
       if (!via) throw new Error('Could not find the attachment box on this page — scroll it into view and try again')
-      toast(`Attaching ${dl.fileName} (via ${via}) — check the Attachments list, then Save.`, 'ok', 9000)
+      toast(`Attaching ${dl.fileName} — check the Attachments list, then Save.`, 'ok', 9000)
+      report('attach-ok', `${dl.fileName} via ${via}`)
     } catch (e) {
-      toast(String((e && e.message) || e), 'error', 10000)
+      const msg = String((e && e.message) || e)
+      toast(msg, 'error', 10000)
+      report('attach-fail', msg)
     } finally {
       busy = false
       const b = document.getElementById(BTN_ID)
@@ -125,26 +135,91 @@
     }
   }
 
-  // ── Button lifecycle (SPA-safe: re-check on DOM changes) ─────────────────────
+  // ── Button: anchored to the Attachments box, draggable, position remembered ──
+  let customPos = null // {x, y} once the user drags it
+  chrome.storage.local.get('profinvBtnPos').then((s) => { customPos = s.profinvBtnPos ?? null })
+
+  function positionButton(btn) {
+    if (customPos) {
+      btn.style.left = `${Math.min(Math.max(customPos.x, 4), window.innerWidth - 150)}px`
+      btn.style.top = `${Math.min(Math.max(customPos.y, 4), window.innerHeight - 44)}px`
+      btn.style.bottom = ''
+      btn.style.right = ''
+      return
+    }
+    const zone = findDropZone()
+    if (zone) {
+      const r = zone.getBoundingClientRect()
+      if (r.bottom > 0 && r.top < window.innerHeight) {
+        btn.style.left = `${Math.min(r.right + 14, window.innerWidth - 160)}px`
+        btn.style.top = `${r.top + r.height / 2 - 18}px`
+        btn.style.bottom = ''
+        btn.style.right = ''
+        return
+      }
+    }
+    // Fallback: bottom-LEFT (clear of QuickBooks' Save / Review and send).
+    btn.style.left = '24px'
+    btn.style.top = ''
+    btn.style.bottom = '70px'
+    btn.style.right = ''
+  }
+
+  function makeDraggable(btn) {
+    let start = null, moved = false
+    btn.addEventListener('pointerdown', (e) => {
+      start = { x: e.clientX, y: e.clientY, bx: btn.getBoundingClientRect().left, by: btn.getBoundingClientRect().top }
+      moved = false
+      btn.setPointerCapture(e.pointerId)
+    })
+    btn.addEventListener('pointermove', (e) => {
+      if (!start) return
+      const dx = e.clientX - start.x, dy = e.clientY - start.y
+      if (!moved && Math.hypot(dx, dy) < 5) return
+      moved = true
+      customPos = { x: start.bx + dx, y: start.by + dy }
+      positionButton(btn)
+    })
+    btn.addEventListener('pointerup', (e) => {
+      btn.releasePointerCapture(e.pointerId)
+      if (moved) {
+        chrome.storage.local.set({ profinvBtnPos: customPos })
+      } else {
+        attachProfInv() // plain click
+      }
+      start = null
+    })
+    btn.addEventListener('dblclick', () => {
+      // Double-click resets to the anchored position.
+      customPos = null
+      chrome.storage.local.remove('profinvBtnPos')
+      positionButton(btn)
+    })
+  }
+
   function ensureButton() {
     const want = isSalesOrderPage()
     const existing = document.getElementById(BTN_ID)
     if (!want) { existing?.remove(); return }
-    if (existing) return
+    if (existing) { positionButton(existing); return }
     const btn = document.createElement('button')
     btn.id = BTN_ID
     btn.textContent = 'Attach Prof Inv'
+    btn.title = 'Attach the Polaris Prof Inv to this Sales Order. Drag to move; double-click to snap back beside the attachment box.'
     Object.assign(btn.style, {
-      position: 'fixed', bottom: '24px', right: '24px', zIndex: 2147483646,
+      position: 'fixed', zIndex: 2147483646, touchAction: 'none',
       background: '#0f766e', color: '#fff', border: 'none', borderRadius: '999px',
-      padding: '12px 20px', font: '600 13px -apple-system, Segoe UI, sans-serif',
-      cursor: 'pointer', boxShadow: '0 4px 20px rgba(0,0,0,.3)',
+      padding: '10px 18px', font: '600 13px -apple-system, Segoe UI, sans-serif',
+      cursor: 'grab', boxShadow: '0 4px 20px rgba(0,0,0,.3)', userSelect: 'none',
     })
-    btn.addEventListener('click', attachProfInv)
+    makeDraggable(btn)
     document.body.appendChild(btn)
+    positionButton(btn)
   }
 
   const mo = new MutationObserver(() => ensureButton())
   mo.observe(document.documentElement, { childList: true, subtree: true })
+  window.addEventListener('scroll', () => { const b = document.getElementById(BTN_ID); if (b) positionButton(b) }, { passive: true, capture: true })
+  window.addEventListener('resize', () => { const b = document.getElementById(BTN_ID); if (b) positionButton(b) })
   ensureButton()
 })()
