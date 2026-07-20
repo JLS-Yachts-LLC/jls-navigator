@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "Invoice PDFs now print the Place of Supply name for all options — Maldives, Oman and Outside UAE previously appeared as their raw code number"
+      },
+      {
+        "type": "fix",
         "title": "QuickBooks event bursts no longer overload the API — when Intuit delivers a backlog all at once, each document is processed exactly once (concurrent duplicates skip) and rate-limit responses back off properly instead of hammering"
       },
       {
