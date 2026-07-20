@@ -86,8 +86,8 @@ export function ShipSyncWarehouse({ data }: { data: ShipSyncData; reload: () => 
                   const code = `${rack}${lvl}`;
                   const items = byZone.get(code) ?? [];
                   const occupied = items.length > 0;
-                  // Cell appearance depends on the active feature.
-                  let cls = occupied ? "border-primary/40 bg-primary/10" : "border-border bg-muted/30";
+                  // Cell appearance: green = empty/available, light red = occupied.
+                  let cls = occupied ? "border-red-400/50 bg-red-400/15" : "border-emerald-500/50 bg-emerald-500/15";
                   if (showAvailable) cls = occupied ? "border-border bg-muted/20 opacity-40" : "border-emerald-500/50 bg-emerald-500/15";
                   if (boatCells) cls = boatCells.has(code) ? "border-primary bg-primary/25 ring-2 ring-primary/60" : "border-border bg-muted/20 opacity-40";
                   return (
