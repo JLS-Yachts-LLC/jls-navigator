@@ -34,7 +34,12 @@ function admin() {
 }
 
 // ── Mappings (ported verbatim from the n8n Code nodes) ────────────────────────
-const PLACE_OF_SUPPLY: Record<string, string> = { '1': 'Dubai', '2': 'KSA', '3': 'Abu Dhabi', '4': 'Turkey', '5': 'UAE' }
+// Codes = the QBO "Place of Supply" list options, in the order they appear on the
+// invoice form (Dubai, KSA, Abu Dhabi, Turkey, UAE, Maldives, Oman, Outside UAE).
+const PLACE_OF_SUPPLY: Record<string, string> = {
+  '1': 'Dubai', '2': 'KSA', '3': 'Abu Dhabi', '4': 'Turkey', '5': 'UAE',
+  '6': 'Maldives', '7': 'Oman', '8': 'Outside UAE',
+}
 const CURRENCY_MAP: Record<string, string> = { '1': 'AED', '2': 'USD', '3': 'EUR', '4': 'AED TO USD', '5': 'AED TO EUR' }
 const BANK_DETAIL_MAP: Record<string, string> = { '1': 'AED', '2': 'USD', '3': 'EURO' }
 const TAX_CODE_MAP: Record<string, { name: string; rate: number }> = {
