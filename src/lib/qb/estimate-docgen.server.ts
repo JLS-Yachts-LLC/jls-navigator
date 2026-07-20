@@ -744,6 +744,18 @@ export async function runEstimateDocgen(entityId: string, rawType: string): Prom
   const lastUpdated = String(estimate.MetaData?.LastUpdatedTime ?? '')
   const createTime = String(estimate.MetaData?.CreateTime ?? '')
 
+  // TEMP DIAGNOSTIC (Sales Order detection): does a DIRECT read expose the
+  // estimate→Sales Order linkage / a status change after conversion?
+  try {
+    const links = JSON.stringify(estimate.LinkedTxn ?? null)
+    const lineLinks = JSON.stringify((estimate.Line ?? []).flatMap((l: any) => l.LinkedTxn ?? []))
+    await logAutomationRun({
+      key: 'qb-estimate-debug', name: 'QB Estimate (debug)', source: 'worker', trigger_type: 'event', category: 'Finance',
+      status: 'success',
+      detail: `Estimate ${estimate.DocNumber ?? entityId}: TxnStatus=${estimate.TxnStatus ?? '-'} | LinkedTxn=${links} | LineLinkedTxn=${lineLinks}`.slice(0, 800),
+    })
+  } catch { /* debug only */ }
+
   // Loop-guard (port of the n8n "QBO Logs" checks): skip events caused by our
   // own attachment writes, and don't re-process a creation we've already seen.
   const { data: log } = await sb.from('qbo_doc_logs')
