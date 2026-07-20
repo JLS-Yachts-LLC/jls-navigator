@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-07-20",
     "entries": [
       {
+        "type": "fix",
+        "title": "Quotation and Pro-Forma typography now matches the Word templates exactly — bold/regular is read from each template field instead of guessed, and the currency Sign stays on conversion quotes as designed"
+      },
+      {
         "type": "feature",
         "title": "Add the Pre-Arrival / Cruising Permit Information form to Anchor — a fillable digital form (arrival, vessel particulars, department heads, dimensions, radio, owner, billing, tenders/toys) that pre-fills from the yacht record, plus the ready-to-send PDF in Templates"
       },
