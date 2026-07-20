@@ -5,9 +5,13 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
-    "version": "2.30.1",
+    "version": "2.31.0",
     "date": "2026-07-20",
     "entries": [
+      {
+        "type": "feature",
+        "title": "Branded document PDFs no longer depend on QuickBooks webhook delivery — the 5-minute sync now detects changed invoices, pro-formas and quotations itself and generates/attaches their documents, so a webhook outage can no longer stop document generation"
+      },
       {
         "type": "fix",
         "title": "QuickBooks events can no longer be lost — every webhook is accepted instantly and stored, processing happens in the background, and a 5-minute sweeper automatically retries anything that failed (repeated errors previously made Intuit stop delivering events altogether)"
