@@ -112,9 +112,8 @@ async function docgenBackstop(changed: ChangedDoc[]): Promise<string[]> {
         const r = await generateAndAttachInvoicePdf(d.id)
         if (r.action !== 'skipped' && r.action !== 'disabled') out.push(`invoice ${d.id}: ${r.action}`)
       } else if (d.docType === 'proforma') {
-        const { runProformaDocgen } = await import('./proforma-docgen.server')
-        const r = await runProformaDocgen(d.id, 'qbo.invoice.update.sync-backstop')
-        if (!r.startsWith('skip') && !r.startsWith('docgen-disabled')) out.push(`proforma ${d.id}: ${r}`)
+        // RETIRED trigger (2026-07-20): custom-field pro-formas no longer generate
+        // documents — the Sales Order flow (quotation Accepted) replaced it.
       } else if (d.docType === 'estimate') {
         const { runEstimateDocgen } = await import('./estimate-docgen.server')
         const r = await runEstimateDocgen(d.id, 'qbo.estimate.update.sync-backstop')

@@ -154,12 +154,11 @@ export async function orchestrate(raw: string): Promise<OrchestrationItem[]> {
         const { runEstimateDocgen } = await import('./estimate-docgen.server')
         item.docgen = await runEstimateDocgen(ev.entityId, ev.rawType)
       }
-      // Pro-Forma doc-gen (port of the n8n "QB (PRO-FORMA)" workflow): a
-      // Pro-Forma is an Invoice classified type "2" above. Gated by qb-proforma-doc.
-      if (ev.entity === 'invoice' && item.invoiceType === 'Pro-Forma' && qboConfigured() && isPrimaryRealm) {
-        const { runProformaDocgen } = await import('./proforma-docgen.server')
-        item.docgen = await runProformaDocgen(ev.entityId, ev.rawType)
-      }
+      // RETIRED (2026-07-20, Matt's decision): the custom-field Pro-Forma trigger
+      // (invoice CustomField='2' → runProformaDocgen) is replaced by the Sales
+      // Order flow — a quotation marked Accepted generates "Prof Inv NNNN-YY
+      // Client" via maybeSalesOrderProforma in estimate-docgen. Classification
+      // (invoiceType/doc_type='proforma') is kept for Finance history.
       // Purchase Order doc-gen (port of the n8n "QB (Purchase Order)" workflow).
       // Gated by qb-po-doc.
       if (ev.entity === 'purchaseorder' && qboConfigured() && isPrimaryRealm) {

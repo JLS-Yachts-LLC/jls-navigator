@@ -719,6 +719,81 @@ export function buildQuotationXlsx(q: QuoteData): Uint8Array {
   ])
 }
 
+// ── Sales Order → Prof Inv ─────────────────────────────────────────────────────
+// Trigger: quotation TxnStatus becomes "Accepted" (the team's one-click step when
+// converting a quotation to a QuickBooks Sales Order — the SO itself is fully
+// invisible to the QBO v3 API, so the quotation's status is the signal).
+// Action: allocate the next year-scoped number (0001-26, 0002-26, …), render the
+// branded PROFORMA letterhead PDF + XLSX from the quotation's lines, and attach
+// both to the quotation as "Prof Inv NNNN-YY Client Name". Runs at most once per
+// quotation (qb_proforma_docs pk); gated by the qb-salesorder-proforma toggle.
+async function maybeSalesOrderProforma(sb: any, estimate: any): Promise<void> {
+  if (String(estimate?.TxnStatus ?? '') !== 'Accepted') return
+  const estId = String(estimate.Id)
+
+  // Idempotency: one Prof Inv per quotation, ever.
+  const { data: existing } = await sb.from('qb_proforma_docs').select('doc_number').eq('estimate_qbo_id', estId).maybeSingle()
+  if (existing) return
+
+  // Toggle (lazily seeded, default OFF so Matt flips it on himself).
+  const { data: auto } = await sb.from('automations').select('enabled').eq('key', 'qb-salesorder-proforma').maybeSingle()
+  if (!auto) {
+    await sb.from('automations').insert({
+      key: 'qb-salesorder-proforma', name: 'Sales Order → Prof Inv',
+      description: 'When a quotation is marked Accepted (done alongside converting it to a Sales Order — the Sales Order itself is not visible to the QuickBooks API), generates the branded "Prof Inv NNNN-YY Client Name" Pro-Forma PDF + XLSX from the quotation and attaches both to it. Numbering restarts at 0001 each year. Runs once per quotation.',
+      category: 'QuickBooks / Finance', department: 'Finance', source: 'worker', trigger_type: 'webhook', enabled: false,
+    })
+    return
+  }
+  if (!auto.enabled) return
+
+  // Allocate the next NNNN-YY number; the unique (year, prof_no) index turns a
+  // concurrent race into a loud failure we simply retry.
+  const year = new Date().getFullYear() % 100
+  const clientName = String(estimate.CustomerRef?.name ?? 'Client').replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim()
+  let docNumber = ''
+  for (let attempt = 0; ; attempt++) {
+    const { data: maxRow } = await sb.from('qb_proforma_docs').select('prof_no').eq('year', year).order('prof_no', { ascending: false }).limit(1)
+    const n = ((maxRow?.[0]?.prof_no as number | undefined) ?? 0) + 1
+    docNumber = `${String(n).padStart(4, '0')}-${String(year).padStart(2, '0')}`
+    const { error } = await sb.from('qb_proforma_docs').insert({
+      estimate_qbo_id: estId, year, prof_no: n, doc_number: docNumber,
+      client_name: clientName, estimate_doc_number: String(estimate.DocNumber ?? ''),
+    })
+    if (!error) break
+    if (String(error.message ?? '').includes('estimate_qbo_id')) return // lost an idempotency race — other run has it
+    if (attempt >= 3) throw new Error(`Prof Inv number allocation failed: ${error.message}`)
+  }
+
+  try {
+    // Render on the branded PROFORMA letterhead from the quotation's own lines.
+    const { transformProforma, buildProformaPdf } = await import('./proforma-docgen.server')
+    const { buildDocXlsx } = await import('./doc-common.server')
+    let trnNo = ''
+    const custId = estimate.CustomerRef?.value
+    if (custId) {
+      const cust = await qboRequest('GET', `/customer/${custId}?minorversion=73`).catch(() => null)
+      trnNo = String(cust?.Customer?.PrimaryTaxIdentifier ?? '')
+    }
+    const data = transformProforma(estimate, { trnNo })
+    data.party.docNumber = docNumber
+    const fileName = `Prof Inv ${docNumber} ${clientName}`
+    const pdfBytes = await buildProformaPdf(data)
+    const xlsxBytes = buildDocXlsx(data, { title: 'PROFORMA INVOICE', partyLabel: 'TO' })
+    await qboUpload(`${fileName}.pdf`, pdfBytes, 'application/pdf', 'Estimate', estId)
+    await qboUpload(`${fileName}.xlsx`, xlsxBytes, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Estimate', estId)
+    await sb.from('qb_proforma_docs').update({ pdf_path: `${fileName}.pdf` }).eq('estimate_qbo_id', estId)
+    await logAutomationRun({
+      key: 'qb-salesorder-proforma', name: 'Sales Order → Prof Inv', source: 'worker', trigger_type: 'event', category: 'Finance',
+      status: 'success', detail: `${fileName}.pdf + .xlsx generated from ${estimate.DocNumber ?? estId} and attached to the quotation`,
+    })
+  } catch (e) {
+    // Free the number registration so the next event retries cleanly.
+    await sb.from('qb_proforma_docs').delete().eq('estimate_qbo_id', estId).catch(() => { /* best-effort */ })
+    throw e
+  }
+}
+
 // ── Orchestration: loop-guard → generate → attach → cleanup ───────────────────
 export async function runEstimateDocgen(entityId: string, rawType: string): Promise<string> {
   if (!qboConfigured()) return 'qbo-not-configured'
@@ -744,17 +819,19 @@ export async function runEstimateDocgen(entityId: string, rawType: string): Prom
   const lastUpdated = String(estimate.MetaData?.LastUpdatedTime ?? '')
   const createTime = String(estimate.MetaData?.CreateTime ?? '')
 
-  // TEMP DIAGNOSTIC (Sales Order detection): does a DIRECT read expose the
-  // estimate→Sales Order linkage / a status change after conversion?
+  // Sales Order → Prof Inv: a quotation marked ACCEPTED (the one-click step the
+  // team does when converting it to a Sales Order — the SO itself is invisible
+  // to the QBO API, verified empirically) gets a "Prof Inv NNNN-YY Client"
+  // document generated on the branded PROFORMA letterhead and attached to the
+  // quotation. Idempotent via qb_proforma_docs (once per quotation, ever).
   try {
-    const links = JSON.stringify(estimate.LinkedTxn ?? null)
-    const lineLinks = JSON.stringify((estimate.Line ?? []).flatMap((l: any) => l.LinkedTxn ?? []))
+    await maybeSalesOrderProforma(sb, estimate)
+  } catch (e: any) {
     await logAutomationRun({
-      key: 'qb-estimate-debug', name: 'QB Estimate (debug)', source: 'worker', trigger_type: 'event', category: 'Finance',
-      status: 'success',
-      detail: `Estimate ${estimate.DocNumber ?? entityId}: TxnStatus=${estimate.TxnStatus ?? '-'} | LinkedTxn=${links} | LineLinkedTxn=${lineLinks}`.slice(0, 800),
+      key: 'qb-salesorder-proforma', name: 'Sales Order → Prof Inv', source: 'worker', trigger_type: 'event', category: 'Finance',
+      status: 'error', detail: `Q ${estimate.DocNumber ?? entityId}: ${String(e?.message ?? e).slice(0, 400)}`,
     })
-  } catch { /* debug only */ }
+  }
 
   // Loop-guard (port of the n8n "QBO Logs" checks): skip events caused by our
   // own attachment writes, and don't re-process a creation we've already seen.
