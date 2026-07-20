@@ -7,13 +7,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { ANCHOR_FORMS, type FormDef, type FormField } from "@/lib/anchor-forms/definitions";
 
-// yachts column → form field key (auto-populate vessel data). Anything we don't hold
-// on the yacht record (voyage-specific fields like ETA, persons onboard) is left blank.
-const VESSEL_MAP: Record<string, string> = {
+// yachts column → form field key(s) (auto-populate vessel data). A column may feed
+// several forms' fields (e.g. port_of_registry). Anything we don't hold on the yacht
+// record (voyage-specific fields like ETA, persons onboard) is left blank.
+const VESSEL_MAP: Record<string, string | string[]> = {
   vessel_name: "vessel_name", flag: "vessel_flag", imo_no: "imo",
   length_overall_m: "loa", mmsi: "mmsi", berth: "berth",
-  location: "marina_arrival", port_of_registry: "marina_departure",
-  // CF12a vessel-registration / details / owner fields
+  location: "marina_arrival", port_of_registry: ["marina_departure", "port_of_registry"],
+  // CF12a / Pre-Arrival vessel-registration / details / owner fields
   vessel_type: "vessel_type", built_year: "year_build", gross_tonnage: "gross_tonnage",
   breadth_m: "beam", draught_m: "draft", max_crew: "crew_count", max_guests: "max_passengers",
   owners_name: "owner_name", owners_nationality: "owner_nationality",
@@ -115,8 +116,10 @@ function FillForm({ def, onBack }: { def: FormDef; onBack: () => void }) {
     if (!y) return;
     setValues((p) => {
       const next = { ...p };
-      for (const [col, key] of Object.entries(VESSEL_MAP)) {
-        if (fieldKeys.has(key) && y[col] != null && y[col] !== "") next[key] = String(y[col]);
+      for (const [col, keys] of Object.entries(VESSEL_MAP)) {
+        for (const key of Array.isArray(keys) ? keys : [keys]) {
+          if (fieldKeys.has(key) && y[col] != null && y[col] !== "") next[key] = String(y[col]);
+        }
       }
       return next;
     });

@@ -129,6 +129,117 @@ export const ANCHOR_FORMS: FormDef[] = [
     ],
   },
   {
+    key: "pre-arrival-cruising-permit",
+    title: "Pre-Arrival / Cruising Permit Information",
+    description: "Full pre-arrival information pack for a visiting vessel — arrival, particulars, dimensions, comms, owner, billing and tenders/toys.",
+    category: "Agency",
+    emailTo: "info@jlsyachts.com",
+    intro:
+      "To be completed before the vessel's arrival in the UAE. Vessel fields pre-fill from the yacht record where held; voyage-specific fields are completed per visit.",
+    sections: [
+      {
+        title: "Arrival",
+        fields: [
+          { key: "arrival_date", label: "Arrival Date", type: "date", required: true },
+          { key: "last_port", label: "Last Port of Call", type: "text" },
+          { key: "arrival_emirate", label: "Arrival Emirate", type: "text" },
+          { key: "arrival_port", label: "Arrival Port", type: "text" },
+        ],
+      },
+      {
+        title: "Vessel Particulars",
+        fields: [
+          { key: "vessel_name", label: "Vessel Name", type: "text", required: true },
+          { key: "imo", label: "IMO No.", type: "text" },
+          { key: "vessel_type", label: "Vessel Type", type: "text" },
+          { key: "official_no", label: "Official No.", type: "text" },
+          { key: "vessel_flag", label: "Flag", type: "text" },
+          { key: "port_of_registry", label: "Port of Registry", type: "text" },
+        ],
+      },
+      {
+        title: "Department Heads",
+        fields: [
+          { key: "captain_name", label: "Captain's Name", type: "text" },
+          { key: "captain_email", label: "Captain's Email Address", type: "email" },
+          { key: "purser_name", label: "Purser/Stew Name", type: "text" },
+          { key: "purser_email", label: "Purser/Stew Email Address", type: "email" },
+          { key: "chief_engineer_name", label: "Chief Engineer/Officer Name", type: "text" },
+          { key: "chief_engineer_email", label: "Chief Engineer/Officer Email Address", type: "email" },
+        ],
+      },
+      {
+        title: "Dimensions & Specification",
+        fields: [
+          { key: "gross_tonnage", label: "Gross Tonnage", type: "text" },
+          { key: "net_tonnage", label: "Net Tonnage", type: "text" },
+          { key: "loa", label: "Length Overall (m)", type: "text" },
+          { key: "beam", label: "Breadth / Beam (m)", type: "text" },
+          { key: "draft", label: "Draught (m)", type: "text" },
+          { key: "air_draft", label: "Air Draft (m)", type: "text" },
+          { key: "max_air_draft", label: "Max Air Draft (m) Accurate", type: "text" },
+          { key: "max_forward_draft", label: "Max Forward Draft (m)", type: "text" },
+          { key: "max_stern_draft", label: "Max Stern Draft (m)", type: "text" },
+          { key: "dead_weight", label: "Dead Weight", type: "text" },
+          { key: "summer_dead_weight", label: "Summer Dead Weight", type: "text" },
+          { key: "displacement", label: "Displacement (tn)", type: "text" },
+          { key: "engine_power_kw", label: "Engine Main Propulsion Power (kW)", type: "text" },
+          { key: "generators_power_kw", label: "Sum of All Generators Power (kW)", type: "text" },
+          { key: "hull_id", label: "Hull Identification Number", type: "text" },
+          { key: "engine_serial", label: "Engine Serial Number", type: "text" },
+          { key: "fuel_type", label: "Fuel Type", type: "text" },
+        ],
+      },
+      {
+        title: "Radio & Communications",
+        fields: [
+          { key: "radio_call_sign", label: "Radio Call Sign", type: "text" },
+          { key: "frequency", label: "Frequency", type: "text" },
+          { key: "equipment_model", label: "Equipment Model", type: "text" },
+          { key: "manufacturer", label: "Manufacturer", type: "text" },
+          { key: "radio_serial", label: "Serial No.", type: "text" },
+          { key: "mmsi", label: "MMSI", type: "text" },
+        ],
+      },
+      {
+        title: "Manning & Capacity",
+        fields: [
+          { key: "crew_count", label: "Max. No. of Crew", type: "number" },
+          { key: "max_passengers", label: "Max. No. of Guests", type: "number" },
+        ],
+      },
+      {
+        title: "Owner's Details",
+        fields: [
+          { key: "owner_name", label: "Owner's Name", type: "text" },
+          { key: "owner_nationality", label: "Owner's Nationality", type: "text" },
+          { key: "owner_address", label: "Owner's Address", type: "textarea", full: true },
+        ],
+      },
+      {
+        title: "Billing Information",
+        fields: [
+          { key: "billing_company", label: "Company Name", type: "text" },
+          { key: "billing_contact", label: "Contact Person", type: "text" },
+          { key: "billing_email", label: "Email Address", type: "email" },
+          { key: "billing_phone", label: "Contact No.", type: "text" },
+          { key: "billing_address", label: "Billing Address", type: "textarea", full: true },
+        ],
+      },
+      {
+        title: "Lifeboats, Tenders & Other Appurtenances (incl. jet skis and vessel toys)",
+        fields: [
+          {
+            key: "tenders",
+            label: "One per line: Description | Manufacturer & Model | Length (m) | ID/Serial No. | Colour | Fuel | Year",
+            type: "textarea", full: true,
+            placeholder: "e.g. Tender | Williams 565 | 5.65 | WLM565-123 | Grey | Petrol | 2022",
+          },
+        ],
+      },
+    ],
+  },
+  {
     key: "cf12a",
     title: "DMA CF12a — Visiting Vessel Permit Application",
     description: "Application for a Foreign-Flagged Visiting Vessel Permit (PCFC / DMA).",
