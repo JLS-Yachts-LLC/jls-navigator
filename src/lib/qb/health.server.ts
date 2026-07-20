@@ -16,7 +16,7 @@
  *   - webhook silence (no hits) while documents are clearly changing
  */
 import { createClient } from '@supabase/supabase-js'
-import { qboConfigured } from './qbo.server'
+import { qboConfigured, qboRequest } from './qbo.server'
 import { JLS_REALM } from './sync.server'
 import { logAutomationRun } from '@/lib/automations.server'
 
@@ -123,6 +123,46 @@ async function docgenReconcileInner(cap: number): Promise<string[]> {
     })
   }
   return out
+}
+
+// ── TEMP one-shot probe: does the Reports API expose Sales Orders + their ids? ──
+// The entity API hides Sales Orders completely; if TransactionList shows them
+// (txn_type + row id), we can attach the Prof Inv PDF to the SO directly.
+export async function soReportProbe(): Promise<void> {
+  if (!qboConfigured()) return
+  const sb = admin() as any
+  const { data: prior } = await sb.from('automation_runs').select('id').eq('automation_key', 'qb-so-probe').limit(1)
+  if (prior?.length) return // already ran
+  try {
+    const rep = await qboRequest('GET', `/reports/TransactionList?start_date=2026-07-18&end_date=2026-07-21&minorversion=73`)
+    // Flatten nested report rows and collect [type, docnum, id] triples.
+    const out: string[] = []
+    const types = new Set<string>()
+    const walk = (rows: any) => {
+      for (const r of rows?.Row ?? []) {
+        if (r.Rows) walk(r.Rows)
+        const cd = r.ColData
+        if (Array.isArray(cd)) {
+          const type = String(cd[1]?.value ?? '')
+          if (type) types.add(type)
+          if (/sales\s*order/i.test(type)) {
+            out.push(`SO row: ${cd.map((c: any) => `${c.value ?? ''}${c.id ? `(id:${c.id})` : ''}`).join(' | ')}`)
+          }
+        }
+      }
+    }
+    walk(rep?.Rows)
+    await logAutomationRun({
+      key: 'qb-so-probe', name: 'QB Sales Order probe (temp)', source: 'worker', trigger_type: 'schedule', category: 'Finance',
+      status: 'success',
+      detail: `txn types seen: [${[...types].join(', ')}] | ${out.length ? out.join(' || ') : 'NO Sales Order rows in TransactionList'}`.slice(0, 1900),
+    })
+  } catch (e: any) {
+    await logAutomationRun({
+      key: 'qb-so-probe', name: 'QB Sales Order probe (temp)', source: 'worker', trigger_type: 'schedule', category: 'Finance',
+      status: 'error', detail: String(e?.message ?? e).slice(0, 800),
+    })
+  }
 }
 
 // ── Health monitor ─────────────────────────────────────────────────────────────
