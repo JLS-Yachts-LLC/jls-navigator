@@ -83,16 +83,29 @@ export function QbExtensionTab() {
             </p>
             <ol className="mt-3 list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
               <li>Download and unzip the extension folder somewhere permanent (e.g. Documents).</li>
-              <li>Chrome → <code className="rounded bg-muted px-1">chrome://extensions</code> → enable <strong>Developer mode</strong> → <strong>Load unpacked</strong> → select the unzipped folder.</li>
-              <li>Right-click the extension icon → <strong>Options</strong> → enter your name + paste the access token below → Save.</li>
+              <li>Open the extensions page — paste <code className="rounded bg-muted px-1">edge://extensions</code> (Edge) or <code className="rounded bg-muted px-1">chrome://extensions</code> (Chrome) into the address bar (browsers block sites from opening it directly).</li>
+              <li>Enable <strong>Developer mode</strong> → <strong>Load unpacked</strong> → select the unzipped folder.</li>
+              <li>Click the puzzle icon → find the extension → <strong>Options</strong> → enter your name + paste the access token below → Save.</li>
             </ol>
-            <a
-              href="/downloads/qbo-profinv.zip"
-              download
-              className="mt-4 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90"
-            >
-              <Download className="h-4 w-4" /> Download extension (v1.1)
-            </a>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <a
+                href="/downloads/qbo-profinv.zip"
+                download
+                className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90"
+              >
+                <Download className="h-4 w-4" /> Download extension (v1.1)
+              </a>
+              <button
+                onClick={() => { void navigator.clipboard.writeText("edge://extensions"); toast.success("Copied — paste it into the address bar"); }}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs text-muted-foreground hover:bg-accent"
+              >
+                <Copy className="h-3.5 w-3.5" /> Copy edge://extensions
+              </button>
+            </div>
+            <p className="mt-3 text-xs text-muted-foreground/80">
+              One-click install via the Edge Add-ons store is being set up — once the listing is approved, this
+              button becomes “Get it for Edge” and updates install automatically.
+            </p>
           </div>
         </div>
       </div>

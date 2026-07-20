@@ -3,7 +3,13 @@
   "name": "Polaris — Attach Prof Inv to Sales Order",
   "version": "1.1.0",
   "description": "Adds an 'Attach Prof Inv' button to QuickBooks Online Sales Orders that attaches the matching Polaris-generated Pro-Forma PDF using your own logged-in session.",
-  "permissions": ["storage", "activeTab"],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": ["storage"],
   "host_permissions": [
     "https://qbo.intuit.com/*",
     "https://*.qbo.intuit.com/*",
@@ -18,5 +24,13 @@
     }
   ],
   "options_page": "options.html",
-  "action": { "default_title": "Polaris Prof Inv — configure via right-click → Options" }
+  "action": {
+    "default_title": "Polaris Prof Inv — configure via right-click → Options",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  }
 }
