@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-07-20",
     "entries": [
       {
+        "type": "feature",
+        "title": "Add the Pre-Arrival / Cruising Permit Information form to Anchor — a fillable digital form (arrival, vessel particulars, department heads, dimensions, radio, owner, billing, tenders/toys) that pre-fills from the yacht record, plus the ready-to-send PDF in Templates"
+      },
+      {
         "type": "fix",
         "title": "Quotation currency-conversion layouts corrected — totals and VAT summary values now sit inside their boxes on the AED-to-USD/EUR and USD/EUR templates, the converted-total line prints properly, and a missing conversion rate no longer leaves a stray currency sign; USD/EUR page totals that had gone missing are restored"
       },
