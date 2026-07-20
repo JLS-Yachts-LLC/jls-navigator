@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Marking a quotation Accepted (when converting it to a Sales Order) now auto-generates a branded Prof Inv NNNN-YY Client Name document and attaches it to the quotation — numbering starts at 0001-26 and restarts each year; this replaces the old custom-field Pro-Forma trigger"
+      },
+      {
+        "type": "feature",
         "title": "Pro-Forma invoices now print on the official JLS letterhead — the generated PDF stamps the real Word templates (all three currency variants), matching the quotation quality"
       },
       {
