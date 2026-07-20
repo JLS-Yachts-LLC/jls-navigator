@@ -618,10 +618,18 @@ export default {
     // ── Every 5 min: incremental QBO document sync (invoices / pro-formas /
     //    estimates) for every connected company — JLS + Waypoint retail. ──
     if (isFiveMin) {
+      // Sync first, THEN the reconciler — strictly sequential so the two can
+      // never process the same document at the same time (a parallel run could
+      // race the duplicate-sweeps against each other), and so the reconciler
+      // sees the doc-gen state the sync's own backstop just wrote.
       ctx.waitUntil(
         syncAllRealms({})
           .then((r) => console.log(`[qbo-sync] ${JSON.stringify(r)}`))
           .catch((e) => console.error('[qbo-sync] error:', e))
+          .then(() => import('./lib/qb/health.server'))
+          .then((m) => m.docgenReconcile())
+          .then((r) => console.log(`[qb-docgen-reconcile] ${r.length ? r.join('; ') : 'nothing to do'}`))
+          .catch((e) => console.error('[qb-docgen-reconcile] error:', e))
       );
       // Reliability sweeper: re-process any QuickBooks webhook event that hasn't
       // fully succeeded (per-document failure, deploy mid-request, transient QBO
@@ -629,13 +637,6 @@ export default {
       ctx.waitUntil(
         retryPendingQbWebhookEvents()
           .catch((e) => console.error('[qb-webhook-sweeper] error:', e))
-      );
-      // Durable reconciler: compare synced docs against doc-gen state and generate
-      // anything every other layer missed — no time window to fall out of.
-      ctx.waitUntil(
-        import('./lib/qb/health.server')
-          .then((m) => m.docgenReconcile())
-          .catch((e) => console.error('[qb-docgen-reconcile] error:', e))
       );
       return;
     }

@@ -32,6 +32,19 @@ const ALERT_TO = () => (process.env.QB_HEALTH_ALERT_TO ?? 'mattpeeters@newhorizo
  *  Runs up to `cap` doc-gens per tick; after each attempt the state row is
  *  stamped so a candidate is retried only when it actually changes again. */
 export async function docgenReconcile(cap = 5): Promise<string[]> {
+  try {
+    return await docgenReconcileInner(cap)
+  } catch (e: any) {
+    // A crash here must be VISIBLE — this is the last line of defence.
+    await logAutomationRun({
+      key: 'qb-docgen-reconcile', name: 'QB Doc-Gen Reconciler (safety net)', source: 'worker', trigger_type: 'schedule', category: 'Finance',
+      status: 'error', detail: `reconciler crashed: ${String(e?.message ?? e).slice(0, 500)}`,
+    }).catch(() => { /* even the log is best-effort */ })
+    return [`ERR ${String(e?.message ?? e).slice(0, 200)}`]
+  }
+}
+
+async function docgenReconcileInner(cap: number): Promise<string[]> {
   if (!qboConfigured()) return []
   const sb = admin() as any
   const out: string[] = []
