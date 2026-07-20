@@ -75,7 +75,7 @@ function buildRow(entity: 'Invoice' | 'Estimate', doc: any, yachtByCust: Map<str
 
 /** Page through an entity (200/page) and batch-upsert in chunks of 100 — keeps both the
  *  subrequest count and per-request CPU/payload well within Worker limits. */
-async function syncEntity(sb: any, entity: 'Invoice' | 'Estimate', where: string, yachtByCust: Map<string, string>, realm: string): Promise<number> {
+async function syncEntity(sb: any, entity: 'Invoice' | 'Estimate', where: string, yachtByCust: Map<string, string>, realm: string, changed?: ChangedDoc[]): Promise<number> {
   let count = 0
   const PAGE = 200
   for (let start = 1; start <= 100000; start += PAGE) {
@@ -86,9 +86,45 @@ async function syncEntity(sb: any, entity: 'Invoice' | 'Estimate', where: string
       await sb.from('qbo_invoices').upsert(mapped, { onConflict: 'qbo_id,doc_type,realm_id' })
       count += mapped.length
     }
+    if (changed) for (const doc of rows) changed.push({ id: String(doc.Id), docType: entity === 'Estimate' ? 'estimate' : (classifyInvoiceType(doc) === 'Pro-Forma' ? 'proforma' : 'invoice') })
     if (rows.length < PAGE) break
   }
   return count
+}
+
+// A document the incremental sync saw change — fed to the doc-gen backstop.
+type ChangedDoc = { id: string; docType: string }
+
+/** Doc-gen backstop (JLS only): run the SAME per-document generation the webhook
+ *  would, for every document the 5-minute incremental sync saw change. This makes
+ *  branded PDFs completely INDEPENDENT of Intuit webhook delivery — even if Intuit
+ *  suspends the webhook (as it does after repeated endpoint failures), every
+ *  changed document still gets its PDF within ~5 minutes. Loop-safe: each doc-gen
+ *  records the post-attach LastUpdatedTime, so re-seeing its own attach echo (or
+ *  re-processing after a webhook already handled it) is a cheap no-op skip. */
+async function docgenBackstop(changed: ChangedDoc[]): Promise<string[]> {
+  const out: string[] = []
+  const CAP = 8 // subrequest budget per tick; the 10-min overlap re-offers stragglers
+  for (const d of changed.slice(0, CAP)) {
+    try {
+      if (d.docType === 'invoice') {
+        const { generateAndAttachInvoicePdf } = await import('./invoice-doc.server')
+        const r = await generateAndAttachInvoicePdf(d.id)
+        if (r.action !== 'skipped' && r.action !== 'disabled') out.push(`invoice ${d.id}: ${r.action}`)
+      } else if (d.docType === 'proforma') {
+        const { runProformaDocgen } = await import('./proforma-docgen.server')
+        const r = await runProformaDocgen(d.id, 'qbo.invoice.update.sync-backstop')
+        if (!r.startsWith('skip') && !r.startsWith('docgen-disabled')) out.push(`proforma ${d.id}: ${r}`)
+      } else if (d.docType === 'estimate') {
+        const { runEstimateDocgen } = await import('./estimate-docgen.server')
+        const r = await runEstimateDocgen(d.id, 'qbo.estimate.update.sync-backstop')
+        if (!r.startsWith('skip') && !r.startsWith('docgen-disabled')) out.push(`estimate ${d.id}: ${r}`)
+      }
+    } catch (e: any) {
+      out.push(`${d.docType} ${d.id}: ERR ${String(e?.message ?? e).slice(0, 200)}`)
+    }
+  }
+  return out
 }
 
 function buildPaymentRow(doc: any, yachtByCust: Map<string, string>, realm: string) {
@@ -162,10 +198,25 @@ export async function syncQboDocuments(opts: { full?: boolean; pdfBatch?: number
   try {
     const yachtByCust = await yachtMap(sb)
     let count = 0
+    // Collect what changed (incremental JLS runs only) for the doc-gen backstop.
+    const changed: ChangedDoc[] | undefined = incremental && realm === JLS_REALM ? [] : undefined
     // Land document rows without blocking on PDFs.
-    count += await syncEntity(sb, 'Invoice', where, yachtByCust, realm)
-    count += await syncEntity(sb, 'Estimate', where, yachtByCust, realm)
+    count += await syncEntity(sb, 'Invoice', where, yachtByCust, realm, changed)
+    count += await syncEntity(sb, 'Estimate', where, yachtByCust, realm, changed)
     count += await syncPayments(sb, where, yachtByCust, realm)
+    // Doc-gen backstop: branded PDFs no longer depend on webhook delivery.
+    let docgen: string[] = []
+    if (changed?.length) {
+      docgen = await docgenBackstop(changed)
+      if (docgen.length) {
+        const { logAutomationRun } = await import('@/lib/automations.server')
+        await logAutomationRun({
+          key: 'qb-docgen-backstop', name: 'QB Doc-Gen Backstop (5-min sync)', source: 'worker', trigger_type: 'schedule', category: 'Finance',
+          status: docgen.some(s => s.includes('ERR')) ? 'error' : 'success',
+          detail: docgen.join('; ').slice(0, 1900),
+        })
+      }
+    }
     // Skip PDFs on a full backfill (subrequest budget); trickle them in on cron runs.
     const pdfBatch = opts.pdfBatch ?? (opts.full ? 0 : 10)
     const pdfs = pdfBatch > 0 ? await backfillPdfs(sb, realm, pdfBatch) : 0
@@ -173,7 +224,7 @@ export async function syncQboDocuments(opts: { full?: boolean; pdfBatch?: number
       id: sid, realm_id: realm, last_run_at: new Date().toISOString(), last_count: count, last_error: null,
       ...(incremental ? {} : { last_full_at: new Date().toISOString() }),
     }, { onConflict: 'id' })
-    return { ok: true, realm, count, pdfs, mode: incremental ? 'incremental' : 'full' }
+    return { ok: true, realm, count, pdfs, docgen: docgen.length || undefined, mode: incremental ? 'incremental' : 'full' }
   } catch (e: any) {
     await sb.from('qbo_sync_state').upsert({ id: sid, realm_id: realm, last_run_at: new Date().toISOString(), last_error: String(e?.message ?? e) }, { onConflict: 'id' })
     throw e
