@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "QB Extension tab in Finance — download and set up the Sales Order attachment extension from inside Polaris, manage its access token, and see who has it installed plus any errors it reports; the extension button now sits beside the attachment box and can be dragged anywhere"
+      },
+      {
+        "type": "feature",
         "title": "Chrome extension attaches the Prof Inv PDF directly onto the QuickBooks Sales Order — one click on the Sales Order page fetches the matching Polaris document and drops it into QuickBooks' own attachment box (the API cannot address Sales Orders, so this rides the signed-in session)"
       },
       {
