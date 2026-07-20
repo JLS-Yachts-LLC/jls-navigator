@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-07-20",
     "entries": [
       {
+        "type": "fix",
+        "title": "Document safety-net runs strictly after the sync (no concurrent processing of the same invoice) and its own failures now show in the run log instead of being silent"
+      },
+      {
         "type": "feature",
         "title": "QuickBooks pipeline now monitors and heals itself — a safety-net reconciler generates any document every other layer missed, and an hourly health monitor emails an alert when a company connection breaks, a sync errors, or Intuit stops delivering webhooks"
       },
