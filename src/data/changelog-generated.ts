@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "Visa scanning now reads UAE entry permits correctly — the permit's Valid Until date is the enter-by deadline and lands in Visa Use By Date, while Visa Expiry stays empty until arrival (the 180-day stay runs from the entry date, not from issue)"
+      },
+      {
+        "type": "fix",
         "title": "Visa expiry flags and their report alerts now fire — the expiry checker was reading an empty legacy date column, so visas scanned in via OCR never triggered the 30-day / 10-day / 5-day warnings"
       }
     ]
