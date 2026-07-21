@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "Purchase Orders now print on the official JLS letterhead — the generated PDF stamps the real Word templates (all three currency variants) instead of the plain fallback layout"
+      },
+      {
+        "type": "fix",
         "title": "Visa scanning now reads UAE entry permits correctly — the permit's Valid Until date is the enter-by deadline and lands in Visa Use By Date, while Visa Expiry stays empty until arrival (the 180-day stay runs from the entry date, not from issue)"
       },
       {
