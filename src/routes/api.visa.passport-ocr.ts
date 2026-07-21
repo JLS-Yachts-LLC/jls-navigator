@@ -50,7 +50,16 @@ Return ONLY a single JSON object (no prose, no code fences) with EXACTLY these k
   "nationality": string|null,           // holder nationality (demonym)
   "date_of_birth": string|null          // YYYY-MM-DD
 }
-Use null for anything you cannot read confidently. Dates (any format/language) MUST be output as YYYY-MM-DD.`
+Use null for anything you cannot read confidently. Dates (any format/language) MUST be output as YYYY-MM-DD.
+
+DATE SEMANTICS — read carefully, they differ by document type:
+- UAE eVisa / ENTRY PERMIT (GDRFA/ICP layout, "إذن دخول", "ENTRY PERMIT NO", e.g. Yachts Crew 180 days):
+  "Valid Until / تاريخ صلاحية الدخول" is the ENTRY deadline (the date the holder must enter the UAE by)
+  → put it in "first_entry_expiry", NOT "expiry_date". The stay duration (e.g. 180 days) runs from the
+  actual entry date, so "expiry_date" is NOT printed on these permits → output expiry_date: null.
+- Sticker visas (Schengen/US/UK style) with a FROM…UNTIL validity window: "UNTIL" IS the visa expiry
+  → put it in "expiry_date"; use "first_entry_expiry" only if a separate enter-before date is shown.
+- Residence permits / long-stay visas with a single printed expiry → "expiry_date".`
 
 export async function visaPassportOcrHandler(request: Request): Promise<Response> {
   const json = (body: unknown, status = 200) =>
