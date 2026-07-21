@@ -5,6 +5,16 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.31.1",
+    "date": "2026-07-21",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Visa expiry flags and their report alerts now fire — the expiry checker was reading an empty legacy date column, so visas scanned in via OCR never triggered the 30-day / 10-day / 5-day warnings"
+      }
+    ]
+  },
+  {
     "version": "2.31.0",
     "date": "2026-07-20",
     "entries": [
