@@ -25,7 +25,7 @@ interface ExpiringVisa {
   id: string
   crew_member_id: string
   yacht_id: string | null
-  visa_expiry_date: string
+  visa_expiry: string
   visa_renewed: boolean
   expiry_flags_sent: Record<string, string | null> | null
   crew_members: { full_name: string | null } | null
@@ -53,16 +53,16 @@ export async function runVisaExpiryFlagJob(): Promise<{ processed: number; flagg
   const { data, error } = await sb
     .from('visa_applications')
     .select(`
-      id, crew_member_id, yacht_id, visa_expiry_date, visa_renewed, expiry_flags_sent,
+      id, crew_member_id, yacht_id, visa_expiry, visa_renewed, expiry_flags_sent,
       crew_members ( full_name ),
       yachts ( vessel_name )
     `)
     .eq('country_code', 'AE')
     .eq('status', 'approved')
     .eq('visa_renewed', false)
-    .not('visa_expiry_date', 'is', null)
-    .gte('visa_expiry_date', today)
-    .lte('visa_expiry_date', addDays(today, 35))
+    .not('visa_expiry', 'is', null)
+    .gte('visa_expiry', today)
+    .lte('visa_expiry', addDays(today, 35))
 
   if (error) {
     console.error('[visaExpiryFlagJob] fetch error:', error.message)
@@ -86,10 +86,10 @@ export async function runVisaExpiryFlagJob(): Promise<{ processed: number; flagg
 async function processVisa(sb: SupabaseClient, visa: ExpiringVisa, recipients: string[]): Promise<number> {
   const today = new Date()
   today.setUTCHours(0, 0, 0, 0)
-  const expiry = new Date(visa.visa_expiry_date)
+  const expiry = new Date(visa.visa_expiry)
   const calendarDays = Math.floor((expiry.getTime() - today.getTime()) / 86_400_000)
 
-  const { data: wd } = await sb.rpc('working_days_until', { target_date: visa.visa_expiry_date })
+  const { data: wd } = await sb.rpc('working_days_until', { target_date: visa.visa_expiry })
   const workingDays: number = typeof wd === 'number' ? wd : calendarDays
 
   const sent = visa.expiry_flags_sent ?? {}
@@ -121,7 +121,7 @@ async function fireFlag(
     crew_id: visa.crew_member_id,
     yacht_id: visa.yacht_id,
     flag_type: flagType,
-    expiry_date: visa.visa_expiry_date,
+    expiry_date: visa.visa_expiry,
     suppressed: false,
     notified_users: recipients,
   })
