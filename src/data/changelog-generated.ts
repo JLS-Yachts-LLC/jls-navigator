@@ -5,6 +5,20 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.32.0",
+    "date": "2026-07-22",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Tax Invoices and Sales Receipts now print on their official JLS Word templates — invoices stamp the branded letterhead across all three currency variants, and receipts render on the Receipt Voucher template; completes the branded document set (quotation, pro-forma, PO, invoice, receipt)"
+      },
+      {
+        "type": "feature",
+        "title": "Recording an arrival date on a UAE crew visa now auto-sets its expiry to arrival + 180 days (manual expiry still wins), completing the entry-permit lifecycle"
+      }
+    ]
+  },
+  {
     "version": "2.31.1",
     "date": "2026-07-21",
     "entries": [
