@@ -24,6 +24,9 @@ import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf
 import { deepWinAnsiSafe } from '@/lib/pdf-winansi'
 import { createClient } from '@supabase/supabase-js'
 import { qboRequest, qboQuery, qboUpload, qboConfigured } from './qbo.server'
+import { TI_TEMPLATE_COORDS } from './ti-template-coords'
+import { quotationVariant } from './estimate-docgen.server'
+import type { StampField, StampPage } from './quotation-template-coords'
 import { logAutomationRun } from '@/lib/automations.server'
 import { QB_DOC_IMAGES } from './invoice-assets'
 
@@ -225,8 +228,169 @@ async function companyDetails(): Promise<Company> {
   }
 }
 
+// ── Branded template stamping (real JLS TAX INVOICE Word templates) ────────────
+// Blank branded backgrounds live in public/qb-templates/ti-bg-<variant>.pdf,
+// pages [single, mid, final] (no Terms page); values are stamped at the extracted
+// {{placeholder}} coordinates — same pipeline as Quotation / Pro-Forma / PO.
+const TI_WHITE_FIELDS = new Set([
+  'totalamount', 'totalvat', 'totalltotalamount', 'totalamount1', 'totalvat1', 'totalltotalamount1',
+  'grandtotalamount', 'grandtotalvat', 'grandtotalltotal', 'totalamountfinal', 'totalamountfinal1',
+  'sign', 'currency', 'newcurrency',
+])
+const tiBgCache = new Map<string, Uint8Array>()
+async function fetchTiBackground(variant: string): Promise<Uint8Array | null> {
+  const cached = tiBgCache.get(variant)
+  if (cached) return cached
+  const base = process.env.VITE_APP_URL || 'https://jls-navigator.m-peeters-4a0.workers.dev'
+  const url = `${base.replace(/\/$/, '')}/qb-templates/ti-bg-${variant}.pdf`
+  try {
+    const assets = (globalThis as Record<string, any>).__CF_ENV?.ASSETS
+    const res = assets?.fetch ? await assets.fetch(url) : await fetch(url)
+    if (!res.ok) return null
+    const bytes = new Uint8Array(await res.arrayBuffer())
+    tiBgCache.set(variant, bytes)
+    return bytes
+  } catch { return null }
+}
+
+async function renderInvoicePdfStamped(t: TransformedInvoice, title: string): Promise<Uint8Array | null> {
+  const variant = quotationVariant(t.currency)
+  const bg = await fetchTiBackground(variant)
+  if (!bg) return null
+  const coords = TI_TEMPLATE_COORDS[variant]
+  void title // the template already carries the "TAX INVOICE" heading
+
+  const src = await PDFDocument.load(bg)
+  const pdf = await PDFDocument.create()
+  const font = await pdf.embedFont(StandardFonts.Helvetica)
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold)
+  const draw = (page: any, f: StampField, value: string, white = false) => {
+    const v = String(value ?? '')
+    if (!v) return
+    const fnt = f.bold ? bold : font
+    const w = fnt.widthOfTextAtSize(v, f.size)
+    const x = f.align === 'right' ? f.x - w : f.align === 'center' ? f.x - w / 2 : f.x
+    page.drawText(v, { x, y: f.y, size: f.size, font: fnt, color: white ? WHITE : BLACK })
+  }
+  const wrap = (text: string, width: number, size: number): string[] => {
+    const out: string[] = []
+    for (const hard of String(text).split(/\r?\n/)) {
+      let rest = hard.trim()
+      if (!rest) { out.push(''); continue }
+      while (rest.length) {
+        if (font.widthOfTextAtSize(rest, size) <= width) { out.push(rest); break }
+        let cut = rest.length
+        while (cut > 1 && font.widthOfTextAtSize(rest.slice(0, cut), size) > width) cut--
+        const sp = rest.lastIndexOf(' ', cut); cut = sp > 0 ? sp : cut
+        out.push(rest.slice(0, cut).trim()); rest = rest.slice(cut).trim()
+      }
+    }
+    while (out.length && out[out.length - 1] === '') out.pop()
+    return out.length ? out : ['']
+  }
+
+  // Totals + VAT breakdown from the numeric item fields.
+  let grandAmount = 0, grandVat = 0, grandTotal = 0, vat5Base = 0, vat0Base = 0, nonTaxable = 0, vat5Value = 0
+  for (const it of t.items) {
+    if (!it.isDataRow) continue
+    grandAmount += it.amountN; grandVat += it.vatN; grandTotal += it.totalN
+    if (it.taxName === 'Taxable Amount @ 5%') { vat5Base += it.amountN; vat5Value += it.vatN }
+    else if (it.taxName === 'Taxable Amount @ 0%') vat0Base += it.amountN
+    else nonTaxable += it.amountN
+  }
+  const cur = t.currency.toUpperCase()
+  const convertedCurrency = cur.includes('USD') ? 'USD' : cur.includes('EUR') ? 'EUR' : null
+  const convertedTotal = cur.includes('TO') && convertedCurrency && t.conversionRate ? grandTotal / t.conversionRate : null
+  const bankKey = t.bankDetail?.toUpperCase().includes('USD') ? 'USD' : t.bankDetail?.toUpperCase().includes('EUR') ? 'EUR' : 'AED'
+  const bank = BANKS[bankKey] ?? BANKS.AED
+
+  // Pre-render item rows (numbers on the middle line of a wrapped description).
+  type Row = { cells: Record<string, string>; a: number; v: number; tt: number }
+  const descWidth = Math.min(coords.single.itemRows.descWidth, coords.mid.itemRows.descWidth, coords.final.itemRows.descWidth)
+  const rows: Row[] = []
+  for (const it of t.items) {
+    const lines = wrap(it.description, descWidth, coords.single.itemRows.cols.description?.size ?? 6)
+    const numLine = Math.floor((lines.length - 1) / 2)
+    lines.forEach((ln, i) => rows.push({
+      cells: {
+        qty: i === numLine ? it.qty : '', description: ln,
+        unitRate: i === numLine ? it.unitRate : '', amount: i === numLine ? it.amount : '',
+        vatPercent: i === numLine ? it.vatPercent : '', vatValue: i === numLine ? it.vatValue : '',
+        totalAmount: i === numLine ? it.totalAmount : '',
+      },
+      a: i === numLine && it.isDataRow ? it.amountN : 0,
+      v: i === numLine && it.isDataRow ? it.vatN : 0,
+      tt: i === numLine && it.isDataRow ? it.totalN : 0,
+    }))
+  }
+  const pageRows: Row[][] = []
+  for (let i = 0; i < rows.length; i += 35) pageRows.push(rows.slice(i, i + 35))
+  if (!pageRows.length) pageRows.push([])
+  const pageCount = pageRows.length
+  const kinds: Array<'single' | 'mid' | 'final'> = pageCount === 1 ? ['single'] : [...Array(pageCount - 1).fill('mid') as 'mid'[], 'final']
+  const BG_INDEX = { single: 0, mid: 1, final: 2 } as const
+
+  const gf: Record<string, string> = {
+    name: t.customer.name, emirates: t.customer.emirates, trnno: t.customer.trn,
+    date: t.invoiceDate, invoiceno: t.docNumber, placeofsupply: t.placeOfSupply,
+    yachtname: t.yachtName, yachtpo: t.yachtPO, currency: t.bankDetail, newcurrency: t.currency,
+    bank: bank.bankName, acct: bank.accountNumber, iban: bank.iban,
+    grandtotalamount: fmtMoney(grandAmount), grandtotalvat: fmtNum(grandVat), grandtotalltotal: fmtMoney(grandTotal),
+    '5%value': fmtNum(vat5Base), '0%value': fmtNum(vat0Base), nontaxablevalue: fmtNum(nonTaxable), '5%vatvalue': fmtNum(vat5Value),
+    totalamountfinal: fmtMoney(grandTotal),
+    sign: variant === 'aedconv' ? (CURRENCY_SIGN[convertedCurrency ?? ''] ?? '') : variant === 'usdeur' ? (CURRENCY_SIGN[t.currency.toUpperCase()] ?? t.currency) : '',
+    totalamountfinal1: convertedTotal != null ? fmtMoney(+convertedTotal.toFixed(2)) : '',
+  }
+
+  for (let pi = 0; pi < pageCount; pi++) {
+    const pc: StampPage = coords[kinds[pi]]
+    const [page] = await pdf.copyPages(src, [BG_INDEX[kinds[pi]]])
+    pdf.addPage(page)
+    const PAGE_TOTAL = new Set(['totalamount', 'totalvat', 'totalltotalamount', 'totalamount1', 'totalvat1', 'totalltotalamount1'])
+    for (const [key, f] of Object.entries(pc.fields)) {
+      if (key === 'address' || PAGE_TOTAL.has(key)) continue
+      draw(page, f, gf[key] ?? '', TI_WHITE_FIELDS.has(key))
+    }
+    for (const rl of (pc as any).relabels ?? []) {
+      const value = gf[rl.key] ?? ''
+      if (!value) continue
+      const label = String(rl.template).replace('%', value)
+      const w = bold.widthOfTextAtSize(label, 7)
+      page.drawRectangle({ x: rl.centerX - (rl.w + 28) / 2, y: rl.y - 2.5, width: rl.w + 28, height: 12, color: BLACK })
+      page.drawText(label, { x: rl.centerX - w / 2, y: rl.y, size: 7, font: bold, color: WHITE })
+    }
+    const addrField = pc.fields['address']
+    if (addrField) wrap(t.customer.address, 170, addrField.size).slice(0, 3).forEach((ln, i) => draw(page, { ...addrField, y: addrField.y - i * 13.32 }, ln))
+
+    let sA = 0, sV = 0, sT = 0
+    pageRows[pi].forEach((r, ri) => {
+      const y = pc.itemRows.ys[ri]; if (y == null) return
+      for (const [key, cf] of Object.entries(pc.itemRows.cols)) { const v = r.cells[key]; if (v) draw(page, { ...cf, y }, v) }
+      sA += r.a; sV += r.v; sT += r.tt
+    })
+    const tot = (base: string) => pc.fields[base] ?? pc.fields[`${base}1`]
+    if (tot('totalamount')) draw(page, tot('totalamount')!, fmtMoney(sA), true)
+    if (tot('totalvat')) draw(page, tot('totalvat')!, fmtNum(sV), true)
+    if (tot('totalltotalamount')) draw(page, tot('totalltotalamount')!, fmtMoney(sT), true)
+
+    if (pageCount > 2 && pc.pageNo) {
+      const b = pc.pageNo
+      page.drawRectangle({ x: b.x - 1, y: b.y - 1.5, width: b.w + 14, height: b.h + 4, color: WHITE })
+      page.drawText('Page ', { x: b.x, y: b.y, size: 5.2, font: bold, color: BLACK })
+      page.drawText(`${pi + 1} of ${pageCount}`, { x: b.x + bold.widthOfTextAtSize('Page ', 5.2), y: b.y, size: 5.2, font, color: BLACK })
+    }
+  }
+  return pdf.save()
+}
+
 export async function renderInvoicePdf(t: TransformedInvoice, company: Company, title = 'TAX INVOICE'): Promise<Uint8Array> {
   t = deepWinAnsiSafe(t); company = deepWinAnsiSafe(company) // stop pdf-lib crashing on non-WinAnsi chars
+  // Prefer the real branded Word-template stamping; fall back to the hand-drawn
+  // layout only if the template background can't be loaded.
+  try {
+    const stamped = await renderInvoicePdfStamped(t, title)
+    if (stamped) return stamped
+  } catch { /* fall through to the built-in layout */ }
   const doc = await PDFDocument.create()
   const font = await doc.embedFont(StandardFonts.Helvetica)      // metric twin of the template's Arial
   const bold = await doc.embedFont(StandardFonts.HelveticaBold)

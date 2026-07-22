@@ -11,6 +11,55 @@ import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 import { deepWinAnsiSafe } from '@/lib/pdf-winansi'
 import { qboRequest, qboConfigured } from './qbo.server'
 import { admin, fmtAlways, docgenGuard, attachAndLog, docgenToggle } from './doc-common.server'
+import { SR_TEMPLATE_COORDS } from './sr-template-coords'
+import type { StampField } from './quotation-template-coords'
+
+// Stamp the values onto the real JLS "Receipt Voucher" template background
+// (public/qb-templates/sr-bg.pdf). Returns null if the background can't be
+// loaded, so the caller falls back to the native hand-drawn receipt.
+const srBgCache = { bytes: null as Uint8Array | null, tried: false }
+async function fetchSrBackground(): Promise<Uint8Array | null> {
+  if (srBgCache.bytes) return srBgCache.bytes
+  const base = process.env.VITE_APP_URL || 'https://jls-navigator.m-peeters-4a0.workers.dev'
+  const url = `${base.replace(/\/$/, '')}/qb-templates/sr-bg.pdf`
+  try {
+    const assets = (globalThis as Record<string, any>).__CF_ENV?.ASSETS
+    const res = assets?.fetch ? await assets.fetch(url) : await fetch(url)
+    if (!res.ok) return null
+    srBgCache.bytes = new Uint8Array(await res.arrayBuffer())
+    return srBgCache.bytes
+  } catch { return null }
+}
+
+async function buildSalesReceiptFromTemplate(r: ReceiptData): Promise<Uint8Array | null> {
+  const bg = await fetchSrBackground()
+  if (!bg) return null
+  const c = SR_TEMPLATE_COORDS
+  const src = await PDFDocument.load(bg)
+  const pdf = await PDFDocument.create()
+  const font = await pdf.embedFont(StandardFonts.Helvetica)
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold)
+  const [page] = await pdf.copyPages(src, [0])
+  pdf.addPage(page)
+  const draw = (f: StampField | undefined, value: string) => {
+    if (!f) return
+    const v = String(value ?? '')
+    if (!v) return
+    const fnt = f.bold ? bold : font
+    const w = fnt.widthOfTextAtSize(v, f.size)
+    const x = f.align === 'right' ? f.x - w : f.align === 'center' ? f.x - w / 2 : f.x
+    page.drawText(v, { x, y: f.y, size: f.size, font: fnt, color: rgb(0, 0, 0) })
+  }
+  draw(c['receiptno'], r.receiptNo)
+  draw(c['date'], r.date)
+  draw(c['dated'], r.date)
+  draw(c['receivedfrommr/ms'], r.receivedFrom)
+  draw(c['thesumof'], r.sumInWords)
+  draw(c['cash/chequeno'], r.receiptNo)
+  draw(c['dhs'], r.dhs)
+  draw(c['fils'], String(r.fils).padStart(2, '0'))
+  return pdf.save()
+}
 
 // ── Verbatim helpers from the n8n Code nodes ───────────────────────────────────
 const ONES = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen']
@@ -61,6 +110,11 @@ type ReceiptData = {
 
 async function buildSalesReceiptPdf(r: ReceiptData): Promise<Uint8Array> {
   r = deepWinAnsiSafe(r) // stop pdf-lib crashing on non-WinAnsi chars
+  // Prefer the real JLS Receipt Voucher template; fall back to the native layout.
+  try {
+    const stamped = await buildSalesReceiptFromTemplate(r)
+    if (stamped) return stamped
+  } catch { /* fall through */ }
   const pdf = await PDFDocument.create()
   const font = await pdf.embedFont(StandardFonts.Helvetica)
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold)
