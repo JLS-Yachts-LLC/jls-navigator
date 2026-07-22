@@ -116,17 +116,6 @@ export async function orchestrate(raw: string): Promise<OrchestrationItem[]> {
         const fetched = await qboRequest('GET', `/invoice/${ev.entityId}?include=enhancedAllCustomFields&minorversion=73`, undefined, realm)
         const invoice = fetched?.Invoice
         if (invoice) {
-          // TEMP DIAGNOSTIC: record the exact CustomField order/values so we can
-          // confirm which field drives Pro-Forma classification (CustomField[0]).
-          try {
-            const cf = (invoice.CustomField ?? []).map((f: any, i: number) =>
-              `[${i}] ${f.Name ?? '?'}(def ${f.DefinitionId ?? '?'})=${JSON.stringify(f.StringValue ?? f.NumberValue ?? null)}`)
-            await logAutomationRun({
-              key: 'qb-customfield-debug', name: 'QB CustomField (debug)', source: 'worker', trigger_type: 'event', category: 'Finance',
-              status: 'success', detail: `Invoice ${invoice.DocNumber ?? ev.entityId}: ${cf.join(' | ') || '(no custom fields)'}`,
-            })
-          } catch { /* debug only */ }
-
           // Doc-number self-heal is DISABLED for now: it wrote back to the invoice,
           // which re-triggered the webhook and caused a processing loop. Classify
           // straight from the fetched invoice instead.

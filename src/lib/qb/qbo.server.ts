@@ -163,7 +163,6 @@ export async function qboUpload(
     // ALWAYS follow up with an /attachable update (Id + SyncToken + AttachableRef)
     // so the PDF genuinely shows on the invoice/estimate/PO.
     let upd: any = null
-    let verify: any = null
     if (attachable?.Id) {
       upd = await qboRequest('POST', `/attachable?minorversion=73`, {
         Id: attachable.Id,
@@ -171,21 +170,8 @@ export async function qboUpload(
         FileName: fileName,
         ContentType: contentType,
         AttachableRef: [{ IncludeOnSend: false, EntityRef: { type: entityType, value: String(entityId) } }],
-      }).catch((e: any) => ({ __error: e?.message ?? String(e) }))
-      // Post-bind verification: read the Attachable back and see what QBO REALLY stored.
-      verify = await qboRequest('GET', `/attachable/${attachable.Id}?minorversion=73`).catch((e: any) => ({ __error: e?.message ?? String(e) }))
-    }
-    // Debug trail (temporary): raw responses so attach failures are diagnosable
-    // from the Automations run log instead of guessed at.
-    try {
-      const { logAutomationRun } = await import('@/lib/automations.server')
-      const slim = (o: any) => JSON.stringify(o ?? null).slice(0, 600)
-      await logAutomationRun({
-        key: 'qb-attach-debug', name: 'QB Attach (raw debug)', source: 'worker', trigger_type: 'event', category: 'Finance',
-        status: 'success',
-        detail: `${fileName} → ${entityType}/${entityId} | upload=${slim(j?.AttachableResponse?.[0])} | bind=${slim(upd)} | verify=${slim((verify as any)?.Attachable ?? verify)}`,
       })
-    } catch { /* debug only */ }
+    }
     const bound = upd?.Attachable
     if (attachable?.Id && !bound?.Id) throw new Error(`QBO attach-link for ${fileName} returned no Attachable: ${JSON.stringify(upd ?? {}).slice(0, 300)}`)
     return bound ?? attachable
