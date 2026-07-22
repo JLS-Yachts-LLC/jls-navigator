@@ -236,6 +236,17 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
     setBusy(true);
     const patch: any = { ...form, updated_at: new Date().toISOString() };
     for (const k of Object.keys(patch)) if (patch[k] === "") patch[k] = null;
+    // UAE crew entry permits: the stay expiry isn't printed — it's 180 days from
+    // the actual arrival. When an arrival date is recorded on a UAE visa and no
+    // expiry has been set by hand, derive it. (A manually-entered expiry wins.)
+    const isUae = (visa?.country_code ?? "").toUpperCase() === "AE" || /emirat|uae|dubai/i.test(visa?.destination_country ?? "");
+    if (isUae && patch.arrival_date && !patch.visa_expiry) {
+      const d = new Date(patch.arrival_date);
+      if (!isNaN(d.getTime())) {
+        d.setUTCDate(d.getUTCDate() + 180);
+        patch.visa_expiry = d.toISOString().slice(0, 10);
+      }
+    }
     // Link the typed vessel name to a yacht row when it matches one.
     if (patch.vessel_name) {
       const { data: y } = await (supabase as any)
