@@ -8,7 +8,7 @@ import {
   Zap, Clock, Webhook, MousePointerClick, Activity, Search, Loader2,
   CheckCircle2, XCircle, CircleDot, Calendar, ExternalLink, PlugZap,
   ListOrdered, History, ChevronDown, Trash2, RotateCcw, RefreshCw,
-  ArrowUpDown, ChevronLeft, ChevronRight, Download, FileText,
+  ArrowUpDown, ChevronLeft, ChevronRight, Download, FileText, MailX, MailCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -104,8 +104,34 @@ export function AutomationsPage() {
   const [deleteTarget, setDeleteTarget] = useState<Automation | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  // Global email kill-switch (integration_settings.email_notifications.enabled).
+  const [emailEnabled, setEmailEnabled] = useState<boolean | null>(null);
+  const [emailBusy, setEmailBusy] = useState(false);
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load(); void loadEmailFlag(); }, []);
+
+  async function loadEmailFlag() {
+    const { data } = await (supabase as any)
+      .from("integration_settings").select("enabled").eq("integration_name", "email_notifications").maybeSingle();
+    setEmailEnabled(data?.enabled === true);
+  }
+
+  async function toggleEmail() {
+    const next = !(emailEnabled ?? false);
+    if (next && !confirm("Re-enable ALL automated email notifications platform-wide? Emails will start sending again immediately.")) return;
+    setEmailBusy(true);
+    const { error } = await (supabase as any).from("integration_settings").upsert(
+      {
+        integration_name: "email_notifications",
+        enabled: next,
+        config: next ? {} : { disabled_reason: "Disabled globally from the Automations page.", disabled_at: new Date().toISOString().slice(0, 10) },
+      },
+      { onConflict: "integration_name" },
+    );
+    if (error) toast.error(error.message);
+    else { setEmailEnabled(next); toast.success(next ? "Email notifications ENABLED platform-wide" : "Email notifications disabled — nothing will send"); }
+    setEmailBusy(false);
+  }
 
   // Live view: silently re-pull automations + run log every minute so new
   // executions (webhooks, crons) appear without a manual reload.
@@ -229,6 +255,35 @@ export function AutomationsPage() {
           </button>
         </div>
       </header>
+
+      {/* Global email kill-switch status */}
+      {emailEnabled !== null && (
+        <div className={cn(
+          "mx-6 mt-4 rounded-lg border px-4 py-3 flex items-start gap-3",
+          emailEnabled ? "border-emerald-500/30 bg-emerald-500/5" : "border-red-500/40 bg-red-500/10",
+        )}>
+          {emailEnabled
+            ? <MailCheck className="h-4 w-4 text-emerald-400 mt-0.5 shrink-0" />
+            : <MailX className="h-4 w-4 text-red-400 mt-0.5 shrink-0" />}
+          <div className="flex-1 text-xs text-muted-foreground">
+            {emailEnabled ? (
+              <><span className="font-semibold text-emerald-400">Email notifications are ENABLED.</span> Automated emails (permit reminders, visa reports, ticket updates, invites, etc.) will send normally.</>
+            ) : (
+              <><span className="font-semibold text-red-400">Email notifications are DISABLED platform-wide.</span> No automated emails will be sent — every send is suppressed at the source. Re-enable here when ready.</>
+            )}
+          </div>
+          <button
+            onClick={toggleEmail}
+            disabled={emailBusy}
+            className={cn(
+              "shrink-0 inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50",
+              emailEnabled ? "bg-red-500/15 text-red-400 hover:bg-red-500/25" : "bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25",
+            )}
+          >
+            {emailBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : emailEnabled ? "Disable all email" : "Enable email"}
+          </button>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 px-6 py-3 border-b border-border/40 bg-muted/10">

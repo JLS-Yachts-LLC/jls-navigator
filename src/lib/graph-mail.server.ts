@@ -8,9 +8,37 @@
  * Sender defaults to itsupport@jlsyachts.com (override with TICKET_MAIL_SENDER).
  */
 import { getSpConfig, getGraphToken } from '@/lib/sharepoint-sync.server'
+import { supabaseAdmin } from '@/integrations/supabase/client.server'
 
 export const TICKET_MAIL_SENDER = process.env.TICKET_MAIL_SENDER ?? 'itsupport@jlsyachts.com'
 const SENDER_NAME = process.env.TICKET_MAIL_SENDER_NAME ?? 'JLS Yachts IT Support'
+
+// ── Global email kill-switch ──────────────────────────────────────────────────
+// Every outbound automated email flows through the send functions below, so this
+// single gate disables ALL notification email platform-wide. Backed by
+// integration_settings.email_notifications.enabled. FAIL-SAFE: if the row is
+// missing or unreadable, email is treated as DISABLED (nothing sends). Toggle it
+// from the Automations page when ready to re-enable.
+let _emailFlag: { value: boolean; at: number } | null = null
+const EMAIL_FLAG_TTL_MS = 15_000
+
+export async function emailNotificationsEnabled(): Promise<boolean> {
+  const now = Date.now()
+  if (_emailFlag && now - _emailFlag.at < EMAIL_FLAG_TTL_MS) return _emailFlag.value
+  let value = false
+  try {
+    const { data } = await (supabaseAdmin as any)
+      .from('integration_settings')
+      .select('enabled')
+      .eq('integration_name', 'email_notifications')
+      .maybeSingle()
+    value = data?.enabled === true
+  } catch {
+    value = false // fail safe — never send if we can't confirm it's enabled
+  }
+  _emailFlag = { value, at: now }
+  return value
+}
 
 // Dedicated "Polaris" Graph app for email (separate from the SharePoint-sync app).
 // Client ID + tenant are not secrets (safe as defaults); only the client secret
@@ -36,6 +64,10 @@ export async function sendTicketEmail(opts: {
   cc?: string | null
   replyTo?: string | null
 }): Promise<void> {
+  if (!(await emailNotificationsEnabled())) {
+    console.warn(`[email-guard] Suppressed ticket email (notifications globally disabled): "${opts.subject}" → ${opts.to}`)
+    return
+  }
   const token = await getMailGraphToken()
 
   const message: any = {
@@ -70,6 +102,10 @@ export async function sendGraphEmail(opts: {
   from?: string
   attachments?: { filename: string; contentBase64: string; contentType: string }[]
 }): Promise<void> {
+  if (!(await emailNotificationsEnabled())) {
+    console.warn(`[email-guard] Suppressed email (notifications globally disabled): "${opts.subject}" → ${opts.to.join(', ')}`)
+    return
+  }
   const token = await getMailGraphToken()
   // General platform mail (user invites, visa reports, permits, ShipSync POD, etc.)
   // sends from polaris@jlsyachts.com unless the caller picks a sender — e.g. Anchor
@@ -115,6 +151,10 @@ export async function sendGraphEmailWithAttachments(opts: {
   from?: string
   attachments: { filename: string; contentBase64: string; contentType: string }[]
 }): Promise<void> {
+  if (!(await emailNotificationsEnabled())) {
+    console.warn(`[email-guard] Suppressed email w/ attachments (notifications globally disabled): "${opts.subject}" → ${opts.to.join(', ')}`)
+    return
+  }
   const token = await getMailGraphToken()
   const sender = opts.from ?? (process.env.MAIL_SENDER as string | undefined) ?? 'polaris@jlsyachts.com'
   const base = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(sender)}`
