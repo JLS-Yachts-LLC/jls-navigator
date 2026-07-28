@@ -280,9 +280,10 @@ export async function buildQuotationPdf(q: QuoteData, opts?: { background?: Uint
   const rows: Row[] = []
   for (const it of q.items) {
     const lines = wrap(it.description, descWidth, coords.single.itemRows.cols.description?.size ?? 6)
-    // Word vertically centres the row, so qty/amounts sit on the middle line of
-    // a multi-line description (matches the n8n output).
-    const numLine = Math.floor((lines.length - 1) / 2)
+    // Numbers print on the FIRST line of the item block — matching how QBO
+    // anchors qty/amounts to the line item. (The old Word/n8n output vertically
+    // centred them, which looked detached on long crew-list descriptions.)
+    const numLine = 0
     lines.forEach((ln, i) => {
       rows.push({
         cells: {

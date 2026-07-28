@@ -311,7 +311,10 @@ async function renderInvoicePdfStamped(t: TransformedInvoice, title: string): Pr
   const rows: Row[] = []
   for (const it of t.items) {
     const lines = wrap(it.description, descWidth, coords.single.itemRows.cols.description?.size ?? 6)
-    const numLine = Math.floor((lines.length - 1) / 2)
+    // Numbers print on the FIRST line of the item block — matching how QBO
+    // anchors qty/amounts to the line item (vertical centring looked detached
+    // on long crew-list descriptions).
+    const numLine = 0
     lines.forEach((ln, i) => rows.push({
       cells: {
         qty: i === numLine ? it.qty : '', description: ln,

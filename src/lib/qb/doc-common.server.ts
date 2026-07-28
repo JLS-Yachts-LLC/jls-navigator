@@ -233,7 +233,10 @@ export async function buildDocPdf(
   const rows: Row[] = []
   for (const it of q.items) {
     const descLines = wrap(it.description, cols[1].w - 8, FS)
-    const numLine = Math.floor((descLines.length - 1) / 2)
+    // Numbers print on the FIRST line of the item block — matching how QBO
+    // anchors qty/amounts to the line item (vertical centring looked detached
+    // on long crew-list descriptions).
+    const numLine = 0
     descLines.forEach((ln, i) => {
       const on = i === numLine && !it.isDescriptionOnly
       rows.push({

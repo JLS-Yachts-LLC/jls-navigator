@@ -157,7 +157,10 @@ export async function buildPurchaseOrderPdf(q: DocData, opts?: { background?: Ui
   const rows: RenderRow[] = []
   for (const it of q.items) {
     const lines = wrap(it.description, descWidth, coords.single.itemRows.cols.description?.size ?? 6)
-    const numLine = Math.floor((lines.length - 1) / 2)
+    // Numbers print on the FIRST line of the item block — matching how QBO
+    // anchors qty/amounts to the line item (vertical centring looked detached
+    // on long crew-list descriptions).
+    const numLine = 0
     lines.forEach((ln, i) => {
       rows.push({
         cells: {
