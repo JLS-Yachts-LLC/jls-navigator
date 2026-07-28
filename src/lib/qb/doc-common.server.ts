@@ -11,9 +11,10 @@
  *   delete superseded "<prefix> - …" attachments → record post-attach stamp.
  */
 import { createClient } from '@supabase/supabase-js'
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
+import { PDFDocument, StandardFonts, rgb, type PDFFont } from 'pdf-lib'
 import { deepWinAnsiSafe } from '@/lib/pdf-winansi'
 import { qboRequest, qboQuery, qboUpload } from './qbo.server'
+import type { StampField } from './quotation-template-coords'
 
 export function admin() {
   return createClient(process.env.SUPABASE_URL ?? '', process.env.SUPABASE_SERVICE_ROLE_KEY ?? '', { auth: { persistSession: false } })
@@ -46,6 +47,72 @@ export function bankFor(bankDetail: string) {
     : bd.includes('EUR') || bd.includes('EURO') ? 'EUR'
     : 'AED'
   return BANK_MAP[key]
+}
+
+// ── Stamped-template address fitting ───────────────────────────────────────────
+// The QUOTE TO / INVOICE TO box has fixed label rows printed on the letterhead
+// background, so a wrapped address must fit the vertical space between its anchor
+// and the next row (Emirates / TRN). A blind "3 lines at fixed pitch" overflows
+// that gap on long addresses and overprints the row below. This fitter measures
+// the real gap, steps the font size down until the wrap fits, and ellipsizes the
+// final line as a last resort — an address can never collide with the next row.
+
+/** Word-wrap `text` to `width` pt at `size`, preserving hard newlines. */
+function wrapToWidth(font: PDFFont, text: string, width: number, size: number): string[] {
+  const out: string[] = []
+  for (const hard of String(text ?? '').split(/\r?\n/)) {
+    let rest = hard.trim()
+    if (!rest) continue
+    while (rest.length) {
+      if (font.widthOfTextAtSize(rest, size) <= width) { out.push(rest); break }
+      let cut = rest.length
+      while (cut > 1 && font.widthOfTextAtSize(rest.slice(0, cut), size) > width) cut--
+      const sp = rest.lastIndexOf(' ', cut)
+      cut = sp > 0 ? sp : cut
+      out.push(rest.slice(0, cut).trim())
+      rest = rest.slice(cut).trim()
+    }
+  }
+  return out
+}
+
+/** Fit an address block under its stamp anchor without hitting the field below it. */
+export function fitStampedAddress(
+  text: string,
+  font: PDFFont,
+  addr: StampField,
+  fields: Record<string, StampField>,
+  width = 170,
+  basePitch = 13.32,
+): { lines: string[]; size: number; pitch: number } {
+  // Nearest field baseline below the address in the same (left) column — that's
+  // the row we must stay clear of. Right-hand fields (dates, totals) are excluded.
+  let floorY: number | null = null
+  for (const [key, f] of Object.entries(fields)) {
+    if (key === 'address' || f.y >= addr.y - 1 || Math.abs(f.x - addr.x) > 60) continue
+    if (floorY === null || f.y > floorY) floorY = f.y
+  }
+
+  const MIN_GAP = 10 // pt between our last baseline and the next row's baseline
+  const maxLinesFor = (pitch: number) => {
+    const room = floorY === null ? pitch * 2 /* legacy 3-line cap */ : addr.y - floorY - MIN_GAP
+    return Math.max(1, Math.floor(room / pitch) + 1)
+  }
+
+  for (const size of [addr.size, addr.size - 0.5, addr.size - 1, addr.size - 1.5, addr.size - 2]) {
+    const pitch = basePitch * (size / addr.size)
+    const lines = wrapToWidth(font, text, width, size)
+    if (lines.length <= maxLinesFor(pitch)) return { lines, size, pitch }
+  }
+
+  // Smallest size still overflows: hard-cap the lines and ellipsize the last one.
+  const size = addr.size - 2
+  const pitch = basePitch * (size / addr.size)
+  const lines = wrapToWidth(font, text, width, size).slice(0, maxLinesFor(pitch))
+  let last = lines[lines.length - 1] ?? ''
+  while (last && font.widthOfTextAtSize(`${last}…`, size) > width) last = last.slice(0, -1).trimEnd()
+  lines[lines.length - 1] = `${last}…`
+  return { lines, size, pitch }
 }
 
 // ── Shared document shape (same as the Quotation QuoteData) ────────────────────

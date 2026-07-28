@@ -13,7 +13,7 @@ import { qboRequest, qboQuery, qboConfigured } from './qbo.server'
 import {
   admin, TAX_CODE_MAP, CURRENCY_MAP, BANK_DETAIL_MAP, bankFor, computeTotals,
   buildDocPdf, buildDocXlsx, docgenGuard, attachAndLog, docgenToggle,
-  fmt, fmtAlways, CURRENCY_SIGN,
+  fmt, fmtAlways, CURRENCY_SIGN, fitStampedAddress,
   type DocData, type DocItem,
 } from './doc-common.server'
 import { PROFORMA_TEMPLATE_COORDS } from './proforma-template-coords'
@@ -244,10 +244,12 @@ export async function buildProformaPdf(q: DocData): Promise<Uint8Array> {
       page.drawText(label, { x: rl.centerX - w / 2, y: rl.y, size, font: bold, color: WHITE })
     }
 
+    // Address: wrapped + auto-shrunk so it can never reach the Emirates row below.
     const addrField = pc.fields['address']
     if (addrField) {
-      wrap(q.party.address, 170, addrField.size).slice(0, 3).forEach((ln, i) => {
-        draw(page, { ...addrField, y: addrField.y - i * ADDRESS_LINE_PITCH }, ln)
+      const fit = fitStampedAddress(q.party.address, font, addrField, pc.fields, 170, ADDRESS_LINE_PITCH)
+      fit.lines.forEach((ln, i) => {
+        draw(page, { ...addrField, size: fit.size, y: addrField.y - i * fit.pitch }, ln)
       })
     }
 

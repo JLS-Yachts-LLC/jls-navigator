@@ -27,6 +27,7 @@ import { qboRequest, qboQuery, qboUpload, qboConfigured } from './qbo.server'
 import { TI_TEMPLATE_COORDS } from './ti-template-coords'
 import { quotationVariant } from './estimate-docgen.server'
 import type { StampField, StampPage } from './quotation-template-coords'
+import { fitStampedAddress } from './doc-common.server'
 import { logAutomationRun } from '@/lib/automations.server'
 import { QB_DOC_IMAGES } from './invoice-assets'
 
@@ -359,8 +360,12 @@ async function renderInvoicePdfStamped(t: TransformedInvoice, title: string): Pr
       page.drawRectangle({ x: rl.centerX - (rl.w + 28) / 2, y: rl.y - 2.5, width: rl.w + 28, height: 12, color: BLACK })
       page.drawText(label, { x: rl.centerX - w / 2, y: rl.y, size: 7, font: bold, color: WHITE })
     }
+    // Address: wrapped + auto-shrunk so it can never reach the Emirates row below.
     const addrField = pc.fields['address']
-    if (addrField) wrap(t.customer.address, 170, addrField.size).slice(0, 3).forEach((ln, i) => draw(page, { ...addrField, y: addrField.y - i * 13.32 }, ln))
+    if (addrField) {
+      const fit = fitStampedAddress(t.customer.address, font, addrField, pc.fields, 170, 13.32)
+      fit.lines.forEach((ln, i) => draw(page, { ...addrField, size: fit.size, y: addrField.y - i * fit.pitch }, ln))
+    }
 
     let sA = 0, sV = 0, sT = 0
     pageRows[pi].forEach((r, ri) => {

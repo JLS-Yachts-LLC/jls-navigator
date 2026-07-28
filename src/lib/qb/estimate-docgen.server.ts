@@ -21,6 +21,7 @@ import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 import { deepWinAnsiSafe } from '@/lib/pdf-winansi'
 import { qboRequest, qboQuery, qboUpload, qboConfigured } from './qbo.server'
 import { QUOTATION_TEMPLATE_COORDS, type QuotationVariant, type StampField, type StampPage } from './quotation-template-coords'
+import { fitStampedAddress } from './doc-common.server'
 import { logAutomationRun } from '@/lib/automations.server'
 
 function admin() {
@@ -364,12 +365,13 @@ export async function buildQuotationPdf(q: QuoteData, opts?: { background?: Uint
       page.drawText(label, { x: rl.centerX - w / 2, y: rl.y, size, font: bold, color: WHITE })
     }
 
-    // Address: wrap up to 3 lines below its anchor.
+    // Address: wrapped + auto-shrunk so it can never reach the Emirates row below
+    // (170pt keeps the wrap inside the QUOTE TO box border).
     const addrField = pc.fields['address']
     if (addrField) {
-      // 170pt keeps the wrap inside the QUOTE TO box border.
-      wrap(q.customer.address, 170, addrField.size).slice(0, 3).forEach((ln, i) => {
-        draw(page, { ...addrField, y: addrField.y - i * ADDRESS_LINE_PITCH }, ln)
+      const fit = fitStampedAddress(q.customer.address, font, addrField, pc.fields, 170, ADDRESS_LINE_PITCH)
+      fit.lines.forEach((ln, i) => {
+        draw(page, { ...addrField, size: fit.size, y: addrField.y - i * fit.pitch }, ln)
       })
     }
 
