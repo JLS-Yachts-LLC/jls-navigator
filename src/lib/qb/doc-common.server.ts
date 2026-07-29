@@ -53,9 +53,11 @@ export function bankFor(bankDetail: string) {
 // The QUOTE TO / INVOICE TO box has fixed label rows printed on the letterhead
 // background, so a wrapped address must fit the vertical space between its anchor
 // and the next row (Emirates / TRN). A blind "3 lines at fixed pitch" overflows
-// that gap on long addresses and overprints the row below. This fitter measures
-// the real gap, steps the font size down until the wrap fits, and ellipsizes the
-// final line as a last resort — an address can never collide with the next row.
+// that gap on long addresses and overprints the row below. This fitter keeps the
+// font size IDENTICAL to the other box fields (it must visually match Name /
+// Emirates / TRN) and instead compresses the line spacing — down to a readable
+// floor — to make the wrap fit; only an address too long even for that gets its
+// last line ellipsized. An address can never collide with the next row.
 
 /** Word-wrap `text` to `width` pt at `size`, preserving hard newlines. */
 function wrapToWidth(font: PDFFont, text: string, width: number, size: number): string[] {
@@ -76,7 +78,11 @@ function wrapToWidth(font: PDFFont, text: string, width: number, size: number): 
   return out
 }
 
-/** Fit an address block under its stamp anchor without hitting the field below it. */
+/** Fit an address block under its stamp anchor without hitting the field below it.
+ *  `yOffset` (when set) lifts the whole block — callers draw line i at
+ *  `addr.y + yOffset - i * pitch`. Mirrors the original Word templates, where the
+ *  address row was "atLeast"-height and grew for long addresses: here the block
+ *  borrows the headroom between the Address anchor and the Name row instead. */
 export function fitStampedAddress(
   text: string,
   font: PDFFont,
@@ -84,35 +90,53 @@ export function fitStampedAddress(
   fields: Record<string, StampField>,
   width = 170,
   basePitch = 13.32,
-): { lines: string[]; size: number; pitch: number } {
-  // Nearest field baseline below the address in the same (left) column — that's
-  // the row we must stay clear of. Right-hand fields (dates, totals) are excluded.
+): { lines: string[]; size: number; pitch: number; yOffset: number } {
+  // Nearest field baselines below (Emirates row) and above (Name row) in the same
+  // column — the rows we must stay clear of. Right-hand fields are excluded.
   let floorY: number | null = null
+  let ceilY: number | null = null
   for (const [key, f] of Object.entries(fields)) {
-    if (key === 'address' || f.y >= addr.y - 1 || Math.abs(f.x - addr.x) > 60) continue
-    if (floorY === null || f.y > floorY) floorY = f.y
+    if (key === 'address' || Math.abs(f.x - addr.x) > 60) continue
+    if (f.y < addr.y - 1 && (floorY === null || f.y > floorY)) floorY = f.y
+    if (f.y > addr.y + 1 && (ceilY === null || f.y < ceilY)) ceilY = f.y
   }
 
-  const MIN_GAP = 10 // pt between our last baseline and the next row's baseline
-  const maxLinesFor = (pitch: number) => {
-    const room = floorY === null ? pitch * 2 /* legacy 3-line cap */ : addr.y - floorY - MIN_GAP
-    return Math.max(1, Math.floor(room / pitch) + 1)
+  const size = addr.size // NEVER shrink — must match Name / Emirates / TRN exactly
+  const minPitch = size * 1.15 // tightest single-spaced leading (7pt → ~8pt, per the Word original)
+  const MIN_GAP = 10 // preferred pt between our last baseline and the next row's baseline
+  const HARD_GAP = 8 // glyph-safe floor (descender ~1.5 + cap height ~5 + breathing)
+  const roomAt = (gap: number) => (floorY === null ? basePitch * 2 /* legacy 3-line cap */ : addr.y - floorY - gap)
+  // Headroom above the anchor we may lift into without crowding the Name row.
+  const maxLift = ceilY === null ? 0 : Math.max(0, ceilY - addr.y - minPitch)
+
+  // Compress the leading (never below the readable floor) until the wrap fits.
+  const tryFit = (lines: string[]): { lines: string[]; size: number; pitch: number; yOffset: number } | null => {
+    if (lines.length <= 1) return { lines, size, pitch: basePitch, yOffset: 0 }
+    const required = roomAt(MIN_GAP) / (lines.length - 1)
+    if (required >= minPitch) return { lines, size, pitch: Math.min(basePitch, required), yOffset: 0 }
+    // Word-style overflow: lift the block into the headroom under the Name row.
+    const lift = (lines.length - 1) * minPitch - roomAt(HARD_GAP)
+    if (lift > 0 && lift <= maxLift) return { lines, size, pitch: minPitch, yOffset: lift }
+    return null
   }
 
-  for (const size of [addr.size, addr.size - 0.5, addr.size - 1, addr.size - 1.5, addr.size - 2]) {
-    const pitch = basePitch * (size / addr.size)
-    const lines = wrapToWidth(font, text, width, size)
-    if (lines.length <= maxLinesFor(pitch)) return { lines, size, pitch }
-  }
+  // 1) Structured: keep the caller's hard line breaks (one address part per line).
+  const structured = tryFit(wrapToWidth(font, text, width, size))
+  if (structured) return structured
 
-  // Smallest size still overflows: hard-cap the lines and ellipsize the last one.
-  const size = addr.size - 2
-  const pitch = basePitch * (size / addr.size)
-  const lines = wrapToWidth(font, text, width, size).slice(0, maxLinesFor(pitch))
-  let last = lines[lines.length - 1] ?? ''
+  // 2) Flowed: collapse the breaks to a comma-separated run — packs tighter.
+  const flowed = String(text ?? '').split(/\r?\n/).map((l) => l.trim().replace(/,$/, '')).filter(Boolean).join(', ')
+  const flowedFit = tryFit(wrapToWidth(font, flowed, width, size))
+  if (flowedFit) return flowedFit
+
+  // 3) Too long even flowed, lifted, at the tightest leading: cap + ellipsize the last line.
+  const maxLines = Math.max(1, Math.floor((roomAt(HARD_GAP) + maxLift) / minPitch) + 1)
+  const capped = wrapToWidth(font, flowed, width, size).slice(0, maxLines)
+  let last = capped[capped.length - 1] ?? ''
   while (last && font.widthOfTextAtSize(`${last}…`, size) > width) last = last.slice(0, -1).trimEnd()
-  lines[lines.length - 1] = `${last}…`
-  return { lines, size, pitch }
+  capped[capped.length - 1] = `${last}…`
+  const lift = Math.min(maxLift, Math.max(0, (capped.length - 1) * minPitch - roomAt(HARD_GAP)))
+  return { lines: capped, size, pitch: minPitch, yOffset: lift }
 }
 
 // ── Shared document shape (same as the Quotation QuoteData) ────────────────────

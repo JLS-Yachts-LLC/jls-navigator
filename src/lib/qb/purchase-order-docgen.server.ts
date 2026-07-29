@@ -66,7 +66,7 @@ export function transformPurchaseOrder(po: any): DocData {
   return {
     party: {
       name: po.VendorRef?.name || 'Unknown Vendor',
-      address: [addr.Line1, addr.Line2, addr.Line3, addr.Line4, addr.City].filter(Boolean).join(' ').trim(),
+      address: [addr.Line1, addr.Line2, addr.Line3, addr.Line4, addr.City].filter(Boolean).map((l: string) => String(l).trim()).join('\n'),
       emirates: addr.City || po.TransactionLocationType || 'Dubai',
       trnNo: '',
       docNumber: String(docNumber),
@@ -236,7 +236,7 @@ export async function buildPurchaseOrderPdf(q: DocData, opts?: { background?: Ui
     if (addrField) {
       const fit = fitStampedAddress(q.party.address, font, addrField, pc.fields, 170, ADDRESS_LINE_PITCH)
       fit.lines.forEach((ln, i) => {
-        draw(page, { ...addrField, size: fit.size, y: addrField.y - i * fit.pitch }, ln)
+        draw(page, { ...addrField, size: fit.size, y: addrField.y + fit.yOffset - i * fit.pitch }, ln)
       })
     }
 

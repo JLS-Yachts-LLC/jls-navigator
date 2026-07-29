@@ -138,7 +138,10 @@ export function transformInvoice(invoice: any): TransformedInvoice {
     docNumber, qboId: String(invoice.Id), lastUpdatedTime: String(invoice.MetaData?.LastUpdatedTime ?? ''),
     customer: {
       name: invoice.CustomerRef?.name ?? 'Unknown Customer',
-      address: [billAddr.Line1, billAddr.Line2, billAddr.Line3, billAddr.City].filter(Boolean).join(' ').trim(),
+      // Joined with hard newlines so each QBO address line prints as its own line
+      // (structured, not one continuous string); the renderers collapse to a
+      // flowed wrap only when the box can't fit the structured form.
+      address: [billAddr.Line1, billAddr.Line2, billAddr.Line3, billAddr.City].filter(Boolean).map((l: string) => String(l).trim()).join('\n'),
       emirates: billAddr.City ?? 'Dubai',
       trn,
     },
@@ -367,7 +370,7 @@ async function renderInvoicePdfStamped(t: TransformedInvoice, title: string): Pr
     const addrField = pc.fields['address']
     if (addrField) {
       const fit = fitStampedAddress(t.customer.address, font, addrField, pc.fields, 170, 13.32)
-      fit.lines.forEach((ln, i) => draw(page, { ...addrField, size: fit.size, y: addrField.y - i * fit.pitch }, ln))
+      fit.lines.forEach((ln, i) => draw(page, { ...addrField, size: fit.size, y: addrField.y + fit.yOffset - i * fit.pitch }, ln))
     }
 
     let sA = 0, sV = 0, sT = 0
@@ -478,7 +481,9 @@ export async function renderInvoicePdf(t: TransformedInvoice, company: Company, 
     const invLabelX = INV_X + CELL_PAD, invValueX = INV_X + 38.45 + CELL_PAD
     draw(page, 'Name', invLabelX, 129.5); draw(page, t.customer.name, invValueX, 129.5)
     draw(page, 'Address', invLabelX, 142.8)
-    wrapText(t.customer.address, font, LABEL_SIZE, INV_W - 38.45 - 2 * CELL_PAD).slice(0, 3)
+    // This fixed layout holds exactly 3 lines — flow the structured address (as the
+    // old space-joined behaviour did) so a hard newline can't cost a whole line.
+    wrapText(t.customer.address.replace(/\s*\n\s*/g, ', '), font, LABEL_SIZE, INV_W - 38.45 - 2 * CELL_PAD).slice(0, 3)
       .forEach((l, i) => draw(page, l, invValueX, 142.8 + i * 8.6))
     draw(page, 'Emirates', invLabelX, 171.6); draw(page, t.customer.emirates, invValueX, 171.6)
     draw(page, 'TRN No', invLabelX, 185.9); draw(page, t.customer.trn, invValueX, 185.9)
