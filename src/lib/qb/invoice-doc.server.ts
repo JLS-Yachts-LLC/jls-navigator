@@ -355,7 +355,9 @@ async function renderInvoicePdfStamped(t: TransformedInvoice, title: string): Pr
     pdf.addPage(page)
     const PAGE_TOTAL = new Set(['totalamount', 'totalvat', 'totalltotalamount', 'totalamount1', 'totalvat1', 'totalltotalamount1'])
     for (const [key, f] of Object.entries(pc.fields)) {
-      if (key === 'address' || PAGE_TOTAL.has(key)) continue
+      // 'emirates' is intentionally dropped — the Emirates row is removed (value
+      // skipped here, baked label whited-out below, address flows into its space).
+      if (key === 'address' || key === 'emirates' || PAGE_TOTAL.has(key)) continue
       draw(page, f, gf[key] ?? '', TI_WHITE_FIELDS.has(key))
     }
     for (const rl of (pc as any).relabels ?? []) {
@@ -366,10 +368,26 @@ async function renderInvoicePdfStamped(t: TransformedInvoice, title: string): Pr
       page.drawRectangle({ x: rl.centerX - (rl.w + 28) / 2, y: rl.y - 2.5, width: rl.w + 28, height: 12, color: BLACK })
       page.drawText(label, { x: rl.centerX - w / 2, y: rl.y, size: 7, font: bold, color: WHITE })
     }
-    // Address: wrapped + auto-shrunk so it can never reach the Emirates row below.
+    // White-out the baked "Emirates" label so the row reads as removed. The box
+    // has no inner gridlines (Word insideH/insideV = none), so a patch in the
+    // label column is clean; it stays left of the value column (address flows
+    // there) and inside the outer border. Geometry from the template table:
+    // value col left = field.x − CELL_PAD; label col is 38.45pt wide to its left.
+    const emField = pc.fields['emirates']
+    if (emField) {
+      const valueColLeft = emField.x - CELL_PAD
+      const boxLeft = valueColLeft - 38.45
+      page.drawRectangle({ x: boxLeft + 1.5, y: emField.y - 3, width: valueColLeft - 1.5 - (boxLeft + 1.5), height: 12, color: WHITE })
+    }
+
+    // Address: wrapped + auto-shrunk so it can never reach the row below. With the
+    // Emirates row removed, fit against the TRN row (hide 'emirates' from the floor
+    // scan) so the block flows DOWN into the freed space and its first line sits on
+    // the "Address" label baseline instead of being lifted above it.
     const addrField = pc.fields['address']
     if (addrField) {
-      const fit = fitStampedAddress(t.customer.address, font, addrField, pc.fields, 170, 13.32)
+      const floorFields = Object.fromEntries(Object.entries(pc.fields).filter(([k]) => k !== 'emirates'))
+      const fit = fitStampedAddress(t.customer.address, font, addrField, floorFields, 170, 13.32)
       fit.lines.forEach((ln, i) => draw(page, { ...addrField, size: fit.size, y: addrField.y + fit.yOffset - i * fit.pitch }, ln))
     }
 
@@ -481,11 +499,11 @@ export async function renderInvoicePdf(t: TransformedInvoice, company: Company, 
     const invLabelX = INV_X + CELL_PAD, invValueX = INV_X + 38.45 + CELL_PAD
     draw(page, 'Name', invLabelX, 129.5); draw(page, t.customer.name, invValueX, 129.5)
     draw(page, 'Address', invLabelX, 142.8)
-    // This fixed layout holds exactly 3 lines — flow the structured address (as the
+    // Emirates row removed — the address may flow into its space (up to 4 lines,
+    // first line on the "Address" baseline). Flow the structured address (as the
     // old space-joined behaviour did) so a hard newline can't cost a whole line.
-    wrapText(t.customer.address.replace(/\s*\n\s*/g, ', '), font, LABEL_SIZE, INV_W - 38.45 - 2 * CELL_PAD).slice(0, 3)
+    wrapText(t.customer.address.replace(/\s*\n\s*/g, ', '), font, LABEL_SIZE, INV_W - 38.45 - 2 * CELL_PAD).slice(0, 4)
       .forEach((l, i) => draw(page, l, invValueX, 142.8 + i * 8.6))
-    draw(page, 'Emirates', invLabelX, 171.6); draw(page, t.customer.emirates, invValueX, 171.6)
     draw(page, 'TRN No', invLabelX, 185.9); draw(page, t.customer.trn, invValueX, 185.9)
     box(page, INV_X, 106.2, INV_W, 84.2)
 
