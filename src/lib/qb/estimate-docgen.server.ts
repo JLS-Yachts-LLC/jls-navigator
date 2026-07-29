@@ -167,7 +167,7 @@ export function transformEstimate(estimate: any, extras?: { trnNo?: string }): Q
   return {
     customer: {
       name: estimate.CustomerRef?.name || 'Customer',
-      address: [billAddr.Line1, billAddr.Line2, billAddr.Line3].filter(Boolean).join(' ').trim(),
+      address: [billAddr.Line1, billAddr.Line2, billAddr.Line3].filter(Boolean).map((l: string) => String(l).trim()).join('\n'),
       emirates: billAddr.City || 'Dubai',
       trnNo: extras?.trnNo ?? '',
       invoiceNo: String(docNumber),
@@ -372,7 +372,7 @@ export async function buildQuotationPdf(q: QuoteData, opts?: { background?: Uint
     if (addrField) {
       const fit = fitStampedAddress(q.customer.address, font, addrField, pc.fields, 170, ADDRESS_LINE_PITCH)
       fit.lines.forEach((ln, i) => {
-        draw(page, { ...addrField, size: fit.size, y: addrField.y - i * fit.pitch }, ln)
+        draw(page, { ...addrField, size: fit.size, y: addrField.y + fit.yOffset - i * fit.pitch }, ln)
       })
     }
 
@@ -526,7 +526,7 @@ export async function buildQuotationPdfBasic(q: QuoteData): Promise<Uint8Array> 
     }
     y -= 11
     text(page, q.customer.name, M, y, 9, bold); y -= 11
-    for (const ln of wrap(q.customer.address, 240, 7.5).slice(0, 3)) { text(page, ln, M, y, 7.5, font, GREY); y -= 9.5 }
+    for (const ln of wrap(q.customer.address.replace(/\s*\n\s*/g, ', '), 240, 7.5).slice(0, 3)) { text(page, ln, M, y, 7.5, font, GREY); y -= 9.5 }
     text(page, q.customer.emirates, M, y, 7.5, font, GREY)
     y = Math.min(y, my) - 14
 

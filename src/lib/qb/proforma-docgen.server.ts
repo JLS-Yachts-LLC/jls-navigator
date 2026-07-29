@@ -77,7 +77,7 @@ export function transformProforma(invoice: any, extras?: { trnNo?: string }): Do
   return {
     party: {
       name: invoice.CustomerRef?.name || 'Customer',
-      address: [billAddr.Line1, billAddr.Line2, billAddr.Line3].filter(Boolean).join(' ').trim(),
+      address: [billAddr.Line1, billAddr.Line2, billAddr.Line3].filter(Boolean).map((l: string) => String(l).trim()).join('\n'),
       emirates: billAddr.City || 'Dubai',
       trnNo: extras?.trnNo ?? '',
       docNumber: String(docNumber),
@@ -252,7 +252,7 @@ export async function buildProformaPdf(q: DocData): Promise<Uint8Array> {
     if (addrField) {
       const fit = fitStampedAddress(q.party.address, font, addrField, pc.fields, 170, ADDRESS_LINE_PITCH)
       fit.lines.forEach((ln, i) => {
-        draw(page, { ...addrField, size: fit.size, y: addrField.y - i * fit.pitch }, ln)
+        draw(page, { ...addrField, size: fit.size, y: addrField.y + fit.yOffset - i * fit.pitch }, ln)
       })
     }
 
