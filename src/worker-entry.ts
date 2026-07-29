@@ -1,5 +1,5 @@
 import { createStartHandler, defaultStreamHandler } from '@tanstack/react-start/server'
-import { syncFromSharePoint, downloadPendingImages, pushChangedRecords, discoverSharePoint, syncById, getSpSyncs, syncStalestList, setupSignonList, resetDeltaTokens } from './lib/sharepoint-sync.server'
+import { downloadPendingImages, downloadPendingImagesRotating, pushChangedRecords, discoverSharePoint, syncById, getSpSyncs, syncStalestList, syncWebhookList, setupSignonList, resetDeltaTokens } from './lib/sharepoint-sync.server'
 import { syncAisPositions } from './lib/aisstream.server'
 import { runExpiryAlerts } from './lib/permit-expiry-cron.server'
 import { syncFleetPositions } from './lib/mygps.server'
@@ -92,7 +92,7 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
           results.push({ name: s.name, ok: false, error: e instanceof Error ? e.message : String(e) })
         }
       }
-      ctx.waitUntil(downloadPendingImages().catch(() => 0))
+      ctx.waitUntil(downloadPendingImagesRotating(10).catch(() => 0))
       return new Response(JSON.stringify({ ok: true, results }), {
         status: 200, headers: { 'Content-Type': 'application/json' },
       })
@@ -307,10 +307,19 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
   // POST: SharePoint change notification.
   // Return 202 immediately — SP will retry if we don't respond within 5s.
   // Use waitUntil so the Worker stays alive while the sync runs.
+  //
+  // Syncs ONLY the list the subscription is registered for (syncWebhookList).
+  // It previously called syncFromSharePoint(), which loops every enabled list in
+  // one invocation — the same thing the cron deliberately avoids because it
+  // exceeds Cloudflare's subrequest limit, so the instant sync died silently.
   if (request.method === 'POST') {
     ctx.waitUntil(
-      syncFromSharePoint()
-        .then(() => downloadPendingImages())
+      syncWebhookList()
+        .then((r) => {
+          if (r) console.log(`[sp-webhook] ${r.name}: synced=${r.synced} errors=${r.errors}`)
+          return downloadPendingImagesRotating(10)
+        })
+        .then((img) => console.log(`[sp-webhook] images downloaded=${img.downloaded}/${img.processed} offset=${img.offset} pending=${img.pending}`))
         .catch((e) => console.error('[sp-webhook] sync error:', e))
     )
     return new Response('', { status: 202 })
@@ -748,10 +757,12 @@ export default {
     // least-recently-synced list, rotating through the whole set over time.
     ctx.waitUntil(
       syncStalestList()
-        // Rotate the batch window each quarter-hour so pending rows that always
-        // fail (no SharePoint match) can't permanently block the ones behind them.
-        .then((r) => { if (r) console.log(`[sp-cron] ${r.name}: synced=${r.synced} errors=${r.errors}`); return downloadPendingImages(10, (new Date().getUTCMinutes() % 4) * 10) })
-        .then((img) => { if (img.downloaded || img.results.length) console.log(`[sp-cron] images downloaded=${img.downloaded}/${img.results.length}`) })
+        // Image backfill walks the WHOLE pending set via a persisted cursor. The
+        // old (UTCminutes % 4) * 10 window only ever produced offsets 0/10/20/30,
+        // so with a backlog over 40 rows every vessel past the first 40 was never
+        // reached — newly uploaded photos for those vessels never downloaded.
+        .then((r) => { if (r) console.log(`[sp-cron] ${r.name}: synced=${r.synced} errors=${r.errors}`); return downloadPendingImagesRotating(10) })
+        .then((img) => { if (img.processed) console.log(`[sp-cron] images downloaded=${img.downloaded}/${img.processed} offset=${img.offset}→${img.nextOffset} pending=${img.pending}`) })
         .catch((e) => console.error('[sp-cron] error:', e))
     )
 

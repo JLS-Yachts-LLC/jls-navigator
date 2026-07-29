@@ -179,6 +179,80 @@ export async function syncById(id: string): Promise<{ synced: number; errors: nu
   return result
 }
 
+/**
+ * Sync only the list the SharePoint webhook subscription is registered for.
+ *
+ * The subscription is created against a single list (getSpConfig().listName — see
+ * registerSharePointWebhook), so a change notification can only ever concern that
+ * list. Previously the webhook called syncFromSharePoint(), which loops EVERY
+ * enabled list in one Worker invocation — the exact thing the cron avoids because
+ * it exceeds Cloudflare's per-invocation subrequest limit, so the "instant" sync
+ * silently died partway. Syncing just the notified list keeps the work bounded.
+ *
+ * Falls back to the stalest list if nothing matches, so a notification is never wasted.
+ */
+export async function syncWebhookList(): Promise<{ name: string; synced: number; errors: number } | null> {
+  const cfg = await getSpConfig()
+  const want = String(cfg.listName ?? '').trim().toLowerCase()
+  const enabled = (await getSpSyncs().catch(() => [] as SpSyncConfig[])).filter(s => s.enabled)
+  const matches = want
+    ? enabled.filter(s => String(s.listName ?? '').trim().toLowerCase() === want)
+    : []
+
+  if (!matches.length) return syncStalestList()
+
+  let synced = 0, errors = 0
+  for (const s of matches) {
+    try {
+      const r = await syncById(s.id)
+      synced += r.synced; errors += r.errors
+    } catch (e) {
+      errors++
+      console.error(`[sp-webhook] ${s.name} failed:`, e instanceof Error ? e.message : String(e))
+    }
+  }
+  return { name: matches.map(m => m.name).join(', '), synced, errors }
+}
+
+/** Rows still needing a vessel image (same predicate downloadPendingImages uses). */
+async function pendingImageCount(): Promise<number> {
+  const { count } = await supabaseAdmin
+    .from('yachts')
+    .select('id', { count: 'exact', head: true })
+    .or('vessel_image.is.null,vessel_image.like.{*')
+  return count ?? 0
+}
+
+/**
+ * Image backfill that walks the WHOLE pending set via a persisted cursor.
+ *
+ * The cron used to call downloadPendingImages(10, (UTCminutes % 4) * 10), which
+ * only ever produced offsets 0/10/20/30 — so with a backlog longer than 40 rows
+ * (ordered by vessel_name) every vessel past the first 40 was never processed
+ * automatically, and newly uploaded photos for those vessels never arrived.
+ * The cursor advances each run and wraps at the end of the set, so the backlog
+ * is fully covered while still paging past rows that always fail.
+ */
+export async function downloadPendingImagesRotating(
+  limit = 10,
+): Promise<{ downloaded: number; processed: number; offset: number; nextOffset: number; pending: number }> {
+  const pending = await pendingImageCount()
+  if (pending === 0) return { downloaded: 0, processed: 0, offset: 0, nextOffset: 0, pending: 0 }
+
+  const cfgRow = await (supabaseAdmin as any)
+    .from('integration_settings').select('config').eq('integration_name', 'sharepoint').maybeSingle()
+  const stored = Number(cfgRow?.data?.config?.image_cursor ?? 0)
+  const offset = Number.isFinite(stored) && stored >= 0 && stored < pending ? Math.floor(stored) : 0
+
+  const r = await downloadPendingImages(limit, offset)
+
+  // Advance past the batch we just attempted; wrap when we run off the end.
+  const nextOffset = offset + limit >= pending ? 0 : offset + limit
+  await saveSpConfigPatch({ image_cursor: nextOffset }).catch(() => {})
+
+  return { downloaded: r.downloaded, processed: r.processed, offset, nextOffset, pending }
+}
+
 // ─── Graph API helpers ─────────────────────────────────────────────────────────
 
 export async function getGraphToken(tenantId: string, clientId: string, clientSecret: string): Promise<string> {
@@ -789,6 +863,9 @@ async function _syncYachts(
 
   const updateById = new Map<string, Record<string, any>>()
   const insertByKey = new Map<string, Record<string, any>>()
+  // Rows dropped because the mapped vessel-name column was empty. Counted (not
+  // silently swallowed) so "0 errors" can't hide vessels that never landed.
+  let skippedNoName = 0
   for (const item of allChanged) {
     if (item['@removed']) continue
     const fields = item.fields ?? {}
@@ -810,7 +887,7 @@ async function _syncYachts(
         record[dbField] = raw !== '' ? raw : null
       }
     }
-    if (!record.vessel_name) continue
+    if (!record.vessel_name) { skippedNoName++; continue }
 
     record.sharepoint_item_id = item.id
     record.sharepoint_synced_at = new Date().toISOString()
@@ -828,7 +905,14 @@ async function _syncYachts(
     }
   }
 
-  return bulkPersist('yachts', updateById, insertByKey)
+  const persisted = await bulkPersist('yachts', updateById, insertByKey)
+  if (skippedNoName > 0) {
+    const msg = `${skippedNoName} SharePoint row(s) skipped — mapped vessel-name column empty`
+    console.warn(`[sp-yachts] ${msg}`)
+    persisted.samples = [msg, ...(persisted.samples ?? [])].slice(0, 8)
+  }
+  console.log(`[sp-yachts] items=${allChanged.length} update=${updateById.size} insert=${insertByKey.size} skipped=${skippedNoName}`)
+  return persisted
 }
 
 async function _syncPermits(cfg: SpConfig): Promise<{ synced: number; errors: number; samples?: string[] }> {
