@@ -402,9 +402,11 @@ async function renderInvoicePdfStamped(t: TransformedInvoice, title: string): Pr
     // accept ANY numeric suffix — keying only on `1` left middle pages at 0.00.
     const tot = (base: string) => pc.fields[base] ?? pc.fields[`${base}1`]
       ?? pc.fields[Object.keys(pc.fields).find((k) => k.startsWith(base) && /^\d+$/.test(k.slice(base.length))) ?? '']
-    if (tot('totalamount')) draw(page, tot('totalamount')!, fmtMoney(sA), true)
+    // Zero renders BLANK (fmtNum), matching the original templates: a page that
+    // carries only description rows shows an empty subtotal bar, not "0.00".
+    if (tot('totalamount')) draw(page, tot('totalamount')!, fmtNum(sA), true)
     if (tot('totalvat')) draw(page, tot('totalvat')!, fmtNum(sV), true)
-    if (tot('totalltotalamount')) draw(page, tot('totalltotalamount')!, fmtMoney(sT), true)
+    if (tot('totalltotalamount')) draw(page, tot('totalltotalamount')!, fmtNum(sT), true)
 
     if (pageCount > 1 && pc.pageNo) {
       const b = pc.pageNo

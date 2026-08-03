@@ -394,9 +394,11 @@ export async function buildQuotationPdf(q: QuoteData, opts?: { background?: Uint
     // suffix so middle pages show their subtotal instead of 0.00.
     const t = (base: string) => pc.fields[base] ?? pc.fields[`${base}1`]
       ?? pc.fields[Object.keys(pc.fields).find((k) => k.startsWith(base) && /^\d+$/.test(k.slice(base.length))) ?? '']
-    if (t('totalamount')) draw(page, t('totalamount')!, fmtAlways(subA), true)
+    // Zero renders BLANK (fmt), matching the original templates: a page that
+    // carries only description rows shows an empty subtotal bar, not "0.00".
+    if (t('totalamount')) draw(page, t('totalamount')!, fmt(subA), true)
     if (t('totalvat')) draw(page, t('totalvat')!, fmt(subV), true)
-    if (t('totalltotalamount')) draw(page, t('totalltotalamount')!, fmtAlways(subT), true)
+    if (t('totalltotalamount')) draw(page, t('totalltotalamount')!, fmt(subT), true)
 
     // Page numbers are baked as "Page 1 of 1" / "Page 1 of 2" / "Page 2 of 2" —
     // correct for 1- and 2-page quotes; redraw for 3+ item pages.
