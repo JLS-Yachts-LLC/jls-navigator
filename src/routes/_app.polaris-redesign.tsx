@@ -86,6 +86,18 @@ function PolarisRedesignApp() {
   useEffect(() => {
     if (search.screen) setScreen(search.screen);
   }, [search.screen]);
+
+  /**
+   * Switch screens AND record it in the URL, so a refresh (or a shared link, or
+   * Back) returns to the screen you were on. Previously the screen lived only in
+   * component state while ?screen= kept its stale value, so refreshing from e.g.
+   * Immigration dropped you back on whatever screen the URL still named.
+   * `replace` keeps in-shell switching out of the Back history as separate entries.
+   */
+  function selectScreen(s: string) {
+    setScreen(s);
+    navigate({ to: "/polaris-redesign", search: { screen: s } as any, replace: true });
+  }
   // null = Global (all vessels) — the default view everywhere. A specific vessel
   // is only ever applied when the user explicitly picks one (per-page dropdowns,
   // or the visa-reports selector), never auto-selected on load.
@@ -185,7 +197,7 @@ function PolarisRedesignApp() {
           // their app route — rendered inside the same Polaris chrome by AppLayout.
           const item = navItemForScreen(s);
           if (item?.route) navigate({ to: item.route as any });
-          else setScreen(s);
+          else selectScreen(s);
         }}
         vesselName={yacht?.vessel_name ?? "All vessels"}
         userInitials={initials}
@@ -201,7 +213,7 @@ function PolarisRedesignApp() {
         ) : screen === "dashboard" ? (
           <PolarisDashboard
             yachts={yachts}
-            onOpenReports={() => setScreen("visa-reports")}
+            onOpenReports={() => selectScreen("visa-reports")}
             leoToken={leoToken}
             userName={user?.email ?? ""}
           />
@@ -274,7 +286,7 @@ function PolarisRedesignApp() {
             message={`The “${screen}” screen is part of the redesign roadmap.`}
             action={{
               label: "Back to dashboard",
-              onClick: () => setScreen("dashboard"),
+              onClick: () => selectScreen("dashboard"),
             }}
           />
         )}

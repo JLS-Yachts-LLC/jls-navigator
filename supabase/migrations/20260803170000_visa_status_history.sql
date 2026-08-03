@@ -73,3 +73,12 @@ drop trigger if exists trg_log_visa_status_change on public.visa_applications;
 create trigger trg_log_visa_status_change
   after update of status on public.visa_applications
   for each row execute function public.log_visa_status_change();
+
+-- Backfill a baseline row for applications that predate the trigger, so the Visa
+-- History panel shows their current state instead of nothing. source='backfill'
+-- distinguishes these from genuinely observed transitions.
+insert into public.visa_status_history (visa_id, old_status, new_status, changed_at, source)
+select a.id, null, a.status, coalesce(a.submitted_at, a.created_at), 'backfill'
+from public.visa_applications a
+where a.status is not null
+  and not exists (select 1 from public.visa_status_history h where h.visa_id = a.id);
