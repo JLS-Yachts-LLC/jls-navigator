@@ -39,6 +39,10 @@ export interface VisaOccupationSelectProps {
   disabled?:    boolean;
   error?:       string;
   required?:    boolean;
+  /** When true the field is a free-text combobox: pick a suggestion OR type any
+   *  occupation. Used for the visa form so a value can always be entered even
+   *  when nothing auto-populates and none of the suggestions fit. */
+  allowCustom?: boolean;
 }
 
 // ─── Default options (replace with your seeded occupation list) ──────────────
@@ -64,6 +68,7 @@ export function VisaOccupationSelect({
   disabled = false,
   error,
   required = false,
+  allowCustom = false,
 }: VisaOccupationSelectProps) {
   const [open, setOpen] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
@@ -71,6 +76,108 @@ export function VisaOccupationSelect({
   const listRef       = useRef<HTMLDivElement>(null);
 
   const selectedOption = options.find((o) => o.value === value) ?? null;
+
+  // Close on outside click (shared by both modes)
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // ─── Editable combobox mode ───────────────────────────────────────────────
+  // Type any occupation, or click a suggestion. The typed text IS the value, so
+  // a value can always be entered even when nothing auto-populates.
+  if (allowCustom) {
+    const text = value ?? '';
+    const matches = text.trim()
+      ? options.filter((o) => o.label.toLowerCase().includes(text.trim().toLowerCase()))
+      : options;
+    const exact = options.some((o) => o.label.toLowerCase() === text.trim().toLowerCase());
+
+    return (
+      <div ref={containerRef} style={{ position: 'relative', width: '100%' }}>
+        <div style={{ position: 'relative' }}>
+          <input
+            type="text"
+            value={text}
+            disabled={disabled}
+            placeholder={placeholder}
+            aria-required={required}
+            onChange={(e) => { onChange(e.target.value); if (!open) setOpen(true); }}
+            onFocus={() => setOpen(true)}
+            onKeyDown={(e) => { if (e.key === 'Escape') setOpen(false); if (e.key === 'Enter') { e.preventDefault(); setOpen(false); } }}
+            style={{
+              width: '100%', padding: '12px 40px 12px 16px', borderRadius: '10px',
+              border: error ? '1px solid #EF4444' : open ? '1px solid #4590BA' : '1px solid rgba(255,255,255,0.18)',
+              background: 'rgba(255,255,255,0.04)', color: '#FFFFFF',
+              fontFamily: "'DINPro','Inter',sans-serif", fontSize: '15px', fontWeight: 500,
+              outline: 'none', boxShadow: open ? '0 0 0 3px rgba(69,144,186,0.20)' : 'none',
+              opacity: disabled ? 0.5 : 1, cursor: disabled ? 'not-allowed' : 'text',
+            }}
+          />
+          <i
+            className={`ti ${open ? 'ti-chevron-up' : 'ti-chevron-down'}`}
+            aria-hidden="true"
+            onClick={() => { if (!disabled) setOpen((o) => !o); }}
+            style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)',
+                     fontSize: '14px', color: 'rgba(255,255,255,0.55)', cursor: disabled ? 'not-allowed' : 'pointer' }}
+          />
+        </div>
+
+        {open && (matches.length > 0 || (!!text.trim() && !exact)) && (
+          <div
+            role="listbox"
+            style={{
+              position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0, zIndex: 50,
+              maxHeight: '260px', overflowY: 'auto', borderRadius: '10px',
+              border: '1px solid rgba(255,255,255,0.12)', background: '#0A2E42',
+              boxShadow: '0 12px 28px rgba(0,0,0,0.35)', padding: '6px',
+            }}
+          >
+            {matches.map((option) => {
+              const isSelected = option.label.toLowerCase() === text.trim().toLowerCase();
+              return (
+                <div
+                  key={option.value}
+                  role="option"
+                  aria-selected={isSelected}
+                  onClick={() => { onChange(option.value); setOpen(false); }}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '10px 12px', borderRadius: '7px', cursor: 'pointer',
+                    background: isSelected ? 'rgba(69,144,186,0.18)' : 'transparent',
+                  }}
+                  onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLDivElement).style.background = 'rgba(255,255,255,0.07)'; }}
+                  onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
+                >
+                  <span style={{ fontFamily: "'DINPro','Inter',sans-serif", fontSize: '15px',
+                                 fontWeight: isSelected ? 500 : 400, color: isSelected ? '#96CBC7' : '#FFFFFF' }}>
+                    {option.label}
+                  </span>
+                  {isSelected && <i className="ti ti-check" aria-hidden="true" style={{ fontSize: '14px', color: '#96CBC7' }} />}
+                </div>
+              );
+            })}
+            {!!text.trim() && !exact && (
+              <div style={{ padding: '9px 12px', fontFamily: "'DINPro','Inter',sans-serif", fontSize: '13px',
+                            color: 'rgba(255,255,255,0.55)', borderTop: matches.length ? '1px solid rgba(255,255,255,0.08)' : 'none',
+                            marginTop: matches.length ? 4 : 0 }}>
+                Custom entry — saved as “{text.trim()}”.
+              </div>
+            )}
+          </div>
+        )}
+
+        {error && (
+          <div role="alert" style={{ marginTop: '6px', fontFamily: "'DINPro','Inter',sans-serif", fontSize: '13px', color: '#F87171' }}>
+            {error}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   // Close on outside click
   useEffect(() => {

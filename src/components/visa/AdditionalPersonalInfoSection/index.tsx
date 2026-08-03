@@ -378,9 +378,8 @@ export const AdditionalPersonalInfoSection = forwardRef<AdditionalPersonalInfoHa
       return 'Please confirm the highlighted fields before continuing.'
     }
 
-    if (fields.occupation.value && !['captain', 'seaman'].includes(fields.occupation.value.toLowerCase())) {
-      return 'Occupation must be Captain or Seaman.'
-    }
+    // Occupation is free-text (Captain / Seaman are only suggestions) so a value
+    // can always be entered — no hard Captain/Seaman restriction.
 
     return null
   }
@@ -681,10 +680,12 @@ export const AdditionalPersonalInfoSection = forwardRef<AdditionalPersonalInfoHa
           >
             <VisaOccupationSelect
               value={fields.occupation.value || null}
-              // UAE/GCC crew visas categorise every rank as Captain or Seaman —
-              // match the validation so any selection is valid. Choosing a value
-              // is itself the confirmation (no separate Confirm click needed), so
-              // it works cleanly for a new application or when changing a stored one.
+              // UAE/GCC crew visas usually categorise a rank as Captain or Seaman,
+              // but the field is free-text so any occupation can be entered when
+              // nothing auto-populates and neither suggestion fits. Typing or
+              // choosing is itself the confirmation (no separate Confirm click).
+              allowCustom
+              placeholder="Select or type an occupation…"
               options={[{ value: 'captain', label: 'Captain' }, { value: 'seaman', label: 'Seaman' }]}
               onChange={v => setField('occupation', v, 'ocr_confirmed')}
             />

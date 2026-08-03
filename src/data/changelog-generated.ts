@@ -5,9 +5,13 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
-    "version": "2.32.4",
+    "version": "2.33.0",
     "date": "2026-08-03",
     "entries": [
+      {
+        "type": "feature",
+        "title": "Sign on/off changes on a visa record are no longer lost — every change is kept as Movement History (shown on the visa page with who/when), and movements on crew-linked visas flow into the Sign On/Off module automatically"
+      },
       {
         "type": "fix",
         "title": "A page carrying only description lines now leaves its Total Amount bar blank instead of printing 0.00, matching the original templates"
