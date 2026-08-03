@@ -71,16 +71,21 @@ function buildCsv(rows: VisaRow[], vesselName: string): string {
     const s = v ?? ''
     return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g,'""')}"` : s
   }
+  // Blank cells (not the display "—" placeholder) for missing dates — cleaner in
+  // a spreadsheet, and the em-dash was showing as mojibake in Excel.
+  const fd = (d: string | null) => (d ? fmt(d) : '')
   const lines = [headers.join(',')]
   for (const r of rows) {
     lines.push([
       esc(r.given_name), esc(r.surname), esc(r.nationality), esc(r.passport_number),
-      esc(r.rank_rating), esc(r.visa_number), esc(fmt(r.visa_issuance_date)),
-      esc(fmt(r.first_entry_expiry)), esc(fmt(r.visa_expiry)),
-      esc(fmt(r.sign_on_date)), esc(fmt(r.sign_off_date)), esc(statusLabel(r.status)),
+      esc(r.rank_rating), esc(r.visa_number), esc(fd(r.visa_issuance_date)),
+      esc(fd(r.first_entry_expiry)), esc(fd(r.visa_expiry)),
+      esc(fd(r.sign_on_date)), esc(fd(r.sign_off_date)), esc(statusLabel(r.status)),
     ].join(','))
   }
-  return lines.join('\r\n')
+  // UTF-8 BOM so Excel decodes accented names correctly (without it Excel assumes
+  // Windows-1252 and ç/é/— turn into "Ã§"/"â€"" mojibake).
+  return '﻿' + lines.join('\r\n')
 }
 
 // ─── PDF ──────────────────────────────────────────────────────────────────────
