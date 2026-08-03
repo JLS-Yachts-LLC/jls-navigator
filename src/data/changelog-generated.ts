@@ -9,6 +9,14 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-08-03",
     "entries": [
       {
+        "type": "feature",
+        "title": "Visa application dates can be set to any date — pick an application date when submitting (defaults to today) or edit it later on the visa, and future-dated 'planned' submissions show a clear reminder banner the day before and the day of"
+      },
+      {
+        "type": "fix",
+        "title": "Newly submitted visa applications no longer disappear when the crew member has an expired or cancelled visa in their history"
+      },
+      {
         "type": "fix",
         "title": "Per-page \"Total Amount\" on multi-page invoices, quotations, pro-formas and purchase orders now shows a running total instead of going blank"
       },
