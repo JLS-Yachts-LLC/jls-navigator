@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-08-03",
     "entries": [
       {
+        "type": "fix",
+        "title": "The per-page Total Amount bar on multi-page invoices, quotations, pro-formas and purchase orders now shows that page's own total, and 0.00 on a page carrying only description lines"
+      },
+      {
         "type": "feature",
         "title": "New Duplicate Crew screen finds the same person recorded twice and merges their split document folders"
       },
