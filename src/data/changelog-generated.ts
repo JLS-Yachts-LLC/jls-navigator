@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "Adding a sign on/off record can no longer overwrite an existing one — editing is clearly labelled (Save changes, with a warning), edit mode is dropped when the dialog closes, and a Save as new record button logs a further movement while keeping the earlier one"
+      },
+      {
+        "type": "fix",
         "title": "The per-page Total Amount bar on multi-page invoices, quotations, pro-formas and purchase orders now shows that page's own total, and 0.00 on a page carrying only description lines"
       },
       {
