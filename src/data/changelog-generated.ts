@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "New Duplicate Crew screen finds the same person recorded twice and merges their split document folders"
+      },
+      {
+        "type": "feature",
         "title": "Visa CSV/PDF/Email exports now respect every filter on screen — the applied-date range, search text and status chip are carried through as well as validity and year, and the emailed report no longer ignores filters entirely"
       },
       {
