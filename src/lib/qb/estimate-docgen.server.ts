@@ -342,6 +342,8 @@ export async function buildQuotationPdf(q: QuoteData, opts?: { background?: Uint
     totalamountfinal1: q.convertedTotal != null ? fmtAlways(+q.convertedTotal.toFixed(2)) : '',
   }
 
+  // Running totals across pages — the per-page bar shows the cumulative figure.
+  let runA = 0, runV = 0, runT = 0
   for (let pi = 0; pi < pageCount; pi++) {
     const kind = kinds[pi]
     const pc: StampPage = coords[kind]
@@ -377,7 +379,6 @@ export async function buildQuotationPdf(q: QuoteData, opts?: { background?: Uint
     }
 
     // Items.
-    let subA = 0, subV = 0, subT = 0
     pageRows[pi].forEach((r, ri) => {
       const y = pc.itemRows.ys[ri]
       if (y == null) return
@@ -385,7 +386,7 @@ export async function buildQuotationPdf(q: QuoteData, opts?: { background?: Uint
         const v = r.cells[key]
         if (v) draw(page, { ...cf, y }, v)
       }
-      subA += r.subAmount; subV += r.subVat; subT += r.subTotal
+      runA += r.subAmount; runV += r.subVat; runT += r.subTotal
     })
 
     // Page totals bar (black → white text). Mid pages use the "…1" fields.
@@ -396,9 +397,9 @@ export async function buildQuotationPdf(q: QuoteData, opts?: { background?: Uint
       ?? pc.fields[Object.keys(pc.fields).find((k) => k.startsWith(base) && /^\d+$/.test(k.slice(base.length))) ?? '']
     // Zero renders BLANK (fmt), matching the original templates: a page that
     // carries only description rows shows an empty subtotal bar, not "0.00".
-    if (t('totalamount')) draw(page, t('totalamount')!, fmt(subA), true)
-    if (t('totalvat')) draw(page, t('totalvat')!, fmt(subV), true)
-    if (t('totalltotalamount')) draw(page, t('totalltotalamount')!, fmt(subT), true)
+    if (t('totalamount')) draw(page, t('totalamount')!, fmtAlways(runA), true)
+    if (t('totalvat')) draw(page, t('totalvat')!, fmtAlways(runV), true)
+    if (t('totalltotalamount')) draw(page, t('totalltotalamount')!, fmtAlways(runT), true)
 
     // Page numbers are baked as "Page 1 of 1" / "Page 1 of 2" / "Page 2 of 2" —
     // correct for 1- and 2-page quotes; redraw for 3+ item pages.
