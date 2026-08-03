@@ -258,6 +258,9 @@ export async function buildPurchaseOrderPdf(q: DocData, opts?: { background?: Ui
       ?? pc.fields[Object.keys(pc.fields).find((k) => k.startsWith(base) && /^\d+$/.test(k.slice(base.length))) ?? '']
     // fmtAlways, not fmt: a page carrying only description rows totals zero and
     // must print "0.00" — an empty bar reads as a rendering fault.
+    // DELIBERATE divergence from the retired n8n workflow, whose formatNumber()
+    // returned '' for zero and so left the bar blank. Confirmed by Matt 2026-08-03;
+    // don't "restore parity" here.
     if (t('totalamount')) draw(page, t('totalamount')!, fmtAlways(subA), true)
     if (t('totalvat')) draw(page, t('totalvat')!, fmtAlways(subV), true)
     if (t('totalltotalamount')) draw(page, t('totalltotalamount')!, fmtAlways(subT), true)

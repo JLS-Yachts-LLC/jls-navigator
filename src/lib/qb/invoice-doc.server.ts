@@ -406,6 +406,9 @@ async function renderInvoicePdfStamped(t: TransformedInvoice, title: string): Pr
       ?? pc.fields[Object.keys(pc.fields).find((k) => k.startsWith(base) && /^\d+$/.test(k.slice(base.length))) ?? '']
     // fmtMoney, not fmtNum: a page carrying only description lines totals zero and
     // must print "0.00" — an empty bar reads as a rendering fault.
+    // DELIBERATE divergence from the retired n8n workflow, whose formatNumber()
+    // returned '' for zero and so left the bar blank. Confirmed by Matt 2026-08-03;
+    // don't "restore parity" here.
     if (tot('totalamount')) draw(page, tot('totalamount')!, fmtMoney(pgA), true)
     if (tot('totalvat')) draw(page, tot('totalvat')!, fmtMoney(pgV), true)
     if (tot('totalltotalamount')) draw(page, tot('totalltotalamount')!, fmtMoney(pgT), true)
