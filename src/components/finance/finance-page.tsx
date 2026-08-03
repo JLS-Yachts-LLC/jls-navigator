@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { QbExcelImportPage } from "@/components/qb/excel-import-page";
 import { QbExtensionTab } from "@/components/finance/qb-extension-tab";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchAllRows } from "@/lib/fetch-all";
 
 // ─── CSV export utility ───────────────────────────────────────────────────────
 
@@ -1409,11 +1410,12 @@ function VisaTracker() {
 
   async function load() {
     setLoading(true);
-    const { data, error } = await (supabase as any)
+    // fetchAllRows pages past PostgREST's 1000-rows-per-request server cap —
+    // a plain .limit(2000) still comes back with only 1000.
+    const { data, error } = await fetchAllRows(() => (supabase as any)
       .from("visa_applications")
       .select("id, yacht_id, given_name, surname, nationality, visa_type, visa_number, visa_issuance_date, country_code, status, submitted_at, created_at, billing_status, invoice_ref, invoice_amount, yacht:yachts(vessel_name)")
-      .order("created_at", { ascending: false })
-      .limit(2000);
+      .order("created_at", { ascending: false }));
     if (error) toast.error(error.message);
     else setItems((data ?? []) as TrackerVisa[]);
     setLoading(false);
