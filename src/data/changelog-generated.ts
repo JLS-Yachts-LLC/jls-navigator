@@ -9,6 +9,14 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-08-03",
     "entries": [
       {
+        "type": "fix",
+        "title": "Finance Invoice Tracker (Visas) no longer caps at 1000 records — all visa rows now load, so the Total and Pending Review counts are accurate"
+      },
+      {
+        "type": "feature",
+        "title": "Full visa history per crew member, plus a status log recording who submitted, approved or cancelled each application"
+      },
+      {
         "type": "feature",
         "title": "Visas show as Activated automatically once the crew member has arrived — a green Activated badge replaces the 30-day activation countdown on the dashboard and visa page, and activation-expiry alerts stop for arrived crew"
       },
