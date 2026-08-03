@@ -5,6 +5,62 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.32.4",
+    "date": "2026-08-03",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Visa Occupation field is now editable and valid on selection — the dropdown offers only the accepted Captain/Seaman categories and choosing one confirms it immediately, instead of allowing invalid picks that failed validation or leaving a stuck Confirm prompt"
+      }
+    ]
+  },
+  {
+    "version": "2.32.3",
+    "date": "2026-07-29",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "INVOICE TO drops the Emirates row and aligns the address to its label"
+      },
+      {
+        "type": "fix",
+        "title": "INVOICE TO address prints structured, full and at the matching 7pt"
+      },
+      {
+        "type": "fix",
+        "title": "Instant webhook sync, full-fleet image backfill, visible row skips"
+      }
+    ]
+  },
+  {
+    "version": "2.32.2",
+    "date": "2026-07-28",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Item qty/amounts print on the first line of the item, not the middle"
+      },
+      {
+        "type": "fix",
+        "title": "QUOTE TO address can no longer overlap the Emirates row on any document"
+      }
+    ]
+  },
+  {
+    "version": "2.32.1",
+    "date": "2026-07-27",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Quotation, Pro-Forma and PO PDFs also print the Date in regular weight"
+      },
+      {
+        "type": "fix",
+        "title": "Invoice PDF Date is no longer bold — matches Invoice No / Place of Supply"
+      }
+    ]
+  },
+  {
     "version": "2.32.0",
     "date": "2026-07-22",
     "entries": [
