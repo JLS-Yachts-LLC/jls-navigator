@@ -30,6 +30,7 @@ interface VisaApplication {
   visa_number: string | null
   visa_expiry: string | null
   sign_on_date: string | null
+  arrival_date: string | null
   submitted_at: string | null
   approved_at: string | null
   visa_issuance_date: string | null
@@ -136,6 +137,7 @@ function statusHint(app: VisaApplication): string {
     case 'in_review':     return 'In review by immigration — no action needed yet.'
     case 'processing':    return 'Processing — no action needed yet.'
     case 'approved': {
+      if (isActivated(app)) return `Approved & activated — crew arrived${app.arrival_date ? ` on ${app.arrival_date.slice(8, 10)}/${app.arrival_date.slice(5, 7)}/${app.arrival_date.slice(0, 4)}` : ''}. Nothing further to do.`
       const d = daysToActivate(app)
       return d == null
         ? 'Approved — crew must activate (enter the country) within 30 days of issuance.'
@@ -147,6 +149,15 @@ function statusHint(app: VisaApplication): string {
     case 'cancelled':     return 'Cancelled.'
     default:              return 'Not started.'
   }
+}
+
+// A visa is ACTIVATED once the crew member has entered the country: an arrival
+// date on/before today, or a status that implies they're already on board.
+// Activated visas show a green badge and are excluded from activation countdowns.
+function isActivated(app: VisaApplication): boolean {
+  if (app.status === 'on_board' || app.status === 'completed') return true
+  const a = app.arrival_date
+  return !!a && a.slice(0, 10) <= new Date().toLocaleDateString('en-CA')
 }
 
 // Days remaining in the 30-day post-issuance activation window (null if no date).
@@ -318,7 +329,7 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
     const [appsRes, alertsRes] = await Promise.all([
       fetchAllRows(() => (supabase as any)
         .from('visa_applications')
-        .select('id, crew_member_id, yacht_id, vessel_name, country_code, status, visa_document_url, passport_number, given_name, surname, nationality, visa_number, visa_expiry, sign_on_date, submitted_at, approved_at, visa_issuance_date, application_notes, created_at, crew_members(full_name, first_name, last_name), yachts(vessel_name)')
+        .select('id, crew_member_id, yacht_id, vessel_name, country_code, status, visa_document_url, passport_number, given_name, surname, nationality, visa_number, visa_expiry, sign_on_date, arrival_date, submitted_at, approved_at, visa_issuance_date, application_notes, created_at, crew_members(full_name, first_name, last_name), yachts(vessel_name)')
         .order('created_at', { ascending: false })),
       (supabase as any)
         .from('compliance_alerts')
@@ -472,6 +483,7 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
     const msgs: BannerAlert[] = []
     for (const app of applications) {
       if (app.status !== 'approved') continue
+      if (isActivated(app)) continue // crew already arrived — the visa is active
       const d = daysToActivate(app)
       if (d == null || d > 30) continue
       const who = getCrewName(app)
@@ -784,8 +796,16 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
                       </div>
                     )
                   })()}
-                  {/* 30-day activation countdown on approved visas */}
+                  {/* 30-day activation countdown on approved visas — replaced by a
+                      green Activated badge once the crew member has arrived. */}
                   {app.status === 'approved' && (() => {
+                    if (isActivated(app)) {
+                      return (
+                        <span title={statusHint(app)} style={{ fontFamily: FONTS.display, fontSize: 10, fontWeight: 700, color: '#22c55e', whiteSpace: 'nowrap' }}>
+                          ✓ Activated
+                        </span>
+                      )
+                    }
                     const d = daysToActivate(app)
                     if (d == null) return null
                     const expired = d < 0

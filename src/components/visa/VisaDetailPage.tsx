@@ -376,6 +376,16 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
             <h1 className="mt-0.5 font-display text-[1.2rem] font-semibold tracking-tight">{name}</h1>
           </div>
           <span className={cn("ml-2 rounded-full px-4 py-1.5 text-sm font-bold tracking-wide shadow-sm", sm.cls)}>{sm.label}</span>
+          {/* Activated = the crew member has arrived in-country (arrival date on/before
+              today, or an on-board/completed status). Clears the activation countdown. */}
+          {(visa.status === "on_board" || visa.status === "completed" ||
+            (!!visa.arrival_date && String(visa.arrival_date).slice(0, 10) <= new Date().toLocaleDateString("en-CA"))) &&
+            !["cancelled", "rejected", "expired", "draft"].includes(visa.status ?? "") && (
+            <span className="rounded-full bg-emerald-500/15 px-4 py-1.5 text-sm font-bold tracking-wide text-emerald-500 shadow-sm"
+              title={visa.arrival_date ? `Crew arrived ${fmt(String(visa.arrival_date).slice(0, 10))} — the visa is activated.` : "Crew is on board — the visa is activated."}>
+              ✓ Activated
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <Button
