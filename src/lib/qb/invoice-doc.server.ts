@@ -397,12 +397,16 @@ async function renderInvoicePdfStamped(t: TransformedInvoice, title: string): Pr
       for (const [key, cf] of Object.entries(pc.itemRows.cols)) { const v = r.cells[key]; if (v) draw(page, { ...cf, y }, v) }
       sA += r.a; sV += r.v; sT += r.tt
     })
+    // Per-page totals bar. The Word templates suffix these fields by page number
+    // (page 1 = `…1`, page 2 of a 3-pager = `…2`, final page = unsuffixed), so
+    // accept ANY numeric suffix — keying only on `1` left middle pages at 0.00.
     const tot = (base: string) => pc.fields[base] ?? pc.fields[`${base}1`]
+      ?? pc.fields[Object.keys(pc.fields).find((k) => k.startsWith(base) && /^\d+$/.test(k.slice(base.length))) ?? '']
     if (tot('totalamount')) draw(page, tot('totalamount')!, fmtMoney(sA), true)
     if (tot('totalvat')) draw(page, tot('totalvat')!, fmtNum(sV), true)
     if (tot('totalltotalamount')) draw(page, tot('totalltotalamount')!, fmtMoney(sT), true)
 
-    if (pageCount > 2 && pc.pageNo) {
+    if (pageCount > 1 && pc.pageNo) {
       const b = pc.pageNo
       page.drawRectangle({ x: b.x - 1, y: b.y - 1.5, width: b.w + 14, height: b.h + 4, color: WHITE })
       page.drawText('Page ', { x: b.x, y: b.y, size: 5.2, font: bold, color: BLACK })

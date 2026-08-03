@@ -389,14 +389,18 @@ export async function buildQuotationPdf(q: QuoteData, opts?: { background?: Uint
     })
 
     // Page totals bar (black → white text). Mid pages use the "…1" fields.
+    // Per-page totals bar — the templates suffix these by page number (page 1 =
+    // `…1`, page 2 of a 3-pager = `…2`, final = unsuffixed): accept any numeric
+    // suffix so middle pages show their subtotal instead of 0.00.
     const t = (base: string) => pc.fields[base] ?? pc.fields[`${base}1`]
+      ?? pc.fields[Object.keys(pc.fields).find((k) => k.startsWith(base) && /^\d+$/.test(k.slice(base.length))) ?? '']
     if (t('totalamount')) draw(page, t('totalamount')!, fmtAlways(subA), true)
     if (t('totalvat')) draw(page, t('totalvat')!, fmt(subV), true)
     if (t('totalltotalamount')) draw(page, t('totalltotalamount')!, fmtAlways(subT), true)
 
     // Page numbers are baked as "Page 1 of 1" / "Page 1 of 2" / "Page 2 of 2" —
     // correct for 1- and 2-page quotes; redraw for 3+ item pages.
-    if (pageCount > 2 && pc.pageNo) {
+    if (pageCount > 1 && pc.pageNo) {
       const b = pc.pageNo
       page.drawRectangle({ x: b.x - 1, y: b.y - 1.5, width: b.w + 14, height: b.h + 4, color: WHITE })
       const label = `Page ${pi + 1} of ${pageCount}`
