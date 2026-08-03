@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Visa list gains an Active / Expired / All filter, and CSV and PDF exports now cover one year at a time instead of all history, with the Rank column removed"
+      },
+      {
+        "type": "feature",
         "title": "Crew Documents card now lists everything in the SharePoint folder — files filed by hand or predating Polaris appear under 'Also in SharePoint' with open links"
       },
       {
