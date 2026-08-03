@@ -57,8 +57,15 @@ async function fetchRows(yachtId: string): Promise<{ rows: VisaRow[]; vesselName
     .eq('yacht_id', yachtId)
     .order('surname', { ascending: true })
   if (error) throw new Error(error.message)
-  const rows: VisaRow[] = (data ?? []) as VisaRow[]
-  const vesselName = rows[0]?.yachts?.vessel_name ?? 'Vessel'
+  // Active visas only: these reports go to vessels/authorities, so expired,
+  // cancelled and rejected visas never belong on them — nor any visa whose
+  // expiry date has already passed.
+  const today = new Date().toISOString().slice(0, 10)
+  const all: VisaRow[] = (data ?? []) as VisaRow[]
+  const rows = all.filter(r =>
+    !['expired', 'cancelled', 'rejected'].includes(String(r.status ?? '')) &&
+    (!r.visa_expiry || String(r.visa_expiry).slice(0, 10) >= today))
+  const vesselName = (all[0]?.yachts?.vessel_name) ?? 'Vessel'
   return { rows, vesselName }
 }
 

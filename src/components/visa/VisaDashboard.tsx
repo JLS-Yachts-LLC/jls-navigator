@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, type CSSProperties } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { supabase } from '@/integrations/supabase/client'
@@ -127,6 +127,159 @@ function RotatingBanner({ messages }: { messages: BannerAlert[] }) {
   )
 }
 
+// ── Export review: check + quick-edit the rows before generating CSV/PDF ──────
+// Mirrors the server's export filter (active visas only) so what you review is
+// exactly what lands in the file. Edited rows are saved (and mirrored to the
+// SharePoint tracker) before the export is generated.
+type ReviewRow = {
+  id: string; given_name: string | null; surname: string | null; nationality: string | null
+  passport_number: string | null; rank_rating: string | null; visa_number: string | null
+  visa_issuance_date: string | null; first_entry_expiry: string | null; visa_expiry: string | null
+  sign_on_date: string | null; sign_off_date: string | null; status: string | null
+}
+const REVIEW_STATUSES = ['draft', 'submitted', 'in_review', 'processing', 'approved', 'on_board', 'signed_off', 'completed']
+
+function ExportReviewDialog({ format, yachtId, exportUrl, onClose, onSaved }: {
+  format: 'csv' | 'pdf'; yachtId: string; exportUrl: string; onClose: () => void; onSaved: () => void
+}) {
+  const [rows, setRows] = useState<ReviewRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [dirty, setDirty] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    void (async () => {
+      const { data } = await fetchAllRows(() => (supabase as any)
+        .from('visa_applications')
+        .select('id, given_name, surname, nationality, passport_number, rank_rating, visa_number, visa_issuance_date, first_entry_expiry, visa_expiry, sign_on_date, sign_off_date, status')
+        .eq('yacht_id', yachtId)
+        .order('surname', { ascending: true }))
+      const today = new Date().toISOString().slice(0, 10)
+      setRows(((data ?? []) as ReviewRow[]).filter(r =>
+        !['expired', 'cancelled', 'rejected'].includes(String(r.status ?? '')) &&
+        (!r.visa_expiry || String(r.visa_expiry).slice(0, 10) >= today)))
+      setLoading(false)
+    })()
+  }, [yachtId])
+
+  function edit(id: string, key: keyof ReviewRow, value: string) {
+    setRows(prev => prev.map(r => r.id === id ? { ...r, [key]: value || null } : r))
+    setDirty(prev => new Set(prev).add(id))
+  }
+
+  async function generate() {
+    setBusy(true)
+    try {
+      // Persist quick edits first so the export reflects them.
+      for (const id of dirty) {
+        const r = rows.find(x => x.id === id)
+        if (!r) continue
+        const { error } = await (supabase as any).from('visa_applications').update({
+          rank_rating: r.rank_rating, visa_number: r.visa_number,
+          visa_issuance_date: r.visa_issuance_date, first_entry_expiry: r.first_entry_expiry,
+          visa_expiry: r.visa_expiry, sign_on_date: r.sign_on_date, sign_off_date: r.sign_off_date,
+          status: r.status, updated_at: new Date().toISOString(),
+        }).eq('id', id)
+        if (error) throw error
+        fetch('/api/visa/excel-push', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) }).catch(() => {})
+      }
+      if (dirty.size) { toast.success(`${dirty.size} record(s) updated`); onSaved() }
+      if (format === 'pdf') window.open(exportUrl, '_blank')
+      else window.location.href = exportUrl
+      onClose()
+    } catch (e: any) {
+      toast.error(e?.message ?? 'Could not save edits')
+    } finally { setBusy(false) }
+  }
+
+  const dateCell = (r: ReviewRow, key: keyof ReviewRow) => (
+    <input type="date" value={(r[key] as string | null)?.slice(0, 10) ?? ''} onChange={e => edit(r.id, key, e.target.value)}
+      style={{ width: 130, fontFamily: FONTS.display, fontSize: 12, color: COLORS.frost, background: COLORS.void, border: `1px solid ${COLORS.deep}`, borderRadius: 6, padding: '4px 6px', colorScheme: 'dark' }} />
+  )
+  const textCell = (r: ReviewRow, key: keyof ReviewRow, width = 120) => (
+    <input type="text" value={(r[key] as string | null) ?? ''} onChange={e => edit(r.id, key, e.target.value)}
+      style={{ width, fontFamily: FONTS.display, fontSize: 12, color: COLORS.frost, background: COLORS.void, border: `1px solid ${COLORS.deep}`, borderRadius: 6, padding: '4px 6px' }} />
+  )
+  const th: CSSProperties = { textAlign: 'left', padding: '8px 8px', fontFamily: FONTS.display, fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: COLORS.muted, whiteSpace: 'nowrap', position: 'sticky', top: 0, background: COLORS.abyss }
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 950, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 'min(1180px, 96vw)', maxHeight: '88vh', display: 'flex', flexDirection: 'column', background: COLORS.abyss, border: `1px solid ${COLORS.deep}`, borderRadius: 12, boxShadow: '0 24px 64px rgba(0,0,0,0.5)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: `1px solid ${COLORS.deep}` }}>
+          <div>
+            <div style={{ fontFamily: FONTS.display, fontSize: 16, fontWeight: 700, color: COLORS.frost }}>
+              Review before {format.toUpperCase()} export
+            </div>
+            <div style={{ fontFamily: FONTS.display, fontSize: 12, color: COLORS.muted, marginTop: 2 }}>
+              Active visas only — expired, cancelled and rejected are excluded automatically. Make any quick corrections below; they're saved when you hit Generate.
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: COLORS.muted, fontSize: 18, cursor: 'pointer' }}>✕</button>
+        </div>
+
+        <div style={{ flex: 1, overflow: 'auto', padding: '0 8px' }}>
+          {loading ? (
+            <div style={{ padding: 40, textAlign: 'center', fontFamily: FONTS.display, color: COLORS.muted }}>Loading…</div>
+          ) : rows.length === 0 ? (
+            <div style={{ padding: 40, textAlign: 'center', fontFamily: FONTS.display, color: COLORS.muted }}>No active visas for this vessel.</div>
+          ) : (
+            <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+              <thead>
+                <tr>
+                  <th style={th}>Crew</th><th style={th}>Passport</th><th style={th}>Rank</th><th style={th}>Visa Ref</th>
+                  <th style={th}>Issuance</th><th style={th}>Use By</th><th style={th}>Expiry</th>
+                  <th style={th}>Sign On</th><th style={th}>Sign Off</th><th style={th}>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(r => (
+                  <tr key={r.id} style={{ borderTop: `1px solid ${COLORS.deep}`, background: dirty.has(r.id) ? `${COLORS.signal}0d` : 'transparent' }}>
+                    <td style={{ padding: '6px 8px', fontFamily: FONTS.display, fontSize: 12.5, fontWeight: 600, color: COLORS.frost, whiteSpace: 'nowrap' }}>
+                      {[r.given_name, r.surname].filter(Boolean).join(' ') || '—'}
+                      <div style={{ fontSize: 10.5, fontWeight: 400, color: COLORS.muted }}>{r.nationality ?? ''}</div>
+                    </td>
+                    <td style={{ padding: '6px 8px', fontFamily: FONTS.display, fontSize: 12, color: COLORS.muted, whiteSpace: 'nowrap' }}>{r.passport_number ?? '—'}</td>
+                    <td style={{ padding: '6px 4px' }}>{textCell(r, 'rank_rating', 110)}</td>
+                    <td style={{ padding: '6px 4px' }}>{textCell(r, 'visa_number', 150)}</td>
+                    <td style={{ padding: '6px 4px' }}>{dateCell(r, 'visa_issuance_date')}</td>
+                    <td style={{ padding: '6px 4px' }}>{dateCell(r, 'first_entry_expiry')}</td>
+                    <td style={{ padding: '6px 4px' }}>{dateCell(r, 'visa_expiry')}</td>
+                    <td style={{ padding: '6px 4px' }}>{dateCell(r, 'sign_on_date')}</td>
+                    <td style={{ padding: '6px 4px' }}>{dateCell(r, 'sign_off_date')}</td>
+                    <td style={{ padding: '6px 4px' }}>
+                      <select value={r.status ?? ''} onChange={e => edit(r.id, 'status', e.target.value)}
+                        style={{ fontFamily: FONTS.display, fontSize: 12, color: COLORS.frost, background: COLORS.void, border: `1px solid ${COLORS.deep}`, borderRadius: 6, padding: '4px 6px' }}>
+                        {!REVIEW_STATUSES.includes(r.status ?? '') && r.status && <option value={r.status}>{r.status}</option>}
+                        {REVIEW_STATUSES.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '14px 20px', borderTop: `1px solid ${COLORS.deep}` }}>
+          <div style={{ fontFamily: FONTS.display, fontSize: 12, color: COLORS.muted }}>
+            {rows.length} record(s) will be exported{dirty.size ? ` · ${dirty.size} edited` : ''}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={onClose} disabled={busy}
+              style={{ fontFamily: FONTS.display, fontSize: 13, fontWeight: 600, color: COLORS.muted, background: 'transparent', border: `1px solid ${COLORS.deep}`, borderRadius: 8, padding: '9px 18px', cursor: 'pointer' }}>
+              Cancel
+            </button>
+            <button onClick={() => void generate()} disabled={busy || loading || rows.length === 0}
+              style={{ fontFamily: FONTS.display, fontSize: 13, fontWeight: 700, color: COLORS.void, background: COLORS.signal, border: 'none', borderRadius: 8, padding: '9px 22px', cursor: busy ? 'wait' : 'pointer', opacity: busy || rows.length === 0 ? 0.6 : 1 }}>
+              {busy ? 'Saving…' : `Generate ${format.toUpperCase()}`}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // What's left / missing to do, per status — shown on the battery tooltip.
 function statusHint(app: VisaApplication): string {
   switch (app.status) {
@@ -229,6 +382,8 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
   const [loading, setLoading]           = useState(true)
   const [alertsOpen, setAlertsOpen]     = useState(false)
   const [emailing, setEmailing]         = useState(false)
+  // Export review: CSV/PDF first opens a check-and-edit screen, then generates.
+  const [exportReview, setExportReview] = useState<null | 'csv' | 'pdf'>(null)
   const [showReport, setShowReport]     = useState(false)
   const [bulkOpen, setBulkOpen]         = useState(false)
 
@@ -537,6 +692,15 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
   return (
     <div style={{ fontFamily: FONTS.display, color: COLORS.frost, minHeight: '100vh', padding: '24px' }}>
       {bulkOpen && <VisaBulkUpload onClose={() => setBulkOpen(false)} onChanged={() => void loadAll()} />}
+      {exportReview && vessel !== 'all' && (
+        <ExportReviewDialog
+          format={exportReview}
+          yachtId={vessel}
+          exportUrl={exportUrl(exportReview)}
+          onClose={() => setExportReview(null)}
+          onSaved={() => void loadAll()}
+        />
+      )}
       <RotatingBanner messages={bannerMessages} />
 
       {/* Header */}
@@ -661,16 +825,14 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
         )}
 
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-          <a href={vessel === 'all' ? undefined : exportUrl('csv')}
-             onClick={e => { if (vessel === 'all') { e.preventDefault(); toast.error('Select a vessel to export') } }}
-             style={{ ...btn(false), textDecoration: 'none', opacity: vessel === 'all' ? 0.5 : 1 }}>
+          <button onClick={() => vessel === 'all' ? toast.error('Select a vessel to export') : setExportReview('csv')}
+             style={{ ...btn(false), opacity: vessel === 'all' ? 0.5 : 1 }}>
             ⬇ CSV
-          </a>
-          <a href={vessel === 'all' ? undefined : exportUrl('pdf')} target="_blank" rel="noreferrer"
-             onClick={e => { if (vessel === 'all') { e.preventDefault(); toast.error('Select a vessel to export') } }}
-             style={{ ...btn(false), textDecoration: 'none', opacity: vessel === 'all' ? 0.5 : 1 }}>
+          </button>
+          <button onClick={() => vessel === 'all' ? toast.error('Select a vessel to export') : setExportReview('pdf')}
+             style={{ ...btn(false), opacity: vessel === 'all' ? 0.5 : 1 }}>
             ⬇ PDF
-          </a>
+          </button>
           <button onClick={emailReport} disabled={emailing} style={{ ...btn(false), opacity: emailing ? 0.6 : 1 }}>
             {emailing ? 'Sending…' : '✉ Email'}
           </button>
