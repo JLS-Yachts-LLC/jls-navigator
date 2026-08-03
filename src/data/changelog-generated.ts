@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "Multi-page documents show the correct per-page Total Amount and page numbers — middle pages were printing 0.00 because the template names those fields by page number, and a 2-page document inherited the template's built-in Page 2 of 3 label"
+      },
+      {
+        "type": "fix",
         "title": "Crew with an existing visa can now start a new application — the wizard was overwriting a crew member's most recent visa (even a cancelled/approved one) instead of creating a new record; it now only reuses an in-progress draft and inserts a fresh application otherwise"
       },
       {
