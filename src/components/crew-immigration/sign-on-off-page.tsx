@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { DateInputDMY } from "@/components/ui/date-input-dmy";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -248,6 +249,18 @@ export function SignOnOffPage() {
    *  can be used as the template for the next one without replacing it. */
   async function save(asNew = false) {
     if (selectedCrew.length === 0) { toast.error("Select at least one crew member"); return; }
+    // A movement with no date is meaningless on a crew list, and a blank date
+    // used to save silently as null.
+    if (!form.event_date) { toast.error("Enter the sign on / sign off date (dd/mm/yyyy)"); return; }
+    // Copying a record keeps its date, so a forgotten change would file the new
+    // movement under the old day — confirm rather than save it quietly.
+    if (asNew && editId) {
+      const src = events.find((e) => e.id === editId);
+      if (src?.event_date === form.event_date &&
+          !window.confirm(`This new record uses the same date as the one you copied (${fmtDate(form.event_date)}).\n\nSave it with that date?`)) {
+        return;
+      }
+    }
     setBusy(true);
     try {
       // Edit mode — update the single existing event.
@@ -520,8 +533,15 @@ export function SignOnOffPage() {
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label className="text-xs">Date</Label>
-                <Input type="date" value={form.event_date} onChange={(e) => setForm((f) => ({ ...f, event_date: e.target.value }))} className="h-8" />
+                <Label className="text-xs">Date <span className="text-destructive">*</span></Label>
+                {/* dd/mm/yyyy regardless of the browser's region, like the rest of
+                    the immigration module — a native date input follows the OS
+                    locale, so a typed date could silently fail to register. */}
+                <DateInputDMY
+                  value={form.event_date}
+                  onChange={(iso) => setForm((f) => ({ ...f, event_date: iso }))}
+                  style={{ height: 32, width: "100%", borderRadius: 6, border: "1px solid var(--border)", background: "var(--background)", color: "var(--foreground)", padding: "0 8px", fontSize: 13 }}
+                />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Port</Label>
