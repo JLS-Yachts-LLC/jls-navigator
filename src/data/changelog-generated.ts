@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "A page carrying only description lines now leaves its Total Amount bar blank instead of printing 0.00, matching the original templates"
+      },
+      {
+        "type": "fix",
         "title": "Multi-page documents show the correct per-page Total Amount and page numbers — middle pages were printing 0.00 because the template names those fields by page number, and a 2-page document inherited the template's built-in Page 2 of 3 label"
       },
       {
