@@ -111,7 +111,13 @@ export function CrewProfilePage({
 
     const [{ data: yl }, { data: pp }, { data: linkedVisas }, { data: dd }] = await Promise.all([
       fetchAllRows(() => supabase.from("yachts").select("id, vessel_name")),
-      fetchAllRows(() => db.from("crew_passports").select("*").eq("crew_id", id).order("is_primary", { ascending: false })),
+      // Newest passport first: primary if one is flagged, otherwise the one that
+      // expires last. The Documents card treats the first as the active passport
+      // and archives the rest, so this ordering decides which files are current.
+      fetchAllRows(() => db.from("crew_passports").select("*").eq("crew_id", id)
+        .order("is_primary", { ascending: false })
+        .order("expiry_date", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false })),
       fetchAllRows(() => db.from("visa_applications").select("*").eq("crew_member_id", id)),
       fetchAllRows(() => db.from("crew_documents").select("*").eq("crew_member_id", id).order("created_at", { ascending: false })),
     ]);
@@ -346,6 +352,7 @@ export function CrewProfilePage({
               vesselName={crew.yacht_id ? yachtMap.get(crew.yacht_id) ?? null : null}
               passports={passports}
               docs={docs}
+              onReload={load}
             />
           </main>
         </div>
