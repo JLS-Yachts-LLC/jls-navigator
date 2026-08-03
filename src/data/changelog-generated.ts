@@ -9,6 +9,14 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-08-03",
     "entries": [
       {
+        "type": "feature",
+        "title": "Visa CSV/PDF exports now open a review screen first — check the rows, make quick corrections inline (rank, visa ref, dates, status), then generate; expired, cancelled and rejected visas are excluded so reports only carry active visas"
+      },
+      {
+        "type": "fix",
+        "title": "Crew Documents now finds the existing SharePoint folder even when the name differs by accent or capitalisation, instead of creating a near-duplicate"
+      },
+      {
         "type": "fix",
         "title": "Visa report CSV opens cleanly in Excel — accented names no longer garble (UTF-8 BOM added) and empty dates export as blank cells instead of dash placeholders"
       },
