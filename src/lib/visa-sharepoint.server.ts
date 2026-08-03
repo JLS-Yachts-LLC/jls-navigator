@@ -19,7 +19,7 @@ const DEFAULT_VISA_SITE_URL = "/sites/PortOperationsandAgency";
 const DEFAULT_VISA_ROOT_FOLDER = "Crew Visas";
 
 /** SharePoint forbids " * : < > ? / \ | in file/folder names. */
-function sanitizeSegment(s: string | null | undefined, fallback: string): string {
+export function sanitizeSegment(s: string | null | undefined, fallback: string): string {
   const cleaned = (s ?? "")
     .replace(/["*:<>?/\\|]/g, "-")
     .replace(/\s+/g, " ")
@@ -36,7 +36,7 @@ function base64ToBytes(base64: string): Uint8Array {
 }
 
 /** Create a folder under `parentPath` (drive-root-relative), ignoring "already exists". */
-async function ensureFolder(siteId: string, token: string, parentPath: string, name: string): Promise<void> {
+export async function ensureFolder(siteId: string, token: string, parentPath: string, name: string): Promise<void> {
   const parentRef = parentPath ? `root:/${encodeURI(parentPath)}:` : "root";
   const res = await fetch(
     `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/${parentRef}/children`,
@@ -61,9 +61,9 @@ async function ensureFolder(siteId: string, token: string, parentPath: string, n
 }
 
 /** Upload bytes to `drive/root:/{folderPath}/{fileName}`, creating each folder. */
-async function uploadIntoFolders(
-  siteId: string, token: string, folderSegments: string[], fileName: string, contentType: string, base64: string,
-): Promise<{ webUrl: string | null }> {
+export async function uploadBytesIntoFolders(
+  siteId: string, token: string, folderSegments: string[], fileName: string, contentType: string, bytes: Uint8Array,
+): Promise<{ webUrl: string | null; id: string | null; name: string | null }> {
   let accumulated = "";
   for (const seg of folderSegments) {
     await ensureFolder(siteId, token, accumulated, seg);
@@ -71,13 +71,12 @@ async function uploadIntoFolders(
   }
   const safeFile = sanitizeSegment(fileName, "document");
   const fullPath = `${accumulated}/${safeFile}`;
-  const bytes = base64ToBytes(base64);
   const uploadRes = await fetch(
     `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root:/${encodeURI(fullPath)}:/content`,
     {
       method: "PUT",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": contentType || "application/octet-stream" },
-      body: bytes,
+      body: bytes as unknown as BodyInit,
     },
   );
   if (!uploadRes.ok) {
@@ -85,11 +84,18 @@ async function uploadIntoFolders(
     throw new Error(`SharePoint upload failed: ${err?.error?.message ?? uploadRes.statusText}`);
   }
   const created = (await uploadRes.json()) as Record<string, any>;
-  return { webUrl: created.webUrl ?? null };
+  return { webUrl: created.webUrl ?? null, id: created.id ?? null, name: created.name ?? safeFile };
+}
+
+async function uploadIntoFolders(
+  siteId: string, token: string, folderSegments: string[], fileName: string, contentType: string, base64: string,
+): Promise<{ webUrl: string | null }> {
+  const { webUrl } = await uploadBytesIntoFolders(siteId, token, folderSegments, fileName, contentType, base64ToBytes(base64));
+  return { webUrl };
 }
 
 /** Ensure a folder tree exists and return the deepest folder's webUrl (for linking). */
-async function ensureFoldersAndGetUrl(
+export async function ensureFoldersAndGetUrl(
   siteId: string, token: string, folderSegments: string[],
 ): Promise<string | null> {
   let accumulated = "";

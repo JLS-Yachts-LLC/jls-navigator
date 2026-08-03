@@ -541,6 +541,14 @@ export function CrewListPage({ onOpenCrew }: { onOpenCrew?: (id: string) => void
                   <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {Object.entries(STATUS_LABELS).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
+                    {/* Tracker-imported statuses (e.g. "Cancelled") aren't crew
+                        employment statuses and can't be newly assigned, but a crew
+                        member may still hold one. Include it so the field shows the
+                        real value instead of appearing blank — and so saving the
+                        dialog can't silently change it. */}
+                    {form.status && !(form.status in STATUS_LABELS) && (
+                      <SelectItem value={form.status}>{statusLabel(form.status)} (imported)</SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
               </div>

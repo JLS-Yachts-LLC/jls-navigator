@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Visas show as Activated automatically once the crew member has arrived — a green Activated badge replaces the 30-day activation countdown on the dashboard and visa page, and activation-expiry alerts stop for arrived crew"
+      },
+      {
+        "type": "feature",
         "title": "Visa application dates can be set to any date — pick an application date when submitting (defaults to today) or edit it later on the visa, and future-dated 'planned' submissions show a clear reminder banner the day before and the day of"
       },
       {
