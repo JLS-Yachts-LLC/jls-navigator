@@ -6,6 +6,10 @@ import { useAuth } from '@/lib/auth'
 import { fetchAllRows } from '@/lib/fetch-all'
 import { COLORS, FONTS } from '@/lib/tokens'
 import { COUNTRY_CONFIGS } from '@/lib/visa/countryConfig'
+import {
+  exportFilterParams, matchesExportFilters, describeExportFilters,
+  type ExportFilterOpts, type FilterableVisa,
+} from '@/lib/visa/export-filters'
 import ComplianceAlertBanner from './ComplianceAlertBanner'
 import { softDeleteEntity } from '@/lib/recycle-bin'
 import { VisaReportView } from './VisaReportView'
@@ -136,7 +140,8 @@ type ReviewRow = {
   passport_number: string | null; rank_rating: string | null; visa_number: string | null
   visa_issuance_date: string | null; first_entry_expiry: string | null; visa_expiry: string | null
   sign_on_date: string | null; sign_off_date: string | null; status: string | null
-  created_at: string | null
+  country_code: string | null; submitted_at: string | null; created_at: string | null
+  yachts?: { vessel_name: string | null } | null
 }
 const REVIEW_STATUSES = ['draft', 'submitted', 'in_review', 'processing', 'approved', 'on_board', 'signed_off', 'completed']
 
@@ -158,10 +163,13 @@ function matchesValidity(
   return v === 'expired' ? lapsed : !lapsed
 }
 
-function ExportReviewDialog({ format, yachtId, exportUrl, validity, exportYear, onClose, onSaved }: {
+function ExportReviewDialog({ format, yachtId, exportUrl, validity, exportYear, filters, onClose, onSaved }: {
   format: 'csv' | 'pdf'; yachtId: string; exportUrl: string
   /** Same validity + year the export URL carries, so the review matches the file. */
   validity: Validity; exportYear: string
+  /** The dashboard filters that are not report-specific: applied-date range,
+   *  search text and the status chip. */
+  filters: ExportFilterOpts
   onClose: () => void; onSaved: () => void
 }) {
   const [rows, setRows] = useState<ReviewRow[]>([])
@@ -176,7 +184,7 @@ function ExportReviewDialog({ format, yachtId, exportUrl, validity, exportYear, 
     void (async () => {
       const { data } = await fetchAllRows(() => (supabase as any)
         .from('visa_applications')
-        .select('id, given_name, surname, nationality, passport_number, rank_rating, visa_number, visa_issuance_date, first_entry_expiry, visa_expiry, sign_on_date, sign_off_date, status, created_at')
+        .select('id, given_name, surname, nationality, passport_number, rank_rating, visa_number, visa_issuance_date, first_entry_expiry, visa_expiry, sign_on_date, sign_off_date, status, country_code, submitted_at, created_at, yachts(vessel_name)')
         .eq('yacht_id', yachtId)
         .order('surname', { ascending: true }))
       const today = new Date().toISOString().slice(0, 10)
@@ -192,10 +200,11 @@ function ExportReviewDialog({ format, yachtId, exportUrl, validity, exportYear, 
           if (Number.isFinite(expiry)) return expiry >= y
           const issued = yearOf(r.visa_issuance_date) || yearOf(r.created_at)
           return !Number.isFinite(issued) || issued === y
-        }))
+        })
+        .filter(r => matchesExportFilters(r as FilterableVisa, filters)))
       setLoading(false)
     })()
-  }, [yachtId, validity, exportYear])
+  }, [yachtId, validity, exportYear, filters.from, filters.to, filters.q, filters.status])
 
   function edit(id: string, key: keyof ReviewRow, value: string) {
     setRows(prev => prev.map(r => r.id === id ? { ...r, [key]: value || null } : r))
@@ -267,7 +276,8 @@ function ExportReviewDialog({ format, yachtId, exportUrl, validity, exportYear, 
               Review before {format.toUpperCase()} export
             </div>
             <div style={{ fontFamily: FONTS.display, fontSize: 12, color: COLORS.muted, marginTop: 2 }}>
-              {validity === 'active' ? 'Active visas only' : validity === 'expired' ? 'Expired visas only' : 'All visas'} · {exportYear} — earlier years are left out.
+              {validity === 'active' ? 'Active visas only' : validity === 'expired' ? 'Expired visas only' : 'All visas'} · {exportYear} — earlier years are left out
+              {describeExportFilters(filters).length ? ` · ${describeExportFilters(filters).join(' · ')}` : ''}.
               Untick any record you don't want in this file (nothing is changed by leaving it out). Quick corrections below are saved when you hit Generate.
             </div>
           </div>
@@ -678,18 +688,26 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
   // calendar year — the selected one, or the current year when the Year filter is
   // on "All", so historical visas from earlier years stay out of vessel reports.
   const exportYear = year !== 'all' ? year : String(new Date().getFullYear())
+  // The rest of the on-screen filters (applied-date range, search text, status
+  // chip) ride along too, so the file is the list you are looking at.
+  const exportOpts: ExportFilterOpts = { from: dateFrom, to: dateTo, q: search, status: activeStatus }
   function exportUrl(format: 'pdf' | 'csv') {
     return `/api/visa/export?yacht_id=${vessel}&format=${format}&visa=${validity}&year=${exportYear}`
+      + exportFilterParams(exportOpts)
   }
   async function emailReport() {
     if (vessel === 'all') { toast.error('Select a vessel to email its report'); return }
     if (!user?.email) { toast.error('No email address on your account'); return }
     setEmailing(true)
     try {
-      const res = await fetch('/api/visa/export/email', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ yacht_id: vessel, to_email: user.email }),
-      })
+      // Same filters as the download — the emailed report used to ignore them
+      // and always send this year's active list.
+      const res = await fetch(
+        `/api/visa/export/email?visa=${validity}&year=${exportYear}` + exportFilterParams(exportOpts),
+        {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ yacht_id: vessel, to_email: user.email }),
+        })
       const json = await res.json()
       if (json.ok) toast.success(`Report emailed to ${user.email}`)
       else toast.error(`Email failed: ${json.error}`)
@@ -780,6 +798,7 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
           exportUrl={exportUrl(exportReview)}
           validity={validity}
           exportYear={exportYear}
+          filters={exportOpts}
           onClose={() => setExportReview(null)}
           onSaved={() => void loadAll()}
         />
