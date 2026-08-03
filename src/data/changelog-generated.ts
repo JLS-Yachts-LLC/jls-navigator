@@ -10,6 +10,14 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Visa CSV/PDF/Email exports now respect every filter on screen — the applied-date range, search text and status chip are carried through as well as validity and year, and the emailed report no longer ignores filters entirely"
+      },
+      {
+        "type": "fix",
+        "title": "Crew folder names now use only typeable characters, so scanning a passport can't create a duplicate folder"
+      },
+      {
+        "type": "feature",
         "title": "Visa list gains an Active / Expired / All filter, and CSV and PDF exports now cover one year at a time instead of all history, with the Rank column removed"
       },
       {
