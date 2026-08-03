@@ -10,6 +10,14 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "Visa report CSV opens cleanly in Excel — accented names no longer garble (UTF-8 BOM added) and empty dates export as blank cells instead of dash placeholders"
+      },
+      {
+        "type": "feature",
+        "title": "Crew Documents section now supports folders with drag-and-drop filing, shows whether each file is in Polaris only or also in SharePoint, and can send a file or open the crew member's folder in SharePoint"
+      },
+      {
+        "type": "fix",
         "title": "Finance Invoice Tracker (Visas) no longer caps at 1000 records — all visa rows now load, so the Total and Pending Review counts are accurate"
       },
       {

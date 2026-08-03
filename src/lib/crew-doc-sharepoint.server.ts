@@ -33,12 +33,60 @@ async function crewSpContext(): Promise<{ token: string; siteId: string }> {
   return { token, siteId };
 }
 
+/** Case- and accent-insensitive key: "JOVAN ČAVOR" and "Jovan Cavor" must match. */
+const nameKey = (s: string) =>
+  s.normalize("NFD").replace(/\p{Diacritic}/gu, "")
+    .toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+/**
+ * SharePoint folder names were typed by hand over years — accents, casing and
+ * spacing drift from what Polaris holds ("JOVAN ČAVOR" vs "Jovan Cavor"). Look
+ * for an existing child folder that matches on a normalised key and return its
+ * REAL name, so we read from and write into the folder staff already use instead
+ * of creating a near-duplicate beside it.
+ */
+async function resolveChildFolder(
+  siteId: string, token: string, parentPath: string, wanted: string,
+): Promise<string | null> {
+  const want = nameKey(wanted);
+  if (!want) return null;
+  const children = await listChildren(siteId, token, parentPath);
+  const folders = children.filter((c) => !!c.folder);
+  const exact = folders.find((c) => nameKey(String(c.name)) === want);
+  if (exact) return String(exact.name);
+  // Fall back to a folder containing every word of the name (handles "Jovan
+  // Cavor (Deck)" and reversed first/last name orders).
+  const words = want.split(" ").filter((w) => w.length > 1);
+  const loose = words.length
+    ? folders.find((c) => { const k = nameKey(String(c.name)); return words.every((w) => k.includes(w)); })
+    : undefined;
+  return loose ? String(loose.name) : null;
+}
+
 const crewSegments = (vesselName: string | null, crewName: string) => [
   "Yacht",
   sanitizeSegment(vesselName, "Unassigned Vessel"),
   "Crew Documents",
   sanitizeSegment(crewName, "Unknown Crew"),
 ];
+
+/**
+ * The crew member's real folder path, matching existing SharePoint folders where
+ * the names only differ by accent/case. Returns the sanitised path unchanged when
+ * nothing comparable exists (so a push creates it).
+ */
+async function resolveCrewPath(
+  siteId: string, token: string, vesselName: string | null, crewName: string,
+): Promise<{ segments: string[]; found: boolean }> {
+  const segments = crewSegments(vesselName, crewName);
+  const vessel = await resolveChildFolder(siteId, token, "Yacht", segments[1]);
+  if (!vessel) return { segments, found: false };
+  segments[1] = vessel;
+  const crew = await resolveChildFolder(siteId, token, `Yacht/${vessel}/Crew Documents`, segments[3]);
+  if (!crew) return { segments, found: false };
+  segments[3] = crew;
+  return { segments, found: true };
+}
 
 /** GET a drive item by path. Returns null on 404 instead of throwing. */
 async function getItemByPath(siteId: string, token: string, path: string): Promise<Record<string, any> | null> {
@@ -86,7 +134,9 @@ export const listCrewSharePointFolder = createServerFn({ method: "POST" })
     const { vesselName, crewName } = ctx.data;
     try {
       const { token, siteId } = await crewSpContext();
-      const base = crewSegments(vesselName, crewName).join("/");
+      const { segments, found } = await resolveCrewPath(siteId, token, vesselName, crewName);
+      if (!found) return { exists: false, webUrl: null, items: [] };
+      const base = segments.join("/");
       const root = await getItemByPath(siteId, token, base);
       if (!root) return { exists: false, webUrl: null, items: [] };
 
@@ -121,8 +171,11 @@ export const createCrewSharePointFolder = createServerFn({ method: "POST" })
     const { vesselName, crewName, folderName } = ctx.data;
     try {
       const { token, siteId } = await crewSpContext();
-      const segments = [...crewSegments(vesselName, crewName), sanitizeSegment(folderName, "New folder")];
-      return { ok: true, webUrl: await ensureFoldersAndGetUrl(siteId, token, segments) };
+      const { segments } = await resolveCrewPath(siteId, token, vesselName, crewName);
+      return {
+        ok: true,
+        webUrl: await ensureFoldersAndGetUrl(siteId, token, [...segments, sanitizeSegment(folderName, "New folder")]),
+      };
     } catch (e: any) {
       return { ok: false, webUrl: null, error: e?.message ?? String(e) };
     }
@@ -178,7 +231,7 @@ export const pushCrewDocToSharePoint = createServerFn({ method: "POST" })
       const bytes = new Uint8Array(await blob.arrayBuffer());
 
       const { token, siteId } = await crewSpContext();
-      const segments = crewSegments(vesselName, crewName);
+      const { segments } = await resolveCrewPath(siteId, token, vesselName, crewName);
       if (subfolder) segments.push(sanitizeSegment(subfolder, "Folder"));
 
       const safeName = sanitizeSegment(fileName, "document");
