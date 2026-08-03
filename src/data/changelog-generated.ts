@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-08-03",
     "entries": [
       {
+        "type": "fix",
+        "title": "Per-page \"Total Amount\" on multi-page invoices, quotations, pro-formas and purchase orders now shows a running total instead of going blank"
+      },
+      {
         "type": "feature",
         "title": "Sign on/off changes on a visa record are no longer lost — every change is kept as Movement History (shown on the visa page with who/when), and movements on crew-linked visas flow into the Sign On/Off module automatically"
       },

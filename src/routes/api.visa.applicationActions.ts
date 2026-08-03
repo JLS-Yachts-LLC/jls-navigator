@@ -30,10 +30,15 @@ function admin() {
   })
 }
 
+// An application can be cancelled from any non-terminal state (including after
+// approval — an issued visa can still be cancelled). Every transition is logged
+// to visa_status_history by a DB trigger as well as to visa_admin_actions here.
 const VALID_TRANSITIONS: Record<string, string[]> = {
-  submitted:          ['in_review'],
-  in_review:          ['approved', 'rejected', 'amendment_required'],
-  amendment_required: ['in_review'],
+  draft:              ['submitted', 'cancelled'],
+  submitted:          ['in_review', 'cancelled'],
+  in_review:          ['approved', 'rejected', 'amendment_required', 'cancelled'],
+  amendment_required: ['in_review', 'cancelled'],
+  approved:           ['cancelled', 'expired'],
 }
 
 /** Best-effort crew notification — never throws. */

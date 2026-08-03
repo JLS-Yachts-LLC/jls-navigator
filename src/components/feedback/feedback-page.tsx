@@ -23,6 +23,18 @@ const STATUS_CLS: Record<string, string> = {
 };
 const fmt = (d: string) => new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 
+/** Label the attachment by extension — it may be a screenshot, a screen
+ *  recording, or a document (PDF / Word / …), all stored in screenshot_url. */
+function attachmentLabel(url: string): string {
+  const ext = (url.split("?")[0].split(".").pop() ?? "").toLowerCase();
+  if (["png", "jpg", "jpeg", "gif", "webp", "bmp", "heic"].includes(ext)) return "Screenshot";
+  if (["webm", "mp4", "mov", "mkv"].includes(ext)) return "Screen recording";
+  if (ext === "pdf") return "PDF";
+  if (["doc", "docx", "odt", "rtf"].includes(ext)) return "Document";
+  if (["xls", "xlsx", "csv"].includes(ext)) return "Spreadsheet";
+  return "Attachment";
+}
+
 export function FeedbackPage() {
   const { user } = useAuth();
   const isAdmin = useDevAccess();
@@ -106,7 +118,14 @@ export function FeedbackPage() {
                         <StatusBadge status={f.status} id={f.id} isAdmin={isAdmin} onChange={setStatus} />
                       </div>
                       <p className="mt-1 whitespace-pre-wrap text-[13px] text-muted-foreground">{f.message}</p>
-                      <div className="mt-1.5 text-[11px] text-muted-foreground/60">{f.created_by_email ?? "—"} · {fmt(f.created_at)}</div>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground/60">
+                        <span>{f.created_by_email ?? "—"} · {fmt(f.created_at)}</span>
+                        {f.screenshot_url && (
+                          <SignedAnchor stored={f.screenshot_url} className="inline-flex items-center gap-1 text-primary hover:underline">
+                            <ExternalLink className="h-3 w-3" /> {attachmentLabel(f.screenshot_url)}
+                          </SignedAnchor>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
@@ -124,7 +143,7 @@ export function FeedbackPage() {
                   <p className="mt-1.5 whitespace-pre-wrap text-[13px] text-muted-foreground">{b.message}</p>
                   <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground/70">
                     <span>{b.created_by_email ?? "—"} · {fmt(b.created_at)}</span>
-                    {b.screenshot_url && <SignedAnchor stored={b.screenshot_url} className="inline-flex items-center gap-1 text-primary hover:underline"><ExternalLink className="h-3 w-3" /> Screenshot</SignedAnchor>}
+                    {b.screenshot_url && <SignedAnchor stored={b.screenshot_url} className="inline-flex items-center gap-1 text-primary hover:underline"><ExternalLink className="h-3 w-3" /> {attachmentLabel(b.screenshot_url)}</SignedAnchor>}
                     {b.log?.lastError && <span className="text-red-400/80">Error: {String(b.log.lastError).slice(0, 80)}</span>}
                   </div>
                   {isAdmin && b.log?.actions?.length > 0 && (

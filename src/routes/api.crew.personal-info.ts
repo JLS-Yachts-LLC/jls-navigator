@@ -123,33 +123,44 @@ async function handlePatch(crewId: string, request: Request): Promise<Response> 
   }
 
   // Apply formatName server-side to name-type fields
-  const placeOfBirth      = formatName(body.placeOfBirth      as string | null)  || (body.placeOfBirth      as string | null) || null
-  const mothersMaidenName = formatName(body.mothersMaidenName as string | null)  || (body.mothersMaidenName as string | null) || null
-  const fathersFullName   = formatName(body.fathersFullName   as string | null)  || (body.fathersFullName   as string | null) || null
-  const nativeLanguage    = formatName(body.nativeLanguage    as string | null)  || (body.nativeLanguage    as string | null) || null
+  const nameCased = (v: unknown) => formatName(v as string | null) || (v as string | null) || null
 
-  const payload: Record<string, unknown> = {
-    nationality_citizenship: body.nationalityCitizenship ?? null,
-    place_of_birth:          placeOfBirth,
-    country_of_birth:        body.countryOfBirth    ?? null,
-    gender:                  body.gender             ?? null,
-    marital_status:          body.maritalStatus      ?? null,
-    native_language:         nativeLanguage,
-    occupation:              body.occupation         ?? null,
-    mothers_maiden_name:     mothersMaidenName,
-    fathers_full_name:       fathersFullName,
-    religion:                body.religion           ?? null,
-    residence_address_line1: body.residenceAddressLine1 ?? null,
-    residence_address_line2: body.residenceAddressLine2 ?? null,
-    residence_city:          body.residenceCity         ?? null,
-    residence_country:       body.residenceCountry      ?? null,
-    residence_phone:         body.residencePhone        ?? null,
-    ocr_populated_fields:    body.ocrPopulatedFields ?? [],
-    ocr_confirmed_fields:    body.ocrConfirmedFields ?? [],
-    updated_at:              new Date().toISOString(),
+  /**
+   * PARTIAL update: only write columns the caller actually sent.
+   *
+   * This used to build a full payload with `?? null` for every column, so any
+   * caller that omitted a field silently NULLed it. CrewPersonalEditDialog
+   * (the ✎ Edit button on the visa Review step) sends only the identity fields,
+   * which wiped the residence address + the ocr_* arrays every time it saved —
+   * the address "disappearing" after it had been entered. Keying off presence in
+   * the body means a partial caller can never destroy data it isn't editing.
+   */
+  const payload: Record<string, unknown> = { updated_at: new Date().toISOString() }
+  const set = (col: string, key: string, transform?: (v: unknown) => unknown) => {
+    if (!(key in body)) return
+    payload[col] = transform ? transform(body[key]) : (body[key] ?? null)
   }
 
-  // Mark complete if all required fields are present
+  set('nationality_citizenship', 'nationalityCitizenship')
+  set('place_of_birth',          'placeOfBirth',      nameCased)
+  set('country_of_birth',        'countryOfBirth')
+  set('gender',                  'gender')
+  set('marital_status',          'maritalStatus')
+  set('native_language',         'nativeLanguage',    nameCased)
+  set('occupation',              'occupation')
+  set('mothers_maiden_name',     'mothersMaidenName', nameCased)
+  set('fathers_full_name',       'fathersFullName',   nameCased)
+  set('religion',                'religion')
+  set('residence_address_line1', 'residenceAddressLine1')
+  set('residence_address_line2', 'residenceAddressLine2')
+  set('residence_city',          'residenceCity')
+  set('residence_country',       'residenceCountry')
+  set('residence_phone',         'residencePhone')
+  set('ocr_populated_fields',    'ocrPopulatedFields', v => v ?? [])
+  set('ocr_confirmed_fields',    'ocrConfirmedFields', v => v ?? [])
+
+  // Mark complete only when this request carries every required field — a
+  // partial save must not claim completion on another caller's behalf.
   const requiredFilled = REQUIRED_FIELDS.every(f => !!(body[f] as string)?.trim())
   if (requiredFilled) {
     payload.personal_info_completed_at = new Date().toISOString()

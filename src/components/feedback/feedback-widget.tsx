@@ -1,14 +1,21 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { getCapturedLog } from "@/lib/action-log";
 import { fileToBase64 } from "@/lib/file-to-base64";
-import { Lightbulb, Bug, Sparkles, X, Loader2, Upload, CheckCircle2, ExternalLink, Camera } from "lucide-react";
+import { Lightbulb, Bug, Sparkles, X, Loader2, Upload, CheckCircle2, ExternalLink, Camera, FileText, Video } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 type Tab = "bug" | "feature";
+
+/** Attachments accepted for review — screenshots plus documents (PDF / Word /
+ *  Excel / text), so a spec or a marked-up doc can be sent, not just an image. */
+const ACCEPT = [
+  "image/*", ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".txt", ".rtf", ".odt", ".msg", ".eml",
+].join(",");
+const MAX_MB = 25;
 
 export function FeedbackWidget() {
   const { user } = useAuth();
@@ -19,6 +26,31 @@ export function FeedbackWidget() {
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [capturing, setCapturing] = useState(false);
+  const [recorder, setRecorder] = useState<MediaRecorder | null>(null);
+  const [recSecs, setRecSecs] = useState(0);
+
+  const isImage = !!file?.type.startsWith("image/");
+  const isVideo = !!file?.type.startsWith("video/");
+
+  // Preview URL for image/video attachments — created once per file and revoked
+  // on change so we don't leak blob URLs on every render.
+  const previewUrl = useMemo(
+    () => (file && (file.type.startsWith("image/") || file.type.startsWith("video/")) ? URL.createObjectURL(file) : null),
+    [file],
+  );
+  useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
+
+  // Tick the elapsed-time readout while recording.
+  useEffect(() => {
+    if (!recorder) return;
+    const t = setInterval(() => setRecSecs((s) => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [recorder]);
+
+  // Never leave the screen-share running if the dialog is dismissed mid-recording.
+  useEffect(() => {
+    if (!open && recorder && recorder.state !== "inactive") recorder.stop();
+  }, [open, recorder]);
 
   // Capture the screen via the browser and attach it as the screenshot. The
   // browser shows a picker (choose "This tab"/window); we grab a single frame.
@@ -42,6 +74,64 @@ export function FeedbackWidget() {
       if (e?.name !== "NotAllowedError" && e?.name !== "AbortError") toast.error("Could not capture screenshot");
     } finally { setCapturing(false); }
   }
+
+  /**
+   * Record the screen (browser tab) to a video the reviewer can play back —
+   * far more useful than a still for reproducing an intermittent bug. The
+   * browser's own picker chooses what to share; stopping the share (or pressing
+   * Stop) ends the recording and attaches it. Comments go in the description as
+   * usual, so the report is "video + what you were doing".
+   */
+  async function startRecording() {
+    const md = navigator.mediaDevices as any;
+    if (!md?.getDisplayMedia || typeof MediaRecorder === "undefined") {
+      toast.error("Screen recording isn't supported in this browser — attach a screenshot or document instead.");
+      return;
+    }
+    try {
+      const stream: MediaStream = await md.getDisplayMedia({ video: { displaySurface: "browser", frameRate: 15 }, audio: false });
+      // Pick the first container the browser can actually encode.
+      const mime = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm", "video/mp4"]
+        .find((m) => MediaRecorder.isTypeSupported(m)) ?? "";
+      const rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 1_200_000 } : undefined);
+      const chunks: Blob[] = [];
+      rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+      rec.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        setRecorder(null);
+        const type = mime.split(";")[0] || "video/webm";
+        const blob = new Blob(chunks, { type });
+        const ext = type.includes("mp4") ? "mp4" : "webm";
+        if (blob.size > MAX_MB * 1024 * 1024) {
+          toast.error(`Recording is ${(blob.size / 1024 / 1024).toFixed(1)} MB — over the ${MAX_MB} MB limit. Try a shorter clip.`);
+          return;
+        }
+        setFile(new File([blob], `screen-recording-${Date.now()}.${ext}`, { type }));
+        toast.success("Recording attached — add your comments below.");
+      };
+      // Ending the share from the browser's own bar should stop us too.
+      stream.getVideoTracks()[0]?.addEventListener("ended", () => { if (rec.state !== "inactive") rec.stop(); });
+      rec.start(1000);
+      setRecSecs(0);
+      setRecorder(rec);
+    } catch (e: any) {
+      if (e?.name !== "NotAllowedError" && e?.name !== "AbortError") toast.error("Could not start the recording");
+    }
+  }
+
+  function stopRecording() {
+    if (recorder && recorder.state !== "inactive") recorder.stop();
+  }
+
+  // Manual pick — accept documents as well as images, with a size guard.
+  function pickFile(f: File | null) {
+    if (f && f.size > MAX_MB * 1024 * 1024) {
+      toast.error(`“${f.name}” is ${(f.size / 1024 / 1024).toFixed(1)} MB — the limit is ${MAX_MB} MB.`);
+      return;
+    }
+    setFile(f);
+  }
+
   const [done, setDone] = useState(false);
 
   function reset() {
@@ -52,12 +142,16 @@ export function FeedbackWidget() {
     if (!message.trim()) { toast.error("Please add a short description"); return; }
     setBusy(true);
     try {
+      // Attachment (screenshot, screen recording or document) — allowed on both
+      // tabs now, so a feature request can carry a spec document too.
       let screenshotUrl: string | null = null;
-      if (file && tab === "bug") {
+      if (file) {
         const ext = file.name.split(".").pop() || "png";
         const path = `feedback/${user?.id ?? "anon"}-${Date.now()}.${ext}`;
-        const { error: upErr } = await supabase.storage.from("permit-documents").upload(path, file, { upsert: true });
-        if (!upErr) screenshotUrl = supabase.storage.from("permit-documents").getPublicUrl(path).data.publicUrl;
+        const { error: upErr } = await supabase.storage.from("permit-documents")
+          .upload(path, file, { upsert: true, contentType: file.type || undefined });
+        if (upErr) throw new Error(`Attachment upload failed: ${upErr.message}`);
+        screenshotUrl = supabase.storage.from("permit-documents").getPublicUrl(path).data.publicUrl;
       }
       const log = tab === "bug" ? getCapturedLog() : null;
       const { data: row, error } = await (supabase as any).from("feedback").insert({
@@ -138,29 +232,64 @@ export function FeedbackWidget() {
                     placeholder={tab === "bug" ? "What went wrong? What were you doing?" : "Describe your idea — staff can upvote it."}
                     className="min-h-[100px] w-full rounded-md border border-border bg-background p-3 text-sm" />
 
-                  {tab === "bug" && (
-                    <>
-                      <div className="flex flex-wrap gap-2">
-                        <label className="flex flex-1 min-w-[180px] cursor-pointer items-center gap-2 rounded-md border border-dashed border-border px-3 py-2.5 text-sm text-muted-foreground hover:border-primary/50">
-                          <Upload className="h-4 w-4" />
-                          {file ? <span className="truncate text-foreground">{file.name}</span> : "Attach a screenshot (optional)"}
-                          <input type="file" accept="image/*" className="hidden" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-                        </label>
+                  {/* Attachment — screenshot, screen recording, or any document */}
+                  <div className="flex flex-wrap gap-2">
+                    <label className="flex flex-1 min-w-[180px] cursor-pointer items-center gap-2 rounded-md border border-dashed border-border px-3 py-2.5 text-sm text-muted-foreground hover:border-primary/50">
+                      <Upload className="h-4 w-4 shrink-0" />
+                      {file ? <span className="truncate text-foreground">{file.name}</span> : "Attach a file (image, PDF, Word…)"}
+                      <input type="file" accept={ACCEPT} className="hidden" onChange={(e) => pickFile(e.target.files?.[0] ?? null)} />
+                    </label>
+                    {tab === "bug" && !recorder && (
+                      <>
                         <button type="button" onClick={takeScreenshot} disabled={capturing}
                           className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-2.5 text-sm font-medium hover:border-primary/50 disabled:opacity-60">
-                          {capturing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />} Take screenshot
+                          {capturing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />} Screenshot
                         </button>
-                      </div>
-                      {file && (
-                        <div className="flex items-center gap-2">
-                          <img src={URL.createObjectURL(file)} alt="" className="h-16 rounded border border-border object-cover" />
-                          <button type="button" onClick={() => setFile(null)} className="text-[12px] text-muted-foreground hover:text-destructive">Remove</button>
-                        </div>
+                        <button type="button" onClick={startRecording}
+                          className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-2.5 text-sm font-medium hover:border-primary/50">
+                          <Video className="h-4 w-4" /> Record screen
+                        </button>
+                      </>
+                    )}
+                    {recorder && (
+                      <button type="button" onClick={stopRecording}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2.5 text-sm font-semibold text-red-400 hover:bg-red-500/20">
+                        <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />
+                        Stop recording · {Math.floor(recSecs / 60)}:{String(recSecs % 60).padStart(2, "0")}
+                      </button>
+                    )}
+                  </div>
+
+                  {recorder && (
+                    <p className="text-[11px] text-red-400/90">
+                      Recording — reproduce the issue now, then press <strong>Stop recording</strong> (or end the share from your browser's bar) and describe it above.
+                    </p>
+                  )}
+
+                  {/* Attachment preview */}
+                  {file && !recorder && (
+                    <div className="flex items-center gap-2.5 rounded-md border border-border bg-muted/20 p-2">
+                      {isImage && previewUrl ? (
+                        <img src={previewUrl} alt="" className="h-16 rounded border border-border object-cover" />
+                      ) : isVideo && previewUrl ? (
+                        <video src={previewUrl} controls className="h-28 rounded border border-border" />
+                      ) : (
+                        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md bg-primary/10">
+                          <FileText className="h-5 w-5 text-primary/80" />
+                        </span>
                       )}
-                      <p className="text-[11px] text-muted-foreground">
-                        A short activity log (recent actions + any error) is attached automatically to help us diagnose it.
-                      </p>
-                    </>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-[12.5px] font-medium">{file.name}</div>
+                        <div className="text-[11px] text-muted-foreground">{(file.size / 1024).toFixed(0)} KB</div>
+                      </div>
+                      <button type="button" onClick={() => setFile(null)} className="text-[12px] text-muted-foreground hover:text-destructive">Remove</button>
+                    </div>
+                  )}
+
+                  {tab === "bug" && (
+                    <p className="text-[11px] text-muted-foreground">
+                      A short activity log (recent actions + any error) is attached automatically to help us diagnose it.
+                    </p>
                   )}
                 </div>
 

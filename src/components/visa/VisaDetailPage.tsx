@@ -75,6 +75,17 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
   // (kept by a DB trigger — the record itself only holds the latest pair).
   type Movement = { id: string; field: "sign_on" | "sign_off"; old_date: string | null; new_date: string | null; changed_at: string; changed_by_email: string | null; source: string };
   const [movements, setMovements] = useState<Movement[]>([]);
+  // Status history: who submitted / approved / cancelled this application, and
+  // when (kept by a DB trigger, so no update path can bypass it).
+  type StatusChange = { id: string; old_status: string | null; new_status: string | null; changed_at: string; changed_by_email: string | null; source: string };
+  const [statusHistory, setStatusHistory] = useState<StatusChange[]>([]);
+  // Full visa history for this crew member: every application they've ever had
+  // (including expired/cancelled ones) plus the actions taken on each, so an
+  // expired or cancelled past visa never hides the record.
+  type CrewApp = { id: string; status: string | null; country_code: string | null; created_at: string; submitted_at: string | null; visa_number: string | null; visa_expiry: string | null };
+  const [crewApps, setCrewApps] = useState<CrewApp[]>([]);
+  const [crewAppHistory, setCrewAppHistory] = useState<Record<string, StatusChange[]>>({});
+  const [expandedApp, setExpandedApp] = useState<string | null>(null);
 
   // Open (creating if needed) the crew member's SharePoint folder in a new tab.
   // Resolved lazily on click so the page load stays light and no empty folders
@@ -178,7 +189,7 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
     setLoading(true);
     const { data, error } = await (supabase as any)
       .from("visa_applications")
-      .select("*, yachts(vessel_name, visa_report_email), crew_members(email)")
+      .select("*, yachts(vessel_name, visa_report_email), crew_members(email, rank, department)")
       .eq("id", id)
       .maybeSingle();
     if (error || !data) { toast.error("Application not found"); goList(); return; }
@@ -200,6 +211,23 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
       setSignOn((events ?? []).find((e: any) => e.event_type === "sign_on")?.event_date ?? null);
       setSignOff((events ?? []).find((e: any) => e.event_type === "sign_off")?.event_date ?? null);
       setDocs(pp ?? null);
+
+      // Every application this crew member has ever had, newest first, plus the
+      // status history of each — one extra query, grouped client-side.
+      const { data: apps } = await db2.from("visa_applications")
+        .select("id, status, country_code, created_at, submitted_at, visa_number, visa_expiry")
+        .eq("crew_member_id", crewId)
+        .order("created_at", { ascending: false });
+      setCrewApps((apps ?? []) as CrewApp[]);
+      const ids = (apps ?? []).map((a: any) => a.id);
+      if (ids.length) {
+        const { data: hist } = await db2.from("visa_status_history")
+          .select("id, visa_id, old_status, new_status, changed_at, changed_by_email, source")
+          .in("visa_id", ids).order("changed_at", { ascending: false });
+        const grouped: Record<string, StatusChange[]> = {};
+        for (const h of (hist ?? []) as any[]) (grouped[h.visa_id] ??= []).push(h);
+        setCrewAppHistory(grouped);
+      }
     }
     (supabase as any).from("yachts").select("vessel_name").not("vessel_name", "is", null).order("vessel_name")
       .then(({ data: ys }: { data: { vessel_name: string }[] | null }) =>
@@ -208,6 +236,10 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
       .select("id, field, old_date, new_date, changed_at, changed_by_email, source")
       .eq("visa_id", id).order("changed_at", { ascending: false }).limit(50)
       .then(({ data: mh }: { data: any[] | null }) => setMovements((mh ?? []) as any));
+    (supabase as any).from("visa_status_history")
+      .select("id, old_status, new_status, changed_at, changed_by_email, source")
+      .eq("visa_id", id).order("changed_at", { ascending: false }).limit(50)
+      .then(({ data: sh }: { data: any[] | null }) => setStatusHistory((sh ?? []) as any));
   }
 
   function pushExcel() {
@@ -224,6 +256,12 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
     const { error } = await (supabase as any).from("visa_applications").update(patch).eq("id", id);
     if (error) { toast.error(error.message); return; }
     toast.success("Status updated"); setVisa(v => ({ ...v!, ...patch })); pushExcel();
+    // The change is logged by a DB trigger — pull the new entry in so the
+    // Status History panel reflects it without a reload.
+    (supabase as any).from("visa_status_history")
+      .select("id, old_status, new_status, changed_at, changed_by_email, source")
+      .eq("visa_id", id).order("changed_at", { ascending: false }).limit(50)
+      .then(({ data: sh }: { data: any[] | null }) => setStatusHistory((sh ?? []) as any));
   }
 
   function openEdit() {
@@ -231,7 +269,9 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
       vessel_name: visa?.vessel_name ?? (vesselName !== "—" ? vesselName : ""),
       nationality: visa?.nationality ?? "", passport_number: visa?.passport_number ?? "",
       visa_number: visa?.visa_number ?? "", visa_application_no: visa?.visa_application_no ?? "",
-      rank_rating: visa?.rank_rating ?? "",
+      // Default the visa's rank to the crew member's, so editing keeps the
+      // seafarer's position rather than blanking it.
+      rank_rating: visa?.rank_rating ?? visa?.crew_members?.rank ?? "",
       visa_issuance_date: visa?.visa_issuance_date ?? "", visa_expiry: visa?.visa_expiry ?? "",
       first_entry_expiry: visa?.first_entry_expiry ?? "", arrival_date: visa?.arrival_date ?? "",
       sign_on_date: visa?.sign_on_date ?? "", sign_off_date: visa?.sign_off_date ?? "",
@@ -286,6 +326,9 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
 
   const name = [visa.given_name, visa.surname].filter(Boolean).join(" ") || visa.application_notes?.split("\n")[0] || "—";
   const sm = STATUS_META[visa.status] ?? { label: visa.status ?? "—", cls: "bg-slate-500/15 text-slate-400" };
+  // The rank shown against the seafarer — the visa's own value wins, else the
+  // crew record's rank (kept in crew_members.rank via the crew list).
+  const crewRank: string | null = visa.rank_rating || visa.crew_members?.rank || null;
 
   const rows: [string, React.ReactNode][] = [
     ["Crew Member", name],
@@ -294,7 +337,13 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
     ["Visa Type", visa.visa_type ?? "—"],
     ["Nationality", visa.nationality ?? "—"],
     ["Passport No.", visa.passport_number ?? "—"],
-    ["Rank / Rating", visa.rank_rating ?? "—"],
+    // Rank / Position: the visa's own rank_rating when set, otherwise the linked
+    // crew member's rank — so the seafarer's position always shows against the
+    // visa instead of a dash when only the crew record carries it.
+    ["Rank / Position", crewRank
+      ? <>{crewRank}{!visa.rank_rating && <span className="ml-1.5 text-[10.5px] text-muted-foreground/60">from crew record</span>}</>
+      : "—"],
+    ["Department", visa.crew_members?.department ?? "—"],
     // Corrected terminology to match the official grant document — these were
     // previously labeled "Visa Reference"/"Visa Issuance"/"1st Entry Expiry",
     // which don't match any country's actual document wording; the underlying
@@ -502,6 +551,107 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
               </div>
             </div>
           )}
+
+          {/* Status history — the record only holds its current status, so this is
+              the audit trail of who submitted / approved / cancelled it, and when. */}
+          {statusHistory.length > 0 && (
+            <div className="rounded-xl border border-border bg-card/60 overflow-hidden">
+              <div className="border-b border-border/40 px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                Status History
+              </div>
+              <div className="divide-y divide-border/40">
+                {statusHistory.map((s) => {
+                  const meta = STATUS_META[String(s.new_status)] ?? { label: s.new_status ?? "—", cls: "bg-slate-500/15 text-slate-400" };
+                  const from = s.old_status ? (STATUS_META[s.old_status]?.label ?? s.old_status) : null;
+                  return (
+                    <div key={s.id} className="flex items-center justify-between gap-3 px-4 py-2 text-[12.5px]">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10.5px] font-semibold", meta.cls)}>
+                          {meta.label}
+                        </span>
+                        <span className="truncate text-muted-foreground">
+                          {from ? <>from {from}</> : "created"}
+                        </span>
+                      </div>
+                      <span className="shrink-0 text-[11px] text-muted-foreground/70">
+                        {new Date(s.changed_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                        {s.changed_by_email ? ` · ${s.changed_by_email.split("@")[0]}` : s.source === "sync" ? " · tracker sync" : ""}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Visa history — EVERY application this crew member has had, including
+              expired and cancelled ones, each expandable to its action log. A past
+              expired/cancelled visa must never hide the crew member or a new
+              application, so the full chain lives here. */}
+          {crewApps.length > 0 && (
+            <div className="rounded-xl border border-border bg-card/60 overflow-hidden md:col-span-2">
+              <div className="flex items-center justify-between border-b border-border/40 px-4 py-2.5">
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                  Visa History — all applications
+                </span>
+                <span className="text-[10.5px] text-muted-foreground/60">{crewApps.length} application{crewApps.length !== 1 ? "s" : ""}</span>
+              </div>
+              <div className="divide-y divide-border/40">
+                {crewApps.map((a) => {
+                  const meta = STATUS_META[String(a.status)] ?? { label: a.status ?? "—", cls: "bg-slate-500/15 text-slate-400" };
+                  const hist = crewAppHistory[a.id] ?? [];
+                  const isCurrent = a.id === id;
+                  const isOpen = expandedApp === a.id;
+                  return (
+                    <div key={a.id}>
+                      <div className="flex items-center gap-3 px-4 py-2.5 text-[12.5px]">
+                        <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10.5px] font-semibold", meta.cls)}>{meta.label}</span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                            <span className="font-medium">{fmt(a.submitted_at ?? a.created_at)}</span>
+                            {a.country_code && <span className="text-muted-foreground/70">{a.country_code}</span>}
+                            {a.visa_number && <span className="text-muted-foreground/70">· {a.visa_number}</span>}
+                            {a.visa_expiry && <span className="text-muted-foreground/70">· expires {fmt(a.visa_expiry)}</span>}
+                            {isCurrent && <span className="rounded-full bg-primary/15 px-1.5 py-px text-[10px] font-semibold text-primary">viewing</span>}
+                          </div>
+                        </div>
+                        {hist.length > 0 && (
+                          <button onClick={() => setExpandedApp(isOpen ? null : a.id)}
+                            className="shrink-0 text-[11px] text-primary hover:underline">
+                            {isOpen ? "Hide" : `${hist.length} action${hist.length !== 1 ? "s" : ""}`}
+                          </button>
+                        )}
+                        {!isCurrent && (
+                          <button onClick={() => navigate({ to: `/crew-immigration/visas/${a.id}` as any })}
+                            className="shrink-0 text-[11px] text-muted-foreground hover:text-foreground">Open</button>
+                        )}
+                      </div>
+                      {isOpen && (
+                        <div className="space-y-1 border-t border-border/30 bg-muted/20 px-4 py-2">
+                          {hist.map((h) => {
+                            const to = STATUS_META[String(h.new_status)]?.label ?? h.new_status ?? "—";
+                            const from = h.old_status ? (STATUS_META[h.old_status]?.label ?? h.old_status) : null;
+                            return (
+                              <div key={h.id} className="flex items-center justify-between gap-3 text-[11.5px]">
+                                <span className="truncate">
+                                  {from ? <>{from} <span className="text-muted-foreground/50">→</span> </> : "Created as "}
+                                  <span className="font-medium">{to}</span>
+                                </span>
+                                <span className="shrink-0 text-[10.5px] text-muted-foreground/70">
+                                  {new Date(h.changed_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                                  {h.changed_by_email ? ` · ${h.changed_by_email.split("@")[0]}` : h.source === "sync" ? " · tracker sync" : ""}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -527,7 +677,7 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
             <div className="space-y-1.5"><Label className="text-xs">Passport No.</Label><Input value={form.passport_number} onChange={e => setForm(f => ({ ...f, passport_number: e.target.value }))} className="h-9" /></div>
             <div className="space-y-1.5"><Label className="text-xs">Visa Number</Label><Input value={form.visa_number} onChange={e => setForm(f => ({ ...f, visa_number: e.target.value }))} className="h-9" /></div>
             <div className="space-y-1.5"><Label className="text-xs">Visa Application No</Label><Input value={form.visa_application_no} onChange={e => setForm(f => ({ ...f, visa_application_no: e.target.value }))} className="h-9" /></div>
-            <div className="space-y-1.5"><Label className="text-xs">Rank / Rating</Label><Input value={form.rank_rating} onChange={e => setForm(f => ({ ...f, rank_rating: e.target.value }))} className="h-9" /></div>
+            <div className="space-y-1.5"><Label className="text-xs">Rank / Position</Label><Input value={form.rank_rating} onChange={e => setForm(f => ({ ...f, rank_rating: e.target.value }))} className="h-9" placeholder="e.g. Chief Officer" /></div>
             <div className="space-y-1.5"><Label className="text-xs">Visa Grant Date</Label><DateInputDMY value={form.visa_issuance_date} onChange={v => setForm(f => ({ ...f, visa_issuance_date: v }))} style={{ height: 36, width: "100%", borderRadius: 8, border: "1px solid var(--border)", background: "var(--background)", color: "var(--foreground)", padding: "0 10px", fontSize: 14 }} /></div>
             <div className="space-y-1.5"><Label className="text-xs">Visa Expiry</Label><DateInputDMY value={form.visa_expiry} onChange={v => setForm(f => ({ ...f, visa_expiry: v }))} style={{ height: 36, width: "100%", borderRadius: 8, border: "1px solid var(--border)", background: "var(--background)", color: "var(--foreground)", padding: "0 10px", fontSize: 14 }} /></div>
             <div className="space-y-1.5"><Label className="text-xs">Visa Use By Date</Label><DateInputDMY value={form.first_entry_expiry} onChange={v => setForm(f => ({ ...f, first_entry_expiry: v }))} style={{ height: 36, width: "100%", borderRadius: 8, border: "1px solid var(--border)", background: "var(--background)", color: "var(--foreground)", padding: "0 10px", fontSize: 14 }} /></div>

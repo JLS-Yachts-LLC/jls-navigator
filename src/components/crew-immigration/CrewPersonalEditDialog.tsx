@@ -66,6 +66,11 @@ export function CrewPersonalEditDialog({ crewId, open, onOpenChange, onSaved }: 
         fathersFullName: pi.fathersFullName ?? '',
         occupation: pi.occupation ?? c?.rank ?? '',
         religion: pi.religion ?? '',
+        residenceAddressLine1: pi.residenceAddressLine1 ?? '',
+        residenceAddressLine2: pi.residenceAddressLine2 ?? '',
+        residenceCity: pi.residenceCity ?? '',
+        residenceCountry: pi.residenceCountry ?? '',
+        residencePhone: pi.residencePhone ?? '',
       })
       setLoading(false)
     })()
@@ -109,6 +114,11 @@ export function CrewPersonalEditDialog({ crewId, open, onOpenChange, onSaved }: 
           mothersMaidenName: f.mothersMaidenName.trim() || null,
           fathersFullName: f.fathersFullName.trim() || null,
           religion: f.religion || null,
+          residenceAddressLine1: f.residenceAddressLine1?.trim() || null,
+          residenceAddressLine2: f.residenceAddressLine2?.trim() || null,
+          residenceCity: f.residenceCity?.trim() || null,
+          residenceCountry: f.residenceCountry?.trim() || null,
+          residencePhone: f.residencePhone?.trim() || null,
         }),
       })
       if (!r.ok) {
@@ -165,6 +175,16 @@ export function CrewPersonalEditDialog({ crewId, open, onOpenChange, onSaved }: 
             {fieldSelect('religion', 'Religion', RELIGIONS)}
             {fieldText('email', 'Email', 'email')}
             {fieldText('phone', 'Phone')}
+            {/* Country of residence address — editable here so this dialog shows
+                the full picture (it previously omitted these, which wiped them). */}
+            <div className="col-span-2 pt-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+              Country of residence address / contact
+            </div>
+            {fieldText('residenceAddressLine1', 'Address line 1')}
+            {fieldText('residenceAddressLine2', 'Address line 2')}
+            {fieldText('residenceCity', 'City')}
+            {fieldText('residenceCountry', 'Country')}
+            {fieldText('residencePhone', 'Telephone No.')}
           </div>
         )}
         <DialogFooter>

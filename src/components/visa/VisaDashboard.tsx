@@ -187,6 +187,16 @@ function formatDate(iso: string | null): string {
 
 const GRID = '1.6fr 1.3fr 1.2fr 120px 1.3fr 110px 96px'
 
+/** Statuses that mean "still being worked" — these are always current, whatever
+ *  expiry date the record happens to carry. */
+const IN_FLIGHT_STATUSES = ['draft', 'pending_docs', 'submitted', 'in_review', 'processing', 'amendment_required']
+
+/** Sortable columns on the applications table. */
+type SortKey = 'crew' | 'vessel' | 'country' | 'status' | 'applied'
+const SORT_COLS: Record<string, SortKey> = {
+  Crew: 'crew', Vessel: 'vessel', Country: 'country', Status: 'status', Applied: 'applied',
+}
+
 // ── Main Component ───────────────────────────────────────────────────────────
 
 export default function VisaDashboard({ embedded = false }: { embedded?: boolean } = {}) {
@@ -297,6 +307,9 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
   const [year, setYear]       = useState('all')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo]     = useState('')
+  // Sort — newest applied first by default.
+  const [sortKey, setSortKey] = useState<SortKey>('applied')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
 
   async function loadAll() {
     setLoading(true)
@@ -344,6 +357,11 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
     const today = new Date().toISOString().slice(0, 10)
     return applications.filter(a => {
       if (['expired', 'cancelled', 'rejected', 'signed off', 'sign off'].includes(a.status)) return false
+      // An in-flight application is current work by definition — never hide it on
+      // an expiry date. Records often carry a stale visa_expiry from the crew
+      // member's PREVIOUS visa, which used to make a freshly submitted
+      // application disappear from every status tab.
+      if (IN_FLIGHT_STATUSES.includes(a.status)) return true
       if (a.visa_expiry && String(a.visa_expiry).slice(0, 10) < today) return false
       return true
     })
@@ -357,7 +375,7 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
 
   // ── Filtering ────────────────────────────────────────────────────────────────
 
-  const filtered = useMemo(() => scoped.filter(a => {
+  const unsorted = useMemo(() => scoped.filter(a => {
     if (activeStatus && a.status !== activeStatus) return false
     if (vessel !== 'all' && a.yacht_id !== vessel) return false
     const d = effectiveDate(a)
@@ -375,6 +393,35 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
     }
     return true
   }), [scoped, activeStatus, vessel, year, dateFrom, dateTo, search])
+
+  // ── Sorting ──────────────────────────────────────────────────────────────────
+  // Newest first by default. The DB order is created_at desc, but the Applied
+  // column shows submitted_at ?? created_at, so without an explicit sort the
+  // list looked out of order. Click a column header to sort by it.
+  const filtered = useMemo(() => {
+    const dir = sortDir === 'asc' ? 1 : -1
+    const val = (a: VisaApplication): string => {
+      switch (sortKey) {
+        case 'crew':    return getCrewName(a).toLowerCase()
+        case 'vessel':  return (a.yachts?.vessel_name ?? a.vessel_name ?? '').toLowerCase()
+        case 'country': return getCountryInfo(a.country_code).name.toLowerCase()
+        case 'status':  return a.status ?? ''
+        default:        return effectiveDate(a)
+      }
+    }
+    return [...unsorted].sort((x, y) => {
+      const a = val(x), b = val(y)
+      return a === b ? 0 : (a < b ? -1 : 1) * dir
+    })
+  }, [unsorted, sortKey, sortDir])
+
+  /** Click a column to sort by it; clicking the active column flips direction.
+   *  Dates start newest-first, text starts A→Z. */
+  function toggleSort(key: SortKey) {
+    if (key === sortKey) { setSortDir(d => (d === 'asc' ? 'desc' : 'asc')); return }
+    setSortKey(key)
+    setSortDir(key === 'applied' ? 'desc' : 'asc')
+  }
 
   const hasFilters = !!activeStatus || vessel !== 'all' || year !== 'all' || !!dateFrom || !!dateTo || !!search.trim()
 
@@ -640,11 +687,25 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
         <div style={{ background: COLORS.abyss, borderRadius: 12, border: `1px solid ${COLORS.deep}`, overflow: 'hidden' }}>
           {/* Table header */}
           <div style={{ display: 'grid', gridTemplateColumns: GRID, padding: '10px 16px', background: COLORS.ocean, borderBottom: `1px solid ${COLORS.deep}` }}>
-            {['Crew', 'Vessel', 'Country', 'Status', 'Passport', 'Applied', 'Actions'].map(col => (
-              <span key={col} style={{ fontFamily: FONTS.display, fontSize: 11, fontWeight: 700, color: COLORS.frost, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                {col}
-              </span>
-            ))}
+            {['Crew', 'Vessel', 'Country', 'Status', 'Passport', 'Applied', 'Actions'].map(col => {
+              const key = SORT_COLS[col]
+              const active = key && key === sortKey
+              return (
+                <span
+                  key={col}
+                  onClick={key ? () => toggleSort(key) : undefined}
+                  title={key ? `Sort by ${col}` : undefined}
+                  style={{
+                    fontFamily: FONTS.display, fontSize: 11, fontWeight: 700,
+                    color: active ? COLORS.signal : COLORS.frost,
+                    textTransform: 'uppercase', letterSpacing: '0.06em',
+                    cursor: key ? 'pointer' : 'default', userSelect: 'none',
+                  }}
+                >
+                  {col}{active && <span style={{ marginLeft: 4 }}>{sortDir === 'asc' ? '▲' : '▼'}</span>}
+                </span>
+              )
+            })}
           </div>
 
           {/* Rows */}

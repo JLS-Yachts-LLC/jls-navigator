@@ -462,6 +462,13 @@
   --font-display: var(--pds-font-display);
   --font-body:    var(--pds-font-body);
   font-family: var(--pds-font-body);
+  /* `body` resolves `color: var(--foreground)` against the BASE theme and that
+     computed colour inherits into portaled surfaces — so re-declaring
+     --foreground above alone left dialog text at the old dim value (faint,
+     hard-to-read inputs in e.g. "Edit personal details"). Re-resolve `color`
+     here so each surface actually uses its own light foreground. Inputs are
+     `bg-transparent` with no colour of their own, so they inherit this. */
+  color: var(--foreground);
 }
 .pds-embed { background: #0a2e40; }
 /* @theme inline bakes the Space Grotesk stack into the font-sans/font-display
