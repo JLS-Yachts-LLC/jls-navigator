@@ -22,7 +22,7 @@ import {
 import { Users, FolderTree, Loader2, ExternalLink, Merge, RefreshCw, CheckCircle2, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { nameSimilarity, groupSimilar } from "@/lib/crew-duplicates.server";
+import { nameSimilarity, groupSimilar } from "@/lib/crew-name-match";
 import { scanDuplicateCrewFolders, mergeCrewFolders, type DupGroup } from "@/lib/crew-duplicates.server";
 
 type Crew = { id: string; first_name: string | null; middle_name: string | null; last_name: string | null; full_name: string | null; rank: string | null; yacht_id: string | null; status: string | null; passport_number: string | null };

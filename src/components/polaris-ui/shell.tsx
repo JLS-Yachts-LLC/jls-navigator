@@ -117,6 +117,13 @@ export const NAV_GROUPS: NavGroup[] = [
         route: "/crew-immigration/visas/sync",
         roles: ["global_admin", "crew_immigration"],
       },
+      {
+        label: "Duplicate Crew",
+        icon: "copy",
+        screen: "route-crew-duplicates",
+        route: "/crew-immigration/duplicates",
+        roles: ["global_admin", "crew_immigration"],
+      },
     ],
   },
   {

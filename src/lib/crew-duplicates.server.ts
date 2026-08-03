@@ -16,7 +16,8 @@
  */
 import { createServerFn } from "@tanstack/react-start";
 import { getSpConfig, getGraphToken, resolveSpSite } from "@/lib/sharepoint-sync.server";
-import { nameKey, listFolderChildren, sanitizeSegment } from "@/lib/visa-sharepoint.server";
+import { listFolderChildren, sanitizeSegment } from "@/lib/visa-sharepoint.server";
+import { nameKey, groupSimilar } from "@/lib/crew-name-match";
 
 const DEFAULT_SITE_URL = "/sites/PortOperationsandAgency";
 
@@ -28,78 +29,8 @@ async function spContext(): Promise<{ token: string; siteId: string }> {
   return { token, siteId };
 }
 
-// ── Fuzzy name similarity ────────────────────────────────────────────────────
-
-/** Levenshtein distance, capped by early exit on the cheap length check. */
-function levenshtein(a: string, b: string): number {
-  if (a === b) return 0;
-  if (!a.length) return b.length;
-  if (!b.length) return a.length;
-  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
-  for (let i = 1; i <= a.length; i++) {
-    const row = [i];
-    for (let j = 1; j <= b.length; j++) {
-      row[j] = Math.min(
-        prev[j] + 1,
-        row[j - 1] + 1,
-        prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
-      );
-    }
-    prev = row;
-  }
-  return prev[b.length];
-}
-
-/**
- * 0–1 similarity between two people's names, order-insensitive.
- *
- * Compares the sorted word sets so "Cavor Jovan" scores the same as "Jovan
- * Cavor", and takes the better of (whole-string ratio, shared-word ratio) so an
- * extra middle name or a "(Deck)" suffix doesn't sink an obvious match.
- */
-export function nameSimilarity(a: string, b: string): number {
-  const ka = nameKey(a), kb = nameKey(b);
-  if (!ka || !kb) return 0;
-  if (ka === kb) return 1;
-
-  const wa = ka.split(" ").filter(Boolean), wb = kb.split(" ").filter(Boolean);
-  const sortedA = [...wa].sort().join(" "), sortedB = [...wb].sort().join(" ");
-  const maxLen = Math.max(sortedA.length, sortedB.length);
-  const whole = maxLen ? 1 - levenshtein(sortedA, sortedB) / maxLen : 0;
-
-  // Shared-word ratio against the SHORTER name, so "Jovan Cavor" vs
-  // "Jovan James Cavor" scores 1.0 on this measure.
-  const setB = new Set(wb);
-  const shared = wa.filter((w) => setB.has(w)).length;
-  const words = shared / Math.max(1, Math.min(wa.length, wb.length));
-
-  // A single shared word ("John" vs "John Smith") is far too weak on its own.
-  const wordScore = shared >= 2 || (shared === 1 && Math.min(wa.length, wb.length) === 1) ? words : words * 0.5;
-  return Math.max(whole, wordScore);
-}
-
-/** Group names whose similarity meets the threshold. Returns only real groups (≥2). */
-export function groupSimilar<T>(
-  items: T[], label: (t: T) => string, threshold = 0.82,
-): T[][] {
-  const groups: T[][] = [];
-  const used = new Set<number>();
-  for (let i = 0; i < items.length; i++) {
-    if (used.has(i)) continue;
-    const group = [items[i]];
-    used.add(i);
-    for (let j = i + 1; j < items.length; j++) {
-      if (used.has(j)) continue;
-      // Compare against every member so a chain (A~B, B~C) lands in one group.
-      if (group.some((g) => nameSimilarity(label(g), label(items[j])) >= threshold)) {
-        group.push(items[j]);
-        used.add(j);
-      }
-    }
-    if (group.length > 1) groups.push(group);
-  }
-  return groups;
-}
+// Fuzzy name matching lives in crew-name-match.ts so the server and the review
+// screen judge similarity identically.
 
 // ── SharePoint folder scan ───────────────────────────────────────────────────
 

@@ -12,39 +12,18 @@
  */
 import { createServerFn } from "@tanstack/react-start";
 import { getSpConfig, getGraphToken, resolveSpSite } from "@/lib/sharepoint-sync.server";
+import { toTypeableName, nameKey } from "@/lib/crew-name-match";
 
 // Server-relative site path + root folder. Overridable via the `sharepoint`
 // integration_settings config (visa_site_url / visa_root_folder) if needed.
 const DEFAULT_VISA_SITE_URL = "/sites/PortOperationsandAgency";
 const DEFAULT_VISA_ROOT_FOLDER = "Crew Visas";
 
-/**
- * Fold accented letters to plain ASCII: "JOVAN ČAVOR" → "JOVAN CAVOR".
- *
- * Passport OCR reads the diacritics on a name exactly as printed, which then ends
- * up in folder names staff can't type or search for — and produced a second,
- * near-duplicate crew folder beside the one already holding the documents. Every
- * SharePoint path segment is folded so only typeable characters are ever created.
- * Any remaining non-ASCII (e.g. non-Latin scripts) is dropped rather than left to
- * become an unsearchable folder name.
- */
-export function toTypeableName(s: string | null | undefined): string {
-  return (s ?? "")
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    // Ligatures and stroked letters carry no combining mark, so map them by hand.
-    .replace(/[ØøŒœÆæÐðÞþŁłĐđŊŋŦŧ]/g, (c) =>
-      ({ Ø: "O", ø: "o", Œ: "OE", œ: "oe", Æ: "AE", æ: "ae", Ð: "D", ð: "d",
-         Þ: "TH", þ: "th", Ł: "L", ł: "l", Đ: "D", đ: "d", Ŋ: "N", ŋ: "n",
-         Ŧ: "T", ŧ: "t" })[c] ?? c)
-    .replace(/ß/g, "ss")
-    .replace(/[^\x20-\x7E]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
+export { toTypeableName, nameKey };
 
 /** SharePoint forbids " * : < > ? / \ | in file/folder names. Names are also
- *  folded to typeable ASCII (see toTypeableName). */
+ *  folded to typeable ASCII (see toTypeableName), so passport OCR accents can
+ *  never create a folder staff are unable to type or search for. */
 export function sanitizeSegment(s: string | null | undefined, fallback: string): string {
   const cleaned = toTypeableName(s)
     .replace(/["*:<>?/\\|]/g, "-")
@@ -53,10 +32,6 @@ export function sanitizeSegment(s: string | null | undefined, fallback: string):
     .slice(0, 120);
   return cleaned || fallback;
 }
-
-/** Case- and accent-insensitive key: "JOVAN ČAVOR" and "Jovan Cavor" must match. */
-export const nameKey = (s: string) =>
-  toTypeableName(s).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
 /** List a folder's children (empty array on any failure — callers treat that as
  *  "nothing comparable exists" and create the folder). */
