@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { fetchAllRows } from "@/lib/fetch-all";
 import { Button } from "@/components/ui/button";
 import {
-  ArrowLeft, Loader2, UserCircle2, BookUser, Stamp, FileText,
+  ArrowLeft, Loader2, UserCircle2, BookUser, Stamp,
   Plane, ShipWheel, Mail, Phone, ExternalLink, ShieldQuestion, Link2, Pencil,
 } from "lucide-react";
 import { CrewPersonalEditDialog } from "@/components/crew-immigration/CrewPersonalEditDialog";
@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { SignedAnchor, SignedImage } from "@/components/ui/signed-file";
 import { CrewTimeline } from "@/components/crew-immigration/CrewTimeline";
+import { CrewDocumentsCard } from "@/components/crew-immigration/CrewDocumentsCard";
 import { formatPhoneForDisplay } from "@/lib/phone/validatePhoneNumber";
 
 type CrewMember = {
@@ -337,44 +338,15 @@ export function CrewProfilePage({
               <CrewTimeline crewId={id} yachtMap={yachtMap} />
             </Section>
 
-            {/* Documents — passport files (from crew_passports) + other crew documents */}
-            {(() => {
-              const pp: any = passports[0] ?? {};
-              const passportDocs: { label: string; url: string }[] = [
-                { label: "Passport — inside pages", url: pp.document_url },
-                { label: "Passport — front cover", url: pp.cover_url },
-                { label: "Headshot photo", url: pp.headshot_url },
-                ...(pp.crew_verification_letter_url
-                  ? [{ label: "Crew verification letter", url: pp.crew_verification_letter_url }]
-                  : [{ label: "Seaman's book", url: pp.seamans_book_url }]),
-              ].filter((d) => !!d.url);
-              const total = passportDocs.length + docs.length;
-              return (
-            <Section icon={FileText} title="Documents" count={total}>
-              {total === 0 ? <Empty>No documents uploaded.</Empty> : (
-                <div className="divide-y divide-border/50">
-                  {passportDocs.map((d) => (
-                    <div key={d.label} className="flex items-center gap-4 py-3">
-                      <div className="flex-1 text-sm font-medium">{d.label}</div>
-                      <DocLink stored={d.url} label="Open" />
-                    </div>
-                  ))}
-                  {docs.map((d) => (
-                    <div key={d.id} className="flex items-center gap-4 py-3">
-                      <div className="flex-1">
-                        <div className="text-sm font-medium">{d.title || d.file_name || titleCase(d.doc_type)}</div>
-                        <div className="mt-0.5 text-[11px] text-muted-foreground">
-                          {titleCase(d.doc_type)}{d.expiry_date ? <> · Expires <span className={cn(isSoon(d.expiry_date) && "text-amber-400")}>{fmt(d.expiry_date)}</span></> : ""}
-                        </div>
-                      </div>
-                      {d.file_url && <DocLink stored={d.file_url} label="Open" />}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Section>
-              );
-            })()}
+            {/* Documents — passport files (from crew_passports) + other crew documents,
+                filed into folders and badged by SharePoint presence. */}
+            <CrewDocumentsCard
+              crewId={id}
+              crewName={crew.full_name || `${crew.first_name} ${crew.last_name}`.trim()}
+              vesselName={crew.yacht_id ? yachtMap.get(crew.yacht_id) ?? null : null}
+              passports={passports}
+              docs={docs}
+            />
           </main>
         </div>
       </div>
