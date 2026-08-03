@@ -71,6 +71,10 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
   const [signOff, setSignOff] = useState<string | null>(null);
   const [docs, setDocs] = useState<Record<string, string | null> | null>(null);
   const [spFolderBusy, setSpFolderBusy] = useState(false);
+  // Movement history: every change ever made to this record's Sign On/Off dates
+  // (kept by a DB trigger — the record itself only holds the latest pair).
+  type Movement = { id: string; field: "sign_on" | "sign_off"; old_date: string | null; new_date: string | null; changed_at: string; changed_by_email: string | null; source: string };
+  const [movements, setMovements] = useState<Movement[]>([]);
 
   // Open (creating if needed) the crew member's SharePoint folder in a new tab.
   // Resolved lazily on click so the page load stays light and no empty folders
@@ -200,6 +204,10 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
     (supabase as any).from("yachts").select("vessel_name").not("vessel_name", "is", null).order("vessel_name")
       .then(({ data: ys }: { data: { vessel_name: string }[] | null }) =>
         setYachtNames(Array.from(new Set((ys ?? []).map(y => y.vessel_name).filter(Boolean))) as string[]));
+    (supabase as any).from("visa_movement_history")
+      .select("id, field, old_date, new_date, changed_at, changed_by_email, source")
+      .eq("visa_id", id).order("changed_at", { ascending: false }).limit(50)
+      .then(({ data: mh }: { data: any[] | null }) => setMovements((mh ?? []) as any));
   }
 
   function pushExcel() {
@@ -463,6 +471,37 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
               )}
             </div>
           </div>
+
+          {/* Movement history — every sign on/off change is kept (the fields above
+              only show the latest pair). Answers "who changed what, when". */}
+          {movements.length > 0 && (
+            <div className="rounded-xl border border-border bg-card/60 overflow-hidden md:col-start-1">
+              <div className="border-b border-border/40 px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                Movement History
+              </div>
+              <div className="divide-y divide-border/40">
+                {movements.map((m) => (
+                  <div key={m.id} className="flex items-center justify-between gap-3 px-4 py-2 text-[12.5px]">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className={cn(
+                        "shrink-0 rounded-full px-2 py-0.5 text-[10.5px] font-semibold",
+                        m.field === "sign_on" ? "bg-teal-500/15 text-teal-500" : "bg-slate-500/15 text-slate-400",
+                      )}>
+                        {m.field === "sign_on" ? "Sign On" : "Sign Off"}
+                      </span>
+                      <span className="truncate font-medium">
+                        {m.old_date ? <>{fmt(m.old_date)} <span className="text-muted-foreground/60">→</span> {fmt(m.new_date)}</> : fmt(m.new_date)}
+                      </span>
+                    </div>
+                    <span className="shrink-0 text-[11px] text-muted-foreground/70">
+                      {new Date(m.changed_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                      {m.changed_by_email ? ` · ${m.changed_by_email.split("@")[0]}` : m.source === "sync" ? " · tracker sync" : ""}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
