@@ -56,7 +56,10 @@ type Item = {
   match?: { anyOf: string[][]; exclude?: string[]; rank: number };
 };
 type FolderRow = { id: string; name: string };
-type SpItem = { id: string; name: string; folder: string | null; isFolder: boolean; webUrl: string | null };
+type SpItem = {
+  id: string; name: string; folder: string | null; isFolder: boolean; webUrl: string | null;
+  size?: number | null; lastModified?: string | null;
+};
 
 const fmt = (d: string | null) =>
   d ? new Date(d + (d.length === 10 ? "T00:00" : "")).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—";
@@ -199,7 +202,7 @@ export function CrewDocumentsCard({
    * still register. Each SharePoint file is claimed by at most one document,
    * most specific slot first.
    */
-  const mirrors = useMemo(() => {
+  const { byDoc: mirrors, unclaimed: spOnly } = useMemo(() => {
     const out: Record<string, { inSp: boolean; webUrl: string | null }> = {};
     const files = sp.items.filter((i) => !i.isFolder);
     const claimed = new Set<string>();
@@ -228,7 +231,12 @@ export function CrewDocumentsCard({
       if (hit) { claimed.add(hit.id); out[it.docKey] = { inSp: true, webUrl: hit.webUrl }; }
     }
     for (const it of items) if (!out[it.docKey]) out[it.docKey] = { inSp: false, webUrl: null };
-    return out;
+    // Anything left over lives only in SharePoint (filed by hand, or from before
+    // Polaris) — surfaced below so the card shows the whole folder, not just the
+    // documents Polaris happens to hold.
+    const recordedUrls = new Set(Object.values(links).map((l) => l?.webUrl).filter(Boolean) as string[]);
+    const unclaimed = files.filter((f) => !claimed.has(f.id) && !(f.webUrl && recordedUrls.has(f.webUrl)));
+    return { byDoc: out, unclaimed };
   }, [items, links, sp.items]);
 
   // ── Auto-archive superseded passports into "Old" ────────────────────────────
@@ -471,6 +479,42 @@ export function CrewDocumentsCard({
           )}
         </div>
       </div>
+
+      {/* Everything else that lives in the SharePoint folder — files staff filed by
+          hand or that predate Polaris. Read-only: open them, or pull a copy into
+          Polaris so it is held here too. */}
+      {spOnly.length > 0 && (
+        <div className="mt-3 rounded-lg border border-border/60 bg-muted/10">
+          <div className="flex items-center gap-2 border-b border-border/50 px-2.5 py-2">
+            <Cloud className="h-3.5 w-3.5 text-sky-400/80" />
+            <span className="text-[12px] font-medium">Also in SharePoint</span>
+            <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9.5px] font-semibold text-muted-foreground">{spOnly.length}</span>
+            <span className="text-[10.5px] text-muted-foreground/70">not held in Polaris</span>
+          </div>
+          <div className="divide-y divide-border/40">
+            {spOnly.map((f) => (
+              <div key={f.id} className="flex items-center gap-2.5 px-2.5 py-2">
+                <FileText className="h-4 w-4 shrink-0 text-muted-foreground/60" />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[13px]">{f.name}</div>
+                  <div className="text-[10.5px] text-muted-foreground/70">
+                    {f.folder ? `${f.folder} · ` : ""}
+                    {f.size != null ? `${Math.max(1, Math.round(f.size / 1024))} KB` : ""}
+                    {f.lastModified ? ` · ${new Date(f.lastModified).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}` : ""}
+                  </div>
+                </div>
+                <span className="shrink-0 rounded-full bg-sky-500/10 px-2 py-0.5 text-[10px] font-medium text-sky-400/90">SharePoint only</span>
+                {f.webUrl && (
+                  <a href={f.webUrl} target="_blank" rel="noreferrer"
+                    className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] font-medium hover:border-primary/50">
+                    <ExternalLink className="h-3 w-3" /> Open
+                  </a>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {sp.loading && (
         <p className="mt-2 flex items-center gap-1.5 text-[11px] text-muted-foreground">

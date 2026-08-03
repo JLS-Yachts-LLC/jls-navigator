@@ -52,15 +52,37 @@ async function resolveChildFolder(
   if (!want) return null;
   const children = await listChildren(siteId, token, parentPath);
   const folders = children.filter((c) => !!c.folder);
-  const exact = folders.find((c) => nameKey(String(c.name)) === want);
-  if (exact) return String(exact.name);
+
+  // Accent/case-insensitive match. Duplicates like "Jovan Cavor" AND "JOVAN ČAVOR"
+  // both exist in places, and Graph's listing order used to decide the winner at
+  // random — which is how a file landed in an empty twin while staff were looking
+  // at the folder holding everything. Rank the candidates instead.
+  const sameKey = folders.filter((c) => nameKey(String(c.name)) === want);
+  if (sameKey.length) return String(pickBest(sameKey, wanted).name);
+
   // Fall back to a folder containing every word of the name (handles "Jovan
   // Cavor (Deck)" and reversed first/last name orders).
   const words = want.split(" ").filter((w) => w.length > 1);
   const loose = words.length
-    ? folders.find((c) => { const k = nameKey(String(c.name)); return words.every((w) => k.includes(w)); })
-    : undefined;
-  return loose ? String(loose.name) : null;
+    ? folders.filter((c) => { const k = nameKey(String(c.name)); return words.every((w) => k.includes(w)); })
+    : [];
+  return loose.length ? String(pickBest(loose, wanted).name) : null;
+}
+
+/** Of several candidate folders, the one already in real use: most items first,
+ *  then an exact name match, then most recently modified. Choosing the busiest
+ *  folder keeps a crew member's documents together instead of splitting them
+ *  across near-identical folders. */
+function pickBest(folders: Record<string, any>[], wanted: string): Record<string, any> {
+  const want = wanted.toLowerCase();
+  return [...folders].sort((a, b) => {
+    const ca = Number(a.folder?.childCount ?? 0), cb = Number(b.folder?.childCount ?? 0);
+    if (cb !== ca) return cb - ca;
+    const la = String(a.name).toLowerCase() === want ? 1 : 0;
+    const lb = String(b.name).toLowerCase() === want ? 1 : 0;
+    if (lb !== la) return lb - la;
+    return String(b.lastModifiedDateTime ?? "").localeCompare(String(a.lastModifiedDateTime ?? ""));
+  })[0];
 }
 
 const crewSegments = (vesselName: string | null, crewName: string) => [
