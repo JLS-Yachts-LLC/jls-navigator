@@ -244,12 +244,14 @@ export function SignOnOffPage() {
     }).catch(() => {});
   }
 
-  async function save() {
+  /** `asNew` forces an insert even from the edit dialog, so an existing movement
+   *  can be used as the template for the next one without replacing it. */
+  async function save(asNew = false) {
     if (selectedCrew.length === 0) { toast.error("Select at least one crew member"); return; }
     setBusy(true);
     try {
       // Edit mode — update the single existing event.
-      if (editId) {
+      if (editId && !asNew) {
         const { error } = await (supabase as any).from("crew_signon_events").update({
           ...movementFields(), crew_member_id: selectedCrew[0],
         }).eq("id", editId);
@@ -278,8 +280,8 @@ export function SignOnOffPage() {
       });
       notifyMovement(selectedCrew);
       const verb = form.event_type === "sign_on" ? "signed on" : "signed off";
-      toast.success(`${selectedCrew.length} crew ${verb}`);
-      setOpen(false);
+      toast.success(`${selectedCrew.length} crew ${verb}${asNew ? " — earlier record kept" : ""}`);
+      setOpen(false); setEditId(null);
       void load();
     } catch (e: any) { toast.error(e.message ?? "Save failed"); }
     finally { setBusy(false); }
@@ -446,9 +448,19 @@ export function SignOnOffPage() {
         )}
       </div>
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      {/* Closing by Esc / clicking outside must also drop edit mode — a leftover
+          editId used to turn the NEXT save into an overwrite of that record. */}
+      <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) setEditId(null); }}>
         <DialogContent className="max-w-lg max-h-[88vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>{editId ? "Edit" : "Record"} Sign On / Sign Off</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>{editId ? "Edit existing record" : "Record Sign On / Sign Off"}</DialogTitle>
+          </DialogHeader>
+          {editId && (
+            <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-600 dark:text-amber-400">
+              You are <strong>changing an existing record</strong> — saving replaces it. To keep the old
+              movement and log a new one, use <strong>Save as new record</strong>.
+            </p>
+          )}
           <div className="grid gap-3 py-2">
             <div className="space-y-1.5">
               <Label className="text-xs">Event Type</Label>
@@ -598,10 +610,20 @@ export function SignOnOffPage() {
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)} disabled={busy}>Cancel</Button>
-            <Button onClick={save} disabled={busy || selectedCrew.length === 0} className="gap-1.5">
+            <Button variant="outline" onClick={() => { setOpen(false); setEditId(null); }} disabled={busy}>Cancel</Button>
+            {/* In edit mode the primary button used to read "Sign Off", which looks
+                like it files a new movement — so an edit silently replaced the old
+                one. Editing now says so, and adding is one click away. */}
+            {editId && (
+              <Button variant="outline" onClick={() => void save(true)} disabled={busy || selectedCrew.length === 0} className="gap-1.5">
+                {busy && <Loader2 className="h-4 w-4 animate-spin" />} Save as new record
+              </Button>
+            )}
+            <Button onClick={() => void save()} disabled={busy || selectedCrew.length === 0} className="gap-1.5">
               {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-              {form.event_type === "sign_on" ? "Sign On" : "Sign Off"}{selectedCrew.length > 0 ? ` ${selectedCrew.length}` : ""}
+              {editId
+                ? "Save changes"
+                : `${form.event_type === "sign_on" ? "Sign On" : "Sign Off"}${selectedCrew.length > 0 ? ` ${selectedCrew.length}` : ""}`}
             </Button>
           </DialogFooter>
         </DialogContent>
