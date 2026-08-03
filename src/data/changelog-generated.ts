@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "Crew with an existing visa can now start a new application — the wizard was overwriting a crew member's most recent visa (even a cancelled/approved one) instead of creating a new record; it now only reuses an in-progress draft and inserts a fresh application otherwise"
+      },
+      {
+        "type": "fix",
         "title": "Visa Occupation field is now editable and valid on selection — the dropdown offers only the accepted Captain/Seaman categories and choosing one confirms it immediately, instead of allowing invalid picks that failed validation or leaving a stuck Confirm prompt"
       }
     ]
