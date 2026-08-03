@@ -483,7 +483,29 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
     // Sort expired (red) first.
     msgs.sort((a, b) => (a.severity === 'red' ? 0 : 1) - (b.severity === 'red' ? 0 : 1))
     for (const a of alerts) if (a.message) msgs.push({ text: a.message, severity: a.severity === 'critical' ? 'red' : 'amber' })
-    return msgs
+
+    // Planned future submissions: staff can set a future application date (stored
+    // as a midnight-UTC submitted_at by the date pickers). Remind the day BEFORE
+    // and the day OF, for applications that are still in play.
+    const dstr = (d: Date) => d.toLocaleDateString('en-CA')
+    const today = dstr(new Date())
+    const tomorrow = dstr(new Date(Date.now() + 86_400_000))
+    const dmy = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`
+    const CLOSED = new Set(['approved', 'completed', 'on_board', 'signed_off', 'cancelled', 'rejected', 'expired'])
+    const planned: BannerAlert[] = []
+    for (const app of applications) {
+      if (!app.submitted_at?.includes('T00:00:00')) continue // only explicitly-chosen dates
+      if (CLOSED.has(String(app.status ?? ''))) continue
+      const d = app.submitted_at.slice(0, 10)
+      if (d !== today && d !== tomorrow) continue
+      const who = getCrewName(app)
+      const country = getCountryInfo(app.country_code).name
+      planned.push(d === today
+        ? { text: `Planned submission TODAY — ${who}'s ${country} visa application is scheduled to be lodged today (${dmy(d)}).`, severity: 'red' }
+        : { text: `Planned submission tomorrow — ${who}'s ${country} visa application is scheduled for ${dmy(d)}.`, severity: 'amber' })
+    }
+    planned.sort((a, b) => (a.severity === 'red' ? 0 : 1) - (b.severity === 'red' ? 0 : 1))
+    return [...planned, ...msgs]
   }, [applications, alerts])
 
   // ── Render ─────────────────────────────────────────────────────────────────

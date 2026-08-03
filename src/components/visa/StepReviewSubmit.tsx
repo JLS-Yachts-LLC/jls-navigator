@@ -77,6 +77,9 @@ export function StepReviewSubmit({ state, onUpdate, onNext, onBack, onDone }: Pr
   const navigate = useNavigate()
   const [submitting, setSubmitting] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
+  // Application date — defaults to today; pick a future date for applications
+  // that will be lodged later (a reminder banner shows the day before + day of).
+  const [appDate, setAppDate] = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
   const personalRef = useRef<HTMLDivElement>(null)
   const [shakeSubmit, setShakeSubmit] = useState(false)
@@ -275,7 +278,9 @@ export function StepReviewSubmit({ state, onUpdate, onNext, onBack, onDone }: Pr
         passport_id:     state.passport.id,
         country_code:    state.countryCode,
         status:          'submitted' as const,
-        submitted_at:    new Date().toISOString(),
+        // A hand-picked date is stored as midnight UTC — the dashboards treat that
+        // as a "planned" submission and remind the day before + the day of.
+        submitted_at:    appDate ? `${appDate}T00:00:00.000Z` : new Date().toISOString(),
         yacht_id:        resolvedYachtId,
         vessel_name:     enteredVessel || null,
         visa_type:       'Crew Visa',
@@ -519,6 +524,36 @@ export function StepReviewSubmit({ state, onUpdate, onNext, onBack, onDone }: Pr
             </div>
           </div>
         )}
+      </SectionCard>
+
+      {/* 7. Application date — today by default; future dates mark a planned
+             submission and surface a reminder banner the day before + day of. */}
+      <SectionCard title="Application Date">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+          <input
+            type="date"
+            value={appDate}
+            onChange={e => setAppDate(e.target.value)}
+            style={{
+              fontFamily: 'Space Grotesk, sans-serif', fontSize: 13.5, fontWeight: 600,
+              color: COLORS.frost, background: COLORS.deep, border: `1px solid ${COLORS.ocean}`,
+              borderRadius: 8, padding: '9px 12px', colorScheme: 'dark',
+            }}
+          />
+          {appDate && (
+            <button type="button" onClick={() => setAppDate('')}
+              style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 12, fontWeight: 600, color: COLORS.muted, background: 'transparent', border: `1px solid ${COLORS.deep}`, borderRadius: 7, padding: '6px 10px', cursor: 'pointer' }}>
+              ✕ Use today
+            </button>
+          )}
+          <span style={{ fontSize: 12.5, color: COLORS.muted, fontFamily: 'Space Grotesk, sans-serif' }}>
+            {appDate
+              ? (appDate > new Date().toLocaleDateString('en-CA')
+                  ? `Planned for ${toDMY(appDate)} — a reminder banner will show the day before and the day of.`
+                  : `Application will be recorded as ${toDMY(appDate)}.`)
+              : 'Defaults to today. Pick a future date if this application will be lodged later.'}
+          </span>
+        </div>
       </SectionCard>
 
       {/* Actions */}

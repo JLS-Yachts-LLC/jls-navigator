@@ -275,6 +275,7 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
       visa_issuance_date: visa?.visa_issuance_date ?? "", visa_expiry: visa?.visa_expiry ?? "",
       first_entry_expiry: visa?.first_entry_expiry ?? "", arrival_date: visa?.arrival_date ?? "",
       sign_on_date: visa?.sign_on_date ?? "", sign_off_date: visa?.sign_off_date ?? "",
+      submitted_at: visa?.submitted_at?.slice(0, 10) ?? "",
       application_notes: visa?.application_notes ?? "",
     });
     setEditOpen(true);
@@ -284,6 +285,12 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
     setBusy(true);
     const patch: any = { ...form, updated_at: new Date().toISOString() };
     for (const k of Object.keys(patch)) if (patch[k] === "") patch[k] = null;
+    // The edit dialog holds the application date as date-only; store it as
+    // midnight UTC — a future date then counts as a "planned" submission and
+    // the dashboard reminds the day before + the day of.
+    if (patch.submitted_at && /^\d{4}-\d{2}-\d{2}$/.test(patch.submitted_at)) {
+      patch.submitted_at = `${patch.submitted_at}T00:00:00.000Z`;
+    }
     // UAE crew entry permits: the stay expiry isn't printed — it's 180 days from
     // the actual arrival. When an arrival date is recorded on a UAE visa and no
     // expiry has been set by hand, derive it. (A manually-entered expiry wins.)
@@ -389,6 +396,14 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
       {visa.visa_dispatched && (
         <div className="border-b border-emerald-500/20 bg-emerald-500/5 px-6 py-1.5 text-xs text-emerald-600 dark:text-emerald-400">
           ✓ Visa sent to the vessel{visa.visa_dispatched_at ? ` — ${new Date(visa.visa_dispatched_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}` : ""}
+        </div>
+      )}
+
+      {/* Planned future submission — set via the Application Date pickers. */}
+      {visa.submitted_at && visa.submitted_at.slice(0, 10) >= new Date().toLocaleDateString("en-CA") && visa.submitted_at.includes("T00:00:00") && (
+        <div className="flex items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-6 py-2 text-[13px] font-semibold text-amber-600 dark:text-amber-400">
+          ⚠ Planned submission — this application is scheduled to be lodged on {fmt(visa.submitted_at.slice(0, 10))}
+          {visa.submitted_at.slice(0, 10) === new Date().toLocaleDateString("en-CA") ? " (TODAY)" : ""}.
         </div>
       )}
 
@@ -684,6 +699,13 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
             <div className="space-y-1.5"><Label className="text-xs">Arrival</Label><DateInputDMY value={form.arrival_date} onChange={v => setForm(f => ({ ...f, arrival_date: v }))} style={{ height: 36, width: "100%", borderRadius: 8, border: "1px solid var(--border)", background: "var(--background)", color: "var(--foreground)", padding: "0 10px", fontSize: 14 }} /></div>
             <div className="space-y-1.5"><Label className="text-xs">Sign On</Label><DateInputDMY value={form.sign_on_date} onChange={v => setForm(f => ({ ...f, sign_on_date: v }))} style={{ height: 36, width: "100%", borderRadius: 8, border: "1px solid var(--border)", background: "var(--background)", color: "var(--foreground)", padding: "0 10px", fontSize: 14 }} /></div>
             <div className="space-y-1.5"><Label className="text-xs">Sign Off</Label><DateInputDMY value={form.sign_off_date} onChange={v => setForm(f => ({ ...f, sign_off_date: v }))} style={{ height: 36, width: "100%", borderRadius: 8, border: "1px solid var(--border)", background: "var(--background)", color: "var(--foreground)", padding: "0 10px", fontSize: 14 }} /></div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Application / Submitted Date</Label>
+              <DateInputDMY value={form.submitted_at} onChange={v => setForm(f => ({ ...f, submitted_at: v }))} style={{ height: 36, width: "100%", borderRadius: 8, border: "1px solid var(--border)", background: "var(--background)", color: "var(--foreground)", padding: "0 10px", fontSize: 14 }} />
+              {form.submitted_at > new Date().toLocaleDateString("en-CA") && (
+                <p className="text-[11px] text-amber-500">Future date — a reminder banner will show the day before and the day of.</p>
+              )}
+            </div>
             <div className="col-span-2 space-y-1.5"><Label className="text-xs">Notes</Label><Textarea rows={2} value={form.application_notes} onChange={e => setForm(f => ({ ...f, application_notes: e.target.value }))} className="resize-none text-sm" /></div>
           </div>
           <DialogFooter>

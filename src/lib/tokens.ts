@@ -24,6 +24,7 @@ export const COLORS = {
   // Leo accent
   leoAmber:  '#E8A020',   // Leo UI, AI-origin content
   warn:      '#E87020',   // warnings, high priority
+  error:     '#E5484D',   // errors, expired/overdue, destructive actions
 
   // Text (theme-aware)
   frost:     'var(--foreground)',        // primary text
