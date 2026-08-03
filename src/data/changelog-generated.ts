@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Crew Documents gains a Refresh button, recognises files already in SharePoint under their hand-written names, and files a replaced passport into an \"Old\" folder automatically so the newest passport is the one in use"
+      },
+      {
+        "type": "feature",
         "title": "Visa CSV/PDF exports now open a review screen first — check the rows, make quick corrections inline (rank, visa ref, dates, status), then generate; expired, cancelled and rejected visas are excluded so reports only carry active visas"
       },
       {
