@@ -681,7 +681,12 @@ export const AdditionalPersonalInfoSection = forwardRef<AdditionalPersonalInfoHa
           >
             <VisaOccupationSelect
               value={fields.occupation.value || null}
-              onChange={v => setField('occupation', v)}
+              // UAE/GCC crew visas categorise every rank as Captain or Seaman —
+              // match the validation so any selection is valid. Choosing a value
+              // is itself the confirmation (no separate Confirm click needed), so
+              // it works cleanly for a new application or when changing a stored one.
+              options={[{ value: 'captain', label: 'Captain' }, { value: 'seaman', label: 'Seaman' }]}
+              onChange={v => setField('occupation', v, 'ocr_confirmed')}
             />
           </ConfirmFieldWrapper>
         </div>
