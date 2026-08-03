@@ -136,11 +136,33 @@ type ReviewRow = {
   passport_number: string | null; rank_rating: string | null; visa_number: string | null
   visa_issuance_date: string | null; first_entry_expiry: string | null; visa_expiry: string | null
   sign_on_date: string | null; sign_off_date: string | null; status: string | null
+  created_at: string | null
 }
 const REVIEW_STATUSES = ['draft', 'submitted', 'in_review', 'processing', 'approved', 'on_board', 'signed_off', 'completed']
 
-function ExportReviewDialog({ format, yachtId, exportUrl, onClose, onSaved }: {
-  format: 'csv' | 'pdf'; yachtId: string; exportUrl: string; onClose: () => void; onSaved: () => void
+// ── Visa validity ─────────────────────────────────────────────────────────────
+// Whether the visa itself is still good, separate from where the application sits
+// in the pipeline. Mirrors the server's export filter so the list, the review
+// dialog and the generated file all agree on what "active" means.
+export type Validity = 'active' | 'expired' | 'all'
+const VALIDITY_LABELS: Record<Validity, string> = { active: 'Active', expired: 'Expired', all: 'All' }
+const LAPSED_STATUSES = ['expired', 'cancelled', 'rejected']
+
+function matchesValidity(
+  r: { status?: string | null; visa_expiry?: string | null }, v: Validity, today: string,
+): boolean {
+  if (v === 'all') return true
+  const status = String(r.status ?? '')
+  const expiry = r.visa_expiry ? String(r.visa_expiry).slice(0, 10) : ''
+  const lapsed = LAPSED_STATUSES.includes(status) || (!!expiry && expiry < today)
+  return v === 'expired' ? lapsed : !lapsed
+}
+
+function ExportReviewDialog({ format, yachtId, exportUrl, validity, exportYear, onClose, onSaved }: {
+  format: 'csv' | 'pdf'; yachtId: string; exportUrl: string
+  /** Same validity + year the export URL carries, so the review matches the file. */
+  validity: Validity; exportYear: string
+  onClose: () => void; onSaved: () => void
 }) {
   const [rows, setRows] = useState<ReviewRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -154,16 +176,26 @@ function ExportReviewDialog({ format, yachtId, exportUrl, onClose, onSaved }: {
     void (async () => {
       const { data } = await fetchAllRows(() => (supabase as any)
         .from('visa_applications')
-        .select('id, given_name, surname, nationality, passport_number, rank_rating, visa_number, visa_issuance_date, first_entry_expiry, visa_expiry, sign_on_date, sign_off_date, status')
+        .select('id, given_name, surname, nationality, passport_number, rank_rating, visa_number, visa_issuance_date, first_entry_expiry, visa_expiry, sign_on_date, sign_off_date, status, created_at')
         .eq('yacht_id', yachtId)
         .order('surname', { ascending: true }))
       const today = new Date().toISOString().slice(0, 10)
-      setRows(((data ?? []) as ReviewRow[]).filter(r =>
-        !['expired', 'cancelled', 'rejected'].includes(String(r.status ?? '')) &&
-        (!r.visa_expiry || String(r.visa_expiry).slice(0, 10) >= today)))
+      // Mirror the server's filters exactly (see applyValidity / applyYear in
+      // api.visa.export.ts) so the review list is what the file will contain.
+      const y = Number(exportYear)
+      const yearOf = (d: string | null | undefined) => (d ? Number(String(d).slice(0, 4)) : NaN)
+      setRows(((data ?? []) as ReviewRow[])
+        .filter(r => matchesValidity(r, validity, today))
+        .filter(r => {
+          if (!Number.isFinite(y)) return true
+          const expiry = yearOf(r.visa_expiry)
+          if (Number.isFinite(expiry)) return expiry >= y
+          const issued = yearOf(r.visa_issuance_date) || yearOf(r.created_at)
+          return !Number.isFinite(issued) || issued === y
+        }))
       setLoading(false)
     })()
-  }, [yachtId])
+  }, [yachtId, validity, exportYear])
 
   function edit(id: string, key: keyof ReviewRow, value: string) {
     setRows(prev => prev.map(r => r.id === id ? { ...r, [key]: value || null } : r))
@@ -235,7 +267,8 @@ function ExportReviewDialog({ format, yachtId, exportUrl, onClose, onSaved }: {
               Review before {format.toUpperCase()} export
             </div>
             <div style={{ fontFamily: FONTS.display, fontSize: 12, color: COLORS.muted, marginTop: 2 }}>
-              Active visas only — expired, cancelled and rejected are excluded automatically. Untick any record you don't want in this file (nothing is changed by leaving it out). Quick corrections below are saved when you hit Generate.
+              {validity === 'active' ? 'Active visas only' : validity === 'expired' ? 'Expired visas only' : 'All visas'} · {exportYear} — earlier years are left out.
+              Untick any record you don't want in this file (nothing is changed by leaving it out). Quick corrections below are saved when you hit Generate.
             </div>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: COLORS.muted, fontSize: 18, cursor: 'pointer' }}>✕</button>
@@ -256,7 +289,7 @@ function ExportReviewDialog({ format, yachtId, exportUrl, onClose, onSaved }: {
                       onChange={() => setExcluded(excluded.size === 0 ? new Set(rows.map(r => r.id)) : new Set())}
                       style={{ cursor: 'pointer', accentColor: COLORS.signal }} />
                   </th>
-                  <th style={th}>Crew</th><th style={th}>Passport</th><th style={th}>Rank</th><th style={th}>Visa Ref</th>
+                  <th style={th}>Crew</th><th style={th}>Passport</th><th style={th}>Visa Ref</th>
                   <th style={th}>Issuance</th><th style={th}>Use By</th><th style={th}>Expiry</th>
                   <th style={th}>Sign On</th><th style={th}>Sign Off</th><th style={th}>Status</th>
                 </tr>
@@ -276,7 +309,6 @@ function ExportReviewDialog({ format, yachtId, exportUrl, onClose, onSaved }: {
                       <div style={{ fontSize: 10.5, fontWeight: 400, color: COLORS.muted, textDecoration: 'none' }}>{r.nationality ?? ''}</div>
                     </td>
                     <td style={{ padding: '6px 8px', fontFamily: FONTS.display, fontSize: 12, color: COLORS.muted, whiteSpace: 'nowrap' }}>{r.passport_number ?? '—'}</td>
-                    <td style={{ padding: '6px 4px' }}>{textCell(r, 'rank_rating', 110)}</td>
                     <td style={{ padding: '6px 4px' }}>{textCell(r, 'visa_number', 150)}</td>
                     <td style={{ padding: '6px 4px' }}>{dateCell(r, 'visa_issuance_date')}</td>
                     <td style={{ padding: '6px 4px' }}>{dateCell(r, 'first_entry_expiry')}</td>
@@ -508,6 +540,9 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
   // behind the "All history" toggle so the pipeline stays workable.
   const [scope, setScope] = useState<'current' | 'all'>('current')
   const [activeStatus, setActiveStatus] = useState<string | null>(null)
+  // Visa validity, independent of the pipeline status: reports and exports are
+  // for active visas, so that is the default. "Expired" is for chasing renewals.
+  const [validity, setValidity] = useState<Validity>('active')
   const [search, setSearch]   = useState('')
   const [vessel, setVessel]   = useState('all')
   const [year, setYear]       = useState('all')
@@ -581,8 +616,10 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
 
   // ── Filtering ────────────────────────────────────────────────────────────────
 
+  const today = new Date().toISOString().slice(0, 10)
   const unsorted = useMemo(() => scoped.filter(a => {
     if (activeStatus && a.status !== activeStatus) return false
+    if (!matchesValidity(a, validity, today)) return false
     if (vessel !== 'all' && a.yacht_id !== vessel) return false
     const d = effectiveDate(a)
     if (year !== 'all' && new Date(d).getFullYear().toString() !== year) return false
@@ -598,7 +635,7 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
       if (!hay.includes(q)) return false
     }
     return true
-  }), [scoped, activeStatus, vessel, year, dateFrom, dateTo, search])
+  }), [scoped, activeStatus, validity, today, vessel, year, dateFrom, dateTo, search])
 
   // ── Sorting ──────────────────────────────────────────────────────────────────
   // Newest first by default. The DB order is created_at desc, but the Applied
@@ -629,16 +666,20 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
     setSortDir(key === 'applied' ? 'desc' : 'asc')
   }
 
-  const hasFilters = !!activeStatus || vessel !== 'all' || year !== 'all' || !!dateFrom || !!dateTo || !!search.trim()
+  const hasFilters = !!activeStatus || vessel !== 'all' || year !== 'all' || !!dateFrom || !!dateTo || !!search.trim() || validity !== 'active'
 
   function clearFilters() {
-    setActiveStatus(null); setVessel('all'); setYear('all'); setDateFrom(''); setDateTo(''); setSearch('')
+    setActiveStatus(null); setVessel('all'); setYear('all'); setDateFrom(''); setDateTo(''); setSearch(''); setValidity('active')
   }
 
   // ── Exports (reuse /api/visa/export — requires a single vessel) ───────────────
 
+  // The file mirrors what is on screen: the same validity filter, and a single
+  // calendar year — the selected one, or the current year when the Year filter is
+  // on "All", so historical visas from earlier years stay out of vessel reports.
+  const exportYear = year !== 'all' ? year : String(new Date().getFullYear())
   function exportUrl(format: 'pdf' | 'csv') {
-    return `/api/visa/export?yacht_id=${vessel}&format=${format}`
+    return `/api/visa/export?yacht_id=${vessel}&format=${format}&visa=${validity}&year=${exportYear}`
   }
   async function emailReport() {
     if (vessel === 'all') { toast.error('Select a vessel to email its report'); return }
@@ -737,6 +778,8 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
           format={exportReview}
           yachtId={vessel}
           exportUrl={exportUrl(exportReview)}
+          validity={validity}
+          exportYear={exportYear}
           onClose={() => setExportReview(null)}
           onSaved={() => void loadAll()}
         />
@@ -854,6 +897,22 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
           <option value="all">All Years</option>
           {years.map(y => <option key={y} value={y}>{y}</option>)}
         </select>
+        {/* Visa validity — reports and exports are for active visas, so that is
+            the default; Expired is for chasing renewals. */}
+        <div style={{ display: 'flex', border: `1px solid ${COLORS.deep}`, borderRadius: 8, overflow: 'hidden' }}>
+          {(['active', 'expired', 'all'] as Validity[]).map(v => (
+            <button key={v} onClick={() => setValidity(v)}
+              title={v === 'active' ? 'Visas still valid' : v === 'expired' ? 'Visas past their expiry, cancelled or rejected' : 'Every visa, valid or not'}
+              style={{
+                fontFamily: FONTS.display, fontSize: 12.5, fontWeight: validity === v ? 700 : 500,
+                padding: '9px 14px', border: 'none', cursor: 'pointer',
+                background: validity === v ? `${COLORS.signal}1a` : 'transparent',
+                color: validity === v ? COLORS.signal : COLORS.muted,
+              }}>
+              {VALIDITY_LABELS[v]}
+            </button>
+          ))}
+        </div>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, color: COLORS.muted, fontSize: 12 }}>
           From <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ ...ctl }} />
         </label>

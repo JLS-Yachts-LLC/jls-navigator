@@ -1,11 +1,16 @@
 /**
  * Visa export handler
- * GET  /api/visa/export?yacht_id=xxx&format=pdf|csv[&exclude=id,id][&include=id,id]
+ * GET  /api/visa/export?yacht_id=xxx&format=pdf|csv
+ *        [&visa=active|expired|all]  visa validity — defaults to active
+ *        [&year=2026|all]            calendar year — defaults to the current year
+ *        [&exclude=id,id | &include=id,id]
  * POST /api/visa/export/email  { yacht_id, to_email }
  *
- * exclude/include let the review dialog drop individual records from the file
- * without changing them in the database. `include` wins when both are present
- * (the dialog sends whichever list is shorter, to keep the URL small).
+ * These files go to vessels and authorities, so they carry this year's active
+ * visas by default: lapsed records and previous years' history stay out unless
+ * asked for explicitly. exclude/include let the review dialog drop individual
+ * records without changing anything in the database; `include` wins when both
+ * are present (the dialog sends whichever list is shorter to keep the URL small).
  */
 import { PDFDocument, StandardFonts, rgb, PDFFont } from 'pdf-lib'
 import { createClient } from '@supabase/supabase-js'
@@ -61,19 +66,44 @@ async function fetchRows(yachtId: string): Promise<{ rows: VisaRow[]; vesselName
     .eq('yacht_id', yachtId)
     .order('surname', { ascending: true })
   if (error) throw new Error(error.message)
-  // Active visas only: these reports go to vessels/authorities, so expired,
-  // cancelled and rejected visas never belong on them — nor any visa whose
-  // expiry date has already passed.
-  const today = new Date().toISOString().slice(0, 10)
   const all: VisaRow[] = (data ?? []) as VisaRow[]
-  const rows = all.filter(r =>
-    !['expired', 'cancelled', 'rejected'].includes(String(r.status ?? '')) &&
-    (!r.visa_expiry || String(r.visa_expiry).slice(0, 10) >= today))
   const vesselName = (all[0]?.yachts?.vessel_name) ?? 'Vessel'
-  return { rows, vesselName }
+  return { rows: all, vesselName }
 }
 
-/** Apply the review dialog's per-record selection to the active rows. */
+/**
+ * Visa validity. Expired, cancelled and rejected records — and anything whose
+ * expiry date has already passed — are not active.
+ */
+function applyValidity(rows: VisaRow[], validity: string): VisaRow[] {
+  if (validity === 'all') return rows
+  const today = new Date().toISOString().slice(0, 10)
+  const lapsed = (r: VisaRow) =>
+    ['expired', 'cancelled', 'rejected'].includes(String(r.status ?? '')) ||
+    (!!r.visa_expiry && String(r.visa_expiry).slice(0, 10) < today)
+  return validity === 'expired' ? rows.filter(lapsed) : rows.filter(r => !lapsed(r))
+}
+
+/**
+ * Keep this year's paperwork only. A record counts as belonging to `year` when
+ * its visa runs into that year or later, or — with no expiry recorded — when it
+ * was issued (failing that, created) in it. Without the first clause a visa
+ * issued last December and valid through this year would be dropped.
+ */
+function applyYear(rows: VisaRow[], year: string): VisaRow[] {
+  if (year === 'all') return rows
+  const y = Number(year)
+  if (!Number.isFinite(y)) return rows
+  const yearOf = (d: string | null | undefined) => (d ? Number(String(d).slice(0, 4)) : NaN)
+  return rows.filter(r => {
+    const expiry = yearOf(r.visa_expiry)
+    if (Number.isFinite(expiry)) return expiry >= y
+    const issued = yearOf(r.visa_issuance_date) || yearOf((r as any).created_at)
+    return !Number.isFinite(issued) || issued === y
+  })
+}
+
+/** Apply the review dialog's per-record selection. */
 function applySelection(rows: VisaRow[], url: URL): VisaRow[] {
   const ids = (p: string) => (url.searchParams.get(p) ?? '').split(',').map(s => s.trim()).filter(Boolean)
   const include = ids('include')
@@ -82,9 +112,18 @@ function applySelection(rows: VisaRow[], url: URL): VisaRow[] {
   return exclude.size ? rows.filter(r => !exclude.has(r.id)) : rows
 }
 
+/** Validity → year → per-record selection, with the report defaults applied. */
+function applyExportFilters(rows: VisaRow[], url: URL): VisaRow[] {
+  const validity = url.searchParams.get('visa') ?? 'active'
+  const year = url.searchParams.get('year') ?? String(new Date().getFullYear())
+  return applySelection(applyYear(applyValidity(rows, validity), year), url)
+}
+
 // ─── CSV ──────────────────────────────────────────────────────────────────────
 function buildCsv(rows: VisaRow[], vesselName: string): string {
-  const headers = ['Given Name','Surname','Nationality','Passport No.','Rank / Rating',
+  // Rank / Rating is deliberately absent — it is rarely filled in and was
+  // shipping an empty column to the vessels.
+  const headers = ['Given Name','Surname','Nationality','Passport No.',
                    'Visa Reference','Visa Issuance','First Entry Expiry','Visa Expiry',
                    'Sign On','Sign Off','Status']
   const esc = (v: string | null | undefined) => {
@@ -98,7 +137,7 @@ function buildCsv(rows: VisaRow[], vesselName: string): string {
   for (const r of rows) {
     lines.push([
       esc(r.given_name), esc(r.surname), esc(r.nationality), esc(r.passport_number),
-      esc(r.rank_rating), esc(r.visa_number), esc(fd(r.visa_issuance_date)),
+      esc(r.visa_number), esc(fd(r.visa_issuance_date)),
       esc(fd(r.first_entry_expiry)), esc(fd(r.visa_expiry)),
       esc(fd(r.sign_on_date)), esc(fd(r.sign_off_date)), esc(statusLabel(r.status)),
     ].join(','))
@@ -145,7 +184,6 @@ async function buildPdf(rows: VisaRow[], vesselName: string): Promise<Uint8Array
     ['Name',            r => displayName(r),                  130],
     ['Nationality',     r => r.nationality ?? '—',             70],
     ['Passport No.',    r => r.passport_number ?? '—',         85],
-    ['Rank / Rating',   r => r.rank_rating ?? '—',             80],
     ['Visa Reference',  r => r.visa_number ?? '—',            115],
     ['Visa Issuance',   r => fmt(r.visa_issuance_date),        80],
     ['Visa Expiry',     r => fmt(r.visa_expiry),               80],
@@ -276,7 +314,9 @@ export async function visaExportHandler(request: Request): Promise<Response> {
     const { yacht_id, to_email } = await request.json() as { yacht_id: string; to_email: string }
     if (!yacht_id || !to_email) return new Response('Missing params', { status: 400 })
     try {
-      const { rows, vesselName } = await fetchRows(yacht_id)
+      // Same defaults as the download: this year's active visas.
+      const { rows: all, vesselName } = await fetchRows(yacht_id)
+      const rows = applyExportFilters(all, url)
       const pdfBytes = await buildPdf(rows, vesselName)
       const pdfBase64 = btoa(String.fromCharCode(...pdfBytes))
       const html = buildEmailHtml(rows, vesselName)
@@ -303,8 +343,8 @@ export async function visaExportHandler(request: Request): Promise<Response> {
   const format   = url.searchParams.get('format') ?? 'csv'
   if (!yacht_id) return new Response('Missing yacht_id', { status: 400 })
   try {
-    const { rows: active, vesselName } = await fetchRows(yacht_id)
-    const rows = applySelection(active, url)
+    const { rows: all, vesselName } = await fetchRows(yacht_id)
+    const rows = applyExportFilters(all, url)
     const safeName = vesselName.replace(/[^a-zA-Z0-9_\- ]/g, '').trim()
     if (format === 'pdf') {
       const pdfBytes = await buildPdf(rows, vesselName)
