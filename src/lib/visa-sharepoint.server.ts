@@ -18,14 +18,125 @@ import { getSpConfig, getGraphToken, resolveSpSite } from "@/lib/sharepoint-sync
 const DEFAULT_VISA_SITE_URL = "/sites/PortOperationsandAgency";
 const DEFAULT_VISA_ROOT_FOLDER = "Crew Visas";
 
-/** SharePoint forbids " * : < > ? / \ | in file/folder names. */
+/**
+ * Fold accented letters to plain ASCII: "JOVAN ČAVOR" → "JOVAN CAVOR".
+ *
+ * Passport OCR reads the diacritics on a name exactly as printed, which then ends
+ * up in folder names staff can't type or search for — and produced a second,
+ * near-duplicate crew folder beside the one already holding the documents. Every
+ * SharePoint path segment is folded so only typeable characters are ever created.
+ * Any remaining non-ASCII (e.g. non-Latin scripts) is dropped rather than left to
+ * become an unsearchable folder name.
+ */
+export function toTypeableName(s: string | null | undefined): string {
+  return (s ?? "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    // Ligatures and stroked letters carry no combining mark, so map them by hand.
+    .replace(/[ØøŒœÆæÐðÞþŁłĐđŊŋŦŧ]/g, (c) =>
+      ({ Ø: "O", ø: "o", Œ: "OE", œ: "oe", Æ: "AE", æ: "ae", Ð: "D", ð: "d",
+         Þ: "TH", þ: "th", Ł: "L", ł: "l", Đ: "D", đ: "d", Ŋ: "N", ŋ: "n",
+         Ŧ: "T", ŧ: "t" })[c] ?? c)
+    .replace(/ß/g, "ss")
+    .replace(/[^\x20-\x7E]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** SharePoint forbids " * : < > ? / \ | in file/folder names. Names are also
+ *  folded to typeable ASCII (see toTypeableName). */
 export function sanitizeSegment(s: string | null | undefined, fallback: string): string {
-  const cleaned = (s ?? "")
+  const cleaned = toTypeableName(s)
     .replace(/["*:<>?/\\|]/g, "-")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 120);
   return cleaned || fallback;
+}
+
+/** Case- and accent-insensitive key: "JOVAN ČAVOR" and "Jovan Cavor" must match. */
+export const nameKey = (s: string) =>
+  toTypeableName(s).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+/** List a folder's children (empty array on any failure — callers treat that as
+ *  "nothing comparable exists" and create the folder). */
+export async function listFolderChildren(
+  siteId: string, token: string, path: string,
+): Promise<Record<string, any>[]> {
+  const select = "id,name,size,webUrl,folder,file,lastModifiedDateTime";
+  const res = await fetch(
+    `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root:/${encodeURI(path)}:/children?%24top=200&%24select=${select}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!res.ok) return [];
+  const body = (await res.json()) as Record<string, any>;
+  return (body.value ?? []) as Record<string, any>[];
+}
+
+/** Of several candidate folders, the one already in real use: most items first,
+ *  then an exact name match, then most recently modified. Choosing the busiest
+ *  folder keeps a crew member's documents together instead of splitting them
+ *  across near-identical folders. */
+export function pickBestFolder(folders: Record<string, any>[], wanted: string): Record<string, any> {
+  const want = wanted.toLowerCase();
+  return [...folders].sort((a, b) => {
+    const ca = Number(a.folder?.childCount ?? 0), cb = Number(b.folder?.childCount ?? 0);
+    if (cb !== ca) return cb - ca;
+    const la = String(a.name).toLowerCase() === want ? 1 : 0;
+    const lb = String(b.name).toLowerCase() === want ? 1 : 0;
+    if (lb !== la) return lb - la;
+    return String(b.lastModifiedDateTime ?? "").localeCompare(String(a.lastModifiedDateTime ?? ""));
+  })[0];
+}
+
+/**
+ * Find an existing child folder whose name matches `wanted` apart from accents,
+ * casing or spacing, and return its REAL name — so we write into the folder staff
+ * already use instead of creating a near-duplicate ("JOVAN ČAVOR" beside "Jovan
+ * Cavor"). Returns null when nothing comparable exists.
+ */
+export async function resolveChildFolder(
+  siteId: string, token: string, parentPath: string, wanted: string,
+): Promise<string | null> {
+  const want = nameKey(wanted);
+  if (!want) return null;
+  const folders = (await listFolderChildren(siteId, token, parentPath)).filter((c) => !!c.folder);
+
+  const sameKey = folders.filter((c) => nameKey(String(c.name)) === want);
+  if (sameKey.length) return String(pickBestFolder(sameKey, wanted).name);
+
+  // Fall back to a folder containing every word of the name (handles "Jovan
+  // Cavor (Deck)" and reversed first/last name orders).
+  const words = want.split(" ").filter((w) => w.length > 1);
+  const loose = words.length
+    ? folders.filter((c) => { const k = nameKey(String(c.name)); return words.every((w) => k.includes(w)); })
+    : [];
+  return loose.length ? String(pickBestFolder(loose, wanted).name) : null;
+}
+
+export const crewFolderSegments = (vesselName: string | null, crewName: string) => [
+  "Yacht",
+  sanitizeSegment(vesselName, "Unassigned Vessel"),
+  "Crew Documents",
+  sanitizeSegment(crewName, "Unknown Crew"),
+];
+
+/**
+ * The crew member's real folder path, matching existing SharePoint folders where
+ * the names differ only by accent/case. Returns the sanitised path unchanged when
+ * nothing comparable exists (so the caller creates it).
+ */
+export async function resolveCrewSegments(
+  siteId: string, token: string, vesselName: string | null, crewName: string,
+): Promise<{ segments: string[]; found: boolean }> {
+  const segments = crewFolderSegments(vesselName, crewName);
+  const vessel = await resolveChildFolder(siteId, token, "Yacht", segments[1]);
+  if (!vessel) return { segments, found: false };
+  segments[1] = vessel;
+  const crew = await resolveChildFolder(siteId, token, `Yacht/${vessel}/Crew Documents`, segments[3]);
+  if (!crew) return { segments, found: false };
+  segments[3] = crew;
+  return { segments, found: true };
 }
 
 function base64ToBytes(base64: string): Uint8Array {
@@ -127,9 +238,10 @@ export const getCrewSharePointFolderLink = createServerFn({ method: "POST" })
     const siteUrl = anyCfg.visaSiteUrl ?? DEFAULT_VISA_SITE_URL;
     const token = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret);
     const siteId = await resolveSpSite(token, cfg.tenantUrl, siteUrl);
-    const vessel = sanitizeSegment(vesselName, "Unassigned Vessel");
-    const crew = sanitizeSegment(crewName, "Unknown Crew");
-    return { webUrl: await ensureFoldersAndGetUrl(siteId, token, ["Yacht", vessel, "Crew Documents", crew]) };
+    // Match the folder staff already use (accents/casing differ) rather than
+    // creating a near-duplicate next to it.
+    const { segments } = await resolveCrewSegments(siteId, token, vesselName, crewName);
+    return { webUrl: await ensureFoldersAndGetUrl(siteId, token, segments) };
   });
 
 /**
@@ -149,10 +261,10 @@ export const uploadCrewDocToSharePoint = createServerFn({ method: "POST" })
     const token = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret);
     const siteId = await resolveSpSite(token, cfg.tenantUrl, siteUrl);
 
-    const vessel = sanitizeSegment(vesselName, "Unassigned Vessel");
-    const crew = sanitizeSegment(crewName, "Unknown Crew");
-    // Shared Documents/Yacht/{vessel}/Crew Documents/{crew}/{file}
-    return uploadIntoFolders(siteId, token, ["Yacht", vessel, "Crew Documents", crew], fileName, contentType, base64);
+    // Shared Documents/Yacht/{vessel}/Crew Documents/{crew}/{file} — resolved
+    // against the existing folder so a document never lands in an empty twin.
+    const { segments } = await resolveCrewSegments(siteId, token, vesselName, crewName);
+    return uploadIntoFolders(siteId, token, segments, fileName, contentType, base64);
   });
 
 export const uploadVisaDocToSharePoint = createServerFn({ method: "POST" })

@@ -20,6 +20,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { getSpConfig, getGraphToken, resolveSpSite } from "@/lib/sharepoint-sync.server";
 import {
   sanitizeSegment, ensureFoldersAndGetUrl, uploadBytesIntoFolders,
+  nameKey, listFolderChildren, resolveCrewSegments,
 } from "@/lib/visa-sharepoint.server";
 
 const DEFAULT_SITE_URL = "/sites/PortOperationsandAgency";
@@ -33,82 +34,11 @@ async function crewSpContext(): Promise<{ token: string; siteId: string }> {
   return { token, siteId };
 }
 
-/** Case- and accent-insensitive key: "JOVAN ČAVOR" and "Jovan Cavor" must match. */
-const nameKey = (s: string) =>
-  s.normalize("NFD").replace(/\p{Diacritic}/gu, "")
-    .toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-
-/**
- * SharePoint folder names were typed by hand over years — accents, casing and
- * spacing drift from what Polaris holds ("JOVAN ČAVOR" vs "Jovan Cavor"). Look
- * for an existing child folder that matches on a normalised key and return its
- * REAL name, so we read from and write into the folder staff already use instead
- * of creating a near-duplicate beside it.
- */
-async function resolveChildFolder(
-  siteId: string, token: string, parentPath: string, wanted: string,
-): Promise<string | null> {
-  const want = nameKey(wanted);
-  if (!want) return null;
-  const children = await listChildren(siteId, token, parentPath);
-  const folders = children.filter((c) => !!c.folder);
-
-  // Accent/case-insensitive match. Duplicates like "Jovan Cavor" AND "JOVAN ČAVOR"
-  // both exist in places, and Graph's listing order used to decide the winner at
-  // random — which is how a file landed in an empty twin while staff were looking
-  // at the folder holding everything. Rank the candidates instead.
-  const sameKey = folders.filter((c) => nameKey(String(c.name)) === want);
-  if (sameKey.length) return String(pickBest(sameKey, wanted).name);
-
-  // Fall back to a folder containing every word of the name (handles "Jovan
-  // Cavor (Deck)" and reversed first/last name orders).
-  const words = want.split(" ").filter((w) => w.length > 1);
-  const loose = words.length
-    ? folders.filter((c) => { const k = nameKey(String(c.name)); return words.every((w) => k.includes(w)); })
-    : [];
-  return loose.length ? String(pickBest(loose, wanted).name) : null;
-}
-
-/** Of several candidate folders, the one already in real use: most items first,
- *  then an exact name match, then most recently modified. Choosing the busiest
- *  folder keeps a crew member's documents together instead of splitting them
- *  across near-identical folders. */
-function pickBest(folders: Record<string, any>[], wanted: string): Record<string, any> {
-  const want = wanted.toLowerCase();
-  return [...folders].sort((a, b) => {
-    const ca = Number(a.folder?.childCount ?? 0), cb = Number(b.folder?.childCount ?? 0);
-    if (cb !== ca) return cb - ca;
-    const la = String(a.name).toLowerCase() === want ? 1 : 0;
-    const lb = String(b.name).toLowerCase() === want ? 1 : 0;
-    if (lb !== la) return lb - la;
-    return String(b.lastModifiedDateTime ?? "").localeCompare(String(a.lastModifiedDateTime ?? ""));
-  })[0];
-}
-
-const crewSegments = (vesselName: string | null, crewName: string) => [
-  "Yacht",
-  sanitizeSegment(vesselName, "Unassigned Vessel"),
-  "Crew Documents",
-  sanitizeSegment(crewName, "Unknown Crew"),
-];
-
-/**
- * The crew member's real folder path, matching existing SharePoint folders where
- * the names only differ by accent/case. Returns the sanitised path unchanged when
- * nothing comparable exists (so a push creates it).
- */
-async function resolveCrewPath(
-  siteId: string, token: string, vesselName: string | null, crewName: string,
-): Promise<{ segments: string[]; found: boolean }> {
-  const segments = crewSegments(vesselName, crewName);
-  const vessel = await resolveChildFolder(siteId, token, "Yacht", segments[1]);
-  if (!vessel) return { segments, found: false };
-  segments[1] = vessel;
-  const crew = await resolveChildFolder(siteId, token, `Yacht/${vessel}/Crew Documents`, segments[3]);
-  if (!crew) return { segments, found: false };
-  segments[3] = crew;
-  return { segments, found: true };
-}
+// Folder resolution (accent/case-insensitive matching against the folders staff
+// already use) lives in visa-sharepoint.server.ts so the visa uploads, the crew
+// verification letters and this card all resolve paths identically — a document
+// must never land in an empty near-duplicate twin.
+const resolveCrewPath = resolveCrewSegments;
 
 /** GET a drive item by path. Returns null on 404 instead of throwing. */
 async function getItemByPath(siteId: string, token: string, path: string): Promise<Record<string, any> | null> {
@@ -120,16 +50,7 @@ async function getItemByPath(siteId: string, token: string, path: string): Promi
   return (await res.json()) as Record<string, any>;
 }
 
-async function listChildren(siteId: string, token: string, path: string): Promise<Record<string, any>[]> {
-  const select = "id,name,size,webUrl,folder,file,lastModifiedDateTime";
-  const res = await fetch(
-    `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root:/${encodeURI(path)}:/children?%24top=200&%24select=${select}`,
-    { headers: { Authorization: `Bearer ${token}` } },
-  );
-  if (!res.ok) return [];
-  const body = (await res.json()) as Record<string, any>;
-  return (body.value ?? []) as Record<string, any>[];
-}
+const listChildren = listFolderChildren;
 
 export type SpCrewItem = {
   id: string;
