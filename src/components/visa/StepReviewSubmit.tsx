@@ -289,14 +289,17 @@ export function StepReviewSubmit({ state, onUpdate, onNext, onBack, onDone }: Pr
       }
       const draftId = (state as any).draftId as string | null | undefined
 
-      // Resolve the row id: prefer the wizard's tracked draftId, then look up
-      // any existing record for this crew member, then insert as last resort.
+      // Resolve the row id: prefer the wizard's tracked draftId, else the crew's
+      // current in-progress DRAFT. Never fall back to a completed application —
+      // a crew member with a cancelled/approved/rejected visa must get a NEW
+      // application, not have the old one overwritten.
       let resolvedId: string | null = draftId ?? null
       if (!resolvedId) {
         const { data: existing } = await db
           .from('visa_applications')
           .select('id')
           .eq('crew_member_id', state.crew.id)
+          .eq('status', 'draft')
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle()

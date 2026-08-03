@@ -53,11 +53,15 @@ async function persistDraft(s: WizardState): Promise<string | null> {
     return s.draftId
   }
 
-  // Look for any existing record for this crew member before inserting.
+  // Reuse ONLY an in-progress draft for this crew — never a completed one.
+  // A crew member can have many applications over time (a cancelled/approved/
+  // rejected visa must not be overwritten when a new one is started), so if the
+  // only existing record is non-draft we insert a fresh application instead.
   const { data: existing } = await db
     .from('visa_applications')
     .select('id')
     .eq('crew_member_id', s.crew.id)
+    .eq('status', 'draft')
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
