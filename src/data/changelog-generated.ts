@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "Sign on/off dates now save as typed — the date field uses dd/mm/yyyy regardless of the browser's region (a native date field could silently keep the previous value), the date is required, and copying a record asks before reusing its date"
+      },
+      {
+        "type": "fix",
         "title": "Adding a sign on/off record can no longer overwrite an existing one — editing is clearly labelled (Save changes, with a warning), edit mode is dropped when the dialog closes, and a Save as new record button logs a further movement while keeping the earlier one"
       },
       {
