@@ -1,7 +1,11 @@
 /**
  * Visa export handler
- * GET  /api/visa/export?yacht_id=xxx&format=pdf|csv
+ * GET  /api/visa/export?yacht_id=xxx&format=pdf|csv[&exclude=id,id][&include=id,id]
  * POST /api/visa/export/email  { yacht_id, to_email }
+ *
+ * exclude/include let the review dialog drop individual records from the file
+ * without changing them in the database. `include` wins when both are present
+ * (the dialog sends whichever list is shorter, to keep the URL small).
  */
 import { PDFDocument, StandardFonts, rgb, PDFFont } from 'pdf-lib'
 import { createClient } from '@supabase/supabase-js'
@@ -67,6 +71,15 @@ async function fetchRows(yachtId: string): Promise<{ rows: VisaRow[]; vesselName
     (!r.visa_expiry || String(r.visa_expiry).slice(0, 10) >= today))
   const vesselName = (all[0]?.yachts?.vessel_name) ?? 'Vessel'
   return { rows, vesselName }
+}
+
+/** Apply the review dialog's per-record selection to the active rows. */
+function applySelection(rows: VisaRow[], url: URL): VisaRow[] {
+  const ids = (p: string) => (url.searchParams.get(p) ?? '').split(',').map(s => s.trim()).filter(Boolean)
+  const include = ids('include')
+  if (include.length) { const keep = new Set(include); return rows.filter(r => keep.has(r.id)) }
+  const exclude = new Set(ids('exclude'))
+  return exclude.size ? rows.filter(r => !exclude.has(r.id)) : rows
 }
 
 // ─── CSV ──────────────────────────────────────────────────────────────────────
@@ -290,7 +303,8 @@ export async function visaExportHandler(request: Request): Promise<Response> {
   const format   = url.searchParams.get('format') ?? 'csv'
   if (!yacht_id) return new Response('Missing yacht_id', { status: 400 })
   try {
-    const { rows, vesselName } = await fetchRows(yacht_id)
+    const { rows: active, vesselName } = await fetchRows(yacht_id)
+    const rows = applySelection(active, url)
     const safeName = vesselName.replace(/[^a-zA-Z0-9_\- ]/g, '').trim()
     if (format === 'pdf') {
       const pdfBytes = await buildPdf(rows, vesselName)

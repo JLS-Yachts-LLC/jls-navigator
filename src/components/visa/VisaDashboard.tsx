@@ -146,6 +146,9 @@ function ExportReviewDialog({ format, yachtId, exportUrl, onClose, onSaved }: {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [dirty, setDirty] = useState<Set<string>>(new Set())
+  // Records unticked here are left out of the file — nothing about them changes
+  // in the database, so the exclusion only ever applies to this one export.
+  const [excluded, setExcluded] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     void (async () => {
@@ -167,6 +170,24 @@ function ExportReviewDialog({ format, yachtId, exportUrl, onClose, onSaved }: {
     setDirty(prev => new Set(prev).add(id))
   }
 
+  function toggleExcluded(id: string) {
+    setExcluded(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  const included = rows.filter(r => !excluded.has(r.id))
+
+  /** Send whichever list is shorter so the URL stays well inside any length limit. */
+  function selectionParam(): string {
+    if (!excluded.size) return ''
+    return excluded.size <= included.length
+      ? `&exclude=${[...excluded].join(',')}`
+      : `&include=${included.map(r => r.id).join(',')}`
+  }
+
   async function generate() {
     setBusy(true)
     try {
@@ -184,8 +205,9 @@ function ExportReviewDialog({ format, yachtId, exportUrl, onClose, onSaved }: {
         fetch('/api/visa/excel-push', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) }).catch(() => {})
       }
       if (dirty.size) { toast.success(`${dirty.size} record(s) updated`); onSaved() }
-      if (format === 'pdf') window.open(exportUrl, '_blank')
-      else window.location.href = exportUrl
+      const url = exportUrl + selectionParam()
+      if (format === 'pdf') window.open(url, '_blank')
+      else window.location.href = url
       onClose()
     } catch (e: any) {
       toast.error(e?.message ?? 'Could not save edits')
@@ -194,7 +216,7 @@ function ExportReviewDialog({ format, yachtId, exportUrl, onClose, onSaved }: {
 
   const dateCell = (r: ReviewRow, key: keyof ReviewRow) => (
     <input type="date" value={(r[key] as string | null)?.slice(0, 10) ?? ''} onChange={e => edit(r.id, key, e.target.value)}
-      style={{ width: 130, fontFamily: FONTS.display, fontSize: 12, color: COLORS.frost, background: COLORS.void, border: `1px solid ${COLORS.deep}`, borderRadius: 6, padding: '4px 6px', colorScheme: 'dark' }} />
+      style={{ width: 116, fontFamily: FONTS.display, fontSize: 11.5, color: COLORS.frost, background: COLORS.void, border: `1px solid ${COLORS.deep}`, borderRadius: 6, padding: '4px 4px', colorScheme: 'dark' }} />
   )
   const textCell = (r: ReviewRow, key: keyof ReviewRow, width = 120) => (
     <input type="text" value={(r[key] as string | null) ?? ''} onChange={e => edit(r.id, key, e.target.value)}
@@ -204,14 +226,16 @@ function ExportReviewDialog({ format, yachtId, exportUrl, onClose, onSaved }: {
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 950, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: 'min(1180px, 96vw)', maxHeight: '88vh', display: 'flex', flexDirection: 'column', background: COLORS.abyss, border: `1px solid ${COLORS.deep}`, borderRadius: 12, boxShadow: '0 24px 64px rgba(0,0,0,0.5)' }}>
+      {/* Wide enough for all ten columns — at 1180px Sign Off and Status fell off
+          the right edge and had to be scrolled to. */}
+      <div onClick={e => e.stopPropagation()} style={{ width: 'min(1500px, 97vw)', maxHeight: '88vh', display: 'flex', flexDirection: 'column', background: COLORS.abyss, border: `1px solid ${COLORS.deep}`, borderRadius: 12, boxShadow: '0 24px 64px rgba(0,0,0,0.5)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: `1px solid ${COLORS.deep}` }}>
           <div>
             <div style={{ fontFamily: FONTS.display, fontSize: 16, fontWeight: 700, color: COLORS.frost }}>
               Review before {format.toUpperCase()} export
             </div>
             <div style={{ fontFamily: FONTS.display, fontSize: 12, color: COLORS.muted, marginTop: 2 }}>
-              Active visas only — expired, cancelled and rejected are excluded automatically. Make any quick corrections below; they're saved when you hit Generate.
+              Active visas only — expired, cancelled and rejected are excluded automatically. Untick any record you don't want in this file (nothing is changed by leaving it out). Quick corrections below are saved when you hit Generate.
             </div>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: COLORS.muted, fontSize: 18, cursor: 'pointer' }}>✕</button>
@@ -226,17 +250,30 @@ function ExportReviewDialog({ format, yachtId, exportUrl, onClose, onSaved }: {
             <table style={{ borderCollapse: 'collapse', width: '100%' }}>
               <thead>
                 <tr>
+                  <th style={{ ...th, padding: '8px 4px 8px 8px', width: 28 }}
+                    title={excluded.size ? 'Include every record again' : 'Exclude every record'}>
+                    <input type="checkbox" checked={excluded.size === 0}
+                      onChange={() => setExcluded(excluded.size === 0 ? new Set(rows.map(r => r.id)) : new Set())}
+                      style={{ cursor: 'pointer', accentColor: COLORS.signal }} />
+                  </th>
                   <th style={th}>Crew</th><th style={th}>Passport</th><th style={th}>Rank</th><th style={th}>Visa Ref</th>
                   <th style={th}>Issuance</th><th style={th}>Use By</th><th style={th}>Expiry</th>
                   <th style={th}>Sign On</th><th style={th}>Sign Off</th><th style={th}>Status</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map(r => (
-                  <tr key={r.id} style={{ borderTop: `1px solid ${COLORS.deep}`, background: dirty.has(r.id) ? `${COLORS.signal}0d` : 'transparent' }}>
-                    <td style={{ padding: '6px 8px', fontFamily: FONTS.display, fontSize: 12.5, fontWeight: 600, color: COLORS.frost, whiteSpace: 'nowrap' }}>
+                {rows.map(r => {
+                  const off = excluded.has(r.id)
+                  return (
+                  <tr key={r.id} style={{ borderTop: `1px solid ${COLORS.deep}`, opacity: off ? 0.4 : 1, background: off ? 'transparent' : dirty.has(r.id) ? `${COLORS.signal}0d` : 'transparent' }}>
+                    <td style={{ padding: '6px 4px 6px 8px' }}>
+                      <input type="checkbox" checked={!off} onChange={() => toggleExcluded(r.id)}
+                        title={off ? 'Left out of this export' : 'Included in this export'}
+                        style={{ cursor: 'pointer', accentColor: COLORS.signal }} />
+                    </td>
+                    <td style={{ padding: '6px 8px', fontFamily: FONTS.display, fontSize: 12.5, fontWeight: 600, color: COLORS.frost, whiteSpace: 'nowrap', textDecoration: off ? 'line-through' : 'none' }}>
                       {[r.given_name, r.surname].filter(Boolean).join(' ') || '—'}
-                      <div style={{ fontSize: 10.5, fontWeight: 400, color: COLORS.muted }}>{r.nationality ?? ''}</div>
+                      <div style={{ fontSize: 10.5, fontWeight: 400, color: COLORS.muted, textDecoration: 'none' }}>{r.nationality ?? ''}</div>
                     </td>
                     <td style={{ padding: '6px 8px', fontFamily: FONTS.display, fontSize: 12, color: COLORS.muted, whiteSpace: 'nowrap' }}>{r.passport_number ?? '—'}</td>
                     <td style={{ padding: '6px 4px' }}>{textCell(r, 'rank_rating', 110)}</td>
@@ -254,7 +291,8 @@ function ExportReviewDialog({ format, yachtId, exportUrl, onClose, onSaved }: {
                       </select>
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           )}
@@ -262,15 +300,17 @@ function ExportReviewDialog({ format, yachtId, exportUrl, onClose, onSaved }: {
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '14px 20px', borderTop: `1px solid ${COLORS.deep}` }}>
           <div style={{ fontFamily: FONTS.display, fontSize: 12, color: COLORS.muted }}>
-            {rows.length} record(s) will be exported{dirty.size ? ` · ${dirty.size} edited` : ''}
+            {excluded.size ? `${included.length} of ${rows.length}` : rows.length} record(s) will be exported
+            {excluded.size ? ` · ${excluded.size} excluded` : ''}{dirty.size ? ` · ${dirty.size} edited` : ''}
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={onClose} disabled={busy}
               style={{ fontFamily: FONTS.display, fontSize: 13, fontWeight: 600, color: COLORS.muted, background: 'transparent', border: `1px solid ${COLORS.deep}`, borderRadius: 8, padding: '9px 18px', cursor: 'pointer' }}>
               Cancel
             </button>
-            <button onClick={() => void generate()} disabled={busy || loading || rows.length === 0}
-              style={{ fontFamily: FONTS.display, fontSize: 13, fontWeight: 700, color: COLORS.void, background: COLORS.signal, border: 'none', borderRadius: 8, padding: '9px 22px', cursor: busy ? 'wait' : 'pointer', opacity: busy || rows.length === 0 ? 0.6 : 1 }}>
+            <button onClick={() => void generate()} disabled={busy || loading || included.length === 0}
+              title={included.length === 0 ? 'Every record is excluded — tick at least one' : undefined}
+              style={{ fontFamily: FONTS.display, fontSize: 13, fontWeight: 700, color: COLORS.void, background: COLORS.signal, border: 'none', borderRadius: 8, padding: '9px 22px', cursor: busy ? 'wait' : 'pointer', opacity: busy || included.length === 0 ? 0.6 : 1 }}>
               {busy ? 'Saving…' : `Generate ${format.toUpperCase()}`}
             </button>
           </div>

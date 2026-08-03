@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Crew Documents card now lists everything in the SharePoint folder — files filed by hand or predating Polaris appear under 'Also in SharePoint' with open links"
+      },
+      {
+        "type": "feature",
         "title": "Crew Documents gains a Refresh button, recognises files already in SharePoint under their hand-written names, and files a replaced passport into an \"Old\" folder automatically so the newest passport is the one in use"
       },
       {
