@@ -349,8 +349,6 @@ async function renderInvoicePdfStamped(t: TransformedInvoice, title: string): Pr
     totalamountfinal1: convertedTotal != null ? fmtMoney(+convertedTotal.toFixed(2)) : '',
   }
 
-  // Running totals across pages — the per-page bar shows the cumulative figure.
-  let runA = 0, runV = 0, runT = 0
   for (let pi = 0; pi < pageCount; pi++) {
     const pc: StampPage = coords[kinds[pi]]
     const [page] = await pdf.copyPages(src, [BG_INDEX[kinds[pi]]])
@@ -393,22 +391,24 @@ async function renderInvoicePdfStamped(t: TransformedInvoice, title: string): Pr
       fit.lines.forEach((ln, i) => draw(page, { ...addrField, size: fit.size, y: addrField.y + fit.yOffset - i * fit.pitch }, ln))
     }
 
+    // Totals for THIS page only — each page's bar sums the lines printed on it,
+    // and the Grand Total on the last page sums the whole invoice.
+    let pgA = 0, pgV = 0, pgT = 0
     pageRows[pi].forEach((r, ri) => {
       const y = pc.itemRows.ys[ri]; if (y == null) return
       for (const [key, cf] of Object.entries(pc.itemRows.cols)) { const v = r.cells[key]; if (v) draw(page, { ...cf, y }, v) }
-      runA += r.a; runV += r.v; runT += r.tt
+      pgA += r.a; pgV += r.v; pgT += r.tt
     })
-    // Per-page totals bar. The Word templates suffix these fields by page number
-    // (page 1 = `…1`, page 2 of a 3-pager = `…2`, final page = unsuffixed), so
-    // accept ANY numeric suffix — keying only on `1` left middle pages blank.
+    // The Word templates suffix these fields by page number (page 1 = `…1`,
+    // page 2 of a 3-pager = `…2`, final page = unsuffixed), so accept ANY numeric
+    // suffix — keying only on `1` left middle pages blank.
     const tot = (base: string) => pc.fields[base] ?? pc.fields[`${base}1`]
       ?? pc.fields[Object.keys(pc.fields).find((k) => k.startsWith(base) && /^\d+$/.test(k.slice(base.length))) ?? '']
-    // RUNNING total through this page (carried-forward convention), so every page
-    // always shows figures — a page holding only description rows would otherwise
-    // print an empty/0.00 bar. On the last page it agrees with the Grand Total.
-    if (tot('totalamount')) draw(page, tot('totalamount')!, fmtMoney(runA), true)
-    if (tot('totalvat')) draw(page, tot('totalvat')!, fmtMoney(runV), true)
-    if (tot('totalltotalamount')) draw(page, tot('totalltotalamount')!, fmtMoney(runT), true)
+    // fmtMoney, not fmtNum: a page carrying only description lines totals zero and
+    // must print "0.00" — an empty bar reads as a rendering fault.
+    if (tot('totalamount')) draw(page, tot('totalamount')!, fmtMoney(pgA), true)
+    if (tot('totalvat')) draw(page, tot('totalvat')!, fmtMoney(pgV), true)
+    if (tot('totalltotalamount')) draw(page, tot('totalltotalamount')!, fmtMoney(pgT), true)
 
     if (pageCount > 1 && pc.pageNo) {
       const b = pc.pageNo

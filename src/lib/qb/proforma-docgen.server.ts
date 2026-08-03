@@ -226,8 +226,6 @@ export async function buildProformaPdf(q: DocData): Promise<Uint8Array> {
     totalamountfinal1: q.convertedTotal != null ? fmtAlways(+q.convertedTotal.toFixed(2)) : '',
   }
 
-  // Running totals across pages — the per-page bar shows the cumulative figure.
-  let runA = 0, runV = 0, runT = 0
   for (let pi = 0; pi < pageCount; pi++) {
     const kind = kinds[pi]
     const pc: StampPage = coords[kind]
@@ -258,6 +256,7 @@ export async function buildProformaPdf(q: DocData): Promise<Uint8Array> {
       })
     }
 
+    let subA = 0, subV = 0, subT = 0
     pageRows[pi].forEach((r, ri) => {
       const y = pc.itemRows.ys[ri]
       if (y == null) return
@@ -265,7 +264,7 @@ export async function buildProformaPdf(q: DocData): Promise<Uint8Array> {
         const v = r.cells[key]
         if (v) draw(page, { ...cf, y }, v)
       }
-      runA += r.subAmount; runV += r.subVat; runT += r.subTotal
+      subA += r.subAmount; subV += r.subVat; subT += r.subTotal
     })
 
     // Per-page totals bar — the templates suffix these by page number (page 1 =
@@ -273,11 +272,11 @@ export async function buildProformaPdf(q: DocData): Promise<Uint8Array> {
     // suffix so middle pages show their subtotal instead of 0.00.
     const t = (base: string) => pc.fields[base] ?? pc.fields[`${base}1`]
       ?? pc.fields[Object.keys(pc.fields).find((k) => k.startsWith(base) && /^\d+$/.test(k.slice(base.length))) ?? '']
-    // Zero renders BLANK (fmt), matching the original templates: a page that
-    // carries only description rows shows an empty subtotal bar, not "0.00".
-    if (t('totalamount')) draw(page, t('totalamount')!, fmtAlways(runA), true)
-    if (t('totalvat')) draw(page, t('totalvat')!, fmtAlways(runV), true)
-    if (t('totalltotalamount')) draw(page, t('totalltotalamount')!, fmtAlways(runT), true)
+    // fmtAlways, not fmt: a page carrying only description rows totals zero and
+    // must print "0.00" — an empty bar reads as a rendering fault.
+    if (t('totalamount')) draw(page, t('totalamount')!, fmtAlways(subA), true)
+    if (t('totalvat')) draw(page, t('totalvat')!, fmtAlways(subV), true)
+    if (t('totalltotalamount')) draw(page, t('totalltotalamount')!, fmtAlways(subT), true)
 
     if (pageCount > 1 && pc.pageNo) {
       const b = pc.pageNo
