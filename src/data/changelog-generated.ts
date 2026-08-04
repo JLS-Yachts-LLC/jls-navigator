@@ -5,6 +5,16 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.34.0",
+    "date": "2026-08-04",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Add another sign on/off for the same crew member in one click — a new duplicate action reuses the vessel, port and flight details but starts a fresh record dated today, so repeat movements are never filed under the previous date"
+      }
+    ]
+  },
+  {
     "version": "2.33.0",
     "date": "2026-08-03",
     "entries": [
