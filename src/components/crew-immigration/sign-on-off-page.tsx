@@ -14,7 +14,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Search, LogIn, LogOut, Trash2, Loader2, FileText, Upload, CheckCircle2, Pencil, BarChart3, Download } from "lucide-react";
+import { Plus, Search, LogIn, LogOut, Trash2, Loader2, FileText, Upload, CheckCircle2, Pencil, BarChart3, Download, CopyPlus } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { doPushToSharePoint } from "@/lib/sharepoint-push.server";
@@ -181,8 +181,23 @@ export function SignOnOffPage() {
     setOpen(true);
   }
 
-  function openEdit(e: SignEvent) {
-    setEditId(e.id);
+  /**
+   * "Add another movement" for a crew member who already has one: reuse the
+   * vessel / port / flight details, but start a genuinely NEW record with TODAY's
+   * date. Crew sign on and off repeatedly, and the old flow (edit → save as new)
+   * carried the previous date over, which filed movements under the wrong day.
+   */
+  function openDuplicate(e: SignEvent) {
+    fillForm(e, { event_date: new Date().toISOString().slice(0, 10) });
+    setEditId(null);            // insert, never an overwrite
+    setSelectedCrew([e.crew_member_id]);
+    setCrewQ("");
+    setOpen(true);
+    toast.info("New movement — set the date, then Sign On / Sign Off to save.");
+  }
+
+  /** Shared form population for edit + duplicate. */
+  function fillForm(e: SignEvent, overrides: Partial<typeof EMPTY_FORM> = {}) {
     setForm({
       yacht_id: e.yacht_id ?? "", event_type: e.event_type, event_date: e.event_date ?? "",
       port: e.port ?? "", notes: e.notes ?? "",
@@ -192,7 +207,13 @@ export function SignOnOffPage() {
       arrival_datetime: e.arrival_datetime ? e.arrival_datetime.slice(0, 16) : "",
       pickup_required: !!e.pickup_required, pickup_time: e.pickup_time ? e.pickup_time.slice(0, 16) : "",
       crew_contact_number: e.crew_contact_number ?? "", driver_name: e.driver_name ?? "",
+      ...overrides,
     });
+  }
+
+  function openEdit(e: SignEvent) {
+    setEditId(e.id);
+    fillForm(e);
     setSelectedCrew([e.crew_member_id]);
     setCrewQ("");
     setOpen(true);
@@ -253,11 +274,16 @@ export function SignOnOffPage() {
     // used to save silently as null.
     if (!form.event_date) { toast.error("Enter the sign on / sign off date (dd/mm/yyyy)"); return; }
     // Copying a record keeps its date, so a forgotten change would file the new
-    // movement under the old day — confirm rather than save it quietly.
+    // movement under the old day. Crew sign on/off repeatedly, so a second record
+    // on the SAME day for the same crew and event is almost always that mistake:
+    // stop and ask for the real date rather than quietly duplicating.
     if (asNew && editId) {
       const src = events.find((e) => e.id === editId);
-      if (src?.event_date === form.event_date &&
-          !window.confirm(`This new record uses the same date as the one you copied (${fmtDate(form.event_date)}).\n\nSave it with that date?`)) {
+      if (src?.event_date === form.event_date && src?.event_type === form.event_type) {
+        toast.error(
+          `Set the new date first — this still shows ${fmtDate(form.event_date)}, the date of the record you copied.`,
+          { duration: 6000 },
+        );
         return;
       }
     }
@@ -445,7 +471,11 @@ export function SignOnOffPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-0.5">
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground/60 hover:text-primary" onClick={() => openEdit(e)} title="Edit">
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground/60 hover:text-primary" onClick={() => openDuplicate(e)}
+                          title="Add another movement for this crew member (same details, new date)">
+                          <CopyPlus className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground/60 hover:text-primary" onClick={() => openEdit(e)} title="Edit this record">
                           <Pencil className="h-3.5 w-3.5" />
                         </Button>
                         <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground/60 hover:text-destructive" onClick={() => setDeleteTarget(e)}>
