@@ -5,6 +5,16 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.34.1",
+    "date": "2026-08-05",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Stop all outbound email to clients — permit expiry reminders no longer go out automatically, and any message addressed outside JLS/New Horizon is withheld until client email is switched back on"
+      }
+    ]
+  },
+  {
     "version": "2.34.0",
     "date": "2026-08-04",
     "entries": [
