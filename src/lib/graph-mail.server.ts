@@ -8,6 +8,7 @@
  * Sender defaults to itsupport@jlsyachts.com (override with TICKET_MAIL_SENDER).
  */
 import { getSpConfig, getGraphToken } from '@/lib/sharepoint-sync.server'
+import { guardRecipients, ClientEmailDisabledError } from '@/lib/mail-guard.server'
 
 export const TICKET_MAIL_SENDER = process.env.TICKET_MAIL_SENDER ?? 'itsupport@jlsyachts.com'
 const SENDER_NAME = process.env.TICKET_MAIL_SENDER_NAME ?? 'JLS Yachts IT Support'
@@ -36,15 +37,17 @@ export async function sendTicketEmail(opts: {
   cc?: string | null
   replyTo?: string | null
 }): Promise<void> {
+  const guard = guardRecipients([opts.to], opts.cc ? [opts.cc] : [], `ticket email "${opts.subject}"`)
+  if (guard.suppressed) throw new ClientEmailDisabledError(opts.subject, guard.blocked)
   const token = await getMailGraphToken()
 
   const message: any = {
     subject: opts.subject,
     body: { contentType: 'HTML', content: opts.html },
-    toRecipients: [{ emailAddress: { address: opts.to } }],
+    toRecipients: guard.to.map((a) => ({ emailAddress: { address: a } })),
     from: { emailAddress: { address: TICKET_MAIL_SENDER, name: SENDER_NAME } },
   }
-  if (opts.cc) message.ccRecipients = [{ emailAddress: { address: opts.cc } }]
+  if (guard.cc.length) message.ccRecipients = guard.cc.map((a) => ({ emailAddress: { address: a } }))
   if (opts.replyTo) message.replyTo = [{ emailAddress: { address: opts.replyTo } }]
 
   const res = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(TICKET_MAIL_SENDER)}/sendMail`, {
@@ -70,6 +73,8 @@ export async function sendGraphEmail(opts: {
   from?: string
   attachments?: { filename: string; contentBase64: string; contentType: string }[]
 }): Promise<void> {
+  const guard = guardRecipients(opts.to, opts.cc ?? [], `email "${opts.subject}"`)
+  if (guard.suppressed) throw new ClientEmailDisabledError(opts.subject, guard.blocked)
   const token = await getMailGraphToken()
   // General platform mail (user invites, visa reports, permits, ShipSync POD, etc.)
   // sends from polaris@jlsyachts.com unless the caller picks a sender — e.g. Anchor
@@ -79,9 +84,9 @@ export async function sendGraphEmail(opts: {
   const message: any = {
     subject: opts.subject,
     body: { contentType: 'HTML', content: opts.html },
-    toRecipients: opts.to.filter(Boolean).map((a) => ({ emailAddress: { address: a } })),
+    toRecipients: guard.to.map((a) => ({ emailAddress: { address: a } })),
   }
-  if (opts.cc?.length) message.ccRecipients = opts.cc.filter(Boolean).map((a) => ({ emailAddress: { address: a } }))
+  if (guard.cc.length) message.ccRecipients = guard.cc.map((a) => ({ emailAddress: { address: a } }))
   if (opts.attachments?.length) {
     message.attachments = opts.attachments.map((a) => ({
       '@odata.type': '#microsoft.graph.fileAttachment',
@@ -115,6 +120,8 @@ export async function sendGraphEmailWithAttachments(opts: {
   from?: string
   attachments: { filename: string; contentBase64: string; contentType: string }[]
 }): Promise<void> {
+  const guard = guardRecipients(opts.to, opts.cc ?? [], `email with attachments "${opts.subject}"`)
+  if (guard.suppressed) throw new ClientEmailDisabledError(opts.subject, guard.blocked)
   const token = await getMailGraphToken()
   const sender = opts.from ?? (process.env.MAIL_SENDER as string | undefined) ?? 'polaris@jlsyachts.com'
   const base = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(sender)}`
@@ -126,8 +133,8 @@ export async function sendGraphEmailWithAttachments(opts: {
     body: JSON.stringify({
       subject: opts.subject,
       body: { contentType: 'HTML', content: opts.html },
-      toRecipients: opts.to.filter(Boolean).map((a) => ({ emailAddress: { address: a } })),
-      ...(opts.cc?.length ? { ccRecipients: opts.cc.filter(Boolean).map((a) => ({ emailAddress: { address: a } })) } : {}),
+      toRecipients: guard.to.map((a) => ({ emailAddress: { address: a } })),
+      ...(guard.cc.length ? { ccRecipients: guard.cc.map((a) => ({ emailAddress: { address: a } })) } : {}),
     }),
   })
   if (!draftRes.ok) throw new Error(`Graph draft ${draftRes.status}: ${(await draftRes.text()).slice(0, 240)}`)

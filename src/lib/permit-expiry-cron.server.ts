@@ -2,11 +2,28 @@
  * Permit expiry alert cron job.
  * Called from worker-entry.ts scheduled handler once per day (checked by hour).
  *
- * Sends a branded SES email to the permit contact when expiry is within 30 days.
- * Will re-send every 7 days if the permit is still expiring within 30 days.
+ * Emails the permit contact when expiry is within 30 days, re-sending every 7
+ * days while it stays inside the window.
+ *
+ * ⚠️ CURRENTLY DISABLED (2026-08-03). The permit contact is usually the CLIENT
+ * (captain / vessel), so this cron was mailing clients unprompted — Exit & Entry
+ * notices were going out automatically. It now returns without sending anything.
+ * The recipient guard in mail-guard.server.ts would also stop the mail, but this
+ * is the outer stop: nothing is composed, no permit rows get stamped
+ * expiry_alert_sent_at, so no reminder is silently marked as "already sent" and
+ * skipped once this is switched back on.
+ *
+ * To re-enable, set BOTH:
+ *   PERMIT_EXPIRY_ALERTS_ENABLED = "true"   (this cron)
+ *   CLIENT_EMAIL_ENABLED         = "true"   (delivery to non-staff addresses)
  */
 import { sendEmail } from "@/lib/ses.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+
+function expiryAlertsEnabled(): boolean {
+  const v = (process.env.PERMIT_EXPIRY_ALERTS_ENABLED ?? "").trim().toLowerCase();
+  return v === "true" || v === "1" || v === "yes";
+}
 
 const PERMIT_TYPE_LABEL: Record<string, string> = {
   exit_entry: "Exit & Entry Permit",
@@ -34,6 +51,10 @@ function daysUntil(d: string): number {
 }
 
 export async function runExpiryAlerts(): Promise<{ sent: number; skipped: number }> {
+  if (!expiryAlertsEnabled()) {
+    console.warn("[expiry-cron] disabled — permit expiry alerts go to client contacts; no email sent.");
+    return { sent: 0, skipped: 0 };
+  }
   const today     = new Date();
   const in30Days  = new Date(today.getTime() + 30 * 86_400_000);
   const sevenDaysAgo = new Date(today.getTime() - 7 * 86_400_000).toISOString();
