@@ -281,7 +281,7 @@ export const uploadVisaDocToSharePoint = createServerFn({ method: "POST" })
       {
         method: "PUT",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": contentType || "application/octet-stream" },
-        body: bytes,
+        body: bytes as unknown as BodyInit,
       },
     );
     if (!uploadRes.ok) {

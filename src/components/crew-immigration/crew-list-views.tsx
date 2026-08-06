@@ -6,11 +6,17 @@ import { Pencil, Trash2, Ship, UserCircle2, FileText, Upload, Download, Check, L
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
-// Local copies (kept in sync with crew-list-page)
+/**
+ * The crew row shape shared by the list page and these views. It lives here
+ * because crew-list-page imports this module (the reverse would be circular);
+ * the page aliases it rather than keeping its own copy, which is how the two
+ * drifted apart and left the grid/card callbacks mistyped.
+ */
 export type CrewRow = {
   id: string;
   yacht_id: string | null;
   first_name: string;
+  middle_name: string | null;
   last_name: string;
   nationality: string | null;
   rank: string | null;
@@ -18,8 +24,12 @@ export type CrewRow = {
   status: string;
   email: string | null;
   phone: string | null;
+  phone_country_code: string | null;
+  phone_number: string | null;
   passport_number: string | null;
   passport_expiry_date: string | null;
+  photo_url: string | null;
+  created_at: string;
 };
 
 const STATUS_COLORS: Record<string, string> = {

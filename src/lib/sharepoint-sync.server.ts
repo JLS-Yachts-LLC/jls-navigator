@@ -97,7 +97,8 @@ export async function getSpSyncs(): Promise<SpSyncConfig[]> {
 }
 
 export async function saveSpSync(
-  sync: Pick<SpSyncConfig, 'id' | 'name' | 'listName' | 'syncTarget' | 'fieldMapping' | 'enabled'> & { id?: string },
+  // No `id` when creating — including it in the Pick would make it required.
+  sync: Pick<SpSyncConfig, 'name' | 'listName' | 'syncTarget' | 'fieldMapping' | 'enabled'> & { id?: string },
 ): Promise<SpSyncConfig> {
   const payload = {
     name: sync.name,
@@ -150,9 +151,11 @@ export async function deleteSpSync(id: string): Promise<void> {
  * which keeps each invocation within Cloudflare's subrequest budget.
  */
 export async function resetDeltaTokens(): Promise<number> {
-  const { data, error } = await supabaseAdmin
+  // sharepoint_sync_configs is not in the generated types (created out of band),
+  // so it goes through the same admin cast the rest of this module uses.
+  const { data, error } = await (supabaseAdmin as any)
     .from('sharepoint_sync_configs')
-    .update({ delta_token: null } as never)
+    .update({ delta_token: null })
     .eq('enabled', true)
     .select('id')
   if (error) { console.error('[sp] resetDeltaTokens error:', error.message); return 0 }

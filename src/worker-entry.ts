@@ -628,7 +628,11 @@ export default {
       return movementReportsHandler(request)
     }
 
-    return handleRequest(request, env, ctx)
+    // TanStack's handler takes (request, opts?) — `env`/`ctx` were being passed
+    // into a slot that expects `{ context }` and a third parameter that does not
+    // exist, so both were ignored. Server code reads the environment from
+    // globalThis.__CF_ENV, set at the top of this fetch handler.
+    return handleRequest(request)
   },
 
   // Cron triggers: "0 * * * *" (hourly) → SharePoint inbound sync of all lists;

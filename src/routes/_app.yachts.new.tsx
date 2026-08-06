@@ -4,23 +4,25 @@ import { createServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 
 const doPushToSharePoint = createServerFn({ method: 'POST' })
-  .handler(async (ctx: { data: { yachtId: string } }) => {
+  .inputValidator((d: { yachtId: string }) => d)
+  .handler(async ({ data }) => {
     try {
       const { pushYachtToSharePoint } = await import('@/lib/sharepoint-sync.server')
-      await pushYachtToSharePoint(ctx.data.yachtId)
+      await pushYachtToSharePoint(data.yachtId)
     } catch {
       // SharePoint push is non-critical
     }
   })
 
 const doCreateSpFolder = createServerFn({ method: 'POST' })
-  .handler(async (ctx: { data: { vesselName: string; yachtId: string } }) => {
+  .inputValidator((d: { vesselName: string; yachtId: string }) => d)
+  .handler(async ({ data }) => {
     try {
       const { createYachtFolderInSharePoint } = await import('@/lib/sharepoint-sync.server')
       const { supabaseAdmin } = await import('@/integrations/supabase/client.server')
-      const folderUrl = await createYachtFolderInSharePoint(ctx.data.vesselName)
+      const folderUrl = await createYachtFolderInSharePoint(data.vesselName)
       if (folderUrl) {
-        await supabaseAdmin.from('yachts').update({ link_to_folder: folderUrl } as never).eq('id', ctx.data.yachtId)
+        await supabaseAdmin.from('yachts').update({ link_to_folder: folderUrl } as never).eq('id', data.yachtId)
       }
     } catch {
       // Non-critical — SP may not be configured

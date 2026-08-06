@@ -16,52 +16,82 @@ export type Database = {
     Tables: {
       permits: {
         Row: {
+          contact_email: string | null
           created_at: string
           created_by: string | null
           dma_phase: string | null
           document_url: string | null
+          email_sent_at: string | null
+          email_sent_by: string | null
+          expiry_alert_sent_at: string | null
           expiry_date: string | null
           holder_name: string | null
           id: string
           issue_date: string | null
           issuing_authority: string | null
+          jls_quotation_number: string | null
+          license_no: string | null
           notes: string | null
           permit_number: string | null
           permit_type: Database["public"]["Enums"]["permit_type"]
+          preferred_inspection_date: string | null
+          requested_by: string | null
+          sharepoint_item_id: string | null
+          sharepoint_synced_at: string | null
           status: Database["public"]["Enums"]["permit_status"]
           updated_at: string
           yacht_id: string | null
         }
         Insert: {
+          contact_email?: string | null
           created_at?: string
           created_by?: string | null
           dma_phase?: string | null
           document_url?: string | null
+          email_sent_at?: string | null
+          email_sent_by?: string | null
+          expiry_alert_sent_at?: string | null
           expiry_date?: string | null
           holder_name?: string | null
           id?: string
           issue_date?: string | null
           issuing_authority?: string | null
+          jls_quotation_number?: string | null
+          license_no?: string | null
           notes?: string | null
           permit_number?: string | null
           permit_type: Database["public"]["Enums"]["permit_type"]
+          preferred_inspection_date?: string | null
+          requested_by?: string | null
+          sharepoint_item_id?: string | null
+          sharepoint_synced_at?: string | null
           status?: Database["public"]["Enums"]["permit_status"]
           updated_at?: string
           yacht_id?: string | null
         }
         Update: {
+          contact_email?: string | null
           created_at?: string
           created_by?: string | null
           dma_phase?: string | null
           document_url?: string | null
+          email_sent_at?: string | null
+          email_sent_by?: string | null
+          expiry_alert_sent_at?: string | null
           expiry_date?: string | null
           holder_name?: string | null
           id?: string
           issue_date?: string | null
           issuing_authority?: string | null
+          jls_quotation_number?: string | null
+          license_no?: string | null
           notes?: string | null
           permit_number?: string | null
           permit_type?: Database["public"]["Enums"]["permit_type"]
+          preferred_inspection_date?: string | null
+          requested_by?: string | null
+          sharepoint_item_id?: string | null
+          sharepoint_synced_at?: string | null
           status?: Database["public"]["Enums"]["permit_status"]
           updated_at?: string
           yacht_id?: string | null
@@ -81,21 +111,27 @@ export type Database = {
           avatar_url: string | null
           created_at: string
           display_name: string | null
+          first_name: string | null
           id: string
+          last_name: string | null
           updated_at: string
         }
         Insert: {
           avatar_url?: string | null
           created_at?: string
           display_name?: string | null
+          first_name?: string | null
           id: string
+          last_name?: string | null
           updated_at?: string
         }
         Update: {
           avatar_url?: string | null
           created_at?: string
           display_name?: string | null
+          first_name?: string | null
           id?: string
+          last_name?: string | null
           updated_at?: string
         }
         Relationships: []

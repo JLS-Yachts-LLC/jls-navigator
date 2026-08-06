@@ -17,29 +17,12 @@ import { doPushToSharePoint } from "@/lib/sharepoint-push.server";
 import { softDeleteEntity, getCrewDeleteImpact, type DeleteImpact } from "@/lib/recycle-bin";
 import { Link } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
-import { CrewCards, CrewGrid, CsvImportDialog } from "@/components/crew-immigration/crew-list-views";
+import { CrewCards, CrewGrid, CsvImportDialog, type CrewRow } from "@/components/crew-immigration/crew-list-views";
 
 type Yacht = { id: string; vessel_name: string };
 
-type CrewMember = {
-  id: string;
-  yacht_id: string | null;
-  first_name: string;
-  middle_name: string | null;
-  last_name: string;
-  nationality: string | null;
-  rank: string | null;
-  department: string | null;
-  status: string;
-  email: string | null;
-  phone: string | null;
-  phone_country_code: string | null;
-  phone_number: string | null;
-  passport_number: string | null;
-  passport_expiry_date: string | null;
-  photo_url: string | null;
-  created_at: string;
-};
+/** Single definition, shared with the grid/card views (see crew-list-views). */
+type CrewMember = CrewRow;
 
 const STATUS_COLORS: Record<string, string> = {
   active:    "bg-emerald-500/15 text-emerald-400",
@@ -413,7 +396,9 @@ export function CrewListPage({ onOpenCrew }: { onOpenCrew?: (id: string) => void
             </table>
           </div>
         ) : view === "grid" ? (
-          <CrewGrid crew={filtered} yachts={yachts} onSave={quickSave} onDelete={setDeleteTarget} />
+          // CrewGrid has no vessel column, so it never accepted a `yachts` prop —
+          // the one previously passed here was silently discarded.
+          <CrewGrid crew={filtered} onSave={quickSave} onDelete={setDeleteTarget} />
         ) : (
           <CrewCards crew={filtered} yachtName={yachtName} fmtDate={fmtDate} onEdit={openEdit} onDelete={setDeleteTarget} />
         )}

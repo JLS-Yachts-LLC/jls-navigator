@@ -76,20 +76,23 @@ const getUsers = createServerFn({ method: 'GET' }).handler(async (): Promise<Use
 })
 
 const doInviteUser = createServerFn({ method: 'POST' })
-  .handler(async (ctx: { data: { email: string } }) => {
-    const { error } = await supabaseAdmin.auth.admin.inviteUserByEmail(ctx.data.email)
+  .inputValidator((d: { email: string }) => d)
+  .handler(async ({ data }) => {
+    const { error } = await supabaseAdmin.auth.admin.inviteUserByEmail(data.email)
     if (error) throw new Error(error.message)
   })
 
 const doResetPassword = createServerFn({ method: 'POST' })
-  .handler(async (ctx: { data: { email: string } }) => {
-    const { error } = await supabaseAdmin.auth.resetPasswordForEmail(ctx.data.email)
+  .inputValidator((d: { email: string }) => d)
+  .handler(async ({ data }) => {
+    const { error } = await supabaseAdmin.auth.resetPasswordForEmail(data.email)
     if (error) throw new Error(error.message)
   })
 
 const doSetRole = createServerFn({ method: 'POST' })
-  .handler(async (ctx: { data: { userId: string; role: AppRole } }) => {
-    const { userId, role } = ctx.data
+  .inputValidator((d: { userId: string; role: AppRole }) => d)
+  .handler(async ({ data }) => {
+    const { userId, role } = data
     const { data: existing } = await supabaseAdmin
       .from('user_roles').select('id').eq('user_id', userId).maybeSingle()
     const { error } = existing
@@ -99,14 +102,16 @@ const doSetRole = createServerFn({ method: 'POST' })
   })
 
 const doDeleteUser = createServerFn({ method: 'POST' })
-  .handler(async (ctx: { data: { userId: string } }) => {
-    const { error } = await supabaseAdmin.auth.admin.deleteUser(ctx.data.userId)
+  .inputValidator((d: { userId: string }) => d)
+  .handler(async ({ data }) => {
+    const { error } = await supabaseAdmin.auth.admin.deleteUser(data.userId)
     if (error) throw new Error(error.message)
   })
 
 const doUpdateProfile = createServerFn({ method: 'POST' })
-  .handler(async (ctx: { data: { userId: string; firstName: string; lastName: string } }) => {
-    const { userId, firstName, lastName } = ctx.data
+  .inputValidator((d: { userId: string; firstName: string; lastName: string }) => d)
+  .handler(async ({ data }) => {
+    const { userId, firstName, lastName } = data
     const displayName = [firstName.trim(), lastName.trim()].filter(Boolean).join(' ') || null
     const { data: existing } = await supabaseAdmin
       .from('profiles').select('id').eq('id', userId).maybeSingle()
@@ -123,8 +128,9 @@ const doUpdateProfile = createServerFn({ method: 'POST' })
   })
 
 const doDisableMFA = createServerFn({ method: 'POST' })
-  .handler(async (ctx: { data: { userId: string; factorIds: string[] } }) => {
-    const { userId, factorIds } = ctx.data
+  .inputValidator((d: { userId: string; factorIds: string[] }) => d)
+  .handler(async ({ data }) => {
+    const { userId, factorIds } = data
     for (const factorId of factorIds) {
       const res = await fetch(
         `${process.env.SUPABASE_URL}/auth/v1/admin/users/${userId}/factors/${factorId}`,
@@ -148,10 +154,11 @@ const getPerms = createServerFn({ method: 'GET' }).handler(async (): Promise<Dep
 })
 
 const savePerms = createServerFn({ method: 'POST' })
-  .handler(async (ctx: { data: DeptPerm[] }) => {
+  .inputValidator((d: DeptPerm[]) => d)
+  .handler(async ({ data }) => {
     const { error } = await (supabaseAdmin as any)
       .from('department_permissions')
-      .upsert(ctx.data, { onConflict: 'department,module' })
+      .upsert(data, { onConflict: 'department,module' })
     if (error) throw new Error(error.message)
   })
 
@@ -172,7 +179,8 @@ import {
 } from '@/lib/sharepoint-sync.server'
 
 const doDiscoverSharePointColumns = createServerFn({ method: 'POST' })
-  .handler(async (ctx: { data: { listName: string } }) => {
+  .inputValidator((d: { listName: string }) => d)
+  .handler(async ({ data }) => {
     const { data: row } = await (supabaseAdmin as any)
       .from('integration_settings')
       .select('config')
@@ -186,22 +194,23 @@ const doDiscoverSharePointColumns = createServerFn({ method: 'POST' })
     const token = await _getGraphToken(tenant_id, client_id, client_secret)
     const siteId = await _resolveSpSite(token, tenant_url, site_url)
     const res = await fetch(
-      `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${ctx.data.listName}/columns`,
+      `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${data.listName}/columns`,
       { headers: { Authorization: `Bearer ${token}` } }
     )
-    const data = await res.json() as Record<string, any>
-    if (!data.value) throw new Error(`Could not read list columns: ${data.error?.message ?? 'List not found'}`)
-    return (data.value as any[])
+    const body = await res.json() as Record<string, any>
+    if (!body.value) throw new Error(`Could not read list columns: ${body.error?.message ?? 'List not found'}`)
+    return (body.value as any[])
       .filter((c: any) => !c.readOnly && c.name !== 'id')
       .map((c: any) => ({ name: c.name as string, displayName: c.displayName as string }))
   })
 
 const doSyncSharePoint = createServerFn({ method: 'POST' })
-  .handler(async (ctx: { data: { listName: string; fieldMapping: Record<string, string>; syncTarget: string } }) => {
+  .inputValidator((d: { listName: string; fieldMapping: Record<string, string>; syncTarget: string }) => d)
+  .handler(async ({ data }) => {
     await saveSpConfigPatch({
-      list_name: ctx.data.listName,
-      field_mapping: ctx.data.fieldMapping,
-      sync_target: ctx.data.syncTarget,
+      list_name: data.listName,
+      field_mapping: data.fieldMapping,
+      sync_target: data.syncTarget,
       delta_token: null,
     })
     const { synced, errors } = await syncFromSharePoint()
@@ -209,8 +218,9 @@ const doSyncSharePoint = createServerFn({ method: 'POST' })
   })
 
 const doRegisterWebhook = createServerFn({ method: 'POST' })
-  .handler(async (ctx: { data: { appUrl: string } }) => {
-    const notificationUrl = `${ctx.data.appUrl.replace(/\/$/, '')}/sp-hook`
+  .inputValidator((d: { appUrl: string }) => d)
+  .handler(async ({ data }) => {
+    const notificationUrl = `${data.appUrl.replace(/\/$/, '')}/sp-hook`
     return registerSharePointWebhook(notificationUrl)
   })
 
@@ -223,18 +233,23 @@ const doGetSpSyncs = createServerFn({ method: 'GET' })
   .handler(async (): Promise<SpSyncConfig[]> => getSpSyncs())
 
 const doSaveSpSync = createServerFn({ method: 'POST' })
-  .handler(async (ctx: { data: Pick<SpSyncConfig, 'id' | 'name' | 'listName' | 'syncTarget' | 'fieldMapping' | 'enabled'> & { id?: string } }): Promise<SpSyncConfig> => {
-    return saveSpSync(ctx.data)
+  // `id` is absent when creating a new sync — Pick<…,'id'> would make it required,
+  // so omit it from the Pick before adding it back as optional.
+  .inputValidator((d: Pick<SpSyncConfig, 'name' | 'listName' | 'syncTarget' | 'fieldMapping' | 'enabled'> & { id?: string }) => d)
+  .handler(async ({ data }): Promise<SpSyncConfig> => {
+    return saveSpSync(data)
   })
 
 const doDeleteSpSync = createServerFn({ method: 'POST' })
-  .handler(async (ctx: { data: { id: string } }): Promise<void> => {
-    return deleteSpSync(ctx.data.id)
+  .inputValidator((d: { id: string }) => d)
+  .handler(async ({ data }): Promise<void> => {
+    return deleteSpSync(data.id)
   })
 
 const doSyncById = createServerFn({ method: 'POST' })
-  .handler(async (ctx: { data: { id: string } }): Promise<{ synced: number; errors: number }> => {
-    return _syncById(ctx.data.id)
+  .inputValidator((d: { id: string }) => d)
+  .handler(async ({ data }): Promise<{ synced: number; errors: number }> => {
+    return _syncById(data.id)
   })
 
 const doGetWebhookStatus = createServerFn({ method: 'GET' })

@@ -105,7 +105,7 @@ export async function downloadImmigrationPackage(docs: ExportableDoc[], zipName:
     const url = await resolveSignedUrl(VISA_ARRIVAL_DOC.ref)
     const res = await fetch(url)
     if (res.ok) {
-      let name = VISA_ARRIVAL_DOC.filename
+      let name: string = VISA_ARRIVAL_DOC.filename
       let n = 1
       while (used.has(name)) { name = VISA_ARRIVAL_DOC.filename.replace(/\.pdf$/i, `_${n}.pdf`); n++ }
       used.add(name)

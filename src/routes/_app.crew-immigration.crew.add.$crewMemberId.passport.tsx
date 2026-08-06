@@ -34,10 +34,13 @@ function PassportStep() {
       // Non-fatal — draft saving failure must never block the wizard.
     }
 
+    // The wizard's "verify" step was never built, and this screen is reached from
+    // the crew profile (the Passport no. row), so Continue returns there with the
+    // passport saved — it used to navigate to a route that does not exist and
+    // simply failed.
     navigate({
-      to: '/crew-immigration/crew/add/$crewMemberId/verify',
-      params: { crewMemberId },
-      state: { passportData: data },
+      to: '/crew-immigration/crew/$id',
+      params: { id: crewMemberId },
     })
   }
 

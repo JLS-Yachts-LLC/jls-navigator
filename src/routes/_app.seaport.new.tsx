@@ -62,7 +62,7 @@ function NewSeaportRequest() {
       if (arr.length) { const { error: e } = await (supabase as any).from("seaport_arrivals").insert(arr.map(mapArr)); if (e) throw new Error(e.message); }
       if (dep.length) { const { error: e } = await (supabase as any).from("seaport_departures").insert(dep.map(mapDep)); if (e) throw new Error(e.message); }
       toast.success("Seaport request submitted");
-      navigate({ to: "/seaport/$requestId" as any, params: { requestId: rid } });
+      navigate({ to: "/seaport/$requestId", params: { requestId: rid } });
     } catch (e: any) {
       toast.error(e.message ?? "Could not submit request");
     } finally {

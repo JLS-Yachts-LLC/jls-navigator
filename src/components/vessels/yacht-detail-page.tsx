@@ -20,20 +20,22 @@ import {
 } from "@/components/ui/alert-dialog";
 
 const doPushToSharePoint = createServerFn({ method: 'POST' })
-  .handler(async (ctx: { data: { yachtId: string } }) => {
+  .inputValidator((d: { yachtId: string }) => d)
+  .handler(async ({ data }) => {
     try {
       const { pushYachtToSharePoint } = await import('@/lib/sharepoint-sync.server')
-      await pushYachtToSharePoint(ctx.data.yachtId)
+      await pushYachtToSharePoint(data.yachtId)
     } catch {
       // SharePoint push is non-critical — log but don't surface to user
     }
   })
 
 const doSyncImage = createServerFn({ method: 'POST' })
-  .handler(async (ctx: { data: { yachtId: string } }) => {
+  .inputValidator((d: { yachtId: string }) => d)
+  .handler(async ({ data }) => {
     try {
       const { downloadYachtImage } = await import('@/lib/sharepoint-sync.server')
-      return await downloadYachtImage(ctx.data.yachtId)
+      return await downloadYachtImage(data.yachtId)
     } catch (e) {
       return { url: null, reason: e instanceof Error ? e.message : 'Unexpected error during sync.' }
     }

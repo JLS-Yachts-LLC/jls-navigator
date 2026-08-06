@@ -14,9 +14,9 @@ import { toast } from "sonner";
 
 // ─── Completion report (#126): build a summary + email it, mark report_sent ────
 const doSendSeaportReport = createServerFn({ method: "POST" })
-  // @ts-expect-error validator() not available in this version
-  .handler(async (ctx: { data: { requestId: string } }) => {
-    const { requestId } = ctx.data;
+  .inputValidator((d: { requestId: string }) => d)
+  .handler(async ({ data }) => {
+    const { requestId } = data;
     const { data: req } = await (supabaseAdmin as any)
       .from("seaport_requests")
       .select("request_id, request_date, status, submitted_by, completed_at, yachts:vessel_id(vessel_name)")

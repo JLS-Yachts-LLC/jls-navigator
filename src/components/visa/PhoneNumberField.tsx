@@ -462,7 +462,8 @@ export const PhoneNumberField = forwardRef<PhoneNumberFieldHandle, PhoneNumberFi
           </div>
         </div>
 
-        {selectedCountryData && isUnmodifiedDefault && defaultSource !== 'none' && !showError && (
+        {/* isUnmodifiedDefault already excludes 'none' — no need to re-test it. */}
+        {selectedCountryData && isUnmodifiedDefault && !showError && (
           <div
             style={{
               display: 'inline-flex',

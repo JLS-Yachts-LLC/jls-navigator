@@ -41,7 +41,9 @@ interface UploadBoxProps {
   isBusy: boolean;
   onClear: () => void;
   onPick: () => void;
-  inputRef: React.RefObject<HTMLInputElement>;
+  // useRef<HTMLInputElement>(null) yields RefObject<HTMLInputElement | null> in
+  // React 19 — accept that rather than the pre-19 non-null shape.
+  inputRef: React.RefObject<HTMLInputElement | null>;
   onFileChange: (f: File) => void;
   accept?: string;
 }

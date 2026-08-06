@@ -93,9 +93,9 @@ function adminError(error: any, context: string): Error {
 }
 
 export const doSendForSignature = createServerFn({ method: "POST" })
-  // @ts-expect-error — TanStack Start v1 serverFn type requires explicit ctx typing
-  .handler(async (ctx: { data: { documentId: string; senderEmail?: string } }) => {
-    const { documentId, senderEmail } = ctx.data ?? {};
+  .inputValidator((d: { documentId: string; senderEmail?: string }) => d)
+  .handler(async ({ data }) => {
+    const { documentId, senderEmail } = data ?? {};
     if (!documentId) throw new Error("No document id was supplied to the signing request.");
     const meta = reqMeta();
 

@@ -3,7 +3,6 @@
  * Runs on the Cloudflare Worker — has access to env secrets.
  */
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
 import { sendEmail } from "@/lib/ses.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
@@ -158,13 +157,10 @@ function buildText(permit: any, yachtName: string): string {
 
 // ── Server function ───────────────────────────────────────────────────────────
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const _z = z; // ensure import kept; validator() not available in this TanStack Start version
-
 export const doSendPermitEmail = createServerFn({ method: "POST" })
-  // @ts-expect-error — TanStack Start v1 serverFn type requires explicit ctx typing
-  .handler(async (ctx: { data: { permitId: string; senderEmail: string } }) => {
-    const { permitId, senderEmail } = ctx.data;
+  .inputValidator((d: { permitId: string; senderEmail: string }) => d)
+  .handler(async ({ data }) => {
+    const { permitId, senderEmail } = data;
 
     // Fetch permit + yacht from DB using service role
     // Cast to any because Supabase generated types may not include new columns

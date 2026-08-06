@@ -27,7 +27,6 @@ export type IntegrationsStatus = {
 /** Read-only integration status for the Developer → Integrations page. Runs on the
  *  worker with the service role; strips the client secret before returning. */
 export const getIntegrationsStatus = createServerFn({ method: "GET" })
-  // @ts-expect-error — TanStack Start v1 serverFn handler typing
   .handler(async (): Promise<IntegrationsStatus> => {
     const db = supabaseAdmin as any;
     const { data: row } = await db
@@ -64,7 +63,6 @@ export const getIntegrationsStatus = createServerFn({ method: "GET" })
 
 /** The list of enabled sync configs, so the client can drive them one at a time. */
 export const getEnabledSyncs = createServerFn({ method: "GET" })
-  // @ts-expect-error — TanStack Start v1 serverFn handler typing
   .handler(async (): Promise<Array<{ id: string; label: string }>> => {
     const syncs = await getSpSyncs().catch(() => []);
     return syncs.filter((s) => s.enabled).map((s) => ({ id: s.id!, label: s.listName ?? s.name }));
@@ -84,7 +82,6 @@ export const syncOneList = createServerFn({ method: "POST" })
  * Returns failure reasons with vessel names so the cause is visible in the UI.
  */
 export const syncImagesBatch = createServerFn({ method: "POST" })
-  // @ts-expect-error — TanStack Start v1 serverFn handler typing
   .handler(async (ctx: { data?: { offset?: number } }): Promise<{ downloaded: number; processed: number; remaining: number; failures: Array<{ vessel: string; reason: string }> }> => {
     const offset = Math.max(0, Number(ctx?.data?.offset ?? 0));
     const res = await downloadPendingImages(12, offset);

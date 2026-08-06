@@ -28,9 +28,12 @@ export function SupportingDocumentsPage() {
   const [saving, setSaving]                   = useState(false)
   const [saveError, setSaveError]             = useState<string | null>(null)
 
-  // Access levels 1–2 (developer / JLS Super Admin) skip this declaration step
+  // Access levels 1–2 (developer / JLS Super Admin) skip this declaration step.
+  // Both navigations below used to target /crew-immigration/visas/documents/upload,
+  // a route that was never built — the wizard owns document upload now, so the
+  // standalone flow lands on the application itself.
   if (accessLevel === 'developer') {
-    void navigate({ to: '/crew-immigration/visas/documents/upload', search: { applicationId } })
+    void navigate({ to: '/crew-immigration/visas/$id', params: { id: applicationId } })
     return null
   }
 
@@ -55,7 +58,7 @@ export function SupportingDocumentsPage() {
         alternativeDocsDeclared:      letterOption === 'no',
         documentsConfirmed:           confirmed,
       })
-      void navigate({ to: '/crew-immigration/visas/documents/upload', search: { applicationId } })
+      void navigate({ to: '/crew-immigration/visas/$id', params: { id: applicationId } })
     } catch {
       setSaveError('Failed to save. Please try again.')
     } finally {

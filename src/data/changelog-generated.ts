@@ -5,6 +5,28 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.35.0",
+    "date": "2026-08-06",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Permit expiry reminders become one internal digest for Port Operations instead of emails to each vessel, and the sidebar vessel switcher is back and now drives the visa dashboard"
+      },
+      {
+        "type": "fix",
+        "title": "Forgot your password now actually sends email (via SES)"
+      },
+      {
+        "type": "feature",
+        "title": "Logistics Team sees ONLY Vessels + Logistics"
+      },
+      {
+        "type": "feature",
+        "title": "Logistics Team role — sees Vessels + Logistics in the nav"
+      }
+    ]
+  },
+  {
     "version": "2.34.1",
     "date": "2026-08-05",
     "entries": [

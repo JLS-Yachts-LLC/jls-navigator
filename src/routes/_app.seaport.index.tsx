@@ -71,7 +71,7 @@ function SeaportQueue() {
             <tbody className="divide-y divide-border">
               {data.map((r: any) => (
                 <tr key={r.request_id} className="cursor-pointer hover:bg-muted/20"
-                  onClick={() => navigate({ to: "/seaport/$requestId" as any, params: { requestId: r.request_id } })}>
+                  onClick={() => navigate({ to: "/seaport/$requestId", params: { requestId: r.request_id } })}>
                   <td className="px-4 py-3 font-medium">{r.vesselName}</td>
                   <td className="px-4 py-3 text-muted-foreground">{fmtDate(r.request_date)}</td>
                   <td className="px-4 py-3 text-muted-foreground">{r.arrivals} arr · {r.departures} dep</td>
