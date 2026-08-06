@@ -115,10 +115,13 @@ function AuthPage() {
     }
     setBusy(true);
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/auth`,
+      // Sent via the app's SES sender (Supabase's own mailer is not configured).
+      const res = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
       });
-      if (error) throw error;
+      if (!res.ok) throw new Error("Failed to send reset email");
       toast.success("Password reset link sent — check your email");
       setMode("signin");
     } catch (e: unknown) {

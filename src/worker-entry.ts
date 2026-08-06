@@ -404,6 +404,12 @@ export default {
       return lightspeedWebhookHandler(request)
     }
 
+    // Public: password-reset email via SES (Supabase's own mailer is unconfigured).
+    if (url.pathname === '/api/auth/forgot-password' && request.method === 'POST') {
+      const { authForgotPasswordHandler } = await import('./routes/api.auth.forgot-password')
+      return authForgotPasswordHandler(request)
+    }
+
     if (url.pathname === '/api/leo/briefing' && request.method === 'POST') {
       return leoBriefingHandler(request)
     }
