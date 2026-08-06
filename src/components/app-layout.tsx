@@ -7,6 +7,7 @@ import { LeoBubble } from "@/components/leo-bubble";
 import { DeployWatcher } from "@/components/deploy-watcher";
 import { WorkingIndicator } from "@/components/working-indicator";
 import { useAuth } from "@/lib/auth";
+import { usePolarisRole } from "@/lib/use-polaris-role";
 import { supabase } from "@/integrations/supabase/client";
 import { recordVisit } from "@/lib/recent-tabs";
 import { recordAction, installErrorCapture } from "@/lib/action-log";
@@ -17,6 +18,7 @@ import { installErrorLogging, setLogUser } from "@/lib/error-logger";
 
 export function AppLayout() {
   const { user, loading } = useAuth();
+  const role = usePolarisRole();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -92,7 +94,7 @@ export function AppLayout() {
     <>
       <DeployWatcher />
       <PolarisShell
-        role="global_admin"
+        role={role}
         active={activeScreenForPath(location.pathname)}
         onNavigate={(s) => {
           const item = navItemForScreen(s);

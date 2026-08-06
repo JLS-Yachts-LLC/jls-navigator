@@ -7,6 +7,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
+import { usePolarisRole } from "@/lib/use-polaris-role";
 import { LeoChat } from "@/components/leo/LeoChat";
 import "@/components/polaris-ui/tokens.css";
 import { PolarisShell, navItemForScreen, type PolarisRole } from "@/components/polaris-ui/shell";
@@ -87,6 +88,15 @@ function PolarisRedesignApp() {
     if (search.screen) setScreen(search.screen);
   }, [search.screen]);
 
+  // Restricted roles can only open their allowed screens — anything else
+  // (including the default Dashboard landing) redirects to their first page.
+  const role = usePolarisRole();
+  useEffect(() => {
+    if (role === "logistics_team" && !["vessels", "logistics"].includes(screen)) {
+      setScreen("vessels");
+    }
+  }, [role, screen]);
+
   /**
    * Switch screens AND record it in the URL, so a refresh (or a shared link, or
    * Back) returns to the screen you were on. Previously the screen lived only in
@@ -104,9 +114,8 @@ function PolarisRedesignApp() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [switcher, setSwitcher] = useState(false);
 
-  // Preview runs at the highest role so the whole nav is visible; real enforcement
-  // lives on the API routes. Swap to derived claims when promoting to production.
-  const role: PolarisRole = "global_admin";
+  // Role drives nav visibility: restricted roles (logistics_team) get a scoped
+  // nav; everyone else runs at global_admin until the full RBAC rollout.
 
   function pickVessel(id: string | null) {
     setSelectedId(id);

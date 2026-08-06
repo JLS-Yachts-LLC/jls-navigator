@@ -155,10 +155,18 @@ export const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
+/** Restricted roles see ONLY these screens — everything else is hidden, even
+ *  items with no `roles` gate (which are otherwise visible to all). */
+const RESTRICTED_NAV: Partial<Record<PolarisRole, string[]>> = {
+  logistics_team: ["vessels", "logistics"],
+};
+
 function visibleGroups(role: PolarisRole): NavGroup[] {
+  const allow = RESTRICTED_NAV[role];
   return NAV_GROUPS.map((g) => ({
     ...g,
-    items: g.items.filter((i) => !i.roles || i.roles.includes(role)),
+    items: g.items.filter((i) =>
+      allow ? allow.includes(i.screen) : (!i.roles || i.roles.includes(role))),
   })).filter((g) => g.items.length > 0);
 }
 
