@@ -31,9 +31,24 @@ export function useActiveVessel(): string | null {
   return id;
 }
 
+/**
+ * Set the active vessel from anywhere — a page's own vessel filter calls this so
+ * the sidebar switcher and the screen never disagree about which vessel you are
+ * looking at. Pass null for "All Vessels".
+ */
+export function setActiveVessel(id: string | null): void {
+  try {
+    if (id) localStorage.setItem(STORAGE_KEY, id);
+    else localStorage.removeItem(STORAGE_KEY);
+  } catch { /* private mode — the event still keeps this session in sync */ }
+  window.dispatchEvent(new CustomEvent(EVENT_KEY, { detail: id }));
+}
+
 export function VesselSwitcher() {
   const [yachts, setYachts] = useState<Yacht[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
+  // Reflects changes made anywhere — a screen's own vessel filter publishes here
+  // too, so the sidebar always shows the vessel you are actually looking at.
+  const activeId = useActiveVessel();
 
   useEffect(() => {
     void (async () => {
@@ -43,17 +58,9 @@ export function VesselSwitcher() {
         .order("vessel_name");
       setYachts((data ?? []) as Yacht[]);
     })();
-    setActiveId(getActiveVessel());
   }, []);
 
-  function select(id: string | null) {
-    setActiveId(id);
-    try {
-      if (id) localStorage.setItem(STORAGE_KEY, id);
-      else localStorage.removeItem(STORAGE_KEY);
-    } catch { /* ignore */ }
-    window.dispatchEvent(new CustomEvent(EVENT_KEY, { detail: id }));
-  }
+  const select = setActiveVessel;
 
   const active = yachts.find((y) => y.id === activeId) ?? null;
 

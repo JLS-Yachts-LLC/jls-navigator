@@ -368,6 +368,12 @@ export default {
       return qbInvoicePdfHandler(request)
     }
 
+    // Permit expiry digest — dry run, sends nothing (admin only)
+    if (url.pathname === '/api/permits/expiry-digest') {
+      const { permitExpiryDigestHandler } = await import('./routes/api.permits.expiry-digest')
+      return permitExpiryDigestHandler(request)
+    }
+
     // Lightspeed → QuickBooks item-description sync (admin only, form-triggered)
     if (url.pathname === '/api/lightspeed/sync') {
       const { lightspeedSyncHandler } = await import('./routes/api.lightspeed.sync')
@@ -841,12 +847,13 @@ export default {
       )
     }
 
-    // Send expiry alerts once daily at 08:00 UTC
+    // Permit expiry digest — one internal email to Port Ops, daily at 08:00 UTC.
+    // No-ops until PERMIT_EXPIRY_ALERTS_ENABLED is true (see wrangler.jsonc).
     if (utcHour === 8) {
       ctx.waitUntil(
         runExpiryAlerts()
-          .then(({ sent, skipped }) => console.log(`[expiry-cron] sent=${sent} skipped=${skipped}`))
-          .catch((e) => console.error('[expiry-cron] error:', e))
+          .then(({ sent, skipped }) => console.log(`[expiry-digest] sent=${sent} skipped=${skipped}`))
+          .catch((e) => console.error('[expiry-digest] error:', e))
       )
     }
   },

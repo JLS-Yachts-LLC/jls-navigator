@@ -374,8 +374,10 @@ export function AppSidebar() {
         </Link>
       </div>
 
-      {/* Vessel switcher — hidden for now (TODO: revisit; restore by un-commenting). */}
-      {/* <VesselSwitcher /> */}
+      {/* Vessel switcher — sets the vessel in view. Screens with a vessel filter
+          (currently the Visa dashboard) read it and publish back to it, so the
+          two never disagree. */}
+      <VesselSwitcher />
 
       {/* Search */}
       <div className="px-3 pt-3 pb-2">

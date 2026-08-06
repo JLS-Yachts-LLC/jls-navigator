@@ -12,6 +12,7 @@ import {
 } from '@/lib/visa/export-filters'
 import ComplianceAlertBanner from './ComplianceAlertBanner'
 import { softDeleteEntity } from '@/lib/recycle-bin'
+import { useActiveVessel, getActiveVessel, setActiveVessel } from '@/components/vessel-switcher'
 import { VisaReportView } from './VisaReportView'
 import { VisaBulkUpload } from './VisaBulkUpload'
 import NewApplicationWizard from './NewApplicationWizard'
@@ -554,7 +555,10 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
   // for active visas, so that is the default. "Expired" is for chasing renewals.
   const [validity, setValidity] = useState<Validity>('active')
   const [search, setSearch]   = useState('')
-  const [vessel, setVessel]   = useState('all')
+  // Seeded from (and published back to) the sidebar vessel switcher, so picking a
+  // vessel in either place moves the other.
+  const activeVessel = useActiveVessel()
+  const [vessel, setVessel]   = useState(() => getActiveVessel() ?? 'all')
   const [year, setYear]       = useState('all')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo]     = useState('')
@@ -679,8 +683,19 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
   const hasFilters = !!activeStatus || vessel !== 'all' || year !== 'all' || !!dateFrom || !!dateTo || !!search.trim() || validity !== 'active'
 
   function clearFilters() {
-    setActiveStatus(null); setVessel('all'); setYear('all'); setDateFrom(''); setDateTo(''); setSearch(''); setValidity('active')
+    setActiveStatus(null); chooseVessel('all'); setYear('all'); setDateFrom(''); setDateTo(''); setSearch(''); setValidity('active')
   }
+
+  // ── Vessel selection is shared with the sidebar switcher ─────────────────────
+  /** Change the vessel here AND in the sidebar, so the two always agree. */
+  function chooseVessel(id: string) {
+    setVessel(id)
+    setActiveVessel(id === 'all' ? null : id)
+  }
+  // Follow the switcher when it is changed from the sidebar.
+  useEffect(() => {
+    setVessel(activeVessel ?? 'all')
+  }, [activeVessel])
 
   // ── Exports (reuse /api/visa/export — requires a single vessel) ───────────────
 
@@ -908,7 +923,7 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
             }}
           />
         </div>
-        <select value={vessel} onChange={e => setVessel(e.target.value)} style={{ ...ctl, cursor: 'pointer' }}>
+        <select value={vessel} onChange={e => chooseVessel(e.target.value)} style={{ ...ctl, cursor: 'pointer' }}>
           <option value="all">All Vessels</option>
           {vessels.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
         </select>
