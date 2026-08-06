@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-08-06",
     "entries": [
       {
+        "type": "fix",
+        "title": "Repair two broken screens and give Settings' first/last name fields somewhere to save"
+      },
+      {
         "type": "feature",
         "title": "Permit expiry reminders become one internal digest for Port Operations instead of emails to each vessel, and the sidebar vessel switcher is back and now drives the visa dashboard"
       },
