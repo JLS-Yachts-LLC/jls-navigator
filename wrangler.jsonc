@@ -15,6 +15,18 @@
   "vars": {
     "SUPABASE_URL": "https://cqzdroabjcdyncfqwawy.supabase.co",
     "SUPABASE_PUBLISHABLE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxemRyb2FiamNkeW5jZnF3YXd5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg4MjkyNjYsImV4cCI6MjA5NDQwNTI2Nn0.ZHjXFJuUCFa3aRHnUVvSK1pBxwtxZ5nWrdELlsT96-c",
-    "VITE_APP_URL": "https://jls-navigator.m-peeters-4a0.workers.dev"
+    "VITE_APP_URL": "https://jls-navigator.m-peeters-4a0.workers.dev",
+
+    // ── Outbound email to clients — OFF since 2026-08-03 ──────────────────────
+    // Permit expiry reminders were mailing client contacts automatically. Flip a
+    // value to "true" and push: the Cloudflare build picks it up on deploy.
+    //   CLIENT_EMAIL_ENABLED         → delivery to any address outside
+    //                                  jlsyachts.com / newhorizon-it.co.uk
+    //                                  (see src/lib/mail-guard.server.ts)
+    //   PERMIT_EXPIRY_ALERTS_ENABLED → the daily 08:00 UTC permit expiry cron
+    // Turning the first on alone restores staff-initiated client email (sending a
+    // permit, dispatching a visa) while the automatic reminders stay off.
+    "CLIENT_EMAIL_ENABLED": "false",
+    "PERMIT_EXPIRY_ALERTS_ENABLED": "false"
   }
 }
