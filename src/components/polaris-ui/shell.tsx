@@ -17,7 +17,8 @@ export type PolarisRole =
   | "global_admin"
   | "crew_immigration"
   | "captain"
-  | "crew";
+  | "crew"
+  | "logistics_team";
 
 export interface NavItem {
   label: string;
@@ -42,7 +43,7 @@ export const NAV_GROUPS: NavGroup[] = [
         label: "Vessels",
         icon: "ship",
         screen: "vessels",
-        roles: ["global_admin", "crew_immigration", "captain"],
+        roles: ["global_admin", "crew_immigration", "captain", "logistics_team"],
       },
       {
         label: "Crew",
