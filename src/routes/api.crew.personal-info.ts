@@ -65,6 +65,12 @@ async function handleGet(crewId: string, request: Request): Promise<Response> {
       'residence_city',
       'residence_country',
       'residence_phone',
+      // Contact number captured when the crew member was created (wizard step 2) —
+      // used to pre-fill the Telephone No. field on the additional-info step.
+      'phone_full',
+      'phone_country_code',
+      'phone_number',
+      'phone',
       'ocr_populated_fields',
       'ocr_confirmed_fields',
       'personal_info_completed_at',
@@ -92,6 +98,13 @@ async function handleGet(crewId: string, request: Request): Promise<Response> {
     residenceCity:           data.residence_city          ?? null,
     residenceCountry:        data.residence_country       ?? null,
     residencePhone:          data.residence_phone         ?? null,
+    // The number from crew creation, in E.164 where possible. Read-only here —
+    // the additional-info step uses it as the default Telephone No.
+    contactPhone:            data.phone_full
+                               ?? (data.phone_country_code && data.phone_number
+                                    ? `${data.phone_country_code}${String(data.phone_number).replace(/\D/g, '')}`
+                                    : null)
+                               ?? data.phone ?? null,
     ocrPopulatedFields:      data.ocr_populated_fields    ?? [],
     ocrConfirmedFields:      data.ocr_confirmed_fields    ?? [],
     personalInfoCompletedAt: data.personal_info_completed_at ?? null,

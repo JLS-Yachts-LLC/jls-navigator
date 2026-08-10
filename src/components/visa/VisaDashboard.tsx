@@ -52,11 +52,14 @@ interface VisaApplication {
 interface ComplianceAlert {
   id: string
   crew_id: string
+  /** The visa application the alert is about — lets the banner open the record. */
+  application_id: string | null
   alert_type: string
   severity: 'warn' | 'critical'
   message: string
   due_date: string | null
   resolved: boolean
+  crew_members?: { full_name: string | null; first_name: string | null; last_name: string | null } | null
 }
 
 // ── Status config (covers EVERY status in the table) ───────────────────────────
@@ -460,6 +463,27 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
     embedded ? setView({ mode: "detail", id }) : navigate({ to: `/crew-immigration/visas/${id}` as any })
   const backToList = () => { setView({ mode: "list" }); void loadAll() }
 
+  /** Name for a compliance alert, from the joined crew member. */
+  const alertCrewName = (a: ComplianceAlert): string | null => {
+    const c = a.crew_members
+    if (!c) return null
+    return c.full_name?.trim() || [c.first_name, c.last_name].filter(Boolean).join(' ').trim() || null
+  }
+
+  /**
+   * Mark an alert dealt with. This used to only drop it from local state, so it
+   * came straight back on the next page load — now it is written to the row.
+   */
+  async function resolveAlert(a: ComplianceAlert) {
+    const { error } = await (supabase as any)
+      .from('compliance_alerts')
+      .update({ resolved: true })
+      .eq('id', a.id)
+    if (error) { toast.error(`Could not resolve the alert: ${error.message}`); return }
+    setAlerts(prev => prev.filter(x => x.id !== a.id))
+    toast.success('Alert resolved')
+  }
+
   const [applications, setApplications] = useState<VisaApplication[]>([])
   const [alerts, setAlerts]             = useState<ComplianceAlert[]>([])
   const [loading, setLoading]           = useState(true)
@@ -575,9 +599,11 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
         .from('visa_applications')
         .select('id, crew_member_id, yacht_id, vessel_name, country_code, status, visa_document_url, passport_number, given_name, surname, nationality, visa_number, visa_expiry, sign_on_date, arrival_date, submitted_at, approved_at, visa_issuance_date, application_notes, created_at, crew_members(full_name, first_name, last_name), yachts(vessel_name)')
         .order('created_at', { ascending: false })),
+      // Pull the crew member's name too: the banner had no name to show, so alerts
+      // read "AE visa for  expires …" and gave no way to find the record.
       (supabase as any)
         .from('compliance_alerts')
-        .select('*')
+        .select('*, crew_members(full_name, first_name, last_name)')
         .eq('resolved', false)
         .in('severity', ['warn', 'critical'])
         .order('due_date', { ascending: true })
@@ -989,8 +1015,13 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
           </button>
           {alertsOpen && (
             <div style={{ border: `1px solid ${COLORS.warn}44`, borderTop: 'none', borderRadius: '0 0 8px 8px', background: '#180a00', padding: 8 }}>
-              {alerts.map((a, i) => (
-                <ComplianceAlertBanner key={i} alert={a} onResolve={() => setAlerts(prev => prev.filter((_, j) => j !== i))} />
+              {alerts.map((a) => (
+                <ComplianceAlertBanner
+                  key={a.id}
+                  alert={{ ...a, crew: alertCrewName(a) }}
+                  onOpen={a.application_id ? () => openDetail(a.application_id!) : undefined}
+                  onResolve={() => void resolveAlert(a)}
+                />
               ))}
             </div>
           )}

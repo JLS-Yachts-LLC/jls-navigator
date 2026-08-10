@@ -308,7 +308,12 @@ export const AdditionalPersonalInfoSection = forwardRef<AdditionalPersonalInfoHa
         residenceAddressLine2:  { value: pi.residenceAddressLine2 ?? '', state: 'manual' },
         residenceCity:          { value: pi.residenceCity         ?? '', state: 'manual' },
         residenceCountry:       { value: pi.residenceCountry      ?? '', state: 'manual' },
-        residencePhone:         { value: pi.residencePhone        ?? '', state: 'manual' },
+        // Carried over from the number captured at crew creation (wizard step 2)
+        // when nothing has been entered here yet, so it doesn't have to be typed
+        // twice. Flagged as auto-filled and fully editable.
+        residencePhone:         pi.residencePhone
+                                  ? { value: pi.residencePhone, state: 'manual' as FieldState }
+                                  : { value: pi.contactPhone ?? '', state: (pi.contactPhone ? 'ocr_auto' : 'manual') as FieldState },
       })
     } catch {
       // Non-fatal — start from empty

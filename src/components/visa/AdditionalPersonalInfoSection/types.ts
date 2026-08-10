@@ -61,6 +61,8 @@ export interface PersonalInfoApiResponse {
   residenceCity:           string | null
   residenceCountry:        string | null
   residencePhone:          string | null
+  /** Number captured when the crew member was created — the Telephone No. default. */
+  contactPhone:            string | null
   ocrPopulatedFields:      string[]
   ocrConfirmedFields:      string[]
   personalInfoCompletedAt: string | null

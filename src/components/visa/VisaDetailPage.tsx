@@ -19,6 +19,9 @@ import { uploadCrewDocToSharePoint, getCrewSharePointFolderLink } from "@/lib/vi
 
 type Visa = Record<string, any>;
 
+/** UAE crew entry permit: 180 days of stay, counted with arrival as day 1. */
+const UAE_STAY_DAYS = 180;
+
 const STATUS_META: Record<string, { label: string; cls: string }> = {
   // ── Canonical lifecycle ──
   draft:        { label: "Draft",       cls: "bg-slate-500/15 text-slate-400" },
@@ -291,14 +294,17 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
     if (patch.submitted_at && /^\d{4}-\d{2}-\d{2}$/.test(patch.submitted_at)) {
       patch.submitted_at = `${patch.submitted_at}T00:00:00.000Z`;
     }
-    // UAE crew entry permits: the stay expiry isn't printed — it's 180 days from
-    // the actual arrival. When an arrival date is recorded on a UAE visa and no
-    // expiry has been set by hand, derive it. (A manually-entered expiry wins.)
+    // UAE crew entry permits: the stay expiry isn't printed — it runs 180 days
+    // from arrival, and immigration counts the day of entry as day 1. So the last
+    // valid day is arrival + 179, not + 180: arriving 01 Aug 2026 expires
+    // 27 Jan 2027, matching the GDRFA record. When an arrival date is recorded on
+    // a UAE visa and no expiry has been set by hand, derive it (a manually
+    // entered expiry always wins).
     const isUae = (visa?.country_code ?? "").toUpperCase() === "AE" || /emirat|uae|dubai/i.test(visa?.destination_country ?? "");
     if (isUae && patch.arrival_date && !patch.visa_expiry) {
       const d = new Date(patch.arrival_date);
       if (!isNaN(d.getTime())) {
-        d.setUTCDate(d.getUTCDate() + 180);
+        d.setUTCDate(d.getUTCDate() + UAE_STAY_DAYS - 1);
         patch.visa_expiry = d.toISOString().slice(0, 10);
       }
     }

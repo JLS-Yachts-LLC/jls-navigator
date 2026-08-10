@@ -12,6 +12,8 @@ interface ComplianceAlert {
 interface ComplianceAlertBannerProps {
   alert: ComplianceAlert;
   onResolve?: () => void;
+  /** Opens the visa application the alert refers to. */
+  onOpen?: () => void;
 }
 
 function formatDueDate(dateStr: string): string {
@@ -70,7 +72,7 @@ const SEVERITY_CONFIG = {
   },
 };
 
-export function ComplianceAlertBanner({ alert, onResolve }: ComplianceAlertBannerProps) {
+export function ComplianceAlertBanner({ alert, onResolve, onOpen }: ComplianceAlertBannerProps) {
   const config = SEVERITY_CONFIG[alert.severity];
   const { Icon } = config;
 
@@ -144,34 +146,54 @@ export function ComplianceAlertBanner({ alert, onResolve }: ComplianceAlertBanne
         )}
       </div>
 
-      {onResolve && (
-        <button
-          onClick={onResolve}
-          style={{
-            flexShrink: 0,
-            padding: '4px 10px',
-            borderRadius: '5px',
-            border: `1px solid ${config.border}`,
-            background: 'transparent',
-            color: config.labelColor,
-            fontSize: '12px',
-            fontWeight: 600,
-            cursor: 'pointer',
-            fontFamily: "'Space Grotesk', sans-serif",
-            transition: 'background 0.15s',
-          }}
-          onMouseEnter={e => {
-            (e.currentTarget as HTMLButtonElement).style.background = config.bg;
-          }}
-          onMouseLeave={e => {
-            (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
-          }}
-        >
-          Resolve
-        </button>
-      )}
+      <div style={{ display: 'flex', flexShrink: 0, gap: 6 }}>
+        {/* Open the record the alert is about — without this the warning named a
+            problem with no way to reach the application and fix it. */}
+        {onOpen && (
+          <button
+            onClick={onOpen}
+            title="Open this visa application"
+            style={{ ...actionStyle(config), background: config.bg }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.filter = 'brightness(1.25)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.filter = 'none'; }}
+          >
+            Open record
+          </button>
+        )}
+        {onResolve && (
+          <button
+            onClick={onResolve}
+            title="Mark this alert as dealt with"
+            style={actionStyle(config)}
+            onMouseEnter={e => {
+              (e.currentTarget as HTMLButtonElement).style.background = config.bg;
+            }}
+            onMouseLeave={e => {
+              (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
+            }}
+          >
+            Resolve
+          </button>
+        )}
+      </div>
     </div>
   );
+}
+
+function actionStyle(config: { border: string; labelColor: string }): React.CSSProperties {
+  return {
+    flexShrink: 0,
+    padding: '4px 10px',
+    borderRadius: '5px',
+    border: `1px solid ${config.border}`,
+    background: 'transparent',
+    color: config.labelColor,
+    fontSize: '12px',
+    fontWeight: 600,
+    cursor: 'pointer',
+    fontFamily: "'Space Grotesk', sans-serif",
+    transition: 'background 0.15s, filter 0.15s',
+  };
 }
 
 export default ComplianceAlertBanner;
