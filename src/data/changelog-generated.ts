@@ -5,6 +5,16 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.35.1",
+    "date": "2026-08-10",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "UAE visa expiry is a day out, compliance alerts now name the crew member and open the record, and Step 4's telephone number carries over from crew creation"
+      }
+    ]
+  },
+  {
     "version": "2.35.0",
     "date": "2026-08-06",
     "entries": [
