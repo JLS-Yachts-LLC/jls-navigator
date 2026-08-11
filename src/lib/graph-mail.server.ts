@@ -31,13 +31,15 @@ async function getMailGraphToken(): Promise<string> {
 }
 
 export async function sendTicketEmail(opts: {
-  to: string
+  /** One address, or several (e.g. the JLS + New Horizon support mailboxes). */
+  to: string | string[]
   subject: string
   html: string
   cc?: string | null
   replyTo?: string | null
 }): Promise<void> {
-  const guard = guardRecipients([opts.to], opts.cc ? [opts.cc] : [], `ticket email "${opts.subject}"`)
+  const toList = Array.isArray(opts.to) ? opts.to : [opts.to]
+  const guard = guardRecipients(toList, opts.cc ? [opts.cc] : [], `ticket email "${opts.subject}"`)
   if (guard.suppressed) throw new ClientEmailDisabledError(opts.subject, guard.blocked)
   const token = await getMailGraphToken()
 

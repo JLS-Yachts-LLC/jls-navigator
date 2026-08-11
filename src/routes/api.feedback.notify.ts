@@ -1,12 +1,25 @@
 /**
  * POST /api/feedback/notify  { feedbackId }
- * Emails a submitted bug report / feature request to IT support
- * (itsupport@jlsyachts.com) via Microsoft Graph.
+ *
+ * Handles an in-app bug report / feature request end to end:
+ *   1. Raises a Service Desk ticket (it_tickets, queue 'polaris') so it is a real
+ *      tracked item to work on — not just an email. The reporter's text also
+ *      becomes the first message on the ticket thread, since the Service Desk is
+ *      worked conversation-first.
+ *   2. Emails both support mailboxes — itsupport@jlsyachts.com and
+ *      support@newhorizon-it.co.uk — with the ticket reference in the subject.
+ *
+ * Idempotent: the created ticket id is written back to feedback.ticket_id, so
+ * re-notifying the same feedback re-sends the email but never duplicates a ticket.
+ * Both steps are independent — a mail failure never loses the ticket, and a ticket
+ * failure never swallows the email.
  */
 import { supabaseAdmin } from '@/integrations/supabase/client.server'
 import { sendTicketEmail } from '@/lib/graph-mail.server'
 
-const SUPPORT = 'itsupport@jlsyachts.com'
+/** Both support mailboxes. Internal domains, so the client-email guard allows them. */
+const SUPPORT_RECIPIENTS = ['itsupport@jlsyachts.com', 'support@newhorizon-it.co.uk']
+
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
 export async function feedbackNotifyHandler(request: Request): Promise<Response> {
@@ -15,10 +28,59 @@ export async function feedbackNotifyHandler(request: Request): Promise<Response>
   try { feedbackId = (await request.json())?.feedbackId ?? '' } catch { return json({ ok: false, error: 'bad body' }, 400) }
   if (!feedbackId) return json({ ok: false, error: 'missing feedbackId' }, 400)
 
-  const { data: f } = await (supabaseAdmin as any).from('feedback').select('*').eq('id', feedbackId).maybeSingle()
+  const db = supabaseAdmin as any
+  const { data: f } = await db.from('feedback').select('*').eq('id', feedbackId).maybeSingle()
   if (!f) return json({ ok: false, error: 'not found' }, 404)
 
   const isBug = f.type === 'bug'
+  const summary = (f.title || String(f.message ?? '').slice(0, 60) || 'Untitled').trim()
+
+  // ── 1. Service Desk ticket ──────────────────────────────────────────────────
+  let ticketId: string | null = f.ticket_id ?? null
+  let ticketNo: string | null = null
+  let ticketError: string | null = null
+
+  if (ticketId) {
+    const { data: existing } = await db.from('it_tickets').select('ticket_no').eq('id', ticketId).maybeSingle()
+    ticketNo = existing?.ticket_no ?? null
+  } else {
+    try {
+      const { data: t, error } = await db.from('it_tickets').insert([{
+        subject:     `${isBug ? 'Bug' : 'Feature request'}: ${summary}`,
+        description: ticketDescription(f),
+        // 'polaris' is the app queue and 'software' the app category — this is what
+        // makes it show up as a Polaris item to work on rather than IT hardware.
+        queue:       'polaris',
+        category:    'software',
+        priority:    priorityFor(f),
+        status:      'open',
+        requested_by:    f.created_by_email ?? null,
+        requester_email: f.created_by_email ?? null,
+        created_by:      f.created_by ?? null,
+      }]).select('id, ticket_no').single()
+      if (error) throw error
+      ticketId = t?.id ?? null
+      ticketNo = t?.ticket_no ?? null
+
+      // Start the thread with the reporter's own words.
+      if (ticketId && f.message) {
+        await db.from('it_ticket_messages').insert([{
+          ticket_id:   ticketId,
+          body:        String(f.message),
+          internal:    false,
+          author_id:   f.created_by ?? null,
+          author_name: f.created_by_email ?? 'Polaris user',
+        }]).then(() => {}, () => {})
+      }
+      if (ticketId) await db.from('feedback').update({ ticket_id: ticketId }).eq('id', f.id)
+    } catch (e) {
+      ticketError = e instanceof Error ? e.message : String(e)
+      console.error('[feedback-notify] ticket creation failed:', ticketError)
+    }
+  }
+
+  // ── 2. Email both support mailboxes ─────────────────────────────────────────
+  const ref = ticketNo ? `[${ticketNo}] ` : ''
   const log = f.log
     ? `<h3 style="margin:18px 0 6px;font-size:13px;">Activity log</h3>
        <p style="margin:0;font-size:12px;color:#64748b;">URL: ${esc(log_url(f.log))}</p>
@@ -27,26 +89,64 @@ export async function feedbackNotifyHandler(request: Request): Promise<Response>
        <pre style="background:#f1f5f9;border-radius:6px;padding:10px;font-size:11px;white-space:pre-wrap;">${esc((f.log.actions ?? []).map((a: any) => `${a.t}  ${a.msg}`).join('\n'))}</pre>`
     : ''
 
+  const ticketLine = ticketNo
+    ? `<p style="margin:0 0 12px;font-size:13px;"><strong>Service Desk:</strong> ${esc(ticketNo)} · queue <strong>Polaris</strong> · priority <strong>${esc(priorityFor(f))}</strong></p>`
+    : `<p style="margin:0 0 12px;font-size:13px;color:#b91c1c;"><strong>Service Desk ticket was NOT created${ticketError ? `: ${esc(ticketError)}` : ''}</strong> — please raise it manually.</p>`
+
   const html = `<div style="font-family:Arial,sans-serif;color:#0f172a;max-width:640px;">
     <h2 style="font-size:18px;margin:0 0 4px;">${isBug ? '🐞 Bug report' : '💡 Feature request'}${f.title ? `: ${esc(f.title)}` : ''}</h2>
     <p style="margin:0 0 12px;font-size:12px;color:#64748b;">From ${esc(f.created_by_email ?? 'unknown')} · ${new Date(f.created_at).toLocaleString('en-GB')}</p>
+    ${ticketLine}
     <p style="font-size:14px;line-height:1.6;white-space:pre-wrap;">${esc(f.message)}</p>
     ${f.screenshot_url ? `<p style="margin:14px 0;"><a href="${esc(f.screenshot_url)}">📎 View screenshot</a></p>` : ''}
     ${log}
-    <p style="margin-top:18px;font-size:11px;color:#94a3b8;">Logged in Polaris → Feedback. Reply to the submitter to follow up.</p>
+    <p style="margin-top:18px;font-size:11px;color:#94a3b8;">Logged in Polaris → Feedback${ticketNo ? ` and tracked as ${esc(ticketNo)} in the Service Desk (Polaris queue)` : ''}. Reply to the submitter to follow up.</p>
   </div>`
 
   try {
     await sendTicketEmail({
-      to: SUPPORT,
-      subject: `${isBug ? '[Bug]' : '[Feature]'} ${f.title || f.message.slice(0, 60)}`,
+      to: SUPPORT_RECIPIENTS,
+      subject: `${ref}${isBug ? '[Bug]' : '[Feature]'} ${summary}`,
       html,
       replyTo: f.created_by_email ?? null,
     })
-    return json({ ok: true })
+    return json({ ok: true, ticketId, ticketNo, ticketError })
   } catch (e) {
-    return json({ ok: false, error: e instanceof Error ? e.message : 'mail failed' }, 502)
+    // The ticket is the durable record — report the mail failure without losing it.
+    return json({
+      ok: false, ticketId, ticketNo, ticketError,
+      error: e instanceof Error ? e.message : 'mail failed',
+    }, 502)
   }
+}
+
+/**
+ * Bugs that captured a real JS error are triaged higher than a reported oddity;
+ * feature requests are backlog by default. Adjust here if triage policy changes.
+ */
+function priorityFor(f: any): 'high' | 'normal' | 'low' {
+  if (f.type !== 'bug') return 'low'
+  return f.log?.lastError ? 'high' : 'normal'
+}
+
+/** Everything an engineer needs on the ticket itself, not just in the email. */
+function ticketDescription(f: any): string {
+  const lines: string[] = [String(f.message ?? '').trim()]
+  lines.push('', '— Reported via Polaris → Feedback —')
+  lines.push(`Type: ${f.type === 'bug' ? 'Bug report' : 'Feature request'}`)
+  if (f.created_by_email) lines.push(`Reported by: ${f.created_by_email}`)
+  lines.push(`Submitted: ${new Date(f.created_at).toISOString()}`)
+  if (f.log?.url) lines.push(`URL: ${log_url(f.log)}`)
+  if (f.log?.userAgent) lines.push(`Browser: ${log_ua(f.log)}`)
+  if (f.log?.lastError) lines.push(`Last error: ${String(f.log.lastError)}`)
+  if (f.screenshot_url) lines.push(`Screenshot: ${f.screenshot_url}`)
+  const actions = (f.log?.actions ?? []) as any[]
+  if (actions.length) {
+    lines.push('', 'Activity log:')
+    for (const a of actions) lines.push(`  ${a.t}  ${a.msg}`)
+  }
+  lines.push('', `Feedback id: ${f.id}`)
+  return lines.join('\n')
 }
 
 function log_url(log: any): string { return String(log?.url ?? '') }

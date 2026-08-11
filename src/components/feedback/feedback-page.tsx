@@ -12,6 +12,8 @@ type Feedback = {
   id: string; type: "bug" | "feature"; title: string | null; message: string;
   screenshot_url: string | null; log: any; status: string;
   created_by: string | null; created_by_email: string | null; created_at: string;
+  /** Service Desk ticket raised for this report (queue 'polaris'). */
+  ticket_id: string | null;
 };
 type Vote = { feedback_id: string; user_id: string; vote: number };
 
@@ -42,6 +44,8 @@ export function FeedbackPage() {
   const [votes, setVotes] = useState<Vote[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"feature" | "bug">("feature");
+  // feedback.ticket_id → Service Desk reference (SD-0001), for the tracked badge.
+  const [ticketNos, setTicketNos] = useState<Record<string, string>>({});
 
   useEffect(() => { void load(); }, []);
   async function load() {
@@ -50,10 +54,24 @@ export function FeedbackPage() {
       fetchAllRows(() => (supabase as any).from("feedback").select("*").order("created_at", { ascending: false })),
       fetchAllRows(() => (supabase as any).from("feedback_votes").select("feedback_id, user_id, vote")),
     ]);
-    setItems((f.data ?? []) as Feedback[]);
+    const rows = (f.data ?? []) as Feedback[];
+    setItems(rows);
     setVotes((v.data ?? []) as Vote[]);
     setLoading(false);
+
+    const ids = [...new Set(rows.map(r => r.ticket_id).filter(Boolean))] as string[];
+    if (ids.length) {
+      const { data: t } = await (supabase as any).from("it_tickets").select("id, ticket_no").in("id", ids);
+      const map: Record<string, string> = {};
+      for (const row of (t ?? []) as { id: string; ticket_no: string | null }[]) {
+        if (row.ticket_no) map[row.id] = row.ticket_no;
+      }
+      setTicketNos(map);
+    }
   }
+
+  /** Service Desk reference for a feedback item, when a ticket was raised. */
+  const ticketNoOf = (f: Feedback) => (f.ticket_id ? ticketNos[f.ticket_id] : undefined);
 
   const scoreOf = (id: string) => votes.filter(v => v.feedback_id === id).reduce((s, v) => s + v.vote, 0);
   const myVote = (id: string) => votes.find(v => v.feedback_id === id && v.user_id === user?.id)?.vote ?? 0;
@@ -116,6 +134,7 @@ export function FeedbackPage() {
                       <div className="flex items-center gap-2">
                         <h3 className="font-display text-sm font-semibold">{f.title || "Feature request"}</h3>
                         <StatusBadge status={f.status} id={f.id} isAdmin={isAdmin} onChange={setStatus} />
+                        <TicketRef ticketNo={ticketNoOf(f)} />
                       </div>
                       <p className="mt-1 whitespace-pre-wrap text-[13px] text-muted-foreground">{f.message}</p>
                       <div className="mt-1.5 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground/60">
@@ -139,6 +158,7 @@ export function FeedbackPage() {
                     <Bug className="h-4 w-4 text-red-400" />
                     <h3 className="font-display text-sm font-semibold">{b.title || b.message.slice(0, 70)}</h3>
                     <StatusBadge status={b.status} id={b.id} isAdmin={isAdmin} onChange={setStatus} />
+                    <TicketRef ticketNo={ticketNoOf(b)} />
                   </div>
                   <p className="mt-1.5 whitespace-pre-wrap text-[13px] text-muted-foreground">{b.message}</p>
                   <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground/70">
@@ -172,6 +192,19 @@ function StatusBadge({ status, id, isAdmin, onChange }: { status: string; id: st
     );
   }
   return <span className={cn("rounded-full px-2 py-0.5 text-[10.5px] font-semibold capitalize", STATUS_CLS[status] ?? STATUS_CLS.open)}>{status.replace("_", " ")}</span>;
+}
+
+/** "SD-0001" pill — shows the report is tracked in the Service Desk (Polaris queue). */
+function TicketRef({ ticketNo }: { ticketNo?: string }) {
+  if (!ticketNo) return null;
+  return (
+    <span
+      title="Tracked in the Service Desk — Polaris queue"
+      className="rounded-full bg-primary/15 px-2 py-0.5 font-mono text-[10.5px] font-semibold text-primary"
+    >
+      {ticketNo}
+    </span>
+  );
 }
 
 function Empty({ children }: { children: React.ReactNode }) {
