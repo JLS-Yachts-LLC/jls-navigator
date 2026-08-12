@@ -435,7 +435,8 @@ function formatDate(iso: string | null): string {
   return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-const GRID = '1.6fr 1.3fr 1.2fr 120px 1.3fr 110px 96px'
+// Leading 30px column is the bulk-select checkbox.
+const GRID = '30px 1.6fr 1.3fr 1.2fr 120px 1.3fr 110px 96px'
 
 /** Statuses that mean "still being worked" — these are always current, whatever
  *  expiry date the record happens to carry. */
@@ -462,6 +463,61 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
   const openDetail = (id: string) =>
     embedded ? setView({ mode: "detail", id }) : navigate({ to: `/crew-immigration/visas/${id}` as any })
   const backToList = () => { setView({ mode: "list" }); void loadAll() }
+
+  // ── Bulk actions (SD-0008) ───────────────────────────────────────────────────
+  // Staff were cancelling or activating a vessel's visas one at a time. Selection
+  // is by row and always scoped to what the filters currently show, so "select
+  // all" after picking a vessel means that vessel's visas and nothing else.
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const [bulkDate, setBulkDate] = useState('')
+
+  /** Apply one patch to every selected application. */
+  async function applyToSelected(patch: Record<string, any>, describe: string) {
+    const ids = [...selected]
+    if (!ids.length) return
+    setBulkBusy(true)
+    try {
+      const { error } = await (supabase as any)
+        .from('visa_applications')
+        .update({ ...patch, updated_at: new Date().toISOString() })
+        .in('id', ids)
+      if (error) throw new Error(error.message)
+      // Mirror each change into the SharePoint tracker, same as a single edit does.
+      for (const id of ids) {
+        fetch('/api/visa/excel-push', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }),
+        }).catch(() => {})
+      }
+      toast.success(`${ids.length} application${ids.length === 1 ? '' : 's'} ${describe}`)
+      setSelected(new Set())
+      await loadAll()
+    } catch (e: any) {
+      toast.error(e?.message ?? 'Bulk update failed')
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+
+  function bulkCancel() {
+    if (!confirm(`Cancel ${selected.size} visa application${selected.size === 1 ? '' : 's'}?\n\nThis sets their status to Cancelled. It does not delete anything.`)) return
+    void applyToSelected({ status: 'cancelled' }, 'cancelled')
+  }
+
+  /**
+   * Record the same arrival date across the selection — this is what "activate"
+   * means for a UAE entry permit. The stay runs 180 days counting arrival as day
+   * 1, so the expiry is arrival + 179 (see VisaDetailPage for the same rule).
+   */
+  function bulkActivate() {
+    if (!bulkDate) { toast.error('Pick the arrival date first'); return }
+    const d = new Date(bulkDate)
+    if (isNaN(d.getTime())) { toast.error('That arrival date is not valid'); return }
+    d.setUTCDate(d.getUTCDate() + 179)
+    const expiry = d.toISOString().slice(0, 10)
+    if (!confirm(`Set arrival ${bulkDate} on ${selected.size} application${selected.size === 1 ? '' : 's'}?\n\nUAE visas also get an expiry of ${expiry} (arrival + 179 days).`)) return
+    void applyToSelected({ arrival_date: bulkDate, visa_expiry: expiry }, `activated from ${bulkDate}`)
+  }
 
   /** Name for a compliance alert, from the joined crew member. */
   const alertCrewName = (a: ComplianceAlert): string | null => {
@@ -1045,8 +1101,47 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
         </div>
       ) : (
         <div style={{ background: COLORS.abyss, borderRadius: 12, border: `1px solid ${COLORS.deep}`, overflow: 'hidden' }}>
+          {/* Bulk action bar — only while rows are selected */}
+          {selected.size > 0 && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+              padding: '10px 16px', background: `${COLORS.signal}14`, borderBottom: `1px solid ${COLORS.signal}44`,
+            }}>
+              <span style={{ fontFamily: FONTS.display, fontSize: 12.5, fontWeight: 700, color: COLORS.signal }}>
+                {selected.size} selected
+              </span>
+              <button onClick={bulkCancel} disabled={bulkBusy}
+                title="Set every selected application to Cancelled"
+                style={{ ...btn(false), color: COLORS.warn, borderColor: `${COLORS.warn}66` }}>
+                Cancel visas
+              </button>
+              <span style={{ width: 1, height: 20, background: COLORS.deep }} />
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: FONTS.display, fontSize: 12, color: COLORS.muted }}>
+                Arrival
+                <input type="date" value={bulkDate} onChange={e => setBulkDate(e.target.value)} style={{ ...ctl }} />
+              </label>
+              <button onClick={bulkActivate} disabled={bulkBusy || !bulkDate}
+                title="Record this arrival date on every selected application (UAE expiry is derived from it)"
+                style={{ ...btn(false), opacity: bulkDate ? 1 : 0.5 }}>
+                Activate with this date
+              </button>
+              <button onClick={() => setSelected(new Set())} disabled={bulkBusy}
+                style={{ ...btn(false), marginLeft: 'auto' }}>
+                Clear selection
+              </button>
+            </div>
+          )}
+
           {/* Table header */}
           <div style={{ display: 'grid', gridTemplateColumns: GRID, padding: '10px 16px', background: COLORS.ocean, borderBottom: `1px solid ${COLORS.deep}` }}>
+            {/* Select every row the current filters show — not the whole table. */}
+            <input
+              type="checkbox"
+              checked={filtered.length > 0 && filtered.every(a => selected.has(a.id))}
+              onChange={e => setSelected(e.target.checked ? new Set(filtered.map(a => a.id)) : new Set())}
+              title={`Select all ${filtered.length} filtered application(s)`}
+              style={{ cursor: 'pointer', accentColor: COLORS.signal, justifySelf: 'start' }}
+            />
             {['Crew', 'Vessel', 'Country', 'Status', 'Passport', 'Applied', 'Actions'].map(col => {
               const key = SORT_COLS[col]
               const active = key && key === sortKey
@@ -1089,6 +1184,22 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
                   transition: 'background 0.12s',
                 }}
               >
+                {/* Bulk select — must not open the application */}
+                <input
+                  type="checkbox"
+                  checked={selected.has(app.id)}
+                  onClick={e => e.stopPropagation()}
+                  onChange={e => {
+                    e.stopPropagation()
+                    setSelected(prev => {
+                      const next = new Set(prev)
+                      next.has(app.id) ? next.delete(app.id) : next.add(app.id)
+                      return next
+                    })
+                  }}
+                  style={{ cursor: 'pointer', accentColor: COLORS.signal, justifySelf: 'start' }}
+                />
+
                 {/* Crew */}
                 <span style={{ fontFamily: FONTS.display, fontSize: 13, fontWeight: 600, color: COLORS.frost, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: 8 }}>
                   {getCrewName(app)}
