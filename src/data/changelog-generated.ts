@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Tick several visa applications and cancel them, or record the same arrival date across all of them, in one go"
+      },
+      {
+        "type": "feature",
         "title": "A yacht or small boat deleted in SharePoint is now archived in Polaris automatically on the next sync, and comes back if the item is restored"
       },
       {
