@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { Ship, Navigation, BarChart3 } from "lucide-react";
+import { Ship, Navigation, BarChart3, Sailboat } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { YachtsPage } from "@/components/vessels/yachts-registry-page";
 import { YachtDetail } from "@/components/vessels/yacht-detail-page";
 import { MyFleetPage } from "@/components/my-fleet-page";
 import { VesselReportScreen } from "@/components/visa/VesselReportScreen";
+import { SmallBoatRegistrationPage } from "@/components/small-boat-registration-page";
 
 /**
  * Vessels hub — Vessel Overview + Live Tracking + Vessel Reports as tabs
@@ -15,8 +16,12 @@ import { VesselReportScreen } from "@/components/visa/VesselReportScreen";
  * Overview keeps vessel detail INSIDE the Beta shell: clicking a vessel opens
  * it inline (list ↔ detail via state) rather than routing to /yachts/$id.
  */
+// Small Boats is a separate registry (its own SharePoint list and `small_boats`
+// table — the yacht registry never included them), so it gets its own tab rather
+// than being mixed into the vessel counts.
 const TABS = [
   { key: "overview", label: "Vessel Overview", icon: Ship },
+  { key: "smallboats", label: "Small Boats", icon: Sailboat },
   { key: "tracking", label: "Live Tracking", icon: Navigation },
   { key: "reports", label: "Vessel Reports", icon: BarChart3 },
 ] as const;
@@ -53,6 +58,8 @@ export function VesselsHub() {
       <div className="min-h-0 flex-1 overflow-auto">
         {tab === "overview" ? (
           <BetaVesselOverview onTrack={(id) => { setTrackFocusId(id); setTab("tracking"); }} />
+        ) : tab === "smallboats" ? (
+          <SmallBoatRegistrationPage />
         ) : tab === "tracking" ? (
           <MyFleetPage focusYachtId={trackFocusId} />
         ) : (

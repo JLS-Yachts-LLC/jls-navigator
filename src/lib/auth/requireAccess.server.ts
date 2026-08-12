@@ -74,7 +74,7 @@ export async function requireAccess(
   // Resolve claims from user_profiles (+ module access).
   const { data: profile } = await sb
     .from("user_profiles")
-    .select("org_id, roles:role_id(name)")
+    .select("org_id, department, roles:role_id(name)")
     .eq("user_id", user.id)
     .maybeSingle();
 
@@ -87,14 +87,30 @@ export async function requireAccess(
     isGlobalAdmin = true;
   }
 
+  // Effective access = department default, then the user's own grants on top as
+  // overrides. Must match deriveClaims() in lib/auth/claims.ts exactly, or the
+  // client would show something the server then refuses (or the reverse).
   const moduleLevels: Record<string, PermissionLevel> = {};
   if (profile) {
-    const { data: mods } = await sb
-      .from("user_module_access")
-      .select("permission_level, modules:module_id(name)")
-      .eq("user_id", user.id);
-    for (const m of (mods ?? []) as any[]) {
-      if (m.modules?.name) moduleLevels[m.modules.name] = m.permission_level;
+    const department = (profile as any)?.department as string | null;
+    const [deptRes, modRes] = await Promise.all([
+      department
+        ? sb.from("department_permissions")
+            .select("module_slug, can_view, can_create, can_edit")
+            .eq("department", department)
+        : Promise.resolve({ data: [] as any[] }),
+      sb.from("user_module_access")
+        .select("permission_level, active, modules:module_id(name)")
+        .eq("user_id", user.id),
+    ]);
+    for (const d of (deptRes.data ?? []) as any[]) {
+      if (!d.module_slug) continue;
+      const level: PermissionLevel | null =
+        d.can_edit ? "edit" : d.can_create ? "create" : d.can_view ? "view" : null;
+      if (level) moduleLevels[d.module_slug] = level;
+    }
+    for (const m of (modRes.data ?? []) as any[]) {
+      if (m.modules?.name && m.active !== false) moduleLevels[m.modules.name] = m.permission_level;
     }
   }
 

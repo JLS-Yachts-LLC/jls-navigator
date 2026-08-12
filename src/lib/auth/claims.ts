@@ -63,6 +63,18 @@ const ROLE_ALIAS: Record<string, string> = {
 const normRole = (r: string | null): string | null => (r ? ROLE_ALIAS[r] ?? r : null);
 
 /**
+ * Collapse a department_permissions row's three checkboxes into the single
+ * cumulative level the rest of the system speaks. can_edit implies create implies
+ * view, so the highest ticked box wins; nothing ticked means no access at all.
+ */
+function departmentLevel(row: { can_view?: boolean; can_create?: boolean; can_edit?: boolean }): PermissionLevel | null {
+  if (row.can_edit) return "edit";
+  if (row.can_create) return "create";
+  if (row.can_view) return "view";
+  return null;
+}
+
+/**
  * Derive the current user's claims from the access-control tables.
  * Reads through the authenticated client (RLS lets a user read only their own
  * profile + access rows; roles/modules are readable by any authenticated user).
@@ -74,19 +86,35 @@ export async function deriveClaims(sb: SupabaseClient, user: User): Promise<Pola
   // 1. Canonical source: user_profiles row.
   const { data: profile } = await (sb as any)
     .from("user_profiles")
-    .select("display_name, email, role_id, org_id, location_id, mfa_enabled, active, roles:role_id(name)")
+    .select("display_name, email, role_id, org_id, location_id, department, mfa_enabled, active, roles:role_id(name)")
     .eq("user_id", user.id)
     .maybeSingle();
 
   if (profile) {
-    const [vessels, modules] = await Promise.all([
+    const [vessels, modules, deptPerms] = await Promise.all([
       (sb as any).from("user_vessel_access").select("vessel_id, active").eq("user_id", user.id),
       (sb as any).from("user_module_access").select("permission_level, modules:module_id(name)").eq("user_id", user.id),
+      // Department defaults. Skipped entirely when the person has no department,
+      // so they simply keep whatever their own grants give them.
+      profile.department
+        ? (sb as any).from("department_permissions")
+            .select("module_slug, can_view, can_create, can_edit")
+            .eq("department", profile.department)
+        : Promise.resolve({ data: [] }),
     ]);
     const roleName = normRole(profile.roles?.name ?? null);
+
+    // Department first, then the user's own grants on top: a per-user row is an
+    // override, so it wins even when it is LOWER than the department default
+    // (that is what makes bespoke, narrower access possible).
     const moduleLevels: Record<string, PermissionLevel> = {};
+    for (const d of deptPerms.data ?? []) {
+      if (!d.module_slug) continue;
+      const level = departmentLevel(d);
+      if (level) moduleLevels[d.module_slug] = level;
+    }
     for (const m of modules.data ?? []) {
-      if (m.modules?.name) moduleLevels[m.modules.name] = m.permission_level;
+      if (m.modules?.name && m.active !== false) moduleLevels[m.modules.name] = m.permission_level;
     }
     return {
       ...base,
