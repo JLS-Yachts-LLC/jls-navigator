@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "A yacht or small boat deleted in SharePoint is now archived in Polaris automatically on the next sync, and comes back if the item is restored"
+      },
+      {
+        "type": "feature",
         "title": "Yachts removed from SharePoint are archived instead of lingering, department permissions now actually govern access, and Small Boats gets its own tab under Vessels"
       }
     ]
