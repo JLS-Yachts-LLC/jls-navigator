@@ -827,6 +827,60 @@ async function bulkPersist(
   return { synced, errors, samples }
 }
 
+/**
+ * Make removals in SharePoint land in Polaris.
+ *
+ * The inbound sync only ever upserted what it saw, so an item deleted in
+ * SharePoint stayed in the app forever — the yacht registry drifted to 181 rows
+ * against SharePoint's 136. After a FULL pull (these lists are pulled whole every
+ * run) anything linked but unseen has gone, so it is archived rather than deleted:
+ * its permits, visas and history survive and it reappears automatically if the
+ * item comes back.
+ *
+ * Two safety rules:
+ *  • A pull that returned suspiciously few rows is ignored, so a truncated or
+ *    failed Graph response can never archive the whole fleet.
+ *  • Only records archived BY this reconciler (sharepoint_missing_since set) are
+ *    ever un-archived, so a manual archive is never undone.
+ */
+async function reconcileRemovals(
+  table: 'yachts' | 'small_boats',
+  seenSpIds: Set<string>,
+  label: string,
+): Promise<{ archived: number; restored: number }> {
+  const db = supabaseAdmin as any
+  const { data: linked } = await fetchAllRows(() => db.from(table)
+    .select('id, sharepoint_item_id, archive, sharepoint_missing_since')
+    .not('sharepoint_item_id', 'is', null)
+    .order('id'))
+  const rows = (linked ?? []) as Array<Record<string, any>>
+  if (!rows.length) return { archived: 0, restored: 0 }
+
+  // Sanity gate: a full list should return at least half of what we already hold.
+  if (seenSpIds.size < Math.floor(rows.length / 2)) {
+    console.warn(`[${label}] removal check SKIPPED — only ${seenSpIds.size} item(s) returned against ${rows.length} on file (looks like a partial pull)`)
+    return { archived: 0, restored: 0 }
+  }
+
+  const gone = rows.filter(r => !r.archive && !seenSpIds.has(String(r.sharepoint_item_id)))
+  const back = rows.filter(r => r.archive && r.sharepoint_missing_since && seenSpIds.has(String(r.sharepoint_item_id)))
+  const stamp = new Date().toISOString()
+
+  // sharepoint_synced_at is included on purpose: it keeps mark_sharepoint_dirty()
+  // quiet, so these housekeeping writes are never mistaken for staff edits and
+  // pushed back out to SharePoint.
+  for (const r of gone) {
+    await db.from(table).update({ archive: true, sharepoint_missing_since: stamp, sharepoint_synced_at: stamp }).eq('id', r.id)
+  }
+  for (const r of back) {
+    await db.from(table).update({ archive: false, sharepoint_missing_since: null, sharepoint_synced_at: stamp }).eq('id', r.id)
+  }
+  if (gone.length || back.length) {
+    console.log(`[${label}] removals: archived=${gone.length} restored=${back.length}`)
+  }
+  return { archived: gone.length, restored: back.length }
+}
+
 async function _syncYachts(
   cfg: SpConfig,
   syncId?: string,
@@ -914,7 +968,19 @@ async function _syncYachts(
     console.warn(`[sp-yachts] ${msg}`)
     persisted.samples = [msg, ...(persisted.samples ?? [])].slice(0, 8)
   }
-  console.log(`[sp-yachts] items=${allChanged.length} update=${updateById.size} insert=${insertByKey.size} skipped=${skippedNoName}`)
+
+  // Yachts deleted in SharePoint get archived here (and un-archived if restored).
+  const seen = new Set(allChanged.filter(i => !i['@removed']).map(i => String(i.id)))
+  const removals = await reconcileRemovals('yachts', seen, 'sp-yachts').catch((e) => {
+    console.error('[sp-yachts] removal check failed:', e instanceof Error ? e.message : e)
+    return { archived: 0, restored: 0 }
+  })
+  if (removals.archived || removals.restored) {
+    const msg = `${removals.archived} archived (gone from SharePoint), ${removals.restored} restored`
+    persisted.samples = [msg, ...(persisted.samples ?? [])].slice(0, 8)
+  }
+
+  console.log(`[sp-yachts] items=${allChanged.length} update=${updateById.size} insert=${insertByKey.size} skipped=${skippedNoName} archived=${removals.archived} restored=${removals.restored}`)
   return persisted
 }
 
@@ -1050,7 +1116,16 @@ async function _syncSmallBoats(cfg: SpConfig): Promise<{ synced: number; errors:
     else insertByKey.set(String(item.id), { ...record })
   }
 
-  return bulkPersist('small_boats', updateById, insertByKey)
+  const persisted = await bulkPersist('small_boats', updateById, insertByKey)
+
+  // Boats deleted in SharePoint get archived, same rule as the yacht registry.
+  const seen = new Set(allItems.filter(i => !i['@removed']).map(i => String(i.id)))
+  await reconcileRemovals('small_boats', seen, 'sp-small-boats').catch((e) => {
+    console.error('[sp-small-boats] removal check failed:', e instanceof Error ? e.message : e)
+    return { archived: 0, restored: 0 }
+  })
+
+  return persisted
 }
 
 // ShipSync Packages sync: SharePoint "Packages" list (on the JLS-DeliveriesApp
