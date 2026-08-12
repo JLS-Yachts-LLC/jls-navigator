@@ -5,6 +5,26 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.37.0",
+    "date": "2026-08-12",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Yachts removed from SharePoint are archived instead of lingering, department permissions now actually govern access, and Small Boats gets its own tab under Vessels"
+      }
+    ]
+  },
+  {
+    "version": "2.36.0",
+    "date": "2026-08-11",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "In-app bugs/requests raise a Service Desk ticket and email both support mailboxes"
+      }
+    ]
+  },
+  {
     "version": "2.35.1",
     "date": "2026-08-10",
     "entries": [
