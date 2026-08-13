@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Assign a responsible Agent to each vessel, with a \"My vessels\" filter"
+      },
+      {
+        "type": "feature",
         "title": "Duplicate checking now also spots the same document stored twice inside SharePoint, and the Forms Library loads its built-in forms on first visit"
       },
       {
