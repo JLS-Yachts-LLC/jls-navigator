@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Yacht documents now flags likely duplicates between Polaris and SharePoint, shows both copies side by side, and lets you choose which to keep"
+      },
+      {
+        "type": "feature",
         "title": "A Documents tab on each yacht — upload files, file them into folders, see at a glance whether each one is in Polaris, SharePoint or both, and sync the two in either direction"
       },
       {
