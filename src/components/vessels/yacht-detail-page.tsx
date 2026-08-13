@@ -14,6 +14,7 @@ import { SeaportImmigrationSection } from "@/components/seaport/SeaportImmigrati
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { z } from "zod";
+import { YachtDocumentsCard } from "@/components/vessels/YachtDocumentsCard";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -135,7 +136,7 @@ export function YachtDetail({
   const [syncingImage, setSyncingImage] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmArchive, setConfirmArchive] = useState(false);
-  const [tab, setTab] = useState<"details" | "crew" | "permits" | "visas" | "finance">("details");
+  const [tab, setTab] = useState<"details" | "documents" | "crew" | "permits" | "visas" | "finance">("details");
 
   useEffect(() => { void load(); }, [id]);
   async function load() {
@@ -323,7 +324,7 @@ export function YachtDetail({
 
       {/* Mini tabs — everything about this vessel in one place */}
       <div className="flex items-center gap-1 overflow-x-auto border-b border-border/60 bg-card/20 px-6">
-        {([["details", "Details"], ["crew", "Crew"], ["permits", "Permits"], ["visas", "Visas"], ["finance", "Finance"]] as const).map(([key, label]) => (
+        {([["details", "Details"], ["documents", "Documents"], ["crew", "Crew"], ["permits", "Permits"], ["visas", "Visas"], ["finance", "Finance"]] as const).map(([key, label]) => (
           <button
             key={key}
             onClick={() => setTab(key)}
@@ -337,7 +338,13 @@ export function YachtDetail({
         ))}
       </div>
 
-      {tab === "finance" ? (
+      {tab === "documents" ? (
+        <div className="flex-1 overflow-auto p-6">
+          <div className="mx-auto max-w-4xl">
+            <YachtDocumentsCard yachtId={String(y.id)} vesselName={String(y.vessel_name ?? "")} />
+          </div>
+        </div>
+      ) : tab === "finance" ? (
         <YachtFinance yachtId={String(y.id)} qboCustomerId={(y as any).qbo_customer_id ?? null} />
       ) : tab === "crew" ? (
         <YachtCrewTab yachtId={String(y.id)} />
