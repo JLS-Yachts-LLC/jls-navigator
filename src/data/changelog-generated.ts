@@ -5,6 +5,16 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.37.1",
+    "date": "2026-08-13",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Crew search now finds partial and out-of-order names and says when a match is hidden by the filters, alerts open the record when clicked, and bug reports name the reporter and CC them"
+      }
+    ]
+  },
+  {
     "version": "2.37.0",
     "date": "2026-08-12",
     "entries": [
