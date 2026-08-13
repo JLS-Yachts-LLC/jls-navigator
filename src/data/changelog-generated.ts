@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Duplicate checking now also spots the same document stored twice inside SharePoint, and the Forms Library loads its built-in forms on first visit"
+      },
+      {
+        "type": "feature",
         "title": "Yacht documents now flags likely duplicates between Polaris and SharePoint, shows both copies side by side, and lets you choose which to keep"
       },
       {

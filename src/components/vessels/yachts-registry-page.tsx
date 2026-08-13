@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusPill } from "@/components/status-pill";
@@ -9,7 +10,7 @@ import {
   Plus, LayoutGrid, List, Search, SlidersHorizontal, Anchor, Ship, MapPin, LogOut, RefreshCcw,
   ChevronUp, ChevronDown, ChevronsUpDown, Pencil, Radar,
   ChevronLeft, ChevronRight, BookMarked, X, Check, Grid3x3, Archive, ArchiveRestore,
-  Navigation, Building2, AlertTriangle, CircleDot,
+  Navigation, Building2, AlertTriangle, CircleDot, UserCog,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -21,6 +22,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { YachtAgentPicker } from "./YachtAgentPicker";
 
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -167,8 +169,13 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
   // AIS movement filter — set by clicking a vessel's movement icon or a pill.
   const [movementFilter, setMovementFilter] = useState<"all" | Movement>("all");
   const toggleMovementFilter = (m: Movement) => setMovementFilter((cur) => (cur === m ? "all" : m));
+  const { user } = useAuth();
   const [archiveView, setArchiveView] = useState<"active" | "archived">("active");
+  /** Show only vessels this user is the responsible agent for. */
+  const [mineOnly, setMineOnly] = useState(false);
   const [archiveTarget, setArchiveTarget] = useState<Yacht | null>(null);
+  /** user_id → display name, for the Agent column (loaded once). */
+  const [staffNames, setStaffNames] = useState<Record<string, string>>({});
   const [visible, setVisible] = useState<YachtColumnKey[]>(init.visible);
   const [sortKey, setSortKey] = useState<YachtColumnKey | null>("vessel_name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
@@ -180,6 +187,20 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
   const [newViewName, setNewViewName] = useState("");
 
   useEffect(() => { void load(); }, []);
+
+  // Staff names for the Agent column
+  useEffect(() => {
+    void (async () => {
+      const { data } = await (supabase as any)
+        .from("user_profiles").select("user_id, display_name, email, active");
+      const map: Record<string, string> = {};
+      for (const u of (data ?? []) as any[]) {
+        if (u.active === false) continue;
+        map[u.user_id] = u.display_name?.trim() || u.email || "Unnamed user";
+      }
+      setStaffNames(map);
+    })();
+  }, []);
 
   // Persist list/cards choice
   useEffect(() => { localStorage.setItem(LS_VIEW_KEY, view); }, [view]);
@@ -259,10 +280,19 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
 
   const archivedCount = useMemo(() => yachts.filter((y) => y.archive).length, [yachts]);
 
-  // Active vs Archived split — the rest of the page (stats, filters, sort) runs on this base.
+  // Active vs Archived split, then "my vessels" — the rest of the page (stats,
+  // filters, sort) runs on this base. Mine-only lets an agent see just the vessels
+  // they are accountable for rather than the whole fleet.
   const baseRows = useMemo(
-    () => yachts.filter((y) => (archiveView === "archived" ? !!y.archive : !y.archive)),
-    [yachts, archiveView],
+    () => yachts
+      .filter((y) => (archiveView === "archived" ? !!y.archive : !y.archive))
+      .filter((y) => (mineOnly ? (y as any).agent_user_id === user?.id : true)),
+    [yachts, archiveView, mineOnly, user?.id],
+  );
+
+  const myVesselCount = useMemo(
+    () => yachts.filter((y) => !y.archive && (y as any).agent_user_id === user?.id).length,
+    [yachts, user?.id],
   );
 
   // ── View preset functions ────────────────────────────────────────────────────
@@ -406,6 +436,18 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
               className="h-8 w-56 pl-8"
             />
           </div>
+
+          {/* My vessels — only the ones this user is the responsible agent for */}
+          <button
+            onClick={() => setMineOnly((v) => !v)}
+            title="Show only vessels you are the responsible agent for"
+            className={cn(
+              "flex h-8 items-center gap-1 rounded-md border px-2.5 text-xs",
+              mineOnly ? "border-primary/50 bg-primary/15 text-primary" : "border-border bg-card text-muted-foreground",
+            )}
+          >
+            <UserCog className="h-3.5 w-3.5" /> My vessels{myVesselCount > 0 ? ` (${myVesselCount})` : ""}
+          </button>
 
           {/* Active / Archived toggle */}
           <div className="flex h-8 rounded-md border border-border bg-card p-0.5">
@@ -678,9 +720,12 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
             onOpenYacht={onOpenYacht}
             outstanding={outstanding}
             onMovementFilter={toggleMovementFilter}
+            staffNames={staffNames}
+            onAgentChanged={(id, next) => setYachts((prev) => prev.map((y) =>
+              y.id === id ? { ...y, agent_user_id: next } : y))}
           />
         ) : (
-          <CardsView rows={filtered} staleIds={new Set(filtered.filter(isStale).map((y) => y.id))} small={view === "small"} onArchive={setArchiveTarget} onOpenYacht={onOpenYacht} onMovementFilter={toggleMovementFilter} />
+          <CardsView rows={filtered} staleIds={new Set(filtered.filter(isStale).map((y) => y.id))} small={view === "small"} onArchive={setArchiveTarget} onOpenYacht={onOpenYacht} onMovementFilter={toggleMovementFilter} staffNames={staffNames} />
         )}
       </div>
 
@@ -835,6 +880,7 @@ function trackUrl(y: Yacht): string {
 
 function ListView({
   rows, visible, sortKey, sortDir, onSort, quickEditId, setQuickEditId, updateStatus, onArchive, onOpenYacht, outstanding = {}, onMovementFilter,
+  staffNames = {}, onAgentChanged,
 }: {
   rows: Yacht[];
   visible: YachtColumnKey[];
@@ -848,6 +894,9 @@ function ListView({
   onArchive: (y: Yacht) => void;
   onOpenYacht?: (id: string) => void;
   onMovementFilter?: (m: Movement) => void;
+  /** user_id → display name, so the Agent column shows a person, not a UUID. */
+  staffNames?: Record<string, string>;
+  onAgentChanged?: (yachtId: string, next: string | null) => void;
 }) {
   const cols = YACHT_COLUMNS.filter((c) => visible.includes(c.key));
   return (
@@ -925,6 +974,29 @@ function ListView({
                         <span className="text-muted-foreground">{relWhen(y.ais_position_at)}</span>
                       </a>
                     ) : <span className="text-muted-foreground/40">—</span>
+                  ) : c.key === "agent_user_id" ? (
+                    quickEditId === `agent:${y.id}` ? (
+                      <YachtAgentPicker
+                        compact
+                        yachtId={y.id}
+                        agentUserId={(y.agent_user_id as string | null) ?? null}
+                        onChanged={(next) => { onAgentChanged?.(y.id, next); setQuickEditId(null); }}
+                      />
+                    ) : (
+                      <div
+                        className="flex items-center gap-1 group/agent cursor-pointer"
+                        onClick={() => setQuickEditId(`agent:${y.id}`)}
+                      >
+                        {y.agent_user_id ? (
+                          <span className="text-foreground/80">
+                            {staffNames[y.agent_user_id as string] ?? "Assigned"}
+                          </span>
+                        ) : (
+                          <span className="text-amber-400/70">Unassigned</span>
+                        )}
+                        <Pencil className="h-2.5 w-2.5 text-muted-foreground opacity-0 group-hover/agent:opacity-60 transition-opacity" />
+                      </div>
+                    )
                   ) : (c.key === "underway_since" || c.key === "last_departed_at" || c.key === "last_arrived_at") ? (
                     <span className="text-foreground/80">{relWhen(y[c.key])}</span>
                   ) : (
@@ -969,7 +1041,7 @@ function ListView({
   );
 }
 
-function CardsView({ rows, staleIds, small, onArchive, onOpenYacht, onMovementFilter }: { rows: Yacht[]; staleIds: Set<string>; small?: boolean; onArchive: (y: Yacht) => void; onOpenYacht?: (id: string) => void; onMovementFilter?: (m: Movement) => void }) {
+function CardsView({ rows, staleIds, small, onArchive, onOpenYacht, onMovementFilter, staffNames = {} }: { rows: Yacht[]; staleIds: Set<string>; small?: boolean; onArchive: (y: Yacht) => void; onOpenYacht?: (id: string) => void; onMovementFilter?: (m: Movement) => void; staffNames?: Record<string, string> }) {
   return (
     <div
       className={
@@ -1038,6 +1110,17 @@ function CardsView({ rows, staleIds, small, onArchive, onOpenYacht, onMovementFi
                 <div><div className="text-muted-foreground">LOA</div><div className="font-medium tabular-nums">{fmt(y.length_overall_m)} m</div></div>
                 <div><div className="text-muted-foreground">ETA</div><div className="font-medium tabular-nums">{fmt(y.eta)}</div></div>
                 <div><div className="text-muted-foreground">ETD</div><div className="font-medium tabular-nums">{fmt(y.etd)}</div></div>
+              </div>
+              {/* Responsible agent — an unassigned vessel is nobody's job, so say so */}
+              <div className="flex items-center gap-1.5 pt-1 text-[11px]">
+                <UserCog className="h-3 w-3 text-muted-foreground/70" />
+                {y.agent_user_id ? (
+                  <span className="text-muted-foreground">
+                    Agent: <span className="text-foreground/80">{staffNames[y.agent_user_id as string] ?? "Assigned"}</span>
+                  </span>
+                ) : (
+                  <span className="text-amber-400/70">No agent assigned</span>
+                )}
               </div>
               {/* Fleet tracking */}
               <div className="border-t border-border/50 pt-2">

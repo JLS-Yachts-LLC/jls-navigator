@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { z } from "zod";
 import { YachtDocumentsCard } from "@/components/vessels/YachtDocumentsCard";
+import { YachtAgentPicker } from "@/components/vessels/YachtAgentPicker";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -356,6 +357,12 @@ export function YachtDetail({
       <div className="flex-1 overflow-auto p-6">
         <div className="mx-auto grid max-w-6xl grid-cols-1 gap-6 lg:grid-cols-3">
           <div className="lg:col-span-1 space-y-4">
+            {/* Who is accountable for this vessel's paperwork */}
+            <YachtAgentPicker
+              yachtId={String(y.id)}
+              agentUserId={(y as any).agent_user_id ?? null}
+              onChanged={(next) => setY((prev: any) => (prev ? { ...prev, agent_user_id: next } : prev))}
+            />
             <div className="overflow-hidden rounded-lg border border-border bg-card">
               <div className="aspect-video bg-muted">
                 {displayImage && !imgLoadError ? (

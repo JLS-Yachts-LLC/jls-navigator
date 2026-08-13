@@ -42,6 +42,8 @@ export const YACHT_COLUMNS = [
   { key: "planner_id", label: "Planner ID" },
   { key: "engine", label: "Engine" },
   { key: "vessel_image", label: "Vessel Image URL" },
+  // Team member accountable for this vessel's permits/paperwork (see YachtAgentPicker).
+  { key: "agent_user_id", label: "Agent" },
   // ── Live AIS (VesselFinder) ──
   { key: "ais_location", label: "Live Location" },
   { key: "underway_since", label: "Underway Since" },
