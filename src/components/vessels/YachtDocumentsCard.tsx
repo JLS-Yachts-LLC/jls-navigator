@@ -18,7 +18,7 @@ import { Input } from "@/components/ui/input";
 import {
   FileText, FolderPlus, Folder, FolderOpen, ChevronRight, ExternalLink, Cloud, CloudOff,
   Loader2, Trash2, UploadCloud, DownloadCloud, ShieldQuestion, GripVertical, RefreshCw,
-  Upload, ArrowLeftRight,
+  Upload, ArrowLeftRight, Copy,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -28,6 +28,8 @@ import {
   listYachtSharePointFolder, createYachtSharePointFolder,
   pushYachtDocToSharePoint, pullYachtDocFromSharePoint,
 } from "@/lib/yacht-doc-sharepoint.server";
+import { YachtDuplicateReview } from "@/components/vessels/YachtDuplicateReview";
+import { compareFileNames, DUPLICATE_THRESHOLD } from "@/lib/fuzzy-match";
 
 type DocRow = {
   id: string; doc_type: string | null; title: string | null;
@@ -75,23 +77,27 @@ export function YachtDocumentsCard({ yachtId, vesselName }: { yachtId: string; v
   const [sp, setSp] = useState<{ loading: boolean; exists: boolean; webUrl: string | null; items: SpItem[]; error?: string }>(
     { loading: true, exists: false, webUrl: null, items: [] },
   );
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const [reviewing, setReviewing] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const newFolderRef = useRef<HTMLInputElement>(null);
 
   // ── Load ────────────────────────────────────────────────────────────────────
   const loadPolaris = useCallback(async () => {
     const db = supabase as any;
-    const [{ data: d }, { data: f }, { data: p }, { data: l }] = await Promise.all([
+    const [{ data: d }, { data: f }, { data: p }, { data: l }, { data: dis }] = await Promise.all([
       db.from("yacht_documents").select("id, doc_type, title, file_url, file_name, expiry_date")
         .eq("yacht_id", yachtId).order("created_at", { ascending: false }),
       db.from("yacht_document_folders").select("id, name").eq("yacht_id", yachtId).order("name"),
       db.from("yacht_document_placements").select("doc_key, folder_id").eq("yacht_id", yachtId),
       db.from("yacht_document_sharepoint_links").select("doc_key, sp_item_id, web_url").eq("yacht_id", yachtId),
+      db.from("yacht_document_duplicate_dismissals").select("doc_key, sp_item_id").eq("yacht_id", yachtId),
     ]);
     setDocs((d ?? []) as DocRow[]);
     setFolders((f ?? []) as FolderRow[]);
     setPlacement(Object.fromEntries(((p ?? []) as any[]).map(r => [r.doc_key, r.folder_id ?? null])));
     setLinks(Object.fromEntries(((l ?? []) as any[]).map(r => [r.doc_key, { spItemId: r.sp_item_id ?? null, webUrl: r.web_url ?? null }])));
+    setDismissed(new Set(((dis ?? []) as any[]).map(r => `${r.doc_key}|${r.sp_item_id}`)));
   }, [yachtId]);
 
   const loadSharePoint = useCallback(async () => {
@@ -151,6 +157,27 @@ export function YachtDocumentsCard({ yachtId, vesselName }: { yachtId: string; v
 
   const polarisOnly = items.filter(i => i.stored && !i.sp);
   const sharePointOnly = items.filter(i => !i.stored);
+
+  /**
+   * Likely duplicate count, for the badge on the Duplicates button. Same rule the
+   * review panel uses: a SharePoint-only file whose name resembles one of the
+   * Polaris documents, once the vessel name, dates and words like "copy" are
+   * discounted — so "Registry Cert 2026.pdf" pairs with "Registry Certificate.pdf".
+   */
+  const duplicateCount = useMemo(() => {
+    let n = 0;
+    for (const sp of sharePointOnly) {
+      const spId = sp.sp?.id;
+      if (!spId) continue;
+      const hit = docs.some(d => {
+        if (dismissed.has(`doc:${d.id}|${spId}`)) return false;
+        const { score } = compareFileNames(sp.spName, d.file_name || d.title || "", [vesselName]);
+        return score >= DUPLICATE_THRESHOLD;
+      });
+      if (hit) n++;
+    }
+    return n;
+  }, [sharePointOnly, docs, dismissed, vesselName]);
 
   // ── Actions ────────────────────────────────────────────────────────────────
   async function upload(file: File) {
@@ -317,6 +344,13 @@ export function YachtDocumentsCard({ yachtId, vesselName }: { yachtId: string; v
             <input ref={fileRef} type="file" className="hidden" disabled={uploading}
               onChange={e => { const f = e.target.files?.[0]; if (f) void upload(f); }} />
           </label>
+          {duplicateCount > 0 && (
+            <Button size="sm" variant="outline" className="h-7 gap-1.5 px-2 text-[11px] border-amber-500/50 text-amber-400"
+              onClick={() => setReviewing(true)}
+              title="Some SharePoint files look like documents you already hold — review before syncing">
+              <Copy className="h-3.5 w-3.5" /> {duplicateCount} possible duplicate{duplicateCount === 1 ? "" : "s"}
+            </Button>
+          )}
           <Button size="sm" variant="outline" className="h-7 gap-1.5 px-2 text-[11px]"
             onClick={() => void syncBothWays()} disabled={syncing || sp.loading}
             title="Send Polaris-only files to SharePoint and import SharePoint-only files into Polaris">
@@ -352,6 +386,31 @@ export function YachtDocumentsCard({ yachtId, vesselName }: { yachtId: string; v
         <p className="mb-2 flex items-center gap-1.5 text-[11px] text-amber-400/90">
           <ShieldQuestion className="h-3 w-3" /> SharePoint could not be reached — badges show Polaris only. {sp.error}
         </p>
+      )}
+
+      {/* Duplicate review — decide before syncing, or the same document lands twice */}
+      {reviewing && (
+        <div className="mt-3">
+          <YachtDuplicateReview
+            yachtId={yachtId}
+            vesselName={vesselName}
+            polarisDocs={docs.map(d => ({
+              docKey: `doc:${d.id}`, id: d.id,
+              label: d.title || d.file_name || "Untitled document",
+              fileName: d.file_name || d.title || "",
+              stored: d.file_url ?? undefined,
+            }))}
+            sharePointOnly={sharePointOnly.filter(i => i.sp).map(i => {
+              const raw = sp.items.find(x => x.id === i.sp!.id);
+              return {
+                id: i.sp!.id, name: i.spName, webUrl: i.sp!.webUrl,
+                size: raw?.size ?? null, lastModified: raw?.lastModified ?? null,
+              };
+            })}
+            dismissed={dismissed}
+            onDone={() => { setReviewing(false); void loadPolaris(); void loadSharePoint(); }}
+          />
+        </div>
       )}
 
       {creating && (
