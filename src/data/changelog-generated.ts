@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "A Documents tab on each yacht — upload files, file them into folders, see at a glance whether each one is in Polaris, SharePoint or both, and sync the two in either direction"
+      },
+      {
+        "type": "feature",
         "title": "A Forms Library — fill JLS forms digitally, keep the PDF original alongside, and send a yacht a link to complete one without a login"
       },
       {
