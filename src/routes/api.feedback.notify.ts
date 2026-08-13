@@ -79,7 +79,26 @@ export async function feedbackNotifyHandler(request: Request): Promise<Response>
     }
   }
 
-  // ── 2. Email both support mailboxes ─────────────────────────────────────────
+  // ── 2. Email both support mailboxes, CC the reporter ────────────────────────
+  // The reporter is CC'd so that replying to the thread reaches them without
+  // anyone having to look their address up — previously they were only in
+  // Reply-To, which a "Reply All" from the support mailbox would miss.
+  const reporterEmail: string | null = f.created_by_email ?? null
+  let reporterName: string | null = null
+  if (f.created_by) {
+    const { data: prof } = await db.from('user_profiles')
+      .select('display_name').eq('user_id', f.created_by).maybeSingle()
+    reporterName = prof?.display_name ?? null
+  }
+  const reporterLabel = reporterName && reporterEmail
+    ? `${reporterName} (${reporterEmail})`
+    : reporterName ?? reporterEmail ?? 'unknown'
+  // Don't CC an address that is already a recipient (staff often report from the
+  // shared support mailbox, which is one of the two To: addresses).
+  const ccReporter = reporterEmail && !SUPPORT_RECIPIENTS.some(r => r.toLowerCase() === reporterEmail.toLowerCase())
+    ? reporterEmail
+    : null
+
   const ref = ticketNo ? `[${ticketNo}] ` : ''
   const log = f.log
     ? `<h3 style="margin:18px 0 6px;font-size:13px;">Activity log</h3>
@@ -95,7 +114,11 @@ export async function feedbackNotifyHandler(request: Request): Promise<Response>
 
   const html = `<div style="font-family:Arial,sans-serif;color:#0f172a;max-width:640px;">
     <h2 style="font-size:18px;margin:0 0 4px;">${isBug ? '🐞 Bug report' : '💡 Feature request'}${f.title ? `: ${esc(f.title)}` : ''}</h2>
-    <p style="margin:0 0 12px;font-size:12px;color:#64748b;">From ${esc(f.created_by_email ?? 'unknown')} · ${new Date(f.created_at).toLocaleString('en-GB')}</p>
+    <p style="margin:0 0 10px;font-size:13px;">
+      <strong>Reported by:</strong> ${esc(reporterLabel)}
+      ${ccReporter ? '<span style="color:#64748b;font-size:12px;"> · CC\'d on this email</span>' : ''}
+    </p>
+    <p style="margin:0 0 12px;font-size:12px;color:#64748b;">${new Date(f.created_at).toLocaleString('en-GB')}</p>
     ${ticketLine}
     <p style="font-size:14px;line-height:1.6;white-space:pre-wrap;">${esc(f.message)}</p>
     ${f.screenshot_url ? `<p style="margin:14px 0;"><a href="${esc(f.screenshot_url)}">📎 View screenshot</a></p>` : ''}
@@ -106,9 +129,10 @@ export async function feedbackNotifyHandler(request: Request): Promise<Response>
   try {
     await sendTicketEmail({
       to: SUPPORT_RECIPIENTS,
+      cc: ccReporter,
       subject: `${ref}${isBug ? '[Bug]' : '[Feature]'} ${summary}`,
       html,
-      replyTo: f.created_by_email ?? null,
+      replyTo: reporterEmail,
     })
     return json({ ok: true, ticketId, ticketNo, ticketError })
   } catch (e) {

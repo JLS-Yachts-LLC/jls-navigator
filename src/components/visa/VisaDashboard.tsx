@@ -102,10 +102,13 @@ function statusProgress(s: string): { pct: number; color: string } {
   }
 }
 
-type BannerAlert = { text: string; severity: 'red' | 'amber' }
+/** `appId` makes the alert actionable — clicking the banner opens that record. */
+type BannerAlert = { text: string; severity: 'red' | 'amber'; appId?: string | null }
 
 // Top banner that rotates through active alerts; red = expired, amber = expiring.
-function RotatingBanner({ messages }: { messages: BannerAlert[] }) {
+// Clicking a message opens the application it refers to (SD-0010: staff were
+// reading a name off the banner then scrolling the list to find them).
+function RotatingBanner({ messages, onOpen }: { messages: BannerAlert[]; onOpen?: (id: string) => void }) {
   const [i, setI] = useState(0)
   useEffect(() => {
     if (messages.length <= 1) return
@@ -122,7 +125,23 @@ function RotatingBanner({ messages }: { messages: BannerAlert[] }) {
       background: `${accent}18`, border: `1px solid ${accent}66`, marginBottom: 16,
     }}>
       <span style={{ fontSize: 15, color: accent }} aria-hidden="true">⚠</span>
-      <span key={i} style={{ flex: 1, fontFamily: FONTS.display, fontSize: 13, fontWeight: red ? 600 : 400, color: COLORS.frost, animation: 'va-fade 0.4s ease' }}>{msg.text}</span>
+      {msg.appId && onOpen ? (
+        <button
+          key={i}
+          onClick={() => onOpen(msg.appId!)}
+          title="Open this application"
+          style={{
+            flex: 1, textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+            fontFamily: FONTS.display, fontSize: 13, fontWeight: red ? 600 : 400, color: COLORS.frost,
+            textDecoration: 'underline', textDecorationColor: `${accent}88`, textUnderlineOffset: 3,
+            animation: 'va-fade 0.4s ease',
+          }}
+        >
+          {msg.text}
+        </button>
+      ) : (
+        <span key={i} style={{ flex: 1, fontFamily: FONTS.display, fontSize: 13, fontWeight: red ? 600 : 400, color: COLORS.frost, animation: 'va-fade 0.4s ease' }}>{msg.text}</span>
+      )}
       {messages.length > 1 && (
         <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{ fontFamily: FONTS.display, fontSize: 11, color: COLORS.muted }}>{(i % messages.length) + 1}/{messages.length}</span>
@@ -406,6 +425,29 @@ function daysToActivate(app: VisaApplication): number | null {
   const issued = new Date(base.length === 10 ? base + 'T00:00' : base)
   const expiry = new Date(issued.getTime() + 30 * 86400000)
   return Math.ceil((expiry.getTime() - Date.now()) / 86400000)
+}
+
+/**
+ * Search matching for the visa list.
+ *
+ * Every word typed has to appear SOMEWHERE in the record, in any order, so a
+ * partial name works ("har eat" finds Harry Eaton) and word order doesn't matter
+ * ("Eaton Harry" finds him too). The old check required the whole query as one
+ * contiguous string, which missed anyone with a middle name — "Harry Eaton" would
+ * not match "Harry John Eaton". Accents are stripped so "Cavor" finds "ČAVOR".
+ */
+const searchKey = (s: string) =>
+  s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
+
+function matchesSearch(app: VisaApplication, query: string): boolean {
+  const words = searchKey(query).split(/\s+/).filter(Boolean)
+  if (!words.length) return true
+  const hay = searchKey([
+    getCrewName(app), app.passport_number, app.visa_number, app.nationality,
+    app.vessel_name, app.yachts?.vessel_name, getCountryInfo(app.country_code).name,
+    app.crew_members?.full_name,
+  ].filter(Boolean).join(' '))
+  return words.every(w => hay.includes(w))
 }
 
 function getCrewName(app: VisaApplication): string {
@@ -722,16 +764,20 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
     const day = d.slice(0, 10)
     if (dateFrom && day < dateFrom) return false
     if (dateTo && day > dateTo) return false
-    if (search.trim()) {
-      const q = search.toLowerCase()
-      const hay = [
-        getCrewName(a), a.passport_number, a.visa_number, a.nationality,
-        a.yachts?.vessel_name, getCountryInfo(a.country_code).name,
-      ].filter(Boolean).join(' ').toLowerCase()
-      if (!hay.includes(q)) return false
-    }
+    if (!matchesSearch(a, search)) return false
     return true
   }), [scoped, activeStatus, validity, today, vessel, year, dateFrom, dateTo, search])
+
+  /**
+   * Records that match the search but are hidden by the other filters. Searching a
+   * name and getting an empty list is the single most confusing thing this screen
+   * can do — a crew member whose visa has expired is filtered out by the default
+   * Active view, which reads as "he isn't in Polaris" (reported as SD-0009).
+   */
+  const hiddenBySearch = useMemo(() => {
+    if (!search.trim() || unsorted.length > 0) return 0
+    return applications.filter(a => matchesSearch(a, search)).length
+  }, [applications, search, unsorted.length])
 
   // ── Sorting ──────────────────────────────────────────────────────────────────
   // Newest first by default. The DB order is created_at desc, but the Applied
@@ -840,12 +886,12 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
       const who = getCrewName(app)
       const country = getCountryInfo(app.country_code).name
       msgs.push(d < 0
-        ? { text: `${who}'s ${country} visa activation window expired ${-d} day(s) ago — a new application is required.`, severity: 'red' }
-        : { text: `${who}'s ${country} visa must be activated within ${d} day(s) or it will expire.`, severity: 'amber' })
+        ? { text: `${who}'s ${country} visa activation window expired ${-d} day(s) ago — a new application is required.`, severity: 'red', appId: app.id }
+        : { text: `${who}'s ${country} visa must be activated within ${d} day(s) or it will expire.`, severity: 'amber', appId: app.id })
     }
     // Sort expired (red) first.
     msgs.sort((a, b) => (a.severity === 'red' ? 0 : 1) - (b.severity === 'red' ? 0 : 1))
-    for (const a of alerts) if (a.message) msgs.push({ text: a.message, severity: a.severity === 'critical' ? 'red' : 'amber' })
+    for (const a of alerts) if (a.message) msgs.push({ text: a.message, severity: a.severity === 'critical' ? 'red' : 'amber', appId: a.application_id })
 
     // Planned future submissions: staff can set a future application date (stored
     // as a midnight-UTC submitted_at by the date pickers). Remind the day BEFORE
@@ -864,8 +910,8 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
       const who = getCrewName(app)
       const country = getCountryInfo(app.country_code).name
       planned.push(d === today
-        ? { text: `Planned submission TODAY — ${who}'s ${country} visa application is scheduled to be lodged today (${dmy(d)}).`, severity: 'red' }
-        : { text: `Planned submission tomorrow — ${who}'s ${country} visa application is scheduled for ${dmy(d)}.`, severity: 'amber' })
+        ? { text: `Planned submission TODAY — ${who}'s ${country} visa application is scheduled to be lodged today (${dmy(d)}).`, severity: 'red', appId: app.id }
+        : { text: `Planned submission tomorrow — ${who}'s ${country} visa application is scheduled for ${dmy(d)}.`, severity: 'amber', appId: app.id })
     }
     planned.sort((a, b) => (a.severity === 'red' ? 0 : 1) - (b.severity === 'red' ? 0 : 1))
     return [...planned, ...msgs]
@@ -900,7 +946,7 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
           onSaved={() => void loadAll()}
         />
       )}
-      <RotatingBanner messages={bannerMessages} />
+      <RotatingBanner messages={bannerMessages} onOpen={openDetail} />
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
@@ -1098,6 +1144,24 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
           <p style={{ fontFamily: FONTS.body, color: COLORS.muted, fontSize: 13, margin: 0 }}>
             {hasFilters ? 'Adjust or clear the filters above.' : 'Create your first visa application using the button above.'}
           </p>
+
+          {/* The search DID match — the other filters are hiding it. Say so, and
+              offer one click to see it, rather than leaving staff to conclude the
+              crew member isn't in Polaris at all. */}
+          {hiddenBySearch > 0 && (
+            <div style={{ marginTop: 18 }}>
+              <p style={{ fontFamily: FONTS.display, fontSize: 13, color: COLORS.leoAmber, margin: '0 0 10px' }}>
+                {hiddenBySearch} application{hiddenBySearch === 1 ? '' : 's'} match “{search.trim()}”, hidden by the current filters
+                {validity === 'active' ? ' — an expired visa is not shown in the Active view.' : '.'}
+              </p>
+              <button
+                onClick={() => { setActiveStatus(null); setValidity('all'); setYear('all'); setDateFrom(''); setDateTo(''); setScope('all') }}
+                style={{ ...btn(true) }}
+              >
+                Show {hiddenBySearch === 1 ? 'it' : 'them'} — search everything
+              </button>
+            </div>
+          )}
         </div>
       ) : (
         <div style={{ background: COLORS.abyss, borderRadius: 12, border: `1px solid ${COLORS.deep}`, overflow: 'hidden' }}>
