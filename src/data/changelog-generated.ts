@@ -5,9 +5,13 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
-    "version": "2.37.1",
+    "version": "2.38.0",
     "date": "2026-08-13",
     "entries": [
+      {
+        "type": "feature",
+        "title": "A Forms Library — fill JLS forms digitally, keep the PDF original alongside, and send a yacht a link to complete one without a login"
+      },
       {
         "type": "fix",
         "title": "Crew search now finds partial and out-of-order names and says when a match is hidden by the filters, alerts open the record when clicked, and bug reports name the reporter and CC them"
