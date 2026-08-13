@@ -8,7 +8,7 @@
  *   • create a share link so an incoming yacht can complete it with no login,
  *   • see every copy sent out and what came back.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -73,6 +73,21 @@ export function FormsHub() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  // First visit: pull the built-in definitions in automatically rather than making
+  // someone find a button before the module does anything. Runs once, and quietly —
+  // if it fails (e.g. not an admin) the empty state still explains the manual step.
+  const autoSeeded = useRef(false);
+  useEffect(() => {
+    if (loading || seeding || autoSeeded.current || forms.length > 0) return;
+    autoSeeded.current = true;
+    void (async () => {
+      try {
+        const res = await fetch("/api/forms/seed", { method: "POST" });
+        if (res.ok) await load();
+      } catch { /* the empty state covers this */ }
+    })();
+  }, [loading, seeding, forms.length, load]);
 
   /** Pull the built-in definitions in from code (first run, or after an update). */
   async function seed() {

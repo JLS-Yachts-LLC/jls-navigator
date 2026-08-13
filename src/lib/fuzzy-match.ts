@@ -105,3 +105,44 @@ export function compareFileNames(a: string, b: string, context: string[] = []): 
 
 /** The threshold above which a pair is worth a human's attention. */
 export const DUPLICATE_THRESHOLD = 0.55
+
+/**
+ * Group names that look like the same document as each other — used to spot
+ * duplicates WITHIN one system, not just across two.
+ *
+ * A yacht's SharePoint folder is where this matters most: "MY Amyra - COR_31Oct2025"
+ * and "MY Amyra - COR_12Nov2030" are the same certificate reissued, and
+ * "TJ Emirates ID front (1)" is a straight copy. Neither has a Polaris counterpart
+ * to be compared against, so cross-system matching never sees them.
+ *
+ * Single-file groups are dropped — only real clusters are returned, largest first.
+ */
+export function groupSimilarNames<T>(
+  entries: T[],
+  nameOf: (t: T) => string,
+  context: string[] = [],
+  threshold: number = DUPLICATE_THRESHOLD,
+): Array<{ members: T[]; score: number; reason: string }> {
+  const used = new Set<number>()
+  const groups: Array<{ members: T[]; score: number; reason: string }> = []
+
+  for (let i = 0; i < entries.length; i++) {
+    if (used.has(i)) continue
+    const members = [entries[i]]
+    let best = 0
+    let reason = ''
+    for (let j = i + 1; j < entries.length; j++) {
+      if (used.has(j)) continue
+      const cmp = compareFileNames(nameOf(entries[i]), nameOf(entries[j]), context)
+      if (cmp.score < threshold) continue
+      members.push(entries[j])
+      used.add(j)
+      if (cmp.score > best) { best = cmp.score; reason = cmp.reason }
+    }
+    if (members.length > 1) {
+      used.add(i)
+      groups.push({ members, score: best, reason })
+    }
+  }
+  return groups.sort((a, b) => b.members.length - a.members.length || b.score - a.score)
+}

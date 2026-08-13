@@ -29,7 +29,7 @@ import {
   pushYachtDocToSharePoint, pullYachtDocFromSharePoint,
 } from "@/lib/yacht-doc-sharepoint.server";
 import { YachtDuplicateReview } from "@/components/vessels/YachtDuplicateReview";
-import { compareFileNames, DUPLICATE_THRESHOLD } from "@/lib/fuzzy-match";
+import { compareFileNames, groupSimilarNames, DUPLICATE_THRESHOLD } from "@/lib/fuzzy-match";
 
 type DocRow = {
   id: string; doc_type: string | null; title: string | null;
@@ -176,8 +176,16 @@ export function YachtDocumentsCard({ yachtId, vesselName }: { yachtId: string; v
       });
       if (hit) n++;
     }
+    // Plus duplicates among the SharePoint files themselves. On a vessel Polaris
+    // holds nothing for yet — every file "SharePoint only" — this is the only kind
+    // there is, and without it the check would find nothing at all to report.
+    const spFiles = sp.items.filter(i => !i.isFolder);
+    for (const g of groupSimilarNames(spFiles, f => f.name, [vesselName])) {
+      if (dismissed.has(`sp:${g.members[0].id}|${g.members[1]?.id ?? ""}`)) continue;
+      n++;
+    }
     return n;
-  }, [sharePointOnly, docs, dismissed, vesselName]);
+  }, [sharePointOnly, docs, dismissed, vesselName, sp.items]);
 
   // ── Actions ────────────────────────────────────────────────────────────────
   async function upload(file: File) {

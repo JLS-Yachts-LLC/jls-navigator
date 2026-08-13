@@ -21,7 +21,7 @@ import {
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
 import { SignedAnchor } from "@/components/ui/signed-file";
-import { compareFileNames, DUPLICATE_THRESHOLD } from "@/lib/fuzzy-match";
+import { compareFileNames, groupSimilarNames, DUPLICATE_THRESHOLD } from "@/lib/fuzzy-match";
 import { pushYachtDocToSharePoint, pullYachtDocFromSharePoint } from "@/lib/yacht-doc-sharepoint.server";
 
 export type DupPolarisDoc = { docKey: string; id: string; label: string; fileName: string; stored?: string };
@@ -75,6 +75,52 @@ export function YachtDuplicateReview({
   }, [polarisDocs, sharePointOnly, dismissed, vesselName]);
 
   const pending = pairs.filter(p => !resolved.has(`${p.doc.docKey}|${p.sp.id}`));
+
+  /**
+   * Duplicates WITHIN SharePoint. On a vessel Polaris holds nothing for yet, every
+   * file is SharePoint-only and there is nothing to pair it against across the two
+   * systems — but the folder itself often holds the same certificate twice
+   * ("COR_31Oct2025" / "COR_12Nov2030") or a literal copy ("… (1).pdf").
+   */
+  const spGroups = useMemo(() => {
+    const groups = groupSimilarNames(sharePointOnly, f => f.name, [vesselName]);
+    // A group whose lead file has been judged before is left out.
+    return groups.filter(g => !dismissed.has(`sp:${g.members[0].id}|${g.members[1]?.id ?? ""}`));
+  }, [sharePointOnly, vesselName, dismissed]);
+
+  const pendingGroups = spGroups.filter(g => !resolved.has(`spgroup:${g.members[0].id}`));
+
+  /** Remember that a same-side group is not a duplicate set. */
+  async function dismissGroup(g: { members: DupSpFile[] }) {
+    const key = `spgroup:${g.members[0].id}`;
+    setBusy(g.members[0].id);
+    try {
+      const { error } = await (supabase as any).from("yacht_document_duplicate_dismissals").upsert({
+        yacht_id: yachtId,
+        doc_key: `sp:${g.members[0].id}`,
+        sp_item_id: g.members[1]?.id ?? g.members[0].id,
+        dismissed_by: user?.id ?? null,
+      }, { onConflict: "yacht_id,doc_key,sp_item_id" });
+      if (error) throw error;
+      toast.success("Noted — these are different documents");
+      setResolved(r => new Set(r).add(key));
+    } catch (e: any) {
+      toast.error(e?.message ?? "Could not save that");
+    } finally { setBusy(null); }
+  }
+
+  /** Import just the copy the human picked out of a same-side group. */
+  async function importOne(f: DupSpFile, groupKey: string) {
+    setBusy(f.id);
+    try {
+      const res = await (pullYachtDocFromSharePoint as any)({ data: { yachtId, itemId: f.id, fileName: f.name } });
+      if (!res?.ok) throw new Error(res?.error ?? "Import failed");
+      toast.success(`“${f.name}” imported — the others were left in SharePoint`);
+      setResolved(r => new Set(r).add(groupKey));
+    } catch (e: any) {
+      toast.error(e?.message ?? "Import failed");
+    } finally { setBusy(null); }
+  }
 
   async function link(p: Pair) {
     setBusy(p.sp.id);
@@ -139,31 +185,93 @@ export function YachtDuplicateReview({
     } finally { setBusy(null); }
   }
 
-  if (pairs.length === 0) {
+  if (pairs.length === 0 && spGroups.length === 0) {
     return (
       <div className="rounded-lg border border-border/60 bg-muted/20 p-6 text-center">
         <CheckCircle2 className="mx-auto h-6 w-6 text-emerald-400" />
         <p className="mt-2 text-[13px] font-medium">No likely duplicates found</p>
         <p className="mt-1 text-[11.5px] text-muted-foreground">
-          Every SharePoint file looks distinct from the documents held in Polaris.
+          Every file looks distinct — both against what Polaris holds and against the other files in SharePoint.
         </p>
         <Button size="sm" variant="outline" className="mt-3" onClick={onDone}>Close</Button>
       </div>
     );
   }
 
+  const sameSideBlock = spGroups.length > 0 && (
+    <div className="space-y-3">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        Duplicates within SharePoint ({spGroups.length})
+      </p>
+      {spGroups.map((g) => {
+        const groupKey = `spgroup:${g.members[0].id}`;
+        const done = resolved.has(groupKey);
+        return (
+          <div key={groupKey} className={done ? "rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 opacity-70" : "rounded-lg border border-sky-500/30 bg-sky-500/5 p-3"}>
+            <div className="mb-2 flex items-center gap-2">
+              <Copy className="h-3.5 w-3.5 shrink-0 text-sky-400" />
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-sky-400">
+                {g.members.length} similar files · {Math.round(g.score * 100)}% match
+              </span>
+              <span className="text-[11.5px] text-muted-foreground">— {g.reason}</span>
+              {done && <span className="ml-auto text-[11px] font-semibold text-emerald-400">Decided</span>}
+            </div>
+            <div className="space-y-1.5">
+              {g.members.map((f) => (
+                <div key={f.id} className="flex flex-wrap items-center gap-2 rounded-md border border-border/60 bg-card p-2">
+                  <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium">{f.name}</span>
+                  <span className="text-[11px] text-muted-foreground">{fmtSize(f.size)} · {fmtDate(f.lastModified)}</span>
+                  {f.webUrl && (
+                    <a href={f.webUrl} target="_blank" rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline">
+                      <ExternalLink className="h-3 w-3" /> Inspect
+                    </a>
+                  )}
+                  {!done && (
+                    <Button size="sm" variant="outline" className="h-6 gap-1 px-1.5 text-[10.5px]"
+                      disabled={busy === f.id} onClick={() => void importOne(f, groupKey)}
+                      title="Import this one into Polaris and leave the others where they are">
+                      {busy === f.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <ArrowLeft className="h-3 w-3" />} Keep this one
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+            {!done && (
+              <div className="mt-2 flex justify-end">
+                <Button size="sm" variant="ghost" className="h-7 gap-1 text-[11px] text-muted-foreground"
+                  disabled={busy === g.members[0].id} onClick={() => void dismissGroup(g)}
+                  title="These are genuinely different documents (e.g. front and back of the same ID)">
+                  <X className="h-3 w-3" /> Not duplicates
+                </Button>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-[12.5px] text-muted-foreground">
-          {pending.length === 0
+          {pending.length + pendingGroups.length === 0
             ? "All decided — close to refresh the list."
-            : `${pending.length} possible duplicate${pending.length === 1 ? "" : "s"} to review. Nothing is deleted from SharePoint by any of these choices.`}
+            : `${pending.length + pendingGroups.length} possible duplicate${pending.length + pendingGroups.length === 1 ? "" : "s"} to review. Nothing is deleted from SharePoint by any of these choices.`}
         </p>
         <Button size="sm" variant="outline" onClick={onDone}>
-          {pending.length === 0 ? "Close and refresh" : "Close"}
+          {pending.length + pendingGroups.length === 0 ? "Close and refresh" : "Close"}
         </Button>
       </div>
+
+      {sameSideBlock}
+
+      {pairs.length > 0 && (
+        <p className="pt-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          Polaris vs SharePoint ({pairs.length})
+        </p>
+      )}
 
       {pairs.map((p) => {
         const key = `${p.doc.docKey}|${p.sp.id}`;
