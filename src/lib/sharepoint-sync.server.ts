@@ -679,24 +679,98 @@ export async function pushRecordToSharePoint(target: string, id: string): Promis
     }
 
     if (spId) {
-      await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${list}/items/${spId}/fields`,
+      const pr = await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${list}/items/${spId}/fields`,
         { method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(spFields) });
+      // Throw rather than fall through: the caller keeps sharepoint_dirty_at set so
+      // the edit is retried. Silently clearing it would lose the change for good.
+      if (!pr.ok) throw new Error(`PATCH ${list}/${spId} → ${pr.status} ${(await pr.text()).slice(0, 200)}`);
     } else {
       const cr = await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${list}/items`,
         { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ fields: spFields }) });
+      if (!cr.ok) throw new Error(`POST ${list} → ${cr.status} ${(await cr.text()).slice(0, 200)}`);
       spId = ((await cr.json()) as any).id ?? null;
     }
     if (spId) {
-      await (supabaseAdmin as any).from(table)
-        .update({ sharepoint_item_id: spId, sharepoint_synced_at: new Date().toISOString() }).eq('id', id);
+      // Clearing the dirty flag here — and only after a successful write — is what
+      // lets the inbound pull start overwriting this row again. Only the four
+      // tables in DIRTY_TABLES carry the column.
+      const stamp: Record<string, unknown> = { sharepoint_item_id: spId, sharepoint_synced_at: new Date().toISOString() };
+      if (DIRTY_TABLES.has(table)) stamp.sharepoint_dirty_at = null;
+      await (supabaseAdmin as any).from(table).update(stamp).eq('id', id);
     }
   }
 }
 
 /**
- * Push back records that were edited in-app since their last SharePoint sync.
- * SAFE: only touches rows already linked to a SharePoint item (sharepoint_item_id
- * set) → always a PATCH, never a mass-create. Loop-safe (updated_at > synced_at).
+ * Tables carrying sharepoint_dirty_at — set by mark_sharepoint_dirty() on any
+ * write that does not stamp sharepoint_synced_at, i.e. an edit made in Polaris.
+ * (See migration 20260812130000_sharepoint_two_way_sync.)
+ */
+const DIRTY_TABLES = new Set(['yachts', 'permits', 'crew_members', 'small_boats'])
+
+/** Ids of rows with an in-app edit not yet pushed to SharePoint. */
+async function dirtyIds(table: string): Promise<Set<string>> {
+  if (!DIRTY_TABLES.has(table)) return new Set()
+  const { data, error } = await (supabaseAdmin as any).from(table)
+    .select('id, sharepoint_dirty_at').not('sharepoint_dirty_at', 'is', null).limit(2000)
+  // A missing column (migration not applied) must not stop the pull — the old
+  // behaviour is simply restored until it is.
+  if (error) return new Set()
+  const rows = (data ?? []) as any[]
+  // A row held back for a day is a push that keeps failing: it is now frozen
+  // against SharePoint changes too, which is worth saying out loud.
+  const dayAgo = Date.now() - 24 * 60 * 60 * 1000
+  const stuck = rows.filter(r => new Date(r.sharepoint_dirty_at).getTime() < dayAgo).length
+  if (stuck) console.warn(`[sp-pull] ${table}: ${stuck} row(s) unpushed for over 24h — check [sp-push] errors`)
+  return new Set(rows.map(r => String(r.id)))
+}
+
+/**
+ * Send in-app edits OUT to SharePoint, driven by the dirty flag.
+ *
+ * Runs immediately before the inbound pull for the same list, which is what makes
+ * two-way sync work: the hourly push alone always lost the race against a pull
+ * every 15 minutes, so edits were overwritten before they ever left.
+ *
+ * `max` bounds the Graph calls per tick — Cloudflare caps subrequests per
+ * invocation, and a large backlog simply drains over successive ticks.
+ */
+export async function pushDirtyRecords(target: string, max = 20): Promise<{ pushed: number; failed: number; remaining: number }> {
+  const table = TARGET_TABLE[target]
+  if (!table || !DIRTY_TABLES.has(table)) return { pushed: 0, failed: 0, remaining: 0 }
+  const db = supabaseAdmin as any
+  const { data, error } = await db.from(table)
+    .select('id, sharepoint_dirty_at')
+    .not('sharepoint_dirty_at', 'is', null)
+    .order('sharepoint_dirty_at', { ascending: true })
+    .limit(max + 1)
+  if (error) return { pushed: 0, failed: 0, remaining: 0 }
+  const rows = ((data ?? []) as any[]).slice(0, max)
+  const remaining = Math.max(0, ((data ?? []) as any[]).length - rows.length)
+
+  let pushed = 0, failed = 0
+  for (const r of rows) {
+    try {
+      await pushRecordToSharePoint(target, r.id)
+      pushed++
+    } catch (e) {
+      // Leave the flag set so the row is retried, and never let one bad record
+      // block the rest of the queue — or the pull that follows.
+      failed++
+      console.error(`[sp-push] ${table}/${r.id} failed:`, e instanceof Error ? e.message : String(e))
+    }
+  }
+  if (pushed || failed) console.log(`[sp-push] ${table}: pushed=${pushed} failed=${failed} remaining=${remaining}`)
+  return { pushed, failed, remaining }
+}
+
+/**
+ * Hourly backstop for the outbound push, and the "Push now" button.
+ *
+ * Tables with a dirty flag go through pushDirtyRecords — the same queue the
+ * pre-pull push drains, so nothing is sent twice and rows created in Polaris are
+ * included. Everything else keeps the older timestamp heuristic, which is safe but
+ * only ever PATCHes rows already linked to a SharePoint item.
  */
 export async function pushChangedRecords(): Promise<{ pushed: number }> {
   const syncs = (await getSpSyncs().catch(() => [])).filter(s => s.enabled);
@@ -705,6 +779,13 @@ export async function pushChangedRecords(): Promise<{ pushed: number }> {
   for (const target of targets) {
     const table = TARGET_TABLE[target];
     if (!table) continue;
+    if (DIRTY_TABLES.has(table)) {
+      // A generous cap here: this is the sweep that clears any backlog the
+      // per-list ticks did not get through.
+      const r = await pushDirtyRecords(target, 100).catch(() => ({ pushed: 0 }));
+      pushed += r.pushed;
+      continue;
+    }
     const { data } = await (supabaseAdmin as any).from(table)
       .select('id, updated_at, sharepoint_synced_at')
       .not('sharepoint_item_id', 'is', null)
@@ -757,6 +838,12 @@ async function _syncWithConfig(cfg: SpConfig, sync: SpSyncConfig): Promise<{ syn
     fieldMapping: sync.fieldMapping,
     syncTarget: sync.syncTarget,
   }
+  // Push first, then pull. In-app edits have to leave before SharePoint's copy is
+  // read back, or the pull overwrites them — the whole reason two-way sync never
+  // worked when the push only ran hourly.
+  await pushDirtyRecords(sync.syncTarget).catch((e) =>
+    console.error('[sp-push] pre-pull push failed:', e instanceof Error ? e.message : String(e)))
+
   let result: { synced: number; errors: number; samples?: string[] }
   if (sync.syncTarget === 'permits') {
     result = await _syncPermits(merged)
@@ -810,6 +897,16 @@ async function bulkPersist(
 ): Promise<{ synced: number; errors: number; samples: string[] }> {
   const samples: string[] = []
   let synced = 0, errors = 0
+  // Yield to unpushed in-app edits. A dirty row is one a member of staff changed
+  // in Polaris that has not reached SharePoint yet; overwriting it here is exactly
+  // the silent revert the dirty flag exists to stop. It is pushed out on the next
+  // tick (pushDirtyRecords runs first), and pulled normally once clean again.
+  const skip = await dirtyIds(table)
+  if (skip.size) {
+    let held = 0
+    for (const id of [...updateById.keys()]) if (skip.has(String(id))) { updateById.delete(id); held++ }
+    if (held) console.log(`[sp-pull] ${table}: held back ${held} row(s) with unpushed in-app edits`)
+  }
   const addSample = (m: string) => { if (m && samples.length < 8 && !samples.includes(m)) samples.push(m) }
   const chunks = (arr: Record<string, any>[], n: number) => {
     const out: Record<string, any>[][] = []

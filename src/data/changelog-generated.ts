@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-08-13",
     "entries": [
       {
+        "type": "fix",
+        "title": "The Forms Library now appears in the sidebar under Resources"
+      },
+      {
         "type": "feature",
         "title": "Assign a responsible Agent to each vessel, with a \"My vessels\" filter"
       },
