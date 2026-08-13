@@ -43,6 +43,7 @@ import { Route as AppItSolutionsRouteImport } from './routes/_app.it-solutions'
 import { Route as AppInternalServicesRouteImport } from './routes/_app.internal-services'
 import { Route as AppIntegrationsRouteImport } from './routes/_app.integrations'
 import { Route as AppGuidesRouteImport } from './routes/_app.guides'
+import { Route as AppFormsRouteImport } from './routes/_app.forms'
 import { Route as AppFleetTrackingRouteImport } from './routes/_app.fleet-tracking'
 import { Route as AppFinanceRouteImport } from './routes/_app.finance'
 import { Route as AppFeedbackRouteImport } from './routes/_app.feedback'
@@ -75,6 +76,7 @@ import { Route as AppGuidesIndexRouteImport } from './routes/_app.guides.index'
 import { Route as AppEsignIndexRouteImport } from './routes/_app.esign.index'
 import { Route as AppCrewPlacementIndexRouteImport } from './routes/_app.crew-placement.index'
 import { Route as AppAdminIndexRouteImport } from './routes/_app.admin.index'
+import { Route as FormsFillTokenRouteImport } from './routes/forms.fill.$token'
 import { Route as AppYachtsNewRouteImport } from './routes/_app.yachts.new'
 import { Route as AppYachtsIdRouteImport } from './routes/_app.yachts.$id'
 import { Route as AppWaypointQuotationsRouteImport } from './routes/_app.waypoint.quotations'
@@ -316,6 +318,11 @@ const AppGuidesRoute = AppGuidesRouteImport.update({
   path: '/guides',
   getParentRoute: () => AppRoute,
 } as any)
+const AppFormsRoute = AppFormsRouteImport.update({
+  id: '/forms',
+  path: '/forms',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppFleetTrackingRoute = AppFleetTrackingRouteImport.update({
   id: '/fleet-tracking',
   path: '/fleet-tracking',
@@ -475,6 +482,11 @@ const AppAdminIndexRoute = AppAdminIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AppAdminRoute,
+} as any)
+const FormsFillTokenRoute = FormsFillTokenRouteImport.update({
+  id: '/forms/fill/$token',
+  path: '/forms/fill/$token',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AppYachtsNewRoute = AppYachtsNewRouteImport.update({
   id: '/yachts/new',
@@ -869,6 +881,7 @@ export interface FileRoutesByFullPath {
   '/feedback': typeof AppFeedbackRoute
   '/finance': typeof AppFinanceRoute
   '/fleet-tracking': typeof AppFleetTrackingRoute
+  '/forms': typeof AppFormsRoute
   '/guides': typeof AppGuidesRouteWithChildren
   '/integrations': typeof AppIntegrationsRoute
   '/internal-services': typeof AppInternalServicesRoute
@@ -947,6 +960,7 @@ export interface FileRoutesByFullPath {
   '/waypoint/quotations': typeof AppWaypointQuotationsRoute
   '/yachts/$id': typeof AppYachtsIdRoute
   '/yachts/new': typeof AppYachtsNewRoute
+  '/forms/fill/$token': typeof FormsFillTokenRoute
   '/admin/': typeof AppAdminIndexRoute
   '/crew-placement/': typeof AppCrewPlacementIndexRoute
   '/esign/': typeof AppEsignIndexRoute
@@ -1001,6 +1015,7 @@ export interface FileRoutesByTo {
   '/feedback': typeof AppFeedbackRoute
   '/finance': typeof AppFinanceRoute
   '/fleet-tracking': typeof AppFleetTrackingRoute
+  '/forms': typeof AppFormsRoute
   '/integrations': typeof AppIntegrationsRoute
   '/internal-services': typeof AppInternalServicesRoute
   '/it-solutions': typeof AppItSolutionsRoute
@@ -1068,6 +1083,7 @@ export interface FileRoutesByTo {
   '/waypoint/quotations': typeof AppWaypointQuotationsRoute
   '/yachts/$id': typeof AppYachtsIdRoute
   '/yachts/new': typeof AppYachtsNewRoute
+  '/forms/fill/$token': typeof FormsFillTokenRoute
   '/admin': typeof AppAdminIndexRoute
   '/crew-placement': typeof AppCrewPlacementIndexRoute
   '/esign': typeof AppEsignIndexRoute
@@ -1127,6 +1143,7 @@ export interface FileRoutesById {
   '/_app/feedback': typeof AppFeedbackRoute
   '/_app/finance': typeof AppFinanceRoute
   '/_app/fleet-tracking': typeof AppFleetTrackingRoute
+  '/_app/forms': typeof AppFormsRoute
   '/_app/guides': typeof AppGuidesRouteWithChildren
   '/_app/integrations': typeof AppIntegrationsRoute
   '/_app/internal-services': typeof AppInternalServicesRoute
@@ -1205,6 +1222,7 @@ export interface FileRoutesById {
   '/_app/waypoint/quotations': typeof AppWaypointQuotationsRoute
   '/_app/yachts/$id': typeof AppYachtsIdRoute
   '/_app/yachts/new': typeof AppYachtsNewRoute
+  '/forms/fill/$token': typeof FormsFillTokenRoute
   '/_app/admin/': typeof AppAdminIndexRoute
   '/_app/crew-placement/': typeof AppCrewPlacementIndexRoute
   '/_app/esign/': typeof AppEsignIndexRoute
@@ -1264,6 +1282,7 @@ export interface FileRouteTypes {
     | '/feedback'
     | '/finance'
     | '/fleet-tracking'
+    | '/forms'
     | '/guides'
     | '/integrations'
     | '/internal-services'
@@ -1342,6 +1361,7 @@ export interface FileRouteTypes {
     | '/waypoint/quotations'
     | '/yachts/$id'
     | '/yachts/new'
+    | '/forms/fill/$token'
     | '/admin/'
     | '/crew-placement/'
     | '/esign/'
@@ -1396,6 +1416,7 @@ export interface FileRouteTypes {
     | '/feedback'
     | '/finance'
     | '/fleet-tracking'
+    | '/forms'
     | '/integrations'
     | '/internal-services'
     | '/it-solutions'
@@ -1463,6 +1484,7 @@ export interface FileRouteTypes {
     | '/waypoint/quotations'
     | '/yachts/$id'
     | '/yachts/new'
+    | '/forms/fill/$token'
     | '/admin'
     | '/crew-placement'
     | '/esign'
@@ -1521,6 +1543,7 @@ export interface FileRouteTypes {
     | '/_app/feedback'
     | '/_app/finance'
     | '/_app/fleet-tracking'
+    | '/_app/forms'
     | '/_app/guides'
     | '/_app/integrations'
     | '/_app/internal-services'
@@ -1599,6 +1622,7 @@ export interface FileRouteTypes {
     | '/_app/waypoint/quotations'
     | '/_app/yachts/$id'
     | '/_app/yachts/new'
+    | '/forms/fill/$token'
     | '/_app/admin/'
     | '/_app/crew-placement/'
     | '/_app/esign/'
@@ -1642,6 +1666,7 @@ export interface RootRouteChildren {
   LegalQuickbooksConnectedRoute: typeof LegalQuickbooksConnectedRoute
   LegalQuickbooksDisconnectedRoute: typeof LegalQuickbooksDisconnectedRoute
   SignTokenRoute: typeof SignTokenRoute
+  FormsFillTokenRoute: typeof FormsFillTokenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -1884,6 +1909,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppGuidesRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/forms': {
+      id: '/_app/forms'
+      path: '/forms'
+      fullPath: '/forms'
+      preLoaderRoute: typeof AppFormsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/fleet-tracking': {
       id: '/_app/fleet-tracking'
       path: '/fleet-tracking'
@@ -2107,6 +2139,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/'
       preLoaderRoute: typeof AppAdminIndexRouteImport
       parentRoute: typeof AppAdminRoute
+    }
+    '/forms/fill/$token': {
+      id: '/forms/fill/$token'
+      path: '/forms/fill/$token'
+      fullPath: '/forms/fill/$token'
+      preLoaderRoute: typeof FormsFillTokenRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_app/yachts/new': {
       id: '/_app/yachts/new'
@@ -2900,6 +2939,7 @@ interface AppRouteChildren {
   AppFeedbackRoute: typeof AppFeedbackRoute
   AppFinanceRoute: typeof AppFinanceRoute
   AppFleetTrackingRoute: typeof AppFleetTrackingRoute
+  AppFormsRoute: typeof AppFormsRoute
   AppGuidesRoute: typeof AppGuidesRouteWithChildren
   AppIntegrationsRoute: typeof AppIntegrationsRoute
   AppInternalServicesRoute: typeof AppInternalServicesRoute
@@ -2970,6 +3010,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppFeedbackRoute: AppFeedbackRoute,
   AppFinanceRoute: AppFinanceRoute,
   AppFleetTrackingRoute: AppFleetTrackingRoute,
+  AppFormsRoute: AppFormsRoute,
   AppGuidesRoute: AppGuidesRouteWithChildren,
   AppIntegrationsRoute: AppIntegrationsRoute,
   AppInternalServicesRoute: AppInternalServicesRoute,
@@ -3030,6 +3071,7 @@ const rootRouteChildren: RootRouteChildren = {
   LegalQuickbooksConnectedRoute: LegalQuickbooksConnectedRoute,
   LegalQuickbooksDisconnectedRoute: LegalQuickbooksDisconnectedRoute,
   SignTokenRoute: SignTokenRoute,
+  FormsFillTokenRoute: FormsFillTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

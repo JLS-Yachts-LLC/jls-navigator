@@ -368,6 +368,17 @@ export default {
       return qbInvoicePdfHandler(request)
     }
 
+    // Forms: public tokenised fill (no login — the token is the authorisation)
+    if (url.pathname === '/api/forms/public') {
+      const { formsPublicHandler } = await import('./routes/api.forms.public')
+      return formsPublicHandler(request)
+    }
+    // Forms: load the built-in definitions from code into the DB (admin only)
+    if (url.pathname === '/api/forms/seed' && request.method === 'POST') {
+      const { formsSeedHandler } = await import('./routes/api.forms.seed')
+      return formsSeedHandler(request)
+    }
+
     // Permit expiry digest — dry run, sends nothing (admin only)
     if (url.pathname === '/api/permits/expiry-digest') {
       const { permitExpiryDigestHandler } = await import('./routes/api.permits.expiry-digest')

@@ -142,6 +142,7 @@ const NAV: NavItem[] = [
     icon: FolderOpen,
     flagKey: "documents",
     children: [
+      { label: "Forms Library",     to: "/forms",                        icon: ClipboardList },
       { label: "Vessel Documents",  to: "/esign",                        icon: Ship },
       { label: "Crew Documents",    to: "/crew-immigration/documents",   icon: Users },
       { label: "Signed Agreements", to: "/esign",                        icon: FileSignature },
