@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { createServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { updateOrThrow } from "@/lib/db-write";
+import { softDeleteEntity } from "@/lib/recycle-bin";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -244,10 +245,19 @@ export function YachtDetail({
     }
   }
 
+  /**
+   * Delete via the Recycle Bin, not a hard DELETE. Deleting a yacht row cascades
+   * to its permits and history, so the snapshot (restorable for 90 days) is the
+   * difference between a mistake and a data loss — this page used to bypass it
+   * even though crew and visa deletion already went through it.
+   */
   async function del() {
-    const { error } = await supabase.from("yachts").delete().eq("id", id);
-    if (error) return toast.error(error.message);
-    toast.success("Deleted");
+    try {
+      await softDeleteEntity("yacht", id as string, String(y?.vessel_name ?? ""));
+    } catch (e) {
+      return toast.error(e instanceof Error ? e.message : "Failed to delete vessel");
+    }
+    toast.success("Vessel moved to the Recycle Bin — restorable for 90 days");
     if (embedded) onBack?.(); else navigate({ to: "/yachts" });
   }
 
