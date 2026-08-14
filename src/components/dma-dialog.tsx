@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { updateOrThrow } from "@/lib/db-write";
 import { type Permit, type PermitStatus } from "@/lib/permit-types";
 import {
   DialogContent, DialogHeader, DialogTitle,
@@ -86,8 +87,10 @@ export function DmaDialog({ yachts, editing, userId, onSaved }: Props) {
     return {
       permit_type: "dma" as const,
       yacht_id: form.yacht_id ?? null,
-      // permit_number → Applied By
+      // permit_number is the authority's reference (and the SharePoint sync's match
+      // key); who applied lives in applied_by.
       permit_number: form.permit_number || null,
+      applied_by: (form.applied_by as string) || null,
       status: (form.status ?? "pending") as PermitStatus,
       // issue_date → Cruising Permit Date Applied
       issue_date: form.issue_date || null,
@@ -111,11 +114,12 @@ export function DmaDialog({ yachts, editing, userId, onSaved }: Props) {
     if (!userId) throw new Error("Not authenticated");
     const payload = buildPayload();
     if (editing) {
-      const { error } = await supabase
-        .from("permits")
-        .update(payload as never)
-        .eq("id", editing.id);
-      if (error) throw error;
+      // .select() + updateOrThrow: an update RLS refuses matches no rows and
+      // returns no error, which used to report a false success.
+      await updateOrThrow(
+        supabase.from("permits").update(payload as never).eq("id", editing.id).select("id"),
+        "permit",
+      );
       toast.success("Permit updated");
       return editing.id;
     } else {
@@ -168,13 +172,14 @@ export function DmaDialog({ yachts, editing, userId, onSaved }: Props) {
           .replace(/\{\{expiry_date\}\}/g, form.expiry_date ?? "")
           .replace(/\{\{issue_date\}\}/g, form.issue_date ?? "")
           .replace(/\{\{authority\}\}/g, form.issuing_authority ?? "")
-          .replace(/\{\{applied_by\}\}/g, form.permit_number ?? "")
+          .replace(/\{\{applied_by\}\}/g, (form.applied_by as string) ?? "")
+          .replace(/\{\{permit_number\}\}/g, form.permit_number ?? "")
           .replace(/\{\{quotation_number\}\}/g, form.jls_quotation_number ?? "");
 
       const subject = tmpl ? replace(tmpl.subject) : `DMA Permit — ${yachtName}`;
       const body = tmpl
         ? replace(tmpl.body)
-        : `Dear ${form.holder_name ?? "Client"},\n\nPlease find your DMA Permit details below.\n\nVessel: ${yachtName}\nDate Applied: ${form.issue_date ?? "—"}\nExpiry: ${form.expiry_date ?? "—"}\nAuthority: ${form.issuing_authority ?? "—"}\nApplied By: ${form.permit_number ?? "—"}\n${form.jls_quotation_number ? `JLS Quotation No: ${form.jls_quotation_number}\n` : ""}${form.document_url ? `\nAttachment: ${form.document_url}` : ""}\n\nKind regards,\nJLS Yachts`;
+        : `Dear ${form.holder_name ?? "Client"},\n\nPlease find your DMA Permit details below.\n\nVessel: ${yachtName}\nDate Applied: ${form.issue_date ?? "—"}\nExpiry: ${form.expiry_date ?? "—"}\nAuthority: ${form.issuing_authority ?? "—"}\nApplied By: ${(form.applied_by as string) ?? "—"}\n${form.permit_number ? `Permit No: ${form.permit_number}\n` : ""}${form.jls_quotation_number ? `JLS Quotation No: ${form.jls_quotation_number}\n` : ""}${form.document_url ? `\nAttachment: ${form.document_url}` : ""}\n\nKind regards,\nJLS Yachts`;
 
       window.open(
         `mailto:${form.contact_email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`,
@@ -286,9 +291,17 @@ export function DmaDialog({ yachts, editing, userId, onSaved }: Props) {
             <div className="space-y-1.5">
               <Label>Applied By</Label>
               <Input
+                value={(form.applied_by as string) ?? ""}
+                onChange={(e) => set("applied_by" as keyof Permit, e.target.value)}
+                placeholder="e.g. External Admin"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Permit Number</Label>
+              <Input
                 value={form.permit_number ?? ""}
                 onChange={(e) => set("permit_number", e.target.value)}
-                placeholder="e.g. External Admin"
+                placeholder="Permit number from the authority"
               />
             </div>
             <div className="space-y-1.5">

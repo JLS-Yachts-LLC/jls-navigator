@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { updateOrThrow } from "@/lib/db-write";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -263,16 +264,29 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
   }
 
   async function updateStatus(id: string, status: string) {
-    const { error } = await supabase.from("yachts").update({ status }).eq("id", id);
-    if (error) toast.error(error.message);
-    else setYachts((prev) => prev.map((y) => (y.id === id ? { ...y, status } : y)));
+    try {
+      await updateOrThrow(
+        supabase.from("yachts").update({ status }).eq("id", id).select("id"),
+        "vessel",
+      );
+      setYachts((prev) => prev.map((y) => (y.id === id ? { ...y, status } : y)));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to update vessel");
+    }
     setQuickEditId(null);
   }
 
   async function applyArchive(y: Yacht) {
     const next = !y.archive;
-    const { error } = await supabase.from("yachts").update({ archive: next } as never).eq("id", y.id);
-    if (error) { toast.error(error.message); return; }
+    try {
+      await updateOrThrow(
+        supabase.from("yachts").update({ archive: next } as never).eq("id", y.id).select("id"),
+        "vessel",
+      );
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to update vessel");
+      return;
+    }
     setYachts((prev) => prev.map((r) => (r.id === y.id ? { ...r, archive: next } : r)));
     setArchiveTarget(null);
     toast.success(next ? "Yacht archived" : "Yacht restored to active fleet");

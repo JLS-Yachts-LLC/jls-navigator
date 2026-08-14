@@ -10,6 +10,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { updateOrThrow } from "@/lib/db-write";
 import { UserCog, Loader2, Check } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -48,11 +49,13 @@ export function YachtAgentPicker({
     setSaving(true);
     setValue(next);
     try {
-      const { error } = await (supabase as any).from("yachts").update({
-        agent_user_id: next || null,
-        agent_assigned_at: next ? new Date().toISOString() : null,
-      }).eq("id", yachtId);
-      if (error) throw error;
+      await updateOrThrow(
+        (supabase as any).from("yachts").update({
+          agent_user_id: next || null,
+          agent_assigned_at: next ? new Date().toISOString() : null,
+        }).eq("id", yachtId).select("id"),
+        "vessel",
+      );
       onChanged?.(next || null);
       setJustSaved(true);
       setTimeout(() => setJustSaved(false), 1800);

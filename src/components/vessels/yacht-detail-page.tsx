@@ -2,6 +2,7 @@ import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { createServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
+import { updateOrThrow } from "@/lib/db-write";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -223,8 +224,12 @@ export function YachtDetail({
         payload.vessel_image = supabase.storage.from("vessel-images").getPublicUrl(path).data.publicUrl;
       }
 
-      const { error } = await supabase.from("yachts").update(payload as never).eq("id", id);
-      if (error) throw error;
+      // .select() + updateOrThrow: an update RLS refuses matches no rows and
+      // returns no error, which used to toast success while nothing changed.
+      await updateOrThrow(
+        supabase.from("yachts").update(payload as never).eq("id", id).select("id"),
+        "vessel",
+      );
       toast.success("Yacht updated");
       // Non-blocking push to SharePoint (fire and forget)
       doPushToSharePoint({ data: { yachtId: id } }).catch(() => {});
@@ -248,8 +253,14 @@ export function YachtDetail({
 
   async function toggleArchive() {
     const next = !y?.archive;
-    const { error } = await supabase.from("yachts").update({ archive: next } as never).eq("id", id);
-    if (error) return toast.error(error.message);
+    try {
+      await updateOrThrow(
+        supabase.from("yachts").update({ archive: next } as never).eq("id", id).select("id"),
+        "vessel",
+      );
+    } catch (e) {
+      return toast.error(e instanceof Error ? e.message : "Failed to update vessel");
+    }
     setConfirmArchive(false);
     toast.success(next ? "Yacht archived" : "Yacht restored to active fleet");
     await load();

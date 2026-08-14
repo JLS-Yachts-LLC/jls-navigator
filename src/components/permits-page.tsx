@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { updateOrThrow } from "@/lib/db-write";
 import { useAuth } from "@/lib/auth";
 import {
   PERMIT_META, PERMIT_STATUSES, DMA_PHASES,
@@ -413,8 +414,10 @@ function PermitDialog({
       };
       const db = supabase as any;
       if (editing) {
-        const { error } = await db.from("permits").update(payload).eq("id", editing.id);
-        if (error) throw error;
+        await updateOrThrow(
+          db.from("permits").update(payload).eq("id", editing.id).select("id"),
+          "permit",
+        );
         toast.success("Permit updated");
         doPushToSharePoint({ data: { target: "permits", id: editing.id } } as any).catch(() => {});
       } else {

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { updateOrThrow } from "@/lib/db-write";
 import { PERMIT_STATUSES, type Permit, type PermitStatus } from "@/lib/permit-types";
 import { Button } from "@/components/ui/button";
 import { SignedAnchor } from "@/components/ui/signed-file";
@@ -89,8 +90,10 @@ export function GatePassDialog({
       };
 
       if (editing) {
-        const { error } = await supabase.from("permits").update(payload).eq("id", editing.id);
-        if (error) throw error;
+        await updateOrThrow(
+          supabase.from("permits").update(payload).eq("id", editing.id).select("id"),
+          "gate pass",
+        );
         toast.success("Gate pass updated");
       } else {
         const { error } = await supabase

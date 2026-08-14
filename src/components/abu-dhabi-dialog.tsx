@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { updateOrThrow } from "@/lib/db-write";
 import {
   ABU_DHABI_PERMIT_TYPES, PERMIT_STATUSES,
   type AbuDhabiPermitType, type Permit, type PermitStatus,
@@ -62,10 +63,15 @@ export function AbuDhabiDialog({
       };
       // Cast to any — Supabase generated types may not include abu_dhabi yet
       const client = supabase as any;
-      const { error } = editing
-        ? await client.from("permits").update(payload).eq("id", editing.id)
-        : await client.from("permits").insert(payload);
-      if (error) throw error;
+      if (editing) {
+        await updateOrThrow(
+          client.from("permits").update(payload).eq("id", editing.id).select("id"),
+          "permit",
+        );
+      } else {
+        const { error } = await client.from("permits").insert(payload);
+        if (error) throw error;
+      }
       toast.success(editing ? "Permit updated" : "Permit created");
       onSaved();
     } catch (err) {

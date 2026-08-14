@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { getFleetAisPositions, doSyncAis, type AisYacht } from "@/lib/aisstream.server";
 import { supabase } from "@/integrations/supabase/client";
+import { updateOrThrow } from "@/lib/db-write";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Radar, RefreshCw, Loader2, Search, Info, Navigation, Anchor } from "lucide-react";
 import { toast } from "sonner";
@@ -222,8 +223,10 @@ function UntrackedVesselsFixer({ onClose }: { onClose: () => void }) {
       const patch: Record<string, any> = { mmsi: c.mmsi, updated_at: new Date().toISOString() };
       const row = rows.find((r) => r.id === yachtId);
       if (c.imo && !/^\d{7}$/.test((row?.imo_no ?? "").trim())) patch.imo_no = c.imo;
-      const { error } = await (supabase as any).from("yachts").update(patch).eq("id", yachtId);
-      if (error) throw error;
+      await updateOrThrow(
+        (supabase as any).from("yachts").update(patch).eq("id", yachtId).select("id"),
+        "vessel",
+      );
       toast.success(`MMSI set — ${row?.vessel_name} joins the live map on the next hourly sync`);
       setRows((all) => all.filter((r) => r.id !== yachtId));
       setOpenId(null);

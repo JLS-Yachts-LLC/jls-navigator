@@ -49,7 +49,11 @@ export type Permit = {
   id: string;
   yacht_id: string | null;
   permit_type: PermitType;
+  /** The authority's permit reference. Also the SharePoint permits sync match key —
+   *  never store anything else here (see migration 20260814090000). */
   permit_number: string | null;
+  /** Who applied for the permit. Previously overloaded onto permit_number. */
+  applied_by?: string | null;
   status: PermitStatus;
   issue_date: string | null;
   expiry_date: string | null;
