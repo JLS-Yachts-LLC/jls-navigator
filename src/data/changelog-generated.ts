@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "Edits made in Polaris now reach SharePoint instead of being overwritten"
+      },
+      {
+        "type": "fix",
         "title": "The Forms Library now appears in the sidebar under Resources"
       },
       {

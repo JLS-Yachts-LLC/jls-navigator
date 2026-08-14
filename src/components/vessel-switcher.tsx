@@ -9,12 +9,17 @@ import {
 type Yacht = { id: string; vessel_name: string; vessel_type: string | null; flag: string | null };
 
 const STORAGE_KEY = "polaris.activeVessel";
+const LEGACY_KEY = "aquila.activeVessel";
 const EVENT_KEY = "polaris:vessel-change";
 
 /** Read the active vessel id from localStorage (other pages can use this). */
 export function getActiveVessel(): string | null {
   try {
-    return localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem("aquila.activeVessel");
+    // The pre-Polaris key was read as a fallback here, but setActiveVessel never
+    // wrote or cleared it — so a value left over in it outlived "All Vessels" and
+    // could re-apply itself as a filter nobody had chosen. Clear it, don't read it.
+    localStorage.removeItem(LEGACY_KEY);
+    return localStorage.getItem(STORAGE_KEY);
   } catch { return null; }
 }
 

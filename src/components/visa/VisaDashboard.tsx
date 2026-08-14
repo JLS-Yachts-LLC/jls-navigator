@@ -12,7 +12,7 @@ import {
 } from '@/lib/visa/export-filters'
 import ComplianceAlertBanner from './ComplianceAlertBanner'
 import { softDeleteEntity } from '@/lib/recycle-bin'
-import { useActiveVessel, getActiveVessel, setActiveVessel } from '@/components/vessel-switcher'
+import { useActiveVessel, setActiveVessel } from '@/components/vessel-switcher'
 import { VisaReportView } from './VisaReportView'
 import { VisaBulkUpload } from './VisaBulkUpload'
 import NewApplicationWizard from './NewApplicationWizard'
@@ -677,10 +677,11 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
   // for active visas, so that is the default. "Expired" is for chasing renewals.
   const [validity, setValidity] = useState<Validity>('active')
   const [search, setSearch]   = useState('')
-  // Seeded from (and published back to) the sidebar vessel switcher, so picking a
-  // vessel in either place moves the other.
-  const activeVessel = useActiveVessel()
-  const [vessel, setVessel]   = useState(() => getActiveVessel() ?? 'all')
+  // The shared switcher store IS the vessel filter — deliberately not copied into
+  // local state as well. A controlled <select> keeps showing the option you
+  // clicked even when the state behind it never changed, so the moment those two
+  // copies drifted the dropdown read one vessel while the list stayed unfiltered.
+  const vessel = useActiveVessel() ?? 'all'
   const [year, setYear]       = useState('all')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo]     = useState('')
@@ -746,17 +747,14 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
     })
   }, [applications, scope])
 
-  const counts = useMemo(() => {
-    const c: Record<string, number> = {}
-    for (const a of scoped) c[a.status] = (c[a.status] ?? 0) + 1
-    return c
-  }, [scoped])
-
   // ── Filtering ────────────────────────────────────────────────────────────────
 
   const today = new Date().toISOString().slice(0, 10)
-  const unsorted = useMemo(() => scoped.filter(a => {
-    if (activeStatus && a.status !== activeStatus) return false
+
+  // Every filter except the status chip. The chip counts come from here so they
+  // describe the view you are in: they used to count the whole fleet, so picking a
+  // vessel left the tabs reading the same totals and the filter looked ignored.
+  const preStatus = useMemo(() => scoped.filter(a => {
     if (!matchesValidity(a, validity, today)) return false
     if (vessel !== 'all' && a.yacht_id !== vessel) return false
     const d = effectiveDate(a)
@@ -766,7 +764,25 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
     if (dateTo && day > dateTo) return false
     if (!matchesSearch(a, search)) return false
     return true
-  }), [scoped, activeStatus, validity, today, vessel, year, dateFrom, dateTo, search])
+  }), [scoped, validity, today, vessel, year, dateFrom, dateTo, search])
+
+  const counts = useMemo(() => {
+    const c: Record<string, number> = {}
+    for (const a of preStatus) c[a.status] = (c[a.status] ?? 0) + 1
+    return c
+  }, [preStatus])
+
+  const unsorted = useMemo(
+    () => (activeStatus ? preStatus.filter(a => a.status === activeStatus) : preStatus),
+    [preStatus, activeStatus],
+  )
+
+  // Ticked rows are only meaningful for the view they were ticked in. Selection
+  // used to survive a filter change, so "select all" on one vessel and then
+  // switching to another left invisible rows ticked — and Cancel still hit them.
+  useEffect(() => {
+    setSelected(new Set())
+  }, [vessel, activeStatus, validity, year, dateFrom, dateTo, search, scope])
 
   /**
    * Records that match the search but are hidden by the other filters. Searching a
@@ -817,13 +833,8 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
   // ── Vessel selection is shared with the sidebar switcher ─────────────────────
   /** Change the vessel here AND in the sidebar, so the two always agree. */
   function chooseVessel(id: string) {
-    setVessel(id)
     setActiveVessel(id === 'all' ? null : id)
   }
-  // Follow the switcher when it is changed from the sidebar.
-  useEffect(() => {
-    setVessel(activeVessel ?? 'all')
-  }, [activeVessel])
 
   // ── Exports (reuse /api/visa/export — requires a single vessel) ───────────────
 
