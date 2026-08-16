@@ -626,20 +626,23 @@ const TARGET_KEY_FIELDS: Record<string, string[]> = {
 };
 
 /**
- * Targets whose outbound push to SharePoint is suppressed.
+ * Targets whose outbound push to SharePoint is suppressed. EMPTY BY DEFAULT —
+ * the sync is fully two-way; this is a dormant emergency lever, not a policy.
  *
- * Writing a SharePoint list item can trigger automation that lives on SharePoint,
- * outside Polaris and outside the reach of the mail guard. On 2026-08-15 client
- * vessels received "<vessel> - TDRA" notices roughly a minute after ordinary
- * permit data entry pushed items to the permits list — a Power Automate flow
- * reacting to our writes. Suppressing the push stops Polaris tripping it.
+ * Why it exists: writing a SharePoint list item can trigger automation that lives
+ * on SharePoint, outside Polaris and beyond the mail guard's reach. On 2026-08-15
+ * a Power Automate flow on the permits list emailed client vessels about a minute
+ * after ordinary permit data entry pushed items across. That flow has since been
+ * turned off at source, so nothing is suppressed here.
  *
- * Set SHAREPOINT_PUSH_DISABLED_TARGETS (comma-separated) to change the list, or
- * "none" to re-enable every push once the flow itself has been dealt with.
- * Inbound sync is unaffected — SharePoint changes still flow INTO Polaris.
+ * If a SharePoint-side automation ever misbehaves again, set
+ * SHAREPOINT_PUSH_DISABLED_TARGETS (comma-separated, e.g. "permits") to stop
+ * Polaris writing to that list without touching the sync engine. Inbound sync is
+ * never affected, and edits stay queued in sharepoint_dirty_at so the backlog
+ * drains once the target is removed again.
  */
 function pushDisabledTargets(): Set<string> {
-  const raw = (process.env.SHAREPOINT_PUSH_DISABLED_TARGETS ?? 'permits').trim();
+  const raw = (process.env.SHAREPOINT_PUSH_DISABLED_TARGETS ?? '').trim();
   if (!raw || raw.toLowerCase() === 'none') return new Set();
   return new Set(raw.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean));
 }
