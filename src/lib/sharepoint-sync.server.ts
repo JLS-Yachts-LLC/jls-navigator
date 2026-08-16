@@ -625,10 +625,38 @@ const TARGET_KEY_FIELDS: Record<string, string[]> = {
   crew_signon_events: [],
 };
 
+/**
+ * Targets whose outbound push to SharePoint is suppressed.
+ *
+ * Writing a SharePoint list item can trigger automation that lives on SharePoint,
+ * outside Polaris and outside the reach of the mail guard. On 2026-08-15 client
+ * vessels received "<vessel> - TDRA" notices roughly a minute after ordinary
+ * permit data entry pushed items to the permits list — a Power Automate flow
+ * reacting to our writes. Suppressing the push stops Polaris tripping it.
+ *
+ * Set SHAREPOINT_PUSH_DISABLED_TARGETS (comma-separated) to change the list, or
+ * "none" to re-enable every push once the flow itself has been dealt with.
+ * Inbound sync is unaffected — SharePoint changes still flow INTO Polaris.
+ */
+function pushDisabledTargets(): Set<string> {
+  const raw = (process.env.SHAREPOINT_PUSH_DISABLED_TARGETS ?? 'permits').trim();
+  if (!raw || raw.toLowerCase() === 'none') return new Set();
+  return new Set(raw.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean));
+}
+
+/** True when this target's records must not be written back to SharePoint. */
+export function sharePointPushBlocked(target: string): boolean {
+  return pushDisabledTargets().has(String(target).trim().toLowerCase());
+}
+
 /** Push one app record to every enabled SharePoint sync for its target. */
 export async function pushRecordToSharePoint(target: string, id: string): Promise<void> {
   const table = TARGET_TABLE[target];
   if (!table) return;
+  if (sharePointPushBlocked(target)) {
+    console.warn(`[sp-push] outbound push for "${target}" is disabled — skipped ${table}/${id}`);
+    return;
+  }
   const syncs = (await getSpSyncs().catch(() => [])).filter(s => s.enabled && s.syncTarget === target);
   if (!syncs.length) return;
 
@@ -738,6 +766,10 @@ async function dirtyIds(table: string): Promise<Set<string>> {
 export async function pushDirtyRecords(target: string, max = 20): Promise<{ pushed: number; failed: number; remaining: number }> {
   const table = TARGET_TABLE[target]
   if (!table || !DIRTY_TABLES.has(table)) return { pushed: 0, failed: 0, remaining: 0 }
+  // Suppressed target: return before touching the queue. sharepoint_dirty_at stays
+  // set on every edited row, so nothing is lost — the backlog drains by itself once
+  // the push is re-enabled.
+  if (sharePointPushBlocked(target)) return { pushed: 0, failed: 0, remaining: 0 }
   const db = supabaseAdmin as any
   const { data, error } = await db.from(table)
     .select('id, sharepoint_dirty_at')

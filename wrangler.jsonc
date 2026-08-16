@@ -38,6 +38,19 @@
     // lists that email vessels when a list item changes.
     "EMAIL_ENABLED": "false",
     "CLIENT_EMAIL_ENABLED": "false",
-    "PERMIT_EXPIRY_ALERTS_ENABLED": "false"
+    "PERMIT_EXPIRY_ALERTS_ENABLED": "false",
+
+    // ── Outbound SharePoint push — permits suppressed since 2026-08-15 ────────
+    // Writing a SharePoint list item triggers automation that lives on SharePoint,
+    // beyond the reach of the mail guard: a Power Automate flow on the permits
+    // list emailed vessels "<vessel> - TDRA" about a minute after ordinary permit
+    // data entry pushed items across. Until that flow is turned off, Polaris does
+    // not write to that list.
+    //
+    // Comma-separated targets, or "none" to restore every push. Inbound sync is
+    // unaffected — SharePoint changes still flow INTO Polaris — and edits made in
+    // Polaris stay queued (sharepoint_dirty_at), so the backlog syncs itself once
+    // this is cleared.
+    "SHAREPOINT_PUSH_DISABLED_TARGETS": "permits"
   }
 }
