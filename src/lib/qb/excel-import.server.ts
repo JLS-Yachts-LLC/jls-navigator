@@ -65,7 +65,11 @@ function parseSheet(sheetTab: string, rows: string[][]): ParsedSheet {
         else if (u === 'description') map.description = i
         else if (u === 'unit rate' || u === 'unitrate') map.unitRate = i
         else if (u === 'amount') map.amount = i
-        else if (u === 'vat%' || u === 'vat %' || u === 'vat') map.vat = i
+        // ONLY the percentage column — matching the n8n original. These sheets carry
+        // "VAT%" (0.05) and then "VAT" (the computed amount, 0.4) side by side; also
+        // accepting bare "VAT" let the amount column overwrite the rate, so a 5% line
+        // came through as 40%.
+        else if (u === 'vat%' || u === 'vat %') map.vat = i
       })
       if (map.description != null && map.qty != null) cols = map
       continue
@@ -74,9 +78,18 @@ function parseSheet(sheetTab: string, rows: string[][]): ParsedSheet {
     if (!desc) continue // blank description ends the item block
     const numOr = (i: number | undefined): number | '' => {
       if (i == null) return ''
-      const v = Number(String(row[i]).replace(/,/g, ''))
+      // Blank must stay blank: Number('') is 0, which reported a quantity of 0 on
+      // every row with an empty cell and made text-only rows look numeric.
+      const raw = norm(row[i]).replace(/,/g, '')
+      if (raw === '') return ''
+      const v = Number(raw)
       return isNaN(v) ? '' : v
     }
+    // These templates carry free-text rows *below* the header — vessel name,
+    // "Quotation no. …", "Requested by : …" — which land in the description column
+    // and were posted as line items. A billable line always carries at least one
+    // number, so a text-only row is a heading, not a charge.
+    if (numOr(cols.qty) === '' && numOr(cols.unitRate) === '' && numOr(cols.amount) === '') continue
     let vatPercent = ''
     if (cols.vat != null) {
       const raw = norm(row[cols.vat])
