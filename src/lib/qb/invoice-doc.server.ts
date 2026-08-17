@@ -718,6 +718,23 @@ export async function generateAndAttachInvoicePdf(qboInvoiceId: string, opts: { 
     // delete all matching PDFs except the one just uploaded.
     const att = await qboUpload(fileName, pdf, 'application/pdf', 'Invoice', t.qboId)
     const deletedOld = await deleteOldPdfs(t.qboId, t.docNumber, String(att?.Id ?? ''))
+
+    // Keep a copy in-app so Finance serves THIS branded PDF. /api/qb/doc-pdf
+    // prefers qbo_invoices.pdf_path and only falls back to QuickBooks' own plain
+    // render when it is empty — which is all it could ever do before, since the
+    // branded document was only ever attached to QBO. Same path the handler
+    // caches to, upserted, so any previously cached QBO render is replaced.
+    // Best-effort: a storage hiccup must not fail the attach.
+    try {
+      const pdfPath = `qbo/invoice-${t.qboId}.pdf`
+      await sb.storage.from('esign-documents')
+        .upload(pdfPath, pdf, { contentType: 'application/pdf', upsert: true })
+      await sb.from('qbo_invoices')
+        .update({ pdf_path: pdfPath, pdf_synced_at: new Date().toISOString() })
+        .eq('qbo_id', String(t.qboId))
+    } catch (e) {
+      console.error('[qb-invoice-pdf] in-app PDF copy failed:', e instanceof Error ? e.message : String(e))
+    }
     // Diagnostic: what did QBO actually return for the link?
     const linkedTo = (Array.isArray(att?.AttachableRef) && att.AttachableRef[0]?.EntityRef?.value) || 'NONE'
 

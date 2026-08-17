@@ -160,24 +160,43 @@ async function resolveCustomer(name: string): Promise<{ id: string; name: string
 }
 
 // ── DocNumber allocation ───────────────────────────────────────────────────────
+/**
+ * Both series are anchored to the CURRENT YEAR — never to whatever prefix happens
+ * to sort highest in QuickBooks.
+ *
+ * The invoice allocator used to take the largest first group ("JLS<n>-"), which in
+ * live data is a 2022 typo: alongside the real JLS26 series (3,108 invoices, …24388)
+ * QuickBooks holds strays like JLS6922-22, JLS6921-22, JLS6800-22. Because
+ * 6922 > 26 it followed the typo and issued JLS6922-23 instead of JLS26-24389.
+ * The estimate branch had the same class of bug from the other direction: "Q26-"
+ * was hardcoded, so it would have kept issuing 2026 numbers in 2027.
+ */
+const yearSuffix = () => String(new Date().getFullYear()).slice(2)
+
 async function nextNumber(kind: 'estimate' | 'invoice'): Promise<string> {
+  const yy = yearSuffix()
   if (kind === 'estimate') {
-    const res = await qboQuery("select * from Estimate where TxnDate > '2024-01-01' MAXRESULTS 1000").catch(() => null)
-    let max = 0
+    const prefix = `Q${yy}-`
+    const res = await qboQuery(`select * from Estimate where DocNumber like '${prefix}%' MAXRESULTS 1000`).catch(() => null)
+    let max = 0, width = 5
     for (const e of res?.QueryResponse?.Estimate ?? []) {
-      const m = /^Q26-(\d+)$/i.exec(String(e.DocNumber ?? '')); if (m) max = Math.max(max, parseInt(m[1], 10))
+      const m = new RegExp(`^Q${yy}-(\\d+)$`, 'i').exec(String(e.DocNumber ?? ''))
+      if (!m) continue
+      const n = parseInt(m[1], 10)
+      if (n > max) { max = n; width = m[1].length }
     }
-    return `Q26-${String(max + 1).padStart(5, '0')}`
+    return `${prefix}${String(max + 1).padStart(width, '0')}`
   }
-  const res = await qboQuery('select * from Invoice MAXRESULTS 1000').catch(() => null)
-  let bestPrefix = 26, bestNum = 0, width = 5
+  const prefix = `JLS${yy}-`
+  const res = await qboQuery(`select * from Invoice where DocNumber like '${prefix}%' MAXRESULTS 1000`).catch(() => null)
+  let max = 0, width = 5
   for (const inv of res?.QueryResponse?.Invoice ?? []) {
-    const m = /^JLS(\d+)-(\d+)$/i.exec(String(inv.DocNumber ?? ''))
+    const m = new RegExp(`^JLS${yy}-(\\d+)$`, 'i').exec(String(inv.DocNumber ?? ''))
     if (!m) continue
-    const pfx = parseInt(m[1], 10), num = parseInt(m[2], 10)
-    if (pfx > bestPrefix || (pfx === bestPrefix && num > bestNum)) { bestPrefix = pfx; bestNum = num; width = m[2].length }
+    const n = parseInt(m[1], 10)
+    if (n > max) { max = n; width = m[1].length }
   }
-  return `JLS${bestPrefix}-${String(bestNum + 1).padStart(width, '0')}`
+  return `${prefix}${String(max + 1).padStart(width, '0')}`
 }
 
 // ── Build + create the QBO document ────────────────────────────────────────────
