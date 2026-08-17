@@ -420,6 +420,16 @@ async function renderInvoicePdfStamped(t: TransformedInvoice, title: string): Pr
       page.drawText(`${pi + 1} of ${pageCount}`, { x: b.x + bold.widthOfTextAtSize('Page ', 5.2), y: b.y, size: 5.2, font, color: BLACK })
     }
   }
+
+  // Terms & Conditions page (static, last page of the background) — matching the
+  // quotation and pro-forma generators. The invoice backgrounds were originally
+  // extracted with only [single, mid, final], so invoices went out without the
+  // T&C page every other document type carried.
+  if (src.getPageCount() > 3) {
+    const [terms] = await pdf.copyPages(src, [3])
+    pdf.addPage(terms)
+  }
+
   return pdf.save()
 }
 
