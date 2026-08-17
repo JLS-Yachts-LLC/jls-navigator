@@ -14,6 +14,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SignTokenRouteImport } from './routes/sign.$token'
+import { Route as QbUploadTokenRouteImport } from './routes/qb-upload.$token'
 import { Route as LegalQuickbooksDisconnectedRouteImport } from './routes/legal.quickbooks-disconnected'
 import { Route as LegalQuickbooksConnectedRouteImport } from './routes/legal.quickbooks-connected'
 import { Route as LegalPrivacyRouteImport } from './routes/legal.privacy'
@@ -168,6 +169,11 @@ const IndexRoute = IndexRouteImport.update({
 const SignTokenRoute = SignTokenRouteImport.update({
   id: '/sign/$token',
   path: '/sign/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const QbUploadTokenRoute = QbUploadTokenRouteImport.update({
+  id: '/qb-upload/$token',
+  path: '/qb-upload/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LegalQuickbooksDisconnectedRoute =
@@ -911,6 +917,7 @@ export interface FileRoutesByFullPath {
   '/legal/privacy': typeof LegalPrivacyRoute
   '/legal/quickbooks-connected': typeof LegalQuickbooksConnectedRoute
   '/legal/quickbooks-disconnected': typeof LegalQuickbooksDisconnectedRoute
+  '/qb-upload/$token': typeof QbUploadTokenRoute
   '/sign/$token': typeof SignTokenRoute
   '/admin/audit': typeof AppAdminAuditRoute
   '/admin/organisations': typeof AppAdminOrganisationsRoute
@@ -1038,6 +1045,7 @@ export interface FileRoutesByTo {
   '/legal/privacy': typeof LegalPrivacyRoute
   '/legal/quickbooks-connected': typeof LegalQuickbooksConnectedRoute
   '/legal/quickbooks-disconnected': typeof LegalQuickbooksDisconnectedRoute
+  '/qb-upload/$token': typeof QbUploadTokenRoute
   '/sign/$token': typeof SignTokenRoute
   '/admin/audit': typeof AppAdminAuditRoute
   '/admin/organisations': typeof AppAdminOrganisationsRoute
@@ -1173,6 +1181,7 @@ export interface FileRoutesById {
   '/legal/privacy': typeof LegalPrivacyRoute
   '/legal/quickbooks-connected': typeof LegalQuickbooksConnectedRoute
   '/legal/quickbooks-disconnected': typeof LegalQuickbooksDisconnectedRoute
+  '/qb-upload/$token': typeof QbUploadTokenRoute
   '/sign/$token': typeof SignTokenRoute
   '/_app/admin/audit': typeof AppAdminAuditRoute
   '/_app/admin/organisations': typeof AppAdminOrganisationsRoute
@@ -1312,6 +1321,7 @@ export interface FileRouteTypes {
     | '/legal/privacy'
     | '/legal/quickbooks-connected'
     | '/legal/quickbooks-disconnected'
+    | '/qb-upload/$token'
     | '/sign/$token'
     | '/admin/audit'
     | '/admin/organisations'
@@ -1439,6 +1449,7 @@ export interface FileRouteTypes {
     | '/legal/privacy'
     | '/legal/quickbooks-connected'
     | '/legal/quickbooks-disconnected'
+    | '/qb-upload/$token'
     | '/sign/$token'
     | '/admin/audit'
     | '/admin/organisations'
@@ -1573,6 +1584,7 @@ export interface FileRouteTypes {
     | '/legal/privacy'
     | '/legal/quickbooks-connected'
     | '/legal/quickbooks-disconnected'
+    | '/qb-upload/$token'
     | '/sign/$token'
     | '/_app/admin/audit'
     | '/_app/admin/organisations'
@@ -1665,6 +1677,7 @@ export interface RootRouteChildren {
   LegalPrivacyRoute: typeof LegalPrivacyRoute
   LegalQuickbooksConnectedRoute: typeof LegalQuickbooksConnectedRoute
   LegalQuickbooksDisconnectedRoute: typeof LegalQuickbooksDisconnectedRoute
+  QbUploadTokenRoute: typeof QbUploadTokenRoute
   SignTokenRoute: typeof SignTokenRoute
   FormsFillTokenRoute: typeof FormsFillTokenRoute
 }
@@ -1704,6 +1717,13 @@ declare module '@tanstack/react-router' {
       path: '/sign/$token'
       fullPath: '/sign/$token'
       preLoaderRoute: typeof SignTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/qb-upload/$token': {
+      id: '/qb-upload/$token'
+      path: '/qb-upload/$token'
+      fullPath: '/qb-upload/$token'
+      preLoaderRoute: typeof QbUploadTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/legal/quickbooks-disconnected': {
@@ -3070,6 +3090,7 @@ const rootRouteChildren: RootRouteChildren = {
   LegalPrivacyRoute: LegalPrivacyRoute,
   LegalQuickbooksConnectedRoute: LegalQuickbooksConnectedRoute,
   LegalQuickbooksDisconnectedRoute: LegalQuickbooksDisconnectedRoute,
+  QbUploadTokenRoute: QbUploadTokenRoute,
   SignTokenRoute: SignTokenRoute,
   FormsFillTokenRoute: FormsFillTokenRoute,
 }
