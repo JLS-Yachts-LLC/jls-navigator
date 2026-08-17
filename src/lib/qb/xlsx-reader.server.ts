@@ -98,11 +98,19 @@ function parseSheet(xml: string, shared: string[]): string[][] {
   let rm: RegExpExecArray | null
   while ((rm = rowRe.exec(xml))) {
     const cells: string[] = []
-    const cellRe = /<c\b([^>]*)>([\s\S]*?)<\/c>|<c\b([^>]*)\/>/g
+    // Self-closing empty cells (<c r="C5" s="7"/>) MUST be matched first, and the
+    // attribute groups must be lazy: with a greedy [^>]* the paired alternative
+    // treats "r=\"C5\" s=\"7\"/" as attributes, matches the ">" of the empty cell,
+    // then swallows the FOLLOWING cell as its body. That put the next cell's value
+    // (and, for shared strings, its raw index rather than the text) in the empty
+    // cell's column — e.g. a provisions quotation read "44" in column C instead of
+    // "MY Nirvana" in column D, corrupting every label lookup after a blank cell.
+    const cellRe = /<c\b([^>]*?)\/>|<c\b([^>]*?)>([\s\S]*?)<\/c>/g
     let cm: RegExpExecArray | null
     while ((cm = cellRe.exec(rm[1]))) {
-      const attrs = cm[1] ?? cm[3] ?? ''
-      const inner = cm[2] ?? ''
+      const selfClosing = cm[1] !== undefined
+      const attrs = (selfClosing ? cm[1] : cm[2]) ?? ''
+      const inner = (selfClosing ? '' : cm[3]) ?? ''
       const ref = /\br="([A-Z]+\d+)"/.exec(attrs)?.[1]
       const type = /\bt="([^"]+)"/.exec(attrs)?.[1]
       const ci = ref ? colToIndex(ref) : cells.length
