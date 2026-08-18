@@ -50,6 +50,16 @@
     // misbehaves again, list the target(s) here (comma-separated) to stop Polaris
     // writing to that list. Inbound sync is never affected, and in-app edits stay
     // queued (sharepoint_dirty_at) so the backlog drains once it is cleared.
-    "SHAREPOINT_PUSH_DISABLED_TARGETS": ""
+    "SHAREPOINT_PUSH_DISABLED_TARGETS": "",
+
+    // ── Inbound SharePoint sync cadence ───────────────────────────────────────
+    // The list pull runs on the 5-minute cron. Priority lists are pulled EVERY
+    // tick (so vessel location/berth/ETD is never more than 5 min behind), plus
+    // this many of the least-recently-synced other lists, which cycles the rest
+    // in roughly 15-20 minutes instead of the old 3 hours.
+    // Raise LISTS_PER_TICK to cover every list at once only if the Cloudflare
+    // subrequest budget allows it — that limit is why the rotation exists.
+    "SP_SYNC_PRIORITY_LISTS": "Yachts",
+    "SP_SYNC_LISTS_PER_TICK": "3"
   }
 }

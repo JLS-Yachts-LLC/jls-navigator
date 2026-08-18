@@ -173,6 +173,54 @@ export async function syncStalestList(): Promise<{ name: string; synced: number;
   return { name: target.name, synced: r.synced, errors: r.errors }
 }
 
+/**
+ * Pull SharePoint changes IN on the fast (5-minute) tick.
+ *
+ * Movement data — a vessel's location, berth, ETA/ETD — has to be current, but
+ * syncing every list in one Worker invocation is what the 15-minute rotation was
+ * written to avoid (Cloudflare caps subrequests per invocation, and a Worker
+ * can't self-fetch to fan out). So each tick does bounded work:
+ *
+ *   • every PRIORITY list, every tick        → Yachts is never more than 5 min stale
+ *   • plus the N least-recently-synced others → the rest cycle in ~15-20 min
+ *
+ * Tunable without a code change:
+ *   SP_SYNC_PRIORITY_LISTS   comma-separated list names (default "Yachts")
+ *   SP_SYNC_LISTS_PER_TICK   how many others per tick   (default 3)
+ * Setting SP_SYNC_LISTS_PER_TICK high enough to cover every list restores
+ * all-at-once behaviour — only do that if the subrequest budget allows it.
+ */
+export async function syncPrioritisedLists(): Promise<Array<{ name: string; synced: number; errors: number }>> {
+  const syncs = (await getSpSyncs().catch(() => [] as SpSyncConfig[])).filter(s => s.enabled)
+  if (!syncs.length) return []
+
+  const priorityNames = (process.env.SP_SYNC_PRIORITY_LISTS ?? 'Yachts')
+    .split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
+  const perTick = Math.max(0, Number(process.env.SP_SYNC_LISTS_PER_TICK ?? 3) || 0)
+  const isPriority = (s: SpSyncConfig) =>
+    priorityNames.includes(String(s.name ?? '').trim().toLowerCase()) ||
+    priorityNames.includes(String(s.listName ?? '').trim().toLowerCase())
+
+  const stale = (a: SpSyncConfig, b: SpSyncConfig) =>
+    (a.lastSyncedAt ? new Date(a.lastSyncedAt).getTime() : 0) -
+    (b.lastSyncedAt ? new Date(b.lastSyncedAt).getTime() : 0)
+
+  const priority = syncs.filter(isPriority)
+  const others = syncs.filter(s => !isPriority(s)).sort(stale).slice(0, perTick)
+
+  const out: Array<{ name: string; synced: number; errors: number }> = []
+  for (const s of [...priority, ...others]) {
+    try {
+      const r = await syncById(s.id)
+      out.push({ name: s.name, synced: r.synced, errors: r.errors })
+    } catch (e) {
+      out.push({ name: s.name, synced: 0, errors: 1 })
+      console.error(`[sp-fast] ${s.name} failed:`, e instanceof Error ? e.message : String(e))
+    }
+  }
+  return out
+}
+
 export async function syncById(id: string): Promise<{ synced: number; errors: number; samples?: string[] }> {
   const syncs = await getSpSyncs()
   const sync = syncs.find(s => s.id === id)

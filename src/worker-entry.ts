@@ -1,5 +1,5 @@
 import { createStartHandler, defaultStreamHandler } from '@tanstack/react-start/server'
-import { downloadPendingImages, downloadPendingImagesRotating, pushChangedRecords, discoverSharePoint, syncById, getSpSyncs, syncStalestList, syncWebhookList, setupSignonList, resetDeltaTokens } from './lib/sharepoint-sync.server'
+import { downloadPendingImages, downloadPendingImagesRotating, pushChangedRecords, discoverSharePoint, syncById, getSpSyncs, syncStalestList, syncPrioritisedLists, syncWebhookList, setupSignonList, resetDeltaTokens } from './lib/sharepoint-sync.server'
 import { syncAisPositions } from './lib/aisstream.server'
 import { runExpiryAlerts } from './lib/permit-expiry-cron.server'
 import { syncFleetPositions } from './lib/mygps.server'
@@ -680,6 +680,16 @@ export default {
         retryPendingQbWebhookEvents()
           .catch((e) => console.error('[qb-webhook-sweeper] error:', e))
       );
+      // ── Every 5 min: pull SharePoint changes IN ──
+      // Priority lists (Yachts) every tick so vessel location/berth/ETD is never
+      // more than 5 minutes behind SharePoint, plus the stalest few others so the
+      // whole set cycles in ~15-20 min instead of the old 3 hours. Bounded per
+      // invocation — see syncPrioritisedLists().
+      ctx.waitUntil(
+        syncPrioritisedLists()
+          .then((ran) => { if (ran.length) console.log('[sp-fast] ' + ran.map(r => `${r.name}: synced=${r.synced} errors=${r.errors}`).join(' | ')) })
+          .catch((e) => console.error('[sp-fast] error:', e))
+      );
       return;
     }
 
@@ -778,10 +788,12 @@ export default {
       )
     }
 
-    // ── Every 15 min: pull SharePoint changes IN, ONE list per tick ──
-    // All lists at once exceeds Cloudflare's per-invocation subrequest limit, and
-    // a Worker can't self-fetch to fan out — so each tick syncs the single
-    // least-recently-synced list, rotating through the whole set over time.
+    // ── Every 15 min: vessel-image backfill ──
+    // The list pull itself moved to the 5-minute tick (syncPrioritisedLists) so
+    // vessel movements land promptly; this tick keeps the image backfill, and
+    // still nudges the stalest list as a safety net if the fast tick is ever
+    // disabled. All lists at once would exceed Cloudflare's per-invocation
+    // subrequest limit, and a Worker can't self-fetch to fan out.
     ctx.waitUntil(
       syncStalestList()
         // Image backfill walks the WHOLE pending set via a persisted cursor. The
