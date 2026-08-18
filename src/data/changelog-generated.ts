@@ -5,6 +5,78 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.40.0",
+    "date": "2026-08-18",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Vessel data syncs every 5 minutes instead of every 3 hours"
+      }
+    ]
+  },
+  {
+    "version": "2.39.0",
+    "date": "2026-08-17",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Invoices now include the Terms & Conditions page"
+      },
+      {
+        "type": "fix",
+        "title": "Invoice numbers follow the live series, and Finance serves the branded PDF"
+      },
+      {
+        "type": "fix",
+        "title": "Faithful invoice-sheet parsing — VAT rate, blank cells, heading rows"
+      },
+      {
+        "type": "fix",
+        "title": "Xlsx reader mis-read every cell following an empty one"
+      },
+      {
+        "type": "feature",
+        "title": "Login-free upload links for the Excel → QuickBooks importer"
+      }
+    ]
+  },
+  {
+    "version": "2.38.2",
+    "date": "2026-08-16",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Restore the permits push — sync is fully two-way again"
+      },
+      {
+        "type": "fix",
+        "title": "Stop pushing permits to SharePoint — it was triggering client emails"
+      },
+      {
+        "type": "fix",
+        "title": "Master switch — no email leaves Polaris until explicitly re-enabled"
+      }
+    ]
+  },
+  {
+    "version": "2.38.1",
+    "date": "2026-08-14",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Deleting a vessel goes to the Recycle Bin instead of vanishing"
+      },
+      {
+        "type": "fix",
+        "title": "Picking a vessel now actually filters the visa list, and bulk actions only touch rows you can see"
+      },
+      {
+        "type": "fix",
+        "title": "Applied By gets its own field, and saves stop reporting false success"
+      }
+    ]
+  },
+  {
     "version": "2.38.0",
     "date": "2026-08-13",
     "entries": [

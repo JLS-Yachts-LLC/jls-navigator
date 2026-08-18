@@ -561,6 +561,21 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
     void applyToSelected({ arrival_date: bulkDate, visa_expiry: expiry }, `activated from ${bulkDate}`)
   }
 
+  /**
+   * Stamp the same sign-on or sign-off date across the selection (SD-0013).
+   * Vessels arrive and depart with the whole crew at once, so these were being
+   * typed in one visa at a time. Unlike activation this touches only the one
+   * column — no expiry is derived, because signing on or off does not change
+   * how long the visa runs.
+   */
+  function bulkSignDate(which: 'sign_on_date' | 'sign_off_date') {
+    const label = which === 'sign_on_date' ? 'sign-on' : 'sign-off'
+    if (!bulkDate) { toast.error(`Pick the ${label} date first`); return }
+    if (isNaN(new Date(bulkDate).getTime())) { toast.error(`That ${label} date is not valid`); return }
+    if (!confirm(`Set ${label} date ${bulkDate} on ${selected.size} application${selected.size === 1 ? '' : 's'}?`)) return
+    void applyToSelected({ [which]: bulkDate }, `given a ${label} date of ${bulkDate}`)
+  }
+
   /** Name for a compliance alert, from the joined crew member. */
   const alertCrewName = (a: ComplianceAlert): string | null => {
     const c = a.crew_members
@@ -1191,14 +1206,25 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
                 Cancel visas
               </button>
               <span style={{ width: 1, height: 20, background: COLORS.deep }} />
+              {/* One date box, three things it can be applied as (SD-0008 / SD-0013) */}
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: FONTS.display, fontSize: 12, color: COLORS.muted }}>
-                Arrival
+                Date
                 <input type="date" value={bulkDate} onChange={e => setBulkDate(e.target.value)} style={{ ...ctl }} />
               </label>
               <button onClick={bulkActivate} disabled={bulkBusy || !bulkDate}
-                title="Record this arrival date on every selected application (UAE expiry is derived from it)"
+                title="Record this as the arrival date on every selected application (UAE expiry is derived from it)"
                 style={{ ...btn(false), opacity: bulkDate ? 1 : 0.5 }}>
-                Activate with this date
+                Activate (arrival)
+              </button>
+              <button onClick={() => bulkSignDate('sign_on_date')} disabled={bulkBusy || !bulkDate}
+                title="Record this as the sign-on date on every selected application"
+                style={{ ...btn(false), opacity: bulkDate ? 1 : 0.5 }}>
+                Sign-on date
+              </button>
+              <button onClick={() => bulkSignDate('sign_off_date')} disabled={bulkBusy || !bulkDate}
+                title="Record this as the sign-off date on every selected application"
+                style={{ ...btn(false), opacity: bulkDate ? 1 : 0.5 }}>
+                Sign-off date
               </button>
               <button onClick={() => setSelected(new Set())} disabled={bulkBusy}
                 style={{ ...btn(false), marginLeft: 'auto' }}>

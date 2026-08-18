@@ -16,6 +16,12 @@ const ACCEPT = [
   "image/*", ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".txt", ".rtf", ".odt", ".msg", ".eml",
 ].join(",");
 const MAX_MB = 25;
+/** Stop a recording before it can exceed the upload limit, rather than binning
+ *  the clip afterwards. Also cap the length — a 10-minute clip is never needed
+ *  to show a bug, and the byte cap alone would allow one at a low bitrate. */
+const REC_MAX_BYTES = 24 * 1024 * 1024;
+const REC_MAX_SECS = 5 * 60;
+const REC_BITRATE = 800_000;
 
 export function FeedbackWidget() {
   const { user } = useAuth();
@@ -28,6 +34,9 @@ export function FeedbackWidget() {
   const [capturing, setCapturing] = useState(false);
   const [recorder, setRecorder] = useState<MediaRecorder | null>(null);
   const [recSecs, setRecSecs] = useState(0);
+  // While recording, the dialog collapses to a floating pill so it isn't sitting
+  // on top of the very thing being recorded.
+  const [minimised, setMinimised] = useState(false);
 
   const isImage = !!file?.type.startsWith("image/");
   const isVideo = !!file?.type.startsWith("video/");
@@ -40,10 +49,17 @@ export function FeedbackWidget() {
   );
   useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
 
-  // Tick the elapsed-time readout while recording.
+  // Tick the elapsed-time readout while recording, and stop at the length cap.
   useEffect(() => {
     if (!recorder) return;
-    const t = setInterval(() => setRecSecs((s) => s + 1), 1000);
+    const t = setInterval(() => setRecSecs((s) => {
+      const next = s + 1;
+      if (next >= REC_MAX_SECS && recorder.state !== "inactive") {
+        toast.info(`Recording stopped at ${REC_MAX_SECS / 60} minutes — the clip has been attached.`);
+        recorder.stop();
+      }
+      return next;
+    }), 1000);
     return () => clearInterval(t);
   }, [recorder]);
 
@@ -89,21 +105,34 @@ export function FeedbackWidget() {
       return;
     }
     try {
-      const stream: MediaStream = await md.getDisplayMedia({ video: { displaySurface: "browser", frameRate: 15 }, audio: false });
+      // No displaySurface hint — that one restricted the picker to browser tabs,
+      // so "Entire Screen" and "Window" were never offered. Let the user choose.
+      const stream: MediaStream = await md.getDisplayMedia({ video: { frameRate: 15 }, audio: false });
       // Pick the first container the browser can actually encode.
       const mime = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm", "video/mp4"]
         .find((m) => MediaRecorder.isTypeSupported(m)) ?? "";
-      const rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 1_200_000 } : undefined);
+      const rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: REC_BITRATE } : undefined);
       const chunks: Blob[] = [];
-      rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+      let bytes = 0;
+      rec.ondataavailable = (e) => {
+        if (!e.data.size) return;
+        chunks.push(e.data);
+        bytes += e.data.size;
+        // Stop ourselves at the cap so the footage so far is kept and attached.
+        if (bytes >= REC_MAX_BYTES && rec.state !== "inactive") {
+          toast.info(`Recording stopped at ${MAX_MB} MB — the clip so far has been attached.`);
+          rec.stop();
+        }
+      };
       rec.onstop = () => {
         stream.getTracks().forEach((t) => t.stop());
         setRecorder(null);
+        setMinimised(false); // the pill goes with it, however the share ended
         const type = mime.split(";")[0] || "video/webm";
         const blob = new Blob(chunks, { type });
         const ext = type.includes("mp4") ? "mp4" : "webm";
-        if (blob.size > MAX_MB * 1024 * 1024) {
-          toast.error(`Recording is ${(blob.size / 1024 / 1024).toFixed(1)} MB — over the ${MAX_MB} MB limit. Try a shorter clip.`);
+        if (!blob.size) {
+          toast.error("Nothing was captured — try again and pick a screen, window or tab to share.");
           return;
         }
         setFile(new File([blob], `screen-recording-${Date.now()}.${ext}`, { type }));
@@ -114,6 +143,9 @@ export function FeedbackWidget() {
       rec.start(1000);
       setRecSecs(0);
       setRecorder(rec);
+      // Hide the dialog while recording so the app underneath is visible and
+      // clickable — otherwise the bug can't be reproduced on camera.
+      setMinimised(true);
     } catch (e: any) {
       if (e?.name !== "NotAllowedError" && e?.name !== "AbortError") toast.error("Could not start the recording");
     }
@@ -121,6 +153,7 @@ export function FeedbackWidget() {
 
   function stopRecording() {
     if (recorder && recorder.state !== "inactive") recorder.stop();
+    setMinimised(false); // bring the form back so the clip can be described
   }
 
   // Manual pick — accept documents as well as images, with a size guard.
@@ -188,7 +221,23 @@ export function FeedbackWidget() {
         <Lightbulb className="h-[18px] w-[18px]" />
       </button>
 
-      {open && (
+      {/* Recording in progress: the dialog is out of the way, so all that shows
+          is a small pill the user can stop from. Everything typed is kept. */}
+      {open && minimised && (
+        <div className="fixed bottom-5 right-5 z-[960] flex items-center gap-2 rounded-full border border-red-500/40 bg-card/95 py-2 pl-3 pr-2 shadow-2xl backdrop-blur">
+          <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />
+          <span className="font-display text-[13px] font-semibold text-red-400">
+            Recording {Math.floor(recSecs / 60)}:{String(recSecs % 60).padStart(2, "0")}
+          </span>
+          <span className="hidden text-[12px] text-muted-foreground sm:inline">— reproduce the issue now</span>
+          <button type="button" onClick={stopRecording}
+            className="ml-1 rounded-full bg-red-500/15 px-3 py-1 text-[13px] font-semibold text-red-400 hover:bg-red-500/25">
+            Stop
+          </button>
+        </div>
+      )}
+
+      {open && !minimised && (
         <div onClick={() => setOpen(false)} className="fixed inset-0 z-[950] flex items-start justify-center bg-black/50 p-4 pt-[8vh]">
           <div onClick={(e) => e.stopPropagation()} className="w-[min(560px,100%)] rounded-xl border border-border bg-card p-5 shadow-2xl">
             <div className="flex items-center justify-between">
@@ -251,7 +300,7 @@ export function FeedbackWidget() {
                         </button>
                       </>
                     )}
-                    {recorder && (
+                    {recorder && !minimised && (
                       <button type="button" onClick={stopRecording}
                         className="inline-flex items-center gap-1.5 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2.5 text-sm font-semibold text-red-400 hover:bg-red-500/20">
                         <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />
