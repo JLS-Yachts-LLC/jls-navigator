@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-08-18",
     "entries": [
       {
+        "type": "fix",
+        "title": "Screen recording lets you record the screen, and keeps the clip"
+      },
+      {
         "type": "feature",
         "title": "Vessel data syncs every 5 minutes instead of every 3 hours"
       }

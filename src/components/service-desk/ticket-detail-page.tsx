@@ -114,13 +114,20 @@ export function TicketDetailPage() {
 
   const authorName = (user?.email ?? "Staff").split("@")[0];
 
-  async function sendReply() {
+  /**
+   * Post the composer's text to the thread. With `complete` the ticket is also
+   * resolved in the same action — the reply doubles as the resolution (unless
+   * one was already written), and the requester gets the resolved email with
+   * that text in it, rather than a reply email followed by a resolved one.
+   */
+  async function sendReply(complete = false) {
     if (!reply.trim() || !ticket) return;
     setSending(true);
     try {
+      const replyBody = reply.trim();
       const { error } = await (supabase as any).from("it_ticket_messages").insert([{
         ticket_id: ticket.id,
-        body: reply.trim(),
+        body: replyBody,
         internal,
         author_id: user?.id ?? null,
         author_name: authorName,
@@ -130,12 +137,19 @@ export function TicketDetailPage() {
       // First public reply records the first-response timestamp.
       const patch: Record<string, any> = { updated_at: new Date().toISOString() };
       if (!internal && !ticket.first_response_at) patch.first_response_at = new Date().toISOString();
+      if (complete) {
+        patch.status = "resolved";
+        if (!ticket.resolved_at) patch.resolved_at = new Date().toISOString();
+        if (!ticket.resolution) patch.resolution = replyBody;
+      }
       await (supabase as any).from("it_tickets").update(patch).eq("id", ticket.id);
 
       // Public replies email the requester (from itsupport@jlsyachts.com).
-      const replyBody = reply.trim();
-      if (!internal) notify("reply", replyBody);
+      // Send & complete emails once — the resolved notice carrying the reply.
+      if (complete) notify("resolved");
+      else if (!internal) notify("reply", replyBody);
 
+      if (complete) toast.success(`${ticket.ticket_no} resolved`);
       setReply(""); setInternal(false);
       void load();
     } catch (e: any) { toast.error(e.message ?? "Failed to send"); }
@@ -262,8 +276,25 @@ export function TicketDetailPage() {
             <div ref={threadEnd} />
           </div>
 
-          {/* Composer */}
+          {/* Composer — Reply / Internal note as two tabs, so notes are a
+              distinct section rather than a mode hidden behind a toggle. */}
           <div className="border-t border-border bg-card/40 px-6 py-3">
+            <div className="mb-2 flex gap-1">
+              <button
+                onClick={() => setInternal(false)}
+                className={cn("flex items-center gap-1.5 rounded-t-md border border-b-0 px-3 py-1.5 text-xs font-medium transition",
+                  !internal ? "border-border bg-card text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}
+              >
+                <MessageSquare className="h-3 w-3" /> Reply
+              </button>
+              <button
+                onClick={() => setInternal(true)}
+                className={cn("flex items-center gap-1.5 rounded-t-md border border-b-0 px-3 py-1.5 text-xs font-medium transition",
+                  internal ? "border-amber-500/40 bg-amber-500/10 text-amber-500" : "border-transparent text-muted-foreground hover:text-foreground")}
+              >
+                <Lock className="h-3 w-3" /> Internal note
+              </button>
+            </div>
             <Textarea
               value={reply}
               onChange={e => setReply(e.target.value)}
@@ -272,18 +303,28 @@ export function TicketDetailPage() {
               className={cn("resize-none text-sm", internal && "border-amber-500/40 focus-visible:ring-amber-500/30")}
               onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") void sendReply(); }}
             />
-            <div className="mt-2 flex items-center justify-between">
-              <button
-                onClick={() => setInternal(v => !v)}
-                className={cn("flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs transition",
-                  internal ? "border-amber-500/40 bg-amber-500/10 text-amber-500" : "border-border text-muted-foreground hover:text-foreground")}
-              >
-                <Lock className="h-3 w-3" /> Internal note
-              </button>
-              <Button size="sm" onClick={sendReply} disabled={sending || !reply.trim()} className="gap-1.5">
-                {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                {internal ? "Add note" : "Send reply"}
-              </Button>
+            <div className="mt-2 flex items-center justify-end gap-2">
+              {internal ? (
+                <Button size="sm" onClick={() => sendReply()} disabled={sending || !reply.trim()}
+                  className="gap-1.5 bg-amber-500/90 text-amber-950 hover:bg-amber-500">
+                  {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Lock className="h-3.5 w-3.5" />}
+                  Add note
+                </Button>
+              ) : (
+                <>
+                  <Button size="sm" variant="outline" onClick={() => sendReply()} disabled={sending || !reply.trim()} className="gap-1.5">
+                    {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                    Send reply
+                  </Button>
+                  <Button size="sm" onClick={() => sendReply(true)}
+                    disabled={sending || !reply.trim() || ticket.status === "resolved" || ticket.status === "closed"}
+                    title="Send this reply and mark the ticket resolved in one go"
+                    className="gap-1.5">
+                    {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                    Send &amp; complete
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         </div>
