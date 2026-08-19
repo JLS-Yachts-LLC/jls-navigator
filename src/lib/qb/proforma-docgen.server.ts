@@ -289,9 +289,8 @@ export async function buildProformaPdf(q: DocData): Promise<Uint8Array> {
     }
   }
 
-  // Terms & Conditions page (static, last page of the background).
-  const [terms] = await pdf.copyPages(src, [3])
-  pdf.addPage(terms)
+  // No Terms & Conditions page — only Quotations carry the T&C (the pro-forma
+  // background still holds one at page index 3; it is deliberately not copied).
 
   return pdf.save()
 }
