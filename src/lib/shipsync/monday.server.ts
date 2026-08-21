@@ -308,3 +308,35 @@ export async function debugMondayFileAccess(): Promise<Record<string, unknown>> 
     noAuth: await probe({}),
   }
 }
+
+/**
+ * Read-only diagnostic: finds one item on the board by its exact name (the
+ * tracking number, since that's what barcode is mapped from) and shows both
+ * what Monday has for it AND what's actually stored in shipsync_packages for
+ * that same item — side by side, to catch a real sync bug rather than guess.
+ */
+export async function debugMondayItemLookup(itemName: string): Promise<Record<string, unknown>> {
+  const cfg = await getMondayConfig()
+  const { columns, items } = await fetchBoard(cfg)
+  const colById = new Map(columns.map((c) => [c.id, c] as const))
+
+  const item = items.find((it) => it.name === itemName)
+  if (!item) return { ok: false, error: `No item named "${itemName}" found on the board (${items.length} items total).` }
+
+  const mondayRow = byTitle(item, colById)
+
+  const { data: stored, error } = await db()
+    .from('shipsync_packages')
+    .select('*')
+    .filter('extra->>monday_item_id', 'eq', item.id)
+    .maybeSingle()
+
+  return {
+    ok: true,
+    mondayItemId: item.id,
+    monday: mondayRow,
+    storedRowFound: !!stored,
+    storedRowError: error?.message ?? null,
+    stored,
+  }
+}
