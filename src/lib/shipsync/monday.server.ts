@@ -349,17 +349,18 @@ export async function debugMondayItemLookup(itemName: string): Promise<Record<st
 
   const mondayRow = byTitle(item, colById)
 
+  // Every row matching this Monday item, whatever local_import value it has —
+  // .maybeSingle() only ever said "multiple rows" without showing them.
   const { data: stored, error } = await db()
     .from('shipsync_packages')
-    .select('*')
+    .select('id, local_import, barcode, boat_name, package_owner, courier, received_at, updated_at, extra')
     .filter('extra->>monday_item_id', 'eq', item.id)
-    .maybeSingle()
 
   return {
     ok: true,
     mondayItemId: item.id,
     monday: mondayRow,
-    storedRowFound: !!stored,
+    matchCount: stored?.length ?? 0,
     storedRowError: error?.message ?? null,
     stored,
   }
