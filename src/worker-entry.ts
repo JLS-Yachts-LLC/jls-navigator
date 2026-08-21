@@ -233,6 +233,16 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
       const { data: permitsByText } = await sb
         .from('permits').select('id, permit_type, holder_name, notes, status, expiry_date, yacht_id')
         .or(`holder_name.ilike.%${name}%,notes.ilike.%${name}%`)
+
+      // Any permit found by text mention may reference a yacht_id that no
+      // longer resolves to a row — check those ids directly, not just by name.
+      const referencedYachtIds = Array.from(new Set((permitsByText ?? []).map((p: any) => p.yacht_id).filter(Boolean)))
+      let referencedYachts: any[] = []
+      if (referencedYachtIds.length > 0) {
+        const { data } = await sb.from('yachts').select('*').in('id', referencedYachtIds)
+        referencedYachts = data ?? []
+      }
+
       return new Response(JSON.stringify({
         ok: true,
         yachtMatches: yachts ?? [],
@@ -240,6 +250,8 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
         permitsForMatchedYachts: permits,
         permitsError: permitsErr,
         permitsMentioningNameInText: permitsByText ?? [],
+        referencedYachtIds,
+        referencedYachtsFound: referencedYachts,
       }), { status: 200, headers: { 'Content-Type': 'application/json' } })
     } catch (e) {
       return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
