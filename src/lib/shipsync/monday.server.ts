@@ -162,7 +162,7 @@ function toDocuments(v: string | null): { name: string; url: string }[] | null {
   return docs.length ? docs : null
 }
 
-export interface MondayImportResult { ok: boolean; synced: number; errors: number; pruned: number; detail: string }
+export interface MondayImportResult { ok: boolean; synced: number; errors: number; pruned: number; deduped: number; detail: string }
 
 /**
  * Pull the Monday Local Shipments board into shipsync_packages. Upserts on
@@ -183,9 +183,23 @@ export async function importMondayShipments(_opts: { limit?: number } = {}): Pro
     .select('id, extra')
     .eq('local_import', 'Local')
   const idByMonday = new Map<string, string>()
+  const dupeRowIds: string[] = []
   for (const r of (existingRows ?? []) as any[]) {
     const mid = r.extra?.monday_item_id
-    if (mid) idByMonday.set(String(mid), r.id)
+    if (!mid) continue
+    const key = String(mid)
+    if (idByMonday.has(key)) dupeRowIds.push(r.id)
+    else idByMonday.set(key, r.id)
+  }
+
+  // Self-heal duplicate rows for the same Monday item — these happen when an
+  // earlier sync run overlapped another (e.g. a client-side timeout while the
+  // request kept running server-side) and both inserted instead of one
+  // updating. Only ever removes rows this sync itself created.
+  let deduped = 0
+  for (const id of dupeRowIds) {
+    const { error } = await db().from('shipsync_packages').delete().eq('id', id)
+    if (!error) deduped++
   }
 
   const now = new Date().toISOString()
@@ -249,8 +263,8 @@ export async function importMondayShipments(_opts: { limit?: number } = {}): Pro
     if (!error) pruned++
   }
 
-  const detail = `Imported ${synced} item(s) from Monday, ${errors} error(s), removed ${pruned} stale row(s) from a prior board.${samples.length ? ' ' + samples.join(' | ') : ''}`
-  return { ok: errors === 0, synced, errors, pruned, detail }
+  const detail = `Imported ${synced} item(s) from Monday, ${errors} error(s), removed ${pruned} stale row(s) from a prior board, merged ${deduped} duplicate row(s).${samples.length ? ' ' + samples.join(' | ') : ''}`
+  return { ok: errors === 0, synced, errors, pruned, deduped, detail }
 }
 
 /** Server function for the "Sync from Monday" button on the Local Packages tab. */
