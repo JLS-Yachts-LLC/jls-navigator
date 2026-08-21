@@ -508,3 +508,34 @@ export async function debugMondayItemLookup(itemName: string): Promise<Record<st
     stored,
   }
 }
+
+/**
+ * Read-only diagnostic: does a boat (by name, case-insensitive substring)
+ * have any items on the Monday board, and any rows currently stored in
+ * shipsync_packages? Compares both sides so a "this boat disappeared" report
+ * can be traced to either "never had Monday items" or "was removed somehow."
+ */
+export async function debugMondayBoatSearch(boatName: string): Promise<Record<string, unknown>> {
+  const needle = boatName.trim().toLowerCase()
+
+  const cfg = await getMondayConfig()
+  const { columns, items } = await fetchBoard(cfg)
+  const colById = new Map(columns.map((c) => [c.id, c] as const))
+  const mondayMatches = items
+    .map((it) => ({ itemName: it.name, itemId: it.id, ...byTitle(it, colById) }))
+    .filter((row) => Object.values(row).some((v) => typeof v === 'string' && v.toLowerCase().includes(needle)))
+
+  const { data: storedMatches, error } = await db()
+    .from('shipsync_packages')
+    .select('id, local_import, barcode, boat_name, updated_at, extra')
+    .ilike('boat_name', `%${boatName.trim()}%`)
+
+  return {
+    ok: true,
+    mondayMatchCount: mondayMatches.length,
+    mondayMatches: mondayMatches.slice(0, 10),
+    storedMatchCount: storedMatches?.length ?? 0,
+    storedMatches: storedMatches?.slice(0, 10) ?? [],
+    storedError: error?.message ?? null,
+  }
+}

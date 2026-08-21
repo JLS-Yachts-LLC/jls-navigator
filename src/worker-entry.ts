@@ -197,6 +197,19 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
     }
   }
 
+  // Read-only diagnostic: `?run=monday-debug-boat&name=<boat name>` checks
+  // whether a boat has items on Monday and/or rows in shipsync_packages.
+  // Writes nothing.
+  if (url.searchParams.get('run') === 'monday-debug-boat') {
+    try {
+      const { debugMondayBoatSearch } = await import('./lib/shipsync/monday.server')
+      const r = await debugMondayBoatSearch(url.searchParams.get('name') ?? '')
+      return new Response(JSON.stringify(r), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
+  }
+
 
   // Manual test: `?run=fleet-finance` sends the weekly Fleet Finance email now
   // (respects the toggle + recipients; add `&force=1` to bypass the toggle).
