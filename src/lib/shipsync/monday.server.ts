@@ -227,3 +227,39 @@ export async function importMondayShipments(_opts: { limit?: number } = {}): Pro
 /** Server function for the "Sync from Monday" button on the Local Packages tab. */
 export const syncMondayImport = createServerFn({ method: 'POST' })
   .handler(async (): Promise<MondayImportResult> => importMondayShipments({}))
+
+export interface ReplaceResult {
+  ok: boolean
+  deleted: number
+  deleteError?: string
+  import?: MondayImportResult
+  dryRun: boolean
+}
+
+/**
+ * Wipe every row in the Local Packages tab (local_import = 'Local' or unset —
+ * same scope as loadPackages()/the Local Packages UI) and repopulate purely
+ * from the Monday board. This is destructive and irreversible: it also removes
+ * packages that were checked in by hand and never touched Monday at all.
+ * dryRun reports the row count that WOULD be deleted and writes nothing.
+ */
+export async function replaceLocalPackagesFromMonday(opts: { dryRun?: boolean } = {}): Promise<ReplaceResult> {
+  const LOCAL_FILTER = 'local_import.is.null,and(local_import.neq.Import,local_import.neq.Export)'
+
+  const { count } = await db()
+    .from('shipsync_packages')
+    .select('id', { count: 'exact', head: true })
+    .or(LOCAL_FILTER)
+
+  if (opts.dryRun) {
+    return { ok: true, deleted: count ?? 0, dryRun: true }
+  }
+
+  const { error: deleteError } = await db().from('shipsync_packages').delete().or(LOCAL_FILTER)
+  if (deleteError) {
+    return { ok: false, deleted: 0, deleteError: deleteError.message, dryRun: false }
+  }
+
+  const importResult = await importMondayShipments({})
+  return { ok: importResult.ok, deleted: count ?? 0, import: importResult, dryRun: false }
+}

@@ -146,6 +146,29 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
     }
   }
 
+  // Manual ShipSync full replace: `?run=monday-replace-local` deletes EVERY row
+  // in the Local Packages tab (including hand-entered ones never touched by
+  // Monday) and repopulates purely from the configured Monday board.
+  // Irreversible — always check `&dryRun=1` first, which reports the row count
+  // that would be deleted and writes nothing.
+  //
+  // Gated behind SHIPSYNC_ADMIN_TOKEN (set via `wrangler secret put
+  // SHIPSYNC_ADMIN_TOKEN`) so this can't be triggered by anyone who just finds
+  // the URL — fails closed if the secret isn't configured.
+  if (url.searchParams.get('run') === 'monday-replace-local') {
+    const adminToken = (process.env as any).SHIPSYNC_ADMIN_TOKEN as string | undefined
+    if (!adminToken || url.searchParams.get('token') !== adminToken) {
+      return new Response(JSON.stringify({ ok: false, error: 'Unauthorized — missing or incorrect token.' }), { status: 403, headers: { 'Content-Type': 'application/json' } })
+    }
+    try {
+      const { replaceLocalPackagesFromMonday } = await import('./lib/shipsync/monday.server')
+      const r = await replaceLocalPackagesFromMonday({ dryRun: url.searchParams.get('dryRun') === '1' })
+      return new Response(JSON.stringify(r), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
+  }
+
   // Manual test: `?run=fleet-finance` sends the weekly Fleet Finance email now
   // (respects the toggle + recipients; add `&force=1` to bypass the toggle).
   if (url.searchParams.get('run') === 'fleet-finance') {
