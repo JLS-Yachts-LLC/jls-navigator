@@ -210,6 +210,41 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
     }
   }
 
+  // Read-only diagnostic: `?run=vessel-debug&name=<boat name>` checks the
+  // yachts table for a boat (case-insensitive substring) and every permit row
+  // linked to any match, across all permit types. Writes nothing. There's no
+  // audit log wired for permit/yacht deletes in this codebase, so this can
+  // only report current state — not history of what happened to a record.
+  if (url.searchParams.get('run') === 'vessel-debug') {
+    try {
+      const name = url.searchParams.get('name') ?? ''
+      const { supabaseAdmin } = await import('./integrations/supabase/client.server')
+      const sb = supabaseAdmin as any
+      const { data: yachts, error: yachtsErr } = await sb
+        .from('yachts').select('*').ilike('vessel_name', `%${name}%`)
+      const yachtIds = (yachts ?? []).map((y: any) => y.id)
+      let permits: any[] = []
+      let permitsErr: string | null = null
+      if (yachtIds.length > 0) {
+        const { data, error } = await sb.from('permits').select('*').in('yacht_id', yachtIds)
+        permits = data ?? []
+        permitsErr = error?.message ?? null
+      }
+      const { data: permitsByText } = await sb
+        .from('permits').select('id, permit_type, holder_name, notes, status, expiry_date, yacht_id')
+        .or(`holder_name.ilike.%${name}%,notes.ilike.%${name}%`)
+      return new Response(JSON.stringify({
+        ok: true,
+        yachtMatches: yachts ?? [],
+        yachtsError: yachtsErr?.message ?? null,
+        permitsForMatchedYachts: permits,
+        permitsError: permitsErr,
+        permitsMentioningNameInText: permitsByText ?? [],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
+  }
 
   // Manual test: `?run=fleet-finance` sends the weekly Fleet Finance email now
   // (respects the toggle + recipients; add `&force=1` to bypass the toggle).
