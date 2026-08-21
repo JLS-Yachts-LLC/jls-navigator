@@ -43,6 +43,44 @@ async function getMondayConfig(): Promise<MondayConfig> {
   return { apiToken: String(apiToken), boardId: String(boardId) }
 }
 
+// Concurrency lock — the hourly cron and a manual trigger (or two manual
+// triggers after a client-side timeout) can otherwise overlap mid-sync, each
+// deciding independently "this item isn't synced yet" and inserting a fresh
+// row for it instead of one updating it. A stale lock older than
+// LOCK_STALE_MINUTES is treated as a crashed run and overridden, not honored
+// forever.
+const LOCK_STALE_MINUTES = 15
+
+async function acquireMondaySyncLock(): Promise<boolean> {
+  const { data: row } = await db()
+    .from('integration_settings')
+    .select('config')
+    .eq('integration_name', 'monday')
+    .maybeSingle()
+  const cfg = row?.config ?? {}
+  const lockedAt = cfg.sync_started_at ? new Date(cfg.sync_started_at).getTime() : 0
+  const staleCutoff = Date.now() - LOCK_STALE_MINUTES * 60_000
+  if (lockedAt > staleCutoff) return false // another run is genuinely in progress
+
+  await db().from('integration_settings')
+    .update({ config: { ...cfg, sync_started_at: new Date().toISOString() } })
+    .eq('integration_name', 'monday')
+  return true
+}
+
+async function releaseMondaySyncLock(): Promise<void> {
+  const { data: row } = await db()
+    .from('integration_settings')
+    .select('config')
+    .eq('integration_name', 'monday')
+    .maybeSingle()
+  const cfg = row?.config ?? {}
+  delete cfg.sync_started_at
+  await db().from('integration_settings')
+    .update({ config: cfg })
+    .eq('integration_name', 'monday')
+}
+
 /** POST a GraphQL query to the Monday API. Throws on transport or GraphQL errors. */
 async function mondayGraphQL(token: string, query: string, variables: Record<string, unknown>): Promise<any> {
   const res = await fetch(MONDAY_API, {
@@ -162,7 +200,7 @@ function toDocuments(v: string | null): { name: string; url: string }[] | null {
   return docs.length ? docs : null
 }
 
-export interface MondayImportResult { ok: boolean; synced: number; errors: number; pruned: number; deduped: number; detail: string }
+export interface MondayImportResult { ok: boolean; synced: number; errors: number; pruned: number; deduped: number; skipped?: boolean; detail: string }
 
 /**
  * Pull the Monday Local Shipments board into shipsync_packages. Upserts on
@@ -171,8 +209,24 @@ export interface MondayImportResult { ok: boolean; synced: number; errors: numbe
  * monday_item_id) but whose item is no longer on the CURRENTLY configured
  * board — e.g. leftovers from a wrong board id that got corrected. Never
  * touches rows without a monday_item_id (hand-entered packages).
+ *
+ * Guarded by acquireMondaySyncLock() so the hourly cron and a manual trigger
+ * can't ever run this concurrently — that overlap is what caused runaway
+ * duplicate rows before this lock existed.
  */
-export async function importMondayShipments(_opts: { limit?: number } = {}): Promise<MondayImportResult> {
+export async function importMondayShipments(opts: { limit?: number } = {}): Promise<MondayImportResult> {
+  const gotLock = await acquireMondaySyncLock()
+  if (!gotLock) {
+    return { ok: true, synced: 0, errors: 0, pruned: 0, deduped: 0, skipped: true, detail: 'Skipped — another Monday sync is already in progress.' }
+  }
+  try {
+    return await importMondayShipmentsInner(opts)
+  } finally {
+    await releaseMondaySyncLock()
+  }
+}
+
+async function importMondayShipmentsInner(_opts: { limit?: number } = {}): Promise<MondayImportResult> {
   const cfg = await getMondayConfig()
   const { columns, items } = await fetchBoard(cfg)
   const colById = new Map(columns.map((c) => [c.id, c] as const))
@@ -280,6 +334,60 @@ export async function importMondayShipments(_opts: { limit?: number } = {}): Pro
 /** Server function for the "Sync from Monday" button on the Local Packages tab. */
 export const syncMondayImport = createServerFn({ method: 'POST' })
   .handler(async (): Promise<MondayImportResult> => importMondayShipments({}))
+
+export interface DedupAllResult { ok: boolean; skipped?: boolean; groupsWithDupes: number; removed: number; totalScanned: number }
+
+/**
+ * One-time repair for duplicate rows that accumulated BEFORE the sync lock
+ * existed — scans the WHOLE table (every local_import value, fully paginated
+ * past the 1000-row default) for any row carrying a monday_item_id, groups by
+ * that id, and for each group with more than one row keeps only the most
+ * recently updated and deletes the rest. Shares the same lock as the sync so
+ * it can't run concurrently with (and delete a row mid-write by) a live sync.
+ */
+export async function dedupeAllMondayRows(): Promise<DedupAllResult> {
+  const gotLock = await acquireMondaySyncLock()
+  if (!gotLock) return { ok: true, skipped: true, groupsWithDupes: 0, removed: 0, totalScanned: 0 }
+
+  try {
+    const rows: { id: string; extra: any; updated_at: string }[] = []
+    for (let offset = 0; ; offset += 1000) {
+      const { data: page } = await db()
+        .from('shipsync_packages')
+        .select('id, extra, updated_at')
+        .not('extra->>monday_item_id', 'is', null)
+        .range(offset, offset + 999)
+      if (!page || page.length === 0) break
+      rows.push(...(page as any[]))
+      if (page.length < 1000) break
+    }
+
+    const groups = new Map<string, { id: string; updated_at: string }[]>()
+    for (const r of rows) {
+      const mid = r.extra?.monday_item_id
+      if (!mid) continue
+      const key = String(mid)
+      const list = groups.get(key) ?? []
+      list.push({ id: r.id, updated_at: r.updated_at })
+      groups.set(key, list)
+    }
+
+    let removed = 0, groupsWithDupes = 0
+    for (const [, group] of groups) {
+      if (group.length <= 1) continue
+      groupsWithDupes++
+      group.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+      for (const stale of group.slice(1)) {
+        const { error } = await db().from('shipsync_packages').delete().eq('id', stale.id)
+        if (!error) removed++
+      }
+    }
+
+    return { ok: true, groupsWithDupes, removed, totalScanned: rows.length }
+  } finally {
+    await releaseMondaySyncLock()
+  }
+}
 
 /**
  * Read-only diagnostic: the board's real column titles plus several sample

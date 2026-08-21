@@ -146,6 +146,20 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
     }
   }
 
+  // One-time repair: `?run=monday-dedup-all` collapses every duplicate row
+  // (any local_import value) sharing a monday_item_id down to the single most
+  // recently updated one. Needed to clean up duplicates that accumulated
+  // before the sync lock existed.
+  if (url.searchParams.get('run') === 'monday-dedup-all') {
+    try {
+      const { dedupeAllMondayRows } = await import('./lib/shipsync/monday.server')
+      const r = await dedupeAllMondayRows()
+      return new Response(JSON.stringify(r), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
+  }
+
   // Read-only diagnostic: `?run=monday-debug` returns the board's real column
   // titles + several sample items' raw values. Writes nothing.
   if (url.searchParams.get('run') === 'monday-debug') {
