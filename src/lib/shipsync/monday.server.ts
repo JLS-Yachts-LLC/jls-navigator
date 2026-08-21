@@ -242,3 +242,16 @@ export async function importMondayShipments(_opts: { limit?: number } = {}): Pro
 /** Server function for the "Sync from Monday" button on the Local Packages tab. */
 export const syncMondayImport = createServerFn({ method: 'POST' })
   .handler(async (): Promise<MondayImportResult> => importMondayShipments({}))
+
+/**
+ * Read-only diagnostic: the board's real column titles plus one sample item's
+ * raw values, so a mapping mismatch (pick() not recognizing this board's
+ * actual column names) can be seen and fixed. Never writes anything.
+ */
+export async function debugMondayBoard(): Promise<{ columns: string[]; sample: Record<string, string> | null }> {
+  const cfg = await getMondayConfig()
+  const { columns, items } = await fetchBoard(cfg)
+  const colById = new Map(columns.map((c) => [c.id, c] as const))
+  const sample = items[0] ? byTitle(items[0], colById) : null
+  return { columns: columns.map((c) => c.title), sample }
+}
