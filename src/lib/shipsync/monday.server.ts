@@ -151,6 +151,17 @@ function toNumber(v: string | null): number | null {
   return isNaN(n) ? null : n
 }
 
+/** A Monday "Files" column's text is one or more URLs (comma-separated when
+ *  more than one file). Filters to actual links — a bare filename with no URL
+ *  can't be turned into a working document link, so it's dropped rather than
+ *  stored broken. */
+function toDocuments(v: string | null): { name: string; url: string }[] | null {
+  if (!v) return null
+  const docs = v.split(',').map((s) => s.trim()).filter((s) => /^https?:\/\//i.test(s))
+    .map((url) => ({ name: decodeURIComponent(url.split('/').pop() || 'Document'), url }))
+  return docs.length ? docs : null
+}
+
 export interface MondayImportResult { ok: boolean; synced: number; errors: number; pruned: number; detail: string }
 
 /**
@@ -185,7 +196,9 @@ export async function importMondayShipments(_opts: { limit?: number } = {}): Pro
   for (const item of items) {
     const row = byTitle(item, colById)
     const record: Record<string, unknown> = {
-      barcode: pick(row, 'waybill', 'awb', 'tracking', 'barcode'),
+      // This board has no dedicated tracking/AWB column — the tracking number
+      // lives in the item's own name/title instead, so fall back to it.
+      barcode: pick(row, 'waybill', 'awb', 'tracking', 'barcode') ?? item.name ?? null,
       boat_name: (pick(row, 'client', 'vessel', 'boat', 'yacht') ?? item.name)?.toUpperCase() ?? null,
       package_owner: pick(row, 'consignee', 'owner', 'receiver'),
       courier: pick(row, 'courier', 'carrier', 'freight'),
@@ -197,6 +210,7 @@ export async function importMondayShipments(_opts: { limit?: number } = {}): Pro
       weight_kg: toNumber(pick(row, 'weight', 'kg', 'gross')),
       received_at: toDate(pick(row, 'date received', 'received', 'arrival', 'eta')),
       planned_delivery_date: toDate(pick(row, 'delivery date', 'planned', 'delivered')),
+      documents: toDocuments(pick(row, 'files', 'file', 'attachment')),
       local_import: 'Local',
       status: 'in_office' as const,
       extra: {

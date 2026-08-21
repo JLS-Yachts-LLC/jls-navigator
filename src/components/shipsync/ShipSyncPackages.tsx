@@ -27,7 +27,7 @@ const COVERED = [
   "air waybill", "waybill", "awb", "tracking", "client", "vessel", "boat", "yacht",
   "date received", "received", "consignee", "owner", "receiver", "number of packages",
   "no. of packages", "packages", "courier", "shipment type", "delivery note",
-  "driver", "date delivered", "delivered", "document", "zone", "status",
+  "driver", "date delivered", "delivered", "document", "file", "zone", "status",
 ];
 
 type Form = Partial<ShipSyncPackage>;
