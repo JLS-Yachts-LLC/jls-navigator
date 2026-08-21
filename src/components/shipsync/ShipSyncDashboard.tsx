@@ -27,7 +27,7 @@ export function ShipSyncDashboard({ data }: { data: ShipSyncData }) {
 
   const cards = [
     { label: "Active packages", value: s.active },
-    { label: "In storage", value: s.inStorage },
+    { label: "Warehouse", value: s.inStorage },
     { label: "Assigned / out for delivery", value: s.out },
     { label: "Delivered this month", value: s.deliveredMonth },
   ];

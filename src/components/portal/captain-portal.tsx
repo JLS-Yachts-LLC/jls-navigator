@@ -1402,7 +1402,7 @@ type LogisticsData = {
 type LogPackage = { id: string; barcode: string | null; courier: string | null; count: number; description: string | null; status: string; zone: string | null; receivedAt: string | null; plannedDate: string | null; deliveredAt: string | null };
 
 const PKG_LABEL: Record<string, string> = {
-  in_office: "In office", in_storage: "In storage", assigned: "Assigned",
+  in_office: "In office", in_storage: "Warehouse", assigned: "Assigned",
   out_for_delivery: "Out for delivery", delivered: "Delivered",
   to_collect: "To collect", collected: "Collected", refused: "Refused",
 };

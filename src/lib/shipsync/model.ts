@@ -14,7 +14,7 @@ export type PackageStatus =
 
 export const STATUS_META: Record<PackageStatus, { label: string; tone: string }> = {
   in_office:        { label: 'In office',        tone: 'sky' },
-  in_storage:       { label: 'In storage',       tone: 'violet' },
+  in_storage:       { label: 'Warehouse',        tone: 'violet' },
   assigned:         { label: 'Assigned',         tone: 'amber' },
   out_for_delivery: { label: 'Out for delivery', tone: 'orange' },
   delivered:        { label: 'Delivered',        tone: 'emerald' },
