@@ -271,6 +271,16 @@ async function importMondayShipmentsInner(_opts: { limit?: number } = {}): Promi
   let synced = 0, errors = 0
   const samples: string[] = []
 
+  // Build every item's record first, split into inserts vs. updates. This
+  // used to be one sequential await per item (roughly 1-2 network round
+  // trips × ~1000 items) — slow enough that a single run could run out of
+  // Workers' execution budget partway through the board, which is why
+  // progress looked like it trickled in across several runs instead of
+  // completing in one pass. Inserts now go in one bulk call; updates run in
+  // small concurrent batches instead of one at a time.
+  const toInsert: Record<string, unknown>[] = []
+  const toUpdate: { id: string; itemName: string; record: Record<string, unknown> }[] = []
+
   for (const item of items) {
     const row = byTitle(item, colById)
     const record: Record<string, unknown> = {
@@ -300,19 +310,44 @@ async function importMondayShipmentsInner(_opts: { limit?: number } = {}): Promi
       },
     }
 
-    try {
-      const existingId = idByMonday.get(item.id)
-      if (existingId) {
-        const { error } = await db().from('shipsync_packages').update(record).eq('id', existingId)
-        if (error) throw new Error(error.message)
-      } else {
-        const { error } = await db().from('shipsync_packages').insert([record])
-        if (error) throw new Error(error.message)
+    const existingId = idByMonday.get(item.id)
+    if (existingId) toUpdate.push({ id: existingId, itemName: item.name, record })
+    else toInsert.push(record)
+  }
+
+  if (toInsert.length > 0) {
+    const { error } = await db().from('shipsync_packages').insert(toInsert)
+    if (!error) {
+      synced += toInsert.length
+    } else {
+      // One bad row fails the whole bulk insert — fall back to inserting
+      // each individually (still concurrent) so the rest aren't lost.
+      const CONCURRENCY = 25
+      for (let i = 0; i < toInsert.length; i += CONCURRENCY) {
+        const batch = toInsert.slice(i, i + CONCURRENCY)
+        const results = await Promise.all(batch.map((rec) => db().from('shipsync_packages').insert([rec])))
+        for (const r of results as any[]) {
+          if (r.error) { errors++; if (samples.length < 3) samples.push(`insert: ${r.error.message}`) }
+          else synced++
+        }
       }
-      synced++
-    } catch (e: any) {
-      errors++
-      if (samples.length < 3) samples.push(`${item.name}: ${e?.message ?? 'error'}`)
+    }
+  }
+
+  const UPDATE_CONCURRENCY = 25
+  for (let i = 0; i < toUpdate.length; i += UPDATE_CONCURRENCY) {
+    const batch = toUpdate.slice(i, i + UPDATE_CONCURRENCY)
+    const results = await Promise.all(
+      batch.map(({ id, record }) => db().from('shipsync_packages').update(record).eq('id', id)),
+    )
+    for (let j = 0; j < results.length; j++) {
+      const { error } = results[j] as any
+      if (error) {
+        errors++
+        if (samples.length < 3) samples.push(`${batch[j].itemName}: ${error.message}`)
+      } else {
+        synced++
+      }
     }
   }
 
