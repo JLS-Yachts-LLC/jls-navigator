@@ -15,11 +15,23 @@ const db = () => supabase as any
 // Local Packages excludes Import and Export rows — those have their own tabs, so
 // the three views stay distinct.
 export async function loadPackages(): Promise<ShipSyncPackage[]> {
-  const { data, error } = await db().from('shipsync_packages').select('*')
-    .or('local_import.is.null,and(local_import.neq.Import,local_import.neq.Export)')
-    .order('received_at', { ascending: false })
-  if (error) throw error
-  return (data ?? []) as ShipSyncPackage[]
+  // Paginated explicitly — PostgREST caps a single query at 1000 rows by
+  // default, and this table is at/beyond that size, so the page was silently
+  // never showing more than the first 1000 Local packages no matter how many
+  // actually existed.
+  const all: ShipSyncPackage[] = []
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error } = await db().from('shipsync_packages').select('*')
+      .or('local_import.is.null,and(local_import.neq.Import,local_import.neq.Export)')
+      .order('received_at', { ascending: false })
+      .order('id', { ascending: true })
+      .range(offset, offset + 999)
+    if (error) throw error
+    if (!data || data.length === 0) break
+    all.push(...(data as ShipSyncPackage[]))
+    if (data.length < 1000) break
+  }
+  return all
 }
 /** Packages of a given trade type (local_import), newest first. Used by the
  *  Import and Export tabs. */

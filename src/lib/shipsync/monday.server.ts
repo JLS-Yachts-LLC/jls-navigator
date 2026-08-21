@@ -178,10 +178,20 @@ export async function importMondayShipments(_opts: { limit?: number } = {}): Pro
   const colById = new Map(columns.map((c) => [c.id, c] as const))
 
   // Existing Local rows, keyed by Monday item id → our row id (for upsert).
-  const { data: existingRows } = await db()
-    .from('shipsync_packages')
-    .select('id, extra')
-    .eq('local_import', 'Local')
+  // Paginated explicitly — PostgREST defaults to a 1000-row cap per query, and
+  // this table is right around that size, so trusting the default silently
+  // hid some rows (and their duplicates) from every check below.
+  const existingRows: { id: string; extra: any }[] = []
+  for (let offset = 0; ; offset += 1000) {
+    const { data: page } = await db()
+      .from('shipsync_packages')
+      .select('id, extra')
+      .eq('local_import', 'Local')
+      .range(offset, offset + 999)
+    if (!page || page.length === 0) break
+    existingRows.push(...(page as any[]))
+    if (page.length < 1000) break
+  }
   const idByMonday = new Map<string, string>()
   const dupeRowIds: string[] = []
   for (const r of (existingRows ?? []) as any[]) {
