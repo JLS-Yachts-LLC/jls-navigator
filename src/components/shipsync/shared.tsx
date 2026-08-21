@@ -1,4 +1,4 @@
-import { STATUS_META, type PackageStatus } from "@/lib/shipsync/model";
+import { STATUS_META, type PackageStatus, type ShipSyncPackage } from "@/lib/shipsync/model";
 
 const TONE: Record<string, string> = {
   sky: "bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/20",
@@ -24,3 +24,24 @@ export const fmtDate = (d: string | null | undefined) =>
   d ? new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—";
 export const fmtDateTime = (d: string | null | undefined) =>
   d ? new Date(d).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—";
+
+/** Most recent extra.imported_at across a set of packages (from a Monday sync), or null. */
+export function lastSyncedAt(rows: ShipSyncPackage[]): string | null {
+  let latest: string | null = null;
+  for (const p of rows) {
+    const at = (p.extra as any)?.imported_at as string | undefined;
+    if (at && (!latest || at > latest)) latest = at;
+  }
+  return latest;
+}
+
+/** Format a timestamp as "just now" / "12m ago" / "3h ago" / a short date. */
+export function rel(ts: string | null): string {
+  if (!ts) return "never";
+  const mins = Math.round((Date.now() - new Date(ts).getTime()) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const h = Math.round(mins / 60);
+  if (h < 48) return `${h}h ago`;
+  return new Date(ts).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+}

@@ -3,18 +3,16 @@
  *
  * Both tabs show shipsync_packages of one trade type (local_import = 'Import'
  * or 'Export'), synced in from the SharePoint "Packages" list. The table renders
- * the standard shipment/customs columns so real rows show their data, and then
- * appends any EXTRA columns a Monday.com board carries (from extra.monday) so the
- * Import tab can also mirror a Monday board (read-only) when one is configured.
+ * the standard shipment/customs columns so real rows show their data, plus any
+ * EXTRA columns a past Monday.com sync left behind in extra.monday — historical
+ * only; Monday now syncs into the Local Packages tab, not here (see
+ * lib/shipsync/monday.server.ts).
  */
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { toast } from "sonner";
-import { Loader2, RefreshCw, Search, ArrowDownToLine, ArrowUpFromLine } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Loader2, Search, ArrowDownToLine, ArrowUpFromLine } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { StatusBadge, fmtDate } from "@/components/shipsync/shared";
 import { loadPackagesByType } from "@/lib/shipsync/data";
-import { syncMondayImport } from "@/lib/shipsync/monday.server";
 import type { ShipSyncPackage } from "@/lib/shipsync/model";
 
 type TradeType = "Import" | "Export";
@@ -55,32 +53,12 @@ function mondayRow(p: ShipSyncPackage): Record<string, string> {
 function mondayColumnOrder(p: ShipSyncPackage): string[] {
   return (((p.extra as any)?.monday_columns ?? []) as string[]).filter(Boolean);
 }
-function lastSyncedAt(rows: ShipSyncPackage[]): string | null {
-  let latest: string | null = null;
-  for (const p of rows) {
-    const at = (p.extra as any)?.imported_at as string | undefined;
-    if (at && (!latest || at > latest)) latest = at;
-  }
-  return latest;
-}
-function rel(ts: string | null): string {
-  if (!ts) return "never";
-  const mins = Math.round((Date.now() - new Date(ts).getTime()) / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const h = Math.round(mins / 60);
-  if (h < 48) return `${h}h ago`;
-  return new Date(ts).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
-}
 
 export function ShipSyncShipments({ kind }: { kind: TradeType }) {
   const [rows, setRows] = useState<ShipSyncPackage[]>([]);
   const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
   const [search, setSearch] = useState("");
 
-  // Only Import mirrors a Monday.com board (single board configured in Settings).
-  const showMonday = kind === "Import";
   const Icon = kind === "Import" ? ArrowDownToLine : ArrowUpFromLine;
 
   async function reload() {
@@ -88,20 +66,6 @@ export function ShipSyncShipments({ kind }: { kind: TradeType }) {
     setRows(data);
   }
   useEffect(() => { setLoading(true); void reload().finally(() => setLoading(false)); }, [kind]);
-
-  async function sync() {
-    setSyncing(true);
-    try {
-      const r = await (syncMondayImport as any)();
-      if (!r.ok && r.synced === 0) throw new Error(r.detail);
-      toast.success(r.detail);
-      await reload();
-    } catch (e: any) {
-      toast.error(e?.message ?? "Monday sync failed");
-    } finally {
-      setSyncing(false);
-    }
-  }
 
   const columns = useMemo(() => baseColumns(kind), [kind]);
 
@@ -127,8 +91,6 @@ export function ShipSyncShipments({ kind }: { kind: TradeType }) {
     );
   }, [rows, search]);
 
-  const synced = lastSyncedAt(rows);
-
   if (loading) {
     return <div className="flex h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
   }
@@ -143,12 +105,6 @@ export function ShipSyncShipments({ kind }: { kind: TradeType }) {
           <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={`Search ${kind.toLowerCase()} shipments…`} className="h-9 w-72 pl-8 text-sm" />
         </div>
         <span className="text-[12px] text-muted-foreground">{filtered.length} of {rows.length}</span>
-        {showMonday && synced && <span className="text-[11px] text-muted-foreground/70">Monday synced {rel(synced)}</span>}
-        {showMonday && (
-          <Button size="sm" onClick={() => void sync()} disabled={syncing} className="ml-auto h-9 gap-1.5">
-            {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Sync from Monday
-          </Button>
-        )}
       </div>
 
       {rows.length === 0 ? (

@@ -1,18 +1,19 @@
 /**
  * ShipSync ↔ Monday.com import.
  *
- * One-way, read-only mirror of a Monday "Import" board into shipsync_packages
- * (local_import = 'Import'). Monday is the source of truth; we never write back.
+ * One-way, read-only mirror of the Monday "Local Shipments" board into
+ * shipsync_packages (local_import = 'Local'). Monday is the source of truth;
+ * we never write back.
  *
  * The board's columns are discovered at sync time and the COMPLETE row is stored
- * verbatim in extra.monday ({ columnTitle: text }) so the Import tab can render
- * exactly the columns the board has — no hardcoded column list. A best-effort map
- * also lands the well-known fields (AWB, client, courier, supplier, …) onto the
+ * verbatim in extra.monday ({ columnTitle: text }) so callers can render exactly
+ * the columns the board has — no hardcoded column list. A best-effort map also
+ * lands the well-known fields (AWB, client, courier, supplier, …) onto the
  * first-class shipsync_packages columns so the rest of the module keeps working.
  *
  * Credentials live in integration_settings (integration_name = 'monday'):
  *   config.api_token  — a Monday API v2 personal token (server-only secret)
- *   config.board_id   — the numeric Import board id
+ *   config.board_id   — the numeric Local Shipments board id
  * Both are entered by the user in Settings → Integrations → Monday.com.
  */
 import { createServerFn } from '@tanstack/react-start'
@@ -153,7 +154,7 @@ function toNumber(v: string | null): number | null {
 export interface MondayImportResult { ok: boolean; synced: number; errors: number; detail: string }
 
 /**
- * Pull the Monday Import board into shipsync_packages. Upserts on
+ * Pull the Monday Local Shipments board into shipsync_packages. Upserts on
  * extra.monday_item_id so re-running updates existing rows in place.
  */
 export async function importMondayShipments(_opts: { limit?: number } = {}): Promise<MondayImportResult> {
@@ -161,11 +162,11 @@ export async function importMondayShipments(_opts: { limit?: number } = {}): Pro
   const { columns, items } = await fetchBoard(cfg)
   const colById = new Map(columns.map((c) => [c.id, c] as const))
 
-  // Existing Import rows, keyed by Monday item id → our row id (for upsert).
+  // Existing Local rows, keyed by Monday item id → our row id (for upsert).
   const { data: existingRows } = await db()
     .from('shipsync_packages')
     .select('id, extra')
-    .eq('local_import', 'Import')
+    .eq('local_import', 'Local')
   const idByMonday = new Map<string, string>()
   for (const r of (existingRows ?? []) as any[]) {
     const mid = r.extra?.monday_item_id
@@ -192,7 +193,7 @@ export async function importMondayShipments(_opts: { limit?: number } = {}): Pro
       weight_kg: toNumber(pick(row, 'weight', 'kg', 'gross')),
       received_at: toDate(pick(row, 'date received', 'received', 'arrival', 'eta')),
       planned_delivery_date: toDate(pick(row, 'delivery date', 'planned', 'delivered')),
-      local_import: 'Import',
+      local_import: 'Local',
       status: 'in_office' as const,
       extra: {
         monday_item_id: item.id,
@@ -223,6 +224,6 @@ export async function importMondayShipments(_opts: { limit?: number } = {}): Pro
   return { ok: errors === 0, synced, errors, detail }
 }
 
-/** Server function for the "Sync from Monday" button on the Import tab. */
+/** Server function for the "Sync from Monday" button on the Local Packages tab. */
 export const syncMondayImport = createServerFn({ method: 'POST' })
   .handler(async (): Promise<MondayImportResult> => importMondayShipments({}))
