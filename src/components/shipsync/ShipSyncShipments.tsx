@@ -9,16 +9,23 @@
  * lib/shipsync/monday.server.ts).
  */
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { toast } from "sonner";
 import { Loader2, Search, ArrowDownToLine, ArrowUpFromLine } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { StatusBadge, fmtDate, mondayRow, extraMondayColumns } from "@/components/shipsync/shared";
-import { loadPackagesByType } from "@/lib/shipsync/data";
-import type { ShipSyncPackage } from "@/lib/shipsync/model";
+import { loadPackagesByType, patchPackage } from "@/lib/shipsync/data";
+import { STATUS_META, type PackageStatus, type ShipSyncPackage } from "@/lib/shipsync/model";
 
 type TradeType = "Import" | "Export";
 
+const STATUS_OPTIONS = Object.keys(STATUS_META) as PackageStatus[];
+
 /** Standard columns — the inbound/outbound shipment + customs fields. */
-function baseColumns(kind: TradeType): { label: string; render: (p: ShipSyncPackage) => ReactNode; cls?: string }[] {
+function baseColumns(
+  kind: TradeType,
+  onStatusChange: (p: ShipSyncPackage, status: PackageStatus) => void,
+): { label: string; render: (p: ShipSyncPackage) => ReactNode; cls?: string }[] {
   return [
     { label: "Air waybill/tracking", render: (p) => p.barcode ?? "—", cls: "font-mono text-[12px] text-foreground" },
     { label: "Client",               render: (p) => p.boat_name ?? "—", cls: "font-medium" },
@@ -31,7 +38,15 @@ function baseColumns(kind: TradeType): { label: string; render: (p: ShipSyncPack
     { label: "BOE No.",              render: (p) => p.boe_no ?? "—", cls: "font-mono text-[12px]" },
     { label: "Commodity",            render: (p) => p.commodity ?? "—" },
     { label: "Delivery Note Number", render: (p) => p.delivery_note_no ?? "—", cls: "tabular-nums" },
-    { label: "Status",               render: (p) => <StatusBadge status={p.status} /> },
+    {
+      label: "Status",
+      render: (p) => (
+        <Select value={p.status} onValueChange={(v) => onStatusChange(p, v as PackageStatus)}>
+          <SelectTrigger className="h-7 w-[132px] border-none bg-transparent p-0 hover:bg-accent/40"><StatusBadge status={p.status} /></SelectTrigger>
+          <SelectContent>{STATUS_OPTIONS.map((s) => <SelectItem key={s} value={s}>{STATUS_META[s].label}</SelectItem>)}</SelectContent>
+        </Select>
+      ),
+    },
   ];
 }
 
@@ -56,7 +71,12 @@ export function ShipSyncShipments({ kind }: { kind: TradeType }) {
   }
   useEffect(() => { setLoading(true); void reload().finally(() => setLoading(false)); }, [kind]);
 
-  const columns = useMemo(() => baseColumns(kind), [kind]);
+  async function quickStatus(p: ShipSyncPackage, status: PackageStatus) {
+    try { await patchPackage(p.id, { status }); await reload(); }
+    catch (e: any) { toast.error(e?.message ?? "Update failed"); }
+  }
+
+  const columns = useMemo(() => baseColumns(kind, quickStatus), [kind]);
 
   // Extra Monday-only columns (not already covered by the base columns), in
   // board order where known. Empty until a Monday sync has actually run.
