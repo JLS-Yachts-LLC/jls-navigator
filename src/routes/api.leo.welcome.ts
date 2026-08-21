@@ -144,13 +144,16 @@ export async function leoWelcomeHandler(request: Request): Promise<Response> {
   const recentlyShown = new Set((recentLog ?? []).map((r: any) => r.message_key))
 
   const severityRank: Record<string, number> = { critical: 3, warn: 2, info: 1 }
-  const unseenSignals = signals
-    .filter((s) => !recentlyShown.has(s.message_key))
+  // Critical signals stay unresolved regardless of whether the user has already
+  // been told once — the 7-day rotation only applies to warn/info, so a critical
+  // alert doesn't go quiet for a week while it's still outstanding.
+  const eligibleSignals = signals
+    .filter((s) => s.severity === 'critical' || !recentlyShown.has(s.message_key))
     .sort((a, b) => (severityRank[b.severity] ?? 0) - (severityRank[a.severity] ?? 0))
 
   let chosen: Signal
-  if (unseenSignals.length > 0) {
-    chosen = unseenSignals[0]
+  if (eligibleSignals.length > 0) {
+    chosen = eligibleSignals[0]
   } else {
     const unseenTips = STATIC_TIPS.filter((t) => !recentlyShown.has(t.key))
     const tipPool = unseenTips.length > 0 ? unseenTips : STATIC_TIPS
