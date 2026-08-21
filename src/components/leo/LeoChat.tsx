@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
+import { ShieldCheck, PackageSearch, UserSearch, FileCheck2, AlertTriangle, ArrowRight, X } from 'lucide-react'
 import { COLORS } from '@/lib/tokens'
 import { LeoIcon } from './LeoIcon'
 import LeoMascot from './LeoMascot'
@@ -11,6 +13,8 @@ interface Message {
   content:   string
   streaming?: boolean
   severity?: 'info' | 'warn' | 'critical'
+  actionUrl?: string | null
+  module?:    string | null
 }
 
 interface LeoChatProps {
@@ -19,12 +23,43 @@ interface LeoChatProps {
   /** Initial assistant message. Optional — when omitted (floating chat), Leo
    *  opens with a short greeting instead of a full briefing. */
   briefingText?: string
+  /** Shows a close (×) button in the header when the widget is collapsible. */
+  onClose?: () => void
 }
 
 const DEFAULT_GREETING =
   "Hi, I'm Leo. Ask me anything about your fleet, crew, visas, permits, or day-to-day operations — I'll answer from what's in Polaris."
 
-export function LeoChat({ token, userName, briefingText }: LeoChatProps) {
+const MODULE_LABEL: Record<string, string> = {
+  crew_immigration: 'Crew Immigration',
+  permits:          'Permits',
+  finance:          'Finance',
+  agency:           'Port Calls',
+  orbit:            'Tasks',
+}
+
+interface QuickAction {
+  label: string
+  sub:   string
+  icon:  typeof ShieldCheck
+  to:    string
+  search?: Record<string, unknown>
+}
+
+const QUICK_ACTIONS: QuickAction[] = [
+  { label: 'Check Crew Visas', sub: 'Verify visa status',  icon: ShieldCheck,   to: '/crew-immigration/visas' },
+  { label: 'Track Shipment',   sub: 'Search shipments',    icon: PackageSearch, to: '/shipsync' },
+  { label: 'Find Driver',      sub: 'Search drivers',      icon: UserSearch,    to: '/shipsync', search: { tab: 'drivers' } },
+  { label: 'Check Permits',    sub: 'Permits & docs',      icon: FileCheck2,    to: '/permits/command-centre' },
+]
+
+function greetingPhrase(): string {
+  const h = new Date().getHours()
+  return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'
+}
+
+export function LeoChat({ token, userName, briefingText, onClose }: LeoChatProps) {
+  const navigate = useNavigate()
   const [messages, setMessages] = useState<Message[]>([
     { role: 'assistant', content: briefingText ?? DEFAULT_GREETING },
   ])
@@ -56,7 +91,7 @@ export function LeoChat({ token, userName, briefingText }: LeoChatProps) {
         if (cancelled || !data?.message) return
         setMessages((prev) =>
           prev.length === 1 && prev[0].role === 'assistant' && !prev[0].streaming
-            ? [{ role: 'assistant', content: data.message, severity: data.severity }]
+            ? [{ role: 'assistant', content: data.message, severity: data.severity, actionUrl: data.action_url, module: data.module }]
             : prev
         )
       })
@@ -169,22 +204,28 @@ export function LeoChat({ token, userName, briefingText }: LeoChatProps) {
         <div style={{ flexShrink: 0, marginTop: -2, marginBottom: -2 }}>
           <LeoMascot state={leoState} size={48} />
         </div>
-        <div style={{ minWidth: 0 }}>
-          <div
-            style={{
-              fontFamily:    "'Space Grotesk', sans-serif",
-              fontSize:      14,
-              fontWeight:    700,
-              letterSpacing: '0.12em',
-              textTransform: 'uppercase' as const,
-              color:         COLORS.leoAmber,
-            }}
-          >
-            Ask Leo
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span
+              style={{
+                fontFamily:    "'Space Grotesk', sans-serif",
+                fontSize:      14,
+                fontWeight:    700,
+                letterSpacing: '0.12em',
+                textTransform: 'uppercase' as const,
+                color:         COLORS.leoAmber,
+              }}
+            >
+              Leo
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: COLORS.success, display: 'inline-block' }} />
+              <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: COLORS.steel }}>Online</span>
+            </span>
           </div>
           <div
             style={{
-              fontFamily: "'Space Grotesk', sans-serif",
+              fontFamily: "'Inter', sans-serif",
               fontSize:   12,
               color:      COLORS.steel,
               whiteSpace: 'nowrap',
@@ -192,22 +233,37 @@ export function LeoChat({ token, userName, briefingText }: LeoChatProps) {
               textOverflow: 'ellipsis',
             }}
           >
-            Fleet · permits · crew · operations
+            Fleet Operations AI
           </div>
         </div>
+        {onClose && (
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            style={{
+              flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer',
+              color: COLORS.steel, display: 'flex', alignItems: 'center', padding: 4,
+            }}
+          >
+            <X size={16} />
+          </button>
+        )}
       </div>
 
-      {/* Messages */}
+      {/* Messages — before the first reply, show the richer welcome view;
+          once a conversation has started, switch to the plain thread. */}
       <div
         style={{
           flex:       1,
           overflowY:  'auto',
-          padding:    '12px 0',
+          padding:    messages.length === 1 && !briefingText ? '18px 16px' : '12px 0',
         }}
       >
-        {messages.map((msg, i) => (
-          <ChatMessage key={i} message={msg} />
-        ))}
+        {messages.length === 1 && !briefingText ? (
+          <WelcomeView userName={userName} signal={messages[0]} navigate={navigate} />
+        ) : (
+          messages.map((msg, i) => <ChatMessage key={i} message={msg} />)
+        )}
         <div ref={bottomRef} />
       </div>
 
@@ -277,6 +333,113 @@ export function LeoChat({ token, userName, briefingText }: LeoChatProps) {
         >
           <SendIcon active={!!(input.trim() && !streaming)} />
         </button>
+      </div>
+    </div>
+  )
+}
+
+// ── Welcome view (shown before the first reply) ────────────────────────────
+
+function WelcomeView({
+  userName, signal, navigate,
+}: {
+  userName: string
+  signal: Message
+  navigate: (opts: { to: string; search?: Record<string, unknown> }) => void
+}) {
+  const initials = (userName || 'U').slice(0, 2).toUpperCase()
+  const isAlert = signal.severity === 'critical' || signal.severity === 'warn'
+  const accentColor = signal.severity === 'critical' ? COLORS.error : COLORS.warn
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div>
+        <p style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 17, fontWeight: 700, color: COLORS.frost, margin: 0 }}>
+          {greetingPhrase()}, {initials} 👋
+        </p>
+        <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: COLORS.steel, margin: '4px 0 0' }}>
+          Here's what I found in your operations.
+        </p>
+      </div>
+
+      {isAlert ? (
+        <div
+          style={{
+            border: `1px solid ${accentColor}40`, background: `${accentColor}14`,
+            borderRadius: 8, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <AlertTriangle size={15} color={accentColor} style={{ flexShrink: 0 }} />
+            <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 700, color: COLORS.frost, flex: 1 }}>
+              {signal.module ? MODULE_LABEL[signal.module] ?? 'Alert' : 'Alert'}
+            </span>
+            <span
+              style={{
+                fontFamily: "'Space Grotesk', sans-serif", fontSize: 10, fontWeight: 700,
+                letterSpacing: '0.06em', textTransform: 'uppercase' as const, color: accentColor,
+                border: `1px solid ${accentColor}60`, borderRadius: 4, padding: '2px 6px', flexShrink: 0,
+              }}
+            >
+              {signal.severity}
+            </span>
+          </div>
+          <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: COLORS.steel, margin: 0, lineHeight: 1.55 }}>
+            {signal.content}
+          </p>
+          {signal.actionUrl && (
+            <button
+              onClick={() => navigate({ to: signal.actionUrl! })}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none',
+                cursor: 'pointer', padding: 0, alignSelf: 'flex-start',
+                fontFamily: "'Space Grotesk', sans-serif", fontSize: 12, fontWeight: 600, color: COLORS.signal,
+              }}
+            >
+              View details <ArrowRight size={12} />
+            </button>
+          )}
+        </div>
+      ) : (
+        <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: COLORS.steel, margin: 0, lineHeight: 1.65 }}>
+          {signal.content}
+        </p>
+      )}
+
+      <div>
+        <div
+          style={{
+            fontFamily: "'Space Grotesk', sans-serif", fontSize: 10, fontWeight: 700,
+            letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: COLORS.steel, marginBottom: 8,
+          }}
+        >
+          Quick actions
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {QUICK_ACTIONS.map(({ label, sub, icon: ActionIcon, to, search }) => (
+            <button
+              key={label}
+              onClick={() => navigate({ to, search })}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left',
+                background: COLORS.void, border: `1px solid ${COLORS.deep}`, borderRadius: 8,
+                padding: '10px 10px', cursor: 'pointer',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = `${COLORS.signal}60` }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = COLORS.deep }}
+            >
+              <ActionIcon size={16} color={COLORS.signal} style={{ flexShrink: 0 }} />
+              <span style={{ minWidth: 0 }}>
+                <span style={{ display: 'block', fontFamily: "'Space Grotesk', sans-serif", fontSize: 12, fontWeight: 600, color: COLORS.frost }}>
+                  {label}
+                </span>
+                <span style={{ display: 'block', fontFamily: "'Inter', sans-serif", fontSize: 11, color: COLORS.steel }}>
+                  {sub}
+                </span>
+              </span>
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   )

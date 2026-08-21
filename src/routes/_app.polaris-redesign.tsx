@@ -158,6 +158,7 @@ function PolarisRedesignApp() {
               <LeoChat
                 token={leoToken}
                 userName={user?.email ?? ""}
+                onClose={() => setLeoOpen(false)}
               />
             </div>
           )}

@@ -49,8 +49,12 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   ]);
 }
 
-export function ShipSyncPage() {
-  const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("packages");
+const TAB_KEYS = TABS.map((t) => t.key) as readonly string[];
+
+export function ShipSyncPage({ initialTab }: { initialTab?: string } = {}) {
+  const [tab, setTab] = useState<(typeof TABS)[number]["key"]>(
+    initialTab && TAB_KEYS.includes(initialTab) ? (initialTab as (typeof TABS)[number]["key"]) : "packages",
+  );
   const [data, setData] = useState<ShipSyncData>({ packages: [], drivers: [], notes: [], destinations: [], schedule: [], vehicles: [], yachts: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
