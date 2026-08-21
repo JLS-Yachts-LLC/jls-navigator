@@ -45,3 +45,29 @@ export function rel(ts: string | null): string {
   if (h < 48) return `${h}h ago`;
   return new Date(ts).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 }
+
+/** The complete raw Monday.com row for a package (verbatim, board column title → text). */
+export function mondayRow(p: ShipSyncPackage): Record<string, string> {
+  return ((p.extra as any)?.monday ?? {}) as Record<string, string>;
+}
+/** The Monday board's own column order, as discovered at sync time. */
+export function mondayColumnOrder(p: ShipSyncPackage): string[] {
+  return (((p.extra as any)?.monday_columns ?? []) as string[]).filter(Boolean);
+}
+/** Column titles from `mondayRow`/`mondayColumnOrder` not already covered by a
+ *  tab's own base columns — so real Monday data never goes missing, and nothing
+ *  gets shown that isn't a genuine Monday column. */
+export function extraMondayColumns(rows: ShipSyncPackage[], covered: string[]): string[] {
+  const isCovered = (title: string) => {
+    const t = title.toLowerCase();
+    return covered.some((k) => t.includes(k));
+  };
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+  const add = (title: string) => {
+    if (!seen.has(title) && !isCovered(title)) { seen.add(title); ordered.push(title); }
+  };
+  for (const p of rows) mondayColumnOrder(p).forEach(add);
+  for (const p of rows) Object.keys(mondayRow(p)).forEach(add);
+  return ordered;
+}

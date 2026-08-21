@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Plus, Search, Loader2, RefreshCw, Trash2, Camera, FileText, ScanLine } from "lucide-react";
 import { BarcodeScannerDialog } from "@/components/shipsync/BarcodeScanner";
-import { StatusBadge, fmtDate, lastSyncedAt, rel } from "@/components/shipsync/shared";
+import { StatusBadge, fmtDate, lastSyncedAt, rel, mondayRow, extraMondayColumns } from "@/components/shipsync/shared";
 import { ALL_ZONES, STATUS_META, type PackageStatus, type ShipSyncPackage } from "@/lib/shipsync/model";
 import { createPackage, patchPackage, deletePackage, uploadShipSyncImage } from "@/lib/shipsync/data";
 import { syncMondayImport } from "@/lib/shipsync/monday.server";
@@ -20,6 +20,15 @@ import type { ShipSyncData } from "@/components/shipsync-page";
 
 const STATUS_OPTIONS = Object.keys(STATUS_META) as PackageStatus[];
 const PRIORITIES = [{ v: 1, l: "1 — High" }, { v: 2, l: "2 — Normal" }, { v: 3, l: "3 — Low" }];
+
+/** Titles the fixed columns below already show — Monday columns matching these
+ *  are not duplicated as extra columns. */
+const COVERED = [
+  "air waybill", "waybill", "awb", "tracking", "client", "vessel", "boat", "yacht",
+  "date received", "received", "consignee", "owner", "receiver", "number of packages",
+  "no. of packages", "packages", "courier", "shipment type", "delivery note",
+  "driver", "date delivered", "delivered", "document", "zone", "status",
+];
 
 type Form = Partial<ShipSyncPackage>;
 const EMPTY: Form = { status: "in_office", num_packages: 1, local_import: "Local" };
@@ -53,6 +62,10 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
 
   const synced = lastSyncedAt(data.packages);
 
+  // Extra Monday-only columns (not already shown by the fixed columns below),
+  // in board order where known. Empty until a Monday sync has actually run.
+  const mondayColumns = useMemo(() => extraMondayColumns(data.packages, COVERED), [data.packages]);
+
   // Every active vessel + saved destinations/locations (hotels etc.) + any boat
   // already on a package — so you can check a package in against any of them,
   // including pickups from vessels that have never had a package.
@@ -70,7 +83,8 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
     if (statusFilter !== "active" && statusFilter !== "all" && p.status !== statusFilter) return false;
     if (search.trim()) {
       const s = search.toLowerCase();
-      if (![p.barcode, p.boat_name, p.package_owner, p.courier, p.description].join(" ").toLowerCase().includes(s)) return false;
+      if (![p.barcode, p.boat_name, p.package_owner, p.courier, p.description, ...Object.values(mondayRow(p))]
+        .join(" ").toLowerCase().includes(s)) return false;
     }
     return true;
   }), [data.packages, statusFilter, search]);
@@ -154,13 +168,15 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
         <div className="absolute inset-0 overflow-auto rounded-xl border border-border bg-card">
         <table className="w-full min-w-[1400px] text-sm">
           <thead className="sticky top-0 z-10"><tr className="border-b border-border bg-card text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-            {["Air waybill/tracking info", "Client", "Date Received", "Consignee", "Number of Packages", "Courier", "Shipment Type", "Delivery Note Number", "Driver", "Date Delivered", "Documents", "Zone", "Status", ""].map((h, i) => (
+            {["Air waybill/tracking info", "Client", "Date Received", "Consignee", "Number of Packages", "Courier", "Shipment Type", "Delivery Note Number", "Driver", "Date Delivered", "Documents", "Zone", "Status"].map((h, i) => (
               <th key={`${h}-${i}`} className="px-3 py-2.5 whitespace-nowrap">{h}</th>
             ))}
+            {mondayColumns.map((c) => <th key={c} className="px-3 py-2.5 whitespace-nowrap">{c}</th>)}
+            <th></th>
           </tr></thead>
           <tbody>
             {filtered.length === 0 ? (
-              <tr><td colSpan={14} className="px-4 py-12 text-center text-sm text-muted-foreground">No packages match.</td></tr>
+              <tr><td colSpan={14 + mondayColumns.length} className="px-4 py-12 text-center text-sm text-muted-foreground">No packages match.</td></tr>
             ) : filtered.map((p) => {
               const note = data.notes.find((n) => n.id === p.delivery_note_id);
               const driver = data.drivers.find((d) => d.id === p.driver_id);
@@ -196,6 +212,9 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
                       <SelectContent>{STATUS_OPTIONS.map((s) => <SelectItem key={s} value={s}>{STATUS_META[s].label}</SelectItem>)}</SelectContent>
                     </Select>
                   </td>
+                  {mondayColumns.map((c) => (
+                    <td key={c} className="px-3 py-2.5 whitespace-nowrap text-muted-foreground">{mondayRow(p)[c] || "—"}</td>
+                  ))}
                   <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
                     <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground/60 hover:text-destructive opacity-0 group-hover:opacity-100" onClick={() => setDelTarget(p)}>
                       <Trash2 className="h-3.5 w-3.5" />

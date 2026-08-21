@@ -11,7 +11,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Loader2, Search, ArrowDownToLine, ArrowUpFromLine } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { StatusBadge, fmtDate } from "@/components/shipsync/shared";
+import { StatusBadge, fmtDate, mondayRow, extraMondayColumns } from "@/components/shipsync/shared";
 import { loadPackagesByType } from "@/lib/shipsync/data";
 import type { ShipSyncPackage } from "@/lib/shipsync/model";
 
@@ -42,17 +42,6 @@ const COVERED = [
   "no. of packages", "packages", "courier", "supplier", "shipper", "origin", "destination",
   "boe", "bill of entry", "commodity", "goods", "delivery note", "status",
 ];
-function isCovered(title: string): boolean {
-  const t = title.toLowerCase();
-  return COVERED.some((k) => t.includes(k));
-}
-
-function mondayRow(p: ShipSyncPackage): Record<string, string> {
-  return ((p.extra as any)?.monday ?? {}) as Record<string, string>;
-}
-function mondayColumnOrder(p: ShipSyncPackage): string[] {
-  return (((p.extra as any)?.monday_columns ?? []) as string[]).filter(Boolean);
-}
 
 export function ShipSyncShipments({ kind }: { kind: TradeType }) {
   const [rows, setRows] = useState<ShipSyncPackage[]>([]);
@@ -71,16 +60,7 @@ export function ShipSyncShipments({ kind }: { kind: TradeType }) {
 
   // Extra Monday-only columns (not already covered by the base columns), in
   // board order where known. Empty until a Monday sync has actually run.
-  const mondayColumns = useMemo(() => {
-    const seen = new Set<string>();
-    const ordered: string[] = [];
-    const add = (title: string) => {
-      if (!seen.has(title) && !isCovered(title)) { seen.add(title); ordered.push(title); }
-    };
-    for (const p of rows) mondayColumnOrder(p).forEach(add);
-    for (const p of rows) Object.keys(mondayRow(p)).forEach(add);
-    return ordered;
-  }, [rows]);
+  const mondayColumns = useMemo(() => extraMondayColumns(rows, COVERED), [rows]);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return rows;
