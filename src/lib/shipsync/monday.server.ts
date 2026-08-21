@@ -258,14 +258,53 @@ export const syncMondayImport = createServerFn({ method: 'POST' })
   .handler(async (): Promise<MondayImportResult> => importMondayShipments({}))
 
 /**
- * Read-only diagnostic: the board's real column titles plus one sample item's
- * raw values, so a mapping mismatch (pick() not recognizing this board's
- * actual column names) can be seen and fixed. Never writes anything.
+ * Read-only diagnostic: the board's real column titles plus several sample
+ * items' raw values (with the item name included), so a mapping mismatch or
+ * genuinely-sparse source data can be told apart. Never writes anything.
  */
-export async function debugMondayBoard(): Promise<{ columns: string[]; sample: Record<string, string> | null }> {
+export async function debugMondayBoard(): Promise<{ columns: string[]; totalItems: number; samples: Record<string, string>[] }> {
   const cfg = await getMondayConfig()
   const { columns, items } = await fetchBoard(cfg)
   const colById = new Map(columns.map((c) => [c.id, c] as const))
-  const sample = items[0] ? byTitle(items[0], colById) : null
-  return { columns: columns.map((c) => c.title), sample }
+  const samples = items.slice(0, 8).map((it) => ({ __itemName: it.name, ...byTitle(it, colById) }))
+  return { columns: columns.map((c) => c.title), totalItems: items.length, samples }
+}
+
+/**
+ * Read-only diagnostic: finds the first item with a Files value and attempts
+ * to download it from Monday two ways (with the API token as a Bearer header,
+ * and with no auth at all) to determine whether Monday's file links actually
+ * need authentication to fetch — needed before deciding how to re-host them.
+ * Never writes anything; downloads are discarded, not stored.
+ */
+export async function debugMondayFileAccess(): Promise<Record<string, unknown>> {
+  const cfg = await getMondayConfig()
+  const { columns, items } = await fetchBoard(cfg)
+  const colById = new Map(columns.map((c) => [c.id, c] as const))
+
+  let fileUrl: string | null = null
+  for (const item of items) {
+    const row = byTitle(item, colById)
+    const raw = pick(row, 'files', 'file', 'attachment')
+    const match = raw?.split(',').map((s) => s.trim()).find((s) => /^https?:\/\//i.test(s))
+    if (match) { fileUrl = match; break }
+  }
+  if (!fileUrl) return { ok: false, error: 'No file URL found in the first pass over items.' }
+
+  async function probe(headers: Record<string, string>) {
+    try {
+      const res = await fetch(fileUrl!, { headers })
+      return { status: res.status, contentType: res.headers.get('content-type'), contentLength: res.headers.get('content-length') }
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : String(e) }
+    }
+  }
+
+  return {
+    ok: true,
+    fileUrl,
+    withBearerToken: await probe({ Authorization: `Bearer ${cfg.apiToken}` }),
+    withRawToken: await probe({ Authorization: cfg.apiToken }),
+    noAuth: await probe({}),
+  }
 }

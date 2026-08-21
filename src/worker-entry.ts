@@ -147,11 +147,23 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
   }
 
   // Read-only diagnostic: `?run=monday-debug` returns the board's real column
-  // titles + one sample item's raw values. Writes nothing.
+  // titles + several sample items' raw values. Writes nothing.
   if (url.searchParams.get('run') === 'monday-debug') {
     try {
       const { debugMondayBoard } = await import('./lib/shipsync/monday.server')
       const r = await debugMondayBoard()
+      return new Response(JSON.stringify(r), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
+  }
+
+  // Read-only diagnostic: `?run=monday-debug-file` checks whether Monday's
+  // file links need the API token to actually download. Writes nothing.
+  if (url.searchParams.get('run') === 'monday-debug-file') {
+    try {
+      const { debugMondayFileAccess } = await import('./lib/shipsync/monday.server')
+      const r = await debugMondayFileAccess()
       return new Response(JSON.stringify(r), { status: 200, headers: { 'Content-Type': 'application/json' } })
     } catch (e) {
       return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
