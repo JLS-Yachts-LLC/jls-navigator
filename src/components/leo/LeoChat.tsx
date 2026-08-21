@@ -10,6 +10,7 @@ interface Message {
   role:      'user' | 'assistant'
   content:   string
   streaming?: boolean
+  severity?: 'info' | 'warn' | 'critical'
 }
 
 interface LeoChatProps {
@@ -55,7 +56,7 @@ export function LeoChat({ token, userName, briefingText }: LeoChatProps) {
         if (cancelled || !data?.message) return
         setMessages((prev) =>
           prev.length === 1 && prev[0].role === 'assistant' && !prev[0].streaming
-            ? [{ role: 'assistant', content: data.message }]
+            ? [{ role: 'assistant', content: data.message, severity: data.severity }]
             : prev
         )
       })
@@ -286,13 +287,22 @@ export function LeoChat({ token, userName, briefingText }: LeoChatProps) {
 function ChatMessage({ message }: { message: Message }) {
   const isUser = message.role === 'user'
 
+  // Critical/warn signals (e.g. compliance alerts) need to visibly stand out
+  // from routine tips — but as a restrained accent, not a full alarm banner.
+  const accentColor =
+    message.severity === 'critical' ? COLORS.error :
+    message.severity === 'warn'     ? COLORS.warn  :
+    undefined
+
   return (
     <div
       style={{
         display:     'flex',
         gap:         10,
-        padding:     '8px 16px',
+        padding:     accentColor ? '8px 16px 8px 13px' : '8px 16px',
         alignItems:  'flex-start',
+        borderLeft:  accentColor ? `3px solid ${accentColor}` : undefined,
+        background:  accentColor ? `${accentColor}14` : undefined,
       }}
     >
       {/* Avatar */}
@@ -328,7 +338,7 @@ function ChatMessage({ message }: { message: Message }) {
         style={{
           fontFamily: isUser ? "'Space Grotesk', sans-serif" : "'Inter', sans-serif",
           fontSize:   16,
-          color:      isUser ? COLORS.frost : COLORS.steel,
+          color:      isUser || accentColor ? COLORS.frost : COLORS.steel,
           lineHeight: isUser ? 1.55 : 1.78,
           margin:     0,
           whiteSpace: 'pre-wrap',
