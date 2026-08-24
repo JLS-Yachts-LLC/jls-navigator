@@ -178,14 +178,14 @@ function PolarisRedesignApp() {
               fontFamily:    "'Space Grotesk', sans-serif",
               fontSize:      12,
               fontWeight:    700,
-              color:         "#E8A020",
+              color:         "#9A70E8",
               letterSpacing: "0.12em",
               boxShadow:     "0 2px 12px rgba(0,0,0,0.4)",
             }}
           >
             <span style={{
               width: 7, height: 7, borderRadius: "50%",
-              background: "#E8A020", display: "inline-block",
+              background: "#9A70E8", display: "inline-block",
               animation: "pulse 2s ease-in-out infinite",
             }} />
             LEO
