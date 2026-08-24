@@ -130,6 +130,7 @@ import { Route as AppOrbitRequestsIndexRouteImport } from './routes/_app.orbit.r
 import { Route as AppGuidesDepartmentIndexRouteImport } from './routes/_app.guides.$department.index'
 import { Route as AppCrewImmigrationVisasIndexRouteImport } from './routes/_app.crew-immigration.visas.index'
 import { Route as AppCrewImmigrationCrewIndexRouteImport } from './routes/_app.crew-immigration.crew.index'
+import { Route as AppYachtsIdPrearrivalRouteImport } from './routes/_app.yachts.$id.prearrival'
 import { Route as AppOrbitRequestsIdRouteImport } from './routes/_app.orbit.requests.$id'
 import { Route as AppGuidesDepartmentGuideIdRouteImport } from './routes/_app.guides.$department.$guideId'
 import { Route as AppDashboardVesselVesselIdRouteImport } from './routes/_app.dashboard.vessel.$vesselId'
@@ -766,6 +767,11 @@ const AppCrewImmigrationCrewIndexRoute =
     path: '/',
     getParentRoute: () => AppCrewImmigrationCrewRoute,
   } as any)
+const AppYachtsIdPrearrivalRoute = AppYachtsIdPrearrivalRouteImport.update({
+  id: '/prearrival',
+  path: '/prearrival',
+  getParentRoute: () => AppYachtsIdRoute,
+} as any)
 const AppOrbitRequestsIdRoute = AppOrbitRequestsIdRouteImport.update({
   id: '/$id',
   path: '/$id',
@@ -965,7 +971,7 @@ export interface FileRoutesByFullPath {
   '/shipsync/logistics': typeof AppShipsyncLogisticsRoute
   '/training/certifications': typeof AppTrainingCertificationsRoute
   '/waypoint/quotations': typeof AppWaypointQuotationsRoute
-  '/yachts/$id': typeof AppYachtsIdRoute
+  '/yachts/$id': typeof AppYachtsIdRouteWithChildren
   '/yachts/new': typeof AppYachtsNewRoute
   '/forms/fill/$token': typeof FormsFillTokenRoute
   '/admin/': typeof AppAdminIndexRoute
@@ -993,6 +999,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/vessel/$vesselId': typeof AppDashboardVesselVesselIdRoute
   '/guides/$department/$guideId': typeof AppGuidesDepartmentGuideIdRoute
   '/orbit/requests/$id': typeof AppOrbitRequestsIdRoute
+  '/yachts/$id/prearrival': typeof AppYachtsIdPrearrivalRoute
   '/crew-immigration/crew/': typeof AppCrewImmigrationCrewIndexRoute
   '/crew-immigration/visas/': typeof AppCrewImmigrationVisasIndexRoute
   '/guides/$department/': typeof AppGuidesDepartmentIndexRoute
@@ -1089,7 +1096,7 @@ export interface FileRoutesByTo {
   '/shipsync/logistics': typeof AppShipsyncLogisticsRoute
   '/training/certifications': typeof AppTrainingCertificationsRoute
   '/waypoint/quotations': typeof AppWaypointQuotationsRoute
-  '/yachts/$id': typeof AppYachtsIdRoute
+  '/yachts/$id': typeof AppYachtsIdRouteWithChildren
   '/yachts/new': typeof AppYachtsNewRoute
   '/forms/fill/$token': typeof FormsFillTokenRoute
   '/admin': typeof AppAdminIndexRoute
@@ -1117,6 +1124,7 @@ export interface FileRoutesByTo {
   '/dashboard/vessel/$vesselId': typeof AppDashboardVesselVesselIdRoute
   '/guides/$department/$guideId': typeof AppGuidesDepartmentGuideIdRoute
   '/orbit/requests/$id': typeof AppOrbitRequestsIdRoute
+  '/yachts/$id/prearrival': typeof AppYachtsIdPrearrivalRoute
   '/crew-immigration/crew': typeof AppCrewImmigrationCrewIndexRoute
   '/crew-immigration/visas': typeof AppCrewImmigrationVisasIndexRoute
   '/guides/$department': typeof AppGuidesDepartmentIndexRoute
@@ -1229,7 +1237,7 @@ export interface FileRoutesById {
   '/_app/shipsync_/logistics': typeof AppShipsyncLogisticsRoute
   '/_app/training/certifications': typeof AppTrainingCertificationsRoute
   '/_app/waypoint/quotations': typeof AppWaypointQuotationsRoute
-  '/_app/yachts/$id': typeof AppYachtsIdRoute
+  '/_app/yachts/$id': typeof AppYachtsIdRouteWithChildren
   '/_app/yachts/new': typeof AppYachtsNewRoute
   '/forms/fill/$token': typeof FormsFillTokenRoute
   '/_app/admin/': typeof AppAdminIndexRoute
@@ -1257,6 +1265,7 @@ export interface FileRoutesById {
   '/_app/dashboard/vessel/$vesselId': typeof AppDashboardVesselVesselIdRoute
   '/_app/guides/$department/$guideId': typeof AppGuidesDepartmentGuideIdRoute
   '/_app/orbit/requests/$id': typeof AppOrbitRequestsIdRoute
+  '/_app/yachts/$id/prearrival': typeof AppYachtsIdPrearrivalRoute
   '/_app/crew-immigration/crew/': typeof AppCrewImmigrationCrewIndexRoute
   '/_app/crew-immigration/visas/': typeof AppCrewImmigrationVisasIndexRoute
   '/_app/guides/$department/': typeof AppGuidesDepartmentIndexRoute
@@ -1397,6 +1406,7 @@ export interface FileRouteTypes {
     | '/dashboard/vessel/$vesselId'
     | '/guides/$department/$guideId'
     | '/orbit/requests/$id'
+    | '/yachts/$id/prearrival'
     | '/crew-immigration/crew/'
     | '/crew-immigration/visas/'
     | '/guides/$department/'
@@ -1521,6 +1531,7 @@ export interface FileRouteTypes {
     | '/dashboard/vessel/$vesselId'
     | '/guides/$department/$guideId'
     | '/orbit/requests/$id'
+    | '/yachts/$id/prearrival'
     | '/crew-immigration/crew'
     | '/crew-immigration/visas'
     | '/guides/$department'
@@ -1660,6 +1671,7 @@ export interface FileRouteTypes {
     | '/_app/dashboard/vessel/$vesselId'
     | '/_app/guides/$department/$guideId'
     | '/_app/orbit/requests/$id'
+    | '/_app/yachts/$id/prearrival'
     | '/_app/crew-immigration/crew/'
     | '/_app/crew-immigration/visas/'
     | '/_app/guides/$department/'
@@ -2531,6 +2543,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppCrewImmigrationCrewIndexRouteImport
       parentRoute: typeof AppCrewImmigrationCrewRoute
     }
+    '/_app/yachts/$id/prearrival': {
+      id: '/_app/yachts/$id/prearrival'
+      path: '/prearrival'
+      fullPath: '/yachts/$id/prearrival'
+      preLoaderRoute: typeof AppYachtsIdPrearrivalRouteImport
+      parentRoute: typeof AppYachtsIdRoute
+    }
     '/_app/orbit/requests/$id': {
       id: '/_app/orbit/requests/$id'
       path: '/$id'
@@ -2937,6 +2956,18 @@ const AppWaypointRouteWithChildren = AppWaypointRoute._addFileChildren(
   AppWaypointRouteChildren,
 )
 
+interface AppYachtsIdRouteChildren {
+  AppYachtsIdPrearrivalRoute: typeof AppYachtsIdPrearrivalRoute
+}
+
+const AppYachtsIdRouteChildren: AppYachtsIdRouteChildren = {
+  AppYachtsIdPrearrivalRoute: AppYachtsIdPrearrivalRoute,
+}
+
+const AppYachtsIdRouteWithChildren = AppYachtsIdRoute._addFileChildren(
+  AppYachtsIdRouteChildren,
+)
+
 interface AppRouteChildren {
   AppAdminRoute: typeof AppAdminRouteWithChildren
   AppAgencyRoute: typeof AppAgencyRoute
@@ -3003,7 +3034,7 @@ interface AppRouteChildren {
   AppShipsyncCheckerRoute: typeof AppShipsyncCheckerRoute
   AppShipsyncDriverRoute: typeof AppShipsyncDriverRoute
   AppShipsyncLogisticsRoute: typeof AppShipsyncLogisticsRoute
-  AppYachtsIdRoute: typeof AppYachtsIdRoute
+  AppYachtsIdRoute: typeof AppYachtsIdRouteWithChildren
   AppYachtsNewRoute: typeof AppYachtsNewRoute
   AppYachtsIndexRoute: typeof AppYachtsIndexRoute
 }
@@ -3074,7 +3105,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppShipsyncCheckerRoute: AppShipsyncCheckerRoute,
   AppShipsyncDriverRoute: AppShipsyncDriverRoute,
   AppShipsyncLogisticsRoute: AppShipsyncLogisticsRoute,
-  AppYachtsIdRoute: AppYachtsIdRoute,
+  AppYachtsIdRoute: AppYachtsIdRouteWithChildren,
   AppYachtsNewRoute: AppYachtsNewRoute,
   AppYachtsIndexRoute: AppYachtsIndexRoute,
 }

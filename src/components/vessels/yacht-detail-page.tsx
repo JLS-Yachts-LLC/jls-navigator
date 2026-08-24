@@ -327,6 +327,11 @@ export function YachtDetail({
               <Button variant="outline" size="sm" onClick={startEdit} className="gap-1.5">
                 <Pencil className="h-3.5 w-3.5" /> Edit
               </Button>
+              <Button asChild variant="outline" size="sm" className="gap-1.5">
+                <Link to="/yachts/$id/prearrival" params={{ id }}>
+                  <FileCheck2 className="h-3.5 w-3.5" /> Pre-Arrival Form
+                </Link>
+              </Button>
               {Boolean(y.archive) ? (
                 <Button variant="outline" size="sm" onClick={toggleArchive} className="gap-1.5">
                   <ArchiveRestore className="h-3.5 w-3.5" /> Restore
