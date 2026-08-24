@@ -5,7 +5,6 @@ import { useNavigate } from '@tanstack/react-router'
 import { ShieldCheck, PackageSearch, UserSearch, FileCheck2, AlertTriangle, ArrowRight, X } from 'lucide-react'
 import { COLORS } from '@/lib/tokens'
 import { LeoIcon } from './LeoIcon'
-import LeoMascot from './LeoMascot'
 import type { LeoBehaviorState } from './leo.types'
 
 interface Message {
@@ -200,9 +199,17 @@ export function LeoChat({ token, userName, briefingText, onClose }: LeoChatProps
           gap:          10,
         }}
       >
-        {/* Animated Leo mascot — reacts to the chat lifecycle */}
-        <div style={{ flexShrink: 0, marginTop: -2, marginBottom: -2 }}>
-          <LeoMascot state={leoState} size={48} />
+        {/* Leo avatar — a soft pulse while thinking/speaking, still otherwise */}
+        <div
+          style={{
+            flexShrink: 0, width: 40, height: 40, borderRadius: '50%',
+            background: `radial-gradient(circle at 32% 28%, #F3C15F, ${COLORS.leoAmber} 65%)`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 20, border: `1px solid ${COLORS.deep}`,
+            animation: leoState === 'thinking' || leoState === 'speaking' ? 'pulse 1.2s ease-in-out infinite' : 'none',
+          }}
+        >
+          🦁
         </div>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
