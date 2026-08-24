@@ -5,9 +5,85 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.41.0",
+    "date": "2026-08-21",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Redesigned floating widget — greeting, alert card, quick actions"
+      },
+      {
+        "type": "fix",
+        "title": "Rename \"In storage\" status label to \"Warehouse\""
+      },
+      {
+        "type": "feature",
+        "title": "Import/Export status is a dropdown, matching Local Packages"
+      },
+      {
+        "type": "improvement",
+        "title": "Batch Monday sync writes instead of one row at a time"
+      },
+      {
+        "type": "fix",
+        "title": "Lock Monday sync against concurrent runs + full-table dedup repair"
+      },
+      {
+        "type": "fix",
+        "title": "Paginate past PostgREST's 1000-row default cap"
+      },
+      {
+        "type": "fix",
+        "title": "Self-heal duplicate rows from overlapping sync runs"
+      },
+      {
+        "type": "fix",
+        "title": "Map tracking number and files from the real Monday board"
+      },
+      {
+        "type": "fix",
+        "title": "Monday sync auto-removes stale rows from a wrong board id"
+      },
+      {
+        "type": "feature",
+        "title": "Token-gated full-replace of Local Packages from Monday"
+      },
+      {
+        "type": "feature",
+        "title": "Local Packages shows every Monday column, not just the fixed ones"
+      },
+      {
+        "type": "fix",
+        "title": "Monday.com sync now lands on Local Packages, not Import"
+      },
+      {
+        "type": "fix",
+        "title": "Critical welcome alerts no longer go quiet for a week"
+      },
+      {
+        "type": "feature",
+        "title": "Critical/warn welcome messages get a visual accent"
+      }
+    ]
+  },
+  {
+    "version": "2.40.1",
+    "date": "2026-08-19",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Pro-formas no longer carry the Terms & Conditions page"
+      }
+    ]
+  },
+  {
     "version": "2.40.0",
     "date": "2026-08-18",
     "entries": [
+      {
+        "type": "feature",
+        "title": "Send & complete, and Reply / Internal note as tabs"
+      },
       {
         "type": "fix",
         "title": "Screen recording lets you record the screen, and keeps the clip"
