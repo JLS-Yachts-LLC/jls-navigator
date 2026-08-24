@@ -203,6 +203,55 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
     }
   }
 
+  // Read-only diagnostic: `?run=sp-dupe-scan` groups every shipsync_packages
+  // row with a barcode by (barcode), counts groups with more than one row,
+  // and reports whether each group's rows share an identical imported_at
+  // (a strong sign of a batch-import bug) vs. genuinely different creation
+  // times (more likely real, separate records). Writes nothing.
+  if (url.searchParams.get('run') === 'sp-dupe-scan') {
+    try {
+      const { supabaseAdmin } = await import('./integrations/supabase/client.server')
+      const sb = supabaseAdmin as any
+      const rows: { barcode: string; created_at: string; extra: any }[] = []
+      for (let offset = 0; ; offset += 1000) {
+        const { data: page } = await sb
+          .from('shipsync_packages')
+          .select('barcode, created_at, extra')
+          .not('barcode', 'is', null)
+          .range(offset, offset + 999)
+        if (!page || page.length === 0) break
+        rows.push(...page)
+        if (page.length < 1000) break
+      }
+
+      const groups = new Map<string, typeof rows>()
+      for (const r of rows) {
+        const list = groups.get(r.barcode) ?? []
+        list.push(r)
+        groups.set(r.barcode, list)
+      }
+
+      let dupeGroups = 0
+      let identicalImportedAtGroups = 0
+      const samples: any[] = []
+      for (const [barcode, group] of groups) {
+        if (group.length <= 1) continue
+        dupeGroups++
+        const importedAts = group.map((r) => r.extra?.imported_at).filter(Boolean)
+        const allSame = importedAts.length === group.length && importedAts.every((t) => t === importedAts[0])
+        if (allSame) identicalImportedAtGroups++
+        if (samples.length < 5) samples.push({ barcode, size: group.length, allSameImportedAt: allSame })
+      }
+
+      return new Response(JSON.stringify({
+        ok: true, totalRows: rows.length, totalBarcodeGroups: groups.size,
+        dupeGroups, identicalImportedAtGroups, samples,
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
+  }
+
   // Read-only diagnostic: `?run=monday-debug-item&name=<tracking number>`
   // compares one item's raw Monday data against what's actually stored for
   // it in shipsync_packages. Writes nothing.
