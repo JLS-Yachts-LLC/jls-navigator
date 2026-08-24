@@ -21,16 +21,17 @@ interface RouteDraft {
   boats: string[];           // boat names added to this route
   excluded: Set<string>;     // parcel ids unticked
   expanded: Set<string>;     // boat names currently expanded
+  manualAssign: Record<string, string>; // parcel id -> stop (boat/location) it's been pulled into
 }
 
 const today = () => new Date().toISOString().slice(0, 10);
 const newRoute = (id: string, name: string): RouteDraft =>
-  ({ id, name, driverId: "", vehicleId: "", boats: [], excluded: new Set(), expanded: new Set() });
+  ({ id, name, driverId: "", vehicleId: "", boats: [], excluded: new Set(), expanded: new Set(), manualAssign: {} });
 
 // Persist the in-progress plan PER delivery date, so each day has its own routes
 // and the plan survives tab switches / navigation / reload.
 const DRAFTS_KEY = "shipsync.routing.drafts.v2";
-type StoredRoute = { id: string; name: string; driverId: string; vehicleId: string; boats: string[]; excluded: string[]; expanded: string[] };
+type StoredRoute = { id: string; name: string; driverId: string; vehicleId: string; boats: string[]; excluded: string[]; expanded: string[]; manualAssign?: Record<string, string> };
 function loadAll(): Record<string, StoredRoute[]> {
   try { const raw = typeof window !== "undefined" ? localStorage.getItem(DRAFTS_KEY) : null; return raw ? (JSON.parse(raw) ?? {}) : {}; }
   catch { return {}; }
@@ -39,7 +40,7 @@ function saveAll(map: Record<string, StoredRoute[]>) {
   try { localStorage.setItem(DRAFTS_KEY, JSON.stringify(map)); } catch { /* storage full/unavailable — non-fatal */ }
 }
 function serializeRoutes(routes: RouteDraft[]): StoredRoute[] {
-  return routes.map((r) => ({ id: r.id, name: r.name, driverId: r.driverId, vehicleId: r.vehicleId, boats: r.boats, excluded: [...r.excluded], expanded: [...r.expanded] }));
+  return routes.map((r) => ({ id: r.id, name: r.name, driverId: r.driverId, vehicleId: r.vehicleId, boats: r.boats, excluded: [...r.excluded], expanded: [...r.expanded], manualAssign: r.manualAssign }));
 }
 /** Rehydrate a day's stored routes, or start a fresh Route 1 when the day has none. */
 function hydrateRoutes(stored: StoredRoute[] | undefined): RouteDraft[] {
@@ -47,6 +48,7 @@ function hydrateRoutes(stored: StoredRoute[] | undefined): RouteDraft[] {
     id: String(r.id), name: String(r.name), driverId: r.driverId ?? "", vehicleId: r.vehicleId ?? "",
     boats: Array.isArray(r.boats) ? r.boats : [],
     excluded: new Set<string>(r.excluded ?? []), expanded: new Set<string>(r.expanded ?? []),
+    manualAssign: r.manualAssign ?? {},
   }));
   return rs.length ? rs : [newRoute("r1", "Route 1")];
 }
@@ -153,13 +155,47 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
 
   const activeDrivers = useMemo(() => data.drivers.filter((d) => d.active), [data.drivers]);
 
-  // Parcels included on a route: all its boats' waiting parcels minus the unticked.
-  function routeParcels(r: RouteDraft): ShipSyncPackage[] {
-    const out: ShipSyncPackage[] = [];
-    for (const boat of r.boats) {
-      for (const p of parcelsByBoat.get(boat) ?? []) if (!r.excluded.has(p.id)) out.push(p);
+  // A stop's parcels: its own client's waiting parcels, MINUS any that were
+  // manually pulled into a different stop that's still on this route, PLUS
+  // any other client's parcels manually pulled into this stop instead. A
+  // parcel only ever counts once per route — pulling it into one stop takes
+  // it off wherever it would otherwise show. Includes unticked (excluded)
+  // parcels, so the checklist UI can still show and re-tick them.
+  function stopAllParcels(r: RouteDraft, boat: string): ShipSyncPackage[] {
+    const byId = new Map<string, ShipSyncPackage>();
+    for (const p of parcelsByBoat.get(boat) ?? []) {
+      const to = r.manualAssign[p.id];
+      const pulledElsewhere = to && to !== boat && r.boats.includes(to);
+      if (!pulledElsewhere) byId.set(p.id, p);
     }
-    return out;
+    for (const p of unrouted) {
+      if (r.manualAssign[p.id] === boat) byId.set(p.id, p);
+    }
+    return Array.from(byId.values());
+  }
+  /** Same as stopAllParcels, minus the ones unticked off this route. */
+  function stopParcels(r: RouteDraft, boat: string): ShipSyncPackage[] {
+    return stopAllParcels(r, boat).filter((p) => !r.excluded.has(p.id));
+  }
+
+  // Parcels included on a route: every stop's parcels, deduped (each parcel
+  // belongs to exactly one stop per stopParcels above).
+  function routeParcels(r: RouteDraft): ShipSyncPackage[] {
+    const byId = new Map<string, ShipSyncPackage>();
+    for (const boat of r.boats) for (const p of stopParcels(r, boat)) byId.set(p.id, p);
+    return Array.from(byId.values());
+  }
+
+  /** Pull every one of `sourceClient`'s currently-waiting parcels into `targetStop`. */
+  function pullInClient(routeId: string, targetStop: string, sourceClient: string) {
+    const toPull = parcelsByBoat.get(sourceClient) ?? [];
+    if (toPull.length === 0) return;
+    patchRoute(routeId, (r) => {
+      const manualAssign = { ...r.manualAssign };
+      for (const p of toPull) manualAssign[p.id] = targetStop;
+      return { ...r, manualAssign };
+    });
+    toast.success(`Pulled ${toPull.length} parcel${toPull.length === 1 ? "" : "s"} from ${sourceClient} into ${targetStop === UNASSIGNED ? "this stop" : targetStop}`);
   }
 
   // ── Route card mutations ───────────────────────────────────────────────────
@@ -178,10 +214,12 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
   }
   function removeBoat(id: string, boat: string) {
     patchRoute(id, (r) => {
-      const ids = (parcelsByBoat.get(boat) ?? []).map((p) => p.id);
+      const ids = stopAllParcels(r, boat).map((p) => p.id);
       const excluded = new Set(r.excluded); ids.forEach((x) => excluded.delete(x));
       const expanded = new Set(r.expanded); expanded.delete(boat);
-      return { ...r, boats: r.boats.filter((b) => b !== boat), excluded, expanded };
+      const manualAssign = { ...r.manualAssign };
+      for (const [pid, to] of Object.entries(manualAssign)) if (to === boat) delete manualAssign[pid];
+      return { ...r, boats: r.boats.filter((b) => b !== boat), excluded, expanded, manualAssign };
     });
   }
   // Move a boat to a new stop position (0-based) — sets the route's delivery order.
@@ -374,7 +412,7 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
                 ) : (
                   <div className="divide-y divide-border/40">
                     {r.boats.map((boat, boatIndex) => {
-                      const all = parcelsByBoat.get(boat) ?? [];
+                      const all = stopAllParcels(r, boat);
                       const included = all.filter((p) => !r.excluded.has(p.id)).length;
                       const dest = boat !== UNASSIGNED ? destByBoat.get(boat.toUpperCase()) : undefined;
                       const open = r.expanded.has(boat);
@@ -400,12 +438,38 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
                           </div>
                           {open && (
                             <div className="divide-y divide-border/30 bg-background/40 pl-9">
+                              <div className="px-4 py-2">
+                                <Select value="" onValueChange={(v) => pullInClient(r.id, boat, v)}>
+                                  <SelectTrigger className="h-8 w-72 text-xs">
+                                    <span className="flex items-center gap-2 text-muted-foreground">
+                                      <Ship className="h-3.5 w-3.5" /><SelectValue placeholder="Pull in another client's packages…" />
+                                    </span>
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {Array.from(parcelsByBoat.keys()).filter((b) => b !== boat).length === 0 ? (
+                                      <div className="px-2 py-1.5 text-xs text-muted-foreground">No other clients with waiting packages</div>
+                                    ) : (
+                                      Array.from(parcelsByBoat.keys())
+                                        .filter((b) => b !== boat)
+                                        .sort((a, b2) => a.localeCompare(b2))
+                                        .map((b) => (
+                                          <SelectItem key={b} value={b}>{b === UNASSIGNED ? "No client set" : b} ({parcelsByBoat.get(b)!.length})</SelectItem>
+                                        ))
+                                    )}
+                                  </SelectContent>
+                                </Select>
+                              </div>
                               {all.map((p) => (
                                 <label key={p.id} className="flex cursor-pointer items-center gap-3 px-4 py-2 text-sm hover:bg-accent/30">
                                   <input type="checkbox" checked={!r.excluded.has(p.id)} onChange={() => toggleParcel(r.id, p.id)} className="h-4 w-4 accent-primary" />
                                   <span className="font-mono text-[12px]">{p.barcode ?? "—"}</span>
                                   <span className="text-muted-foreground">{p.package_owner ?? p.description ?? ""}</span>
                                   {p.courier && <span className="text-[11px] text-muted-foreground/70">{p.courier}</span>}
+                                  {(p.boat_name || UNASSIGNED) !== boat && (
+                                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary" title="Pulled in from another client">
+                                      {p.boat_name || UNASSIGNED}
+                                    </span>
+                                  )}
                                   <span className="ml-auto flex items-center gap-2">
                                     {(p.num_packages ?? 1) > 1 && <span className="text-[11px] text-muted-foreground">×{p.num_packages}</span>}
                                     <StatusBadge status={p.status} />
