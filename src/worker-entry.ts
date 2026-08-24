@@ -194,7 +194,7 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
       const barcode = url.searchParams.get('barcode') ?? ''
       const { data, error } = await (supabaseAdmin as any)
         .from('shipsync_packages')
-        .select('id, local_import, barcode, boat_name, created_at, updated_at, extra')
+        .select('id, local_import, barcode, boat_name, receiver_full_name, delivery_note_no, created_at, updated_at, extra')
         .eq('barcode', barcode)
         .order('created_at', { ascending: true })
       return new Response(JSON.stringify({ ok: true, count: data?.length ?? 0, rows: data ?? [], error: error?.message ?? null }), { status: 200, headers: { 'Content-Type': 'application/json' } })
