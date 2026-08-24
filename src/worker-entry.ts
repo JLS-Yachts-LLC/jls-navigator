@@ -184,6 +184,25 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
     }
   }
 
+  // Read-only diagnostic: `?run=package-debug&barcode=<tracking number>`
+  // returns EVERY shipsync_packages row with this exact barcode, regardless
+  // of monday_item_id — so a duplicate not created by the Monday sync isn't
+  // missed. Writes nothing.
+  if (url.searchParams.get('run') === 'package-debug') {
+    try {
+      const { supabaseAdmin } = await import('./integrations/supabase/client.server')
+      const barcode = url.searchParams.get('barcode') ?? ''
+      const { data, error } = await (supabaseAdmin as any)
+        .from('shipsync_packages')
+        .select('id, local_import, barcode, boat_name, created_at, updated_at, extra')
+        .eq('barcode', barcode)
+        .order('created_at', { ascending: true })
+      return new Response(JSON.stringify({ ok: true, count: data?.length ?? 0, rows: data ?? [], error: error?.message ?? null }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
+  }
+
   // Read-only diagnostic: `?run=monday-debug-item&name=<tracking number>`
   // compares one item's raw Monday data against what's actually stored for
   // it in shipsync_packages. Writes nothing.
