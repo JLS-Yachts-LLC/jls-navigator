@@ -203,7 +203,7 @@ export function LeoChat({ token, userName, briefingText, onClose }: LeoChatProps
         <div
           style={{
             flexShrink: 0, width: 40, height: 40, borderRadius: '50%',
-            background: `radial-gradient(circle at 32% 28%, #C9A8F0, ${COLORS.leoViolet} 65%)`,
+            background: `radial-gradient(circle at 32% 28%, #7FB3D5, ${COLORS.signal} 65%)`,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontSize: 20, border: `1px solid ${COLORS.deep}`,
             animation: leoState === 'thinking' || leoState === 'speaking' ? 'pulse 1.2s ease-in-out infinite' : 'none',
@@ -220,7 +220,7 @@ export function LeoChat({ token, userName, briefingText, onClose }: LeoChatProps
                 fontWeight:    700,
                 letterSpacing: '0.12em',
                 textTransform: 'uppercase' as const,
-                color:         COLORS.leoViolet,
+                color:         COLORS.signal,
               }}
             >
               Leo
@@ -314,7 +314,7 @@ export function LeoChat({ token, userName, briefingText, onClose }: LeoChatProps
             el.style.height = `${Math.min(el.scrollHeight, 120)}px`
           }}
           onFocus={e => {
-            e.currentTarget.style.borderColor = `rgba(0,196,204,0.40)`
+            e.currentTarget.style.borderColor = `${COLORS.signal}66`
           }}
           onBlur={e => {
             e.currentTarget.style.borderColor = COLORS.deep
@@ -523,7 +523,7 @@ function ChatMessage({ message }: { message: Message }) {
               display:       'inline-block',
               width:         2,
               height:        12,
-              background:    COLORS.leoViolet,
+              background:    COLORS.signal,
               marginLeft:    2,
               verticalAlign: 'middle',
               animation:     'blink 0.75s step-end infinite',
