@@ -5,6 +5,24 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.42.0",
+    "date": "2026-08-24",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Staff pickers show people's display names instead of usernames"
+      },
+      {
+        "type": "feature",
+        "title": "App Developer task board under Yacht IT Solutions"
+      },
+      {
+        "type": "fix",
+        "title": "Replace full-body mascot with a simple circular avatar"
+      }
+    ]
+  },
+  {
     "version": "2.41.0",
     "date": "2026-08-21",
     "entries": [

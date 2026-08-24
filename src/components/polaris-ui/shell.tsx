@@ -78,7 +78,7 @@ export const NAV_GROUPS: NavGroup[] = [
         roles: ["global_admin", "crew_immigration"],
       },
       { label: "Logistics", icon: "truck", screen: "logistics" },
-      { label: "Crew Cab", icon: "car", screen: "route-crew-cab", route: "/crew-cab/trips" },
+      { label: "Crew Care", icon: "car", screen: "route-crew-cab", route: "/crew-cab/trips" },
       { label: "Agency", icon: "world", screen: "route-agency", route: "/agency" },
       { label: "Provisioning", icon: "tools-kitchen-2", screen: "route-provisioning", route: "/provisioning" },
       { label: "Waypoint Chandlery", icon: "shopping-cart", screen: "route-waypoint", route: "/waypoint" },

@@ -194,7 +194,7 @@ function GoogleMapsCard() {
     setSaving(false);
     if (error) { toast.error(error.message); return; }
     setConnected(enabled && !!apiKey.trim());
-    toast.success("Google Maps settings saved" + (enabled && apiKey.trim() ? " — maps are live on ShipSync routes & Crew Cab trips" : ""));
+    toast.success("Google Maps settings saved" + (enabled && apiKey.trim() ? " — maps are live on ShipSync routes & Crew Care trips" : ""));
   }
 
   async function test() {
@@ -229,7 +229,7 @@ function GoogleMapsCard() {
         </button>
       </div>
       <p className="mb-3 text-[12px] text-muted-foreground">
-        Powers directions & route planning on ShipSync delivery runs (optimized stop order, distances, ETA) and Crew Cab trips
+        Powers directions & route planning on ShipSync delivery runs (optimized stop order, distances, ETA) and Crew Care trips
         (address search, route preview, journey times for airport pickups).
       </p>
       {loading ? (

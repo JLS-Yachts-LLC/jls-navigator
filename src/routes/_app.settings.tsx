@@ -288,7 +288,7 @@ export const Route = createFileRoute('/_app/settings')({
 const DEPARTMENTS = [
   'Port & Operations',
   'Logistics',
-  'Crew Cab',
+  'Crew Care',
   'Orbit',
   'Accounts',
   'Marketing',
@@ -302,7 +302,7 @@ const MODULES = [
   'Permits',
   'Small Boat Registration',
   'Orbit',
-  'Crew Cab',
+  'Crew Care',
   'ShipSync',
   'Director',
 ]

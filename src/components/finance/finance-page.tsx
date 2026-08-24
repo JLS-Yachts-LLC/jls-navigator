@@ -1775,7 +1775,7 @@ const DEPT_LIST: {
   icon: React.ComponentType<{ className?: string }>;
   available: boolean;
 }[] = [
-  { key: "crew",        label: "Crew Cab",                shortLabel: "Crew Cab",       icon: Car,         available: true  },
+  { key: "crew",        label: "Crew Care",                shortLabel: "Crew Care",       icon: Car,         available: true  },
   { key: "packages",    label: "ShipSync",   shortLabel: "ShipSync",       icon: Package,     available: true  },
   { key: "it",          label: "Yacht IT Solutions",      shortLabel: "Yacht IT",       icon: Cpu,         available: true  },
   { key: "procurement", label: "Procurement",             shortLabel: "Procurement",    icon: ShoppingCart,available: true  },
