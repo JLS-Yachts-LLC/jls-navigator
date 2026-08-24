@@ -30,6 +30,29 @@ const COVERED = [
   "driver", "date delivered", "delivered", "document", "file", "zone", "status",
 ];
 
+/**
+ * One value straight off the Monday board. The importer keeps the row verbatim
+ * under extra.monday but only maps part of it onto our own columns, so values
+ * Monday fills that we have no field for (Receiver) — or that we only set later
+ * in our own flow (driver, delivery note, delivered date, files) — would otherwise
+ * show as a dash even though they are sitting right there on the record.
+ */
+const mondayVal = (p: ShipSyncPackage, column: string): string | null => {
+  const v = mondayRow(p)[column];
+  return typeof v === "string" && v.trim() ? v.trim() : null;
+};
+
+/** Monday keeps delivery-note PDFs in a Files column, as plain URLs. */
+const mondayDocs = (p: ShipSyncPackage): { name: string; url: string }[] =>
+  (mondayVal(p, "Files") ?? "")
+    .split(/[\s,]+/)
+    .filter((u) => u.startsWith("http"))
+    .map((url) => {
+      let name = "Document";
+      try { name = decodeURIComponent(new URL(url).pathname.split("/").pop() || name); } catch { /* keep the default */ }
+      return { name, url };
+    });
+
 type Form = Partial<ShipSyncPackage>;
 const EMPTY: Form = { status: "in_office", num_packages: 1, local_import: "Local" };
 
@@ -168,7 +191,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
         <div className="absolute inset-0 overflow-auto rounded-xl border border-border bg-card">
         <table className="w-full min-w-[1400px] text-sm">
           <thead className="sticky top-0 z-10"><tr className="border-b border-border bg-card text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-            {["Air waybill/tracking info", "Client", "Date Received", "Consignee", "Number of Packages", "Courier", "Shipment Type", "Delivery Note Number", "Driver", "Date Delivered", "Documents", "Zone", "Status"].map((h, i) => (
+            {["Air waybill/tracking info", "Client", "Date Received", "Consignee", "Receiver", "Number of Packages", "Courier", "Shipment Type", "Delivery Note Number", "Driver", "Date Delivered", "Documents", "Status"].map((h, i) => (
               <th key={`${h}-${i}`} className="px-3 py-2.5 whitespace-nowrap">{h}</th>
             ))}
             {mondayColumns.map((c) => <th key={c} className="px-3 py-2.5 whitespace-nowrap">{c}</th>)}
@@ -180,19 +203,20 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
             ) : filtered.map((p) => {
               const note = data.notes.find((n) => n.id === p.delivery_note_id);
               const driver = data.drivers.find((d) => d.id === p.driver_id);
-              const docs = p.documents ?? [];
+              const docs = p.documents?.length ? p.documents : mondayDocs(p);
               return (
                 <tr key={p.id} onClick={() => openEdit(p)} className="group cursor-pointer border-b border-border/40 hover:bg-accent/20">
                   <td className="px-3 py-2.5 font-mono text-[12px] text-foreground whitespace-nowrap">{p.barcode ?? "—"}</td>
                   <td className="px-3 py-2.5 font-medium whitespace-nowrap">{p.boat_name ?? "—"}</td>
                   <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{fmtDate(p.received_at)}</td>
                   <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{p.package_owner ?? "—"}</td>
+                  <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{p.receiver_full_name ?? mondayVal(p, "Receiver") ?? "—"}</td>
                   <td className="px-3 py-2.5 tabular-nums text-muted-foreground text-center">{p.num_packages ?? 1}</td>
                   <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{p.courier ?? "—"}</td>
                   <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{p.local_import ?? "—"}</td>
-                  <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{p.delivery_note_no ?? note?.number ?? "—"}</td>
-                  <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{driver?.name ?? "—"}</td>
-                  <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{fmtDate(p.delivered_at)}</td>
+                  <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{p.delivery_note_no ?? note?.number ?? mondayVal(p, "Delivery Note Number") ?? "—"}</td>
+                  <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{driver?.name ?? mondayVal(p, "Driver") ?? "—"}</td>
+                  <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{fmtDate(p.delivered_at ?? mondayVal(p, "Date Delivered"))}</td>
                   <td className="px-3 py-2.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                     {docs.length === 0 ? <span className="text-muted-foreground">—</span> : (
                       <div className="flex flex-wrap gap-1.5">
@@ -205,7 +229,6 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
                       </div>
                     )}
                   </td>
-                  <td className="px-3 py-2.5 text-muted-foreground">{p.warehouse_zone ?? "—"}</td>
                   <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
                     <Select value={p.status} onValueChange={(v) => quickStatus(p, v as PackageStatus)}>
                       <SelectTrigger className="h-7 w-[132px] border-none bg-transparent p-0 hover:bg-accent/40"><StatusBadge status={p.status} /></SelectTrigger>

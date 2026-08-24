@@ -10,6 +10,18 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "Unify chat widget on one consistent blue accent"
+      },
+      {
+        "type": "feature",
+        "title": "Rename Crew Cab to Crew Care"
+      },
+      {
+        "type": "feature",
+        "title": "Switch chat widget accent from amber to violet"
+      },
+      {
+        "type": "fix",
         "title": "Staff pickers show people's display names instead of usernames"
       },
       {

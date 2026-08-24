@@ -116,12 +116,28 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
     return s;
   }, [routes]);
 
-  // Boats still available to add, sorted (unassigned-name group last).
+  // Clients still available to add, sorted (unassigned-name group last). Every
+  // known client is listed, not just the ones with parcels waiting today — a route
+  // often has to be planned for a client before their parcels have been checked in.
   const availableBoats = useMemo(() => {
-    return Array.from(parcelsByBoat.keys())
+    // Keyed on the upper-cased name so a vessel-list entry and a parcel's boat name
+    // that differ only in case or stray spacing don't both show up as separate rows.
+    // Names that actually have parcels are added first and keep their exact
+    // spelling, so the per-client parcel lookups below still match.
+    const byKey = new Map<string, string>();
+    const add = (name?: string | null) => {
+      const n = name ?? "";
+      if (!n.trim()) return;
+      const k = n.trim().toUpperCase();
+      if (!byKey.has(k)) byKey.set(k, n);
+    };
+    for (const b of parcelsByBoat.keys()) add(b);
+    for (const y of data.yachts) add(y);
+    for (const d of data.destinations) if ((d as any).type !== "location") add(d.boat_name);
+    return Array.from(byKey.values())
       .filter((b) => !assignedBoats.has(b))
       .sort((a, b) => (a === UNASSIGNED ? 1 : b === UNASSIGNED ? -1 : a.localeCompare(b)));
-  }, [parcelsByBoat, assignedBoats]);
+  }, [parcelsByBoat, assignedBoats, data.yachts, data.destinations]);
 
   // Pickup / drop-off Locations (hotels, marinas, suppliers) from the Locations
   // tab — selectable as route stops even when they have no waiting parcels.
@@ -212,7 +228,7 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
 
   async function dispatch(r: RouteDraft) {
     const parcels = routeParcels(r);
-    if (parcels.length === 0) { toast.error("Add boats/parcels to this route first"); return; }
+    if (parcels.length === 0) { toast.error("Add clients/parcels to this route first"); return; }
     if (!r.driverId) { toast.error("Choose a driver for this route"); return; }
     if (!r.vehicleId) { toast.error("Choose a van for this route"); return; }
     if (!deliveryDate) { toast.error("Set the delivery date at the top first"); return; }
@@ -229,7 +245,7 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
       await reload();
       // Drop this card; keep the rest (renumbering is cosmetic — leave names as-is).
       setRoutes((prev) => (prev.length === 1 ? [newRoute("r1", "Route 1")] : prev.filter((x) => x.id !== r.id)));
-      toast.success(`Dispatched ${parcels.length} parcel${parcels.length > 1 ? "s" : ""} across ${distinctBoats.length} boat${distinctBoats.length > 1 ? "s" : ""} to ${driver?.name ?? "driver"} for ${deliveryDate} (DN-${note.number})`);
+      toast.success(`Dispatched ${parcels.length} parcel${parcels.length > 1 ? "s" : ""} across ${distinctBoats.length} client${distinctBoats.length > 1 ? "s" : ""} to ${driver?.name ?? "driver"} for ${deliveryDate} (DN-${note.number})`);
     } catch (e: any) {
       toast.error(e?.message ?? "Dispatch failed");
     } finally {
@@ -270,7 +286,7 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
                     <Truck className="h-4 w-4 text-primary" />
                     <span className="font-display text-sm font-bold">{r.name}</span>
                   </div>
-                  <span className="text-[12px] text-muted-foreground">{r.boats.length} boat{r.boats.length === 1 ? "" : "s"} · {parcels.length} parcel{parcels.length === 1 ? "" : "s"}</span>
+                  <span className="text-[12px] text-muted-foreground">{r.boats.length} client{r.boats.length === 1 ? "" : "s"} · {parcels.length} parcel{parcels.length === 1 ? "" : "s"}</span>
                   <div className="ml-auto flex items-center gap-2">
                     <Button
                       size="sm" variant="outline" className="h-8 gap-1.5"
@@ -326,17 +342,17 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
                   </div>
                 </div>
 
-                {/* Add-boat picker */}
+                {/* Add-client picker */}
                 <div className="border-b border-border/60 px-4 py-2.5">
                   <Select value="" onValueChange={(v) => addBoat(r.id, v)}>
-                    <SelectTrigger className="h-8 w-64 text-xs"><span className="flex items-center gap-2"><Plus className="h-3.5 w-3.5 text-muted-foreground" /><SelectValue placeholder="Add boat to this route…" /></span></SelectTrigger>
+                    <SelectTrigger className="h-8 w-64 text-xs"><span className="flex items-center gap-2"><Plus className="h-3.5 w-3.5 text-muted-foreground" /><SelectValue placeholder="Add client to this route…" /></span></SelectTrigger>
                     <SelectContent>
                       {availableBoats.length === 0 && availableLocations.length === 0 ? (
-                        <div className="px-2 py-1.5 text-xs text-muted-foreground">No boats or locations left to add</div>
+                        <div className="px-2 py-1.5 text-xs text-muted-foreground">No clients or locations left to add</div>
                       ) : (
                         <>
                           {availableBoats.map((b) => (
-                            <SelectItem key={b} value={b}>{b === UNASSIGNED ? "No boat set" : b} ({(parcelsByBoat.get(b) ?? []).length})</SelectItem>
+                            <SelectItem key={b} value={b}>{b === UNASSIGNED ? "No client set" : b} ({(parcelsByBoat.get(b) ?? []).length})</SelectItem>
                           ))}
                           {availableLocations.length > 0 && (
                             <>
@@ -354,7 +370,7 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
 
                 {/* Boats on this route */}
                 {r.boats.length === 0 ? (
-                  <div className="px-4 py-6 text-center text-sm text-muted-foreground">No boats yet — add one above.</div>
+                  <div className="px-4 py-6 text-center text-sm text-muted-foreground">No clients yet — add one above.</div>
                 ) : (
                   <div className="divide-y divide-border/40">
                     {r.boats.map((boat, boatIndex) => {
@@ -375,10 +391,10 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
                               </SelectContent>
                             </Select>
                             <Ship className="h-4 w-4 text-muted-foreground" />
-                            <span className="text-sm font-medium">{boat === UNASSIGNED ? "No boat set" : boat}</span>
+                            <span className="text-sm font-medium">{boat === UNASSIGNED ? "No client set" : boat}</span>
                             <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold">{included}/{all.length} pkg</span>
                             {dest?.address && <span className="flex items-center gap-1 text-[11px] text-muted-foreground"><Anchor className="h-3 w-3" /> {dest.address}</span>}
-                            <Button variant="ghost" size="sm" className="ml-auto h-7 w-7 p-0 text-muted-foreground/60 hover:text-destructive" onClick={() => removeBoat(r.id, boat)} title="Remove boat from route">
+                            <Button variant="ghost" size="sm" className="ml-auto h-7 w-7 p-0 text-muted-foreground/60 hover:text-destructive" onClick={() => removeBoat(r.id, boat)} title="Remove client from route">
                               <X className="h-3.5 w-3.5" />
                             </Button>
                           </div>
