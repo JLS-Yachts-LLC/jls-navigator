@@ -252,6 +252,59 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
     }
   }
 
+  // One-time repair: `?run=cleanup-empty-stub-dupes` removes rows that are
+  // COMPLETELY empty besides their barcode (no boat, courier, owner, local_import,
+  // supplier, origin, commodity, description, or delivery note) when another
+  // row shares that same barcode and has real data. Never touches a row that
+  // has any content of its own, and never touches a barcode group that's
+  // either all-stub or all-rich (nothing to prefer between siblings there).
+  if (url.searchParams.get('run') === 'cleanup-empty-stub-dupes') {
+    try {
+      const { supabaseAdmin } = await import('./integrations/supabase/client.server')
+      const sb = supabaseAdmin as any
+      const isEmptyStub = (r: any) =>
+        !r.boat_name && !r.package_owner && !r.courier && !r.local_import &&
+        !r.supplier && !r.origin && !r.commodity && !r.description && !r.delivery_note_no
+
+      const rows: any[] = []
+      for (let offset = 0; ; offset += 1000) {
+        const { data: page } = await sb
+          .from('shipsync_packages')
+          .select('id, barcode, boat_name, package_owner, courier, local_import, supplier, origin, commodity, description, delivery_note_no')
+          .not('barcode', 'is', null)
+          .range(offset, offset + 999)
+        if (!page || page.length === 0) break
+        rows.push(...page)
+        if (page.length < 1000) break
+      }
+
+      const groups = new Map<string, any[]>()
+      for (const r of rows) {
+        const list = groups.get(r.barcode) ?? []
+        list.push(r)
+        groups.set(r.barcode, list)
+      }
+
+      let removed = 0, groupsFixed = 0
+      const removedIds: string[] = []
+      for (const [, group] of groups) {
+        if (group.length <= 1) continue
+        const stubs = group.filter(isEmptyStub)
+        const rich = group.filter((r: any) => !isEmptyStub(r))
+        if (stubs.length === 0 || rich.length === 0) continue
+        groupsFixed++
+        for (const s of stubs) {
+          const { error } = await sb.from('shipsync_packages').delete().eq('id', s.id)
+          if (!error) { removed++; removedIds.push(s.id) }
+        }
+      }
+
+      return new Response(JSON.stringify({ ok: true, groupsFixed, removed, removedIds: removedIds.slice(0, 20) }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
+  }
+
   // Read-only diagnostic: `?run=monday-debug-item&name=<tracking number>`
   // compares one item's raw Monday data against what's actually stored for
   // it in shipsync_packages. Writes nothing.
