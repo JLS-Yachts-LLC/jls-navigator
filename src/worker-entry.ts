@@ -252,6 +252,64 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
     }
   }
 
+  // Read-only diagnostic: `?run=monday-vs-nonmonday-scan` finds every barcode
+  // that has both a Monday-linked row and a non-Monday row (SharePoint import
+  // or hand-entered), and checks whether the non-Monday sibling shows any sign
+  // of real manual work (status changed from the default, warehouse zone,
+  // driver, or a photo) — vs. sitting untouched since creation. Needed before
+  // deciding whether it's safe to prefer the Monday row and drop the other.
+  // Writes nothing.
+  if (url.searchParams.get('run') === 'monday-vs-nonmonday-scan') {
+    try {
+      const { supabaseAdmin } = await import('./integrations/supabase/client.server')
+      const sb = supabaseAdmin as any
+      const rows: any[] = []
+      for (let offset = 0; ; offset += 1000) {
+        const { data: page } = await sb
+          .from('shipsync_packages')
+          .select('id, barcode, status, warehouse_zone, driver_id, item_photo_url, documents, extra')
+          .not('barcode', 'is', null)
+          .range(offset, offset + 999)
+        if (!page || page.length === 0) break
+        rows.push(...page)
+        if (page.length < 1000) break
+      }
+
+      const groups = new Map<string, any[]>()
+      for (const r of rows) {
+        const list = groups.get(r.barcode) ?? []
+        list.push(r)
+        groups.set(r.barcode, list)
+      }
+
+      const hasActivity = (r: any) =>
+        (r.status && r.status !== 'in_office') || r.warehouse_zone || r.driver_id ||
+        r.item_photo_url || (Array.isArray(r.documents) && r.documents.length > 0)
+
+      let pairGroups = 0, untouchedSiblings = 0, activeSiblings = 0
+      const activeSamples: any[] = []
+      for (const [barcode, group] of groups) {
+        if (group.length <= 1) continue
+        const mondayRows = group.filter((r: any) => r.extra?.monday_item_id)
+        const otherRows = group.filter((r: any) => !r.extra?.monday_item_id)
+        if (mondayRows.length === 0 || otherRows.length === 0) continue
+        pairGroups++
+        for (const o of otherRows) {
+          if (hasActivity(o)) {
+            activeSiblings++
+            if (activeSamples.length < 10) activeSamples.push({ barcode, id: o.id, status: o.status, warehouse_zone: o.warehouse_zone, driver_id: o.driver_id, hasPhoto: !!o.item_photo_url, docCount: o.documents?.length ?? 0 })
+          } else {
+            untouchedSiblings++
+          }
+        }
+      }
+
+      return new Response(JSON.stringify({ ok: true, pairGroups, untouchedSiblings, activeSiblings, activeSamples }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
+  }
+
   // One-time repair: `?run=cleanup-empty-stub-dupes` removes rows that are
   // COMPLETELY empty besides their barcode (no boat, courier, owner, local_import,
   // supplier, origin, commodity, description, or delivery note) when another
