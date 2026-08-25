@@ -737,8 +737,13 @@ export async function pushRecordToSharePoint(target: string, id: string): Promis
     const spFields: Record<string, any> = {};
     for (const [spCol, dbField] of Object.entries(sync.fieldMapping)) {
       if (!dbField || dbField === 'vessel_image') continue;
-      const v = valueFor(dbField);
-      if (v !== null && v !== undefined && v !== '') spFields[spCol] = v;
+      let v = valueFor(dbField);
+      if (v === null || v === undefined || v === '') continue;
+      // Date-only values go out as NOON UTC: SharePoint renders datetimes in the
+      // site's regional timezone, so a bare date (= midnight UTC) would display
+      // as the previous day on any site east of UTC — the mirror of SD-0017.
+      if (typeof v === 'string' && /^d{4}-d{2}-d{2}$/.test(v)) v = `${v}T12:00:00Z`;
+      spFields[spCol] = v;
     }
     if (!Object.keys(spFields).length) continue;
 
@@ -956,6 +961,31 @@ async function _syncWithConfig(cfg: SpConfig, sync: SpSyncConfig): Promise<{ syn
   return result
 }
 
+/**
+ * SD-0017: SharePoint date columns arrive over Graph as UTC datetimes shifted by
+ * the site's regional timezone — a DOB entered as 10 May on the Dubai (+04:00)
+ * site comes back as "1990-05-09T20:00:00Z". Taking the first 10 characters (or
+ * letting Postgres cast the raw string to a date) therefore recorded every synced
+ * date one day early. Round to the nearest calendar day instead: an evening
+ * timestamp IS the next day's date; a morning/midnight one is its own.
+ */
+const YACHT_DATE_FIELDS  = new Set(['eta', 'etd', 'cruising_permit_expiry', 'departed_date'])
+const PERMIT_DATE_FIELDS = new Set(['issue_date', 'expiry_date', 'preferred_inspection_date'])
+const BOAT_DATE_FIELDS   = new Set(['reg_start_date', 'reg_end_date', 'document_submission_date', 'inspection_date'])
+
+function spDateOnly(v: any): string | null {
+  if (v == null || v === '') return null
+  const str = String(v)
+  const m = str.match(/^(d{4}-d{2}-d{2})[T ](d{2})/)
+  if (!m) return str.slice(0, 10)
+  if (Number(m[2]) >= 12) {
+    const d = new Date(`${m[1]}T00:00:00Z`)
+    d.setUTCDate(d.getUTCDate() + 1)
+    return d.toISOString().slice(0, 10)
+  }
+  return m[1]
+}
+
 // SharePoint numeric columns often hold text like "8.60M" or "N/A"; coerce to a
 // number (first numeric token) or null so they don't break numeric DB columns.
 const YACHT_NUMERIC_FIELDS = new Set([
@@ -1121,7 +1151,8 @@ async function _syncYachts(
       } else if (YACHT_NUMERIC_FIELDS.has(dbField)) {
         record[dbField] = coerceNumeric(raw)
       } else {
-        record[dbField] = raw !== '' ? raw : null
+        const val = raw !== '' ? raw : null
+        record[dbField] = val != null && YACHT_DATE_FIELDS.has(dbField) ? spDateOnly(val) : val
       }
     }
     if (!record.vessel_name) { skippedNoName++; continue }
@@ -1226,7 +1257,8 @@ async function _syncPermits(cfg: SpConfig): Promise<{ synced: number; errors: nu
         }
         continue
       }
-      record[dbField] = raw !== '' && raw !== null && raw !== undefined ? raw : null
+      const val = raw !== '' && raw !== null && raw !== undefined ? raw : null
+      record[dbField] = val != null && PERMIT_DATE_FIELDS.has(dbField) ? spDateOnly(val) : val
     }
 
     if (!record.holder_name && !record.permit_number) continue
@@ -1285,7 +1317,8 @@ async function _syncSmallBoats(cfg: SpConfig): Promise<{ synced: number; errors:
     for (const [spField, dbField] of Object.entries(cfg.fieldMapping)) {
       if (!dbField || !(spField in fields)) continue
       const raw = fields[spField]
-      record[dbField] = raw !== '' && raw !== null && raw !== undefined ? raw : null
+      const val = raw !== '' && raw !== null && raw !== undefined ? raw : null
+      record[dbField] = val != null && BOAT_DATE_FIELDS.has(dbField) ? spDateOnly(val) : val
     }
 
     if (!record.boat_name) continue
@@ -1361,7 +1394,7 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
       if (dbField === 'status') { record.status = SP_STATUS_REV[String(raw)] ?? 'in_office'; continue }
       if (dbField === 'num_packages') { record.num_packages = coerceNumeric(raw) ?? 1; continue }
       let val: any = raw !== '' && raw !== null && raw !== undefined ? raw : null
-      if (val != null && PKG_DATE_FIELDS.has(dbField)) val = String(val).slice(0, 10)
+      if (val != null && PKG_DATE_FIELDS.has(dbField)) val = spDateOnly(val)
       record[dbField] = val
     }
 
@@ -1508,7 +1541,7 @@ async function _syncVisas(cfg: SpConfig): Promise<{ synced: number; errors: numb
         continue
       }
       let val: any = raw === '' || raw === undefined ? null : raw
-      if (val != null && DATE_FIELDS.has(dbField)) val = String(val).slice(0, 10)
+      if (val != null && DATE_FIELDS.has(dbField)) val = spDateOnly(val)
       record[dbField] = val
     }
 
@@ -1582,7 +1615,7 @@ async function _syncCrew(cfg: SpConfig): Promise<{ synced: number; errors: numbe
         continue
       }
       let val: any = raw === '' || raw === undefined ? null : raw
-      if (val != null && DATE_FIELDS.has(dbField)) val = String(val).slice(0, 10)
+      if (val != null && DATE_FIELDS.has(dbField)) val = spDateOnly(val)
       record[dbField] = val
     }
 
