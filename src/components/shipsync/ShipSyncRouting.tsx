@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
 import { Loader2, Ship, Truck, Route, X, Plus, ChevronRight, ChevronDown, Anchor, Calendar, Map as MapIcon, ScanLine } from "lucide-react";
 import { StatusBadge } from "@/components/shipsync/shared";
 import { ShipSyncDeliveryCalendar } from "@/components/shipsync/ShipSyncDeliveryCalendar";
@@ -54,6 +56,57 @@ function hydrateRoutes(stored: StoredRoute[] | undefined): RouteDraft[] {
 }
 const maxRouteNum = (routes: RouteDraft[]) =>
   routes.reduce((m, r) => { const n = parseInt(r.name.replace(/\D/g, ""), 10); return isNaN(n) ? m : Math.max(m, n); }, 1);
+
+/**
+ * Searchable client/location picker — the fleet is large enough that a plain
+ * dropdown is unusable, so this is a Popover + Command combobox with a search
+ * box instead. `groups` lets a caller show a "Locations" section separately
+ * from clients without needing two separate combobox instances.
+ */
+function ClientCombobox({
+  placeholder, groups, onSelect, icon: Icon = Ship, emptyText = "Nothing to add",
+}: {
+  placeholder: string;
+  groups: { heading?: string; items: { value: string; label: string }[] }[];
+  onSelect: (value: string) => void;
+  icon?: ComponentType<{ className?: string }>;
+  emptyText?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const isEmpty = groups.every((g) => g.items.length === 0);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" size="sm" role="combobox" aria-expanded={open}
+          className="h-8 w-72 justify-start gap-2 text-xs font-normal text-muted-foreground">
+          <Icon className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{placeholder}</span>
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-72 p-0" align="start">
+        {isEmpty ? (
+          <div className="px-3 py-4 text-center text-xs text-muted-foreground">{emptyText}</div>
+        ) : (
+          <Command>
+            <CommandInput placeholder="Search…" className="h-9 text-xs" />
+            <CommandList>
+              <CommandEmpty className="py-4 text-xs">No matches.</CommandEmpty>
+              {groups.map((g, i) => g.items.length === 0 ? null : (
+                <CommandGroup key={g.heading ?? i} heading={g.heading}>
+                  {g.items.map((o) => (
+                    <CommandItem key={o.value} value={o.label}
+                      onSelect={() => { onSelect(o.value); setOpen(false); }} className="text-xs">
+                      {o.label}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              ))}
+            </CommandList>
+          </Command>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: () => Promise<void> }) {
   const seq = useRef(1);
@@ -382,28 +435,16 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
 
                 {/* Add-client picker */}
                 <div className="border-b border-border/60 px-4 py-2.5">
-                  <Select value="" onValueChange={(v) => addBoat(r.id, v)}>
-                    <SelectTrigger className="h-8 w-64 text-xs"><span className="flex items-center gap-2"><Plus className="h-3.5 w-3.5 text-muted-foreground" /><SelectValue placeholder="Add client to this route…" /></span></SelectTrigger>
-                    <SelectContent>
-                      {availableBoats.length === 0 && availableLocations.length === 0 ? (
-                        <div className="px-2 py-1.5 text-xs text-muted-foreground">No clients or locations left to add</div>
-                      ) : (
-                        <>
-                          {availableBoats.map((b) => (
-                            <SelectItem key={b} value={b}>{b === UNASSIGNED ? "No client set" : b} ({(parcelsByBoat.get(b) ?? []).length})</SelectItem>
-                          ))}
-                          {availableLocations.length > 0 && (
-                            <>
-                              <div className="px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/60">Locations</div>
-                              {availableLocations.map((b) => (
-                                <SelectItem key={`loc-${b}`} value={b}>📍 {b}</SelectItem>
-                              ))}
-                            </>
-                          )}
-                        </>
-                      )}
-                    </SelectContent>
-                  </Select>
+                  <ClientCombobox
+                    placeholder="Add client to this route…"
+                    emptyText="No clients or locations left to add"
+                    icon={Plus}
+                    onSelect={(v) => addBoat(r.id, v)}
+                    groups={[
+                      { items: availableBoats.map((b) => ({ value: b, label: `${b === UNASSIGNED ? "No client set" : b} (${(parcelsByBoat.get(b) ?? []).length})` })) },
+                      { heading: "Locations", items: availableLocations.map((b) => ({ value: b, label: `📍 ${b}` })) },
+                    ]}
+                  />
                 </div>
 
                 {/* Boats on this route */}
@@ -439,25 +480,17 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
                           {open && (
                             <div className="divide-y divide-border/30 bg-background/40 pl-9">
                               <div className="px-4 py-2">
-                                <Select value="" onValueChange={(v) => pullInClient(r.id, boat, v)}>
-                                  <SelectTrigger className="h-8 w-72 text-xs">
-                                    <span className="flex items-center gap-2 text-muted-foreground">
-                                      <Ship className="h-3.5 w-3.5" /><SelectValue placeholder="Pull in another client's packages…" />
-                                    </span>
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {Array.from(parcelsByBoat.keys()).filter((b) => b !== boat).length === 0 ? (
-                                      <div className="px-2 py-1.5 text-xs text-muted-foreground">No other clients with waiting packages</div>
-                                    ) : (
-                                      Array.from(parcelsByBoat.keys())
-                                        .filter((b) => b !== boat)
-                                        .sort((a, b2) => a.localeCompare(b2))
-                                        .map((b) => (
-                                          <SelectItem key={b} value={b}>{b === UNASSIGNED ? "No client set" : b} ({parcelsByBoat.get(b)!.length})</SelectItem>
-                                        ))
-                                    )}
-                                  </SelectContent>
-                                </Select>
+                                <ClientCombobox
+                                  placeholder="Pull in another client's packages…"
+                                  emptyText="No other clients with waiting packages"
+                                  onSelect={(v) => pullInClient(r.id, boat, v)}
+                                  groups={[{
+                                    items: Array.from(parcelsByBoat.keys())
+                                      .filter((b) => b !== boat)
+                                      .sort((a, b2) => a.localeCompare(b2))
+                                      .map((b) => ({ value: b, label: `${b === UNASSIGNED ? "No client set" : b} (${parcelsByBoat.get(b)!.length})` })),
+                                  }]}
+                                />
                               </div>
                               {all.map((p) => (
                                 <label key={p.id} className="flex cursor-pointer items-center gap-3 px-4 py-2 text-sm hover:bg-accent/30">
