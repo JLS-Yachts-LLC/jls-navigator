@@ -82,6 +82,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: "Agency", icon: "world", screen: "route-agency", route: "/agency" },
       { label: "Provisioning", icon: "tools-kitchen-2", screen: "route-provisioning", route: "/provisioning" },
       { label: "Waypoint Chandlery", icon: "shopping-cart", screen: "route-waypoint", route: "/waypoint" },
+      { label: "Yacht Shipments", icon: "package", screen: "route-yacht-shipments", route: "/yacht-shipments" },
       { label: "Seaport Immigration", icon: "building-lighthouse", screen: "route-seaport", route: "/seaport", roles: ["global_admin", "crew_immigration"] },
       { label: "Training", icon: "certificate", screen: "training" },
       { label: "Yacht IT Solutions", icon: "cpu", screen: "yacht-it" },
