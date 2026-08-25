@@ -1084,6 +1084,16 @@ export default {
       )
     }
 
+    // ── Every 15 min: Mini Backup platform — start due AMIs, poll them, and
+    //    advance the offsite block copy to Impossible Cloud (bounded per tick).
+    //    No-ops until the AWS credentials are saved in the Backups tab. ──
+    ctx.waitUntil(
+      import('./lib/backup/runner.server')
+        .then((m) => m.runBackupTick())
+        .then((r) => { if (r) console.log('[backup-cron]', JSON.stringify(r)) })
+        .catch((e) => console.error('[backup-cron] error:', e))
+    )
+
     // ── Every 15 min: vessel-image backfill ──
     // The list pull itself moved to the 5-minute tick (syncPrioritisedLists) so
     // vessel movements land promptly; this tick keeps the image backfill, and
