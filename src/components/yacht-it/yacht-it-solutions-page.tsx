@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Headset, Ship, KeyRound, Boxes, FileText, Smartphone, Code2 } from "lucide-react";
+import { Headset, Ship, KeyRound, Boxes, FileText, Smartphone, Code2, DatabaseBackup } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ServiceDeskPage } from "@/components/service-desk/service-desk-page";
 import { ItYachtsPage } from "@/components/yacht-it/it-yachts-page";
@@ -7,6 +7,7 @@ import { LicensingPage } from "@/components/licensing-page";
 import { InternalServicesPage } from "@/components/yacht-it/internal-services-page";
 import { SimCardsPage } from "@/components/yacht-it/sim-cards-page";
 import { AppDeveloperPage } from "@/components/yacht-it/app-developer-page";
+import { BackupsPage } from "@/components/yacht-it/backups-page";
 
 /**
  * Yacht IT Solutions — single sidebar entry that surfaces its sections as tabs.
@@ -25,6 +26,7 @@ const TABS = [
   { key: "sim-cards", label: "SIM Cards", icon: Smartphone },
   { key: "client", label: "Client Subscriptions and Services", icon: FileText },
   { key: "internal", label: "JLS Yachts Internal Services", icon: Boxes },
+  { key: "backups", label: "Backups", icon: DatabaseBackup },
 ] as const;
 
 export function YachtItSolutionsPage() {
@@ -62,6 +64,7 @@ export function YachtItSolutionsPage() {
         {tab === "sim-cards" && <SimCardsPage />}
         {tab === "client" && <InternalServicesPage scope="client" />}
         {tab === "internal" && <InternalServicesPage scope="internal" />}
+        {tab === "backups" && <BackupsPage />}
       </div>
     </div>
   );
