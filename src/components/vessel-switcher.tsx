@@ -30,8 +30,16 @@ export function useActiveVessel(): string | null {
   );
   useEffect(() => {
     const handler = (e: Event) => setId((e as CustomEvent).detail ?? null);
+    // Another TAB changing the vessel only fires the browser's storage event —
+    // without this, two open tabs could filter by different vessels while both
+    // sidebars claimed the same one (SD-0016 territory).
+    const storageHandler = (e: StorageEvent) => { if (e.key === STORAGE_KEY) setId(e.newValue); };
     window.addEventListener(EVENT_KEY, handler);
-    return () => window.removeEventListener(EVENT_KEY, handler);
+    window.addEventListener("storage", storageHandler);
+    return () => {
+      window.removeEventListener(EVENT_KEY, handler);
+      window.removeEventListener("storage", storageHandler);
+    };
   }, []);
   return id;
 }
