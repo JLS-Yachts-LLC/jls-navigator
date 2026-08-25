@@ -64,6 +64,22 @@ async function flowEnabled(key: string, name: string, description: string): Prom
 
 const esc = (s: string) => String(s ?? '').replace(/'/g, "\\'")
 
+/**
+ * QuickBooks rejects a NAME containing a colon outright (fault 2040 "Invalid
+ * String"), and Lightspeed customers legitimately carry them — e.g.
+ * "JA THE RESORT (BR. OF JA RESORTS & HOTELS LLC) TRN : 100068202900003".
+ * Clean the name the same way everywhere it is used, so the lookup and the
+ * create/update agree on one spelling and the customer is never duplicated.
+ * (DisplayName also cannot hold tabs/newlines and is capped at 500 chars.)
+ */
+export function qboName(raw: string | null | undefined): string {
+  return String(raw ?? '')
+    .replace(/[:\t\r\n]+/g, ' ')   // colon + control chars are illegal in QBO names
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 500)
+}
+
 // ── Flow 1: customer.update ────────────────────────────────────────────────────
 export async function syncCustomer(payload: any, realm: string): Promise<string> {
   const contact = payload.contact ?? {}
@@ -73,7 +89,7 @@ export async function syncCustomer(payload: any, realm: string): Promise<string>
   // Walk-in customers are explicitly excluded (n8n If1).
   if ((contact.first_name ?? first) === 'Walk in Customer') return 'skip-walk-in'
 
-  const displayName = `${first} ${last}`.trim()
+  const displayName = qboName(`${first} ${last}`)
   if (!displayName) return 'skip-no-name'
 
   const found = await qboQuery(`SELECT * FROM Customer WHERE DisplayName = '${esc(displayName)}'`, realm)
@@ -153,8 +169,8 @@ export type ParsedSale = {
 
 export function parseSale(payload: any): ParsedSale {
   const cust = payload.customer ?? {}
-  const customerName = cust.company_name
-    || `${cust.first_name ?? cust.contact_first_name ?? ''} ${cust.last_name ?? cust.contact_last_name ?? ''}`.trim()
+  const customerName = qboName(cust.company_name
+    || `${cust.first_name ?? cust.contact_first_name ?? ''} ${cust.last_name ?? cust.contact_last_name ?? ''}`)
   return {
     saleId: String(payload.id ?? ''),
     invoiceNumber: String(payload.invoice_number ?? ''),
@@ -226,45 +242,62 @@ export async function syncCredit(payload: any, cfg: LsConfig, realm: string): Pr
   const dup = await qboQuery(`SELECT * FROM CreditMemo WHERE DocNumber = '${esc(docNumber)}'`, realm)
   if (dup?.QueryResponse?.CreditMemo?.length) return `skip-creditmemo-exists ${docNumber}`
 
+  // A linked return names its original invoice, which gives us the customer
+  // directly — more reliable than matching on name.
+  let invoice: any = null
   if (sale.hasLinkedInvoice) {
-    // Path A — linked return: copy the original invoice's sales lines.
     const orig = await qboQuery(`SELECT * FROM Invoice WHERE DocNumber = '${esc(sale.invoiceNumber)}'`, realm)
-    const invoice = orig?.QueryResponse?.Invoice?.[0]
+    invoice = orig?.QueryResponse?.Invoice?.[0] ?? null
     if (!invoice) return `skip-original-invoice-not-found ${sale.invoiceNumber}`
-    await qboRequest('POST', '/creditmemo?minorversion=73', {
-      CustomerRef: { value: invoice.CustomerRef.value },
-      DocNumber: docNumber,
-      Line: (invoice.Line ?? [])
-        .filter((l: any) => l.DetailType === 'SalesItemLineDetail')
-        .map((l: any) => ({
-          Description: l.Description,
-          Amount: l.Amount,
-          DetailType: 'SalesItemLineDetail',
-          SalesItemLineDetail: {
-            ItemRef: l.SalesItemLineDetail.ItemRef,
-            Qty: l.SalesItemLineDetail.Qty,
-            UnitPrice: l.SalesItemLineDetail.UnitPrice,
-          },
-        })),
-    }, realm)
-    return `creditmemo-created ${docNumber} (linked)`
   }
 
-  // Path B — standalone return: rebuild from the sale's line items.
-  const cust = await qboQuery(`SELECT * FROM Customer WHERE DisplayName = '${esc(sale.customerName)}'`, realm)
-  const customer = cust?.QueryResponse?.Customer?.[0]
-  if (!customer) return `skip-customer-not-found "${sale.customerName}"`
+  let customerId: string | null = invoice?.CustomerRef?.value ?? null
+  if (!customerId) {
+    const cust = await qboQuery(`SELECT * FROM Customer WHERE DisplayName = '${esc(sale.customerName)}'`, realm)
+    customerId = cust?.QueryResponse?.Customer?.[0]?.Id ?? null
+    if (!customerId) return `skip-customer-not-found "${sale.customerName}"`
+  }
 
-  const { lines, totalTax, missing } = await resolveLines(cfg, realm, sale)
-  if (!lines.length) return `skip-no-resolvable-items${missing.length ? ` (missing: ${missing.join(', ')})` : ''}`
+  // Credit ONLY the items that actually came back. Copying the whole original
+  // invoice (the first cut of this flow) refunds a partial return in full, so
+  // the returned lines are rebuilt instead — resolveLines already flips the
+  // negative return quantities to positive credit amounts.
+  const returnedOnly = { ...sale, lineItems: sale.lineItems.filter((i) => i.is_return) }
+  const { lines, totalTax, missing } = await resolveLines(cfg, realm, returnedOnly)
+  const note = missing.length ? ` (skipped items: ${missing.join(', ')})` : ''
+
+  if (lines.length) {
+    await qboRequest('POST', '/creditmemo?minorversion=73', {
+      CustomerRef: { value: customerId },
+      DocNumber: docNumber,
+      TxnTaxDetail: { TotalTax: totalTax },
+      Line: lines,
+    }, realm)
+    return `creditmemo-created ${docNumber}${sale.hasLinkedInvoice ? ' (linked)' : ''}${note}`
+  }
+
+  // Nothing resolved. For a standalone return there is nothing to raise; for a
+  // linked one, fall back to mirroring the original invoice so the credit is not
+  // silently lost (flagged in the result so it can be checked).
+  if (!invoice) return `skip-no-resolvable-items${missing.length ? ` (missing: ${missing.join(', ')})` : ''}`
 
   await qboRequest('POST', '/creditmemo?minorversion=73', {
-    CustomerRef: { value: customer.Id },
+    CustomerRef: { value: invoice.CustomerRef.value },
     DocNumber: docNumber,
-    TxnTaxDetail: { TotalTax: totalTax },
-    Line: lines,
+    Line: (invoice.Line ?? [])
+      .filter((l: any) => l.DetailType === 'SalesItemLineDetail')
+      .map((l: any) => ({
+        Description: l.Description,
+        Amount: l.Amount,
+        DetailType: 'SalesItemLineDetail',
+        SalesItemLineDetail: {
+          ItemRef: l.SalesItemLineDetail.ItemRef,
+          Qty: l.SalesItemLineDetail.Qty,
+          UnitPrice: l.SalesItemLineDetail.UnitPrice,
+        },
+      })),
   }, realm)
-  return `creditmemo-created ${docNumber}${missing.length ? ` (skipped items: ${missing.join(', ')})` : ''}`
+  return `creditmemo-created ${docNumber} (FULL invoice copy — returned items unmatched: ${missing.join(', ') || 'none resolved'})`
 }
 
 // ── Flow 4: sales → invoice ────────────────────────────────────────────────────
