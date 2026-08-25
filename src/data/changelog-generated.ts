@@ -5,9 +5,43 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.43.0",
+    "date": "2026-08-25",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Lightspeed customer sync no longer fails on names containing a colon (QuickBooks rejects them) — names are cleaned consistently for both lookup and create, so customers like 'JA THE RESORT ... TRN : 1000...' sync again"
+      },
+      {
+        "type": "feature",
+        "title": "Add Yacht Shipments module (whole yachts as cargo)"
+      },
+      {
+        "type": "feature",
+        "title": "Searchable combobox for client pickers in Routing"
+      }
+    ]
+  },
+  {
     "version": "2.42.0",
     "date": "2026-08-24",
     "entries": [
+      {
+        "type": "feature",
+        "title": "Pre-Arrival / Cruising Permit form auto-populated from yacht profile"
+      },
+      {
+        "type": "feature",
+        "title": "Pull another client's packages into any route stop"
+      },
+      {
+        "type": "fix",
+        "title": "Remove barcode duplicates that are completely empty"
+      },
+      {
+        "type": "feature",
+        "title": "Receiver column, Zone removed, Client wording on routing, and Monday's delivery details showing through"
+      },
       {
         "type": "fix",
         "title": "Unify chat widget on one consistent blue accent"
