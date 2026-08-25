@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-08-25",
     "entries": [
       {
+        "type": "feature",
+        "title": "Backups tab — scheduled EC2 AMI images with offsite copy to Impossible Cloud"
+      },
+      {
         "type": "fix",
         "title": "Lightspeed customer sync no longer fails on names containing a colon (QuickBooks rejects them) — names are cleaned consistently for both lookup and create, so customers like 'JA THE RESORT ... TRN : 1000...' sync again"
       },
