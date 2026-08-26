@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-08-26",
     "entries": [
       {
+        "type": "fix",
+        "title": "The deploy build no longer runs out of memory"
+      },
+      {
         "type": "feature",
         "title": "Permissions now work end-to-end — assign departments, real modules, sidebar follows access"
       },
