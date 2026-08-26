@@ -4,15 +4,19 @@
  * Mirrors the Monday.com "Shipment - Import/Transit" board, grouped into the
  * exact same sections Monday shows on-screen (IMPORT, TRANSIT, Completed, …)
  * — discovered at sync time, never hardcoded, so a group Monday adds or
- * renames shows up here automatically.
+ * renames shows up here automatically. Column order matches Monday's own
+ * board left-to-right (its "Accounts" column is dropped — unused on every
+ * item so far and not wanted here).
  *
- * "Status" here means "which section" — changing it moves the shipment
- * between groups, same as dragging a card between columns on Monday. Every
- * field is editable locally for day-to-day office use, but nothing writes
- * back to Monday: the next hourly sync (lib/shipsync/monday-import-board.server.ts)
- * re-pulls the board and overwrites any Monday-linked row's fields (including
- * a manual group move) back to whatever Monday currently has. Rows added
- * here by hand (no monday_item_id) are never touched by the sync.
+ * "Status" sits where Monday's own STATUS column sits (after Yacht Name, not
+ * pinned first) but means "which section" here — changing it moves the
+ * shipment between groups, same as dragging a card between columns on
+ * Monday. Every field is editable locally for day-to-day office use, but
+ * nothing writes back to Monday: the next hourly sync
+ * (lib/shipsync/monday-import-board.server.ts) re-pulls the board and
+ * overwrites any Monday-linked row's fields (including a manual group move)
+ * back to whatever Monday currently has. Rows added here by hand (no
+ * monday_item_id) are never touched by the sync.
  */
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -40,23 +44,21 @@ function groupColor(title: string): string {
 
 function extraOf(p: ShipSyncPackage): Record<string, any> { return (p.extra as any) ?? {}; }
 function mondayText(p: ShipSyncPackage, title: string): string { return mondayRow(p)[title] ?? ""; }
-function fromMonday(p: ShipSyncPackage, keyword: string): string {
-  const row = mondayRow(p);
-  const key = Object.keys(row).find((k) => k.toLowerCase().includes(keyword));
-  return (key && row[key]) || "";
-}
 
-/** Titles the explicit columns below already cover — anything else genuinely
- *  Monday-only still shows via the extra-columns fallback. */
+/** Titles the explicit cells below already cover (including the dropped
+ *  Accounts column) — anything else genuinely Monday-only still shows via
+ *  the extra-columns fallback at the end. */
 const COVERED = [
   "air waybill", "waybill", "tracking", "account", "invoice", "item id",
   "yacht", "vessel", "boat", "status", "shipment type", "boe", "supplier",
   "date received", "received", "date delivered", "delivered", "dn no",
-  "delivery note", "receiver", "driver", "courier", "qty", "number of packages",
-  "packages", "file", "duty", "vat", "edas", "remarks",
+  "delivery note", "receiver", "driver", "qty", "number of packages",
+  "packages", "file", "edas", "courier", "paid amount", "payment copy",
+  "remarks", "payment method", "client email", "requestor", "quotation",
+  "collection and destination", "duty", "vat",
 ];
 
-type ColType = "text" | "number" | "date" | "boolean";
+type ColType = "text" | "number" | "date";
 interface ColDef {
   key: string;
   label: string;
@@ -86,25 +88,46 @@ function mondayCol(key: string, label: string, width: string, mondayKey: string)
   };
 }
 
-const COLS: ColDef[] = [
-  fieldCol("barcode", "Air waybill/tracking", "w-32", "text", "barcode"),
-  mondayCol("accounts", "Accounts", "w-20", "Accounts"),
-  mondayCol("invoiceNo", "Invoice No.", "w-24", "Invoice No."),
-  mondayCol("itemId", "Item ID", "w-24", "Item ID"),
-  fieldCol("boat_name", "Yacht Name", "w-32", "text", "boat_name"),
-  mondayCol("mondayStatus", "Monday Status", "w-28", "STATUS"),
-  fieldCol("trade_type", "Shipment Type", "w-28", "text", "trade_type"),
-  fieldCol("boe_no", "BOE No.", "w-24", "text", "boe_no"),
-  fieldCol("supplier", "Supplier", "w-28", "text", "supplier"),
-  fieldCol("received_at", "Date Received", "w-24", "date", "received_at"),
-  fieldCol("delivered_at", "Date Delivered", "w-24", "date", "delivered_at"),
-  fieldCol("delivery_note_no", "DN No.", "w-20", "text", "delivery_note_no"),
-  fieldCol("receiver_full_name", "Receiver", "w-24", "text", "receiver_full_name"),
-  mondayCol("driver", "Driver", "w-24", "DRIVER"),
-  fieldCol("courier", "Courier", "w-20", "text", "courier"),
-  fieldCol("num_packages", "Qty", "w-12", "number", "num_packages"),
-  fieldCol("duty", "Duty", "w-16", "number", "duty"),
-  fieldCol("vat", "VAT", "w-16", "number", "vat"),
+type CellSpec =
+  | { kind: "field"; col: ColDef }
+  | { kind: "status" }
+  | { kind: "documents" }
+  | { kind: "edas" };
+
+/** Left-to-right, exactly matching the Monday board's own column order
+ *  (Air WayBill/Tracking Number, Accounts[dropped], Invoice No., Item ID,
+ *  Yacht Name, STATUS, Shipment Type, BOE No., Supplier, Date Received,
+ *  Date Delivered, DN No., Receiver, Driver, Qty, Files, EDAS Required,
+ *  Courier, Paid Amount, Payment Copy, Remarks, Payment Method, Client
+ *  Email, Requestor, Quotation, Collection and Destination, Duty, VAT). */
+const CELLS: CellSpec[] = [
+  { kind: "field", col: fieldCol("barcode", "Air waybill/tracking", "w-32", "text", "barcode") },
+  { kind: "field", col: mondayCol("invoiceNo", "Invoice No.", "w-24", "Invoice No.") },
+  { kind: "field", col: mondayCol("itemId", "Item ID", "w-24", "Item ID") },
+  { kind: "field", col: fieldCol("boat_name", "Yacht Name", "w-32", "text", "boat_name") },
+  { kind: "status" },
+  { kind: "field", col: fieldCol("trade_type", "Shipment Type", "w-28", "text", "trade_type") },
+  { kind: "field", col: fieldCol("boe_no", "BOE No.", "w-24", "text", "boe_no") },
+  { kind: "field", col: fieldCol("supplier", "Supplier", "w-28", "text", "supplier") },
+  { kind: "field", col: fieldCol("received_at", "Date Received", "w-24", "date", "received_at") },
+  { kind: "field", col: fieldCol("delivered_at", "Date Delivered", "w-24", "date", "delivered_at") },
+  { kind: "field", col: fieldCol("delivery_note_no", "DN No.", "w-20", "text", "delivery_note_no") },
+  { kind: "field", col: fieldCol("receiver_full_name", "Receiver", "w-24", "text", "receiver_full_name") },
+  { kind: "field", col: mondayCol("driver", "Driver", "w-24", "DRIVER") },
+  { kind: "field", col: fieldCol("num_packages", "Qty", "w-12", "number", "num_packages") },
+  { kind: "documents" },
+  { kind: "edas" },
+  { kind: "field", col: fieldCol("courier", "Courier", "w-20", "text", "courier") },
+  { kind: "field", col: mondayCol("paidAmount", "Paid Amount", "w-20", "Paid Amount") },
+  { kind: "field", col: mondayCol("paymentCopy", "Payment Copy", "w-24", "PAYMENT COPY") },
+  { kind: "field", col: fieldCol("description", "Remarks", "w-40", "text", "description") },
+  { kind: "field", col: mondayCol("paymentMethod", "Payment Method", "w-24", "PAYMENT METHOD") },
+  { kind: "field", col: mondayCol("clientEmail", "Client Email", "w-28", "Client Email") },
+  { kind: "field", col: mondayCol("requestor", "Requestor", "w-24", "Requestor") },
+  { kind: "field", col: mondayCol("quotation", "Quotation", "w-24", "Quotation") },
+  { kind: "field", col: fieldCol("origin", "Collection and Destination", "w-40", "text", "origin") },
+  { kind: "field", col: fieldCol("duty", "Duty", "w-16", "number", "duty") },
+  { kind: "field", col: fieldCol("vat", "VAT", "w-16", "number", "vat") },
 ];
 
 interface GroupInfo { title: string; position: number }
@@ -237,6 +260,7 @@ export function ShipSyncImportBoard() {
         <div className="min-h-0 flex-1 space-y-4 overflow-auto">
           {groups.map((g) => {
             const isCollapsed = collapsed[g.title];
+            const colCount = CELLS.length + mondayColumns.length;
             return (
               <div key={g.title} className="overflow-hidden rounded-xl border border-border bg-card">
                 <button onClick={() => toggle(g.title)}
@@ -251,10 +275,12 @@ export function ShipSyncImportBoard() {
                     <table className="w-full table-fixed border-collapse text-[12.5px]">
                       <thead>
                         <tr className="border-b border-border bg-card text-left text-[10px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">
-                          <th className="w-28 px-2 py-1.5">Status</th>
-                          {COLS.map((c) => <th key={c.key} className={cn("px-2 py-1.5", c.width)}>{c.label}</th>)}
-                          <th className="w-14 px-2 py-1.5">EDAS</th>
-                          <th className="w-28 px-2 py-1.5">Documents</th>
+                          {CELLS.map((c) => {
+                            if (c.kind === "field") return <th key={c.col.key} className={cn("px-2 py-1.5", c.col.width)}>{c.col.label}</th>;
+                            if (c.kind === "status") return <th key="status" className="w-28 px-2 py-1.5">Status</th>;
+                            if (c.kind === "documents") return <th key="documents" className="w-28 px-2 py-1.5">Files</th>;
+                            return <th key="edas" className="w-14 px-2 py-1.5">EDAS</th>;
+                          })}
                           {mondayColumns.map((c) => <th key={c} className="w-28 px-2 py-1.5">{c}</th>)}
                         </tr>
                       </thead>
@@ -264,54 +290,69 @@ export function ShipSyncImportBoard() {
                           const docs = p.documents ?? [];
                           return (
                             <tr key={p.id} className="border-b border-border/40 hover:bg-accent/10">
-                              <td className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
-                                <Select value={g.title} onValueChange={(v) => {
-                                  const target = allGroups.find((x) => x.title === v);
-                                  if (target) void moveGroup(p, target);
-                                }}>
-                                  <SelectTrigger className="h-7 w-full border-none bg-transparent px-1.5 text-[11px] hover:bg-accent/40">
-                                    {savingCell === `${p.id}:group` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : (
-                                      <span className={cn("truncate rounded-full border bg-muted/40 px-2 py-0.5 text-[10px] font-semibold", groupColor(g.title))}>{g.title}</span>
-                                    )}
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {allGroups.map((opt) => <SelectItem key={opt.title} value={opt.title}>{opt.title}</SelectItem>)}
-                                  </SelectContent>
-                                </Select>
-                              </td>
-                              {COLS.map((c) => (
-                                <td key={c.key} className={cn("overflow-hidden px-1 py-0.5", c.width)}>
-                                  <EditableCell col={c} p={p} saving={savingCell === `${p.id}:${c.key}`}
-                                    onChange={(v) => void commit(p, `${p.id}:${c.key}`, c.set(p, v))} />
-                                </td>
-                              ))}
-                              <td className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
-                                <Select value={p.edas_required == null ? "unset" : p.edas_required ? "yes" : "no"}
-                                  onValueChange={(v) => void commit(p, `${p.id}:edas`, { edas_required: v === "unset" ? null : v === "yes" } as any)}>
-                                  <SelectTrigger className="h-7 w-full border-none bg-transparent px-1.5 text-[11px] hover:bg-accent/40">
-                                    {savingCell === `${p.id}:edas` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : (
-                                      <span>{p.edas_required == null ? "—" : p.edas_required ? "Yes" : "No"}</span>
-                                    )}
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="unset">—</SelectItem>
-                                    <SelectItem value="yes">Yes</SelectItem>
-                                    <SelectItem value="no">No</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </td>
-                              <td className="overflow-hidden px-2 py-1">
-                                {docs.length === 0 ? <span className="text-muted-foreground">—</span> : (
-                                  <div className="flex flex-wrap gap-1">
-                                    {docs.map((d, i) => (
-                                      <a key={i} href={d.url} target="_blank" rel="noopener noreferrer" title={d.name}
-                                        className="inline-flex max-w-[90px] items-center gap-1 truncate rounded border border-border px-1 py-0.5 text-[10px] text-primary hover:bg-primary/5">
-                                        <FileText className="h-3 w-3 shrink-0" /> <span className="truncate">{d.name}</span>
-                                      </a>
-                                    ))}
-                                  </div>
-                                )}
-                              </td>
+                              {CELLS.map((c) => {
+                                if (c.kind === "field") {
+                                  const col = c.col;
+                                  return (
+                                    <td key={col.key} className={cn("overflow-hidden px-1 py-0.5", col.width)}>
+                                      <EditableCell col={col} p={p} saving={savingCell === `${p.id}:${col.key}`}
+                                        onChange={(v) => void commit(p, `${p.id}:${col.key}`, col.set(p, v))} />
+                                    </td>
+                                  );
+                                }
+                                if (c.kind === "status") {
+                                  return (
+                                    <td key="status" className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
+                                      <Select value={g.title} onValueChange={(v) => {
+                                        const target = allGroups.find((x) => x.title === v);
+                                        if (target) void moveGroup(p, target);
+                                      }}>
+                                        <SelectTrigger className="h-7 w-full border-none bg-transparent px-1.5 text-[11px] hover:bg-accent/40">
+                                          {savingCell === `${p.id}:group` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : (
+                                            <span className={cn("truncate rounded-full border bg-muted/40 px-2 py-0.5 text-[10px] font-semibold", groupColor(g.title))}>{g.title}</span>
+                                          )}
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {allGroups.map((opt) => <SelectItem key={opt.title} value={opt.title}>{opt.title}</SelectItem>)}
+                                        </SelectContent>
+                                      </Select>
+                                    </td>
+                                  );
+                                }
+                                if (c.kind === "documents") {
+                                  return (
+                                    <td key="documents" className="overflow-hidden px-2 py-1">
+                                      {docs.length === 0 ? <span className="text-muted-foreground">—</span> : (
+                                        <div className="flex flex-wrap gap-1">
+                                          {docs.map((d, i) => (
+                                            <a key={i} href={d.url} target="_blank" rel="noopener noreferrer" title={d.name}
+                                              className="inline-flex max-w-[90px] items-center gap-1 truncate rounded border border-border px-1 py-0.5 text-[10px] text-primary hover:bg-primary/5">
+                                              <FileText className="h-3 w-3 shrink-0" /> <span className="truncate">{d.name}</span>
+                                            </a>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </td>
+                                  );
+                                }
+                                return (
+                                  <td key="edas" className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
+                                    <Select value={p.edas_required == null ? "unset" : p.edas_required ? "yes" : "no"}
+                                      onValueChange={(v) => void commit(p, `${p.id}:edas`, { edas_required: v === "unset" ? null : v === "yes" } as any)}>
+                                      <SelectTrigger className="h-7 w-full border-none bg-transparent px-1.5 text-[11px] hover:bg-accent/40">
+                                        {savingCell === `${p.id}:edas` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : (
+                                          <span>{p.edas_required == null ? "—" : p.edas_required ? "Yes" : "No"}</span>
+                                        )}
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="unset">—</SelectItem>
+                                        <SelectItem value="yes">Yes</SelectItem>
+                                        <SelectItem value="no">No</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </td>
+                                );
+                              })}
                               {mondayColumns.map((c) => (
                                 <td key={c} className="overflow-hidden truncate px-2 py-1 text-muted-foreground">{row[c] || "—"}</td>
                               ))}
@@ -319,7 +360,7 @@ export function ShipSyncImportBoard() {
                           );
                         })}
                         <tr>
-                          <td colSpan={COLS.length + 3 + mondayColumns.length} className="px-2 py-1">
+                          <td colSpan={colCount} className="px-2 py-1">
                             {addingIn === g.title ? (
                               <div className="flex items-center gap-2 py-0.5">
                                 <Input
