@@ -240,12 +240,19 @@ export function YachtShipmentsBoard() {
                       <table className="w-full table-fixed border-collapse text-sm">
                         <thead>
                           <tr className="border-b border-border bg-muted/30">
-                            <th className="sticky left-0 z-10 w-9 border-r border-border/40 bg-muted/30 px-3 py-2"></th>
+                            {/* Sticky header cells need a SOLID background — the row's
+                                own bg-muted/30 is translucent, which only looks opaque
+                                because it sits over the opaque panel behind it. Once a
+                                cell is pinned via `sticky`, other scrolled-under header
+                                cells paint behind it instead, and the 30%-opacity tint
+                                let their text bleed through. bg-card (solid, same as
+                                the sticky body cells already use) fixes it for real. */}
+                            <th className="sticky left-0 z-10 w-9 border-r border-border/40 bg-card px-3 py-2"></th>
                             {COLS.map((c) => (
                               <th key={c.key}
                                 className={cn(
                                   "px-3 py-2 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap",
-                                  c.width, c.sticky && "sticky left-9 z-10 border-r border-border/40 bg-muted/30",
+                                  c.width, c.sticky && "sticky left-9 z-10 border-r border-border/40 bg-card",
                                 )}>
                                 {c.label}
                               </th>
