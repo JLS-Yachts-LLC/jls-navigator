@@ -33,6 +33,7 @@ type UserRecord = {
   firstName: string | null
   lastName: string | null
   role: AppRole
+  department: string | null
   mfaEnabled: boolean
   invited: boolean
   lastSignIn: string | null
@@ -43,6 +44,8 @@ type UserRecord = {
 type DeptPerm = {
   department: string
   module: string
+  /** modules.name — what the enforcement layer actually keys on. */
+  module_slug?: string | null
   can_view: boolean
   can_create: boolean
   can_edit: boolean
@@ -51,10 +54,11 @@ type DeptPerm = {
 // ─── Server functions ─────────────────────────────────────────────────────────
 
 const getUsers = createServerFn({ method: 'GET' }).handler(async (): Promise<UserRecord[]> => {
-  const [{ data: auth, error }, { data: roles }, { data: profiles }] = await Promise.all([
+  const [{ data: auth, error }, { data: roles }, { data: profiles }, { data: userProfiles }] = await Promise.all([
     supabaseAdmin.auth.admin.listUsers({ perPage: 1000 }),
     supabaseAdmin.from('user_roles').select('user_id, role'),
     supabaseAdmin.from('profiles').select('id, display_name, first_name, last_name'),
+    (supabaseAdmin as any).from('user_profiles').select('user_id, department'),
   ])
   if (error) throw new Error(error.message)
   return (auth?.users ?? []).map((u: any) => {
@@ -66,6 +70,7 @@ const getUsers = createServerFn({ method: 'GET' }).handler(async (): Promise<Use
     firstName: profile?.first_name ?? null,
     lastName: profile?.last_name ?? null,
     role: (roles?.find((r: any) => r.user_id === u.id)?.role ?? 'user') as AppRole,
+    department: ((userProfiles ?? []) as any[]).find((x: any) => x.user_id === u.id)?.department ?? null,
     mfaEnabled: (u.factors?.length ?? 0) > 0,
     invited: !u.last_sign_in_at,
     lastSignIn: u.last_sign_in_at ?? null,
@@ -79,6 +84,19 @@ const doInviteUser = createServerFn({ method: 'POST' })
   .inputValidator((d: { email: string }) => d)
   .handler(async ({ data }) => {
     const { error } = await supabaseAdmin.auth.admin.inviteUserByEmail(data.email)
+    if (error) throw new Error(error.message)
+  })
+
+const doSetDepartment = createServerFn({ method: 'POST' })
+  .inputValidator((d: { userId: string; email: string; department: string | null }) => d)
+  .handler(async ({ data }) => {
+    // user_profiles may not have a row yet for older accounts — upsert one.
+    const { error } = await (supabaseAdmin as any).from('user_profiles').upsert({
+      user_id: data.userId,
+      email: data.email,
+      department: data.department,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id' })
     if (error) throw new Error(error.message)
   })
 
@@ -149,7 +167,7 @@ const doDisableMFA = createServerFn({ method: 'POST' })
 const getPerms = createServerFn({ method: 'GET' }).handler(async (): Promise<DeptPerm[]> => {
   const { data } = await (supabaseAdmin as any)
     .from('department_permissions')
-    .select('department, module, can_view, can_create, can_edit')
+    .select('department, module, module_slug, can_view, can_create, can_edit')
   return data ?? []
 })
 
@@ -297,14 +315,25 @@ const DEPARTMENTS = [
   'Management',
 ]
 
-const MODULES = [
-  'Yachts',
-  'Permits',
-  'Small Boat Registration',
-  'Orbit',
-  'Crew Care',
-  'ShipSync',
-  'Director',
+// The real modules the enforcement layer keys on (modules.name → display).
+// The old grid listed 7 ad-hoc labels; Yachts/Permits/Small Boat Registration
+// all live inside 'agency' and "Director" was 'finance'.
+const MODULES: { slug: string; label: string; note?: string }[] = [
+  { slug: 'agency', label: 'Agency & Destinations', note: 'Yachts · Permits · Small Boats · Port Calls' },
+  { slug: 'crew_immigration', label: 'Crew & Immigration', note: 'Crew · Visas · Compliance · Reports' },
+  { slug: 'crew_movements', label: 'Crew Sign-On / Off' },
+  { slug: 'crew_placement', label: 'Crew Placement' },
+  { slug: 'orbit', label: 'ORBIT — Operations' },
+  { slug: 'shipsync', label: 'ShipSync — Logistics', note: 'Logistics · Yacht Shipments' },
+  { slug: 'transport', label: 'Transport & Fleet', note: 'Crew Care — trips, journeys, vehicles' },
+  { slug: 'finance', label: 'Finance', note: 'Finance · Berth Billing' },
+  { slug: 'provisioning', label: 'Superyacht Provisioning' },
+  { slug: 'waypoint', label: 'Waypoint — Chandlery' },
+  { slug: 'seaport', label: 'Seaport Immigration' },
+  { slug: 'training', label: 'JLS Yacht Training' },
+  { slug: 'yacht_it', label: 'Yacht IT Solutions' },
+  { slug: 'compass_card', label: 'Compass Card' },
+  { slug: 'leo', label: 'Leo Intelligence' },
 ]
 
 type SettingsTab = 'users' | 'permissions' | 'integrations' | 'emailTemplates' | 'security'
@@ -416,6 +445,18 @@ function UsersPanel() {
     }
   }
 
+  const handleDeptChange = async (user: UserRecord, department: string | null) => {
+    try {
+      setActionLoading('dept-' + user.id)
+      await doSetDepartment({ data: { userId: user.id, email: user.email, department } })
+      setUsers(prev => prev.map(u => u.id === user.id ? { ...u, department } : u))
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Failed to set department')
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
   const handleDisableMFA = async (user: UserRecord) => {
     if (!confirm(`Disable MFA for ${user.email}?`)) return
     try {
@@ -503,6 +544,7 @@ function UsersPanel() {
               <tr className="border-b border-border bg-muted/40">
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">User</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Role</th>
+                <th className="text-left px-4 py-3 font-medium text-muted-foreground">Department</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">MFA</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Status</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Last seen</th>
@@ -512,7 +554,7 @@ function UsersPanel() {
             <tbody className="divide-y divide-border">
               {users.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">
+                  <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
                     No users found
                   </td>
                 </tr>
@@ -529,6 +571,7 @@ function UsersPanel() {
                   }
                   onResetPassword={() => handleResetPassword(user.email)}
                   onRoleChange={role => handleRoleChange(user.id, role)}
+                  onDeptChange={dept => handleDeptChange(user, dept)}
                   onDisableMFA={() => handleDisableMFA(user)}
                   onRemove={() => handleRemove(user)}
                   onProfileUpdated={(userId, firstName, lastName) => {
@@ -555,12 +598,13 @@ const ROLE_STYLES: Record<AppRole, string> = {
 }
 
 function UserRow({
-  user, isLoading, onResetPassword, onRoleChange, onDisableMFA, onRemove, onProfileUpdated,
+  user, isLoading, onResetPassword, onRoleChange, onDeptChange, onDisableMFA, onRemove, onProfileUpdated,
 }: {
   user: UserRecord
   isLoading: boolean
   onResetPassword: () => void
   onRoleChange: (r: AppRole) => void
+  onDeptChange: (d: string | null) => void
   onDisableMFA: () => void
   onRemove: () => void
   onProfileUpdated: (userId: string, firstName: string, lastName: string) => void
@@ -670,6 +714,18 @@ function UserRow({
         <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium capitalize ${ROLE_STYLES[user.role]}`}>
           {user.role}
         </span>
+      </td>
+      <td className="px-4 py-3">
+        {/* Department drives the default module access (department_permissions);
+            per-user rows in user_module_access still override it. */}
+        <select
+          value={user.department ?? ''}
+          onChange={e => onDeptChange(e.target.value || null)}
+          className="h-7 max-w-[150px] rounded-md border border-input bg-background px-1.5 text-xs"
+        >
+          <option value="">— None —</option>
+          {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+        </select>
       </td>
       <td className="px-4 py-3">
         {user.mfaEnabled ? (
@@ -791,20 +847,23 @@ function PermissionsPanel() {
       .finally(() => setLoading(false))
   }, [])
 
-  const getPerm = (dept: string, mod: string): DeptPerm =>
-    perms.find(p => p.department === dept && p.module === mod) ?? {
-      department: dept, module: mod, can_view: false, can_create: false, can_edit: false,
+  const getPerm = (dept: string, slug: string): DeptPerm => {
+    const mod = MODULES.find(m => m.slug === slug)!
+    return perms.find(p => p.department === dept && (p.module_slug === slug || p.module === mod.label)) ?? {
+      department: dept, module: mod.label, module_slug: slug, can_view: false, can_create: false, can_edit: false,
     }
+  }
 
-  const toggle = (dept: string, mod: string, field: keyof Pick<DeptPerm, 'can_view' | 'can_create' | 'can_edit'>) => {
+  const toggle = (dept: string, slug: string, field: keyof Pick<DeptPerm, 'can_view' | 'can_create' | 'can_edit'>) => {
+    const mod = MODULES.find(m => m.slug === slug)!
     setPerms(prev => {
-      const idx = prev.findIndex(p => p.department === dept && p.module === mod)
+      const idx = prev.findIndex(p => p.department === dept && (p.module_slug === slug || p.module === mod.label))
       if (idx >= 0) {
         const next = [...prev]
-        next[idx] = { ...next[idx], [field]: !next[idx][field] }
+        next[idx] = { ...next[idx], module_slug: slug, [field]: !next[idx][field] }
         return next
       }
-      return [...prev, { department: dept, module: mod, can_view: false, can_create: false, can_edit: false, [field]: true }]
+      return [...prev, { department: dept, module: mod.label, module_slug: slug, can_view: false, can_create: false, can_edit: false, [field]: true }]
     })
     setSaved(false)
   }
@@ -812,7 +871,7 @@ function PermissionsPanel() {
   const handleSave = async () => {
     try {
       setSaving(true)
-      const allPerms = DEPARTMENTS.flatMap(dept => MODULES.map(mod => getPerm(dept, mod)))
+      const allPerms = DEPARTMENTS.flatMap(dept => MODULES.map(mod => getPerm(dept, mod.slug)))
       await savePerms({ data: allPerms })
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
@@ -877,25 +936,28 @@ function PermissionsPanel() {
             </div>
 
             {MODULES.map((mod, i) => {
-              const perm = getPerm(selectedDept, mod)
+              const perm = getPerm(selectedDept, mod.slug)
               return (
                 <div
-                  key={mod}
+                  key={mod.slug}
                   className={`grid grid-cols-4 gap-4 items-center px-5 py-3.5 border-b border-border last:border-0 ${
                     i % 2 === 1 ? 'bg-muted/20' : ''
                   }`}
                 >
-                  <span className="text-sm font-medium">{mod}</span>
+                  <span className="text-sm font-medium">
+                    {mod.label}
+                    {mod.note && <span className="block text-[11px] font-normal text-muted-foreground">{mod.note}</span>}
+                  </span>
                   {(['can_view', 'can_create', 'can_edit'] as const).map(field => (
                     <div key={field} className="flex justify-center">
                       <button
-                        onClick={() => toggle(selectedDept, mod, field)}
+                        onClick={() => toggle(selectedDept, mod.slug, field)}
                         className={`h-5 w-5 rounded border transition-all ${
                           perm[field]
                             ? 'bg-primary border-primary text-primary-foreground'
                             : 'border-border bg-background hover:border-primary/50'
                         }`}
-                        aria-label={`${field} for ${mod}`}
+                        aria-label={`${field} for ${mod.label}`}
                       >
                         {perm[field] && (
                           <svg viewBox="0 0 12 12" fill="none" className="h-full w-full p-0.5">

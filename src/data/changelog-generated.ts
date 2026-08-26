@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Vehicle Maintenance — 3D damage capture, digital Condition Reports, Service Requests and driver Journeys"
+      },
+      {
+        "type": "feature",
         "title": "Vehicle insurance register — insurer, policy, premium and chassis details on Crew Care vehicles"
       },
       {

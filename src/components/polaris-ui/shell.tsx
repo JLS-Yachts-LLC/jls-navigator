@@ -12,6 +12,8 @@ import { FeedbackWidget } from "@/components/feedback/feedback-widget";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { GlobalSearch } from "./global-search";
 import { useTheme } from "@/lib/theme";
+import { useAccess } from "@/lib/auth/useAccess";
+import { canAccessModule, type PolarisClaims } from "@/lib/auth/claims";
 
 export type PolarisRole =
   | "global_admin"
@@ -25,6 +27,11 @@ export interface NavItem {
   icon: string;
   screen: string;
   roles?: PolarisRole[]; // undefined = all roles
+  /** modules.name this item belongs to — hidden when the user's module grants
+   *  (department defaults + per-user overrides) don't include view access.
+   *  Only enforced once the user HAS module grants; a user with none configured
+   *  sees everything, so the permissions rollout can't blank anyone's sidebar. */
+  module?: string;
   /** Route-backed item: navigates to this app route (rendered inside the same
    *  Polaris chrome by AppLayout) instead of switching an in-shell screen. */
   route?: string;
@@ -41,18 +48,21 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: "Dashboard", icon: "layout-dashboard", screen: "dashboard" },
       {
         label: "Vessels",
+        module: "agency",
         icon: "ship",
         screen: "vessels",
         roles: ["global_admin", "crew_immigration", "captain", "logistics_team"],
       },
       {
         label: "Crew",
+        module: "crew_immigration",
         icon: "users",
         screen: "crew",
         roles: ["global_admin", "crew_immigration", "captain", "crew"],
       },
       {
         label: "Compliance",
+        module: "crew_immigration",
         icon: "shield-check",
         screen: "compliance",
         roles: ["global_admin", "crew_immigration", "captain"],
@@ -61,6 +71,7 @@ export const NAV_GROUPS: NavGroup[] = [
         // Permits hub — Command Centre + one mini tab per permit type
         // (gate pass, cruising, exit & entry, …).
         label: "Permits",
+        module: "agency",
         icon: "license",
         screen: "permits",
         roles: ["global_admin", "crew_immigration", "captain"],
@@ -73,25 +84,26 @@ export const NAV_GROUPS: NavGroup[] = [
       {
         // Immigration hub — tabs into Visa + Sign On/Off (the real pages).
         label: "Immigration",
+        module: "crew_immigration",
         icon: "id-badge",
         screen: "immigration",
         roles: ["global_admin", "crew_immigration"],
       },
-      { label: "Logistics", icon: "truck", screen: "logistics" },
-      { label: "Crew Care", icon: "car", screen: "route-crew-cab", route: "/crew-cab/trips" },
-      { label: "Agency", icon: "world", screen: "route-agency", route: "/agency" },
-      { label: "Provisioning", icon: "tools-kitchen-2", screen: "route-provisioning", route: "/provisioning" },
-      { label: "Waypoint Chandlery", icon: "shopping-cart", screen: "route-waypoint", route: "/waypoint" },
-      { label: "Yacht Shipments", icon: "package", screen: "route-yacht-shipments", route: "/yacht-shipments" },
-      { label: "Seaport Immigration", icon: "building-lighthouse", screen: "route-seaport", route: "/seaport", roles: ["global_admin", "crew_immigration"] },
-      { label: "Training", icon: "certificate", screen: "training" },
-      { label: "Yacht IT Solutions", icon: "cpu", screen: "yacht-it" },
+      { label: "Logistics", module: "shipsync", icon: "truck", screen: "logistics" },
+      { label: "Crew Care", module: "transport", icon: "car", screen: "route-crew-cab", route: "/crew-cab/trips" },
+      { label: "Agency", module: "agency", icon: "world", screen: "route-agency", route: "/agency" },
+      { label: "Provisioning", module: "provisioning", icon: "tools-kitchen-2", screen: "route-provisioning", route: "/provisioning" },
+      { label: "Waypoint Chandlery", module: "waypoint", icon: "shopping-cart", screen: "route-waypoint", route: "/waypoint" },
+      { label: "Yacht Shipments", module: "shipsync", icon: "package", screen: "route-yacht-shipments", route: "/yacht-shipments" },
+      { label: "Seaport Immigration", module: "seaport", icon: "building-lighthouse", screen: "route-seaport", route: "/seaport", roles: ["global_admin", "crew_immigration"] },
+      { label: "Training", module: "training", icon: "certificate", screen: "training" },
+      { label: "Yacht IT Solutions", module: "yacht_it", icon: "cpu", screen: "yacht-it" },
       { label: "Anchor", icon: "signature", screen: "anchor" },
-      { label: "Crew Placement", icon: "user-star", screen: "crew-placement", roles: ["global_admin", "crew_immigration"] },
-      { label: "Finance", icon: "report-money", screen: "finance", roles: ["global_admin"] },
-      { label: "Port Calls", icon: "anchor", screen: "port-calls" },
-      { label: "Berth Billing", icon: "receipt-2", screen: "berth-billing", roles: ["global_admin"] },
-      { label: "Orbit", icon: "orbit", screen: "orbit" },
+      { label: "Crew Placement", module: "crew_placement", icon: "user-star", screen: "crew-placement", roles: ["global_admin", "crew_immigration"] },
+      { label: "Finance", module: "finance", icon: "report-money", screen: "finance", roles: ["global_admin"] },
+      { label: "Port Calls", module: "agency", icon: "anchor", screen: "port-calls" },
+      { label: "Berth Billing", module: "finance", icon: "receipt-2", screen: "berth-billing", roles: ["global_admin"] },
+      { label: "Orbit", module: "orbit", icon: "orbit", screen: "orbit" },
       {
         // Captain's Portal triage — requests raised by client captains at /portal.
         label: "Client Requests",
@@ -106,14 +118,16 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       {
         label: "Visa Reports",
+        module: "crew_immigration",
         icon: "file-description",
         screen: "visa-reports",
         roles: ["global_admin", "crew_immigration", "captain"],
       },
-      { label: "Sign On/Off", icon: "clipboard-list", screen: "soso-reports" },
-      { label: "Crew Documents", icon: "files", screen: "documents" },
+      { label: "Sign On/Off", module: "crew_movements", icon: "clipboard-list", screen: "soso-reports" },
+      { label: "Crew Documents", module: "crew_immigration", icon: "files", screen: "documents" },
       {
         label: "Spreadsheet Sync",
+        module: "crew_immigration",
         icon: "refresh",
         screen: "route-visa-sync",
         route: "/crew-immigration/visas/sync",
@@ -121,6 +135,7 @@ export const NAV_GROUPS: NavGroup[] = [
       },
       {
         label: "Duplicate Crew",
+        module: "crew_immigration",
         icon: "copy",
         screen: "route-crew-duplicates",
         route: "/crew-immigration/duplicates",
@@ -163,12 +178,18 @@ const RESTRICTED_NAV: Partial<Record<PolarisRole, string[]>> = {
   logistics_team: ["vessels", "logistics"],
 };
 
-function visibleGroups(role: PolarisRole): NavGroup[] {
+function visibleGroups(role: PolarisRole, claims?: PolarisClaims): NavGroup[] {
   const allow = RESTRICTED_NAV[role];
+  // Module gating only bites once the user actually has module grants — a user
+  // with none configured keeps the full (role-filtered) menu during rollout.
+  const gate = !!claims && !claims.isGlobalAdmin && claims.moduleNames.length > 0;
   return NAV_GROUPS.map((g) => ({
     ...g,
-    items: g.items.filter((i) =>
-      allow ? allow.includes(i.screen) : (!i.roles || i.roles.includes(role))),
+    items: g.items.filter((i) => {
+      if (allow ? !allow.includes(i.screen) : (i.roles && !i.roles.includes(role))) return false;
+      if (gate && i.module && !canAccessModule(claims!, i.module)) return false;
+      return true;
+    }),
   })).filter((g) => g.items.length > 0);
 }
 
@@ -346,6 +367,7 @@ function NavList({
   collapsed?: boolean;
 }) {
   const badges = useFeatureBadges();
+  const { claims } = useAccess();
   return (
     <nav
       style={{
@@ -355,7 +377,7 @@ function NavList({
         padding: collapsed ? "12px 8px" : "16px 12px",
       }}
     >
-      {visibleGroups(role).map((g) => (
+      {visibleGroups(role, claims).map((g) => (
         <div key={g.label}>
           {collapsed ? (
             <div style={{ height: 1, margin: "0 6px 6px", background: "var(--pds-border)" }} />

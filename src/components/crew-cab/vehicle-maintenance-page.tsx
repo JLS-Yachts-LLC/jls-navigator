@@ -17,7 +17,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Car, Loader2, X, Check, Wrench, ClipboardCheck, Camera, RotateCcw, CircleDot, Eraser,
+  Car, Loader2, X, Check, Wrench, ClipboardCheck, Camera, RotateCcw, CircleDot, Eraser, FileDown,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -323,6 +323,36 @@ export function VehicleMaintenancePage() {
     if (error) toast.error(error.message); else await loadVehicleData();
   }
 
+  async function downloadReportPdf(r: Report) {
+    if (!vehicle) return;
+    try {
+      // pdf-lib loads on demand — keeps it out of the page bundle until used.
+      const { buildConditionReportPdf } = await import("@/lib/crew-cab/condition-report-pdf");
+      const linked = damage.filter(d => d.condition_report_id === r.id);
+      const bytes = await buildConditionReportPdf({
+        vehicle: {
+          make: vehicle.make, model: vehicle.model, registration: vehicle.registration,
+          color: vehicle.color, mileage: r.mileage, chassis_no: vehicle.chassis_no,
+        },
+        report: r,
+        damage: linked.map(d => ({
+          panelLabel: PANEL_LABELS[d.panel] ?? d.panel,
+          code: DAMAGE_KEY[d.kind]?.code ?? "?",
+          kindLabel: DAMAGE_KEY[d.kind]?.label ?? d.kind,
+          severity: d.severity, note: d.note,
+        })),
+        serviceChecklist: SERVICES,
+        damageKey: Object.values(DAMAGE_KEY).filter(k => k.code !== "O").map(k => ({ code: k.code, label: k.label })),
+      });
+      const blob = new Blob([bytes as BlobPart], { type: "application/pdf" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `Condition Report - ${vehicle.make} ${vehicle.model} - ${r.date_in}.pdf`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (e: any) { toast.error(e?.message ?? "Could not build the PDF"); }
+  }
+
   async function setBodyType(bt: BodyType) {
     if (!vehicle) return;
     setVehicles(prev => prev.map(v => (v.id === vehicle.id ? { ...v, body_type: bt } : v)));
@@ -584,6 +614,10 @@ export function VehicleMaintenancePage() {
                 <span className="font-medium">{r.driver_name}</span>
                 <span className="text-muted-foreground">{fmtDate(r.date_in)}{r.date_out ? ` → ${fmtDate(r.date_out)}` : ""}</span>
                 {r.mileage != null && <span className="ml-auto tabular-nums text-muted-foreground">{r.mileage.toLocaleString()} km</span>}
+                <button onClick={() => void downloadReportPdf(r)} title="Download PDF"
+                  className={cn("rounded-md border border-border p-1 text-muted-foreground transition hover:border-primary/50 hover:text-primary", r.mileage == null && "ml-auto")}>
+                  <FileDown className="h-3.5 w-3.5" />
+                </button>
               </div>
               {r.services.length > 0 && <p className="mt-0.5 text-muted-foreground">{r.services.join(" · ")}</p>}
               {r.comments && <p className="mt-0.5 italic text-muted-foreground">{r.comments}</p>}
