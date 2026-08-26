@@ -14,21 +14,20 @@ import { syncYachtShipmentsFromMonday } from "@/lib/yacht-shipments/monday.serve
 
 type Row = Record<string, any>;
 
-const IMPORT_STATUS_GROUPS = [
+// Monday's real status column uses the exact same five values on both the
+// Import and Export boards (confirmed against the actual synced data — no
+// separate "New Request"/"Completed" vocabulary on Export, and Import's
+// "done" bucket is labelled "Complete" on Monday, not "Done"). One shared
+// group set for both directions, 1:1 with Monday.
+const STATUS_GROUPS = [
   { key: "new_lead", label: "New Lead", dot: "bg-slate-400", text: "text-slate-300" },
   { key: "in_progress", label: "In Progress", dot: "bg-blue-500", text: "text-blue-400" },
   { key: "on_hold", label: "On Hold", dot: "bg-amber-600", text: "text-amber-500" },
-  { key: "done", label: "Done", dot: "bg-emerald-500", text: "text-emerald-400" },
+  { key: "done", label: "Complete", dot: "bg-emerald-500", text: "text-emerald-400" },
   { key: "cancelled", label: "Cancelled", dot: "bg-red-500", text: "text-red-400" },
 ] as const;
 
-const EXPORT_STATUS_GROUPS = [
-  { key: "new_request", label: "New Request", dot: "bg-slate-400", text: "text-slate-300" },
-  { key: "in_progress", label: "In Progress", dot: "bg-blue-500", text: "text-blue-400" },
-  { key: "completed", label: "Completed", dot: "bg-emerald-500", text: "text-emerald-400" },
-] as const;
-
-const STATUS_GROUPS_BY_DIRECTION = { import: IMPORT_STATUS_GROUPS, export: EXPORT_STATUS_GROUPS } as const;
+const STATUS_GROUPS_BY_DIRECTION = { import: STATUS_GROUPS, export: STATUS_GROUPS } as const;
 
 const STATUS_BADGE: Record<string, string> = {
   new_lead: "bg-slate-500/15 text-slate-300",
@@ -36,8 +35,6 @@ const STATUS_BADGE: Record<string, string> = {
   on_hold: "bg-amber-600/20 text-amber-500",
   done: "bg-emerald-500/15 text-emerald-400",
   cancelled: "bg-red-500/15 text-red-400",
-  new_request: "bg-slate-500/15 text-slate-300",
-  completed: "bg-emerald-500/15 text-emerald-400",
 };
 
 // Free-text "tag" columns (Customs Option) get a deterministic colour per
