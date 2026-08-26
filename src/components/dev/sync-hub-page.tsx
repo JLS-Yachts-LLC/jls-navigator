@@ -234,10 +234,10 @@ export function SyncHubPage() {
               <div className="border-b border-border/60 bg-card/60 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                 ShipSync Import ⇄ Monday.com
               </div>
-              <SyncRow icon={ArrowDownToLine} name="Import board (Monday → app)"
-                       description="Inbound shipments mirrored from the Monday.com Import board into the ShipSync Import tab (read-only). Configure the API token + board ID in Settings → Integrations."
+              <SyncRow icon={ArrowDownToLine} name="Import/Transit board (Monday → app)"
+                       description="Shipments + native Monday groups mirrored into the ShipSync Import board (read-only). Configure the API token + Import board ID in Settings → Integrations."
                        schedule="hourly · read-only" lastRun={undefined}
-                       action={<RunButton onRun={() => run("monday-import")} label="Import now" />} />
+                       action={<RunButton onRun={() => run("shipsync-import-monday")} label="Import now" />} />
             </section>
           </>
         )}

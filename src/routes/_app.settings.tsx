@@ -1017,7 +1017,8 @@ const INTEGRATIONS: {
     logo: '📋',
     fields: [
       { key: 'api_token', label: 'API Token', type: 'password', placeholder: '••••••••' },
-      { key: 'board_id', label: 'Board ID', placeholder: 'e.g. 1234567890' },
+      { key: 'board_id', label: 'Board ID (Local Shipments)', placeholder: 'e.g. 1234567890' },
+      { key: 'import_board_id', label: 'Board ID (ShipSync Import)', placeholder: 'e.g. 1234567890' },
       { key: 'workspace_id', label: 'Workspace ID', placeholder: 'e.g. 987654' },
     ],
   },

@@ -10,12 +10,11 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Search, Loader2, RefreshCw, Trash2, Camera, FileText, ScanLine } from "lucide-react";
+import { Plus, Search, Loader2, Trash2, Camera, FileText, ScanLine } from "lucide-react";
 import { BarcodeScannerDialog } from "@/components/shipsync/BarcodeScanner";
-import { StatusBadge, fmtDate, lastSyncedAt, rel, mondayRow, extraMondayColumns } from "@/components/shipsync/shared";
+import { StatusBadge, fmtDate, mondayRow, extraMondayColumns } from "@/components/shipsync/shared";
 import { ALL_ZONES, STATUS_META, type PackageStatus, type ShipSyncPackage } from "@/lib/shipsync/model";
 import { createPackage, patchPackage, deletePackage, uploadShipSyncImage } from "@/lib/shipsync/data";
-import { syncMondayImport } from "@/lib/shipsync/monday.server";
 import type { ShipSyncData } from "@/components/shipsync-page";
 
 const STATUS_OPTIONS = Object.keys(STATUS_META) as PackageStatus[];
@@ -65,25 +64,8 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
   const [busy, setBusy] = useState(false);
   const [delTarget, setDelTarget] = useState<ShipSyncPackage | null>(null);
   const [scanOpen, setScanOpen] = useState(false);
-  const [syncing, setSyncing] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const set = (p: Form) => setForm((f) => ({ ...f, ...p }));
-
-  async function sync() {
-    setSyncing(true);
-    try {
-      const r = await (syncMondayImport as any)();
-      if (!r.ok && r.synced === 0) throw new Error(r.detail);
-      toast.success(r.detail);
-      await reload();
-    } catch (e: any) {
-      toast.error(e?.message ?? "Monday sync failed");
-    } finally {
-      setSyncing(false);
-    }
-  }
-
-  const synced = lastSyncedAt(data.packages);
 
   // Extra Monday-only columns (not already shown by the fixed columns below),
   // in board order where known. Empty until a Monday sync has actually run.
@@ -180,10 +162,6 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
           </SelectContent>
         </Select>
         <span className="text-[12px] text-muted-foreground">{filtered.length} of {data.packages.length}</span>
-        {synced && <span className="text-[11px] text-muted-foreground/70">Monday synced {rel(synced)}</span>}
-        <Button size="sm" variant="outline" onClick={() => void sync()} disabled={syncing} className="h-9 gap-1.5">
-          {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Sync from Monday
-        </Button>
         <Button size="sm" onClick={openNew} className="ml-auto h-9 gap-1.5"><Plus className="h-4 w-4" /> Check in package</Button>
       </div>
 
@@ -199,7 +177,14 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
           </tr></thead>
           <tbody>
             {filtered.length === 0 ? (
-              <tr><td colSpan={14 + mondayColumns.length} className="px-4 py-12 text-center text-sm text-muted-foreground">No packages match.</td></tr>
+              <tr><td colSpan={14 + mondayColumns.length} className="px-4 py-12 text-center text-sm text-muted-foreground">
+                {data.packages.length === 0 ? (
+                  <div className="flex flex-col items-center gap-3">
+                    <span>No packages yet — check one in to get started.</span>
+                    <Button size="sm" onClick={openNew} className="gap-1.5"><Plus className="h-4 w-4" /> Check in package</Button>
+                  </div>
+                ) : "No packages match."}
+              </td></tr>
             ) : filtered.map((p) => {
               const note = data.notes.find((n) => n.id === p.delivery_note_id);
               const driver = data.drivers.find((d) => d.id === p.driver_id);

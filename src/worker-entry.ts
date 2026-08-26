@@ -1018,13 +1018,13 @@ export default {
           .catch((e) => console.error('[myshiptracking-cron] error:', e))
       )
 
-      // ── Hourly: mirror the Monday.com ShipSync Import board into the app
-      //    (read-only). No-ops silently until the Monday token + board id are set. ──
+      // ── Hourly: mirror the Monday.com ShipSync Import/Transit board into the
+      //    app (read-only). No-ops silently until the token + import_board_id are set. ──
       ctx.waitUntil(
-        import('./lib/shipsync/monday.server')
-          .then(({ importMondayShipments }) => importMondayShipments({}))
-          .then((r) => console.log(`[monday-import-cron] synced=${r.synced} errors=${r.errors}`))
-          .catch((e) => console.error('[monday-import-cron] error:', e instanceof Error ? e.message : String(e)))
+        import('./lib/shipsync/monday-import-board.server')
+          .then(({ importMondayImportBoard }) => importMondayImportBoard())
+          .then((r) => console.log(`[shipsync-import-board-cron] synced=${r.synced} errors=${r.errors}`))
+          .catch((e) => console.error('[shipsync-import-board-cron] error:', e instanceof Error ? e.message : String(e)))
       )
 
       // ── Hourly: QuickBooks pipeline health monitor — broken/expiring company

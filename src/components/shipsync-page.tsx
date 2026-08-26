@@ -10,6 +10,7 @@ import type {
 } from "@/lib/shipsync/model";
 import { ShipSyncPackages } from "@/components/shipsync/ShipSyncPackages";
 import { ShipSyncShipments } from "@/components/shipsync/ShipSyncShipments";
+import { ShipSyncImportBoard } from "@/components/shipsync/ShipSyncImportBoard";
 import { ShipSyncDispatch } from "@/components/shipsync/ShipSyncDispatch";
 import { ShipSyncRouting } from "@/components/shipsync/ShipSyncRouting";
 import { ShipSyncWarehouse } from "@/components/shipsync/ShipSyncWarehouse";
@@ -132,7 +133,7 @@ export function ShipSyncPage({ initialTab }: { initialTab?: string } = {}) {
         ) : (
           <>
             {tab === "packages" && <ShipSyncPackages data={data} reload={reload} />}
-            {tab === "import" && <ShipSyncShipments kind="Import" />}
+            {tab === "import" && <ShipSyncImportBoard />}
             {tab === "export" && <ShipSyncShipments kind="Export" />}
             {tab === "dispatch" && <ShipSyncDispatch data={data} reload={reload} />}
             {tab === "routing" && <ShipSyncRouting data={data} reload={reload} />}
