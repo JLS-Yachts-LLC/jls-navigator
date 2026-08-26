@@ -230,7 +230,14 @@ export function YachtShipmentsBoard() {
 
                   {!isCollapsed && (
                     <div className="overflow-x-auto">
-                      <table className="w-full border-collapse text-sm">
+                      {/* table-fixed + a matching width class on every th AND td:
+                          each group renders its own <table>, and browsers' default
+                          auto-layout sizes columns per-table from cell content — so
+                          a table with real text ("test") computed different column
+                          widths than an empty one, and the sticky offsets (fixed
+                          Tailwind values) stopped lining up with the real column
+                          edge. Fixed layout makes widths content-independent. */}
+                      <table className="w-full table-fixed border-collapse text-sm">
                         <thead>
                           <tr className="border-b border-border bg-muted/30">
                             <th className="sticky left-0 z-10 w-9 border-r border-border/40 bg-muted/30 px-3 py-2"></th>
@@ -253,7 +260,7 @@ export function YachtShipmentsBoard() {
                                 <Checkbox checked={selected.has(r.id)} onCheckedChange={() => toggleSelect(r.id)} />
                               </td>
                               {COLS.map((c) => (
-                                <td key={c.key} className={cn("px-1 py-1", c.sticky && "sticky left-9 z-10 border-r border-border/40 bg-card group-hover:bg-accent/10")}>
+                                <td key={c.key} className={cn("overflow-hidden px-1 py-1", c.width, c.sticky && "sticky left-9 z-10 border-r border-border/40 bg-card group-hover:bg-accent/10")}>
                                   <EditableCell
                                     col={c}
                                     row={r}
