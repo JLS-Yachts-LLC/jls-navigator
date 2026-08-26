@@ -8,11 +8,14 @@
  * board left-to-right (its "Accounts" column is dropped — unused on every
  * item so far and not wanted here).
  *
- * "Status" sits where Monday's own STATUS column sits (after Yacht Name, not
- * pinned first) but means "which section" here — changing it moves the
- * shipment between groups, same as dragging a card between columns on
- * Monday. Every field is editable locally for day-to-day office use, but
- * nothing writes back to Monday: the next hourly sync
+ * "Group" (pinned first — not a real Monday column, so it has no "correct"
+ * position to match) moves a shipment between sections, same as dragging a
+ * card between columns on Monday. "Status" is the separate, real Monday
+ * STATUS column — same 18 labels and colours as Monday's own status picker
+ * — sitting where Monday has it (after Yacht Name). The two are independent:
+ * changing Status never moves a shipment's group. Every field is editable
+ * locally for day-to-day office use, but nothing writes back to Monday: the
+ * next hourly sync
  * (lib/shipsync/monday-import-board.server.ts) re-pulls the board and
  * overwrites any Monday-linked row's fields (including a manual group move)
  * back to whatever Monday currently has. Rows added here by hand (no
@@ -40,6 +43,33 @@ function groupColor(title: string): string {
   let h = 0;
   for (let i = 0; i < title.length; i++) h = (h * 31 + title.charCodeAt(i)) >>> 0;
   return GROUP_PALETTE[h % GROUP_PALETTE.length];
+}
+
+/** Monday's real STATUS column — its exact 18 labels and colours (from the
+ *  board's column settings), in the same order Monday's own label picker
+ *  shows them. Independent of the group/section a shipment sits in. */
+const MONDAY_STATUS_LABELS: { label: string; color: string }[] = [
+  { label: "New Request", color: "#ff007f" },
+  { label: "Intransit", color: "#784bd1" },
+  { label: "Incoming", color: "#c4c4c4" },
+  { label: "Warehouse", color: "#fdab3d" },
+  { label: "Delivered - TBI", color: "#ffcb00" },
+  { label: "Collected from Origin", color: "#333333" },
+  { label: "Office", color: "#df2f4a" },
+  { label: "1st Inspection", color: "#007eb5" },
+  { label: "Collected in Warehouse", color: "#9d50dd" },
+  { label: "2nd Inspection", color: "#579bfc" },
+  { label: "Out for Delivery", color: "#cab641" },
+  { label: "Scheduled for Delivery", color: "#037f4c" },
+  { label: "Exported", color: "#bb3354" },
+  { label: "In Warehouse - For Inspection", color: "#5559df" },
+  { label: "In Warehouse", color: "#ff5ac4" },
+  { label: "Arrived in UAE", color: "#9cd326" },
+  { label: "Canceled", color: "#66ccff" },
+  { label: "Complete", color: "#00c875" },
+];
+function mondayStatusColor(label: string): string {
+  return MONDAY_STATUS_LABELS.find((s) => s.label === label)?.color ?? "#6b7280";
 }
 
 function extraOf(p: ShipSyncPackage): Record<string, any> { return (p.extra as any) ?? {}; }
@@ -90,7 +120,7 @@ function mondayCol(key: string, label: string, width: string, mondayKey: string)
 
 type CellSpec =
   | { kind: "field"; col: ColDef }
-  | { kind: "status" }
+  | { kind: "mondayStatus" }
   | { kind: "documents" }
   | { kind: "edas" };
 
@@ -105,7 +135,7 @@ const CELLS: CellSpec[] = [
   { kind: "field", col: mondayCol("invoiceNo", "Invoice No.", "w-24", "Invoice No.") },
   { kind: "field", col: mondayCol("itemId", "Item ID", "w-24", "Item ID") },
   { kind: "field", col: fieldCol("boat_name", "Yacht Name", "w-32", "text", "boat_name") },
-  { kind: "status" },
+  { kind: "mondayStatus" },
   { kind: "field", col: fieldCol("trade_type", "Shipment Type", "w-28", "text", "trade_type") },
   { kind: "field", col: fieldCol("boe_no", "BOE No.", "w-24", "text", "boe_no") },
   { kind: "field", col: fieldCol("supplier", "Supplier", "w-28", "text", "supplier") },
@@ -260,7 +290,7 @@ export function ShipSyncImportBoard() {
         <div className="min-h-0 flex-1 space-y-4 overflow-auto">
           {groups.map((g) => {
             const isCollapsed = collapsed[g.title];
-            const colCount = CELLS.length + mondayColumns.length;
+            const colCount = CELLS.length + 1 + mondayColumns.length;
             return (
               <div key={g.title} className="overflow-hidden rounded-xl border border-border bg-card">
                 <button onClick={() => toggle(g.title)}
@@ -275,9 +305,10 @@ export function ShipSyncImportBoard() {
                     <table className="w-full table-fixed border-collapse text-[12.5px]">
                       <thead>
                         <tr className="border-b border-border bg-card text-left text-[10px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">
+                          <th className="w-28 px-2 py-1.5">Group</th>
                           {CELLS.map((c) => {
                             if (c.kind === "field") return <th key={c.col.key} className={cn("px-2 py-1.5", c.col.width)}>{c.col.label}</th>;
-                            if (c.kind === "status") return <th key="status" className="w-28 px-2 py-1.5">Status</th>;
+                            if (c.kind === "mondayStatus") return <th key="mondayStatus" className="w-36 px-2 py-1.5">Status</th>;
                             if (c.kind === "documents") return <th key="documents" className="w-28 px-2 py-1.5">Files</th>;
                             return <th key="edas" className="w-14 px-2 py-1.5">EDAS</th>;
                           })}
@@ -290,6 +321,21 @@ export function ShipSyncImportBoard() {
                           const docs = p.documents ?? [];
                           return (
                             <tr key={p.id} className="border-b border-border/40 hover:bg-accent/10">
+                              <td className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
+                                <Select value={g.title} onValueChange={(v) => {
+                                  const target = allGroups.find((x) => x.title === v);
+                                  if (target) void moveGroup(p, target);
+                                }}>
+                                  <SelectTrigger className="h-7 w-full border-none bg-transparent px-1.5 text-[11px] hover:bg-accent/40">
+                                    {savingCell === `${p.id}:group` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : (
+                                      <span className={cn("truncate rounded-full border bg-muted/40 px-2 py-0.5 text-[10px] font-semibold", groupColor(g.title))}>{g.title}</span>
+                                    )}
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {allGroups.map((opt) => <SelectItem key={opt.title} value={opt.title}>{opt.title}</SelectItem>)}
+                                  </SelectContent>
+                                </Select>
+                              </td>
                               {CELLS.map((c) => {
                                 if (c.kind === "field") {
                                   const col = c.col;
@@ -300,20 +346,26 @@ export function ShipSyncImportBoard() {
                                     </td>
                                   );
                                 }
-                                if (c.kind === "status") {
+                                if (c.kind === "mondayStatus") {
+                                  const current = mondayText(p, "STATUS");
                                   return (
-                                    <td key="status" className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
-                                      <Select value={g.title} onValueChange={(v) => {
-                                        const target = allGroups.find((x) => x.title === v);
-                                        if (target) void moveGroup(p, target);
-                                      }}>
+                                    <td key="mondayStatus" className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
+                                      <Select value={current || undefined}
+                                        onValueChange={(v) => void commit(p, `${p.id}:mondayStatus`, { extra: { ...extraOf(p), monday: { ...mondayRow(p), STATUS: v } } } as any)}>
                                         <SelectTrigger className="h-7 w-full border-none bg-transparent px-1.5 text-[11px] hover:bg-accent/40">
-                                          {savingCell === `${p.id}:group` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : (
-                                            <span className={cn("truncate rounded-full border bg-muted/40 px-2 py-0.5 text-[10px] font-semibold", groupColor(g.title))}>{g.title}</span>
-                                          )}
+                                          {savingCell === `${p.id}:mondayStatus` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : current ? (
+                                            <span className="truncate rounded px-2 py-0.5 text-[10px] font-semibold text-white" style={{ background: mondayStatusColor(current) }}>{current}</span>
+                                          ) : <span className="text-muted-foreground/30">—</span>}
                                         </SelectTrigger>
                                         <SelectContent>
-                                          {allGroups.map((opt) => <SelectItem key={opt.title} value={opt.title}>{opt.title}</SelectItem>)}
+                                          {MONDAY_STATUS_LABELS.map((s) => (
+                                            <SelectItem key={s.label} value={s.label}>
+                                              <span className="flex items-center gap-2">
+                                                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: s.color }} />
+                                                {s.label}
+                                              </span>
+                                            </SelectItem>
+                                          ))}
                                         </SelectContent>
                                       </Select>
                                     </td>
