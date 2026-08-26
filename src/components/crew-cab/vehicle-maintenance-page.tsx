@@ -7,9 +7,7 @@
  * damage form (bottom sheet on phones, side panel on desktop). The model
  * reshapes to the vehicle's body type — coupe, sedan, estate, pickup or van.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Canvas } from "@react-three/fiber";
-import { OrbitControls, ContactShadows } from "@react-three/drei";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type * as THREE from "three";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
@@ -22,9 +20,15 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
-  VehicleModel, DAMAGE_KEY, PANEL_LABELS, SEVERITY_COLORS,
+  DAMAGE_KEY, PANEL_LABELS, SEVERITY_COLORS,
   type BodyType, type DamageKind, type Severity, type Marker,
-} from "./car-model";
+} from "./car-model-data";
+
+// `three` / `@react-three/fiber` / `@react-three/drei` are client-only (no
+// WebGL server-side) and blew up the SSR build's memory when imported at this
+// page's top level — lazy-load the actual 3D viewport, and gate it on the
+// `mounted` check below so the SSR pass never even attempts to resolve it.
+const Vehicle3DViewport = lazy(() => import("./vehicle-3d-viewport"));
 
 type Vehicle = {
   id: string; make: string; model: string; registration: string | null;
@@ -145,6 +149,10 @@ function SignaturePad({ onChange }: { onChange: (dataUrl: string | null) => void
 export function VehicleMaintenancePage() {
   const { user } = useAuth();
   const isMobile = useIsMobile();
+  // True only after client-side mount — never during SSR — so the lazy 3D
+  // viewport import is never even initiated server-side.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [vehicleId, setVehicleId] = useState<string>("");
   const [damage, setDamage] = useState<Damage[]>([]);
@@ -629,21 +637,22 @@ export function VehicleMaintenancePage() {
           {/* 3D viewport */}
           <div className={cn("relative overflow-hidden rounded-xl border border-border bg-[#0a1017]",
             isMobile ? "h-[46vh] shrink-0" : "min-h-[560px]")}>
-            <Canvas dpr={[1, 2]} camera={{ position: [4.6, 2.8, 4.6], fov: 42 }} style={{ touchAction: "none" }}>
-              <ambientLight intensity={0.65} />
-              <directionalLight position={[6, 9, 4]} intensity={1.3} />
-              <directionalLight position={[-6, 4, -5]} intensity={0.4} />
-              <VehicleModel
-                bodyType={vehicle.body_type ?? "sedan"}
-                paint={paintFor(vehicle.color)}
-                markers={markers}
-                damagedPanels={damagedPanels}
-                selectedPanel={pending?.panel ?? null}
-                onPanelTap={onPanelTap}
-              />
-              <ContactShadows position={[0, 0.01, 0]} opacity={0.5} scale={12} blur={2.2} far={3} />
-              <OrbitControls enablePan={false} minDistance={3.2} maxDistance={10} maxPolarAngle={1.5} />
-            </Canvas>
+            {mounted && (
+              <Suspense fallback={
+                <div className="flex h-full items-center justify-center text-muted-foreground">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                </div>
+              }>
+                <Vehicle3DViewport
+                  bodyType={vehicle.body_type ?? "sedan"}
+                  paint={paintFor(vehicle.color)}
+                  markers={markers}
+                  damagedPanels={damagedPanels}
+                  selectedPanel={pending?.panel ?? null}
+                  onPanelTap={onPanelTap}
+                />
+              </Suspense>
+            )}
             <div className="pointer-events-none absolute left-3 top-3 rounded-lg bg-black/45 px-2.5 py-1.5 text-[11px] text-white/85 backdrop-blur">
               <RotateCcw className="mr-1 inline h-3 w-3" /> Drag to rotate · pinch/scroll to zoom · <b>tap a panel</b> to record damage
             </div>
