@@ -15,9 +15,10 @@
  */
 import { useMemo, useRef, useState } from "react";
 import type { ThreeEvent } from "@react-three/fiber";
+import { Edges } from "@react-three/drei";
 import type * as THREE from "three";
 import {
-  bodySpec, KIND_COLORS, SEVERITY_COLORS,
+  bodySpec, KIND_COLORS,
   type BodyType, type Marker, type Role, type Severity,
 } from "./car-model-data";
 
@@ -36,16 +37,24 @@ export function VehicleModel({
   const parts = useMemo(() => bodySpec(bodyType), [bodyType])
   const downAt = useRef<{ x: number; y: number } | null>(null)
 
+  // Enterprise schematic: the vehicle is always matte white with drawn panel
+  // lines — the visual language of an insurance condition-report diagram.
+  // State is shown as a pastel FILL of the panel, not a glow: damage severity
+  // in amber→red, hover/selection in blue. The real paint colour is ignored.
+  void paint
   const roleColor: Record<Role, string> = {
-    paint, glass: "#1d3040", dark: "#20262e", trim: "#2c333c",
+    paint: "#eef1f4", glass: "#c5d4de", dark: "#d5dbe2", trim: "#dee4ea",
+  }
+  const SEVERITY_FILL: Record<Severity, string> = {
+    minor: "#fde68a", moderate: "#fdba74", severe: "#fca5a5",
   }
 
-  function emissiveFor(panel: string): { color: string; intensity: number } {
-    if (panel === selectedPanel) return { color: "#22d3ee", intensity: 0.55 }
-    if (hovered === panel) return { color: "#22d3ee", intensity: 0.3 }
+  function fillFor(panel: string, base: string): string {
+    if (panel === selectedPanel) return "#7dd3fc"
+    if (hovered === panel) return "#bae6fd"
     const sev = damagedPanels[panel]
-    if (sev) return { color: SEVERITY_COLORS[sev], intensity: 0.4 }
-    return { color: "#000000", intensity: 0 }
+    if (sev) return SEVERITY_FILL[sev]
+    return base
   }
 
   // A tap is a click only if the pointer barely moved — otherwise it was an
@@ -68,12 +77,12 @@ export function VehicleModel({
   return (
     <group>
       {parts.map((p, i) => {
-        const em = emissiveFor(p.panel)
         if (p.kind === "wheel") {
           return (
             <mesh key={i} position={p.pos} rotation={[Math.PI / 2, 0, 0]} {...handlers(p.panel)}>
               <cylinderGeometry args={[p.radius, p.radius, 0.26, 24]} />
-              <meshStandardMaterial color="#15181d" roughness={0.9} emissive={em.color} emissiveIntensity={em.intensity} />
+              <meshStandardMaterial color={fillFor(p.panel, "#adb7c2")} metalness={0} roughness={0.85} />
+              <Edges threshold={30} color="#64748b" />
             </mesh>
           )
         }
@@ -81,14 +90,14 @@ export function VehicleModel({
           <mesh key={i} position={p.pos} rotation={[0, 0, p.rotZ ?? 0]} {...handlers(p.panel)}>
             <boxGeometry args={p.size} />
             <meshStandardMaterial
-              color={roleColor[p.role]}
-              metalness={p.role === "paint" ? 0.55 : p.role === "glass" ? 0.1 : 0.3}
-              roughness={p.role === "paint" ? 0.35 : p.role === "glass" ? 0.15 : 0.7}
+              color={fillFor(p.panel, roleColor[p.role])}
+              metalness={0}
+              roughness={0.9}
               transparent={p.role === "glass"}
-              opacity={p.role === "glass" ? 0.85 : 1}
-              emissive={em.color}
-              emissiveIntensity={em.intensity}
+              opacity={p.role === "glass" ? 0.92 : 1}
             />
+            {/* Drawn panel lines — the schematic look */}
+            <Edges threshold={15} color="#64748b" />
           </mesh>
         )
       })}

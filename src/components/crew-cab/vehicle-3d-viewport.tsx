@@ -24,9 +24,9 @@ export default function Vehicle3DViewport({
 }) {
   return (
     <Canvas dpr={[1, 2]} camera={{ position: [4.6, 2.8, 4.6], fov: 42 }} style={{ touchAction: "none" }}>
-      <ambientLight intensity={0.65} />
-      <directionalLight position={[6, 9, 4]} intensity={1.3} />
-      <directionalLight position={[-6, 4, -5]} intensity={0.4} />
+      <ambientLight intensity={0.95} />
+      <directionalLight position={[6, 9, 4]} intensity={0.75} />
+      <directionalLight position={[-6, 4, -5]} intensity={0.35} />
       <VehicleModel
         bodyType={bodyType}
         paint={paint}
