@@ -8,7 +8,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { usePolarisRole } from "@/lib/use-polaris-role";
-import { LeoChat } from "@/components/leo/LeoChat";
+import { LeoFloatingChat } from "@/components/leo/LeoFloatingChat";
 import "@/components/polaris-ui/tokens.css";
 import { PolarisShell, navItemForScreen, type PolarisRole } from "@/components/polaris-ui/shell";
 import { ToastProvider } from "@/components/polaris-ui/feedback";
@@ -128,76 +128,15 @@ function PolarisRedesignApp() {
     yachts.find((y) => y.id === selectedId) ?? null;
   const initials = (user?.email ?? "?").slice(0, 2).toUpperCase();
 
-  // Start collapsed — Leo's chat opens only when the user clicks the LEO pill,
-  // so it doesn't pop open on every page load / refresh.
-  const [leoOpen, setLeoOpen] = useState(false);
   const leoToken = session?.access_token ?? "";
 
   return (
     <ToastProvider>
       {/* ── Leo floating agent — fixed bottom-right, outside shell flow ──
            This is the ASK-LEO chat (not the briefing). The morning brief lives
-           inline on the dashboard; here the user types questions about the app. ── */}
-      {leoToken && (
-        <div
-          style={{
-            position:  "fixed",
-            bottom:    24,
-            right:     24,
-            width:     leoOpen ? 420 : "auto",
-            zIndex:    9999,
-            display:   "flex",
-            flexDirection: "column",
-            alignItems: "flex-end",
-            gap:        0,
-            filter:    "drop-shadow(0 8px 32px rgba(0,0,0,0.55))",
-          }}
-        >
-          {leoOpen && (
-            <div style={{ width: "100%", height: "min(70vh, 520px)", marginBottom: 0 }}>
-              <LeoChat
-                token={leoToken}
-                userName={user?.email ?? ""}
-                onClose={() => setLeoOpen(false)}
-              />
-            </div>
-          )}
-          {/* Toggle pill */}
-          <button
-            onClick={() => setLeoOpen(o => !o)}
-            style={{
-              marginTop:     leoOpen ? 6 : 0,
-              display:       "flex",
-              alignItems:    "center",
-              gap:            6,
-              background:    "#0D1520",
-              border:        "1px solid #1E4060",
-              borderRadius:  20,
-              padding:       "6px 14px 6px 10px",
-              cursor:        "pointer",
-              fontFamily:    "'Space Grotesk', sans-serif",
-              fontSize:      12,
-              fontWeight:    700,
-              color:         "#4590ba",
-              letterSpacing: "0.12em",
-              boxShadow:     "0 2px 12px rgba(0,0,0,0.4)",
-            }}
-          >
-            <span style={{
-              width: 7, height: 7, borderRadius: "50%",
-              background: "#4590ba", display: "inline-block",
-              animation: "pulse 2s ease-in-out infinite",
-            }} />
-            LEO
-            <span style={{
-              fontSize: 10, color: "#3A5570", fontWeight: 400,
-              marginLeft: 2,
-            }}>
-              {leoOpen ? "▾" : "▴"}
-            </span>
-          </button>
-        </div>
-      )}
+           inline on the dashboard; here the user types questions about the app.
+           Shared with every other route via AppLayout — see LeoFloatingChat. ── */}
+      <LeoFloatingChat token={leoToken} userName={user?.email ?? ""} />
 
       <PolarisShell
         role={role}

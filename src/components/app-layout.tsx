@@ -3,7 +3,7 @@ import { useEffect } from "react";
 import "@/components/polaris-ui/tokens.css";
 import { PolarisShell, navItemForScreen, activeScreenForPath } from "@/components/polaris-ui/shell";
 import { ViewAsBanner } from "@/components/view-as-banner";
-import { LeoBubble } from "@/components/leo-bubble";
+import { LeoFloatingChat } from "@/components/leo/LeoFloatingChat";
 import { DeployWatcher } from "@/components/deploy-watcher";
 import { WorkingIndicator } from "@/components/working-indicator";
 import { useAuth } from "@/lib/auth";
@@ -17,7 +17,7 @@ import { installErrorLogging, setLogUser } from "@/lib/error-logger";
 // inside the Polaris shell (see git history for the previous layout markup).
 
 export function AppLayout() {
-  const { user, loading } = useAuth();
+  const { user, session, loading } = useAuth();
   const role = usePolarisRole();
   const navigate = useNavigate();
   const location = useLocation();
@@ -109,7 +109,7 @@ export function AppLayout() {
         <Outlet />
       </PolarisShell>
       <WorkingIndicator />
-      <LeoBubble />
+      <LeoFloatingChat token={session?.access_token ?? ""} userName={user.email ?? ""} />
     </>
   );
 }
