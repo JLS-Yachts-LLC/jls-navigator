@@ -9,6 +9,14 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-08-25",
     "entries": [
       {
+        "type": "fix",
+        "title": "The vessel filter now follows changes made in another browser tab"
+      },
+      {
+        "type": "fix",
+        "title": "Dates synced from SharePoint are no longer recorded one day early"
+      },
+      {
         "type": "feature",
         "title": "Backups tab — scheduled EC2 AMI images with offsite copy to Impossible Cloud"
       },
