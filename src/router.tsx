@@ -8,8 +8,14 @@ import { getCapturedLog } from "@/lib/action-log";
 // means the browser is on a stale build after a new deploy — the hashed chunk
 // filename it wants no longer exists. Reload once to pull the fresh index +
 // chunks instead of dead-ending on the error screen. Guarded against reload loops.
+//
+// On a stale build, the route loader's dynamic import can also resolve to
+// `undefined` instead of throwing (rather than 404ing outright) when the
+// client's routeTree no longer lines up with what the server now serves —
+// surfacing as "Cannot read properties of undefined (reading 'component')"
+// deep in TanStack Router's lazy-loading code. Same root cause, same fix.
 const isChunkError = (msg: string | undefined) =>
-  /dynamically imported module|importing a module script failed|failed to fetch dynamically|ChunkLoadError|error loading dynamically imported/i.test(msg ?? "");
+  /dynamically imported module|importing a module script failed|failed to fetch dynamically|ChunkLoadError|error loading dynamically imported|reading ['"]component['"]/i.test(msg ?? "");
 
 function reloadOnceForStaleChunk() {
   try {
