@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +12,7 @@ import {
   createDeliveryNote, setNoteDriver, unassignPackage, deleteRun,
 } from "@/lib/shipsync/data";
 import { supabase } from "@/integrations/supabase/client";
+import { useGoogleMaps } from "@/lib/google-maps";
 import { googleMapsDirectionsUrl, vanLabel, type ShipSyncDeliveryNote } from "@/lib/shipsync/model";
 import type { ShipSyncData } from "@/components/shipsync-page";
 
@@ -45,6 +46,57 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
       lng: sel?.destination_lng != null ? String(sel.destination_lng) : "",
     });
   }, [sel?.id]);
+
+  // Address-suggestions dropdown on the destination field (Google Places),
+  // mirroring how Google Maps itself autocompletes an address search. Degrades
+  // to the plain text field when Maps isn't configured. Picking a suggestion
+  // fills lat/lng too and saves immediately — no need to wait for blur.
+  //
+  // Guard: when the Places key/referrer isn't authorised, Google's own widget
+  // doesn't fail quietly — it disables the input and overwrites its placeholder
+  // with "Oops! Something went wrong." (class `gm-err-autocomplete`), which
+  // would brick manual typing too. A MutationObserver reverses that the moment
+  // it happens, so a broken Maps key degrades to the plain field instead of an
+  // unusable one. (Confirmed via the production error log — this key has hit
+  // RefererNotAllowedMapError before.)
+  const { maps: gmaps } = useGoogleMaps();
+  const addressInputRef = useRef<HTMLInputElement>(null);
+  const placesRef = useRef<google.maps.places.Autocomplete | null>(null);
+  const guardRef = useRef<MutationObserver | null>(null);
+  const saveDestinationRef = useRef<((patch: Partial<ShipSyncDeliveryNote>) => Promise<void>) | undefined>(undefined);
+  useEffect(() => {
+    if (!gmaps?.places?.Autocomplete || !addressInputRef.current || placesRef.current) return;
+    const input = addressInputRef.current;
+    const ac = new gmaps.places.Autocomplete(input, {
+      fields: ["formatted_address", "geometry", "name"],
+    });
+    ac.addListener("place_changed", () => {
+      const place = ac.getPlace();
+      const address = place.formatted_address || place.name || "";
+      const loc = place.geometry?.location;
+      const lat = loc ? loc.lat() : null;
+      const lng = loc ? loc.lng() : null;
+      setDestDraft({ address, lat: lat != null ? String(lat) : "", lng: lng != null ? String(lng) : "" });
+      void saveDestinationRef.current?.({ destination_address: address || null, destination_lat: lat, destination_lng: lng });
+    });
+
+    const guard = new MutationObserver(() => {
+      if (input.classList.contains("gm-err-autocomplete") || input.disabled) {
+        input.disabled = false;
+        input.classList.remove("gm-err-autocomplete");
+        input.removeAttribute("style"); // clears Google's error-icon background-image
+        input.placeholder = "Marina / berth address";
+      }
+    });
+    guard.observe(input, { attributes: true, attributeFilter: ["disabled", "class", "placeholder", "style"] });
+
+    placesRef.current = ac;
+    guardRef.current = guard;
+  }, [gmaps, sel?.id]);
+  // Separate unmount-only cleanup — the setup effect above intentionally
+  // re-fires (harmlessly, guarded by placesRef) as `sel` changes, which would
+  // disconnect-then-never-reconnect the observer if cleanup lived there instead.
+  useEffect(() => () => guardRef.current?.disconnect(), []);
 
   // Stops for the selected note: one per boat (from the destinations register),
   // falling back to the note's own destination when a boat has none.
@@ -88,6 +140,7 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
     if (!sel) return;
     await (supabase as any).from("shipsync_delivery_notes").update(patch).eq("id", sel.id); await reload();
   }
+  saveDestinationRef.current = saveDestination;
   async function setNoteStatus(status: string) {
     if (!sel) return;
     await (supabase as any).from("shipsync_delivery_notes").update({ status, ...(status === "delivered" ? { delivered_at: new Date().toISOString() } : {}) }).eq("id", sel.id);
@@ -223,6 +276,7 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
               <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground"><MapPin className="h-3.5 w-3.5" /> Destination</div>
               <div className="grid grid-cols-[1fr_120px_120px] gap-2">
                 <Input
+                  ref={addressInputRef}
                   value={destDraft.address}
                   onChange={(e) => setDestDraft((d) => ({ ...d, address: e.target.value }))}
                   onBlur={() => { if (destDraft.address !== (sel.destination_address ?? "")) void saveDestination({ destination_address: destDraft.address || null }); }}
