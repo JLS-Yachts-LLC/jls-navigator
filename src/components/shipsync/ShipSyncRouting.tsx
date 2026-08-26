@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
 import { Loader2, Ship, Truck, Route, X, Plus, ChevronRight, ChevronDown, Anchor, Calendar, Map as MapIcon, ScanLine } from "lucide-react";
-import { StatusBadge } from "@/components/shipsync/shared";
+import { StatusBadge, fmtDate } from "@/components/shipsync/shared";
 import { ShipSyncDeliveryCalendar } from "@/components/shipsync/ShipSyncDeliveryCalendar";
 import { BarcodeScannerDialog } from "@/components/shipsync/BarcodeScanner";
 import { RouteMapDialog, type RouteStop } from "@/components/shipsync/RouteMapDialog";
-import { dispatchRoute } from "@/lib/shipsync/data";
+import { dispatchRoute, saveDestination } from "@/lib/shipsync/data";
 import { vanLabel, driverWorks, weekdayOf, WEEKDAYS, type ShipSyncPackage, type ShipSyncDestination } from "@/lib/shipsync/model";
 import type { ShipSyncData } from "@/components/shipsync-page";
 
@@ -103,6 +104,43 @@ function ClientCombobox({
             </CommandList>
           </Command>
         )}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/**
+ * Delivery address for a stop, editable inline so it can be set before
+ * dispatch instead of only afterward on the Dispatched tab. Shows the address
+ * as a click-to-edit label when one exists, or a flagged "Add address" prompt
+ * when it doesn't.
+ */
+function AddressField({ address, onSave }: { address?: string | null; onSave: (address: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState(address ?? "");
+  useEffect(() => { setValue(address ?? ""); }, [address]);
+  function save() {
+    const v = value.trim();
+    if (v && v !== address) onSave(v);
+    setOpen(false);
+  }
+  return (
+    <Popover open={open} onOpenChange={(o) => { setOpen(o); if (o) setValue(address ?? ""); }}>
+      <PopoverTrigger asChild>
+        {address ? (
+          <button className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground" title="Click to edit delivery address">
+            <Anchor className="h-3 w-3" /> {address}
+          </button>
+        ) : (
+          <button className="flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10.5px] font-medium text-amber-500 hover:bg-amber-500/25" title="No delivery address set">
+            <Anchor className="h-3 w-3" /> Add address
+          </button>
+        )}
+      </PopoverTrigger>
+      <PopoverContent className="w-72 space-y-2 p-2.5" align="start">
+        <Input autoFocus value={value} onChange={(e) => setValue(e.target.value)} placeholder="Marina / berth address" className="h-8 text-xs"
+          onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") setOpen(false); }} />
+        <Button size="sm" className="h-7 w-full text-xs" disabled={!value.trim()} onClick={save}>Save address</Button>
       </PopoverContent>
     </Popover>
   );
@@ -224,7 +262,14 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
     for (const p of unrouted) {
       if (r.manualAssign[p.id] === boat) byId.set(p.id, p);
     }
-    return Array.from(byId.values());
+    // Order by the parcel's own boat (so pulled-in packages from another
+    // client group together instead of interleaving), then oldest-received
+    // first within that group.
+    return Array.from(byId.values()).sort((a, b) => {
+      const boatCmp = (a.boat_name || UNASSIGNED).localeCompare(b.boat_name || UNASSIGNED);
+      if (boatCmp !== 0) return boatCmp;
+      return (a.received_at ?? "").localeCompare(b.received_at ?? "");
+    });
   }
   /** Same as stopAllParcels, minus the ones unticked off this route. */
   function stopParcels(r: RouteDraft, boat: string): ShipSyncPackage[] {
@@ -249,6 +294,16 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
       return { ...r, manualAssign };
     });
     toast.success(`Pulled ${toPull.length} parcel${toPull.length === 1 ? "" : "s"} from ${sourceClient} into ${targetStop === UNASSIGNED ? "this stop" : targetStop}`);
+  }
+
+  async function saveClientAddress(boat: string, address: string) {
+    try {
+      await saveDestination({ boat_name: boat, address, type: destByBoat.get(boat.toUpperCase())?.type ?? "vessel" });
+      await reload();
+      toast.success(`Delivery address saved for ${boat}`);
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed to save address");
+    }
   }
 
   // ── Route card mutations ───────────────────────────────────────────────────
@@ -472,7 +527,7 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
                             <Ship className="h-4 w-4 text-muted-foreground" />
                             <span className="text-sm font-medium">{boat === UNASSIGNED ? "No client set" : boat}</span>
                             <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold">{included}/{all.length} pkg</span>
-                            {dest?.address && <span className="flex items-center gap-1 text-[11px] text-muted-foreground"><Anchor className="h-3 w-3" /> {dest.address}</span>}
+                            {boat !== UNASSIGNED && <AddressField address={dest?.address} onSave={(address) => void saveClientAddress(boat, address)} />}
                             <Button variant="ghost" size="sm" className="ml-auto h-7 w-7 p-0 text-muted-foreground/60 hover:text-destructive" onClick={() => removeBoat(r.id, boat)} title="Remove client from route">
                               <X className="h-3.5 w-3.5" />
                             </Button>
@@ -498,6 +553,7 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
                                   <span className="font-mono text-[12px]">{p.barcode ?? "—"}</span>
                                   <span className="text-muted-foreground">{p.package_owner ?? p.description ?? ""}</span>
                                   {p.courier && <span className="text-[11px] text-muted-foreground/70">{p.courier}</span>}
+                                  {p.received_at && <span className="text-[11px] text-muted-foreground/60">{fmtDate(p.received_at)}</span>}
                                   {(p.boat_name || UNASSIGNED) !== boat && (
                                     <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary" title="Pulled in from another client">
                                       {p.boat_name || UNASSIGNED}

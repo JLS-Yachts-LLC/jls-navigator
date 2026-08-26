@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +32,19 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
   const boats = useMemo(() => Array.from(new Set(data.packages.map((p) => p.boat_name).filter(Boolean) as string[])).sort(), [data.packages]);
   const [confirmDel, setConfirmDel] = useState(false);
   const [showRouteMap, setShowRouteMap] = useState(false);
+
+  // Local draft for the destination fields — typing updates this instantly;
+  // the DB write (+ reload) only fires on blur. Binding the inputs straight to
+  // `sel` (server state) meant every keystroke round-tripped before the value
+  // could update, so fast typing dropped characters or looked frozen.
+  const [destDraft, setDestDraft] = useState({ address: "", lat: "", lng: "" });
+  useEffect(() => {
+    setDestDraft({
+      address: sel?.destination_address ?? "",
+      lat: sel?.destination_lat != null ? String(sel.destination_lat) : "",
+      lng: sel?.destination_lng != null ? String(sel.destination_lng) : "",
+    });
+  }, [sel?.id]);
 
   // Stops for the selected note: one per boat (from the destinations register),
   // falling back to the note's own destination when a boat has none.
@@ -209,9 +222,24 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
             <div className="rounded-xl border border-border bg-card p-3">
               <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground"><MapPin className="h-3.5 w-3.5" /> Destination</div>
               <div className="grid grid-cols-[1fr_120px_120px] gap-2">
-                <Input value={sel.destination_address ?? ""} onChange={(e) => saveDestination({ destination_address: e.target.value })} placeholder="Marina / berth address" className="h-9" />
-                <Input value={sel.destination_lat ?? ""} onChange={(e) => saveDestination({ destination_lat: e.target.value === "" ? null : Number(e.target.value) })} placeholder="Lat" className="h-9" />
-                <Input value={sel.destination_lng ?? ""} onChange={(e) => saveDestination({ destination_lng: e.target.value === "" ? null : Number(e.target.value) })} placeholder="Lng" className="h-9" />
+                <Input
+                  value={destDraft.address}
+                  onChange={(e) => setDestDraft((d) => ({ ...d, address: e.target.value }))}
+                  onBlur={() => { if (destDraft.address !== (sel.destination_address ?? "")) void saveDestination({ destination_address: destDraft.address || null }); }}
+                  placeholder="Marina / berth address" className="h-9"
+                />
+                <Input
+                  value={destDraft.lat}
+                  onChange={(e) => setDestDraft((d) => ({ ...d, lat: e.target.value }))}
+                  onBlur={() => { const n = destDraft.lat === "" ? null : Number(destDraft.lat); if (n !== sel.destination_lat) void saveDestination({ destination_lat: n }); }}
+                  placeholder="Lat" className="h-9"
+                />
+                <Input
+                  value={destDraft.lng}
+                  onChange={(e) => setDestDraft((d) => ({ ...d, lng: e.target.value }))}
+                  onBlur={() => { const n = destDraft.lng === "" ? null : Number(destDraft.lng); if (n !== sel.destination_lng) void saveDestination({ destination_lng: n }); }}
+                  placeholder="Lng" className="h-9"
+                />
               </div>
               {googleMapsDirectionsUrl([{ address: sel.destination_address, lat: sel.destination_lat, lng: sel.destination_lng }]) && (
                 <a href={googleMapsDirectionsUrl([{ address: sel.destination_address, lat: sel.destination_lat, lng: sel.destination_lng }])!} target="_blank" rel="noopener noreferrer"
