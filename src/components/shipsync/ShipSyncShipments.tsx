@@ -21,23 +21,29 @@ type TradeType = "Import" | "Export";
 
 const STATUS_OPTIONS = Object.keys(STATUS_META) as PackageStatus[];
 
-/** Standard columns — the inbound/outbound shipment + customs fields. */
+/** Case-insensitive lookup into a package's raw Monday row by column-title keyword —
+ *  for columns the JLS board tracks (Accounts, Invoice No., Item ID) that have no
+ *  first-class field of their own, only ever seen from a historical Monday sync. */
+function fromMonday(p: ShipSyncPackage, keyword: string): string {
+  const row = mondayRow(p);
+  const key = Object.keys(row).find((k) => k.toLowerCase().includes(keyword));
+  return (key && row[key]) || "—";
+}
+
+/** Standard columns — ordered to match the JLS Monday.com shipment board
+ *  (Airway bill, Accounts, Invoice No., Item ID, Yacht Name, Status, Shipment
+ *  Type, BOE No., Supplier, Date Received, Date Delivered, DN No.), then the
+ *  extra fields Polaris tracks that aren't on that board. */
 function baseColumns(
   kind: TradeType,
   onStatusChange: (p: ShipSyncPackage, status: PackageStatus) => void,
 ): { label: string; render: (p: ShipSyncPackage) => ReactNode; cls?: string }[] {
   return [
     { label: "Air waybill/tracking", render: (p) => p.barcode ?? "—", cls: "font-mono text-[12px] text-foreground" },
-    { label: "Client",               render: (p) => p.boat_name ?? "—", cls: "font-medium" },
-    { label: "Date Received",        render: (p) => fmtDate(p.received_at), cls: "tabular-nums" },
-    { label: "Consignee",            render: (p) => p.package_owner ?? "—" },
-    { label: "Number of Packages",   render: (p) => p.num_packages ?? 1, cls: "tabular-nums text-center" },
-    { label: "Courier",              render: (p) => p.courier ?? "—" },
-    { label: "Supplier",             render: (p) => p.supplier ?? "—" },
-    { label: kind === "Export" ? "Destination" : "Origin", render: (p) => p.origin ?? "—" },
-    { label: "BOE No.",              render: (p) => p.boe_no ?? "—", cls: "font-mono text-[12px]" },
-    { label: "Commodity",            render: (p) => p.commodity ?? "—" },
-    { label: "Delivery Note Number", render: (p) => p.delivery_note_no ?? "—", cls: "tabular-nums" },
+    { label: "Accounts",             render: (p) => fromMonday(p, "account") },
+    { label: "Invoice No.",          render: (p) => fromMonday(p, "invoice"), cls: "font-mono text-[12px]" },
+    { label: "Item ID",              render: (p) => fromMonday(p, "item id"), cls: "font-mono text-[12px]" },
+    { label: "Yacht Name",           render: (p) => p.boat_name ?? "—", cls: "font-medium" },
     {
       label: "Status",
       render: (p) => (
@@ -47,15 +53,28 @@ function baseColumns(
         </Select>
       ),
     },
+    { label: "Shipment Type",        render: (p) => p.trade_type ?? "—" },
+    { label: "BOE No.",              render: (p) => p.boe_no ?? "—", cls: "font-mono text-[12px]" },
+    { label: "Supplier",             render: (p) => p.supplier ?? "—" },
+    { label: "Date Received",        render: (p) => fmtDate(p.received_at), cls: "tabular-nums" },
+    { label: "Date Delivered",       render: (p) => fmtDate(p.delivered_at), cls: "tabular-nums" },
+    { label: "DN No.",               render: (p) => p.delivery_note_no ?? "—", cls: "tabular-nums" },
+    // Polaris-only fields the JLS Monday board doesn't carry — kept, not dropped.
+    { label: "Consignee",            render: (p) => p.package_owner ?? "—" },
+    { label: "Number of Packages",   render: (p) => p.num_packages ?? 1, cls: "tabular-nums text-center" },
+    { label: "Courier",              render: (p) => p.courier ?? "—" },
+    { label: kind === "Export" ? "Destination" : "Origin", render: (p) => p.origin ?? "—" },
+    { label: "Commodity",            render: (p) => p.commodity ?? "—" },
   ];
 }
 
 /** Titles the base columns already cover — Monday columns matching these are not duplicated. */
 const COVERED = [
-  "air waybill", "waybill", "awb", "tracking", "client", "vessel", "boat", "yacht",
-  "date received", "received", "consignee", "owner", "receiver", "number of packages",
+  "air waybill", "waybill", "awb", "tracking", "account", "invoice", "item id",
+  "client", "vessel", "boat", "yacht", "date received", "received", "date delivered",
+  "delivered", "consignee", "owner", "receiver", "number of packages",
   "no. of packages", "packages", "courier", "supplier", "shipper", "origin", "destination",
-  "boe", "bill of entry", "commodity", "goods", "delivery note", "status",
+  "boe", "bill of entry", "shipment type", "commodity", "goods", "delivery note", "dn no", "status",
 ];
 
 export function ShipSyncShipments({ kind }: { kind: TradeType }) {
