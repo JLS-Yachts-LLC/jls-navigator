@@ -52,8 +52,8 @@ export default function FleetMap({
   return (
     <MapContainer center={[25.2, 55.3]} zoom={9} className="h-full w-full" style={{ background: "#aadaff" }}>
       <TileLayer
-        attribution='&copy; OpenStreetMap'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        attribution='&copy; OpenStreetMap contributors &copy; CARTO'
+        url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
       />
       <FitBounds vehicles={located} once={fitOnce} />
       <FocusController focus={focus} />
