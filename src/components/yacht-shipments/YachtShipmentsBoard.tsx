@@ -7,9 +7,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Ship, ChevronDown, ChevronRight, Plus, Trash2, ExternalLink, Loader2 } from "lucide-react";
+import { Ship, ChevronDown, ChevronRight, Plus, Trash2, ExternalLink, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { syncYachtShipmentsFromMonday } from "@/lib/yacht-shipments/monday.server";
 
 type Row = Record<string, any>;
 
@@ -111,6 +112,7 @@ export function YachtShipmentsBoard() {
   const [addingIn, setAddingIn] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
   const [savingCell, setSavingCell] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => { void load(); }, []);
 
@@ -120,6 +122,20 @@ export function YachtShipmentsBoard() {
     if (error) toast.error(error.message);
     setRows(data ?? []);
     setLoading(false);
+  }
+
+  async function syncFromMonday() {
+    setSyncing(true);
+    try {
+      const r = await (syncYachtShipmentsFromMonday as any)();
+      if (!r.ok && r.synced === 0) throw new Error(r.detail);
+      toast.success(r.detail);
+      await load();
+    } catch (e: any) {
+      toast.error(e?.message ?? "Monday sync failed");
+    } finally {
+      setSyncing(false);
+    }
   }
 
   const rowsInTab = useMemo(() => rows.filter((r) => (r.direction ?? "import") === direction), [rows, direction]);
@@ -189,6 +205,9 @@ export function YachtShipmentsBoard() {
           </h1>
         </div>
         <div className="flex items-center gap-2.5">
+          <Button size="sm" variant="outline" onClick={() => void syncFromMonday()} disabled={syncing} className="h-9 gap-1.5 text-xs">
+            {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Sync from Monday
+          </Button>
           {selected.size > 0 && (
             <Button size="sm" variant="outline" className="h-9 gap-1.5 text-xs text-destructive"
               onClick={() => deleteRows([...selected])}>
