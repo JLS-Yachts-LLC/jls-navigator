@@ -55,7 +55,7 @@ export default function AisFleetMap({
   const located = useMemo(() => yachts.filter(y => y.lat != null && y.lon != null), [yachts]);
   return (
     <MapContainer center={[25.2, 55.3]} zoom={8} className="h-full w-full" style={{ background: "#aadaff" }}>
-      <TileLayer attribution="&copy; OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+      <TileLayer attribution="&copy; OpenStreetMap contributors &copy; CARTO" url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png" />
       <FitBounds yachts={located} once={fitOnce} />
       <FocusController focus={focus} />
       {located.map(y => (

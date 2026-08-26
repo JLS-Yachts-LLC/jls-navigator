@@ -6,8 +6,8 @@
   "scripts": {
     "dev": "node scripts/generate-changelog.mjs && vite dev",
     "changelog": "node scripts/generate-changelog.mjs",
-    "build": "node scripts/generate-changelog.mjs && vite build",
-    "build:dev": "node scripts/generate-changelog.mjs && vite build --mode development",
+    "build": "node scripts/generate-changelog.mjs && node --max-old-space-size=6144 node_modules/vite/bin/vite.js build",
+    "build:dev": "node scripts/generate-changelog.mjs && node --max-old-space-size=6144 node_modules/vite/bin/vite.js build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write .",

@@ -323,12 +323,18 @@ export async function syncInvoice(payload: any, cfg: LsConfig, realm: string): P
   const { lines, totalTax, missing } = await resolveLines(cfg, realm, sale)
   if (!lines.length) return `skip-no-resolvable-items${missing.length ? ` (missing: ${missing.join(', ')})` : ''}`
 
+  try {
   await qboRequest('POST', '/invoice?minorversion=73', {
     CustomerRef: { value: customer.Id },
     DocNumber: sale.invoiceNumber,
     TxnTaxDetail: { TotalTax: totalTax },
     Line: lines,
   }, realm)
+  } catch (e: any) {
+    // A parallel webhook won the race — QBO already holds this DocNumber.
+    if (String(e?.message ?? '').includes('Duplicate Document Number')) return `skip-invoice-exists ${sale.invoiceNumber} (raced)`
+    throw e
+  }
   return `invoice-created ${sale.invoiceNumber}${missing.length ? ` (skipped items: ${missing.join(', ')})` : ''}`
 }
 

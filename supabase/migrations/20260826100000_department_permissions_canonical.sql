@@ -1,0 +1,4 @@
+-- Merge the grid's legacy ad-hoc labels into one canonical row per
+-- (department, module_slug), OR-ing the checkboxes. Applied live 26 Aug 2026;
+-- see the live migration department_permissions_canonical_modules.
+-- (Kept here so the repo records the schema history.)

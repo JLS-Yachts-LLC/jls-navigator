@@ -10,7 +10,43 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Permissions now work end-to-end — assign departments, real modules, sidebar follows access"
+      },
+      {
+        "type": "feature",
+        "title": "One-way Monday.com sync (Import + Export boards)"
+      },
+      {
+        "type": "feature",
+        "title": "Vehicle Maintenance — 3D damage capture, digital Condition Reports, Service Requests and driver Journeys"
+      },
+      {
+        "type": "fix",
+        "title": "Sticky header text bleed-through on scroll"
+      },
+      {
+        "type": "fix",
+        "title": "Properly fix the sticky Yacht Name column overlap on scroll"
+      },
+      {
+        "type": "feature",
         "title": "Vehicle insurance register — insurer, policy, premium and chassis details on Crew Care vehicles"
+      },
+      {
+        "type": "feature",
+        "title": "Rebuild as a Monday-style status board, applied and tested against real schema"
+      },
+      {
+        "type": "feature",
+        "title": "Reorder Import/Export columns to match the JLS Monday.com shipment board"
+      },
+      {
+        "type": "feature",
+        "title": "Google Places address suggestions on the Dispatch destination field"
+      },
+      {
+        "type": "fix",
+        "title": "Auto-recover from a stale-build route crash that wasn't self-healing"
       },
       {
         "type": "fix",
