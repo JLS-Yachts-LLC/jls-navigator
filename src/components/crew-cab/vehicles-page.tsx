@@ -25,6 +25,12 @@ type Vehicle = {
   mileage: number;
   status: string;
   insurance_expiry: string | null;
+  insurer: string | null;
+  policy_number: string | null;
+  insurance_issue_date: string | null;
+  premium_aed: number | null;
+  chassis_no: string | null;
+  engine_no: string | null;
   notes: string | null;
   last_lat: number | null;
   last_lon: number | null;
@@ -62,7 +68,8 @@ function LiveLocation({ v }: { v: Vehicle }) {
 
 const EMPTY = {
   make: "", model: "", year: "", registration: "", color: "",
-  capacity: "4", mileage: "0", status: "available", insurance_expiry: "", notes: "",
+  capacity: "4", mileage: "0", status: "available", insurance_expiry: "",
+  insurer: "", policy_number: "", notes: "",
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -141,7 +148,8 @@ export function VehiclesPage() {
       make: v.make, model: v.model, year: v.year ? String(v.year) : "",
       registration: v.registration ?? "", color: v.color ?? "",
       capacity: String(v.capacity), mileage: String(v.mileage),
-      status: v.status, insurance_expiry: v.insurance_expiry ?? "", notes: v.notes ?? "",
+      status: v.status, insurance_expiry: v.insurance_expiry ?? "",
+      insurer: v.insurer ?? "", policy_number: v.policy_number ?? "", notes: v.notes ?? "",
     });
     setOpen(true);
   }
@@ -157,6 +165,8 @@ export function VehiclesPage() {
         capacity: Number(form.capacity) || 4, mileage: Number(form.mileage) || 0,
         status: form.status,
         insurance_expiry: form.insurance_expiry || null,
+        insurer: form.insurer || null,
+        policy_number: form.policy_number || null,
         notes: form.notes || null,
         updated_at: new Date().toISOString(),
       };
@@ -244,10 +254,10 @@ export function VehiclesPage() {
           </div>
         ) : (
           <div className="rounded-lg border border-border overflow-x-auto">
-            <table className="w-full text-xs min-w-[1040px]">
+            <table className="w-full text-xs min-w-[1240px]">
               <thead className="bg-muted/40 border-b border-border">
                 <tr>
-                  {["Make", "Model", "Year", "Registration", "Live Location", "Color", "Capacity", "Mileage", "Insurance Expiry", "Status", ""].map((h) => (
+                  {["Make", "Model", "Year", "Registration", "Live Location", "Color", "Capacity", "Mileage", "Insurer", "Policy No.", "Insurance Expiry", "Status", ""].map((h) => (
                     <th key={h} className="px-3 py-2 text-left font-medium uppercase tracking-wider text-muted-foreground whitespace-nowrap">
                       {h}
                     </th>
@@ -265,6 +275,8 @@ export function VehiclesPage() {
                     <td className="px-3 py-1.5 text-muted-foreground">{v.color ?? "—"}</td>
                     <td className="px-3 py-1.5 text-muted-foreground">{v.capacity}</td>
                     <td className="px-3 py-1.5 text-muted-foreground">{v.mileage?.toLocaleString()} km</td>
+                    <td className="px-3 py-1.5 text-muted-foreground whitespace-nowrap">{v.insurer ?? "—"}</td>
+                    <td className="px-3 py-1.5 text-muted-foreground font-mono">{v.policy_number ?? "—"}</td>
                     <td className="px-3 py-1.5"><InsuranceBadge expiry={v.insurance_expiry} /></td>
                     <td className="px-3 py-1.5"><StatusBadge status={v.status} /></td>
                     <td className="px-3 py-1.5">
@@ -309,6 +321,8 @@ export function VehiclesPage() {
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1.5"><Label>Capacity</Label><Input type="number" value={form.capacity} onChange={set("capacity")} /></div>
               <div className="space-y-1.5"><Label>Mileage (km)</Label><Input type="number" value={form.mileage} onChange={set("mileage")} /></div>
+              <div className="space-y-1.5"><Label>Insurer</Label><Input value={form.insurer} onChange={set("insurer")} placeholder="GIG GULF" /></div>
+              <div className="space-y-1.5"><Label>Policy No.</Label><Input value={form.policy_number} onChange={set("policy_number")} /></div>
               <div className="space-y-1.5"><Label>Insurance Expiry</Label><Input type="date" value={form.insurance_expiry} onChange={set("insurance_expiry")} /></div>
             </div>
             <div className="space-y-1.5">
