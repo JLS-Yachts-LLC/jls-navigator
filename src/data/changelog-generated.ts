@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-08-26",
     "entries": [
       {
+        "type": "feature",
+        "title": "The 3D vehicle is now a white schematic, like an insurance condition diagram"
+      },
+      {
         "type": "fix",
         "title": "Status groups now match Monday exactly, on both Import and Export"
       },
