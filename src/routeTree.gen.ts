@@ -122,7 +122,9 @@ import { Route as AppCrewImmigrationDashboardRouteImport } from './routes/_app.c
 import { Route as AppCrewImmigrationCrewRouteImport } from './routes/_app.crew-immigration.crew'
 import { Route as AppCrewCabVehiclesRouteImport } from './routes/_app.crew-cab.vehicles'
 import { Route as AppCrewCabTripsRouteImport } from './routes/_app.crew-cab.trips'
+import { Route as AppCrewCabMaintenanceRouteImport } from './routes/_app.crew-cab.maintenance'
 import { Route as AppCrewCabLocationsRouteImport } from './routes/_app.crew-cab.locations'
+import { Route as AppCrewCabJourneysRouteImport } from './routes/_app.crew-cab.journeys'
 import { Route as AppCrewCabDriversRouteImport } from './routes/_app.crew-cab.drivers'
 import { Route as AppAdminUsersRouteImport } from './routes/_app.admin.users'
 import { Route as AppAdminPermissionsRouteImport } from './routes/_app.admin.permissions'
@@ -726,9 +728,19 @@ const AppCrewCabTripsRoute = AppCrewCabTripsRouteImport.update({
   path: '/trips',
   getParentRoute: () => AppCrewCabRoute,
 } as any)
+const AppCrewCabMaintenanceRoute = AppCrewCabMaintenanceRouteImport.update({
+  id: '/maintenance',
+  path: '/maintenance',
+  getParentRoute: () => AppCrewCabRoute,
+} as any)
 const AppCrewCabLocationsRoute = AppCrewCabLocationsRouteImport.update({
   id: '/locations',
   path: '/locations',
+  getParentRoute: () => AppCrewCabRoute,
+} as any)
+const AppCrewCabJourneysRoute = AppCrewCabJourneysRouteImport.update({
+  id: '/journeys',
+  path: '/journeys',
   getParentRoute: () => AppCrewCabRoute,
 } as any)
 const AppCrewCabDriversRoute = AppCrewCabDriversRouteImport.update({
@@ -943,7 +955,9 @@ export interface FileRoutesByFullPath {
   '/admin/permissions': typeof AppAdminPermissionsRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/crew-cab/drivers': typeof AppCrewCabDriversRoute
+  '/crew-cab/journeys': typeof AppCrewCabJourneysRoute
   '/crew-cab/locations': typeof AppCrewCabLocationsRoute
+  '/crew-cab/maintenance': typeof AppCrewCabMaintenanceRoute
   '/crew-cab/trips': typeof AppCrewCabTripsRoute
   '/crew-cab/vehicles': typeof AppCrewCabVehiclesRoute
   '/crew-immigration/crew': typeof AppCrewImmigrationCrewRouteWithChildren
@@ -1073,7 +1087,9 @@ export interface FileRoutesByTo {
   '/admin/permissions': typeof AppAdminPermissionsRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/crew-cab/drivers': typeof AppCrewCabDriversRoute
+  '/crew-cab/journeys': typeof AppCrewCabJourneysRoute
   '/crew-cab/locations': typeof AppCrewCabLocationsRoute
+  '/crew-cab/maintenance': typeof AppCrewCabMaintenanceRoute
   '/crew-cab/trips': typeof AppCrewCabTripsRoute
   '/crew-cab/vehicles': typeof AppCrewCabVehiclesRoute
   '/crew-immigration/dashboard': typeof AppCrewImmigrationDashboardRoute
@@ -1212,7 +1228,9 @@ export interface FileRoutesById {
   '/_app/admin/permissions': typeof AppAdminPermissionsRoute
   '/_app/admin/users': typeof AppAdminUsersRoute
   '/_app/crew-cab/drivers': typeof AppCrewCabDriversRoute
+  '/_app/crew-cab/journeys': typeof AppCrewCabJourneysRoute
   '/_app/crew-cab/locations': typeof AppCrewCabLocationsRoute
+  '/_app/crew-cab/maintenance': typeof AppCrewCabMaintenanceRoute
   '/_app/crew-cab/trips': typeof AppCrewCabTripsRoute
   '/_app/crew-cab/vehicles': typeof AppCrewCabVehiclesRoute
   '/_app/crew-immigration/crew': typeof AppCrewImmigrationCrewRouteWithChildren
@@ -1355,7 +1373,9 @@ export interface FileRouteTypes {
     | '/admin/permissions'
     | '/admin/users'
     | '/crew-cab/drivers'
+    | '/crew-cab/journeys'
     | '/crew-cab/locations'
+    | '/crew-cab/maintenance'
     | '/crew-cab/trips'
     | '/crew-cab/vehicles'
     | '/crew-immigration/crew'
@@ -1485,7 +1505,9 @@ export interface FileRouteTypes {
     | '/admin/permissions'
     | '/admin/users'
     | '/crew-cab/drivers'
+    | '/crew-cab/journeys'
     | '/crew-cab/locations'
+    | '/crew-cab/maintenance'
     | '/crew-cab/trips'
     | '/crew-cab/vehicles'
     | '/crew-immigration/dashboard'
@@ -1623,7 +1645,9 @@ export interface FileRouteTypes {
     | '/_app/admin/permissions'
     | '/_app/admin/users'
     | '/_app/crew-cab/drivers'
+    | '/_app/crew-cab/journeys'
     | '/_app/crew-cab/locations'
+    | '/_app/crew-cab/maintenance'
     | '/_app/crew-cab/trips'
     | '/_app/crew-cab/vehicles'
     | '/_app/crew-immigration/crew'
@@ -2509,11 +2533,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppCrewCabTripsRouteImport
       parentRoute: typeof AppCrewCabRoute
     }
+    '/_app/crew-cab/maintenance': {
+      id: '/_app/crew-cab/maintenance'
+      path: '/maintenance'
+      fullPath: '/crew-cab/maintenance'
+      preLoaderRoute: typeof AppCrewCabMaintenanceRouteImport
+      parentRoute: typeof AppCrewCabRoute
+    }
     '/_app/crew-cab/locations': {
       id: '/_app/crew-cab/locations'
       path: '/locations'
       fullPath: '/crew-cab/locations'
       preLoaderRoute: typeof AppCrewCabLocationsRouteImport
+      parentRoute: typeof AppCrewCabRoute
+    }
+    '/_app/crew-cab/journeys': {
+      id: '/_app/crew-cab/journeys'
+      path: '/journeys'
+      fullPath: '/crew-cab/journeys'
+      preLoaderRoute: typeof AppCrewCabJourneysRouteImport
       parentRoute: typeof AppCrewCabRoute
     }
     '/_app/crew-cab/drivers': {
@@ -2723,14 +2761,18 @@ const AppAdminRouteWithChildren = AppAdminRoute._addFileChildren(
 
 interface AppCrewCabRouteChildren {
   AppCrewCabDriversRoute: typeof AppCrewCabDriversRoute
+  AppCrewCabJourneysRoute: typeof AppCrewCabJourneysRoute
   AppCrewCabLocationsRoute: typeof AppCrewCabLocationsRoute
+  AppCrewCabMaintenanceRoute: typeof AppCrewCabMaintenanceRoute
   AppCrewCabTripsRoute: typeof AppCrewCabTripsRoute
   AppCrewCabVehiclesRoute: typeof AppCrewCabVehiclesRoute
 }
 
 const AppCrewCabRouteChildren: AppCrewCabRouteChildren = {
   AppCrewCabDriversRoute: AppCrewCabDriversRoute,
+  AppCrewCabJourneysRoute: AppCrewCabJourneysRoute,
   AppCrewCabLocationsRoute: AppCrewCabLocationsRoute,
+  AppCrewCabMaintenanceRoute: AppCrewCabMaintenanceRoute,
   AppCrewCabTripsRoute: AppCrewCabTripsRoute,
   AppCrewCabVehiclesRoute: AppCrewCabVehiclesRoute,
 }

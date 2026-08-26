@@ -5,6 +5,24 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.44.0",
+    "date": "2026-08-26",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Vehicle insurance register — insurer, policy, premium and chassis details on Crew Care vehicles"
+      },
+      {
+        "type": "fix",
+        "title": "Add pre_arrival_forms, yacht_tenders, and v_prearrival_prefill to generated Supabase types"
+      },
+      {
+        "type": "fix",
+        "title": "Stop dropped keystrokes on destination fields; add inline delivery address editing to Routing"
+      }
+    ]
+  },
+  {
     "version": "2.43.0",
     "date": "2026-08-25",
     "entries": [
