@@ -10,11 +10,27 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "Status groups now match Monday exactly, on both Import and Export"
+      },
+      {
+        "type": "fix",
+        "title": "Fleet and AIS maps now show place names in English"
+      },
+      {
+        "type": "feature",
+        "title": "Replace the drag-to-move Leo bubble with the same click-to-open pop-up used on the Polaris home screen"
+      },
+      {
+        "type": "fix",
         "title": "The deploy build no longer runs out of memory"
       },
       {
         "type": "feature",
         "title": "Permissions now work end-to-end — assign departments, real modules, sidebar follows access"
+      },
+      {
+        "type": "fix",
+        "title": "Stop the SSR build running out of memory on the new 3D vehicle viewer"
       },
       {
         "type": "feature",
