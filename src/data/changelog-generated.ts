@@ -10,6 +10,26 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "The 3D vehicles now have accurate silhouettes — real profiles, wheel arches, glazing"
+      },
+      {
+        "type": "fix",
+        "title": "Import board — split Group from Status, add Monday's real 18-label colour-coded Status"
+      },
+      {
+        "type": "fix",
+        "title": "Import board — drop Accounts column, match Monday's exact column order"
+      },
+      {
+        "type": "fix",
+        "title": "Import board — Status now moves shipments between Monday's groups, every field editable, tighter columns"
+      },
+      {
+        "type": "feature",
+        "title": "Drop Monday sync from Local Packages, add it to a new Import board instead"
+      },
+      {
+        "type": "feature",
         "title": "The 3D vehicle is now a white schematic, like an insurance condition diagram"
       },
       {
