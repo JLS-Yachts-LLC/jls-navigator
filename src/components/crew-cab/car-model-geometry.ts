@@ -29,6 +29,11 @@ export type VehicleGeom = {
   /** Vertical door/panel seam lines drawn on the body sides, at these x positions. */
   seams: number[];
   seamY: [number, number];
+  /** Glass plates laid ON the outer surface (windscreen, rear screen): a
+   *  profile-space segment from (x1,y1) to (x2,y2), rendered as an angled
+   *  sheet across the width. The wrapped band only shows on the SIDES —
+   *  these are what make the front and rear glazing visible. */
+  screens?: { x1: number; y1: number; x2: number; y2: number }[];
   /** Extra dark plates (e.g. a pickup's open load bed floor). */
   darkPlates?: { panel: string; x: [number, number]; y: number; z: [number, number] }[];
   /** Tap zones, first match wins; anything unmatched is 'body'. */
@@ -69,6 +74,10 @@ export const VEHICLE_GEOMS: Record<BodyType, VehicleGeom> = {
       q(-2.3, 1.73, -2.31, 1.6), l(-2.33, 1.2), l(-2.28, 1.17), l(2.0, 1.15),
     ],
     mirror: { x: 1.78, y: 1.34 },
+    screens: [
+      { x1: 1.96, y1: 1.24, x2: 1.55, y2: 1.73 },
+      { x1: -2.44, y1: 1.65, x2: -2.46, y2: 1.1 },
+    ],
     seams: [1.15, 0.45, -0.75], seamY: [0.46, 1.16],
     zones: [
       ...wheelZones(1.72, -1.55, 0.45, 1.2), ...mirrorZones(1.78, 1.34),
@@ -99,6 +108,10 @@ export const VEHICLE_GEOMS: Record<BodyType, VehicleGeom> = {
       q(-0.98, 1.34, -1.2, 1.18), l(-1.44, 1.02), l(-1.36, 0.98),
     ],
     mirror: { x: 0.64, y: 1.02 },
+    screens: [
+      { x1: 0.64, y1: 1.05, x2: 0.27, y2: 1.37 },
+      { x1: -0.95, y1: 1.37, x2: -1.62, y2: 1.07 },
+    ],
     seams: [1.0, 0.0, -0.95], seamY: [0.44, 0.96],
     zones: [
       ...wheelZones(1.45, -1.45, 0.43, 1.15), ...mirrorZones(0.64, 1.02),
@@ -116,34 +129,41 @@ export const VEHICLE_GEOMS: Record<BodyType, VehicleGeom> = {
       ...LR("quarter_rear", [-2.15, -0.95], [0.25, 0.97], 1.15),
     ],
   },
-  coupe: {
-    width: 1.84, bottomY: 0.36, wheelR: 0.33,
-    arches: [{ x: 1.42, r: 0.43 }, { x: -1.42, r: 0.43 }],
+  // Tiida-class hatchback: short rear overhang, roof running back into a
+  // steep glassed tailgate, four side doors.
+  hatchback: {
+    width: 1.78, bottomY: 0.38, wheelR: 0.32,
+    arches: [{ x: 1.35, r: 0.42 }, { x: -1.3, r: 0.42 }],
     outline: [
-      l(2.25, 0.36), l(2.25, 0.56), q(2.25, 0.72, 2.08, 0.75), l(0.95, 0.85),
-      q(0.75, 0.88, 0.55, 1.0), l(0.2, 1.24), q(0.0, 1.31, -0.35, 1.3),
-      l(-0.7, 1.26), q(-1.3, 1.14, -1.75, 0.88), q(-2.05, 0.82, -2.18, 0.78),
-      q(-2.25, 0.74, -2.25, 0.6), l(-2.25, 0.36),
+      l(2.15, 0.38), l(2.15, 0.6), q(2.15, 0.76, 2.0, 0.8), l(0.95, 0.92),
+      q(0.75, 0.95, 0.58, 1.06), l(0.25, 1.42), q(0.08, 1.5, -0.2, 1.5),
+      l(-1.2, 1.48), q(-1.5, 1.46, -1.78, 1.2), l(-2.0, 0.95),
+      q(-2.1, 0.9, -2.1, 0.72), l(-2.1, 0.38),
     ],
     glass: [
-      l(0.68, 0.92), l(0.28, 1.2), q(0.05, 1.26, -0.3, 1.25), l(-0.62, 1.21),
-      q(-1.1, 1.1, -1.48, 0.9), l(-1.36, 0.86),
+      l(0.7, 0.98), l(0.32, 1.38), q(0.15, 1.44, -0.15, 1.44), l(-1.15, 1.42),
+      q(-1.42, 1.4, -1.62, 1.16), l(-1.7, 0.98), l(-1.6, 0.95),
     ],
-    mirror: { x: 0.58, y: 0.95 },
-    seams: [0.95, -0.55], seamY: [0.4, 0.88],
+    mirror: { x: 0.6, y: 1.02 },
+    screens: [
+      { x1: 0.6, y1: 1.05, x2: 0.24, y2: 1.43 },
+      { x1: -1.72, y1: 1.26, x2: -1.98, y2: 0.97 },
+    ],
+    seams: [0.95, 0.0, -0.9], seamY: [0.42, 0.94],
     zones: [
-      ...wheelZones(1.42, -1.42, 0.43, 1.15), ...mirrorZones(0.58, 0.95),
-      { panel: "front_bumper", x: [2.05, 2.5], y: [0, 0.65] },
-      { panel: "rear_bumper", x: [-2.5, -2.05], y: [0, 0.65] },
-      { panel: "hood", x: [0.6, 2.05], y: [0.68, 1.05] },
-      { panel: "windshield", x: [0.14, 0.6], y: [0.95, 1.4] },
-      { panel: "roof", x: [-0.7, 0.14], y: [1.15, 1.5] },
-      { panel: "rear_window", x: [-1.6, -0.7], y: [0.88, 1.35] },
-      { panel: "trunk", x: [-2.05, -1.6], y: [0.72, 0.95] },
-      { panel: "glass", x: [-1.48, 0.68], y: [0.86, 1.3] },
-      ...LR("fender_front", [0.95, 2.05], [0.22, 0.88], 1.15),
-      ...LR("door", [-0.55, 0.95], [0.22, 0.88], 1.15),
-      ...LR("quarter_rear", [-2.05, -0.55], [0.22, 0.88], 1.15),
+      ...wheelZones(1.35, -1.3, 0.42, 1.12), ...mirrorZones(0.6, 1.02),
+      { panel: "front_bumper", x: [1.95, 2.35], y: [0, 0.7] },
+      { panel: "rear_bumper", x: [-2.35, -1.95], y: [0, 0.65] },
+      { panel: "hood", x: [0.62, 1.95], y: [0.75, 1.12] },
+      { panel: "windshield", x: [0.18, 0.62], y: [1.0, 1.6] },
+      { panel: "roof", x: [-1.25, 0.18], y: [1.35, 1.7] },
+      { panel: "rear_window", x: [-1.85, -1.25], y: [1.05, 1.6] },
+      { panel: "tailgate", x: [-2.35, -1.85], y: [0.65, 1.1] },
+      { panel: "glass", x: [-1.7, 0.7], y: [0.95, 1.46] },
+      ...LR("fender_front", [0.95, 1.95], [0.22, 0.95], 1.12),
+      ...LR("door_front", [0.0, 0.95], [0.22, 0.95], 1.12),
+      ...LR("door_rear", [-0.9, 0.0], [0.22, 0.95], 1.12),
+      ...LR("quarter_rear", [-1.95, -0.9], [0.22, 0.95], 1.12),
     ],
   },
   estate: {
@@ -160,6 +180,10 @@ export const VEHICLE_GEOMS: Record<BodyType, VehicleGeom> = {
       q(-1.88, 1.38, -2.02, 1.16), l(-2.1, 0.98), l(-2.0, 0.96),
     ],
     mirror: { x: 0.68, y: 1.04 },
+    screens: [
+      { x1: 0.68, y1: 1.07, x2: 0.33, y2: 1.41 },
+      { x1: -2.14, y1: 1.24, x2: -2.31, y2: 0.95 },
+    ],
     seams: [1.05, 0.05, -0.95], seamY: [0.44, 0.98],
     zones: [
       ...wheelZones(1.5, -1.5, 0.44, 1.15), ...mirrorZones(0.68, 1.04),
@@ -191,6 +215,10 @@ export const VEHICLE_GEOMS: Record<BodyType, VehicleGeom> = {
       l(-0.15, 1.26),
     ],
     mirror: { x: 1.32, y: 1.42 },
+    screens: [
+      { x1: 1.04, y1: 1.29, x2: 0.74, y2: 1.69 },
+      { x1: -0.23, y1: 1.6, x2: -0.25, y2: 1.16 },
+    ],
     seams: [1.25, -0.28], seamY: [0.55, 1.14],
     darkPlates: [{ panel: "bed", x: [-2.5, -0.32], y: 1.0, z: [-0.8, 0.8] }],
     zones: [

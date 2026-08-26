@@ -129,6 +129,27 @@ export function VehicleModel({
       <mesh geometry={glassGeo}>
         <meshStandardMaterial color="#8aa4b5" metalness={0.15} roughness={0.3} transparent opacity={0.96} />
       </mesh>
+      {/* Windscreen / rear-screen sheets — the wrapped band only shows on the
+          sides, so the front and rear glazing are laid on the surface as thin
+          angled plates, slightly proud of the shell. */}
+      {(geom.screens ?? []).map((sc, i) => {
+        const dx = sc.x2 - sc.x1, dy = sc.y2 - sc.y1
+        const len = Math.hypot(dx, dy)
+        const ang = Math.atan2(dy, dx)
+        // Outward normal: rotate the direction -90° and flip so it points away
+        // from the body centre (positive x for front screens, negative for rear).
+        let nx = dy / len, ny = -dx / len
+        const midX = (sc.x1 + sc.x2) / 2
+        if ((midX >= 0 && nx < 0) || (midX < 0 && nx > 0)) { nx = -nx; ny = -ny }
+        return (
+          <mesh key={"screen-" + i}
+            position={[midX + nx * 0.03, (sc.y1 + sc.y2) / 2 + ny * 0.03, 0]}
+            rotation={[0, 0, ang]}>
+            <boxGeometry args={[len, 0.03, geom.width - 0.22]} />
+            <meshStandardMaterial color="#8aa4b5" metalness={0.15} roughness={0.3} />
+          </mesh>
+        )
+      })}
       {/* Door / panel seam lines on both sides */}
       {geom.seams.map((x, i) => (
         <group key={`seam-${i}`}>
@@ -157,10 +178,14 @@ export function VehicleModel({
       )))}
       {/* Mirrors on stalks */}
       {geom.mirror && ([1, -1] as const).map(side => (
-        <group key={`mirror-${side}`} position={[geom.mirror!.x, geom.mirror!.y, side * (zEdge + 0.1)]}>
-          <mesh><boxGeometry args={[0.06, 0.05, 0.18]} /><meshStandardMaterial color="#dfe4e9" roughness={0.7} /></mesh>
-          <mesh position={[-0.02, 0.02, side * 0.09]}>
-            <boxGeometry args={[0.1, 0.14, 0.05]} />
+        <group key={`mirror-${side}`} position={[geom.mirror!.x, geom.mirror!.y, side * (zEdge - 0.02)]}>
+          {/* stalk grows outward from the door skin, head on its end */}
+          <mesh position={[0, 0, side * 0.09]}>
+            <boxGeometry args={[0.05, 0.04, 0.16]} />
+            <meshStandardMaterial color="#dfe4e9" roughness={0.7} />
+          </mesh>
+          <mesh position={[-0.01, 0.03, side * 0.19]}>
+            <boxGeometry args={[0.09, 0.15, 0.06]} />
             <meshStandardMaterial color="#eef1f4" roughness={0.7} />
           </mesh>
         </group>

@@ -52,7 +52,7 @@ type Report = {
 };
 
 const BODY_TYPES: { key: BodyType; label: string }[] = [
-  { key: "coupe", label: "Coupé" }, { key: "sedan", label: "Sedan" }, { key: "estate", label: "Estate" },
+  { key: "hatchback", label: "Hatchback" }, { key: "sedan", label: "Sedan" }, { key: "estate", label: "Estate" },
   { key: "pickup", label: "Pickup" }, { key: "van", label: "Van" },
 ];
 
