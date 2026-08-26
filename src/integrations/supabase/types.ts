@@ -106,6 +106,136 @@ export type Database = {
           },
         ]
       }
+      pre_arrival_form_confirmations: {
+        Row: {
+          confirmed: boolean
+          confirmed_at: string | null
+          field_key: string
+          pre_arrival_form_id: string
+        }
+        Insert: {
+          confirmed?: boolean
+          confirmed_at?: string | null
+          field_key: string
+          pre_arrival_form_id: string
+        }
+        Update: {
+          confirmed?: boolean
+          confirmed_at?: string | null
+          field_key?: string
+          pre_arrival_form_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pre_arrival_form_confirmations_pre_arrival_form_id_fkey"
+            columns: ["pre_arrival_form_id"]
+            isOneToOne: false
+            referencedRelation: "pre_arrival_forms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pre_arrival_forms: {
+        Row: {
+          arrival_date: string | null
+          arrival_emirate: string | null
+          arrival_port: string | null
+          beam_m: number | null
+          captain_email: string | null
+          captain_name: string | null
+          chief_engineer_email: string | null
+          chief_engineer_name: string | null
+          created_at: string
+          dead_weight_tn: number | null
+          displacement_tn: number | null
+          engine_serial_no: string | null
+          fuel_type: string | null
+          generators_kw: number | null
+          hull_id_number: string | null
+          id: string
+          last_port_of_call: string | null
+          main_propulsion_kw: number | null
+          max_air_draft_m: number | null
+          max_forward_draft_m: number | null
+          max_stern_draft_m: number | null
+          purser_email: string | null
+          purser_name: string | null
+          status: string
+          submitted_at: string | null
+          submitted_by: string | null
+          summer_dead_weight_tn: number | null
+          yacht_id: string
+        }
+        Insert: {
+          arrival_date?: string | null
+          arrival_emirate?: string | null
+          arrival_port?: string | null
+          beam_m?: number | null
+          captain_email?: string | null
+          captain_name?: string | null
+          chief_engineer_email?: string | null
+          chief_engineer_name?: string | null
+          created_at?: string
+          dead_weight_tn?: number | null
+          displacement_tn?: number | null
+          engine_serial_no?: string | null
+          fuel_type?: string | null
+          generators_kw?: number | null
+          hull_id_number?: string | null
+          id?: string
+          last_port_of_call?: string | null
+          main_propulsion_kw?: number | null
+          max_air_draft_m?: number | null
+          max_forward_draft_m?: number | null
+          max_stern_draft_m?: number | null
+          purser_email?: string | null
+          purser_name?: string | null
+          status?: string
+          submitted_at?: string | null
+          submitted_by?: string | null
+          summer_dead_weight_tn?: number | null
+          yacht_id: string
+        }
+        Update: {
+          arrival_date?: string | null
+          arrival_emirate?: string | null
+          arrival_port?: string | null
+          beam_m?: number | null
+          captain_email?: string | null
+          captain_name?: string | null
+          chief_engineer_email?: string | null
+          chief_engineer_name?: string | null
+          created_at?: string
+          dead_weight_tn?: number | null
+          displacement_tn?: number | null
+          engine_serial_no?: string | null
+          fuel_type?: string | null
+          generators_kw?: number | null
+          hull_id_number?: string | null
+          id?: string
+          last_port_of_call?: string | null
+          main_propulsion_kw?: number | null
+          max_air_draft_m?: number | null
+          max_forward_draft_m?: number | null
+          max_stern_draft_m?: number | null
+          purser_email?: string | null
+          purser_name?: string | null
+          status?: string
+          submitted_at?: string | null
+          submitted_by?: string | null
+          summer_dead_weight_tn?: number | null
+          yacht_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pre_arrival_forms_yacht_id_fkey"
+            columns: ["yacht_id"]
+            isOneToOne: false
+            referencedRelation: "yachts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -156,6 +286,53 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      yacht_tenders: {
+        Row: {
+          color: string | null
+          created_at: string
+          description: string | null
+          fuel_type: string | null
+          id: string
+          id_serial_no: string | null
+          length_m: number | null
+          manufacturer_model: string | null
+          yacht_id: string
+          year_of_build: number | null
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string
+          description?: string | null
+          fuel_type?: string | null
+          id?: string
+          id_serial_no?: string | null
+          length_m?: number | null
+          manufacturer_model?: string | null
+          yacht_id: string
+          year_of_build?: number | null
+        }
+        Update: {
+          color?: string | null
+          created_at?: string
+          description?: string | null
+          fuel_type?: string | null
+          id?: string
+          id_serial_no?: string | null
+          length_m?: number | null
+          manufacturer_model?: string | null
+          yacht_id?: string
+          year_of_build?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "yacht_tenders_yacht_id_fkey"
+            columns: ["yacht_id"]
+            isOneToOne: false
+            referencedRelation: "yachts"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       yachts: {
         Row: {
@@ -312,7 +489,41 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      v_prearrival_prefill: {
+        Row: {
+          air_draft_m: number | null
+          billing_address: string | null
+          breadth_m: number | null
+          company_name: string | null
+          contact_no: string | null
+          contact_person: string | null
+          draught_m: number | null
+          email_address: string | null
+          engine: string | null
+          equipment_model: string | null
+          flag: string | null
+          frequency: string | null
+          gross_tonnage: number | null
+          imo_no: string | null
+          length_overall_m: number | null
+          manufacturer: string | null
+          max_crew: number | null
+          max_guests: number | null
+          mmsi: string | null
+          net_tonnage: number | null
+          official_no: string | null
+          owners_address: string | null
+          owners_name: string | null
+          owners_nationality: string | null
+          port_of_registry: string | null
+          radio_call_sign: string | null
+          serial_no: string | null
+          vessel_name: string | null
+          vessel_type: string | null
+          yacht_id: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       has_role: {
