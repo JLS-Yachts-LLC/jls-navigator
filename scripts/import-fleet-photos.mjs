@@ -135,14 +135,17 @@ if (vehicleZip) {
     }
 
     if (!DRY) {
+      // One bad row must not cost the whole run: report it and carry on. (A
+      // thrown error here once aborted the import after a single vehicle,
+      // leaving 4 uploaded files and nothing else.)
       const front = angles.find(a => a.angle === 'front') ?? angles[0]
       const { error: uErr } = await sb.from('crew_vehicles').update({ photo_url: front.url }).eq('id', m.vehicle.id)
-      if (uErr) throw new Error(`link ${m.vehicle.registration}: ${uErr.message}`)
+      if (uErr) report.review.push(`VEHICLE ${m.vehicle.registration} — could not set the thumbnail: ${uErr.message}`)
       for (const [i, a] of angles.entries()) {
         const { error: pErr } = await sb.from('crew_vehicle_photos')
           .upsert({ vehicle_id: m.vehicle.id, url: a.url, angle: a.angle, sort_order: i },
                   { onConflict: 'vehicle_id,angle' })
-        if (pErr) throw new Error(`photo row ${m.vehicle.registration}/${a.angle}: ${pErr.message}`)
+        if (pErr) report.review.push(`VEHICLE ${m.vehicle.registration}/${a.angle} — could not save the photo row: ${pErr.message}`)
       }
     }
     report.vehicles.push(m.vehicle.registration)
@@ -194,7 +197,7 @@ if (driverZip) {
     if (!DRY) {
       const url = await upload(`drivers/photos/${m.driver.id}.jpg`, buf)
       const { error } = await sb.from('crew_drivers').update({ photo_url: url }).eq('id', m.driver.id)
-      if (error) throw new Error(`link ${m.driver.full_name}: ${error.message}`)
+      if (error) { report.review.push(`DRIVER ${m.driver.full_name} — uploaded but could not link: ${error.message}`); continue }
     }
     report.drivers.push(m.driver.full_name)
     console.log(`  ✓ ${base.padEnd(30)} → ${m.driver.full_name.padEnd(28)} (${m.how})  ${kb(before)} → ${kb(buf.length)}`)

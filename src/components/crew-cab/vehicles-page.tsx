@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Plus, Pencil, Trash2, Loader2, Car, Search, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
-import { PhotoField } from "./photo-upload";
+import { PhotoGallery, type GalleryPhoto } from "./photo-upload";
 
 type Vehicle = {
   id: string;
@@ -135,6 +135,10 @@ export function VehiclesPage() {
 
   useEffect(() => { void load(); }, []);
 
+  // Photos for the vehicle being edited. Kept separate from `form` because they
+  // live in their own table (crew_vehicle_photos) rather than on the vehicle row.
+  const [photos, setPhotos] = useState<GalleryPhoto[]>([]);
+
   async function load() {
     setLoading(true);
     const { data, error } = await fetchAllRows(() => (supabase as any).from("crew_vehicles").select("*").order("make"));
@@ -143,7 +147,13 @@ export function VehiclesPage() {
     setLoading(false);
   }
 
-  function openNew() { setEditing(null); setForm(EMPTY); setOpen(true); }
+  function openNew() { setEditing(null); setForm(EMPTY); setPhotos([]); setOpen(true); }
+  async function loadPhotos(vehicleId: string) {
+    const { data } = await (supabase as any).from("crew_vehicle_photos")
+      .select("id, url, angle").eq("vehicle_id", vehicleId).order("sort_order");
+    setPhotos(((data ?? []) as any[]).map(r => ({ id: r.id, url: r.url, angle: r.angle })));
+  }
+
   function openEdit(v: Vehicle) {
     setEditing(v);
     setForm({
@@ -155,6 +165,7 @@ export function VehiclesPage() {
       photo_url: v.photo_url ?? null,
     });
     setOpen(true);
+    void loadPhotos(v.id);
   }
 
   async function handleSave() {
@@ -174,14 +185,38 @@ export function VehiclesPage() {
         notes: form.notes || null,
         updated_at: new Date().toISOString(),
       };
+      // The first photo in the gallery is the list thumbnail.
+      const thumb = photos[0]?.url ?? null;
+      let vehicleId = editing?.id ?? null;
       if (editing) {
-        const { error } = await (supabase as any).from("crew_vehicles").update(payload).eq("id", editing.id);
+        const { error } = await (supabase as any).from("crew_vehicles")
+          .update({ ...payload, photo_url: thumb }).eq("id", editing.id);
         if (error) throw error;
         toast.success("Vehicle updated");
       } else {
-        const { error } = await (supabase as any).from("crew_vehicles").insert([payload]);
+        const { data, error } = await (supabase as any).from("crew_vehicles")
+          .insert([{ ...payload, photo_url: thumb }]).select("id").single();
         if (error) throw error;
+        vehicleId = data.id;
         toast.success("Vehicle added");
+      }
+
+      // Replace the photo set: rows the editor no longer holds are dropped, and
+      // the remaining ones are re-numbered so the order on screen is the order
+      // stored. Files themselves are left in storage — cheap, and it keeps an
+      // accidental removal recoverable.
+      if (vehicleId) {
+        const keep = photos.map(p => p.url);
+        const del = (supabase as any).from("crew_vehicle_photos").delete().eq("vehicle_id", vehicleId);
+        await (keep.length ? del.not("url", "in", `(${keep.map(u => `"${u}"`).join(",")})`) : del);
+        if (photos.length) {
+          const rows = photos.map((ph, i) => ({
+            vehicle_id: vehicleId, url: ph.url, angle: ph.angle ?? null, sort_order: i,
+          }));
+          const { error: pErr } = await (supabase as any).from("crew_vehicle_photos")
+            .upsert(rows, { onConflict: "vehicle_id,angle" });
+          if (pErr) toast.error(`Photos: ${pErr.message}`);
+        }
       }
       setOpen(false);
       await load();
@@ -336,11 +371,10 @@ export function VehiclesPage() {
               <div className="space-y-1.5"><Label>Capacity</Label><Input type="number" value={form.capacity} onChange={set("capacity")} /></div>
               <div className="space-y-1.5"><Label>Mileage (km)</Label><Input type="number" value={form.mileage} onChange={set("mileage")} /></div>
               <div className="space-y-1.5 sm:col-span-2">
-                <PhotoField
-                  label="Vehicle photo"
-                  value={form.photo_url}
-                  onChange={(url) => setForm((f) => ({ ...f, photo_url: url }))}
-                  folder="vehicles/photos"
+                <PhotoGallery
+                  photos={photos}
+                  onChange={setPhotos}
+                  folder={`vehicles/photos/${editing?.id ?? "new"}`}
                   recordId={editing?.id ?? "new"}
                 />
               </div>
