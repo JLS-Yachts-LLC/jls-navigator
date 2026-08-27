@@ -186,6 +186,20 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
     }
   }
 
+  // Read-only diagnostic: `?run=training-boards-probe` returns the schema
+  // (title, columns, groups, sample items) of the 4 Monday.com Training
+  // Institute boards, ahead of building the Training module UI to mirror
+  // them. Writes nothing.
+  if (url.searchParams.get('run') === 'training-boards-probe') {
+    try {
+      const { probeTrainingBoards } = await import('./lib/training/monday.server')
+      const r = await probeTrainingBoards()
+      return new Response(JSON.stringify(r), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
+  }
+
   // Read-only diagnostic: `?run=monday-debug-file` checks whether Monday's
   // file links need the API token to actually download. Writes nothing.
   if (url.searchParams.get('run') === 'monday-debug-file') {
