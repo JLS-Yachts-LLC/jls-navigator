@@ -3,6 +3,8 @@
  *
  *   node scripts/import-fleet-photos.mjs --dry-run     # match + resize report, no writes
  *   node scripts/import-fleet-photos.mjs               # upload + link
+ *   node scripts/import-fleet-photos.mjs --create-missing   # …and add drivers who
+ *                                                          # have no record yet
  *
  * Both reading the fleet tables and writing to storage need the service role
  * key — RLS refuses anonymous reads of crew_vehicles/crew_drivers and the
@@ -30,9 +32,12 @@ import { readFileSync, existsSync, mkdirSync, rmSync, readdirSync, statSync } fr
 import { execFileSync } from 'node:child_process'
 import { join, basename } from 'node:path'
 import sharp from 'sharp'
-import { matchVehicleFolder, matchDriverFile, angleOf } from './lib/fleet-photo-match.mjs'
+import { matchVehicleFolder, matchDriverFile, cleanDriverName, angleOf } from './lib/fleet-photo-match.mjs'
 
 const DRY = process.argv.includes('--dry-run')
+// Create a driver record for any photo whose person isn't in Crew Care yet.
+// Off by default: adding people is not something an import should do quietly.
+const CREATE_MISSING = process.argv.includes('--create-missing')
 const TMP = '.fleet-photos-tmp'
 const BUCKET = 'permit-documents'
 
@@ -100,7 +105,7 @@ console.log(`Matching against ${vehicles.length} vehicles and ${drivers.length} 
 if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true })
 const vehicleZip = readdirSync('.').find(f => /JLS Vehicle Pictures\.zip$/i.test(f))
 const driverZip = readdirSync('.').find(f => /^wetransfer_drivers-photo.*\.zip$/i.test(f))
-const report = { vehicles: [], drivers: [], review: [], before: 0, after: 0 }
+const report = { vehicles: [], drivers: [], created: [], review: [], before: 0, after: 0 }
 
 // ── Vehicles ──────────────────────────────────────────────────────────────────
 if (vehicleZip) {
@@ -155,7 +160,32 @@ if (driverZip) {
 
   for (const f of walk(dest).filter(isImage).sort()) {
     const base = basename(f).replace(/\.[^.]+$/, '')
-    const m = matchDriverFile(base, drivers)
+    let m = matchDriverFile(base, drivers)
+
+    // No such driver yet — create them from the photo's file name so the photo
+    // has somewhere to live. The part after a dash ("- Truck Provi",
+    // "- Toyota Hiace") is a note about their vehicle, not part of the name, so
+    // it goes to notes rather than into full_name.
+    if (!m.ok && CREATE_MISSING) {
+      const name = cleanDriverName(base);
+      const suffix = base.slice(name.length).replace(/^[\s\-–]+/, "").replace(/\(\d+\)/g, "").trim();
+      const notes = ["Added from the driver photo import.", suffix && `Noted on the photo: ${suffix}.`]
+        .filter(Boolean).join(" ");
+      if (DRY) {
+        console.log(`  + ${base.padEnd(30)} → would CREATE driver "${name}"`);
+        report.created.push(`${name} (would create)`);
+        continue;
+      }
+      const { data: made, error: cErr } = await sb.from("crew_drivers")
+        .insert([{ full_name: name, status: "active", notes }])
+        .select("id, full_name, email").single();
+      if (cErr) { report.review.push(`DRIVER "${base}" — could not create: ${cErr.message}`); continue }
+      drivers.push(made);          // so a later photo of the same person matches
+      m = { ok: true, driver: made, how: "created from photo" };
+      report.created.push(made.full_name);
+      console.log(`  + created driver "${made.full_name}"`);
+    }
+
     if (!m.ok) { report.review.push(`DRIVER ${m.reason}`); console.log(`  ⚠ ${base} — ${m.reason}`); continue }
 
     const before = statSync(f).size
@@ -178,7 +208,11 @@ if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true })
 console.log(`\n──────── ${DRY ? 'DRY RUN — nothing written' : 'IMPORT COMPLETE'} ────────`)
 console.log(`Vehicles linked : ${report.vehicles.length}`)
 console.log(`Drivers linked  : ${report.drivers.length}`)
+if (report.created.length) console.log(`Drivers created : ${report.created.length} — ${report.created.join(', ')}`)
 console.log(`Image payload   : ${mb(report.before)} → ${mb(report.after)}`)
+if (!CREATE_MISSING && report.review.some(r => r.startsWith('DRIVER'))) {
+  console.log('\nRe-run with --create-missing to add the drivers who have no record yet.')
+}
 if (report.review.length) {
   console.log(`\nLeft for a human (${report.review.length}) — nothing was guessed:`)
   for (const r of report.review) console.log('  •', r)
