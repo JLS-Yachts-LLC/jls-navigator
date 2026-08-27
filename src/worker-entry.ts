@@ -799,6 +799,11 @@ export default {
       return crewVerificationHandler(request)
     }
 
+    if (url.pathname === '/api/it-tickets/poll-mail' && request.method === 'POST') {
+      const { itTicketsPollMailHandler } = await import('./routes/api.it-tickets.poll-mail')
+      return itTicketsPollMailHandler(request)
+    }
+
     if (url.pathname === '/api/it-tickets/notify' && request.method === 'POST') {
       return itTicketsNotifyHandler(request)
     }
@@ -998,6 +1003,17 @@ export default {
       // Priority lists (Yachts) every tick so vessel location/berth/ETD is never
       // more than 5 minutes behind SharePoint, plus the stalest few others so the
       // whole set cycles in ~15-20 min instead of the old 3 hours. Bounded per
+      // ── Every 5 min: pull email replies INTO their tickets ──
+      //    Our notifications tell people "reply to this email to add to your
+      //    ticket"; this is what delivers on that. No-ops until the mail
+      //    credentials are set (and the app has Mail.Read).
+      ctx.waitUntil(
+        import('./lib/ticket-mail-inbound.server')
+          .then((m) => m.pollTicketMailbox())
+          .then((r) => { if (r && (r.appended || r.errors.length)) console.log('[ticket-mail]', JSON.stringify(r)) })
+          .catch((e) => console.error('[ticket-mail] error:', e instanceof Error ? e.message : String(e)))
+      );
+
       // invocation — see syncPrioritisedLists().
       ctx.waitUntil(
         syncPrioritisedLists()

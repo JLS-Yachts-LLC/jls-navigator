@@ -30,6 +30,15 @@ async function getMailGraphToken(): Promise<string> {
   return getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret)
 }
 
+/** Graph token for READING the ticket mailbox (inbound reply ingestion).
+ *  Same app registration as sending — it needs Mail.Read in addition to
+ *  Mail.Send. Throws when no mail secret is configured, so callers can no-op. */
+export async function getMailGraphTokenForRead(): Promise<string> {
+  const secret = process.env.MAIL_GRAPH_CLIENT_SECRET ?? process.env.MAIL_GRAPH_CLIENT_SECRE
+  if (!secret) throw new Error('MAIL_GRAPH_CLIENT_SECRET not configured')
+  return getGraphToken(MAIL_TENANT_ID, MAIL_CLIENT_ID, secret)
+}
+
 export async function sendTicketEmail(opts: {
   /** One address, or several (e.g. the JLS + New Horizon support mailboxes). */
   to: string | string[]
