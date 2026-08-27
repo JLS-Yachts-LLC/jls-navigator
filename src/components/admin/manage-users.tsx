@@ -69,6 +69,7 @@ function StaffPanel() {
   const [users, setUsers] = useState<UserRole[]>([]);
   const [total, setTotal] = useState(0);
   const [roles, setRoles] = useState<RoleOption[]>([]);
+  const [departments, setDepartments] = useState<{ slug: string; name: string; description?: string | null }[]>([]);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -80,6 +81,7 @@ function StaffPanel() {
       setUsers(data.users ?? []);
       setTotal(data.total ?? 0);
       setRoles(data.roles ?? []);
+      setDepartments(data.departments ?? []);
     } finally { setLoading(false); }
   }, [token]);
   useEffect(() => { void load(); }, [load]);
@@ -92,7 +94,7 @@ function StaffPanel() {
       {loading ? (
         <div className="flex h-32 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
       ) : (
-        <UserTable users={users} total={total} roles={roles} onRefresh={load} />
+        <UserTable users={users} total={total} roles={roles} departments={departments} onRefresh={load} />
       )}
     </div>
   );

@@ -17,6 +17,15 @@ function json(body: unknown, status = 200): Response {
   })
 }
 
+/**
+ * Privilege levels a JLS STAFF login may hold, most senior first. Everything else
+ * in the roles catalogue is organisation/vessel scoped and belongs to the Client
+ * Portal, so it is never offered (or accepted) here.
+ */
+const STAFF_ROLES: string[] = [
+  'platform_owner', 'developer', 'global_admin', 'dept_admin', 'jls_staff', 'read_only',
+]
+
 const handlers = {
   // List platform users from user_profiles (the real RBAC store — the same table
   // requireAdminAccess reads), joined to the roles catalog. Email / MFA / last-login
@@ -32,9 +41,20 @@ const handlers = {
 
     const sb = getAdmin()
 
-    // Role catalog drives the UI dropdowns + badge labels.
-    const { data: roleRows } = await sb
+    // Role catalog drives the UI dropdowns + badge labels. The Internal Staff
+    // list must offer STAFF privilege levels only — the client-portal roles
+    // (captain, owner, family_office, client_admin, supplier…) belong to the
+    // Client Portal tab and were previously offered here by mistake.
+    const { data: allRoles } = await sb
       .from('roles').select('name, display_name, scope').order('display_name')
+    const roleRows = (allRoles ?? []).filter(r => STAFF_ROLES.includes(r.name))
+      .sort((a, b) => STAFF_ROLES.indexOf(a.name) - STAFF_ROLES.indexOf(b.name))
+
+    // Departments decide WHICH modules a staff member sees (defaults live in
+    // department_permissions); the role above decides how much they can do.
+    const { data: departments } = await sb
+      .from('staff_departments').select('slug, name, description')
+      .eq('active', true).order('sort_order')
 
     let query = sb
       .from('user_profiles')
@@ -90,7 +110,7 @@ const handlers = {
       }
     }
 
-    return json({ users, total: count ?? 0, page, pageSize, roles: roleRows ?? [] })
+    return json({ users, total: count ?? 0, page, pageSize, roles: roleRows, allRoles: allRoles ?? [], departments: departments ?? [] })
   },
 
   // Invite a user: create the auth user (sends the email) + create their profile
@@ -102,11 +122,12 @@ const handlers = {
 
     const body = await request.json() as {
       email: string
-      role: string            // a roles.name value
+      role: string            // a roles.name value — the privilege level
+      department?: string     // a staff_departments.slug — drives module access
       org_id?: string
       location_id?: string
     }
-    const { email, role, org_id, location_id } = body
+    const { email, role, department, org_id, location_id } = body
 
     if (!email || !role) return json({ error: 'email and role are required' }, 400)
 
@@ -115,6 +136,9 @@ const handlers = {
     const { data: roleRow } = await sb
       .from('roles').select('role_id, scope').eq('name', role).maybeSingle()
     if (!roleRow) return json({ error: `Unknown role: ${role}` }, 400)
+    if (!STAFF_ROLES.includes(role)) {
+      return json({ error: `${role} is a client-portal role — invite staff from the Internal Staff tab only.` }, 400)
+    }
 
     // Org admins may not grant global-scope roles.
     if (session.user.role === 'org_admin' && roleRow.scope === 'global') {
@@ -161,6 +185,7 @@ const handlers = {
       // refine it once they accept and complete their profile.
       display_name: email.split('@')[0],
       role_id:      roleRow.role_id,
+      department:   department ?? null,
       org_id:       org_id ?? (session.user.org_id ?? null),
       location_id:  location_id ?? null,
       active:       false,

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { ModuleAccessModal } from './ModuleAccessModal'
 import { useAuth } from '@/lib/auth'
 import { RoleBadge } from './RoleBadge'
 import { EditRoleModal } from './EditRoleModal'
@@ -28,6 +29,7 @@ const STATUS_META: Record<string, { dot: string; label: string; text: string }> 
 export function UserRow({ userRole, roles, onRefresh }: Props) {
   const { session } = useAuth()
   const [editOpen, setEditOpen] = useState(false)
+  const [modulesOpen, setModulesOpen] = useState(false)
   const [busy, setBusy]         = useState(false)
   const [msg, setMsg]           = useState('')
 
@@ -125,6 +127,14 @@ export function UserRow({ userRole, roles, onRefresh }: Props) {
             >
               Role
             </button>
+            <button
+              onClick={() => setModulesOpen(true)}
+              title="Which modules this person can see, overriding their department"
+              className="rounded px-2 py-1 text-[11.5px] text-muted-foreground hover:text-cyan-500
+                         hover:bg-cyan-500/10 transition-colors"
+            >
+              Modules
+            </button>
             {status === 'invited' && (
               <button
                 onClick={() => act('resend_invite', 'Invite re-sent')}
@@ -170,6 +180,13 @@ export function UserRow({ userRole, roles, onRefresh }: Props) {
           roles={roles}
           onClose={() => setEditOpen(false)}
           onSuccess={onRefresh}
+        />
+      )}
+      {modulesOpen && (
+        <ModuleAccessModal
+          userId={userRole.user_id}
+          email={(userRole as any).user?.email ?? (userRole as any).email ?? userRole.user_id}
+          onClose={() => { setModulesOpen(false); onRefresh() }}
         />
       )}
     </>

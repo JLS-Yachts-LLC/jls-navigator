@@ -986,6 +986,10 @@ export default {
     if (url.pathname === '/api/admin/permissions') {
       return adminPermissionsHandler(request)
     }
+    if (url.pathname === '/api/admin/user-modules') {
+      const { adminUserModulesHandler } = await import('./routes/api.admin.user-modules')
+      return adminUserModulesHandler(request)
+    }
     if (url.pathname === '/api/admin/users') {
       return adminUsersHandler(request)
     }

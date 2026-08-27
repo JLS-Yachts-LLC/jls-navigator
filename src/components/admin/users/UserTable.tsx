@@ -7,10 +7,11 @@ interface Props {
   users: UserRole[]
   total: number
   roles: RoleOption[]
+  departments?: { slug: string; name: string; description?: string | null }[]
   onRefresh: () => void
 }
 
-export function UserTable({ users, total, roles, onRefresh }: Props) {
+export function UserTable({ users, total, roles, departments = [], onRefresh }: Props) {
   const [inviteOpen,  setInviteOpen]  = useState(false)
   const [search,      setSearch]      = useState('')
   const [roleFilter,  setRoleFilter]  = useState('')
@@ -90,6 +91,7 @@ export function UserTable({ users, total, roles, onRefresh }: Props) {
       {inviteOpen && (
         <InviteUserModal
           roles={roles}
+          departments={departments}
           onClose={() => setInviteOpen(false)}
           onSuccess={onRefresh}
         />

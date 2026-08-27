@@ -93,7 +93,7 @@ export async function deriveClaims(sb: SupabaseClient, user: User): Promise<Pola
   if (profile) {
     const [vessels, modules, deptPerms] = await Promise.all([
       (sb as any).from("user_vessel_access").select("vessel_id, active").eq("user_id", user.id),
-      (sb as any).from("user_module_access").select("permission_level, modules:module_id(name)").eq("user_id", user.id),
+      (sb as any).from("user_module_access").select("permission_level, active, modules:module_id(name)").eq("user_id", user.id),
       // Department defaults. Skipped entirely when the person has no department,
       // so they simply keep whatever their own grants give them.
       profile.department
@@ -114,7 +114,13 @@ export async function deriveClaims(sb: SupabaseClient, user: User): Promise<Pola
       if (level) moduleLevels[d.module_slug] = level;
     }
     for (const m of modules.data ?? []) {
-      if (m.modules?.name && m.active !== false) moduleLevels[m.modules.name] = m.permission_level;
+      const name = m.modules?.name;
+      if (!name) continue;
+      // active = false is an explicit DENY: it revokes what the department
+      // granted. Removing the row altogether is what hands a module back to
+      // the department default.
+      if (m.active === false) { delete moduleLevels[name]; continue; }
+      moduleLevels[name] = m.permission_level;
     }
     return {
       ...base,
