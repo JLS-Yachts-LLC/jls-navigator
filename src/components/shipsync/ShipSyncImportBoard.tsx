@@ -319,16 +319,24 @@ export function ShipSyncImportBoard() {
             const isCollapsed = collapsed[g.title];
             const colCount = CELLS.length + 1 + mondayColumns.length;
             return (
-              <div key={g.title} className="overflow-hidden rounded-xl border border-border bg-card">
+              <div key={g.title} className="rounded-xl border border-border bg-card">
+                {/* No overflow-x-auto wrapper around the table: any nested
+                    element with overflow-x set to a non-visible value forces
+                    its own overflow-y to auto too (CSS spec coercion), which
+                    would silently hijack position:sticky onto THIS box's own
+                    (never-scrolling) viewport instead of the real vertical
+                    scroller below — killing the sticky header. Horizontal
+                    scroll for a wide table is instead handled by the outer
+                    groups list (already overflow-auto on both axes), same as
+                    Local Packages' single-table board. */}
                 <button onClick={() => toggle(g.title)}
-                  className={cn("flex w-full items-center gap-2 border-l-4 bg-muted/20 px-4 py-2 text-left", groupColor(g.title))}>
+                  className={cn("flex w-full items-center gap-2 rounded-t-xl border-l-4 bg-muted/20 px-4 py-2 text-left", groupColor(g.title))}>
                   {isCollapsed ? <ChevronRight className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
                   <span className="font-display text-sm font-semibold uppercase tracking-wide">{g.title}</span>
                   <span className="text-xs text-muted-foreground">{g.rows.length} shipment{g.rows.length === 1 ? "" : "s"}</span>
                 </button>
 
                 {!isCollapsed && (
-                  <div className="overflow-x-auto overflow-y-visible">
                     <table className="w-full table-fixed border-collapse text-[12.5px]">
                       <thead className="sticky top-0 z-10">
                         <tr className="border-b border-border bg-card text-left text-[10px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">
@@ -492,7 +500,6 @@ export function ShipSyncImportBoard() {
                         </tr>
                       </tbody>
                     </table>
-                  </div>
                 )}
               </div>
             );

@@ -234,9 +234,17 @@ export function YachtShipmentsBoard() {
               const isCollapsed = collapsed[g.key];
               const groupCharges = groupRows.reduce((s, r) => s + (Number(r.charges) || 0), 0);
               return (
-                <div key={g.key} className="overflow-hidden rounded-xl border border-border bg-card shadow-[0_2px_12px_-4px_rgba(0,0,0,0.4)]">
+                <div key={g.key} className="rounded-xl border border-border bg-card shadow-[0_2px_12px_-4px_rgba(0,0,0,0.4)]">
+                  {/* No overflow-x-auto wrapper around the table: any nested
+                      element with overflow-x set to a non-visible value forces
+                      its own overflow-y to auto too (CSS spec coercion), which
+                      would silently hijack position:sticky onto THIS box's own
+                      (never-scrolling) viewport instead of the real vertical
+                      scroller below — killing the sticky header. Horizontal
+                      scroll for a wide table is instead handled by the outer
+                      groups list (already overflow-auto on both axes). */}
                   <button onClick={() => toggleGroup(g.key)}
-                    className={cn("flex w-full items-center gap-2 border-l-4 bg-muted/20 px-4 py-2.5 text-left", g.dot.replace("bg-", "border-"))}>
+                    className={cn("flex w-full items-center gap-2 rounded-t-xl border-l-4 bg-muted/20 px-4 py-2.5 text-left", g.dot.replace("bg-", "border-"))}>
                     {isCollapsed ? <ChevronRight className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
                     <span className={cn("h-2 w-2 rounded-full", g.dot)} />
                     <span className={cn("font-display text-sm font-semibold uppercase tracking-wide", g.text)}>{g.label}</span>
@@ -244,15 +252,14 @@ export function YachtShipmentsBoard() {
                     {groupCharges > 0 && <span className="ml-auto text-xs text-muted-foreground">{fmtAED(groupCharges)}</span>}
                   </button>
 
+                  {/* table-fixed + a matching width class on every th AND td:
+                      each group renders its own <table>, and browsers' default
+                      auto-layout sizes columns per-table from cell content — so
+                      a table with real text ("test") computed different column
+                      widths than an empty one, and the sticky offsets (fixed
+                      Tailwind values) stopped lining up with the real column
+                      edge. Fixed layout makes widths content-independent. */}
                   {!isCollapsed && (
-                    <div className="overflow-x-auto overflow-y-visible">
-                      {/* table-fixed + a matching width class on every th AND td:
-                          each group renders its own <table>, and browsers' default
-                          auto-layout sizes columns per-table from cell content — so
-                          a table with real text ("test") computed different column
-                          widths than an empty one, and the sticky offsets (fixed
-                          Tailwind values) stopped lining up with the real column
-                          edge. Fixed layout makes widths content-independent. */}
                       <table className="w-full table-fixed border-collapse text-sm">
                         <thead>
                           <tr className="border-b border-border bg-muted/30">
@@ -335,7 +342,6 @@ export function YachtShipmentsBoard() {
                           </tr>
                         </tbody>
                       </table>
-                    </div>
                   )}
                 </div>
               );
