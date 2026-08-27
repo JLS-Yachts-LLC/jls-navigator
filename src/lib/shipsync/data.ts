@@ -148,9 +148,18 @@ export async function createDeliveryNote(boat_name: string, driver_id?: string |
   return data as ShipSyncDeliveryNote
 }
 
-/** Assign packages onto a note + driver, flipping them to "assigned". */
+/** Assign packages onto a note + driver, flipping them to "assigned". Refuses
+ *  to grab a package that's already on a DIFFERENT note instead of silently
+ *  overwriting it — without this, two routes built around the same overlooked
+ *  boat (or a retried dispatch after a partial failure) could both claim the
+ *  same parcels, with whichever dispatch runs last winning with no warning. */
 export async function assignPackagesToNote(packageIds: string[], note: ShipSyncDeliveryNote, driverId: string | null): Promise<void> {
   if (packageIds.length === 0) return
+  const { data: existing } = await db().from('shipsync_packages').select('id, delivery_note_id').in('id', packageIds)
+  const alreadyOnAnotherNote = (existing ?? []).filter((p: any) => p.delivery_note_id && p.delivery_note_id !== note.id)
+  if (alreadyOnAnotherNote.length > 0) {
+    throw new Error(`${alreadyOnAnotherNote.length} of these parcel(s) are already on another delivery note — refresh and try again.`)
+  }
   const { error } = await db().from('shipsync_packages').update({
     delivery_note_id: note.id, driver_id: driverId,
     status: 'assigned' as PackageStatus, scan_out_time: new Date().toISOString(),
@@ -178,18 +187,30 @@ export async function setNoteDriver(noteId: string, driverId: string | null): Pr
   await db().from('shipsync_packages').update({ driver_id: driverId }).eq('delivery_note_id', noteId)
 }
 
-/** Remove a package from its note (back to in_office, unassigned). */
+/** Remove a package from its note (back to the routing pool, unassigned).
+ *  Reverts to 'in_storage' — not always 'in_office' — if it still has a rack
+ *  assignment: forcing 'in_office' unconditionally lost that distinction for
+ *  any parcel that had been shelved before it was routed. Also clears
+ *  delivered_at: a package coming off a note can't still carry a real
+ *  delivery timestamp, or it ends up reading "In office" while delivered_at
+ *  says otherwise — a silently contradictory, undetectable-in-UI state. */
 export async function unassignPackage(id: string): Promise<void> {
-  await patchPackage(id, { delivery_note_id: null, driver_id: null, status: 'in_office', scan_out_time: null })
+  const { data: pkg } = await db().from('shipsync_packages').select('warehouse_zone').eq('id', id).maybeSingle()
+  const status: PackageStatus = pkg?.warehouse_zone ? 'in_storage' : 'in_office'
+  await patchPackage(id, { delivery_note_id: null, driver_id: null, status, scan_out_time: null, delivered_at: null })
 }
 
 /** Delete a dispatched run: send all its parcels back to the routing pool, then
- *  remove the delivery note. */
+ *  remove the delivery note. Same status/delivered_at correctness as
+ *  unassignPackage above, applied per-parcel since a route can span several
+ *  boats with different warehouse states. */
 export async function deleteRun(noteId: string): Promise<void> {
-  await db().from('shipsync_packages').update({
-    delivery_note_id: null, driver_id: null, status: 'in_office' as PackageStatus,
-    scan_out_time: null, driver_scanned: false, driver_scan_out_time: null,
-  }).eq('delivery_note_id', noteId)
+  const { data: pkgs } = await db().from('shipsync_packages').select('id, warehouse_zone').eq('delivery_note_id', noteId)
+  const inStorageIds = (pkgs ?? []).filter((p: any) => p.warehouse_zone).map((p: any) => p.id)
+  const inOfficeIds = (pkgs ?? []).filter((p: any) => !p.warehouse_zone).map((p: any) => p.id)
+  const baseReset = { delivery_note_id: null, driver_id: null, scan_out_time: null, driver_scanned: false, driver_scan_out_time: null, delivered_at: null }
+  if (inStorageIds.length) await db().from('shipsync_packages').update({ ...baseReset, status: 'in_storage' as PackageStatus }).in('id', inStorageIds)
+  if (inOfficeIds.length) await db().from('shipsync_packages').update({ ...baseReset, status: 'in_office' as PackageStatus }).in('id', inOfficeIds)
   const { error } = await db().from('shipsync_delivery_notes').delete().eq('id', noteId)
   if (error) throw error
 }

@@ -540,8 +540,13 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
                                   emptyText="No other clients with waiting packages"
                                   onSelect={(v) => pullInClient(r.id, boat, v)}
                                   groups={[{
+                                    // Excludes boats already on ANY route (not just this
+                                    // one) — otherwise a client already added as its own
+                                    // stop on another route could be pulled in here too,
+                                    // putting the same parcels on two delivery notes at
+                                    // once with no conflict check.
                                     items: Array.from(parcelsByBoat.keys())
-                                      .filter((b) => b !== boat)
+                                      .filter((b) => b !== boat && !assignedBoats.has(b))
                                       .sort((a, b2) => a.localeCompare(b2))
                                       .map((b) => ({ value: b, label: `${b === UNASSIGNED ? "No client set" : b} (${parcelsByBoat.get(b)!.length})` })),
                                   }]}

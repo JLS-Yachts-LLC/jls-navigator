@@ -235,11 +235,11 @@ async function importMondayShipmentsInner(_opts: { limit?: number } = {}): Promi
   // Paginated explicitly — PostgREST defaults to a 1000-row cap per query, and
   // this table is right around that size, so trusting the default silently
   // hid some rows (and their duplicates) from every check below.
-  const existingRows: { id: string; extra: any }[] = []
+  const existingRows: { id: string; extra: any; delivery_note_id: string | null }[] = []
   for (let offset = 0; ; offset += 1000) {
     const { data: page } = await db()
       .from('shipsync_packages')
-      .select('id, extra')
+      .select('id, extra, delivery_note_id')
       .eq('local_import', 'Local')
       .range(offset, offset + 999)
     if (!page || page.length === 0) break
@@ -247,13 +247,20 @@ async function importMondayShipmentsInner(_opts: { limit?: number } = {}): Promi
     if (page.length < 1000) break
   }
   const idByMonday = new Map<string, string>()
+  // A package already routed/dispatched locally (delivery_note_id set) is
+  // mid-workflow in OUR system — a re-sync must not clobber its status back
+  // to whatever Monday's own snapshot says (usually 'in_office', since
+  // Monday won't show "Date Delivered" until the driver actually delivers
+  // it), or a package the office just dispatched would revert to "waiting to
+  // route" every time someone clicks Sync from Monday.
+  const activeNoteByMonday = new Map<string, boolean>()
   const dupeRowIds: string[] = []
   for (const r of (existingRows ?? []) as any[]) {
     const mid = r.extra?.monday_item_id
     if (!mid) continue
     const key = String(mid)
     if (idByMonday.has(key)) dupeRowIds.push(r.id)
-    else idByMonday.set(key, r.id)
+    else { idByMonday.set(key, r.id); activeNoteByMonday.set(key, !!r.delivery_note_id) }
   }
 
   // Self-heal duplicate rows for the same Monday item — these happen when an
@@ -283,6 +290,14 @@ async function importMondayShipmentsInner(_opts: { limit?: number } = {}): Promi
 
   for (const item of items) {
     const row = byTitle(item, colById)
+    // Monday's own "Date Delivered" column is the one signal this board gives
+    // for a completed delivery — previously mapped into planned_delivery_date
+    // (a future-looking field) via the 'delivered' keyword, and status was
+    // hardcoded to 'in_office' regardless, so every item Monday already shows
+    // as delivered stayed stuck "waiting to be routed" here forever (~1000
+    // stale rows found this way, some over a year old). A populated Date
+    // Delivered now maps to delivered_at and flips status to 'delivered'.
+    const deliveredAt = toDate(pick(row, 'date delivered', 'delivered'))
     const record: Record<string, unknown> = {
       // This board has no dedicated tracking/AWB column — the tracking number
       // lives in the item's own name/title instead, so fall back to it.
@@ -297,10 +312,11 @@ async function importMondayShipmentsInner(_opts: { limit?: number } = {}): Promi
       commodity: pick(row, 'commodity', 'goods', 'description', 'contents'),
       weight_kg: toNumber(pick(row, 'weight', 'kg', 'gross')),
       received_at: toDate(pick(row, 'date received', 'received', 'arrival', 'eta')),
-      planned_delivery_date: toDate(pick(row, 'delivery date', 'planned', 'delivered')),
+      planned_delivery_date: toDate(pick(row, 'delivery date', 'planned')),
+      delivered_at: deliveredAt,
       documents: toDocuments(pick(row, 'files', 'file', 'attachment')),
       local_import: 'Local',
-      status: 'in_office' as const,
+      status: deliveredAt ? 'delivered' : 'in_office',
       extra: {
         monday_item_id: item.id,
         monday_item_name: item.name,
@@ -311,8 +327,14 @@ async function importMondayShipmentsInner(_opts: { limit?: number } = {}): Promi
     }
 
     const existingId = idByMonday.get(item.id)
-    if (existingId) toUpdate.push({ id: existingId, itemName: item.name, record })
-    else toInsert.push(record)
+    if (existingId) {
+      const updateRecord = activeNoteByMonday.get(item.id)
+        ? (({ status: _status, delivered_at: _deliveredAt, ...rest }) => rest)(record as any)
+        : record
+      toUpdate.push({ id: existingId, itemName: item.name, record: updateRecord })
+    } else {
+      toInsert.push(record)
+    }
   }
 
   if (toInsert.length > 0) {
