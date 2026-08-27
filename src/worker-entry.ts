@@ -200,6 +200,20 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
     }
   }
 
+  // Manual Training Institute sync: `?run=training-sync-all` pulls all 4
+  // boards (Instructors/Students/Courses/Classes) in one call — same manual
+  // trigger the in-UI "Sync from Monday" buttons use, for ops/cron use
+  // outside the browser.
+  if (url.searchParams.get('run') === 'training-sync-all') {
+    try {
+      const { syncAllTrainingBoards } = await import('./lib/training/monday.server')
+      const r = await syncAllTrainingBoards()
+      return new Response(JSON.stringify(r), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
+  }
+
   // Read-only diagnostic: `?run=monday-debug-file` checks whether Monday's
   // file links need the API token to actually download. Writes nothing.
   if (url.searchParams.get('run') === 'monday-debug-file') {

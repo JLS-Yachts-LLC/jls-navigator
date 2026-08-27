@@ -4,9 +4,14 @@ import { fetchAllRows } from "@/lib/fetch-all";
 import {
   GraduationCap, Award, Loader2, Plus, Search, Pencil, Trash2,
   AlertTriangle, CheckCircle2, Clock, BookOpen, X, ChevronDown, ChevronUp,
+  UserCog, Users, CalendarRange,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { InstructorsTab } from "@/components/training/InstructorsTab";
+import { StudentsTab } from "@/components/training/StudentsTab";
+import { CoursesTab } from "@/components/training/CoursesTab";
+import { ClassesTab } from "@/components/training/ClassesTab";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -48,7 +53,8 @@ type Certification = {
   created_at: string;
 };
 
-type Tab = "records" | "certifications";
+type Tab = "instructors" | "students" | "courses" | "classes" | "records" | "certifications";
+const SCHOOL_TABS: Tab[] = ["instructors", "students", "courses", "classes"];
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -93,7 +99,7 @@ export function TrainingPage() {
   const [records, setRecords]       = useState<TrainingRecord[]>([]);
   const [certs, setCerts]           = useState<Certification[]>([]);
   const [loading, setLoading]       = useState(true);
-  const [tab, setTab]               = useState<Tab>("records");
+  const [tab, setTab]               = useState<Tab>("instructors");
   const [q, setQ]                   = useState("");
 
   // Record dialog state
@@ -174,15 +180,52 @@ export function TrainingPage() {
             JLS Training Institute
           </h1>
         </div>
-        <button
-          onClick={() => tab === "records" ? (setEditingRecord(null), setRecordOpen(true)) : (setEditingCert(null), setCertOpen(true))}
-          className="flex items-center gap-2 rounded-lg bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-primary/90"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          {tab === "records" ? "Add Training Record" : "Add Certification"}
-        </button>
+        {!SCHOOL_TABS.includes(tab) && (
+          <button
+            onClick={() => tab === "records" ? (setEditingRecord(null), setRecordOpen(true)) : (setEditingCert(null), setCertOpen(true))}
+            className="flex items-center gap-2 rounded-lg bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-primary/90"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            {tab === "records" ? "Add Training Record" : "Add Certification"}
+          </button>
+        )}
       </header>
 
+      {/* ── School tabs (mirror the 4 Monday.com boards) ────────────── */}
+      <div className="border-b border-border/40 bg-muted/10 px-6 py-2.5">
+        <div className="flex gap-1 rounded-lg border border-border bg-card/50 p-1 w-fit">
+          {([
+            ["instructors", "Instructors", UserCog],
+            ["students", "Students", Users],
+            ["courses", "Courses", BookOpen],
+            ["classes", "Classes", CalendarRange],
+            ["records", "Records", GraduationCap],
+            ["certifications", "Certifications", Award],
+          ] as [Tab, string, typeof UserCog][]).map(([t, label, Icon]) => (
+            <button
+              key={t}
+              onClick={() => { setTab(t); setQ(""); }}
+              className={cn(
+                "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12.5px] font-medium transition-all",
+                tab === t ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <Icon className="h-3.5 w-3.5" /> {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {SCHOOL_TABS.includes(tab) && (
+        <div className="min-h-0 flex-1">
+          {tab === "instructors" && <InstructorsTab />}
+          {tab === "students" && <StudentsTab />}
+          {tab === "courses" && <CoursesTab />}
+          {tab === "classes" && <ClassesTab />}
+        </div>
+      )}
+
+      {!SCHOOL_TABS.includes(tab) && (
       <div className="flex-1 overflow-auto px-6 py-5">
         <div className="mx-auto max-w-6xl space-y-5">
 
@@ -262,25 +305,8 @@ export function TrainingPage() {
             </section>
           )}
 
-          {/* ── Tabs + Search ──────────────────────────────────────── */}
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex gap-1 rounded-lg border border-border bg-card/50 p-1">
-              {(["records", "certifications"] as Tab[]).map(t => (
-                <button
-                  key={t}
-                  onClick={() => { setTab(t); setQ(""); }}
-                  className={cn(
-                    "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12.5px] font-medium transition-all",
-                    tab === t
-                      ? "bg-primary text-primary-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  {t === "records" ? <><GraduationCap className="h-3.5 w-3.5" /> Training Records</> : <><Award className="h-3.5 w-3.5" /> Certifications</>}
-                </button>
-              ))}
-            </div>
-
+          {/* ── Search ─────────────────────────────────────────────── */}
+          <div className="flex items-center justify-end gap-4">
             <div className="relative w-64">
               <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/50" />
               <input
@@ -314,6 +340,7 @@ export function TrainingPage() {
 
         </div>
       </div>
+      )}
 
       {/* ── Dialogs ──────────────────────────────────────────────── */}
       <RecordDialog
