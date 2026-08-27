@@ -20,8 +20,13 @@ export function UserTable({ users, total, roles, departments = [], onRefresh }: 
     ...roles.map(r => ({ value: r.name, label: r.display_name }))]
 
   const filtered = users.filter(u => {
-    const email = ((u as any).user?.email ?? u.user_id ?? '').toLowerCase()
-    if (search && !email.includes(search.toLowerCase())) return false
+    // Match the email OR the person's name — now that names are shown, searching
+    // "Hilary" has to find the row that reads Hilary Ackermann.
+    const haystack = [
+      (u as any).user?.email, u.user_id,
+      (u as any).display_name, (u as any).first_name, (u as any).last_name,
+    ].filter(Boolean).join(' ').toLowerCase()
+    if (search && !haystack.includes(search.toLowerCase())) return false
     if (roleFilter && u.role !== roleFilter) return false
     return true
   })
@@ -30,7 +35,7 @@ export function UserTable({ users, total, roles, departments = [], onRefresh }: 
     <div>
       <div className="flex items-center gap-3 p-3 border-b border-border">
         <input
-          placeholder="Search by email…"
+          placeholder="Search by name or email…"
           value={search}
           onChange={e => setSearch(e.target.value)}
           className="flex-1 rounded-md border border-border bg-background px-3 py-1.5
@@ -60,7 +65,7 @@ export function UserTable({ users, total, roles, departments = [], onRefresh }: 
       <table className="w-full text-xs" style={{ tableLayout: 'fixed' }}>
         <thead>
           <tr className="bg-muted text-muted-foreground text-[11px] font-semibold tracking-wider">
-            <th className="text-left px-3 py-2 w-52">User</th>
+            <th className="text-left px-3 py-2 w-64">Name / Email</th>
             <th className="text-left px-3 py-2 w-28">Role</th>
             <th className="text-left px-3 py-2 w-28">Scope</th>
             <th className="text-left px-3 py-2 w-20">Status</th>

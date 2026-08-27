@@ -25,8 +25,12 @@ const handlers = {
 
     const { id } = params
     const body = await request.json() as {
-      action: 'role' | 'suspend' | 'unsuspend' | 'reset_password' | 'resend_invite'
+      action: 'role' | 'suspend' | 'unsuspend' | 'reset_password' | 'resend_invite' | 'name'
       role?: string          // a roles.name value
+      // action: 'name' — first/last go to `profiles`, display_name to user_profiles
+      first_name?: string
+      last_name?: string
+      display_name?: string
     }
 
     const sb = getAdmin()
@@ -97,6 +101,31 @@ const handlers = {
         result:      'success',
       })
       return json({ success: true })
+    }
+
+    // Names. first/last live on `profiles`; display_name on user_profiles is what
+    // the app's pickers show. Saving first/last also refreshes display_name (a DB
+    // trigger does it), unless an explicit display name was given.
+    if (body.action === 'name') {
+      const first = typeof body.first_name === 'string' ? body.first_name.trim() : null
+      const last  = typeof body.last_name  === 'string' ? body.last_name.trim()  : null
+      const explicit = typeof body.display_name === 'string' ? body.display_name.trim() : ''
+
+      if (first !== null || last !== null) {
+        const { error: pErr } = await sb.from('profiles')
+          .upsert({ id, first_name: first, last_name: last }, { onConflict: 'id' })
+        if (pErr) return json({ error: pErr.message }, 500)
+      }
+
+      const derived = [first, last].filter(Boolean).join(' ').trim()
+      const displayName = explicit || derived
+      if (displayName) {
+        const { error: dErr } = await sb.from('user_profiles')
+          .update({ display_name: displayName, updated_at: new Date().toISOString() })
+          .eq('user_id', id)
+        if (dErr) return json({ error: dErr.message }, 500)
+      }
+      return json({ ok: true, display_name: displayName || null, first_name: first, last_name: last })
     }
 
     if (body.action === 'suspend' || body.action === 'unsuspend') {

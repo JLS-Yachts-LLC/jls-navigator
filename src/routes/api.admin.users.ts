@@ -59,19 +59,33 @@ const handlers = {
     let query = sb
       .from('user_profiles')
       .select(
-        'user_id, email, active, mfa_enabled, last_login, created_at, org_id, location_id, role_id, roles:role_id(name, display_name, scope)',
+        'user_id, email, display_name, active, mfa_enabled, last_login, created_at, org_id, location_id, role_id, roles:role_id(name, display_name, scope)',
         { count: 'exact' },
       )
       .order('created_at', { ascending: false })
       .range((page - 1) * pageSize, page * pageSize - 1)
 
-    if (search) query = query.ilike('email', `%${search}%`)
+    // Search matches the email OR the display name — people look for "Hilary",
+    // not "h.ackermann".
+    if (search) query = query.or(`email.ilike.%${search}%,display_name.ilike.%${search}%`)
     if (session.user.role === 'org_admin' && session.user.org_id) {
       query = query.eq('org_id', session.user.org_id)
     }
 
     const { data, error, count } = await query
     if (error) return json({ error: error.message }, 500)
+
+    // First/last name live on `profiles` (what Settings → My Profile edits);
+    // display_name on user_profiles is what every picker in the app shows.
+    const profileIds = (data ?? []).map((p: any) => p.user_id)
+    const nameByUser = new Map<string, { first: string | null; last: string | null }>()
+    if (profileIds.length) {
+      const { data: names } = await sb
+        .from('profiles').select('id, first_name, last_name').in('id', profileIds)
+      for (const n of (names ?? []) as any[]) {
+        nameByUser.set(n.id, { first: n.first_name ?? null, last: n.last_name ?? null })
+      }
+    }
 
     const users = (data ?? []).map((p: any) => {
       const roleName = p.roles?.name ?? null
@@ -89,6 +103,9 @@ const handlers = {
         is_active:    !!p.active,
         status,
         granted_at:   p.created_at,
+        display_name: p.display_name ?? null,
+        first_name:   nameByUser.get(p.user_id)?.first ?? null,
+        last_name:    nameByUser.get(p.user_id)?.last ?? null,
         user: { id: p.user_id, email: p.email ?? p.user_id, last_sign_in_at: p.last_login ?? null, created_at: p.created_at ?? null },
         // user_profiles.mfa_enabled is the source of truth; surface it as a factor.
         mfa_factors: p.mfa_enabled ? [{ id: 'mfa', factor_type: 'totp', status: 'verified' }] : [],

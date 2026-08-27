@@ -3,6 +3,7 @@ import { ModuleAccessModal } from './ModuleAccessModal'
 import { useAuth } from '@/lib/auth'
 import { RoleBadge } from './RoleBadge'
 import { EditRoleModal } from './EditRoleModal'
+import { EditNameModal } from './EditNameModal'
 import type { UserRole, RoleOption } from '@/lib/admin/types'
 
 function relativeTime(iso: string | null): string {
@@ -29,11 +30,24 @@ const STATUS_META: Record<string, { dot: string; label: string; text: string }> 
 export function UserRow({ userRole, roles, onRefresh }: Props) {
   const { session } = useAuth()
   const [editOpen, setEditOpen] = useState(false)
+  const [nameOpen, setNameOpen] = useState(false)
   const [modulesOpen, setModulesOpen] = useState(false)
   const [busy, setBusy]         = useState(false)
   const [msg, setMsg]           = useState('')
 
   const email      = (userRole as any).user?.email ?? userRole.user_id
+  const firstName  = (userRole as any).first_name ?? null
+  const lastName   = (userRole as any).last_name ?? null
+  // The name we show: explicit display name, else first+last, else nothing (the
+  // email carries the row on its own).
+  const fullName   = [firstName, lastName].filter(Boolean).join(' ').trim()
+  const displayName = ((userRole as any).display_name ?? '').trim() || fullName
+  // Initials from a real name when we have one — "HA" beats "H." every time.
+  const initials = firstName && lastName
+    ? (firstName[0] + lastName[0]).toUpperCase()
+    : displayName
+      ? displayName.slice(0, 2).toUpperCase()
+      : email.slice(0, 2).toUpperCase()
   const lastSeen   = (userRole as any).user?.last_sign_in_at ?? null
   const hasMFA     = ((userRole as any).mfa_factors ?? []).some((f: any) => f.status === 'verified')
   const status     = userRole.status ?? (userRole.is_active ? 'active' : 'suspended')
@@ -93,9 +107,18 @@ export function UserRow({ userRole, roles, onRefresh }: Props) {
           <div className="flex items-center gap-2">
             <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full
                             bg-muted text-[11.5px] font-bold text-muted-foreground">
-              {email.slice(0, 2).toUpperCase()}
+              {initials}
             </div>
-            <span className="truncate text-[13px] text-foreground">{email}</span>
+            <div className="min-w-0">
+              {displayName ? (
+                <>
+                  <div className="truncate text-[13px] font-medium text-foreground">{displayName}</div>
+                  <div className="truncate text-[11.5px] text-muted-foreground">{email}</div>
+                </>
+              ) : (
+                <span className="truncate text-[13px] text-foreground">{email}</span>
+              )}
+            </div>
           </div>
         </td>
         <td className="px-3 py-2.5">
@@ -120,6 +143,14 @@ export function UserRow({ userRole, roles, onRefresh }: Props) {
         </td>
         <td className="px-3 py-2.5">
           <div className="flex flex-wrap items-center gap-1">
+            <button
+              onClick={() => setNameOpen(true)}
+              title="Display name, first and last name"
+              className="rounded px-2 py-1 text-[11.5px] text-muted-foreground hover:text-emerald-500
+                         hover:bg-emerald-500/10 transition-colors"
+            >
+              Name
+            </button>
             <button
               onClick={() => setEditOpen(true)}
               className="rounded px-2 py-1 text-[11.5px] text-muted-foreground hover:text-amber-500
@@ -174,6 +205,13 @@ export function UserRow({ userRole, roles, onRefresh }: Props) {
         </td>
       </tr>
 
+      {nameOpen && (
+        <EditNameModal
+          userRole={userRole as any}
+          onClose={() => setNameOpen(false)}
+          onSuccess={onRefresh}
+        />
+      )}
       {editOpen && (
         <EditRoleModal
           userRole={userRole}
