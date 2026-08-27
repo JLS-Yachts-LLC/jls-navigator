@@ -156,7 +156,9 @@ export async function assembleLeoContext(userId: string, userEmail: string) {
 
   return {
     accessLevel: level,
-    generatedAt: new Date().toISOString(),
+    // Hour precision on purpose: a per-request timestamp inside the context made
+    // every prompt byte-unique and silently defeated prompt caching.
+    generatedAt: new Date(Math.floor(Date.now() / 36e5) * 36e5).toISOString(),
     fleet: {
       total:    (yachtsRes.data ?? []).length,
       active:   (yachtsRes.data ?? []).filter((y: any) => y.status === 'Active').length,
@@ -264,7 +266,7 @@ export async function assembleLeoContext(userId: string, userEmail: string) {
 // ── System prompt builder ─────────────────────────────────────────────────────
 type Workspace = { type: string; id: string; label: string } | null
 
-function buildSystemPrompt(userName: string, accessLabel: string, context: any, workspace: Workspace): string {
+function buildSystemPrompt(userName: string, accessLabel: string, context: any, workspace: Workspace): { stable: string; live: string } {
   const hour = new Date().getHours()
   const greeting = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening'
 
@@ -276,17 +278,17 @@ Focus the briefing on this ${workspace.type}. Lead with what matters for it, and
 treat fleet-wide items as secondary unless they directly affect this ${workspace.type}.\n`
     : ''
 
-  return `You are Leo — the active intelligence engine inside Polaris, the yacht management and concierge platform operated by JLS Yachts.
+  // Prompt caching: the stable block is identical for every user and briefing,
+  // so it caches org-wide; everything user- or time-specific lives in `live`.
+  const stable = `You are Leo — the active intelligence engine inside Polaris, the yacht management and concierge platform operated by JLS Yachts.
 
 You are not a chatbot or assistant. You are a proactive operational briefing officer. You speak first. You deliver intelligence.
 
-USER: ${userName} | ACCESS: ${accessLabel} | TIME: ${greeting}
-${workspaceBlock}LIVE CONTEXT (as of ${new Date().toUTCString()}):
-${JSON.stringify(context, null, 2)}
+The USER line and LIVE CONTEXT for this briefing are provided in the final system block.
 
 BRIEFING STRUCTURE (follow exactly when delivering an initial briefing):
 
-1. GREETING — One sentence. Address ${userName} by first name. Acknowledge the time.
+1. GREETING — One sentence. Address the user by first name (see the USER line). Acknowledge the time of day.
 
 2. FLEET STATUS — Current vessel positions, movements, and anything notable. Be specific: name vessels, speeds, destinations. Flag anything unusual.
 
@@ -320,6 +322,13 @@ Do not list every alert. One maximum in the briefing prose. Prioritise critical 
 When in CHAT mode (follow-up questions after the briefing):
 Answer directly from the context provided. If data is not in context, say so plainly.
 Stay in character as Leo. Operational. Precise. No filler.`
+
+  const hourStamp = new Date(Math.floor(Date.now() / 36e5) * 36e5).toUTCString()
+  const live = `USER: ${userName} | ACCESS: ${accessLabel} | TIME: ${greeting}
+${workspaceBlock}LIVE CONTEXT (updated ${hourStamp}):
+${JSON.stringify(context, null, 2)}`
+
+  return { stable, live }
 }
 
 // ── Handler (called directly from worker-entry.ts) ───────────────────────────
@@ -375,7 +384,11 @@ export async function leoBriefingHandler(request: Request): Promise<Response> {
     }
 
     const accessLabel = ACCESS_LABELS[getAccessLevel(userEmail)]
-    const systemPrompt = buildSystemPrompt(userName, accessLabel, context, workspace)
+    const prompt = buildSystemPrompt(userName, accessLabel, context, workspace)
+    const systemPrompt = [
+      { type: 'text', text: prompt.stable, cache_control: { type: 'ephemeral' } },
+      { type: 'text', text: prompt.live },
+    ]
 
     // Call Anthropic — stream the response
     let anthropicRes: Response

@@ -26,12 +26,14 @@ function getAdmin() {
 // access-scoped operational data the briefing uses (fleet, permits, tasks,
 // crew/visas, finance, agency/port calls) rather than answering purely from
 // whatever happens to be in the client-carried conversation history.
-const CHAT_SYSTEM = (userName: string, accessLabel: string, context: any) => `You are Leo — the active intelligence engine inside Polaris, the JLS Yachts management platform.
+// Prompt caching: the request is a prefix match, so the STABLE persona/rules
+// come first (cached across every user and conversation) and the volatile
+// per-user live context comes last, behind its own breakpoint. The context
+// timestamp is rounded to the hour — a per-second timestamp silently
+// invalidated the whole prefix on every single turn.
+const CHAT_PERSONA = `You are Leo — the active intelligence engine inside Polaris, the JLS Yachts management platform.
 
-You are the in-app assistant. The user ${userName} (${accessLabel}) is asking you questions while working inside Polaris.
-
-LIVE CONTEXT (as of ${new Date().toUTCString()}, scoped to what this user can access):
-${JSON.stringify(context, null, 2)}
+You are the in-app assistant. The user identified in the LIVE CONTEXT block is asking you questions while working inside Polaris.
 
 SCOPE — stay within the platform:
 Only answer questions relevant to Polaris and yacht operations: the fleet/vessels, crew,
@@ -46,6 +48,14 @@ If the answer isn't in the context, say so plainly — never fabricate operation
 Stay in character: confident, direct, no filler phrases.
 Keep responses concise — 2-4 sentences unless more detail is clearly needed.
 Use plain text only, no markdown headers, no bullet lists.`
+
+const CHAT_LIVE = (userName: string, accessLabel: string, context: any) => {
+  const hourStamp = new Date(Math.floor(Date.now() / 36e5) * 36e5).toUTCString()
+  return `USER: ${userName} (${accessLabel})
+
+LIVE CONTEXT (updated ${hourStamp}, scoped to what this user can access):
+${JSON.stringify(context, null, 2)}`
+}
 
 // ── Handler (called directly from worker-entry.ts) ───────────────────────────
 export async function leoChatHandler(request: Request): Promise<Response> {
@@ -99,7 +109,12 @@ export async function leoChatHandler(request: Request): Promise<Response> {
       context = { error: 'Context assembly failed' }
     }
 
-    const systemPrompt = CHAT_SYSTEM(userName, accessLabel, context)
+    // Two cache breakpoints: the persona block hits for every user; the context
+    // block hits again on follow-up turns while the underlying data is unchanged.
+    const systemPrompt = [
+      { type: 'text', text: CHAT_PERSONA, cache_control: { type: 'ephemeral' } },
+      { type: 'text', text: CHAT_LIVE(userName, accessLabel, context), cache_control: { type: 'ephemeral' } },
+    ]
 
     // Validate messages format — only 'user' and 'assistant' roles
     const safeMessages = messages
