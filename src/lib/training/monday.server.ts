@@ -295,15 +295,24 @@ export const syncTrainingCourses = createServerFn({ method: 'POST' })
 export const syncTrainingClasses = createServerFn({ method: 'POST' })
   .handler(async (): Promise<TrainingSyncResult> => syncClasses(await getMondayApiToken()))
 
-/** Server function to sync all 4 boards in one call — used by the page-level "Sync all" action. */
-export const syncAllTrainingBoards = createServerFn({ method: 'POST' })
-  .handler(async (): Promise<Record<string, TrainingSyncResult>> => {
-    const token = await getMondayApiToken()
-    const [instructors, students, courses, classes] = await Promise.all([
-      syncInstructors(token), syncStudents(token), syncCourses(token), syncClasses(token),
-    ])
-    return { instructors, students, courses, classes }
-  })
+/**
+ * Sync all 4 boards in one call. Plain async function, NOT wrapped in
+ * createServerFn — createServerFn's handler needs TanStack Start's request
+ * context (AsyncLocalStorage), which only exists for requests that actually
+ * flow through the Start request handler. The `?run=training-sync-all`
+ * diagnostic in worker-entry.ts calls this directly from a plain Cloudflare
+ * Worker fetch handler branch, outside that context, so it fails with
+ * "No Start context found" if wrapped. debugMondayBoard() and
+ * importMondayShipments() in the ShipSync sync file follow the same
+ * plain-function convention for the same reason.
+ */
+export async function syncAllTrainingBoards(): Promise<Record<string, TrainingSyncResult>> {
+  const token = await getMondayApiToken()
+  const [instructors, students, courses, classes] = await Promise.all([
+    syncInstructors(token), syncStudents(token), syncCourses(token), syncClasses(token),
+  ])
+  return { instructors, students, courses, classes }
+}
 
 /**
  * Read-only diagnostic: the 4 boards' real column titles, groups, and a
