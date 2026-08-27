@@ -174,6 +174,21 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
     }
   }
 
+  // Manual ShipSync proximity check: `?run=shipsync-proximity-check` runs the
+  // "arriving in ~5 minutes" pass now, same as the 5-min cron tick — useful
+  // for confirming the Google Maps key actually works server-side (it's
+  // documented as referrer-restricted for browser use, which a
+  // server-to-server call carries no Referer header for).
+  if (url.searchParams.get('run') === 'shipsync-proximity-check') {
+    try {
+      const { checkDeliveryProximity } = await import('./lib/shipsync/proximity-alert.server')
+      const r = await checkDeliveryProximity()
+      return new Response(JSON.stringify(r), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
+  }
+
   // One-time repair: `?run=monday-dedup-all` collapses every duplicate row
   // (any local_import value) sharing a monday_item_id down to the single most
   // recently updated one. Needed to clean up duplicates that accumulated
@@ -1078,6 +1093,26 @@ export default {
           .then((ran) => { if (ran.length) console.log('[sp-fast] ' + ran.map(r => `${r.name}: synced=${r.synced} errors=${r.errors}`).join(' | ')) })
           .catch((e) => console.error('[sp-fast] error:', e))
       );
+
+      // Van GPS every 5 min (moved from the 15-min tick): the "arriving in ~5
+      // minutes" proximity check right below needs a position no more than a
+      // few minutes stale, or a genuinely-5-minutes-out van could be missed
+      // or reported late.
+      ctx.waitUntil(
+        syncFleetPositions()
+          .then(({ fetched, updated }) => console.log(`[mygps-cron] fetched=${fetched} updated=${updated}`))
+          .catch((e) => console.error('[mygps-cron] error:', e))
+      );
+
+      // ShipSync: email a package's receiver once their van's real
+      // driving-time ETA drops to 5 minutes or under. No-ops silently until
+      // Google Maps integration is configured.
+      ctx.waitUntil(
+        import('./lib/shipsync/proximity-alert.server')
+          .then((m) => m.checkDeliveryProximity())
+          .then((r) => { if (r.checked) console.log(`[shipsync-proximity] checked=${r.checked} notified=${r.notified} skipped=${r.skipped}`) })
+          .catch((e) => console.error('[shipsync-proximity] error:', e))
+      );
       return;
     }
 
@@ -1203,12 +1238,8 @@ export default {
         .catch((e) => console.error('[sp-cron] error:', e))
     )
 
-    // Sync live myGPS vehicle positions onto crew_vehicles every run (~15 min)
-    ctx.waitUntil(
-      syncFleetPositions()
-        .then(({ fetched, updated }) => console.log(`[mygps-cron] fetched=${fetched} updated=${updated}`))
-        .catch((e) => console.error('[mygps-cron] error:', e))
-    )
+    // (myGPS vehicle positions now sync on the 5-min tick above — the
+    // ShipSync proximity alert needs fresher data than 15 min gave it.)
 
     // Sync live VesselFinder AIS positions onto yachts (no-op until userkey set)
     ctx.waitUntil(
