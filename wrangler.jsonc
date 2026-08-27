@@ -36,7 +36,7 @@
     // NOT covered by these switches (they are not Polaris sends): Supabase Auth
     // password-reset / invite mail, and Power Automate flows on the SharePoint
     // lists that email vessels when a list item changes.
-    "EMAIL_ENABLED": "false",
+    "EMAIL_ENABLED": "true",  // restored 26 Aug 2026 — staff/internal mail only (client freeze below still applies)
     "CLIENT_EMAIL_ENABLED": "false",
     "PERMIT_EXPIRY_ALERTS_ENABLED": "false",
 
