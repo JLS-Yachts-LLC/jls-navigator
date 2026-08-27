@@ -10,6 +10,18 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "The photo importer can create drivers who have no record yet"
+      },
+      {
+        "type": "feature",
+        "title": "Bulk importer for the supplied vehicle and driver photos"
+      },
+      {
+        "type": "feature",
+        "title": "Photos for vehicles and round profile avatars for drivers"
+      },
+      {
+        "type": "feature",
         "title": "Manage Users shows and edits names, not just email addresses"
       },
       {
