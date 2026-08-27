@@ -445,8 +445,8 @@
   --muted-foreground:      #a8c4ce;             /* light teal-grey */
   --accent:                rgba(69,144,186,0.18);
   --accent-foreground:     #96cbc7;             /* Jamaica Bay */
-  --border:                rgba(150,203,199,0.18);
-  --input:                 rgba(150,203,199,0.18);
+  --border:                rgba(150,203,199,0.4);
+  --input:                 rgba(150,203,199,0.4);
   --ring:                  #4590ba;
   --destructive:           #e24b4a;
   --destructive-foreground:#ffffff;
@@ -454,7 +454,7 @@
   --sidebar-foreground:    #f0f4f8;
   --sidebar-accent:        rgba(255,255,255,0.06);
   --sidebar-accent-foreground: #96cbc7;
-  --sidebar-border:        rgba(150,203,199,0.18);
+  --sidebar-border:        rgba(150,203,199,0.4);
   /* Font parity with the Beta shell/nav: raw CSS that references
      --font-sans / --font-display (data-table headers, h1–h4, pills, label-caps)
      resolves these per-element, so embedded pages render in the shell font. */

@@ -169,7 +169,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
             sticky <thead> bleed through as a ghost overlap in Chrome, and
             border-b on a <tr> stops painting under border-separate (that
             model only recognises borders on <td>/<th>, not <tr>). */}
-        <table className="w-full min-w-[1400px] border-separate border-spacing-0 text-sm">
+        <table className="w-full min-w-[1400px] border-separate border-spacing-0 text-sm [&_td]:border-r [&_td]:border-border/40 [&_th]:border-r [&_th]:border-border/40">
           <thead className="sticky top-0 z-10 will-change-transform">
             <tr className="bg-card text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground shadow-[inset_0_-1px_0_0_var(--border)]">
               {["Air waybill/tracking info", "Client", "Date Received", "Consignee", "Receiver", "Number of Packages", "Courier", "Shipment Type", "Delivery Note Number", "Driver", "Date Delivered", "Documents", "Status"].map((h, i) => (

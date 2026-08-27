@@ -37,6 +37,7 @@ import { Loader2, Search, ChevronDown, ChevronRight, RefreshCw, FileText, ArrowD
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -203,7 +204,12 @@ export function ShipSyncImportBoard() {
   const [newPackageOpen, setNewPackageOpen] = useState(false);
   const [npName, setNpName] = useState("");
   const [npGroup, setNpGroup] = useState("");
-  const [delTarget, setDelTarget] = useState<ShipSyncPackage | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [confirmDeleteIds, setConfirmDeleteIds] = useState<string[] | null>(null);
+
+  function toggleSelect(id: string) {
+    setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  }
 
   async function reload() {
     const data = await loadImportPackages();
@@ -239,14 +245,14 @@ export function ShipSyncImportBoard() {
     await commit(p, cellId, { extra } as any);
   }
 
-  async function addShipment(g: GroupInfo, name: string) {
-    const boat = name.trim();
-    if (!boat) return;
+  async function addShipment(g: GroupInfo, awbNumber: string) {
+    const awb = awbNumber.trim();
+    if (!awb) return;
     setAddingIn(null);
     setNewName("");
     try {
       const created = await createPackage({
-        boat_name: boat, local_import: "Import", status: "in_office",
+        barcode: awb, local_import: "Import", status: "in_office",
         extra: { monday_group_title: g.title, monday_group_position: g.position },
       });
       setRows((prev) => [...prev, created]);
@@ -263,15 +269,17 @@ export function ShipSyncImportBoard() {
   }
 
   async function confirmDelete() {
-    if (!delTarget) return;
+    const ids = confirmDeleteIds;
+    if (!ids || ids.length === 0) return;
     try {
-      await deletePackage(delTarget.id);
-      setRows((prev) => prev.filter((r) => r.id !== delTarget.id));
-      toast.success("Shipment removed");
+      await Promise.all(ids.map((id) => deletePackage(id)));
+      setRows((prev) => prev.filter((r) => !ids.includes(r.id)));
+      setSelected((prev) => { const n = new Set(prev); ids.forEach((id) => n.delete(id)); return n; });
+      toast.success(ids.length > 1 ? `${ids.length} shipments removed` : "Shipment removed");
     } catch (e: any) {
       toast.error(e?.message ?? "Delete failed");
     } finally {
-      setDelTarget(null);
+      setConfirmDeleteIds(null);
     }
   }
 
@@ -317,7 +325,10 @@ export function ShipSyncImportBoard() {
     return <div className="flex h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
   }
 
-  const colCount = 1 + CELLS.length + mondayColumns.length + 1;
+  const colCount = 2 + CELLS.length + mondayColumns.length + 1;
+  const deleteTarget = confirmDeleteIds && confirmDeleteIds.length === 1
+    ? rows.find((r) => r.id === confirmDeleteIds[0])
+    : null;
 
   return (
     <div className="flex h-full min-w-0 flex-col px-6 py-5">
@@ -330,6 +341,12 @@ export function ShipSyncImportBoard() {
         <Button size="sm" onClick={() => { setNpGroup(allGroups[0]?.title ?? ""); setNpName(""); setNewPackageOpen(true); }} className="ml-auto h-9 gap-1.5">
           <Plus className="h-4 w-4" /> New Package
         </Button>
+        {selected.size > 0 && (
+          <Button size="sm" variant="outline" className="h-9 gap-1.5 text-xs text-destructive"
+            onClick={() => setConfirmDeleteIds([...selected])}>
+            <Trash2 className="h-3.5 w-3.5" /> Delete {selected.size} selected
+          </Button>
+        )}
         <Button size="sm" variant="outline" onClick={() => void sync()} disabled={syncing} className="h-9 gap-1.5">
           {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Sync from Monday
         </Button>
@@ -350,7 +367,7 @@ export function ShipSyncImportBoard() {
         // sticky <thead> in a collapsed-border table) so the sticky column
         // header renders cleanly.
         <div className="pds-scroll min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-card">
-          <table className="w-full table-fixed border-separate border-spacing-0 text-[12.5px]">
+          <table className="w-full table-fixed border-separate border-spacing-0 text-[12.5px] [&_td]:border-r [&_td]:border-border/40 [&_th]:border-r [&_th]:border-border/40">
             <thead className="sticky top-0 z-20 will-change-transform">
               {/* box-shadow instead of border-b: border-separate drops <tr>
                   borders (the separated-borders model only recognises
@@ -358,6 +375,7 @@ export function ShipSyncImportBoard() {
                   the table border model, so it renders the divider line
                   either way. */}
               <tr className="bg-card text-left text-[10px] font-semibold uppercase tracking-[0.05em] text-muted-foreground shadow-[inset_0_-1px_0_0_var(--border)]">
+                <th className="sticky left-0 z-20 w-9 bg-card px-3 py-1.5 will-change-transform"></th>
                 <th className="w-28 px-2 py-1.5">Group</th>
                 {CELLS.map((c) => {
                   if (c.kind === "field") return <th key={c.col.key} className={cn("px-2 py-1.5", c.col.width)}>{c.col.label}</th>;
@@ -395,6 +413,9 @@ export function ShipSyncImportBoard() {
                       const docs = p.documents ?? [];
                       return (
                         <tr key={p.id} className="group shadow-[inset_0_-1px_0_0_var(--border)] hover:bg-accent/10">
+                          <td className="sticky left-0 z-10 w-9 bg-card px-3 py-0.5 will-change-transform group-hover:bg-accent/10" onClick={(e) => e.stopPropagation()}>
+                            <Checkbox checked={selected.has(p.id)} onCheckedChange={() => toggleSelect(p.id)} />
+                          </td>
                           <td className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
                             <Select value={g.title} onValueChange={(v) => {
                               const target = allGroups.find((x) => x.title === v);
@@ -508,7 +529,7 @@ export function ShipSyncImportBoard() {
                             <td key={c} className="overflow-hidden truncate px-2 py-1 text-muted-foreground">{row[c] || "—"}</td>
                           ))}
                           <td className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
-                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground/60 hover:text-destructive opacity-0 group-hover:opacity-100" onClick={() => setDelTarget(p)}>
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground/60 hover:text-destructive opacity-0 group-hover:opacity-100" onClick={() => setConfirmDeleteIds([p.id])}>
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
                           </td>
@@ -517,7 +538,8 @@ export function ShipSyncImportBoard() {
                     })}
                     {!isCollapsed && (
                       <tr>
-                        <td colSpan={colCount} className="px-2 py-1">
+                        <td className="sticky left-0 z-10 w-9 bg-card px-3 py-1 will-change-transform"></td>
+                        <td colSpan={colCount - 1} className="px-2 py-1">
                           {addingIn === g.title ? (
                             <div className="flex items-center gap-2 py-0.5">
                               <Input
@@ -528,7 +550,7 @@ export function ShipSyncImportBoard() {
                                   if (e.key === "Enter") void addShipment(g, newName);
                                   if (e.key === "Escape") { setAddingIn(null); setNewName(""); }
                                 }}
-                                placeholder="Yacht name…"
+                                placeholder="Airway bill / tracking no…"
                                 className="h-7 w-56 text-xs"
                               />
                               <Button size="sm" className="h-7 text-xs" disabled={!newName.trim()} onClick={() => void addShipment(g, newName)}>Add</Button>
@@ -556,10 +578,10 @@ export function ShipSyncImportBoard() {
           <DialogHeader><DialogTitle>New package</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5">
-              <Label htmlFor="np-name">Yacht name</Label>
+              <Label htmlFor="np-name">Airway bill / tracking no.</Label>
               <Input id="np-name" autoFocus value={npName} onChange={(e) => setNpName(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter" && npName.trim() && npGroup) void submitNewPackage(); }}
-                placeholder="Yacht name…" />
+                placeholder="Airway bill / tracking no…" />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="np-group">Group</Label>
@@ -578,11 +600,14 @@ export function ShipSyncImportBoard() {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={!!delTarget} onOpenChange={(o) => !o && setDelTarget(null)}>
+      <AlertDialog open={!!confirmDeleteIds} onOpenChange={(o) => !o && setConfirmDeleteIds(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remove shipment?</AlertDialogTitle>
-            <AlertDialogDescription>{delTarget?.barcode ?? delTarget?.boat_name} will be permanently removed.</AlertDialogDescription>
+            <AlertDialogTitle>{(confirmDeleteIds?.length ?? 0) > 1 ? `Remove ${confirmDeleteIds?.length} shipments?` : "Remove shipment?"}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget ? `${deleteTarget.barcode ?? deleteTarget.boat_name ?? "This shipment"} will be permanently removed.`
+                : `${confirmDeleteIds?.length ?? 0} shipments will be permanently removed.`}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>

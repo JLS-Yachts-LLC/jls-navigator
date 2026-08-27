@@ -249,7 +249,7 @@ export function YachtShipmentsBoard() {
           // visible, which hijacks sticky onto that box's own,
           // never-scrolling viewport).
           <div className="pds-scroll h-full overflow-auto rounded-xl border border-border bg-card shadow-[0_2px_12px_-4px_rgba(0,0,0,0.4)]">
-            <table className="w-full table-fixed border-separate border-spacing-0 text-sm">
+            <table className="w-full table-fixed border-separate border-spacing-0 text-sm [&_td]:border-r [&_td]:border-border/40 [&_th]:border-r [&_th]:border-border/40">
               <thead>
                 {/* box-shadow instead of border-b: border-separate (needed
                     for the sticky header cells below to render clean —
