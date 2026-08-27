@@ -10,6 +10,66 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "An expired invitation or reset link now explains itself instead of showing a blank sign-in page — the link error is read from the URL and the user can send themselves a fresh link on the spot"
+      },
+      {
+        "type": "feature",
+        "title": "ORBIT tiered spend approvals — the value of a cost decides who signs it off"
+      },
+      {
+        "type": "fix",
+        "title": "Visible grid lines, bulk delete, AWB add field"
+      },
+      {
+        "type": "fix",
+        "title": "Fix ShipSync's tab body so it actually scrolls internally"
+      },
+      {
+        "type": "feature",
+        "title": "Add the themed scrollbar from Yacht Shipments"
+      },
+      {
+        "type": "fix",
+        "title": "Restore row borders and add delete on Import/Export boards"
+      },
+      {
+        "type": "feature",
+        "title": "Email the package receiver when their van is ~5 min out"
+      },
+      {
+        "type": "feature",
+        "title": "Add a Tracking tab showing live yacht positions"
+      },
+      {
+        "type": "feature",
+        "title": "Group Local Packages by status, matching Import/Export"
+      },
+      {
+        "type": "feature",
+        "title": "Rebuild Export tab to mirror the Monday.com Export board"
+      },
+      {
+        "type": "fix",
+        "title": "Local Packages status dropdown could orphan packages"
+      },
+      {
+        "type": "fix",
+        "title": "Correct 4 logic bugs found in Routing/Dispatch review"
+      },
+      {
+        "type": "feature",
+        "title": "Surface the rebuilt Training Institute in the New View sidebar"
+      },
+      {
+        "type": "fix",
+        "title": "SyncAllTrainingBoards must be a plain function, not createServerFn"
+      },
+      {
+        "type": "feature",
+        "title": "Rebuild JLS Yacht Training Institute to mirror Monday.com"
+      },
+      {
+        "type": "fix",
         "title": "Email replies show just the message, not the signature and disclaimer"
       },
       {
