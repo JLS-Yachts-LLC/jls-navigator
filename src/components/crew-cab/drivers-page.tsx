@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Plus, Pencil, Trash2, Loader2, UserCircle2, Search } from "lucide-react";
 import { toast } from "sonner";
+import { Avatar, PhotoField } from "./photo-upload";
 
 type Driver = {
   id: string;
@@ -22,9 +23,10 @@ type Driver = {
   license_no: string | null;
   status: string;
   notes: string | null;
+  photo_url: string | null;
 };
 
-const EMPTY = { full_name: "", phone: "", email: "", license_no: "", status: "active", notes: "" };
+const EMPTY = { full_name: "", phone: "", email: "", license_no: "", status: "active", notes: "", photo_url: null as string | null };
 
 function StatusBadge({ status }: { status: string }) {
   const cls = status === "active"
@@ -67,6 +69,7 @@ export function DriversPage() {
       license_no: d.license_no ?? "",
       status: d.status,
       notes: d.notes ?? "",
+      photo_url: d.photo_url ?? null,
     });
     setOpen(true);
   }
@@ -82,6 +85,7 @@ export function DriversPage() {
         license_no: form.license_no || null,
         status: form.status,
         notes: form.notes || null,
+        photo_url: form.photo_url,
         updated_at: new Date().toISOString(),
       };
       if (editing) {
@@ -168,7 +172,12 @@ export function DriversPage() {
               <tbody className="divide-y divide-border">
                 {filtered.map((d) => (
                   <tr key={d.id} className="hover:bg-muted/20 transition-colors">
-                    <td className="px-3 py-1.5 font-medium text-sm">{d.full_name}</td>
+                    <td className="px-3 py-1.5 font-medium text-sm">
+                      <span className="flex items-center gap-2.5">
+                        <Avatar src={d.photo_url} name={d.full_name} size={30} />
+                        {d.full_name}
+                      </span>
+                    </td>
                     <td className="px-3 py-1.5 text-muted-foreground">{d.phone ?? "—"}</td>
                     <td className="px-3 py-1.5 text-muted-foreground">{d.email ?? "—"}</td>
                     <td className="px-3 py-1.5 text-muted-foreground">{d.license_no ?? "—"}</td>
@@ -206,6 +215,16 @@ export function DriversPage() {
             <div className="space-y-1.5">
               <Label>Full Name <span className="text-destructive">*</span></Label>
               <Input value={form.full_name} onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))} placeholder="e.g. Ahmed Al Mansouri" />
+            </div>
+            <div className="space-y-1.5">
+              <PhotoField
+                label="Profile photo"
+                value={form.photo_url}
+                onChange={(url) => setForm((f) => ({ ...f, photo_url: url }))}
+                folder="drivers/photos"
+                recordId={editing?.id ?? "new"}
+                round
+              />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">

@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Plus, Pencil, Trash2, Loader2, Car, Search, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
+import { PhotoField } from "./photo-upload";
 
 type Vehicle = {
   id: string;
@@ -25,6 +26,7 @@ type Vehicle = {
   mileage: number;
   status: string;
   insurance_expiry: string | null;
+  photo_url: string | null;
   insurer: string | null;
   policy_number: string | null;
   insurance_issue_date: string | null;
@@ -69,7 +71,7 @@ function LiveLocation({ v }: { v: Vehicle }) {
 const EMPTY = {
   make: "", model: "", year: "", registration: "", color: "",
   capacity: "4", mileage: "0", status: "available", insurance_expiry: "",
-  insurer: "", policy_number: "", notes: "",
+  insurer: "", policy_number: "", notes: "", photo_url: null as string | null,
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -150,6 +152,7 @@ export function VehiclesPage() {
       capacity: String(v.capacity), mileage: String(v.mileage),
       status: v.status, insurance_expiry: v.insurance_expiry ?? "",
       insurer: v.insurer ?? "", policy_number: v.policy_number ?? "", notes: v.notes ?? "",
+      photo_url: v.photo_url ?? null,
     });
     setOpen(true);
   }
@@ -167,6 +170,7 @@ export function VehiclesPage() {
         insurance_expiry: form.insurance_expiry || null,
         insurer: form.insurer || null,
         policy_number: form.policy_number || null,
+        photo_url: form.photo_url,
         notes: form.notes || null,
         updated_at: new Date().toISOString(),
       };
@@ -254,11 +258,11 @@ export function VehiclesPage() {
           </div>
         ) : (
           <div className="rounded-lg border border-border overflow-x-auto">
-            <table className="w-full text-xs min-w-[1240px]">
+            <table className="w-full text-xs min-w-[1320px]">
               <thead className="bg-muted/40 border-b border-border">
                 <tr>
-                  {["Make", "Model", "Year", "Registration", "Live Location", "Color", "Capacity", "Mileage", "Insurer", "Policy No.", "Insurance Expiry", "Status", ""].map((h) => (
-                    <th key={h} className="px-3 py-2 text-left font-medium uppercase tracking-wider text-muted-foreground whitespace-nowrap">
+                  {["", "Make", "Model", "Year", "Registration", "Live Location", "Color", "Capacity", "Mileage", "Insurer", "Policy No.", "Insurance Expiry", "Status", ""].map((h, i) => (
+                    <th key={h || `col${i}`} className="px-3 py-2 text-left font-medium uppercase tracking-wider text-muted-foreground whitespace-nowrap">
                       {h}
                     </th>
                   ))}
@@ -267,6 +271,16 @@ export function VehiclesPage() {
               <tbody className="divide-y divide-border">
                 {filtered.map((v) => (
                   <tr key={v.id} className="hover:bg-muted/20 transition-colors">
+                    <td className="px-3 py-1.5">
+                      {v.photo_url ? (
+                        <img src={v.photo_url} alt="" loading="lazy"
+                          className="h-9 w-14 rounded-md border border-border object-cover" />
+                      ) : (
+                        <div className="flex h-9 w-14 items-center justify-center rounded-md border border-dashed border-border/70">
+                          <Car className="h-3.5 w-3.5 text-muted-foreground/40" />
+                        </div>
+                      )}
+                    </td>
                     <td className="px-3 py-1.5 font-medium text-sm">{v.make}</td>
                     <td className="px-3 py-1.5">{v.model}</td>
                     <td className="px-3 py-1.5 text-muted-foreground">{v.year ?? "—"}</td>
@@ -321,6 +335,15 @@ export function VehiclesPage() {
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1.5"><Label>Capacity</Label><Input type="number" value={form.capacity} onChange={set("capacity")} /></div>
               <div className="space-y-1.5"><Label>Mileage (km)</Label><Input type="number" value={form.mileage} onChange={set("mileage")} /></div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <PhotoField
+                  label="Vehicle photo"
+                  value={form.photo_url}
+                  onChange={(url) => setForm((f) => ({ ...f, photo_url: url }))}
+                  folder="vehicles/photos"
+                  recordId={editing?.id ?? "new"}
+                />
+              </div>
               <div className="space-y-1.5"><Label>Insurer</Label><Input value={form.insurer} onChange={set("insurer")} placeholder="GIG GULF" /></div>
               <div className="space-y-1.5"><Label>Policy No.</Label><Input value={form.policy_number} onChange={set("policy_number")} /></div>
               <div className="space-y-1.5"><Label>Insurance Expiry</Label><Input type="date" value={form.insurance_expiry} onChange={set("insurance_expiry")} /></div>
