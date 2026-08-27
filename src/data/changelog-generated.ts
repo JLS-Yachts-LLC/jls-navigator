@@ -5,9 +5,55 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.45.0",
+    "date": "2026-08-27",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Service desk emails send again for internal recipients"
+      },
+      {
+        "type": "fix",
+        "title": "Local Packages — drop dead Monday fallback, match table styling"
+      },
+      {
+        "type": "fix",
+        "title": "Rebuild both boards on a single table"
+      },
+      {
+        "type": "fix",
+        "title": "Reduce sticky-cell scroll flicker in Chrome"
+      },
+      {
+        "type": "fix",
+        "title": "Stop sticky header ghosting from border-collapse"
+      },
+      {
+        "type": "fix",
+        "title": "Actually fix sticky column headers"
+      },
+      {
+        "type": "fix",
+        "title": "Sticky column headers per status group"
+      },
+      {
+        "type": "fix",
+        "title": "Import board — sticky column headers per group, add top-level New Package button"
+      },
+      {
+        "type": "feature",
+        "title": "Import board — Shipment Type is now a selectable dropdown"
+      }
+    ]
+  },
+  {
     "version": "2.44.0",
     "date": "2026-08-26",
     "entries": [
+      {
+        "type": "feature",
+        "title": "Vehicles get visible windscreens and rear glass, and Coupé becomes Hatchback"
+      },
       {
         "type": "feature",
         "title": "The 3D vehicles now have accurate silhouettes — real profiles, wheel arches, glazing"
