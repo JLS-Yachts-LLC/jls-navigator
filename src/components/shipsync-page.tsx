@@ -122,7 +122,7 @@ export function ShipSyncPage({ initialTab }: { initialTab?: string } = {}) {
         })}
       </div>
 
-      <div className="min-w-0 flex-1 overflow-auto">
+      <div className="pds-scroll min-w-0 flex-1 overflow-auto">
         {loading ? (
           <div className="flex h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
         ) : error ? (

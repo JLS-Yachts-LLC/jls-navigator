@@ -162,7 +162,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
         <Button size="sm" onClick={openNew} className="ml-auto h-9 gap-1.5"><Plus className="h-4 w-4" /> Check in package</Button>
       </div>
 
-      <div className="min-h-0 min-w-0 flex-1 overflow-auto rounded-xl border border-border bg-card">
+      <div className="pds-scroll min-h-0 min-w-0 flex-1 overflow-auto rounded-xl border border-border bg-card">
         {/* border-separate + box-shadow row dividers, will-change-transform on
             the sticky header: same pattern as the Import and Yacht Shipments
             boards — border-collapse tables let the row scrolling up behind a

@@ -349,7 +349,7 @@ export function ShipSyncImportBoard() {
         // border-collapse — Chrome ghosts the row scrolling up behind a
         // sticky <thead> in a collapsed-border table) so the sticky column
         // header renders cleanly.
-        <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-card">
+        <div className="pds-scroll min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-card">
           <table className="w-full table-fixed border-separate border-spacing-0 text-[12.5px]">
             <thead className="sticky top-0 z-20 will-change-transform">
               {/* box-shadow instead of border-b: border-separate drops <tr>

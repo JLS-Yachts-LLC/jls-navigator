@@ -304,7 +304,7 @@ export function ShipSyncExportBoard() {
       ) : (
         // Same one-scroll-box structure as the Import board — see that
         // file's header comment for why (a table per group breaks sticky).
-        <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-card">
+        <div className="pds-scroll min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-card">
           <table className="w-full table-fixed border-separate border-spacing-0 text-[12.5px]">
             <thead className="sticky top-0 z-20 will-change-transform">
               <tr className="bg-card text-left text-[10px] font-semibold uppercase tracking-[0.05em] text-muted-foreground shadow-[inset_0_-1px_0_0_var(--border)]">
