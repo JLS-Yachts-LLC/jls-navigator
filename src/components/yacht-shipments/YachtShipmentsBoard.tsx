@@ -291,27 +291,27 @@ export function YachtShipmentsBoard() {
                                 cell is pinned via `sticky`, other scrolled-under cells
                                 paint behind it instead, and the 30%-opacity tint would
                                 let their text bleed through. bg-card (solid) fixes it. */}
-                            <th className="sticky left-0 top-0 z-20 w-9 border-r border-border/40 bg-card px-3 py-2"></th>
+                            <th className="sticky left-0 top-0 z-20 w-9 border-r border-border/40 bg-card px-3 py-2 will-change-transform"></th>
                             {COLS.map((c) => (
                               <th key={c.key}
                                 className={cn(
-                                  "sticky top-0 z-20 bg-card px-3 py-2 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap",
+                                  "sticky top-0 z-20 bg-card px-3 py-2 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap will-change-transform",
                                   c.width, c.sticky && "left-9 border-r border-border/40",
                                 )}>
                                 {c.label}
                               </th>
                             ))}
-                            <th className="sticky top-0 z-20 w-10 bg-card px-2 py-2"></th>
+                            <th className="sticky top-0 z-20 w-10 bg-card px-2 py-2 will-change-transform"></th>
                           </tr>
                         </thead>
                         <tbody>
                           {groupRows.map((r) => (
                             <tr key={r.id} className="group shadow-[inset_0_-1px_0_0_color-mix(in_oklab,var(--border)_40%,transparent)] hover:bg-accent/10">
-                              <td className="sticky left-0 z-10 w-9 border-r border-border/40 bg-card px-3 py-2 group-hover:bg-accent/10">
+                              <td className="sticky left-0 z-10 w-9 border-r border-border/40 bg-card px-3 py-2 will-change-transform group-hover:bg-accent/10">
                                 <Checkbox checked={selected.has(r.id)} onCheckedChange={() => toggleSelect(r.id)} />
                               </td>
                               {COLS.map((c) => (
-                                <td key={c.key} className={cn("overflow-hidden px-1 py-1", c.width, c.sticky && "sticky left-9 z-10 border-r border-border/40 bg-card group-hover:bg-accent/10")}>
+                                <td key={c.key} className={cn("overflow-hidden px-1 py-1", c.width, c.sticky && "sticky left-9 z-10 border-r border-border/40 bg-card will-change-transform group-hover:bg-accent/10")}>
                                   <EditableCell
                                     col={c}
                                     row={r}
@@ -330,7 +330,7 @@ export function YachtShipmentsBoard() {
                             </tr>
                           ))}
                           <tr>
-                            <td className="sticky left-0 z-10 w-9 border-r border-border/40 bg-card px-3 py-2"></td>
+                            <td className="sticky left-0 z-10 w-9 border-r border-border/40 bg-card px-3 py-2 will-change-transform"></td>
                             <td colSpan={COLS.length + 1} className="px-1 py-1">
                               {addingIn === g.key ? (
                                 <div className="flex items-center gap-2 py-0.5">

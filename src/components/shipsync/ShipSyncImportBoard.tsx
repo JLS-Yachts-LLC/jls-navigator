@@ -342,7 +342,7 @@ export function ShipSyncImportBoard() {
                     up behind it bleed through as a ghost overlap. */}
                 {!isCollapsed && (
                     <table className="w-full table-fixed border-separate border-spacing-0 text-[12.5px]">
-                      <thead className="sticky top-0 z-10">
+                      <thead className="sticky top-0 z-10 will-change-transform">
                         {/* box-shadow instead of border-b: with border-separate
                             (required for the sticky thead above to render clean —
                             see note above), a border set on the <tr> itself no
