@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "A Check email button on the Service Desk pulls replies in on demand"
+      },
+      {
+        "type": "feature",
         "title": "Email replies now appear in the ticket"
       },
       {
