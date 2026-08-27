@@ -72,6 +72,17 @@ function mondayStatusColor(label: string): string {
   return MONDAY_STATUS_LABELS.find((s) => s.label === label)?.color ?? "#6b7280";
 }
 
+/** Monday's "Shipment Type" column — same 3 labels and colours as Monday's
+ *  own label picker. */
+const SHIPMENT_TYPE_LABELS: { label: string; color: string }[] = [
+  { label: "Transit Shipment", color: "#00c875" },
+  { label: "Import Shipment", color: "#fdab3d" },
+  { label: "DDP Shipment", color: "#e2445c" },
+];
+function shipmentTypeColor(label: string): string {
+  return SHIPMENT_TYPE_LABELS.find((s) => s.label === label)?.color ?? "#6b7280";
+}
+
 function extraOf(p: ShipSyncPackage): Record<string, any> { return (p.extra as any) ?? {}; }
 function mondayText(p: ShipSyncPackage, title: string): string { return mondayRow(p)[title] ?? ""; }
 
@@ -121,6 +132,7 @@ function mondayCol(key: string, label: string, width: string, mondayKey: string)
 type CellSpec =
   | { kind: "field"; col: ColDef }
   | { kind: "mondayStatus" }
+  | { kind: "shipmentType" }
   | { kind: "documents" }
   | { kind: "edas" };
 
@@ -136,7 +148,7 @@ const CELLS: CellSpec[] = [
   { kind: "field", col: mondayCol("itemId", "Item ID", "w-24", "Item ID") },
   { kind: "field", col: fieldCol("boat_name", "Yacht Name", "w-32", "text", "boat_name") },
   { kind: "mondayStatus" },
-  { kind: "field", col: fieldCol("trade_type", "Shipment Type", "w-28", "text", "trade_type") },
+  { kind: "shipmentType" },
   { kind: "field", col: fieldCol("boe_no", "BOE No.", "w-24", "text", "boe_no") },
   { kind: "field", col: fieldCol("supplier", "Supplier", "w-28", "text", "supplier") },
   { kind: "field", col: fieldCol("received_at", "Date Received", "w-24", "date", "received_at") },
@@ -309,6 +321,7 @@ export function ShipSyncImportBoard() {
                           {CELLS.map((c) => {
                             if (c.kind === "field") return <th key={c.col.key} className={cn("px-2 py-1.5", c.col.width)}>{c.col.label}</th>;
                             if (c.kind === "mondayStatus") return <th key="mondayStatus" className="w-36 px-2 py-1.5">Status</th>;
+                            if (c.kind === "shipmentType") return <th key="shipmentType" className="w-28 px-2 py-1.5">Shipment Type</th>;
                             if (c.kind === "documents") return <th key="documents" className="w-28 px-2 py-1.5">Files</th>;
                             return <th key="edas" className="w-14 px-2 py-1.5">EDAS</th>;
                           })}
@@ -359,6 +372,31 @@ export function ShipSyncImportBoard() {
                                         </SelectTrigger>
                                         <SelectContent>
                                           {MONDAY_STATUS_LABELS.map((s) => (
+                                            <SelectItem key={s.label} value={s.label}>
+                                              <span className="flex items-center gap-2">
+                                                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: s.color }} />
+                                                {s.label}
+                                              </span>
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </td>
+                                  );
+                                }
+                                if (c.kind === "shipmentType") {
+                                  const current = p.trade_type ?? "";
+                                  return (
+                                    <td key="shipmentType" className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
+                                      <Select value={current || undefined}
+                                        onValueChange={(v) => void commit(p, `${p.id}:shipmentType`, { trade_type: v } as any)}>
+                                        <SelectTrigger className="h-7 w-full border-none bg-transparent px-1.5 text-[11px] hover:bg-accent/40">
+                                          {savingCell === `${p.id}:shipmentType` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : current ? (
+                                            <span className="truncate rounded px-2 py-0.5 text-[10px] font-semibold text-white" style={{ background: shipmentTypeColor(current) }}>{current}</span>
+                                          ) : <span className="text-muted-foreground/30">—</span>}
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {SHIPMENT_TYPE_LABELS.map((s) => (
                                             <SelectItem key={s.label} value={s.label}>
                                               <span className="flex items-center gap-2">
                                                 <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: s.color }} />
