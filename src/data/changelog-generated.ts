@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-08-27",
     "entries": [
       {
+        "type": "fix",
+        "title": "Email replies show just the message, not the signature and disclaimer"
+      },
+      {
         "type": "feature",
         "title": "A Check email button on the Service Desk pulls replies in on demand"
       },
