@@ -186,6 +186,22 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
     }
   }
 
+  // Read-only diagnostic: `?run=monday-board-probe&board=<id>` returns the
+  // schema (title, columns w/ settings, groups, sample items) of any Monday
+  // board by id — used to scope a new board integration off real data before
+  // building it. Writes nothing.
+  if (url.searchParams.get('run') === 'monday-board-probe') {
+    try {
+      const boardId = url.searchParams.get('board')
+      if (!boardId) throw new Error('Missing ?board=<id>')
+      const { probeMondayBoard } = await import('./lib/shipsync/monday-probe.server')
+      const r = await probeMondayBoard(boardId)
+      return new Response(JSON.stringify(r), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
+  }
+
   // Read-only diagnostic: `?run=training-boards-probe` returns the schema
   // (title, columns, groups, sample items) of the 4 Monday.com Training
   // Institute boards, ahead of building the Training module UI to mirror
