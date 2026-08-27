@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { DateInputDMY } from "@/components/ui/date-input-dmy";
+import { MovementImportDialog } from "@/components/crew-immigration/MovementImportDialog";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -64,6 +65,7 @@ export function SignOnOffPage() {
   const [immBusy, setImmBusy] = useState(false);
   const [immForm, setImmForm] = useState<{ yacht_id: string; list_date: string; notes: string; file: File | null; emirate: "dubai" | "abu_dhabi" }>({ yacht_id: "", list_date: "", notes: "", file: null, emirate: "dubai" });
   const [editId, setEditId] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
   const [selectedEvents, setSelectedEvents] = useState<string[]>([]);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -408,6 +410,7 @@ export function SignOnOffPage() {
           </Select>
           <Button size="sm" variant="outline" onClick={() => { setImmForm({ yacht_id: filterYacht !== "all" ? filterYacht : "", list_date: new Date().toISOString().slice(0, 10), notes: "", file: null, emirate: "dubai" }); setImmOpen(true); }} className="h-9 gap-1.5 px-3 text-xs"><FileText className="h-3.5 w-3.5" /> Dubai Imm.</Button>
           <Button size="sm" variant="outline" onClick={() => { setImmForm({ yacht_id: filterYacht !== "all" ? filterYacht : "", list_date: new Date().toISOString().slice(0, 10), notes: "", file: null, emirate: "abu_dhabi" }); setImmOpen(true); }} className="h-9 gap-1.5 px-3 text-xs"><FileText className="h-3.5 w-3.5" /> AUH Imm.</Button>
+          <Button size="sm" variant="outline" onClick={() => setImportOpen(true)} className="h-9 gap-1.5 px-3 text-xs" title="Import a sign on/off sheet sent by the vessel"><Upload className="h-3.5 w-3.5" /> Import sheet</Button>
           <Button size="sm" variant="outline" onClick={() => setReportsOpen(true)} className="h-9 gap-1.5 px-3 text-xs"><BarChart3 className="h-3.5 w-3.5" /> Reports</Button>
           <Button size="sm" onClick={openNew} className="h-9 gap-1.5 px-3.5 font-medium shadow-sm"><Plus className="h-3.5 w-3.5" /> Record Event</Button>
         </div>
@@ -678,6 +681,15 @@ export function SignOnOffPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <MovementImportDialog
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onImported={() => { void load(); }}
+        yachtId={filterYacht !== 'all' ? filterYacht : null}
+        crew={crew}
+        yachts={yachts}
+      />
 
       <Dialog open={immOpen} onOpenChange={setImmOpen}>
         <DialogContent className="max-w-md">

@@ -915,6 +915,10 @@ export default {
       const id = decodeURIComponent(url.pathname.slice('/api/admin/users/'.length))
       if (id) return adminUserByIdHandler(request, id)
     }
+    if (url.pathname === '/api/movements/import' && request.method === 'POST') {
+      const { movementsImportHandler } = await import('./routes/api.movements.import')
+      return movementsImportHandler(request)
+    }
     if (url.pathname === '/api/movements/notify' && request.method === 'POST') {
       return movementsNotifyHandler(request)
     }
