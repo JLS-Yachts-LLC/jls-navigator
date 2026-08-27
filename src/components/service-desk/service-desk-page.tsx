@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Plus, Search, Loader2, Headset, Ship, MessageSquare } from "lucide-react";
+import { Plus, Search, Loader2, Headset, Ship, MessageSquare, MailCheck } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
@@ -63,6 +63,7 @@ export function ServiceDeskPage() {
   const [itYachts, setItYachts] = useState<Yacht[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
+  const [checkingMail, setCheckingMail] = useState(false);
   const [q, setQ] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterQueue, setFilterQueue] = useState("all");
@@ -143,6 +144,33 @@ export function ServiceDeskPage() {
     return true;
   }), [rows, q, filterStatus, filterQueue, filterPriority, filterCategory, filterYacht, yachts, itYachts]);
 
+  // Pull email replies into their tickets on demand. The cron does this every
+  // five minutes; this button is for "I just replied, show me now" — and it
+  // surfaces Graph's actual error (e.g. a missing Mail.Read permission) instead
+  // of failing silently in a cron log.
+  async function checkEmailReplies() {
+    setCheckingMail(true);
+    try {
+      const { data: { session } } = await (supabase as any).auth.getSession();
+      const res = await fetch("/api/it-tickets/poll-mail", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || body?.ok === false) throw new Error(body?.error ?? `Failed (${res.status})`);
+      if (body.appended > 0) {
+        toast.success(`${body.appended} email repl${body.appended === 1 ? "y" : "ies"} added to tickets`);
+        void load();
+      } else {
+        toast.info(`No new replies (scanned ${body.scanned} message${body.scanned === 1 ? "" : "s"})`);
+      }
+    } catch (e: any) {
+      toast.error(e?.message ?? "Could not check the mailbox");
+    } finally {
+      setCheckingMail(false);
+    }
+  }
+
   return (
     <div className="flex h-full flex-col">
       <header className="flex items-center justify-between border-b border-border/70 bg-card/30 px-6 py-3.5">
@@ -157,6 +185,11 @@ export function ServiceDeskPage() {
             <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/50" />
             <Input value={q} onChange={e => setQ(e.target.value)} placeholder="Search tickets…" className="h-9 w-60 pl-8 text-sm" />
           </div>
+          <Button size="sm" variant="outline" onClick={() => void checkEmailReplies()} disabled={checkingMail}
+            title="Pull replies from the itsupport mailbox into their tickets"
+            className="h-9 gap-1.5 px-3 font-medium">
+            {checkingMail ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MailCheck className="h-3.5 w-3.5" />} Check email
+          </Button>
           <Button size="sm" onClick={() => setOpen(true)} className="h-9 gap-1.5 px-3.5 font-medium shadow-sm">
             <Plus className="h-3.5 w-3.5" /> New Ticket
           </Button>
