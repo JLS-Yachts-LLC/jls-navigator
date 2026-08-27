@@ -189,6 +189,19 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
     }
   }
 
+  // Read-only diagnostic: `?run=shipsync-proximity-test-key` confirms the
+  // stored Google Maps key works for a server-to-server Routes API call
+  // (two arbitrary Dubai coordinates — no real delivery data, no email).
+  if (url.searchParams.get('run') === 'shipsync-proximity-test-key') {
+    try {
+      const { testGoogleRoutesServerSide } = await import('./lib/shipsync/proximity-alert.server')
+      const r = await testGoogleRoutesServerSide()
+      return new Response(JSON.stringify(r), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
+  }
+
   // One-time repair: `?run=monday-dedup-all` collapses every duplicate row
   // (any local_import value) sharing a monday_item_id down to the single most
   // recently updated one. Needed to clean up duplicates that accumulated

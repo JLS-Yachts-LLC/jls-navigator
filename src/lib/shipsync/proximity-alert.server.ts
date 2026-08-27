@@ -113,6 +113,19 @@ async function sendArrivalSoonEmail(to: string, boatName: string | null, etaSeco
   await sendEmail({ to: [to], cc: [LOGISTICS], subject: `Arriving in ~${etaLabel} — ${boatName ?? ''}`, html, text })
 }
 
+/** Read-only diagnostic: confirms the stored Google Maps key actually works
+ *  for a server-to-server Routes API call (the referrer-restriction risk
+ *  documented above), using two arbitrary Dubai coordinates — no real
+ *  delivery data touched, no email sent. */
+export async function testGoogleRoutesServerSide(): Promise<Record<string, unknown>> {
+  const key = await getGoogleMapsKey()
+  if (!key) return { ok: false, reason: 'Google Maps integration not configured/enabled.' }
+  const eta = await drivingEtaSeconds(key, { lat: 25.0657, lng: 55.1713 }, { lat: 25.2048, lng: 55.2708 })
+  return eta == null
+    ? { ok: false, reason: 'Routes API call failed — see server logs for the specific error.' }
+    : { ok: true, etaSeconds: eta }
+}
+
 export interface ProximityCheckResult { checked: number; notified: number; skipped: number }
 
 export async function checkDeliveryProximity(): Promise<ProximityCheckResult> {
