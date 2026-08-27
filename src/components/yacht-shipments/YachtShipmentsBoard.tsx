@@ -259,10 +259,26 @@ export function YachtShipmentsBoard() {
                       widths than an empty one, and the sticky offsets (fixed
                       Tailwind values) stopped lining up with the real column
                       edge. Fixed layout makes widths content-independent. */}
+                  {/* border-separate (not border-collapse): Chrome has a
+                      long-standing bug where position:sticky on a <thead>
+                      inside a border-collapse table lets the row scrolling
+                      up behind it bleed through as a ghost overlap. Separate
+                      borders (spacing 0) render visually the same here since
+                      every border below is one-sided (border-b / border-r on
+                      individual cells, never opposing borders on adjacent
+                      cells), so there's no double-thickness seam. */}
                   {!isCollapsed && (
-                      <table className="w-full table-fixed border-collapse text-sm">
+                      <table className="w-full table-fixed border-separate border-spacing-0 text-sm">
                         <thead>
-                          <tr className="border-b border-border bg-muted/30">
+                          {/* box-shadow instead of border-b: with border-separate
+                              (required for the sticky header cells above to
+                              render clean — see note above), a border set on the
+                              <tr> itself no longer paints, since the separated-
+                              borders model only recognises borders on <td>/<th>,
+                              not <tr>. An inset box-shadow isn't part of the
+                              table border model, so it renders the same divider
+                              line either way. */}
+                          <tr className="bg-muted/30 shadow-[inset_0_-1px_0_0_var(--border)]">
                             {/* Every header cell is sticky top-0 too, so the header
                                 row itself stays visible while scrolling down through
                                 a long group — not just the yacht-name column staying
@@ -290,7 +306,7 @@ export function YachtShipmentsBoard() {
                         </thead>
                         <tbody>
                           {groupRows.map((r) => (
-                            <tr key={r.id} className="group border-b border-border/40 hover:bg-accent/10">
+                            <tr key={r.id} className="group shadow-[inset_0_-1px_0_0_color-mix(in_oklab,var(--border)_40%,transparent)] hover:bg-accent/10">
                               <td className="sticky left-0 z-10 w-9 border-r border-border/40 bg-card px-3 py-2 group-hover:bg-accent/10">
                                 <Checkbox checked={selected.has(r.id)} onCheckedChange={() => toggleSelect(r.id)} />
                               </td>

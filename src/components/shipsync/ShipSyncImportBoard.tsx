@@ -336,10 +336,21 @@ export function ShipSyncImportBoard() {
                   <span className="text-xs text-muted-foreground">{g.rows.length} shipment{g.rows.length === 1 ? "" : "s"}</span>
                 </button>
 
+                {/* border-separate (not border-collapse): Chrome has a
+                    long-standing bug where position:sticky on a <thead>
+                    inside a border-collapse table lets the row scrolling
+                    up behind it bleed through as a ghost overlap. */}
                 {!isCollapsed && (
-                    <table className="w-full table-fixed border-collapse text-[12.5px]">
+                    <table className="w-full table-fixed border-separate border-spacing-0 text-[12.5px]">
                       <thead className="sticky top-0 z-10">
-                        <tr className="border-b border-border bg-card text-left text-[10px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">
+                        {/* box-shadow instead of border-b: with border-separate
+                            (required for the sticky thead above to render clean —
+                            see note above), a border set on the <tr> itself no
+                            longer paints, since the separated-borders model only
+                            recognises borders on <td>/<th>, not <tr>. An inset
+                            box-shadow isn't part of the table border model at
+                            all, so it renders the same divider line either way. */}
+                        <tr className="bg-card text-left text-[10px] font-semibold uppercase tracking-[0.05em] text-muted-foreground shadow-[inset_0_-1px_0_0_var(--border)]">
                           <th className="w-28 px-2 py-1.5">Group</th>
                           {CELLS.map((c) => {
                             if (c.kind === "field") return <th key={c.col.key} className={cn("px-2 py-1.5", c.col.width)}>{c.col.label}</th>;
@@ -356,7 +367,7 @@ export function ShipSyncImportBoard() {
                           const row = mondayRow(p);
                           const docs = p.documents ?? [];
                           return (
-                            <tr key={p.id} className="border-b border-border/40 hover:bg-accent/10">
+                            <tr key={p.id} className="shadow-[inset_0_-1px_0_0_color-mix(in_oklab,var(--border)_40%,transparent)] hover:bg-accent/10">
                               <td className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
                                 <Select value={g.title} onValueChange={(v) => {
                                   const target = allGroups.find((x) => x.title === v);
