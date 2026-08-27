@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchAllRows } from "@/lib/fetch-all";
 import { useAuth } from "@/lib/auth";
@@ -224,144 +224,144 @@ export function YachtShipmentsBoard() {
         </Tabs>
       </div>
 
-      <div className="pds-scroll flex-1 overflow-auto px-6 py-5">
+      <div className="min-h-0 flex-1 overflow-hidden px-6 py-5">
         {loading ? (
           <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
         ) : (
-          <div className="space-y-5">
-            {statusGroups.map((g) => {
-              const groupRows = grouped.get(g.key) ?? [];
-              const isCollapsed = collapsed[g.key];
-              const groupCharges = groupRows.reduce((s, r) => s + (Number(r.charges) || 0), 0);
-              return (
-                <div key={g.key} className="rounded-xl border border-border bg-card shadow-[0_2px_12px_-4px_rgba(0,0,0,0.4)]">
-                  {/* No overflow-x-auto wrapper around the table: any nested
-                      element with overflow-x set to a non-visible value forces
-                      its own overflow-y to auto too (CSS spec coercion), which
-                      would silently hijack position:sticky onto THIS box's own
-                      (never-scrolling) viewport instead of the real vertical
-                      scroller below — killing the sticky header. Horizontal
-                      scroll for a wide table is instead handled by the outer
-                      groups list (already overflow-auto on both axes). */}
-                  <button onClick={() => toggleGroup(g.key)}
-                    className={cn("flex w-full items-center gap-2 rounded-t-xl border-l-4 bg-muted/20 px-4 py-2.5 text-left", g.dot.replace("bg-", "border-"))}>
-                    {isCollapsed ? <ChevronRight className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
-                    <span className={cn("h-2 w-2 rounded-full", g.dot)} />
-                    <span className={cn("font-display text-sm font-semibold uppercase tracking-wide", g.text)}>{g.label}</span>
-                    <span className="text-xs text-muted-foreground">{groupRows.length} {groupRows.length === 1 ? "yacht name" : "yacht names"}</span>
-                    {groupCharges > 0 && <span className="ml-auto text-xs text-muted-foreground">{fmtAED(groupCharges)}</span>}
-                  </button>
-
-                  {/* table-fixed + a matching width class on every th AND td:
-                      each group renders its own <table>, and browsers' default
-                      auto-layout sizes columns per-table from cell content — so
-                      a table with real text ("test") computed different column
-                      widths than an empty one, and the sticky offsets (fixed
-                      Tailwind values) stopped lining up with the real column
-                      edge. Fixed layout makes widths content-independent. */}
-                  {/* border-separate (not border-collapse): Chrome has a
-                      long-standing bug where position:sticky on a <thead>
-                      inside a border-collapse table lets the row scrolling
-                      up behind it bleed through as a ghost overlap. Separate
-                      borders (spacing 0) render visually the same here since
-                      every border below is one-sided (border-b / border-r on
-                      individual cells, never opposing borders on adjacent
-                      cells), so there's no double-thickness seam. */}
-                  {!isCollapsed && (
-                      <table className="w-full table-fixed border-separate border-spacing-0 text-sm">
-                        <thead>
-                          {/* box-shadow instead of border-b: with border-separate
-                              (required for the sticky header cells above to
-                              render clean — see note above), a border set on the
-                              <tr> itself no longer paints, since the separated-
-                              borders model only recognises borders on <td>/<th>,
-                              not <tr>. An inset box-shadow isn't part of the
-                              table border model, so it renders the same divider
-                              line either way. */}
-                          <tr className="bg-muted/30 shadow-[inset_0_-1px_0_0_var(--border)]">
-                            {/* Every header cell is sticky top-0 too, so the header
-                                row itself stays visible while scrolling down through
-                                a long group — not just the yacht-name column staying
-                                visible while scrolling sideways. z-20 (over the body's
-                                z-10 sticky-left cells) so the header still wins where
-                                the frozen column and the frozen header overlap.
-                                Sticky cells need a SOLID background — the row's own
-                                bg-muted/30 is translucent, which only looks opaque
-                                because it sits over the opaque panel behind it. Once a
-                                cell is pinned via `sticky`, other scrolled-under cells
-                                paint behind it instead, and the 30%-opacity tint would
-                                let their text bleed through. bg-card (solid) fixes it. */}
-                            <th className="sticky left-0 top-0 z-20 w-9 border-r border-border/40 bg-card px-3 py-2 will-change-transform"></th>
-                            {COLS.map((c) => (
-                              <th key={c.key}
-                                className={cn(
-                                  "sticky top-0 z-20 bg-card px-3 py-2 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap will-change-transform",
-                                  c.width, c.sticky && "left-9 border-r border-border/40",
-                                )}>
-                                {c.label}
-                              </th>
-                            ))}
-                            <th className="sticky top-0 z-20 w-10 bg-card px-2 py-2 will-change-transform"></th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {groupRows.map((r) => (
-                            <tr key={r.id} className="group shadow-[inset_0_-1px_0_0_color-mix(in_oklab,var(--border)_40%,transparent)] hover:bg-accent/10">
-                              <td className="sticky left-0 z-10 w-9 border-r border-border/40 bg-card px-3 py-2 will-change-transform group-hover:bg-accent/10">
-                                <Checkbox checked={selected.has(r.id)} onCheckedChange={() => toggleSelect(r.id)} />
-                              </td>
-                              {COLS.map((c) => (
-                                <td key={c.key} className={cn("overflow-hidden px-1 py-1", c.width, c.sticky && "sticky left-9 z-10 border-r border-border/40 bg-card will-change-transform group-hover:bg-accent/10")}>
-                                  <EditableCell
-                                    col={c}
-                                    row={r}
-                                    saving={savingCell === `${r.id}:${c.key}`}
-                                    statusGroups={statusGroups}
-                                    onChange={(v) => patch(r, c.key, v)}
-                                  />
-                                </td>
-                              ))}
-                              <td className="px-2 py-1">
-                                <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground/0 hover:text-destructive group-hover:text-muted-foreground/60"
-                                  onClick={() => deleteRows([r.id])}>
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
-                              </td>
-                            </tr>
-                          ))}
-                          <tr>
-                            <td className="sticky left-0 z-10 w-9 border-r border-border/40 bg-card px-3 py-2 will-change-transform"></td>
-                            <td colSpan={COLS.length + 1} className="px-1 py-1">
-                              {addingIn === g.key ? (
-                                <div className="flex items-center gap-2 py-0.5">
-                                  <Input
-                                    autoFocus
-                                    value={newName}
-                                    onChange={(e) => setNewName(e.target.value)}
-                                    onKeyDown={(e) => {
-                                      if (e.key === "Enter") void addRow(g.key, newName);
-                                      if (e.key === "Escape") { setAddingIn(null); setNewName(""); }
-                                    }}
-                                    placeholder="Yacht name or model…"
-                                    className="h-8 w-64 text-sm"
-                                  />
-                                  <Button size="sm" className="h-8 text-xs" disabled={!newName.trim()} onClick={() => void addRow(g.key, newName)}>Add</Button>
-                                  <Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground" onClick={() => { setAddingIn(null); setNewName(""); }}>Cancel</Button>
-                                </div>
-                              ) : (
-                                <button onClick={() => setAddingIn(g.key)}
-                                  className="flex items-center gap-1.5 rounded px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent/30 hover:text-foreground">
-                                  <Plus className="h-3.5 w-3.5" /> Add yacht name
-                                </button>
-                              )}
+          // ONE <table> for every status group, not one table per group: a
+          // group's own toggle row and its shipment rows are all part of the
+          // same table body, so there is exactly one scrolling box (the
+          // border below) for the whole board — the sticky column header,
+          // the frozen yacht-name column, and the scrollbar all belong to
+          // that one box. A separate table per group was tried first and
+          // doesn't work: nesting a horizontally-scrolling box inside a
+          // vertically-scrolling one breaks position:sticky (CSS forces a
+          // box's overflow-y to auto the moment its overflow-x isn't
+          // visible, which hijacks sticky onto that box's own,
+          // never-scrolling viewport).
+          <div className="pds-scroll h-full overflow-auto rounded-xl border border-border bg-card shadow-[0_2px_12px_-4px_rgba(0,0,0,0.4)]">
+            <table className="w-full table-fixed border-separate border-spacing-0 text-sm">
+              <thead>
+                {/* box-shadow instead of border-b: border-separate (needed
+                    for the sticky header cells below to render clean —
+                    Chrome ghosts the row scrolling up behind a sticky
+                    <thead>/<th> inside a border-collapse table) drops <tr>
+                    borders, since the separated-borders model only
+                    recognises borders on <td>/<th>. An inset box-shadow
+                    isn't part of the table border model, so it renders the
+                    same divider line either way. */}
+                <tr className="bg-muted/30 shadow-[inset_0_-1px_0_0_var(--border)]">
+                  {/* Every header cell is sticky top-0 too, so the header row
+                      itself stays visible while scrolling down through a long
+                      group — not just the yacht-name column staying visible
+                      while scrolling sideways. z-20 (over the body's z-10
+                      sticky-left cells) so the header still wins where the
+                      frozen column and the frozen header overlap. Sticky
+                      cells need a SOLID background — the row's own
+                      bg-muted/30 is translucent, which only looks opaque
+                      because it sits over the opaque panel behind it. Once a
+                      cell is pinned via `sticky`, other scrolled-under cells
+                      paint behind it instead, and the 30%-opacity tint would
+                      let their text bleed through. bg-card (solid) fixes it.
+                      will-change-transform: mitigates a Chrome compositor
+                      quirk where sticky table cells can show a transient
+                      ghost of the row scrolling underneath during active
+                      scrolling. */}
+                  <th className="sticky left-0 top-0 z-20 w-9 border-r border-border/40 bg-card px-3 py-2 will-change-transform"></th>
+                  {COLS.map((c) => (
+                    <th key={c.key}
+                      className={cn(
+                        "sticky top-0 z-20 bg-card px-3 py-2 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap will-change-transform",
+                        c.width, c.sticky && "left-9 border-r border-border/40",
+                      )}>
+                      {c.label}
+                    </th>
+                  ))}
+                  <th className="sticky top-0 z-20 w-10 bg-card px-2 py-2 will-change-transform"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {statusGroups.map((g) => {
+                  const groupRows = grouped.get(g.key) ?? [];
+                  const isCollapsed = collapsed[g.key];
+                  const groupCharges = groupRows.reduce((s, r) => s + (Number(r.charges) || 0), 0);
+                  return (
+                    <Fragment key={g.key}>
+                      <tr>
+                        <td colSpan={COLS.length + 2} className="p-0">
+                          {/* sticky left-0 on the INNER wrapper (not the td —
+                              a colSpan cell already spans the full row, so
+                              making IT sticky does nothing to its content's
+                              position): keeps the group name readable no
+                              matter how far right you've scrolled. */}
+                          <button onClick={() => toggleGroup(g.key)}
+                            className={cn("sticky left-0 flex w-fit min-w-[260px] items-center gap-2 border-l-4 bg-muted/20 px-4 py-2.5 text-left", g.dot.replace("bg-", "border-"))}>
+                            {isCollapsed ? <ChevronRight className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                            <span className={cn("h-2 w-2 rounded-full", g.dot)} />
+                            <span className={cn("font-display text-sm font-semibold uppercase tracking-wide", g.text)}>{g.label}</span>
+                            <span className="text-xs text-muted-foreground">{groupRows.length} {groupRows.length === 1 ? "yacht name" : "yacht names"}</span>
+                            {groupCharges > 0 && <span className="ml-4 text-xs text-muted-foreground">{fmtAED(groupCharges)}</span>}
+                          </button>
+                        </td>
+                      </tr>
+                      {!isCollapsed && groupRows.map((r) => (
+                        <tr key={r.id} className="group shadow-[inset_0_-1px_0_0_color-mix(in_oklab,var(--border)_40%,transparent)] hover:bg-accent/10">
+                          <td className="sticky left-0 z-10 w-9 border-r border-border/40 bg-card px-3 py-2 will-change-transform group-hover:bg-accent/10">
+                            <Checkbox checked={selected.has(r.id)} onCheckedChange={() => toggleSelect(r.id)} />
+                          </td>
+                          {COLS.map((c) => (
+                            <td key={c.key} className={cn("overflow-hidden px-1 py-1", c.width, c.sticky && "sticky left-9 z-10 border-r border-border/40 bg-card will-change-transform group-hover:bg-accent/10")}>
+                              <EditableCell
+                                col={c}
+                                row={r}
+                                saving={savingCell === `${r.id}:${c.key}`}
+                                statusGroups={statusGroups}
+                                onChange={(v) => patch(r, c.key, v)}
+                              />
                             </td>
-                          </tr>
-                        </tbody>
-                      </table>
-                  )}
-                </div>
-              );
-            })}
+                          ))}
+                          <td className="px-2 py-1">
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground/0 hover:text-destructive group-hover:text-muted-foreground/60"
+                              onClick={() => deleteRows([r.id])}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                      {!isCollapsed && (
+                        <tr>
+                          <td className="sticky left-0 z-10 w-9 border-r border-border/40 bg-card px-3 py-2 will-change-transform"></td>
+                          <td colSpan={COLS.length + 1} className="px-1 py-1">
+                            {addingIn === g.key ? (
+                              <div className="flex items-center gap-2 py-0.5">
+                                <Input
+                                  autoFocus
+                                  value={newName}
+                                  onChange={(e) => setNewName(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") void addRow(g.key, newName);
+                                    if (e.key === "Escape") { setAddingIn(null); setNewName(""); }
+                                  }}
+                                  placeholder="Yacht name or model…"
+                                  className="h-8 w-64 text-sm"
+                                />
+                                <Button size="sm" className="h-8 text-xs" disabled={!newName.trim()} onClick={() => void addRow(g.key, newName)}>Add</Button>
+                                <Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground" onClick={() => { setAddingIn(null); setNewName(""); }}>Cancel</Button>
+                              </div>
+                            ) : (
+                              <button onClick={() => setAddingIn(g.key)}
+                                className="flex items-center gap-1.5 rounded px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent/30 hover:text-foreground">
+                                <Plus className="h-3.5 w-3.5" /> Add yacht name
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

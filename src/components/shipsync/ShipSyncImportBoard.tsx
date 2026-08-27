@@ -20,8 +20,18 @@
  * overwrites any Monday-linked row's fields (including a manual group move)
  * back to whatever Monday currently has. Rows added here by hand (no
  * monday_item_id) are never touched by the sync.
+ *
+ * ONE <table> for every group, not one table per group: a group's own toggle
+ * row and its shipment rows are all part of the same table body, so there is
+ * exactly one scrolling box (border below) for the whole board — the sticky
+ * column header and the horizontal scrollbar both belong to that one box,
+ * instead of each group fighting for its own. A separate table per group
+ * was tried first and doesn't work: nesting a horizontally-scrolling box
+ * inside a vertically-scrolling one breaks position:sticky (CSS forces a
+ * box's overflow-y to auto the moment its overflow-x isn't visible, which
+ * hijacks sticky onto that box's own, never-scrolling viewport).
  */
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Loader2, Search, ChevronDown, ChevronRight, RefreshCw, FileText, ArrowDownToLine, Plus } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -289,6 +299,8 @@ export function ShipSyncImportBoard() {
     return <div className="flex h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
   }
 
+  const colCount = 1 + CELLS.length + mondayColumns.length;
+
   return (
     <div className="flex h-full min-w-0 flex-col px-6 py-5">
       <div className="mb-3 flex shrink-0 flex-wrap items-center gap-2.5">
@@ -314,207 +326,204 @@ export function ShipSyncImportBoard() {
           <p className="max-w-md text-[13px] text-muted-foreground">Click "Sync from Monday" to pull in the Import/Transit board.</p>
         </div>
       ) : (
-        <div className="min-h-0 flex-1 space-y-4 overflow-auto">
-          {groups.map((g) => {
-            const isCollapsed = collapsed[g.title];
-            const colCount = CELLS.length + 1 + mondayColumns.length;
-            return (
-              <div key={g.title} className="rounded-xl border border-border bg-card">
-                {/* No overflow-x-auto wrapper around the table: any nested
-                    element with overflow-x set to a non-visible value forces
-                    its own overflow-y to auto too (CSS spec coercion), which
-                    would silently hijack position:sticky onto THIS box's own
-                    (never-scrolling) viewport instead of the real vertical
-                    scroller below — killing the sticky header. Horizontal
-                    scroll for a wide table is instead handled by the outer
-                    groups list (already overflow-auto on both axes), same as
-                    Local Packages' single-table board. */}
-                <button onClick={() => toggle(g.title)}
-                  className={cn("flex w-full items-center gap-2 rounded-t-xl border-l-4 bg-muted/20 px-4 py-2 text-left", groupColor(g.title))}>
-                  {isCollapsed ? <ChevronRight className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
-                  <span className="font-display text-sm font-semibold uppercase tracking-wide">{g.title}</span>
-                  <span className="text-xs text-muted-foreground">{g.rows.length} shipment{g.rows.length === 1 ? "" : "s"}</span>
-                </button>
-
-                {/* border-separate (not border-collapse): Chrome has a
-                    long-standing bug where position:sticky on a <thead>
-                    inside a border-collapse table lets the row scrolling
-                    up behind it bleed through as a ghost overlap. */}
-                {!isCollapsed && (
-                    <table className="w-full table-fixed border-separate border-spacing-0 text-[12.5px]">
-                      <thead className="sticky top-0 z-10 will-change-transform">
-                        {/* box-shadow instead of border-b: with border-separate
-                            (required for the sticky thead above to render clean —
-                            see note above), a border set on the <tr> itself no
-                            longer paints, since the separated-borders model only
-                            recognises borders on <td>/<th>, not <tr>. An inset
-                            box-shadow isn't part of the table border model at
-                            all, so it renders the same divider line either way. */}
-                        <tr className="bg-card text-left text-[10px] font-semibold uppercase tracking-[0.05em] text-muted-foreground shadow-[inset_0_-1px_0_0_var(--border)]">
-                          <th className="w-28 px-2 py-1.5">Group</th>
+        // The one and only scroll box for the whole board — bounded, its own
+        // border/scrollbar, both axes. table-fixed + border-separate (not
+        // border-collapse — Chrome ghosts the row scrolling up behind a
+        // sticky <thead> in a collapsed-border table) so the sticky column
+        // header renders cleanly.
+        <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-card">
+          <table className="w-full table-fixed border-separate border-spacing-0 text-[12.5px]">
+            <thead className="sticky top-0 z-20 will-change-transform">
+              {/* box-shadow instead of border-b: border-separate drops <tr>
+                  borders (the separated-borders model only recognises
+                  borders on <td>/<th>). An inset box-shadow isn't part of
+                  the table border model, so it renders the divider line
+                  either way. */}
+              <tr className="bg-card text-left text-[10px] font-semibold uppercase tracking-[0.05em] text-muted-foreground shadow-[inset_0_-1px_0_0_var(--border)]">
+                <th className="w-28 px-2 py-1.5">Group</th>
+                {CELLS.map((c) => {
+                  if (c.kind === "field") return <th key={c.col.key} className={cn("px-2 py-1.5", c.col.width)}>{c.col.label}</th>;
+                  if (c.kind === "mondayStatus") return <th key="mondayStatus" className="w-36 px-2 py-1.5">Status</th>;
+                  if (c.kind === "shipmentType") return <th key="shipmentType" className="w-28 px-2 py-1.5">Shipment Type</th>;
+                  if (c.kind === "documents") return <th key="documents" className="w-28 px-2 py-1.5">Files</th>;
+                  return <th key="edas" className="w-14 px-2 py-1.5">EDAS</th>;
+                })}
+                {mondayColumns.map((c) => <th key={c} className="w-28 px-2 py-1.5">{c}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {groups.map((g) => {
+                const isCollapsed = collapsed[g.title];
+                return (
+                  <Fragment key={g.title}>
+                    <tr>
+                      <td colSpan={colCount} className="p-0">
+                        {/* sticky left-0 on the INNER wrapper (not the td —
+                            a colSpan cell already spans the full row, so
+                            making IT sticky does nothing to its content's
+                            position): keeps the group name readable no
+                            matter how far right you've scrolled. */}
+                        <button onClick={() => toggle(g.title)}
+                          className={cn("sticky left-0 flex w-fit min-w-[200px] items-center gap-2 border-l-4 bg-muted/20 px-4 py-2 text-left", groupColor(g.title))}>
+                          {isCollapsed ? <ChevronRight className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                          <span className="font-display text-sm font-semibold uppercase tracking-wide">{g.title}</span>
+                          <span className="text-xs text-muted-foreground">{g.rows.length} shipment{g.rows.length === 1 ? "" : "s"}</span>
+                        </button>
+                      </td>
+                    </tr>
+                    {!isCollapsed && g.rows.map((p) => {
+                      const row = mondayRow(p);
+                      const docs = p.documents ?? [];
+                      return (
+                        <tr key={p.id} className="shadow-[inset_0_-1px_0_0_color-mix(in_oklab,var(--border)_40%,transparent)] hover:bg-accent/10">
+                          <td className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
+                            <Select value={g.title} onValueChange={(v) => {
+                              const target = allGroups.find((x) => x.title === v);
+                              if (target) void moveGroup(p, target);
+                            }}>
+                              <SelectTrigger className="h-7 w-full border-none bg-transparent px-1.5 text-[11px] hover:bg-accent/40">
+                                {savingCell === `${p.id}:group` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : (
+                                  <span className={cn("truncate rounded-full border bg-muted/40 px-2 py-0.5 text-[10px] font-semibold", groupColor(g.title))}>{g.title}</span>
+                                )}
+                              </SelectTrigger>
+                              <SelectContent>
+                                {allGroups.map((opt) => <SelectItem key={opt.title} value={opt.title}>{opt.title}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          </td>
                           {CELLS.map((c) => {
-                            if (c.kind === "field") return <th key={c.col.key} className={cn("px-2 py-1.5", c.col.width)}>{c.col.label}</th>;
-                            if (c.kind === "mondayStatus") return <th key="mondayStatus" className="w-36 px-2 py-1.5">Status</th>;
-                            if (c.kind === "shipmentType") return <th key="shipmentType" className="w-28 px-2 py-1.5">Shipment Type</th>;
-                            if (c.kind === "documents") return <th key="documents" className="w-28 px-2 py-1.5">Files</th>;
-                            return <th key="edas" className="w-14 px-2 py-1.5">EDAS</th>;
-                          })}
-                          {mondayColumns.map((c) => <th key={c} className="w-28 px-2 py-1.5">{c}</th>)}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {g.rows.map((p) => {
-                          const row = mondayRow(p);
-                          const docs = p.documents ?? [];
-                          return (
-                            <tr key={p.id} className="shadow-[inset_0_-1px_0_0_color-mix(in_oklab,var(--border)_40%,transparent)] hover:bg-accent/10">
-                              <td className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
-                                <Select value={g.title} onValueChange={(v) => {
-                                  const target = allGroups.find((x) => x.title === v);
-                                  if (target) void moveGroup(p, target);
-                                }}>
+                            if (c.kind === "field") {
+                              const col = c.col;
+                              return (
+                                <td key={col.key} className={cn("overflow-hidden px-1 py-0.5", col.width)}>
+                                  <EditableCell col={col} p={p} saving={savingCell === `${p.id}:${col.key}`}
+                                    onChange={(v) => void commit(p, `${p.id}:${col.key}`, col.set(p, v))} />
+                                </td>
+                              );
+                            }
+                            if (c.kind === "mondayStatus") {
+                              const current = mondayText(p, "STATUS");
+                              return (
+                                <td key="mondayStatus" className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
+                                  <Select value={current || undefined}
+                                    onValueChange={(v) => void commit(p, `${p.id}:mondayStatus`, { extra: { ...extraOf(p), monday: { ...mondayRow(p), STATUS: v } } } as any)}>
+                                    <SelectTrigger className="h-7 w-full border-none bg-transparent px-1.5 text-[11px] hover:bg-accent/40">
+                                      {savingCell === `${p.id}:mondayStatus` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : current ? (
+                                        <span className="truncate rounded px-2 py-0.5 text-[10px] font-semibold text-white" style={{ background: mondayStatusColor(current) }}>{current}</span>
+                                      ) : <span className="text-muted-foreground/30">—</span>}
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {MONDAY_STATUS_LABELS.map((s) => (
+                                        <SelectItem key={s.label} value={s.label}>
+                                          <span className="flex items-center gap-2">
+                                            <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: s.color }} />
+                                            {s.label}
+                                          </span>
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </td>
+                              );
+                            }
+                            if (c.kind === "shipmentType") {
+                              const current = p.trade_type ?? "";
+                              return (
+                                <td key="shipmentType" className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
+                                  <Select value={current || undefined}
+                                    onValueChange={(v) => void commit(p, `${p.id}:shipmentType`, { trade_type: v } as any)}>
+                                    <SelectTrigger className="h-7 w-full border-none bg-transparent px-1.5 text-[11px] hover:bg-accent/40">
+                                      {savingCell === `${p.id}:shipmentType` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : current ? (
+                                        <span className="truncate rounded px-2 py-0.5 text-[10px] font-semibold text-white" style={{ background: shipmentTypeColor(current) }}>{current}</span>
+                                      ) : <span className="text-muted-foreground/30">—</span>}
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {SHIPMENT_TYPE_LABELS.map((s) => (
+                                        <SelectItem key={s.label} value={s.label}>
+                                          <span className="flex items-center gap-2">
+                                            <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: s.color }} />
+                                            {s.label}
+                                          </span>
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </td>
+                              );
+                            }
+                            if (c.kind === "documents") {
+                              return (
+                                <td key="documents" className="overflow-hidden px-2 py-1">
+                                  {docs.length === 0 ? <span className="text-muted-foreground">—</span> : (
+                                    <div className="flex flex-wrap gap-1">
+                                      {docs.map((d, i) => (
+                                        <a key={i} href={d.url} target="_blank" rel="noopener noreferrer" title={d.name}
+                                          className="inline-flex max-w-[90px] items-center gap-1 truncate rounded border border-border px-1 py-0.5 text-[10px] text-primary hover:bg-primary/5">
+                                          <FileText className="h-3 w-3 shrink-0" /> <span className="truncate">{d.name}</span>
+                                        </a>
+                                      ))}
+                                    </div>
+                                  )}
+                                </td>
+                              );
+                            }
+                            return (
+                              <td key="edas" className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
+                                <Select value={p.edas_required == null ? "unset" : p.edas_required ? "yes" : "no"}
+                                  onValueChange={(v) => void commit(p, `${p.id}:edas`, { edas_required: v === "unset" ? null : v === "yes" } as any)}>
                                   <SelectTrigger className="h-7 w-full border-none bg-transparent px-1.5 text-[11px] hover:bg-accent/40">
-                                    {savingCell === `${p.id}:group` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : (
-                                      <span className={cn("truncate rounded-full border bg-muted/40 px-2 py-0.5 text-[10px] font-semibold", groupColor(g.title))}>{g.title}</span>
+                                    {savingCell === `${p.id}:edas` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : (
+                                      <span>{p.edas_required == null ? "—" : p.edas_required ? "Yes" : "No"}</span>
                                     )}
                                   </SelectTrigger>
                                   <SelectContent>
-                                    {allGroups.map((opt) => <SelectItem key={opt.title} value={opt.title}>{opt.title}</SelectItem>)}
+                                    <SelectItem value="unset">—</SelectItem>
+                                    <SelectItem value="yes">Yes</SelectItem>
+                                    <SelectItem value="no">No</SelectItem>
                                   </SelectContent>
                                 </Select>
                               </td>
-                              {CELLS.map((c) => {
-                                if (c.kind === "field") {
-                                  const col = c.col;
-                                  return (
-                                    <td key={col.key} className={cn("overflow-hidden px-1 py-0.5", col.width)}>
-                                      <EditableCell col={col} p={p} saving={savingCell === `${p.id}:${col.key}`}
-                                        onChange={(v) => void commit(p, `${p.id}:${col.key}`, col.set(p, v))} />
-                                    </td>
-                                  );
-                                }
-                                if (c.kind === "mondayStatus") {
-                                  const current = mondayText(p, "STATUS");
-                                  return (
-                                    <td key="mondayStatus" className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
-                                      <Select value={current || undefined}
-                                        onValueChange={(v) => void commit(p, `${p.id}:mondayStatus`, { extra: { ...extraOf(p), monday: { ...mondayRow(p), STATUS: v } } } as any)}>
-                                        <SelectTrigger className="h-7 w-full border-none bg-transparent px-1.5 text-[11px] hover:bg-accent/40">
-                                          {savingCell === `${p.id}:mondayStatus` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : current ? (
-                                            <span className="truncate rounded px-2 py-0.5 text-[10px] font-semibold text-white" style={{ background: mondayStatusColor(current) }}>{current}</span>
-                                          ) : <span className="text-muted-foreground/30">—</span>}
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          {MONDAY_STATUS_LABELS.map((s) => (
-                                            <SelectItem key={s.label} value={s.label}>
-                                              <span className="flex items-center gap-2">
-                                                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: s.color }} />
-                                                {s.label}
-                                              </span>
-                                            </SelectItem>
-                                          ))}
-                                        </SelectContent>
-                                      </Select>
-                                    </td>
-                                  );
-                                }
-                                if (c.kind === "shipmentType") {
-                                  const current = p.trade_type ?? "";
-                                  return (
-                                    <td key="shipmentType" className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
-                                      <Select value={current || undefined}
-                                        onValueChange={(v) => void commit(p, `${p.id}:shipmentType`, { trade_type: v } as any)}>
-                                        <SelectTrigger className="h-7 w-full border-none bg-transparent px-1.5 text-[11px] hover:bg-accent/40">
-                                          {savingCell === `${p.id}:shipmentType` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : current ? (
-                                            <span className="truncate rounded px-2 py-0.5 text-[10px] font-semibold text-white" style={{ background: shipmentTypeColor(current) }}>{current}</span>
-                                          ) : <span className="text-muted-foreground/30">—</span>}
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          {SHIPMENT_TYPE_LABELS.map((s) => (
-                                            <SelectItem key={s.label} value={s.label}>
-                                              <span className="flex items-center gap-2">
-                                                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: s.color }} />
-                                                {s.label}
-                                              </span>
-                                            </SelectItem>
-                                          ))}
-                                        </SelectContent>
-                                      </Select>
-                                    </td>
-                                  );
-                                }
-                                if (c.kind === "documents") {
-                                  return (
-                                    <td key="documents" className="overflow-hidden px-2 py-1">
-                                      {docs.length === 0 ? <span className="text-muted-foreground">—</span> : (
-                                        <div className="flex flex-wrap gap-1">
-                                          {docs.map((d, i) => (
-                                            <a key={i} href={d.url} target="_blank" rel="noopener noreferrer" title={d.name}
-                                              className="inline-flex max-w-[90px] items-center gap-1 truncate rounded border border-border px-1 py-0.5 text-[10px] text-primary hover:bg-primary/5">
-                                              <FileText className="h-3 w-3 shrink-0" /> <span className="truncate">{d.name}</span>
-                                            </a>
-                                          ))}
-                                        </div>
-                                      )}
-                                    </td>
-                                  );
-                                }
-                                return (
-                                  <td key="edas" className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
-                                    <Select value={p.edas_required == null ? "unset" : p.edas_required ? "yes" : "no"}
-                                      onValueChange={(v) => void commit(p, `${p.id}:edas`, { edas_required: v === "unset" ? null : v === "yes" } as any)}>
-                                      <SelectTrigger className="h-7 w-full border-none bg-transparent px-1.5 text-[11px] hover:bg-accent/40">
-                                        {savingCell === `${p.id}:edas` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : (
-                                          <span>{p.edas_required == null ? "—" : p.edas_required ? "Yes" : "No"}</span>
-                                        )}
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="unset">—</SelectItem>
-                                        <SelectItem value="yes">Yes</SelectItem>
-                                        <SelectItem value="no">No</SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                  </td>
-                                );
-                              })}
-                              {mondayColumns.map((c) => (
-                                <td key={c} className="overflow-hidden truncate px-2 py-1 text-muted-foreground">{row[c] || "—"}</td>
-                              ))}
-                            </tr>
-                          );
-                        })}
-                        <tr>
-                          <td colSpan={colCount} className="px-2 py-1">
-                            {addingIn === g.title ? (
-                              <div className="flex items-center gap-2 py-0.5">
-                                <Input
-                                  autoFocus
-                                  value={newName}
-                                  onChange={(e) => setNewName(e.target.value)}
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter") void addShipment(g, newName);
-                                    if (e.key === "Escape") { setAddingIn(null); setNewName(""); }
-                                  }}
-                                  placeholder="Yacht name…"
-                                  className="h-7 w-56 text-xs"
-                                />
-                                <Button size="sm" className="h-7 text-xs" disabled={!newName.trim()} onClick={() => void addShipment(g, newName)}>Add</Button>
-                                <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" onClick={() => { setAddingIn(null); setNewName(""); }}>Cancel</Button>
-                              </div>
-                            ) : (
-                              <button onClick={() => setAddingIn(g.title)}
-                                className="flex items-center gap-1.5 rounded px-1.5 py-1 text-xs text-muted-foreground hover:bg-accent/30 hover:text-foreground">
-                                <Plus className="h-3.5 w-3.5" /> Add shipment
-                              </button>
-                            )}
-                          </td>
+                            );
+                          })}
+                          {mondayColumns.map((c) => (
+                            <td key={c} className="overflow-hidden truncate px-2 py-1 text-muted-foreground">{row[c] || "—"}</td>
+                          ))}
                         </tr>
-                      </tbody>
-                    </table>
-                )}
-              </div>
-            );
-          })}
+                      );
+                    })}
+                    {!isCollapsed && (
+                      <tr>
+                        <td colSpan={colCount} className="px-2 py-1">
+                          {addingIn === g.title ? (
+                            <div className="flex items-center gap-2 py-0.5">
+                              <Input
+                                autoFocus
+                                value={newName}
+                                onChange={(e) => setNewName(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") void addShipment(g, newName);
+                                  if (e.key === "Escape") { setAddingIn(null); setNewName(""); }
+                                }}
+                                placeholder="Yacht name…"
+                                className="h-7 w-56 text-xs"
+                              />
+                              <Button size="sm" className="h-7 text-xs" disabled={!newName.trim()} onClick={() => void addShipment(g, newName)}>Add</Button>
+                              <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" onClick={() => { setAddingIn(null); setNewName(""); }}>Cancel</Button>
+                            </div>
+                          ) : (
+                            <button onClick={() => setAddingIn(g.title)}
+                              className="flex items-center gap-1.5 rounded px-1.5 py-1 text-xs text-muted-foreground hover:bg-accent/30 hover:text-foreground">
+                              <Plus className="h-3.5 w-3.5" /> Add shipment
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
 
