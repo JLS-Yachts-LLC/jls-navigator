@@ -18,6 +18,15 @@ import { createPackage, patchPackage, deletePackage, uploadShipSyncImage } from 
 import type { ShipSyncData } from "@/components/shipsync-page";
 
 const STATUS_OPTIONS = Object.keys(STATUS_META) as PackageStatus[];
+// 'assigned' and 'out_for_delivery' only mean anything alongside a delivery
+// note + driver (set together by Routing → Dispatch, or the driver app) — a
+// bare status flip here can't provide either, so picking one from a free
+// dropdown produces a package that reads "Assigned" but isn't actually on
+// any run: invisible to Routing (no longer 'in_office'/'in_storage') AND to
+// Dispatch (no delivery_note_id to show it under). Found ~150 packages
+// exactly like that. Manual status changes are restricted to the states
+// that stand on their own.
+const MANUAL_STATUS_OPTIONS = STATUS_OPTIONS.filter((s) => s !== "assigned" && s !== "out_for_delivery");
 const PRIORITIES = [{ v: 1, l: "1 — High" }, { v: 2, l: "2 — Normal" }, { v: 3, l: "3 — Low" }];
 
 type Form = Partial<ShipSyncPackage>;
@@ -187,7 +196,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
                   <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
                     <Select value={p.status} onValueChange={(v) => quickStatus(p, v as PackageStatus)}>
                       <SelectTrigger className="h-7 w-[132px] border-none bg-transparent p-0 hover:bg-accent/40"><StatusBadge status={p.status} /></SelectTrigger>
-                      <SelectContent>{STATUS_OPTIONS.map((s) => <SelectItem key={s} value={s}>{STATUS_META[s].label}</SelectItem>)}</SelectContent>
+                      <SelectContent>{MANUAL_STATUS_OPTIONS.map((s) => <SelectItem key={s} value={s}>{STATUS_META[s].label}</SelectItem>)}</SelectContent>
                     </Select>
                   </td>
                   <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
@@ -238,7 +247,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
             <div className="space-y-1.5"><Label className="text-xs">Status</Label>
               <Select value={form.status ?? "in_office"} onValueChange={(v) => set({ status: v as PackageStatus })}>
                 <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
-                <SelectContent>{STATUS_OPTIONS.map((s) => <SelectItem key={s} value={s}>{STATUS_META[s].label}</SelectItem>)}</SelectContent></Select></div>
+                <SelectContent>{MANUAL_STATUS_OPTIONS.map((s) => <SelectItem key={s} value={s}>{STATUS_META[s].label}</SelectItem>)}</SelectContent></Select></div>
             <div className="space-y-1.5"><Label className="text-xs">Delivery note no.</Label>
               <Input value={form.delivery_note_no ?? ""} onChange={(e) => set({ delivery_note_no: e.target.value })} className="h-9" placeholder="e.g. 1962" /></div>
             <div className="space-y-1.5"><Label className="text-xs">Received by (JLS)</Label>
