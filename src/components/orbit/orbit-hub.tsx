@@ -17,12 +17,14 @@ import { OrbitRequestsPage } from "./orbit-requests-page";
 import { OrbitRequestDetailPage } from "./orbit-request-detail-page";
 import { ORBIT_DEFECTS_CONFIG, ORBIT_MAINTENANCE_CONFIG } from "./orbit-resource-configs";
 import { OrbitBoatsHub } from "./orbit-boats-hub";
-import { LayoutGrid, ClipboardList, Wrench, CalendarClock, Ship } from "lucide-react";
+import { OrbitApprovalsPage } from "./orbit-approvals-page";
+import { LayoutGrid, ClipboardList, Wrench, CalendarClock, Ship, ShieldCheck } from "lucide-react";
 
-type Tab = "projects" | "requests" | "defects" | "maintenance" | "boats";
+type Tab = "projects" | "requests" | "approvals" | "defects" | "maintenance" | "boats";
 const TABS: { key: Tab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { key: "projects", label: "Projects", icon: LayoutGrid },
   { key: "requests", label: "Service Requests", icon: ClipboardList },
+  { key: "approvals", label: "Approvals", icon: ShieldCheck },
   { key: "defects", label: "Defects & Repairs", icon: Wrench },
   { key: "maintenance", label: "Planned Maintenance", icon: CalendarClock },
   { key: "boats", label: "Small Boats", icon: Ship },
@@ -70,6 +72,10 @@ export function OrbitHub() {
           ) : (
             <OrbitRequestsPage onOpenRequest={(requestId) => setRequestsView({ mode: "detail", requestId })} />
           )
+        )}
+
+        {tab === "approvals" && (
+          <div className="h-full overflow-auto"><OrbitApprovalsPage /></div>
         )}
 
         {tab === "defects" && (
