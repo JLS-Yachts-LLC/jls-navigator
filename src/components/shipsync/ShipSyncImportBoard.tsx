@@ -27,6 +27,8 @@ import { Loader2, Search, ChevronDown, ChevronRight, RefreshCw, FileText, ArrowD
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { fmtDate, mondayRow, extraMondayColumns } from "@/components/shipsync/shared";
 import { loadImportPackages, patchPackage, createPackage } from "@/lib/shipsync/data";
@@ -184,6 +186,9 @@ export function ShipSyncImportBoard() {
   const [savingCell, setSavingCell] = useState<string | null>(null);
   const [addingIn, setAddingIn] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
+  const [newPackageOpen, setNewPackageOpen] = useState(false);
+  const [npName, setNpName] = useState("");
+  const [npGroup, setNpGroup] = useState("");
 
   async function reload() {
     const data = await loadImportPackages();
@@ -233,6 +238,13 @@ export function ShipSyncImportBoard() {
     } catch (e: any) {
       toast.error(e?.message ?? "Couldn't add shipment");
     }
+  }
+
+  async function submitNewPackage() {
+    const target = allGroups.find((g) => g.title === npGroup);
+    if (!target) return;
+    await addShipment(target, npName);
+    setNewPackageOpen(false);
   }
 
   const filtered = useMemo(() => {
@@ -285,7 +297,10 @@ export function ShipSyncImportBoard() {
           <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search import shipments…" className="h-9 w-72 pl-8 text-sm" />
         </div>
         <span className="text-[12px] text-muted-foreground">{filtered.length} of {rows.length}</span>
-        <Button size="sm" variant="outline" onClick={() => void sync()} disabled={syncing} className="ml-auto h-9 gap-1.5">
+        <Button size="sm" onClick={() => { setNpGroup(allGroups[0]?.title ?? ""); setNpName(""); setNewPackageOpen(true); }} className="ml-auto h-9 gap-1.5">
+          <Plus className="h-4 w-4" /> New Package
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => void sync()} disabled={syncing} className="h-9 gap-1.5">
           {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Sync from Monday
         </Button>
       </div>
@@ -313,9 +328,9 @@ export function ShipSyncImportBoard() {
                 </button>
 
                 {!isCollapsed && (
-                  <div className="overflow-x-auto">
+                  <div className="overflow-x-auto overflow-y-visible">
                     <table className="w-full table-fixed border-collapse text-[12.5px]">
-                      <thead>
+                      <thead className="sticky top-0 z-10">
                         <tr className="border-b border-border bg-card text-left text-[10px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">
                           <th className="w-28 px-2 py-1.5">Group</th>
                           {CELLS.map((c) => {
@@ -484,6 +499,33 @@ export function ShipSyncImportBoard() {
           })}
         </div>
       )}
+
+      <Dialog open={newPackageOpen} onOpenChange={setNewPackageOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>New package</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="np-name">Yacht name</Label>
+              <Input id="np-name" autoFocus value={npName} onChange={(e) => setNpName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && npName.trim() && npGroup) void submitNewPackage(); }}
+                placeholder="Yacht name…" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="np-group">Group</Label>
+              <Select value={npGroup} onValueChange={setNpGroup}>
+                <SelectTrigger id="np-group"><span>{npGroup || "Select group…"}</span></SelectTrigger>
+                <SelectContent>
+                  {allGroups.map((g) => <SelectItem key={g.title} value={g.title}>{g.title}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setNewPackageOpen(false)}>Cancel</Button>
+            <Button disabled={!npName.trim() || !npGroup} onClick={() => void submitNewPackage()}>Add</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
