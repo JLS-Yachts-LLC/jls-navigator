@@ -116,14 +116,27 @@ async function sendArrivalSoonEmail(to: string, boatName: string | null, etaSeco
 /** Read-only diagnostic: confirms the stored Google Maps key actually works
  *  for a server-to-server Routes API call (the referrer-restriction risk
  *  documented above), using two arbitrary Dubai coordinates — no real
- *  delivery data touched, no email sent. */
+ *  delivery data touched, no email sent. Calls the API directly (rather than
+ *  through drivingEtaSeconds) so the raw status/body come back in the
+ *  response instead of only to console.error, for one-off diagnosis. */
 export async function testGoogleRoutesServerSide(): Promise<Record<string, unknown>> {
   const key = await getGoogleMapsKey()
   if (!key) return { ok: false, reason: 'Google Maps integration not configured/enabled.' }
-  const eta = await drivingEtaSeconds(key, { lat: 25.0657, lng: 55.1713 }, { lat: 25.2048, lng: 55.2708 })
-  return eta == null
-    ? { ok: false, reason: 'Routes API call failed — see server logs for the specific error.' }
-    : { ok: true, etaSeconds: eta }
+  try {
+    const res = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': key, 'X-Goog-FieldMask': 'routes.duration' },
+      body: JSON.stringify({
+        origin: { location: { latLng: { latitude: 25.0657, longitude: 55.1713 } } },
+        destination: { location: { latLng: { latitude: 25.2048, longitude: 55.2708 } } },
+        travelMode: 'DRIVE',
+      }),
+    })
+    const text = await res.text()
+    return { ok: res.ok, status: res.status, body: text.slice(0, 500) }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
 }
 
 export interface ProximityCheckResult { checked: number; notified: number; skipped: number }
