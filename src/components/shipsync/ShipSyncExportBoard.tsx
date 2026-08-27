@@ -30,15 +30,19 @@
  */
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { Loader2, Search, ChevronDown, ChevronRight, RefreshCw, FileText, ArrowUpFromLine, Plus } from "lucide-react";
+import { Loader2, Search, ChevronDown, ChevronRight, RefreshCw, FileText, ArrowUpFromLine, Plus, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { fmtDate, mondayRow, extraMondayColumns } from "@/components/shipsync/shared";
-import { loadExportPackages, patchPackage, createPackage } from "@/lib/shipsync/data";
+import { loadExportPackages, patchPackage, createPackage, deletePackage } from "@/lib/shipsync/data";
 import type { ShipSyncPackage } from "@/lib/shipsync/model";
 import { syncMondayExportBoard } from "@/lib/shipsync/monday-export-board.server";
 
@@ -158,6 +162,7 @@ export function ShipSyncExportBoard() {
   const [newPackageOpen, setNewPackageOpen] = useState(false);
   const [npName, setNpName] = useState("");
   const [npGroup, setNpGroup] = useState("");
+  const [delTarget, setDelTarget] = useState<ShipSyncPackage | null>(null);
 
   async function reload() {
     const data = await loadExportPackages();
@@ -216,6 +221,19 @@ export function ShipSyncExportBoard() {
     setNewPackageOpen(false);
   }
 
+  async function confirmDelete() {
+    if (!delTarget) return;
+    try {
+      await deletePackage(delTarget.id);
+      setRows((prev) => prev.filter((r) => r.id !== delTarget.id));
+      toast.success("Shipment removed");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Delete failed");
+    } finally {
+      setDelTarget(null);
+    }
+  }
+
   const filtered = useMemo(() => {
     if (!search.trim()) return rows;
     const s = search.toLowerCase();
@@ -257,7 +275,7 @@ export function ShipSyncExportBoard() {
     return <div className="flex h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
   }
 
-  const colCount = 1 + CELLS.length + mondayColumns.length;
+  const colCount = 1 + CELLS.length + mondayColumns.length + 1;
 
   return (
     <div className="flex h-full min-w-0 flex-col px-6 py-5">
@@ -297,6 +315,7 @@ export function ShipSyncExportBoard() {
                   return <th key="documents" className="w-28 px-2 py-1.5">Files</th>;
                 })}
                 {mondayColumns.map((c) => <th key={c} className="w-28 px-2 py-1.5">{c}</th>)}
+                <th className="w-10 px-2 py-1.5"></th>
               </tr>
             </thead>
             <tbody>
@@ -318,7 +337,7 @@ export function ShipSyncExportBoard() {
                       const row = mondayRow(p);
                       const docs = p.documents ?? [];
                       return (
-                        <tr key={p.id} className="shadow-[inset_0_-1px_0_0_color-mix(in_oklab,var(--border)_40%,transparent)] hover:bg-accent/10">
+                        <tr key={p.id} className="group shadow-[inset_0_-1px_0_0_var(--border)] hover:bg-accent/10">
                           <td className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
                             <Select value={g.title} onValueChange={(v) => {
                               const target = allGroups.find((x) => x.title === v);
@@ -387,6 +406,11 @@ export function ShipSyncExportBoard() {
                           {mondayColumns.map((c) => (
                             <td key={c} className="overflow-hidden truncate px-2 py-1 text-muted-foreground">{row[c] || "—"}</td>
                           ))}
+                          <td className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground/60 hover:text-destructive opacity-0 group-hover:opacity-100" onClick={() => setDelTarget(p)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </td>
                         </tr>
                       );
                     })}
@@ -452,6 +476,19 @@ export function ShipSyncExportBoard() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!delTarget} onOpenChange={(o) => !o && setDelTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove shipment?</AlertDialogTitle>
+            <AlertDialogDescription>{delTarget?.barcode ?? delTarget?.boat_name} will be permanently removed.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

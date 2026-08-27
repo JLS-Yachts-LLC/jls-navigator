@@ -212,7 +212,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
                     const driver = data.drivers.find((d) => d.id === p.driver_id);
                     const docs = p.documents ?? [];
                     return (
-                      <tr key={p.id} onClick={() => openEdit(p)} className="group cursor-pointer shadow-[inset_0_-1px_0_0_color-mix(in_oklab,var(--border)_40%,transparent)] hover:bg-accent/20">
+                      <tr key={p.id} onClick={() => openEdit(p)} className="group cursor-pointer shadow-[inset_0_-1px_0_0_var(--border)] hover:bg-accent/20">
                         <td className="px-3 py-2.5 font-mono text-[12px] text-foreground whitespace-nowrap">{p.barcode ?? "—"}</td>
                         <td className="px-3 py-2.5 font-medium whitespace-nowrap">{p.boat_name ?? "—"}</td>
                         <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{fmtDate(p.received_at)}</td>
