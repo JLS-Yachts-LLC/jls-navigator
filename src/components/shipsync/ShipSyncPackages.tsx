@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { Fragment, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,14 +10,29 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Search, Loader2, Trash2, Camera, FileText, ScanLine } from "lucide-react";
+import { Plus, Search, Loader2, Trash2, Camera, FileText, ScanLine, ChevronDown, ChevronRight } from "lucide-react";
 import { BarcodeScannerDialog } from "@/components/shipsync/BarcodeScanner";
 import { StatusBadge, fmtDate } from "@/components/shipsync/shared";
 import { ALL_ZONES, STATUS_META, type PackageStatus, type ShipSyncPackage } from "@/lib/shipsync/model";
 import { createPackage, patchPackage, deletePackage, uploadShipSyncImage } from "@/lib/shipsync/data";
 import type { ShipSyncData } from "@/components/shipsync-page";
+import { cn } from "@/lib/utils";
 
 const STATUS_OPTIONS = Object.keys(STATUS_META) as PackageStatus[];
+// Same tone→colour mapping StatusBadge uses, just as a border class for each
+// status group's toggle bar instead of a badge fill — keeps a group's colour
+// consistent with its own status badge everywhere else in ShipSync.
+const TONE_BORDER: Record<string, string> = {
+  sky: "border-sky-500", violet: "border-violet-500", amber: "border-amber-500",
+  orange: "border-orange-500", emerald: "border-emerald-500", red: "border-red-500",
+  muted: "border-border",
+};
+function statusBorder(status: PackageStatus): string {
+  return TONE_BORDER[STATUS_META[status]?.tone ?? "muted"] ?? TONE_BORDER.muted;
+}
+// Terminal states start collapsed — everything still-in-progress starts open,
+// same balance the old "Active" status filter struck by default.
+const DEFAULT_COLLAPSED: PackageStatus[] = ["delivered", "collected", "refused"];
 // 'assigned' and 'out_for_delivery' only mean anything alongside a delivery
 // note + driver (set together by Routing → Dispatch, or the driver app) — a
 // bare status flip here can't provide either, so picking one from a free
@@ -34,7 +49,9 @@ const EMPTY: Form = { status: "in_office", num_packages: 1, local_import: "Local
 
 export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload: () => Promise<void> }) {
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("active");
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(
+    () => Object.fromEntries(DEFAULT_COLLAPSED.map((s) => [s, true])),
+  );
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<Form>(EMPTY);
   const [photo, setPhoto] = useState<File | null>(null);
@@ -57,15 +74,30 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
   );
 
   const filtered = useMemo(() => data.packages.filter((p) => {
-    if (statusFilter === "active" && ["delivered", "collected", "refused"].includes(p.status)) return false;
-    if (statusFilter !== "active" && statusFilter !== "all" && p.status !== statusFilter) return false;
     if (search.trim()) {
       const s = search.toLowerCase();
       if (![p.barcode, p.boat_name, p.package_owner, p.courier, p.description]
         .join(" ").toLowerCase().includes(s)) return false;
     }
     return true;
-  }), [data.packages, statusFilter, search]);
+  }), [data.packages, search]);
+
+  // Grouped by status, in the lifecycle order STATUS_META declares them —
+  // same collapsible-sections-in-one-table pattern as the Import/Export
+  // boards. Skips a status with nothing in it rather than showing an empty
+  // group.
+  const groups = useMemo(() => {
+    const map = new Map<PackageStatus, ShipSyncPackage[]>();
+    for (const p of filtered) {
+      if (!map.has(p.status)) map.set(p.status, []);
+      map.get(p.status)!.push(p);
+    }
+    return STATUS_OPTIONS.filter((s) => map.has(s)).map((s) => ({ status: s, rows: map.get(s)! }));
+  }, [filtered]);
+
+  function toggleGroup(status: PackageStatus) {
+    setCollapsed((prev) => ({ ...prev, [status]: !prev[status] }));
+  }
 
   function openNew() { setForm(EMPTY); setPhoto(null); setOpen(true); }
   function openEdit(p: ShipSyncPackage) { setForm({ ...p }); setPhoto(null); setOpen(true); }
@@ -126,14 +158,6 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/50" />
           <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search barcode, boat, owner, courier…" className="h-9 w-72 pl-8 text-sm" />
         </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="h-9 w-40 text-xs"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="active">Active</SelectItem>
-            <SelectItem value="all">All</SelectItem>
-            {STATUS_OPTIONS.map((s) => <SelectItem key={s} value={s}>{STATUS_META[s].label}</SelectItem>)}
-          </SelectContent>
-        </Select>
         <span className="text-[12px] text-muted-foreground">{filtered.length} of {data.packages.length}</span>
         <Button size="sm" onClick={openNew} className="ml-auto h-9 gap-1.5"><Plus className="h-4 w-4" /> Check in package</Button>
       </div>
@@ -155,7 +179,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
             </tr>
           </thead>
           <tbody>
-            {filtered.length === 0 ? (
+            {groups.length === 0 ? (
               <tr><td colSpan={14} className="px-4 py-12 text-center text-sm text-muted-foreground">
                 {data.packages.length === 0 ? (
                   <div className="flex flex-col items-center gap-3">
@@ -164,47 +188,69 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
                   </div>
                 ) : "No packages match."}
               </td></tr>
-            ) : filtered.map((p) => {
-              const note = data.notes.find((n) => n.id === p.delivery_note_id);
-              const driver = data.drivers.find((d) => d.id === p.driver_id);
-              const docs = p.documents ?? [];
+            ) : groups.map((g) => {
+              const isCollapsed = collapsed[g.status];
               return (
-                <tr key={p.id} onClick={() => openEdit(p)} className="group cursor-pointer shadow-[inset_0_-1px_0_0_color-mix(in_oklab,var(--border)_40%,transparent)] hover:bg-accent/20">
-                  <td className="px-3 py-2.5 font-mono text-[12px] text-foreground whitespace-nowrap">{p.barcode ?? "—"}</td>
-                  <td className="px-3 py-2.5 font-medium whitespace-nowrap">{p.boat_name ?? "—"}</td>
-                  <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{fmtDate(p.received_at)}</td>
-                  <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{p.package_owner ?? "—"}</td>
-                  <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{p.receiver_full_name ?? "—"}</td>
-                  <td className="px-3 py-2.5 tabular-nums text-muted-foreground text-center">{p.num_packages ?? 1}</td>
-                  <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{p.courier ?? "—"}</td>
-                  <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{p.local_import ?? "—"}</td>
-                  <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{p.delivery_note_no ?? note?.number ?? "—"}</td>
-                  <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{driver?.name ?? "—"}</td>
-                  <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{fmtDate(p.delivered_at)}</td>
-                  <td className="px-3 py-2.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                    {docs.length === 0 ? <span className="text-muted-foreground">—</span> : (
-                      <div className="flex flex-wrap gap-1.5">
-                        {docs.map((d, i) => (
-                          <a key={i} href={d.url} target="_blank" rel="noopener noreferrer" title={d.name}
-                            className="inline-flex max-w-[120px] items-center gap-1 truncate rounded border border-border px-1.5 py-0.5 text-[11px] text-primary hover:bg-primary/5">
-                            <FileText className="h-3 w-3 shrink-0" /> <span className="truncate">{d.name}</span>
-                          </a>
-                        ))}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
-                    <Select value={p.status} onValueChange={(v) => quickStatus(p, v as PackageStatus)}>
-                      <SelectTrigger className="h-7 w-[132px] border-none bg-transparent p-0 hover:bg-accent/40"><StatusBadge status={p.status} /></SelectTrigger>
-                      <SelectContent>{MANUAL_STATUS_OPTIONS.map((s) => <SelectItem key={s} value={s}>{STATUS_META[s].label}</SelectItem>)}</SelectContent>
-                    </Select>
-                  </td>
-                  <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
-                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground/60 hover:text-destructive opacity-0 group-hover:opacity-100" onClick={() => setDelTarget(p)}>
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </td>
-                </tr>
+                <Fragment key={g.status}>
+                  <tr>
+                    <td colSpan={14} className="p-0">
+                      {/* sticky left-0 on the INNER wrapper (not the td — a
+                          colSpan cell already spans the full row, so making
+                          IT sticky does nothing to its content's position):
+                          keeps the status name readable no matter how far
+                          right you've scrolled. */}
+                      <button onClick={() => toggleGroup(g.status)}
+                        className={cn("sticky left-0 flex w-fit min-w-[220px] items-center gap-2 border-l-4 bg-muted/20 px-4 py-2 text-left", statusBorder(g.status))}>
+                        {isCollapsed ? <ChevronRight className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                        <span className="font-display text-sm font-semibold uppercase tracking-wide">{STATUS_META[g.status].label}</span>
+                        <span className="text-xs text-muted-foreground">{g.rows.length} package{g.rows.length === 1 ? "" : "s"}</span>
+                      </button>
+                    </td>
+                  </tr>
+                  {!isCollapsed && g.rows.map((p) => {
+                    const note = data.notes.find((n) => n.id === p.delivery_note_id);
+                    const driver = data.drivers.find((d) => d.id === p.driver_id);
+                    const docs = p.documents ?? [];
+                    return (
+                      <tr key={p.id} onClick={() => openEdit(p)} className="group cursor-pointer shadow-[inset_0_-1px_0_0_color-mix(in_oklab,var(--border)_40%,transparent)] hover:bg-accent/20">
+                        <td className="px-3 py-2.5 font-mono text-[12px] text-foreground whitespace-nowrap">{p.barcode ?? "—"}</td>
+                        <td className="px-3 py-2.5 font-medium whitespace-nowrap">{p.boat_name ?? "—"}</td>
+                        <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{fmtDate(p.received_at)}</td>
+                        <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{p.package_owner ?? "—"}</td>
+                        <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{p.receiver_full_name ?? "—"}</td>
+                        <td className="px-3 py-2.5 tabular-nums text-muted-foreground text-center">{p.num_packages ?? 1}</td>
+                        <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{p.courier ?? "—"}</td>
+                        <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{p.local_import ?? "—"}</td>
+                        <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{p.delivery_note_no ?? note?.number ?? "—"}</td>
+                        <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{driver?.name ?? "—"}</td>
+                        <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{fmtDate(p.delivered_at)}</td>
+                        <td className="px-3 py-2.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                          {docs.length === 0 ? <span className="text-muted-foreground">—</span> : (
+                            <div className="flex flex-wrap gap-1.5">
+                              {docs.map((d, i) => (
+                                <a key={i} href={d.url} target="_blank" rel="noopener noreferrer" title={d.name}
+                                  className="inline-flex max-w-[120px] items-center gap-1 truncate rounded border border-border px-1.5 py-0.5 text-[11px] text-primary hover:bg-primary/5">
+                                  <FileText className="h-3 w-3 shrink-0" /> <span className="truncate">{d.name}</span>
+                                </a>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+                          <Select value={p.status} onValueChange={(v) => quickStatus(p, v as PackageStatus)}>
+                            <SelectTrigger className="h-7 w-[132px] border-none bg-transparent p-0 hover:bg-accent/40"><StatusBadge status={p.status} /></SelectTrigger>
+                            <SelectContent>{MANUAL_STATUS_OPTIONS.map((s) => <SelectItem key={s} value={s}>{STATUS_META[s].label}</SelectItem>)}</SelectContent>
+                          </Select>
+                        </td>
+                        <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground/60 hover:text-destructive opacity-0 group-hover:opacity-100" onClick={() => setDelTarget(p)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </Fragment>
               );
             })}
           </tbody>
