@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { updateOrThrow } from "@/lib/db-write";
 import { useAuth } from "@/lib/auth";
+import { useAccess } from "@/lib/auth/useAccess";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusPill } from "@/components/status-pill";
@@ -171,6 +172,11 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
   const [movementFilter, setMovementFilter] = useState<"all" | Movement>("all");
   const toggleMovementFilter = (m: Movement) => setMovementFilter((cur) => (cur === m ? "all" : m));
   const { user } = useAuth();
+  // The registry is part of the 'agency' module. Every department can READ it;
+  // editing is limited to those granted edit (Operations, Admin) — so the
+  // add / archive / inline-edit controls are hidden for everyone else.
+  const { canAccessModule } = useAccess();
+  const canEditVessels = canAccessModule("agency", "edit");
   const [archiveView, setArchiveView] = useState<"active" | "archived">("active");
   /** Show only vessels this user is the responsible agent for. */
   const [mineOnly, setMineOnly] = useState(false);
@@ -653,9 +659,11 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
               <Link to="/my-fleet"><Radar className="h-3.5 w-3.5" /> Live Fleet Map</Link>
             </Button>
           )}
-          <Button asChild size="sm" className="h-8 gap-1.5 text-xs">
-            <Link to="/yachts/new"><Plus className="h-3.5 w-3.5" /> Add Yacht</Link>
-          </Button>
+          {canEditVessels && (
+            <Button asChild size="sm" className="h-8 gap-1.5 text-xs">
+              <Link to="/yachts/new"><Plus className="h-3.5 w-3.5" /> Add Yacht</Link>
+            </Button>
+          )}
         </div>
       </header>
 
@@ -730,7 +738,8 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
             quickEditId={quickEditId}
             setQuickEditId={setQuickEditId}
             updateStatus={updateStatus}
-            onArchive={setArchiveTarget}
+            onArchive={canEditVessels ? setArchiveTarget : undefined}
+            canEdit={canEditVessels}
             onOpenYacht={onOpenYacht}
             outstanding={outstanding}
             onMovementFilter={toggleMovementFilter}
@@ -739,7 +748,7 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
               y.id === id ? { ...y, agent_user_id: next } : y))}
           />
         ) : (
-          <CardsView rows={filtered} staleIds={new Set(filtered.filter(isStale).map((y) => y.id))} small={view === "small"} onArchive={setArchiveTarget} onOpenYacht={onOpenYacht} onMovementFilter={toggleMovementFilter} staffNames={staffNames} />
+          <CardsView rows={filtered} staleIds={new Set(filtered.filter(isStale).map((y) => y.id))} small={view === "small"} onArchive={canEditVessels ? setArchiveTarget : undefined} onOpenYacht={onOpenYacht} onMovementFilter={toggleMovementFilter} staffNames={staffNames} />
         )}
       </div>
 
@@ -893,7 +902,7 @@ function trackUrl(y: Yacht): string {
 }
 
 function ListView({
-  rows, visible, sortKey, sortDir, onSort, quickEditId, setQuickEditId, updateStatus, onArchive, onOpenYacht, outstanding = {}, onMovementFilter,
+  rows, visible, sortKey, sortDir, onSort, quickEditId, setQuickEditId, updateStatus, onArchive, canEdit, onOpenYacht, outstanding = {}, onMovementFilter,
   staffNames = {}, onAgentChanged,
 }: {
   rows: Yacht[];
@@ -905,7 +914,8 @@ function ListView({
   quickEditId: string | null;
   setQuickEditId: (id: string | null) => void;
   updateStatus: (id: string, status: string) => Promise<void>;
-  onArchive: (y: Yacht) => void;
+  onArchive?: (y: Yacht) => void;
+  canEdit: boolean;
   onOpenYacht?: (id: string) => void;
   onMovementFilter?: (m: Movement) => void;
   /** user_id → display name, so the Agent column shows a person, not a UUID. */
@@ -969,9 +979,14 @@ function ListView({
                         ))}
                       </select>
                     ) : (
-                      <div className="flex items-center gap-1 group/status cursor-pointer" onClick={() => setQuickEditId(y.id)}>
+                      <div
+                        className={cn("flex items-center gap-1 group/status", canEdit && "cursor-pointer")}
+                        onClick={() => canEdit && setQuickEditId(y.id)}
+                      >
                         <StatusPill status={y[c.key] as string | null} />
-                        <Pencil className="h-2.5 w-2.5 text-muted-foreground opacity-0 group-hover/status:opacity-60 transition-opacity" />
+                        {canEdit && (
+                          <Pencil className="h-2.5 w-2.5 text-muted-foreground opacity-0 group-hover/status:opacity-60 transition-opacity" />
+                        )}
                       </div>
                     )
                   ) : c.key === "ais_location" ? (
@@ -998,8 +1013,8 @@ function ListView({
                       />
                     ) : (
                       <div
-                        className="flex items-center gap-1 group/agent cursor-pointer"
-                        onClick={() => setQuickEditId(`agent:${y.id}`)}
+                        className={cn("flex items-center gap-1 group/agent", canEdit && "cursor-pointer")}
+                        onClick={() => canEdit && setQuickEditId(`agent:${y.id}`)}
                       >
                         {y.agent_user_id ? (
                           <span className="text-foreground/80">
@@ -1008,7 +1023,9 @@ function ListView({
                         ) : (
                           <span className="text-amber-400/70">Unassigned</span>
                         )}
-                        <Pencil className="h-2.5 w-2.5 text-muted-foreground opacity-0 group-hover/agent:opacity-60 transition-opacity" />
+                        {canEdit && (
+                          <Pencil className="h-2.5 w-2.5 text-muted-foreground opacity-0 group-hover/agent:opacity-60 transition-opacity" />
+                        )}
                       </div>
                     )
                   ) : (c.key === "underway_since" || c.key === "last_departed_at" || c.key === "last_arrived_at") ? (
@@ -1038,13 +1055,15 @@ function ListView({
                   >
                     <Radar className="h-3.5 w-3.5" />
                   </a>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onArchive(y); }}
-                    title={y.archive ? "Restore to active fleet" : "Archive yacht"}
-                    className="inline-flex h-6 w-6 items-center justify-center rounded transition hover:bg-amber-500/10 hover:text-amber-500 text-muted-foreground/50"
-                  >
-                    {y.archive ? <ArchiveRestore className="h-3.5 w-3.5" /> : <Archive className="h-3.5 w-3.5" />}
-                  </button>
+                  {onArchive && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onArchive(y); }}
+                      title={y.archive ? "Restore to active fleet" : "Archive yacht"}
+                      className="inline-flex h-6 w-6 items-center justify-center rounded transition hover:bg-amber-500/10 hover:text-amber-500 text-muted-foreground/50"
+                    >
+                      {y.archive ? <ArchiveRestore className="h-3.5 w-3.5" /> : <Archive className="h-3.5 w-3.5" />}
+                    </button>
+                  )}
                 </div>
               </td>
             </tr>
@@ -1055,7 +1074,7 @@ function ListView({
   );
 }
 
-function CardsView({ rows, staleIds, small, onArchive, onOpenYacht, onMovementFilter, staffNames = {} }: { rows: Yacht[]; staleIds: Set<string>; small?: boolean; onArchive: (y: Yacht) => void; onOpenYacht?: (id: string) => void; onMovementFilter?: (m: Movement) => void; staffNames?: Record<string, string> }) {
+function CardsView({ rows, staleIds, small, onArchive, onOpenYacht, onMovementFilter, staffNames = {} }: { rows: Yacht[]; staleIds: Set<string>; small?: boolean; onArchive?: (y: Yacht) => void; onOpenYacht?: (id: string) => void; onMovementFilter?: (m: Movement) => void; staffNames?: Record<string, string> }) {
   return (
     <div
       className={
@@ -1090,13 +1109,15 @@ function CardsView({ rows, staleIds, small, onArchive, onOpenYacht, onMovementFi
             {staleIds.has(y.id) && small && (
               <span title="No activity in over 30 days" className="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full bg-amber-500/90 shadow" />
             )}
-            <button
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onArchive(y); }}
-              title={y.archive ? "Restore to active fleet" : "Archive yacht"}
-              className={`absolute left-1.5 top-1.5 inline-flex items-center justify-center rounded-md bg-black/45 text-white/90 backdrop-blur transition hover:bg-black/65 ${small ? "h-6 w-6" : "h-7 w-7"}`}
-            >
-              {y.archive ? <ArchiveRestore className={small ? "h-3.5 w-3.5" : "h-4 w-4"} /> : <Archive className={small ? "h-3.5 w-3.5" : "h-4 w-4"} />}
-            </button>
+            {onArchive && (
+              <button
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); onArchive(y); }}
+                title={y.archive ? "Restore to active fleet" : "Archive yacht"}
+                className={`absolute left-1.5 top-1.5 inline-flex items-center justify-center rounded-md bg-black/45 text-white/90 backdrop-blur transition hover:bg-black/65 ${small ? "h-6 w-6" : "h-7 w-7"}`}
+              >
+                {y.archive ? <ArchiveRestore className={small ? "h-3.5 w-3.5" : "h-4 w-4"} /> : <Archive className={small ? "h-3.5 w-3.5" : "h-4 w-4"} />}
+              </button>
+            )}
           </div>
           {small ? (
             <div className="space-y-1 p-2.5">
