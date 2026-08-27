@@ -97,6 +97,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: "Yacht Shipments", module: "shipsync", icon: "package", screen: "route-yacht-shipments", route: "/yacht-shipments" },
       { label: "Seaport Immigration", module: "seaport", icon: "building-lighthouse", screen: "route-seaport", route: "/seaport", roles: ["global_admin", "crew_immigration"] },
       { label: "Training", module: "training", icon: "certificate", screen: "training" },
+      { label: "Training Institute", module: "training", icon: "school", screen: "route-training", route: "/training" },
       { label: "Yacht IT Solutions", module: "yacht_it", icon: "cpu", screen: "yacht-it" },
       { label: "Anchor", icon: "signature", screen: "anchor" },
       { label: "Crew Placement", module: "crew_placement", icon: "user-star", screen: "crew-placement", roles: ["global_admin", "crew_immigration"] },
