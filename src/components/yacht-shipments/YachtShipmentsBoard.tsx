@@ -245,7 +245,7 @@ export function YachtShipmentsBoard() {
                   </button>
 
                   {!isCollapsed && (
-                    <div className="overflow-x-auto">
+                    <div className="overflow-x-auto overflow-y-visible">
                       {/* table-fixed + a matching width class on every th AND td:
                           each group renders its own <table>, and browsers' default
                           auto-layout sizes columns per-table from cell content — so
@@ -256,24 +256,29 @@ export function YachtShipmentsBoard() {
                       <table className="w-full table-fixed border-collapse text-sm">
                         <thead>
                           <tr className="border-b border-border bg-muted/30">
-                            {/* Sticky header cells need a SOLID background — the row's
-                                own bg-muted/30 is translucent, which only looks opaque
+                            {/* Every header cell is sticky top-0 too, so the header
+                                row itself stays visible while scrolling down through
+                                a long group — not just the yacht-name column staying
+                                visible while scrolling sideways. z-20 (over the body's
+                                z-10 sticky-left cells) so the header still wins where
+                                the frozen column and the frozen header overlap.
+                                Sticky cells need a SOLID background — the row's own
+                                bg-muted/30 is translucent, which only looks opaque
                                 because it sits over the opaque panel behind it. Once a
-                                cell is pinned via `sticky`, other scrolled-under header
-                                cells paint behind it instead, and the 30%-opacity tint
-                                let their text bleed through. bg-card (solid, same as
-                                the sticky body cells already use) fixes it for real. */}
-                            <th className="sticky left-0 z-10 w-9 border-r border-border/40 bg-card px-3 py-2"></th>
+                                cell is pinned via `sticky`, other scrolled-under cells
+                                paint behind it instead, and the 30%-opacity tint would
+                                let their text bleed through. bg-card (solid) fixes it. */}
+                            <th className="sticky left-0 top-0 z-20 w-9 border-r border-border/40 bg-card px-3 py-2"></th>
                             {COLS.map((c) => (
                               <th key={c.key}
                                 className={cn(
-                                  "px-3 py-2 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap",
-                                  c.width, c.sticky && "sticky left-9 z-10 border-r border-border/40 bg-card",
+                                  "sticky top-0 z-20 bg-card px-3 py-2 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap",
+                                  c.width, c.sticky && "left-9 border-r border-border/40",
                                 )}>
                                 {c.label}
                               </th>
                             ))}
-                            <th className="w-10 px-2 py-2"></th>
+                            <th className="sticky top-0 z-20 w-10 bg-card px-2 py-2"></th>
                           </tr>
                         </thead>
                         <tbody>
