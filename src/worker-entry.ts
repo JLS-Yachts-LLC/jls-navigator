@@ -160,6 +160,20 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
     }
   }
 
+  // Manual ShipSync Export board sync: `?run=shipsync-export-board` pulls the
+  // Monday.com Export board into shipsync_packages (local_import = 'Export')
+  // now, same as the "Sync from Monday" button on the Export tab (no-op
+  // error if not configured).
+  if (url.searchParams.get('run') === 'shipsync-export-board') {
+    try {
+      const { importMondayExportBoard } = await import('./lib/shipsync/monday-export-board.server')
+      const r = await importMondayExportBoard()
+      return new Response(JSON.stringify(r), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
+  }
+
   // One-time repair: `?run=monday-dedup-all` collapses every duplicate row
   // (any local_import value) sharing a monday_item_id down to the single most
   // recently updated one. Needed to clean up duplicates that accumulated
