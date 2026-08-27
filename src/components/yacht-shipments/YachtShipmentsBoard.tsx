@@ -11,6 +11,7 @@ import { Ship, ChevronDown, ChevronRight, Plus, Trash2, ExternalLink, Loader2, R
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { syncYachtShipmentsFromMonday } from "@/lib/yacht-shipments/monday.server";
+import { MyFleetPage } from "@/components/my-fleet-page";
 
 type Row = Record<string, any>;
 
@@ -103,7 +104,7 @@ export function YachtShipmentsBoard() {
   const { user } = useAuth();
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
-  const [direction, setDirection] = useState<"import" | "export">("import");
+  const [direction, setDirection] = useState<"import" | "export" | "tracking">("import");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [addingIn, setAddingIn] = useState<string | null>(null);
@@ -136,7 +137,9 @@ export function YachtShipmentsBoard() {
   }
 
   const rowsInTab = useMemo(() => rows.filter((r) => (r.direction ?? "import") === direction), [rows, direction]);
-  const statusGroups = STATUS_GROUPS_BY_DIRECTION[direction];
+  // "tracking" has no board/status groups of its own — it renders MyFleetPage
+  // instead further down, so this only ever needs to be real for import/export.
+  const statusGroups = STATUS_GROUPS_BY_DIRECTION[direction === "tracking" ? "import" : direction];
 
   const grouped = useMemo(() => {
     const map = new Map<string, Row[]>();
@@ -201,29 +204,35 @@ export function YachtShipmentsBoard() {
             <Ship className="h-4 w-4 text-primary/80" /> Yacht Shipments
           </h1>
         </div>
-        <div className="flex items-center gap-2.5">
-          <Button size="sm" variant="outline" onClick={() => void syncFromMonday()} disabled={syncing} className="h-9 gap-1.5 text-xs">
-            {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Sync from Monday
-          </Button>
-          {selected.size > 0 && (
-            <Button size="sm" variant="outline" className="h-9 gap-1.5 text-xs text-destructive"
-              onClick={() => deleteRows([...selected])}>
-              <Trash2 className="h-3.5 w-3.5" /> Delete {selected.size} selected
+        {direction !== "tracking" && (
+          <div className="flex items-center gap-2.5">
+            <Button size="sm" variant="outline" onClick={() => void syncFromMonday()} disabled={syncing} className="h-9 gap-1.5 text-xs">
+              {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Sync from Monday
             </Button>
-          )}
-          <span className="text-xs text-muted-foreground">{rowsInTab.length} shipments · {fmtAED(totalCharges)} total</span>
-        </div>
+            {selected.size > 0 && (
+              <Button size="sm" variant="outline" className="h-9 gap-1.5 text-xs text-destructive"
+                onClick={() => deleteRows([...selected])}>
+                <Trash2 className="h-3.5 w-3.5" /> Delete {selected.size} selected
+              </Button>
+            )}
+            <span className="text-xs text-muted-foreground">{rowsInTab.length} shipments · {fmtAED(totalCharges)} total</span>
+          </div>
+        )}
       </header>
 
       <div className="border-b border-border/40 bg-muted/10 px-6 py-2.5">
-        <Tabs value={direction} onValueChange={(v) => { setDirection(v as "import" | "export"); setSelected(new Set()); }}>
+        <Tabs value={direction} onValueChange={(v) => { setDirection(v as "import" | "export" | "tracking"); setSelected(new Set()); }}>
           <TabsList>
             <TabsTrigger value="import">Import</TabsTrigger>
             <TabsTrigger value="export">Export</TabsTrigger>
+            <TabsTrigger value="tracking">Tracking</TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
 
+      {direction === "tracking" ? (
+        <div className="min-h-0 flex-1"><MyFleetPage /></div>
+      ) : (
       <div className="min-h-0 flex-1 overflow-hidden px-6 py-5">
         {loading ? (
           <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
@@ -365,6 +374,7 @@ export function YachtShipmentsBoard() {
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }
