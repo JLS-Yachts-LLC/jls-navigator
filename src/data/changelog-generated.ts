@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Email replies now appear in the ticket"
+      },
+      {
+        "type": "feature",
         "title": "Import a vessel's own sign on/off sheet — upload the CSV, PDF or a photo the yacht sent and Polaris reads the crew names, dates and ports, matches them to existing crew profiles and vessels, then shows everything for approval before anything is saved; rows already recorded are flagged so a re-sent sheet cannot duplicate them"
       },
       {
