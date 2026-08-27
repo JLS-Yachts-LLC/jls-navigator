@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Manage Users shows and edits names, not just email addresses"
+      },
+      {
+        "type": "feature",
         "title": "Orbit added as a staff department, and every department can now read the vessel registry — Add Yacht, archive/restore and the inline status and agent editors are hidden unless the person holds edit on the vessels module, so read-only departments genuinely cannot change records"
       },
       {
