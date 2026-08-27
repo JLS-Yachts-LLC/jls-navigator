@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-08-27",
     "entries": [
       {
+        "type": "feature",
+        "title": "Staff invites are now by department — Logistics, ShipSync, Crew Care, Operations, Finance and Admin decide which modules a person sees, with an access level for how much they can do, and a per-user Modules override on each row for exceptions"
+      },
+      {
         "type": "fix",
         "title": "An expired invitation or reset link now explains itself instead of showing a blank sign-in page — the link error is read from the URL and the user can send themselves a fresh link on the spot"
       },
