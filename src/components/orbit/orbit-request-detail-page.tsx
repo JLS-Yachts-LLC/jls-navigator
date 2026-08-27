@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ArrowLeft, Loader2, Ship, Plus, Check, X, Activity } from "lucide-react";
 import { toast } from "sonner";
+import { planApproval } from "@/lib/orbit/approvals";
 import { cn } from "@/lib/utils";
 import { CATEGORY_LABEL, STATUS_META, URGENCY_META, SLA_TARGET, NEXT_STATUS, type OrbitStatus } from "./orbit-constants";
 import { BunkerRequestExtensions } from "./bunker-request-extensions";
@@ -90,13 +91,74 @@ export function OrbitRequestDetailPage({
     setQuoteOpen(false); setQuote({ supplier: "", amount: "", currency: "AED", valid_until: "", notes: "" });
     setBusy(false);
   }
+  /**
+   * Accepting a quote routes it through the tiered spend approvals rather than
+   * approving the request outright: the value decides how many sign-offs it
+   * needs. Within the captain's limit it still clears immediately, so small
+   * jobs are no slower than before.
+   */
   async function reviewQuote(q: any, status: "accepted" | "rejected") {
     setBusy(true);
-    await (supabase as any).from("orbit_quotations").update({ status, reviewed_at: new Date().toISOString(), reviewed_by: user?.id ?? null }).eq("id", q.id);
-    await logActivity(`quote_${status}`, `${q.supplier} — ${q.currency} ${q.amount}`);
-    if (status === "accepted") await patch({ assigned_supplier: q.supplier, status: "approved" }, "Quote accepted");
-    else await load();
-    setBusy(false);
+    try {
+      const db = supabase as any;
+      if (status === "rejected") {
+        await db.from("orbit_quotations").update({ status, reviewed_at: new Date().toISOString(), reviewed_by: user?.id ?? null }).eq("id", q.id);
+        await logActivity("quote_rejected", `${q.supplier} — ${q.currency} ${q.amount}`);
+        await load();
+        return;
+      }
+
+      // Load the vessel's limits (falling back to the fleet default) and rates.
+      const [{ data: pols }, { data: fx }] = await Promise.all([
+        db.from("orbit_approval_policies").select("*"),
+        db.from("orbit_fx_rates").select("currency, rate_to_aed"),
+      ]);
+      const own = (pols ?? []).find((x: any) => x.yacht_id === req?.yacht_id);
+      const def = (pols ?? []).find((x: any) => !x.yacht_id);
+      const src = own ?? def;
+      const policy = {
+        captainLimit: Number(src?.captain_limit ?? 5000),
+        managerLimit: Number(src?.manager_limit ?? 50000),
+        baseCurrency: src?.base_currency ?? "AED",
+      };
+      const rates = Object.fromEntries(((fx ?? []) as any[]).map((r) => [r.currency, Number(r.rate_to_aed)]));
+      const plan = planApproval(Number(q.amount ?? 0), q.currency ?? policy.baseCurrency, policy, rates);
+
+      await db.from("orbit_quotations").update({
+        status: plan.totalStages === 0 ? "accepted" : q.status,
+        reviewed_at: new Date().toISOString(),
+        reviewed_by: user?.id ?? null,
+        approval_status: plan.initialStatus,
+        approval_stage: 0,
+        approval_total_stages: plan.totalStages,
+        amount_base: plan.amountBase,
+      }).eq("id", q.id);
+
+      await db.from("orbit_approvals").insert([{
+        quotation_id: q.id, request_id: id, yacht_id: req?.yacht_id ?? null,
+        stage_number: 0, total_stages: plan.totalStages,
+        approver_role: "submitter",
+        action: plan.totalStages === 0 ? "auto_approved" : "submitted",
+        status: plan.initialStatus,
+        approved_by_name: user?.email ?? null, approver_id: user?.id ?? null,
+        amount_original: q.amount, currency_original: String(q.currency ?? policy.baseCurrency).toUpperCase(),
+        amount_base: plan.amountBase, fx_rate: rates[String(q.currency ?? policy.baseCurrency).toUpperCase()] ?? 1,
+        comments: plan.rationale, approved_at: new Date().toISOString(),
+      }]);
+
+      await logActivity("quote_accepted", `${q.supplier} — ${q.currency} ${q.amount}. ${plan.rationale}`);
+
+      if (plan.totalStages === 0) {
+        await patch({ assigned_supplier: q.supplier, status: "approved" }, "Quote accepted — auto-approved");
+      } else {
+        await patch({ assigned_supplier: q.supplier, status: "awaiting_approval" }, "Quote accepted — sent for approval");
+        toast.info(plan.rationale, { description: "Track it in ORBIT → Approvals." });
+      }
+    } catch (e: any) {
+      toast.error(e?.message ?? "Could not process the quote");
+    } finally {
+      setBusy(false);
+    }
   }
 
   if (loading) return <div className="flex h-full items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
