@@ -21,12 +21,13 @@ export const Route = createFileRoute("/auth")({
   head: () => ({ meta: [{ title: "Sign in — Polaris" }] }),
 });
 
-type Mode = "signin" | "set-password" | "forgot-password";
+type Mode = "signin" | "set-password" | "forgot-password" | "link-expired";
 
 function AuthPage() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
   const [mode, setMode] = useState<Mode>("signin");
+  const [linkError, setLinkError] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -38,9 +39,27 @@ function AuthPage() {
   const [claims, setClaims] = useState<PolarisClaims | null>(null);
   const [resolving, setResolving] = useState(false);
 
-  // Detect invite / password-recovery tokens in the URL hash
+  // Detect invite / password-recovery tokens in the URL hash — or the ERROR hash
+  // Supabase sends when the link has expired or was already used. Without the
+  // error branch an expired invite silently rendered the normal sign-in form,
+  // which reads as 'the invite link is broken'.
   useEffect(() => {
     const hash = window.location.hash;
+    if (!hash) return;
+    const params = new URLSearchParams(hash.replace(/^#/, ''));
+    const errCode = params.get('error_code');
+    const errDesc = params.get('error_description');
+    if (errCode || params.get('error')) {
+      setLinkError(
+        errCode === 'otp_expired'
+          ? 'That link has expired. Invitation and reset links are only valid for a short time.'
+          : (errDesc ? errDesc.replace(/\+/g, ' ') : 'That link is no longer valid.'),
+      );
+      setMode("link-expired");
+      // Drop the hash so a refresh doesn't replay the error.
+      window.history.replaceState(null, '', window.location.pathname);
+      return;
+    }
     if (hash.includes("type=invite") || hash.includes("type=recovery")) {
       setMode("set-password");
     }
@@ -135,6 +154,7 @@ function AuthPage() {
     "signin": { heading: "Welcome back", sub: "Sign in to your account." },
     "set-password": { heading: "Set your password", sub: "You have been invited to Polaris. Choose a password to activate your account." },
     "forgot-password": { heading: "Reset password", sub: "Enter your email and we'll send you a reset link." },
+    "link-expired": { heading: "Link expired", sub: "Request a fresh link below — it only takes a moment." },
   };
 
   const showWorkspaceStep = mode === "signin" && !!user && !!workspaces;
@@ -200,6 +220,32 @@ function AuthPage() {
                     {busy ? "Saving…" : "Activate account"}
                   </Button>
                 </form>
+              )}
+
+              {mode === "link-expired" && (
+                <div className="space-y-3">
+                  <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-[13px] leading-relaxed text-amber-600 dark:text-amber-400">
+                    {linkError}
+                  </p>
+                  <p className="text-[13px] leading-relaxed text-muted-foreground">
+                    Enter your email address and we&apos;ll send a new link. Use it within the hour to set
+                    your password and activate your account.
+                  </p>
+                  <form onSubmit={handleForgotPassword} className="space-y-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="expired-email">Email</Label>
+                      <Input id="expired-email" type="email" required value={email}
+                        onChange={(e) => setEmail(e.target.value)} placeholder="you@jlsyachts.com" />
+                    </div>
+                    <Button type="submit" disabled={busy} className="w-full">
+                      {busy ? "Sending…" : "Send me a new link"}
+                    </Button>
+                    <button type="button" onClick={() => setMode("signin")}
+                      className="w-full text-center text-xs text-muted-foreground hover:text-foreground transition">
+                      Back to sign in
+                    </button>
+                  </form>
+                </div>
               )}
 
               {mode === "forgot-password" && (
