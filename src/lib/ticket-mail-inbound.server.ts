@@ -4,15 +4,14 @@
  * Every notification we send says "Reply to this email to add to your ticket";
  * this is what makes that true. Polls the itsupport mailbox via Graph, matches
  * the ticket reference in the subject (`[SD-0019]`), and appends the reply to
- * that ticket's thread so it appears in the app exactly like an in-app message.
+ * that ticket's thread so it appears in the app like an in-app message.
  *
  * Deliberate choices:
  *  • Dedupe in our own table (ticket_mail_processed), NOT by marking mail read —
  *    the team works this mailbox by hand and we must not touch their unread state.
  *  • Our own outbound notifications are recognised and skipped, so a ticket can
  *    never echo its own emails back into itself.
- *  • Quoted history is trimmed, so the thread shows what the person actually
- *    wrote rather than the whole chain each time.
+ *  • The body is reduced to what the person actually wrote (see extractReplyText).
  */
 import { createClient } from '@supabase/supabase-js'
 import { TICKET_MAIL_SENDER, getMailGraphTokenForRead } from '@/lib/graph-mail.server'
@@ -26,27 +25,98 @@ function admin() {
 /** `[SD-0019] …` anywhere in the subject (also matches JLS-0003-style refs). */
 const TICKET_REF = /\[?\b([A-Z]{2,5}-\d{2,6})\b\]?/
 
-/**
- * Strip quoted history and signatures so the appended message is just the new
- * text. Graph gives us the plain-text body; replies pile the whole chain below.
- */
-export function extractReplyText(raw: string): string {
-  const lines = String(raw ?? '').replace(/\r/g, '').split('\n')
+// ─── Body cleanup ──────────────────────────────────────────────────────────────
+// Real replies arrive wrapped in three kinds of noise, all of which made the
+// ticket thread unreadable: the mail gateway's "Trusted Sender" banner ABOVE the
+// message, a signature block with no delimiter (name, title, phone, URL, city),
+// and a legal disclaimer. The patterns below come from the bodies we actually
+// received on SD-0019, not from guesswork.
+
+/** Invisible characters Outlook sprinkles through signatures. */
+const ZERO_WIDTH = new RegExp('[​-‏  ﻿]', 'g')
+const NBSP = new RegExp(' ', 'g')
+
+/** Security-gateway notices that sit above the real message. */
+const GATEWAY_BANNER = [
+  /Trusted Sender\s*:/i,
+  /^\s*\[?\s*EXTERNAL\s*\]?\s*[:-]/i,
+  /^\s*CAUTION\s*[:-]/i,
+  /^\s*This (?:message|email) (?:originated|came|was sent) from outside/i,
+  /^\s*External (?:email|sender)\s*[:-]/i,
+  /^\s*You don't often get email from/i,
+]
+
+/** Everything from here down is quoted history, headers or boilerplate. */
+const HARD_BOUNDARY = [
+  /^-{2,}\s*$/, /^_{4,}\s*$/, /^\*{4,}\s*$/,
+  /^-{3,}\s*Original Message/i,
+  /^From\s*:\s/i, /^Sent\s*:\s/i, /^To\s*:\s/i, /^Subject\s*:\s/i,
+  /^On .{5,160}\bwrote\s*:\s*$/i,
+  /^Sent from my /i, /^Get Outlook for /i,
+  // Our own notification template, in case it is quoted back unmarked.
+  /^Sent by JLS Yachts IT Support/i,
+  /^There.s an update on your ticket/i,
+  /^The IT support team has added an update/i,
+  /^Reply to this email if you need anything further/i,
+  /^This (?:e-?mail|message)(?: and any attachments?)?\b.*\b(?:confidential|intended solely|intended recipient)/i,
+  /^(?:Confidentiality|Disclaimer|Legal)\b.*\b(?:notice|statement)/i,
+  /^If you are not the intended recipient/i,
+  /^Please contact the sender if you believe/i,
+]
+
+/** Signature lines — a boundary only once real message text has been seen, so a
+ *  one-word reply ("Thanks") is never swallowed. */
+const SIG_SIGNAL = [
+  /^[A-Z][A-Z'’\-. ]{3,40}$/,                    // ALL-CAPS name
+  /^(?:Kind regards|Best regards|Warm regards|Regards|Many thanks|Thanks|Thank you|Cheers|Sincerely|Yours (?:sincerely|faithfully))[,.!]?\s*$/i,
+  /^\+?[\d][\d\s()\-.]{7,}$/,                         // phone-only line
+  /^(?:www\.|https?:\/\/)\S+$/i,                      // bare URL
+  /^[\w.+-]+@[\w.-]+\.\w{2,}$/,                       // bare email
+  /^(?:Director|Managing Director|Manager|Engineer|Captain|Chief|CEO|CTO|Owner|Partner)$/i,
+]
+
+function tidy(lines: string[]): string {
   const out: string[] = []
+  for (const l of lines) {
+    // Collapse runs of blank lines — signatures leave a dozen behind.
+    if (!l.trim() && (!out.length || !out[out.length - 1].trim())) continue
+    out.push(l.replace(/[ \t]+$/, ''))
+  }
+  while (out.length && !out[out.length - 1].trim()) out.pop()
+  return out.join('\n').trim()
+}
+
+/** Reduce a received email to just what the person actually wrote. */
+export function extractReplyText(raw: string): string {
+  const norm = String(raw ?? '').replace(/\r/g, '').replace(ZERO_WIDTH, '').replace(NBSP, ' ')
+  let lines = norm.split('\n')
+
+  // Drop gateway banners sitting above the message.
+  let start = 0
+  for (let i = 0; i < Math.min(lines.length, 6); i++) {
+    if (GATEWAY_BANNER.some(re => re.test(lines[i]))) start = i + 1
+  }
+  lines = lines.slice(start)
+
+  const kept: string[] = []
+  let hasText = false
   for (const line of lines) {
     const t = line.trim()
-    // Common reply/forward separators across Outlook, Gmail and mobile clients.
-    if (/^-{3,}\s*Original Message/i.test(t)) break
-    if (/^_{5,}$/.test(t)) break
-    if (/^From:\s/i.test(t) && out.length) break
-    if (/^On .{5,80}\bwrote:$/i.test(t)) break
-    if (/^Sent from my /i.test(t)) break
-    if (/^Sent by JLS Yachts IT Support/i.test(t)) break
     if (t.startsWith('>')) continue
-    out.push(line)
+    if (HARD_BOUNDARY.some(re => re.test(t))) break
+    if (hasText && SIG_SIGNAL.some(re => re.test(t))) break
+    kept.push(line)
+    if (t) hasText = true
   }
-  return out.join('\n').trim().slice(0, 8000)
+
+  const text = tidy(kept)
+  if (text) return text.slice(0, 8000)
+  // Nothing survived (e.g. the mail was only a signature) — keep the first real
+  // line rather than appending an empty message.
+  return (lines.map(l => l.trim()).find(Boolean) ?? '').slice(0, 500)
 }
+
+// ─── Poller ────────────────────────────────────────────────────────────────────
 
 type GraphMessage = {
   id: string
@@ -64,7 +134,7 @@ export async function pollTicketMailbox(): Promise<InboundResult | null> {
   let token: string
   try {
     token = await getMailGraphTokenForRead()
-  } catch (e: any) {
+  } catch {
     // No mail credentials configured — stay silent rather than logging every tick.
     return null
   }
