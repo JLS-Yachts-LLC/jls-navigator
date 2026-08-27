@@ -122,7 +122,12 @@ export function ShipSyncPage({ initialTab }: { initialTab?: string } = {}) {
         })}
       </div>
 
-      <div className="pds-scroll min-w-0 flex-1 overflow-auto">
+      {/* min-h-0 is load-bearing: without it this flex-1 child's min-height
+          defaults to its content's height, so it never actually shrinks to
+          fit and the overflow escapes to the New View shell's own <main>
+          instead — which hides its scrollbar app-wide, so scrolling still
+          worked but with no visible thumb (and no pds-scroll styling). */}
+      <div className="pds-scroll min-h-0 min-w-0 flex-1 overflow-auto">
         {loading ? (
           <div className="flex h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
         ) : error ? (
