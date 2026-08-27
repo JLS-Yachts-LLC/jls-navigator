@@ -1,0 +1,17 @@
+-- Applied live via MCP 27 Aug 2026. Recorded here for parity.
+-- Orbit's Small Boats tab was empty because orbit_boats had never been populated,
+-- even though it carries a small_boat_id link for exactly this purpose.
+--
+--   small_boats  = REGISTRATION record (SharePoint "Small Boat Reg" list).
+--   orbit_boats  = OPERATIONAL record — engine hours, services, defects,
+--                  checklists. Orbit's jobs/defects/checklists reference
+--                  orbit_boats.id, so the tables stay separate and are joined by
+--                  small_boat_id.
+--
+-- A trigger on small_boats keeps the two in step: the registry owns a boat's
+-- identity (name, licence, expiry) and whether it is live; Orbit owns everything
+-- operational, which is never overwritten.
+--
+-- See the applied migration 'orbit_boats_from_small_boats' for the full body:
+--   orbit_parse_length(), orbit_boat_type_from_registry(),
+--   sync_orbit_boat_from_small_boat() + trg_sync_orbit_boat.
