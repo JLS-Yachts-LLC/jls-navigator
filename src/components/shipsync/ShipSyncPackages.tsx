@@ -12,45 +12,13 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Plus, Search, Loader2, Trash2, Camera, FileText, ScanLine } from "lucide-react";
 import { BarcodeScannerDialog } from "@/components/shipsync/BarcodeScanner";
-import { StatusBadge, fmtDate, mondayRow, extraMondayColumns } from "@/components/shipsync/shared";
+import { StatusBadge, fmtDate } from "@/components/shipsync/shared";
 import { ALL_ZONES, STATUS_META, type PackageStatus, type ShipSyncPackage } from "@/lib/shipsync/model";
 import { createPackage, patchPackage, deletePackage, uploadShipSyncImage } from "@/lib/shipsync/data";
 import type { ShipSyncData } from "@/components/shipsync-page";
 
 const STATUS_OPTIONS = Object.keys(STATUS_META) as PackageStatus[];
 const PRIORITIES = [{ v: 1, l: "1 — High" }, { v: 2, l: "2 — Normal" }, { v: 3, l: "3 — Low" }];
-
-/** Titles the fixed columns below already show — Monday columns matching these
- *  are not duplicated as extra columns. */
-const COVERED = [
-  "air waybill", "waybill", "awb", "tracking", "client", "vessel", "boat", "yacht",
-  "date received", "received", "consignee", "owner", "receiver", "number of packages",
-  "no. of packages", "packages", "courier", "shipment type", "delivery note",
-  "driver", "date delivered", "delivered", "document", "file", "zone", "status",
-];
-
-/**
- * One value straight off the Monday board. The importer keeps the row verbatim
- * under extra.monday but only maps part of it onto our own columns, so values
- * Monday fills that we have no field for (Receiver) — or that we only set later
- * in our own flow (driver, delivery note, delivered date, files) — would otherwise
- * show as a dash even though they are sitting right there on the record.
- */
-const mondayVal = (p: ShipSyncPackage, column: string): string | null => {
-  const v = mondayRow(p)[column];
-  return typeof v === "string" && v.trim() ? v.trim() : null;
-};
-
-/** Monday keeps delivery-note PDFs in a Files column, as plain URLs. */
-const mondayDocs = (p: ShipSyncPackage): { name: string; url: string }[] =>
-  (mondayVal(p, "Files") ?? "")
-    .split(/[\s,]+/)
-    .filter((u) => u.startsWith("http"))
-    .map((url) => {
-      let name = "Document";
-      try { name = decodeURIComponent(new URL(url).pathname.split("/").pop() || name); } catch { /* keep the default */ }
-      return { name, url };
-    });
 
 type Form = Partial<ShipSyncPackage>;
 const EMPTY: Form = { status: "in_office", num_packages: 1, local_import: "Local" };
@@ -66,10 +34,6 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
   const [scanOpen, setScanOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const set = (p: Form) => setForm((f) => ({ ...f, ...p }));
-
-  // Extra Monday-only columns (not already shown by the fixed columns below),
-  // in board order where known. Empty until a Monday sync has actually run.
-  const mondayColumns = useMemo(() => extraMondayColumns(data.packages, COVERED), [data.packages]);
 
   // Every active vessel + saved destinations/locations (hotels etc.) + any boat
   // already on a package — so you can check a package in against any of them,
@@ -88,7 +52,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
     if (statusFilter !== "active" && statusFilter !== "all" && p.status !== statusFilter) return false;
     if (search.trim()) {
       const s = search.toLowerCase();
-      if (![p.barcode, p.boat_name, p.package_owner, p.courier, p.description, ...Object.values(mondayRow(p))]
+      if (![p.barcode, p.boat_name, p.package_owner, p.courier, p.description]
         .join(" ").toLowerCase().includes(s)) return false;
     }
     return true;
@@ -165,19 +129,25 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
         <Button size="sm" onClick={openNew} className="ml-auto h-9 gap-1.5"><Plus className="h-4 w-4" /> Check in package</Button>
       </div>
 
-      <div className="relative min-h-0 min-w-0 flex-1">
-        <div className="absolute inset-0 overflow-auto rounded-xl border border-border bg-card">
-        <table className="w-full min-w-[1400px] text-sm">
-          <thead className="sticky top-0 z-10"><tr className="border-b border-border bg-card text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-            {["Air waybill/tracking info", "Client", "Date Received", "Consignee", "Receiver", "Number of Packages", "Courier", "Shipment Type", "Delivery Note Number", "Driver", "Date Delivered", "Documents", "Status"].map((h, i) => (
-              <th key={`${h}-${i}`} className="px-3 py-2.5 whitespace-nowrap">{h}</th>
-            ))}
-            {mondayColumns.map((c) => <th key={c} className="px-3 py-2.5 whitespace-nowrap">{c}</th>)}
-            <th></th>
-          </tr></thead>
+      <div className="min-h-0 min-w-0 flex-1 overflow-auto rounded-xl border border-border bg-card">
+        {/* border-separate + box-shadow row dividers, will-change-transform on
+            the sticky header: same pattern as the Import and Yacht Shipments
+            boards — border-collapse tables let the row scrolling up behind a
+            sticky <thead> bleed through as a ghost overlap in Chrome, and
+            border-b on a <tr> stops painting under border-separate (that
+            model only recognises borders on <td>/<th>, not <tr>). */}
+        <table className="w-full min-w-[1400px] border-separate border-spacing-0 text-sm">
+          <thead className="sticky top-0 z-10 will-change-transform">
+            <tr className="bg-card text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground shadow-[inset_0_-1px_0_0_var(--border)]">
+              {["Air waybill/tracking info", "Client", "Date Received", "Consignee", "Receiver", "Number of Packages", "Courier", "Shipment Type", "Delivery Note Number", "Driver", "Date Delivered", "Documents", "Status"].map((h, i) => (
+                <th key={`${h}-${i}`} className="px-3 py-2.5 whitespace-nowrap">{h}</th>
+              ))}
+              <th></th>
+            </tr>
+          </thead>
           <tbody>
             {filtered.length === 0 ? (
-              <tr><td colSpan={14 + mondayColumns.length} className="px-4 py-12 text-center text-sm text-muted-foreground">
+              <tr><td colSpan={14} className="px-4 py-12 text-center text-sm text-muted-foreground">
                 {data.packages.length === 0 ? (
                   <div className="flex flex-col items-center gap-3">
                     <span>No packages yet — check one in to get started.</span>
@@ -188,20 +158,20 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
             ) : filtered.map((p) => {
               const note = data.notes.find((n) => n.id === p.delivery_note_id);
               const driver = data.drivers.find((d) => d.id === p.driver_id);
-              const docs = p.documents?.length ? p.documents : mondayDocs(p);
+              const docs = p.documents ?? [];
               return (
-                <tr key={p.id} onClick={() => openEdit(p)} className="group cursor-pointer border-b border-border/40 hover:bg-accent/20">
+                <tr key={p.id} onClick={() => openEdit(p)} className="group cursor-pointer shadow-[inset_0_-1px_0_0_color-mix(in_oklab,var(--border)_40%,transparent)] hover:bg-accent/20">
                   <td className="px-3 py-2.5 font-mono text-[12px] text-foreground whitespace-nowrap">{p.barcode ?? "—"}</td>
                   <td className="px-3 py-2.5 font-medium whitespace-nowrap">{p.boat_name ?? "—"}</td>
                   <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{fmtDate(p.received_at)}</td>
                   <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{p.package_owner ?? "—"}</td>
-                  <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{p.receiver_full_name ?? mondayVal(p, "Receiver") ?? "—"}</td>
+                  <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{p.receiver_full_name ?? "—"}</td>
                   <td className="px-3 py-2.5 tabular-nums text-muted-foreground text-center">{p.num_packages ?? 1}</td>
                   <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{p.courier ?? "—"}</td>
                   <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{p.local_import ?? "—"}</td>
-                  <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{p.delivery_note_no ?? note?.number ?? mondayVal(p, "Delivery Note Number") ?? "—"}</td>
-                  <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{driver?.name ?? mondayVal(p, "Driver") ?? "—"}</td>
-                  <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{fmtDate(p.delivered_at ?? mondayVal(p, "Date Delivered"))}</td>
+                  <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{p.delivery_note_no ?? note?.number ?? "—"}</td>
+                  <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{driver?.name ?? "—"}</td>
+                  <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{fmtDate(p.delivered_at)}</td>
                   <td className="px-3 py-2.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                     {docs.length === 0 ? <span className="text-muted-foreground">—</span> : (
                       <div className="flex flex-wrap gap-1.5">
@@ -220,9 +190,6 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
                       <SelectContent>{STATUS_OPTIONS.map((s) => <SelectItem key={s} value={s}>{STATUS_META[s].label}</SelectItem>)}</SelectContent>
                     </Select>
                   </td>
-                  {mondayColumns.map((c) => (
-                    <td key={c} className="px-3 py-2.5 whitespace-nowrap text-muted-foreground">{mondayRow(p)[c] || "—"}</td>
-                  ))}
                   <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
                     <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground/60 hover:text-destructive opacity-0 group-hover:opacity-100" onClick={() => setDelTarget(p)}>
                       <Trash2 className="h-3.5 w-3.5" />
@@ -233,7 +200,6 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
             })}
           </tbody>
         </table>
-        </div>
       </div>
 
       {/* Check-in / edit dialog */}
