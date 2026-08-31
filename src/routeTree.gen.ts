@@ -109,6 +109,8 @@ import { Route as AppPackagesDeliveriesRouteImport } from './routes/_app.package
 import { Route as AppOrbitRequestsRouteImport } from './routes/_app.orbit.requests'
 import { Route as AppOrbitMaintenanceRouteImport } from './routes/_app.orbit.maintenance'
 import { Route as AppOrbitDefectsRouteImport } from './routes/_app.orbit.defects'
+import { Route as AppOrbitBoatsRouteImport } from './routes/_app.orbit.boats'
+import { Route as AppOrbitApprovalsRouteImport } from './routes/_app.orbit.approvals'
 import { Route as AppOrbitProjectIdRouteImport } from './routes/_app.orbit.$projectId'
 import { Route as AppItTicketsTicketIdRouteImport } from './routes/_app.it-tickets.$ticketId'
 import { Route as AppGuidesDepartmentRouteImport } from './routes/_app.guides.$department'
@@ -658,6 +660,16 @@ const AppOrbitDefectsRoute = AppOrbitDefectsRouteImport.update({
   path: '/defects',
   getParentRoute: () => AppOrbitRoute,
 } as any)
+const AppOrbitBoatsRoute = AppOrbitBoatsRouteImport.update({
+  id: '/boats',
+  path: '/boats',
+  getParentRoute: () => AppOrbitRoute,
+} as any)
+const AppOrbitApprovalsRoute = AppOrbitApprovalsRouteImport.update({
+  id: '/approvals',
+  path: '/approvals',
+  getParentRoute: () => AppOrbitRoute,
+} as any)
 const AppOrbitProjectIdRoute = AppOrbitProjectIdRouteImport.update({
   id: '/$projectId',
   path: '/$projectId',
@@ -971,6 +983,8 @@ export interface FileRoutesByFullPath {
   '/guides/$department': typeof AppGuidesDepartmentRouteWithChildren
   '/it-tickets/$ticketId': typeof AppItTicketsTicketIdRoute
   '/orbit/$projectId': typeof AppOrbitProjectIdRoute
+  '/orbit/approvals': typeof AppOrbitApprovalsRoute
+  '/orbit/boats': typeof AppOrbitBoatsRoute
   '/orbit/defects': typeof AppOrbitDefectsRoute
   '/orbit/maintenance': typeof AppOrbitMaintenanceRoute
   '/orbit/requests': typeof AppOrbitRequestsRouteWithChildren
@@ -1100,6 +1114,8 @@ export interface FileRoutesByTo {
   '/esign/$documentId': typeof AppEsignDocumentIdRoute
   '/it-tickets/$ticketId': typeof AppItTicketsTicketIdRoute
   '/orbit/$projectId': typeof AppOrbitProjectIdRoute
+  '/orbit/approvals': typeof AppOrbitApprovalsRoute
+  '/orbit/boats': typeof AppOrbitBoatsRoute
   '/orbit/defects': typeof AppOrbitDefectsRoute
   '/orbit/maintenance': typeof AppOrbitMaintenanceRoute
   '/packages/deliveries': typeof AppPackagesDeliveriesRoute
@@ -1244,6 +1260,8 @@ export interface FileRoutesById {
   '/_app/guides/$department': typeof AppGuidesDepartmentRouteWithChildren
   '/_app/it-tickets/$ticketId': typeof AppItTicketsTicketIdRoute
   '/_app/orbit/$projectId': typeof AppOrbitProjectIdRoute
+  '/_app/orbit/approvals': typeof AppOrbitApprovalsRoute
+  '/_app/orbit/boats': typeof AppOrbitBoatsRoute
   '/_app/orbit/defects': typeof AppOrbitDefectsRoute
   '/_app/orbit/maintenance': typeof AppOrbitMaintenanceRoute
   '/_app/orbit/requests': typeof AppOrbitRequestsRouteWithChildren
@@ -1389,6 +1407,8 @@ export interface FileRouteTypes {
     | '/guides/$department'
     | '/it-tickets/$ticketId'
     | '/orbit/$projectId'
+    | '/orbit/approvals'
+    | '/orbit/boats'
     | '/orbit/defects'
     | '/orbit/maintenance'
     | '/orbit/requests'
@@ -1518,6 +1538,8 @@ export interface FileRouteTypes {
     | '/esign/$documentId'
     | '/it-tickets/$ticketId'
     | '/orbit/$projectId'
+    | '/orbit/approvals'
+    | '/orbit/boats'
     | '/orbit/defects'
     | '/orbit/maintenance'
     | '/packages/deliveries'
@@ -1661,6 +1683,8 @@ export interface FileRouteTypes {
     | '/_app/guides/$department'
     | '/_app/it-tickets/$ticketId'
     | '/_app/orbit/$projectId'
+    | '/_app/orbit/approvals'
+    | '/_app/orbit/boats'
     | '/_app/orbit/defects'
     | '/_app/orbit/maintenance'
     | '/_app/orbit/requests'
@@ -2442,6 +2466,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrbitDefectsRouteImport
       parentRoute: typeof AppOrbitRoute
     }
+    '/_app/orbit/boats': {
+      id: '/_app/orbit/boats'
+      path: '/boats'
+      fullPath: '/orbit/boats'
+      preLoaderRoute: typeof AppOrbitBoatsRouteImport
+      parentRoute: typeof AppOrbitRoute
+    }
+    '/_app/orbit/approvals': {
+      id: '/_app/orbit/approvals'
+      path: '/approvals'
+      fullPath: '/orbit/approvals'
+      preLoaderRoute: typeof AppOrbitApprovalsRouteImport
+      parentRoute: typeof AppOrbitRoute
+    }
     '/_app/orbit/$projectId': {
       id: '/_app/orbit/$projectId'
       path: '/$projectId'
@@ -2956,6 +2994,8 @@ const AppOrbitRequestsRouteWithChildren =
 
 interface AppOrbitRouteChildren {
   AppOrbitProjectIdRoute: typeof AppOrbitProjectIdRoute
+  AppOrbitApprovalsRoute: typeof AppOrbitApprovalsRoute
+  AppOrbitBoatsRoute: typeof AppOrbitBoatsRoute
   AppOrbitDefectsRoute: typeof AppOrbitDefectsRoute
   AppOrbitMaintenanceRoute: typeof AppOrbitMaintenanceRoute
   AppOrbitRequestsRoute: typeof AppOrbitRequestsRouteWithChildren
@@ -2964,6 +3004,8 @@ interface AppOrbitRouteChildren {
 
 const AppOrbitRouteChildren: AppOrbitRouteChildren = {
   AppOrbitProjectIdRoute: AppOrbitProjectIdRoute,
+  AppOrbitApprovalsRoute: AppOrbitApprovalsRoute,
+  AppOrbitBoatsRoute: AppOrbitBoatsRoute,
   AppOrbitDefectsRoute: AppOrbitDefectsRoute,
   AppOrbitMaintenanceRoute: AppOrbitMaintenanceRoute,
   AppOrbitRequestsRoute: AppOrbitRequestsRouteWithChildren,
@@ -3219,12 +3261,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-  }
-}
