@@ -9,7 +9,7 @@ import { RouteMapDialog, type RouteStop } from "@/components/shipsync/RouteMapDi
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/shipsync/shared";
 import {
-  createDeliveryNote, setNoteDriver, unassignPackage, deleteRun,
+  createDeliveryNote, setNoteDriver, unassignPackage, deleteRun, saveDestination as saveBoatDestination,
 } from "@/lib/shipsync/data";
 import { supabase } from "@/integrations/supabase/client";
 import { useGoogleMaps } from "@/lib/google-maps";
@@ -149,7 +149,20 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
   }
   async function saveDestination(patch: Partial<ShipSyncDeliveryNote>) {
     if (!sel) return;
-    await (supabase as any).from("shipsync_delivery_notes").update(patch).eq("id", sel.id); await reload();
+    await (supabase as any).from("shipsync_delivery_notes").update(patch).eq("id", sel.id);
+    // Also remember this on the boat's own saved destination (shipsync_destinations,
+    // the same table Routing's per-stop address field writes to) — otherwise typing
+    // it in here only fixes THIS note, and the next delivery to the same boat shows
+    // up blank again. Single-boat notes only; a multi-boat note has no one boat to
+    // attribute the address to.
+    if (sel.boat_name) {
+      const destPatch: Record<string, unknown> = { type: "vessel" };
+      if ("destination_address" in patch) destPatch.address = patch.destination_address;
+      if ("destination_lat" in patch) destPatch.lat = patch.destination_lat;
+      if ("destination_lng" in patch) destPatch.lng = patch.destination_lng;
+      if (Object.keys(destPatch).length > 1) await saveBoatDestination({ boat_name: sel.boat_name, ...destPatch } as any);
+    }
+    await reload();
   }
   saveDestinationRef.current = saveDestination;
   async function setNoteStatus(status: string) {
