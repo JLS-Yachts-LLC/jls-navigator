@@ -89,13 +89,15 @@ type CellSpec =
   | { kind: "field"; col: ColDef }
   | { kind: "documents" };
 
-/** Left-to-right, matching the Monday board's own column order (AWB, CLIENT,
- *  Date, Files) — "Subitems" and the linked-board "Mirror" status column
- *  aren't modelled here (every sampled row had both blank); they still show
- *  via the extra-columns fallback if Monday ever populates them. */
+/** Left-to-right, matching the Monday board's own column order exactly
+ *  (Name, AWB, CLIENT, Date, Files) — "Subitems" and the linked-board
+ *  "Mirror" status column aren't modelled here (every sampled row had both
+ *  blank); they still show via the extra-columns fallback if Monday ever
+ *  populates them. */
 const CELLS: CellSpec[] = [
+  { kind: "field", col: fieldCol("barcode", "Name", "w-32", "text", "barcode") },
   { kind: "field", col: mondayCol("awb", "AWB", "w-40", "AWB") },
-  { kind: "field", col: fieldCol("boat_name", "Client", "w-32", "text", "boat_name") },
+  { kind: "field", col: fieldCol("boat_name", "CLIENT", "w-32", "text", "boat_name") },
   { kind: "field", col: fieldCol("received_at", "Date", "w-28", "date", "received_at") },
   { kind: "documents" },
 ];
@@ -170,15 +172,15 @@ export function ShipSyncEdasBoard() {
     } catch (e: any) { toast.error(e?.message ?? "Couldn't remove file"); }
   }
 
-  async function addShipment(g: GroupInfo, awbNumber: string) {
-    const awb = awbNumber.trim();
-    if (!awb) return;
+  async function addShipment(g: GroupInfo, name: string) {
+    const barcode = name.trim();
+    if (!barcode) return;
     setAddingIn(null);
     setNewName("");
     try {
       const created = await createPackage({
-        local_import: "EDAS", status: "in_office",
-        extra: { monday_group_title: g.title, monday_group_position: g.position, monday: { AWB: awb } },
+        barcode, local_import: "EDAS", status: "in_office",
+        extra: { monday_group_title: g.title, monday_group_position: g.position },
       });
       setRows((prev) => [...prev, created]);
     } catch (e: any) {
@@ -414,7 +416,7 @@ export function ShipSyncEdasBoard() {
                                   if (e.key === "Enter") void addShipment(g, newName);
                                   if (e.key === "Escape") { setAddingIn(null); setNewName(""); }
                                 }}
-                                placeholder="AWB…"
+                                placeholder="Name…"
                                 className="h-7 w-56 text-xs"
                               />
                               <Button size="sm" className="h-7 text-xs" disabled={!newName.trim()} onClick={() => void addShipment(g, newName)}>Add</Button>
@@ -442,10 +444,10 @@ export function ShipSyncEdasBoard() {
           <DialogHeader><DialogTitle>New EDAS entry</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5">
-              <Label htmlFor="np-name">AWB</Label>
+              <Label htmlFor="np-name">Name</Label>
               <Input id="np-name" autoFocus value={npName} onChange={(e) => setNpName(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter" && npName.trim() && npGroup) void submitNewPackage(); }}
-                placeholder="AWB…" />
+                placeholder="Name…" />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="np-group">Group</Label>
@@ -472,7 +474,7 @@ export function ShipSyncEdasBoard() {
           <AlertDialogHeader>
             <AlertDialogTitle>{(confirmDeleteIds?.length ?? 0) > 1 ? `Remove ${confirmDeleteIds?.length} entries?` : "Remove entry?"}</AlertDialogTitle>
             <AlertDialogDescription>
-              {deleteTarget ? `${mondayText(deleteTarget, "AWB") || deleteTarget.boat_name || "This entry"} will be permanently removed.`
+              {deleteTarget ? `${deleteTarget.barcode ?? deleteTarget.boat_name ?? "This entry"} will be permanently removed.`
                 : `${confirmDeleteIds?.length ?? 0} entries will be permanently removed.`}
             </AlertDialogDescription>
           </AlertDialogHeader>

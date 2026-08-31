@@ -192,11 +192,11 @@ async function importInner(): Promise<MondayEdasBoardResult> {
     if (!item.name?.trim()) continue // Monday's own blank placeholder rows
     const row = byTitle(item, colById)
     const record: Record<string, unknown> = {
-      // The item's own name is itself a tracking-style reference on this
-      // board (e.g. "1010003085426") — prefer the dedicated AWB column when
-      // it's set (it sometimes carries a different/compound carrier
-      // reference), falling back to the item name otherwise.
-      barcode: pick(row, 'awb') ?? item.name,
+      // The item's own name (e.g. "1010003085426") and the dedicated AWB
+      // column (e.g. "955287LGFVF / 1Z955287046104834") are genuinely
+      // different values on this board, not a fallback pair — both are
+      // shown as their own column (Name / AWB), matching Monday exactly.
+      barcode: item.name,
       boat_name: pick(row, 'client')?.toUpperCase() ?? null,
       documents: toDocuments(pick(row, 'files')),
       received_at: toDate(pick(row, 'date')),
