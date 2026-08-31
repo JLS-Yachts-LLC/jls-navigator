@@ -45,6 +45,31 @@ function FocusController({ focus }: { focus: { id: string; lat: number; lon: num
 const fmtTime = (iso: string | null) =>
   iso ? new Date(iso).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—";
 
+/** ais_eta is whatever string the AIS provider sent — usually parseable, but
+ *  shown verbatim if it isn't (still better than dropping it silently). */
+const fmtEta = (raw: string | null) => {
+  if (!raw) return null;
+  const d = new Date(raw);
+  return isNaN(d.getTime()) ? raw : fmtTime(d.toISOString());
+};
+
+/** Same "is this vessel moving" call the sync jobs use (myshiptracking.server.ts
+ *  / vesselfinder.server.ts) — so "Underway since" / "Last arrived" agrees with
+ *  the status line and the marker's moving/stopped colour above it. */
+function isMoving(y: AisYacht): boolean {
+  if (y.navstat === 0 || y.navstat === 8) return true;
+  if (y.navstat === 1 || y.navstat === 5) return false;
+  return (y.speed ?? 0) > 0.5;
+}
+
+/** "Underway since 3 Jul, 08:34" while moving, "Arrived 3 Jul, 13:58" once
+ *  stopped — the closest thing to "where it's coming from" AIS actually
+ *  gives us: it broadcasts a destination, never an origin. */
+function voyageLine(y: AisYacht): string | null {
+  if (isMoving(y)) return y.underwaySince ? `Underway since ${fmtTime(y.underwaySince)}` : null;
+  return y.lastArrivedAt ? `Arrived ${fmtTime(y.lastArrivedAt)}` : null;
+}
+
 export default function AisFleetMap({
   yachts, focus, fitOnce,
 }: {
@@ -61,16 +86,26 @@ export default function AisFleetMap({
       {located.map(y => (
         <Marker key={y.id} position={[y.lat!, y.lon!]} icon={vesselIcon(y)}>
           <Popup>
-            <div style={{ minWidth: 180 }}>
-              <div style={{ fontWeight: 700, marginBottom: 2 }}>{y.vessel_name}</div>
-              <div style={{ fontSize: 12, color: "#475569" }}>
-                {y.mmsi ? <div>MMSI: {y.mmsi}</div> : null}
-                <div>Speed: {y.speed != null ? `${y.speed.toFixed(1)} kn` : "—"}</div>
-                <div>Course: {y.course != null ? `${Math.round(y.course)}°` : "—"}</div>
-                <div>Status: {y.navstat != null ? (NAVSTAT[y.navstat] ?? `#${y.navstat}`) : "—"}</div>
-                {y.destination ? <div>Dest: {y.destination}</div> : null}
-                <div>Updated: {fmtTime(y.positionAt)}</div>
+            <div style={{ minWidth: 220 }}>
+              <div style={{ fontWeight: 700 }}>{y.vessel_name}</div>
+              {(y.vesselType || y.flag || y.lengthOverallM) && (
+                <div style={{ fontSize: 11, color: "#64748b", marginBottom: 6 }}>
+                  {[y.vesselType, y.flag, y.lengthOverallM ? `${y.lengthOverallM}m` : null].filter(Boolean).join(" · ")}
+                </div>
+              )}
+              <div style={{ display: "grid", gridTemplateColumns: "60px 1fr", rowGap: 2, fontSize: 12, color: "#475569" }}>
+                {y.mmsi ? <><span>MMSI</span><span>{y.mmsi}</span></> : null}
+                {y.imo ? <><span>IMO</span><span>{y.imo}</span></> : null}
+                {y.callSign ? <><span>Call sign</span><span>{y.callSign}</span></> : null}
+                {y.portOfRegistry ? <><span>Registered</span><span>{y.portOfRegistry}</span></> : null}
+                <span>Speed</span><span>{y.speed != null ? `${y.speed.toFixed(1)} kn` : "—"}</span>
+                <span>Course</span><span>{y.course != null ? `${Math.round(y.course)}°` : "—"}</span>
+                <span>Status</span><span>{y.navstat != null ? (NAVSTAT[y.navstat] ?? `#${y.navstat}`) : "—"}</span>
+                {y.destination ? <><span>Dest</span><span>{y.destination}</span></> : null}
+                {fmtEta(y.eta) ? <><span>ETA</span><span>{fmtEta(y.eta)}</span></> : null}
+                <span>Updated</span><span>{fmtTime(y.positionAt)}</span>
               </div>
+              {voyageLine(y) ? <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 6 }}>{voyageLine(y)}</div> : null}
             </div>
           </Popup>
         </Marker>

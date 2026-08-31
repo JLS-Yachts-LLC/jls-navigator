@@ -135,6 +135,9 @@ export function MyFleetPage({ focusYachtId }: { focusYachtId?: string | null } =
                   <span className="block truncate text-[10.5px] text-muted-foreground/60">
                     {y.speed != null ? `${y.speed.toFixed(1)} kn` : "—"} · {fmtTime(y.positionAt)}
                   </span>
+                  {y.destination && (
+                    <span className="block truncate text-[10.5px] text-muted-foreground/50">→ {y.destination}</span>
+                  )}
                 </span>
               </button>
             ))}

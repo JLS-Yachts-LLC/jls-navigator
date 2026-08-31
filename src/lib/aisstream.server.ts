@@ -24,6 +24,12 @@ export interface AisYacht {
   id: string;
   vessel_name: string;
   mmsi: string | null;
+  imo: string | null;
+  vesselType: string | null;
+  flag: string | null;
+  portOfRegistry: string | null;
+  lengthOverallM: number | null;
+  callSign: string | null;
   lat: number | null;
   lon: number | null;
   speed: number | null;
@@ -31,6 +37,10 @@ export interface AisYacht {
   heading: number | null;
   navstat: number | null;
   destination: string | null;
+  eta: string | null;
+  underwaySince: string | null;
+  lastDepartedAt: string | null;
+  lastArrivedAt: string | null;
   positionAt: string | null;
 }
 
@@ -158,16 +168,29 @@ export const doSyncAis = createServerFn({ method: "POST" }).handler(async () => 
   return await syncAisPositions(25000);
 });
 
-/** Read the fleet's latest known AIS positions for the live map. */
+/** Read the fleet's latest known AIS positions for the live map. Combines
+ *  live AIS columns with the yacht's own static registry details (IMO, flag,
+ *  type, length, call sign) — those never change and cost nothing to show,
+ *  unlike another AIS API call. */
 export const getFleetAisPositions = createServerFn({ method: "GET" }).handler(async (): Promise<{ yachts: AisYacht[]; fetchedAt: string }> => {
   const { data } = await fetchAllRows<any>(() => supabaseAdmin
     .from("yachts")
-    .select("id, vessel_name, mmsi, ais_lat, ais_lon, ais_speed, ais_course, ais_heading, ais_navstat, ais_destination, ais_position_at")
+    .select(`
+      id, vessel_name, mmsi, imo_no, vessel_type, flag, port_of_registry, length_overall_m, radio_call_sign,
+      ais_lat, ais_lon, ais_speed, ais_course, ais_heading, ais_navstat, ais_destination, ais_eta,
+      underway_since, last_departed_at, last_arrived_at, ais_position_at
+    `)
     .order("vessel_name"));
   const yachts: AisYacht[] = (data ?? []).map((y: any) => ({
     id: y.id,
     vessel_name: y.vessel_name,
     mmsi: y.mmsi ?? null,
+    imo: y.imo_no ?? null,
+    vesselType: y.vessel_type ?? null,
+    flag: y.flag ?? null,
+    portOfRegistry: y.port_of_registry ?? null,
+    lengthOverallM: y.length_overall_m ?? null,
+    callSign: y.radio_call_sign ?? null,
     lat: y.ais_lat ?? null,
     lon: y.ais_lon ?? null,
     speed: y.ais_speed ?? null,
@@ -175,6 +198,10 @@ export const getFleetAisPositions = createServerFn({ method: "GET" }).handler(as
     heading: y.ais_heading ?? null,
     navstat: y.ais_navstat ?? null,
     destination: y.ais_destination ?? null,
+    eta: y.ais_eta ?? null,
+    underwaySince: y.underway_since ?? null,
+    lastDepartedAt: y.last_departed_at ?? null,
+    lastArrivedAt: y.last_arrived_at ?? null,
     positionAt: y.ais_position_at ?? null,
   }));
   return { yachts, fetchedAt: new Date().toISOString() };
