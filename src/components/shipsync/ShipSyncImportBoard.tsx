@@ -45,7 +45,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { fmtDate, mondayRow, extraMondayColumns, DocumentDropzoneDialog } from "@/components/shipsync/shared";
+import { fmtDate, mondayRow, extraMondayColumns, DocumentDropzoneDialog, TableChartToggle, StatusBarChart } from "@/components/shipsync/shared";
 import { loadImportPackages, patchPackage, createPackage, deletePackage, addPackageDocuments, removePackageDocument } from "@/lib/shipsync/data";
 import type { ShipSyncPackage } from "@/lib/shipsync/model";
 import { syncMondayImportBoard } from "@/lib/shipsync/monday-import-board.server";
@@ -207,6 +207,7 @@ export function ShipSyncImportBoard() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmDeleteIds, setConfirmDeleteIds] = useState<string[] | null>(null);
   const [docTarget, setDocTarget] = useState<ShipSyncPackage | null>(null);
+  const [view, setView] = useState<"table" | "chart">("table");
 
   function toggleSelect(id: string) {
     setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -307,6 +308,15 @@ export function ShipSyncImportBoard() {
 
   const mondayColumns = useMemo(() => extraMondayColumns(rows, COVERED), [rows]);
 
+  const chartData = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const p of filtered) {
+      const s = mondayText(p, "STATUS");
+      if (s) counts.set(s, (counts.get(s) ?? 0) + 1);
+    }
+    return MONDAY_STATUS_LABELS.map((s) => ({ label: s.label, count: counts.get(s.label) ?? 0, color: s.color }));
+  }, [filtered]);
+
   /** Every group currently known, from the WHOLE data set (not search-filtered) —
    *  so the move-to dropdown never loses an option while searching. */
   const allGroups = useMemo(() => {
@@ -351,6 +361,7 @@ export function ShipSyncImportBoard() {
           <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search import shipments…" className="h-9 w-72 pl-8 text-sm" />
         </div>
         <span className="text-[12px] text-muted-foreground">{filtered.length} of {rows.length}</span>
+        <TableChartToggle value={view} onChange={setView} />
         <Button size="sm" onClick={() => { setNpGroup(allGroups[0]?.title ?? ""); setNpName(""); setNewPackageOpen(true); }} className="ml-auto h-9 gap-1.5">
           <Plus className="h-4 w-4" /> New Package
         </Button>
@@ -365,7 +376,11 @@ export function ShipSyncImportBoard() {
         </Button>
       </div>
 
-      {rows.length === 0 ? (
+      {view === "chart" ? (
+        <div className="min-h-0 flex-1 overflow-auto">
+          <StatusBarChart data={chartData} title="Import shipments by status" />
+        </div>
+      ) : rows.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-card/40 px-6 py-16 text-center">
           <div className="flex h-12 w-12 items-center justify-center rounded-full border border-border bg-background/60">
             <ArrowDownToLine className="h-5 w-5 text-muted-foreground" />

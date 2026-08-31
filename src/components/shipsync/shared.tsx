@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { toast } from "sonner";
-import { Loader2, UploadCloud } from "lucide-react";
+import { Loader2, UploadCloud, Table as TableIcon, BarChart3 } from "lucide-react";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -14,6 +15,13 @@ const TONE: Record<string, string> = {
   emerald: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
   red: "bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/20",
   muted: "bg-muted text-muted-foreground border-border",
+};
+
+/** Same tone vocabulary as TONE above, as real hex — for contexts (recharts
+ *  bar fills) that can't take a Tailwind class. */
+export const TONE_HEX: Record<string, string> = {
+  sky: "#0ea5e9", violet: "#8b5cf6", amber: "#f59e0b", orange: "#f97316",
+  emerald: "#10b981", red: "#ef4444", muted: "#6b7280",
 };
 
 export function StatusBadge({ status }: { status: PackageStatus | string }) {
@@ -123,6 +131,62 @@ export function DocumentDropzoneDialog({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Small segmented control switching a board between its table and its chart
+ *  view — the same "Main table / Chart" split Monday.com boards show. */
+export function TableChartToggle({ value, onChange }: { value: "table" | "chart"; onChange: (v: "table" | "chart") => void }) {
+  return (
+    <div className="inline-flex items-center rounded-lg border border-border bg-muted/30 p-0.5">
+      {([
+        { v: "table" as const, label: "Table", Icon: TableIcon },
+        { v: "chart" as const, label: "Chart", Icon: BarChart3 },
+      ]).map(({ v, label, Icon }) => (
+        <button key={v} type="button" onClick={() => onChange(v)}
+          className={cn(
+            "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-medium transition-colors",
+            value === v ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+          )}>
+          <Icon className="h-3.5 w-3.5" /> {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Bar chart of counts per status/group, coloured to match each label's own
+ *  badge colour — the board's "Chart" view. Skips zero-count labels, same as
+ *  Monday's own chart (an all-zero board renders an empty-state instead). */
+export function StatusBarChart({
+  data, title,
+}: {
+  data: { label: string; count: number; color: string }[];
+  title: string;
+}) {
+  const bars = data.filter((d) => d.count > 0);
+  return (
+    <div className="rounded-xl border border-border bg-card p-4">
+      <div className="mb-3 text-sm font-semibold">{title}</div>
+      {bars.length === 0 ? (
+        <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">Nothing to chart yet.</div>
+      ) : (
+        <ResponsiveContainer width="100%" height={340}>
+          <BarChart data={bars} margin={{ top: 8, right: 8, left: 0, bottom: 64 }}>
+            <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--border)" />
+            <XAxis dataKey="label" tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+              interval={0} angle={-35} textAnchor="end" height={80} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
+            <YAxis allowDecimals={false} width={32} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+              axisLine={false} tickLine={false} />
+            <Tooltip cursor={{ fill: "var(--muted)" }}
+              contentStyle={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }} />
+            <Bar dataKey="count" radius={[4, 4, 0, 0]} maxBarSize={56}>
+              {bars.map((d, i) => <Cell key={i} fill={d.color} />)}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      )}
+    </div>
   );
 }
 

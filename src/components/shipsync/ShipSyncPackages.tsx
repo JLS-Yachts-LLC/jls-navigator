@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Plus, Search, Loader2, Trash2, Camera, FileText, ScanLine, ChevronDown, ChevronRight, X } from "lucide-react";
 import { BarcodeScannerDialog } from "@/components/shipsync/BarcodeScanner";
-import { StatusBadge, fmtDate, DocumentDropzoneDialog } from "@/components/shipsync/shared";
+import { StatusBadge, fmtDate, DocumentDropzoneDialog, TableChartToggle, StatusBarChart, TONE_HEX } from "@/components/shipsync/shared";
 import { ALL_ZONES, STATUS_META, type PackageStatus, type ShipSyncPackage } from "@/lib/shipsync/model";
 import { createPackage, patchPackage, deletePackage, uploadShipSyncImage, addPackageDocuments, removePackageDocument } from "@/lib/shipsync/data";
 import type { ShipSyncData } from "@/components/shipsync-page";
@@ -59,6 +59,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
   const [delTarget, setDelTarget] = useState<ShipSyncPackage | null>(null);
   const [docTarget, setDocTarget] = useState<ShipSyncPackage | null>(null);
   const [scanOpen, setScanOpen] = useState(false);
+  const [view, setView] = useState<"table" | "chart">("table");
   const fileRef = useRef<HTMLInputElement>(null);
   const set = (p: Form) => setForm((f) => ({ ...f, ...p }));
 
@@ -95,6 +96,12 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
     }
     return STATUS_OPTIONS.filter((s) => map.has(s)).map((s) => ({ status: s, rows: map.get(s)! }));
   }, [filtered]);
+
+  const chartData = useMemo(() => STATUS_OPTIONS.map((s) => ({
+    label: STATUS_META[s].label,
+    count: filtered.filter((p) => p.status === s).length,
+    color: TONE_HEX[STATUS_META[s].tone] ?? TONE_HEX.muted,
+  })), [filtered]);
 
   function toggleGroup(status: PackageStatus) {
     setCollapsed((prev) => ({ ...prev, [status]: !prev[status] }));
@@ -174,9 +181,15 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
           <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search barcode, boat, owner, courier…" className="h-9 w-72 pl-8 text-sm" />
         </div>
         <span className="text-[12px] text-muted-foreground">{filtered.length} of {data.packages.length}</span>
+        <TableChartToggle value={view} onChange={setView} />
         <Button size="sm" onClick={openNew} className="ml-auto h-9 gap-1.5"><Plus className="h-4 w-4" /> Check in package</Button>
       </div>
 
+      {view === "chart" ? (
+        <div className="min-h-0 flex-1 overflow-auto">
+          <StatusBarChart data={chartData} title="Local packages by status" />
+        </div>
+      ) : (
       <div className="pds-scroll min-h-0 min-w-0 flex-1 overflow-auto rounded-xl border border-border bg-card">
         {/* border-separate + box-shadow row dividers, will-change-transform on
             the sticky header: same pattern as the Import and Yacht Shipments
@@ -286,6 +299,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
           </tbody>
         </table>
       </div>
+      )}
 
       {/* Check-in / edit dialog */}
       <Dialog open={open} onOpenChange={setOpen}>
