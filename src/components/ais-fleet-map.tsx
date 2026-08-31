@@ -1,5 +1,5 @@
-import { Fragment, useEffect, useMemo } from "react";
-import { MapContainer, TileLayer, Marker, Popup, Polyline, CircleMarker, useMap } from "react-leaflet";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { MapContainer, TileLayer, Marker, Popup, Polyline, CircleMarker, useMap, useMapEvent } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { AisYacht } from "@/lib/aisstream.server";
@@ -42,6 +42,13 @@ function FocusController({ focus }: { focus: { id: string; lat: number; lon: num
   return null;
 }
 
+/** Clicking bare map background (not a marker — markers/paths stop the click
+ *  from bubbling here) clears the selection, hiding whatever route line was showing. */
+function DeselectOnMapClick({ onDeselect }: { onDeselect: () => void }) {
+  useMapEvent("click", onDeselect);
+  return null;
+}
+
 const fmtTime = (iso: string | null) =>
   iso ? new Date(iso).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—";
 
@@ -78,17 +85,24 @@ export default function AisFleetMap({
   fitOnce: React.MutableRefObject<boolean>;
 }) {
   const located = useMemo(() => yachts.filter(y => y.lat != null && y.lon != null), [yachts]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Clicking a vessel in the sidebar list (which drives `focus`) selects it
+  // too, same as clicking its marker directly — either way shows its route.
+  useEffect(() => { if (focus) setSelectedId(focus.id); }, [focus]);
+
   return (
     <MapContainer center={[25.2, 55.3]} zoom={8} className="h-full w-full" style={{ background: "#aadaff" }}>
       <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
       <FitBounds yachts={located} once={fitOnce} />
       <FocusController focus={focus} />
+      <DeselectOnMapClick onDeselect={() => setSelectedId(null)} />
       {located.map(y => {
         const moving = isMoving(y);
-        const hasRoute = y.destLat != null && y.destLon != null;
+        const hasCoords = y.destLat != null && y.destLon != null;
+        const showRoute = hasCoords && y.id === selectedId;
         return (
           <Fragment key={y.id}>
-            {hasRoute && (
+            {showRoute && (
               <>
                 <Polyline
                   positions={[[y.lat!, y.lon!], [y.destLat!, y.destLon!]]}
@@ -100,7 +114,12 @@ export default function AisFleetMap({
                 </CircleMarker>
               </>
             )}
-            <Marker position={[y.lat!, y.lon!]} icon={vesselIcon(y)}>
+            <Marker position={[y.lat!, y.lon!]} icon={vesselIcon(y)}
+              eventHandlers={{
+                click: () => setSelectedId(y.id),
+                popupclose: () => setSelectedId((prev) => (prev === y.id ? null : prev)),
+              }}
+            >
               <Popup>
                 <div style={{ minWidth: 220 }}>
                   <div style={{ fontWeight: 700 }}>{y.vessel_name}</div>
@@ -122,7 +141,7 @@ export default function AisFleetMap({
                     <span>Updated</span><span>{fmtTime(y.positionAt)}</span>
                   </div>
                   {voyageLine(y) ? <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 6 }}>{voyageLine(y)}</div> : null}
-                  {!hasRoute && y.destination && (
+                  {!hasCoords && y.destination && (
                     <div style={{ fontSize: 10.5, color: "#cbd5e1", marginTop: 6 }}>Route line unavailable — destination couldn't be located on the map.</div>
                   )}
                 </div>
