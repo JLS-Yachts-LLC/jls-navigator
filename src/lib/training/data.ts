@@ -69,6 +69,17 @@ export interface TrainingClass {
   updated_at: string
 }
 
+export interface TrainingCalendarEvent {
+  id: string
+  event_date: string
+  title: string
+  time_of_day: string | null
+  category: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
 async function loadAll<T>(table: string, orderCol: string): Promise<T[]> {
   const all: T[] = []
   for (let offset = 0; ; offset += 1000) {
@@ -85,6 +96,7 @@ export const loadInstructors = () => loadAll<TrainingInstructor>('training_instr
 export const loadStudents = () => loadAll<TrainingStudent>('training_students', 'full_name')
 export const loadCourses = () => loadAll<TrainingCourse>('training_courses', 'name')
 export const loadClasses = () => loadAll<TrainingClass>('training_classes', 'name')
+export const loadCalendarEvents = () => loadAll<TrainingCalendarEvent>('training_calendar_events', 'event_date')
 
 function makeCrud<T extends { id: string }>(table: string) {
   return {
@@ -108,3 +120,4 @@ export const instructorCrud = makeCrud<TrainingInstructor>('training_instructors
 export const studentCrud = makeCrud<TrainingStudent>('training_students')
 export const courseCrud = makeCrud<TrainingCourse>('training_courses')
 export const classCrud = makeCrud<TrainingClass>('training_classes')
+export const calendarEventCrud = makeCrud<TrainingCalendarEvent>('training_calendar_events')

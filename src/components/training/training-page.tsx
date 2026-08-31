@@ -4,7 +4,7 @@ import { fetchAllRows } from "@/lib/fetch-all";
 import {
   GraduationCap, Award, Loader2, Plus, Search, Pencil, Trash2,
   AlertTriangle, CheckCircle2, Clock, BookOpen, X, ChevronDown, ChevronUp,
-  UserCog, Users, CalendarRange,
+  UserCog, Users, CalendarRange, CalendarDays,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -12,6 +12,7 @@ import { InstructorsTab } from "@/components/training/InstructorsTab";
 import { StudentsTab } from "@/components/training/StudentsTab";
 import { CoursesTab } from "@/components/training/CoursesTab";
 import { ClassesTab } from "@/components/training/ClassesTab";
+import { CalendarTab } from "@/components/training/CalendarTab";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -53,8 +54,8 @@ type Certification = {
   created_at: string;
 };
 
-type Tab = "instructors" | "students" | "courses" | "classes" | "records" | "certifications";
-const SCHOOL_TABS: Tab[] = ["instructors", "students", "courses", "classes"];
+type Tab = "instructors" | "students" | "courses" | "classes" | "calendar" | "records" | "certifications";
+const SCHOOL_TABS: Tab[] = ["instructors", "students", "courses", "classes", "calendar"];
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -199,6 +200,7 @@ export function TrainingPage() {
             ["students", "Students", Users],
             ["courses", "Courses", BookOpen],
             ["classes", "Classes", CalendarRange],
+            ["calendar", "Calendar", CalendarDays],
             ["records", "Records", GraduationCap],
             ["certifications", "Certifications", Award],
           ] as [Tab, string, typeof UserCog][]).map(([t, label, Icon]) => (
@@ -222,6 +224,7 @@ export function TrainingPage() {
           {tab === "students" && <StudentsTab />}
           {tab === "courses" && <CoursesTab />}
           {tab === "classes" && <ClassesTab />}
+          {tab === "calendar" && <CalendarTab />}
         </div>
       )}
 
