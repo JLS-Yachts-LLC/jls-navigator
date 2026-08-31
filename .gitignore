@@ -18,6 +18,9 @@ public/version.json
 # Wrangler
 .wrangler/
 
+# Supabase CLI's own version cache — rewritten by every CLI command, no functional value
+supabase/.temp/cli-latest
+
 # OS
 .DS_Store
 Thumbs.db

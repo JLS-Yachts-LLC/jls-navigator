@@ -4,8 +4,8 @@
     {
       "name": "Dev Server",
       "runtimeExecutable": "C:\\Program Files\\nodejs\\node.exe",
-      "runtimeArgs": ["node_modules/vite/bin/vite.js", "--port", "5173"],
-      "port": 5173
+      "runtimeArgs": ["node_modules/vite/bin/vite.js"],
+      "port": 8080
     },
     {
       "name": "Preview Server",
