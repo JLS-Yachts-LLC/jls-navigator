@@ -241,3 +241,23 @@ export async function addPackageDocuments(
   }))
   return [...(p.documents ?? []), ...uploaded]
 }
+
+/** Drop one document (e.g. the wrong file was attached) and return the
+ *  remaining array ready to patch onto the package. Also best-effort deletes
+ *  the underlying storage object — failure there (odd URL shape, already
+ *  gone, etc.) never blocks detaching the reference itself. */
+export async function removePackageDocument(
+  p: { documents: { name: string; url: string }[] | null }, index: number,
+): Promise<{ name: string; url: string }[]> {
+  const target = (p.documents ?? [])[index]
+  const documents = (p.documents ?? []).filter((_, i) => i !== index)
+  if (target?.url) {
+    const marker = '/object/public/shipsync/'
+    const at = target.url.indexOf(marker)
+    if (at !== -1) {
+      try { await supabase.storage.from('shipsync').remove([target.url.slice(at + marker.length)]) }
+      catch { /* best-effort — the record's still detached below either way */ }
+    }
+  }
+  return documents
+}

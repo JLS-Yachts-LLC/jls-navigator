@@ -33,7 +33,7 @@
  */
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { Loader2, Search, ChevronDown, ChevronRight, RefreshCw, FileText, ArrowDownToLine, Plus, Trash2 } from "lucide-react";
+import { Loader2, Search, ChevronDown, ChevronRight, RefreshCw, FileText, ArrowDownToLine, Plus, Trash2, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -46,7 +46,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { fmtDate, mondayRow, extraMondayColumns, DocumentDropzoneDialog } from "@/components/shipsync/shared";
-import { loadImportPackages, patchPackage, createPackage, deletePackage, addPackageDocuments } from "@/lib/shipsync/data";
+import { loadImportPackages, patchPackage, createPackage, deletePackage, addPackageDocuments, removePackageDocument } from "@/lib/shipsync/data";
 import type { ShipSyncPackage } from "@/lib/shipsync/model";
 import { syncMondayImportBoard } from "@/lib/shipsync/monday-import-board.server";
 
@@ -243,6 +243,13 @@ export function ShipSyncImportBoard() {
   async function uploadDocuments(p: ShipSyncPackage, files: File[]) {
     const documents = await addPackageDocuments(p, files);
     await commit(p, `${p.id}:documents`, { documents });
+  }
+
+  async function removeDocument(p: ShipSyncPackage, index: number) {
+    try {
+      const documents = await removePackageDocument(p, index);
+      await commit(p, `${p.id}:documents`, { documents });
+    } catch (e: any) { toast.error(e?.message ?? "Couldn't remove file"); }
   }
 
   async function moveGroup(p: ShipSyncPackage, g: GroupInfo) {
@@ -508,10 +515,16 @@ export function ShipSyncImportBoard() {
                                   ) : (
                                     <div className="flex flex-wrap items-center gap-1">
                                       {docs.map((d, i) => (
-                                        <a key={i} href={d.url} target="_blank" rel="noopener noreferrer" title={d.name}
-                                          className="inline-flex max-w-[90px] items-center gap-1 truncate rounded border border-border px-1 py-0.5 text-[10px] text-primary hover:bg-primary/5">
-                                          <FileText className="h-3 w-3 shrink-0" /> <span className="truncate">{d.name}</span>
-                                        </a>
+                                        <span key={i} className="group/doc inline-flex max-w-[100px] items-center gap-1 rounded border border-border pl-1 pr-0.5 py-0.5 text-[10px] text-primary hover:bg-primary/5">
+                                          <a href={d.url} target="_blank" rel="noopener noreferrer" title={d.name}
+                                            className="flex min-w-0 items-center gap-1 truncate">
+                                            <FileText className="h-3 w-3 shrink-0" /> <span className="truncate">{d.name}</span>
+                                          </a>
+                                          <button type="button" onClick={() => removeDocument(p, i)} title="Remove file"
+                                            className="shrink-0 rounded p-0.5 text-muted-foreground/60 opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover/doc:opacity-100">
+                                            <X className="h-3 w-3" />
+                                          </button>
+                                        </span>
                                       ))}
                                       <button type="button" onClick={() => setDocTarget(p)} title="Add files"
                                         className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border border-dashed border-border text-muted-foreground hover:border-primary hover:text-primary">
