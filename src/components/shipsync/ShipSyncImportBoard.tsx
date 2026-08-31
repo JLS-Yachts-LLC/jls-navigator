@@ -46,7 +46,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { fmtDate, mondayRow, extraMondayColumns, DocumentDropzoneDialog, TableChartToggle, ShipSyncChartsPanel } from "@/components/shipsync/shared";
-import { loadImportPackages, patchPackage, createPackage, deletePackage, addPackageDocuments, removePackageDocument } from "@/lib/shipsync/data";
+import { loadImportPackages, patchPackage, createPackage, deletePackage, addPackageDocuments, removePackageDocument, uploadShipSyncFile } from "@/lib/shipsync/data";
 import { nextItemId, type ShipSyncPackage } from "@/lib/shipsync/model";
 import { syncMondayImportBoard } from "@/lib/shipsync/monday-import-board.server";
 
@@ -151,6 +151,7 @@ type CellSpec =
   | { kind: "mondayStatus" }
   | { kind: "shipmentType" }
   | { kind: "documents" }
+  | { kind: "paymentCopy" }
   | { kind: "edas" };
 
 /** Left-to-right, exactly matching the Monday board's own column order
@@ -178,7 +179,7 @@ const CELLS: CellSpec[] = [
   { kind: "edas" },
   { kind: "field", col: fieldCol("courier", "Courier", "w-20", "text", "courier") },
   { kind: "field", col: mondayCol("paidAmount", "Paid Amount", "w-20", "Paid Amount") },
-  { kind: "field", col: mondayCol("paymentCopy", "Payment Copy", "w-24", "PAYMENT COPY") },
+  { kind: "paymentCopy" },
   { kind: "field", col: fieldCol("description", "Remarks", "w-40", "text", "description") },
   { kind: "field", col: mondayCol("paymentMethod", "Payment Method", "w-24", "PAYMENT METHOD") },
   { kind: "field", col: mondayCol("clientEmail", "Client Email", "w-28", "Client Email") },
@@ -207,6 +208,7 @@ export function ShipSyncImportBoard() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmDeleteIds, setConfirmDeleteIds] = useState<string[] | null>(null);
   const [docTarget, setDocTarget] = useState<ShipSyncPackage | null>(null);
+  const [paymentCopyTarget, setPaymentCopyTarget] = useState<ShipSyncPackage | null>(null);
   const [view, setView] = useState<"table" | "chart">("table");
 
   function toggleSelect(id: string) {
@@ -250,6 +252,20 @@ export function ShipSyncImportBoard() {
     try {
       const documents = await removePackageDocument(p, index);
       await commit(p, `${p.id}:documents`, { documents });
+    } catch (e: any) { toast.error(e?.message ?? "Couldn't remove file"); }
+  }
+
+  async function uploadPaymentCopy(p: ShipSyncPackage, files: File[]) {
+    const file = files[0];
+    if (!file) return;
+    const path = `payment-copies/${p.id}/${Date.now()}-${file.name}`;
+    const url = await uploadShipSyncFile(file, path);
+    await commit(p, `${p.id}:paymentCopy`, { extra: { ...extraOf(p), monday: { ...mondayRow(p), "PAYMENT COPY": url } } } as any);
+  }
+
+  async function removePaymentCopy(p: ShipSyncPackage) {
+    try {
+      await commit(p, `${p.id}:paymentCopy`, { extra: { ...extraOf(p), monday: { ...mondayRow(p), "PAYMENT COPY": "" } } } as any);
     } catch (e: any) { toast.error(e?.message ?? "Couldn't remove file"); }
   }
 
@@ -411,6 +427,7 @@ export function ShipSyncImportBoard() {
                   if (c.kind === "mondayStatus") return <th key="mondayStatus" className="w-36 px-2 py-1.5">Status</th>;
                   if (c.kind === "shipmentType") return <th key="shipmentType" className="w-28 px-2 py-1.5">Shipment Type</th>;
                   if (c.kind === "documents") return <th key="documents" className="w-28 px-2 py-1.5">Files</th>;
+                  if (c.kind === "paymentCopy") return <th key="paymentCopy" className="w-28 px-2 py-1.5">Payment Copy</th>;
                   return <th key="edas" className="w-14 px-2 py-1.5">EDAS</th>;
                 })}
                 {mondayColumns.map((c) => <th key={c} className="w-28 px-2 py-1.5">{c}</th>)}
@@ -551,6 +568,37 @@ export function ShipSyncImportBoard() {
                                 </td>
                               );
                             }
+                            if (c.kind === "paymentCopy") {
+                              const value = mondayText(p, "PAYMENT COPY");
+                              const isUrl = /^https?:\/\//i.test(value);
+                              const label = isUrl ? (value.split("/").pop() || "Payment copy") : value;
+                              return (
+                                <td key="paymentCopy" className="overflow-hidden px-2 py-1" onClick={(e) => e.stopPropagation()}>
+                                  {!value ? (
+                                    <button type="button" onClick={() => setPaymentCopyTarget(p)}
+                                      className="inline-flex items-center gap-1 rounded border border-dashed border-border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:border-primary hover:text-primary">
+                                      <Plus className="h-3 w-3" /> Add file
+                                    </button>
+                                  ) : (
+                                    <span className="group/doc inline-flex max-w-[110px] items-center gap-1 rounded border border-border pl-1 pr-0.5 py-0.5 text-[10px] text-primary hover:bg-primary/5">
+                                      {isUrl ? (
+                                        <a href={value} target="_blank" rel="noopener noreferrer" title={label} className="flex min-w-0 items-center gap-1 truncate">
+                                          <FileText className="h-3 w-3 shrink-0" /> <span className="truncate">{label}</span>
+                                        </a>
+                                      ) : (
+                                        <span className="flex min-w-0 items-center gap-1 truncate" title={label}>
+                                          <FileText className="h-3 w-3 shrink-0" /> <span className="truncate">{label}</span>
+                                        </span>
+                                      )}
+                                      <button type="button" onClick={() => void removePaymentCopy(p)} title="Remove"
+                                        className="shrink-0 rounded p-0.5 text-muted-foreground/60 opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover/doc:opacity-100">
+                                        <X className="h-3 w-3" />
+                                      </button>
+                                    </span>
+                                  )}
+                                </td>
+                              );
+                            }
                             return (
                               <td key="edas" className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
                                 <Select value={p.edas_required == null ? "unset" : p.edas_required ? "yes" : "no"}
@@ -646,6 +694,9 @@ export function ShipSyncImportBoard() {
 
       <DocumentDropzoneDialog open={!!docTarget} onClose={() => setDocTarget(null)}
         onUpload={(files) => uploadDocuments(docTarget!, files)} />
+
+      <DocumentDropzoneDialog open={!!paymentCopyTarget} onClose={() => setPaymentCopyTarget(null)}
+        onUpload={(files) => uploadPaymentCopy(paymentCopyTarget!, files)} title="Attach payment copy" />
 
       <AlertDialog open={!!confirmDeleteIds} onOpenChange={(o) => !o && setConfirmDeleteIds(null)}>
         <AlertDialogContent>
