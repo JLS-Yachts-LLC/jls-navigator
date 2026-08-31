@@ -128,10 +128,15 @@ type CellSpec =
   | { kind: "documents" };
 
 /** Left-to-right, exactly matching the Monday board's own column order
- *  (Client, Air WayBill/Tracking Number, Invoice number, Requested Date,
- *  STATUS, Courier/Agent, Consignee, Shipping Cost, Quote Value,
- *  DESTINATION, ITEM DESCRIPTION, REMARKS, Files, Accounts). */
+ *  (Quotation Number, Client, Air WayBill/Tracking Number, Invoice number,
+ *  Requested Date, STATUS, Courier/Agent, Consignee, Shipping Cost, Quote
+ *  Value, DESTINATION, ITEM DESCRIPTION, REMARKS, Files, Accounts). */
 const CELLS: CellSpec[] = [
+  // Same barcode field Import uses for its AWB — here it holds the item's
+  // own name, a quotation reference like "Q26-01816" (see header comment
+  // above). Was already searched on and used as a delete-confirmation label,
+  // but never actually shown as its own column until now.
+  { kind: "field", col: fieldCol("barcode", "Quotation Number", "w-28", "text", "barcode") },
   { kind: "field", col: fieldCol("boat_name", "Client", "w-28", "text", "boat_name") },
   { kind: "field", col: mondayCol("awb", "AWB/Tracking Number", "w-32", "Air WayBill/Tracking Number") },
   { kind: "field", col: mondayCol("invoiceNo", "Invoice No.", "w-28", "Invoice number") },
