@@ -1,7 +1,7 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Loader2, UploadCloud, Table as TableIcon, BarChart3 } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
+import { BarChart, Bar, PieChart, Pie, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -155,37 +155,180 @@ export function TableChartToggle({ value, onChange }: { value: "table" | "chart"
   );
 }
 
-/** Bar chart of counts per status/group, coloured to match each label's own
- *  badge colour — the board's "Chart" view. Skips zero-count labels, same as
- *  Monday's own chart (an all-zero board renders an empty-state instead). */
-export function StatusBarChart({
-  data, title,
+export interface StatusDatum { label: string; count: number; color: string }
+
+const TOOLTIP_STYLE = { background: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 };
+const AXIS_TICK = { fontSize: 11, fill: "var(--muted-foreground)" };
+
+/** Distinct hex colours for per-vessel bars/segments — order matters (rank 0
+ *  gets colour 0), so the same vessel keeps the same colour across the top-
+ *  vessels bar and the monthly stacked bar below it. */
+const VESSEL_PALETTE = [
+  "#00c875", "#579bfc", "#fdab3d", "#e2445c", "#a25ddc", "#66ccff",
+  "#ff642e", "#037f4c", "#cab641", "#9d50dd",
+];
+const OTHER_COLOR = "#6b7280";
+
+function sumQty(rows: ShipSyncPackage[]): number {
+  return rows.reduce((s, p) => s + (p.num_packages ?? 1), 0);
+}
+
+/** Top N vessels by total quantity, the rest folded into one "Other" bucket
+ *  — same Pareto-style ranking as Monday's "Client Packages" chart. */
+function topVessels(rows: ShipSyncPackage[], n = 8): { name: string; qty: number; color: string }[] {
+  const totals = new Map<string, number>();
+  for (const p of rows) {
+    const name = p.boat_name?.trim() || "Unassigned";
+    totals.set(name, (totals.get(name) ?? 0) + (p.num_packages ?? 1));
+  }
+  const sorted = [...totals.entries()].sort((a, b) => b[1] - a[1]);
+  const top = sorted.slice(0, n).map(([name, qty], i) => ({ name, qty, color: VESSEL_PALETTE[i % VESSEL_PALETTE.length] }));
+  const restQty = sorted.slice(n).reduce((s, [, q]) => s + q, 0);
+  if (restQty > 0) top.push({ name: "Other", qty: restQty, color: OTHER_COLOR });
+  return top;
+}
+
+const monthKey = (iso: string) => { const d = new Date(iso); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
+const monthLabel = (key: string) => {
+  const [y, m] = key.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString("en-GB", { month: "short", year: "numeric" });
+};
+
+/** Quantity per month, stacked by the same vessels `topVessels` ranked (plus
+ *  "Other" if it picked one) — Monday's stacked monthly view. Rows without a
+ *  received date don't have a month to sit in, so they're left out here
+ *  (they still count in the other three widgets). */
+function monthlyByVessel(rows: ShipSyncPackage[], vessels: { name: string }[]): Record<string, number | string>[] {
+  const names = new Set(vessels.map((v) => v.name));
+  const byMonth = new Map<string, Record<string, number>>();
+  for (const p of rows) {
+    if (!p.received_at) continue;
+    const key = monthKey(p.received_at);
+    const boat = p.boat_name?.trim() || "Unassigned";
+    const bucket = names.has(boat) ? boat : "Other";
+    if (!byMonth.has(key)) byMonth.set(key, {});
+    const m = byMonth.get(key)!;
+    m[bucket] = (m[bucket] ?? 0) + (p.num_packages ?? 1);
+  }
+  return [...byMonth.keys()].sort().map((key) => ({ month: monthLabel(key), ...byMonth.get(key)! }));
+}
+
+function ChartCard({ title, className, empty, children }: { title: string; className?: string; empty: boolean; children: ReactNode }) {
+  return (
+    <div className={cn("rounded-xl border border-border bg-card p-4", className)}>
+      <div className="mb-3 text-sm font-semibold">{title}</div>
+      {empty ? <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">Nothing to chart yet.</div> : children}
+    </div>
+  );
+}
+
+function StatusPieCard({ data, title }: { data: StatusDatum[]; title: string }) {
+  const slices = data.filter((d) => d.count > 0);
+  const total = slices.reduce((s, d) => s + d.count, 0);
+  return (
+    <ChartCard title={title} empty={slices.length === 0}>
+      <div className="flex flex-wrap items-center gap-6">
+        <ResponsiveContainer width={180} height={180}>
+          <PieChart>
+            <Pie data={slices} dataKey="count" nameKey="label" outerRadius={85} stroke="var(--card)" strokeWidth={2}>
+              {slices.map((d, i) => <Cell key={i} fill={d.color} />)}
+            </Pie>
+            <Tooltip contentStyle={TOOLTIP_STYLE} />
+          </PieChart>
+        </ResponsiveContainer>
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5 text-[12px]">
+          {slices.map((d) => (
+            <div key={d.label} className="flex items-center gap-2">
+              <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: d.color }} />
+              <span className="min-w-0 flex-1 truncate">{d.label}</span>
+              <span className="tabular-nums text-muted-foreground">{((d.count / total) * 100).toFixed(1)}%</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </ChartCard>
+  );
+}
+
+function NumbersCard({ rows }: { rows: ShipSyncPackage[] }) {
+  return (
+    <ChartCard title="Numbers" empty={false} className="flex flex-col items-center justify-center text-center">
+      <div className="font-display text-4xl font-bold tabular-nums">{sumQty(rows)}</div>
+      <div className="mt-1 text-[11px] uppercase tracking-wide text-muted-foreground">
+        Total quantity across {rows.length} shipment{rows.length === 1 ? "" : "s"}
+      </div>
+    </ChartCard>
+  );
+}
+
+function TopVesselsCard({ data, title }: { data: { name: string; qty: number; color: string }[]; title: string }) {
+  return (
+    <ChartCard title={title} empty={data.length === 0}>
+      <ResponsiveContainer width="100%" height={300}>
+        <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 56 }}>
+          <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--border)" />
+          <XAxis dataKey="name" tick={{ fontSize: 10, fill: "var(--muted-foreground)" }}
+            interval={0} angle={-35} textAnchor="end" height={70} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
+          <YAxis allowDecimals={false} width={32} tick={AXIS_TICK} axisLine={false} tickLine={false} />
+          <Tooltip cursor={{ fill: "var(--muted)" }} contentStyle={TOOLTIP_STYLE} />
+          <Bar dataKey="qty" radius={[4, 4, 0, 0]} maxBarSize={40}>
+            {data.map((d, i) => <Cell key={i} fill={d.color} />)}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </ChartCard>
+  );
+}
+
+function MonthlyStackedCard({
+  data, vessels, title,
 }: {
-  data: { label: string; count: number; color: string }[];
+  data: Record<string, number | string>[];
+  vessels: { name: string; color: string }[];
   title: string;
 }) {
-  const bars = data.filter((d) => d.count > 0);
   return (
-    <div className="rounded-xl border border-border bg-card p-4">
-      <div className="mb-3 text-sm font-semibold">{title}</div>
-      {bars.length === 0 ? (
-        <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">Nothing to chart yet.</div>
-      ) : (
-        <ResponsiveContainer width="100%" height={340}>
-          <BarChart data={bars} margin={{ top: 8, right: 8, left: 0, bottom: 64 }}>
-            <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--border)" />
-            <XAxis dataKey="label" tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
-              interval={0} angle={-35} textAnchor="end" height={80} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
-            <YAxis allowDecimals={false} width={32} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
-              axisLine={false} tickLine={false} />
-            <Tooltip cursor={{ fill: "var(--muted)" }}
-              contentStyle={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }} />
-            <Bar dataKey="count" radius={[4, 4, 0, 0]} maxBarSize={56}>
-              {bars.map((d, i) => <Cell key={i} fill={d.color} />)}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
-      )}
+    <ChartCard title={title} empty={data.length === 0} className="lg:col-span-2">
+      <ResponsiveContainer width="100%" height={320}>
+        <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+          <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--border)" />
+          <XAxis dataKey="month" tick={AXIS_TICK} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
+          <YAxis allowDecimals={false} width={32} tick={AXIS_TICK} axisLine={false} tickLine={false} />
+          <Tooltip contentStyle={TOOLTIP_STYLE} />
+          {vessels.map((v) => <Bar key={v.name} dataKey={v.name} stackId="qty" fill={v.color} maxBarSize={56} />)}
+        </BarChart>
+      </ResponsiveContainer>
+      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[11px] text-muted-foreground">
+        {vessels.map((v) => (
+          <div key={v.name} className="flex items-center gap-1.5">
+            <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: v.color }} /> {v.name}
+          </div>
+        ))}
+      </div>
+    </ChartCard>
+  );
+}
+
+/** A board's whole "Chart" view — the multi-widget layout Monday's own Chart
+ *  tab shows (status breakdown, total quantity, top vessels by quantity, and
+ *  quantity per month stacked by vessel), built from the same rows and
+ *  status/colour vocabulary the board's table already uses. `rows` should be
+ *  the board's current (search-)filtered set, same data the table shows. */
+export function ShipSyncChartsPanel({
+  rows, statusData, title,
+}: {
+  rows: ShipSyncPackage[];
+  statusData: StatusDatum[];
+  title: string;
+}) {
+  const vessels = useMemo(() => topVessels(rows), [rows]);
+  const monthly = useMemo(() => monthlyByVessel(rows, vessels), [rows, vessels]);
+  return (
+    <div className="grid gap-4 lg:grid-cols-2">
+      <StatusPieCard data={statusData} title={`${title} by status`} />
+      <NumbersCard rows={rows} />
+      <TopVesselsCard data={vessels} title={`${title} by vessel (qty)`} />
+      <MonthlyStackedCard data={monthly} vessels={vessels} title={`${title} by month`} />
     </div>
   );
 }

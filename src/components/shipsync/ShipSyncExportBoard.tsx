@@ -42,7 +42,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { fmtDate, mondayRow, extraMondayColumns, DocumentDropzoneDialog, TableChartToggle, StatusBarChart } from "@/components/shipsync/shared";
+import { fmtDate, mondayRow, extraMondayColumns, DocumentDropzoneDialog, TableChartToggle, ShipSyncChartsPanel } from "@/components/shipsync/shared";
 import { loadExportPackages, patchPackage, createPackage, deletePackage, addPackageDocuments, removePackageDocument } from "@/lib/shipsync/data";
 import type { ShipSyncPackage } from "@/lib/shipsync/model";
 import { syncMondayExportBoard } from "@/lib/shipsync/monday-export-board.server";
@@ -336,7 +336,7 @@ export function ShipSyncExportBoard() {
 
       {view === "chart" ? (
         <div className="min-h-0 flex-1 overflow-auto">
-          <StatusBarChart data={chartData} title="Export shipments by status" />
+          <ShipSyncChartsPanel rows={filtered} statusData={chartData} title="Export shipments" />
         </div>
       ) : rows.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-card/40 px-6 py-16 text-center">

@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Plus, Search, Loader2, Trash2, Camera, FileText, ScanLine, ChevronDown, ChevronRight, X } from "lucide-react";
 import { BarcodeScannerDialog } from "@/components/shipsync/BarcodeScanner";
-import { StatusBadge, fmtDate, DocumentDropzoneDialog, TableChartToggle, StatusBarChart, TONE_HEX } from "@/components/shipsync/shared";
+import { StatusBadge, fmtDate, DocumentDropzoneDialog, TableChartToggle, ShipSyncChartsPanel, TONE_HEX } from "@/components/shipsync/shared";
 import { ALL_ZONES, STATUS_META, type PackageStatus, type ShipSyncPackage } from "@/lib/shipsync/model";
 import { createPackage, patchPackage, deletePackage, uploadShipSyncImage, addPackageDocuments, removePackageDocument } from "@/lib/shipsync/data";
 import type { ShipSyncData } from "@/components/shipsync-page";
@@ -187,7 +187,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
 
       {view === "chart" ? (
         <div className="min-h-0 flex-1 overflow-auto">
-          <StatusBarChart data={chartData} title="Local packages by status" />
+          <ShipSyncChartsPanel rows={filtered} statusData={chartData} title="Local packages" />
         </div>
       ) : (
       <div className="pds-scroll min-h-0 min-w-0 flex-1 overflow-auto rounded-xl border border-border bg-card">
