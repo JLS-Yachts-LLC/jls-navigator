@@ -1,5 +1,5 @@
-import { useEffect, useMemo } from "react";
-import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
+import { Fragment, useEffect, useMemo } from "react";
+import { MapContainer, TileLayer, Marker, Popup, Polyline, CircleMarker, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { AisYacht } from "@/lib/aisstream.server";
@@ -80,36 +80,57 @@ export default function AisFleetMap({
   const located = useMemo(() => yachts.filter(y => y.lat != null && y.lon != null), [yachts]);
   return (
     <MapContainer center={[25.2, 55.3]} zoom={8} className="h-full w-full" style={{ background: "#aadaff" }}>
-      <TileLayer attribution="&copy; OpenStreetMap contributors &copy; CARTO" url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png" />
+      <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
       <FitBounds yachts={located} once={fitOnce} />
       <FocusController focus={focus} />
-      {located.map(y => (
-        <Marker key={y.id} position={[y.lat!, y.lon!]} icon={vesselIcon(y)}>
-          <Popup>
-            <div style={{ minWidth: 220 }}>
-              <div style={{ fontWeight: 700 }}>{y.vessel_name}</div>
-              {(y.vesselType || y.flag || y.lengthOverallM) && (
-                <div style={{ fontSize: 11, color: "#64748b", marginBottom: 6 }}>
-                  {[y.vesselType, y.flag, y.lengthOverallM ? `${y.lengthOverallM}m` : null].filter(Boolean).join(" · ")}
+      {located.map(y => {
+        const moving = isMoving(y);
+        const hasRoute = y.destLat != null && y.destLon != null;
+        return (
+          <Fragment key={y.id}>
+            {hasRoute && (
+              <>
+                <Polyline
+                  positions={[[y.lat!, y.lon!], [y.destLat!, y.destLon!]]}
+                  pathOptions={{ color: moving ? "#0ea5e9" : "#94a3b8", weight: 2, dashArray: "6 6", opacity: 0.75 }}
+                />
+                <CircleMarker center={[y.destLat!, y.destLon!]} radius={4}
+                  pathOptions={{ color: "#fff", weight: 1.5, fillColor: moving ? "#0ea5e9" : "#94a3b8", fillOpacity: 0.9 }}>
+                  <Popup><strong>{y.vessel_name}</strong> — planned destination{y.destination ? `: ${y.destination}` : ""}{fmtEta(y.eta) ? ` (ETA ${fmtEta(y.eta)})` : ""}</Popup>
+                </CircleMarker>
+              </>
+            )}
+            <Marker position={[y.lat!, y.lon!]} icon={vesselIcon(y)}>
+              <Popup>
+                <div style={{ minWidth: 220 }}>
+                  <div style={{ fontWeight: 700 }}>{y.vessel_name}</div>
+                  {(y.vesselType || y.flag || y.lengthOverallM) && (
+                    <div style={{ fontSize: 11, color: "#64748b", marginBottom: 6 }}>
+                      {[y.vesselType, y.flag, y.lengthOverallM ? `${y.lengthOverallM}m` : null].filter(Boolean).join(" · ")}
+                    </div>
+                  )}
+                  <div style={{ display: "grid", gridTemplateColumns: "60px 1fr", rowGap: 2, fontSize: 12, color: "#475569" }}>
+                    {y.mmsi ? <><span>MMSI</span><span>{y.mmsi}</span></> : null}
+                    {y.imo ? <><span>IMO</span><span>{y.imo}</span></> : null}
+                    {y.callSign ? <><span>Call sign</span><span>{y.callSign}</span></> : null}
+                    {y.portOfRegistry ? <><span>Registered</span><span>{y.portOfRegistry}</span></> : null}
+                    <span>Speed</span><span>{y.speed != null ? `${y.speed.toFixed(1)} kn` : "—"}</span>
+                    <span>Course</span><span>{y.course != null ? `${Math.round(y.course)}°` : "—"}</span>
+                    <span>Status</span><span>{y.navstat != null ? (NAVSTAT[y.navstat] ?? `#${y.navstat}`) : "—"}</span>
+                    {y.destination ? <><span>Dest</span><span>{y.destination}</span></> : null}
+                    {fmtEta(y.eta) ? <><span>ETA</span><span>{fmtEta(y.eta)}</span></> : null}
+                    <span>Updated</span><span>{fmtTime(y.positionAt)}</span>
+                  </div>
+                  {voyageLine(y) ? <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 6 }}>{voyageLine(y)}</div> : null}
+                  {!hasRoute && y.destination && (
+                    <div style={{ fontSize: 10.5, color: "#cbd5e1", marginTop: 6 }}>Route line unavailable — destination couldn't be located on the map.</div>
+                  )}
                 </div>
-              )}
-              <div style={{ display: "grid", gridTemplateColumns: "60px 1fr", rowGap: 2, fontSize: 12, color: "#475569" }}>
-                {y.mmsi ? <><span>MMSI</span><span>{y.mmsi}</span></> : null}
-                {y.imo ? <><span>IMO</span><span>{y.imo}</span></> : null}
-                {y.callSign ? <><span>Call sign</span><span>{y.callSign}</span></> : null}
-                {y.portOfRegistry ? <><span>Registered</span><span>{y.portOfRegistry}</span></> : null}
-                <span>Speed</span><span>{y.speed != null ? `${y.speed.toFixed(1)} kn` : "—"}</span>
-                <span>Course</span><span>{y.course != null ? `${Math.round(y.course)}°` : "—"}</span>
-                <span>Status</span><span>{y.navstat != null ? (NAVSTAT[y.navstat] ?? `#${y.navstat}`) : "—"}</span>
-                {y.destination ? <><span>Dest</span><span>{y.destination}</span></> : null}
-                {fmtEta(y.eta) ? <><span>ETA</span><span>{fmtEta(y.eta)}</span></> : null}
-                <span>Updated</span><span>{fmtTime(y.positionAt)}</span>
-              </div>
-              {voyageLine(y) ? <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 6 }}>{voyageLine(y)}</div> : null}
-            </div>
-          </Popup>
-        </Marker>
-      ))}
+              </Popup>
+            </Marker>
+          </Fragment>
+        );
+      })}
     </MapContainer>
   );
 }

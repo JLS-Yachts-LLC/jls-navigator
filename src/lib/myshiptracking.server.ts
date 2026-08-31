@@ -16,6 +16,7 @@
  */
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { fetchAllRows } from "./fetch-all";
+import { resolvePortCoords } from "./geocode-port.server";
 
 const ENDPOINT = "https://api.myshiptracking.com/api/v2/vessel/bulk";
 
@@ -116,6 +117,11 @@ export async function syncMyShipTracking(opts: { extended?: boolean } = {}): Pro
     if (extended) {
       patch.ais_destination = rec.destination ? String(rec.destination) : null;
       patch.ais_eta = rec.eta ? String(rec.eta) : (rec.next_port_eta_utc ? String(rec.next_port_eta_utc) : null);
+      // Best-effort geocode for the "planned route" line on the map — cache-first,
+      // so this is a live network call only for a genuinely new destination string.
+      const coords = await resolvePortCoords(patch.ais_destination);
+      patch.dest_lat = coords?.lat ?? null;
+      patch.dest_lon = coords?.lon ?? null;
     }
 
     // Voyage-state transitions (same rules as the other AIS sources).

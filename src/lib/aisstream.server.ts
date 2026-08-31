@@ -37,6 +37,8 @@ export interface AisYacht {
   heading: number | null;
   navstat: number | null;
   destination: string | null;
+  destLat: number | null;
+  destLon: number | null;
   eta: string | null;
   underwaySince: string | null;
   lastDepartedAt: string | null;
@@ -177,7 +179,7 @@ export const getFleetAisPositions = createServerFn({ method: "GET" }).handler(as
     .from("yachts")
     .select(`
       id, vessel_name, mmsi, imo_no, vessel_type, flag, port_of_registry, length_overall_m, radio_call_sign,
-      ais_lat, ais_lon, ais_speed, ais_course, ais_heading, ais_navstat, ais_destination, ais_eta,
+      ais_lat, ais_lon, ais_speed, ais_course, ais_heading, ais_navstat, ais_destination, dest_lat, dest_lon, ais_eta,
       underway_since, last_departed_at, last_arrived_at, ais_position_at
     `)
     .order("vessel_name"));
@@ -198,6 +200,8 @@ export const getFleetAisPositions = createServerFn({ method: "GET" }).handler(as
     heading: y.ais_heading ?? null,
     navstat: y.ais_navstat ?? null,
     destination: y.ais_destination ?? null,
+    destLat: y.dest_lat ?? null,
+    destLon: y.dest_lon ?? null,
     eta: y.ais_eta ?? null,
     underwaySince: y.underway_since ?? null,
     lastDepartedAt: y.last_departed_at ?? null,

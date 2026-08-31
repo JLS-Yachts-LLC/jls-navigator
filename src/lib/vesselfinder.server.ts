@@ -9,6 +9,7 @@
  */
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { fetchAllRows } from "./fetch-all";
+import { resolvePortCoords } from "./geocode-port.server";
 
 const ENDPOINT = "https://api.vesselfinder.com/vessels";
 
@@ -88,6 +89,12 @@ export async function syncVesselPositions(): Promise<{ requested: number; matche
       ais_position_at: positionAt,
       ais_synced_at: now,
     };
+
+    // Best-effort geocode for the "planned route" line on the map — cache-first,
+    // so this is a live network call only for a genuinely new destination string.
+    const destCoords = await resolvePortCoords(patch.ais_destination);
+    patch.dest_lat = destCoords?.lat ?? null;
+    patch.dest_lon = destCoords?.lon ?? null;
 
     // Voyage-state transitions.
     if (movingNow && !movingPrev) {
