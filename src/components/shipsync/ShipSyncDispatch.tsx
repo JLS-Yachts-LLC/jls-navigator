@@ -34,6 +34,17 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
   const [confirmDel, setConfirmDel] = useState(false);
   const [showRouteMap, setShowRouteMap] = useState(false);
 
+  // Who to send "Email pre-delivery"/"Email POD" to. Pre-fills from a
+  // receiver email already on one of the note's packages (only ever set by
+  // the driver app at delivery time, so usually blank pre-delivery) — the
+  // whole point of this field is to let staff supply one manually instead,
+  // since the email buttons used to have nowhere to send to at all.
+  const [emailTo, setEmailTo] = useState("");
+  useEffect(() => {
+    setEmailTo(pkgsOnNote.find((p) => p.receiver_email)?.receiver_email ?? "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selId]);
+
   // Local draft for the destination fields — typing updates this instantly;
   // the DB write (+ reload) only fires on blur. Binding the inputs straight to
   // `sel` (server state) meant every keystroke round-tripped before the value
@@ -172,9 +183,10 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
   }
   async function emailPod(kind: "predelivery" | "delivery" = "delivery") {
     if (!sel) return;
+    if (!emailTo.trim()) { toast.error("Enter a recipient email first"); return; }
     setPdfBusy(kind === "predelivery" ? "email-pre" : "email");
     try {
-      const j = await callApi("/api/shipsync/email-pod", { noteId: sel.id, kind });
+      const j = await callApi("/api/shipsync/email-pod", { noteId: sel.id, kind, to: emailTo.trim() });
       toast.success(kind === "predelivery" ? `Pre-delivery note emailed to ${j.to}` : `Proof of delivery emailed to ${j.to}`);
       await reload();
     } catch (e: any) { toast.error(e?.message ?? "Email failed"); } finally { setPdfBusy(null); }
@@ -255,16 +267,25 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
               <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => genPdf("delivery")} disabled={!!pdfBusy}>
                 {pdfBusy === "delivery" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />} Delivery note
               </Button>
-              <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => emailPod("predelivery")} disabled={!!pdfBusy}>
+              <Input
+                type="email"
+                value={emailTo}
+                onChange={(e) => setEmailTo(e.target.value)}
+                placeholder="Recipient email"
+                title="Who to send the pre-delivery/POD emails to — only auto-fills once a driver has captured a receiver email at delivery, so usually needs typing in by hand"
+                className="h-8 w-48 text-xs"
+              />
+              <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => emailPod("predelivery")} disabled={!!pdfBusy || !emailTo.trim()}>
                 {pdfBusy === "email-pre" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />} Email pre-delivery
               </Button>
-              <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => emailPod("delivery")} disabled={!!pdfBusy}>
+              <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => emailPod("delivery")} disabled={!!pdfBusy || !emailTo.trim()}>
                 {pdfBusy === "email" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />} Email POD
               </Button>
               <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => setShowRouteMap(true)} disabled={routeStops.length === 0}
                 title="Route map — optimized stop order, distances & ETA">
                 <MapIcon className="h-3.5 w-3.5" /> Route map
               </Button>
+              {sel.predelivery_pdf_url && <a href={sel.predelivery_pdf_url} target="_blank" rel="noopener noreferrer" className="text-[12px] text-primary hover:underline">View pre-delivery PDF</a>}
               {sel.delivery_pdf_url && <a href={sel.delivery_pdf_url} target="_blank" rel="noopener noreferrer" className="text-[12px] text-primary hover:underline">View delivery PDF</a>}
               <Button size="sm" variant="outline" className="ml-auto h-8 gap-1.5 text-destructive hover:bg-destructive/10" onClick={() => setConfirmDel(true)} disabled={busy}>
                 <Trash2 className="h-3.5 w-3.5" /> Delete run
