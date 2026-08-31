@@ -12,9 +12,9 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Plus, Search, Loader2, Trash2, Camera, FileText, ScanLine, ChevronDown, ChevronRight } from "lucide-react";
 import { BarcodeScannerDialog } from "@/components/shipsync/BarcodeScanner";
-import { StatusBadge, fmtDate } from "@/components/shipsync/shared";
+import { StatusBadge, fmtDate, DocumentDropzoneDialog } from "@/components/shipsync/shared";
 import { ALL_ZONES, STATUS_META, type PackageStatus, type ShipSyncPackage } from "@/lib/shipsync/model";
-import { createPackage, patchPackage, deletePackage, uploadShipSyncImage } from "@/lib/shipsync/data";
+import { createPackage, patchPackage, deletePackage, uploadShipSyncImage, addPackageDocuments } from "@/lib/shipsync/data";
 import type { ShipSyncData } from "@/components/shipsync-page";
 import { cn } from "@/lib/utils";
 
@@ -57,6 +57,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
   const [photo, setPhoto] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [delTarget, setDelTarget] = useState<ShipSyncPackage | null>(null);
+  const [docTarget, setDocTarget] = useState<ShipSyncPackage | null>(null);
   const [scanOpen, setScanOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const set = (p: Form) => setForm((f) => ({ ...f, ...p }));
@@ -144,6 +145,12 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
     catch (e: any) { toast.error(e?.message ?? "Update failed"); }
   }
 
+  async function uploadDocuments(p: ShipSyncPackage, files: File[]) {
+    const documents = await addPackageDocuments(p, files);
+    await patchPackage(p.id, { documents });
+    await reload();
+  }
+
   async function confirmDelete() {
     if (!delTarget) return;
     try { await deletePackage(delTarget.id); toast.success("Package removed"); await reload(); }
@@ -225,14 +232,23 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
                         <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{driver?.name ?? "—"}</td>
                         <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{fmtDate(p.delivered_at)}</td>
                         <td className="px-3 py-2.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                          {docs.length === 0 ? <span className="text-muted-foreground">—</span> : (
-                            <div className="flex flex-wrap gap-1.5">
+                          {docs.length === 0 ? (
+                            <button type="button" onClick={() => setDocTarget(p)}
+                              className="inline-flex items-center gap-1 rounded border border-dashed border-border px-1.5 py-0.5 text-[11px] text-muted-foreground hover:border-primary hover:text-primary">
+                              <Plus className="h-3 w-3" /> Add files
+                            </button>
+                          ) : (
+                            <div className="flex flex-wrap items-center gap-1.5">
                               {docs.map((d, i) => (
                                 <a key={i} href={d.url} target="_blank" rel="noopener noreferrer" title={d.name}
                                   className="inline-flex max-w-[120px] items-center gap-1 truncate rounded border border-border px-1.5 py-0.5 text-[11px] text-primary hover:bg-primary/5">
                                   <FileText className="h-3 w-3 shrink-0" /> <span className="truncate">{d.name}</span>
                                 </a>
                               ))}
+                              <button type="button" onClick={() => setDocTarget(p)} title="Add files"
+                                className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border border-dashed border-border text-muted-foreground hover:border-primary hover:text-primary">
+                                <Plus className="h-3 w-3" />
+                              </button>
                             </div>
                           )}
                         </td>
@@ -321,6 +337,9 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
       </Dialog>
 
       <BarcodeScannerDialog open={scanOpen} onClose={() => setScanOpen(false)} onDetected={(v) => { set({ barcode: v }); setScanOpen(false); }} title="Scan package barcode" />
+
+      <DocumentDropzoneDialog open={!!docTarget} onClose={() => setDocTarget(null)}
+        onUpload={(files) => uploadDocuments(docTarget!, files)} />
 
       <AlertDialog open={!!delTarget} onOpenChange={(o) => !o && setDelTarget(null)}>
         <AlertDialogContent>

@@ -1,3 +1,9 @@
+import { useRef, useState } from "react";
+import { toast } from "sonner";
+import { Loader2, UploadCloud } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { STATUS_META, type PackageStatus, type ShipSyncPackage } from "@/lib/shipsync/model";
 
 const TONE: Record<string, string> = {
@@ -54,6 +60,72 @@ export function mondayRow(p: ShipSyncPackage): Record<string, string> {
 export function mondayColumnOrder(p: ShipSyncPackage): string[] {
   return (((p.extra as any)?.monday_columns ?? []) as string[]).filter(Boolean);
 }
+/** Drag-and-drop (or browse) file picker, shown as a popup for attaching one
+ *  or more documents to a row. Doesn't upload itself — hands the picked
+ *  files to `onUpload` and stays open (spinner) until that resolves, then
+ *  closes. Shared by Local Packages, Import and Export so all three "Files"
+ *  columns behave identically. */
+export function DocumentDropzoneDialog({
+  open, onClose, onUpload, title = "Attach documents",
+}: {
+  open: boolean;
+  onClose: () => void;
+  onUpload: (files: File[]) => Promise<void>;
+  title?: string;
+}) {
+  const [dragOver, setDragOver] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  async function handleFiles(list: FileList | null) {
+    const files = Array.from(list ?? []);
+    if (files.length === 0) return;
+    setBusy(true);
+    try {
+      await onUpload(files);
+      onClose();
+    } catch (e: any) {
+      toast.error(e?.message ?? "Upload failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && !busy && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
+        <div
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(e) => { e.preventDefault(); setDragOver(false); void handleFiles(e.dataTransfer.files); }}
+          className={cn(
+            "flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed p-10 text-center transition-colors",
+            dragOver ? "border-primary bg-primary/5" : "border-border",
+          )}
+        >
+          {busy ? (
+            <>
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">Uploading…</p>
+            </>
+          ) : (
+            <>
+              <UploadCloud className="h-8 w-8 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">Drag and drop files here</p>
+              <span className="text-xs text-muted-foreground/70">or</span>
+              <Button type="button" variant="outline" size="sm" onClick={() => fileRef.current?.click()}>
+                Browse files
+              </Button>
+            </>
+          )}
+          <input ref={fileRef} type="file" multiple className="hidden" onChange={(e) => void handleFiles(e.target.files)} />
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /** Column titles from `mondayRow`/`mondayColumnOrder` not already covered by a
  *  tab's own base columns — so real Monday data never goes missing, and nothing
  *  gets shown that isn't a genuine Monday column. */

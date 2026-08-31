@@ -45,8 +45,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { fmtDate, mondayRow, extraMondayColumns } from "@/components/shipsync/shared";
-import { loadImportPackages, patchPackage, createPackage, deletePackage } from "@/lib/shipsync/data";
+import { fmtDate, mondayRow, extraMondayColumns, DocumentDropzoneDialog } from "@/components/shipsync/shared";
+import { loadImportPackages, patchPackage, createPackage, deletePackage, addPackageDocuments } from "@/lib/shipsync/data";
 import type { ShipSyncPackage } from "@/lib/shipsync/model";
 import { syncMondayImportBoard } from "@/lib/shipsync/monday-import-board.server";
 
@@ -206,6 +206,7 @@ export function ShipSyncImportBoard() {
   const [npGroup, setNpGroup] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmDeleteIds, setConfirmDeleteIds] = useState<string[] | null>(null);
+  const [docTarget, setDocTarget] = useState<ShipSyncPackage | null>(null);
 
   function toggleSelect(id: string) {
     setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -237,6 +238,11 @@ export function ShipSyncImportBoard() {
     try { await patchPackage(p.id, patch); }
     catch (e: any) { toast.error(e?.message ?? "Update failed"); await reload(); }
     finally { setSavingCell(null); }
+  }
+
+  async function uploadDocuments(p: ShipSyncPackage, files: File[]) {
+    const documents = await addPackageDocuments(p, files);
+    await commit(p, `${p.id}:documents`, { documents });
   }
 
   async function moveGroup(p: ShipSyncPackage, g: GroupInfo) {
@@ -493,15 +499,24 @@ export function ShipSyncImportBoard() {
                             }
                             if (c.kind === "documents") {
                               return (
-                                <td key="documents" className="overflow-hidden px-2 py-1">
-                                  {docs.length === 0 ? <span className="text-muted-foreground">—</span> : (
-                                    <div className="flex flex-wrap gap-1">
+                                <td key="documents" className="overflow-hidden px-2 py-1" onClick={(e) => e.stopPropagation()}>
+                                  {docs.length === 0 ? (
+                                    <button type="button" onClick={() => setDocTarget(p)}
+                                      className="inline-flex items-center gap-1 rounded border border-dashed border-border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:border-primary hover:text-primary">
+                                      <Plus className="h-3 w-3" /> Add files
+                                    </button>
+                                  ) : (
+                                    <div className="flex flex-wrap items-center gap-1">
                                       {docs.map((d, i) => (
                                         <a key={i} href={d.url} target="_blank" rel="noopener noreferrer" title={d.name}
                                           className="inline-flex max-w-[90px] items-center gap-1 truncate rounded border border-border px-1 py-0.5 text-[10px] text-primary hover:bg-primary/5">
                                           <FileText className="h-3 w-3 shrink-0" /> <span className="truncate">{d.name}</span>
                                         </a>
                                       ))}
+                                      <button type="button" onClick={() => setDocTarget(p)} title="Add files"
+                                        className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border border-dashed border-border text-muted-foreground hover:border-primary hover:text-primary">
+                                        <Plus className="h-3 w-3" />
+                                      </button>
                                     </div>
                                   )}
                                 </td>
@@ -599,6 +614,9 @@ export function ShipSyncImportBoard() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <DocumentDropzoneDialog open={!!docTarget} onClose={() => setDocTarget(null)}
+        onUpload={(files) => uploadDocuments(docTarget!, files)} />
 
       <AlertDialog open={!!confirmDeleteIds} onOpenChange={(o) => !o && setConfirmDeleteIds(null)}>
         <AlertDialogContent>

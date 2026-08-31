@@ -221,3 +221,23 @@ export async function uploadShipSyncImage(file: File | Blob, path: string): Prom
   if (error) throw error
   return supabase.storage.from('shipsync').getPublicUrl(path).data.publicUrl
 }
+
+// ── Documents ────────────────────────────────────────────────────────────────
+/** Same bucket as uploadShipSyncImage — just a clearer name for non-image
+ *  attachments (PDFs, multi-page scans, etc.) uploaded onto a package's
+ *  `documents` list. */
+export const uploadShipSyncFile = uploadShipSyncImage
+
+/** Upload several files onto a package's `documents` list, one storage object
+ *  per file under documents/{packageId}/, and return the merged array
+ *  (existing docs + newly uploaded ones) ready to patch onto the package. */
+export async function addPackageDocuments(
+  p: { id: string; documents: { name: string; url: string }[] | null }, files: File[],
+): Promise<{ name: string; url: string }[]> {
+  const uploaded = await Promise.all(files.map(async (f) => {
+    const path = `documents/${p.id}/${Date.now()}-${f.name}`
+    const url = await uploadShipSyncFile(f, path)
+    return { name: f.name, url }
+  }))
+  return [...(p.documents ?? []), ...uploaded]
+}
