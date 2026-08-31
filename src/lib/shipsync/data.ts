@@ -12,8 +12,12 @@ import {
 const db = () => supabase as any
 
 // ── Reads ────────────────────────────────────────────────────────────────────
-// Local Packages excludes Import and Export rows — those have their own tabs, so
-// the three views stay distinct.
+// Local Packages is only rows explicitly tagged 'Local', plus untagged legacy
+// rows (local_import was added after some packages already existed) — every
+// other trade type has its own tab. This used to be the inverse (show
+// anything that ISN'T Import/Export), which let any other value — a stray
+// 'Transit' tag some rows carry from before the current check-in flow existed
+// — silently fall through into Local Packages instead of Import.
 export async function loadPackages(): Promise<ShipSyncPackage[]> {
   // Paginated explicitly — PostgREST caps a single query at 1000 rows by
   // default, and this table is at/beyond that size, so the page was silently
@@ -22,7 +26,7 @@ export async function loadPackages(): Promise<ShipSyncPackage[]> {
   const all: ShipSyncPackage[] = []
   for (let offset = 0; ; offset += 1000) {
     const { data, error } = await db().from('shipsync_packages').select('*')
-      .or('local_import.is.null,and(local_import.neq.Import,local_import.neq.Export)')
+      .or('local_import.is.null,local_import.eq.Local')
       .order('received_at', { ascending: false })
       .order('id', { ascending: true })
       .range(offset, offset + 999)
@@ -34,7 +38,8 @@ export async function loadPackages(): Promise<ShipSyncPackage[]> {
   return all
 }
 /** Packages of a given trade type (local_import), newest first. Used by the
- *  Import and Export tabs. */
+ *  Export tab (Import has its own loader — see loadImportPackages — since it
+ *  also needs to catch 'Transit'-tagged rows). */
 export async function loadPackagesByType(type: string): Promise<ShipSyncPackage[]> {
   const { data, error } = await db().from('shipsync_packages').select('*')
     .eq('local_import', type)
@@ -42,8 +47,18 @@ export async function loadPackagesByType(type: string): Promise<ShipSyncPackage[
   if (error) throw error
   return (data ?? []) as ShipSyncPackage[]
 }
-/** Import-tab packages. */
-export const loadImportPackages = () => loadPackagesByType('Import')
+/** Import-tab packages — both 'Import' and 'Transit' (a handful of legacy
+ *  rows, from before the current check-in flow existed, are tagged 'Transit'
+ *  directly rather than sitting in the Import board's own Monday-synced
+ *  TRANSIT group; this is the only place that reads that value, so both
+ *  belong on the Import tab either way). */
+export async function loadImportPackages(): Promise<ShipSyncPackage[]> {
+  const { data, error } = await db().from('shipsync_packages').select('*')
+    .in('local_import', ['Import', 'Transit'])
+    .order('received_at', { ascending: false })
+  if (error) throw error
+  return (data ?? []) as ShipSyncPackage[]
+}
 /** Export-tab packages. */
 export const loadExportPackages = () => loadPackagesByType('Export')
 export async function loadDrivers(): Promise<ShipSyncDriver[]> {

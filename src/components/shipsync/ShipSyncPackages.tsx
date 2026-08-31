@@ -200,7 +200,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
         <table className="w-full min-w-[1400px] border-separate border-spacing-0 text-sm [&_td]:border-r [&_td]:border-border/40 [&_th]:border-r [&_th]:border-border/40">
           <thead className="sticky top-0 z-10 will-change-transform">
             <tr className="bg-card text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground shadow-[inset_0_-1px_0_0_var(--border)]">
-              {["Air waybill/tracking info", "Client", "Date Received", "Consignee", "Receiver", "Number of Packages", "Courier", "Shipment Type", "Delivery Note Number", "Driver", "Date Delivered", "Documents", "Status"].map((h, i) => (
+              {["Air waybill/tracking info", "Client", "Date Received", "Received Photo", "Consignee", "Receiver", "Number of Packages", "Courier", "Shipment Type", "Delivery Note Number", "Delivery Note", "Driver", "Date Delivered", "Delivery Photo", "Documents", "Status"].map((h, i) => (
                 <th key={`${h}-${i}`} className="px-3 py-2.5 whitespace-nowrap">{h}</th>
               ))}
               <th></th>
@@ -208,7 +208,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
           </thead>
           <tbody>
             {groups.length === 0 ? (
-              <tr><td colSpan={14} className="px-4 py-12 text-center text-sm text-muted-foreground">
+              <tr><td colSpan={17} className="px-4 py-12 text-center text-sm text-muted-foreground">
                 {data.packages.length === 0 ? (
                   <div className="flex flex-col items-center gap-3">
                     <span>No packages yet — check one in to get started.</span>
@@ -221,7 +221,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
               return (
                 <Fragment key={g.status}>
                   <tr>
-                    <td colSpan={14} className="p-0">
+                    <td colSpan={17} className="p-0">
                       {/* sticky left-0 on the INNER wrapper (not the td — a
                           colSpan cell already spans the full row, so making
                           IT sticky does nothing to its content's position):
@@ -244,14 +244,36 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
                         <td className="px-3 py-2.5 font-mono text-[12px] text-foreground whitespace-nowrap">{p.barcode ?? "—"}</td>
                         <td className="px-3 py-2.5 font-medium whitespace-nowrap">{p.boat_name ?? "—"}</td>
                         <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{fmtDate(p.received_at)}</td>
+                        <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+                          {p.item_photo_url ? (
+                            <a href={p.item_photo_url} target="_blank" rel="noopener noreferrer">
+                              <img src={p.item_photo_url} alt="Item photo" className="h-8 w-8 rounded object-cover border border-border hover:ring-2 hover:ring-primary/40" />
+                            </a>
+                          ) : <span className="text-muted-foreground/30">—</span>}
+                        </td>
                         <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{p.package_owner ?? "—"}</td>
                         <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{p.receiver_full_name ?? "—"}</td>
                         <td className="px-3 py-2.5 tabular-nums text-muted-foreground text-center">{p.num_packages ?? 1}</td>
                         <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{p.courier ?? "—"}</td>
                         <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{p.local_import ?? "—"}</td>
                         <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{p.delivery_note_no ?? note?.number ?? "—"}</td>
+                        <td className="px-3 py-2.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                          {(note?.delivery_pdf_url || note?.predelivery_pdf_url) ? (
+                            <a href={(note.delivery_pdf_url || note.predelivery_pdf_url)!} target="_blank" rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[11px] text-primary hover:bg-primary/5">
+                              <FileText className="h-3 w-3" /> {note?.delivery_pdf_url ? "Delivery note" : "Pre-delivery"}
+                            </a>
+                          ) : <span className="text-muted-foreground/30">—</span>}
+                        </td>
                         <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{driver?.name ?? "—"}</td>
                         <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{fmtDate(p.delivered_at)}</td>
+                        <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+                          {p.delivery_photo_url ? (
+                            <a href={p.delivery_photo_url} target="_blank" rel="noopener noreferrer">
+                              <img src={p.delivery_photo_url} alt="Delivery photo" className="h-8 w-8 rounded object-cover border border-border hover:ring-2 hover:ring-primary/40" />
+                            </a>
+                          ) : <span className="text-muted-foreground/30">—</span>}
+                        </td>
                         <td className="px-3 py-2.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                           {docs.length === 0 ? (
                             <button type="button" onClick={() => setDocTarget(p)}
