@@ -280,6 +280,17 @@ export function ShipSyncImportBoard() {
     if (!awb) return;
     setAddingIn(null);
     setNewName("");
+    // Same AWB already on the board (however it got there — synced from
+    // Monday or added here) — surface the existing shipment instead of
+    // silently creating a duplicate. Matches the client's ask: scanning an
+    // AWB that already exists should update that record, not add a second one.
+    const existing = rows.find((r) => r.barcode?.trim().toLowerCase() === awb.toLowerCase());
+    if (existing) {
+      const existingGroup = extraOf(existing).monday_group_title ?? "Not on Monday";
+      setCollapsed((prev) => ({ ...prev, [existingGroup]: false }));
+      toast.info(`AWB ${awb} is already on the Import board (in "${existingGroup}") — opened that group instead of creating a duplicate.`);
+      return;
+    }
     try {
       const itemId = await nextItemId();
       const created = await createPackage({
