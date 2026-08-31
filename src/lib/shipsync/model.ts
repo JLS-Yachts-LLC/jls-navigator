@@ -163,6 +163,15 @@ export async function nextDeliveryNumber(): Promise<string> {
   return data as string
 }
 
+/** Allocate the next Import "Item ID" atomically (server sequence), formatted
+ *  like Monday's own (e.g. "SHP26-0001") — for shipments created directly in
+ *  the app rather than synced from Monday, which supplies its own. */
+export async function nextItemId(): Promise<string> {
+  const { data, error } = await (supabase as any).rpc('next_shipsync_item_id')
+  if (error) throw error
+  return data as string
+}
+
 /**
  * Build a Google Maps directions deep-link. With one stop it routes straight
  * there; with several it chains them as waypoints in order (driver's run).

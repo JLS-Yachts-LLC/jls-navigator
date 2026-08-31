@@ -47,7 +47,7 @@ import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { fmtDate, mondayRow, extraMondayColumns, DocumentDropzoneDialog, TableChartToggle, ShipSyncChartsPanel } from "@/components/shipsync/shared";
 import { loadImportPackages, patchPackage, createPackage, deletePackage, addPackageDocuments, removePackageDocument } from "@/lib/shipsync/data";
-import type { ShipSyncPackage } from "@/lib/shipsync/model";
+import { nextItemId, type ShipSyncPackage } from "@/lib/shipsync/model";
 import { syncMondayImportBoard } from "@/lib/shipsync/monday-import-board.server";
 
 /** Deterministic colour per Monday group title — same idea as a Monday group's
@@ -265,9 +265,10 @@ export function ShipSyncImportBoard() {
     setAddingIn(null);
     setNewName("");
     try {
+      const itemId = await nextItemId();
       const created = await createPackage({
         barcode: awb, local_import: "Import", status: "in_office",
-        extra: { monday_group_title: g.title, monday_group_position: g.position },
+        extra: { monday_group_title: g.title, monday_group_position: g.position, monday: { "Item ID": itemId } },
       });
       setRows((prev) => [...prev, created]);
     } catch (e: any) {
