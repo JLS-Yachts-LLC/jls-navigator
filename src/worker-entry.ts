@@ -174,6 +174,21 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
     }
   }
 
+  // Manual ShipSync EDAS board sync: `?run=shipsync-edas-board` pulls the
+  // Monday.com EDAS 2026 board into shipsync_packages (local_import =
+  // 'EDAS') now, same as the "Sync from Monday" button on the EDAS tab
+  // (no-op error if not configured). Same manual-only pattern as Export —
+  // not on the hourly cron.
+  if (url.searchParams.get('run') === 'shipsync-edas-board') {
+    try {
+      const { importMondayEdasBoard } = await import('./lib/shipsync/monday-edas-board.server')
+      const r = await importMondayEdasBoard()
+      return new Response(JSON.stringify(r), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
+  }
+
   // Manual ShipSync proximity check: `?run=shipsync-proximity-check` runs the
   // "arriving in ~5 minutes" pass now, same as the 5-min cron tick — useful
   // for confirming the Google Maps key actually works server-side (it's

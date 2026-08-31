@@ -61,6 +61,8 @@ export async function loadImportPackages(): Promise<ShipSyncPackage[]> {
 }
 /** Export-tab packages. */
 export const loadExportPackages = () => loadPackagesByType('Export')
+/** EDAS-tab packages. */
+export const loadEdasPackages = () => loadPackagesByType('EDAS')
 export async function loadDrivers(): Promise<ShipSyncDriver[]> {
   const { data } = await db().from('shipsync_drivers').select('*').order('name')
   return (data ?? []) as ShipSyncDriver[]
