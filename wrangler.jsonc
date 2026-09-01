@@ -17,9 +17,11 @@
     "SUPABASE_PUBLISHABLE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxemRyb2FiamNkeW5jZnF3YXd5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg4MjkyNjYsImV4cCI6MjA5NDQwNTI2Nn0.ZHjXFJuUCFa3aRHnUVvSK1pBxwtxZ5nWrdELlsT96-c",
     "VITE_APP_URL": "https://jls-navigator.m-peeters-4a0.workers.dev",
 
-    // ── ALL outbound email — OFF since 2026-08-15 (MD instruction) ────────────
-    // Client vessels received "<vessel> - TDRA" notices, so every kind of email is
-    // switched off until each capability is deliberately turned back on.
+    // ── Outbound email — MANUAL SENDS ON, AUTOMATIC SENDS OFF (1 Sep 2026) ───
+    // Frozen on 2026-08-15 after client vessels received "<vessel> - TDRA" notices
+    // switched off, then restored one capability at a time: staff mail 26 Aug 2026,
+    // client mail 1 Sep 2026. Nothing sends on a schedule — every client-facing email
+    // is a person pressing Send in the app.
     // Flip a value to "true" and push: the Cloudflare build picks it up on deploy.
     //
     //   EMAIL_ENABLED                → MASTER SWITCH. While "false" Polaris sends
@@ -30,15 +32,15 @@
     //                                  (see src/lib/mail-guard.server.ts)
     //   PERMIT_EXPIRY_ALERTS_ENABLED → the daily 08:00 UTC permit expiry cron
     //
-    // Restore order: EMAIL_ENABLED → CLIENT_EMAIL_ENABLED → PERMIT_EXPIRY_ALERTS,
-    // verifying at each step.
+    // Remaining lever: PERMIT_EXPIRY_ALERTS_ENABLED. Leave it "false" unless the client
+    // explicitly asks for the daily expiry digest to resume.
     //
     // NOT covered by these switches (they are not Polaris sends): Supabase Auth
     // password-reset / invite mail, and Power Automate flows on the SharePoint
     // lists that email vessels when a list item changes.
-    "EMAIL_ENABLED": "true",  // restored 26 Aug 2026 — staff/internal mail only (client freeze below still applies)
-    "CLIENT_EMAIL_ENABLED": "false",
-    "PERMIT_EXPIRY_ALERTS_ENABLED": "false",
+    "EMAIL_ENABLED": "true",  // MASTER SWITCH — restored 26 Aug 2026
+    "CLIENT_EMAIL_ENABLED": "true",   // restored 1 Sep 2026 — client/vessel addresses allowed again
+    "PERMIT_EXPIRY_ALERTS_ENABLED": "false",  // deliberately OFF: no expiry mail unless a human presses Send
 
     // ── Outbound SharePoint push — FULLY ENABLED (two-way sync intact) ────────
     // Empty = nothing suppressed. Briefly set to "permits" on 2026-08-15, when a
