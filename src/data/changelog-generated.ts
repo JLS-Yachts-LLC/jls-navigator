@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "Add boat works for the ORBIT department, and boat type takes any vessel type"
+      },
+      {
+        "type": "fix",
         "title": "Bulk visa upload files against the open application instead of creating a duplicate"
       },
       {
