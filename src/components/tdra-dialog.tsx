@@ -25,6 +25,7 @@ interface Props {
 
 const AUTHORITIES = [
   "TDRA",
+  "FMA",
   "Dubai Municipality",
   "Dubai Maritime City Authority",
   "Port Rashid",

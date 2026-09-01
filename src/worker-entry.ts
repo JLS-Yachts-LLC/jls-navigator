@@ -779,6 +779,11 @@ export default {
     }
 
     // Lightspeed → QuickBooks item-description sync (admin only, form-triggered)
+    if (url.pathname === '/api/permits/email') {
+      const { permitsEmailHandler } = await import('./routes/api.permits.email')
+      return permitsEmailHandler(request)
+    }
+
     if (url.pathname === '/api/backups') {
       const { backupsHandler } = await import('./routes/api.backups')
       return backupsHandler(request)

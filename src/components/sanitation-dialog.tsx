@@ -24,6 +24,7 @@ interface Props {
 }
 
 const AUTHORITIES = [
+  "FMA",
   "Dubai Municipality",
   "Dubai Maritime City Authority",
   "Port Rashid",

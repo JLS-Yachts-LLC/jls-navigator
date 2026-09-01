@@ -13,7 +13,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Paperclip, FileCheck2, Save, Mail, Loader2 } from "lucide-react";
+import { Paperclip, FileCheck2, Save, Mail, Loader2, Eye, X } from "lucide-react";
 import { toast } from "sonner";
 
 type Yacht = { id: string; vessel_name: string };
@@ -26,6 +26,7 @@ interface Props {
 }
 
 const AUTHORITIES = [
+  "FMA",
   "Dubai Municipality",
   "Dubai Maritime City Authority",
   "Port Rashid",
@@ -46,6 +47,9 @@ export function CruisingMothershipDialog({ yachts, editing, userId, onSaved }: P
   );
   const [busy, setBusy] = useState(false);
   const [emailBusy, setEmailBusy] = useState(false);
+  const [previewBusy, setPreviewBusy] = useState(false);
+  // The rendered email, exactly as the server will send it.
+  const [preview, setPreview] = useState<{ subject: string; html: string; to: string } | null>(null);
   const [uploading, setUploading] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -145,47 +149,60 @@ export function CruisingMothershipDialog({ yachts, editing, userId, onSaved }: P
     }
   }
 
+  /** Ask the server to render the email; it uses the stored template when there
+   *  is one, so the preview is the real thing rather than an approximation. */
+  async function callEmailApi(permitId: string, previewOnly: boolean) {
+    const { data: { session } } = await (supabase as any).auth.getSession();
+    const res = await fetch("/api/permits/email", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      },
+      body: JSON.stringify({ permitId, preview: previewOnly }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body?.error ?? `Request failed (${res.status})`);
+    return body;
+  }
+
+  /** Save, then show the email that would go out — no send. */
+  async function handlePreview() {
+    setPreviewBusy(true);
+    try {
+      const permitId = await doSave();
+      const body = await callEmailApi(permitId, true);
+      setPreview({ subject: body.subject, html: body.html, to: body.to });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not build the preview");
+    } finally {
+      setPreviewBusy(false);
+    }
+  }
+
+  /** Save and send from the app (the permit document rides along as an
+   *  attachment). Previously this opened Outlook via a mailto: link, which left
+   *  no record of what actually went out. */
   async function handleEmailSave() {
     if (!form.contact_email) {
-      toast.error("Add an email address first");
+      toast.error("Add the client's email address first");
       return;
     }
     setEmailBusy(true);
     try {
-      await doSave();
-
-      const { data: templates } = await supabase
-        .from("email_templates" as never)
-        .select("subject, body")
-        .eq("permit_type", "cruising_mothership")
-        .limit(1) as { data: Array<{ subject: string; body: string }> | null };
-
-      const tmpl = templates?.[0];
-      const yachtName = yachts.find((y) => y.id === form.yacht_id)?.vessel_name ?? "";
-
-      const replace = (s: string) =>
-        s
-          .replace(/\{\{boat_name\}\}/g, yachtName)
-          .replace(/\{\{holder_name\}\}/g, form.holder_name ?? "")
-          .replace(/\{\{expiry_date\}\}/g, form.expiry_date ?? "")
-          .replace(/\{\{issue_date\}\}/g, form.issue_date ?? "")
-          .replace(/\{\{authority\}\}/g, form.issuing_authority ?? "")
-          .replace(/\{\{applied_by\}\}/g, (form.applied_by as string) ?? "")
-          .replace(/\{\{permit_number\}\}/g, form.permit_number ?? "")
-          .replace(/\{\{quotation_number\}\}/g, form.jls_quotation_number ?? "");
-
-      const subject = tmpl ? replace(tmpl.subject) : `Cruising Permit — ${yachtName}`;
-      const body = tmpl
-        ? replace(tmpl.body)
-        : `Dear ${form.holder_name ?? "Client"},\n\nPlease find your Cruising Permit (Mothership) details below.\n\nVessel: ${yachtName}\nDate Applied: ${form.issue_date ?? "—"}\nExpiry: ${form.expiry_date ?? "—"}\nAuthority: ${form.issuing_authority ?? "—"}\nApplied By: ${(form.applied_by as string) ?? "—"}\n${form.permit_number ? "Permit No: " + form.permit_number + "\n" : ""}${form.jls_quotation_number ? `JLS Quotation No: ${form.jls_quotation_number}\n` : ""}${form.document_url ? `\nAttachment: ${form.document_url}` : ""}\n\nKind regards,\nJLS Yachts`;
-
-      window.open(
-        `mailto:${form.contact_email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`,
-        "_blank"
-      );
+      const permitId = await doSave();
+      const body = await callEmailApi(permitId, false);
+      toast.success(`Sent to ${body.to}`, {
+        description: body.attached
+          ? "The permit document was attached, and it's logged against the vessel."
+          : "Logged against the vessel.",
+      });
+      setPreview(null);
       onSaved();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed");
+      const msg = e instanceof Error ? e.message : "Send failed";
+      // The mail guard's refusal is long and explains itself — show it in full.
+      toast.error(msg, { duration: /switched off|disabled/i.test(msg) ? 12000 : 6000 });
     } finally {
       setEmailBusy(false);
     }
@@ -402,12 +419,51 @@ export function CruisingMothershipDialog({ yachts, editing, userId, onSaved }: P
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             Save only
           </Button>
+          <Button type="button" variant="outline" onClick={handlePreview} disabled={isBusy} className="gap-1.5">
+            {previewBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
+            Preview email
+          </Button>
           <Button type="button" onClick={handleEmailSave} disabled={isBusy} className="gap-1.5">
             {emailBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
             Email Pass &amp; Save
           </Button>
         </div>
       </form>
+
+      {/* ── Email preview ──
+          Rendered by the same server code that sends it, shown in a sandboxed
+          iframe so the email's own styles can't leak into the app. */}
+      {preview && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4"
+          onClick={() => setPreview(null)}>
+          <div className="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl"
+            onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start gap-3 border-b border-border px-4 py-3">
+              <div className="min-w-0 flex-1">
+                <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Email preview</div>
+                <div className="truncate text-sm font-semibold">{preview.subject}</div>
+                <div className="truncate text-[11.5px] text-muted-foreground">
+                  To: {preview.to || <span className="text-amber-400">no client email set</span>}
+                  {form.document_url ? " · permit document attached" : ""}
+                </div>
+              </div>
+              <button type="button" onClick={() => setPreview(null)}
+                className="rounded p-1 text-muted-foreground transition hover:text-foreground">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <iframe title="Email preview" srcDoc={preview.html} sandbox=""
+              className="min-h-[420px] flex-1 bg-white" />
+            <div className="flex justify-end gap-2 border-t border-border px-4 py-3">
+              <Button type="button" variant="outline" onClick={() => setPreview(null)}>Close</Button>
+              <Button type="button" onClick={handleEmailSave} disabled={isBusy || !preview.to} className="gap-1.5">
+                {emailBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+                Send now
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </DialogContent>
   );
 }
