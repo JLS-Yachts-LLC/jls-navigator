@@ -44,9 +44,24 @@ type View =
   | { mode: "defect"; boatId: string; hasTrailer: boolean };
 
 const EMPTY_FORM = {
-  name: "", boat_type: "tender", length_m: "", manufacturer: "", model: "", year: "",
+  name: "", boat_type: "Tender", length_m: "", manufacturer: "", model: "", year: "",
   engine: "", fuel_type: "diesel", has_trailer: false, assigned_department: "",
 };
+
+/**
+ * The nine types below are suggestions, not the whole world — the list of tender
+ * and vessel types is effectively endless, so the field takes free text. Anything
+ * matching a known type (by slug or by label) is stored as that type's slug so it
+ * still groups with the existing boats; anything else is kept exactly as typed.
+ */
+function normaliseBoatType(input: string): string {
+  const v = input.trim();
+  if (!v) return "";
+  const known = BOAT_TYPES.find(
+    (t) => t === v.toLowerCase() || BOAT_TYPE_LABEL[t].toLowerCase() === v.toLowerCase(),
+  );
+  return known ?? v;
+}
 
 export function OrbitBoatsHub() {
   const [view, setView] = useState<View>({ mode: "list" });
@@ -74,7 +89,7 @@ export function OrbitBoatsHub() {
     setBusy(true);
     const { error } = await db().rpc("create_orbit_boat", {
       p_boat: {
-        name: form.name.trim(), boat_type: form.boat_type, length_m: form.length_m,
+        name: form.name.trim(), boat_type: normaliseBoatType(form.boat_type), length_m: form.length_m,
         manufacturer: form.manufacturer, model: form.model, year: form.year,
         engine: form.engine, fuel_type: form.fuel_type, has_trailer: form.has_trailer,
         assigned_department: form.assigned_department,
@@ -175,10 +190,17 @@ export function OrbitBoatsHub() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs">Boat type</Label>
-                <Select value={form.boat_type} onValueChange={(v) => setForm((f) => ({ ...f, boat_type: v }))}>
-                  <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
-                  <SelectContent>{BOAT_TYPES.map((t) => <SelectItem key={t} value={t}>{BOAT_TYPE_LABEL[t]}</SelectItem>)}</SelectContent>
-                </Select>
+                <Input
+                  value={form.boat_type}
+                  onChange={(e) => setForm((f) => ({ ...f, boat_type: e.target.value }))}
+                  list="orbit-boat-types"
+                  className="h-9"
+                  placeholder="Pick one or type your own"
+                  autoComplete="off"
+                />
+                <datalist id="orbit-boat-types">
+                  {BOAT_TYPES.map((t) => <option key={t} value={BOAT_TYPE_LABEL[t]} />)}
+                </datalist>
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Fuel type</Label>

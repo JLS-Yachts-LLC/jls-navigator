@@ -5,6 +5,102 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.47.0",
+    "date": "2026-09-01",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Bulk visa upload files against the open application instead of creating a duplicate"
+      },
+      {
+        "type": "feature",
+        "title": "Client email sending is switched back on for manual sends from the app"
+      },
+      {
+        "type": "feature",
+        "title": "Permits email the client from the app, tracked against the vessel"
+      }
+    ]
+  },
+  {
+    "version": "2.46.0",
+    "date": "2026-08-31",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "EDAS board wasn't showing Monday's Name field at all"
+      },
+      {
+        "type": "feature",
+        "title": "Add EDAS 2026 as a new ShipSync tab"
+      },
+      {
+        "type": "fix",
+        "title": "Remember a boat's dispatch destination for next time"
+      },
+      {
+        "type": "fix",
+        "title": "Show the pre-delivery PDF link, add a recipient field for POD emails"
+      },
+      {
+        "type": "fix",
+        "title": "Don't create a duplicate Import shipment for an AWB that already exists"
+      },
+      {
+        "type": "fix",
+        "title": "Stop Transit packages leaking into Local Packages, surface photos + delivery note"
+      },
+      {
+        "type": "feature",
+        "title": "Show Quotation Number as its own column on Export"
+      },
+      {
+        "type": "feature",
+        "title": "Drag-and-drop upload for Import's Payment Copy column"
+      },
+      {
+        "type": "feature",
+        "title": "Wire up Approvals, Small Boats, and Projects nav entries"
+      },
+      {
+        "type": "fix",
+        "title": "Only show a vessel's route line once it's selected"
+      },
+      {
+        "type": "feature",
+        "title": "Draw each vessel's planned route line on the fleet map"
+      },
+      {
+        "type": "feature",
+        "title": "Add a manually-editable Calendar tab"
+      },
+      {
+        "type": "feature",
+        "title": "Auto-generate Import's Item ID for locally-added shipments"
+      },
+      {
+        "type": "feature",
+        "title": "Richer vessel tracking popup — ETA, IMO, flag, voyage state"
+      },
+      {
+        "type": "feature",
+        "title": "Match Monday's multi-widget Chart tab, not a single chart"
+      },
+      {
+        "type": "feature",
+        "title": "Per-board Chart view for Local Packages, Import, Export"
+      },
+      {
+        "type": "feature",
+        "title": "Let a file be removed from a package's Documents column"
+      },
+      {
+        "type": "feature",
+        "title": "Drag-and-drop document upload on Local Packages/Import/Export"
+      }
+    ]
+  },
+  {
     "version": "2.45.0",
     "date": "2026-08-27",
     "entries": [
