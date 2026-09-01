@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-09-01",
     "entries": [
       {
+        "type": "feature",
+        "title": "Ctrl-K now finds ORBIT and ShipSync records, and says when a lookup fails"
+      },
+      {
         "type": "fix",
         "title": "Add boat works for the ORBIT department, and boat type takes any vessel type"
       },

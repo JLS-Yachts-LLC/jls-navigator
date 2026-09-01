@@ -395,8 +395,11 @@ export function ProjectDetailPage({
             <Button variant="outline" size="sm" onClick={openEditProject} className="gap-1.5">
               <Pencil className="h-3.5 w-3.5" /> Edit
             </Button>
-            <Button variant="ghost" size="sm" onClick={handleDeleteProject} className="gap-1.5 text-destructive/70 hover:text-destructive">
-              <Trash2 className="h-3.5 w-3.5" />
+            {/* Labelled deliberately: an unlabelled bin next to "Add Task" reads
+                as "delete a task", and this one takes the project AND every task
+                in it (orbit_tasks.project_id cascades). */}
+            <Button variant="ghost" size="sm" onClick={handleDeleteProject} title="Delete this project and all of its tasks" className="gap-1.5 text-destructive/70 hover:text-destructive">
+              <Trash2 className="h-3.5 w-3.5" /> Delete project
             </Button>
             <Button size="sm" onClick={() => openNewTask("todo")} className="gap-1.5">
               <Plus className="h-4 w-4" /> Add Task

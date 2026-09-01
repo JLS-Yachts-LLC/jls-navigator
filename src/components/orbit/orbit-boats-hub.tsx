@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Ship, Plus, Loader2 } from "lucide-react";
+import { Ship, Plus, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { BoatStatusHome } from "./boat-status-home";
@@ -82,6 +82,19 @@ export function OrbitBoatsHub() {
     if (home.error) toast.error(home.error.message); else setBoats(home.data ?? []);
     setTrailerFlags(Object.fromEntries((boatsRaw.data ?? []).map((b: any) => [b.id, b.has_trailer])));
     setLoading(false);
+  }
+
+  /**
+   * Retire, not delete: the boat drops off the hub (v_orbit_boat_home filters on
+   * is_active) while its jobs, defects and checklist history stay in place. Boats
+   * previously had no removal at all, so one added in error was stuck for good.
+   */
+  async function handleRetire(b: Boat) {
+    if (!confirm(`Remove "${b.name}" from the boats hub?\n\nIts jobs, defects and checklist history are kept, and an admin can put it back.`)) return;
+    const { error } = await db().rpc("retire_orbit_boat", { p_boat_id: b.boat_id });
+    if (error) { toast.error(error.message); return; }
+    toast.success(`${b.name} removed`);
+    await load();
   }
 
   async function handleCreate() {
@@ -158,10 +171,10 @@ export function OrbitBoatsHub() {
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {boats.map((b) => (
+              <div key={b.boat_id} className="group relative">
               <button
-                key={b.boat_id}
                 onClick={() => setView({ mode: "status", boatId: b.boat_id, hasTrailer: trailerFlags[b.boat_id] ?? false })}
-                className="rounded-xl border border-border bg-card p-4 text-left transition hover:border-primary/30 hover:shadow-sm"
+                className="w-full rounded-xl border border-border bg-card p-4 text-left transition hover:border-primary/30 hover:shadow-sm"
               >
                 <div className="mb-2 flex items-center justify-between">
                   <span className="font-medium">{b.name}</span>
@@ -174,6 +187,18 @@ export function OrbitBoatsHub() {
                   <span>{b.outstanding_defects} defect{b.outstanding_defects === 1 ? "" : "s"}</span>
                 </div>
               </button>
+              {/* Sibling, not nested — a button inside the card button is invalid
+                  markup and would swallow the click that opens the boat. */}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleRetire(b)}
+                title={`Remove ${b.name} from the hub`}
+                className="absolute bottom-2 right-2 h-7 w-7 p-0 text-muted-foreground/50 opacity-0 transition group-hover:opacity-100 hover:text-destructive focus-visible:opacity-100"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+              </div>
             ))}
           </div>
         )}
