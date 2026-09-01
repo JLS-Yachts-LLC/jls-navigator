@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-08-27",
     "entries": [
       {
+        "type": "fix",
+        "title": "Vehicle photo rows save, and several images can be added at once"
+      },
+      {
         "type": "feature",
         "title": "The photo importer can create drivers who have no record yet"
       },
