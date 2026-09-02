@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Import board shows app-confirmed deliveries, and every Import/Transit shipment gets an Item ID"
+      },
+      {
+        "type": "feature",
         "title": "A staff member's department can now be set from Manage Users — a Department column on each row shows and changes it, so module access no longer has to be decided at invite time"
       },
       {

@@ -12,14 +12,18 @@
  * position to match) moves a shipment between sections, same as dragging a
  * card between columns on Monday. "Status" is the separate, real Monday
  * STATUS column — same 18 labels and colours as Monday's own status picker
- * — sitting where Monday has it (after Yacht Name). The two are independent:
- * changing Status never moves a shipment's group. Every field is editable
- * locally for day-to-day office use, but nothing writes back to Monday: the
- * next hourly sync
- * (lib/shipsync/monday-import-board.server.ts) re-pulls the board and
- * overwrites any Monday-linked row's fields (including a manual group move)
- * back to whatever Monday currently has. Rows added here by hand (no
- * monday_item_id) are never touched by the sync.
+ * — sitting where Monday has it (after Yacht Name).
+ *
+ * Status is the one field that DOES write back to Monday, and it carries the
+ * group with it: received puts a shipment in Import or Transit (by shipment
+ * type), delivered in Delivered Shipment, invoiced in Completed — pushed to
+ * Monday and mirrored here (setShipmentStatus in
+ * lib/shipsync/monday-import-board.server.ts). It has to work that way: the
+ * hourly sync re-pulls the board and overwrites every Monday-linked row, so a
+ * status or group changed only in Polaris was silently reverted within the hour.
+ *
+ * Every OTHER field is still local-only and still subject to that overwrite.
+ * Rows added here by hand (no monday_item_id) are never touched by the sync.
  *
  * ONE <table> for every group, not one table per group: a group's own toggle
  * row and its shipment rows are all part of the same table body, so there is
@@ -48,7 +52,7 @@ import { cn } from "@/lib/utils";
 import { fmtDate, mondayRow, extraMondayColumns, DocumentDropzoneDialog, TableChartToggle, ShipSyncChartsPanel } from "@/components/shipsync/shared";
 import { loadImportPackages, patchPackage, createPackage, deletePackage, addPackageDocuments, removePackageDocument, uploadShipSyncFile } from "@/lib/shipsync/data";
 import { nextItemId, type ShipSyncPackage } from "@/lib/shipsync/model";
-import { syncMondayImportBoard } from "@/lib/shipsync/monday-import-board.server";
+import { syncMondayImportBoard, pushShipmentStatus } from "@/lib/shipsync/monday-import-board.server";
 
 /** Deterministic colour per Monday group title — same idea as a Monday group's
  *  own colour bar, just derived instead of picked, since we don't fetch colours. */
@@ -260,6 +264,28 @@ export function ShipSyncImportBoard() {
     try { await patchPackage(p.id, patch); }
     catch (e: any) { toast.error(e?.message ?? "Update failed"); await reload(); }
     finally { setSavingCell(null); }
+  }
+
+  /**
+   * Status changes go through the server so they reach Monday, and so the group
+   * moves with them: received puts a shipment in Import or Transit, delivered in
+   * Delivered Shipment, invoiced in Completed. Writing only to Polaris was
+   * pointless — the hourly sync rewrites each row from Monday, so the change
+   * disappeared within the hour.
+   */
+  async function changeStatus(p: ShipSyncPackage, status: string) {
+    setSavingCell(`${p.id}:mondayStatus`);
+    try {
+      const r = await (pushShipmentStatus as any)({ data: { packageId: p.id, status } });
+      toast.success(r?.group ? `Status set to ${status} — moved to ${r.group}` : `Status set to ${status}`);
+      if (r?.note) toast.warning(r.note);
+      await reload();
+    } catch (e: any) {
+      toast.error(e?.message ?? "Could not update the status");
+      await reload();
+    } finally {
+      setSavingCell(null);
+    }
   }
 
   async function uploadDocuments(p: ShipSyncPackage, files: File[]) {
@@ -526,7 +552,7 @@ export function ShipSyncImportBoard() {
                               return (
                                 <td key="mondayStatus" className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
                                   <Select value={current || undefined}
-                                    onValueChange={(v) => void commit(p, `${p.id}:mondayStatus`, { extra: { ...extraOf(p), monday: { ...mondayRow(p), STATUS: v } } } as any)}>
+                                    onValueChange={(v) => void changeStatus(p, v)}>
                                     <SelectTrigger
                                       className="h-7 w-full border-none bg-transparent px-1.5 text-[11px] hover:bg-accent/40"
                                       title={scanned

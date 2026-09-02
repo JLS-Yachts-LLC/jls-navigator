@@ -303,3 +303,130 @@ export async function importMondayImportBoard(): Promise<MondayImportBoardResult
 /** Server function for the "Sync from Monday" button on the ShipSync Import board. */
 export const syncMondayImportBoard = createServerFn({ method: 'POST' })
   .handler(async (): Promise<MondayImportBoardResult> => importMondayImportBoard())
+
+// ─── Status → group, written back to Monday ───────────────────────────────────
+
+/**
+ * Where a shipment belongs once its status changes, in the team's own workflow:
+ * received into the building takes it out of Incoming and into Import or Transit
+ * depending on the shipment type; delivered moves it to Delivered Shipment; and
+ * invoiced moves it to Completed. Anything else leaves the group alone.
+ *
+ * Titles are matched against the board's real groups case-insensitively, because
+ * Monday's own spelling has drifted ("Incomming", "IMPORT" vs "Import").
+ */
+function targetGroupTitle(status: string, shipmentType: string): string | null {
+  switch (status) {
+    case 'Warehouse':
+    case 'Office':
+    case 'In Warehouse':
+      return /transit/i.test(shipmentType) ? 'TRANSIT' : 'IMPORT'
+    case 'Delivered - TBI':
+      return 'Delivered Shipment'
+    case 'Complete':
+      return 'Completed'
+    default:
+      return null
+  }
+}
+
+export interface StatusPushResult {
+  /** The group the shipment ended up in, or null when the status implies no move. */
+  group: string | null
+  /** False when the shipment only exists in Polaris, so there was nothing to push. */
+  pushedToMonday: boolean
+  note?: string
+}
+
+/**
+ * Set a shipment's status and move it to the group that status implies — in
+ * Monday as well as here.
+ *
+ * Both halves matter. The Import board mirrors Monday and the hourly sync rewrites
+ * each row wholesale, so a change made only in Polaris (status included) was
+ * silently reverted within the hour. Pushing it to Monday first means the sync
+ * finds the board already agreeing and leaves it be.
+ *
+ * Shipments scanned in through SharePoint have no Monday item behind them; those
+ * are updated locally and reported as not pushed, rather than failing.
+ */
+export async function setShipmentStatus(packageId: string, status: string): Promise<StatusPushResult> {
+  const { data: row } = await db()
+    .from('shipsync_packages')
+    .select('id, extra, local_import')
+    .eq('id', packageId)
+    .maybeSingle()
+  if (!row) throw new Error('Shipment not found')
+
+  const extra = (row.extra ?? {}) as Record<string, any>
+  const mondayRow = (extra.monday ?? {}) as Record<string, string>
+  const shipmentType = mondayRow['Shipment Type'] ?? row.local_import ?? ''
+  const wantedTitle = targetGroupTitle(status, shipmentType)
+  const itemId = extra.monday_item_id ? String(extra.monday_item_id) : null
+
+  let groupTitle: string | null = null
+  let groupId: string | null = null
+  let pushedToMonday = false
+  let note: string | undefined
+
+  if (itemId) {
+    const cfg = await getMondayConfig()
+    const meta = await mondayGraphQL(
+      cfg.apiToken,
+      `query ($board: [ID!]) { boards (ids: $board) { columns { id title } groups { id title } } }`,
+      { board: [cfg.boardId] },
+    )
+    const columns: Array<{ id: string; title: string }> = meta?.boards?.[0]?.columns ?? []
+    const groups: MondayGroup[] = meta?.boards?.[0]?.groups ?? []
+
+    const statusCol = columns.find((c) => c.title.trim().toUpperCase() === 'STATUS')
+    if (statusCol) {
+      await mondayGraphQL(
+        cfg.apiToken,
+        `mutation ($board: ID!, $item: ID!, $col: String!, $val: String!) {
+           change_simple_column_value (board_id: $board, item_id: $item, column_id: $col, value: $val) { id }
+         }`,
+        { board: cfg.boardId, item: itemId, col: statusCol.id, val: status },
+      )
+      pushedToMonday = true
+    } else {
+      note = 'No STATUS column found on the Monday board — status saved in Polaris only.'
+    }
+
+    if (wantedTitle) {
+      const g = groups.find((x) => x.title.trim().toLowerCase() === wantedTitle.toLowerCase())
+      if (g) {
+        await mondayGraphQL(
+          cfg.apiToken,
+          `mutation ($item: ID!, $group: String!) { move_item_to_group (item_id: $item, group_id: $group) { id } }`,
+          { item: itemId, group: g.id },
+        )
+        groupTitle = g.title
+        groupId = g.id
+      } else {
+        note = `Monday has no "${wantedTitle}" group — status changed but the shipment was not moved.`
+      }
+    }
+  } else {
+    note = 'Scanned shipment with no Monday item — updated in Polaris only.'
+    if (wantedTitle) groupTitle = wantedTitle
+  }
+
+  // Mirror locally so the board is right immediately and the next sync agrees.
+  const nextExtra: Record<string, any> = {
+    ...extra,
+    monday: { ...mondayRow, STATUS: status },
+  }
+  if (groupTitle) nextExtra.monday_group_title = groupTitle
+  if (groupId) nextExtra.monday_group_id = groupId
+
+  const { error } = await db().from('shipsync_packages').update({ extra: nextExtra }).eq('id', packageId)
+  if (error) throw new Error(error.message)
+
+  return { group: groupTitle, pushedToMonday, note }
+}
+
+/** Server function for the Import board's Status dropdown. */
+export const pushShipmentStatus = createServerFn({ method: 'POST' })
+  .inputValidator((d: { packageId: string; status: string }) => d)
+  .handler(async ({ data }): Promise<StatusPushResult> => setShipmentStatus(data.packageId, data.status))
