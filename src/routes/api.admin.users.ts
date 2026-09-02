@@ -59,7 +59,7 @@ const handlers = {
     let query = sb
       .from('user_profiles')
       .select(
-        'user_id, email, display_name, active, mfa_enabled, last_login, created_at, org_id, location_id, role_id, roles:role_id(name, display_name, scope)',
+        'user_id, email, display_name, active, mfa_enabled, last_login, created_at, org_id, location_id, department, role_id, roles:role_id(name, display_name, scope)',
         { count: 'exact' },
       )
       .order('created_at', { ascending: false })
@@ -97,6 +97,7 @@ const handlers = {
         user_id:      p.user_id,
         role:         roleName,
         role_display: p.roles?.display_name ?? roleName,
+        department:   p.department ?? null,
         org_id:       p.org_id ?? null,
         vessel_id:    null,
         location_id:  p.location_id ?? null,

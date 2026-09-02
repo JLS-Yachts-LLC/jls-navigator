@@ -67,6 +67,7 @@ export function UserTable({ users, total, roles, departments = [], onRefresh }: 
           <tr className="bg-muted text-muted-foreground text-[11px] font-semibold tracking-wider">
             <th className="text-left px-3 py-2 w-64">Name / Email</th>
             <th className="text-left px-3 py-2 w-28">Role</th>
+            <th className="text-left px-3 py-2 w-36">Department</th>
             <th className="text-left px-3 py-2 w-28">Scope</th>
             <th className="text-left px-3 py-2 w-20">Status</th>
             <th className="text-center px-3 py-2 w-12">MFA</th>
@@ -83,7 +84,7 @@ export function UserTable({ users, total, roles, departments = [], onRefresh }: 
             </tr>
           ) : (
             filtered.map(u => (
-              <UserRow key={u.id} userRole={u} roles={roles} onRefresh={onRefresh} />
+              <UserRow key={u.id} userRole={u} roles={roles} departments={departments} onRefresh={onRefresh} />
             ))
           )}
         </tbody>

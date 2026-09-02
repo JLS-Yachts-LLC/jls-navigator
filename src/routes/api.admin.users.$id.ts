@@ -25,8 +25,9 @@ const handlers = {
 
     const { id } = params
     const body = await request.json() as {
-      action: 'role' | 'suspend' | 'unsuspend' | 'reset_password' | 'resend_invite' | 'name'
+      action: 'role' | 'department' | 'suspend' | 'unsuspend' | 'reset_password' | 'resend_invite' | 'name'
       role?: string          // a roles.name value
+      department?: string | null   // a staff_departments.slug, or null to clear
       // action: 'name' — first/last go to `profiles`, display_name to user_profiles
       first_name?: string
       last_name?: string
@@ -36,6 +37,36 @@ const handlers = {
     const sb = getAdmin()
 
     // Account actions that email the user — email lives on the profile.
+    // Department drives DEFAULT module access via department_permissions;
+    // any per-user row in user_module_access still overrides it.
+    if (body.action === 'department') {
+      const slug = body.department ? String(body.department) : null
+      if (slug) {
+        const { data: dept } = await sb
+          .from('staff_departments').select('slug').eq('slug', slug).eq('active', true).maybeSingle()
+        if (!dept) return json({ error: `Unknown department: ${slug}` }, 400)
+      }
+      const { data: before } = await sb
+        .from('user_profiles').select('email, department').eq('user_id', id).maybeSingle()
+      const { error } = await sb
+        .from('user_profiles').update({ department: slug }).eq('user_id', id)
+      if (error) return json({ error: error.message }, 500)
+
+      await logAuditEvent({
+        event_type:  'PERM',
+        actor_id:    session.user.id,
+        actor_email: session.user.email,
+        actor_role:  session.user.role,
+        target_type: 'user',
+        target_id:   id,
+        target_label: (before as any)?.email ?? id,
+        detail:      `Department changed: ${(before as any)?.department ?? 'none'} → ${slug ?? 'none'}`,
+        ip_address:  request.headers.get('x-forwarded-for'),
+        result:      'success',
+      })
+      return json({ success: true, department: slug })
+    }
+
     if (body.action === 'reset_password' || body.action === 'resend_invite') {
       const { data: profile } = await sb
         .from('user_profiles').select('email').eq('user_id', id).maybeSingle()
