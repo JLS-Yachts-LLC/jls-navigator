@@ -1349,10 +1349,33 @@ const SP_STATUS_REV: Record<string, string> = {
   'In Office': 'in_office', 'In Storage': 'in_storage', 'Assigned': 'assigned',
   'Out for Delivery': 'out_for_delivery', 'Delivered': 'delivered',
   'Client to Collect': 'to_collect', 'Client Collected': 'collected', 'Client Refused': 'refused',
+  // Wording the Power App has used for the same states. Kept as aliases rather
+  // than renamed, because the list holds a mix of old and new choice text.
+  'Assigned to Driver': 'assigned', 'Out For Delivery': 'out_for_delivery',
+  'Delivered to Vessel': 'delivered', 'Collected': 'collected',
+  'To Collect': 'to_collect', 'Refused': 'refused', 'Storage': 'in_storage',
+  'Office': 'in_office', 'Received': 'in_office',
 }
+/** Choice text varies by case and spacing between the app and the list. */
+const statusKey = (s: string) => s.toLowerCase().replace(/[^a-z]/g, '')
+const SP_STATUS_BY_KEY = new Map(
+  Object.entries(SP_STATUS_REV).map(([text, ours]) => [statusKey(text), ours]),
+)
 // `date`-typed package columns: truncate any SharePoint datetime to YYYY-MM-DD
 // (timestamptz columns like delivered_at/received_at keep the full value).
 const PKG_DATE_FIELDS = new Set(['planned_delivery_date'])
+/**
+ * Package columns holding a SharePoint image (received photo, delivered photo,
+ * signature). SharePoint hands these over as an object describing the file, not a
+ * URL, so the value is downloaded into Supabase storage and the public URL stored.
+ */
+const PKG_IMAGE_FIELDS = new Set([
+  'item_photo_url', 'delivery_photo_url', 'office_photo_url', 'signature_url',
+])
+/** Photos fetched per sync run — the rest are picked up on the next run. */
+const PKG_IMAGE_BUDGET = 15
+/** A stored photo value we don't need to fetch again. */
+const isStoredUrl = (v: unknown) => typeof v === 'string' && /^https?:\/\//.test(v) && !v.startsWith('{')
 async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; errors: number; samples?: string[] }> {
   const token = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret)
   const siteId = await resolveSpSite(token, cfg.tenantUrl, cfg.siteUrl)
@@ -1369,30 +1392,75 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
   }
 
   const { data: existing } = await fetchAllRows(() => (supabaseAdmin as any)
-    .from('shipsync_packages').select('id, barcode, extra').order('id'))
+    .from('shipsync_packages')
+    .select('id, barcode, extra, status, item_photo_url, delivery_photo_url, office_photo_url, signature_url, documents')
+    .order('id'))
   const byBarcode = new Map<string, string>()
   const bySpId = new Map<string, string>()
   const extraById = new Map<string, Record<string, any>>()
+  const rowById = new Map<string, Record<string, any>>()
   for (const p of (existing ?? []) as Record<string, any>[]) {
     if (p.barcode) byBarcode.set(String(p.barcode).toLowerCase().trim(), String(p.id))
     const sp = p.extra?.sp_item_id
     if (sp) bySpId.set(String(sp), String(p.id))
     extraById.set(String(p.id), (p.extra ?? {}) as Record<string, any>)
+    rowById.set(String(p.id), p)
   }
 
   const updateById = new Map<string, Record<string, any>>()
   const insertByKey = new Map<string, Record<string, any>>()
+  /** Status choice text the list uses that we have no mapping for. */
+  const unmappedStatus = new Set<string>()
+  let imageBudget = PKG_IMAGE_BUDGET
+  const imageNotes: string[] = []
 
   for (const item of allItems) {
     if (item['@removed']) continue
     const fields = item.fields ?? {}
     const record: Record<string, any> = { sp_synced_at: new Date().toISOString() }
 
+    // Which row this is (needed before mapping, so photos already stored are not
+    // downloaded again and a status we can't read isn't overwritten).
+    const spBarcodeField = Object.entries(cfg.fieldMapping).find(([, db]) => db === 'barcode')?.[0]
+    const spBarcode = spBarcodeField ? fields[spBarcodeField] : null
+    const existingId =
+      bySpId.get(String(item.id)) ??
+      (spBarcode ? byBarcode.get(String(spBarcode).toLowerCase().trim()) : undefined)
+    const current = existingId ? rowById.get(existingId) : undefined
+
     for (const [spField, dbField] of Object.entries(cfg.fieldMapping)) {
       if (!dbField || !(spField in fields)) continue
       const raw = fields[spField]
-      if (dbField === 'status') { record.status = SP_STATUS_REV[String(raw)] ?? 'in_office'; continue }
+      if (dbField === 'status') {
+        const text = String(raw ?? '').trim()
+        const ours = text ? SP_STATUS_BY_KEY.get(statusKey(text)) : undefined
+        if (ours) { record.status = ours; continue }
+        // An unrecognised choice must not silently demote the package to In Office —
+        // keep what we have and report the wording so the mapping can be extended.
+        if (text) unmappedStatus.add(text)
+        if (current?.status) record.status = current.status
+        continue
+      }
       if (dbField === 'num_packages') { record.num_packages = coerceNumeric(raw) ?? 1; continue }
+      if (PKG_IMAGE_FIELDS.has(dbField)) {
+        if (raw == null || raw === '') continue
+        if (isStoredUrl(current?.[dbField])) continue // already downloaded
+        if (imageBudget <= 0) continue                // next run picks it up
+        imageBudget--
+        const got = await fetchSpImageToSupabase(
+          raw, token, cfg.tenantUrl, `pkg-${item.id}-${dbField}`,
+          cfg.tenantId, cfg.clientId, cfg.clientSecret,
+        )
+        if (got.url) record[dbField] = got.url
+        else if (got.reason && imageNotes.length < 3) imageNotes.push(`${dbField}: ${got.reason}`)
+        continue
+      }
+      if (dbField === 'documents') {
+        const doc = spDocEntry(raw)
+        // Documents uploaded in Polaris stay — the SharePoint one is added to them.
+        if (doc) record.documents = mergeDocs(current?.documents, doc)
+        continue
+      }
       let val: any = raw !== '' && raw !== null && raw !== undefined ? raw : null
       if (val != null && PKG_DATE_FIELDS.has(dbField)) val = spDateOnly(val)
       record[dbField] = val
@@ -1404,10 +1472,6 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
     if (record.num_packages == null) record.num_packages = 1
     if (record.status == null) record.status = 'in_office'
 
-    const existingId =
-      bySpId.get(String(item.id)) ??
-      (record.barcode ? byBarcode.get(String(record.barcode).toLowerCase().trim()) : undefined)
-
     if (existingId) {
       // Preserve any other keys already in extra (note links, photos, etc.).
       record.extra = { ...(extraById.get(existingId) ?? {}), sp_item_id: item.id }
@@ -1418,7 +1482,44 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
     }
   }
 
-  return bulkPersist('shipsync_packages', updateById, insertByKey)
+  const res = await bulkPersist('shipsync_packages', updateById, insertByKey)
+  // Surface what the sync could not read, rather than leaving it to be noticed as
+  // "the status isn't updating": these lines show in the Integrations panel.
+  const notes = [
+    ...(unmappedStatus.size
+      ? [`Unmapped Status choice(s): ${[...unmappedStatus].slice(0, 6).join(', ')} — status left unchanged on those rows`]
+      : []),
+    ...imageNotes,
+  ]
+  return notes.length ? { ...res, samples: [...(res.samples ?? []), ...notes] } : res
+}
+
+/** One SharePoint document value → the { name, url } shape `documents` holds. */
+function spDocEntry(raw: unknown): { name: string; url: string } | null {
+  if (!raw) return null
+  if (typeof raw === 'string') {
+    const s = raw.trim()
+    if (!s) return null
+    if (/^https?:\/\//.test(s)) return { name: decodeURIComponent(s.split('/').pop() ?? 'Document'), url: s }
+    try {
+      const o = JSON.parse(s)
+      return spDocEntry(o)
+    } catch { return null }
+  }
+  if (typeof raw === 'object') {
+    const o = raw as Record<string, any>
+    const url = o.Url ?? o.url ?? o.serverRelativeUrl ?? null
+    if (typeof url !== 'string' || !url) return null
+    const name = o.Description ?? o.fileName ?? decodeURIComponent(url.split('/').pop() ?? 'Document')
+    return { name: String(name), url }
+  }
+  return null
+}
+
+/** Add a document without disturbing the ones already on the package. */
+function mergeDocs(current: unknown, doc: { name: string; url: string }): Array<{ name: string; url: string }> {
+  const list = Array.isArray(current) ? (current as Array<{ name: string; url: string }>) : []
+  return list.some((d) => d?.url === doc.url) ? list : [...list, doc]
 }
 
 // ShipSync Drivers sync: SharePoint "Drivers" list → shipsync_drivers. The drivers

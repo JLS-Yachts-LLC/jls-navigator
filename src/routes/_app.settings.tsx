@@ -197,7 +197,7 @@ import {
 } from '@/lib/sharepoint-sync.server'
 
 const doDiscoverSharePointColumns = createServerFn({ method: 'POST' })
-  .inputValidator((d: { listName: string }) => d)
+  .inputValidator((d: { listName: string; sitePath?: string | null }) => d)
   .handler(async ({ data }) => {
     const { data: row } = await (supabaseAdmin as any)
       .from('integration_settings')
@@ -210,16 +210,26 @@ const doDiscoverSharePointColumns = createServerFn({ method: 'POST' })
       throw new Error('Complete the SharePoint credentials first (Tenant ID, Client ID, Secret, URLs).')
     }
     const token = await _getGraphToken(tenant_id, client_id, client_secret)
-    const siteId = await _resolveSpSite(token, tenant_url, site_url)
+    // A sync can live on its own site (ShipSync is on /sites/JLS-DeliveriesApp).
+    // Without honouring that, this reads the default site and reports the list as
+    // missing — or worse, returns a same-named list's columns.
+    const siteId = await _resolveSpSite(token, tenant_url, data.sitePath?.trim() || site_url)
     const res = await fetch(
       `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${data.listName}/columns`,
       { headers: { Authorization: `Bearer ${token}` } }
     )
     const body = await res.json() as Record<string, any>
     if (!body.value) throw new Error(`Could not read list columns: ${body.error?.message ?? 'List not found'}`)
+    // Read-only columns are kept: inbound syncs only ever read, and SharePoint
+    // marks image/computed columns read-only — filtering them out made photo
+    // columns impossible to map.
     return (body.value as any[])
-      .filter((c: any) => !c.readOnly && c.name !== 'id')
-      .map((c: any) => ({ name: c.name as string, displayName: c.displayName as string }))
+      .filter((c: any) => c.name !== 'id')
+      .map((c: any) => ({
+        name: c.name as string,
+        displayName: c.displayName as string,
+        readOnly: !!c.readOnly,
+      }))
   })
 
 const doSyncSharePoint = createServerFn({ method: 'POST' })
