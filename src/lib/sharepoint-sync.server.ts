@@ -557,7 +557,7 @@ async function fetchSpImageToSupabase(
   clientId?: string,
   clientSecret?: string,
   /** Lets a Power App attachment photo be found — see fetchListAttachment. */
-  attach?: { siteAbsoluteUrl: string; listName: string; itemId: string },
+  attach?: { siteAbsoluteUrl: string; listName: string; itemId: string; listId?: string },
 ): Promise<{ url: string | null; reason?: string; shape?: string[] }> {
   // SP image/thumbnail columns return an object (or sometimes a JSON string)
   let img: Record<string, any> | null = null
@@ -597,7 +597,7 @@ async function fetchSpImageToSupabase(
     if (!attach) {
       return { url: null, reason: `Photo is a list attachment ("${attachName}") — this sync can't reach attachments.`, shape: Object.keys(img) }
     }
-    return fetchListAttachment(attach, attachName, spItemId, 'attachment', tenantId, clientId, clientSecret)
+    return fetchListAttachment(attach, attachName, spItemId, 'attachment', graphToken, tenantId, clientId, clientSecret)
   }
 
   const serverUrl: string = img.serverUrl ?? tenantUrl.replace(/\/$/, '')
@@ -673,41 +673,62 @@ function describeFolderUrl(url: string): string {
  * through SharePoint's own API and then downloaded with a SharePoint token.
  */
 async function fetchListAttachment(
-  ctx: { siteAbsoluteUrl: string; listName: string; itemId: string },
+  ctx: { siteAbsoluteUrl: string; listName: string; itemId: string; listId?: string },
   fileName: string,
   spItemId: string,
   tag: string,
+  graphToken: string,
   tenantId?: string,
   clientId?: string,
   clientSecret?: string,
 ): Promise<{ url: string | null; reason?: string }> {
-  if (!tenantId || !clientId || !clientSecret) {
-    return { url: null, reason: 'Attachment photo needs the SharePoint credentials (tenant/client/secret).' }
-  }
   const origin = new URL(ctx.siteAbsoluteUrl).origin
-  let spToken: string
-  try {
-    spToken = await getSharePointToken(tenantId, clientId, clientSecret, new URL(origin).hostname)
-  } catch (e) {
-    return { url: null, reason: `Could not get a SharePoint token: ${e instanceof Error ? e.message : String(e)}` }
+  const site = ctx.siteAbsoluteUrl.replace(/\/$/, '')
+  const tried: string[] = []
+
+  // ── 1. The item's attachments (a photo taken in the Power App) ──────────────
+  if (tenantId && clientId && clientSecret) {
+    try {
+      const spToken = await getSharePointToken(tenantId, clientId, clientSecret, new URL(origin).hostname)
+      const api = `${site}/_api/web/lists/getbytitle('${encodeURIComponent(ctx.listName)}')/items(${ctx.itemId})/AttachmentFiles`
+      const res = await fetch(api, {
+        headers: { Authorization: `Bearer ${spToken}`, Accept: 'application/json;odata=nometadata' },
+      })
+      if (res.ok) {
+        const body = await res.json().catch(() => null) as Record<string, any> | null
+        const files = (body?.value ?? []) as Array<Record<string, any>>
+        // Match the named file; fall back to the item's only attachment, since a
+        // mismatch means the file was replaced rather than that none exists.
+        const hit = files.find((f) => String(f.FileName) === fileName) ?? (files.length === 1 ? files[0] : null)
+        const rel = hit ? String(hit.ServerRelativeUrl ?? '') : ''
+        if (rel) {
+          const got = await uploadUrlToSupabase(`${origin}${encodeURI(rel)}`, spToken, spItemId, tag)
+          if (got.url) return got
+          tried.push(`attachment download (${got.reason ?? 'failed'})`)
+        } else {
+          tried.push(files.length ? `attachment "${fileName}" not among ${files.length} on the item` : 'item has no attachments')
+        }
+      } else {
+        tried.push(`attachment list HTTP ${res.status}`)
+      }
+    } catch (e) {
+      tried.push(`SharePoint token: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  } else {
+    tried.push('no SharePoint credentials for attachments')
   }
 
-  const api = `${ctx.siteAbsoluteUrl.replace(/\/$/, '')}/_api/web/lists/getbytitle('${encodeURIComponent(ctx.listName)}')/items(${ctx.itemId})/AttachmentFiles`
-  const res = await fetch(api, {
-    headers: { Authorization: `Bearer ${spToken}`, Accept: 'application/json;odata=nometadata' },
-  })
-  if (!res.ok) return { url: null, reason: `Attachment list HTTP ${res.status} (${tag})` }
-  const body = await res.json().catch(() => null) as Record<string, any> | null
-  const files = (body?.value ?? []) as Array<Record<string, any>>
-  if (!files.length) return { url: null, reason: `Item ${ctx.itemId} has no attachments (${tag})` }
+  // ── 2. The list's own image folder (an Image column filled in SharePoint) ───
+  // Files added through the list UI land in SiteAssets/Lists/<list id>/, which
+  // Graph can serve — so this needs no extra permission.
+  if (ctx.listId) {
+    const assetUrl = `${site}/SiteAssets/Lists/${ctx.listId}/${encodeURIComponent(fileName)}`
+    const got = await fetchFileUrlToSupabase(assetUrl, graphToken, spItemId, `${tag}-siteassets`, tenantId, clientId, clientSecret)
+    if (got.url) return got
+    tried.push(`SiteAssets copy (${got.reason ?? 'failed'})`)
+  }
 
-  // Match the named file; fall back to the first attachment, since the column
-  // naming its own file is the normal case and a mismatch means the file was
-  // replaced rather than that there's nothing to fetch.
-  const hit = files.find((f) => String(f.FileName) === fileName) ?? files[0]
-  const rel = String(hit.ServerRelativeUrl ?? '')
-  if (!rel) return { url: null, reason: `Attachment has no server path (${tag})` }
-  return uploadUrlToSupabase(`${origin}${encodeURI(rel)}`, spToken, spItemId, tag)
+  return { url: null, reason: `Could not fetch "${fileName}": ${tried.join('; ')}` }
 }
 
 /**
@@ -1530,6 +1551,9 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
   // e.g. https://jlsyachts.sharepoint.com/sites/JLS-DeliveriesApp — needed to
   // reach list-item attachments, which Graph can't serve.
   const siteAbsolute = `${new URL(cfg.tenantUrl).origin}${cfg.siteUrl}`
+  // Only needed to locate photos filled in through the list UI; a failure here
+  // must not stop the sync, so it degrades to "attachments only".
+  const listId = await getSpListId(token, siteId, cfg.listName).catch(() => undefined)
 
   let allItems: any[] = []
   let nextUrl: string | null =
@@ -1610,7 +1634,7 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
         const got = await fetchSpImageToSupabase(
           raw, token, cfg.tenantUrl, `pkg-${item.id}-${dbField}`,
           cfg.tenantId, cfg.clientId, cfg.clientSecret,
-          { siteAbsoluteUrl: siteAbsolute, listName: cfg.listName, itemId: String(item.id) },
+          { siteAbsoluteUrl: siteAbsolute, listName: cfg.listName, itemId: String(item.id), listId },
         )
         if (got.url) record[dbField] = got.url
         else {
