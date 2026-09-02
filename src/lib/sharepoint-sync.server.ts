@@ -1755,6 +1755,8 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
   let archiveSkipped = 0
   /** One folder listing per vessel per run, not one per package. */
   const vesselFolders = new Map<string, Array<Record<string, any>> | null>()
+  /** Why a package could not be located in the image library. */
+  const folderNotes: string[] = []
 
   for (const item of allItems) {
     if (item['@removed']) continue
@@ -1812,6 +1814,16 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
             got = await fetchStageImageByPath(siteId, token, notePath, stage, `pkg-${item.id}`, dbField)
           } else if (imageFolderUrl) {
             got = await fetchPackageStageImage(imageFolderUrl, stage, token, `pkg-${item.id}`, dbField)
+          } else if (folderNotes.length < 2) {
+            // Say which package couldn't be located and what was looked for —
+            // "no photo" and "wrong folder name" look identical without this.
+            const listed = vesselFolders.get(vessel)
+            folderNotes.push(
+              !vessel ? 'photo lookup: package has no vessel name'
+                : !note ? `photo lookup: ${vessel} package has no delivery note number`
+                : listed == null ? `photo lookup: no "${PKG_IMAGE_LIBRARY}/${vessel}" folder in the library`
+                : `photo lookup: no folder matching note "${note}" among ${listed.length} under ${vessel}`,
+            )
           }
         }
         if (!got?.url) {
@@ -1869,6 +1881,7 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
     ...(archiveSkipped
       ? [`${archiveSkipped} archived delivery/deliveries are for packages not held in Polaris — left in SharePoint (history import is a separate step)`]
       : []),
+    ...folderNotes,
     ...imageNotes,
     ...(imageProbe ? [`${imageProbe.field} raw value: ${imageProbe.value}`] : []),
   ]
