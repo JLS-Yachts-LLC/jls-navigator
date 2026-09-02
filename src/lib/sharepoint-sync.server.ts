@@ -556,6 +556,8 @@ async function fetchSpImageToSupabase(
   tenantId?: string,
   clientId?: string,
   clientSecret?: string,
+  /** Lets a Power App attachment photo be found — see fetchListAttachment. */
+  attach?: { siteAbsoluteUrl: string; listName: string; itemId: string },
 ): Promise<{ url: string | null; reason?: string; shape?: string[] }> {
   // SP image/thumbnail columns return an object (or sometimes a JSON string)
   let img: Record<string, any> | null = null
@@ -587,6 +589,15 @@ async function fetchSpImageToSupabase(
     return directUrl.endsWith('/')
       ? { url: null, reason: `${describeFolderUrl(directUrl)} is a folder of images, not an image — map it to Documents rather than a photo field.` }
       : fetchFileUrlToSupabase(directUrl, graphToken, spItemId, 'hyperlink', tenantId, clientId, clientSecret)
+  }
+
+  // ── Power App attachment: a file name and nothing else ──────────────────────
+  const attachName = typeof img.fileName === 'string' ? img.fileName : null
+  if (attachName && !img.serverRelativeUrl && !img.thumbnailUrl && !img.serverUrl) {
+    if (!attach) {
+      return { url: null, reason: `Photo is a list attachment ("${attachName}") — this sync can't reach attachments.`, shape: Object.keys(img) }
+    }
+    return fetchListAttachment(attach, attachName, spItemId, 'attachment', tenantId, clientId, clientSecret)
   }
 
   const serverUrl: string = img.serverUrl ?? tenantUrl.replace(/\/$/, '')
@@ -652,6 +663,51 @@ function describeFolderUrl(url: string): string {
   const parts = url.replace(/\/+$/, '').split('/').filter(Boolean)
   const tail = parts.slice(-2).map((p) => decodeURIComponent(p)).join(' / ')
   return tail || 'Folder'
+}
+
+/**
+ * A Power App that saves a photo into a list writes the file as an ATTACHMENT on
+ * the list item and stores only its name in the column — the value looks like
+ * `{"fileName":"Reserved_ImageAttachment_[13]_[PictureofItem]…jpeg"}` with no URL
+ * of any kind. Graph has no route to list-item attachments, so the file is found
+ * through SharePoint's own API and then downloaded with a SharePoint token.
+ */
+async function fetchListAttachment(
+  ctx: { siteAbsoluteUrl: string; listName: string; itemId: string },
+  fileName: string,
+  spItemId: string,
+  tag: string,
+  tenantId?: string,
+  clientId?: string,
+  clientSecret?: string,
+): Promise<{ url: string | null; reason?: string }> {
+  if (!tenantId || !clientId || !clientSecret) {
+    return { url: null, reason: 'Attachment photo needs the SharePoint credentials (tenant/client/secret).' }
+  }
+  const origin = new URL(ctx.siteAbsoluteUrl).origin
+  let spToken: string
+  try {
+    spToken = await getSharePointToken(tenantId, clientId, clientSecret, new URL(origin).hostname)
+  } catch (e) {
+    return { url: null, reason: `Could not get a SharePoint token: ${e instanceof Error ? e.message : String(e)}` }
+  }
+
+  const api = `${ctx.siteAbsoluteUrl.replace(/\/$/, '')}/_api/web/lists/getbytitle('${encodeURIComponent(ctx.listName)}')/items(${ctx.itemId})/AttachmentFiles`
+  const res = await fetch(api, {
+    headers: { Authorization: `Bearer ${spToken}`, Accept: 'application/json;odata=nometadata' },
+  })
+  if (!res.ok) return { url: null, reason: `Attachment list HTTP ${res.status} (${tag})` }
+  const body = await res.json().catch(() => null) as Record<string, any> | null
+  const files = (body?.value ?? []) as Array<Record<string, any>>
+  if (!files.length) return { url: null, reason: `Item ${ctx.itemId} has no attachments (${tag})` }
+
+  // Match the named file; fall back to the first attachment, since the column
+  // naming its own file is the normal case and a mismatch means the file was
+  // replaced rather than that there's nothing to fetch.
+  const hit = files.find((f) => String(f.FileName) === fileName) ?? files[0]
+  const rel = String(hit.ServerRelativeUrl ?? '')
+  if (!rel) return { url: null, reason: `Attachment has no server path (${tag})` }
+  return uploadUrlToSupabase(`${origin}${encodeURI(rel)}`, spToken, spItemId, tag)
 }
 
 /**
@@ -1471,6 +1527,9 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
   const siteId = await resolveSpSite(token, cfg.tenantUrl, cfg.siteUrl)
   const archive = isDeliveredArchive(cfg.listName)
   const idKey = spIdKeyFor(cfg.listName)
+  // e.g. https://jlsyachts.sharepoint.com/sites/JLS-DeliveriesApp — needed to
+  // reach list-item attachments, which Graph can't serve.
+  const siteAbsolute = `${new URL(cfg.tenantUrl).origin}${cfg.siteUrl}`
 
   let allItems: any[] = []
   let nextUrl: string | null =
@@ -1551,6 +1610,7 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
         const got = await fetchSpImageToSupabase(
           raw, token, cfg.tenantUrl, `pkg-${item.id}-${dbField}`,
           cfg.tenantId, cfg.clientId, cfg.clientSecret,
+          { siteAbsoluteUrl: siteAbsolute, listName: cfg.listName, itemId: String(item.id) },
         )
         if (got.url) record[dbField] = got.url
         else {
