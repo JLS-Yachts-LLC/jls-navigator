@@ -1518,6 +1518,80 @@ const PKG_DATE_FIELDS = new Set(['planned_delivery_date'])
 const PKG_IMAGE_FIELDS = new Set([
   'item_photo_url', 'delivery_photo_url', 'office_photo_url', 'signature_url',
 ])
+
+/**
+ * Where the Power App actually files a package's photos: the site's Documents
+ * library, under Package - Images / <vessel> / <delivery note> / <stage>. The
+ * list's own picture columns only name the file, so the folder is the reliable
+ * source — and it is a document library, which Graph can read with the same
+ * permission the rest of the sync uses.
+ */
+const PKG_IMAGE_STAGE: Record<string, string> = {
+  item_photo_url: 'Received in Office',
+  delivery_photo_url: 'Delivery Image',
+  signature_url: 'Signature Image',
+}
+/** Stage folder names, for recognising one at the end of a stored folder link. */
+const PKG_STAGES = Object.values(PKG_IMAGE_STAGE)
+
+const IMAGE_EXT = /\.(jpe?g|png|gif|webp|heic|bmp)$/i
+
+/** Graph: list a folder's children, addressing it by its SharePoint URL. */
+async function listFolderChildren(folderUrl: string, graphToken: string): Promise<Array<Record<string, any>> | null> {
+  const res = await fetch(
+    `https://graph.microsoft.com/v1.0/shares/${encodeShareUrl(folderUrl.replace(/\/+$/, ''))}/driveItem/children`
+      + `?$select=name,file,folder,lastModifiedDateTime,@microsoft.graph.downloadUrl&$top=200`,
+    { headers: { Authorization: `Bearer ${graphToken}` } },
+  )
+  if (!res.ok) return null
+  const body = await res.json().catch(() => null) as Record<string, any> | null
+  return (body?.value ?? null) as Array<Record<string, any>> | null
+}
+
+/**
+ * Fetch the newest image from the stage folder for one package photo.
+ *
+ * `folderUrl` is the link the list stores, which points either at the delivery
+ * note's folder or at one stage inside it — so both are handled: step up out of a
+ * stage folder, then down into the one being asked for.
+ */
+async function fetchPackageStageImage(
+  folderUrl: string,
+  stage: string,
+  graphToken: string,
+  spItemId: string,
+  tag: string,
+): Promise<{ url: string | null; reason?: string }> {
+  const clean = folderUrl.replace(/\/+$/, '')
+  const last = decodeURIComponent(clean.split('/').pop() ?? '')
+  const noteFolder = PKG_STAGES.includes(last) ? clean.slice(0, clean.lastIndexOf('/')) : clean
+  const stageUrl = `${noteFolder}/${encodeURIComponent(stage)}`
+
+  const children = await listFolderChildren(stageUrl, graphToken)
+  if (children == null) {
+    // No such stage for this package is normal — a package with no delivery photo
+    // simply has no Delivery Image folder.
+    return { url: null, reason: `no "${stage}" folder for this package` }
+  }
+  const images = children
+    .filter((c) => c.file && IMAGE_EXT.test(String(c.name ?? '')))
+    .sort((a, b) => String(b.lastModifiedDateTime ?? '').localeCompare(String(a.lastModifiedDateTime ?? '')))
+  if (!images.length) return { url: null, reason: `"${stage}" folder holds no image` }
+
+  // Graph hands back a pre-signed download URL — no Authorization header, and no
+  // SharePoint-scoped token needed.
+  const dl = images[0]['@microsoft.graph.downloadUrl'] as string | undefined
+  if (!dl) return { url: null, reason: `no download link for ${images[0].name}` }
+  const res = await fetch(dl)
+  if (!res.ok) return { url: null, reason: `HTTP ${res.status} downloading ${images[0].name}` }
+  const ab = await res.arrayBuffer()
+  const ct = res.headers.get('content-type') ?? 'image/jpeg'
+  const ext = String(images[0].name).match(IMAGE_EXT)?.[0] ?? '.jpg'
+  const path = `shipsync/${spItemId}-${tag}${ext.toLowerCase()}`
+  const { error } = await supabaseAdmin.storage.from('vessel-images').upload(path, ab, { upsert: true, contentType: ct })
+  if (error) return { url: null, reason: `Supabase upload failed: ${error.message}` }
+  return { url: supabaseAdmin.storage.from('vessel-images').getPublicUrl(path).data.publicUrl }
+}
 /**
  * Photos fetched per sync run — the rest are picked up on the next run. Each one
  * costs two or three outbound requests, so this stays well inside the Worker's
@@ -1612,6 +1686,12 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
     // The archive completes what we hold; it does not bring its history with it.
     if (archive && !existingId) { archiveSkipped++; continue }
 
+    // The link to this package's folder in the image library, wherever on the row
+    // it happens to live — it is the same folder for all three of its photos.
+    const imageFolderUrl = Object.values(fields).find(
+      (v): v is string => typeof v === 'string' && v.includes('/Package - Images/'),
+    )
+
     for (const [spField, dbField] of Object.entries(cfg.fieldMapping)) {
       if (!dbField || !(spField in fields)) continue
       const raw = fields[spField]
@@ -1631,11 +1711,22 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
         if (isStoredUrl(current?.[dbField])) continue // already downloaded
         if (imageBudget <= 0) continue                // next run picks it up
         imageBudget--
-        const got = await fetchSpImageToSupabase(
-          raw, token, cfg.tenantUrl, `pkg-${item.id}-${dbField}`,
-          cfg.tenantId, cfg.clientId, cfg.clientSecret,
-          { siteAbsoluteUrl: siteAbsolute, listName: cfg.listName, itemId: String(item.id), listId },
-        )
+
+        // The image library is where the files really are, so try the package's
+        // own folder first and only fall back to reading the column's value.
+        const stage = PKG_IMAGE_STAGE[dbField]
+        let got: { url: string | null; reason?: string } | null = null
+        if (stage && imageFolderUrl) {
+          got = await fetchPackageStageImage(imageFolderUrl, stage, token, `pkg-${item.id}`, dbField)
+        }
+        if (!got?.url) {
+          const viaColumn = await fetchSpImageToSupabase(
+            raw, token, cfg.tenantUrl, `pkg-${item.id}-${dbField}`,
+            cfg.tenantId, cfg.clientId, cfg.clientSecret,
+            { siteAbsoluteUrl: siteAbsolute, listName: cfg.listName, itemId: String(item.id), listId },
+          )
+          got = viaColumn.url ? viaColumn : { url: null, reason: [got?.reason, viaColumn.reason].filter(Boolean).join('; ') }
+        }
         if (got.url) record[dbField] = got.url
         else {
           if (got.reason && imageNotes.length < 3) imageNotes.push(`${dbField}: ${got.reason}`)
