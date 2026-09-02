@@ -556,14 +556,21 @@ async function fetchSpImageToSupabase(
   tenantId?: string,
   clientId?: string,
   clientSecret?: string,
-): Promise<{ url: string | null; reason?: string }> {
+): Promise<{ url: string | null; reason?: string; shape?: string[] }> {
   // SP image/thumbnail columns return an object (or sometimes a JSON string)
   let img: Record<string, any> | null = null
   if (typeof raw === 'string') {
     // Could be a JSON-encoded object or a plain URL
     try { img = JSON.parse(raw) } catch {
+      const url = raw.trim()
+      // ShipSync's delivery-note column holds a link to the SharePoint folder the
+      // package's images live in, not an image. Downloading a folder can only
+      // fail, so say so plainly instead of reporting a permission error.
+      if (url.endsWith('/')) {
+        return { url: null, reason: `${describeFolderUrl(url)} is a folder of images, not an image — map it to Documents rather than a photo field.` }
+      }
       // A plain URL — how the Power App's picture columns arrive.
-      return fetchFileUrlToSupabase(raw.trim(), graphToken, spItemId, 'plain-url', tenantId, clientId, clientSecret)
+      return fetchFileUrlToSupabase(url, graphToken, spItemId, 'plain-url', tenantId, clientId, clientSecret)
     }
   } else if (raw && typeof raw === 'object') {
     img = raw as Record<string, any>
@@ -623,8 +630,18 @@ async function fetchSpImageToSupabase(
     url: null,
     reason: tried.length
       ? `SharePoint image found but download failed: ${tried.join('; ')}. Ensure the Azure app has Files.Read.All or Sites.Read.All permission.`
-      : 'Image field has no downloadable URL (serverRelativeUrl or thumbnailUrl).',
+      // The keys tell us which SharePoint column flavour this is — without them
+      // "no downloadable URL" is a dead end for whoever reads the sync report.
+      : `Image field has no downloadable URL. Keys present: ${Object.keys(img).join(', ') || '(none)'}.`,
+    shape: Object.keys(img),
   }
+}
+
+/** "Package Images — OCEAN VICTORY / 1814" from a folder URL. */
+function describeFolderUrl(url: string): string {
+  const parts = url.replace(/\/+$/, '').split('/').filter(Boolean)
+  const tail = parts.slice(-2).map((p) => decodeURIComponent(p)).join(' / ')
+  return tail || 'Folder'
 }
 
 /**
@@ -1480,6 +1497,8 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
   const unmappedStatus = new Set<string>()
   let imageBudget = PKG_IMAGE_BUDGET
   const imageNotes: string[] = []
+  /** One unreadable image value, reported so the column can be mapped properly. */
+  let imageProbe: { field: string; value: string } | null = null
   /** Archive rows for packages Polaris doesn't hold — counted, not imported. */
   let archiveSkipped = 0
 
@@ -1524,7 +1543,12 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
           cfg.tenantId, cfg.clientId, cfg.clientSecret,
         )
         if (got.url) record[dbField] = got.url
-        else if (got.reason && imageNotes.length < 3) imageNotes.push(`${dbField}: ${got.reason}`)
+        else {
+          if (got.reason && imageNotes.length < 3) imageNotes.push(`${dbField}: ${got.reason}`)
+          // Keep one unreadable value so the column's real shape can be examined
+          // rather than guessed at from a failure message.
+          if (!imageProbe) imageProbe = { field: dbField, value: String(JSON.stringify(raw)).slice(0, 600) }
+        }
         continue
       }
       if (dbField === 'documents') {
@@ -1566,6 +1590,7 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
       ? [`${archiveSkipped} archived delivery/deliveries are for packages not held in Polaris — left in SharePoint (history import is a separate step)`]
       : []),
     ...imageNotes,
+    ...(imageProbe ? [`${imageProbe.field} raw value: ${imageProbe.value}`] : []),
   ]
   return notes.length ? { ...res, samples: [...(res.samples ?? []), ...notes] } : res
 }
@@ -1576,6 +1601,10 @@ function spDocEntry(raw: unknown): { name: string; url: string } | null {
   if (typeof raw === 'string') {
     const s = raw.trim()
     if (!s) return null
+    // A trailing slash means a folder — ShipSync's delivery-note column links to
+    // the folder of images for that vessel and note, so name it after those
+    // rather than leaving the document blank.
+    if (/^https?:\/\//.test(s) && s.endsWith('/')) return { name: describeFolderUrl(s), url: s }
     if (/^https?:\/\//.test(s)) return { name: decodeURIComponent(s.split('/').pop() ?? 'Document'), url: s }
     try {
       const o = JSON.parse(s)
