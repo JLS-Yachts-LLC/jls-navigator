@@ -98,9 +98,10 @@ export async function getSpSyncs(): Promise<SpSyncConfig[]> {
 
 export async function saveSpSync(
   // No `id` when creating — including it in the Pick would make it required.
-  sync: Pick<SpSyncConfig, 'name' | 'listName' | 'syncTarget' | 'fieldMapping' | 'enabled'> & { id?: string },
+  sync: Pick<SpSyncConfig, 'name' | 'listName' | 'syncTarget' | 'fieldMapping' | 'enabled'>
+    & { id?: string; sitePath?: string | null },
 ): Promise<SpSyncConfig> {
-  const payload = {
+  const payload: Record<string, unknown> = {
     name: sync.name,
     list_name: sync.listName,
     sync_target: sync.syncTarget,
@@ -108,6 +109,9 @@ export async function saveSpSync(
     enabled: sync.enabled,
     updated_at: new Date().toISOString(),
   }
+  // Only write site_path when the caller supplied it: a caller that doesn't know
+  // about site overrides must not blank out a sync that has one.
+  if (sync.sitePath !== undefined) payload.site_path = sync.sitePath?.trim() || null
   let row: any
   if (sync.id) {
     const { data, error } = await (supabaseAdmin as any)

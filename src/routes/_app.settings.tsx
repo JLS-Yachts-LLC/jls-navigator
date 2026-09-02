@@ -263,7 +263,7 @@ const doGetSpSyncs = createServerFn({ method: 'GET' })
 const doSaveSpSync = createServerFn({ method: 'POST' })
   // `id` is absent when creating a new sync — Pick<…,'id'> would make it required,
   // so omit it from the Pick before adding it back as optional.
-  .inputValidator((d: Pick<SpSyncConfig, 'name' | 'listName' | 'syncTarget' | 'fieldMapping' | 'enabled'> & { id?: string }) => d)
+  .inputValidator((d: Pick<SpSyncConfig, 'name' | 'listName' | 'syncTarget' | 'fieldMapping' | 'enabled'> & { id?: string; sitePath?: string | null }) => d)
   .handler(async ({ data }): Promise<SpSyncConfig> => {
     return saveSpSync(data)
   })
@@ -1569,17 +1569,94 @@ const CREW_DB_FIELDS = [
 ]
 
 /** App Field dropdown list for the explicitly-selected sync target. */
+// ShipSync's Packages list lives in its own Power App site and carries the whole
+// delivery lifecycle, so it gets its own field set rather than borrowing another.
+const PACKAGE_DB_FIELDS = [
+  { value: '', label: '— Not mapped —' },
+  { value: 'barcode', label: 'Barcode' },
+  { value: 'boat_name', label: 'Vessel / Location' },
+  { value: 'package_owner', label: 'Package Owner' },
+  { value: 'courier', label: 'Courier' },
+  { value: 'num_packages', label: 'Number of Packages' },
+  { value: 'status', label: 'Status' },
+  { value: 'local_import', label: 'Local / Import' },
+  { value: 'warehouse_zone', label: 'Warehouse Zone' },
+  { value: 'description', label: 'Delivery Comments' },
+  { value: 'received_at', label: 'Received / Scanned Date' },
+  { value: 'received_by', label: 'Received By (Who Scanned)' },
+  { value: 'planned_delivery_date', label: 'Planned Delivery Date' },
+  { value: 'scan_out_time', label: 'Scan Out Time' },
+  { value: 'driver_scan_out_time', label: 'Driver Scan Out Time' },
+  { value: 'delivered_at', label: 'Delivery Date / Time (Delivered)' },
+  { value: 'receiver_full_name', label: 'Receiver — Full Name' },
+  { value: 'receiver_designation', label: 'Receiver — Designation' },
+  { value: 'receiver_email', label: 'Receiver — Email' },
+  { value: 'item_photo_url', label: 'Received Photo' },
+  { value: 'delivery_photo_url', label: 'Delivered Photo' },
+  { value: 'office_photo_url', label: 'Office Photo' },
+  { value: 'signature_url', label: 'Signature' },
+  { value: 'delivery_note_no', label: 'Delivery Note No.' },
+  { value: 'documents', label: 'Documents (Delivery Note / attachments)' },
+  { value: 'declaration', label: 'Declaration' },
+  { value: 'boe_no', label: 'BOE No.' },
+  { value: 'supplier', label: 'Supplier' },
+  { value: 'origin', label: 'Origin' },
+  { value: 'commodity', label: 'Commodity' },
+  { value: 'weight_kg', label: 'Weight (kg)' },
+]
+
+const DRIVER_DB_FIELDS = [
+  { value: '', label: '— Not mapped —' },
+  { value: 'name', label: 'Name' },
+  { value: 'email', label: 'Email' },
+  { value: 'phone', label: 'Phone' },
+]
+
 function getFieldSetForTarget(target: string): typeof YACHT_DB_FIELDS {
   if (target === 'permits') return PERMIT_DB_FIELDS
   if (target === 'small_boats') return SMALL_BOAT_DB_FIELDS
   if (target === 'visa_applications') return VISA_DB_FIELDS
   if (target === 'crew_members') return CREW_DB_FIELDS
+  if (target === 'shipsync_packages') return PACKAGE_DB_FIELDS
+  if (target === 'shipsync_drivers') return DRIVER_DB_FIELDS
   return YACHT_DB_FIELDS
 }
 
 const TARGET_LABELS: Record<string, string> = {
   yachts: 'Yachts', permits: 'Permits', small_boats: 'Small Boats',
   crew_members: 'Crew Members', visa_applications: 'Visa Applications',
+  shipsync_packages: 'ShipSync Packages', shipsync_drivers: 'ShipSync Drivers',
+}
+
+/** Auto-suggest for the ShipSync Packages list. */
+function autoSuggestPackage(displayName: string): string {
+  const n = displayName.toLowerCase().replace(/[\s._\-()+#/]/g, '')
+  const map: Record<string, string> = {
+    barcode: 'barcode', location: 'boat_name', vessel: 'boat_name',
+    packageowner: 'package_owner', courier: 'courier',
+    numberofpackages: 'num_packages', status: 'status',
+    warehousezone: 'warehouse_zone', deliverycomments: 'description',
+    scanneddate: 'received_at', whoscanned: 'received_by',
+    planneddeliverydate: 'planned_delivery_date',
+    driverscanout: 'scan_out_time', driverscanouttime: 'driver_scan_out_time',
+    driverscandelivered: 'delivered_at', deliverydate: 'delivered_at',
+    dateofdelivery: 'delivered_at', delivereddate: 'delivered_at',
+    fullnamereceiverondelivery: 'receiver_full_name',
+    designationreceiverondelivery: 'receiver_designation',
+    emailaddressreceiverondelivery: 'receiver_email',
+    receivedphoto: 'item_photo_url', receivedimage: 'item_photo_url',
+    packagephoto: 'item_photo_url', itemphoto: 'item_photo_url',
+    deliveredphoto: 'delivery_photo_url', deliveryphoto: 'delivery_photo_url',
+    deliveredimage: 'delivery_photo_url',
+    officephoto: 'office_photo_url', signature: 'signature_url',
+    deliverynote: 'delivery_note_no', dn: 'delivery_note_no',
+    documents: 'documents', deliverynotedocuments: 'documents',
+    decleration: 'declaration', declaration: 'declaration',
+    boeno: 'boe_no', supplier: 'supplier', origin: 'origin',
+    commodity: 'commodity', weight: 'weight_kg',
+    packagelocalimport: 'local_import', localimport: 'local_import',
+  }
+  return map[n] ?? ''
 }
 
 /** Per-list auto-suggest for permit fields */
@@ -1824,14 +1901,19 @@ function SyncEditPanel({
   const [listName, setListName] = useState(initial?.listName ?? '')
   const [syncTarget, setSyncTarget] = useState<SpSyncConfig['syncTarget']>(initial?.syncTarget ?? 'yachts')
   const [enabled, setEnabled] = useState(initial?.enabled ?? true)
-  const [columns, setColumns] = useState<{ name: string; displayName: string }[]>([])
+  /** Blank = the default site. ShipSync's lists live on /sites/JLS-DeliveriesApp. */
+  const [sitePath, setSitePath] = useState(initial?.sitePath ?? '')
+  const [columns, setColumns] = useState<{ name: string; displayName: string; readOnly?: boolean }[]>([])
   const [mapping, setMapping] = useState<Record<string, string>>(initial?.fieldMapping ?? {})
   const [discovering, setDiscovering] = useState(false)
   const [saving, setSaving] = useState(false)
   const [discoverErr, setDiscoverErr] = useState<string | null>(null)
 
-  // Auto-detect target from list name
+  // Auto-detect target from list name — for NEW syncs only. Running this while
+  // editing retargeted an existing sync from its own list name (opening ShipSync
+  // Packages silently switched it to Yachts, and saving would have broken it).
   useEffect(() => {
+    if (!isNew) return
     const n = listName.toLowerCase().trim()
     if (n.includes('tdra') || n.includes('sanitation') || n.includes('gate') || n.includes('cruising') || n.includes('navigation') || n.includes('dma') || n.includes('permit') || n.includes('exit') || n.includes('entry')) {
       setSyncTarget('permits')
@@ -1857,13 +1939,14 @@ function SyncEditPanel({
     if (syncTarget === 'small_boats') return autoSuggestSmallBoat
     if (syncTarget === 'visa_applications') return autoSuggestVisa
     if (syncTarget === 'crew_members') return autoSuggestCrew
+    if (syncTarget === 'shipsync_packages') return autoSuggestPackage
     return autoSuggest
   }
 
   async function handleDiscover() {
     setDiscovering(true); setDiscoverErr(null)
     try {
-      const cols = await doDiscoverSharePointColumns({ data: { listName } })
+      const cols = await doDiscoverSharePointColumns({ data: { listName, sitePath } })
       setColumns(cols)
       const suggestFn = getSuggestFn()
       // Preserve any existing mapping; only auto-suggest columns not already mapped.
@@ -1896,6 +1979,7 @@ function SyncEditPanel({
           syncTarget,
           fieldMapping: mapping,
           enabled,
+          sitePath: sitePath.trim() || null,
         },
       })
       onSaved(saved)
@@ -1936,11 +2020,25 @@ function SyncEditPanel({
         </div>
       </div>
 
+      <div className="space-y-1">
+        <Label className="text-xs">SharePoint Site (leave blank for the main site)</Label>
+        <Input
+          value={sitePath}
+          onChange={e => { setSitePath(e.target.value); setColumns([]) }}
+          placeholder="/sites/JLS-DeliveriesApp"
+          className="h-8 text-sm font-mono"
+        />
+        <p className="text-[11px] text-muted-foreground">
+          Lists that live in their own site — such as the ShipSync Power App — need their site path here,
+          or <strong>Load</strong> looks in the wrong place.
+        </p>
+      </div>
+
       <div className="flex items-center gap-4">
         <div className="space-y-1">
           <Label className="text-xs">Syncs To</Label>
-          <div className="flex gap-1.5">
-            {(['yachts', 'permits', 'small_boats', 'crew_members', 'visa_applications'] as const).map(t => (
+          <div className="flex flex-wrap gap-1.5">
+            {(['yachts', 'permits', 'small_boats', 'crew_members', 'visa_applications', 'shipsync_packages', 'shipsync_drivers'] as const).map(t => (
               <button
                 key={t}
                 onClick={() => setSyncTarget(t)}
@@ -1979,7 +2077,14 @@ function SyncEditPanel({
             {columns.map(col => (
               <div key={col.name} className="grid grid-cols-[1fr_20px_1fr] gap-2 items-center px-3 py-1.5">
                 <div>
-                  <div className="font-medium text-xs">{col.displayName}</div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-medium text-xs">{col.displayName}</span>
+                    {col.readOnly && (
+                      <span className="rounded bg-muted px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        read-only
+                      </span>
+                    )}
+                  </div>
                   <div className="text-[10px] text-muted-foreground font-mono">{col.name}</div>
                 </div>
                 <span className="text-center text-muted-foreground text-xs">→</span>
