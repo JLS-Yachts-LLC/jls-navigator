@@ -1533,6 +1533,8 @@ const PKG_IMAGE_STAGE: Record<string, string> = {
 }
 /** Stage folder names, for recognising one at the end of a stored folder link. */
 const PKG_STAGES = Object.values(PKG_IMAGE_STAGE)
+/** Top-level folder in the site's Documents library holding all package photos. */
+const PKG_IMAGE_LIBRARY = 'Package - Images'
 
 const IMAGE_EXT = /\.(jpe?g|png|gif|webp|heic|bmp)$/i
 
@@ -1546,6 +1548,76 @@ async function listFolderChildren(folderUrl: string, graphToken: string): Promis
   if (!res.ok) return null
   const body = await res.json().catch(() => null) as Record<string, any> | null
   return (body?.value ?? null) as Array<Record<string, any>> | null
+}
+
+const CHILD_SELECT = '$select=name,file,folder,lastModifiedDateTime,@microsoft.graph.downloadUrl&$top=200'
+
+/**
+ * List a folder in the site's Documents library by its path.
+ *
+ * This is the route that actually works for the image library: it reads the
+ * library directly with the same Sites permission the sync already uses, unlike
+ * the sharing API (which returns 403 here) or a direct file GET (401).
+ */
+async function listLibraryPath(
+  siteId: string,
+  graphToken: string,
+  path: string,
+): Promise<Array<Record<string, any>> | null> {
+  const encoded = path.split('/').filter(Boolean).map(encodeURIComponent).join('/')
+  const res = await fetch(
+    `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root:/${encoded}:/children?${CHILD_SELECT}`,
+    { headers: { Authorization: `Bearer ${graphToken}` } },
+  )
+  if (!res.ok) return null
+  const body = await res.json().catch(() => null) as Record<string, any> | null
+  return (body?.value ?? null) as Array<Record<string, any>> | null
+}
+
+const looseKey = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+
+/**
+ * Find a package's folder under Package - Images/<vessel>.
+ *
+ * The note folder is named inconsistently — "1814", "186", "DN 20099" — so rather
+ * than guessing the spelling, the vessel's folder is listed once and the note
+ * matched within it. The listing is cached per vessel for the run, since a vessel
+ * usually has several packages in the same batch.
+ */
+async function findPackageImageFolder(
+  siteId: string,
+  graphToken: string,
+  vessel: string,
+  note: string,
+  cache: Map<string, Array<Record<string, any>> | null>,
+): Promise<string | null> {
+  if (!vessel || !note) return null
+  const vesselPath = `${PKG_IMAGE_LIBRARY}/${vessel}`
+  if (!cache.has(vessel)) cache.set(vessel, await listLibraryPath(siteId, graphToken, vesselPath))
+  const children = cache.get(vessel)
+  if (!children?.length) return null
+
+  const want = looseKey(note)
+  const folders = children.filter((c) => c.folder)
+  const hit =
+    folders.find((c) => looseKey(String(c.name)) === want) ??
+    folders.find((c) => looseKey(String(c.name)) === `dn${want}`) ??
+    folders.find((c) => looseKey(String(c.name)).endsWith(want))
+  return hit ? `${vesselPath}/${hit.name}` : null
+}
+
+/** Take the newest image out of a stage folder and store it. */
+async function fetchStageImageByPath(
+  siteId: string,
+  graphToken: string,
+  notePath: string,
+  stage: string,
+  spItemId: string,
+  tag: string,
+): Promise<{ url: string | null; reason?: string }> {
+  const children = await listLibraryPath(siteId, graphToken, `${notePath}/${stage}`)
+  if (children == null) return { url: null, reason: `no "${stage}" folder` }
+  return storeNewestImage(children, spItemId, tag, stage)
 }
 
 /**
@@ -1573,13 +1645,26 @@ async function fetchPackageStageImage(
     // simply has no Delivery Image folder.
     return { url: null, reason: `no "${stage}" folder for this package` }
   }
+  return storeNewestImage(children, spItemId, tag, stage)
+}
+
+/**
+ * Download the most recent image among a folder's children and store it.
+ *
+ * Graph hands back a pre-signed download URL, so the fetch itself carries no
+ * credential — which is why this route works where the others returned 401.
+ */
+async function storeNewestImage(
+  children: Array<Record<string, any>>,
+  spItemId: string,
+  tag: string,
+  label: string,
+): Promise<{ url: string | null; reason?: string }> {
   const images = children
     .filter((c) => c.file && IMAGE_EXT.test(String(c.name ?? '')))
     .sort((a, b) => String(b.lastModifiedDateTime ?? '').localeCompare(String(a.lastModifiedDateTime ?? '')))
-  if (!images.length) return { url: null, reason: `"${stage}" folder holds no image` }
+  if (!images.length) return { url: null, reason: `"${label}" folder holds no image` }
 
-  // Graph hands back a pre-signed download URL — no Authorization header, and no
-  // SharePoint-scoped token needed.
   const dl = images[0]['@microsoft.graph.downloadUrl'] as string | undefined
   if (!dl) return { url: null, reason: `no download link for ${images[0].name}` }
   const res = await fetch(dl)
@@ -1668,6 +1753,8 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
   let imageProbe: { field: string; value: string } | null = null
   /** Archive rows for packages Polaris doesn't hold — counted, not imported. */
   let archiveSkipped = 0
+  /** One folder listing per vessel per run, not one per package. */
+  const vesselFolders = new Map<string, Array<Record<string, any>> | null>()
 
   for (const item of allItems) {
     if (item['@removed']) continue
@@ -1712,12 +1799,20 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
         if (imageBudget <= 0) continue                // next run picks it up
         imageBudget--
 
-        // The image library is where the files really are, so try the package's
-        // own folder first and only fall back to reading the column's value.
+        // The image library is where the files really are. Most rows don't carry
+        // a link to their folder, so it's located from the vessel and delivery
+        // note instead; the stored link is used when there is one.
         const stage = PKG_IMAGE_STAGE[dbField]
         let got: { url: string | null; reason?: string } | null = null
-        if (stage && imageFolderUrl) {
-          got = await fetchPackageStageImage(imageFolderUrl, stage, token, `pkg-${item.id}`, dbField)
+        if (stage) {
+          const vessel = String(record.boat_name ?? current?.boat_name ?? '').trim()
+          const note = String(record.delivery_note_no ?? current?.delivery_note_no ?? '').trim()
+          const notePath = await findPackageImageFolder(siteId, token, vessel, note, vesselFolders)
+          if (notePath) {
+            got = await fetchStageImageByPath(siteId, token, notePath, stage, `pkg-${item.id}`, dbField)
+          } else if (imageFolderUrl) {
+            got = await fetchPackageStageImage(imageFolderUrl, stage, token, `pkg-${item.id}`, dbField)
+          }
         }
         if (!got?.url) {
           const viaColumn = await fetchSpImageToSupabase(
