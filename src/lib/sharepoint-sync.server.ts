@@ -562,8 +562,8 @@ async function fetchSpImageToSupabase(
   if (typeof raw === 'string') {
     // Could be a JSON-encoded object or a plain URL
     try { img = JSON.parse(raw) } catch {
-      // plain URL — upload it to Supabase
-      return uploadUrlToSupabase(raw, graphToken, spItemId, 'plain-url')
+      // A plain URL — how the Power App's picture columns arrive.
+      return fetchFileUrlToSupabase(raw.trim(), graphToken, spItemId, 'plain-url', tenantId, clientId, clientSecret)
     }
   } else if (raw && typeof raw === 'object') {
     img = raw as Record<string, any>
@@ -572,7 +572,7 @@ async function fetchSpImageToSupabase(
 
   // ── Hyperlink/Picture column: { Url, Description } ──────────────────────────
   if (typeof img.Url === 'string') {
-    return uploadUrlToSupabase(img.Url, graphToken, spItemId, 'hyperlink')
+    return fetchFileUrlToSupabase(img.Url, graphToken, spItemId, 'hyperlink', tenantId, clientId, clientSecret)
   }
 
   const serverUrl: string = img.serverUrl ?? tenantUrl.replace(/\/$/, '')
@@ -625,6 +625,40 @@ async function fetchSpImageToSupabase(
       ? `SharePoint image found but download failed: ${tried.join('; ')}. Ensure the Azure app has Files.Read.All or Sites.Read.All permission.`
       : 'Image field has no downloadable URL (serverRelativeUrl or thumbnailUrl).',
   }
+}
+
+/**
+ * Download a SharePoint file given its plain URL, trying each way in turn.
+ *
+ * A direct GET with a Graph token is refused by SharePoint with a 401 — which is
+ * what package photos hit, because the Power App's picture columns hand over a
+ * plain URL rather than the object a classic Picture column gives. So: Graph
+ * /shares first (it only needs the Sites.Read.All the app already has), then a
+ * SharePoint-scoped token, and only then the bare Graph token.
+ */
+async function fetchFileUrlToSupabase(
+  fullUrl: string,
+  graphToken: string,
+  spItemId: string,
+  tag: string,
+  tenantId?: string,
+  clientId?: string,
+  clientSecret?: string,
+): Promise<{ url: string | null; reason?: string }> {
+  const viaGraph = await fetchViaGraphShares(fullUrl, graphToken, spItemId, tag)
+  if (viaGraph.url) return viaGraph
+
+  if (tenantId && clientId && clientSecret) {
+    try {
+      const spToken = await getSharePointToken(tenantId, clientId, clientSecret, new URL(fullUrl).hostname)
+      const viaSp = await uploadUrlToSupabase(fullUrl, spToken, spItemId, `${tag}-sp`)
+      if (viaSp.url) return viaSp
+    } catch { /* fall through to the Graph token */ }
+  }
+
+  const direct = await uploadUrlToSupabase(fullUrl, graphToken, spItemId, tag)
+  if (direct.url) return direct
+  return { url: null, reason: `${viaGraph.reason ?? 'Graph /shares failed'}; ${direct.reason ?? 'direct fetch failed'}` }
 }
 
 /** Fetch a URL with the given bearer token and upload the bytes to Supabase vessel-images. */
@@ -1380,8 +1414,13 @@ const PKG_DATE_FIELDS = new Set(['planned_delivery_date'])
 const PKG_IMAGE_FIELDS = new Set([
   'item_photo_url', 'delivery_photo_url', 'office_photo_url', 'signature_url',
 ])
-/** Photos fetched per sync run — the rest are picked up on the next run. */
-const PKG_IMAGE_BUDGET = 15
+/**
+ * Photos fetched per sync run — the rest are picked up on the next run. Each one
+ * costs two or three outbound requests, so this stays well inside the Worker's
+ * per-invocation subrequest ceiling while still clearing a 650-photo backlog in
+ * a handful of runs.
+ */
+const PKG_IMAGE_BUDGET = 40
 /** A stored photo value we don't need to fetch again. */
 const isStoredUrl = (v: unknown) => typeof v === 'string' && /^https?:\/\//.test(v) && !v.startsWith('{')
 /**
