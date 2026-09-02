@@ -577,9 +577,16 @@ async function fetchSpImageToSupabase(
   }
   if (!img) return { url: null, reason: 'Image field value was empty or unrecognisable.' }
 
-  // ── Hyperlink/Picture column: { Url, Description } ──────────────────────────
-  if (typeof img.Url === 'string') {
-    return fetchFileUrlToSupabase(img.Url, graphToken, spItemId, 'hyperlink', tenantId, clientId, clientSecret)
+  // ── Hyperlink/Picture column ────────────────────────────────────────────────
+  // The key's spelling depends on who wrote the value: a classic Picture column
+  // gives "Url", a Power App can give "url", and a Thumbnail column "getUrl". Any
+  // of them is the file, so accept them all rather than only the one casing.
+  const directUrl = [img.Url, img.url, img.URL, img.getUrl, img.fileUrl, img.href]
+    .find((v) => typeof v === 'string' && /^https?:\/\//.test(v)) as string | undefined
+  if (directUrl) {
+    return directUrl.endsWith('/')
+      ? { url: null, reason: `${describeFolderUrl(directUrl)} is a folder of images, not an image — map it to Documents rather than a photo field.` }
+      : fetchFileUrlToSupabase(directUrl, graphToken, spItemId, 'hyperlink', tenantId, clientId, clientSecret)
   }
 
   const serverUrl: string = img.serverUrl ?? tenantUrl.replace(/\/$/, '')
@@ -596,7 +603,10 @@ async function fetchSpImageToSupabase(
   }
 
   // ── 1. Try serverRelativeUrl (classic Picture column) ───────────────────────
-  const serverRelativeUrl: string | undefined = img.serverRelativeUrl
+  // Same reasoning as the direct URL above: accept the spellings SharePoint and
+  // the Power App each use for the file's path within the site.
+  const serverRelativeUrl: string | undefined =
+    img.serverRelativeUrl ?? img.ServerRelativeUrl ?? img.serverRelativePath ?? img.path
   if (serverRelativeUrl) {
     const fullUrl = `${serverUrl}${serverRelativeUrl}`
     // 1a. Graph /shares — uses the app's existing Graph permission (preferred).
