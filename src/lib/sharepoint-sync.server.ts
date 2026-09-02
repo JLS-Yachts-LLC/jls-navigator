@@ -1353,6 +1353,10 @@ const SP_STATUS_REV: Record<string, string> = {
   'In Office': 'in_office', 'In Storage': 'in_storage', 'Assigned': 'assigned',
   'Out for Delivery': 'out_for_delivery', 'Delivered': 'delivered',
   'Client to Collect': 'to_collect', 'Client Collected': 'collected', 'Client Refused': 'refused',
+  // "Unassigned" is a real choice in the Power App (40 packages held it when this
+  // was written) with no counterpart of its own here: it means in the office and
+  // not yet given to a driver, which is what In Office covers.
+  'Unassigned': 'in_office',
   // Wording the Power App has used for the same states. Kept as aliases rather
   // than renamed, because the list holds a mix of old and new choice text.
   'Assigned to Driver': 'assigned', 'Out For Delivery': 'out_for_delivery',
@@ -1380,9 +1384,27 @@ const PKG_IMAGE_FIELDS = new Set([
 const PKG_IMAGE_BUDGET = 15
 /** A stored photo value we don't need to fetch again. */
 const isStoredUrl = (v: unknown) => typeof v === 'string' && /^https?:\/\//.test(v) && !v.startsWith('{')
+/**
+ * The Power App keeps two lists: "Packages" holds everything in play, and
+ * "Delivered Packages" is the archive it writes a package into once delivered —
+ * which is where the delivery date lives. Both feed the same table here.
+ *
+ * The archive is update-only: it completes packages Polaris already knows about
+ * and reports how many of its 5,000-odd historical rows it left alone, so turning
+ * it on can't quietly triple the package list. Importing that history is a
+ * separate, deliberate decision.
+ */
+const isDeliveredArchive = (listName: string) => /delivered/i.test(listName)
+
+/** Where a list's SharePoint item id is remembered. Two lists, two ids. */
+const spIdKeyFor = (listName: string) =>
+  isDeliveredArchive(listName) ? 'sp_delivered_item_id' : 'sp_item_id'
+
 async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; errors: number; samples?: string[] }> {
   const token = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret)
   const siteId = await resolveSpSite(token, cfg.tenantUrl, cfg.siteUrl)
+  const archive = isDeliveredArchive(cfg.listName)
+  const idKey = spIdKeyFor(cfg.listName)
 
   let allItems: any[] = []
   let nextUrl: string | null =
@@ -1405,7 +1427,9 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
   const rowById = new Map<string, Record<string, any>>()
   for (const p of (existing ?? []) as Record<string, any>[]) {
     if (p.barcode) byBarcode.set(String(p.barcode).toLowerCase().trim(), String(p.id))
-    const sp = p.extra?.sp_item_id
+    // Only this list's own id — the two lists number their items separately, so
+    // matching on the other list's id would land on the wrong package.
+    const sp = p.extra?.[idKey]
     if (sp) bySpId.set(String(sp), String(p.id))
     extraById.set(String(p.id), (p.extra ?? {}) as Record<string, any>)
     rowById.set(String(p.id), p)
@@ -1417,6 +1441,8 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
   const unmappedStatus = new Set<string>()
   let imageBudget = PKG_IMAGE_BUDGET
   const imageNotes: string[] = []
+  /** Archive rows for packages Polaris doesn't hold — counted, not imported. */
+  let archiveSkipped = 0
 
   for (const item of allItems) {
     if (item['@removed']) continue
@@ -1431,6 +1457,9 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
       bySpId.get(String(item.id)) ??
       (spBarcode ? byBarcode.get(String(spBarcode).toLowerCase().trim()) : undefined)
     const current = existingId ? rowById.get(existingId) : undefined
+
+    // The archive completes what we hold; it does not bring its history with it.
+    if (archive && !existingId) { archiveSkipped++; continue }
 
     for (const [spField, dbField] of Object.entries(cfg.fieldMapping)) {
       if (!dbField || !(spField in fields)) continue
@@ -1477,11 +1506,12 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
     if (record.status == null) record.status = 'in_office'
 
     if (existingId) {
-      // Preserve any other keys already in extra (note links, photos, etc.).
-      record.extra = { ...(extraById.get(existingId) ?? {}), sp_item_id: item.id }
+      // Preserve any other keys already in extra (note links, photos, the other
+      // list's item id).
+      record.extra = { ...(extraById.get(existingId) ?? {}), [idKey]: item.id }
       updateById.set(existingId, { ...record, id: existingId })
     } else {
-      record.extra = { sp_item_id: item.id, imported_at: new Date().toISOString() }
+      record.extra = { [idKey]: item.id, imported_at: new Date().toISOString() }
       insertByKey.set(String(item.id), { ...record })
     }
   }
@@ -1492,6 +1522,9 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
   const notes = [
     ...(unmappedStatus.size
       ? [`Unmapped Status choice(s): ${[...unmappedStatus].slice(0, 6).join(', ')} — status left unchanged on those rows`]
+      : []),
+    ...(archiveSkipped
+      ? [`${archiveSkipped} archived delivery/deliveries are for packages not held in Polaris — left in SharePoint (history import is a separate step)`]
       : []),
     ...imageNotes,
   ]

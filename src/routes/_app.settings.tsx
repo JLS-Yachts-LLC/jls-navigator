@@ -1628,22 +1628,41 @@ const TARGET_LABELS: Record<string, string> = {
   shipsync_packages: 'ShipSync Packages', shipsync_drivers: 'ShipSync Drivers',
 }
 
-/** Auto-suggest for the ShipSync Packages list. */
+/**
+ * Auto-suggest for the ShipSync Packages and Delivered Packages lists. The keys
+ * are the real column names from those two lists, so pressing Load fills the
+ * mapping in and it only needs saving.
+ */
 function autoSuggestPackage(displayName: string): string {
-  const n = displayName.toLowerCase().replace(/[\s._\-()+#/]/g, '')
+  const n = displayName.toLowerCase().replace(/[\s._\-()+#/@]/g, '')
   const map: Record<string, string> = {
+    // ── The Power App's own column names ──
+    item: 'barcode',
+    scanneddateatjlsreceivedby: 'received_at',
+    nameofreceiverjls: 'received_by',
+    dateandtimereceived: 'received_at',
+    packagelocalimport: 'local_import',
+    deliverynotenumber: 'delivery_note_no',
+    deliverynoteimage: 'documents',
+    boatname: 'boat_name',
+    pictureofitemoncourierdelivery: 'item_photo_url',
+    pictureondeliverytoclient: 'delivery_photo_url',
+    signaturereceiverondelivery: 'signature_url',
+    emailaddressreceiverondelivery: 'receiver_email',
+    fullnamereceiverondelivery: 'receiver_full_name',
+    designationreceiverondelivery: 'receiver_designation',
+    packagescanouttime: 'scan_out_time',
+    scandeliverytime: 'delivered_at',
+    awbdescription: 'description',
     barcode: 'barcode', location: 'boat_name', vessel: 'boat_name',
     packageowner: 'package_owner', courier: 'courier',
     numberofpackages: 'num_packages', status: 'status',
     warehousezone: 'warehouse_zone', deliverycomments: 'description',
     scanneddate: 'received_at', whoscanned: 'received_by',
     planneddeliverydate: 'planned_delivery_date',
-    driverscanout: 'scan_out_time', driverscanouttime: 'driver_scan_out_time',
-    driverscandelivered: 'delivered_at', deliverydate: 'delivered_at',
+    driverscanout: 'scan_out_time',
+    deliverydate: 'delivered_at',
     dateofdelivery: 'delivered_at', delivereddate: 'delivered_at',
-    fullnamereceiverondelivery: 'receiver_full_name',
-    designationreceiverondelivery: 'receiver_designation',
-    emailaddressreceiverondelivery: 'receiver_email',
     receivedphoto: 'item_photo_url', receivedimage: 'item_photo_url',
     packagephoto: 'item_photo_url', itemphoto: 'item_photo_url',
     deliveredphoto: 'delivery_photo_url', deliveryphoto: 'delivery_photo_url',
@@ -1654,7 +1673,7 @@ function autoSuggestPackage(displayName: string): string {
     decleration: 'declaration', declaration: 'declaration',
     boeno: 'boe_no', supplier: 'supplier', origin: 'origin',
     commodity: 'commodity', weight: 'weight_kg',
-    packagelocalimport: 'local_import', localimport: 'local_import',
+    localimport: 'local_import',
   }
   return map[n] ?? ''
 }
@@ -2071,9 +2090,9 @@ function SyncEditPanel({
       {columns.length > 0 && (
         <div className="rounded-lg border border-border overflow-hidden text-sm">
           <div className="grid grid-cols-[1fr_20px_1fr] gap-2 bg-muted/40 border-b border-border px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            <span>SharePoint Column</span><span /><span>App Field ({TARGET_LABELS[syncTarget] ?? syncTarget})</span>
+            <span>SharePoint Column ({columns.length})</span><span /><span>App Field ({TARGET_LABELS[syncTarget] ?? syncTarget})</span>
           </div>
-          <div className="divide-y divide-border max-h-64 overflow-auto">
+          <div className="divide-y divide-border max-h-[32rem] overflow-auto">
             {columns.map(col => (
               <div key={col.name} className="grid grid-cols-[1fr_20px_1fr] gap-2 items-center px-3 py-1.5">
                 <div>
@@ -2101,6 +2120,13 @@ function SyncEditPanel({
             ))}
           </div>
         </div>
+      )}
+
+      {columns.length > 0 && (
+        <p className="text-[11px] text-muted-foreground">
+          {columns.length} columns — the list scrolls. Columns SharePoint reports as read-only, which
+          includes picture columns, can still be mapped: the sync only reads them.
+        </p>
       )}
 
       {columns.length === 0 && !discovering && (
