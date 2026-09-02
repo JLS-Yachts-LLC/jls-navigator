@@ -40,7 +40,6 @@ import { DevSettingsPage } from "@/components/dev/dev-settings-page";
 import { ChangelogPage } from "@/components/changelog-page";
 import { AutomationsPage } from "@/components/automations/automations-page";
 import { ErrorLogPage } from "@/components/dev/error-log-page";
-import { IntegrationsPage } from "@/components/dev/integrations-page";
 import { FeedbackPage } from "@/components/feedback/feedback-page";
 import { CrewPlacementPage } from "@/components/crew-placement/crew-placement-page";
 import { PortCallsHub } from "@/components/port-calls/PortCallsHub";
@@ -62,7 +61,6 @@ const EMBED_SCREENS: Record<string, React.ComponentType> = {
   "admin-changelog": ChangelogPage,
   "admin-automations": AutomationsPage,
   "admin-errors": ErrorLogPage,
-  "admin-integrations": IntegrationsPage,
   "admin-feedback": FeedbackPage,
 };
 

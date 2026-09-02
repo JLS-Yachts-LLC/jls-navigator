@@ -9,6 +9,30 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-09-02",
     "entries": [
       {
+        "type": "fix",
+        "title": "Package photos taken in the Power App now appear in Polaris"
+      },
+      {
+        "type": "fix",
+        "title": "Read a package photo whatever spelling SharePoint gives its file link"
+      },
+      {
+        "type": "fix",
+        "title": "A delivery note's folder of images is filed as a document rather than reported as a broken photo"
+      },
+      {
+        "type": "fix",
+        "title": "Package photos from SharePoint now download instead of failing with a permission error"
+      },
+      {
+        "type": "fix",
+        "title": "Deliveries recorded in the Power App's Delivered Packages list now reach Polaris"
+      },
+      {
+        "type": "fix",
+        "title": "A scanned AWB updates the existing Import/Transit shipment instead of creating a second one"
+      },
+      {
         "type": "feature",
         "title": "Changing an Import shipment's status moves its group, in Monday as well as Polaris"
       },

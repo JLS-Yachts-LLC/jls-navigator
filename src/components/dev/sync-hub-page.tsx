@@ -2,6 +2,12 @@
  * Sync Centre (Admin Settings → Sync) — every scheduled sync with an external
  * platform in one place: what it does, when it runs, when it last ran, and a
  * "Run now" button wired to the same functions the crons execute.
+ *
+ * This is the single home for *running* syncs; Settings → Integrations is the
+ * single home for *configuring* them (credentials, sync definitions, webhook).
+ * The old Developer → Integrations page duplicated both and has been removed —
+ * its QuickBooks customer links live here now, its Graph permission checklist
+ * under Settings → Integrations → SharePoint.
  */
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -12,6 +18,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { getSyncHubStatus, runSyncNow, type SyncHubStatus } from "@/lib/sync-hub.server";
+import { QboCustomersPanel } from "@/components/dev/qbo-customers-panel";
 
 function rel(ts: string | null): string {
   if (!ts) return "never";
@@ -239,6 +246,9 @@ export function SyncHubPage() {
                        schedule="hourly · read-only" lastRun={undefined}
                        action={<RunButton onRun={() => run("shipsync-import-monday")} label="Import now" />} />
             </section>
+
+            {/* QuickBooks vessel <-> customer links (drives the QBO sync above) */}
+            <QboCustomersPanel />
           </>
         )}
       </div>

@@ -1,7 +1,13 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { ChangelogPage } from "@/components/changelog-page";
+import { createFileRoute, Navigate } from "@tanstack/react-router";
 
+/**
+ * Legacy route — kept so existing links keep working. The page itself lives in the
+ * Polaris shell now (Settings group in the sidebar); rendering it bare here left it
+ * without any navigation.
+ */
 export const Route = createFileRoute("/_app/changelog")({
-  component: ChangelogPage,
+  component: () => (
+    <Navigate to="/polaris-redesign" search={{ screen: "admin-changelog" } as any} replace />
+  ),
   head: () => ({ meta: [{ title: "Changelog — JLS Navigator" }] }),
 });

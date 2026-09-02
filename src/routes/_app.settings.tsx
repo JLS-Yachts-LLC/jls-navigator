@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import {
   Users, Shield, Plus, RotateCcw, Trash2, ChevronDown,
   CheckCircle2, XCircle, Loader2, Lock, Plug, Mail, Pencil, Save, X, Search, ShieldCheck,
+  AlertTriangle,
 } from 'lucide-react'
 import { MfaSetup } from '@/components/auth/MfaSetup'
 import { Button } from '@/components/ui/button'
@@ -1054,6 +1055,45 @@ const INTEGRATIONS: {
   },
 ]
 
+/**
+ * Graph application permissions the SharePoint integration needs. Shown under the
+ * SharePoint credentials so whoever enters them can see what still has to be
+ * consented in Azure. Moved here from the old Developer -> Integrations page,
+ * which duplicated this panel's job and has been removed.
+ */
+const REQUIRED_GRAPH_PERMS: { perm: string; purpose: string; have?: boolean }[] = [
+  { perm: 'Sites.Read.All / Files.Read.All', purpose: 'Read SharePoint lists & download files (vessel images)', have: true },
+  { perm: 'Sites.ReadWrite.All', purpose: 'Write Crew List items & Sign-On/Off events back to SharePoint' },
+  { perm: 'Files.ReadWrite.All', purpose: 'Write the Visa Excel tracker & upload crew documents' },
+  { perm: 'Sites.Manage.All', purpose: "Auto-create the 'Crew Sign On Off' list" },
+]
+
+function GraphPermissionsChecklist() {
+  return (
+    <div className="mt-4 border-t border-border/60 pt-4">
+      <h3 className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        <AlertTriangle className="h-3 w-3 text-amber-400" /> Required Graph application permissions
+      </h3>
+      <div className="space-y-1.5">
+        {REQUIRED_GRAPH_PERMS.map(p => (
+          <div key={p.perm} className="flex items-start gap-2 text-[12.5px]">
+            {p.have
+              ? <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
+              : <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/40" />}
+            <div>
+              <code className="rounded bg-muted px-1.5 py-px font-mono text-[11px]">{p.perm}</code>
+              <span className="ml-2 text-muted-foreground">{p.purpose}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+      <p className="mt-2 text-[11px] text-muted-foreground/70">
+        Grant in Azure &rarr; Entra ID &rarr; App registrations &rarr; this app &rarr; API permissions, then &ldquo;Grant admin consent&rdquo;.
+      </p>
+    </div>
+  )
+}
+
 function IntegrationsPanel() {
   const [settings, setSettings] = useState<Record<string, IntegrationSetting>>({})
   const [saving, setSaving] = useState<string | null>(null)
@@ -1164,6 +1204,7 @@ function IntegrationsPanel() {
                       : <><Save className="h-4 w-4 mr-1.5" />Save</>}
                 </Button>
               </div>
+              {key === 'sharepoint' && <GraphPermissionsChecklist />}
               {key === 'sharepoint' && <SharePointSyncSection />}
             </div>
           </div>
