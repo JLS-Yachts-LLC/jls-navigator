@@ -5,9 +5,27 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.48.0",
+    "date": "2026-09-02",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "A staff member's department can now be set from Manage Users — a Department column on each row shows and changes it, so module access no longer has to be decided at invite time"
+      },
+      {
+        "type": "fix",
+        "title": "ShipSync package photos, delivery notes and status wording now come through from SharePoint"
+      }
+    ]
+  },
+  {
     "version": "2.47.0",
     "date": "2026-09-01",
     "entries": [
+      {
+        "type": "feature",
+        "title": "Boats can be removed, and the project bin no longer looks like a task bin"
+      },
       {
         "type": "feature",
         "title": "Ctrl-K now finds ORBIT and ShipSync records, and says when a lookup fails"
