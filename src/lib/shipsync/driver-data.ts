@@ -4,6 +4,7 @@
  */
 import { supabase } from '@/integrations/supabase/client'
 import { isOnline, queueAdd, blobPut, kvSet, kvGet } from './offline'
+import { shrinkImage, extFor, type ImageKind } from './image-shrink'
 import type { ShipSyncDriver, ShipSyncDeliveryNote, ShipSyncPackage, ShipSyncDestination, ShipSyncVehicle, PackageStatus } from './model'
 
 const db = () => supabase as any
@@ -86,16 +87,18 @@ export async function scanOntoVan(pkg: ShipSyncPackage): Promise<void> {
 }
 
 /** Upload an image field online, or stage it + queue when offline. */
-async function uploadField(pkgId: string, field: string, blob: Blob, label: string): Promise<void> {
-  const path = `packages/${pkgId}/${label}_${Date.now()}.png`
+async function uploadField(pkgId: string, field: string, blob: Blob, label: string, kind: ImageKind = 'photo'): Promise<void> {
+  // Shrink before anything else, so an offline queue holds the small version too.
+  const body = await shrinkImage(blob, kind)
+  const path = `packages/${pkgId}/${label}_${Date.now()}.${extFor(body, kind)}`
   if (isOnline()) {
-    const up = await supabase.storage.from('shipsync').upload(path, blob, { upsert: true })
+    const up = await supabase.storage.from('shipsync').upload(path, body, { upsert: true })
     if (up.error) throw up.error
     const url = supabase.storage.from('shipsync').getPublicUrl(path).data.publicUrl
     await patch('shipsync_packages', pkgId, { [field]: url })
   } else {
     const blobKey = `${pkgId}:${field}:${Date.now()}`
-    await blobPut(blobKey, blob)
+    await blobPut(blobKey, body)
     await queueAdd({ kind: 'uploadAndPatch', blobKey, path, table: 'shipsync_packages', id: pkgId, field })
   }
 }
@@ -119,12 +122,13 @@ export async function deliverPackage(pkg: ShipSyncPackage, proof: DeliveryProof)
     receiver_email: proof.receiverEmail ?? null,
   })
   if (proof.photo) await uploadField(pkg.id, 'delivery_photo_url', proof.photo, 'delivery')
-  if (proof.signature) await uploadField(pkg.id, 'signature_url', proof.signature, 'signature')
+  if (proof.signature) await uploadField(pkg.id, 'signature_url', proof.signature, 'signature', 'signature')
 }
 
 /** Upload a blob once and return its public URL (online only). */
-async function uploadShared(path: string, blob: Blob): Promise<string> {
-  const up = await supabase.storage.from('shipsync').upload(path, blob, { upsert: true })
+async function uploadShared(path: string, blob: Blob, kind: ImageKind = 'photo'): Promise<string> {
+  const body = await shrinkImage(blob, kind)
+  const up = await supabase.storage.from('shipsync').upload(path, body, { upsert: true })
   if (up.error) throw up.error
   return supabase.storage.from('shipsync').getPublicUrl(path).data.publicUrl
 }
@@ -140,8 +144,8 @@ export async function deliverBoat(packages: ShipSyncPackage[], proof: DeliveryPr
   }
   const stamp = Date.now()
   const base = `deliveries/${packages[0].id}`
-  const photoUrl = proof.photo ? await uploadShared(`${base}/photo_${stamp}.png`, proof.photo) : null
-  const sigUrl = proof.signature ? await uploadShared(`${base}/signature_${stamp}.png`, proof.signature) : null
+  const photoUrl = proof.photo ? await uploadShared(`${base}/photo_${stamp}.jpg`, proof.photo) : null
+  const sigUrl = proof.signature ? await uploadShared(`${base}/signature_${stamp}.png`, proof.signature, 'signature') : null
   const deliveredAt = new Date().toISOString()
   for (const p of packages) {
     await patch('shipsync_packages', p.id, {

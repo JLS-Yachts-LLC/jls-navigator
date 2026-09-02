@@ -194,6 +194,20 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
   // for confirming the Google Maps key actually works server-side (it's
   // documented as referrer-restricted for browser use, which a
   // server-to-server call carries no Referer header for).
+  // Manual ShipSync photo backup: `?run=shipsync-photo-backup` copies photos
+  // captured in Polaris into the SharePoint image library now, rather than
+  // waiting for the hourly pass. `&limit=` widens the batch for a first catch-up.
+  if (url.searchParams.get('run') === 'shipsync-photo-backup') {
+    try {
+      const { backupShipSyncPhotos } = await import('./lib/shipsync/photo-backup.server')
+      const limit = Number(url.searchParams.get('limit') ?? '') || undefined
+      const r = await backupShipSyncPhotos({ limit })
+      return new Response(JSON.stringify(r), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
+  }
+
   if (url.searchParams.get('run') === 'shipsync-proximity-check') {
     try {
       const { checkDeliveryProximity } = await import('./lib/shipsync/proximity-alert.server')
@@ -1157,6 +1171,16 @@ export default {
         pushChangedRecords()
           .then(({ pushed }) => console.log(`[sp-pushback] pushed=${pushed}`))
           .catch((e) => console.error('[sp-pushback] error:', e))
+      )
+
+      // ── Hourly: copy Polaris-captured package photos into the SharePoint
+      //    image library, so it keeps a second copy of every photo. Backup
+      //    only — Supabase holds the original and a failure just retries. ──
+      ctx.waitUntil(
+        import('./lib/shipsync/photo-backup.server')
+          .then(({ backupShipSyncPhotos }) => backupShipSyncPhotos())
+          .then((r) => { if (r.copied || r.failed) console.log(`[shipsync-photo-backup] ${r.detail}`) })
+          .catch((e) => console.error('[shipsync-photo-backup] error:', e))
       )
 
       // ── Hourly: MyShipTracking live positions (no-op until API key set).

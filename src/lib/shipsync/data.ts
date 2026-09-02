@@ -3,6 +3,7 @@
  * the office module and (read paths) the driver PWA.
  */
 import { supabase } from '@/integrations/supabase/client'
+import { shrinkImage } from './image-shrink'
 import {
   nextDeliveryNumber,
   type ShipSyncPackage, type ShipSyncDriver, type ShipSyncDeliveryNote, type ShipSyncDestination,
@@ -234,7 +235,10 @@ export async function deleteRun(noteId: string): Promise<void> {
 
 // ── Images ───────────────────────────────────────────────────────────────────
 export async function uploadShipSyncImage(file: File | Blob, path: string): Promise<string> {
-  const { error } = await supabase.storage.from('shipsync').upload(path, file, { upsert: true })
+  // Camera output is resized on the way up — see image-shrink for why. Anything
+  // that isn't an image (a PDF on a package's documents) passes through as-is.
+  const body = file.type?.startsWith('image/') ? await shrinkImage(file) : file
+  const { error } = await supabase.storage.from('shipsync').upload(path, body, { upsert: true })
   if (error) throw error
   return supabase.storage.from('shipsync').getPublicUrl(path).data.publicUrl
 }
