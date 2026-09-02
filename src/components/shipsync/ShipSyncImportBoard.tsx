@@ -89,6 +89,25 @@ function mondayStatusColor(label: string): string {
   return MONDAY_STATUS_LABELS.find((s) => s.label === label)?.color ?? "#6b7280";
 }
 
+/**
+ * A finished state the Power App has actually recorded against the package, in
+ * Monday's own wording where one fits.
+ *
+ * The Status column reads Monday's STATUS text, but a package delivered through
+ * the ShipSync app updates our own `status` instead — which this board never
+ * showed. 41 Import/Transit shipments were sitting here marked delivered with a
+ * blank status cell. A scan is what physically happened, so it is shown ahead of
+ * Monday's text; the dropdown still writes to Monday's STATUS as before.
+ */
+function scanFinishedLabel(p: ShipSyncPackage): string | null {
+  switch (p.status) {
+    case "delivered": return "Delivered - TBI";
+    case "collected": return "Delivered - TBI";
+    case "refused":   return "Refused";
+    default:          return null;
+  }
+}
+
 /** Monday's "Shipment Type" column — same 3 labels and colours as Monday's
  *  own label picker. */
 const SHIPMENT_TYPE_LABELS: { label: string; color: string }[] = [
@@ -339,7 +358,9 @@ export function ShipSyncImportBoard() {
   const chartData = useMemo(() => {
     const counts = new Map<string, number>();
     for (const p of filtered) {
-      const s = mondayText(p, "STATUS");
+      // Same precedence as the Status cell, so the chart agrees with the rows
+      // rather than reporting nothing for shipments the app has marked delivered.
+      const s = scanFinishedLabel(p) ?? mondayText(p, "STATUS");
       if (s) counts.set(s, (counts.get(s) ?? 0) + 1);
     }
     return MONDAY_STATUS_LABELS.map((s) => ({ label: s.label, count: counts.get(s.label) ?? 0, color: s.color }));
@@ -500,13 +521,20 @@ export function ShipSyncImportBoard() {
                             }
                             if (c.kind === "mondayStatus") {
                               const current = mondayText(p, "STATUS");
+                              const scanned = scanFinishedLabel(p);
+                              const shown = scanned ?? current;
                               return (
                                 <td key="mondayStatus" className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
                                   <Select value={current || undefined}
                                     onValueChange={(v) => void commit(p, `${p.id}:mondayStatus`, { extra: { ...extraOf(p), monday: { ...mondayRow(p), STATUS: v } } } as any)}>
-                                    <SelectTrigger className="h-7 w-full border-none bg-transparent px-1.5 text-[11px] hover:bg-accent/40">
-                                      {savingCell === `${p.id}:mondayStatus` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : current ? (
-                                        <span className="truncate rounded px-2 py-0.5 text-[10px] font-semibold text-white" style={{ background: mondayStatusColor(current) }}>{current}</span>
+                                    <SelectTrigger
+                                      className="h-7 w-full border-none bg-transparent px-1.5 text-[11px] hover:bg-accent/40"
+                                      title={scanned
+                                        ? `Scanned as ${scanned.toLowerCase()} in the ShipSync app${p.delivered_at ? ` on ${new Date(p.delivered_at).toLocaleDateString("en-GB")}` : ""}${current ? ` — Monday still shows "${current}"` : ""}`
+                                        : undefined}
+                                    >
+                                      {savingCell === `${p.id}:mondayStatus` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : shown ? (
+                                        <span className="truncate rounded px-2 py-0.5 text-[10px] font-semibold text-white" style={{ background: mondayStatusColor(shown) }}>{shown}</span>
                                       ) : <span className="text-muted-foreground/30">—</span>}
                                     </SelectTrigger>
                                     <SelectContent>
