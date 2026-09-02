@@ -1,11 +1,19 @@
 /**
  * ShipSync Import tab ↔ Monday.com import.
  *
- * One-way, read-only mirror of the Monday "Shipment - Import/Transit" board
- * into shipsync_packages (local_import = 'Import') — Monday is the source of
- * truth, this never writes back. A sibling of shipsync/monday.server.ts (which
- * covers the separate "Local Shipments" board into local_import = 'Local'),
- * kept in its own file since the two boards have unrelated column layouts.
+ * Mirrors the Monday "Shipment - Import/Transit" board into shipsync_packages
+ * (local_import = 'Import'). Monday is the source of truth for the shipment's
+ * own details; the one thing that travels the other way is a status change made
+ * on the Import board, which is pushed back along with the group move it implies
+ * (setShipmentStatus, at the foot of this file). A sibling of
+ * shipsync/monday.server.ts (which covers the separate "Local Shipments" board
+ * into local_import = 'Local'), kept in its own file since the two boards have
+ * unrelated column layouts.
+ *
+ * Items are matched to existing rows by Monday's item id and then by AWB, so a
+ * package the Power App already scanned in is updated rather than recorded a
+ * second time. Anything the scan owns — status, delivery details, photos — is
+ * left alone when Monday's version is merged on top.
  *
  * Unlike the Local sync, this one also mirrors the board's native GROUPS
  * (the coloured sections Monday shows on-screen, e.g. "IMPORT", "TRANSIT",
@@ -172,6 +180,42 @@ function toDocuments(v: string | null): { name: string; url: string }[] | null {
   return docs.length ? docs : null
 }
 
+/**
+ * Fields the Power App owns — written when a package is scanned in or delivered
+ * through ShipSync. Monday never knows better about these, so a re-pull must not
+ * blank them. That matters now the sync merges onto scanned packages by AWB: the
+ * record it builds carries `status: 'in_office'` for every item, which would have
+ * reset a delivered shipment on the hour, every hour.
+ */
+const SCAN_OWNED_FIELDS = [
+  'status', 'delivered_at', 'receiver_full_name', 'receiver_designation', 'receiver_email',
+  'signature_url', 'delivery_photo_url', 'item_photo_url', 'office_photo_url',
+  'scan_out_time', 'driver_scan_out_time', 'driver_scanned', 'warehouse_zone', 'documents',
+] as const
+
+/** Monday's version of a shipment, folded onto a row that already exists here. */
+function mergeOntoExisting(
+  record: Record<string, unknown>,
+  existingExtra: Record<string, any> | undefined,
+): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...record }
+
+  // Status is only ever an opening value for a brand-new row. On an existing one
+  // it is either a scan result or something a person set, and both outrank a
+  // re-pull.
+  delete merged.status
+
+  for (const key of SCAN_OWNED_FIELDS) {
+    const v = merged[key]
+    if (v == null || v === '' || (Array.isArray(v) && v.length === 0)) delete merged[key]
+  }
+
+  // Keep everything already in extra (the SharePoint link, photos, note links)
+  // and let Monday's own keys land on top.
+  merged.extra = { ...(existingExtra ?? {}), ...((record.extra as Record<string, unknown>) ?? {}) }
+  return merged
+}
+
 export interface MondayImportBoardResult { ok: boolean; synced: number; errors: number; pruned: number; skipped?: boolean; detail: string }
 
 async function importInner(): Promise<MondayImportBoardResult> {
@@ -181,21 +225,31 @@ async function importInner(): Promise<MondayImportBoardResult> {
   const columnOrder = columns.map((c) => c.title)
   const groupOrder = groups.map((g) => g.title)
 
-  const existingRows: { id: string; extra: any }[] = []
+  const existingRows: { id: string; extra: any; barcode: string | null }[] = []
   for (let offset = 0; ; offset += 1000) {
     const { data: page } = await db()
       .from('shipsync_packages')
-      .select('id, extra')
-      .eq('local_import', 'Import')
+      .select('id, extra, barcode')
+      // Transit belongs here too: a shipment scanned in as Transit is part of the
+      // same Import/Transit section, and is a candidate for AWB matching below.
+      .in('local_import', ['Import', 'Transit'])
       .range(offset, offset + 999)
     if (!page || page.length === 0) break
     existingRows.push(...(page as any[]))
     if (page.length < 1000) break
   }
   const idByMonday = new Map<string, string>()
+  // AWB → row, so a shipment already scanned in through the Power App is updated
+  // rather than inserted a second time. Matching only on Monday's own item id put
+  // 83 AWBs into Polaris twice — once from the scan, once from Monday.
+  const idByBarcode = new Map<string, string>()
+  const extraById = new Map<string, Record<string, any>>()
   for (const r of existingRows) {
     const mid = r.extra?.monday_item_id
     if (mid) idByMonday.set(String(mid), r.id)
+    const bc = String(r.barcode ?? '').toLowerCase().trim()
+    if (bc) idByBarcode.set(bc, r.id)
+    extraById.set(String(r.id), (r.extra ?? {}) as Record<string, any>)
   }
 
   const now = new Date().toISOString()
@@ -237,9 +291,15 @@ async function importInner(): Promise<MondayImportBoardResult> {
       },
     }
 
-    const existingId = idByMonday.get(item.id)
-    if (existingId) toUpdate.push({ id: existingId, itemName: item.name, record })
-    else toInsert.push(record)
+    const awb = String(record.barcode ?? '').toLowerCase().trim()
+    const existingId = idByMonday.get(item.id) ?? (awb ? idByBarcode.get(awb) : undefined)
+    if (existingId) {
+      toUpdate.push({ id: existingId, itemName: item.name, record: mergeOntoExisting(record, extraById.get(existingId)) })
+      // Claim the AWB so two Monday items sharing one never fight over the row.
+      if (awb) idByBarcode.delete(awb)
+    } else {
+      toInsert.push(record)
+    }
   }
 
   let synced = 0, errors = 0

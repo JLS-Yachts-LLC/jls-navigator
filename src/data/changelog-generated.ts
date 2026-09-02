@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Changing an Import shipment's status moves its group, in Monday as well as Polaris"
+      },
+      {
+        "type": "feature",
         "title": "Import board shows app-confirmed deliveries, and every Import/Transit shipment gets an Item ID"
       },
       {
