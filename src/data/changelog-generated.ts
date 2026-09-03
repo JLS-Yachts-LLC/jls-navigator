@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Clients can open their vessel's documents in the portal"
+      },
+      {
+        "type": "feature",
         "title": "The app now records who changed a vessel, permit or visa, and what changed"
       },
       {

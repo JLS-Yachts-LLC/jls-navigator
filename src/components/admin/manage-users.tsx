@@ -25,7 +25,7 @@ type CaptainRow = {
   email: string | null; active: boolean; position: string; created_at: string;
   yachts?: { vessel_name: string } | null;
 };
-type YachtOpt = { id: string; vessel_name: string };
+type YachtOpt = { id: string; vessel_name: string; preferred_document_delivery?: string | null };
 
 export const PORTAL_POSITIONS = ["captain", "owner", "representative", "purser", "other"] as const;
 const positionLabel = (p: string) => p.charAt(0).toUpperCase() + p.slice(1);
@@ -117,7 +117,7 @@ function VesselUsersPanel() {
       db.from("captain_accounts")
         .select("id, user_id, yacht_id, display_name, email, active, position, created_at, yachts(vessel_name)")
         .order("created_at", { ascending: false }),
-      db.from("yachts").select("id, vessel_name").order("vessel_name"),
+      db.from("yachts").select("id, vessel_name, preferred_document_delivery").order("vessel_name"),
     ]);
     setRows(accounts ?? []);
     setYachts(ys ?? []);
@@ -197,12 +197,30 @@ function VesselUsersPanel() {
     void load();
   };
 
+  const deliveryOf = (yachtId: string) =>
+    yachts.find((y) => y.id === yachtId)?.preferred_document_delivery === "portal"
+      ? "portal"
+      : "secure_link";
+
+  /**
+   * Record where this client wants their documents. 'secure_link' emails the
+   * branded expiring link; 'portal' emails no link at all and points them at the
+   * portal, where the file is scoped to their vessel.
+   */
+  async function setDelivery(yachtId: string, value: string) {
+    const { error } = await db.from("yachts")
+      .update({ preferred_document_delivery: value }).eq("id", yachtId);
+    if (error) { toast.error(error.message); return; }
+    setYachts((prev) => prev.map((y) => (y.id === yachtId ? { ...y, preferred_document_delivery: value } : y)));
+    toast.success(value === "portal" ? "Documents will be shared in the portal only" : "Documents will be sent by secure link");
+  }
+
   // Group by vessel — one section per yacht, alphabetical.
   const grouped = useMemo(() => {
-    const m = new Map<string, { vessel: string; rows: CaptainRow[] }>();
+    const m = new Map<string, { yachtId: string; vessel: string; rows: CaptainRow[] }>();
     for (const r of rows) {
       const key = r.yacht_id;
-      if (!m.has(key)) m.set(key, { vessel: r.yachts?.vessel_name ?? "Unknown vessel", rows: [] });
+      if (!m.has(key)) m.set(key, { yachtId: key, vessel: r.yachts?.vessel_name ?? "Unknown vessel", rows: [] });
       m.get(key)!.rows.push(r);
     }
     return [...m.values()].sort((a, b) => a.vessel.localeCompare(b.vessel));
@@ -236,10 +254,24 @@ function VesselUsersPanel() {
         <div className="space-y-4">
           {grouped.map((g) => (
             <div key={g.vessel} className="overflow-hidden rounded-xl border border-border bg-card">
-              <div className="flex items-center gap-2 border-b border-border/60 bg-card/60 px-4 py-2.5">
+              <div className="flex flex-wrap items-center gap-2 border-b border-border/60 bg-card/60 px-4 py-2.5">
                 <Anchor className="h-3.5 w-3.5 text-primary/70" />
                 <span className="text-sm font-semibold">{g.vessel}</span>
                 <span className="text-xs text-muted-foreground">· {g.rows.length} user{g.rows.length === 1 ? "" : "s"}</span>
+                {/* How this client asked to receive documents — the permit and
+                    visa senders read it, so it belongs next to their logins. */}
+                <label className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">
+                  Documents
+                  <select
+                    value={deliveryOf(g.yachtId)}
+                    onChange={(e) => void setDelivery(g.yachtId, e.target.value)}
+                    className="rounded-lg border border-border bg-background/40 px-2 py-1 text-xs outline-none focus:border-primary/50"
+                    title="Where this client is sent their documents"
+                  >
+                    <option value="secure_link">by secure link</option>
+                    <option value="portal">in the portal only</option>
+                  </select>
+                </label>
               </div>
               <table className="data-table">
                 <thead>
