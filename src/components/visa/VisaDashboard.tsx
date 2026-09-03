@@ -1,5 +1,5 @@
 import { storageRef } from '@/lib/signed-url'
-import { useState, useEffect, useMemo, type CSSProperties } from 'react'
+import { useState, useEffect, useMemo, useRef, type CSSProperties } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { supabase } from '@/integrations/supabase/client'
@@ -514,9 +514,29 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkBusy, setBulkBusy] = useState(false)
   const [bulkDate, setBulkDate] = useState('')
+  const bulkDateRef = useRef<HTMLInputElement>(null)
 
-  /** Apply one patch to every selected application. */
-  async function applyToSelected(patch: Record<string, any>, describe: string) {
+  /**
+   * These actions all need a date. They used to be disabled until one was picked,
+   * which read as "not built yet" rather than "tell me the date" — so they stay
+   * clickable and point at the date box instead.
+   */
+  function focusBulkDate() {
+    bulkDateRef.current?.focus()
+    // showPicker() throws in some browsers when it isn't a direct user gesture;
+    // focusing is the part that matters.
+    try { bulkDateRef.current?.showPicker?.() } catch { /* ignore */ }
+  }
+
+  /**
+   * Apply one patch to every selected application, and optionally a second patch
+   * to a subset of them (activation derives an expiry for some rows but not all).
+   */
+  async function applyToSelected(
+    patch: Record<string, any>,
+    describe: string,
+    extra?: { ids: string[]; patch: Record<string, any> },
+  ) {
     const ids = [...selected]
     if (!ids.length) return
     setBulkBusy(true)
@@ -526,6 +546,13 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
         .update({ ...patch, updated_at: new Date().toISOString() })
         .in('id', ids)
       if (error) throw new Error(error.message)
+      if (extra?.ids.length) {
+        const { error: extraErr } = await (supabase as any)
+          .from('visa_applications')
+          .update({ ...extra.patch, updated_at: new Date().toISOString() })
+          .in('id', extra.ids)
+        if (extraErr) throw new Error(extraErr.message)
+      }
       // Mirror each change into the SharePoint tracker, same as a single edit does.
       for (const id of ids) {
         fetch('/api/visa/excel-push', {
@@ -550,16 +577,44 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
   /**
    * Record the same arrival date across the selection — this is what "activate"
    * means for a UAE entry permit. The stay runs 180 days counting arrival as day
-   * 1, so the expiry is arrival + 179 (see VisaDetailPage for the same rule).
+   * 1, so the expiry is arrival + 179.
+   *
+   * The expiry is derived on exactly the same terms as a single edit
+   * (VisaDetailPage): only for a UAE visa, and never over an expiry someone has
+   * already entered by hand — 375 applications carry an expiry with no arrival
+   * date yet, and a blanket patch would have silently overwritten all of them.
    */
-  function bulkActivate() {
-    if (!bulkDate) { toast.error('Pick the arrival date first'); return }
+  async function bulkActivate() {
+    if (!bulkDate) { toast.error('Pick the arrival date first'); focusBulkDate(); return }
     const d = new Date(bulkDate)
     if (isNaN(d.getTime())) { toast.error('That arrival date is not valid'); return }
     d.setUTCDate(d.getUTCDate() + 179)
     const expiry = d.toISOString().slice(0, 10)
-    if (!confirm(`Set arrival ${bulkDate} on ${selected.size} application${selected.size === 1 ? '' : 's'}?\n\nUAE visas also get an expiry of ${expiry} (arrival + 179 days).`)) return
-    void applyToSelected({ arrival_date: bulkDate, visa_expiry: expiry }, `activated from ${bulkDate}`)
+
+    const ids = [...selected]
+    const { data: rows, error } = await (supabase as any)
+      .from('visa_applications')
+      .select('id, country_code, destination_country, visa_expiry')
+      .in('id', ids)
+    if (error) { toast.error(`Could not read the selected applications: ${error.message}`); return }
+
+    const isUae = (r: any) =>
+      String(r.country_code ?? '').toUpperCase() === 'AE' ||
+      /emirat|uae|dubai/i.test(String(r.destination_country ?? ''))
+    const needExpiry = (rows ?? []).filter((r: any) => isUae(r) && !r.visa_expiry).map((r: any) => r.id)
+    const keptOwnExpiry = (rows ?? []).filter((r: any) => isUae(r) && r.visa_expiry).length
+
+    const detail = [
+      needExpiry.length ? `${needExpiry.length} will also get an expiry of ${expiry} (arrival + 179 days).` : null,
+      keptOwnExpiry ? `${keptOwnExpiry} already have an expiry, which is left as it is.` : null,
+    ].filter(Boolean).join('\n')
+    if (!confirm(`Set arrival ${bulkDate} on ${ids.length} application${ids.length === 1 ? '' : 's'}?\n\n${detail}`)) return
+
+    void applyToSelected(
+      { arrival_date: bulkDate },
+      `activated from ${bulkDate}`,
+      needExpiry.length ? { ids: needExpiry, patch: { visa_expiry: expiry } } : undefined,
+    )
   }
 
   /**
@@ -571,7 +626,7 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
    */
   function bulkSignDate(which: 'sign_on_date' | 'sign_off_date') {
     const label = which === 'sign_on_date' ? 'sign-on' : 'sign-off'
-    if (!bulkDate) { toast.error(`Pick the ${label} date first`); return }
+    if (!bulkDate) { toast.error(`Pick the ${label} date first`); focusBulkDate(); return }
     if (isNaN(new Date(bulkDate).getTime())) { toast.error(`That ${label} date is not valid`); return }
     if (!confirm(`Set ${label} date ${bulkDate} on ${selected.size} application${selected.size === 1 ? '' : 's'}?`)) return
     void applyToSelected({ [which]: bulkDate }, `given a ${label} date of ${bulkDate}`)
@@ -1210,21 +1265,21 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
               {/* One date box, three things it can be applied as (SD-0008 / SD-0013) */}
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: FONTS.display, fontSize: 12, color: COLORS.muted }}>
                 Date
-                <input type="date" value={bulkDate} onChange={e => setBulkDate(e.target.value)} style={{ ...ctl }} />
+                <input ref={bulkDateRef} type="date" value={bulkDate} onChange={e => setBulkDate(e.target.value)} style={{ ...ctl }} />
               </label>
-              <button onClick={bulkActivate} disabled={bulkBusy || !bulkDate}
+              <button onClick={() => void bulkActivate()} disabled={bulkBusy}
                 title="Record this as the arrival date on every selected application (UAE expiry is derived from it)"
-                style={{ ...btn(false), opacity: bulkDate ? 1 : 0.5 }}>
+                style={{ ...btn(false) }}>
                 Activate (arrival)
               </button>
-              <button onClick={() => bulkSignDate('sign_on_date')} disabled={bulkBusy || !bulkDate}
+              <button onClick={() => bulkSignDate('sign_on_date')} disabled={bulkBusy}
                 title="Record this as the sign-on date on every selected application"
-                style={{ ...btn(false), opacity: bulkDate ? 1 : 0.5 }}>
+                style={{ ...btn(false) }}>
                 Sign-on date
               </button>
-              <button onClick={() => bulkSignDate('sign_off_date')} disabled={bulkBusy || !bulkDate}
+              <button onClick={() => bulkSignDate('sign_off_date')} disabled={bulkBusy}
                 title="Record this as the sign-off date on every selected application"
-                style={{ ...btn(false), opacity: bulkDate ? 1 : 0.5 }}>
+                style={{ ...btn(false) }}>
                 Sign-off date
               </button>
               <button onClick={() => setSelected(new Set())} disabled={bulkBusy}
