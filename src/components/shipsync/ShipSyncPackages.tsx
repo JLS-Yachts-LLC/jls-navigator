@@ -47,6 +47,34 @@ const PRIORITIES = [{ v: 1, l: "1 — High" }, { v: 2, l: "2 — Normal" }, { v:
 type Form = Partial<ShipSyncPackage>;
 const EMPTY: Form = { status: "in_office", num_packages: 1, local_import: "Local" };
 
+/**
+ * The list splits by where a package is in its journey, so what's still waiting
+ * to go out isn't mixed in with what's already been dealt with.
+ *
+ * A package moves between these by its status alone — setting one back to In
+ * Office returns it to the main list, which is how a delivery that turns out not
+ * to be planned gets put back.
+ */
+const STAGES = {
+  active: {
+    label: "In the office",
+    hint: "Received, stored, or waiting to be collected — nothing assigned to a driver yet.",
+    match: (s: PackageStatus) => s === "in_office" || s === "in_storage" || s === "to_collect" || s === "refused",
+  },
+  assigned: {
+    label: "Assigned",
+    hint: "Given to a driver and still to be delivered.",
+    match: (s: PackageStatus) => s === "assigned" || s === "out_for_delivery",
+  },
+  delivered: {
+    label: "Delivered",
+    hint: "Completed — delivered to the vessel or collected by the client.",
+    match: (s: PackageStatus) => s === "delivered" || s === "collected",
+  },
+} as const;
+type Stage = keyof typeof STAGES;
+const STAGE_KEYS = Object.keys(STAGES) as Stage[];
+
 export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload: () => Promise<void> }) {
   const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(
@@ -60,6 +88,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
   const [docTarget, setDocTarget] = useState<ShipSyncPackage | null>(null);
   const [scanOpen, setScanOpen] = useState(false);
   const [view, setView] = useState<"table" | "chart">("table");
+  const [stage, setStage] = useState<Stage>("active");
   const fileRef = useRef<HTMLInputElement>(null);
   const set = (p: Form) => setForm((f) => ({ ...f, ...p }));
 
@@ -76,13 +105,21 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
   );
 
   const filtered = useMemo(() => data.packages.filter((p) => {
+    if (!STAGES[stage].match(p.status)) return false;
     if (search.trim()) {
       const s = search.toLowerCase();
       if (![p.barcode, p.boat_name, p.package_owner, p.courier, p.description]
         .join(" ").toLowerCase().includes(s)) return false;
     }
     return true;
-  }), [data.packages, search]);
+  }), [data.packages, search, stage]);
+
+  /** Counts for the stage bar, independent of the search box. */
+  const stageCounts = useMemo(() => {
+    const out = {} as Record<Stage, number>;
+    for (const key of STAGE_KEYS) out[key] = data.packages.filter((p) => STAGES[key].match(p.status)).length;
+    return out;
+  }, [data.packages]);
 
   // Grouped by status, in the lifecycle order STATUS_META declares them —
   // same collapsible-sections-in-one-table pattern as the Import/Export
@@ -175,12 +212,41 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
 
   return (
     <div className="flex h-full min-w-0 flex-col px-6 py-5">
+      {/* Where a package is in its journey. Keeping what's still to go out apart
+          from what's finished is the whole point of the split. */}
+      <div className="mb-3 flex shrink-0 items-center gap-1 rounded-lg border border-border bg-card p-1 w-fit">
+        {STAGE_KEYS.map((key) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setStage(key)}
+            title={STAGES[key].hint}
+            aria-current={stage === key}
+            className={cn(
+              "flex items-center gap-2 rounded-md px-3 py-1.5 text-[12.5px] font-medium transition",
+              stage === key
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:bg-accent/40 hover:text-foreground",
+            )}
+          >
+            {STAGES[key].label}
+            <span className={cn(
+              "rounded-full px-1.5 py-px text-[10.5px] tabular-nums",
+              stage === key ? "bg-primary-foreground/20" : "bg-muted text-muted-foreground",
+            )}>
+              {stageCounts[key]}
+            </span>
+          </button>
+        ))}
+      </div>
+      <p className="mb-3 shrink-0 text-[11.5px] text-muted-foreground">{STAGES[stage].hint}</p>
+
       <div className="mb-3 flex shrink-0 flex-wrap items-center gap-2.5">
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/50" />
           <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search barcode, boat, owner, courier…" className="h-9 w-72 pl-8 text-sm" />
         </div>
-        <span className="text-[12px] text-muted-foreground">{filtered.length} of {data.packages.length}</span>
+        <span className="text-[12px] text-muted-foreground">{filtered.length} of {stageCounts[stage]}</span>
         <TableChartToggle value={view} onChange={setView} />
         <Button size="sm" onClick={openNew} className="ml-auto h-9 gap-1.5"><Plus className="h-4 w-4" /> Check in package</Button>
       </div>
@@ -200,7 +266,10 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
         <table className="w-full min-w-[1400px] border-separate border-spacing-0 text-sm [&_td]:border-r [&_td]:border-border/40 [&_th]:border-r [&_th]:border-border/40">
           <thead className="sticky top-0 z-10 will-change-transform">
             <tr className="bg-card text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground shadow-[inset_0_-1px_0_0_var(--border)]">
-              {["Air waybill/tracking info", "Client", "Date Received", "Received Photo", "Consignee", "Receiver", "Number of Packages", "Courier", "Shipment Type", "Delivery Note Number", "Delivery Note", "Driver", "Date Delivered", "Delivery Photo", "Documents", "Status"].map((h, i) => (
+              {/* The delivery note used to have its own column; it now sits with
+                  everything else under Documents, so all of a package's paperwork
+                  is in one place. */}
+              {["Air waybill/tracking info", "Client", "Date Received", "Received Photo", "Consignee", "Receiver", "Number of Packages", "Courier", "Shipment Type", "Delivery Note Number", "Driver", "Date Delivered", "Delivery Photo", "Documents", "Status"].map((h, i) => (
                 <th key={`${h}-${i}`} className="px-3 py-2.5 whitespace-nowrap">{h}</th>
               ))}
               <th></th>
@@ -208,7 +277,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
           </thead>
           <tbody>
             {groups.length === 0 ? (
-              <tr><td colSpan={17} className="px-4 py-12 text-center text-sm text-muted-foreground">
+              <tr><td colSpan={16} className="px-4 py-12 text-center text-sm text-muted-foreground">
                 {data.packages.length === 0 ? (
                   <div className="flex flex-col items-center gap-3">
                     <span>No packages yet — check one in to get started.</span>
@@ -221,7 +290,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
               return (
                 <Fragment key={g.status}>
                   <tr>
-                    <td colSpan={17} className="p-0">
+                    <td colSpan={16} className="p-0">
                       {/* sticky left-0 on the INNER wrapper (not the td — a
                           colSpan cell already spans the full row, so making
                           IT sticky does nothing to its content's position):
@@ -239,6 +308,12 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
                     const note = data.notes.find((n) => n.id === p.delivery_note_id);
                     const driver = data.drivers.find((d) => d.id === p.driver_id);
                     const docs = p.documents ?? [];
+                    // The signed delivery note, shown alongside the uploaded files
+                    // rather than in a column of its own.
+                    const notePdf = note?.delivery_pdf_url || note?.predelivery_pdf_url;
+                    const noteDoc = notePdf
+                      ? { url: notePdf, name: note?.delivery_pdf_url ? "Delivery note" : "Pre-delivery note" }
+                      : null;
                     return (
                       <tr key={p.id} onClick={() => openEdit(p)} className="group cursor-pointer shadow-[inset_0_-1px_0_0_var(--border)] hover:bg-accent/20">
                         <td className="px-3 py-2.5 font-mono text-[12px] text-foreground whitespace-nowrap">{p.barcode ?? "—"}</td>
@@ -257,14 +332,6 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
                         <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{p.courier ?? "—"}</td>
                         <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{p.local_import ?? "—"}</td>
                         <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{p.delivery_note_no ?? note?.number ?? "—"}</td>
-                        <td className="px-3 py-2.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                          {(note?.delivery_pdf_url || note?.predelivery_pdf_url) ? (
-                            <a href={(note.delivery_pdf_url || note.predelivery_pdf_url)!} target="_blank" rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[11px] text-primary hover:bg-primary/5">
-                              <FileText className="h-3 w-3" /> {note?.delivery_pdf_url ? "Delivery note" : "Pre-delivery"}
-                            </a>
-                          ) : <span className="text-muted-foreground/30">—</span>}
-                        </td>
                         <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{driver?.name ?? "—"}</td>
                         <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{fmtDate(p.delivered_at)}</td>
                         <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
@@ -275,13 +342,23 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
                           ) : <span className="text-muted-foreground/30">—</span>}
                         </td>
                         <td className="px-3 py-2.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                          {docs.length === 0 ? (
+                          {docs.length === 0 && !noteDoc ? (
                             <button type="button" onClick={() => setDocTarget(p)}
                               className="inline-flex items-center gap-1 rounded border border-dashed border-border px-1.5 py-0.5 text-[11px] text-muted-foreground hover:border-primary hover:text-primary">
                               <Plus className="h-3 w-3" /> Add files
                             </button>
                           ) : (
                             <div className="flex flex-wrap items-center gap-1.5">
+                              {/* The delivery note leads, since it's the document
+                                  anyone opening this is most likely after. It is
+                                  generated rather than uploaded, so it has no
+                                  remove control. */}
+                              {noteDoc && (
+                                <a href={noteDoc.url} target="_blank" rel="noopener noreferrer" title={noteDoc.name}
+                                  className="inline-flex max-w-[150px] items-center gap-1 rounded border border-primary/40 bg-primary/5 px-1.5 py-0.5 text-[11px] font-medium text-primary hover:bg-primary/10">
+                                  <FileText className="h-3 w-3 shrink-0" /> <span className="truncate">{noteDoc.name}</span>
+                                </a>
+                              )}
                               {docs.map((d, i) => (
                                 <span key={i} className="group/doc inline-flex max-w-[130px] items-center gap-1 rounded border border-border pl-1.5 pr-0.5 py-0.5 text-[11px] text-primary hover:bg-primary/5">
                                   <a href={d.url} target="_blank" rel="noopener noreferrer" title={d.name}
