@@ -393,8 +393,12 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
     }
     if (q.trim()) {
       const s = q.toLowerCase();
+      // Only the declared yacht fields — i.e. what the user can actually see.
+      // Searching every property matched internal ones too, so a short query
+      // like "03" hit the id and the created_at/updated_at timestamps of every
+      // row synced that day and appeared to do nothing at all.
       rows = rows.filter((y) =>
-        Object.values(y).some((v) => String(v ?? "").toLowerCase().includes(s)),
+        YACHT_COLUMNS.some((c) => String((y as any)[c.key] ?? "").toLowerCase().includes(s)),
       );
     }
     if (sortKey) {
