@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-09-03",
     "entries": [
       {
+        "type": "feature",
+        "title": "Every permit and visa document now goes out as a secure link"
+      },
+      {
         "type": "fix",
         "title": "Searching the yacht registry now matches what you can see"
       },
