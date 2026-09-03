@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-09-03",
     "entries": [
       {
+        "type": "fix",
+        "title": "Secure document links record the visitor's address in the access log"
+      },
+      {
         "type": "feature",
         "title": "Documents are sent as a secure, expiring link instead of an attachment"
       },
