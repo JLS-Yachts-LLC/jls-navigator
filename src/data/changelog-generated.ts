@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-09-03",
     "entries": [
       {
+        "type": "feature",
+        "title": "Yacht IT Solutions has a Projects tab"
+      },
+      {
         "type": "fix",
         "title": "A bug report that fails to reach support now says so, and names its reporter"
       },
