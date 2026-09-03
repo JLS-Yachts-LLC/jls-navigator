@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "Remove the duplicate permits the old SharePoint matching created"
+      },
+      {
+        "type": "fix",
         "title": "A synced permit is now identified by the list it came from, not just its number"
       },
       {

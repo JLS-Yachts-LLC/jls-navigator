@@ -49,9 +49,11 @@ async function recordNotifyOutcome(feedbackId: string, error: string | null): Pr
  */
 function originalSenderBlock(email: string | null, name: string | null): string {
   if (!email) return ''
-  return `<p style="margin:6px 0 0;font-size:11px;color:#cbd5e1;">Original-Sender: ${esc(email)}${
-    name ? `<br>Original-Sender-Name: ${esc(name)}` : ''
-  }</p>`
+  // Separate paragraphs, not one with a <br>: each must survive HTML-to-text as
+  // its own line, because both are matched at the start of a line.
+  return `<p style="margin:6px 0 0;font-size:11px;color:#cbd5e1;">Original-Sender: ${esc(email)}</p>${
+    name ? `<p style="margin:0;font-size:11px;color:#cbd5e1;">Original-Sender-Name: ${esc(name)}</p>` : ''
+  }`
 }
 
 export async function feedbackNotifyHandler(request: Request): Promise<Response> {

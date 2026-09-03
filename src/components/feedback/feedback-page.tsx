@@ -17,7 +17,6 @@ type Feedback = {
   /** When the support notification email went out; null means it never did. */
   notified_at: string | null;
   notify_error: string | null;
-};| null;
 };
 type Vote = { feedback_id: string; user_id: string; vote: number };
 
