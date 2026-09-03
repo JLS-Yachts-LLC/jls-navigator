@@ -28,6 +28,7 @@ type Ticket = {
   description: string | null;
   yacht_id: string | null;
   it_yacht_id: string | null;
+  project_id: string | null;
   queue: string | null;
   category: string | null;
   priority: string | null;
@@ -42,6 +43,7 @@ type Ticket = {
   created_at: string;
   updated_at: string;
 };
+type ProjectOption = { id: string; name: string };
 type Message = {
   id: string;
   body: string;
@@ -70,6 +72,7 @@ export function TicketDetailPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [yachts, setYachts] = useState<Yacht[]>([]);
   const [itYachts, setItYachts] = useState<Yacht[]>([]);
+  const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -88,12 +91,16 @@ export function TicketDetailPage() {
 
   async function load() {
     setLoading(true);
-    const [tRes, mRes, yRes, pRes, iRes] = await Promise.all([
+    const [tRes, mRes, yRes, pRes, iRes, prjRes] = await Promise.all([
       (supabase as any).from("it_tickets").select("*").eq("id", ticketId).maybeSingle(),
       (supabase as any).from("it_ticket_messages").select("*").eq("ticket_id", ticketId).order("created_at"),
       supabase.from("yachts").select("id, vessel_name").order("vessel_name"),
       (supabase as any).from("profiles").select("id, display_name").order("display_name"),
       (supabase as any).from("it_yachts").select("id, name").eq("active", true).order("name"),
+      // Only projects still running can be picked; a finished one keeps whatever
+      // tickets it already has.
+      (supabase as any).from("it_projects").select("id, name")
+        .in("status", ["planning", "active", "on_hold"]).order("name"),
     ]);
     if (tRes.error || !tRes.data) {
       toast.error("Ticket not found");
@@ -109,6 +116,7 @@ export function TicketDetailPage() {
     setYachts((yRes.data ?? []) as Yacht[]);
     setItYachts(((iRes.data ?? []) as any[]).map(y => ({ id: y.id, vessel_name: y.name })));
     setProfiles((pRes.data ?? []) as Profile[]);
+    setProjects((prjRes.data ?? []) as ProjectOption[]);
     setLoading(false);
   }
 
@@ -357,6 +365,20 @@ export function TicketDetailPage() {
             <Select value={ticket.category ?? "general"} onValueChange={v => patchTicket({ category: v })}>
               <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
               <SelectContent>{CATEGORY_ORDER.map(c => <SelectItem key={c} value={c}>{CATEGORY_LABEL[c]}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          {/* Ties the ticket to a project so it shows on that project's page. */}
+          <div className="space-y-1.5">
+            <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">Project</Label>
+            <Select
+              value={ticket.project_id ?? "__none"}
+              onValueChange={v => patchTicket({ project_id: v === "__none" ? null : v })}
+            >
+              <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="— None —" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none">— None —</SelectItem>
+                {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+              </SelectContent>
             </Select>
           </div>
           <div className="space-y-1.5">
