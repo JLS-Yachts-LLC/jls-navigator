@@ -791,6 +791,12 @@ export default {
       return portalDocumentOpenHandler(request)
     }
 
+    // What the permits sync would write, without writing it (admin only).
+    if (url.pathname === '/api/sharepoint/permits-dry-run') {
+      const { permitsDryRunHandler } = await import('./routes/api.sharepoint.permits-dry-run')
+      return permitsDryRunHandler(request)
+    }
+
     // Secure document links — public, authorised by the token alone.
     if (url.pathname === '/api/documents/meta') {
       const { documentShareMetaHandler } = await import('./routes/api.documents')

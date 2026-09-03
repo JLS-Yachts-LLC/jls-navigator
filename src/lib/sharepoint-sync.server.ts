@@ -235,6 +235,36 @@ export async function syncById(id: string): Promise<{ synced: number; errors: nu
 }
 
 /**
+ * What the permit lists WOULD do, without writing anything.
+ *
+ * The permits sync spent three months overwriting rows across lists, so it is not
+ * something to switch back on and hope. This reports the planned updates and
+ * inserts per list — run it, read the numbers, then decide.
+ *
+ * Ignores `enabled`, so it can be run while the lists are switched off.
+ */
+export async function dryRunPermitsSync(): Promise<Array<{ list: string; result: { synced: number; errors: number; samples?: string[] } }>> {
+  const cfg = await getSpConfig()
+  const syncs = (await getSpSyncs()).filter(s => s.syncTarget === 'permits')
+  const out: Array<{ list: string; result: { synced: number; errors: number; samples?: string[] } }> = []
+  for (const sync of syncs) {
+    const merged: SpConfig = {
+      ...cfg,
+      siteUrl: sync.sitePath ?? cfg.siteUrl,
+      listName: sync.listName,
+      fieldMapping: sync.fieldMapping,
+      syncTarget: sync.syncTarget,
+    }
+    try {
+      out.push({ list: sync.listName, result: await _syncPermits(merged, { dryRun: true }) })
+    } catch (e) {
+      out.push({ list: sync.listName, result: { synced: 0, errors: 1, samples: [e instanceof Error ? e.message : String(e)] } })
+    }
+  }
+  return out
+}
+
+/**
  * Sync only the list the SharePoint webhook subscription is registered for.
  *
  * The subscription is created against a single list (getSpConfig().listName — see
@@ -807,7 +837,10 @@ const TARGET_TABLE: Record<string, string> = {
 // Natural keys used to find an existing SP item when a record has no sharepoint_item_id yet.
 const TARGET_KEY_FIELDS: Record<string, string[]> = {
   yachts: ['imo_no', 'vessel_name'],
-  permits: ['permit_number', 'holder_name'],
+  // NOT holder_name: a person is not a permit, and matching on it attached one
+  // crew member's permit to another of their permits. permit_number is checked
+  // with _isRealPermitNumber before use, since "NA" names a crowd.
+  permits: ['permit_number'],
   small_boats: ['boat_name'],
   crew_members: ['passport_number'],
   visa_applications: ['jls_reference'],
@@ -876,6 +909,19 @@ export async function pushRecordToSharePoint(target: string, id: string): Promis
 
   for (const sync of syncs) {
     const list = sync.listName;
+
+    // A permit belongs to exactly ONE SharePoint list. `syncs` holds every list
+    // for this target, so without this guard pushing one gate pass wrote its
+    // fields into item <id> of Sanitation, TDRA, DMA and both Cruising lists too
+    // — the outbound half of the cross-list overwriting, and how SharePoint's own
+    // copy became unreliable. Prefer the list recorded on the row; fall back to
+    // the list that owns its permit type.
+    if (target === 'permits') {
+      const recList: string | null = rec.sharepoint_list_name ?? null;
+      const ownsType = _permitTypeFromListName(list) === rec.permit_type;
+      if (recList ? recList !== list : !ownsType) continue;
+    }
+
     const spFields: Record<string, any> = {};
     for (const [spCol, dbField] of Object.entries(sync.fieldMapping)) {
       if (!dbField || dbField === 'vessel_image') continue;
@@ -889,12 +935,19 @@ export async function pushRecordToSharePoint(target: string, id: string): Promis
     }
     if (!Object.keys(spFields).length) continue;
 
-    let spId: string | null = rec.sharepoint_item_id ?? null;
+    // Only reuse the stored item id against the list it was recorded for. Item
+    // ids repeat across lists, so reusing one elsewhere targets a stranger's row.
+    let spId: string | null =
+      target === 'permits' && rec.sharepoint_list_name && rec.sharepoint_list_name !== list
+        ? null
+        : rec.sharepoint_item_id ?? null;
     if (!spId) {
       for (const kf of (TARGET_KEY_FIELDS[target] ?? [])) {
         const spCol = Object.entries(sync.fieldMapping).find(([, db]) => db === kf)?.[0];
         const kv = valueFor(kf);
         if (!spCol || !kv) continue;
+        // A placeholder reference would match every other placeholder.
+        if (kf === 'permit_number' && !_isRealPermitNumber(kv)) continue;
         const r = await fetch(
           `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${list}/items?$filter=${encodeURIComponent(`fields/${spCol} eq '${String(kv).replace(/'/g, "''")}'`)}&$select=id`,
           { headers: { Authorization: `Bearer ${token}` } });
@@ -921,6 +974,8 @@ export async function pushRecordToSharePoint(target: string, id: string): Promis
       // lets the inbound pull start overwriting this row again. Only the four
       // tables in DIRTY_TABLES carry the column.
       const stamp: Record<string, unknown> = { sharepoint_item_id: spId, sharepoint_synced_at: new Date().toISOString() };
+      // Record WHICH list the id belongs to, or the next push has to guess again.
+      if (target === 'permits') stamp.sharepoint_list_name = list;
       if (DIRTY_TABLES.has(table)) stamp.sharepoint_dirty_at = null;
       await (supabaseAdmin as any).from(table).update(stamp).eq('id', id);
     }
@@ -1337,11 +1392,23 @@ async function _syncYachts(
   return persisted
 }
 
-async function _syncPermits(cfg: SpConfig): Promise<{ synced: number; errors: number; samples?: string[] }> {
+async function _syncPermits(
+  cfg: SpConfig,
+  opts: { dryRun?: boolean } = {},
+): Promise<{ synced: number; errors: number; samples?: string[] }> {
+  const permitType = _permitTypeFromListName(cfg.listName)
+
+  // Every match path is scoped to this list's permit type, so without a type
+  // there is no safe way to match — and writing untyped permits is what produced
+  // the mess this scoping exists to prevent. Refuse rather than guess.
+  if (!permitType) {
+    const msg = `"${cfg.listName}" does not map to a permit type — refusing to sync, as matching cannot be scoped`
+    console.error(`[sp-permits] ${msg}`)
+    return { synced: 0, errors: 1, samples: [msg] }
+  }
+
   const token = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret)
   const siteId = await resolveSpSite(token, cfg.tenantUrl, cfg.siteUrl)
-
-  const permitType = _permitTypeFromListName(cfg.listName)
 
   // Fetch ALL items (no delta for permits yet)
   let allItems: any[] = []
@@ -1355,18 +1422,40 @@ async function _syncPermits(cfg: SpConfig): Promise<{ synced: number; errors: nu
     nextUrl = page['@odata.nextLink'] ?? null
   }
 
-  // Load existing permits for matching (sp item id first, then permit no / holder)
+  // Existing permits, for matching. EVERY map below is scoped to this list or to
+  // the permit type this list owns — see the cascade at the bottom of the loop for
+  // why that scoping is the whole point.
   const { data: existingPermits } = await fetchAllRows(() => (supabaseAdmin as any)
     .from('permits')
-    .select('id, permit_number, holder_name, sharepoint_item_id')
-    .order('id'))
-  const bySpId = new Map<string, string>()
-  const byPermitNo = new Map<string, string>()
-  const byHolderName = new Map<string, string>()
+    .select('id, permit_number, permit_type, sharepoint_item_id, sharepoint_list_name, created_at')
+    .order('created_at'))
+
+  // Rows already claimed by this list: identity is (list, item id).
+  const byListItem = new Map<string, string>()
+  // Legacy rows of this list's type that predate sharepoint_list_name. Adopting
+  // one stamps the list onto it, so it only ever happens once per row.
+  const byTypeItem = new Map<string, string>()
+  // Last resort, still type-scoped: the authority's own reference.
+  const byTypeNumber = new Map<string, string>()
+
+  // Rows are ordered by created_at, so `set` only when absent keeps the OLDEST
+  // candidate. The old matching left the same SharePoint item inserted many times
+  // over; picking deterministically means repeated syncs converge on one row
+  // instead of taking turns rewriting several.
+  const claim = (m: Map<string, string>, k: string, id: string) => { if (k && !m.has(k)) m.set(k, id) }
+
   for (const p of (existingPermits ?? []) as Record<string, any>[]) {
-    if (p.sharepoint_item_id) bySpId.set(String(p.sharepoint_item_id), String(p.id))
-    if (p.permit_number) byPermitNo.set(String(p.permit_number).toLowerCase(), String(p.id))
-    if (p.holder_name) byHolderName.set(String(p.holder_name).toLowerCase(), String(p.id))
+    const id = String(p.id)
+    const itemId = p.sharepoint_item_id ? String(p.sharepoint_item_id) : null
+    const list = p.sharepoint_list_name ? String(p.sharepoint_list_name) : null
+    const sameType = permitType != null && p.permit_type === permitType
+
+    if (itemId && list === cfg.listName) claim(byListItem, itemId, id)
+    else if (itemId && !list && sameType) claim(byTypeItem, itemId, id)
+
+    if (sameType && _isRealPermitNumber(p.permit_number)) {
+      claim(byTypeNumber, String(p.permit_number).trim().toLowerCase(), id)
+    }
   }
 
   // Preload yachts for vessel_name → yacht_id resolution
@@ -1385,7 +1474,7 @@ async function _syncPermits(cfg: SpConfig): Promise<{ synced: number; errors: nu
     const record: Record<string, any> = {
       sharepoint_synced_at: new Date().toISOString(),
     }
-    if (permitType) record.permit_type = permitType
+    record.permit_type = permitType
 
     for (const [spField, dbField] of Object.entries(cfg.fieldMapping)) {
       if (!dbField || !(spField in fields)) continue
@@ -1405,18 +1494,51 @@ async function _syncPermits(cfg: SpConfig): Promise<{ synced: number; errors: nu
 
     if (!record.holder_name && !record.permit_number) continue
     record.sharepoint_item_id = item.id
+    record.sharepoint_list_name = cfg.listName
+
+    // Match only within this list, or within the permit type this list owns.
+    //
+    // What this deliberately no longer does:
+    //   • match on the bare SharePoint item id — ids repeat across lists, so
+    //     "item 5" matched another list's permit and overwrote it;
+    //   • match on holder_name — a person is not a permit, so one crew member's
+    //     gate pass would land on top of their DMA permit;
+    //   • match on permit_number alone — null on 511 rows and shared by many.
+    const itemKey = String(item.id)
+    const numberKey = _isRealPermitNumber(record.permit_number)
+      ? String(record.permit_number).trim().toLowerCase()
+      : null
 
     const existingId =
-      bySpId.get(String(item.id)) ??
-      (record.permit_number
-        ? byPermitNo.get(String(record.permit_number).toLowerCase())
-        : undefined) ??
-      (record.holder_name
-        ? byHolderName.get(String(record.holder_name).toLowerCase())
-        : undefined)
+      byListItem.get(itemKey) ??
+      byTypeItem.get(itemKey) ??
+      (numberKey ? byTypeNumber.get(numberKey) : undefined)
 
-    if (existingId) updateById.set(existingId, { ...record, id: existingId })
-    else insertByKey.set(String(item.id), { ...record })
+    if (existingId) {
+      updateById.set(existingId, { ...record, id: existingId })
+      // Claim it for this list so a later item in this same run cannot land on
+      // the row we just took.
+      byListItem.set(itemKey, existingId)
+      byTypeItem.delete(itemKey)
+      if (numberKey) byTypeNumber.delete(numberKey)
+    } else {
+      insertByKey.set(itemKey, { ...record })
+    }
+  }
+
+  if (opts.dryRun) {
+    // Say what would happen without touching anything — the way to see the blast
+    // radius before re-enabling a sync that has previously done damage.
+    const samples = [...updateById.values()].slice(0, 5).map(r =>
+      `update ${String(r.id).slice(0, 8)} → ${r.permit_type} item ${r.sharepoint_item_id} (${r.holder_name ?? r.permit_number ?? '—'})`)
+    return {
+      synced: 0,
+      errors: 0,
+      samples: [
+        `DRY RUN "${cfg.listName}": ${allItems.length} SharePoint items → ${updateById.size} update(s), ${insertByKey.size} insert(s)`,
+        ...samples,
+      ],
+    }
   }
 
   return bulkPersist('permits', updateById, insertByKey)
@@ -2139,6 +2261,18 @@ async function _syncCrew(cfg: SpConfig): Promise<{ synced: number; errors: numbe
 
   const r = await bulkPersist('crew_members', updateById, insertByKey)
   return { synced: r.synced, errors: r.errors + skipped, samples: [...skipSamples, ...r.samples].slice(0, 8) }
+}
+
+/**
+ * Whether a permit number can identify a permit. Staff write "NA" or "-" when the
+ * authority hasn't issued one, and 511 permits have none at all, so these values
+ * name a whole crowd rather than one record — matching on them is how unrelated
+ * permits ended up on top of each other.
+ */
+function _isRealPermitNumber(v: unknown): boolean {
+  const s = String(v ?? '').trim()
+  if (s.length < 3) return false
+  return !['na', 'n/a', 'n.a.', 'none', 'nil', 'tbc', 'tba', 'pending', '-', '--'].includes(s.toLowerCase())
 }
 
 function _permitTypeFromListName(listName: string): string | null {
