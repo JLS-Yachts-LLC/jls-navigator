@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-09-03",
     "entries": [
       {
+        "type": "fix",
+        "title": "Bulk visa actions are usable straight away, and keep expiry dates you set"
+      },
+      {
         "type": "feature",
         "title": "Clients can open their own vessel's documents in the portal"
       },

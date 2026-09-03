@@ -1,3 +1,4 @@
+import { fileVisaToSharePoint, reportVisaFiling } from '@/lib/visa/file-to-sharepoint'
 import { storageRef } from '@/lib/signed-url'
 import { useState, useEffect, useMemo, useRef, type CSSProperties } from 'react'
 import { useNavigate } from '@tanstack/react-router'
@@ -698,14 +699,15 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
       if (error) throw error
       setApplications(prev => prev.map(a => a.id === app.id ? { ...a, ...patch } : a))
       toast.success('Visa attached — application moved to Approved')
-      // File into the SharePoint crew folder (best-effort).
-      try {
-        const { uploadCrewDocToSharePoint } = await import('@/lib/visa-sharepoint.server')
-        await (uploadCrewDocToSharePoint as any)({
-          data: { vesselName: app.vessel_name ?? app.yachts?.vessel_name ?? null, crewName: getCrewName(app), fileName: `Visa - ${file.name}`, contentType: file.type, base64 },
-        })
-        toast.success('Filed in the SharePoint crew folder')
-      } catch { /* non-fatal — Supabase copy is the source of truth */ }
+      // Filing is secondary to the visa being saved, but its outcome is always
+      // reported: silently dropping it was SD-0021.
+      reportVisaFiling(await fileVisaToSharePoint({
+        applicationId: app.id,
+        vesselName: app.vessel_name ?? app.yachts?.vessel_name ?? null,
+        crewName: getCrewName(app),
+        file,
+        base64,
+      }))
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Could not attach the visa')
     } finally {

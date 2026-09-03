@@ -16,7 +16,8 @@ import { ArrowLeft, Loader2, Pencil, Trash2, ExternalLink, Upload, IdCard, FileC
 import { toast } from "sonner";
 import { cn, toDMY } from "@/lib/utils";
 import { fileToBase64 } from "@/lib/file-to-base64";
-import { uploadCrewDocToSharePoint, getCrewSharePointFolderLink } from "@/lib/visa-sharepoint.server";
+import { getCrewSharePointFolderLink } from "@/lib/visa-sharepoint.server";
+import { fileVisaToSharePoint, reportVisaFiling } from "@/lib/visa/file-to-sharepoint";
 
 type Visa = Record<string, any>;
 
@@ -161,15 +162,13 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
       setVisa(v => ({ ...v!, ...patch }));
       toast.success("Visa attached — application moved to Approved");
       // File into SharePoint: Shared Documents / Yacht / {vessel} / Crew Documents / {crew}.
-      try {
-        const crewName = [visa?.given_name, visa?.surname].filter(Boolean).join(" ") || "Unknown Crew";
-        await (uploadCrewDocToSharePoint as any)({
-          data: { vesselName: visa?.vessel_name ?? (vesselName !== "—" ? vesselName : null), crewName, fileName: `Visa - ${file.name}`, contentType: file.type, base64 },
-        });
-        toast.success("Filed in the SharePoint crew folder");
-      } catch (spErr) {
-        toast.warning(`Saved, but SharePoint filing failed: ${spErr instanceof Error ? spErr.message : "unknown error"}`);
-      }
+      reportVisaFiling(await fileVisaToSharePoint({
+        applicationId: id,
+        vesselName: visa?.vessel_name ?? (vesselName !== "—" ? vesselName : null),
+        crewName: [visa?.given_name, visa?.surname].filter(Boolean).join(" ") || "Unknown Crew",
+        file,
+        base64,
+      }));
       pushExcel();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not attach the visa");
