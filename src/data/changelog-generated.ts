@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "A bug report that fails to reach support now says so, and names its reporter"
+      },
+      {
+        "type": "fix",
         "title": "Remove the duplicate permits the old SharePoint matching created"
       },
       {

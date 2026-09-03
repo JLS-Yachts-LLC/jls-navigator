@@ -15,3 +15,14 @@ alter table public.feedback
 
 comment on column public.feedback.notified_at  is 'When the support notification email was accepted for delivery. Null = never sent.';
 comment on column public.feedback.notify_error is 'Why the last notification attempt failed. Null when it succeeded.';
+
+-- Backfill. Reports raised before this existed carry no evidence either way, so
+-- they are treated as delivered — except the three proven absent from the New
+-- Horizon board, which are exactly the losses this column exists to expose.
+-- Without this every historic report would read "Not sent" and the badge would
+-- be noise from day one.
+update public.feedback f
+set notified_at = f.created_at
+where f.notified_at is null
+  and coalesce((select t.ticket_no from public.it_tickets t where t.id = f.ticket_id), '')
+      not in ('SD-0013', 'SD-0016', 'SD-0017');
