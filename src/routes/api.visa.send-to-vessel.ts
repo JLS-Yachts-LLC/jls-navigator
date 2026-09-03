@@ -2,12 +2,13 @@
  * POST /api/visa/send-to-vessel — email a crew member's issued visa to the yacht.
  *
  * Body: { visaId, to: string[], cc?: string[], message?: string }
- * Attaches the issued visa document AND (always) the UAE Arrival Instructions
- * one-pager, per the standing requirement. Sent via the Graph draft flow so the
- * large arrival PDF never trips the sendMail size cap. Records the dispatch on
- * the application (visa_dispatched / _at / _channels).
+ * The visa itself goes as a secure, expiring link (it is personal data); the UAE
+ * Arrival Instructions one-pager is still attached, per the standing requirement
+ * that it always accompanies the visa. Sent via the Graph draft flow so the large
+ * arrival PDF never trips the sendMail size cap. Records the dispatch on the
+ * application (visa_dispatched / _at / _channels).
  */
-import { resolveSignedUrlAdmin } from '@/lib/signed-url.server'
+import { createDocumentShare, documentButtonHtml } from '@/lib/document-share.server'
 import { createClient } from '@supabase/supabase-js'
 import { sendGraphEmailWithAttachments } from '@/lib/graph-mail.server'
 import { visaArrivalAttachment } from '@/lib/visa/arrival-instructions.server'
@@ -40,19 +41,28 @@ export async function visaSendToVesselHandler(request: Request): Promise<Respons
   const crewName = [visa.given_name, visa.surname].filter(Boolean).join(' ') || 'Crew member'
   const vessel = visa.vessel_name ?? visa.yachts?.vessel_name ?? ''
 
-  // Fetch the issued visa document.
-  const docRes = await fetch(await resolveSignedUrlAdmin(visa.visa_document_url))
-  if (!docRes.ok) return json({ ok: false, error: `Could not fetch the visa document (${docRes.status})` }, 500)
-  const docBuf = new Uint8Array(await docRes.arrayBuffer())
-  let docBin = ''
-  for (let i = 0; i < docBuf.length; i++) docBin += String.fromCharCode(docBuf[i])
+  // The visa itself carries the crew member's personal data, so it travels as a
+  // secure, expiring link rather than a copy that lives in the vessel's inbox
+  // for ever.
   const ext = (visa.visa_document_url.split('.').pop() ?? 'pdf').split('?')[0].toLowerCase()
-  const docType = ext === 'pdf' ? 'application/pdf' : ext === 'png' ? 'image/png' : ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : 'application/octet-stream'
-  const visaAttachment = { filename: `UAE Crew Visa - ${crewName}.${ext || 'pdf'}`, contentBase64: btoa(docBin), contentType: docType }
+  const share = await createDocumentShare({
+    storageRef: visa.visa_document_url,
+    filename: `UAE Crew Visa - ${crewName}.${ext || 'pdf'}`,
+    title: `UAE Crew Visa — ${crewName}`,
+    reference: visa.visa_number ? String(visa.visa_number) : null,
+    purpose: `The issued UAE crew visa for ${crewName}${vessel ? `, joining ${vessel}` : ''}. Please print a copy for the crew member to carry.`,
+    vesselName: vessel || null,
+    recipientEmail: to.join(', '),
+    sourceTable: 'visa_applications',
+    sourceId: visa.id,
+    createdBy: user.id,
+  })
 
-  // The UAE Arrival Instructions MUST always accompany the visa.
+  // The UAE Arrival Instructions MUST always accompany the visa. It stays a real
+  // attachment: it holds no personal data, and the crew member has to have it in
+  // hand at the immigration counter — an expiring link is the wrong place for it.
   const arrival = await visaArrivalAttachment()
-  const attachments = arrival ? [visaAttachment, arrival] : [visaAttachment]
+  const attachments = arrival ? [arrival] : []
 
   const note = body.message ? `<p>${esc(String(body.message))}</p>` : ''
   try {
@@ -63,11 +73,15 @@ export async function visaSendToVesselHandler(request: Request): Promise<Respons
         <h2 style="margin:0 0 8px;font-size:16px">UAE Crew Visa — ${esc(crewName)}</h2>
         ${vessel ? `<p style="margin:0 0 10px;color:#4b5563">Vessel: <strong>${esc(vessel)}</strong>${visa.visa_number ? ` &nbsp;·&nbsp; Visa ref: <strong>${esc(String(visa.visa_number))}</strong>` : ''}</p>` : ''}
         ${note}
-        <p>Please find attached:</p>
-        <ul>
-          <li>The issued UAE crew visa${visa.first_entry_expiry ? ` — <strong>must enter the UAE before ${new Date(visa.first_entry_expiry).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</strong>` : ''}</li>
-          <li><strong>UAE Arrival Instructions</strong> — the crew member must use the manual immigration counters (NOT the e-gates) and carry a printed copy of the visa</li>
-        </ul>
+        <p>The issued UAE crew visa is available on the secure link below${visa.first_entry_expiry ? ` — <strong>the crew member must enter the UAE before ${new Date(visa.first_entry_expiry).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</strong>` : ''}.</p>
+        ${documentButtonHtml({
+          url: share.url,
+          title: `UAE Crew Visa — ${crewName}`,
+          reference: visa.visa_number ? String(visa.visa_number) : null,
+          purpose: 'Please download and print a copy for the crew member to carry.',
+          expiresAt: share.expiresAt,
+        })}
+        <p><strong>UAE Arrival Instructions</strong> are attached — the crew member must use the manual immigration counters (NOT the e-gates) and carry a printed copy of the visa.</p>
         <p style="color:#94a3b8;font-size:12px;">Sent via Polaris · JLS Yachts</p>
       </div>`,
       attachments,
@@ -85,5 +99,5 @@ export async function visaSendToVesselHandler(request: Request): Promise<Respons
     updated_at: new Date().toISOString(),
   } as any).eq('id', visa.id)
 
-  return json({ ok: true, sent: to.length, arrivalAttached: !!arrival })
+  return json({ ok: true, sent: to.length, arrivalAttached: !!arrival, secureLink: true, linkExpiresAt: share.expiresAt })
 }

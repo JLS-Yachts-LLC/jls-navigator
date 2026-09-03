@@ -31,7 +31,7 @@ import { DmaDialog } from "@/components/dma-dialog";
 import { NavigationLicenseDialog } from "@/components/navigation-license-dialog";
 import { GatePassDialog } from "@/components/gate-pass-dialog";
 import { AbuDhabiDialog } from "@/components/abu-dhabi-dialog";
-import { doSendPermitEmail } from "@/lib/permit-email.server";
+import { sendPermitEmail } from "@/lib/permits/send-permit-email";
 import { Plus, Search, FileCheck2, Pencil, Trash2, AlertTriangle, CheckCircle2, Clock, Mail, MailCheck, Loader2 as SpinnerIcon } from "lucide-react";
 import { toast } from "sonner";
 import { doPushToSharePoint } from "@/lib/sharepoint-push.server";
@@ -58,8 +58,14 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
     if (!permit.contact_email) { toast.error("This permit has no contact email address"); return; }
     setSendingEmail(permit.id);
     try {
-      await (doSendPermitEmail as any)({ data: { permitId: permit.id, senderEmail: user.email } });
-      toast.success(`Email sent to ${permit.contact_email}`);
+      // Same path as the permit dialogs, so the client gets the secure-document
+      // button and the send is logged against the vessel either way.
+      const res = await sendPermitEmail(permit.id);
+      toast.success(`Email sent to ${res.to}`, {
+        description: res.secureLink
+          ? "The document went as a secure link, and it's logged against the vessel."
+          : "Logged against the vessel.",
+      });
       void load(); // refresh to show email_sent_at
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Email failed to send");

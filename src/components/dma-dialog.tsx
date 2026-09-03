@@ -1,4 +1,5 @@
-import { storageRef, signedUrlForEmail } from "@/lib/signed-url";
+import { sendPermitEmail } from "@/lib/permits/send-permit-email";
+import { storageRef } from "@/lib/signed-url";
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { updateOrThrow } from "@/lib/db-write";
@@ -148,6 +149,9 @@ export function DmaDialog({ yachts, editing, userId, onSaved }: Props) {
     }
   }
 
+  /** Save and send from the app. Previously this opened Outlook via a mailto:
+   *  link, which could carry neither the branded secure-document button nor any
+   *  record of what actually went out. */
   async function handleEmailSave() {
     if (!form.contact_email) {
       toast.error("Add an email address first");
@@ -155,48 +159,22 @@ export function DmaDialog({ yachts, editing, userId, onSaved }: Props) {
     }
     setEmailBusy(true);
     try {
-      await doSave();
-
-      const { data: templates } = await supabase
-        .from("email_templates" as never)
-        .select("subject, body")
-        .eq("permit_type", "dma")
-        .limit(1) as { data: Array<{ subject: string; body: string }> | null };
-
-      const tmpl = templates?.[0];
-      const yachtName = yachts.find((y) => y.id === form.yacht_id)?.vessel_name ?? "";
-
-      // The permit document is stored as a reference, not a public URL — sign it
-      // so the link in the message expires instead of living on forever.
-      const docLink = form.document_url ? await signedUrlForEmail(form.document_url) : "";
-
-      const replace = (s: string) =>
-        s
-          .replace(/\{\{boat_name\}\}/g, yachtName)
-          .replace(/\{\{holder_name\}\}/g, form.holder_name ?? "")
-          .replace(/\{\{expiry_date\}\}/g, form.expiry_date ?? "")
-          .replace(/\{\{issue_date\}\}/g, form.issue_date ?? "")
-          .replace(/\{\{authority\}\}/g, form.issuing_authority ?? "")
-          .replace(/\{\{applied_by\}\}/g, (form.applied_by as string) ?? "")
-          .replace(/\{\{permit_number\}\}/g, form.permit_number ?? "")
-          .replace(/\{\{quotation_number\}\}/g, form.jls_quotation_number ?? "")
-          .replace(/\{\{document_link\}\}/g, docLink);
-
-      const subject = tmpl ? replace(tmpl.subject) : `DMA Permit — ${yachtName}`;
-      const body = tmpl
-        ? replace(tmpl.body)
-        : `Dear ${form.holder_name ?? "Client"},\n\nPlease find your DMA Permit details below.\n\nVessel: ${yachtName}\nDate Applied: ${form.issue_date ?? "—"}\nExpiry: ${form.expiry_date ?? "—"}\nAuthority: ${form.issuing_authority ?? "—"}\nApplied By: ${(form.applied_by as string) ?? "—"}\n${form.permit_number ? `Permit No: ${form.permit_number}\n` : ""}${form.jls_quotation_number ? `JLS Quotation No: ${form.jls_quotation_number}\n` : ""}${docLink ? `\nAttachment: ${docLink}` : ""}\n\nKind regards,\nJLS Yachts`;
-
-      window.open(
-        `mailto:${form.contact_email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`,
-        "_blank"
-      );
+      const permitId = await doSave();
+      const body = await sendPermitEmail(permitId);
+      toast.success(`Sent to ${body.to}`, {
+        description: body.secureLink
+          ? "The permit went as a secure link, and it's logged against the vessel."
+          : "Logged against the vessel.",
+      });
       onSaved();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed");
+      const msg = e instanceof Error ? e.message : "Send failed";
+      // The mail guard's refusal is long and explains itself — show it in full.
+      toast.error(msg, { duration: /switched off|disabled/i.test(msg) ? 12000 : 6000 });
     } finally {
       setEmailBusy(false);
     }
+
   }
 
   const isBusy = busy || emailBusy || uploading;

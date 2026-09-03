@@ -1,3 +1,4 @@
+import { sendPermitEmail, previewPermitEmail } from "@/lib/permits/send-permit-email";
 import { storageRef } from "@/lib/signed-url";
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -149,29 +150,14 @@ export function CruisingMothershipDialog({ yachts, editing, userId, onSaved }: P
     }
   }
 
-  /** Ask the server to render the email; it uses the stored template when there
-   *  is one, so the preview is the real thing rather than an approximation. */
-  async function callEmailApi(permitId: string, previewOnly: boolean) {
-    const { data: { session } } = await (supabase as any).auth.getSession();
-    const res = await fetch("/api/permits/email", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
-      },
-      body: JSON.stringify({ permitId, preview: previewOnly }),
-    });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(body?.error ?? `Request failed (${res.status})`);
-    return body;
-  }
-
-  /** Save, then show the email that would go out — no send. */
+  /** Save, then show the email that would go out — no send. The server renders
+   *  it with the stored template, so the preview is the real thing rather than
+   *  an approximation. */
   async function handlePreview() {
     setPreviewBusy(true);
     try {
       const permitId = await doSave();
-      const body = await callEmailApi(permitId, true);
+      const body = await previewPermitEmail(permitId);
       setPreview({ subject: body.subject, html: body.html, to: body.to });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not build the preview");
@@ -180,9 +166,9 @@ export function CruisingMothershipDialog({ yachts, editing, userId, onSaved }: P
     }
   }
 
-  /** Save and send from the app (the permit document rides along as an
-   *  attachment). Previously this opened Outlook via a mailto: link, which left
-   *  no record of what actually went out. */
+  /** Save and send from the app, with the permit document as a secure link.
+   *  Previously this opened Outlook via a mailto: link, which left no record of
+   *  what actually went out. */
   async function handleEmailSave() {
     if (!form.contact_email) {
       toast.error("Add the client's email address first");
@@ -191,7 +177,7 @@ export function CruisingMothershipDialog({ yachts, editing, userId, onSaved }: P
     setEmailBusy(true);
     try {
       const permitId = await doSave();
-      const body = await callEmailApi(permitId, false);
+      const body = await sendPermitEmail(permitId);
       toast.success(`Sent to ${body.to}`, {
         description: body.secureLink
           ? "The permit went as a secure link, and it's logged against the vessel."

@@ -59,6 +59,15 @@ function detailRows(p: Record<string, any>, vesselName: string): Array<[string, 
     ['Expiry date', p.expiry_date ? fmtDate(p.expiry_date) : null],
     ['21-day extension', p.extension_status],
     ['Applied by', p.applied_by],
+    ['Requested by', p.requested_by],
+    ['Licence no.', p.license_no],
+    // preferred_inspection_date is reused per permit type: on a sanitation
+    // certificate it really is the requested inspection date, everywhere else it
+    // holds the date the authority actually issued the permit.
+    [
+      p.permit_type === 'sanitation' ? 'Preferred inspection date' : 'Issue date',
+      p.preferred_inspection_date ? fmtDate(p.preferred_inspection_date) : null,
+    ],
     ['JLS quotation no.', p.jls_quotation_number],
   ]
   return rows

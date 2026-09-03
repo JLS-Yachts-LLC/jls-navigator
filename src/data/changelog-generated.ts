@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "Searching the yacht registry now matches what you can see"
+      },
+      {
+        "type": "fix",
         "title": "Secure document links record the visitor's address in the access log"
       },
       {
