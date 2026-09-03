@@ -24,6 +24,30 @@ export function parseStorageRef(stored: string, defaultBucket?: string): Parsed 
   return null;
 }
 
+/** Every bucket this project stores files in. */
+export const KNOWN_BUCKETS = new Set([
+  "permit-documents", "esign-documents", "visa-documents", "crew-docs",
+  "orbit-documents", "signatures", "vessel-images", "guide-images", "shipsync",
+]);
+
+/**
+ * Like `parseStorageRef`, but for columns that hold EITHER a "<bucket>/<path>"
+ * reference or a bare path inside a known bucket (`esign_documents.file_path`,
+ * `ism_certificates.file_path`).
+ *
+ * `parseStorageRef` cannot serve both: given a default bucket it treats the whole
+ * value as the path, and without one it treats the first segment as the bucket —
+ * so a bare `forms/x.pdf` would resolve to the non-existent bucket "forms". Here
+ * the first segment is only taken as a bucket when it actually names one.
+ */
+export function parseStorageRefOrPath(stored: string, fallbackBucket: string): Parsed | null {
+  if (!stored) return null;
+  const asRef = parseStorageRef(stored);
+  if (asRef && KNOWN_BUCKETS.has(asRef.bucket)) return asRef;
+  if (/^https?:\/\//i.test(stored)) return null;
+  return { bucket: fallbackBucket, path: stored.replace(/^\/+/, "") };
+}
+
 export async function resolveSignedUrl(stored: string, defaultBucket?: string): Promise<string> {
   const ref = parseStorageRef(stored, defaultBucket);
   if (!ref) return stored; // not a storage ref we manage — return verbatim

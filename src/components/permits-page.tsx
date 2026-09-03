@@ -31,7 +31,7 @@ import { DmaDialog } from "@/components/dma-dialog";
 import { NavigationLicenseDialog } from "@/components/navigation-license-dialog";
 import { GatePassDialog } from "@/components/gate-pass-dialog";
 import { AbuDhabiDialog } from "@/components/abu-dhabi-dialog";
-import { sendPermitEmail } from "@/lib/permits/send-permit-email";
+import { sendPermitEmail, deliveryNote } from "@/lib/permits/send-permit-email";
 import { Plus, Search, FileCheck2, Pencil, Trash2, AlertTriangle, CheckCircle2, Clock, Mail, MailCheck, Loader2 as SpinnerIcon } from "lucide-react";
 import { toast } from "sonner";
 import { doPushToSharePoint } from "@/lib/sharepoint-push.server";
@@ -62,9 +62,7 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
       // button and the send is logged against the vessel either way.
       const res = await sendPermitEmail(permit.id);
       toast.success(`Email sent to ${res.to}`, {
-        description: res.secureLink
-          ? "The document went as a secure link, and it's logged against the vessel."
-          : "Logged against the vessel.",
+        description: deliveryNote(res),
       });
       void load(); // refresh to show email_sent_at
     } catch (err) {

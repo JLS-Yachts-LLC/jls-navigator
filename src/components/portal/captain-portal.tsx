@@ -1116,25 +1116,85 @@ function CrewTab({ yachtId }: { yachtId: string }) {
 }
 
 // ── Documents (permits + visas) ──────────────────────────────────────────────
+/**
+ * A document the vessel can open. The stored location never reaches the browser:
+ * the button asks /api/portal/documents/open, which re-checks that the document
+ * belongs to this vessel before signing anything.
+ */
+function OpenDocumentButton({ kind, id, label = "Open" }: { kind: string; id: string; label?: string }) {
+  const [busy, setBusy] = useState(false);
+
+  async function open() {
+    setBusy(true);
+    try {
+      const { data: { session } } = await db.auth.getSession();
+      const res = await fetch(`/api/portal/documents/open?type=${kind}&id=${id}`, {
+        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+        redirect: "follow",
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error ?? "That document could not be opened.");
+      }
+      window.open(res.url, "_blank", "noreferrer");
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "That document could not be opened.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <button
+      type="button" onClick={() => void open()} disabled={busy}
+      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-medium text-foreground transition hover:border-primary/50 disabled:opacity-50"
+    >
+      {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />} {label}
+    </button>
+  );
+}
+
+type PortalDoc = { hasFile?: boolean };
+type PortalPermit = Permit & PortalDoc & { license_no?: string | null };
+type PortalVisa = Visa & PortalDoc;
+type VesselDoc = PortalDoc & {
+  id: string; title: string | null; file_name: string | null; doc_type: string | null; created_at: string | null;
+};
+
 function DocumentsTab({ yachtId }: { yachtId: string }) {
-  const [permits, setPermits] = useState<Permit[]>([]);
-  const [visas, setVisas] = useState<Visa[]>([]);
+  const [permits, setPermits] = useState<PortalPermit[]>([]);
+  const [visas, setVisas] = useState<PortalVisa[]>([]);
+  const [vesselDocs, setVesselDocs] = useState<VesselDoc[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([
-      db.from("permits")
-        .select("id, permit_type, permit_number, status, issue_date, expiry_date, issuing_authority, holder_name")
-        .order("created_at", { ascending: false }),
-      db.from("visa_applications")
-        .select("id, given_name, surname, visa_type, status, destination_country, visa_expiry, visa_number, sign_on_date")
-        .order("created_at", { ascending: false }).limit(100),
-    ]).then(([p, v]: any[]) => { setPermits(p.data ?? []); setVisas(v.data ?? []); setLoading(false); });
+    let alive = true;
+    void (async () => {
+      try {
+        const { data: { session } } = await db.auth.getSession();
+        const res = await fetch("/api/portal/documents", {
+          headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+        });
+        const body = await res.json();
+        if (!res.ok) throw new Error(body?.error ?? "Could not load documents");
+        if (!alive) return;
+        setPermits(body.permits ?? []);
+        setVisas(body.visas ?? []);
+        setVesselDocs(body.vesselDocuments ?? []);
+      } catch (e) {
+        if (alive) setError(e instanceof Error ? e.message : "Could not load documents");
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
   }, [yachtId]);
 
   const typeLabel = (t: string) => t.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
   if (loading) return <div className="flex h-32 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
+  if (error) return <Card className="px-6 py-8 text-center text-sm text-muted-foreground">{error}</Card>;
 
   return (
     <div className="space-y-6">
@@ -1163,9 +1223,34 @@ function DocumentsTab({ yachtId }: { yachtId: string }) {
                     </div>
                     <div className="mt-0.5 text-muted-foreground">{fmtDate(p.expiry_date)}</div>
                   </div>
+                  {p.hasFile && <OpenDocumentButton kind="permit" id={p.id} />}
                 </Card>
               );
             })}
+          </div>
+        )}
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-lg font-bold">Vessel documents</h2>
+        {vesselDocs.length === 0 ? (
+          <Card className="px-6 py-8 text-center text-sm text-muted-foreground">No documents have been shared for your vessel yet.</Card>
+        ) : (
+          <div className="space-y-2">
+            {vesselDocs.map((d) => (
+              <Card key={d.id} className="flex items-center gap-3 p-4">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border bg-background/50">
+                  <FileText className="h-4 w-4 text-muted-foreground" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-semibold">{d.title ?? d.file_name ?? "Document"}</div>
+                  <div className="mt-0.5 text-[11px] text-muted-foreground">
+                    {[d.doc_type, d.created_at ? `Added ${fmtDate(d.created_at)}` : null].filter(Boolean).join(" · ") || "—"}
+                  </div>
+                </div>
+                {d.hasFile && <OpenDocumentButton kind="vessel_doc" id={d.id} />}
+              </Card>
+            ))}
           </div>
         )}
       </section>
@@ -1191,6 +1276,7 @@ function DocumentsTab({ yachtId }: { yachtId: string }) {
                   <div className="font-semibold">{v.status ?? "—"}</div>
                   <div className="mt-0.5 text-muted-foreground">{v.visa_expiry ? `Expires ${fmtDate(v.visa_expiry)}` : ""}</div>
                 </div>
+                {v.hasFile && <OpenDocumentButton kind="visa" id={v.id} />}
               </Card>
             ))}
           </div>

@@ -2,7 +2,6 @@
  * ISM section for the "My Yacht" portal — safety certificates + drill log.
  * Reads `ism_certificates` / `ism_drills` (yacht-scoped). BUILT BUT NOT YET WIRED.
  */
-import { resolveSignedUrl } from "@/lib/signed-url";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
@@ -51,9 +50,25 @@ export function IsmSection({ yachtId }: { yachtId: string }) {
     ]).then(([c, d]: any[]) => { setCerts(c.data ?? []); setDrills(d.data ?? []); setLoading(false); });
   }, [yachtId]);
 
-  function openDoc(path: string | null) {
-    if (!path) return;
-    void resolveSignedUrl(path, "esign-documents").then((u) => { if (u) window.open(u, "_blank"); });
+  /**
+   * Certificates are opened through the portal endpoint, not by signing storage
+   * from the browser: it re-checks the certificate belongs to this vessel and
+   * records the access. Portal users have no storage read grant of their own.
+   */
+  async function openDoc(certId: string) {
+    try {
+      const { data: { session } } = await db.auth.getSession();
+      const res = await fetch(`/api/portal/documents/open?type=ism_cert&id=${certId}`, {
+        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error ?? "That certificate could not be opened.");
+      }
+      window.open(res.url, "_blank", "noreferrer");
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "That certificate could not be opened.");
+    }
   }
 
   if (loading) return <SectionLoading />;
@@ -93,7 +108,7 @@ export function IsmSection({ yachtId }: { yachtId: string }) {
                       {c.expiry_date ? `Expires ${fmtDate(c.expiry_date)}` : "No expiry"}
                     </div>
                     {c.file_path && (
-                      <button onClick={() => openDoc(c.file_path)} className="mt-1 inline-flex items-center gap-1 text-primary hover:underline">
+                      <button onClick={() => void openDoc(c.id)} className="mt-1 inline-flex items-center gap-1 text-primary hover:underline">
                         <FileText className="h-3 w-3" /> View
                       </button>
                     )}

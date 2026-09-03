@@ -781,6 +781,16 @@ export default {
       return formsPublicHandler(request)
     }
 
+    // Client portal — the vessel's documents, and the file behind one.
+    if (url.pathname === '/api/portal/documents') {
+      const { portalDocumentsHandler } = await import('./routes/api.portal.documents')
+      return portalDocumentsHandler(request)
+    }
+    if (url.pathname === '/api/portal/documents/open') {
+      const { portalDocumentOpenHandler } = await import('./routes/api.portal.documents')
+      return portalDocumentOpenHandler(request)
+    }
+
     // Secure document links — public, authorised by the token alone.
     if (url.pathname === '/api/documents/meta') {
       const { documentShareMetaHandler } = await import('./routes/api.documents')

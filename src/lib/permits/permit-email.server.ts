@@ -162,11 +162,13 @@ export async function loadPermitForEmail(permitId: string): Promise<{
   permit: Record<string, any>
   vesselName: string
   template: { subject: string; body: string } | null
+  /** How this client asked to receive documents: 'secure_link' (default) or 'portal'. */
+  delivery: 'secure_link' | 'portal'
 }> {
   const sb = admin() as any
   const { data: permit, error } = await sb
     .from('permits')
-    .select('*, yachts(vessel_name)')
+    .select('*, yachts(vessel_name, preferred_document_delivery)')
     .eq('id', permitId)
     .maybeSingle()
   if (error) throw new Error(error.message)
@@ -183,5 +185,6 @@ export async function loadPermitForEmail(permitId: string): Promise<{
     permit,
     vesselName: permit.yachts?.vessel_name ?? permit.vessel_name ?? '—',
     template: tmpl ?? null,
+    delivery: permit.yachts?.preferred_document_delivery === 'portal' ? 'portal' : 'secure_link',
   }
 }

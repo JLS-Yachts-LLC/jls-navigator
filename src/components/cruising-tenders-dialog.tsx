@@ -1,4 +1,4 @@
-import { sendPermitEmail } from "@/lib/permits/send-permit-email";
+import { sendPermitEmail, deliveryNote } from "@/lib/permits/send-permit-email";
 import { storageRef } from "@/lib/signed-url";
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -159,9 +159,7 @@ export function CruisingTendersDialog({ yachts, editing, userId, onSaved }: Prop
       const permitId = await doSave();
       const body = await sendPermitEmail(permitId);
       toast.success(`Sent to ${body.to}`, {
-        description: body.secureLink
-          ? "The permit went as a secure link, and it's logged against the vessel."
-          : "Logged against the vessel.",
+        description: deliveryNote(body, "permit"),
       });
       onSaved();
     } catch (e) {

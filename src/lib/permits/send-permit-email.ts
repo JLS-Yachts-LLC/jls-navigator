@@ -12,9 +12,22 @@ export interface PermitEmailResult {
   to: string;
   subject: string;
   label: string;
+  /** How this client asked to receive documents. */
+  delivery: "secure_link" | "portal";
   /** True when the permit document went as a secure, expiring link. */
   secureLink: boolean;
   linkExpiresAt: string | null;
+}
+
+/** What to tell the sender about how the document actually travelled. */
+export function deliveryNote(r: PermitEmailResult, noun = "document"): string {
+  if (r.delivery === "portal") {
+    return `The ${noun} is waiting in the client's portal — no link was emailed, as they requested.`;
+  }
+  if (r.secureLink) {
+    return `The ${noun} went as a secure link, and it's logged against the vessel.`;
+  }
+  return "Logged against the vessel.";
 }
 
 export interface PermitEmailPreview {

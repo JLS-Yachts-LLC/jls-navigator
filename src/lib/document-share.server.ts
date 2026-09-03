@@ -261,6 +261,35 @@ export function documentButtonHtml(opts: {
   </table>`;
 }
 
+/**
+ * The alternative block, for a client who asked to be pointed at the portal
+ * instead of emailed a link. No token is issued: they sign in and open the
+ * document from their own Documents tab, where access is scoped to their vessel.
+ */
+export function portalPointerHtml(opts: { title: string; reference?: string | null }): string {
+  const esc = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const portalUrl = `${shareBaseUrl(reqMeta().origin)}/portal`;
+
+  return `
+  <table cellpadding="0" cellspacing="0" style="margin:20px 0;border-collapse:collapse;width:100%">
+    <tr><td style="padding:16px 18px;border:1px solid #dfe5ea;border-radius:8px;background:#f8fafc">
+      <div style="font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:#64748b">In your portal</div>
+      <div style="margin-top:4px;font-size:15px;font-weight:600;color:#0f172a">${esc(opts.title)}</div>
+      ${opts.reference ? `<div style="margin-top:2px;font-size:13px;color:#4a5b68">Reference: ${esc(opts.reference)}</div>` : ""}
+      <div style="margin-top:6px;font-size:13px;line-height:1.5;color:#4a5b68">
+        This document is filed under <strong>Documents</strong> in your JLS Yachts portal, alongside the rest of your vessel's paperwork.
+      </div>
+      <div style="margin-top:14px">
+        <a href="${esc(portalUrl)}"
+           style="display:inline-block;padding:11px 18px;background:#07435e;color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;border-radius:6px">
+          Open your portal
+        </a>
+      </div>
+    </td></tr>
+  </table>`;
+}
+
 /** Plain-text equivalent, for the text part of the same message. */
 export function documentButtonText(opts: {
   url: string;
