@@ -1,3 +1,4 @@
+import { storageRef, signedUrlForEmail } from "@/lib/signed-url";
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { type Permit, type PermitStatus } from "@/lib/permit-types";
@@ -64,8 +65,7 @@ export function SanitationDialog({ yachts, editing, userId, onSaved }: Props) {
         .from("permit-documents")
         .upload(path, file, { upsert: true });
       if (error) throw error;
-      const { data } = supabase.storage.from("permit-documents").getPublicUrl(path);
-      set("document_url", data.publicUrl);
+      set("document_url", storageRef("permit-documents", path));
       setFileName(file.name);
       toast.success("Certificate uploaded");
     } catch (e) {
@@ -150,6 +150,10 @@ export function SanitationDialog({ yachts, editing, userId, onSaved }: Props) {
       const yachtName =
         yachts.find((y) => y.id === form.yacht_id)?.vessel_name ?? "";
 
+      // The certificate is stored as a reference, not a public URL — sign it so
+      // the link in the message expires instead of living on forever.
+      const docLink = form.document_url ? await signedUrlForEmail(form.document_url) : "";
+
       const replace = (s: string) =>
         s
           .replace(/\{\{boat_name\}\}/g, yachtName)
@@ -165,7 +169,8 @@ export function SanitationDialog({ yachts, editing, userId, onSaved }: Props) {
           .replace(
             /\{\{preferred_inspection_date\}\}/g,
             form.preferred_inspection_date ?? ""
-          );
+          )
+          .replace(/\{\{document_link\}\}/g, docLink);
 
       const subject = tmpl
         ? replace(tmpl.subject)
@@ -173,7 +178,7 @@ export function SanitationDialog({ yachts, editing, userId, onSaved }: Props) {
 
       const body = tmpl
         ? replace(tmpl.body)
-        : `Dear ${form.holder_name ?? "Client"},\n\nPlease find your sanitation certificate details below.\n\nVessel: ${yachtName}\nIssue Date: ${form.issue_date ?? "—"}\nExpiry Date: ${form.expiry_date ?? "—"}\nAuthority: ${form.issuing_authority ?? "—"}\nPermit/Invoice No: ${form.permit_number ?? "—"}\n${form.jls_quotation_number ? `JLS Quotation No: ${form.jls_quotation_number}\n` : ""}${form.document_url ? `\nCertificate: ${form.document_url}` : ""}\n\nKind regards,\nJLS Yachts`;
+        : `Dear ${form.holder_name ?? "Client"},\n\nPlease find your sanitation certificate details below.\n\nVessel: ${yachtName}\nIssue Date: ${form.issue_date ?? "—"}\nExpiry Date: ${form.expiry_date ?? "—"}\nAuthority: ${form.issuing_authority ?? "—"}\nPermit/Invoice No: ${form.permit_number ?? "—"}\n${form.jls_quotation_number ? `JLS Quotation No: ${form.jls_quotation_number}\n` : ""}${docLink ? `\nCertificate: ${docLink}` : ""}\n\nKind regards,\nJLS Yachts`;
 
       window.open(
         `mailto:${form.contact_email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`,

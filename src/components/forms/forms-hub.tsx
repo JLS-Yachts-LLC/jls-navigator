@@ -8,6 +8,7 @@
  *   • create a share link so an incoming yacht can complete it with no login,
  *   • see every copy sent out and what came back.
  */
+import { storageRef } from "@/lib/signed-url";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -110,9 +111,9 @@ export function FormsHub() {
       const path = `forms/${form.slug}/${Date.now()}-${file.name}`;
       const { error } = await supabase.storage.from("permit-documents").upload(path, file, { upsert: true });
       if (error) throw error;
-      const { data: { publicUrl } } = supabase.storage.from("permit-documents").getPublicUrl(path);
+      const stored = storageRef("permit-documents", path);
       const { error: upErr } = await (supabase as any).from("forms")
-        .update({ pdf_url: publicUrl, pdf_file_name: file.name, updated_at: new Date().toISOString() })
+        .update({ pdf_url: stored, pdf_file_name: file.name, updated_at: new Date().toISOString() })
         .eq("id", form.id);
       if (upErr) throw upErr;
       toast.success(`PDF attached to “${form.title}”`);

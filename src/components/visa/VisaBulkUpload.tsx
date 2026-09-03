@@ -1,3 +1,4 @@
+import { storageRef } from '@/lib/signed-url'
 import { useRef, useState } from 'react'
 import { supabase } from '@/integrations/supabase/client'
 import { fileToBase64 } from '@/lib/file-to-base64'
@@ -185,7 +186,7 @@ export function VisaBulkUpload({ countryCode, onClose, onChanged }: {
     const { error } = await supabase.storage.from('permit-documents')
       .upload(path, bytes, { contentType: row.contentType || 'application/octet-stream', upsert: true })
     if (error) throw error
-    return supabase.storage.from('permit-documents').getPublicUrl(path).data.publicUrl
+    return storageRef('permit-documents', path)
   }
 
   /**

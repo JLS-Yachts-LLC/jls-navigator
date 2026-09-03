@@ -1,3 +1,4 @@
+import { storageRef } from "@/lib/signed-url";
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { updateOrThrow } from "@/lib/db-write";
@@ -69,8 +70,8 @@ export function ExitEntryDialog({
       const path = `permits/${Date.now()}-${file.name}`;
       const { error } = await supabase.storage.from("permit-documents").upload(path, file);
       if (error) throw error;
-      const { data: { publicUrl } } = supabase.storage.from("permit-documents").getPublicUrl(path);
-      set("document_url", publicUrl);
+      const stored = storageRef("permit-documents", path);
+      set("document_url", stored);
       toast.success("File attached");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Upload failed");

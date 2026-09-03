@@ -1,3 +1,4 @@
+import { resolveSignedUrl } from "@/lib/signed-url";
 import { useState, useEffect } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Route } from "@/routes/_app.guides.$department.$guideId";
@@ -105,8 +106,7 @@ export function GuideDetailPage() {
               <Button
                 variant="outline" size="sm" className="gap-1.5"
                 onClick={() => {
-                  const { data } = (supabase as any).storage.from("esign-documents").getPublicUrl(guide.pdf_path);
-                  if (data?.publicUrl) window.open(data.publicUrl, "_blank");
+                  void resolveSignedUrl(guide.pdf_path!, "esign-documents").then((u) => { if (u) window.open(u, "_blank"); });
                 }}
               >
                 <FileDown className="h-3.5 w-3.5" /> Branded PDF

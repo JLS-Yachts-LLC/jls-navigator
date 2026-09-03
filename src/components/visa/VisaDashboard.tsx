@@ -1,3 +1,4 @@
+import { storageRef } from '@/lib/signed-url'
 import { useState, useEffect, useMemo, type CSSProperties } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
@@ -619,7 +620,7 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
       const path = `visa/${app.id}/visa-document.${ext}`
       const { error: upErr } = await supabase.storage.from('permit-documents').upload(path, file, { upsert: true })
       if (upErr) throw upErr
-      const url = supabase.storage.from('permit-documents').getPublicUrl(path).data.publicUrl
+      const url = storageRef('permit-documents', path)
       const { fileToBase64 } = await import('@/lib/file-to-base64')
       const base64 = await fileToBase64(file)
       const patch: any = { visa_document_url: url, status: 'approved', approved_at: new Date().toISOString(), updated_at: new Date().toISOString() }

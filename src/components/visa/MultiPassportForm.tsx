@@ -1,3 +1,4 @@
+import { storageRef } from '@/lib/signed-url'
 import React, { useState, useRef } from 'react'
 import { COLORS, FONTS } from '@/lib/tokens'
 import { supabase } from '@/integrations/supabase/client'
@@ -89,10 +90,7 @@ export default function MultiPassportForm({
         .from('permit-documents')
         .upload(path, file, { upsert: true })
       if (upErr) throw upErr
-      const { data: urlData } = supabase.storage
-        .from('permit-documents')
-        .getPublicUrl(path)
-      setForm(f => ({ ...f, document_url: urlData.publicUrl }))
+      setForm(f => ({ ...f, document_url: storageRef('permit-documents', path) }))
     } catch (err: any) {
       setError(err?.message ?? 'Upload failed')
     } finally {

@@ -1,3 +1,4 @@
+import { storageRef } from '@/lib/signed-url'
 import React, { useState, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 import { COLORS, FONTS } from '@/lib/tokens'
@@ -993,7 +994,7 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
         const path = `crew/${crewId}/${key}_${Date.now()}.${ext}`
         const { error: upErr } = await supabase.storage.from('permit-documents').upload(path, file, { upsert: true })
         if (upErr) throw upErr
-        return supabase.storage.from('permit-documents').getPublicUrl(path).data.publicUrl
+        return storageRef('permit-documents', path)
       }
       const [coverUrl, dataUrl, seamansUrl, headshotUrl] = await Promise.all([
         uploadSlot('cover'), uploadSlot('data'), uploadSlot('seamans'), uploadSlot('headshot'),

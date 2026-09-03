@@ -10,6 +10,7 @@
  * Mirrors crew-doc-sharepoint.server.ts: read-only listing for the badges, a
  * subfolder creator, and a per-file push whose bytes are read server-side.
  */
+import { storageRef } from '@/lib/signed-url'
 import { createServerFn } from '@tanstack/react-start'
 import { getSpConfig, getGraphToken, resolveSpSite } from '@/lib/sharepoint-sync.server'
 import { sanitizeSegment, ensureFoldersAndGetUrl, uploadBytesIntoFolders } from '@/lib/visa-sharepoint.server'
@@ -207,7 +208,7 @@ export const pullYachtDocFromSharePoint = createServerFn({ method: 'POST' })
       const { error: upErr } = await supabaseAdmin.storage.from('permit-documents')
         .upload(path, bytes, { upsert: true, contentType: contentTypeFor(safeName) })
       if (upErr) return { ok: false, error: `Storage upload failed: ${upErr.message}` }
-      const fileUrl = supabaseAdmin.storage.from('permit-documents').getPublicUrl(path).data.publicUrl
+      const fileUrl = storageRef('permit-documents', path)
 
       const { data: row, error } = await (supabaseAdmin as any).from('yacht_documents').insert([{
         yacht_id: data.yachtId, title: data.fileName, file_name: data.fileName,

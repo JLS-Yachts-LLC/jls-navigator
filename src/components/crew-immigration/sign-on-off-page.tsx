@@ -1,3 +1,4 @@
+import { storageRef } from "@/lib/signed-url";
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchAllRows } from "@/lib/fetch-all";
@@ -159,7 +160,7 @@ export function SignOnOffPage() {
         const path = `immigration/${immForm.yacht_id}/${immForm.emirate}_${Date.now()}.${ext}`;
         const { error: upErr } = await supabase.storage.from("permit-documents").upload(path, immForm.file, { upsert: true });
         if (upErr) throw upErr;
-        fileUrl = supabase.storage.from("permit-documents").getPublicUrl(path).data.publicUrl;
+        fileUrl = storageRef("permit-documents", path);
         fileName = immForm.file.name;
       }
       const { error } = await (supabase as any).from("immigration_crew_lists").insert([{

@@ -10,6 +10,8 @@
  * ~80 KB, which matters because these render in list views where a dozen load
  * at once.
  */
+import { storageRef, useSignedUrl } from "@/lib/signed-url";
+import { SignedImage } from "@/components/ui/signed-file";
 import { useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Camera, Loader2, Trash2, User } from "lucide-react";
@@ -46,7 +48,7 @@ export async function uploadPhoto(file: File, folder: string, id: string): Promi
     upsert: true, contentType: "image/jpeg",
   });
   if (error) throw error;
-  return supabase.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
+  return storageRef(BUCKET, path);
 }
 
 // ── Round avatar (driver lists) ────────────────────────────────────────────────
@@ -55,14 +57,16 @@ const initialsOf = (name: string) =>
   name.trim().split(/\s+/).slice(0, 2).map(w => w[0]).join("").toUpperCase() || "?";
 
 export function Avatar({ src, name, size = 32, className }: {
+  /** Stored reference or legacy public URL — resolved to a signed URL to display. */
   src?: string | null; name: string; size?: number; className?: string;
 }) {
   const [failed, setFailed] = useState(false);
+  const resolved = useSignedUrl(src);
   const px = { width: size, height: size };
-  if (src && !failed) {
+  if (resolved && !failed) {
     return (
       <img
-        src={src} alt={name} style={px} loading="lazy"
+        src={resolved} alt={name} style={px} loading="lazy"
         onError={() => setFailed(true)}
         className={cn("shrink-0 rounded-full border border-border object-cover", className)}
       />
@@ -115,7 +119,7 @@ export function PhotoField({
       <label className="text-xs text-muted-foreground">{label}</label>
       <div className="flex items-center gap-3">
         {value ? (
-          <img src={value} alt=""
+          <SignedImage stored={value} alt=""
             className={cn("border border-border object-cover", round ? "h-16 w-16 rounded-full" : "h-16 w-24 rounded-lg")} />
         ) : (
           <div className={cn("flex items-center justify-center border border-dashed border-border text-muted-foreground/50",
@@ -225,7 +229,7 @@ export function PhotoGallery({
         <div className="flex flex-wrap gap-2">
           {photos.map((p, i) => (
             <div key={p.url} className="group relative">
-              <img src={p.url} alt={p.angle ?? ""} loading="lazy"
+              <SignedImage stored={p.url} alt={p.angle ?? ""}
                 className={cn("h-20 w-28 rounded-lg border object-cover",
                   i === 0 ? "border-primary/60" : "border-border")} />
               <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white/90">

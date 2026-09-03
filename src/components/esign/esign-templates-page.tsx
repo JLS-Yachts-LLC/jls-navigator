@@ -1,3 +1,4 @@
+import { resolveSignedUrl } from "@/lib/signed-url";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
@@ -140,9 +141,9 @@ export function EsignTemplatesPage() {
     finally { setDeleting(false); }
   }
 
-  function download(t: Template) {
-    const { data } = (supabase as any).storage.from("esign-documents").getPublicUrl(t.file_path);
-    if (data?.publicUrl) window.open(data.publicUrl, "_blank");
+  async function download(t: Template) {
+    const url = await resolveSignedUrl(t.file_path, "esign-documents");
+    if (url) window.open(url, "_blank");
   }
 
   const filtered = useMemo(() => rows.filter(r => {

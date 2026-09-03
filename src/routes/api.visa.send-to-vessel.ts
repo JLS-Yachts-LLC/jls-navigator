@@ -7,6 +7,7 @@
  * large arrival PDF never trips the sendMail size cap. Records the dispatch on
  * the application (visa_dispatched / _at / _channels).
  */
+import { resolveSignedUrlAdmin } from '@/lib/signed-url.server'
 import { createClient } from '@supabase/supabase-js'
 import { sendGraphEmailWithAttachments } from '@/lib/graph-mail.server'
 import { visaArrivalAttachment } from '@/lib/visa/arrival-instructions.server'
@@ -40,7 +41,7 @@ export async function visaSendToVesselHandler(request: Request): Promise<Respons
   const vessel = visa.vessel_name ?? visa.yachts?.vessel_name ?? ''
 
   // Fetch the issued visa document.
-  const docRes = await fetch(visa.visa_document_url)
+  const docRes = await fetch(await resolveSignedUrlAdmin(visa.visa_document_url))
   if (!docRes.ok) return json({ ok: false, error: `Could not fetch the visa document (${docRes.status})` }, 500)
   const docBuf = new Uint8Array(await docRes.arrayBuffer())
   let docBin = ''

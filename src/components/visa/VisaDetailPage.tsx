@@ -1,3 +1,4 @@
+import { storageRef } from "@/lib/signed-url";
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
@@ -122,7 +123,7 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
       const path = `visa/${id}/visa-document.${ext}`;
       const { error: upErr } = await supabase.storage.from("permit-documents").upload(path, file, { upsert: true });
       if (upErr) throw upErr;
-      const url = supabase.storage.from("permit-documents").getPublicUrl(path).data.publicUrl;
+      const url = storageRef("permit-documents", path);
       const base64 = await fileToBase64(file);
       const patch: any = { visa_document_url: url, status: "approved", approved_at: new Date().toISOString(), updated_at: new Date().toISOString() };
       // OCR the visa to auto-fill its number, issuance, expiry and entry deadline.

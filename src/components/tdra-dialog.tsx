@@ -1,3 +1,4 @@
+import { storageRef, signedUrlForEmail } from "@/lib/signed-url";
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { type Permit, type PermitStatus } from "@/lib/permit-types";
@@ -178,7 +179,7 @@ export function TdraDialog({ yachts, editing, userId, onSaved }: Props) {
       .from("permit-documents")
       .upload(path, file, { upsert: true });
     if (error) throw error;
-    return supabase.storage.from("permit-documents").getPublicUrl(path).data.publicUrl;
+    return storageRef("permit-documents", path);
   }
 
   async function handleInvoiceUpload(file: File) {
@@ -297,6 +298,10 @@ export function TdraDialog({ yachts, editing, userId, onSaved }: Props) {
       const tmpl = templates?.[0];
       const yachtName = yachts.find((y) => y.id === form.yacht_id)?.vessel_name ?? "";
 
+      // The certificate is stored as a reference, not a public URL — sign it so
+      // the link in the message expires instead of living on forever.
+      const docLink = form.document_url ? await signedUrlForEmail(form.document_url) : "";
+
       const replace = (s: string) =>
         s
           .replace(/\{\{boat_name\}\}/g, yachtName)
@@ -305,12 +310,13 @@ export function TdraDialog({ yachts, editing, userId, onSaved }: Props) {
           .replace(/\{\{issue_date\}\}/g, form.issue_date ?? "")
           .replace(/\{\{authority\}\}/g, form.issuing_authority ?? "")
           .replace(/\{\{applied_by\}\}/g, form.permit_number ?? "")
-          .replace(/\{\{quotation_number\}\}/g, form.jls_quotation_number ?? "");
+          .replace(/\{\{quotation_number\}\}/g, form.jls_quotation_number ?? "")
+          .replace(/\{\{document_link\}\}/g, docLink);
 
       const subject = tmpl ? replace(tmpl.subject) : `TDRA Permit — ${yachtName}`;
       const body = tmpl
         ? replace(tmpl.body)
-        : `Dear ${form.holder_name ?? "Client"},\n\nPlease find your TDRA Permit details below.\n\nVessel: ${yachtName}\nDate Applied: ${form.issue_date ?? "—"}\nExpiry: ${form.expiry_date ?? "—"}\nAuthority: ${form.issuing_authority ?? "—"}\nApplied By: ${form.permit_number ?? "—"}\n${form.jls_quotation_number ? `JLS Quotation No: ${form.jls_quotation_number}\n` : ""}${form.document_url ? `\nCertificate: ${form.document_url}` : ""}\n\nKind regards,\nJLS Yachts`;
+        : `Dear ${form.holder_name ?? "Client"},\n\nPlease find your TDRA Permit details below.\n\nVessel: ${yachtName}\nDate Applied: ${form.issue_date ?? "—"}\nExpiry: ${form.expiry_date ?? "—"}\nAuthority: ${form.issuing_authority ?? "—"}\nApplied By: ${form.permit_number ?? "—"}\n${form.jls_quotation_number ? `JLS Quotation No: ${form.jls_quotation_number}\n` : ""}${docLink ? `\nCertificate: ${docLink}` : ""}\n\nKind regards,\nJLS Yachts`;
 
       window.open(
         `mailto:${form.contact_email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`,

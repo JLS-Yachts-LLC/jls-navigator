@@ -11,6 +11,7 @@
  * Crew paperwork is deliberately absent — it lives under the vessel's
  * "Crew Documents" subfolder and belongs to the crew profile, not here.
  */
+import { storageRef } from "@/lib/signed-url";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -194,9 +195,9 @@ export function YachtDocumentsCard({ yachtId, vesselName }: { yachtId: string; v
       const path = `yachts/${yachtId}/${Date.now()}-${file.name}`;
       const { error } = await supabase.storage.from("permit-documents").upload(path, file);
       if (error) throw error;
-      const { data: { publicUrl } } = supabase.storage.from("permit-documents").getPublicUrl(path);
+      const stored = storageRef("permit-documents", path);
       const { error: insErr } = await (supabase as any).from("yacht_documents").insert([{
-        yacht_id: yachtId, title: file.name, file_name: file.name, file_url: publicUrl,
+        yacht_id: yachtId, title: file.name, file_name: file.name, file_url: stored,
         doc_type: "upload", created_by: user?.id ?? null,
       }]);
       if (insErr) throw insErr;

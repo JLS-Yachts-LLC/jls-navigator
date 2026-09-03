@@ -9,6 +9,7 @@
  * 'blocked' with the reason, so the Yacht view shows what was tried as well as
  * what was delivered.
  */
+import { resolveSignedUrlAdmin } from '@/lib/signed-url.server'
 import { requireAdminAccess } from '@/lib/admin/access'
 import { supabaseAdmin } from '@/integrations/supabase/client.server'
 import { sendGraphEmailWithAttachments } from '@/lib/graph-mail.server'
@@ -18,9 +19,11 @@ const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json' } })
 
 /** Fetch the permit document so it rides with the email rather than as a link. */
-async function fetchAttachment(url: string): Promise<{ filename: string; contentBase64: string; contentType: string } | null> {
+async function fetchAttachment(stored: string): Promise<{ filename: string; contentBase64: string; contentType: string } | null> {
   try {
-    const res = await fetch(url)
+    // `stored` is a <bucket>/<path> reference (or a legacy public URL) — sign it
+    // for the moment it takes to read the bytes.
+    const res = await fetch(await resolveSignedUrlAdmin(stored))
     if (!res.ok) return null
     const buf = new Uint8Array(await res.arrayBuffer())
     // 4MB ceiling: Graph's simple attachment limit, and beyond that a link is
@@ -30,7 +33,7 @@ async function fetchAttachment(url: string): Promise<{ filename: string; content
     for (let i = 0; i < buf.length; i += 8192) {
       binary += String.fromCharCode(...buf.subarray(i, i + 8192))
     }
-    const name = decodeURIComponent((url.split('/').pop() ?? 'permit').split('?')[0]) || 'permit.pdf'
+    const name = decodeURIComponent((stored.split('/').pop() ?? 'permit').split('?')[0]) || 'permit.pdf'
     return {
       filename: name,
       contentBase64: btoa(binary),

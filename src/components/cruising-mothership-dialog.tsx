@@ -1,3 +1,4 @@
+import { storageRef } from "@/lib/signed-url";
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { updateOrThrow } from "@/lib/db-write";
@@ -76,8 +77,7 @@ export function CruisingMothershipDialog({ yachts, editing, userId, onSaved }: P
         .from("permit-documents")
         .upload(path, file, { upsert: true });
       if (error) throw error;
-      const { data } = supabase.storage.from("permit-documents").getPublicUrl(path);
-      set("document_url", data.publicUrl);
+      set("document_url", storageRef("permit-documents", path));
       setFileName(file.name);
       toast.success("Attachment uploaded");
     } catch (e) {

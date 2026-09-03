@@ -1,3 +1,4 @@
+import { storageRef } from "@/lib/signed-url";
 import { useState, useEffect } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
@@ -81,8 +82,8 @@ export function VisaWizardPage() {
       const path = `visa-docs/${Date.now()}-${file.name}`;
       const { error } = await supabase.storage.from("permit-documents").upload(path, file);
       if (error) throw error;
-      const { data: { publicUrl } } = supabase.storage.from("permit-documents").getPublicUrl(path);
-      setDocs((arr) => arr.map((x, xi) => xi === i ? { ...x, status: "uploaded", url: publicUrl } : x));
+      const stored = storageRef("permit-documents", path);
+      setDocs((arr) => arr.map((x, xi) => xi === i ? { ...x, status: "uploaded", url: stored } : x));
 
       // Also push a copy to the SharePoint Crew Visas folder (best-effort —
       // the Supabase copy is the source of truth, so a SP failure isn't fatal).

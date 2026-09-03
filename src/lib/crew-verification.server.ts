@@ -13,6 +13,8 @@
  * Requires Graph Files.ReadWrite.All / Sites.ReadWrite.All (granted).
  */
 
+import { resolveSignedUrlAdmin } from "@/lib/signed-url.server";
+import { storageRef } from "@/lib/signed-url";
 import { createServerFn } from "@tanstack/react-start";
 import { unzipSync, zipSync, strToU8, strFromU8 } from "fflate";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -233,7 +235,7 @@ export async function generateCrewVerificationLetter(
   const { error: upErr } = await supabaseAdmin.storage
     .from("permit-documents").upload(storagePath, bytes, { upsert: true, contentType });
   if (upErr) throw new Error(`Storage upload failed: ${upErr.message}`);
-  const fileUrl = supabaseAdmin.storage.from("permit-documents").getPublicUrl(storagePath).data.publicUrl;
+  const fileUrl = storageRef("permit-documents", storagePath);
 
   // 4. Save the URL onto the passport so the UI download slot appears.
   await (supabaseAdmin as any).from("crew_passports")
@@ -254,7 +256,7 @@ export async function generateCrewVerificationLetter(
     ];
     for (const p of pushes) {
       if (!p.url) continue;
-      const r = await fetch(p.url);
+      const r = await fetch(await resolveSignedUrlAdmin(p.url));
       if (!r.ok) continue;
       const ct = r.headers.get("content-type") ?? "application/octet-stream";
       await uploadToFolders(siteId, token, folder, `${p.label}.${extFromUrl(p.url)}`, ct, new Uint8Array(await r.arrayBuffer()));

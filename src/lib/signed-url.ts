@@ -50,3 +50,39 @@ export function useSignedUrl(stored: string | null | undefined, defaultBucket?: 
   }, [stored, defaultBucket]);
   return url;
 }
+
+/**
+ * The canonical way to record an uploaded file: a `<bucket>/<path>` reference
+ * rather than a public URL.
+ *
+ * Public URLs are permanent and unauthenticated — once one is emailed out or
+ * forwarded, the document is readable by anyone, forever, with no audit trail.
+ * Storing the reference instead means every read goes through `resolveSignedUrl`
+ * (or `SignedAnchor` / `SignedImage`), which mints a short-lived signed URL for
+ * the current viewer. Existing rows that still hold a public URL keep working —
+ * `parseStorageRef` understands both shapes.
+ */
+export function storageRef(bucket: string, path: string): string {
+  return `${bucket}/${path.replace(/^\/+/, "")}`;
+}
+
+/**
+ * Seconds a link sent by email stays valid. A client may open the message days
+ * after it arrives, so the one-hour in-app TTL is far too short — but "public
+ * forever" is what we are moving away from, so it is bounded.
+ */
+export const EMAIL_LINK_TTL = 30 * 24 * 60 * 60;
+
+/**
+ * Sign a stored reference for inclusion in an email. Uncached (each send gets a
+ * fresh window) and long-lived compared with an in-app link.
+ */
+export async function signedUrlForEmail(stored: string, defaultBucket?: string): Promise<string> {
+  const ref = parseStorageRef(stored, defaultBucket);
+  if (!ref) return stored;
+  const { data, error } = await supabase.storage
+    .from(ref.bucket)
+    .createSignedUrl(ref.path, EMAIL_LINK_TTL);
+  if (error || !data?.signedUrl) return stored;
+  return data.signedUrl;
+}

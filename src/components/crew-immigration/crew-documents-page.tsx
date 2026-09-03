@@ -1,3 +1,4 @@
+import { storageRef } from "@/lib/signed-url";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchAllRows } from "@/lib/fetch-all";
@@ -97,8 +98,8 @@ export function CrewDocumentsPage() {
       const path = `crew/${Date.now()}-${file.name}`;
       const { error } = await supabase.storage.from("permit-documents").upload(path, file);
       if (error) throw error;
-      const { data: { publicUrl } } = supabase.storage.from("permit-documents").getPublicUrl(path);
-      setForm((f) => ({ ...f, file_url: publicUrl, file_name: file.name }));
+      const stored = storageRef("permit-documents", path);
+      setForm((f) => ({ ...f, file_url: stored, file_name: file.name }));
 
       // All crew documents are mirrored into SharePoint under
       //   Shared Documents / Yacht / {vessel} / Crew Documents / {crew} / {file}

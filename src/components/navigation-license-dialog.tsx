@@ -1,3 +1,4 @@
+import { storageRef, signedUrlForEmail } from "@/lib/signed-url";
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { updateOrThrow } from "@/lib/db-write";
@@ -81,8 +82,7 @@ export function NavigationLicenseDialog({ yachts, editing, userId, onSaved }: Pr
         .from("permit-documents")
         .upload(path, file, { upsert: true });
       if (error) throw error;
-      const { data } = supabase.storage.from("permit-documents").getPublicUrl(path);
-      set("document_url", data.publicUrl);
+      set("document_url", storageRef("permit-documents", path));
       setFileName(file.name);
       toast.success("Attachment uploaded");
     } catch (e) {
@@ -169,6 +169,10 @@ export function NavigationLicenseDialog({ yachts, editing, userId, onSaved }: Pr
       const tmpl = templates?.[0];
       const yachtName = yachts.find((y) => y.id === form.yacht_id)?.vessel_name ?? "";
 
+      // The permit document is stored as a reference, not a public URL — sign it
+      // so the link in the message expires instead of living on forever.
+      const docLink = form.document_url ? await signedUrlForEmail(form.document_url) : "";
+
       const replace = (s: string) =>
         s
           .replace(/\{\{boat_name\}\}/g, yachtName)
@@ -181,12 +185,13 @@ export function NavigationLicenseDialog({ yachts, editing, userId, onSaved }: Pr
           .replace(/\{\{quotation_number\}\}/g, form.jls_quotation_number ?? "")
           .replace(/\{\{requested_by\}\}/g, (form.requested_by as string) ?? "")
           .replace(/\{\{license_no\}\}/g, (form.license_no as string) ?? "")
-          .replace(/\{\{actual_issue_date\}\}/g, form.preferred_inspection_date ?? "");
+          .replace(/\{\{actual_issue_date\}\}/g, form.preferred_inspection_date ?? "")
+          .replace(/\{\{document_link\}\}/g, docLink);
 
       const subject = tmpl ? replace(tmpl.subject) : `Navigation License — ${yachtName}`;
       const body = tmpl
         ? replace(tmpl.body)
-        : `Dear ${form.holder_name ?? "Client"},\n\nPlease find your Navigation License details below.\n\nVessel: ${yachtName}\nDate Applied: ${form.issue_date ?? "—"}\nExpiry: ${form.expiry_date ?? "—"}\nAuthority: ${form.issuing_authority ?? "—"}\nApplied By: ${(form.applied_by as string) ?? "—"}\n${form.permit_number ? "Permit No: " + form.permit_number + "\n" : ""}${form.jls_quotation_number ? `JLS Quotation No: ${form.jls_quotation_number}\n` : ""}${form.requested_by ? `Requested By: ${form.requested_by}\n` : ""}${form.license_no ? `License No: ${form.license_no}\n` : ""}${form.preferred_inspection_date ? `Issue Date: ${form.preferred_inspection_date}\n` : ""}${form.notes ? `\nRemarks: ${form.notes}` : ""}${form.document_url ? `\nAttachment: ${form.document_url}` : ""}\n\nKind regards,\nJLS Yachts`;
+        : `Dear ${form.holder_name ?? "Client"},\n\nPlease find your Navigation License details below.\n\nVessel: ${yachtName}\nDate Applied: ${form.issue_date ?? "—"}\nExpiry: ${form.expiry_date ?? "—"}\nAuthority: ${form.issuing_authority ?? "—"}\nApplied By: ${(form.applied_by as string) ?? "—"}\n${form.permit_number ? "Permit No: " + form.permit_number + "\n" : ""}${form.jls_quotation_number ? `JLS Quotation No: ${form.jls_quotation_number}\n` : ""}${form.requested_by ? `Requested By: ${form.requested_by}\n` : ""}${form.license_no ? `License No: ${form.license_no}\n` : ""}${form.preferred_inspection_date ? `Issue Date: ${form.preferred_inspection_date}\n` : ""}${form.notes ? `\nRemarks: ${form.notes}` : ""}${docLink ? `\nAttachment: ${docLink}` : ""}\n\nKind regards,\nJLS Yachts`;
 
       window.open(
         `mailto:${form.contact_email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`,

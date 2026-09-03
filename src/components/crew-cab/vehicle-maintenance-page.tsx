@@ -7,6 +7,8 @@
  * damage form (bottom sheet on phones, side panel on desktop). The model
  * reshapes to the vehicle's body type — coupe, sedan, estate, pickup or van.
  */
+import { SignedAnchor } from "@/components/ui/signed-file";
+import { storageRef } from "@/lib/signed-url";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type * as THREE from "three";
 import { supabase } from "@/integrations/supabase/client";
@@ -238,7 +240,7 @@ export function VehicleMaintenancePage() {
         const path = `vehicles/damage/${vehicle.id}/${Date.now()}-${photo.name}`;
         const { error } = await supabase.storage.from("permit-documents").upload(path, photo, { upsert: true });
         if (error) throw error;
-        photoUrl = supabase.storage.from("permit-documents").getPublicUrl(path).data.publicUrl;
+        photoUrl = storageRef("permit-documents", path);
       }
       const { error } = await (supabase as any).from("vehicle_damage_reports").insert([{
         vehicle_id: vehicle.id, panel: pending.panel,
@@ -308,7 +310,7 @@ export function VehicleMaintenancePage() {
         const path = `vehicles/service-requests/${vehicle.id}/${Date.now()}-${srPhoto.name}`;
         const { error } = await supabase.storage.from("permit-documents").upload(path, srPhoto, { upsert: true });
         if (error) throw error;
-        photoUrl = supabase.storage.from("permit-documents").getPublicUrl(path).data.publicUrl;
+        photoUrl = storageRef("permit-documents", path);
       }
       const { error } = await (supabase as any).from("vehicle_service_requests").insert([{
         vehicle_id: vehicle.id, driver_name: srDriver.trim(), request_type: srType,
@@ -570,7 +572,7 @@ export function VehicleMaintenancePage() {
               <span className="ml-1.5 capitalize" style={{ color: SEVERITY_COLORS[d.severity] }}>{d.severity}</span>
               {d.note && <p className="truncate text-muted-foreground">{d.note}</p>}
             </div>
-            {d.photo_url && <a href={d.photo_url} target="_blank" rel="noreferrer" className="text-primary"><Camera className="h-3.5 w-3.5" /></a>}
+            {d.photo_url && <SignedAnchor stored={d.photo_url} className="text-primary"><Camera className="h-3.5 w-3.5" /></SignedAnchor>}
             <button onClick={() => void resolveDamage(d)} title="Mark fixed"
               className="rounded-md border border-border px-2 py-1 text-[10px] text-muted-foreground transition hover:border-emerald-500/50 hover:text-emerald-400">
               Fixed
@@ -606,7 +608,7 @@ export function VehicleMaintenancePage() {
               </div>
               <p className="mt-0.5 text-muted-foreground">{r.driver_name} · {fmtDate(r.created_at)}</p>
               {r.description && <p className="mt-0.5">{r.description}</p>}
-              {r.photo_url && <a href={r.photo_url} target="_blank" rel="noreferrer" className="mt-0.5 inline-flex items-center gap-1 text-primary"><Camera className="h-3 w-3" /> photo</a>}
+              {r.photo_url && <SignedAnchor stored={r.photo_url} className="mt-0.5 inline-flex items-center gap-1 text-primary"><Camera className="h-3 w-3" /> photo</SignedAnchor>}
             </div>
           );
         })}

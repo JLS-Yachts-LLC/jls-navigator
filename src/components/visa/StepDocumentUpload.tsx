@@ -1,3 +1,4 @@
+import { storageRef } from '@/lib/signed-url'
 import React, { useRef, useState, useEffect } from 'react'
 import { supabase } from '@/integrations/supabase/client'
 import { COLORS, FONTS } from '@/lib/tokens'
@@ -114,12 +115,8 @@ export default function StepDocumentUpload({ state, onUpdate, onNext, onBack }: 
       return
     }
 
-    const { data: urlData } = supabase.storage
-      .from('permit-documents')
-      .getPublicUrl(path)
-
     onUpdate({
-      uploadedDocs: { ...state.uploadedDocs, [slot.key]: urlData.publicUrl },
+      uploadedDocs: { ...state.uploadedDocs, [slot.key]: storageRef('permit-documents', path) },
     })
     setUploading(u => ({ ...u, [slot.key]: false }))
   }

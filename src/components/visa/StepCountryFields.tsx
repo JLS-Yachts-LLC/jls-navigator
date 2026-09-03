@@ -1,3 +1,4 @@
+import { SignedAnchor } from '@/components/ui/signed-file'
 import React, { useEffect, useRef, useState } from 'react'
 import { COLORS, FONTS } from '@/lib/tokens'
 import { COUNTRY_CONFIGS } from '@/lib/visa/countryConfig'
@@ -622,10 +623,10 @@ function CrewVerificationPanel({ state, onUpdate, authToken }: { state: WizardSt
       )}
       {status === 'done' && url && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <a href={url} target="_blank" rel="noopener noreferrer" download
+          <SignedAnchor stored={url}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: COLORS.void, border: `1px solid ${COLORS.deep}`, borderRadius: 7, fontFamily: FONTS.display, fontSize: 12, color: COLORS.frost, textDecoration: 'none' }}>
             📄 Crew Verification Letter (PDF) <span style={{ color: COLORS.signal }}>↓</span>
-          </a>
+          </SignedAnchor>
           <button type="button" onClick={() => generate()} style={{ fontFamily: FONTS.display, fontSize: 11, color: COLORS.muted, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Regenerate</button>
         </div>
       )}

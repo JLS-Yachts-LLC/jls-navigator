@@ -1,3 +1,4 @@
+import { SignedImage } from "@/components/ui/signed-file";
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchAllRows } from "@/lib/fetch-all";
@@ -308,7 +309,7 @@ export function VehiclesPage() {
                   <tr key={v.id} className="hover:bg-muted/20 transition-colors">
                     <td className="px-3 py-1.5">
                       {v.photo_url ? (
-                        <img src={v.photo_url} alt="" loading="lazy"
+                        <SignedImage stored={v.photo_url} alt=""
                           className="h-9 w-14 rounded-md border border-border object-cover" />
                       ) : (
                         <div className="flex h-9 w-14 items-center justify-center rounded-md border border-dashed border-border/70">

@@ -5,9 +5,39 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.49.0",
+    "date": "2026-09-03",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Local packages split into In the office, Assigned and Delivered, with all paperwork in one column"
+      }
+    ]
+  },
+  {
     "version": "2.48.0",
     "date": "2026-09-02",
     "entries": [
+      {
+        "type": "fix",
+        "title": "The sync says why a package's photos could not be found"
+      },
+      {
+        "type": "fix",
+        "title": "Package photos are located from the vessel and delivery note, not a stored link"
+      },
+      {
+        "type": "feature",
+        "title": "Photos taken in Polaris are copied to SharePoint, and no longer upload at full camera size"
+      },
+      {
+        "type": "fix",
+        "title": "Package photos are read from the image library the Power App files them in"
+      },
+      {
+        "type": "fix",
+        "title": "Find a package photo whether it was taken in the Power App or added in SharePoint"
+      },
       {
         "type": "fix",
         "title": "Package photos taken in the Power App now appear in Polaris"

@@ -1,3 +1,4 @@
+import { storageRef } from "@/lib/signed-url";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
@@ -184,7 +185,7 @@ export function FeedbackWidget() {
         const { error: upErr } = await supabase.storage.from("permit-documents")
           .upload(path, file, { upsert: true, contentType: file.type || undefined });
         if (upErr) throw new Error(`Attachment upload failed: ${upErr.message}`);
-        screenshotUrl = supabase.storage.from("permit-documents").getPublicUrl(path).data.publicUrl;
+        screenshotUrl = storageRef("permit-documents", path);
       }
       const log = tab === "bug" ? getCapturedLog() : null;
       const { data: row, error } = await (supabase as any).from("feedback").insert({

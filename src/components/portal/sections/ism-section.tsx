@@ -2,6 +2,7 @@
  * ISM section for the "My Yacht" portal — safety certificates + drill log.
  * Reads `ism_certificates` / `ism_drills` (yacht-scoped). BUILT BUT NOT YET WIRED.
  */
+import { resolveSignedUrl } from "@/lib/signed-url";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
@@ -52,8 +53,7 @@ export function IsmSection({ yachtId }: { yachtId: string }) {
 
   function openDoc(path: string | null) {
     if (!path) return;
-    const { data } = db.storage.from("esign-documents").getPublicUrl(path);
-    if (data?.publicUrl) window.open(data.publicUrl, "_blank");
+    void resolveSignedUrl(path, "esign-documents").then((u) => { if (u) window.open(u, "_blank"); });
   }
 
   if (loading) return <SectionLoading />;
