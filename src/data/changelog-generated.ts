@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "A visa that fails to file in SharePoint now says so instead of appearing saved"
+      },
+      {
+        "type": "fix",
         "title": "Bulk visa actions are usable straight away, and keep expiry dates you set"
       },
       {
