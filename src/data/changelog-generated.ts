@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "A synced permit is now identified by the list it came from, not just its number"
+      },
+      {
+        "type": "fix",
         "title": "A visa that fails to file in SharePoint now says so instead of appearing saved"
       },
       {

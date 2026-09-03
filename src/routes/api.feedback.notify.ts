@@ -22,6 +22,38 @@ const SUPPORT_RECIPIENTS = ['itsupport@jlsyachts.com', 'support@newhorizon-it.co
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
+/**
+ * Store whether the notification went out. Never throws: failing to record the
+ * outcome must not turn a delivered email into a reported failure, or mask the
+ * real send error behind a database one.
+ */
+async function recordNotifyOutcome(feedbackId: string, error: string | null): Promise<void> {
+  try {
+    await (supabaseAdmin as any).from('feedback').update({
+      notified_at: error ? null : new Date().toISOString(),
+      notify_error: error ? error.slice(0, 500) : null,
+    }).eq('id', feedbackId)
+  } catch (e) {
+    console.error('[feedback-notify] could not record the notification outcome:', e)
+  }
+}
+
+/**
+ * Name the person who actually filed the report, in the `Original-Sender:` form
+ * the Service Desk's inbound mail already understands.
+ *
+ * This email is sent from the Polaris system mailbox, which is also the address
+ * registered as JLS CRM's error mailbox — so without this the Service Desk reads
+ * every report as "the app reporting itself" and files it as an app error under
+ * "IT Support", even when it is a feature request from a named person.
+ */
+function originalSenderBlock(email: string | null, name: string | null): string {
+  if (!email) return ''
+  return `<p style="margin:6px 0 0;font-size:11px;color:#cbd5e1;">Original-Sender: ${esc(email)}${
+    name ? `<br>Original-Sender-Name: ${esc(name)}` : ''
+  }</p>`
+}
+
 export async function feedbackNotifyHandler(request: Request): Promise<Response> {
   const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { 'Content-Type': 'application/json' } })
   let feedbackId = ''
@@ -124,6 +156,7 @@ export async function feedbackNotifyHandler(request: Request): Promise<Response>
     ${f.screenshot_url ? `<p style="margin:14px 0;"><a href="${esc(f.screenshot_url)}">📎 View screenshot</a></p>` : ''}
     ${log}
     <p style="margin-top:18px;font-size:11px;color:#94a3b8;">Logged in Polaris → Feedback${ticketNo ? ` and tracked as ${esc(ticketNo)} in the Service Desk (Polaris queue)` : ''}. Reply to the submitter to follow up.</p>
+    ${originalSenderBlock(reporterEmail, reporterName)}
   </div>`
 
   try {
@@ -134,13 +167,16 @@ export async function feedbackNotifyHandler(request: Request): Promise<Response>
       html,
       replyTo: reporterEmail,
     })
+    await recordNotifyOutcome(feedbackId, null)
     return json({ ok: true, ticketId, ticketNo, ticketError })
   } catch (e) {
-    // The ticket is the durable record — report the mail failure without losing it.
-    return json({
-      ok: false, ticketId, ticketNo, ticketError,
-      error: e instanceof Error ? e.message : 'mail failed',
-    }, 502)
+    // The ticket is the durable record — report the mail failure without losing
+    // it. Write the failure down too: returning it to the browser alone meant a
+    // report could sit in Polaris while nothing ever reached New Horizon, with
+    // no trace of why.
+    const error = e instanceof Error ? e.message : 'mail failed'
+    await recordNotifyOutcome(feedbackId, error)
+    return json({ ok: false, ticketId, ticketNo, ticketError, error }, 502)
   }
 }
 

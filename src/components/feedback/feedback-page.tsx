@@ -14,6 +14,10 @@ type Feedback = {
   created_by: string | null; created_by_email: string | null; created_at: string;
   /** Service Desk ticket raised for this report (queue 'polaris'). */
   ticket_id: string | null;
+  /** When the support notification email went out; null means it never did. */
+  notified_at: string | null;
+  notify_error: string | null;
+};| null;
 };
 type Vote = { feedback_id: string; user_id: string; vote: number };
 
@@ -135,6 +139,7 @@ export function FeedbackPage() {
                         <h3 className="font-display text-sm font-semibold">{f.title || "Feature request"}</h3>
                         <StatusBadge status={f.status} id={f.id} isAdmin={isAdmin} onChange={setStatus} />
                         <TicketRef ticketNo={ticketNoOf(f)} />
+                        <NotifyState row={f} onResent={load} />
                       </div>
                       <p className="mt-1 whitespace-pre-wrap text-[13px] text-muted-foreground">{f.message}</p>
                       <div className="mt-1.5 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground/60">
@@ -159,6 +164,7 @@ export function FeedbackPage() {
                     <h3 className="font-display text-sm font-semibold">{b.title || b.message.slice(0, 70)}</h3>
                     <StatusBadge status={b.status} id={b.id} isAdmin={isAdmin} onChange={setStatus} />
                     <TicketRef ticketNo={ticketNoOf(b)} />
+                    <NotifyState row={b} onResent={load} />
                   </div>
                   <p className="mt-1.5 whitespace-pre-wrap text-[13px] text-muted-foreground">{b.message}</p>
                   <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground/70">
@@ -192,6 +198,55 @@ function StatusBadge({ status, id, isAdmin, onChange }: { status: string; id: st
     );
   }
   return <span className={cn("rounded-full px-2 py-0.5 text-[10.5px] font-semibold capitalize", STATUS_CLS[status] ?? STATUS_CLS.open)}>{status.replace("_", " ")}</span>;
+}
+
+/**
+ * Whether this report actually reached the support mailboxes.
+ *
+ * Raising the ticket and emailing support are independent, so a report could sit
+ * here looking filed while nothing ever arrived at New Horizon — three reports
+ * were lost that way in August with no trace. An unsent one now says so, and can
+ * be sent again.
+ */
+function NotifyState({ row, onResent }: { row: Feedback; onResent: () => void }) {
+  const [busy, setBusy] = useState(false);
+  if (row.notified_at) return null;
+
+  async function resend() {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/feedback/notify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ feedbackId: row.id }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error ?? `Send failed (${res.status})`);
+      toast.success("Sent to the support mailboxes");
+      onResent();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not send it");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span
+        title={row.notify_error ?? "This report has not been emailed to the support mailboxes."}
+        className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10.5px] font-semibold text-amber-400"
+      >
+        Not sent
+      </span>
+      <button
+        onClick={() => void resend()} disabled={busy}
+        className="text-[10.5px] font-medium text-primary hover:underline disabled:opacity-50"
+      >
+        {busy ? "Sending…" : "Send again"}
+      </button>
+    </span>
+  );
 }
 
 /** "SD-0001" pill — shows the report is tracked in the Service Desk (Polaris queue). */
