@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-09-03",
     "entries": [
       {
+        "type": "fix",
+        "title": "Client documents are no longer shared as permanent public links"
+      },
+      {
         "type": "feature",
         "title": "Local packages split into In the office, Assigned and Delivered, with all paperwork in one column"
       }

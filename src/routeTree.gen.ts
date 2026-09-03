@@ -19,6 +19,7 @@ import { Route as LegalQuickbooksDisconnectedRouteImport } from './routes/legal.
 import { Route as LegalQuickbooksConnectedRouteImport } from './routes/legal.quickbooks-connected'
 import { Route as LegalPrivacyRouteImport } from './routes/legal.privacy'
 import { Route as LegalEulaRouteImport } from './routes/legal.eula'
+import { Route as DTokenRouteImport } from './routes/d.$token'
 import { Route as AppYachtShipmentsRouteImport } from './routes/_app.yacht-shipments'
 import { Route as AppYachtItRouteImport } from './routes/_app.yacht-it'
 import { Route as AppWaypointRouteImport } from './routes/_app.waypoint'
@@ -203,6 +204,11 @@ const LegalPrivacyRoute = LegalPrivacyRouteImport.update({
 const LegalEulaRoute = LegalEulaRouteImport.update({
   id: '/legal/eula',
   path: '/legal/eula',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DTokenRoute = DTokenRouteImport.update({
+  id: '/d/$token',
+  path: '/d/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppYachtShipmentsRoute = AppYachtShipmentsRouteImport.update({
@@ -956,6 +962,7 @@ export interface FileRoutesByFullPath {
   '/waypoint': typeof AppWaypointRouteWithChildren
   '/yacht-it': typeof AppYachtItRoute
   '/yacht-shipments': typeof AppYachtShipmentsRouteWithChildren
+  '/d/$token': typeof DTokenRoute
   '/legal/eula': typeof LegalEulaRoute
   '/legal/privacy': typeof LegalPrivacyRoute
   '/legal/quickbooks-connected': typeof LegalQuickbooksConnectedRoute
@@ -1090,6 +1097,7 @@ export interface FileRoutesByTo {
   '/shipsync': typeof AppShipsyncRoute
   '/small-boat-registration': typeof AppSmallBoatRegistrationRoute
   '/yacht-it': typeof AppYachtItRoute
+  '/d/$token': typeof DTokenRoute
   '/legal/eula': typeof LegalEulaRoute
   '/legal/privacy': typeof LegalPrivacyRoute
   '/legal/quickbooks-connected': typeof LegalQuickbooksConnectedRoute
@@ -1233,6 +1241,7 @@ export interface FileRoutesById {
   '/_app/waypoint': typeof AppWaypointRouteWithChildren
   '/_app/yacht-it': typeof AppYachtItRoute
   '/_app/yacht-shipments': typeof AppYachtShipmentsRouteWithChildren
+  '/d/$token': typeof DTokenRoute
   '/legal/eula': typeof LegalEulaRoute
   '/legal/privacy': typeof LegalPrivacyRoute
   '/legal/quickbooks-connected': typeof LegalQuickbooksConnectedRoute
@@ -1380,6 +1389,7 @@ export interface FileRouteTypes {
     | '/waypoint'
     | '/yacht-it'
     | '/yacht-shipments'
+    | '/d/$token'
     | '/legal/eula'
     | '/legal/privacy'
     | '/legal/quickbooks-connected'
@@ -1514,6 +1524,7 @@ export interface FileRouteTypes {
     | '/shipsync'
     | '/small-boat-registration'
     | '/yacht-it'
+    | '/d/$token'
     | '/legal/eula'
     | '/legal/privacy'
     | '/legal/quickbooks-connected'
@@ -1656,6 +1667,7 @@ export interface FileRouteTypes {
     | '/_app/waypoint'
     | '/_app/yacht-it'
     | '/_app/yacht-shipments'
+    | '/d/$token'
     | '/legal/eula'
     | '/legal/privacy'
     | '/legal/quickbooks-connected'
@@ -1755,6 +1767,7 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   AuthRoute: typeof AuthRoute
   PortalRoute: typeof PortalRoute
+  DTokenRoute: typeof DTokenRoute
   LegalEulaRoute: typeof LegalEulaRoute
   LegalPrivacyRoute: typeof LegalPrivacyRoute
   LegalQuickbooksConnectedRoute: typeof LegalQuickbooksConnectedRoute
@@ -1834,6 +1847,13 @@ declare module '@tanstack/react-router' {
       path: '/legal/eula'
       fullPath: '/legal/eula'
       preLoaderRoute: typeof LegalEulaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/d/$token': {
+      id: '/d/$token'
+      path: '/d/$token'
+      fullPath: '/d/$token'
+      preLoaderRoute: typeof DTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app/yacht-shipments': {
@@ -3250,6 +3270,7 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   AuthRoute: AuthRoute,
   PortalRoute: PortalRoute,
+  DTokenRoute: DTokenRoute,
   LegalEulaRoute: LegalEulaRoute,
   LegalPrivacyRoute: LegalPrivacyRoute,
   LegalQuickbooksConnectedRoute: LegalQuickbooksConnectedRoute,

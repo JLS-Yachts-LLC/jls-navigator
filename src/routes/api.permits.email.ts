@@ -4,43 +4,23 @@
  *   { permitId, preview: true }  → returns { subject, html, to } and sends nothing
  *   { permitId, cc?: string[] }  → sends, stamps the permit, writes the yacht log
  *
+ * The permit document travels as a secure link, not an attachment: the email
+ * carries a button to the branded landing page, the link expires, and each open
+ * is recorded against the share (see `document-share.server.ts`).
+ *
  * Every attempt is recorded in yacht_activity_log, including a refusal: while
  * client email is switched off the guard throws and the attempt is logged as
  * 'blocked' with the reason, so the Yacht view shows what was tried as well as
  * what was delivered.
  */
-import { resolveSignedUrlAdmin } from '@/lib/signed-url.server'
 import { requireAdminAccess } from '@/lib/admin/access'
 import { supabaseAdmin } from '@/integrations/supabase/client.server'
 import { sendGraphEmailWithAttachments } from '@/lib/graph-mail.server'
 import { loadPermitForEmail, renderPermitEmail, PERMIT_LABELS } from '@/lib/permits/permit-email.server'
+import { createDocumentShare, documentButtonHtml, DEFAULT_SHARE_TTL_DAYS } from '@/lib/document-share.server'
 
 const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json' } })
-
-/** Fetch the permit document so it rides with the email rather than as a link. */
-async function fetchAttachment(stored: string): Promise<{ filename: string; contentBase64: string; contentType: string } | null> {
-  try {
-    // `stored` is a <bucket>/<path> reference (or a legacy public URL) — sign it
-    // for the moment it takes to read the bytes.
-    const res = await fetch(await resolveSignedUrlAdmin(stored))
-    if (!res.ok) return null
-    const buf = new Uint8Array(await res.arrayBuffer())
-    // 4MB ceiling: Graph's simple attachment limit, and beyond that a link is
-    // kinder to the recipient's inbox anyway.
-    if (buf.byteLength > 4_000_000) return null
-    let binary = ''
-    for (let i = 0; i < buf.length; i += 8192) {
-      binary += String.fromCharCode(...buf.subarray(i, i + 8192))
-    }
-    const name = decodeURIComponent((stored.split('/').pop() ?? 'permit').split('?')[0]) || 'permit.pdf'
-    return {
-      filename: name,
-      contentBase64: btoa(binary),
-      contentType: res.headers.get('content-type') ?? 'application/octet-stream',
-    }
-  } catch { return null }
-}
 
 export async function permitsEmailHandler(request: Request): Promise<Response> {
   const session = await requireAdminAccess(request, ['global_admin', 'org_admin', 'jls_staff'])
@@ -60,15 +40,52 @@ export async function permitsEmailHandler(request: Request): Promise<Response> {
 
   try {
     const { permit, vesselName, template } = await loadPermitForEmail(permitId)
-    const { subject, html } = renderPermitEmail({ permit, vesselName }, template)
     const to = String(permit.contact_email ?? '').trim()
+    const label = PERMIT_LABELS[permit.permit_type] ?? 'Permit'
+    const reference = String(permit.permit_number ?? permit.license_no ?? '').trim() || null
+    const purpose = [
+      `Your ${label} for ${vesselName || 'your vessel'}`,
+      permit.issuing_authority ? `issued by ${permit.issuing_authority}` : null,
+      'is ready. Please keep a copy on board.',
+    ].filter(Boolean).join(' ')
 
+    // A preview must show the real layout without burning a token, so it renders
+    // the button against a placeholder link.
     if (preview) {
+      const previewBlock = permit.document_url
+        ? documentButtonHtml({
+            url: '#',
+            title: label,
+            reference,
+            purpose,
+            expiresAt: new Date(Date.now() + DEFAULT_SHARE_TTL_DAYS * 86400000).toISOString(),
+          })
+        : null
+      const { subject, html } = renderPermitEmail({ permit, vesselName }, template, previewBlock)
       return json({ ok: true, preview: true, subject, html, to, vesselName })
     }
     if (!to) return json({ error: 'This permit has no client email address.' }, 400)
 
-    const attachment = permit.document_url ? await fetchAttachment(permit.document_url) : null
+    // Secure link rather than an attachment: the document stays in our storage,
+    // the link expires, and every open is recorded against the share.
+    const share = permit.document_url
+      ? await createDocumentShare({
+          storageRef: permit.document_url,
+          title: label,
+          reference,
+          purpose,
+          vesselName,
+          recipientEmail: to,
+          sourceTable: 'permits',
+          sourceId: permitId,
+          createdBy: session.user.id,
+        })
+      : null
+
+    const documentBlock = share
+      ? documentButtonHtml({ url: share.url, title: label, reference, purpose, expiresAt: share.expiresAt })
+      : null
+    const { subject, html } = renderPermitEmail({ permit, vesselName }, template, documentBlock)
     const logRow = {
       yacht_id: permit.yacht_id ?? null,
       permit_id: permitId,
@@ -78,18 +95,15 @@ export async function permitsEmailHandler(request: Request): Promise<Response> {
       recipients: [to],
       cc,
       body_html: html,
-      attachments: attachment
-        ? [{ filename: attachment.filename, bytes: attachment.contentBase64.length }]
-        : permit.document_url ? [{ filename: 'permit document', link_only: true }] : [],
+      attachments: share
+        ? [{ filename: 'permit document', delivery: 'secure_link', token: share.token, expires_at: share.expiresAt }]
+        : [],
       actor_id: session.user.id,
       actor_name: session.user.email,
     }
 
     try {
-      await sendGraphEmailWithAttachments({
-        to: [to], cc, subject, html,
-        attachments: attachment ? [attachment] : [],
-      })
+      await sendGraphEmailWithAttachments({ to: [to], cc, subject, html, attachments: [] })
     } catch (e: any) {
       // A refusal is information, not a dead end — record it against the vessel.
       const msg = String(e?.message ?? e)
@@ -106,9 +120,9 @@ export async function permitsEmailHandler(request: Request): Promise<Response> {
     }).eq('id', permitId)
 
     return json({
-      ok: true, sent: true, to, subject,
-      label: PERMIT_LABELS[permit.permit_type] ?? 'Permit',
-      attached: !!attachment,
+      ok: true, sent: true, to, subject, label,
+      secureLink: !!share,
+      linkExpiresAt: share?.expiresAt ?? null,
     })
   } catch (e: any) {
     return json({ error: String(e?.message ?? e).slice(0, 300) }, 500)

@@ -77,7 +77,16 @@ function bodyToHtml(text: string): string {
 
 const BRAND = '#0f2a3d'
 
-export function renderPermitEmail(input: PermitEmailInput, template?: { subject: string; body: string } | null): {
+/**
+ * @param documentBlock the secure-link button, pre-rendered by the caller (it
+ *   owns the share and its expiry). Null when the permit has no document, in
+ *   which case the email simply doesn't mention one.
+ */
+export function renderPermitEmail(
+  input: PermitEmailInput,
+  template?: { subject: string; body: string } | null,
+  documentBlock?: string | null,
+): {
   subject: string
   html: string
 } {
@@ -105,7 +114,7 @@ export function renderPermitEmail(input: PermitEmailInput, template?: { subject:
     : `<p style="margin:0 0 12px;line-height:1.55">Dear ${esc(holder || 'Client')},</p>
        <p style="margin:0 0 12px;line-height:1.55">Greetings from JLS Yachts!</p>
        <p style="margin:0 0 12px;line-height:1.55">
-         Please find below the details of your ${esc(label)}${p.document_url ? ', with the approved permit attached' : ''}.
+         Please find below the details of your ${esc(label)}${documentBlock ? ', and a secure link to the approved permit' : ''}.
        </p>`
 
   const rows = detailRows(p, vesselName).map(([k, v]) => `
@@ -127,9 +136,7 @@ export function renderPermitEmail(input: PermitEmailInput, template?: { subject:
       ${intro}
       <table style="border-collapse:collapse;width:100%;margin:16px 0;font-size:13.5px">${rows}</table>
       ${remarks ? `<p style="margin:0 0 12px;line-height:1.55"><strong>Remarks:</strong> ${esc(remarks)}</p>` : ''}
-      ${p.document_url
-        ? `<p style="margin:16px 0 0;font-size:13px;color:#4a5b68">The approved permit is attached to this email.</p>`
-        : ''}
+      ${documentBlock ?? ''}
       <p style="margin:18px 0 0;line-height:1.55">Best regards,<br><strong>JLS Yachts</strong></p>
     </div>
     <div style="text-align:center;color:#7d8b96;font-size:11.5px;padding:14px 8px">

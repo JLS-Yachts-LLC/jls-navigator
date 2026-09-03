@@ -193,8 +193,8 @@ export function CruisingMothershipDialog({ yachts, editing, userId, onSaved }: P
       const permitId = await doSave();
       const body = await callEmailApi(permitId, false);
       toast.success(`Sent to ${body.to}`, {
-        description: body.attached
-          ? "The permit document was attached, and it's logged against the vessel."
+        description: body.secureLink
+          ? "The permit went as a secure link, and it's logged against the vessel."
           : "Logged against the vessel.",
       });
       setPreview(null);

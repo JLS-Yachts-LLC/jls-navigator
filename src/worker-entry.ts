@@ -780,6 +780,16 @@ export default {
       const { formsPublicHandler } = await import('./routes/api.forms.public')
       return formsPublicHandler(request)
     }
+
+    // Secure document links — public, authorised by the token alone.
+    if (url.pathname === '/api/documents/meta') {
+      const { documentShareMetaHandler } = await import('./routes/api.documents')
+      return documentShareMetaHandler(request)
+    }
+    if (url.pathname === '/api/documents/open') {
+      const { documentShareOpenHandler } = await import('./routes/api.documents')
+      return documentShareOpenHandler(request)
+    }
     // Forms: load the built-in definitions from code into the DB (admin only)
     if (url.pathname === '/api/forms/seed' && request.method === 'POST') {
       const { formsSeedHandler } = await import('./routes/api.forms.seed')
