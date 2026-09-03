@@ -16,7 +16,7 @@ const json = (b: unknown, s = 200) =>
 
 export async function documentShareMetaHandler(request: Request): Promise<Response> {
   const token = new URL(request.url).searchParams.get('token') ?? ''
-  const view = await viewDocumentShare(token)
+  const view = await viewDocumentShare(token, request)
   // Always 200: the landing page renders the "expired / not available" state
   // itself, and a status code should not be a probe for valid tokens.
   return json(view)
@@ -24,7 +24,7 @@ export async function documentShareMetaHandler(request: Request): Promise<Respon
 
 export async function documentShareOpenHandler(request: Request): Promise<Response> {
   const token = new URL(request.url).searchParams.get('token') ?? ''
-  const opened = await openDocumentShare(token)
+  const opened = await openDocumentShare(token, request)
   if (!opened) return json({ error: 'This link is no longer available.' }, 410)
 
   return new Response(null, {

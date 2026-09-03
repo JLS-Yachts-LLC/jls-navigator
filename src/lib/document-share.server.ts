@@ -54,15 +54,21 @@ function randomToken(): string {
   return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-export function reqMeta(): { ip: string | null; ua: string | null; origin: string | null } {
+/**
+ * Caller details for the audit trail. The public endpoints are plain Worker
+ * fetch handlers rather than server functions, so they pass their Request in;
+ * `getRequest()` is the fallback for server-function callers.
+ */
+export function reqMeta(request?: Request): { ip: string | null; ua: string | null; origin: string | null } {
   try {
-    const h = getRequest().headers;
+    const req = request ?? getRequest();
+    const h = req.headers;
     const ip =
       h.get("cf-connecting-ip") ||
       h.get("x-forwarded-for")?.split(",")[0]?.trim() ||
       null;
     let origin: string | null = null;
-    try { origin = new URL(getRequest().url).origin; } catch { /* ignore */ }
+    try { origin = new URL(req.url).origin; } catch { /* ignore */ }
     return { ip, ua: h.get("user-agent"), origin };
   } catch {
     return { ip: null, ua: null, origin: null };
@@ -145,11 +151,11 @@ export interface ShareView {
  * What the landing page shows. Records the visit, but does not mint a URL for the
  * file — that only happens when the recipient actually asks for it.
  */
-export async function viewDocumentShare(token: string): Promise<ShareView> {
+export async function viewDocumentShare(token: string, request?: Request): Promise<ShareView> {
   const share = await loadShare(token);
   if (typeof share === "string") return { state: share };
 
-  await recordAccess(share.id, "viewed");
+  await recordAccess(share.id, "viewed", request);
   return {
     state: "ok",
     title: share.title,
@@ -165,7 +171,7 @@ export async function viewDocumentShare(token: string): Promise<ShareView> {
  * Resolve a share to a short-lived signed URL, recording the download. Returns
  * null when the share is not usable, so callers give nothing away about why.
  */
-export async function openDocumentShare(token: string): Promise<{ url: string; filename: string } | null> {
+export async function openDocumentShare(token: string, request?: Request): Promise<{ url: string; filename: string } | null> {
   const share = await loadShare(token);
   if (typeof share === "string") return null;
 
@@ -180,7 +186,7 @@ export async function openDocumentShare(token: string): Promise<{ url: string; f
     .createSignedUrl(path, OPEN_TTL_SECONDS, { download: share.filename ?? undefined });
   if (error || !data?.signedUrl) return null;
 
-  await recordAccess(share.id, "downloaded");
+  await recordAccess(share.id, "downloaded", request);
   return { url: data.signedUrl as string, filename: share.filename ?? filenameOf(ref) };
 }
 
@@ -194,8 +200,8 @@ async function loadShare(token: string): Promise<ShareRow | ShareState> {
   return data;
 }
 
-async function recordAccess(shareId: string, action: "viewed" | "downloaded") {
-  const { ip, ua } = reqMeta();
+async function recordAccess(shareId: string, action: "viewed" | "downloaded", request?: Request) {
+  const { ip, ua } = reqMeta(request);
   const sb = supabaseAdmin as any;
   // Best-effort: a failure to write the audit row must not stop the client
   // reaching a document they are entitled to.

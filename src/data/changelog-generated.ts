@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-09-03",
     "entries": [
       {
+        "type": "feature",
+        "title": "Documents are sent as a secure, expiring link instead of an attachment"
+      },
+      {
         "type": "fix",
         "title": "Client documents are no longer shared as permanent public links"
       },
