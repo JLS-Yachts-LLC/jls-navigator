@@ -35,9 +35,10 @@
  * box's overflow-y to auto the moment its overflow-x isn't visible, which
  * hijacks sticky onto that box's own, never-scrolling viewport).
  */
+import { AwbScanDialog, type AwbScan } from "@/components/shipsync/AwbScanDialog";
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { Loader2, Search, ChevronDown, ChevronRight, RefreshCw, FileText, ArrowDownToLine, Plus, Trash2, X } from "lucide-react";
+import { Loader2, Search, ChevronDown, ChevronRight, RefreshCw, FileText, ArrowDownToLine, Plus, Trash2, X, ScanLine } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -226,6 +227,8 @@ export function ShipSyncImportBoard() {
   const [addingIn, setAddingIn] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
   const [newPackageOpen, setNewPackageOpen] = useState(false);
+  const [scanOpen, setScanOpen] = useState(false);
+  const [scanGroup, setScanGroup] = useState("");
   const [npName, setNpName] = useState("");
   const [npGroup, setNpGroup] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -355,6 +358,54 @@ export function ShipSyncImportBoard() {
     setNewPackageOpen(false);
   }
 
+  /**
+   * Raise a shipment from a scanned waybill. Goes through the same duplicate
+   * check as a typed AWB — a scan of paperwork for something already on the
+   * board must open that shipment, not create a second one.
+   */
+  async function createFromScan(scan: AwbScan) {
+    const awb = (scan.awb_number ?? "").trim();
+    const target = allGroups.find((g) => g.title === scanGroup) ?? allGroups[0];
+    if (!awb || !target) return;
+
+    const existing = rows.find((r) => r.barcode?.trim().toLowerCase() === awb.toLowerCase());
+    if (existing) {
+      const existingGroup = extraOf(existing).monday_group_title ?? "Not on Monday";
+      setCollapsed((prev) => ({ ...prev, [existingGroup]: false }));
+      toast.info(`AWB ${awb} is already on the Import board (in "${existingGroup}") — opened that group rather than adding it twice.`);
+      return;
+    }
+
+    const itemId = await nextItemId();
+    const created = await createPackage({
+      barcode: awb,
+      local_import: "Import",
+      status: "in_office",
+      courier: scan.courier,
+      supplier: scan.shipper,
+      boat_name: scan.vessel_name,
+      origin: scan.origin,
+      description: scan.description,
+      commodity: scan.commodity,
+      num_packages: scan.pieces ?? 1,
+      weight_kg: scan.weight_kg,
+      extra: {
+        monday_group_title: target.title,
+        monday_group_position: target.position,
+        monday: { "Item ID": itemId },
+        // Kept for the clerk and for customs queries — these have no column of
+        // their own on the board.
+        awb_scan: {
+          house_awb: scan.house_awb, consignee: scan.consignee,
+          destination: scan.destination, flight_date: scan.flight_date,
+          declared_value: scan.declared_value, scanned_at: new Date().toISOString(),
+        },
+      },
+    } as any);
+    setRows((prev) => [...prev, created]);
+    toast.success(`Shipment ${awb} created from the waybill`);
+  }
+
   async function confirmDelete() {
     const ids = confirmDeleteIds;
     if (!ids || ids.length === 0) return;
@@ -437,7 +488,11 @@ export function ShipSyncImportBoard() {
         </div>
         <span className="text-[12px] text-muted-foreground">{filtered.length} of {rows.length}</span>
         <TableChartToggle value={view} onChange={setView} />
-        <Button size="sm" onClick={() => { setNpGroup(allGroups[0]?.title ?? ""); setNpName(""); setNewPackageOpen(true); }} className="ml-auto h-9 gap-1.5">
+        <Button size="sm" variant="outline" className="ml-auto h-9 gap-1.5"
+          onClick={() => { setScanGroup(allGroups[0]?.title ?? ""); setScanOpen(true); }}>
+          <ScanLine className="h-4 w-4" /> Scan AWB
+        </Button>
+        <Button size="sm" onClick={() => { setNpGroup(allGroups[0]?.title ?? ""); setNpName(""); setNewPackageOpen(true); }} className="h-9 gap-1.5">
           <Plus className="h-4 w-4" /> New Package
         </Button>
         {selected.size > 0 && (
@@ -729,6 +784,8 @@ export function ShipSyncImportBoard() {
           </table>
         </div>
       )}
+
+      <AwbScanDialog open={scanOpen} onClose={() => setScanOpen(false)} onConfirm={createFromScan} />
 
       <Dialog open={newPackageOpen} onOpenChange={setNewPackageOpen}>
         <DialogContent className="max-w-sm">

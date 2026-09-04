@@ -927,6 +927,12 @@ export default {
       return visaPassportOcrHandler(request)
     }
 
+    // Read an air waybill so an Import shipment can be raised from the paperwork.
+    if (url.pathname === '/api/shipsync/awb-ocr' && request.method === 'POST') {
+      const { shipsyncAwbOcrHandler } = await import('./routes/api.shipsync.awb-ocr')
+      return shipsyncAwbOcrHandler(request)
+    }
+
     if (url.pathname === '/api/crew/verification-letter' && request.method === 'POST') {
       const { crewVerificationHandler } = await import('./lib/crew-verification.server')
       return crewVerificationHandler(request)
