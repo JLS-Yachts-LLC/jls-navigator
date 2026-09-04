@@ -314,6 +314,22 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
     }
   }
 
+  // Backfills item_photo_url on Import-board packages from image assets
+  // already attached on Monday. `?run=monday-backfill-import-photos&dryRun=1`
+  // reports what it WOULD do without writing anything; drop `dryRun` (or set
+  // it to 0) to actually download + upload + patch. Never overwrites a photo
+  // a row already has.
+  if (url.searchParams.get('run') === 'monday-backfill-import-photos') {
+    try {
+      const dryRun = url.searchParams.get('dryRun') !== '0' && url.searchParams.get('dryRun') !== 'false'
+      const { backfillImportBoardPhotos } = await import('./lib/shipsync/monday-import-board.server')
+      const r = await backfillImportBoardPhotos(dryRun)
+      return new Response(JSON.stringify(r), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
+  }
+
   // Read-only diagnostic: `?run=package-debug&barcode=<tracking number>`
   // returns EVERY shipsync_packages row with this exact barcode, regardless
   // of monday_item_id — so a duplicate not created by the Monday sync isn't
