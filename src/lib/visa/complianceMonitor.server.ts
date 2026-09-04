@@ -29,15 +29,22 @@ async function upsertAlert(
     due_date?:       string | null
   },
 ) {
-  // De-duplicate: one open alert per (crew_id, alert_type, due_date)
-  const existing = await (sb as any)
+  // De-duplicate: one open alert per (crew_id, alert_type, due_date).
+  //
+  // A null has to be matched with .is(), not .eq(): supabase-js turns
+  // `.eq(col, null)` into `col=eq.null`, and PostgREST then casts the literal
+  // string "null" to the column's type. That produced `invalid input syntax for
+  // type uuid: "null"` 288 times in 24 hours — and because the query errored,
+  // `existing.data` was undefined, so every run took the insert branch and added
+  // another copy of an alert that already existed.
+  let q = (sb as any)
     .from('compliance_alerts')
     .select('id')
-    .eq('crew_id',    alert.crew_id    ?? null)
     .eq('alert_type', alert.alert_type)
-    .eq('due_date',   alert.due_date   ?? null)
     .eq('resolved',   false)
-    .limit(1)
+  q = alert.crew_id  ? q.eq('crew_id',  alert.crew_id)  : q.is('crew_id',  null)
+  q = alert.due_date ? q.eq('due_date', alert.due_date) : q.is('due_date', null)
+  const existing = await q.limit(1)
 
   if (existing.data?.length) {
     // Update severity if escalated
