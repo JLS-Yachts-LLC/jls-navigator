@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
@@ -8,7 +8,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Compass, Calculator, Plus, Trash2, CheckCircle2 } from "lucide-react";
+import { Compass, Calculator, Plus, Trash2, CheckCircle2, Pencil } from "lucide-react";
 import {
   ZONES, calcCbm, locationCode, shelfUsage,
 } from "@/components/shipsync/warehouse/warehouse-constants";
@@ -195,6 +195,7 @@ function StorageChargeCalculator() {
 
 function ZoneDetails({ zone, data, reload }: { zone: Zone; data: WarehouseData; reload: () => Promise<void> }) {
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<WarehouseShelf | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<WarehouseShelf | null>(null);
   const shelves = data.shelves.filter((s) => s.zone === zone);
 
@@ -210,7 +211,7 @@ function ZoneDetails({ zone, data, reload }: { zone: Zone; data: WarehouseData; 
       <div className="rounded-xl border border-border bg-card">
         <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
           <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Zone {zone} — {shelves.length} shelf{shelves.length === 1 ? "" : "es"}</span>
-          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setAdding(true)}><Plus className="h-3.5 w-3.5" /> Add shelf</Button>
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { setEditing(null); setAdding(true); }}><Plus className="h-3.5 w-3.5" /> Add shelf</Button>
         </div>
         {shelves.length === 0 ? (
           <div className="px-4 py-10 text-center text-sm text-muted-foreground">No shelves recorded for this zone yet.</div>
@@ -238,7 +239,10 @@ function ZoneDetails({ zone, data, reload }: { zone: Zone; data: WarehouseData; 
                       <td className="px-3 py-2 tabular-nums text-muted-foreground">{usedWeightKg.toLocaleString()} kg</td>
                       <td className="px-3 py-2 tabular-nums font-medium text-emerald-600 dark:text-emerald-400">{s.max_weight_kg != null ? `${(s.max_weight_kg - usedWeightKg).toLocaleString()} kg` : "No limit"}</td>
                       <td className="px-3 py-2">
-                        <button onClick={() => setDeleteTarget(s)} className="rounded p-1 text-muted-foreground/60 hover:bg-destructive/10 hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
+                        <div className="flex items-center gap-1">
+                          <button onClick={() => { setAdding(false); setEditing(s); }} className="rounded p-1 text-muted-foreground/60 hover:bg-accent hover:text-foreground"><Pencil className="h-3.5 w-3.5" /></button>
+                          <button onClick={() => setDeleteTarget(s)} className="rounded p-1 text-muted-foreground/60 hover:bg-destructive/10 hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -249,7 +253,8 @@ function ZoneDetails({ zone, data, reload }: { zone: Zone; data: WarehouseData; 
         )}
       </div>
 
-      {adding && <AddShelfForm zone={zone} onDone={() => setAdding(false)} onSaved={reload} />}
+      {adding && <ShelfForm zone={zone} editing={null} onDone={() => setAdding(false)} onSaved={reload} />}
+      {editing && <ShelfForm zone={zone} editing={editing} onDone={() => setEditing(null)} onSaved={reload} />}
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <AlertDialogContent>
@@ -267,11 +272,21 @@ function ZoneDetails({ zone, data, reload }: { zone: Zone; data: WarehouseData; 
   );
 }
 
-function AddShelfForm({ zone, onDone, onSaved }: { zone: Zone; onDone: () => void; onSaved: () => Promise<void> }) {
+function ShelfForm({ zone, editing, onDone, onSaved }: { zone: Zone; editing: WarehouseShelf | null; onDone: () => void; onSaved: () => Promise<void> }) {
   const [f, setF] = useState({ bay: "", shelf: "", maxLength: "", maxWidth: "", maxHeight: "", maxWeight: "" });
   const [busy, setBusy] = useState(false);
   const set = (patch: Partial<typeof f>) => setF((prev) => ({ ...prev, ...patch }));
   const maxCbm = calcCbm(Number(f.maxLength) || 0, Number(f.maxWidth) || 0, Number(f.maxHeight) || 0);
+
+  useEffect(() => {
+    if (editing) {
+      setF({
+        bay: editing.bay, shelf: editing.shelf, maxLength: String(editing.max_length_cm), maxWidth: String(editing.max_width_cm),
+        maxHeight: String(editing.max_height_cm), maxWeight: editing.max_weight_kg != null ? String(editing.max_weight_kg) : "",
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing?.id]);
 
   async function save() {
     if (!f.bay.trim() || !f.shelf.trim() || !f.maxLength || !f.maxWidth || !f.maxHeight) {
@@ -279,12 +294,14 @@ function AddShelfForm({ zone, onDone, onSaved }: { zone: Zone; onDone: () => voi
     }
     setBusy(true);
     try {
-      await shelfCrud.create({
+      const payload = {
         zone, bay: f.bay.trim(), shelf: f.shelf.trim(),
         max_length_cm: Number(f.maxLength), max_width_cm: Number(f.maxWidth), max_height_cm: Number(f.maxHeight),
         max_cbm: maxCbm, max_weight_kg: f.maxWeight ? Number(f.maxWeight) : null,
-      });
-      toast.success(`Shelf ${zone}${f.bay}-${f.shelf} added`);
+      };
+      if (editing) await shelfCrud.patch(editing.id, payload);
+      else await shelfCrud.create(payload);
+      toast.success(editing ? `Shelf ${zone}${f.bay}-${f.shelf} updated` : `Shelf ${zone}${f.bay}-${f.shelf} added`);
       await onSaved();
       onDone();
     } catch (e: any) { toast.error(e?.message ?? "Save failed — bay/shelf combination may already exist in this zone"); }
@@ -293,7 +310,7 @@ function AddShelfForm({ zone, onDone, onSaved }: { zone: Zone; onDone: () => voi
 
   return (
     <div className="rounded-xl border border-border bg-card p-4">
-      <div className="mb-3 font-display text-sm font-semibold">Add shelf to Zone {zone}</div>
+      <div className="mb-3 font-display text-sm font-semibold">{editing ? `Edit shelf ${locationCode(editing)}` : `Add shelf to Zone ${zone}`}</div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <div className="space-y-1.5"><Label className="text-xs">Bay</Label><Input value={f.bay} onChange={(e) => set({ bay: e.target.value })} placeholder="e.g. 1" className="h-9" /></div>
         <div className="space-y-1.5"><Label className="text-xs">Shelf</Label><Input value={f.shelf} onChange={(e) => set({ shelf: e.target.value })} placeholder="e.g. 01" className="h-9" /></div>
@@ -306,7 +323,7 @@ function AddShelfForm({ zone, onDone, onSaved }: { zone: Zone; onDone: () => voi
       </div>
       <div className="mt-4 flex justify-end gap-2">
         <Button variant="outline" onClick={onDone} disabled={busy}>Cancel</Button>
-        <Button onClick={save} disabled={busy} className="gap-1.5">Save shelf</Button>
+        <Button onClick={save} disabled={busy} className="gap-1.5">{editing ? "Save changes" : "Add shelf"}</Button>
       </div>
     </div>
   );

@@ -91,6 +91,7 @@ export interface WarehousePackageContent {
   quantity: number
   unit: string
   status: PackageContentManualStatus
+  due_date: string | null
   remarks: string | null
   image_url: string | null
   created_at: string
