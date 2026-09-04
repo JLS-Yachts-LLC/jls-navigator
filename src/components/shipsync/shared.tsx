@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Loader2, UploadCloud, Table as TableIcon, BarChart3 } from "lucide-react";
 import { BarChart, Bar, PieChart, Pie, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
@@ -349,83 +349,4 @@ export function extraMondayColumns(rows: ShipSyncPackage[], covered: string[]): 
   for (const p of rows) mondayColumnOrder(p).forEach(add);
   for (const p of rows) Object.keys(mondayRow(p)).forEach(add);
   return ordered;
-}
-
-/**
- * Persists a board's column order (an array of stable column ids) to
- * localStorage, per browser/device, keyed by `storageKey`. Reconciled
- * against the current full id list — a column that's disappeared (e.g. a
- * Monday column dropped) is dropped from the saved order too, and a new one
- * is appended at the end rather than losing it.
- */
-export function useColumnOrder(storageKey: string, ids: string[]): [string[], (next: string[]) => void] {
-  const [order, setOrder] = useState<string[]>(() => {
-    let saved: string[] = [];
-    try { saved = JSON.parse(localStorage.getItem(storageKey) ?? "[]"); } catch { /* ignore */ }
-    const known = new Set(ids);
-    const kept = saved.filter((id) => known.has(id));
-    const missing = ids.filter((id) => !kept.includes(id));
-    return [...kept, ...missing];
-  });
-
-  const idsKey = ids.join("|");
-  useEffect(() => {
-    setOrder((prev) => {
-      const known = new Set(ids);
-      const kept = prev.filter((id) => known.has(id));
-      const missing = ids.filter((id) => !kept.includes(id));
-      if (kept.length === prev.length && missing.length === 0) return prev;
-      return [...kept, ...missing];
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idsKey]);
-
-  const update = useCallback((next: string[]) => {
-    setOrder(next);
-    try { localStorage.setItem(storageKey, JSON.stringify(next)); } catch { /* ignore */ }
-  }, [storageKey]);
-
-  return [order, update];
-}
-
-function reorderColumns(order: string[], fromId: string, toId: string): string[] {
-  const next = order.filter((id) => id !== fromId);
-  const insertAt = next.indexOf(toId);
-  next.splice(insertAt === -1 ? next.length : insertAt, 0, fromId);
-  return next;
-}
-
-/**
- * Drag-to-reorder for a board's columns: picking one up and dragging over
- * another marks it as the drop target, and letting go there moves it — the
- * order itself only ever changes once, on drop, never on every pixel of
- * mouse movement. Callers should collapse the column being held (its header
- * AND every row's cell in that column) to a thin placeholder while
- * `draggingId` is set, so a board with hundreds of rows isn't re-rendering
- * full-width interactive cells for every column the drag passes over.
- */
-export function useColumnDrag(order: string[], setOrder: (next: string[]) => void) {
-  const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [dragOverId, setDragOverId] = useState<string | null>(null);
-
-  function headerDragProps(id: string) {
-    return {
-      draggable: true,
-      onDragStart: (e: DragEvent) => { e.dataTransfer.effectAllowed = "move"; setDraggingId(id); },
-      onDragEnd: () => { setDraggingId(null); setDragOverId(null); },
-      onDragOver: (e: DragEvent) => {
-        e.preventDefault();
-        if (draggingId && draggingId !== id && dragOverId !== id) setDragOverId(id);
-      },
-      onDragLeave: () => { if (dragOverId === id) setDragOverId(null); },
-      onDrop: (e: DragEvent) => {
-        e.preventDefault();
-        if (draggingId && draggingId !== id) setOrder(reorderColumns(order, draggingId, id));
-        setDraggingId(null);
-        setDragOverId(null);
-      },
-    };
-  }
-
-  return { draggingId, dragOverId, headerDragProps };
 }

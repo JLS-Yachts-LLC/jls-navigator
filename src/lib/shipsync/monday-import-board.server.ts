@@ -27,6 +27,7 @@
  */
 import { createServerFn } from '@tanstack/react-start'
 import { supabaseAdmin } from '@/integrations/supabase/client.server'
+import { storageRef } from '@/lib/signed-url'
 
 const db = () => supabaseAdmin as any
 
@@ -344,6 +345,137 @@ async function importInner(): Promise<MondayImportBoardResult> {
 
   const detail = `Imported ${synced} item(s) from Monday, ${errors} error(s), removed ${pruned} stale row(s).${samples.length ? ' ' + samples.join(' | ') : ''}`
   return { ok: errors === 0, synced, errors, pruned, detail }
+}
+
+/**
+ * Read-only diagnostic: checks whether Monday's API actually returns real
+ * file/image asset data for this board (public_url, name, extension) — the
+ * plain `column_values { text }` query the sync above uses never sees
+ * attachments, only whatever text Monday renders for the column, so this is
+ * the only way to know ahead of building a real backfill whether asset data
+ * is even available with this account's token/plan. Writes nothing.
+ */
+export async function debugImportBoardAssets(): Promise<Record<string, unknown>> {
+  const cfg = await getMondayConfig()
+  const data = await mondayGraphQL(
+    cfg.apiToken,
+    `query ($board: [ID!]) {
+       boards (ids: $board) {
+         items_page (limit: 25) {
+           items { id name assets { public_url name file_extension file_size } }
+         }
+       }
+     }`,
+    { board: [cfg.boardId] },
+  )
+  const items: { id: string; name: string; assets: { public_url: string; name: string; file_extension: string; file_size: number }[] }[] =
+    data?.boards?.[0]?.items_page?.items ?? []
+  const withAssets = items.filter((it) => (it.assets ?? []).length > 0)
+  return {
+    ok: true,
+    itemsChecked: items.length,
+    itemsWithAssets: withAssets.length,
+    sample: withAssets.slice(0, 5).map((it) => ({ id: it.id, name: it.name, assets: it.assets })),
+  }
+}
+
+const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.heif', '.bmp'])
+
+interface BackfillPhotosResult {
+  ok: boolean
+  itemsScanned: number
+  itemsWithImageAsset: number
+  updated: number
+  skippedAlreadyHasPhoto: number
+  skippedNoMatchingRow: number
+  errors: number
+  dryRun: boolean
+  samples: string[]
+}
+
+/**
+ * One-time backfill: for every Monday item with an image-type asset attached
+ * (mixed in with PDFs and other files in the board's Files column — Monday
+ * doesn't have a separate dedicated photo column), copies the first such
+ * image onto the matching shipsync_packages row's item_photo_url.
+ *
+ * Monday's asset public_url is a pre-signed S3 link that expires in about an
+ * hour, so this downloads the bytes and re-uploads them into our own
+ * `shipsync` bucket rather than referencing Monday's URL directly — the same
+ * thing `uploadShipSyncImage` does client-side, just run server-side here
+ * since this processes the whole board in one pass. Never overwrites a photo
+ * a row already has (a real driver/office upload always wins).
+ */
+export async function backfillImportBoardPhotos(dryRun: boolean): Promise<BackfillPhotosResult> {
+  const cfg = await getMondayConfig()
+
+  const items: { id: string; assets: { public_url: string; name: string; file_extension: string }[] }[] = []
+  const firstPage = await mondayGraphQL(
+    cfg.apiToken,
+    `query ($board: [ID!]) { boards (ids: $board) { items_page (limit: 100) { cursor items { id assets { public_url name file_extension } } } } }`,
+    { board: [cfg.boardId] },
+  )
+  let ip = firstPage?.boards?.[0]?.items_page
+  items.push(...(ip?.items ?? []))
+  let cursor: string | null = ip?.cursor ?? null
+  for (let page = 0; cursor && page < 100; page++) {
+    const next = await mondayGraphQL(
+      cfg.apiToken,
+      `query ($cursor: String!) { next_items_page (cursor: $cursor, limit: 100) { cursor items { id assets { public_url name file_extension } } } }`,
+      { cursor },
+    )
+    ip = next?.next_items_page
+    items.push(...(ip?.items ?? []))
+    cursor = ip?.cursor ?? null
+  }
+
+  const withImage = items
+    .map((it) => ({ id: it.id, asset: (it.assets ?? []).find((a) => IMAGE_EXTENSIONS.has((a.file_extension ?? '').toLowerCase())) }))
+    .filter((it): it is { id: string; asset: NonNullable<typeof it.asset> } => !!it.asset)
+
+  let updated = 0, skippedAlreadyHasPhoto = 0, skippedNoMatchingRow = 0, errors = 0
+  const samples: string[] = []
+
+  for (const { id: itemId, asset } of withImage) {
+    try {
+      const { data: rows } = await db()
+        .from('shipsync_packages')
+        .select('id, item_photo_url')
+        .eq('local_import', 'Import')
+        .contains('extra', { monday_item_id: itemId })
+        .limit(1)
+      const row = rows?.[0]
+      if (!row) { skippedNoMatchingRow++; continue }
+      if (row.item_photo_url) { skippedAlreadyHasPhoto++; continue }
+
+      if (dryRun) {
+        updated++
+        if (samples.length < 15) samples.push(`${itemId} -> ${row.id} would get "${asset.name}"`)
+        continue
+      }
+
+      const res = await fetch(asset.public_url)
+      if (!res.ok) { errors++; continue }
+      const bytes = await res.arrayBuffer()
+      const ext = (asset.file_extension || '.jpg').replace(/^\./, '').toLowerCase()
+      const path = `packages/${row.id}/item_${Date.now()}.${ext}`
+      const up = await supabaseAdmin.storage.from('shipsync').upload(path, bytes, {
+        upsert: true, contentType: `image/${ext === 'jpg' ? 'jpeg' : ext}`,
+      })
+      if (up.error) { errors++; continue }
+      const url = storageRef('shipsync', path)
+      await db().from('shipsync_packages').update({ item_photo_url: url }).eq('id', row.id)
+      updated++
+      if (samples.length < 15) samples.push(`${itemId} -> ${row.id} (${asset.name})`)
+    } catch {
+      errors++
+    }
+  }
+
+  return {
+    ok: true, itemsScanned: items.length, itemsWithImageAsset: withImage.length,
+    updated, skippedAlreadyHasPhoto, skippedNoMatchingRow, errors, dryRun, samples,
+  }
 }
 
 /** Guarded by its own lock — can't run concurrently with itself, and never

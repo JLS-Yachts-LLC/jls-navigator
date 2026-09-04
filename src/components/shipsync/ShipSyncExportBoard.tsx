@@ -28,10 +28,10 @@
  * whatever Monday currently has. Rows added here by hand (no
  * monday_item_id) are never touched by the sync.
  */
-import { SignedAnchor } from "@/components/ui/signed-file";
+import { SignedAnchor, SignedImage } from "@/components/ui/signed-file";
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { Loader2, Search, ChevronDown, ChevronRight, RefreshCw, FileText, ArrowUpFromLine, Plus, Trash2, X } from "lucide-react";
+import { Loader2, Search, ChevronDown, ChevronRight, RefreshCw, FileText, ArrowUpFromLine, Plus, Trash2, X, Camera } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -43,8 +43,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { fmtDate, mondayRow, extraMondayColumns, DocumentDropzoneDialog, TableChartToggle, ShipSyncChartsPanel, useColumnOrder, useColumnDrag } from "@/components/shipsync/shared";
-import { loadExportPackages, patchPackage, createPackage, deletePackage, addPackageDocuments, removePackageDocument } from "@/lib/shipsync/data";
+import { fmtDate, mondayRow, extraMondayColumns, DocumentDropzoneDialog, TableChartToggle, ShipSyncChartsPanel } from "@/components/shipsync/shared";
+import { loadExportPackages, patchPackage, createPackage, deletePackage, addPackageDocuments, removePackageDocument, uploadShipSyncFile } from "@/lib/shipsync/data";
 import type { ShipSyncPackage } from "@/lib/shipsync/model";
 import { syncMondayExportBoard } from "@/lib/shipsync/monday-export-board.server";
 
@@ -126,7 +126,8 @@ function mondayCol(key: string, label: string, width: string, mondayKey: string)
 type CellSpec =
   | { kind: "field"; col: ColDef }
   | { kind: "exportStatus" }
-  | { kind: "documents" };
+  | { kind: "documents" }
+  | { kind: "photo" };
 
 /** Left-to-right, exactly matching the Monday board's own column order
  *  (Quotation Number, Client, Air WayBill/Tracking Number, Invoice number,
@@ -151,19 +152,9 @@ const CELLS: CellSpec[] = [
   { kind: "field", col: fieldCol("description", "Item Description", "w-48", "text", "description") },
   { kind: "field", col: mondayCol("remarks", "Remarks", "w-48", "REMARKS") },
   { kind: "documents" },
+  { kind: "photo" },
   { kind: "field", col: mondayCol("accounts", "Accounts", "w-32", "Accounts") },
 ];
-
-/** Stable id for a column, used to persist/drag-reorder it — the field key
- *  for a "field" cell (already unique), the kind itself for the one-off
- *  cells (each appears at most once), or the raw Monday column title for a
- *  dynamic "leftover" column. */
-type OrderedCell = CellSpec | { kind: "monday"; title: string };
-function cellId(c: OrderedCell): string {
-  if (c.kind === "monday") return c.title;
-  return c.kind === "field" ? c.col.key : c.kind;
-}
-const CELLS_BY_ID = new Map<string, CellSpec>(CELLS.map((c) => [cellId(c), c]));
 
 interface GroupInfo { title: string; position: number }
 interface Group extends GroupInfo { rows: ShipSyncPackage[] }
@@ -228,6 +219,19 @@ export function ShipSyncExportBoard() {
     await commit(p, `${p.id}:documents`, { documents });
   }
 
+  async function uploadPhoto(p: ShipSyncPackage, file: File | undefined) {
+    if (!file) return;
+    setSavingCell(`${p.id}:photo`);
+    try {
+      const url = await uploadShipSyncFile(file, `packages/${p.id}/item_${Date.now()}.jpg`);
+      await commit(p, `${p.id}:photo`, { item_photo_url: url });
+    } catch (e: any) {
+      toast.error(e?.message ?? "Couldn't upload photo");
+    } finally {
+      setSavingCell(null);
+    }
+  }
+
   async function removeDocument(p: ShipSyncPackage, index: number) {
     try {
       const documents = await removePackageDocument(p, index);
@@ -282,13 +286,6 @@ export function ShipSyncExportBoard() {
   }, [rows, search]);
 
   const mondayColumns = useMemo(() => extraMondayColumns(rows, COVERED), [rows]);
-  const allColumnIds = useMemo(() => [...CELLS.map(cellId), ...mondayColumns], [mondayColumns]);
-  const [columnOrder, setColumnOrder] = useColumnOrder("shipsync-export-columns", allColumnIds);
-  const { draggingId, dragOverId, headerDragProps } = useColumnDrag(columnOrder, setColumnOrder);
-  const orderedCells: OrderedCell[] = useMemo(
-    () => columnOrder.map((id) => CELLS_BY_ID.get(id) ?? { kind: "monday" as const, title: id }),
-    [columnOrder],
-  );
 
   const chartData = useMemo(() => {
     const counts = new Map<string, number>();
@@ -330,7 +327,7 @@ export function ShipSyncExportBoard() {
     return <div className="flex h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
   }
 
-  const colCount = 2 + orderedCells.length + 1;
+  const colCount = 2 + CELLS.length + mondayColumns.length + 1;
   const deleteTarget = confirmDeleteIds && confirmDeleteIds.length === 1
     ? rows.find((r) => r.id === confirmDeleteIds[0])
     : null;
@@ -379,16 +376,13 @@ export function ShipSyncExportBoard() {
               <tr className="bg-card text-left text-[10px] font-semibold uppercase tracking-[0.05em] text-muted-foreground shadow-[inset_0_-1px_0_0_var(--border)]">
                 <th className="sticky left-0 z-20 w-9 bg-card px-3 py-1.5 will-change-transform"></th>
                 <th className="w-28 px-2 py-1.5">Group</th>
-                {orderedCells.map((c) => {
-                  const id = cellId(c);
-                  const dragProps = headerDragProps(id);
-                  if (draggingId === id) return <th key={id} {...dragProps} className="w-6 min-w-6 max-w-6 px-0 py-1.5 bg-primary/20" />;
-                  const base = cn("cursor-grab select-none px-2 py-1.5", dragOverId === id && "bg-primary/10 outline outline-2 -outline-offset-2 outline-primary/50");
-                  if (c.kind === "field") return <th key={id} {...dragProps} className={cn(base, c.col.width)}>{c.col.label}</th>;
-                  if (c.kind === "exportStatus") return <th key={id} {...dragProps} className={cn(base, "w-36")}>Status</th>;
-                  if (c.kind === "documents") return <th key={id} {...dragProps} className={cn(base, "w-28")}>Files</th>;
-                  return <th key={id} {...dragProps} className={cn(base, "w-28")}>{c.title}</th>;
+                {CELLS.map((c) => {
+                  if (c.kind === "field") return <th key={c.col.key} className={cn("px-2 py-1.5", c.col.width)}>{c.col.label}</th>;
+                  if (c.kind === "exportStatus") return <th key="exportStatus" className="w-36 px-2 py-1.5">Status</th>;
+                  if (c.kind === "documents") return <th key="documents" className="w-28 px-2 py-1.5">Files</th>;
+                  return <th key="photo" className="w-16 px-2 py-1.5">Photo</th>;
                 })}
+                {mondayColumns.map((c) => <th key={c} className="w-28 px-2 py-1.5">{c}</th>)}
                 <th className="w-10 px-2 py-1.5"></th>
               </tr>
             </thead>
@@ -430,9 +424,7 @@ export function ShipSyncExportBoard() {
                               </SelectContent>
                             </Select>
                           </td>
-                          {orderedCells.map((c) => {
-                            const id = cellId(c);
-                            if (draggingId === id) return <td key={id} className="w-6 min-w-6 max-w-6 px-0 py-0.5 bg-primary/10" />;
+                          {CELLS.map((c) => {
                             if (c.kind === "field") {
                               const col = c.col;
                               return (
@@ -468,7 +460,7 @@ export function ShipSyncExportBoard() {
                               );
                             }
                             if (c.kind === "documents") return (
-                              <td key={id} className="overflow-hidden px-2 py-1" onClick={(e) => e.stopPropagation()}>
+                              <td key="documents" className="overflow-hidden px-2 py-1" onClick={(e) => e.stopPropagation()}>
                                 {docs.length === 0 ? (
                                   <button type="button" onClick={() => setDocTarget(p)}
                                     className="inline-flex items-center gap-1 rounded border border-dashed border-border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:border-primary hover:text-primary">
@@ -496,8 +488,32 @@ export function ShipSyncExportBoard() {
                                 )}
                               </td>
                             );
-                            return <td key={id} className="overflow-hidden truncate px-2 py-1 text-muted-foreground">{row[c.title] || "—"}</td>;
+                            const url = p.item_photo_url;
+                            const uploading = savingCell === `${p.id}:photo`;
+                            return (
+                              <td key="photo" className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
+                                {!url ? (
+                                  <label className="inline-flex cursor-pointer items-center gap-1 rounded border border-dashed border-border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:border-primary hover:text-primary">
+                                    {uploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Camera className="h-3 w-3" />} Add photo
+                                    <input type="file" accept="image/*" className="hidden" disabled={uploading} onChange={(e) => void uploadPhoto(p, e.target.files?.[0])} />
+                                  </label>
+                                ) : (
+                                  <div className="group/photo relative inline-block">
+                                    <SignedAnchor stored={url}>
+                                      <SignedImage stored={url} alt="Item photo" className="h-8 w-8 rounded object-cover border border-border hover:ring-2 hover:ring-primary/40" />
+                                    </SignedAnchor>
+                                    <label className="absolute -right-1 -top-1 flex h-4 w-4 cursor-pointer items-center justify-center rounded-full border border-border bg-card text-muted-foreground/70 opacity-0 hover:text-primary group-hover/photo:opacity-100">
+                                      {uploading ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Camera className="h-2.5 w-2.5" />}
+                                      <input type="file" accept="image/*" className="hidden" disabled={uploading} onChange={(e) => void uploadPhoto(p, e.target.files?.[0])} />
+                                    </label>
+                                  </div>
+                                )}
+                              </td>
+                            );
                           })}
+                          {mondayColumns.map((c) => (
+                            <td key={c} className="overflow-hidden truncate px-2 py-1 text-muted-foreground">{row[c] || "—"}</td>
+                          ))}
                           <td className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
                             <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground/60 hover:text-destructive opacity-0 group-hover:opacity-100" onClick={() => setConfirmDeleteIds([p.id])}>
                               <Trash2 className="h-3.5 w-3.5" />
