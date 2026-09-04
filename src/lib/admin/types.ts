@@ -82,6 +82,8 @@ export interface AuditEvent {
 
 export interface LogAuditEventParams {
   event_type: AuditEventType
+  /** Which area of the app acted. Defaults to 'admin'. */
+  module?: string
   actor_id: string
   actor_email: string
   actor_role: string
