@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "Delivery photos, PODs and signatures are no longer public files"
+      },
+      {
+        "type": "fix",
         "title": "Administrative actions are recorded in the audit trail again"
       },
       {
