@@ -9,6 +9,7 @@
  * IndexedDB stores: kv (snapshots), queue (ordered mutations), blobs (images
  * waiting to upload). Everything is best-effort and degrades gracefully.
  */
+import { storageRef } from '@/lib/signed-url'
 import { supabase } from '@/integrations/supabase/client'
 
 const DB_NAME = 'shipsync-driver'
@@ -69,7 +70,7 @@ async function applyMutation(m: Mutation): Promise<void> {
     if (!blob) return // blob gone — skip
     const up = await supabase.storage.from('shipsync').upload(m.path, blob, { upsert: true })
     if (up.error) throw up.error
-    const url = supabase.storage.from('shipsync').getPublicUrl(m.path).data.publicUrl
+    const url = storageRef('shipsync', m.path)
     const { error } = await db2().from(m.table).update({ [m.field]: url }).eq('id', m.id)
     if (error) throw error
     await blobDel(m.blobKey)

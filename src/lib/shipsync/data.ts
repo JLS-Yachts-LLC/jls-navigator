@@ -2,6 +2,7 @@
  * ShipSync data access — CRUD + helpers over the shipsync_* tables, shared by
  * the office module and (read paths) the driver PWA.
  */
+import { storageRef, parseStorageRefOrPath } from '@/lib/signed-url'
 import { supabase } from '@/integrations/supabase/client'
 import { shrinkImage } from './image-shrink'
 import {
@@ -240,7 +241,7 @@ export async function uploadShipSyncImage(file: File | Blob, path: string): Prom
   const body = file.type?.startsWith('image/') ? await shrinkImage(file) : file
   const { error } = await supabase.storage.from('shipsync').upload(path, body, { upsert: true })
   if (error) throw error
-  return supabase.storage.from('shipsync').getPublicUrl(path).data.publicUrl
+  return storageRef('shipsync', path)
 }
 
 // ── Documents ────────────────────────────────────────────────────────────────
@@ -273,10 +274,10 @@ export async function removePackageDocument(
   const target = (p.documents ?? [])[index]
   const documents = (p.documents ?? []).filter((_, i) => i !== index)
   if (target?.url) {
-    const marker = '/object/public/shipsync/'
-    const at = target.url.indexOf(marker)
-    if (at !== -1) {
-      try { await supabase.storage.from('shipsync').remove([target.url.slice(at + marker.length)]) }
+    // Stored as a '<bucket>/<path>' ref now; older rows still hold a public URL.
+    const ref = parseStorageRefOrPath(target.url, 'shipsync')
+    if (ref) {
+      try { await supabase.storage.from(ref.bucket).remove([ref.path]) }
       catch { /* best-effort — the record's still detached below either way */ }
     }
   }

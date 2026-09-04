@@ -1,3 +1,4 @@
+import { SignedAnchor, SignedImage } from "@/components/ui/signed-file";
 import { Fragment, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -321,9 +322,9 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
                         <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{fmtDate(p.received_at)}</td>
                         <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
                           {p.item_photo_url ? (
-                            <a href={p.item_photo_url} target="_blank" rel="noopener noreferrer">
-                              <img src={p.item_photo_url} alt="Item photo" className="h-8 w-8 rounded object-cover border border-border hover:ring-2 hover:ring-primary/40" />
-                            </a>
+                            <SignedAnchor stored={p.item_photo_url}>
+                              <SignedImage stored={p.item_photo_url} alt="Item photo" className="h-8 w-8 rounded object-cover border border-border hover:ring-2 hover:ring-primary/40" />
+                            </SignedAnchor>
                           ) : <span className="text-muted-foreground/30">—</span>}
                         </td>
                         <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{p.package_owner ?? "—"}</td>
@@ -336,9 +337,9 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
                         <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{fmtDate(p.delivered_at)}</td>
                         <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
                           {p.delivery_photo_url ? (
-                            <a href={p.delivery_photo_url} target="_blank" rel="noopener noreferrer">
-                              <img src={p.delivery_photo_url} alt="Delivery photo" className="h-8 w-8 rounded object-cover border border-border hover:ring-2 hover:ring-primary/40" />
-                            </a>
+                            <SignedAnchor stored={p.delivery_photo_url}>
+                              <SignedImage stored={p.delivery_photo_url} alt="Delivery photo" className="h-8 w-8 rounded object-cover border border-border hover:ring-2 hover:ring-primary/40" />
+                            </SignedAnchor>
                           ) : <span className="text-muted-foreground/30">—</span>}
                         </td>
                         <td className="px-3 py-2.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
@@ -354,17 +355,17 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
                                   generated rather than uploaded, so it has no
                                   remove control. */}
                               {noteDoc && (
-                                <a href={noteDoc.url} target="_blank" rel="noopener noreferrer" title={noteDoc.name}
+                                <SignedAnchor stored={noteDoc.url} title={noteDoc.name}
                                   className="inline-flex max-w-[150px] items-center gap-1 rounded border border-primary/40 bg-primary/5 px-1.5 py-0.5 text-[11px] font-medium text-primary hover:bg-primary/10">
                                   <FileText className="h-3 w-3 shrink-0" /> <span className="truncate">{noteDoc.name}</span>
-                                </a>
+                                </SignedAnchor>
                               )}
                               {docs.map((d, i) => (
                                 <span key={i} className="group/doc inline-flex max-w-[130px] items-center gap-1 rounded border border-border pl-1.5 pr-0.5 py-0.5 text-[11px] text-primary hover:bg-primary/5">
-                                  <a href={d.url} target="_blank" rel="noopener noreferrer" title={d.name}
+                                  <SignedAnchor stored={d.url} title={d.name}
                                     className="flex min-w-0 items-center gap-1 truncate">
                                     <FileText className="h-3 w-3 shrink-0" /> <span className="truncate">{d.name}</span>
-                                  </a>
+                                  </SignedAnchor>
                                   <button type="button" onClick={() => removeDocument(p, i)} title="Remove file"
                                     className="shrink-0 rounded p-0.5 text-muted-foreground/60 opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover/doc:opacity-100">
                                     <X className="h-3 w-3" />

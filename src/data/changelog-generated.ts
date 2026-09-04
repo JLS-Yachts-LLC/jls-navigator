@@ -9,6 +9,22 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-09-04",
     "entries": [
       {
+        "type": "fix",
+        "title": "Administrative actions are recorded in the audit trail again"
+      },
+      {
+        "type": "feature",
+        "title": "Import real warehouse inventory data, match company ref formats"
+      },
+      {
+        "type": "feature",
+        "title": "Wire Warehouse module to real Supabase data"
+      },
+      {
+        "type": "feature",
+        "title": "Rebuild Warehouse per the Polaris Warehouse Board spec (UI only)"
+      },
+      {
         "type": "feature",
         "title": "Raise an Import shipment by scanning the air waybill"
       }

@@ -1,3 +1,4 @@
+import { SignedAnchor, SignedImage } from "@/components/ui/signed-file";
 import { useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
@@ -105,12 +106,12 @@ export function AttachmentsField({ label, pathPrefix, files, onChange }: {
     <Field label={label} full>
       <div className="flex flex-wrap items-center gap-2">
         {files.map((f, i) => (
-          <a key={i} href={f.url} target="_blank" rel="noopener noreferrer" title={f.name}
+          <SignedAnchor key={i} stored={f.url} title={f.name}
             className="group/doc inline-flex max-w-[160px] items-center gap-1 rounded border border-border bg-muted/30 px-2 py-1 text-[11px] hover:bg-primary/5">
             <FileText className="h-3 w-3 shrink-0 text-primary" /> <span className="truncate">{f.name}</span>
             <button onClick={(e) => { e.preventDefault(); onChange(files.filter((_, j) => j !== i)); }}
               className="shrink-0 text-muted-foreground/60 hover:text-destructive"><X className="h-3 w-3" /></button>
-          </a>
+          </SignedAnchor>
         ))}
         <label className="inline-flex cursor-pointer items-center gap-1.5 rounded border border-dashed border-border px-2.5 py-1.5 text-[11px] text-muted-foreground hover:border-primary hover:text-primary">
           {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Paperclip className="h-3.5 w-3.5" />} Choose file(s)
@@ -134,7 +135,7 @@ export function ImageField({ pathPrefix, url, onChange }: { pathPrefix: string; 
   return (
     <Field label="Image" full>
       <div className="flex items-center gap-3">
-        {url && <img src={url} alt="" className="h-12 w-12 rounded object-cover border border-border" />}
+        {url && <SignedImage stored={url} alt="" className="h-12 w-12 rounded object-cover border border-border" />}
         <label className="inline-flex cursor-pointer items-center gap-1.5 rounded border border-dashed border-border px-2.5 py-1.5 text-[11px] text-muted-foreground hover:border-primary hover:text-primary">
           {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImagePlus className="h-3.5 w-3.5" />} {url ? "Replace image" : "Choose image"}
           <input type="file" accept="image/*" className="hidden" disabled={busy} onChange={(e) => void handleFile(e.target.files?.[0])} />

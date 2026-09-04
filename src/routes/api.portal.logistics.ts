@@ -7,6 +7,7 @@
  * Served with the service role (portal users have no direct RLS grant on the shipsync_*
  * tables) but hard-filtered to the vessel resolved from the caller's JWT.
  */
+import { resolveSignedUrlAdmin } from '@/lib/signed-url.server'
 import { createClient } from '@supabase/supabase-js'
 import { resolvePortalYacht } from '@/lib/portal/portal-auth.server'
 
@@ -76,7 +77,9 @@ export async function portalLogisticsHandler(request: Request): Promise<Response
     const driverById = new Map((drivers ?? []).map((d: any) => [d.id, d]))
     const vehicleById = new Map((vehicles ?? []).map((v: any) => [v.id, v]))
 
-    const deliveries = notes.map((n: any) => {
+    // The proof of delivery lives in a private bucket now, so hand the client a
+    // short-lived signed URL rather than a storage path they could not open.
+    const deliveries = await Promise.all(notes.map(async (n: any) => {
       const d = n.driver_id ? driverById.get(n.driver_id) : null
       const v = n.vehicle_id ? vehicleById.get(n.vehicle_id) : null
       const live = n.status !== 'delivered' && n.status !== 'cancelled' && v?.last_lat != null && v?.last_lon != null
@@ -87,14 +90,14 @@ export async function portalLogisticsHandler(request: Request): Promise<Response
         destination: n.destination_address,
         createdAt: n.created_at,
         deliveredAt: n.delivered_at,
-        podUrl: n.delivery_pdf_url,
+        podUrl: n.delivery_pdf_url ? await resolveSignedUrlAdmin(n.delivery_pdf_url, 15 * 60, 'shipsync') : null,
         driver: d ? { name: d.name, phone: d.phone } : null,
         vehicle: v ? { label: (v.registration || [v.make, v.model].filter(Boolean).join(' ') || 'Van').trim() } : null,
         location: live
           ? { lat: Number(v.last_lat), lng: Number(v.last_lon), updatedAt: v.last_location_at }
           : null,
       }
-    })
+    }))
 
     return json({
       vessel: yacht.vesselName,

@@ -1,3 +1,4 @@
+import { SignedAnchor } from "@/components/ui/signed-file";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -298,8 +299,8 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
                 title="Route map — optimized stop order, distances & ETA">
                 <MapIcon className="h-3.5 w-3.5" /> Route map
               </Button>
-              {sel.predelivery_pdf_url && <a href={sel.predelivery_pdf_url} target="_blank" rel="noopener noreferrer" className="text-[12px] text-primary hover:underline">View pre-delivery PDF</a>}
-              {sel.delivery_pdf_url && <a href={sel.delivery_pdf_url} target="_blank" rel="noopener noreferrer" className="text-[12px] text-primary hover:underline">View delivery PDF</a>}
+              {sel.predelivery_pdf_url && <SignedAnchor stored={sel.predelivery_pdf_url} className="text-[12px] text-primary hover:underline">View pre-delivery PDF</SignedAnchor>}
+              {sel.delivery_pdf_url && <SignedAnchor stored={sel.delivery_pdf_url} className="text-[12px] text-primary hover:underline">View delivery PDF</SignedAnchor>}
               <Button size="sm" variant="outline" className="ml-auto h-8 gap-1.5 text-destructive hover:bg-destructive/10" onClick={() => setConfirmDel(true)} disabled={busy}>
                 <Trash2 className="h-3.5 w-3.5" /> Delete run
               </Button>

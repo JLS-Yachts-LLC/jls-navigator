@@ -2,6 +2,7 @@
  * ShipSync automations — delivery-note PDF generation/storage and the
  * proof-of-delivery email. Mirrors the PowerApp flows, server-side.
  */
+import { storageRef } from '@/lib/signed-url'
 import { supabaseAdmin } from '@/integrations/supabase/client.server'
 import { sendEmail } from '@/lib/ses.server'
 import { buildDeliveryNotePdf } from '@/lib/shipsync/pdf.server'
@@ -68,7 +69,7 @@ export async function generateNotePdf(noteId: string, kind: 'predelivery' | 'del
   const path = `delivery-notes/${note.number ?? noteId}/${kind}-${Date.now()}.pdf`
   const up = await supabaseAdmin.storage.from('shipsync').upload(path, bytes, { upsert: true, contentType: 'application/pdf' })
   if (up.error) throw up.error
-  const url = supabaseAdmin.storage.from('shipsync').getPublicUrl(path).data.publicUrl
+  const url = storageRef('shipsync', path)
   const field = kind === 'predelivery' ? 'predelivery_pdf_url' : 'delivery_pdf_url'
   await db().from('shipsync_delivery_notes').update({ [field]: url }).eq('id', noteId)
   return url

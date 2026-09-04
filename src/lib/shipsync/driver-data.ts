@@ -2,6 +2,7 @@
  * Driver-side data: resolve the logged-in driver, load their runs, and apply
  * actions that work online OR queue offline (flushed on reconnect).
  */
+import { storageRef } from '@/lib/signed-url'
 import { supabase } from '@/integrations/supabase/client'
 import { isOnline, queueAdd, blobPut, kvSet, kvGet } from './offline'
 import { shrinkImage, extFor, type ImageKind } from './image-shrink'
@@ -94,7 +95,7 @@ async function uploadField(pkgId: string, field: string, blob: Blob, label: stri
   if (isOnline()) {
     const up = await supabase.storage.from('shipsync').upload(path, body, { upsert: true })
     if (up.error) throw up.error
-    const url = supabase.storage.from('shipsync').getPublicUrl(path).data.publicUrl
+    const url = storageRef('shipsync', path)
     await patch('shipsync_packages', pkgId, { [field]: url })
   } else {
     const blobKey = `${pkgId}:${field}:${Date.now()}`
@@ -130,7 +131,7 @@ async function uploadShared(path: string, blob: Blob, kind: ImageKind = 'photo')
   const body = await shrinkImage(blob, kind)
   const up = await supabase.storage.from('shipsync').upload(path, body, { upsert: true })
   if (up.error) throw up.error
-  return supabase.storage.from('shipsync').getPublicUrl(path).data.publicUrl
+  return storageRef('shipsync', path)
 }
 
 /** Deliver a whole boat's parcels with ONE customer signature (the delivery note is

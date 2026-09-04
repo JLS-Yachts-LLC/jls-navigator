@@ -2,6 +2,7 @@
  * Warehouse module — CRUD over the warehouse_* Supabase tables.
  * Mirrors the same loadAll/makeCrud pattern used across ShipSync/Training.
  */
+import { storageRef } from '@/lib/signed-url'
 import { supabase } from '@/integrations/supabase/client'
 
 const db = () => supabase as any
@@ -162,5 +163,5 @@ export async function uploadWarehouseFile(file: File | Blob, path: string): Prom
   const fullPath = `warehouse/${path}`
   const { error } = await supabase.storage.from('shipsync').upload(fullPath, file, { upsert: true })
   if (error) throw error
-  return supabase.storage.from('shipsync').getPublicUrl(fullPath).data.publicUrl
+  return storageRef('shipsync', fullPath)
 }

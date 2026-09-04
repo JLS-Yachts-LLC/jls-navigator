@@ -28,6 +28,7 @@
  * whatever Monday currently has. Rows added here by hand (no
  * monday_item_id) are never touched by the sync.
  */
+import { SignedAnchor } from "@/components/ui/signed-file";
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Loader2, Search, ChevronDown, ChevronRight, RefreshCw, FileText, ArrowUpFromLine, Plus, Trash2, X } from "lucide-react";
@@ -453,10 +454,10 @@ export function ShipSyncExportBoard() {
                                   <div className="flex flex-wrap items-center gap-1">
                                     {docs.map((d, i) => (
                                       <span key={i} className="group/doc inline-flex max-w-[100px] items-center gap-1 rounded border border-border pl-1 pr-0.5 py-0.5 text-[10px] text-primary hover:bg-primary/5">
-                                        <a href={d.url} target="_blank" rel="noopener noreferrer" title={d.name}
+                                        <SignedAnchor stored={d.url} title={d.name}
                                           className="flex min-w-0 items-center gap-1 truncate">
                                           <FileText className="h-3 w-3 shrink-0" /> <span className="truncate">{d.name}</span>
-                                        </a>
+                                        </SignedAnchor>
                                         <button type="button" onClick={() => removeDocument(p, i)} title="Remove file"
                                           className="shrink-0 rounded p-0.5 text-muted-foreground/60 opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover/doc:opacity-100">
                                           <X className="h-3 w-3" />
