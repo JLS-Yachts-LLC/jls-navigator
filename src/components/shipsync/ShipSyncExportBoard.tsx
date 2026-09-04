@@ -28,10 +28,10 @@
  * whatever Monday currently has. Rows added here by hand (no
  * monday_item_id) are never touched by the sync.
  */
-import { SignedAnchor } from "@/components/ui/signed-file";
+import { SignedAnchor, SignedImage } from "@/components/ui/signed-file";
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { Loader2, Search, ChevronDown, ChevronRight, RefreshCw, FileText, ArrowUpFromLine, Plus, Trash2, X } from "lucide-react";
+import { Loader2, Search, ChevronDown, ChevronRight, RefreshCw, FileText, ArrowUpFromLine, Plus, Trash2, X, Camera } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -44,7 +44,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { fmtDate, mondayRow, extraMondayColumns, DocumentDropzoneDialog, TableChartToggle, ShipSyncChartsPanel } from "@/components/shipsync/shared";
-import { loadExportPackages, patchPackage, createPackage, deletePackage, addPackageDocuments, removePackageDocument } from "@/lib/shipsync/data";
+import { loadExportPackages, patchPackage, createPackage, deletePackage, addPackageDocuments, removePackageDocument, uploadShipSyncFile } from "@/lib/shipsync/data";
 import type { ShipSyncPackage } from "@/lib/shipsync/model";
 import { syncMondayExportBoard } from "@/lib/shipsync/monday-export-board.server";
 
@@ -126,7 +126,8 @@ function mondayCol(key: string, label: string, width: string, mondayKey: string)
 type CellSpec =
   | { kind: "field"; col: ColDef }
   | { kind: "exportStatus" }
-  | { kind: "documents" };
+  | { kind: "documents" }
+  | { kind: "photo" };
 
 /** Left-to-right, exactly matching the Monday board's own column order
  *  (Quotation Number, Client, Air WayBill/Tracking Number, Invoice number,
@@ -151,6 +152,7 @@ const CELLS: CellSpec[] = [
   { kind: "field", col: fieldCol("description", "Item Description", "w-48", "text", "description") },
   { kind: "field", col: mondayCol("remarks", "Remarks", "w-48", "REMARKS") },
   { kind: "documents" },
+  { kind: "photo" },
   { kind: "field", col: mondayCol("accounts", "Accounts", "w-32", "Accounts") },
 ];
 
@@ -215,6 +217,19 @@ export function ShipSyncExportBoard() {
   async function uploadDocuments(p: ShipSyncPackage, files: File[]) {
     const documents = await addPackageDocuments(p, files);
     await commit(p, `${p.id}:documents`, { documents });
+  }
+
+  async function uploadPhoto(p: ShipSyncPackage, file: File | undefined) {
+    if (!file) return;
+    setSavingCell(`${p.id}:photo`);
+    try {
+      const url = await uploadShipSyncFile(file, `packages/${p.id}/item_${Date.now()}.jpg`);
+      await commit(p, `${p.id}:photo`, { item_photo_url: url });
+    } catch (e: any) {
+      toast.error(e?.message ?? "Couldn't upload photo");
+    } finally {
+      setSavingCell(null);
+    }
   }
 
   async function removeDocument(p: ShipSyncPackage, index: number) {
@@ -364,7 +379,8 @@ export function ShipSyncExportBoard() {
                 {CELLS.map((c) => {
                   if (c.kind === "field") return <th key={c.col.key} className={cn("px-2 py-1.5", c.col.width)}>{c.col.label}</th>;
                   if (c.kind === "exportStatus") return <th key="exportStatus" className="w-36 px-2 py-1.5">Status</th>;
-                  return <th key="documents" className="w-28 px-2 py-1.5">Files</th>;
+                  if (c.kind === "documents") return <th key="documents" className="w-28 px-2 py-1.5">Files</th>;
+                  return <th key="photo" className="w-16 px-2 py-1.5">Photo</th>;
                 })}
                 {mondayColumns.map((c) => <th key={c} className="w-28 px-2 py-1.5">{c}</th>)}
                 <th className="w-10 px-2 py-1.5"></th>
@@ -443,7 +459,7 @@ export function ShipSyncExportBoard() {
                                 </td>
                               );
                             }
-                            return (
+                            if (c.kind === "documents") return (
                               <td key="documents" className="overflow-hidden px-2 py-1" onClick={(e) => e.stopPropagation()}>
                                 {docs.length === 0 ? (
                                   <button type="button" onClick={() => setDocTarget(p)}
@@ -468,6 +484,28 @@ export function ShipSyncExportBoard() {
                                       className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border border-dashed border-border text-muted-foreground hover:border-primary hover:text-primary">
                                       <Plus className="h-3 w-3" />
                                     </button>
+                                  </div>
+                                )}
+                              </td>
+                            );
+                            const url = p.item_photo_url;
+                            const uploading = savingCell === `${p.id}:photo`;
+                            return (
+                              <td key="photo" className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
+                                {!url ? (
+                                  <label className="inline-flex cursor-pointer items-center gap-1 rounded border border-dashed border-border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:border-primary hover:text-primary">
+                                    {uploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Camera className="h-3 w-3" />} Add photo
+                                    <input type="file" accept="image/*" className="hidden" disabled={uploading} onChange={(e) => void uploadPhoto(p, e.target.files?.[0])} />
+                                  </label>
+                                ) : (
+                                  <div className="group/photo relative inline-block">
+                                    <SignedAnchor stored={url}>
+                                      <SignedImage stored={url} alt="Item photo" className="h-8 w-8 rounded object-cover border border-border hover:ring-2 hover:ring-primary/40" />
+                                    </SignedAnchor>
+                                    <label className="absolute -right-1 -top-1 flex h-4 w-4 cursor-pointer items-center justify-center rounded-full border border-border bg-card text-muted-foreground/70 opacity-0 hover:text-primary group-hover/photo:opacity-100">
+                                      {uploading ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Camera className="h-2.5 w-2.5" />}
+                                      <input type="file" accept="image/*" className="hidden" disabled={uploading} onChange={(e) => void uploadPhoto(p, e.target.files?.[0])} />
+                                    </label>
                                   </div>
                                 )}
                               </td>

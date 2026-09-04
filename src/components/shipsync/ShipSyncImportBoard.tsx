@@ -35,11 +35,11 @@
  * box's overflow-y to auto the moment its overflow-x isn't visible, which
  * hijacks sticky onto that box's own, never-scrolling viewport).
  */
-import { SignedAnchor } from "@/components/ui/signed-file";
+import { SignedAnchor, SignedImage } from "@/components/ui/signed-file";
 import { AwbScanDialog, type AwbScan } from "@/components/shipsync/AwbScanDialog";
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { Loader2, Search, ChevronDown, ChevronRight, RefreshCw, FileText, ArrowDownToLine, Plus, Trash2, X, ScanLine } from "lucide-react";
+import { Loader2, Search, ChevronDown, ChevronRight, RefreshCw, FileText, ArrowDownToLine, Plus, Trash2, X, ScanLine, Camera } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -176,6 +176,7 @@ type CellSpec =
   | { kind: "mondayStatus" }
   | { kind: "shipmentType" }
   | { kind: "documents" }
+  | { kind: "photo" }
   | { kind: "paymentCopy" }
   | { kind: "edas" };
 
@@ -201,6 +202,7 @@ const CELLS: CellSpec[] = [
   { kind: "field", col: mondayCol("driver", "Driver", "w-24", "DRIVER") },
   { kind: "field", col: fieldCol("num_packages", "Qty", "w-12", "number", "num_packages") },
   { kind: "documents" },
+  { kind: "photo" },
   { kind: "edas" },
   { kind: "field", col: fieldCol("courier", "Courier", "w-20", "text", "courier") },
   { kind: "field", col: mondayCol("paidAmount", "Paid Amount", "w-20", "Paid Amount") },
@@ -310,6 +312,19 @@ export function ShipSyncImportBoard() {
     const path = `payment-copies/${p.id}/${Date.now()}-${file.name}`;
     const url = await uploadShipSyncFile(file, path);
     await commit(p, `${p.id}:paymentCopy`, { extra: { ...extraOf(p), monday: { ...mondayRow(p), "PAYMENT COPY": url } } } as any);
+  }
+
+  async function uploadPhoto(p: ShipSyncPackage, file: File | undefined) {
+    if (!file) return;
+    setSavingCell(`${p.id}:photo`);
+    try {
+      const url = await uploadShipSyncFile(file, `packages/${p.id}/item_${Date.now()}.jpg`);
+      await commit(p, `${p.id}:photo`, { item_photo_url: url });
+    } catch (e: any) {
+      toast.error(e?.message ?? "Couldn't upload photo");
+    } finally {
+      setSavingCell(null);
+    }
   }
 
   async function removePaymentCopy(p: ShipSyncPackage) {
@@ -541,6 +556,7 @@ export function ShipSyncImportBoard() {
                   if (c.kind === "mondayStatus") return <th key="mondayStatus" className="w-36 px-2 py-1.5">Status</th>;
                   if (c.kind === "shipmentType") return <th key="shipmentType" className="w-28 px-2 py-1.5">Shipment Type</th>;
                   if (c.kind === "documents") return <th key="documents" className="w-28 px-2 py-1.5">Files</th>;
+                  if (c.kind === "photo") return <th key="photo" className="w-16 px-2 py-1.5">Photo</th>;
                   if (c.kind === "paymentCopy") return <th key="paymentCopy" className="w-28 px-2 py-1.5">Payment Copy</th>;
                   return <th key="edas" className="w-14 px-2 py-1.5">EDAS</th>;
                 })}
@@ -684,6 +700,30 @@ export function ShipSyncImportBoard() {
                                         className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border border-dashed border-border text-muted-foreground hover:border-primary hover:text-primary">
                                         <Plus className="h-3 w-3" />
                                       </button>
+                                    </div>
+                                  )}
+                                </td>
+                              );
+                            }
+                            if (c.kind === "photo") {
+                              const url = p.item_photo_url;
+                              const uploading = savingCell === `${p.id}:photo`;
+                              return (
+                                <td key="photo" className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
+                                  {!url ? (
+                                    <label className="inline-flex cursor-pointer items-center gap-1 rounded border border-dashed border-border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:border-primary hover:text-primary">
+                                      {uploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Camera className="h-3 w-3" />} Add photo
+                                      <input type="file" accept="image/*" className="hidden" disabled={uploading} onChange={(e) => void uploadPhoto(p, e.target.files?.[0])} />
+                                    </label>
+                                  ) : (
+                                    <div className="group/photo relative inline-block">
+                                      <SignedAnchor stored={url}>
+                                        <SignedImage stored={url} alt="Item photo" className="h-8 w-8 rounded object-cover border border-border hover:ring-2 hover:ring-primary/40" />
+                                      </SignedAnchor>
+                                      <label className="absolute -right-1 -top-1 flex h-4 w-4 cursor-pointer items-center justify-center rounded-full border border-border bg-card text-muted-foreground/70 opacity-0 hover:text-primary group-hover/photo:opacity-100">
+                                        {uploading ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Camera className="h-2.5 w-2.5" />}
+                                        <input type="file" accept="image/*" className="hidden" disabled={uploading} onChange={(e) => void uploadPhoto(p, e.target.files?.[0])} />
+                                      </label>
                                     </div>
                                   )}
                                 </td>
