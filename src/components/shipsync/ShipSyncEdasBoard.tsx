@@ -31,7 +31,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { fmtDate, mondayRow, extraMondayColumns, DocumentDropzoneDialog, TableChartToggle, ShipSyncChartsPanel, type StatusDatum } from "@/components/shipsync/shared";
+import { fmtDate, mondayRow, extraMondayColumns, DocumentDropzoneDialog, TableChartToggle, ShipSyncChartsPanel, useColumnOrder, useColumnDrag, type StatusDatum } from "@/components/shipsync/shared";
 import { loadEdasPackages, patchPackage, createPackage, deletePackage, addPackageDocuments, removePackageDocument } from "@/lib/shipsync/data";
 import type { ShipSyncPackage } from "@/lib/shipsync/model";
 import { syncMondayEdasBoard } from "@/lib/shipsync/monday-edas-board.server";
@@ -102,6 +102,17 @@ const CELLS: CellSpec[] = [
   { kind: "field", col: fieldCol("received_at", "Date", "w-28", "date", "received_at") },
   { kind: "documents" },
 ];
+
+/** Stable id for a column, used to persist/drag-reorder it — the field key
+ *  for a "field" cell (already unique), the kind itself for the one-off
+ *  "documents" cell, or the raw Monday column title for a dynamic
+ *  "leftover" column. */
+type OrderedCell = CellSpec | { kind: "monday"; title: string };
+function cellId(c: OrderedCell): string {
+  if (c.kind === "monday") return c.title;
+  return c.kind === "field" ? c.col.key : c.kind;
+}
+const CELLS_BY_ID = new Map<string, CellSpec>(CELLS.map((c) => [cellId(c), c]));
 
 interface GroupInfo { title: string; position: number }
 interface Group extends GroupInfo { rows: ShipSyncPackage[] }
@@ -220,6 +231,13 @@ export function ShipSyncEdasBoard() {
   }, [rows, search]);
 
   const mondayColumns = useMemo(() => extraMondayColumns(rows, COVERED), [rows]);
+  const allColumnIds = useMemo(() => [...CELLS.map(cellId), ...mondayColumns], [mondayColumns]);
+  const [columnOrder, setColumnOrder] = useColumnOrder("shipsync-edas-columns", allColumnIds);
+  const { draggingId, dragOverId, headerDragProps } = useColumnDrag(columnOrder, setColumnOrder);
+  const orderedCells: OrderedCell[] = useMemo(
+    () => columnOrder.map((id) => CELLS_BY_ID.get(id) ?? { kind: "monday" as const, title: id }),
+    [columnOrder],
+  );
 
   /** No status workflow on this board — the panel's status pie just shows
    *  "Nothing to chart yet"; the by-vessel / by-month widgets still work
@@ -257,7 +275,7 @@ export function ShipSyncEdasBoard() {
     return <div className="flex h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
   }
 
-  const colCount = 2 + CELLS.length + mondayColumns.length + 1;
+  const colCount = 2 + orderedCells.length + 1;
   const deleteTarget = confirmDeleteIds && confirmDeleteIds.length === 1
     ? rows.find((r) => r.id === confirmDeleteIds[0])
     : null;
@@ -306,11 +324,15 @@ export function ShipSyncEdasBoard() {
               <tr className="bg-card text-left text-[10px] font-semibold uppercase tracking-[0.05em] text-muted-foreground shadow-[inset_0_-1px_0_0_var(--border)]">
                 <th className="sticky left-0 z-20 w-9 bg-card px-3 py-1.5 will-change-transform"></th>
                 <th className="w-28 px-2 py-1.5">Group</th>
-                {CELLS.map((c) => {
-                  if (c.kind === "field") return <th key={c.col.key} className={cn("px-2 py-1.5", c.col.width)}>{c.col.label}</th>;
-                  return <th key="documents" className="w-40 px-2 py-1.5">Files</th>;
+                {orderedCells.map((c) => {
+                  const id = cellId(c);
+                  const dragProps = headerDragProps(id);
+                  if (draggingId === id) return <th key={id} {...dragProps} className="w-6 min-w-6 max-w-6 px-0 py-1.5 bg-primary/20" />;
+                  const base = cn("cursor-grab select-none px-2 py-1.5", dragOverId === id && "bg-primary/10 outline outline-2 -outline-offset-2 outline-primary/50");
+                  if (c.kind === "field") return <th key={id} {...dragProps} className={cn(base, c.col.width)}>{c.col.label}</th>;
+                  if (c.kind === "documents") return <th key={id} {...dragProps} className={cn(base, "w-40")}>Files</th>;
+                  return <th key={id} {...dragProps} className={cn(base, "w-28")}>{c.title}</th>;
                 })}
-                {mondayColumns.map((c) => <th key={c} className="w-28 px-2 py-1.5">{c}</th>)}
                 <th className="w-10 px-2 py-1.5"></th>
               </tr>
             </thead>
@@ -352,7 +374,9 @@ export function ShipSyncEdasBoard() {
                               </SelectContent>
                             </Select>
                           </td>
-                          {CELLS.map((c) => {
+                          {orderedCells.map((c) => {
+                            const id = cellId(c);
+                            if (draggingId === id) return <td key={id} className="w-6 min-w-6 max-w-6 px-0 py-0.5 bg-primary/10" />;
                             if (c.kind === "field") {
                               const col = c.col;
                               return (
@@ -362,8 +386,8 @@ export function ShipSyncEdasBoard() {
                                 </td>
                               );
                             }
-                            return (
-                              <td key="documents" className="overflow-hidden px-2 py-1" onClick={(e) => e.stopPropagation()}>
+                            if (c.kind === "documents") return (
+                              <td key={id} className="overflow-hidden px-2 py-1" onClick={(e) => e.stopPropagation()}>
                                 {docs.length === 0 ? (
                                   <button type="button" onClick={() => setDocTarget(p)}
                                     className="inline-flex items-center gap-1 rounded border border-dashed border-border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:border-primary hover:text-primary">
@@ -391,10 +415,8 @@ export function ShipSyncEdasBoard() {
                                 )}
                               </td>
                             );
+                            return <td key={id} className="overflow-hidden truncate px-2 py-1 text-muted-foreground">{row[c.title] || "—"}</td>;
                           })}
-                          {mondayColumns.map((c) => (
-                            <td key={c} className="overflow-hidden truncate px-2 py-1 text-muted-foreground">{row[c] || "—"}</td>
-                          ))}
                           <td className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
                             <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground/60 hover:text-destructive opacity-0 group-hover:opacity-100" onClick={() => setConfirmDeleteIds([p.id])}>
                               <Trash2 className="h-3.5 w-3.5" />

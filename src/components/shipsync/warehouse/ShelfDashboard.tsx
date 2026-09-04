@@ -51,21 +51,27 @@ export function ShelfDashboard({ data }: { data: WarehouseData }) {
   }, [perZone]);
 
   const clientUsage = useMemo(() => {
-    const m = new Map<string, { shelves: Set<string>; packages: number }>();
+    const m = new Map<string, { shelves: Set<string>; packages: number; cbm: number }>();
     for (const it of clientItems) {
-      const e = m.get(it.client_name) ?? { shelves: new Set<string>(), packages: 0 };
-      e.shelves.add(locationCode(it)); e.packages += 1;
+      const e = m.get(it.client_name) ?? { shelves: new Set<string>(), packages: 0, cbm: 0 };
+      e.shelves.add(locationCode(it)); e.packages += 1; e.cbm += it.cbm ?? 0;
       m.set(it.client_name, e);
     }
     return Array.from(m.entries())
-      .map(([name, v]) => ({ name, shelves: v.shelves.size, packages: v.packages }))
-      .sort((a, b) => b.packages - a.packages);
+      .map(([name, v]) => ({ name, shelves: v.shelves.size, packages: v.packages, cbm: v.cbm }))
+      .sort((a, b) => b.cbm - a.cbm);
   }, [clientItems]);
 
   const deptUsage = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const it of internalItems) m.set(it.department, (m.get(it.department) ?? 0) + 1);
-    return Array.from(m.entries()).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
+    const m = new Map<string, { shelves: Set<string>; count: number; cbm: number }>();
+    for (const it of internalItems) {
+      const e = m.get(it.department) ?? { shelves: new Set<string>(), count: 0, cbm: 0 };
+      e.shelves.add(locationCode(it)); e.count += 1; e.cbm += it.cbm ?? 0;
+      m.set(it.department, e);
+    }
+    return Array.from(m.entries())
+      .map(([name, v]) => ({ name, shelves: v.shelves.size, count: v.count, cbm: v.cbm }))
+      .sort((a, b) => b.cbm - a.cbm);
   }, [internalItems]);
 
   const selectedItems = selectedClient ? clientItems.filter((i) => i.client_name === selectedClient) : [];
@@ -131,7 +137,7 @@ export function ShelfDashboard({ data }: { data: WarehouseData }) {
                   className={cn("flex items-center justify-between rounded-lg border px-3 py-2 text-left text-sm transition",
                     selectedClient === c.name ? "border-primary bg-primary/5" : "border-border/60 hover:bg-accent/30")}>
                   <span className="font-medium">{c.name}</span>
-                  <span className="text-[11px] text-muted-foreground">{c.shelves} shelf{c.shelves === 1 ? "" : "shelves"} · {c.packages} pkg</span>
+                  <span className="text-[11px] text-muted-foreground">{c.shelves} shelf{c.shelves === 1 ? "" : "shelves"} · {c.cbm.toFixed(2)} m³ · {c.packages} pkg</span>
                 </button>
               ))}
             </div>
@@ -144,7 +150,7 @@ export function ShelfDashboard({ data }: { data: WarehouseData }) {
               {deptUsage.map((d) => (
                 <div key={d.name} className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2 text-sm">
                   <span className="font-medium">{d.name}</span>
-                  <span className="text-[11px] text-muted-foreground">{d.count} item{d.count === 1 ? "" : "s"}</span>
+                  <span className="text-[11px] text-muted-foreground">{d.shelves} shelf{d.shelves === 1 ? "" : "shelves"} · {d.cbm.toFixed(2)} m³ · {d.count} item{d.count === 1 ? "" : "s"}</span>
                 </div>
               ))}
             </div>

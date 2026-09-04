@@ -1,6 +1,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { SignedImage } from "@/components/ui/signed-file";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -41,9 +42,13 @@ export function InventoryList({ data, reload }: { data: WarehouseData; reload: (
     () => (selectedRef ? data.packageContents.filter((c) => c.ref_no === selectedRef) : []),
     [data.packageContents, selectedRef],
   );
-  const existingContentsForEdit = useMemo(
+  const existingContentsForClientEdit = useMemo(
     () => (editingClient ? data.packageContents.filter((c) => c.ref_no === editingClient.ref_no) : []),
     [data.packageContents, editingClient],
+  );
+  const existingContentsForInternalEdit = useMemo(
+    () => (editingInternal ? data.packageContents.filter((c) => c.ref_no === editingInternal.ref_no) : []),
+    [data.packageContents, editingInternal],
   );
 
   async function confirmDelete() {
@@ -98,15 +103,23 @@ export function InventoryList({ data, reload }: { data: WarehouseData; reload: (
               <p className="text-sm text-muted-foreground">No packing list available for <span className="font-mono">{selectedRef}</span>.</p>
             ) : (
               <div className="flex flex-col gap-2">
-                {packingList.map((c) => (
-                  <div key={c.id} className="rounded-lg border border-border/60 p-2.5 text-[12.5px]">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-medium">{c.item_name}</span>
-                      <StatusPill label={c.status} style={DISPLAY_STATUS_STYLE[c.status]} />
+                {packingList.map((c) => {
+                  const status = deriveStatus(c.due_date, c.status);
+                  return (
+                    <div key={c.id} className="flex items-start gap-2.5 rounded-lg border border-border/60 p-2.5 text-[12.5px]">
+                      <ImageThumb url={c.image_url} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-medium">{c.item_name}</span>
+                          <StatusPill label={status} style={DISPLAY_STATUS_STYLE[status]} />
+                        </div>
+                        <div className="mt-1 text-muted-foreground">
+                          {c.quantity} {c.unit}{c.due_date ? ` · due ${c.due_date}` : ""}{c.remarks ? ` · ${c.remarks}` : ""}
+                        </div>
+                      </div>
                     </div>
-                    <div className="mt-1 text-muted-foreground">{c.quantity} {c.unit}{c.remarks ? ` · ${c.remarks}` : ""}</div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -117,7 +130,7 @@ export function InventoryList({ data, reload }: { data: WarehouseData; reload: (
         <DialogContent className="max-w-2xl max-h-[88vh] overflow-y-auto">
           <DialogHeader><DialogTitle>{editingClient ? `Edit ${editingClient.ref_no}` : "New client storage item"}</DialogTitle></DialogHeader>
           {editingClient !== undefined && (
-            <ClientItemForm editing={editingClient} existingContents={existingContentsForEdit}
+            <ClientItemForm editing={editingClient} existingContents={existingContentsForClientEdit}
               onSaved={async () => { await reload(); setEditingClient(undefined); }}
               onCancel={() => setEditingClient(undefined)} />
           )}
@@ -128,7 +141,7 @@ export function InventoryList({ data, reload }: { data: WarehouseData; reload: (
         <DialogContent className="max-w-2xl max-h-[88vh] overflow-y-auto">
           <DialogHeader><DialogTitle>{editingInternal ? `Edit ${editingInternal.ref_no}` : "New internal storage item"}</DialogTitle></DialogHeader>
           {editingInternal !== undefined && (
-            <InternalItemForm kind={editingInternal?.kind ?? "documents"} editing={editingInternal}
+            <InternalItemForm kind={editingInternal?.kind ?? "documents"} editing={editingInternal} existingContents={existingContentsForInternalEdit}
               onSaved={async () => { await reload(); setEditingInternal(undefined); }}
               onCancel={() => setEditingInternal(undefined)} />
           )}
@@ -164,6 +177,11 @@ function RowActions({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => 
   );
 }
 
+function ImageThumb({ url }: { url: string | null }) {
+  if (!url) return <span className="text-muted-foreground">—</span>;
+  return <SignedImage stored={url} className="h-8 w-8 rounded object-cover border border-border" />;
+}
+
 function ClientTable({ rows, selectedRef, onSelect, onEdit, onDelete }: {
   rows: WarehouseClientItem[]; selectedRef: string | null; onSelect: (ref: string) => void;
   onEdit: (item: WarehouseClientItem) => void; onDelete: (item: WarehouseClientItem) => void;
@@ -175,7 +193,7 @@ function ClientTable({ rows, selectedRef, onSelect, onEdit, onDelete }: {
         <tr>
           <Th>Ref No.</Th><Th>Client Name</Th><Th>Description</Th><Th>Quotation No.</Th>
           <Th>L×W×H (cm)</Th><Th>Weight</Th><Th>CBM</Th><Th>Date Stored</Th><Th>Due Date</Th>
-          <Th>Location</Th><Th>Invoice No.</Th><Th>Status</Th><Th>Remarks</Th><Th>{""}</Th>
+          <Th>Location</Th><Th>Invoice No.</Th><Th>Status</Th><Th>Remarks</Th><Th>Image</Th><Th>{""}</Th>
         </tr>
       </thead>
       <tbody className="divide-y divide-border/40">
@@ -197,6 +215,7 @@ function ClientTable({ rows, selectedRef, onSelect, onEdit, onDelete }: {
               <td className="px-3 py-2 font-mono text-muted-foreground">{r.invoice_no ?? "—"}</td>
               <td className="px-3 py-2"><StatusPill label={status} style={DISPLAY_STATUS_STYLE[status]} /></td>
               <td className="px-3 py-2 max-w-[160px] truncate text-muted-foreground">{r.remarks || "—"}</td>
+              <td className="px-3 py-2"><ImageThumb url={r.image_url} /></td>
               <td className="px-3 py-2"><RowActions onEdit={() => onEdit(r)} onDelete={() => onDelete(r)} /></td>
             </tr>
           );
@@ -217,7 +236,7 @@ function InternalTable({ rows, selectedRef, onSelect, onEdit, onDelete }: {
         <tr>
           <Th>Ref No.</Th><Th>Department</Th><Th>Description</Th>
           <Th>L×W×H (cm)</Th><Th>Weight</Th><Th>CBM</Th><Th>Date Stored</Th>
-          <Th>Location</Th><Th>Status</Th><Th>Remarks</Th><Th>{""}</Th>
+          <Th>Location</Th><Th>Status</Th><Th>Remarks</Th><Th>Image</Th><Th>{""}</Th>
         </tr>
       </thead>
       <tbody className="divide-y divide-border/40">
@@ -236,6 +255,7 @@ function InternalTable({ rows, selectedRef, onSelect, onEdit, onDelete }: {
               <td className="px-3 py-2 font-mono">{locationCode(r)}</td>
               <td className="px-3 py-2"><StatusPill label={status} style={DISPLAY_STATUS_STYLE[status]} /></td>
               <td className="px-3 py-2 max-w-[160px] truncate text-muted-foreground">{r.remarks || "—"}</td>
+              <td className="px-3 py-2"><ImageThumb url={r.image_url} /></td>
               <td className="px-3 py-2"><RowActions onEdit={() => onEdit(r)} onDelete={() => onDelete(r)} /></td>
             </tr>
           );
@@ -263,35 +283,43 @@ function PackageContentTable({ rows, reload }: { rows: WarehousePackageContent[]
 
   return (
     <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-card">
-      {rows.length === 0 ? <div className="px-4 py-10 text-center text-sm text-muted-foreground">No package contents recorded yet — add a packing list from a client storage item.</div> : (
+      {rows.length === 0 ? <div className="px-4 py-10 text-center text-sm text-muted-foreground">No package contents recorded yet — add a packing list from a client or internal storage item.</div> : (
         <table className="w-full text-[12.5px]">
           <thead className="sticky top-0 z-10 bg-card shadow-[inset_0_-1px_0_0_var(--border)]">
             <tr>
               <Th>Ref No.</Th><Th>Item ID</Th><Th>Client / Department</Th><Th>Item Name</Th>
-              <Th>Quantity</Th><Th>Unit</Th><Th>Status</Th><Th>Remarks</Th><Th>{""}</Th>
+              <Th>Quantity</Th><Th>Unit</Th><Th>Due Date</Th><Th>Status</Th><Th>Remarks</Th><Th>Image</Th><Th>{""}</Th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/40">
-            {rows.map((c) => (
-              <tr key={c.id} className="hover:bg-accent/10">
-                <td className="px-3 py-2 font-mono font-medium">{c.ref_no}</td>
-                <td className="px-3 py-2 font-mono text-muted-foreground">{c.item_id}</td>
-                <td className="px-3 py-2">{c.client_or_dept ?? "—"}</td>
-                <td className="px-3 py-2">{c.item_name}</td>
-                <td className="px-3 py-2 tabular-nums text-muted-foreground">{c.quantity}</td>
-                <td className="px-3 py-2 text-muted-foreground">{c.unit}</td>
-                <td className="px-3 py-2">
-                  <Select value={c.status} onValueChange={(v) => updateStatus(c.id, v as PackageContentManualStatus)}>
-                    <SelectTrigger className="h-7 w-[130px] text-xs"><SelectValue /></SelectTrigger>
-                    <SelectContent>{CONTENT_STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
-                  </Select>
-                </td>
-                <td className="px-3 py-2 max-w-[220px] truncate text-muted-foreground">{c.remarks || "—"}</td>
-                <td className="px-3 py-2">
-                  <button onClick={() => setDeleteId(c.id)} className="rounded p-1 text-muted-foreground/60 hover:bg-destructive/10 hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
-                </td>
-              </tr>
-            ))}
+            {rows.map((c) => {
+              const derived = deriveStatus(c.due_date, c.status);
+              return (
+                <tr key={c.id} className="hover:bg-accent/10">
+                  <td className="px-3 py-2 font-mono font-medium">{c.ref_no}</td>
+                  <td className="px-3 py-2 font-mono text-muted-foreground">{c.item_id}</td>
+                  <td className="px-3 py-2">{c.client_or_dept ?? "—"}</td>
+                  <td className="px-3 py-2">{c.item_name}</td>
+                  <td className="px-3 py-2 tabular-nums text-muted-foreground">{c.quantity}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{c.unit}</td>
+                  <td className="px-3 py-2 tabular-nums text-muted-foreground whitespace-nowrap">{c.due_date ?? "—"}</td>
+                  <td className="px-3 py-2">
+                    <div className="flex flex-col items-start gap-1">
+                      <StatusPill label={derived} style={DISPLAY_STATUS_STYLE[derived]} />
+                      <Select value={c.status} onValueChange={(v) => updateStatus(c.id, v as PackageContentManualStatus)}>
+                        <SelectTrigger className="h-7 w-[130px] text-xs"><SelectValue /></SelectTrigger>
+                        <SelectContent>{CONTENT_STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 max-w-[220px] truncate text-muted-foreground">{c.remarks || "—"}</td>
+                  <td className="px-3 py-2"><ImageThumb url={c.image_url} /></td>
+                  <td className="px-3 py-2">
+                    <button onClick={() => setDeleteId(c.id)} className="rounded p-1 text-muted-foreground/60 hover:bg-destructive/10 hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}

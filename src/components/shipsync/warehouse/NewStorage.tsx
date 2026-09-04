@@ -48,7 +48,7 @@ export function NewStorage({ onSaved }: { onSaved: () => Promise<void> }) {
 
       {owner === "client"
         ? <ClientItemForm key={`client-${key}`} editing={null} existingContents={[]} onSaved={handleSaved} />
-        : <InternalItemForm key={`internal-${internalKind}-${key}`} kind={internalKind} editing={null} onSaved={handleSaved} />}
+        : <InternalItemForm key={`internal-${internalKind}-${key}`} kind={internalKind} editing={null} existingContents={[]} onSaved={handleSaved} />}
     </div>
   );
 }

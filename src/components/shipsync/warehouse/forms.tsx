@@ -147,29 +147,63 @@ export function ImageField({ pathPrefix, url, onChange }: { pathPrefix: string; 
 
 // ── Packing list — reconciled against real warehouse_package_contents ──────────
 
-interface PackingRow { dbId: string | null; itemId: string | null; itemName: string; quantity: string; unit: string }
-const blankPackingRow = (): PackingRow => ({ dbId: null, itemId: null, itemName: "", quantity: "1", unit: "pcs" });
+interface PackingRow {
+  dbId: string | null; localId: string; itemId: string | null;
+  itemName: string; quantity: string; unit: string; dueDate: string; remarks: string; imageUrl: string | null;
+}
+let packingRowSeq = 0;
+const blankPackingRow = (): PackingRow => ({
+  dbId: null, localId: `new-${++packingRowSeq}`, itemId: null,
+  itemName: "", quantity: "1", unit: "pcs", dueDate: "", remarks: "", imageUrl: null,
+});
 
-function PackingListEditor({ rows, onChange }: { rows: PackingRow[]; onChange: (rows: PackingRow[]) => void }) {
+function PackingListEditor({ pathPrefix, rows, onChange }: { pathPrefix: string; rows: PackingRow[]; onChange: (rows: PackingRow[]) => void }) {
   function update(i: number, patch: Partial<PackingRow>) { onChange(rows.map((r, j) => (j === i ? { ...r, ...patch } : r))); }
   return (
     <div className="col-span-2 space-y-1.5">
       <Label className="text-xs">Packing List <span className="font-normal text-muted-foreground">(optional — leave blank if contents aren't known yet)</span></Label>
       <div className="flex flex-col gap-2">
         {rows.map((r, i) => (
-          <div key={r.dbId ?? `new-${i}`} className="flex items-center gap-2">
-            <Input value={r.itemName} onChange={(e) => update(i, { itemName: e.target.value })} placeholder="Item name" className="h-8 flex-1 text-xs" />
-            <Input type="number" min={1} value={r.quantity} onChange={(e) => update(i, { quantity: e.target.value })} placeholder="Qty" className="h-8 w-20 text-xs" />
-            <Input value={r.unit} onChange={(e) => update(i, { unit: e.target.value })} placeholder="Unit" className="h-8 w-20 text-xs" />
-            <button onClick={() => onChange(rows.filter((_, j) => j !== i))} className="rounded p-1 text-muted-foreground/60 hover:bg-destructive/10 hover:text-destructive">
-              <X className="h-3.5 w-3.5" />
-            </button>
+          <div key={r.dbId ?? r.localId} className="rounded-lg border border-border/60 p-2.5">
+            <div className="flex items-center gap-2">
+              <Input value={r.itemName} onChange={(e) => update(i, { itemName: e.target.value })} placeholder="Item name" className="h-8 flex-1 text-xs" />
+              <Input type="number" min={1} value={r.quantity} onChange={(e) => update(i, { quantity: e.target.value })} placeholder="Qty" className="h-8 w-20 text-xs" />
+              <Input value={r.unit} onChange={(e) => update(i, { unit: e.target.value })} placeholder="Unit" className="h-8 w-20 text-xs" />
+              <button onClick={() => onChange(rows.filter((_, j) => j !== i))} className="rounded p-1 text-muted-foreground/60 hover:bg-destructive/10 hover:text-destructive">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <Input type="date" value={r.dueDate} onChange={(e) => update(i, { dueDate: e.target.value })} placeholder="Due date" title="Due / retention date" className="h-8 w-36 text-xs" />
+              <Input value={r.remarks} onChange={(e) => update(i, { remarks: e.target.value })} placeholder="Remarks" className="h-8 flex-1 min-w-[140px] text-xs" />
+              <PackingRowImage pathPrefix={pathPrefix} url={r.imageUrl} onChange={(url) => update(i, { imageUrl: url })} />
+            </div>
           </div>
         ))}
       </div>
       <Button type="button" variant="outline" size="sm" className="mt-1 gap-1.5" onClick={() => onChange([...rows, blankPackingRow()])}>
         <Plus className="h-3.5 w-3.5" /> Add item
       </Button>
+    </div>
+  );
+}
+
+function PackingRowImage({ pathPrefix, url, onChange }: { pathPrefix: string; url: string | null; onChange: (url: string | null) => void }) {
+  const [busy, setBusy] = useState(false);
+  async function handleFile(file: File | undefined) {
+    if (!file) return;
+    setBusy(true);
+    try { onChange(await uploadWarehouseFile(file, `${pathPrefix}/content-${Date.now()}-${file.name}`)); }
+    catch (e: any) { toast.error(e?.message ?? "Upload failed"); }
+    finally { setBusy(false); }
+  }
+  return (
+    <div className="flex shrink-0 items-center gap-1.5">
+      {url && <SignedImage stored={url} alt="" className="h-6 w-6 rounded object-cover border border-border" />}
+      <label className="inline-flex cursor-pointer items-center gap-1 rounded border border-dashed border-border px-2 py-1 text-[10.5px] text-muted-foreground hover:border-primary hover:text-primary">
+        {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <ImagePlus className="h-3 w-3" />} {url ? "Replace" : "Image"}
+        <input type="file" accept="image/*" className="hidden" disabled={busy} onChange={(e) => void handleFile(e.target.files?.[0])} />
+      </label>
     </div>
   );
 }
@@ -183,16 +217,27 @@ async function reconcilePackingList(refNo: string, ownerLabel: string, rows: Pac
     if (!r.itemName.trim()) continue;
     if (r.dbId) {
       keptIds.add(r.dbId);
-      await packageContentCrud.patch(r.dbId, { item_name: r.itemName.trim(), quantity: Number(r.quantity) || 1, unit: r.unit.trim() || "pcs" });
+      await packageContentCrud.patch(r.dbId, {
+        item_name: r.itemName.trim(), quantity: Number(r.quantity) || 1, unit: r.unit.trim() || "pcs",
+        due_date: r.dueDate || null, remarks: r.remarks.trim() || null, image_url: r.imageUrl,
+      });
     } else {
       const itemId = await nextPackageItemId(refNo);
       await packageContentCrud.create({
         item_id: itemId, ref_no: refNo, client_or_dept: ownerLabel,
         item_name: r.itemName.trim(), quantity: Number(r.quantity) || 1, unit: r.unit.trim() || "pcs", status: "Stored",
+        due_date: r.dueDate || null, remarks: r.remarks.trim() || null, image_url: r.imageUrl,
       });
     }
   }
   for (const id of originalDbIds) if (!keptIds.has(id)) await packageContentCrud.remove(id);
+}
+
+function packingRowFromContent(c: WarehousePackageContent): PackingRow {
+  return {
+    dbId: c.id, localId: c.id, itemId: c.item_id, itemName: c.item_name, quantity: String(c.quantity), unit: c.unit,
+    dueDate: c.due_date ?? "", remarks: c.remarks ?? "", imageUrl: c.image_url,
+  };
 }
 
 // ── Client item form ─────────────────────────────────────────────────────────
@@ -223,9 +268,7 @@ export function ClientItemForm({ editing, existingContents, onSaved, onCancel }:
       });
       setDocs(editing.documents ?? []);
       setImageUrl(editing.image_url);
-      setPacking(existingContents.length
-        ? existingContents.map((c) => ({ dbId: c.id, itemId: c.item_id, itemName: c.item_name, quantity: String(c.quantity), unit: c.unit }))
-        : [blankPackingRow()]);
+      setPacking(existingContents.length ? existingContents.map(packingRowFromContent) : [blankPackingRow()]);
     } else {
       setF(blank); setDocs([]); setImageUrl(null); setPacking([blankPackingRow()]);
     }
@@ -291,7 +334,7 @@ export function ClientItemForm({ editing, existingContents, onSaved, onCancel }:
         <AttachmentsField label="Attached Documents" pathPrefix={`client/${pathPrefix}`} files={docs} onChange={setDocs} />
         <ImageField pathPrefix={`client/${pathPrefix}`} url={imageUrl} onChange={setImageUrl} />
 
-        <PackingListEditor rows={packing} onChange={setPacking} />
+        <PackingListEditor pathPrefix={`client/${pathPrefix}`} rows={packing} onChange={setPacking} />
       </div>
       <div className="mt-5 flex justify-end gap-2">
         {onCancel && <Button variant="outline" onClick={onCancel} disabled={busy}>Cancel</Button>}
@@ -303,9 +346,10 @@ export function ClientItemForm({ editing, existingContents, onSaved, onCancel }:
 
 // ── Internal item form (Documents / Assets) ─────────────────────────────────
 
-export function InternalItemForm({ kind, editing, onSaved, onCancel }: {
+export function InternalItemForm({ kind, editing, existingContents, onSaved, onCancel }: {
   kind: "documents" | "assets";
   editing: WarehouseInternalItem | null;
+  existingContents: WarehousePackageContent[];
   onSaved: () => Promise<void>;
   onCancel?: () => void;
 }) {
@@ -313,6 +357,7 @@ export function InternalItemForm({ kind, editing, onSaved, onCancel }: {
   const [f, setF] = useState(blank);
   const [docs, setDocs] = useState<WarehouseDoc[]>([]);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [packing, setPacking] = useState<PackingRow[]>([blankPackingRow()]);
   const [busy, setBusy] = useState(false);
   const pathPrefix = editing?.id ?? "new-internal";
 
@@ -328,8 +373,9 @@ export function InternalItemForm({ kind, editing, onSaved, onCancel }: {
       });
       setDocs(editing.documents ?? []);
       setImageUrl(editing.image_url);
+      setPacking(existingContents.length ? existingContents.map(packingRowFromContent) : [blankPackingRow()]);
     } else {
-      setF(blank); setDocs([]); setImageUrl(null);
+      setF(blank); setDocs([]); setImageUrl(null); setPacking([blankPackingRow()]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing?.id]);
@@ -352,11 +398,16 @@ export function InternalItemForm({ kind, editing, onSaved, onCancel }: {
         checked_out_to: f.status === "Checked Out" ? (f.checkedOutTo.trim() || null) : null,
         actual_return_date: f.status === "Returned" ? (f.actualReturnDate || null) : null,
       };
-      if (editing) await internalItemCrud.patch(editing.id, payload);
-      else {
-        const refNo = await nextInternalRef();
-        await internalItemCrud.create({ ...payload, ref_no: refNo });
+      let refNo: string;
+      if (editing) {
+        refNo = editing.ref_no;
+        await internalItemCrud.patch(editing.id, payload);
+      } else {
+        refNo = await nextInternalRef();
+        const created = await internalItemCrud.create({ ...payload, ref_no: refNo });
+        refNo = created.ref_no;
       }
+      await reconcilePackingList(refNo, f.department, packing, new Set(existingContents.map((c) => c.id)));
       toast.success(editing ? "Internal storage updated" : "Internal storage registered");
       await onSaved();
     } catch (e: any) { toast.error(e?.message ?? "Save failed"); }
@@ -391,6 +442,8 @@ export function InternalItemForm({ kind, editing, onSaved, onCancel }: {
 
         <AttachmentsField label="Attached Documents" pathPrefix={`internal/${pathPrefix}`} files={docs} onChange={setDocs} />
         <ImageField pathPrefix={`internal/${pathPrefix}`} url={imageUrl} onChange={setImageUrl} />
+
+        <PackingListEditor pathPrefix={`internal/${pathPrefix}`} rows={packing} onChange={setPacking} />
       </div>
       {kind === "assets" && <p className="mt-3 text-[11px] text-muted-foreground">Assets don't need a destruction date — that only applies to Documents.</p>}
       <div className="mt-5 flex justify-end gap-2">
