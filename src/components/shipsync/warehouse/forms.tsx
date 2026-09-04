@@ -11,8 +11,38 @@ import { ZONES, INTERNAL_DEPARTMENTS, calcCbm } from "@/components/shipsync/ware
 import {
   clientItemCrud, internalItemCrud, packageContentCrud,
   nextClientRef, nextInternalRef, nextPackageItemId, uploadWarehouseFile,
-  type WarehouseClientItem, type WarehouseInternalItem, type WarehousePackageContent, type WarehouseDoc,
+  type WarehouseClientItem, type WarehouseInternalItem, type WarehousePackageContent, type WarehouseDoc, type ManualStatus,
 } from "@/lib/warehouse/data";
+
+const ITEM_STATUSES: ManualStatus[] = ["Stored", "Checked Out", "Returned", "Disposed", "Completed"];
+
+/** Shared Status + checkout tracking, used by both Client and Internal item
+ *  forms — mirrors the source spreadsheet, where a whole item (not just a
+ *  packing-list row) can be checked out to someone and later returned. */
+function StatusAndCheckoutFields({ status, checkedOutDate, checkedOutTo, actualReturnDate, onChange }: {
+  status: ManualStatus; checkedOutDate: string; checkedOutTo: string; actualReturnDate: string;
+  onChange: (patch: Partial<{ status: ManualStatus; checkedOutDate: string; checkedOutTo: string; actualReturnDate: string }>) => void;
+}) {
+  return (
+    <>
+      <Field label="Status">
+        <Select value={status} onValueChange={(v) => onChange({ status: v as ManualStatus })}>
+          <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+          <SelectContent>{ITEM_STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+        </Select>
+      </Field>
+      {status === "Checked Out" && (
+        <>
+          <Field label="Checked-Out Date"><Input type="date" value={checkedOutDate} onChange={(e) => onChange({ checkedOutDate: e.target.value })} className="h-9" /></Field>
+          <Field label="Checked Out To"><Input value={checkedOutTo} onChange={(e) => onChange({ checkedOutTo: e.target.value })} placeholder="Name" className="h-9" /></Field>
+        </>
+      )}
+      {status === "Returned" && (
+        <Field label="Actual Return Date"><Input type="date" value={actualReturnDate} onChange={(e) => onChange({ actualReturnDate: e.target.value })} className="h-9" /></Field>
+      )}
+    </>
+  );
+}
 
 // ── Small shared field helpers ──────────────────────────────────────────────
 
@@ -154,7 +184,7 @@ async function reconcilePackingList(refNo: string, ownerLabel: string, rows: Pac
       keptIds.add(r.dbId);
       await packageContentCrud.patch(r.dbId, { item_name: r.itemName.trim(), quantity: Number(r.quantity) || 1, unit: r.unit.trim() || "pcs" });
     } else {
-      const itemId = await nextPackageItemId();
+      const itemId = await nextPackageItemId(refNo);
       await packageContentCrud.create({
         item_id: itemId, ref_no: refNo, client_or_dept: ownerLabel,
         item_name: r.itemName.trim(), quantity: Number(r.quantity) || 1, unit: r.unit.trim() || "pcs", status: "Stored",
@@ -172,7 +202,7 @@ export function ClientItemForm({ editing, existingContents, onSaved, onCancel }:
   onSaved: () => Promise<void>;
   onCancel?: () => void;
 }) {
-  const blank = { clientName: "", description: "", quotationNo: "", length: "", width: "", height: "", weight: "", charges: "", dateStored: "", dueDate: "", zone: "", bay: "", shelf: "", invoiceNo: "" };
+  const blank = { clientName: "", description: "", quotationNo: "", length: "", width: "", height: "", weight: "", charges: "", dateStored: "", dueDate: "", zone: "", bay: "", shelf: "", invoiceNo: "", status: "Stored" as ManualStatus, checkedOutDate: "", checkedOutTo: "", actualReturnDate: "" };
   const [f, setF] = useState(blank);
   const [docs, setDocs] = useState<WarehouseDoc[]>([]);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
@@ -188,6 +218,7 @@ export function ClientItemForm({ editing, existingContents, onSaved, onCancel }:
         height: editing.height_cm != null ? String(editing.height_cm) : "", weight: editing.weight_kg != null ? String(editing.weight_kg) : "",
         charges: editing.charges != null ? String(editing.charges) : "", dateStored: editing.date_stored ?? "", dueDate: editing.due_date ?? "",
         zone: editing.zone ?? "", bay: editing.bay ?? "", shelf: editing.shelf ?? "", invoiceNo: editing.invoice_no ?? "",
+        status: editing.status, checkedOutDate: editing.checked_out_date ?? "", checkedOutTo: editing.checked_out_to ?? "", actualReturnDate: editing.actual_return_date ?? "",
       });
       setDocs(editing.documents ?? []);
       setImageUrl(editing.image_url);
@@ -214,6 +245,9 @@ export function ClientItemForm({ editing, existingContents, onSaved, onCancel }:
         date_stored: f.dateStored || null, due_date: f.dueDate || null,
         zone: (f.zone || null) as WarehouseClientItem["zone"], bay: f.bay.trim() || null, shelf: f.shelf.trim() || null,
         invoice_no: f.invoiceNo.trim() || null, documents: docs, image_url: imageUrl,
+        status: f.status, checked_out_date: f.status === "Checked Out" ? (f.checkedOutDate || null) : null,
+        checked_out_to: f.status === "Checked Out" ? (f.checkedOutTo.trim() || null) : null,
+        actual_return_date: f.status === "Returned" ? (f.actualReturnDate || null) : null,
       };
       let refNo: string;
       if (editing) {
@@ -221,7 +255,7 @@ export function ClientItemForm({ editing, existingContents, onSaved, onCancel }:
         await clientItemCrud.patch(editing.id, payload);
       } else {
         refNo = await nextClientRef();
-        const created = await clientItemCrud.create({ ...payload, ref_no: refNo, status: "Stored" });
+        const created = await clientItemCrud.create({ ...payload, ref_no: refNo });
         refNo = created.ref_no;
       }
       await reconcilePackingList(refNo, f.clientName.trim(), packing, new Set(existingContents.map((c) => c.id)));
@@ -251,6 +285,8 @@ export function ClientItemForm({ editing, existingContents, onSaved, onCancel }:
         <ZoneBayShelfFields zone={f.zone} bay={f.bay} shelf={f.shelf} onZone={(v) => set({ zone: v })} onBay={(v) => set({ bay: v })} onShelf={(v) => set({ shelf: v })} />
         <Field label="Invoice No."><Input value={f.invoiceNo} onChange={(e) => set({ invoiceNo: e.target.value })} className="h-9" /></Field>
 
+        <StatusAndCheckoutFields status={f.status} checkedOutDate={f.checkedOutDate} checkedOutTo={f.checkedOutTo} actualReturnDate={f.actualReturnDate} onChange={set} />
+
         <AttachmentsField label="Attached Documents" pathPrefix={`client/${pathPrefix}`} files={docs} onChange={setDocs} />
         <ImageField pathPrefix={`client/${pathPrefix}`} url={imageUrl} onChange={setImageUrl} />
 
@@ -272,7 +308,7 @@ export function InternalItemForm({ kind, editing, onSaved, onCancel }: {
   onSaved: () => Promise<void>;
   onCancel?: () => void;
 }) {
-  const blank = { department: "", description: "", length: "", width: "", height: "", weight: "", dateStored: "", destructionDate: "", zone: "", bay: "", shelf: "" };
+  const blank = { department: "", description: "", length: "", width: "", height: "", weight: "", dateStored: "", destructionDate: "", zone: "", bay: "", shelf: "", status: "Stored" as ManualStatus, checkedOutDate: "", checkedOutTo: "", actualReturnDate: "" };
   const [f, setF] = useState(blank);
   const [docs, setDocs] = useState<WarehouseDoc[]>([]);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
@@ -287,6 +323,7 @@ export function InternalItemForm({ kind, editing, onSaved, onCancel }: {
         height: editing.height_cm != null ? String(editing.height_cm) : "", weight: editing.weight_kg != null ? String(editing.weight_kg) : "",
         dateStored: editing.date_stored ?? "", destructionDate: editing.destruction_date ?? "",
         zone: editing.zone ?? "", bay: editing.bay ?? "", shelf: editing.shelf ?? "",
+        status: editing.status, checkedOutDate: editing.checked_out_date ?? "", checkedOutTo: editing.checked_out_to ?? "", actualReturnDate: editing.actual_return_date ?? "",
       });
       setDocs(editing.documents ?? []);
       setImageUrl(editing.image_url);
@@ -310,11 +347,14 @@ export function InternalItemForm({ kind, editing, onSaved, onCancel }: {
         date_stored: f.dateStored || null, destruction_date: kind === "documents" ? (f.destructionDate || null) : null,
         zone: (f.zone || null) as WarehouseInternalItem["zone"], bay: f.bay.trim() || null, shelf: f.shelf.trim() || null,
         documents: docs, image_url: imageUrl, kind,
+        status: f.status, checked_out_date: f.status === "Checked Out" ? (f.checkedOutDate || null) : null,
+        checked_out_to: f.status === "Checked Out" ? (f.checkedOutTo.trim() || null) : null,
+        actual_return_date: f.status === "Returned" ? (f.actualReturnDate || null) : null,
       };
       if (editing) await internalItemCrud.patch(editing.id, payload);
       else {
         const refNo = await nextInternalRef();
-        await internalItemCrud.create({ ...payload, ref_no: refNo, status: "Stored" });
+        await internalItemCrud.create({ ...payload, ref_no: refNo });
       }
       toast.success(editing ? "Internal storage updated" : "Internal storage registered");
       await onSaved();
@@ -345,6 +385,8 @@ export function InternalItemForm({ kind, editing, onSaved, onCancel }: {
         )}
 
         <ZoneBayShelfFields zone={f.zone} bay={f.bay} shelf={f.shelf} onZone={(v) => set({ zone: v })} onBay={(v) => set({ bay: v })} onShelf={(v) => set({ shelf: v })} />
+
+        <StatusAndCheckoutFields status={f.status} checkedOutDate={f.checkedOutDate} checkedOutTo={f.checkedOutTo} actualReturnDate={f.actualReturnDate} onChange={set} />
 
         <AttachmentsField label="Attached Documents" pathPrefix={`internal/${pathPrefix}`} files={docs} onChange={setDocs} />
         <ImageField pathPrefix={`internal/${pathPrefix}`} url={imageUrl} onChange={setImageUrl} />

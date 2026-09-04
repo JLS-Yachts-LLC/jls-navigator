@@ -57,7 +57,7 @@ function ShelfFinderAndCalculator({ data }: { data: WarehouseData }) {
     const neededCbm = calcCbm(l, w, h);
     return shelvesWithUsage.filter((s) => {
       const availCbm = s.max_cbm - s.usedCbm;
-      const availWeight = s.max_weight_kg - s.usedWeightKg;
+      const availWeight = s.max_weight_kg == null ? Infinity : s.max_weight_kg - s.usedWeightKg;
       return l <= s.max_length_cm && w <= s.max_width_cm && h <= s.max_height_cm && neededCbm <= availCbm && wt <= availWeight;
     }).sort((a, b) => (a.max_cbm - a.usedCbm) - (b.max_cbm - b.usedCbm));
   }, [dims, searched, shelvesWithUsage]);
@@ -88,7 +88,7 @@ function ShelfFinderAndCalculator({ data }: { data: WarehouseData }) {
                     <div className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" /><span className="font-mono font-semibold">{locationCode(s)}</span></div>
                     <div className="flex items-center gap-3 text-muted-foreground">
                       <span>Avail. vol: {(s.max_cbm - s.usedCbm).toFixed(2)} m³</span>
-                      <span>Avail. weight: {(s.max_weight_kg - s.usedWeightKg).toLocaleString()} kg</span>
+                      <span>Avail. weight: {s.max_weight_kg == null ? "No limit" : `${(s.max_weight_kg - s.usedWeightKg).toLocaleString()} kg`}</span>
                     </div>
                   </div>
                 ))}
@@ -234,9 +234,9 @@ function ZoneDetails({ zone, data, reload }: { zone: Zone; data: WarehouseData; 
                       <td className="px-3 py-2 tabular-nums text-muted-foreground">{s.max_cbm.toFixed(1)} m³</td>
                       <td className="px-3 py-2 tabular-nums text-muted-foreground">{usedCbm.toFixed(1)} m³</td>
                       <td className="px-3 py-2 tabular-nums font-medium text-emerald-600 dark:text-emerald-400">{(s.max_cbm - usedCbm).toFixed(1)} m³</td>
-                      <td className="px-3 py-2 tabular-nums text-muted-foreground">{s.max_weight_kg.toLocaleString()} kg</td>
+                      <td className="px-3 py-2 tabular-nums text-muted-foreground">{s.max_weight_kg != null ? `${s.max_weight_kg.toLocaleString()} kg` : "No limit"}</td>
                       <td className="px-3 py-2 tabular-nums text-muted-foreground">{usedWeightKg.toLocaleString()} kg</td>
-                      <td className="px-3 py-2 tabular-nums font-medium text-emerald-600 dark:text-emerald-400">{(s.max_weight_kg - usedWeightKg).toLocaleString()} kg</td>
+                      <td className="px-3 py-2 tabular-nums font-medium text-emerald-600 dark:text-emerald-400">{s.max_weight_kg != null ? `${(s.max_weight_kg - usedWeightKg).toLocaleString()} kg` : "No limit"}</td>
                       <td className="px-3 py-2">
                         <button onClick={() => setDeleteTarget(s)} className="rounded p-1 text-muted-foreground/60 hover:bg-destructive/10 hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
                       </td>
@@ -274,15 +274,15 @@ function AddShelfForm({ zone, onDone, onSaved }: { zone: Zone; onDone: () => voi
   const maxCbm = calcCbm(Number(f.maxLength) || 0, Number(f.maxWidth) || 0, Number(f.maxHeight) || 0);
 
   async function save() {
-    if (!f.bay.trim() || !f.shelf.trim() || !f.maxLength || !f.maxWidth || !f.maxHeight || !f.maxWeight) {
-      toast.error("All fields are required"); return;
+    if (!f.bay.trim() || !f.shelf.trim() || !f.maxLength || !f.maxWidth || !f.maxHeight) {
+      toast.error("Bay, shelf, and dimensions are required"); return;
     }
     setBusy(true);
     try {
       await shelfCrud.create({
         zone, bay: f.bay.trim(), shelf: f.shelf.trim(),
         max_length_cm: Number(f.maxLength), max_width_cm: Number(f.maxWidth), max_height_cm: Number(f.maxHeight),
-        max_cbm: maxCbm, max_weight_kg: Number(f.maxWeight),
+        max_cbm: maxCbm, max_weight_kg: f.maxWeight ? Number(f.maxWeight) : null,
       });
       toast.success(`Shelf ${zone}${f.bay}-${f.shelf} added`);
       await onSaved();
@@ -301,7 +301,7 @@ function AddShelfForm({ zone, onDone, onSaved }: { zone: Zone; onDone: () => voi
         <div className="space-y-1.5"><Label className="text-xs">Max length (cm)</Label><Input type="number" min={0} value={f.maxLength} onChange={(e) => set({ maxLength: e.target.value })} className="h-9" /></div>
         <div className="space-y-1.5"><Label className="text-xs">Max width (cm)</Label><Input type="number" min={0} value={f.maxWidth} onChange={(e) => set({ maxWidth: e.target.value })} className="h-9" /></div>
         <div className="space-y-1.5"><Label className="text-xs">Max height (cm)</Label><Input type="number" min={0} value={f.maxHeight} onChange={(e) => set({ maxHeight: e.target.value })} className="h-9" /></div>
-        <div className="space-y-1.5"><Label className="text-xs">Max weight (kg)</Label><Input type="number" min={0} value={f.maxWeight} onChange={(e) => set({ maxWeight: e.target.value })} className="h-9" /></div>
+        <div className="space-y-1.5"><Label className="text-xs">Max weight (kg) <span className="font-normal text-muted-foreground">(optional)</span></Label><Input type="number" min={0} value={f.maxWeight} onChange={(e) => set({ maxWeight: e.target.value })} placeholder="No limit" className="h-9" /></div>
         <div className="space-y-1.5"><Label className="text-xs">Max volume (auto)</Label><Input readOnly value={maxCbm ? `${maxCbm.toFixed(2)} m³` : ""} placeholder="—" className="h-9 bg-muted/30 text-muted-foreground" /></div>
       </div>
       <div className="mt-4 flex justify-end gap-2">

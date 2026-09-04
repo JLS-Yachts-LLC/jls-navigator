@@ -29,7 +29,7 @@ export function ShelfDashboard({ data }: { data: WarehouseData }) {
     return ZONES.map((zone) => {
       const zoneShelves = shelves.filter((s) => s.zone === zone);
       const maxCbm = zoneShelves.reduce((s, sh) => s + sh.max_cbm, 0);
-      const maxWeightKg = zoneShelves.reduce((s, sh) => s + sh.max_weight_kg, 0);
+      const maxWeightKg = zoneShelves.reduce((s, sh) => s + (sh.max_weight_kg ?? 0), 0);
       const maxShelves = zoneShelves.length;
       const occupiedKeys = new Set<string>();
       let usedCbm = 0, usedWeightKg = 0;

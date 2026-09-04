@@ -7,8 +7,8 @@ import { supabase } from '@/integrations/supabase/client'
 const db = () => supabase as any
 
 export type Zone = 'A' | 'B' | 'C' | 'D' | 'E'
-export type ManualStatus = 'Stored' | 'Completed'
-export type PackageContentManualStatus = 'Stored' | 'Checked Out' | 'Returned' | 'Disposed' | 'Completed'
+export type ManualStatus = 'Stored' | 'Checked Out' | 'Returned' | 'Disposed' | 'Completed'
+export type PackageContentManualStatus = ManualStatus
 export interface WarehouseDoc { name: string; url: string }
 
 export interface WarehouseShelf {
@@ -20,7 +20,7 @@ export interface WarehouseShelf {
   max_width_cm: number
   max_height_cm: number
   max_cbm: number
-  max_weight_kg: number
+  max_weight_kg: number | null
   created_at: string
   updated_at: string
 }
@@ -44,6 +44,9 @@ export interface WarehouseClientItem {
   shelf: string | null
   invoice_no: string | null
   status: ManualStatus
+  checked_out_date: string | null
+  checked_out_to: string | null
+  actual_return_date: string | null
   remarks: string | null
   documents: WarehouseDoc[]
   image_url: string | null
@@ -68,6 +71,9 @@ export interface WarehouseInternalItem {
   bay: string | null
   shelf: string | null
   status: ManualStatus
+  checked_out_date: string | null
+  checked_out_to: string | null
+  actual_return_date: string | null
   remarks: string | null
   documents: WarehouseDoc[]
   image_url: string | null
@@ -141,9 +147,11 @@ export async function nextInternalRef(): Promise<string> {
   if (error) throw error
   return data as string
 }
-/** Allocate the next Package Content item ID atomically (e.g. "ITM-0001"). */
-export async function nextPackageItemId(): Promise<string> {
-  const { data, error } = await db().rpc('next_warehouse_item_id')
+/** Allocate the next Package Content item ID for a given parent ref number
+ *  (e.g. "JLS-INT-26-0060" -> "JLS-INT-26-0060-01") — a per-parent suffix,
+ *  not a global counter, matching the real numbering convention. */
+export async function nextPackageItemId(refNo: string): Promise<string> {
+  const { data, error } = await db().rpc('next_warehouse_package_item_id', { p_ref_no: refNo })
   if (error) throw error
   return data as string
 }
