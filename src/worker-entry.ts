@@ -344,6 +344,32 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
     }
   }
 
+  // Same backfill, Export board. `?run=monday-backfill-export-photos&dryRun=1`
+  // reports without writing; `&dryRun=0` actually writes.
+  if (url.searchParams.get('run') === 'monday-backfill-export-photos') {
+    try {
+      const dryRun = url.searchParams.get('dryRun') !== '0' && url.searchParams.get('dryRun') !== 'false'
+      const { backfillExportBoardPhotos } = await import('./lib/shipsync/monday-export-board.server')
+      const r = await backfillExportBoardPhotos(dryRun)
+      return new Response(JSON.stringify(r), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
+  }
+
+  // Same backfill, Local board. `?run=monday-backfill-local-photos&dryRun=1`
+  // reports without writing; `&dryRun=0` actually writes.
+  if (url.searchParams.get('run') === 'monday-backfill-local-photos') {
+    try {
+      const dryRun = url.searchParams.get('dryRun') !== '0' && url.searchParams.get('dryRun') !== 'false'
+      const { backfillLocalBoardPhotos } = await import('./lib/shipsync/monday.server')
+      const r = await backfillLocalBoardPhotos(dryRun)
+      return new Response(JSON.stringify(r), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
+  }
+
   // Read-only diagnostic: `?run=package-debug&barcode=<tracking number>`
   // returns EVERY shipsync_packages row with this exact barcode, regardless
   // of monday_item_id — so a duplicate not created by the Monday sync isn't
