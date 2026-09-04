@@ -1,16 +1,11 @@
 /**
- * ShipSync — Warehouse module shared vocabulary + illustrative sample data.
- *
- * UI-first pass per "Polaris – Warehouse Board: Functions and Requirements" —
- * nothing here reads or writes shipsync_packages or any other real table yet.
- * The SAMPLE_* arrays exist purely so the screens don't look dead during
- * review; every one is clearly fake (obviously placeholder names/numbers)
- * and never touches Supabase. Swap them for real loaders when this module
- * gets wired up for real.
+ * ShipSync — Warehouse module shared vocabulary + display helpers.
+ * Real data lives in src/lib/warehouse/data.ts; this file is UI-only
+ * constants and small pure functions shared across the warehouse screens.
  */
+import type { Zone, WarehouseClientItem, WarehouseInternalItem } from "@/lib/warehouse/data";
 
-export const ZONES = ["A", "B", "C", "D", "E"] as const;
-export type Zone = (typeof ZONES)[number];
+export const ZONES: Zone[] = ["A", "B", "C", "D", "E"];
 
 export type CapacityStatus = "Safe" | "Warning" | "Full/Restricted";
 export const CAPACITY_STATUS_STYLE: Record<CapacityStatus, string> = {
@@ -24,16 +19,13 @@ export function capacityStatus(usedPct: number): CapacityStatus {
   return "Safe";
 }
 
-export type ClientInventoryStatus = "Stored" | "Due Soon" | "Overdue" | "Completed";
-export const CLIENT_STATUS_STYLE: Record<ClientInventoryStatus, string> = {
-  "Stored": "bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/20",
-  "Due Soon": "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/20",
-  "Overdue": "bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/20",
-  "Completed": "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
-};
-
-export type PackageContentStatus = "Stored" | "Due Soon" | "Overdue" | "Checked Out" | "Returned" | "Disposed" | "Completed";
-export const PACKAGE_CONTENT_STATUS_STYLE: Record<PackageContentStatus, string> = {
+/** The four/seven display statuses per the spec — these are DERIVED at read
+ *  time from a due/destruction date, never stored, so a list never shows a
+ *  stale "Stored" after its due date has quietly passed. A manually-set
+ *  terminal state (Completed / Checked Out / Returned / Disposed) always
+ *  wins over anything date-derived. */
+export type DisplayStatus = "Stored" | "Due Soon" | "Overdue" | "Checked Out" | "Returned" | "Disposed" | "Completed";
+export const DISPLAY_STATUS_STYLE: Record<DisplayStatus, string> = {
   "Stored": "bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/20",
   "Due Soon": "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/20",
   "Overdue": "bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/20",
@@ -43,13 +35,33 @@ export const PACKAGE_CONTENT_STATUS_STYLE: Record<PackageContentStatus, string> 
   "Completed": "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
 };
 
+/** Days-ahead window for "Due Soon" — a due/destruction date inside this
+ *  window (but not yet passed) is flagged for follow-up. */
+const DUE_SOON_WINDOW_DAYS = 14;
+
+/** Derive the display status for a Client/Internal item: `manualStatus` wins
+ *  once it's anything other than the default 'Stored' (i.e. once someone's
+ *  explicitly marked it Completed); otherwise Stored/Due Soon/Overdue is
+ *  computed from `dateField` against today. */
+export function deriveStatus(dateField: string | null, manualStatus: string): DisplayStatus {
+  if (manualStatus !== "Stored") return manualStatus as DisplayStatus;
+  if (!dateField) return "Stored";
+  const days = Math.ceil((new Date(dateField + "T00:00").getTime() - Date.now()) / 86_400_000);
+  if (days < 0) return "Overdue";
+  if (days <= DUE_SOON_WINDOW_DAYS) return "Due Soon";
+  return "Stored";
+}
+
 export const INTERNAL_DEPARTMENTS = ["Accounts", "Marketing", "IT", "Logistics", "Training", "Other"] as const;
 
 /** Every storage spot is Zone → Bay → Shelf (three separate fields per the
  *  spec, not one combined code) — this just renders them compactly for
  *  table cells / search results. */
-export interface StorageLocation { zone: Zone; bay: string; shelf: string }
-export function locationCode(loc: StorageLocation): string { return `${loc.zone}${loc.bay}-${loc.shelf}`; }
+export interface StorageLocation { zone: Zone | string | null; bay: string | null; shelf: string | null }
+export function locationCode(loc: StorageLocation): string {
+  if (!loc.zone) return "—";
+  return `${loc.zone}${loc.bay ?? ""}-${loc.shelf ?? ""}`;
+}
 
 /** CBM (cubic metres) from L×W×H in centimetres — the same conversion used
  *  everywhere this module asks for it. */
@@ -58,90 +70,28 @@ export function calcCbm(lengthCm: number, widthCm: number, heightCm: number): nu
   return (lengthCm * widthCm * heightCm) / 1_000_000;
 }
 
-// ── Illustrative sample data (obviously placeholder — no real client/vessel
-//    names, deliberately round numbers) ──────────────────────────────────────
+/** A "Completed" item has finished its storage process — it no longer
+ *  occupies real shelf space for capacity purposes, everything else does. */
+const occupiesSpace = (status: string) => status !== "Completed";
 
-export interface SampleZoneCapacity {
-  zone: Zone;
-  maxWeightKg: number;
-  usedWeightKg: number;
-  maxCbm: number;
-  usedCbm: number;
-  maxShelves: number;
-  usedShelves: number;
+/** Volume + weight currently occupying a specific shelf, from real client +
+ *  internal items assigned to it — there's no stored per-shelf counter (that
+ *  would drift out of sync with the items themselves), so this is always
+ *  computed fresh from the item rows. */
+export function shelfUsage(
+  zone: string, bay: string, shelf: string,
+  clientItems: WarehouseClientItem[], internalItems: WarehouseInternalItem[],
+): { usedCbm: number; usedWeightKg: number } {
+  let usedCbm = 0, usedWeightKg = 0;
+  for (const it of clientItems) {
+    if (it.zone === zone && it.bay === bay && it.shelf === shelf && occupiesSpace(it.status)) {
+      usedCbm += it.cbm ?? 0; usedWeightKg += it.weight_kg ?? 0;
+    }
+  }
+  for (const it of internalItems) {
+    if (it.zone === zone && it.bay === bay && it.shelf === shelf && occupiesSpace(it.status)) {
+      usedCbm += it.cbm ?? 0; usedWeightKg += it.weight_kg ?? 0;
+    }
+  }
+  return { usedCbm, usedWeightKg };
 }
-export const SAMPLE_ZONE_CAPACITY: SampleZoneCapacity[] = [
-  { zone: "A", maxWeightKg: 20000, usedWeightKg: 8400, maxCbm: 240, usedCbm: 96, maxShelves: 48, usedShelves: 19 },
-  { zone: "B", maxWeightKg: 20000, usedWeightKg: 15600, maxCbm: 240, usedCbm: 182, maxShelves: 48, usedShelves: 37 },
-  { zone: "C", maxWeightKg: 15000, usedWeightKg: 14550, maxCbm: 180, usedCbm: 171, maxShelves: 36, usedShelves: 35 },
-  { zone: "D", maxWeightKg: 15000, usedWeightKg: 3200, maxCbm: 180, usedCbm: 40, maxShelves: 36, usedShelves: 8 },
-  { zone: "E", maxWeightKg: 10000, usedWeightKg: 1100, maxCbm: 120, usedCbm: 12, maxShelves: 24, usedShelves: 3 },
-];
-
-export interface SampleShelf extends StorageLocation {
-  maxLengthCm: number;
-  maxWidthCm: number;
-  maxHeightCm: number;
-  maxCbm: number;
-  usedCbm: number;
-  maxWeightKg: number;
-  usedWeightKg: number;
-}
-export const SAMPLE_SHELVES: SampleShelf[] = [
-  { zone: "A", bay: "1", shelf: "01", maxLengthCm: 120, maxWidthCm: 100, maxHeightCm: 180, maxCbm: 5, usedCbm: 1.2, maxWeightKg: 400, usedWeightKg: 90 },
-  { zone: "A", bay: "1", shelf: "02", maxLengthCm: 120, maxWidthCm: 100, maxHeightCm: 180, maxCbm: 5, usedCbm: 4.8, maxWeightKg: 400, usedWeightKg: 380 },
-  { zone: "A", bay: "2", shelf: "01", maxLengthCm: 150, maxWidthCm: 120, maxHeightCm: 200, maxCbm: 8, usedCbm: 0, maxWeightKg: 600, usedWeightKg: 0 },
-  { zone: "B", bay: "1", shelf: "01", maxLengthCm: 100, maxWidthCm: 100, maxHeightCm: 160, maxCbm: 4, usedCbm: 3.5, maxWeightKg: 350, usedWeightKg: 300 },
-  { zone: "B", bay: "2", shelf: "03", maxLengthCm: 140, maxWidthCm: 110, maxHeightCm: 180, maxCbm: 6.5, usedCbm: 6.1, maxWeightKg: 500, usedWeightKg: 470 },
-  { zone: "C", bay: "1", shelf: "01", maxLengthCm: 90, maxWidthCm: 90, maxHeightCm: 150, maxCbm: 3, usedCbm: 2.9, maxWeightKg: 300, usedWeightKg: 295 },
-  { zone: "D", bay: "1", shelf: "01", maxLengthCm: 160, maxWidthCm: 130, maxHeightCm: 200, maxCbm: 9, usedCbm: 2, maxWeightKg: 700, usedWeightKg: 140 },
-  { zone: "E", bay: "1", shelf: "01", maxLengthCm: 200, maxWidthCm: 150, maxHeightCm: 220, maxCbm: 14, usedCbm: 1, maxWeightKg: 900, usedWeightKg: 60 },
-];
-
-export interface SampleClientItem extends StorageLocation {
-  refNo: string;
-  clientName: string;
-  description: string;
-  quotationNo: string;
-  lengthCm: number; widthCm: number; heightCm: number; weightKg: number;
-  dateStored: string; dueDate: string;
-  invoiceNo: string;
-  status: ClientInventoryStatus;
-  remarks: string;
-}
-export const SAMPLE_CLIENT_ITEMS: SampleClientItem[] = [
-  { refNo: "CLI-0001", clientName: "M/Y Example One", description: "Deck chairs (4x)", quotationNo: "Q26-01001", lengthCm: 90, widthCm: 60, heightCm: 85, weightKg: 22, dateStored: "2026-06-02", dueDate: "2026-12-02", zone: "A", bay: "1", shelf: "02", invoiceNo: "INV-3301", status: "Stored", remarks: "" },
-  { refNo: "CLI-0002", clientName: "M/Y Example Two", description: "Tender covers", quotationNo: "Q26-01014", lengthCm: 140, widthCm: 110, heightCm: 40, weightKg: 65, dateStored: "2026-04-18", dueDate: "2026-08-18", zone: "B", bay: "2", shelf: "03", invoiceNo: "INV-3288", status: "Due Soon", remarks: "Client to confirm pickup" },
-  { refNo: "CLI-0003", clientName: "M/Y Example Three", description: "Spare parts crate", quotationNo: "Q26-00987", lengthCm: 60, widthCm: 50, heightCm: 50, weightKg: 38, dateStored: "2026-02-10", dueDate: "2026-05-10", zone: "C", bay: "1", shelf: "01", invoiceNo: "INV-3140", status: "Overdue", remarks: "Follow up on renewal" },
-  { refNo: "CLI-0004", clientName: "M/Y Example Four", description: "Interior cushions", quotationNo: "Q26-01102", lengthCm: 100, widthCm: 80, heightCm: 60, weightKg: 15, dateStored: "2026-07-01", dueDate: "2026-10-01", zone: "A", bay: "1", shelf: "01", invoiceNo: "INV-3402", status: "Completed", remarks: "Collected in full" },
-];
-
-export interface SampleInternalItem extends StorageLocation {
-  refNo: string;
-  department: string;
-  description: string;
-  lengthCm: number; widthCm: number; heightCm: number; weightKg: number;
-  dateStored: string;
-  status: ClientInventoryStatus;
-  remarks: string;
-}
-export const SAMPLE_INTERNAL_ITEMS: SampleInternalItem[] = [
-  { refNo: "INT-0001", department: "Accounts", description: "Archived invoices 2024–2025", lengthCm: 40, widthCm: 30, heightCm: 30, weightKg: 12, dateStored: "2026-01-15", zone: "D", bay: "1", shelf: "01", status: "Stored", remarks: "" },
-  { refNo: "INT-0002", department: "IT", description: "Retired network switches", lengthCm: 50, widthCm: 40, heightCm: 25, weightKg: 9, dateStored: "2026-03-22", zone: "E", bay: "1", shelf: "01", status: "Stored", remarks: "" },
-];
-
-export interface SamplePackageContent {
-  refNo: string;
-  itemId: string;
-  clientOrDept: string;
-  itemName: string;
-  quantity: number;
-  unit: string;
-  status: PackageContentStatus;
-  remarks: string;
-}
-export const SAMPLE_PACKAGE_CONTENTS: SamplePackageContent[] = [
-  { refNo: "CLI-0001", itemId: "ITM-001", clientOrDept: "M/Y Example One", itemName: "Deck chair", quantity: 4, unit: "pcs", status: "Stored", remarks: "" },
-  { refNo: "CLI-0002", itemId: "ITM-002", clientOrDept: "M/Y Example Two", itemName: "Tender cover", quantity: 2, unit: "pcs", status: "Checked Out", remarks: "Out with captain since 12 Aug" },
-  { refNo: "INT-0001", itemId: "ITM-003", clientOrDept: "Accounts", itemName: "Invoice box", quantity: 6, unit: "boxes", status: "Due Soon", remarks: "" },
-];

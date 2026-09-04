@@ -1,12 +1,19 @@
 import { useMemo, useState } from "react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Compass, Calculator, Plus, Trash2, CheckCircle2 } from "lucide-react";
 import {
-  ZONES, type Zone, SAMPLE_SHELVES, calcCbm, locationCode,
+  ZONES, calcCbm, locationCode, shelfUsage,
 } from "@/components/shipsync/warehouse/warehouse-constants";
+import { shelfCrud, type Zone, type WarehouseShelf } from "@/lib/warehouse/data";
+import type { WarehouseData } from "@/components/shipsync/ShipSyncWarehouse";
 
 type SubTab = "finder" | Zone;
 const SUB_TABS: { key: SubTab; label: string }[] = [
@@ -14,15 +21,11 @@ const SUB_TABS: { key: SubTab; label: string }[] = [
   ...ZONES.map((z) => ({ key: z as SubTab, label: `Zone ${z}` })),
 ];
 
-export function ZoneStorageStatus() {
+export function ZoneStorageStatus({ data, reload }: { data: WarehouseData; reload: () => Promise<void> }) {
   const [tab, setTab] = useState<SubTab>("finder");
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-dashed border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-400">
-        UI preview — shelf capacity below is illustrative sample data, not the real warehouse layout.
-      </div>
-
       <div className="flex flex-wrap gap-1 rounded-lg border border-border bg-card/50 p-1 w-fit">
         {SUB_TABS.map((t) => (
           <button key={t.key} onClick={() => setTab(t.key)}
@@ -33,27 +36,31 @@ export function ZoneStorageStatus() {
         ))}
       </div>
 
-      {tab === "finder" ? <ShelfFinderAndCalculator /> : <ZoneDetails zone={tab} />}
+      {tab === "finder" ? <ShelfFinderAndCalculator data={data} /> : <ZoneDetails zone={tab} data={data} reload={reload} />}
     </div>
   );
 }
 
-// ── 4.1 Shelf Finder ──────────────────────────────────────────────────────────
+// ── Shelf Finder ─────────────────────────────────────────────────────────────
 
-function ShelfFinderAndCalculator() {
+function ShelfFinderAndCalculator({ data }: { data: WarehouseData }) {
   const [dims, setDims] = useState({ length: "", width: "", height: "", weight: "" });
   const [searched, setSearched] = useState(false);
+
+  const shelvesWithUsage = useMemo(() => data.shelves.map((s) => ({
+    ...s, ...shelfUsage(s.zone, s.bay, s.shelf, data.clientItems, data.internalItems),
+  })), [data.shelves, data.clientItems, data.internalItems]);
 
   const matches = useMemo(() => {
     if (!searched) return [];
     const l = Number(dims.length) || 0, w = Number(dims.width) || 0, h = Number(dims.height) || 0, wt = Number(dims.weight) || 0;
     const neededCbm = calcCbm(l, w, h);
-    return SAMPLE_SHELVES.filter((s) => {
-      const availCbm = s.maxCbm - s.usedCbm;
-      const availWeight = s.maxWeightKg - s.usedWeightKg;
-      return l <= s.maxLengthCm && w <= s.maxWidthCm && h <= s.maxHeightCm && neededCbm <= availCbm && wt <= availWeight;
-    }).sort((a, b) => (a.maxCbm - a.usedCbm) - (b.maxCbm - b.usedCbm)); // tightest fit first
-  }, [dims, searched]);
+    return shelvesWithUsage.filter((s) => {
+      const availCbm = s.max_cbm - s.usedCbm;
+      const availWeight = s.max_weight_kg - s.usedWeightKg;
+      return l <= s.max_length_cm && w <= s.max_width_cm && h <= s.max_height_cm && neededCbm <= availCbm && wt <= availWeight;
+    }).sort((a, b) => (a.max_cbm - a.usedCbm) - (b.max_cbm - b.usedCbm));
+  }, [dims, searched, shelvesWithUsage]);
 
   return (
     <div className="space-y-5">
@@ -77,11 +84,11 @@ function ShelfFinderAndCalculator() {
             ) : (
               <div className="flex flex-col gap-2">
                 {matches.map((s) => (
-                  <div key={locationCode(s)} className="flex items-center justify-between rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-[12.5px]">
+                  <div key={s.id} className="flex items-center justify-between rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-[12.5px]">
                     <div className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" /><span className="font-mono font-semibold">{locationCode(s)}</span></div>
                     <div className="flex items-center gap-3 text-muted-foreground">
-                      <span>Avail. vol: {(s.maxCbm - s.usedCbm).toFixed(2)} m³</span>
-                      <span>Avail. weight: {(s.maxWeightKg - s.usedWeightKg).toLocaleString()} kg</span>
+                      <span>Avail. vol: {(s.max_cbm - s.usedCbm).toFixed(2)} m³</span>
+                      <span>Avail. weight: {(s.max_weight_kg - s.usedWeightKg).toLocaleString()} kg</span>
                     </div>
                   </div>
                 ))}
@@ -96,9 +103,9 @@ function ShelfFinderAndCalculator() {
   );
 }
 
-// ── 4.2 Storage Charge Calculator ──────────────────────────────────────────────
+// ── Storage Charge Calculator ────────────────────────────────────────────────
 
-// Placeholder rates — swap for the real pricing schedule when this module is wired up for real.
+// Placeholder rates — swap for the real pricing schedule when confirmed.
 const STANDARD_CBM_PER_PACKAGE = 1;
 const BASE_CHARGE_PER_PACKAGE = 50; // AED / month
 const EXCESS_CBM_RATE = 40;         // AED / m³ / month
@@ -184,42 +191,123 @@ function StorageChargeCalculator() {
   );
 }
 
-// ── 4.3 Zone Details ───────────────────────────────────────────────────────────
+// ── Zone Details — real shelves + Add shelf ─────────────────────────────────
 
-function ZoneDetails({ zone }: { zone: Zone }) {
-  const shelves = SAMPLE_SHELVES.filter((s) => s.zone === zone);
+function ZoneDetails({ zone, data, reload }: { zone: Zone; data: WarehouseData; reload: () => Promise<void> }) {
+  const [adding, setAdding] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<WarehouseShelf | null>(null);
+  const shelves = data.shelves.filter((s) => s.zone === zone);
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    try { await shelfCrud.remove(deleteTarget.id); toast.success("Shelf removed"); await reload(); }
+    catch (e: any) { toast.error(e?.message ?? "Delete failed"); }
+    finally { setDeleteTarget(null); }
+  }
+
   return (
-    <div className="rounded-xl border border-border bg-card">
-      <div className="border-b border-border px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Zone {zone} — {shelves.length} shelf{shelves.length === 1 ? "" : "es"}</div>
-      {shelves.length === 0 ? (
-        <div className="px-4 py-10 text-center text-sm text-muted-foreground">No shelves recorded for this zone.</div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-[12.5px]">
-            <thead>
-              <tr className="border-b border-border/60 bg-muted/20 text-left text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">
-                <th className="px-3 py-2">Shelf</th><th className="px-3 py-2">Max L×W×H (cm)</th>
-                <th className="px-3 py-2">Max Volume</th><th className="px-3 py-2">Used Volume</th><th className="px-3 py-2">Available Space</th>
-                <th className="px-3 py-2">Max Weight</th><th className="px-3 py-2">Used Weight</th><th className="px-3 py-2">Available Weight</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/40">
-              {shelves.map((s) => (
-                <tr key={locationCode(s)} className="hover:bg-accent/10">
-                  <td className="px-3 py-2 font-mono font-medium">{locationCode(s)}</td>
-                  <td className="px-3 py-2 tabular-nums text-muted-foreground whitespace-nowrap">{s.maxLengthCm}×{s.maxWidthCm}×{s.maxHeightCm}</td>
-                  <td className="px-3 py-2 tabular-nums text-muted-foreground">{s.maxCbm.toFixed(1)} m³</td>
-                  <td className="px-3 py-2 tabular-nums text-muted-foreground">{s.usedCbm.toFixed(1)} m³</td>
-                  <td className="px-3 py-2 tabular-nums font-medium text-emerald-600 dark:text-emerald-400">{(s.maxCbm - s.usedCbm).toFixed(1)} m³</td>
-                  <td className="px-3 py-2 tabular-nums text-muted-foreground">{s.maxWeightKg.toLocaleString()} kg</td>
-                  <td className="px-3 py-2 tabular-nums text-muted-foreground">{s.usedWeightKg.toLocaleString()} kg</td>
-                  <td className="px-3 py-2 tabular-nums font-medium text-emerald-600 dark:text-emerald-400">{(s.maxWeightKg - s.usedWeightKg).toLocaleString()} kg</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+    <div className="space-y-3">
+      <div className="rounded-xl border border-border bg-card">
+        <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
+          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Zone {zone} — {shelves.length} shelf{shelves.length === 1 ? "" : "es"}</span>
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setAdding(true)}><Plus className="h-3.5 w-3.5" /> Add shelf</Button>
         </div>
-      )}
+        {shelves.length === 0 ? (
+          <div className="px-4 py-10 text-center text-sm text-muted-foreground">No shelves recorded for this zone yet.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-[12.5px]">
+              <thead>
+                <tr className="border-b border-border/60 bg-muted/20 text-left text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  <th className="px-3 py-2">Shelf</th><th className="px-3 py-2">Max L×W×H (cm)</th>
+                  <th className="px-3 py-2">Max Volume</th><th className="px-3 py-2">Used Volume</th><th className="px-3 py-2">Available Space</th>
+                  <th className="px-3 py-2">Max Weight</th><th className="px-3 py-2">Used Weight</th><th className="px-3 py-2">Available Weight</th><th />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/40">
+                {shelves.map((s) => {
+                  const { usedCbm, usedWeightKg } = shelfUsage(s.zone, s.bay, s.shelf, data.clientItems, data.internalItems);
+                  return (
+                    <tr key={s.id} className="hover:bg-accent/10">
+                      <td className="px-3 py-2 font-mono font-medium">{locationCode(s)}</td>
+                      <td className="px-3 py-2 tabular-nums text-muted-foreground whitespace-nowrap">{s.max_length_cm}×{s.max_width_cm}×{s.max_height_cm}</td>
+                      <td className="px-3 py-2 tabular-nums text-muted-foreground">{s.max_cbm.toFixed(1)} m³</td>
+                      <td className="px-3 py-2 tabular-nums text-muted-foreground">{usedCbm.toFixed(1)} m³</td>
+                      <td className="px-3 py-2 tabular-nums font-medium text-emerald-600 dark:text-emerald-400">{(s.max_cbm - usedCbm).toFixed(1)} m³</td>
+                      <td className="px-3 py-2 tabular-nums text-muted-foreground">{s.max_weight_kg.toLocaleString()} kg</td>
+                      <td className="px-3 py-2 tabular-nums text-muted-foreground">{usedWeightKg.toLocaleString()} kg</td>
+                      <td className="px-3 py-2 tabular-nums font-medium text-emerald-600 dark:text-emerald-400">{(s.max_weight_kg - usedWeightKg).toLocaleString()} kg</td>
+                      <td className="px-3 py-2">
+                        <button onClick={() => setDeleteTarget(s)} className="rounded p-1 text-muted-foreground/60 hover:bg-destructive/10 hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {adding && <AddShelfForm zone={zone} onDone={() => setAdding(false)} onSaved={reload} />}
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove shelf {deleteTarget ? locationCode(deleteTarget) : ""}?</AlertDialogTitle>
+            <AlertDialogDescription>This can't be undone. Items already assigned to this shelf keep their Zone/Bay/Shelf value, but it will no longer show as a registered shelf.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete}>Remove</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
+function AddShelfForm({ zone, onDone, onSaved }: { zone: Zone; onDone: () => void; onSaved: () => Promise<void> }) {
+  const [f, setF] = useState({ bay: "", shelf: "", maxLength: "", maxWidth: "", maxHeight: "", maxWeight: "" });
+  const [busy, setBusy] = useState(false);
+  const set = (patch: Partial<typeof f>) => setF((prev) => ({ ...prev, ...patch }));
+  const maxCbm = calcCbm(Number(f.maxLength) || 0, Number(f.maxWidth) || 0, Number(f.maxHeight) || 0);
+
+  async function save() {
+    if (!f.bay.trim() || !f.shelf.trim() || !f.maxLength || !f.maxWidth || !f.maxHeight || !f.maxWeight) {
+      toast.error("All fields are required"); return;
+    }
+    setBusy(true);
+    try {
+      await shelfCrud.create({
+        zone, bay: f.bay.trim(), shelf: f.shelf.trim(),
+        max_length_cm: Number(f.maxLength), max_width_cm: Number(f.maxWidth), max_height_cm: Number(f.maxHeight),
+        max_cbm: maxCbm, max_weight_kg: Number(f.maxWeight),
+      });
+      toast.success(`Shelf ${zone}${f.bay}-${f.shelf} added`);
+      await onSaved();
+      onDone();
+    } catch (e: any) { toast.error(e?.message ?? "Save failed — bay/shelf combination may already exist in this zone"); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-4">
+      <div className="mb-3 font-display text-sm font-semibold">Add shelf to Zone {zone}</div>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <div className="space-y-1.5"><Label className="text-xs">Bay</Label><Input value={f.bay} onChange={(e) => set({ bay: e.target.value })} placeholder="e.g. 1" className="h-9" /></div>
+        <div className="space-y-1.5"><Label className="text-xs">Shelf</Label><Input value={f.shelf} onChange={(e) => set({ shelf: e.target.value })} placeholder="e.g. 01" className="h-9" /></div>
+        <div />
+        <div className="space-y-1.5"><Label className="text-xs">Max length (cm)</Label><Input type="number" min={0} value={f.maxLength} onChange={(e) => set({ maxLength: e.target.value })} className="h-9" /></div>
+        <div className="space-y-1.5"><Label className="text-xs">Max width (cm)</Label><Input type="number" min={0} value={f.maxWidth} onChange={(e) => set({ maxWidth: e.target.value })} className="h-9" /></div>
+        <div className="space-y-1.5"><Label className="text-xs">Max height (cm)</Label><Input type="number" min={0} value={f.maxHeight} onChange={(e) => set({ maxHeight: e.target.value })} className="h-9" /></div>
+        <div className="space-y-1.5"><Label className="text-xs">Max weight (kg)</Label><Input type="number" min={0} value={f.maxWeight} onChange={(e) => set({ maxWeight: e.target.value })} className="h-9" /></div>
+        <div className="space-y-1.5"><Label className="text-xs">Max volume (auto)</Label><Input readOnly value={maxCbm ? `${maxCbm.toFixed(2)} m³` : ""} placeholder="—" className="h-9 bg-muted/30 text-muted-foreground" /></div>
+      </div>
+      <div className="mt-4 flex justify-end gap-2">
+        <Button variant="outline" onClick={onDone} disabled={busy}>Cancel</Button>
+        <Button onClick={save} disabled={busy} className="gap-1.5">Save shelf</Button>
+      </div>
     </div>
   );
 }

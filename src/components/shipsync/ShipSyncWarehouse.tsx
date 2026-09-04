@@ -1,28 +1,24 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
-import { Search, LayoutDashboard, ClipboardList, Compass, PackagePlus } from "lucide-react";
+import { Search, LayoutDashboard, ClipboardList, Compass, PackagePlus, Loader2 } from "lucide-react";
 import { WarehouseSearch } from "@/components/shipsync/warehouse/WarehouseSearch";
 import { ShelfDashboard } from "@/components/shipsync/warehouse/ShelfDashboard";
 import { InventoryList } from "@/components/shipsync/warehouse/InventoryList";
 import { ZoneStorageStatus } from "@/components/shipsync/warehouse/ZoneStorageStatus";
 import { NewStorage } from "@/components/shipsync/warehouse/NewStorage";
+import {
+  loadShelves, loadClientItems, loadInternalItems, loadPackageContents,
+  type WarehouseShelf, type WarehouseClientItem, type WarehouseInternalItem, type WarehousePackageContent,
+} from "@/lib/warehouse/data";
 import type { ShipSyncData } from "@/components/shipsync-page";
 
-/**
- * ShipSync — Warehouse.
- *
- * UI-first pass per "Polaris – Warehouse Board: Functions and Requirements"
- * (the 5 functions: Search, Shelf Dashboard, Inventory List, Zone & Storage
- * Status, New Storage). Nothing here is wired to shipsync_packages or any
- * other real table yet — every screen runs on its own local state and the
- * illustrative SAMPLE_* data in warehouse/warehouse-constants.ts. `data`/
- * `reload` are accepted (same props every other ShipSync tab gets from
- * shipsync-page.tsx) but unused for now — swap the sample data for real
- * loaders when this module is ready to go live.
- *
- * Shelf Dashboard is the default view, per spec ("should be the main/
- * default view when the Warehouse section is opened").
- */
+export interface WarehouseData {
+  shelves: WarehouseShelf[];
+  clientItems: WarehouseClientItem[];
+  internalItems: WarehouseInternalItem[];
+  packageContents: WarehousePackageContent[];
+}
+
 type SubTab = "dashboard" | "search" | "inventory" | "zones" | "new";
 const SUB_TABS: { key: SubTab; label: string; icon: typeof Search }[] = [
   { key: "dashboard", label: "Shelf Dashboard", icon: LayoutDashboard },
@@ -32,8 +28,30 @@ const SUB_TABS: { key: SubTab; label: string; icon: typeof Search }[] = [
   { key: "new", label: "New Storage", icon: PackagePlus },
 ];
 
+/**
+ * ShipSync — Warehouse. The 5 functions per "Polaris – Warehouse Board:
+ * Functions and Requirements" (Search, Shelf Dashboard, Inventory List,
+ * Zone & Storage Status, New Storage), backed by the real warehouse_*
+ * Supabase tables. Shelf Dashboard is the default view per spec.
+ */
 export function ShipSyncWarehouse(_props: { data: ShipSyncData; reload: () => Promise<void> }) {
   const [tab, setTab] = useState<SubTab>("dashboard");
+  const [data, setData] = useState<WarehouseData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const reload = useCallback(async () => {
+    try {
+      const [shelves, clientItems, internalItems, packageContents] = await Promise.all([
+        loadShelves(), loadClientItems(), loadInternalItems(), loadPackageContents(),
+      ]);
+      setData({ shelves, clientItems, internalItems, packageContents });
+      setError(null);
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to load warehouse data");
+    }
+  }, []);
+
+  useEffect(() => { void reload(); }, [reload]);
 
   return (
     <div className="flex h-full min-w-0 flex-col px-6 py-5">
@@ -48,11 +66,19 @@ export function ShipSyncWarehouse(_props: { data: ShipSyncData; reload: () => Pr
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto">
-        {tab === "dashboard" && <ShelfDashboard />}
-        {tab === "search" && <WarehouseSearch />}
-        {tab === "inventory" && <InventoryList />}
-        {tab === "zones" && <ZoneStorageStatus />}
-        {tab === "new" && <NewStorage />}
+        {!data ? (
+          <div className="flex h-48 items-center justify-center gap-2 text-sm text-muted-foreground">
+            {error ? error : <><Loader2 className="h-4 w-4 animate-spin" /> Loading warehouse data…</>}
+          </div>
+        ) : (
+          <>
+            {tab === "dashboard" && <ShelfDashboard data={data} />}
+            {tab === "search" && <WarehouseSearch data={data} />}
+            {tab === "inventory" && <InventoryList data={data} reload={reload} />}
+            {tab === "zones" && <ZoneStorageStatus data={data} reload={reload} />}
+            {tab === "new" && <NewStorage onSaved={reload} />}
+          </>
+        )}
       </div>
     </div>
   );

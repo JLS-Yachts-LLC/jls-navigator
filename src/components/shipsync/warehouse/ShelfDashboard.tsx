@@ -2,9 +2,9 @@ import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Boxes, Building2, Ship, Weight } from "lucide-react";
 import {
-  SAMPLE_ZONE_CAPACITY, CAPACITY_STATUS_STYLE, capacityStatus,
-  SAMPLE_CLIENT_ITEMS, SAMPLE_INTERNAL_ITEMS, locationCode,
+  ZONES, CAPACITY_STATUS_STYLE, capacityStatus, DISPLAY_STATUS_STYLE, deriveStatus, locationCode,
 } from "@/components/shipsync/warehouse/warehouse-constants";
+import type { WarehouseData } from "@/components/shipsync/ShipSyncWarehouse";
 
 function Bar({ pct, tone }: { pct: number; tone: "emerald" | "amber" | "red" }) {
   const fill = tone === "red" ? "bg-red-500" : tone === "amber" ? "bg-amber-500" : "bg-emerald-500";
@@ -19,45 +19,65 @@ function toneFor(status: string): "emerald" | "amber" | "red" {
   return status === "Full/Restricted" ? "red" : status === "Warning" ? "amber" : "emerald";
 }
 
-export function ShelfDashboard() {
+const occupiesSpace = (status: string) => status !== "Completed";
+
+export function ShelfDashboard({ data }: { data: WarehouseData }) {
+  const { shelves, clientItems, internalItems } = data;
   const [selectedClient, setSelectedClient] = useState<string | null>(null);
 
-  const totals = useMemo(() => {
-    const maxCbm = SAMPLE_ZONE_CAPACITY.reduce((s, z) => s + z.maxCbm, 0);
-    const usedCbm = SAMPLE_ZONE_CAPACITY.reduce((s, z) => s + z.usedCbm, 0);
-    const maxShelves = SAMPLE_ZONE_CAPACITY.reduce((s, z) => s + z.maxShelves, 0);
-    const usedShelves = SAMPLE_ZONE_CAPACITY.reduce((s, z) => s + z.usedShelves, 0);
-    return { maxCbm, usedCbm, maxShelves, usedShelves, availableCbm: maxCbm - usedCbm, availableShelves: maxShelves - usedShelves };
-  }, []);
+  const perZone = useMemo(() => {
+    return ZONES.map((zone) => {
+      const zoneShelves = shelves.filter((s) => s.zone === zone);
+      const maxCbm = zoneShelves.reduce((s, sh) => s + sh.max_cbm, 0);
+      const maxWeightKg = zoneShelves.reduce((s, sh) => s + sh.max_weight_kg, 0);
+      const maxShelves = zoneShelves.length;
+      const occupiedKeys = new Set<string>();
+      let usedCbm = 0, usedWeightKg = 0;
+      for (const it of [...clientItems, ...internalItems]) {
+        if (it.zone !== zone || !occupiesSpace(it.status)) continue;
+        usedCbm += it.cbm ?? 0; usedWeightKg += it.weight_kg ?? 0;
+        if (it.bay && it.shelf) occupiedKeys.add(`${it.bay}-${it.shelf}`);
+      }
+      return { zone, maxCbm, maxWeightKg, maxShelves, usedShelves: occupiedKeys.size, usedCbm, usedWeightKg };
+    });
+  }, [shelves, clientItems, internalItems]);
 
-  // Client space usage — occupied shelving (count of items) + package count, from sample data.
+  const totals = useMemo(() => {
+    const maxCbm = perZone.reduce((s, z) => s + z.maxCbm, 0);
+    const usedCbm = perZone.reduce((s, z) => s + z.usedCbm, 0);
+    const maxShelves = perZone.reduce((s, z) => s + z.maxShelves, 0);
+    const usedShelves = perZone.reduce((s, z) => s + z.usedShelves, 0);
+    return { maxCbm, usedCbm, maxShelves, usedShelves, availableCbm: maxCbm - usedCbm, availableShelves: maxShelves - usedShelves };
+  }, [perZone]);
+
   const clientUsage = useMemo(() => {
     const m = new Map<string, { shelves: Set<string>; packages: number }>();
-    for (const it of SAMPLE_CLIENT_ITEMS) {
-      const e = m.get(it.clientName) ?? { shelves: new Set<string>(), packages: 0 };
+    for (const it of clientItems) {
+      const e = m.get(it.client_name) ?? { shelves: new Set<string>(), packages: 0 };
       e.shelves.add(locationCode(it)); e.packages += 1;
-      m.set(it.clientName, e);
+      m.set(it.client_name, e);
     }
     return Array.from(m.entries())
       .map(([name, v]) => ({ name, shelves: v.shelves.size, packages: v.packages }))
       .sort((a, b) => b.packages - a.packages);
-  }, []);
+  }, [clientItems]);
 
   const deptUsage = useMemo(() => {
     const m = new Map<string, number>();
-    for (const it of SAMPLE_INTERNAL_ITEMS) m.set(it.department, (m.get(it.department) ?? 0) + 1);
+    for (const it of internalItems) m.set(it.department, (m.get(it.department) ?? 0) + 1);
     return Array.from(m.entries()).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
-  }, []);
+  }, [internalItems]);
 
-  const selectedItems = selectedClient ? SAMPLE_CLIENT_ITEMS.filter((i) => i.clientName === selectedClient) : [];
+  const selectedItems = selectedClient ? clientItems.filter((i) => i.client_name === selectedClient) : [];
 
   return (
     <div className="space-y-5">
-      <div className="rounded-lg border border-dashed border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-400">
-        UI preview — the numbers below are illustrative sample data, not live warehouse figures.
-      </div>
+      {shelves.length === 0 && (
+        <div className="rounded-lg border border-dashed border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-400">
+          No shelves registered yet — capacity below will read zero until shelves are added under Zone & Storage Status.
+        </div>
+      )}
 
-      {/* Warehouse capacity — overall + per zone */}
       <div className="rounded-xl border border-border bg-card p-4">
         <div className="mb-3 flex items-center gap-2 font-display text-sm font-semibold"><Weight className="h-4 w-4 text-primary/70" /> Warehouse Capacity</div>
         <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -80,8 +100,8 @@ export function ShelfDashboard() {
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          {SAMPLE_ZONE_CAPACITY.map((z) => {
-            const weightPct = (z.usedWeightKg / z.maxWeightKg) * 100;
+          {perZone.map((z) => {
+            const weightPct = z.maxWeightKg ? (z.usedWeightKg / z.maxWeightKg) * 100 : 0;
             const status = capacityStatus(weightPct);
             return (
               <div key={z.zone} className="rounded-lg border border-border/60 p-3">
@@ -92,7 +112,7 @@ export function ShelfDashboard() {
                 <div className="space-y-1.5 text-[11px] text-muted-foreground">
                   <div className="flex items-center justify-between"><span>Weight</span><span className="tabular-nums">{z.usedWeightKg.toLocaleString()} / {z.maxWeightKg.toLocaleString()} kg</span></div>
                   <Bar pct={weightPct} tone={toneFor(status)} />
-                  <div className="flex items-center justify-between pt-1"><span>Volume</span><span className="tabular-nums">{z.usedCbm} / {z.maxCbm} m³</span></div>
+                  <div className="flex items-center justify-between pt-1"><span>Volume</span><span className="tabular-nums">{z.usedCbm.toFixed(1)} / {z.maxCbm.toFixed(1)} m³</span></div>
                   <div className="flex items-center justify-between"><span>Shelves</span><span className="tabular-nums">{z.usedShelves} / {z.maxShelves}</span></div>
                 </div>
               </div>
@@ -101,7 +121,6 @@ export function ShelfDashboard() {
         </div>
       </div>
 
-      {/* Client + internal storage summary */}
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="rounded-xl border border-border bg-card p-4">
           <div className="mb-3 flex items-center gap-2 font-display text-sm font-semibold"><Ship className="h-4 w-4 text-primary/70" /> Client Storage — by space used</div>
@@ -133,7 +152,6 @@ export function ShelfDashboard() {
         </div>
       </div>
 
-      {/* Client storage details — packages/items for the selected client */}
       {selectedClient && (
         <div className="rounded-xl border border-border bg-card p-4">
           <div className="mb-3 flex items-center justify-between">
@@ -148,14 +166,19 @@ export function ShelfDashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/40">
-                {selectedItems.map((it) => (
-                  <tr key={it.refNo}>
-                    <td className="px-3 py-2 font-mono">{it.refNo}</td>
-                    <td className="px-3 py-2">{it.description}</td>
-                    <td className="px-3 py-2">{locationCode(it)}</td>
-                    <td className="px-3 py-2">{it.status}</td>
-                  </tr>
-                ))}
+                {selectedItems.map((it) => {
+                  const status = deriveStatus(it.due_date, it.status);
+                  return (
+                    <tr key={it.ref_no}>
+                      <td className="px-3 py-2 font-mono">{it.ref_no}</td>
+                      <td className="px-3 py-2">{it.description}</td>
+                      <td className="px-3 py-2">{locationCode(it)}</td>
+                      <td className="px-3 py-2">
+                        <span className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide", DISPLAY_STATUS_STYLE[status])}>{status}</span>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
