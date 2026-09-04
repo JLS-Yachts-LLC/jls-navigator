@@ -53,7 +53,14 @@ async function upsertAlert(
       .update({ severity: alert.severity, message: alert.message })
       .eq('id', existing.data[0].id)
   } else {
-    await (sb as any).from('compliance_alerts').insert(alert)
+    const { error } = await (sb as any).from('compliance_alerts').insert(alert)
+    // `compliance_alerts_open_identity_uniq` is the backstop for the lookup
+    // above — a partial unique index on (crew_id, alert_type, due_date) with
+    // NULLS NOT DISTINCT, where the alert is still open. A conflict means the
+    // alert is already raised, which is the desired end state, not a failure.
+    if (error && error.code !== '23505') {
+      console.error('[compliance] could not raise alert:', alert.alert_type, error.message)
+    }
   }
 }
 

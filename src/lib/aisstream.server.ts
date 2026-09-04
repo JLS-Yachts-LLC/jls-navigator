@@ -51,6 +51,28 @@ export interface AisYacht {
  * matches nothing when fed malformed values (IMO numbers, blanks, short codes),
  * so we normalise and validate before subscribing. Returns null if unusable.
  */
+/**
+ * AISStream's `time_utc` is a Go `time.Time` rendered with its default layout —
+ * "2026-09-04 02:35:17.024286886 +0000 UTC" — which Postgres cannot parse, so
+ * every position report carrying one was rejected with `invalid input syntax for
+ * type timestamp with time zone`. Returns null when the value is unusable, and
+ * the caller falls back to the current time.
+ */
+function parseAisTime(raw: unknown): string | null {
+  const s = String(raw ?? "").trim();
+  if (!s) return null;
+  const cleaned = s
+    // Drop the trailing zone NAME ("UTC", "CEST") — the numeric offset is kept.
+    .replace(/\s+[A-Za-z]{2,5}$/, "")
+    // Nanoseconds down to the milliseconds Date understands.
+    .replace(/(\.\d{3})\d+/, "$1")
+    .replace(/^(\d{4}-\d{2}-\d{2})[ ]/, "$1T")
+    // " +0000" → "+00:00": both the space and the missing colon defeat Date.
+    .replace(/\s*([+-]\d{2}):?(\d{2})$/, "$1:$2");
+  const d = new Date(cleaned);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
 function normaliseMmsi(raw: string | null): string | null {
   const digits = String(raw ?? "").replace(/\D/g, "");
   return /^\d{9}$/.test(digits) ? digits : null;
@@ -114,7 +136,7 @@ export async function syncAisPositions(
         course: pr.Cog ?? null,
         heading,
         navstat: pr.NavigationalStatus ?? null,
-        time: meta.time_utc ?? null,
+        time: parseAisTime(meta.time_utc),
       });
     } catch { /* ignore malformed frames */ }
   });

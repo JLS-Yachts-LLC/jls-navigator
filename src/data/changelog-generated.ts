@@ -10,6 +10,18 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "Compliance alerts stop duplicating themselves every time the checks run"
+      },
+      {
+        "type": "feature",
+        "title": "Backfill Import board photos from Monday's existing assets"
+      },
+      {
+        "type": "feature",
+        "title": "Real inline photo thumbnails on Import and Export boards"
+      },
+      {
+        "type": "fix",
         "title": "An invite that cannot be emailed gives you a link to send instead"
       },
       {
