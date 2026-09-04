@@ -29,10 +29,27 @@ function emailHtml(heading: string, intro: string, cta: string, link: string): s
   </body></html>`
 }
 
+export interface AuthLinkResult {
+  /** The email was accepted for delivery. NOT proof it arrived — see below. */
+  sent: boolean
+  /** The action link itself, so an admin can pass it on by another channel. */
+  link: string | null
+  error: string | null
+}
+
 /**
- * Generate an auth action link and email it via SES. Returns true on success,
- * false if the link couldn't be generated or the email failed (caller decides
- * how to surface that — the user account is unaffected either way).
+ * Generate an auth action link and email it.
+ *
+ * `sent` means Microsoft Graph accepted the message — which is not the same as
+ * the person receiving it. A mailbox that does not exist, or a quarantine rule,
+ * produces an accepted send and a bounce nobody sees. That is exactly how an
+ * invite came to be reported as delivered while the recipient had nothing: the
+ * old version returned a bare boolean, so a "successful" send was indistinguishable
+ * from a real one.
+ *
+ * So the link is returned too. Onboarding should never depend on an email
+ * arriving when the admin doing it is sitting right there and can paste it into
+ * Teams instead.
  */
 export async function sendAuthLinkViaSES(sb: any, opts: {
   email: string
@@ -42,15 +59,18 @@ export async function sendAuthLinkViaSES(sb: any, opts: {
   heading: string
   intro: string
   cta: string
-}): Promise<boolean> {
+}): Promise<AuthLinkResult> {
+  let link: string | null = null
   try {
     const { data, error } = await sb.auth.admin.generateLink({
       type: opts.type,
       email: opts.email,
       options: { redirectTo: opts.redirectTo },
     })
-    const link = data?.properties?.action_link
-    if (error || !link) return false
+    link = data?.properties?.action_link ?? null
+    if (error || !link) {
+      return { sent: false, link: null, error: error?.message ?? 'Could not generate the sign-in link' }
+    }
     await sendEmail({
       from: process.env.POLARIS_MAIL_SENDER ?? 'polaris@jlsyachts.com',
       to: [opts.email],
@@ -58,8 +78,10 @@ export async function sendAuthLinkViaSES(sb: any, opts: {
       html: emailHtml(opts.heading, opts.intro, opts.cta, link),
       text: `${opts.intro}\n\n${opts.cta}: ${link}`,
     })
-    return true
-  } catch {
-    return false
+    return { sent: true, link, error: null }
+  } catch (e) {
+    // The link is still good even though the email failed — hand it back so the
+    // admin can deliver it themselves rather than being stuck.
+    return { sent: false, link, error: e instanceof Error ? e.message : 'Email send failed' }
   }
 }

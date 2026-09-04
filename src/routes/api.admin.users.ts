@@ -179,8 +179,8 @@ const handlers = {
       if (!userId) return json({ error: createErr?.message ?? 'Invite failed' }, 400)
     }
 
-    // Primary: branded Polaris invite via SES. Fallback: Supabase's native invite.
-    let emailSent = await sendAuthLinkViaSES(sb, {
+    // Primary: branded Polaris invite. Fallback: Supabase's native invite.
+    const attempt = await sendAuthLinkViaSES(sb, {
       email,
       type: 'recovery',
       redirectTo: `${base}/auth`,
@@ -189,6 +189,7 @@ const handlers = {
       intro: 'An administrator has invited you to the Polaris operational platform. Set your password to activate your account.',
       cta: 'Set up my account',
     })
+    let emailSent = attempt.sent
     if (!emailSent) {
       const { error: inviteErr } = await sb.auth.admin.inviteUserByEmail(email, {
         data: { role }, redirectTo: `${base}/auth/mfa-setup`,
@@ -207,6 +208,9 @@ const handlers = {
       org_id:       org_id ?? (session.user.org_id ?? null),
       location_id:  location_id ?? null,
       active:       false,
+      // Evidence of what actually happened, so "invited" isn't an assumption.
+      invite_sent_at: emailSent ? new Date().toISOString() : null,
+      invite_error:   emailSent ? null : (attempt.error ?? 'Email send failed').slice(0, 500),
     }, { onConflict: 'user_id' })
     if (profileErr) return json({ error: `Invited, but profile setup failed: ${profileErr.message}` }, 500)
 
@@ -222,10 +226,17 @@ const handlers = {
       result:      'pending',
     })
 
+    // The link comes back whether or not the email went. Graph accepting a
+    // message is not the same as the person receiving it — a missing mailbox or
+    // a quarantine rule looks identical to success from here — so the admin
+    // always has something they can hand over directly.
     return json({
       success: true,
       emailSent,
-      warning: emailSent ? undefined : 'User created, but the invite email could not be sent. Use "Resend invite" once email is configured.',
+      link: attempt.link,
+      warning: emailSent
+        ? undefined
+        : 'The invite email could not be sent. Copy the sign-up link below and send it to them another way.',
     })
   },
 }

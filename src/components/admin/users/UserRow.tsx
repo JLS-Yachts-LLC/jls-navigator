@@ -39,6 +39,8 @@ export function UserRow({ userRole, roles, departments = [], onRefresh }: Props)
   const [deptBusy, setDeptBusy] = useState(false)
   const [busy, setBusy]         = useState(false)
   const [msg, setMsg]           = useState('')
+  /** Sign-in link from the last invite/reset, so it can be handed over directly. */
+  const [link, setLink]         = useState<string | null>(null)
 
   const email      = (userRole as any).user?.email ?? userRole.user_id
   const firstName  = (userRole as any).first_name ?? null
@@ -125,7 +127,17 @@ export function UserRow({ userRole, roles, departments = [], onRefresh }: Props)
       })
       const j = await res.json().catch(() => ({}))
       if (!res.ok) { setMsg(j.error ?? 'Failed'); return }
-      if (okMsg) { setMsg(okMsg); setTimeout(() => setMsg(''), 4000) }
+
+      // Hold on to the sign-in link so it can be copied. An accepted email is
+      // not a received one — a missing mailbox or a quarantine rule looks
+      // exactly like success from the server — so the link stays available
+      // whether or not the send reported success.
+      if (j.link) setLink(j.link)
+      if (j.sent === false) {
+        setMsg(j.error ? `Email failed: ${j.error} — copy the link instead` : 'Email failed — copy the link instead')
+      } else if (okMsg) {
+        setMsg(okMsg); setTimeout(() => setMsg(''), 4000)
+      }
       if (action === 'suspend' || action === 'unsuspend') onRefresh()
     } catch {
       setMsg('Network error')
@@ -249,6 +261,19 @@ export function UserRow({ userRole, roles, departments = [], onRefresh }: Props)
               Delete
             </button>
             {msg && <span className="text-[11.5px] text-cyan-600 dark:text-cyan-400">{msg}</span>}
+            {link && (
+              <button
+                type="button"
+                onClick={() => {
+                  void navigator.clipboard.writeText(link)
+                  setMsg('Link copied — send it to them directly')
+                }}
+                title={link}
+                className="rounded border border-cyan-500/40 px-2 py-1 text-[11.5px] text-cyan-500 hover:bg-cyan-500/10"
+              >
+                Copy sign-in link
+              </button>
+            )}
           </div>
         </td>
       </tr>

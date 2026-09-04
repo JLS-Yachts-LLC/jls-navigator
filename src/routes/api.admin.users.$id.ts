@@ -76,8 +76,8 @@ const handlers = {
       const base = process.env.VITE_APP_URL ?? new URL(request.url).origin
       const isReset = body.action === 'reset_password'
 
-      // Primary: branded Polaris email via SES. Fallback: Supabase's native send.
-      let sent = await sendAuthLinkViaSES(sb, {
+      // Primary: branded Polaris email. Fallback: Supabase's native send.
+      const attempt = await sendAuthLinkViaSES(sb, {
         email,
         type: 'recovery',
         redirectTo: `${base}/auth`,
@@ -88,13 +88,21 @@ const handlers = {
           : 'An administrator has invited you to the Polaris operational platform. Set your password to activate your account.',
         cta: isReset ? 'Reset my password' : 'Set up my account',
       })
+      let sent = attempt.sent
       if (!sent) {
         const { error: mailErr } = isReset
           ? await sb.auth.resetPasswordForEmail(email, { redirectTo: `${base}/auth` })
           : await sb.auth.admin.inviteUserByEmail(email, { redirectTo: `${base}/auth/mfa-setup` })
         sent = !mailErr
-        if (!sent) return json({ error: mailErr?.message ?? 'Email send failed' }, 400)
+        // A failed send is not a dead end when we hold a usable link.
+        if (!sent && !attempt.link) return json({ error: mailErr?.message ?? 'Email send failed' }, 400)
       }
+
+      // Record what happened, so "invited" is evidence rather than assumption.
+      await sb.from('user_profiles').update({
+        invite_sent_at: sent ? new Date().toISOString() : null,
+        invite_error: sent ? null : (attempt.error ?? 'Email send failed').slice(0, 500),
+      }).eq('user_id', id)
 
       await logAuditEvent({
         event_type:  body.action === 'reset_password' ? 'AUTH' : 'PERM',
@@ -103,13 +111,14 @@ const handlers = {
         actor_role:  session.user.role,
         target_type: 'user',
         target_id:   id,
-        detail:      body.action === 'reset_password'
+        detail:      (body.action === 'reset_password'
           ? `Password reset email sent to ${email}`
-          : `Invite re-sent to ${email}`,
+          : `Invite re-sent to ${email}`) + (sent ? '' : ' (email NOT delivered — link returned instead)'),
         ip_address:  request.headers.get('x-forwarded-for'),
-        result:      'success',
+        result:      sent ? 'success' : 'failed',
       })
-      return json({ success: true })
+      // The link goes back either way: email is a convenience, not the only route in.
+      return json({ success: true, sent, link: attempt.link, error: sent ? undefined : attempt.error })
     }
 
     if (body.action === 'role' && body.role) {
