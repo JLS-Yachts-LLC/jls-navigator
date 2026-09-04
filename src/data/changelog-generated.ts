@@ -5,6 +5,16 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.50.0",
+    "date": "2026-09-04",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Raise an Import shipment by scanning the air waybill"
+      }
+    ]
+  },
+  {
     "version": "2.49.0",
     "date": "2026-09-03",
     "entries": [
