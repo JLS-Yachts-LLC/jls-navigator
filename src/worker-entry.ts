@@ -300,6 +300,20 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
     }
   }
 
+  // Read-only diagnostic: `?run=monday-debug-import-assets` checks whether
+  // Monday's API actually returns real file/image asset data (not just text)
+  // for items on the Import board — scoping step before building a real
+  // image backfill. Writes nothing.
+  if (url.searchParams.get('run') === 'monday-debug-import-assets') {
+    try {
+      const { debugImportBoardAssets } = await import('./lib/shipsync/monday-import-board.server')
+      const r = await debugImportBoardAssets()
+      return new Response(JSON.stringify(r), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
+  }
+
   // Read-only diagnostic: `?run=package-debug&barcode=<tracking number>`
   // returns EVERY shipsync_packages row with this exact barcode, regardless
   // of monday_item_id — so a duplicate not created by the Monday sync isn't

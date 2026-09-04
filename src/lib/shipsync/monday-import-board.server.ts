@@ -346,6 +346,38 @@ async function importInner(): Promise<MondayImportBoardResult> {
   return { ok: errors === 0, synced, errors, pruned, detail }
 }
 
+/**
+ * Read-only diagnostic: checks whether Monday's API actually returns real
+ * file/image asset data for this board (public_url, name, extension) — the
+ * plain `column_values { text }` query the sync above uses never sees
+ * attachments, only whatever text Monday renders for the column, so this is
+ * the only way to know ahead of building a real backfill whether asset data
+ * is even available with this account's token/plan. Writes nothing.
+ */
+export async function debugImportBoardAssets(): Promise<Record<string, unknown>> {
+  const cfg = await getMondayConfig()
+  const data = await mondayGraphQL(
+    cfg.apiToken,
+    `query ($board: [ID!]) {
+       boards (ids: $board) {
+         items_page (limit: 25) {
+           items { id name assets { public_url name file_extension file_size } }
+         }
+       }
+     }`,
+    { board: [cfg.boardId] },
+  )
+  const items: { id: string; name: string; assets: { public_url: string; name: string; file_extension: string; file_size: number }[] }[] =
+    data?.boards?.[0]?.items_page?.items ?? []
+  const withAssets = items.filter((it) => (it.assets ?? []).length > 0)
+  return {
+    ok: true,
+    itemsChecked: items.length,
+    itemsWithAssets: withAssets.length,
+    sample: withAssets.slice(0, 5).map((it) => ({ id: it.id, name: it.name, assets: it.assets })),
+  }
+}
+
 /** Guarded by its own lock — can't run concurrently with itself, and never
  *  touches the Local sync's rows (scoped to local_import = 'Import' throughout). */
 export async function importMondayImportBoard(): Promise<MondayImportBoardResult> {
