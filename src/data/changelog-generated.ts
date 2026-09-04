@@ -10,6 +10,26 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "An invite that cannot be emailed gives you a link to send instead"
+      },
+      {
+        "type": "feature",
+        "title": "Drag-to-reorder columns on Export and EDAS boards"
+      },
+      {
+        "type": "feature",
+        "title": "Drag-to-reorder columns on the Import board"
+      },
+      {
+        "type": "fix",
+        "title": "Render warehouse image thumbnails through SignedImage"
+      },
+      {
+        "type": "fix",
+        "title": "Close spec gaps in Warehouse — package content dates/images, CBM ranking, search drill-down, shelf editing"
+      },
+      {
+        "type": "fix",
         "title": "Delivery photos, PODs and signatures are no longer public files"
       },
       {
