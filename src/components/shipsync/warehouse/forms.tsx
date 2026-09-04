@@ -199,7 +199,7 @@ function PackingRowImage({ pathPrefix, url, onChange }: { pathPrefix: string; ur
   }
   return (
     <div className="flex shrink-0 items-center gap-1.5">
-      {url && <img src={url} alt="" className="h-6 w-6 rounded object-cover border border-border" />}
+      {url && <SignedImage stored={url} alt="" className="h-6 w-6 rounded object-cover border border-border" />}
       <label className="inline-flex cursor-pointer items-center gap-1 rounded border border-dashed border-border px-2 py-1 text-[10.5px] text-muted-foreground hover:border-primary hover:text-primary">
         {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <ImagePlus className="h-3 w-3" />} {url ? "Replace" : "Image"}
         <input type="file" accept="image/*" className="hidden" disabled={busy} onChange={(e) => void handleFile(e.target.files?.[0])} />

@@ -1,6 +1,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { SignedImage } from "@/components/ui/signed-file";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -178,7 +179,7 @@ function RowActions({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => 
 
 function ImageThumb({ url }: { url: string | null }) {
   if (!url) return <span className="text-muted-foreground">—</span>;
-  return <img src={url} alt="" className="h-8 w-8 rounded object-cover border border-border" />;
+  return <SignedImage stored={url} className="h-8 w-8 rounded object-cover border border-border" />;
 }
 
 function ClientTable({ rows, selectedRef, onSelect, onEdit, onDelete }: {
