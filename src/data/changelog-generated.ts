@@ -5,6 +5,16 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.51.0",
+    "date": "2026-09-07",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Client links now use polaris.jlsyachts.com"
+      }
+    ]
+  },
+  {
     "version": "2.50.0",
     "date": "2026-09-04",
     "entries": [
