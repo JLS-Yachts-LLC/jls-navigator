@@ -51,7 +51,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { fmtDate, mondayRow, extraMondayColumns, DocumentDropzoneDialog, TableChartToggle, ShipSyncChartsPanel } from "@/components/shipsync/shared";
+import { fmtDate, mondayRow, extraMondayColumns, DocumentDropzoneDialog, TableChartToggle, ShipSyncChartsPanel, downloadCsv } from "@/components/shipsync/shared";
 import { loadImportPackages, patchPackage, createPackage, deletePackage, addPackageDocuments, removePackageDocument, uploadShipSyncFile } from "@/lib/shipsync/data";
 import { nextItemId, type ShipSyncPackage } from "@/lib/shipsync/model";
 import { syncMondayImportBoard, pushShipmentStatus } from "@/lib/shipsync/monday-import-board.server";
@@ -96,15 +96,22 @@ function mondayStatusColor(label: string): string {
 }
 
 /**
- * A finished state the Power App has actually recorded against the package, in
- * Monday's own wording where one fits.
+ * What the Status column shows.
  *
- * The Status column reads Monday's STATUS text, but a package delivered through
- * the ShipSync app updates our own `status` instead — which this board never
- * showed. 41 Import/Transit shipments were sitting here marked delivered with a
- * blank status cell. A scan is what physically happened, so it is shown ahead of
- * Monday's text; the dropdown still writes to Monday's STATUS as before.
+ * Monday's own STATUS text wins whenever it is set — it is what somebody last
+ * chose, here or on the board. `scanFinishedLabel` below only fills a blank.
+ *
+ * It was the other way round at first, to surface the 41 Import/Transit
+ * shipments the ShipSync app had marked delivered while Monday held no status
+ * for them at all. Overriding was too strong: a shipment set to Complete still
+ * displayed "Delivered - TBI" (its `status` was 'delivered' from the scan) and
+ * re-picking never appeared to do anything, because the scan label won every
+ * time. Filling a blank achieves the original aim without hiding a real choice.
  */
+function statusShown(p: ShipSyncPackage): string {
+  return mondayText(p, "STATUS") || scanFinishedLabel(p) || "";
+}
+
 function scanFinishedLabel(p: ShipSyncPackage): string | null {
   switch (p.status) {
     case "delivered":     return "Delivered - TBI";
@@ -127,6 +134,22 @@ const SHIPMENT_TYPE_LABELS: { label: string; color: string }[] = [
 ];
 function shipmentTypeColor(label: string): string {
   return SHIPMENT_TYPE_LABELS.find((s) => s.label === label)?.color ?? "#6b7280";
+}
+
+/**
+ * Header and value for one board cell in the export, driven by the same CELLS
+ * list the table renders from — so the spreadsheet matches the screen, including
+ * anything added to the board later. Cells holding files or images return null;
+ * there is nothing useful to put in a column for them.
+ */
+function exportCell(c: CellSpec, p: ShipSyncPackage): { label: string; value: string } | null {
+  switch (c.kind) {
+    case "field":        return { label: c.col.label, value: c.col.get(p) };
+    case "mondayStatus": return { label: "Status", value: statusShown(p) };
+    case "shipmentType": return { label: "Shipment Type", value: mondayText(p, "Shipment Type") };
+    case "edas":         return { label: "EDAS Required", value: mondayText(p, "EDAS Required") };
+    default:             return null;
+  }
 }
 
 function extraOf(p: ShipSyncPackage): Record<string, any> { return (p.extra as any) ?? {}; }
@@ -457,7 +480,7 @@ export function ShipSyncImportBoard() {
     for (const p of filtered) {
       // Same precedence as the Status cell, so the chart agrees with the rows
       // rather than reporting nothing for shipments the app has marked delivered.
-      const s = scanFinishedLabel(p) ?? mondayText(p, "STATUS");
+      const s = statusShown(p);
       if (s) counts.set(s, (counts.get(s) ?? 0) + 1);
     }
     return MONDAY_STATUS_LABELS.map((s) => ({ label: s.label, count: counts.get(s.label) ?? 0, color: s.color }));
@@ -490,6 +513,28 @@ export function ShipSyncImportBoard() {
 
   function toggle(title: string) { setCollapsed((p) => ({ ...p, [title]: !p[title] })); }
 
+  /**
+   * Everything currently on screen, in the board's own column order, as a
+   * spreadsheet. Group leads because that's how the board reads; the Monday-only
+   * extra columns trail, same as the table. Search and any other filtering are
+   * respected — you export what you are looking at, not the whole board.
+   */
+  function exportSpreadsheet() {
+    const specs = CELLS.map((c) => ({ c, sample: exportCell(c, filtered[0] ?? ({} as ShipSyncPackage)) }))
+      .filter((x) => x.sample !== null);
+    const headers = ["Group", ...specs.map((x) => x.sample!.label), ...mondayColumns];
+    const rows = groups.flatMap((g) =>
+      g.rows.map((p) => [
+        g.title,
+        ...specs.map((x) => exportCell(x.c, p)?.value ?? ""),
+        ...mondayColumns.map((title) => mondayText(p, title)),
+      ]),
+    );
+    if (rows.length === 0) { toast.error("Nothing to export"); return; }
+    downloadCsv(`shipsync-import-${new Date().toISOString().slice(0, 10)}.csv`, headers, rows);
+    toast.success(`Exported ${rows.length} shipment${rows.length === 1 ? "" : "s"}`);
+  }
+
   if (loading) {
     return <div className="flex h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
   }
@@ -521,6 +566,10 @@ export function ShipSyncImportBoard() {
             <Trash2 className="h-3.5 w-3.5" /> Delete {selected.size} selected
           </Button>
         )}
+        <Button size="sm" variant="outline" onClick={exportSpreadsheet} className="h-9 gap-1.5"
+          title="Download the shipments shown as a CSV — opens straight in Excel">
+          <ArrowDownToLine className="h-4 w-4" /> Export
+        </Button>
         <Button size="sm" variant="outline" onClick={() => void sync()} disabled={syncing} className="h-9 gap-1.5">
           {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Sync from Monday
         </Button>
@@ -623,8 +672,10 @@ export function ShipSyncImportBoard() {
                             }
                             if (c.kind === "mondayStatus") {
                               const current = mondayText(p, "STATUS");
-                              const scanned = scanFinishedLabel(p);
-                              const shown = scanned ?? current;
+                              // Only shown when Monday has nothing, so it can never
+                              // sit on top of a status someone has actually picked.
+                              const scanned = current ? null : scanFinishedLabel(p);
+                              const shown = statusShown(p);
                               return (
                                 <td key="mondayStatus" className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
                                   <Select value={current || undefined}

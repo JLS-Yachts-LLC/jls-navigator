@@ -336,6 +336,35 @@ export function ShipSyncChartsPanel({
 /** Column titles from `mondayRow`/`mondayColumnOrder` not already covered by a
  *  tab's own base columns — so real Monday data never goes missing, and nothing
  *  gets shown that isn't a genuine Monday column. */
+/**
+ * Download rows as a CSV that Excel opens cleanly — a UTF-8 BOM so accented
+ * names survive, CRLF line endings, and every value quoted.
+ *
+ * A leading =, +, - or @ is prefixed with an apostrophe: spreadsheets treat
+ * those as the start of a formula, which is both wrong and the standard CSV
+ * injection route.
+ *
+ * Excel will still helpfully reformat a long all-digit reference (an AWB, say)
+ * into scientific notation on open. Nothing in a .csv can stop that — a real
+ * .xlsx would be needed.
+ */
+export function downloadCsv(
+  filename: string,
+  headers: string[],
+  rows: (string | number | null | undefined)[][],
+): void {
+  const cell = (v: string | number | null | undefined) => {
+    let s = v == null ? "" : String(v);
+    if (/^[=+\-@]/.test(s)) s = `'${s}`;
+    return `"${s.replace(/"/g, '""')}"`;
+  };
+  const csv = [headers, ...rows].map((r) => r.map(cell).join(",")).join("\r\n");
+  const url = URL.createObjectURL(new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" }));
+  const a = Object.assign(document.createElement("a"), { href: url, download: filename });
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export function extraMondayColumns(rows: ShipSyncPackage[], covered: string[]): string[] {
   const isCovered = (title: string) => {
     const t = title.toLowerCase();
