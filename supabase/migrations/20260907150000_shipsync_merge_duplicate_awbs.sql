@@ -8,7 +8,10 @@
 --  2. Two SharePoint pulls overlapping (a list webhook landing while the
 --     5-minute cron is mid-pull) can both see the same list item as new and both
 --     insert it. Rare -- two shipments on 2026-09-07, 150ms apart, same
---     sp_item_id -- and closed off by the unique index at the foot of this file.
+--     sp_item_id. The unique index that closes that race off for good is a
+--     SEPARATE migration, deliberately: it has to run after this one, and a
+--     failure to create it must not roll back the merge (which is what happened
+--     on the first attempt, when the two were in one file and one transaction).
 --
 -- A naive delete would not have worked: whichever row still holds the upstream
 -- link gets recreated by the next sync. So the surviving row inherits BOTH links
@@ -22,8 +25,8 @@
 -- shipsync_duplicate_merge_backup, and the pairing is kept in
 -- shipsync_dup_merge_plan.
 --
--- Idempotent: the plan is only built for AWBs that still have two rows, so a
--- second run finds nothing to do.
+-- Idempotent: the plan is only built for AWBs that still have more than one
+-- row, so a second run finds nothing left to do.
 
 -- ── 1. Work out the pairs, once, so update and delete can't disagree ─────────
 
@@ -46,7 +49,9 @@ with dupes as (
   from public.shipsync_packages
   where local_import in ('Import', 'Transit') and coalesce(barcode, '') <> ''
   group by barcode
-  having count(*) = 2
+  -- Two OR MORE: one AWB turned up with three rows (the overlapping-pull race
+  -- can fire more than once), and an exact-pair rule silently skipped it.
+  having count(*) > 1
 ),
 ranked as (
   select
@@ -68,7 +73,7 @@ ranked as (
 insert into public.shipsync_dup_merge_plan (barcode, keep_id, drop_id)
 select k.barcode, k.id, l.id
 from ranked k
-join ranked l on l.barcode = k.barcode and l.rn = 2
+join ranked l on l.barcode = k.barcode and l.rn > 1
 where k.rn = 1 and k.monday_rows < 2
 on conflict (drop_id) do nothing;
 
@@ -125,12 +130,3 @@ where p.id = pl.keep_id;
 delete from public.shipsync_packages p
 using public.shipsync_dup_merge_plan pl
 where p.id = pl.drop_id;
-
--- ── 5. Stop the overlapping-pull race recreating any of this ────────────────
--- One SharePoint list item can only ever own one row. A concurrent pull that
--- tries to insert a second is refused by the database rather than quietly
--- doubling up.
-
-create unique index if not exists shipsync_packages_sp_item_id_key
-  on public.shipsync_packages ((extra->>'sp_item_id'))
-  where coalesce(extra->>'sp_item_id', '') <> '';
