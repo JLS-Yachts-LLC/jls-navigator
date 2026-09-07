@@ -20,7 +20,7 @@ import type { StampField } from './quotation-template-coords'
 const srBgCache = { bytes: null as Uint8Array | null, tried: false }
 async function fetchSrBackground(): Promise<Uint8Array | null> {
   if (srBgCache.bytes) return srBgCache.bytes
-  const base = process.env.VITE_APP_URL || 'https://jls-navigator.m-peeters-4a0.workers.dev'
+  const base = process.env.VITE_APP_URL || 'https://polaris.jlsyachts.com'
   const url = `${base.replace(/\/$/, '')}/qb-templates/sr-bg.pdf`
   try {
     const assets = (globalThis as Record<string, any>).__CF_ENV?.ASSETS

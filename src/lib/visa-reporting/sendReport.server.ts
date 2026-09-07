@@ -77,7 +77,7 @@ export async function sendVesselVisaReport(
 
   const base =
     process.env.VITE_APP_URL ??
-    "https://jls-navigator.m-peeters-4a0.workers.dev";
+    "https://polaris.jlsyachts.com";
   const { subject, html, text } = buildVisaReportEmail({
     vesselName: yacht.vessel_name ?? "Vessel",
     reportDate: report.report_date,

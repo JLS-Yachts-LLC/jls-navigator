@@ -245,7 +245,7 @@ const tiBgCache = new Map<string, Uint8Array>()
 async function fetchTiBackground(variant: string): Promise<Uint8Array | null> {
   const cached = tiBgCache.get(variant)
   if (cached) return cached
-  const base = process.env.VITE_APP_URL || 'https://jls-navigator.m-peeters-4a0.workers.dev'
+  const base = process.env.VITE_APP_URL || 'https://polaris.jlsyachts.com'
   const url = `${base.replace(/\/$/, '')}/qb-templates/ti-bg-${variant}.pdf`
   try {
     const assets = (globalThis as Record<string, any>).__CF_ENV?.ASSETS

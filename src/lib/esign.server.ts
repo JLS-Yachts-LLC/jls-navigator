@@ -39,7 +39,7 @@ function baseUrl(origin: string | null): string {
     (process.env.VITE_APP_URL as string | undefined) ||
     (process.env.PUBLIC_APP_URL as string | undefined) ||
     origin ||
-    "https://jls-navigator.m-peeters-4a0.workers.dev"
+    "https://polaris.jlsyachts.com"
   ).replace(/\/$/, "");
 }
 

@@ -108,7 +108,7 @@ const bgCache = new Map<string, Uint8Array>()
 async function fetchProformaBackground(variant: string): Promise<Uint8Array | null> {
   const cached = bgCache.get(variant)
   if (cached) return cached
-  const base = process.env.VITE_APP_URL || 'https://jls-navigator.m-peeters-4a0.workers.dev'
+  const base = process.env.VITE_APP_URL || 'https://polaris.jlsyachts.com'
   const url = `${base.replace(/\/$/, '')}/qb-templates/proforma-bg-${variant}.pdf`
   try {
     // A Worker cannot fetch its own hostname — read via the static ASSETS binding.

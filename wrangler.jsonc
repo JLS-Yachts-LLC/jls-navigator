@@ -15,7 +15,12 @@
   "vars": {
     "SUPABASE_URL": "https://cqzdroabjcdyncfqwawy.supabase.co",
     "SUPABASE_PUBLISHABLE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxemRyb2FiamNkeW5jZnF3YXd5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg4MjkyNjYsImV4cCI6MjA5NDQwNTI2Nn0.ZHjXFJuUCFa3aRHnUVvSK1pBxwtxZ5nWrdELlsT96-c",
-    "VITE_APP_URL": "https://jls-navigator.m-peeters-4a0.workers.dev",
+    // The public face of the platform. Every link a client is sent — secure
+    // document links, e-Sign invitations, portal invites, password setup — is
+    // built from this, so it must be the branded hostname and not the
+    // workers.dev address the Worker also answers on.
+    "VITE_APP_URL": "https://polaris.jlsyachts.com",
+    "DOCUMENT_SHARE_BASE_URL": "https://polaris.jlsyachts.com",
 
     // ── Outbound email — MANUAL SENDS ON, AUTOMATIC SENDS OFF (1 Sep 2026) ───
     // Frozen on 2026-08-15 after client vessels received "<vessel> - TDRA" notices

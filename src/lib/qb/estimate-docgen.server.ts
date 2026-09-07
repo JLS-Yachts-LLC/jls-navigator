@@ -210,7 +210,7 @@ const bgCache = new Map<QuotationVariant, Uint8Array>()
 async function fetchBackground(variant: QuotationVariant): Promise<Uint8Array | null> {
   const cached = bgCache.get(variant)
   if (cached) return cached
-  const base = process.env.VITE_APP_URL || 'https://jls-navigator.m-peeters-4a0.workers.dev'
+  const base = process.env.VITE_APP_URL || 'https://polaris.jlsyachts.com'
   const url = `${base.replace(/\/$/, '')}/qb-templates/quotation-bg-${variant}.pdf`
   try {
     // In production a Worker CANNOT fetch its own hostname (Cloudflare blocks

@@ -220,7 +220,7 @@ export async function runWeeklyImmigrationReports(): Promise<{ signOn: number; s
     .map((p: any) => p.email as string)
   if (recipients.length === 0) return { signOn: on.length, signOff: off.length, sent: 0 }
 
-  const base = process.env.VITE_APP_URL ?? 'https://jls-navigator.m-peeters-4a0.workers.dev'
+  const base = process.env.VITE_APP_URL ?? 'https://polaris.jlsyachts.com'
   const list = (arr: any[]) => arr.length
     ? `<ul style="margin:4px 0 0;padding-left:18px">${arr.map((a) => `<li>${nm(a)} — ${vs(a)} (${d(a.event_date)})</li>`).join('')}</ul>`
     : '<p style="margin:4px 0 0;color:#6b7280">None scheduled.</p>'

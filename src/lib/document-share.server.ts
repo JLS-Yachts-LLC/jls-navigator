@@ -76,16 +76,18 @@ export function reqMeta(request?: Request): { ip: string | null; ua: string | nu
 }
 
 /**
- * The domain client links are built on. `polaris.jlsyachts.com` is the intended
- * public face; until DNS points at the Worker, VITE_APP_URL keeps links working
- * on whatever host is actually serving.
+ * The domain client links are built on — `polaris.jlsyachts.com`, live since
+ * 7 Sep 2026. The env vars come first so it can be repointed without a code
+ * change; the literal is the last resort, and must never be the workers.dev
+ * address, or a missing variable would quietly put the raw hostname in front of
+ * a client.
  */
 export function shareBaseUrl(origin?: string | null): string {
   return (
     (process.env.DOCUMENT_SHARE_BASE_URL as string | undefined) ||
     (process.env.VITE_APP_URL as string | undefined) ||
     origin ||
-    "https://jls-navigator.m-peeters-4a0.workers.dev"
+    "https://polaris.jlsyachts.com"
   ).replace(/\/$/, "");
 }
 

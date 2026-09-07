@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "Vessel positions from the AIS feed are no longer rejected"
+      },
+      {
+        "type": "fix",
         "title": "Compliance alerts stop duplicating themselves every time the checks run"
       },
       {
