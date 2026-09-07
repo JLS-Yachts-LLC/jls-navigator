@@ -1,9 +1,10 @@
 import { SignedAnchor, SignedImage } from "@/components/ui/signed-file";
-import { Fragment, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -33,7 +34,7 @@ function statusBorder(status: PackageStatus): string {
 }
 // Terminal states start collapsed — everything still-in-progress starts open,
 // same balance the old "Active" status filter struck by default.
-const DEFAULT_COLLAPSED: PackageStatus[] = ["delivered", "collected", "refused"];
+const DEFAULT_COLLAPSED: PackageStatus[] = ["delivered", "collected", "refused", "completed"];
 // 'assigned' and 'out_for_delivery' only mean anything alongside a delivery
 // note + driver (set together by Routing → Dispatch, or the driver app) — a
 // bare status flip here can't provide either, so picking one from a free
@@ -69,8 +70,9 @@ const STAGES = {
   },
   delivered: {
     label: "Delivered",
-    hint: "Completed — delivered to the vessel or collected by the client.",
-    match: (s: PackageStatus) => s === "delivered" || s === "collected",
+    hint: "Delivered to the vessel or collected by the client — including anything waiting to be invoiced.",
+    match: (s: PackageStatus) =>
+      s === "delivered" || s === "collected" || s === "delivered_tbi" || s === "completed",
   },
 } as const;
 type Stage = keyof typeof STAGES;
@@ -90,6 +92,12 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
   const [scanOpen, setScanOpen] = useState(false);
   const [view, setView] = useState<"table" | "chart">("table");
   const [stage, setStage] = useState<Stage>("active");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulk, setBulk] = useState<{ status: string; description: string; invoice_no: string }>(
+    { status: "", description: "", invoice_no: "" },
+  );
+  const [bulkBusy, setBulkBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const set = (p: Form) => setForm((f) => ({ ...f, ...p }));
 
@@ -109,7 +117,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
     if (!STAGES[stage].match(p.status)) return false;
     if (search.trim()) {
       const s = search.toLowerCase();
-      if (![p.barcode, p.boat_name, p.package_owner, p.courier, p.description]
+      if (![p.barcode, p.boat_name, p.package_owner, p.courier, p.description, p.invoice_no]
         .join(" ").toLowerCase().includes(s)) return false;
     }
     return true;
@@ -145,6 +153,54 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
     setCollapsed((prev) => ({ ...prev, [status]: !prev[status] }));
   }
 
+  // Ticked rows only mean anything in the view they were ticked in. Selection
+  // surviving a stage or search change would leave rows you can no longer see
+  // still selected — and then updated by the bulk action.
+  useEffect(() => { setSelected(new Set()); }, [stage, search]);
+
+  const allShownSelected = filtered.length > 0 && filtered.every((p) => selected.has(p.id));
+
+  function toggleAllShown() {
+    setSelected(allShownSelected ? new Set() : new Set(filtered.map((p) => p.id)));
+  }
+
+  function toggleOne(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  function openBulk() {
+    setBulk({ status: "", description: "", invoice_no: "" });
+    setBulkOpen(true);
+  }
+
+  /** Applies only the fields actually filled in — anything left blank is left alone. */
+  async function applyBulk() {
+    const patch: Partial<ShipSyncPackage> = {};
+    if (bulk.status) patch.status = bulk.status as PackageStatus;
+    if (bulk.description.trim()) patch.description = bulk.description.trim();
+    if (bulk.invoice_no.trim()) patch.invoice_no = bulk.invoice_no.trim();
+    if (Object.keys(patch).length === 0) { toast.error("Set a status, remarks or an invoice number first"); return; }
+
+    const ids = [...selected];
+    setBulkBusy(true);
+    let failed = 0;
+    try {
+      for (const id of ids) {
+        try { await patchPackage(id, patch); } catch { failed++; }
+      }
+      const done = ids.length - failed;
+      if (done) toast.success(`Updated ${done} package${done === 1 ? "" : "s"}`);
+      if (failed) toast.error(`${failed} could not be updated`);
+      setBulkOpen(false);
+      setSelected(new Set());
+      await reload();
+    } finally { setBulkBusy(false); }
+  }
+
   function openNew() { setForm(EMPTY); setPhoto(null); setOpen(true); }
   function openEdit(p: ShipSyncPackage) { setForm({ ...p }); setPhoto(null); setOpen(true); }
 
@@ -166,6 +222,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
         warehouse_zone: form.warehouse_zone ?? null,
         status: form.status ?? "in_office",
         delivery_note_no: form.delivery_note_no?.trim() || null,
+        invoice_no: form.invoice_no?.trim() || null,
         received_by: form.received_by?.trim() || null,
         planned_delivery_date: form.planned_delivery_date || null,
         description: form.description?.trim() || null,
@@ -252,6 +309,16 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
         <Button size="sm" onClick={openNew} className="ml-auto h-9 gap-1.5"><Plus className="h-4 w-4" /> Check in package</Button>
       </div>
 
+      {/* Only while rows are ticked. The count is of the selection, not the
+          view — the two can't diverge, since changing stage or search clears it. */}
+      {selected.size > 0 && view === "table" && (
+        <div className="mb-3 flex shrink-0 flex-wrap items-center gap-2.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
+          <span className="text-[12.5px] font-medium">{selected.size} selected</span>
+          <Button size="sm" className="h-8 gap-1.5" onClick={openBulk}>Update selected</Button>
+          <Button size="sm" variant="ghost" className="h-8" onClick={() => setSelected(new Set())}>Clear</Button>
+        </div>
+      )}
+
       {view === "chart" ? (
         <div className="min-h-0 flex-1 overflow-auto">
           <ShipSyncChartsPanel rows={filtered} statusData={chartData} title="Local packages" />
@@ -270,7 +337,14 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
               {/* The delivery note used to have its own column; it now sits with
                   everything else under Documents, so all of a package's paperwork
                   is in one place. */}
-              {["Air waybill/tracking info", "Client", "Date Received", "Received Photo", "Consignee", "Receiver", "Number of Packages", "Courier", "Shipment Type", "Delivery Note Number", "Driver", "Date Delivered", "Delivery Photo", "Documents", "Status"].map((h, i) => (
+              <th className="w-9 px-3 py-2.5">
+                <Checkbox
+                  checked={allShownSelected}
+                  onCheckedChange={toggleAllShown}
+                  aria-label="Select every package shown"
+                />
+              </th>
+              {["Air waybill/tracking info", "Client", "Date Received", "Received Photo", "Consignee", "Receiver", "Number of Packages", "Courier", "Shipment Type", "Delivery Note Number", "Driver", "Date Delivered", "Delivery Photo", "Documents", "Invoice Number", "Status"].map((h, i) => (
                 <th key={`${h}-${i}`} className="px-3 py-2.5 whitespace-nowrap">{h}</th>
               ))}
               <th></th>
@@ -278,7 +352,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
           </thead>
           <tbody>
             {groups.length === 0 ? (
-              <tr><td colSpan={16} className="px-4 py-12 text-center text-sm text-muted-foreground">
+              <tr><td colSpan={18} className="px-4 py-12 text-center text-sm text-muted-foreground">
                 {data.packages.length === 0 ? (
                   <div className="flex flex-col items-center gap-3">
                     <span>No packages yet — check one in to get started.</span>
@@ -291,7 +365,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
               return (
                 <Fragment key={g.status}>
                   <tr>
-                    <td colSpan={16} className="p-0">
+                    <td colSpan={18} className="p-0">
                       {/* sticky left-0 on the INNER wrapper (not the td — a
                           colSpan cell already spans the full row, so making
                           IT sticky does nothing to its content's position):
@@ -317,6 +391,13 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
                       : null;
                     return (
                       <tr key={p.id} onClick={() => openEdit(p)} className="group cursor-pointer shadow-[inset_0_-1px_0_0_var(--border)] hover:bg-accent/20">
+                        <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+                          <Checkbox
+                            checked={selected.has(p.id)}
+                            onCheckedChange={() => toggleOne(p.id)}
+                            aria-label={`Select ${p.barcode ?? p.boat_name ?? "package"}`}
+                          />
+                        </td>
                         <td className="px-3 py-2.5 font-mono text-[12px] text-foreground whitespace-nowrap">{p.barcode ?? "—"}</td>
                         <td className="px-3 py-2.5 font-medium whitespace-nowrap">{p.boat_name ?? "—"}</td>
                         <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{fmtDate(p.received_at)}</td>
@@ -379,6 +460,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
                             </div>
                           )}
                         </td>
+                        <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{p.invoice_no ?? "—"}</td>
                         <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
                           <Select value={p.status} onValueChange={(v) => quickStatus(p, v as PackageStatus)}>
                             <SelectTrigger className="h-7 w-[132px] border-none bg-transparent p-0 hover:bg-accent/40"><StatusBadge status={p.status} /></SelectTrigger>
@@ -440,6 +522,8 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
                 <SelectContent>{MANUAL_STATUS_OPTIONS.map((s) => <SelectItem key={s} value={s}>{STATUS_META[s].label}</SelectItem>)}</SelectContent></Select></div>
             <div className="space-y-1.5"><Label className="text-xs">Delivery note no.</Label>
               <Input value={form.delivery_note_no ?? ""} onChange={(e) => set({ delivery_note_no: e.target.value })} className="h-9" placeholder="e.g. 1962" /></div>
+            <div className="space-y-1.5"><Label className="text-xs">Invoice number</Label>
+              <Input value={form.invoice_no ?? ""} onChange={(e) => set({ invoice_no: e.target.value })} className="h-9" placeholder="Once invoiced" /></div>
             <div className="space-y-1.5"><Label className="text-xs">Received by (JLS)</Label>
               <Input value={form.received_by ?? ""} onChange={(e) => set({ received_by: e.target.value })} className="h-9" /></div>
             <div className="space-y-1.5"><Label className="text-xs">Planned delivery</Label>
@@ -460,6 +544,44 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)} disabled={busy}>Cancel</Button>
             <Button onClick={save} disabled={busy} className="gap-1.5">{busy && <Loader2 className="h-4 w-4 animate-spin" />} {form.id ? "Save" : "Check in"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk update — anything left blank is left as it is, so one field can be
+          set across a selection without touching the other two. */}
+      <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Update {selected.size} package{selected.size === 1 ? "" : "s"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            <p className="text-[12px] text-muted-foreground">Only the fields you fill in are changed. Leave one blank to keep what each package already has.</p>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Status</Label>
+              <Select value={bulk.status} onValueChange={(v) => setBulk((b) => ({ ...b, status: v }))}>
+                <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Leave unchanged" /></SelectTrigger>
+                <SelectContent>
+                  {MANUAL_STATUS_OPTIONS.map((s) => <SelectItem key={s} value={s}>{STATUS_META[s].label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Invoice number</Label>
+              <Input value={bulk.invoice_no} onChange={(e) => setBulk((b) => ({ ...b, invoice_no: e.target.value }))}
+                className="h-9" placeholder="Leave unchanged" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Remarks</Label>
+              <Textarea rows={2} value={bulk.description} onChange={(e) => setBulk((b) => ({ ...b, description: e.target.value }))}
+                className="resize-none text-sm" placeholder="Leave unchanged — this replaces the remarks on every selected package" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkOpen(false)} disabled={bulkBusy}>Cancel</Button>
+            <Button onClick={applyBulk} disabled={bulkBusy} className="gap-1.5">
+              {bulkBusy && <Loader2 className="h-4 w-4 animate-spin" />} Update {selected.size}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

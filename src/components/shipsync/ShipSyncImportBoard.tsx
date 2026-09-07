@@ -107,9 +107,13 @@ function mondayStatusColor(label: string): string {
  */
 function scanFinishedLabel(p: ShipSyncPackage): string | null {
   switch (p.status) {
-    case "delivered": return "Delivered - TBI";
-    case "collected": return "Delivered - TBI";
-    case "refused":   return "Refused";
+    case "delivered":     return "Delivered - TBI";
+    case "collected":     return "Delivered - TBI";
+    // Set deliberately on Local Packages, so it maps to Monday's own wording
+    // rather than being inferred from a plain delivery.
+    case "delivered_tbi": return "Delivered - TBI";
+    case "completed":     return "Complete";
+    case "refused":       return "Refused";
     default:          return null;
   }
 }

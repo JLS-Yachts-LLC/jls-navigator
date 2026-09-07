@@ -10,7 +10,8 @@ import { supabase } from '@/integrations/supabase/client'
 
 export type PackageStatus =
   | 'in_office' | 'in_storage' | 'assigned' | 'out_for_delivery'
-  | 'delivered' | 'to_collect' | 'collected' | 'refused'
+  | 'delivered' | 'delivered_tbi' | 'completed'
+  | 'to_collect' | 'collected' | 'refused'
 
 export const STATUS_META: Record<PackageStatus, { label: string; tone: string }> = {
   in_office:        { label: 'In office',        tone: 'sky' },
@@ -18,6 +19,10 @@ export const STATUS_META: Record<PackageStatus, { label: string; tone: string }>
   assigned:         { label: 'Assigned',         tone: 'amber' },
   out_for_delivery: { label: 'Out for delivery', tone: 'orange' },
   delivered:        { label: 'Delivered',        tone: 'emerald' },
+  // Delivered but not yet invoiced, then closed off. Same wording as the
+  // equivalent Monday labels on the Import board, so both tabs read alike.
+  delivered_tbi:    { label: 'Delivered - TBI',  tone: 'amber' },
+  completed:        { label: 'Completed',        tone: 'emerald' },
   to_collect:       { label: 'To collect',       tone: 'amber' },
   collected:        { label: 'Collected',        tone: 'emerald' },
   refused:          { label: 'Refused',          tone: 'red' },
@@ -27,7 +32,9 @@ export const STATUS_META: Record<PackageStatus, { label: string; tone: string }>
 export const ACTIVE_STATUSES: PackageStatus[] = [
   'in_office', 'in_storage', 'assigned', 'out_for_delivery', 'to_collect',
 ]
-export const DONE_STATUSES: PackageStatus[] = ['delivered', 'collected', 'refused']
+export const DONE_STATUSES: PackageStatus[] = [
+  'delivered', 'delivered_tbi', 'completed', 'collected', 'refused',
+]
 
 export type DeliveryNoteStatus = 'open' | 'dispatched' | 'delivered' | 'cancelled'
 
@@ -138,6 +145,8 @@ export interface ShipSyncPackage {
   item_photo_url: string | null
   office_photo_url: string | null
   delivery_note_no: string | null
+  /** Invoice raised for this package — shown and searchable on Local Packages. */
+  invoice_no: string | null
   documents: { name: string; url: string }[] | null
   boe_no: string | null
   trade_type: string | null

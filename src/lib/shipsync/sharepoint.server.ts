@@ -23,7 +23,13 @@ const LIST_PACKAGES = () => env('SHIPSYNC_SP_PACKAGES_LIST') ?? 'Packages'
 // Our status → the SharePoint "Status" choice text (legacy vocabulary).
 const SP_STATUS: Record<PackageStatus, string> = {
   in_office: 'In Office', in_storage: 'In Storage', assigned: 'Assigned',
-  out_for_delivery: 'Out for Delivery', delivered: 'Delivered',
+  out_for_delivery: 'Out for Delivery',
+  // The Power App's Status choice list has no invoicing states, so both of ours
+  // push as Delivered. They must stay ABOVE plain 'delivered': the import
+  // reverses this map with Object.fromEntries, where the LAST duplicate value
+  // wins, so 'delivered' has to be the final owner of 'Delivered'.
+  delivered_tbi: 'Delivered', completed: 'Delivered',
+  delivered: 'Delivered',
   to_collect: 'Client to Collect', collected: 'Client Collected', refused: 'Client Refused',
 }
 

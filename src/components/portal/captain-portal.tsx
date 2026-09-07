@@ -1490,6 +1490,7 @@ type LogPackage = { id: string; barcode: string | null; courier: string | null; 
 const PKG_LABEL: Record<string, string> = {
   in_office: "In office", in_storage: "Warehouse", assigned: "Assigned",
   out_for_delivery: "Out for delivery", delivered: "Delivered",
+  delivered_tbi: "Delivered - TBI", completed: "Completed",
   to_collect: "To collect", collected: "Collected", refused: "Refused",
 };
 const PKG_BADGE: Record<string, string> = {
