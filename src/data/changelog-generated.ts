@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-09-07",
     "entries": [
       {
+        "type": "fix",
+        "title": "A status you pick on the Import board is the status it shows, and the board can be exported"
+      },
+      {
         "type": "feature",
         "title": "A staff member can belong to more than one department"
       },
