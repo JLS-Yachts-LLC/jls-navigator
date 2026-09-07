@@ -91,15 +91,26 @@ export async function deriveClaims(sb: SupabaseClient, user: User): Promise<Pola
     .maybeSingle();
 
   if (profile) {
+    // Someone can belong to several departments (user_departments); the single
+    // user_profiles.department is only the primary one, kept for display.
+    const { data: deptRows } = await (sb as any)
+      .from("user_departments").select("department").eq("user_id", user.id);
+    const departments: string[] = (deptRows ?? [])
+      .map((d: any) => d.department)
+      .filter(Boolean);
+    // Fall back to the profile column if the join table has nothing for them —
+    // covers a row added out of band, and any moment before the backfill ran.
+    if (!departments.length && profile.department) departments.push(profile.department);
+
     const [vessels, modules, deptPerms] = await Promise.all([
       (sb as any).from("user_vessel_access").select("vessel_id, active").eq("user_id", user.id),
       (sb as any).from("user_module_access").select("permission_level, active, modules:module_id(name)").eq("user_id", user.id),
       // Department defaults. Skipped entirely when the person has no department,
       // so they simply keep whatever their own grants give them.
-      profile.department
+      departments.length
         ? (sb as any).from("department_permissions")
             .select("module_slug, can_view, can_create, can_edit")
-            .eq("department", profile.department)
+            .in("department", departments)
         : Promise.resolve({ data: [] }),
     ]);
     const roleName = normRole(profile.roles?.name ?? null);
@@ -111,7 +122,13 @@ export async function deriveClaims(sb: SupabaseClient, user: User): Promise<Pola
     for (const d of deptPerms.data ?? []) {
       if (!d.module_slug) continue;
       const level = departmentLevel(d);
-      if (level) moduleLevels[d.module_slug] = level;
+      if (!level) continue;
+      // Across several departments the most generous default wins — belonging to
+      // a second department can only ever add access, never take it away.
+      const current = moduleLevels[d.module_slug];
+      if (!current || PERMISSION_ORDER.indexOf(level) > PERMISSION_ORDER.indexOf(current)) {
+        moduleLevels[d.module_slug] = level;
+      }
     }
     for (const m of modules.data ?? []) {
       const name = m.modules?.name;

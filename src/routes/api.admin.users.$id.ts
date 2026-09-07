@@ -28,6 +28,8 @@ const handlers = {
       action: 'role' | 'department' | 'suspend' | 'unsuspend' | 'reset_password' | 'resend_invite' | 'name'
       role?: string          // a roles.name value
       department?: string | null   // a staff_departments.slug, or null to clear
+      /** The whole set of departments — replaces whatever they had. */
+      departments?: string[]
       // action: 'name' — first/last go to `profiles`, display_name to user_profiles
       first_name?: string
       last_name?: string
@@ -40,18 +42,39 @@ const handlers = {
     // Department drives DEFAULT module access via department_permissions;
     // any per-user row in user_module_access still overrides it.
     if (body.action === 'department') {
-      const slug = body.department ? String(body.department) : null
-      if (slug) {
-        const { data: dept } = await sb
-          .from('staff_departments').select('slug').eq('slug', slug).eq('active', true).maybeSingle()
-        if (!dept) return json({ error: `Unknown department: ${slug}` }, 400)
-      }
-      const { data: before } = await sb
-        .from('user_profiles').select('email, department').eq('user_id', id).maybeSingle()
-      const { error } = await sb
-        .from('user_profiles').update({ department: slug }).eq('user_id', id)
-      if (error) return json({ error: error.message }, 500)
+      // Someone can sit in several departments. `departments` is the whole set;
+      // the single `department` is still accepted so nothing older breaks.
+      const slugs = Array.isArray(body.departments)
+        ? [...new Set(body.departments.map((d) => String(d)).filter(Boolean))]
+        : body.department ? [String(body.department)] : []
 
+      if (slugs.length) {
+        const { data: valid } = await sb
+          .from('staff_departments').select('slug').in('slug', slugs).eq('active', true)
+        const known = new Set((valid ?? []).map((d: any) => d.slug))
+        const unknown = slugs.filter((s) => !known.has(s))
+        if (unknown.length) return json({ error: `Unknown department: ${unknown.join(', ')}` }, 400)
+      }
+
+      const { data: before } = await sb
+        .from('user_profiles').select('email').eq('user_id', id).maybeSingle()
+      const { data: beforeDepts } = await sb
+        .from('user_departments').select('department').eq('user_id', id)
+      const previous = (beforeDepts ?? []).map((d: any) => d.department).sort()
+
+      // Replace the set. The trigger on user_departments keeps
+      // user_profiles.department pointing at the primary one.
+      const { error: delErr } = await sb.from('user_departments').delete().eq('user_id', id)
+      if (delErr) return json({ error: delErr.message }, 500)
+      if (slugs.length) {
+        const { error: insErr } = await sb.from('user_departments')
+          .insert(slugs.map((department) => ({ user_id: id, department })))
+        if (insErr) return json({ error: insErr.message }, 500)
+      } else {
+        // No departments left — the trigger only fires per row, so clear the
+        // primary here.
+        await sb.from('user_profiles').update({ department: null }).eq('user_id', id)
+      }
       await logAuditEvent({
         event_type:  'PERM',
         actor_id:    session.user.id,
@@ -60,11 +83,16 @@ const handlers = {
         target_type: 'user',
         target_id:   id,
         target_label: (before as any)?.email ?? id,
-        detail:      `Department changed: ${(before as any)?.department ?? 'none'} → ${slug ?? 'none'}`,
+        detail:      `Departments changed: ${previous.join(', ') || 'none'} → ${[...slugs].sort().join(', ') || 'none'}`,
         ip_address:  request.headers.get('x-forwarded-for'),
         result:      'success',
       })
-      return json({ success: true, department: slug })
+
+      // The primary is whatever the trigger settled on — read it back rather
+      // than guessing, so the caller shows the same thing the list will.
+      const { data: after } = await sb
+        .from('user_profiles').select('department').eq('user_id', id).maybeSingle()
+      return json({ success: true, departments: slugs, department: (after as any)?.department ?? null })
     }
 
     if (body.action === 'reset_password' || body.action === 'resend_invite') {

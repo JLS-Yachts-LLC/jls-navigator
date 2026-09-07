@@ -35,7 +35,10 @@ export function UserRow({ userRole, roles, departments = [], onRefresh }: Props)
   const [modulesOpen, setModulesOpen] = useState(false)
   // Department drives which modules the person sees (via department_permissions),
   // so it is set right here on the row rather than only at invite time.
-  const [dept, setDept] = useState<string>((userRole as any).department ?? '')
+  // Every department this person belongs to; the list sends the whole set back.
+  const [depts, setDepts] = useState<string[]>(
+    (userRole as any).departments ?? ((userRole as any).department ? [(userRole as any).department] : []),
+  )
   const [deptBusy, setDeptBusy] = useState(false)
   const [busy, setBusy]         = useState(false)
   const [msg, setMsg]           = useState('')
@@ -84,11 +87,15 @@ export function UserRow({ userRole, roles, departments = [], onRefresh }: Props)
     }
   }
 
-  /** Move the person to another department — this changes which modules they
-   *  can see, so the list is refreshed and their claims re-derive on next load. */
-  async function changeDept(next: string) {
-    const previous = dept
-    setDept(next)
+  const nameOf = (slug: string) => departments.find((d) => d.slug === slug)?.name ?? slug
+
+  /** Add or remove one department — the whole set is sent, since that is what
+   *  the endpoint replaces. Changing it changes which modules they can see, so
+   *  the list refreshes and their claims re-derive on next load. */
+  async function toggleDept(slug: string, checked: boolean) {
+    const previous = depts
+    const next = checked ? [...depts, slug] : depts.filter((d) => d !== slug)
+    setDepts(next)
     setDeptBusy(true)
     setMsg('')
     try {
@@ -98,15 +105,15 @@ export function UserRow({ userRole, roles, departments = [], onRefresh }: Props)
           'Content-Type': 'application/json',
           Authorization: `Bearer ${(session as any)?.access_token ?? ''}`,
         },
-        body: JSON.stringify({ action: 'department', department: next || null }),
+        body: JSON.stringify({ action: 'department', departments: next }),
       })
       const j = await res.json().catch(() => ({}))
-      if (!res.ok) { setDept(previous); setMsg(j.error ?? 'Could not change department'); return }
-      setMsg(next ? 'Department updated' : 'Department cleared')
+      if (!res.ok) { setDepts(previous); setMsg(j.error ?? 'Could not change departments'); return }
+      setMsg(next.length === 0 ? 'Departments cleared' : `${next.length} department${next.length === 1 ? '' : 's'}`)
       setTimeout(() => setMsg(''), 3000)
       onRefresh()
     } catch {
-      setDept(previous)
+      setDepts(previous)
       setMsg('Network error')
     } finally {
       setDeptBusy(false)
@@ -170,19 +177,43 @@ export function UserRow({ userRole, roles, departments = [], onRefresh }: Props)
         <td className="px-3 py-2.5">
           <RoleBadge role={userRole.role} />
         </td>
+        {/* Several departments are allowed — someone covering two areas gets the
+            modules of both, rather than needing bespoke per-user grants that then
+            stop tracking either department. */}
         <td className="px-3 py-2.5">
-          <select
-            value={dept}
-            disabled={deptBusy}
-            onChange={(e) => void changeDept(e.target.value)}
-            title="Department decides which modules this person can see"
-            className="h-7 w-full max-w-[140px] rounded-md border border-border bg-background px-1.5 text-[12px] text-foreground disabled:opacity-50"
-          >
-            <option value="">— none —</option>
-            {departments.map((d) => (
-              <option key={d.slug} value={d.slug}>{d.name}</option>
-            ))}
-          </select>
+          <details className="relative">
+            <summary
+              title="Departments decide which modules this person can see"
+              className={`flex h-7 max-w-[160px] cursor-pointer list-none items-center gap-1 truncate rounded-md
+                          border border-border bg-background px-1.5 text-[12px] text-foreground
+                          ${deptBusy ? 'opacity-50' : ''}`}
+            >
+              {depts.length === 0
+                ? <span className="text-muted-foreground">— none —</span>
+                : depts.length === 1
+                  ? <span className="truncate">{nameOf(depts[0])}</span>
+                  : <span className="truncate">{nameOf(depts[0])} +{depts.length - 1}</span>}
+            </summary>
+            <div className="absolute z-20 mt-1 max-h-64 w-56 overflow-auto rounded-lg border border-border bg-popover p-1 shadow-lg">
+              {departments.map((d) => (
+                <label
+                  key={d.slug}
+                  className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-[12px] hover:bg-accent"
+                >
+                  <input
+                    type="checkbox"
+                    checked={depts.includes(d.slug)}
+                    disabled={deptBusy}
+                    onChange={(e) => void toggleDept(d.slug, e.target.checked)}
+                  />
+                  <span className="truncate">{d.name}</span>
+                </label>
+              ))}
+              {departments.length === 0 && (
+                <div className="px-2 py-1.5 text-[12px] text-muted-foreground">No departments set up</div>
+              )}
+            </div>
+          </details>
         </td>
         <td className="px-3 py-2.5">
           <span className="text-[12px] text-muted-foreground">{scopeLabel}</span>

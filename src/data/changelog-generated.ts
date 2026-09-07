@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Local Packages gets invoicing statuses, an Invoice Number column, and bulk updates"
+      },
+      {
+        "type": "feature",
         "title": "Client links now use polaris.jlsyachts.com"
       }
     ]

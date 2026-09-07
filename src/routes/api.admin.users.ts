@@ -87,6 +87,17 @@ const handlers = {
       }
     }
 
+    // Every department each person belongs to — user_profiles.department is only
+    // the primary one.
+    const deptsByUser = new Map<string, string[]>()
+    if (profileIds.length) {
+      const { data: rows } = await sb
+        .from('user_departments').select('user_id, department').in('user_id', profileIds)
+      for (const r of (rows ?? []) as any[]) {
+        deptsByUser.set(r.user_id, [...(deptsByUser.get(r.user_id) ?? []), r.department])
+      }
+    }
+
     const users = (data ?? []).map((p: any) => {
       const roleName = p.roles?.name ?? null
       // Pending invite = inactive profile for someone who has never signed in.
@@ -98,6 +109,7 @@ const handlers = {
         role:         roleName,
         role_display: p.roles?.display_name ?? roleName,
         department:   p.department ?? null,
+        departments:  (deptsByUser.get(p.user_id) ?? []).sort(),
         org_id:       p.org_id ?? null,
         vessel_id:    null,
         location_id:  p.location_id ?? null,
@@ -213,6 +225,15 @@ const handlers = {
       invite_error:   emailSent ? null : (attempt.error ?? 'Email send failed').slice(0, 500),
     }, { onConflict: 'user_id' })
     if (profileErr) return json({ error: `Invited, but profile setup failed: ${profileErr.message}` }, 500)
+
+    // Seed the join table too — it is what claims read, and more departments can
+    // be added on the row afterwards.
+    if (department) {
+      await sb.from('user_departments')
+        .insert({ user_id: userId, department })
+        .select()
+        .then(undefined, () => undefined)
+    }
 
     await logAuditEvent({
       event_type:  'PERM',
