@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "A staff member can belong to more than one department"
+      },
+      {
+        "type": "feature",
         "title": "Local Packages gets invoicing statuses, an Invoice Number column, and bulk updates"
       },
       {
