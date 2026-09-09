@@ -1,9 +1,10 @@
+import { ProfileAvatar, EditProfileDialog, useMyProfile, initialsOf } from "@/components/profile/profile-menu";
 import { useState, useEffect, useRef } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import {
-  Search, LogOut, Settings, UserCircle2, Ship, Loader2, ChevronDown, X, Sun, Moon, Users, Eye, Check, ShieldCheck, Sparkles,
+  Search, LogOut, Settings, UserCircle2, UserRound, Ship, Loader2, ChevronDown, X, Sun, Moon, Users, Eye, Check, ShieldCheck, Sparkles,
 } from "lucide-react";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
@@ -239,6 +240,8 @@ export function ViewAsSwitcher() {
 
 export function TopBar() {
   const { user, signOut } = useAuth();
+  const myProfile = useMyProfile();
+  const [editProfileOpen, setEditProfileOpen] = useState(false);
   const { theme, toggle } = useTheme();
   const navigate = useNavigate();
   const canSeeOnline = useCanImpersonate();
@@ -385,11 +388,15 @@ export function TopBar() {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button className="flex items-center gap-2.5 rounded-lg py-1 pl-1.5 pr-2 hover:bg-accent transition">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/15 text-[11px] font-bold text-primary ring-1 ring-primary/20">
-                {initials}
-              </div>
+              <ProfileAvatar
+                avatarUrl={myProfile.avatarUrl}
+                initials={initialsOf(myProfile.displayName, user?.email ?? null) || initials}
+                size={32}
+                className="ring-1 ring-primary/20"
+                style={{ background: "hsl(var(--primary) / 0.15)", color: "hsl(var(--primary))" }}
+              />
               <div className="hidden text-left sm:block">
-                <div className="text-[12.5px] font-semibold leading-tight text-foreground">{displayName}</div>
+                <div className="text-[12.5px] font-semibold leading-tight text-foreground">{myProfile.displayName ?? displayName}</div>
                 <div className="text-[10.5px] leading-tight text-muted-foreground">{user?.email}</div>
               </div>
               <ChevronDown className="h-3.5 w-3.5 text-muted-foreground/60" />
@@ -401,6 +408,9 @@ export function TopBar() {
               <div className="text-xs text-muted-foreground font-normal">{user?.email}</div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => setEditProfileOpen(true)}>
+              <UserRound className="mr-2 h-4 w-4" /> Edit profile
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => navigate({ to: "/settings" })}>
               <Settings className="mr-2 h-4 w-4" /> Settings
             </DropdownMenuItem>
@@ -410,6 +420,12 @@ export function TopBar() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+
+        <EditProfileDialog
+          open={editProfileOpen}
+          onClose={() => setEditProfileOpen(false)}
+          profile={myProfile}
+        />
       </div>
     </header>
   );

@@ -4,6 +4,7 @@
  * Mobile-first: side nav hidden < 768px (hamburger overlay + bottom tabs); desktop
  * shows the fixed side nav. Role-based nav visibility per the redesign spec.
  */
+import { ProfileMenu, ProfileAvatar } from "@/components/profile/profile-menu";
 import { useEffect, useState, type ReactNode } from "react";
 import { TIcon } from "./primitives";
 import { useFeatureBadges, BADGE_META } from "@/lib/feature-badges";
@@ -331,24 +332,23 @@ export function PolarisTopBar({
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <GlobalSearch />
         <TopBarControls />
-        <div
-          aria-label={`User: ${userName}`}
-          title={userName}
-          style={{
-            width: 30,
-            height: 30,
-            borderRadius: "50%",
-            background: "var(--pds-gold-muted)",
-            border: "1px solid var(--pds-border-gold)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "var(--pds-gold)",
-            fontSize: 12,
-            fontWeight: 600,
-          }}
-        >
-          {userInitials}
+        {/* The avatar opens the profile menu — edit your name and picture, or
+            sign out. `userInitials` is the fallback until the profile loads. */}
+        <div className="dark">
+          <ProfileMenu
+            renderTrigger={({ avatarUrl, initials }) => (
+              <ProfileAvatar
+                avatarUrl={avatarUrl}
+                initials={initials || userInitials}
+                size={30}
+                style={{
+                  background: "var(--pds-gold-muted)",
+                  border: "1px solid var(--pds-border-gold)",
+                  color: "var(--pds-gold)",
+                }}
+              />
+            )}
+          />
         </div>
       </div>
     </header>

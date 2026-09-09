@@ -94,7 +94,8 @@ export function ProjectsPage() {
     const [p, y, iy, pr] = await Promise.all([
       db.from("it_projects").select("*").order("updated_at", { ascending: false }),
       db.from("yachts").select("id, vessel_name").order("vessel_name"),
-      db.from("it_yachts").select("id, name").order("name"),
+      // Only yachts still under IT management, matching the Service Desk picker.
+      db.from("it_yachts").select("id, name").eq("active", true).order("name"),
       db.from("user_profiles").select("user_id, display_name").eq("active", true).order("display_name"),
     ]);
 
@@ -296,10 +297,23 @@ function NewProjectDialog({ yachts, itYachts, people, userId, onClose, onCreated
               <Label>Vessel</Label>
               <Select value={vessel} onValueChange={setVessel}>
                 <SelectTrigger><SelectValue placeholder="Select vessel" /></SelectTrigger>
+                {/* IT-managed yachts lead — this is the Yacht IT module, and
+                    they were previously stranded below 138 fleet vessels with
+                    nothing to separate the two lists. */}
                 <SelectContent>
                   <SelectItem value="__none">— None —</SelectItem>
-                  {yachts.map((y) => <SelectItem key={`f${y.id}`} value={`fleet:${y.id}`}>{y.vessel_name}</SelectItem>)}
+                  {itYachts.length > 0 && (
+                    <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                      IT Yachts
+                    </div>
+                  )}
                   {itYachts.map((y) => <SelectItem key={`i${y.id}`} value={`it:${y.id}`}>{y.vessel_name}</SelectItem>)}
+                  {yachts.length > 0 && (
+                    <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                      Fleet
+                    </div>
+                  )}
+                  {yachts.map((y) => <SelectItem key={`f${y.id}`} value={`fleet:${y.id}`}>{y.vessel_name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>

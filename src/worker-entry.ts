@@ -811,6 +811,12 @@ export default {
       return formsPublicHandler(request)
     }
 
+    // Your own name and picture — scoped to the caller by their token.
+    if (url.pathname === '/api/me/profile') {
+      const { myProfileHandler } = await import('./routes/api.me.profile')
+      return myProfileHandler(request)
+    }
+
     // Client portal — the vessel's documents, and the file behind one.
     if (url.pathname === '/api/portal/documents') {
       const { portalDocumentsHandler } = await import('./routes/api.portal.documents')

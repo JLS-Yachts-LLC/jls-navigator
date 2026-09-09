@@ -10,6 +10,14 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "Merge the duplicated Import/Transit shipments and make the double-insert impossible"
+      },
+      {
+        "type": "feature",
+        "title": "Migration to merge the Import/Transit shipments recorded twice under one AWB"
+      },
+      {
+        "type": "fix",
         "title": "A status you pick on the Import board is the status it shows, and the board can be exported"
       },
       {
