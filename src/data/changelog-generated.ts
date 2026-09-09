@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "A client-portal login can no longer reach staff areas"
+      },
+      {
+        "type": "fix",
         "title": "A client-portal login is no longer created as a staff account"
       },
       {
