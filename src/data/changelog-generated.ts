@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-09-09",
     "entries": [
       {
+        "type": "fix",
+        "title": "Resend a lost feedback report without copying the reporter"
+      },
+      {
         "type": "feature",
         "title": "See every secure document link sent to a client, and revoke one"
       },
