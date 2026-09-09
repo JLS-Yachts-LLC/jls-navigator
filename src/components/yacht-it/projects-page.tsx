@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/select";
 import {
   FolderKanban, Plus, Loader2, ArrowLeft, Trash2, Check, Pencil, MessageSquare,
-  Ticket as TicketIcon,
+  CalendarPlus, Ticket as TicketIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -83,6 +83,24 @@ const TASK_LABEL: Record<TaskStatus, string> = {
 
 const fmtDate = (d: string | null) =>
   d ? new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—";
+
+/** Today as YYYY-MM-DD, for comparing against a date column. */
+const todayISO = () => new Date().toISOString().slice(0, 10);
+
+/**
+ * Drop a leading list marker from a pasted line.
+ *
+ * Tasks are usually pasted straight out of a Word or email list, which carries
+ * the bullet glyph and its tab along with the text — so titles rendered with a
+ * double bullet. Hyphens and asterisks only count as markers when followed by
+ * whitespace, so a title that legitimately starts with one survives.
+ */
+function stripBullet(line: string): string {
+  return line
+    .replace(/^[\s•‣▪◦·]+/, "")
+    .replace(/^[-*]\s+/, "")
+    .trim();
+}
 
 /** Comment timestamps need the time of day — several can land on one date. */
 const fmtWhen = (d: string) =>
@@ -461,16 +479,33 @@ function ProjectDetail({
     onChanged();
   }
 
+  /**
+   * Add one task per line, bullets removed.
+   *
+   * Pasting a list is how these get entered in practice, and a multi-line paste
+   * used to become a single task with the newlines and bullets inside it.
+   */
   async function addTask() {
-    const title = newTask.trim();
-    if (!title) return;
+    const titles = newTask.split(/\r?\n/).map(stripBullet).filter(Boolean);
+    if (!titles.length) return;
     setBusy(true);
-    const { error } = await db.from("it_project_tasks").insert([{
-      project_id: project.id, title, sort_order: tasks.length,
-    }]);
+    const { error } = await db.from("it_project_tasks").insert(
+      titles.map((title, i) => ({
+        project_id: project.id, title, sort_order: tasks.length + i,
+      })),
+    );
     setBusy(false);
     if (error) { toast.error(error.message); return; }
+    if (titles.length > 1) toast.success(`Added ${titles.length} tasks`);
     setNewTask("");
+    await load();
+    onChanged();
+  }
+
+  async function setTaskDue(t: Task, due: string | null) {
+    const { error } = await db.from("it_project_tasks")
+      .update({ due_date: due, updated_at: new Date().toISOString() }).eq("id", t.id);
+    if (error) { toast.error(error.message); return; }
     await load();
     onChanged();
   }
@@ -570,13 +605,20 @@ function ProjectDetail({
           <section className="rounded-xl border border-border bg-card p-4">
             <h2 className="mb-3 text-sm font-semibold">Tasks</h2>
             <div className="flex gap-2">
-              <Input
+              {/* A textarea, not an input: pasting a multi-line list into an
+                  <input> collapses the newlines to spaces, and pasting a list is
+                  how these actually get entered. */}
+              <Textarea
                 value={newTask} onChange={(e) => setNewTask(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") void addTask(); }}
-                placeholder="Add a task and press Enter" className="h-8 text-xs"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void addTask(); }
+                }}
+                rows={1}
+                placeholder="Add a task and press Enter — or paste a list, one per line"
+                className="min-h-[2rem] resize-y py-1.5 text-xs"
               />
-              <Button size="sm" className="h-8" onClick={() => void addTask()} disabled={busy || !newTask.trim()}>
-                Add
+              <Button size="sm" className="h-8 shrink-0" onClick={() => void addTask()} disabled={busy || !newTask.trim()}>
+                {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Add"}
               </Button>
             </div>
             {tasks.length === 0 ? (
@@ -592,6 +634,7 @@ function ProjectDetail({
                     onToggleExpanded={() => setOpenTask(openTask === t.id ? null : t.id)}
                     onToggleDone={() => void toggleTask(t)}
                     onRemove={() => void removeTask(t)}
+                    onSetDue={(due) => void setTaskDue(t, due)}
                     onComment={(body) => addComment(t.id, body)}
                     onRemoveComment={(id) => void removeComment(id)}
                   />
@@ -637,7 +680,7 @@ function ProjectDetail({
  */
 function TaskRow({
   task, comments, expanded,
-  onToggleExpanded, onToggleDone, onRemove, onComment, onRemoveComment,
+  onToggleExpanded, onToggleDone, onRemove, onSetDue, onComment, onRemoveComment,
 }: {
   task: Task;
   comments: TaskComment[];
@@ -645,11 +688,17 @@ function TaskRow({
   onToggleExpanded: () => void;
   onToggleDone: () => void;
   onRemove: () => void;
+  onSetDue: (due: string | null) => void;
   onComment: (body: string) => Promise<boolean>;
   onRemoveComment: (id: string) => void;
 }) {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+
+  const due = (task.due_date ?? "").slice(0, 10);
+  // A date that has passed only matters while the task is still open.
+  const overdue = !!due && task.status !== "done" && due < todayISO();
+  const dueToday = !!due && task.status !== "done" && due === todayISO();
 
   async function submit() {
     const body = draft.trim();
@@ -692,8 +741,24 @@ function TaskRow({
           {comments.length > 0 && comments.length}
         </button>
 
-        {task.due_date && (
-          <span className="shrink-0 text-[10.5px] text-muted-foreground">{fmtDate(task.due_date)}</span>
+        {due ? (
+          <button
+            onClick={onToggleExpanded}
+            title={overdue ? "Overdue — click to change" : "Due date — click to change"}
+            className={cn("shrink-0 rounded px-1 text-[10.5px] transition",
+              overdue ? "font-semibold text-destructive"
+                : dueToday ? "font-semibold text-amber-400"
+                : "text-muted-foreground hover:text-primary")}
+          >
+            {fmtDate(due)}
+          </button>
+        ) : (
+          <button
+            onClick={onToggleExpanded} title="Set a due date"
+            className="shrink-0 rounded px-1 text-muted-foreground/0 transition group-hover:text-muted-foreground hover:!text-primary"
+          >
+            <CalendarPlus className="h-3 w-3" />
+          </button>
         )}
         <button onClick={onRemove} title="Remove task"
           className="shrink-0 text-muted-foreground transition hover:text-destructive">
@@ -703,6 +768,24 @@ function TaskRow({
 
       {expanded && (
         <div className="border-t border-border/60 px-2.5 py-2">
+          <div className="mb-2 flex items-center gap-2">
+            <Label className="text-[10.5px] text-muted-foreground">Due</Label>
+            <Input
+              type="date" value={due}
+              onChange={(e) => onSetDue(e.target.value || null)}
+              className="h-7 w-[9.5rem] text-xs"
+            />
+            {due && (
+              <button
+                onClick={() => onSetDue(null)}
+                className="text-[10.5px] text-muted-foreground transition hover:text-destructive"
+              >
+                Clear
+              </button>
+            )}
+            {overdue && <span className="text-[10.5px] font-semibold text-destructive">Overdue</span>}
+          </div>
+
           {comments.length === 0 ? (
             <p className="mb-2 text-[11px] text-muted-foreground">No comments on this task yet.</p>
           ) : (
