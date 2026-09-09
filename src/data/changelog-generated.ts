@@ -5,6 +5,16 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.52.0",
+    "date": "2026-09-09",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "The avatar opens a menu to edit your profile or sign out"
+      }
+    ]
+  },
+  {
     "version": "2.51.0",
     "date": "2026-09-07",
     "entries": [
