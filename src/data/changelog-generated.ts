@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-09-09",
     "entries": [
       {
+        "type": "fix",
+        "title": "Local Packages no longer records a scanned waybill twice, and the 123 already doubled are merged"
+      },
+      {
         "type": "feature",
         "title": "Assign project tasks to someone"
       },
