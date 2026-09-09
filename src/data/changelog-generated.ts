@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "See every secure document link sent to a client, and revoke one"
+      },
+      {
+        "type": "feature",
         "title": "The avatar opens a menu to edit your profile or sign out"
       }
     ]
