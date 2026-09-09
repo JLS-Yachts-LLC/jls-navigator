@@ -23,9 +23,10 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { initialsOf } from "@/components/profile/profile-menu";
 import {
   FolderKanban, Plus, Loader2, ArrowLeft, Trash2, Check, Pencil, MessageSquare,
-  CalendarPlus, Ticket as TicketIcon,
+  CalendarPlus, UserPlus, Ticket as TicketIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -510,6 +511,14 @@ function ProjectDetail({
     onChanged();
   }
 
+  async function setTaskAssignee(t: Task, assignee: string | null) {
+    const { error } = await db.from("it_project_tasks")
+      .update({ assignee_id: assignee, updated_at: new Date().toISOString() }).eq("id", t.id);
+    if (error) { toast.error(error.message); return; }
+    await load();
+    onChanged();
+  }
+
   async function toggleTask(t: Task) {
     const next: TaskStatus = t.status === "done" ? "todo" : "done";
     const { error } = await db.from("it_project_tasks")
@@ -635,6 +644,9 @@ function ProjectDetail({
                     onToggleDone={() => void toggleTask(t)}
                     onRemove={() => void removeTask(t)}
                     onSetDue={(due) => void setTaskDue(t, due)}
+                    people={people}
+                    assigneeName={personName(t.assignee_id)}
+                    onSetAssignee={(id) => void setTaskAssignee(t, id)}
                     onComment={(body) => addComment(t.id, body)}
                     onRemoveComment={(id) => void removeComment(id)}
                   />
@@ -679,16 +691,20 @@ function ProjectDetail({
  * a long list quiet.
  */
 function TaskRow({
-  task, comments, expanded,
-  onToggleExpanded, onToggleDone, onRemove, onSetDue, onComment, onRemoveComment,
+  task, comments, expanded, people, assigneeName,
+  onToggleExpanded, onToggleDone, onRemove, onSetDue, onSetAssignee,
+  onComment, onRemoveComment,
 }: {
   task: Task;
   comments: TaskComment[];
   expanded: boolean;
+  people: Person[];
+  assigneeName: string;
   onToggleExpanded: () => void;
   onToggleDone: () => void;
   onRemove: () => void;
   onSetDue: (due: string | null) => void;
+  onSetAssignee: (id: string | null) => void;
   onComment: (body: string) => Promise<boolean>;
   onRemoveComment: (id: string) => void;
 }) {
@@ -741,6 +757,24 @@ function TaskRow({
           {comments.length > 0 && comments.length}
         </button>
 
+        {task.assignee_id ? (
+          <button
+            onClick={onToggleExpanded} title={`Assigned to ${assigneeName} — click to change`}
+            className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-primary/15 text-[9px] font-semibold text-primary transition hover:bg-primary/25"
+          >
+            {/* personName() gives "—" for someone no longer in the staff list;
+                a dash reads as a glyph rather than a person, so show "?". */}
+            {assigneeName === "—" ? "?" : initialsOf(assigneeName, null)}
+          </button>
+        ) : (
+          <button
+            onClick={onToggleExpanded} title="Assign someone"
+            className="shrink-0 rounded px-1 text-muted-foreground/0 transition group-hover:text-muted-foreground hover:!text-primary"
+          >
+            <UserPlus className="h-3 w-3" />
+          </button>
+        )}
+
         {due ? (
           <button
             onClick={onToggleExpanded}
@@ -768,22 +802,40 @@ function TaskRow({
 
       {expanded && (
         <div className="border-t border-border/60 px-2.5 py-2">
-          <div className="mb-2 flex items-center gap-2">
-            <Label className="text-[10.5px] text-muted-foreground">Due</Label>
-            <Input
-              type="date" value={due}
-              onChange={(e) => onSetDue(e.target.value || null)}
-              className="h-7 w-[9.5rem] text-xs"
-            />
-            {due && (
-              <button
-                onClick={() => onSetDue(null)}
-                className="text-[10.5px] text-muted-foreground transition hover:text-destructive"
+          <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-2">
+            <div className="flex items-center gap-2">
+              <Label className="text-[10.5px] text-muted-foreground">Assigned to</Label>
+              <Select
+                value={task.assignee_id ?? "__none"}
+                onValueChange={(v) => onSetAssignee(v === "__none" ? null : v)}
               >
-                Clear
-              </button>
-            )}
-            {overdue && <span className="text-[10.5px] font-semibold text-destructive">Overdue</span>}
+                <SelectTrigger className="h-7 w-44 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none">— Unassigned —</SelectItem>
+                  {people.map((p) => (
+                    <SelectItem key={p.user_id} value={p.user_id}>{p.display_name ?? "—"}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Label className="text-[10.5px] text-muted-foreground">Due</Label>
+              <Input
+                type="date" value={due}
+                onChange={(e) => onSetDue(e.target.value || null)}
+                className="h-7 w-[9.5rem] text-xs"
+              />
+              {due && (
+                <button
+                  onClick={() => onSetDue(null)}
+                  className="text-[10.5px] text-muted-foreground transition hover:text-destructive"
+                >
+                  Clear
+                </button>
+              )}
+              {overdue && <span className="text-[10.5px] font-semibold text-destructive">Overdue</span>}
+            </div>
           </div>
 
           {comments.length === 0 ? (
