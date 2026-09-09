@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-09-09",
     "entries": [
       {
+        "type": "feature",
+        "title": "Edit a Yacht IT project, and comment on its tasks"
+      },
+      {
         "type": "fix",
         "title": "A client-portal login can no longer reach staff areas"
       },
