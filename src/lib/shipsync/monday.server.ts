@@ -200,6 +200,41 @@ function toDocuments(v: string | null): { name: string; url: string }[] | null {
   return docs.length ? docs : null
 }
 
+/**
+ * Fields the ShipSync app owns — written when a package is scanned in or
+ * delivered. Monday has no better information about any of them, so a re-pull
+ * must not blank them. Only relevant when this sync folds a Monday item onto a
+ * package that was scanned in first (matched by AWB rather than item id).
+ */
+const SCAN_OWNED_FIELDS = [
+  'delivered_at', 'receiver_full_name', 'receiver_designation', 'receiver_email',
+  'signature_url', 'delivery_photo_url', 'item_photo_url', 'office_photo_url',
+  'scan_out_time', 'driver_scan_out_time', 'warehouse_zone', 'documents',
+] as const
+
+/** Monday's version of a package, folded onto one the app already scanned in. */
+function mergeOntoScanned(
+  record: Record<string, unknown>,
+  existingExtra: Record<string, any> | undefined,
+): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...record }
+
+  // 'in_office' here only means Monday has no Date Delivered yet — it is an
+  // absence of information, not a contradiction, and must not undo a delivery
+  // the app has already recorded.
+  if (merged.status === 'in_office') { delete merged.status; delete merged.delivered_at }
+
+  for (const key of SCAN_OWNED_FIELDS) {
+    const v = merged[key]
+    if (v == null || v === '' || (Array.isArray(v) && v.length === 0)) delete merged[key]
+  }
+
+  // Keep what is already in extra — above all the SharePoint link, without which
+  // the next pull would simply insert the scanned row again.
+  merged.extra = { ...(existingExtra ?? {}), ...((record.extra as Record<string, unknown>) ?? {}) }
+  return merged
+}
+
 export interface MondayImportResult { ok: boolean; synced: number; errors: number; pruned: number; deduped: number; skipped?: boolean; detail: string }
 
 /**
@@ -239,7 +274,7 @@ async function importMondayShipmentsInner(_opts: { limit?: number } = {}): Promi
   for (let offset = 0; ; offset += 1000) {
     const { data: page } = await db()
       .from('shipsync_packages')
-      .select('id, extra, delivery_note_id')
+      .select('id, extra, delivery_note_id, barcode')
       .eq('local_import', 'Local')
       .range(offset, offset + 999)
     if (!page || page.length === 0) break
@@ -247,6 +282,12 @@ async function importMondayShipmentsInner(_opts: { limit?: number } = {}): Promi
     if (page.length < 1000) break
   }
   const idByMonday = new Map<string, string>()
+  // AWB -> row, so a package the Power App has already scanned in is updated
+  // rather than recorded a second time. Matching on Monday's own item id alone
+  // is what put 141 waybills into Local Packages twice (reported by Jonathan,
+  // e.g. 130201246824) -- the same fault the Import board had, fixed in a9c975db.
+  const idByBarcode = new Map<string, string>()
+  const extraById = new Map<string, Record<string, any>>()
   // A package already routed/dispatched locally (delivery_note_id set) is
   // mid-workflow in OUR system — a re-sync must not clobber its status back
   // to whatever Monday's own snapshot says (usually 'in_office', since
@@ -261,6 +302,13 @@ async function importMondayShipmentsInner(_opts: { limit?: number } = {}): Promi
     const key = String(mid)
     if (idByMonday.has(key)) dupeRowIds.push(r.id)
     else { idByMonday.set(key, r.id); activeNoteByMonday.set(key, !!r.delivery_note_id) }
+  }
+  // Every row, Monday-linked or not — a scanned package has no Monday id, which
+  // is exactly the case the AWB fallback exists for.
+  for (const r of (existingRows ?? []) as any[]) {
+    const bc = String(r.barcode ?? '').toLowerCase().trim()
+    if (bc && !idByBarcode.has(bc)) idByBarcode.set(bc, r.id)
+    extraById.set(String(r.id), (r.extra ?? {}) as Record<string, any>)
   }
 
   // Self-heal duplicate rows for the same Monday item — these happen when an
@@ -326,11 +374,20 @@ async function importMondayShipmentsInner(_opts: { limit?: number } = {}): Promi
       },
     }
 
-    const existingId = idByMonday.get(item.id)
+    const awb = String(record.barcode ?? '').toLowerCase().trim()
+    const byMondayId = idByMonday.get(item.id)
+    const byAwb = !byMondayId && awb ? idByBarcode.get(awb) : undefined
+    const existingId = byMondayId ?? byAwb
+
     if (existingId) {
-      const updateRecord = activeNoteByMonday.get(item.id)
-        ? (({ status: _status, delivered_at: _deliveredAt, ...rest }) => rest)(record as any)
-        : record
+      let updateRecord: Record<string, unknown> = record
+      if (byAwb) {
+        updateRecord = mergeOntoScanned(record, extraById.get(existingId))
+        // Claim it, so two Monday items sharing a waybill can't both land here.
+        idByBarcode.delete(awb)
+      } else if (activeNoteByMonday.get(item.id)) {
+        updateRecord = (({ status: _status, delivered_at: _deliveredAt, ...rest }) => rest)(record as any)
+      }
       toUpdate.push({ id: existingId, itemName: item.name, record: updateRecord })
     } else {
       toInsert.push(record)
