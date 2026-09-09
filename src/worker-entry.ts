@@ -842,6 +842,11 @@ export default {
       const { documentShareOpenHandler } = await import('./routes/api.documents')
       return documentShareOpenHandler(request)
     }
+    // Staff-only: kill a link that has already gone out, or put it back.
+    if (url.pathname === '/api/documents/revoke') {
+      const { documentRevokeHandler } = await import('./routes/api.documents.revoke')
+      return documentRevokeHandler(request)
+    }
     // Forms: load the built-in definitions from code into the DB (admin only)
     if (url.pathname === '/api/forms/seed' && request.method === 'POST') {
       const { formsSeedHandler } = await import('./routes/api.forms.seed')

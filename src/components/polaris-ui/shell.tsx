@@ -127,6 +127,8 @@ export const NAV_GROUPS: NavGroup[] = [
       },
       { label: "Sign On/Off", module: "crew_movements", icon: "clipboard-list", screen: "soso-reports" },
       { label: "Crew Documents", module: "crew_immigration", icon: "files", screen: "documents" },
+      // Every secure link sent to a client, who opened it, and a way to revoke one.
+      { label: "Document Links", icon: "link", screen: "route-document-links", route: "/document-links" },
       {
         label: "Spreadsheet Sync",
         module: "crew_immigration",
