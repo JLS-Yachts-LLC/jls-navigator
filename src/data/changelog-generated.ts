@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "A Completed status on Local Packages now stays put, and invoice numbers arrive from Monday"
+      },
+      {
+        "type": "fix",
         "title": "Local Packages no longer records a scanned waybill twice, and the 123 already doubled are merged"
       },
       {

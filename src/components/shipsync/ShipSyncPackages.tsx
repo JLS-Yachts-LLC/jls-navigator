@@ -113,15 +113,40 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
     [data],
   );
 
+  /** Delivery-note number by note id, for the rows that carry a link rather than
+   *  the number itself — both spellings have to be searchable. */
+  const noteNumberById = useMemo(
+    () => new Map(data.notes.map((n) => [n.id, n.number ?? ""])),
+    [data.notes],
+  );
+
+  /**
+   * A search looks across EVERY stage, not just the one on screen.
+   *
+   * The stage bar is for browsing; the search box is for finding. Scoping the
+   * search to the open stage meant looking up a delivered package while sitting
+   * on "In the office" returned nothing at all, with no hint the package existed
+   * — reported by Jonathan for delivery-note numbers, and it applied to every
+   * other field too.
+   */
+  const searching = search.trim().length > 0;
+
   const filtered = useMemo(() => data.packages.filter((p) => {
-    if (!STAGES[stage].match(p.status)) return false;
-    if (search.trim()) {
-      const s = search.toLowerCase();
-      if (![p.barcode, p.boat_name, p.package_owner, p.courier, p.description, p.invoice_no]
-        .join(" ").toLowerCase().includes(s)) return false;
+    if (!searching && !STAGES[stage].match(p.status)) return false;
+    if (searching) {
+      const s = search.trim().toLowerCase();
+      const haystack = [
+        p.barcode, p.boat_name, p.package_owner, p.receiver_full_name, p.courier,
+        p.description, p.invoice_no,
+        // The delivery note is shown on every row and is how the office refers to
+        // a run, so it has to be searchable — it was the one column you could read
+        // but not find.
+        p.delivery_note_no, p.delivery_note_id ? noteNumberById.get(p.delivery_note_id) : null,
+      ];
+      if (!haystack.join(" ").toLowerCase().includes(s)) return false;
     }
     return true;
-  }), [data.packages, search, stage]);
+  }), [data.packages, search, searching, stage, noteNumberById]);
 
   /** Counts for the stage bar, independent of the search box. */
   const stageCounts = useMemo(() => {
@@ -297,14 +322,20 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
           </button>
         ))}
       </div>
-      <p className="mb-3 shrink-0 text-[11.5px] text-muted-foreground">{STAGES[stage].hint}</p>
+      <p className="mb-3 shrink-0 text-[11.5px] text-muted-foreground">
+        {searching ? "Searching every stage — clear the box to go back to browsing." : STAGES[stage].hint}
+      </p>
 
       <div className="mb-3 flex shrink-0 flex-wrap items-center gap-2.5">
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/50" />
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search barcode, boat, owner, courier…" className="h-9 w-72 pl-8 text-sm" />
+          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search barcode, boat, delivery note, invoice, receiver…" className="h-9 w-72 pl-8 text-sm" />
         </div>
-        <span className="text-[12px] text-muted-foreground">{filtered.length} of {stageCounts[stage]}</span>
+        <span className="text-[12px] text-muted-foreground">
+          {searching
+            ? `${filtered.length} match${filtered.length === 1 ? "" : "es"} across all stages`
+            : `${filtered.length} of ${stageCounts[stage]}`}
+        </span>
         <TableChartToggle value={view} onChange={setView} />
         <Button size="sm" onClick={openNew} className="ml-auto h-9 gap-1.5"><Plus className="h-4 w-4" /> Check in package</Button>
       </div>
