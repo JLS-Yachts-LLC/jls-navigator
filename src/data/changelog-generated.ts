@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "A client-portal login is no longer created as a staff account"
+      },
+      {
+        "type": "fix",
         "title": "Resend a lost feedback report without copying the reporter"
       },
       {

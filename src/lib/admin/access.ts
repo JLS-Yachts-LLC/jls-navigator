@@ -50,6 +50,22 @@ export async function requireAdminAccess(
 
   const email = user.email ?? ''
 
+  // A client-portal captain is never an admin, whatever else the account carries.
+  //
+  // This check exists because everything below runs with the SERVICE ROLE, which
+  // bypasses RLS — so the database-level captain isolation that protects the rest
+  // of the app does nothing here. An account that is both a captain and a staff
+  // profile (the AQUILA test login was exactly that: an old global_admin
+  // repurposed as a captain) would otherwise pass every admin guard in the app,
+  // including user management and document revocation.
+  const { data: captainAcct } = await sb
+    .from('captain_accounts')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('active', true)
+    .limit(1)
+  if (captainAcct?.length) return denied(403, 'Client-portal accounts cannot access staff areas')
+
   // Resolve role + org. Source order:
   //   1. app_metadata (set by the JWT hook — not deployed yet, Edge Fns off)
   //   2. user_profiles (the access-control table from #128) — server-side claims

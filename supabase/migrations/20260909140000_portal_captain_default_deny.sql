@@ -219,3 +219,20 @@ begin
 
   return new;
 end; $function$;
+
+-- ── Applied live 2026-09-09 ────────────────────────────────────────────────────
+-- The AQUILA test captain (m.peeters@jlsyachts.com) was an old global_admin
+-- repurposed as a captain, so it still carried a staff user_profiles row. RLS
+-- neutralised that (user_profiles is itself captain-fenced, so the storage
+-- policies' EXISTS returned false) but requireAdminAccess reads user_profiles
+-- with the SERVICE ROLE, which bypasses RLS — that account could call every
+-- admin endpoint. Stripped, and tagged as a portal login:
+--
+--   delete from public.user_profiles where user_id = '2b0476e5-…';
+--   delete from public.profiles      where id      = '2b0476e5-…';
+--   update auth.users set raw_user_meta_data =
+--     coalesce(raw_user_meta_data,'{}'::jsonb) || '{"portal":"captain","vessel":"AQUILA"}'::jsonb
+--   where id = '2b0476e5-…';
+--
+-- requireAdminAccess now also refuses any active captain outright, because the
+-- API layer bypasses RLS and cannot rely on the fences above.
