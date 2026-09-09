@@ -1,5 +1,5 @@
 /**
- * POST /api/feedback/notify  { feedbackId }
+ * POST /api/feedback/notify  { feedbackId, ccReporter? }
  *
  * Handles an in-app bug report / feature request end to end:
  *   1. Raises a Service Desk ticket (it_tickets, queue 'polaris') so it is a real
@@ -59,7 +59,14 @@ function originalSenderBlock(email: string | null, name: string | null): string 
 export async function feedbackNotifyHandler(request: Request): Promise<Response> {
   const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { 'Content-Type': 'application/json' } })
   let feedbackId = ''
-  try { feedbackId = (await request.json())?.feedbackId ?? '' } catch { return json({ ok: false, error: 'bad body' }, 400) }
+  // Default true: a first notification should always reach the person who filed it.
+  // Only a deliberate quiet re-send passes false — see the CC block below.
+  let ccRequested = true
+  try {
+    const body = await request.json() as any
+    feedbackId = body?.feedbackId ?? ''
+    ccRequested = body?.ccReporter !== false
+  } catch { return json({ ok: false, error: 'bad body' }, 400) }
   if (!feedbackId) return json({ ok: false, error: 'missing feedbackId' }, 400)
 
   const db = supabaseAdmin as any
@@ -129,7 +136,14 @@ export async function feedbackNotifyHandler(request: Request): Promise<Response>
     : reporterName ?? reporterEmail ?? 'unknown'
   // Don't CC an address that is already a recipient (staff often report from the
   // shared support mailbox, which is one of the two To: addresses).
-  const ccReporter = reporterEmail && !SUPPORT_RECIPIENTS.some(r => r.toLowerCase() === reporterEmail.toLowerCase())
+  //
+  // `ccReporter: false` suppresses it entirely. That exists for re-sending a
+  // report that was lost weeks ago: the three August reports that never reached
+  // New Horizon were all filed from a client's shared mailbox, and landing them
+  // in that inbox now — long after the fact — would read as a new problem rather
+  // than housekeeping. Reply-To still points there, so a deliberate reply works.
+  const ccReporter = ccRequested && reporterEmail
+    && !SUPPORT_RECIPIENTS.some(r => r.toLowerCase() === reporterEmail.toLowerCase())
     ? reporterEmail
     : null
 
@@ -150,7 +164,11 @@ export async function feedbackNotifyHandler(request: Request): Promise<Response>
     <h2 style="font-size:18px;margin:0 0 4px;">${isBug ? '🐞 Bug report' : '💡 Feature request'}${f.title ? `: ${esc(f.title)}` : ''}</h2>
     <p style="margin:0 0 10px;font-size:13px;">
       <strong>Reported by:</strong> ${esc(reporterLabel)}
-      ${ccReporter ? '<span style="color:#64748b;font-size:12px;"> · CC\'d on this email</span>' : ''}
+      ${ccReporter
+        ? '<span style="color:#64748b;font-size:12px;"> · CC\'d on this email</span>'
+        : reporterEmail
+          ? '<span style="color:#64748b;font-size:12px;"> · not CC\'d — sent quietly, so reply to them directly if you need to</span>'
+          : ''}
     </p>
     <p style="margin:0 0 12px;font-size:12px;color:#64748b;">${new Date(f.created_at).toLocaleString('en-GB')}</p>
     ${ticketLine}

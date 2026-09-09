@@ -211,17 +211,19 @@ function NotifyState({ row, onResent }: { row: Feedback; onResent: () => void })
   const [busy, setBusy] = useState(false);
   if (row.notified_at) return null;
 
-  async function resend() {
+  async function resend(ccReporter: boolean) {
     setBusy(true);
     try {
       const res = await fetch("/api/feedback/notify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ feedbackId: row.id }),
+        body: JSON.stringify({ feedbackId: row.id, ccReporter }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body?.error ?? `Send failed (${res.status})`);
-      toast.success("Sent to the support mailboxes");
+      toast.success(ccReporter
+        ? "Sent to the support mailboxes"
+        : `Sent to the support mailboxes — ${row.created_by_email ?? "the reporter"} was not copied`);
       onResent();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not send it");
@@ -239,11 +241,20 @@ function NotifyState({ row, onResent }: { row: Feedback; onResent: () => void })
         Not sent
       </span>
       <button
-        onClick={() => void resend()} disabled={busy}
+        onClick={() => void resend(true)} disabled={busy}
         className="text-[10.5px] font-medium text-primary hover:underline disabled:opacity-50"
       >
         {busy ? "Sending…" : "Send again"}
       </button>
+      {row.created_by_email && (
+        <button
+          onClick={() => void resend(false)} disabled={busy}
+          title={`Email the support mailboxes only — don't copy ${row.created_by_email}. Use this for a report that was lost a while ago, so it isn't landed back in the reporter's inbox as if it were new.`}
+          className="text-[10.5px] font-medium text-muted-foreground hover:underline disabled:opacity-50"
+        >
+          Send quietly
+        </button>
+      )}
     </span>
   );
 }
