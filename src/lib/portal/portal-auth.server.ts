@@ -10,6 +10,9 @@ import { createClient } from '@supabase/supabase-js'
 
 export type PortalYacht = {
   userId: string
+  /** From the JWT — how a portal caller is named in staff-facing logs, which
+   *  cannot reference their id the way a staff account can. */
+  email: string
   yachtId: string
   vesselName: string
   qboCustomerId: string | null
@@ -58,6 +61,7 @@ export async function resolvePortalYacht(
     ok: true,
     yacht: {
       userId: user.id,
+      email: user.email ?? '',
       yachtId: yacht.id,
       vesselName: yacht.vessel_name,
       qboCustomerId: (yacht as any).qbo_customer_id ?? null,

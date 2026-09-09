@@ -24,7 +24,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  FolderKanban, Plus, Loader2, ArrowLeft, Trash2, Check, Ticket as TicketIcon,
+  FolderKanban, Plus, Loader2, ArrowLeft, Trash2, Check, Pencil, MessageSquare,
+  Ticket as TicketIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -54,6 +55,11 @@ type Task = {
   due_date: string | null; assignee_id: string | null; sort_order: number;
 };
 
+type TaskComment = {
+  id: string; task_id: string; body: string;
+  author_id: string | null; author_name: string | null; created_at: string;
+};
+
 type Yacht = { id: string; vessel_name: string };
 type Person = { user_id: string; display_name: string | null };
 
@@ -77,6 +83,12 @@ const TASK_LABEL: Record<TaskStatus, string> = {
 
 const fmtDate = (d: string | null) =>
   d ? new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—";
+
+/** Comment timestamps need the time of day — several can land on one date. */
+const fmtWhen = (d: string) =>
+  new Date(d).toLocaleString("en-GB", {
+    day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
+  });
 
 export function ProjectsPage() {
   const { user } = useAuth();
@@ -141,8 +153,11 @@ export function ProjectsPage() {
       <ProjectDetail
         project={open}
         vessel={vesselName(open)}
+        yachts={yachts}
+        itYachts={itYachts}
         people={people}
         personName={personName}
+        userId={user?.id}
         onBack={() => setOpenId(null)}
         onChanged={load}
       />
@@ -229,36 +244,51 @@ export function ProjectsPage() {
       )}
 
       {openNew && (
-        <NewProjectDialog
+        <ProjectDialog
           yachts={yachts} itYachts={itYachts} people={people} userId={user?.id}
           onClose={() => setOpenNew(false)}
-          onCreated={async (id) => { setOpenNew(false); await load(); setOpenId(id); }}
+          onSaved={async (id) => { setOpenNew(false); await load(); setOpenId(id); }}
         />
       )}
     </div>
   );
 }
 
-// ── New project ───────────────────────────────────────────────────────────────
+// ── New / edit project ────────────────────────────────────────────────────────
 
-function NewProjectDialog({ yachts, itYachts, people, userId, onClose, onCreated }: {
+/** The vessel picker's value, encoding which register the yacht came from. */
+function vesselKeyOf(p: Project | undefined): string {
+  if (p?.yacht_id) return `fleet:${p.yacht_id}`;
+  if (p?.it_yacht_id) return `it:${p.it_yacht_id}`;
+  return "__none";
+}
+
+/**
+ * One dialog for creating and editing, because every field is the same either
+ * way — only where the values start and whether it inserts or updates differ.
+ * Pass `project` to edit it.
+ */
+function ProjectDialog({ project, yachts, itYachts, people, userId, onClose, onSaved }: {
+  project?: Project;
   yachts: Yacht[]; itYachts: Yacht[]; people: Person[]; userId: string | undefined;
-  onClose: () => void; onCreated: (id: string) => void;
+  onClose: () => void; onSaved: (id: string) => void;
 }) {
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [vessel, setVessel] = useState("__none");
-  const [owner, setOwner] = useState("__none");
-  const [status, setStatus] = useState<ProjectStatus>("planning");
-  const [start, setStart] = useState("");
-  const [end, setEnd] = useState("");
+  const editing = !!project;
+  const [name, setName] = useState(project?.name ?? "");
+  const [description, setDescription] = useState(project?.description ?? "");
+  const [vessel, setVessel] = useState(vesselKeyOf(project));
+  const [owner, setOwner] = useState(project?.owner_id ?? "__none");
+  const [status, setStatus] = useState<ProjectStatus>(project?.status ?? "planning");
+  // <input type="date"> wants YYYY-MM-DD; the column may carry a timestamp.
+  const [start, setStart] = useState((project?.start_date ?? "").slice(0, 10));
+  const [end, setEnd] = useState((project?.end_date ?? "").slice(0, 10));
   const [busy, setBusy] = useState(false);
 
   async function save() {
     if (!name.trim()) { toast.error("Give the project a name"); return; }
     setBusy(true);
     try {
-      const { data, error } = await db.from("it_projects").insert([{
+      const fields = {
         name: name.trim(),
         description: description.trim() || null,
         status,
@@ -267,13 +297,25 @@ function NewProjectDialog({ yachts, itYachts, people, userId, onClose, onCreated
         start_date: start || null,
         end_date: end || null,
         owner_id: owner === "__none" ? null : owner,
-        created_by: userId ?? null,
-      }]).select("id").single();
+      };
+
+      if (editing) {
+        const { error } = await db.from("it_projects")
+          .update({ ...fields, updated_at: new Date().toISOString() }).eq("id", project!.id);
+        if (error) throw new Error(error.message);
+        toast.success("Project updated");
+        onSaved(project!.id);
+        return;
+      }
+
+      const { data, error } = await db.from("it_projects")
+        .insert([{ ...fields, created_by: userId ?? null }]).select("id").single();
       if (error) throw new Error(error.message);
       toast.success("Project created");
-      onCreated((data as { id: string }).id);
+      onSaved((data as { id: string }).id);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not create the project");
+      toast.error(e instanceof Error ? e.message
+        : `Could not ${editing ? "save" : "create"} the project`);
     } finally {
       setBusy(false);
     }
@@ -282,7 +324,7 @@ function NewProjectDialog({ yachts, itYachts, people, userId, onClose, onCreated
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="max-w-lg">
-        <DialogHeader><DialogTitle>New project</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{editing ? "Edit project" : "New project"}</DialogTitle></DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1.5">
             <Label>Name</Label>
@@ -353,7 +395,9 @@ function NewProjectDialog({ yachts, itYachts, people, userId, onClose, onCreated
         <DialogFooter>
           <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
           <Button onClick={() => void save()} disabled={busy} className="gap-1.5">
-            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />} Create
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              : editing ? <Check className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+            {editing ? "Save changes" : "Create"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -365,16 +409,23 @@ function NewProjectDialog({ yachts, itYachts, people, userId, onClose, onCreated
 
 type LinkedTicket = { id: string; ticket_no: string; subject: string; status: string; priority: string };
 
-function ProjectDetail({ project, vessel, people, personName, onBack, onChanged }: {
-  project: Project; vessel: string; people: Person[];
+function ProjectDetail({
+  project, vessel, yachts, itYachts, people, personName, userId, onBack, onChanged,
+}: {
+  project: Project; vessel: string;
+  yachts: Yacht[]; itYachts: Yacht[]; people: Person[];
   personName: (id: string | null) => string;
+  userId: string | undefined;
   onBack: () => void; onChanged: () => void;
 }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [tickets, setTickets] = useState<LinkedTicket[]>([]);
+  const [comments, setComments] = useState<TaskComment[]>([]);
   const [loading, setLoading] = useState(true);
   const [newTask, setNewTask] = useState("");
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [openTask, setOpenTask] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -384,8 +435,20 @@ function ProjectDetail({ project, vessel, people, personName, onBack, onChanged 
       db.from("it_tickets").select("id, ticket_no, subject, status, priority")
         .eq("project_id", project.id).order("created_at", { ascending: false }),
     ]);
-    setTasks((t.data ?? []) as Task[]);
+    const taskRows = (t.data ?? []) as Task[];
+    setTasks(taskRows);
     setTickets((k.data ?? []) as LinkedTicket[]);
+
+    // All of this project's comments in one go — a project has a handful of
+    // tasks, so this is cheaper than a query per thread as rows are opened.
+    if (taskRows.length) {
+      const c = await db.from("it_project_task_comments")
+        .select("*").in("task_id", taskRows.map((r) => r.id))
+        .order("created_at");
+      setComments((c.data ?? []) as TaskComment[]);
+    } else {
+      setComments([]);
+    }
     setLoading(false);
   }, [project.id]);
 
@@ -427,6 +490,25 @@ function ProjectDetail({ project, vessel, people, personName, onBack, onChanged 
     onChanged();
   }
 
+  async function addComment(taskId: string, body: string) {
+    const { error } = await db.from("it_project_task_comments").insert([{
+      task_id: taskId,
+      body,
+      author_id: userId ?? null,
+      // Stored with the comment so it still reads correctly if the account goes.
+      author_name: personName(userId ?? null),
+    }]);
+    if (error) { toast.error(error.message); return false; }
+    await load();
+    return true;
+  }
+
+  async function removeComment(id: string) {
+    const { error } = await db.from("it_project_task_comments").delete().eq("id", id);
+    if (error) { toast.error(error.message); return; }
+    await load();
+  }
+
   const done = tasks.filter((t) => t.status === "done").length;
 
   return (
@@ -444,14 +526,22 @@ function ProjectDetail({ project, vessel, people, personName, onBack, onChanged 
               <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{project.description}</p>
             )}
           </div>
-          <Select value={project.status} onValueChange={(v) => void patchProject({ status: v })}>
-            <SelectTrigger className="h-8 w-40 text-xs"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {(Object.keys(STATUS_LABEL) as ProjectStatus[]).map((s) => (
-                <SelectItem key={s} value={s}>{STATUS_LABEL[s]}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs"
+              onClick={() => setEditing(true)}>
+              <Pencil className="h-3.5 w-3.5" /> Edit
+            </Button>
+            {/* Status stays out here as well as in the dialog: it is the one field
+                that changes on its own, several times over a project's life. */}
+            <Select value={project.status} onValueChange={(v) => void patchProject({ status: v })}>
+              <SelectTrigger className="h-8 w-40 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {(Object.keys(STATUS_LABEL) as ProjectStatus[]).map((s) => (
+                  <SelectItem key={s} value={s}>{STATUS_LABEL[s]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
@@ -461,6 +551,15 @@ function ProjectDetail({ project, vessel, people, personName, onBack, onChanged 
           <div><dt className="text-[11px] text-muted-foreground">Tasks</dt><dd>{done}/{tasks.length} done</dd></div>
         </dl>
       </div>
+
+      {editing && (
+        <ProjectDialog
+          project={project}
+          yachts={yachts} itYachts={itYachts} people={people} userId={userId}
+          onClose={() => setEditing(false)}
+          onSaved={() => { setEditing(false); onChanged(); }}
+        />
+      )}
 
       {loading ? (
         <div className="grid place-items-center py-16 text-muted-foreground">
@@ -485,24 +584,17 @@ function ProjectDetail({ project, vessel, people, personName, onBack, onChanged 
             ) : (
               <ul className="mt-3 space-y-1.5">
                 {tasks.map((t) => (
-                  <li key={t.id} className="flex items-center gap-2 rounded-lg border border-border/60 px-2.5 py-1.5">
-                    <button
-                      onClick={() => void toggleTask(t)} title={TASK_LABEL[t.status]}
-                      className={cn("grid h-4 w-4 shrink-0 place-items-center rounded border",
-                        t.status === "done" ? "border-emerald-500 bg-emerald-500/20 text-emerald-400" : "border-border")}
-                    >
-                      {t.status === "done" && <Check className="h-3 w-3" />}
-                    </button>
-                    <span className={cn("min-w-0 flex-1 truncate text-xs",
-                      t.status === "done" && "text-muted-foreground line-through")}>
-                      {t.title}
-                    </span>
-                    {t.due_date && <span className="shrink-0 text-[10.5px] text-muted-foreground">{fmtDate(t.due_date)}</span>}
-                    <button onClick={() => void removeTask(t)} title="Remove task"
-                      className="shrink-0 text-muted-foreground transition hover:text-destructive">
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </li>
+                  <TaskRow
+                    key={t.id}
+                    task={t}
+                    comments={comments.filter((c) => c.task_id === t.id)}
+                    expanded={openTask === t.id}
+                    onToggleExpanded={() => setOpenTask(openTask === t.id ? null : t.id)}
+                    onToggleDone={() => void toggleTask(t)}
+                    onRemove={() => void removeTask(t)}
+                    onComment={(body) => addComment(t.id, body)}
+                    onRemoveComment={(id) => void removeComment(id)}
+                  />
                 ))}
               </ul>
             )}
@@ -530,6 +622,127 @@ function ProjectDetail({ project, vessel, people, personName, onBack, onChanged 
         </div>
       )}
     </div>
+  );
+}
+
+// ── Task row, with its comment thread ─────────────────────────────────────────
+
+/**
+ * One task. Clicking the title opens its comments underneath — a task used to be
+ * a title and a tick box, so whatever was learned doing it had nowhere to go.
+ *
+ * The comment count sits on the row so a task with notes is obvious without
+ * opening every one; a task with none shows the icon only when hovered, to keep
+ * a long list quiet.
+ */
+function TaskRow({
+  task, comments, expanded,
+  onToggleExpanded, onToggleDone, onRemove, onComment, onRemoveComment,
+}: {
+  task: Task;
+  comments: TaskComment[];
+  expanded: boolean;
+  onToggleExpanded: () => void;
+  onToggleDone: () => void;
+  onRemove: () => void;
+  onComment: (body: string) => Promise<boolean>;
+  onRemoveComment: (id: string) => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    const body = draft.trim();
+    if (!body) return;
+    setBusy(true);
+    const ok = await onComment(body);
+    setBusy(false);
+    if (ok) setDraft("");
+  }
+
+  return (
+    <li className="group rounded-lg border border-border/60">
+      <div className="flex items-center gap-2 px-2.5 py-1.5">
+        <button
+          onClick={onToggleDone} title={TASK_LABEL[task.status]}
+          className={cn("grid h-4 w-4 shrink-0 place-items-center rounded border",
+            task.status === "done" ? "border-emerald-500 bg-emerald-500/20 text-emerald-400" : "border-border")}
+        >
+          {task.status === "done" && <Check className="h-3 w-3" />}
+        </button>
+
+        <button
+          onClick={onToggleExpanded}
+          title={expanded ? "Hide comments" : "Show comments"}
+          className={cn("min-w-0 flex-1 truncate text-left text-xs transition hover:text-primary",
+            task.status === "done" && "text-muted-foreground line-through")}
+        >
+          {task.title}
+        </button>
+
+        <button
+          onClick={onToggleExpanded}
+          title={comments.length ? `${comments.length} comment${comments.length === 1 ? "" : "s"}` : "Add a comment"}
+          className={cn("inline-flex shrink-0 items-center gap-1 rounded px-1 text-[10.5px] transition",
+            comments.length
+              ? "text-muted-foreground hover:text-primary"
+              : "text-muted-foreground/0 group-hover:text-muted-foreground hover:!text-primary")}
+        >
+          <MessageSquare className="h-3 w-3" />
+          {comments.length > 0 && comments.length}
+        </button>
+
+        {task.due_date && (
+          <span className="shrink-0 text-[10.5px] text-muted-foreground">{fmtDate(task.due_date)}</span>
+        )}
+        <button onClick={onRemove} title="Remove task"
+          className="shrink-0 text-muted-foreground transition hover:text-destructive">
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      {expanded && (
+        <div className="border-t border-border/60 px-2.5 py-2">
+          {comments.length === 0 ? (
+            <p className="mb-2 text-[11px] text-muted-foreground">No comments on this task yet.</p>
+          ) : (
+            <ul className="mb-2 space-y-1.5">
+              {comments.map((c) => (
+                <li key={c.id} className="group/c rounded-md bg-muted/40 px-2 py-1.5">
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-[11px] font-semibold">{c.author_name ?? "Unknown"}</span>
+                    <span className="text-[10px] text-muted-foreground">{fmtWhen(c.created_at)}</span>
+                    <button
+                      onClick={() => onRemoveComment(c.id)} title="Delete comment"
+                      className="ml-auto text-muted-foreground/0 transition group-hover/c:text-muted-foreground hover:!text-destructive"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                  <p className="mt-0.5 whitespace-pre-wrap text-xs">{c.body}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="flex gap-2">
+            <Textarea
+              value={draft} onChange={(e) => setDraft(e.target.value)}
+              // Enter sends, Shift+Enter makes a new line — these are short notes,
+              // so sending is the common case.
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void submit(); }
+              }}
+              rows={1} placeholder="Add a comment — Enter to send, Shift+Enter for a new line"
+              className="min-h-[2rem] resize-y py-1.5 text-xs"
+            />
+            <Button size="sm" className="h-8 shrink-0" onClick={() => void submit()}
+              disabled={busy || !draft.trim()}>
+              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Post"}
+            </Button>
+          </div>
+        </div>
+      )}
+    </li>
   );
 }
 

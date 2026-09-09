@@ -84,7 +84,9 @@ export interface LogAuditEventParams {
   event_type: AuditEventType
   /** Which area of the app acted. Defaults to 'admin'. */
   module?: string
-  actor_id: string
+  /** Null for an actor with no staff profile — a client-portal login, say,
+   *  which audit_log.user_id cannot reference. Identify those by actor_email. */
+  actor_id: string | null
   actor_email: string
   actor_role: string
   target_type?: string
