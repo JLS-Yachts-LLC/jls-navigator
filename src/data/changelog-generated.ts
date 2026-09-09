@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Due dates on project tasks, and no more pasted bullets"
+      },
+      {
+        "type": "feature",
         "title": "Edit a Yacht IT project, and comment on its tasks"
       },
       {
