@@ -274,7 +274,7 @@ async function importMondayShipmentsInner(_opts: { limit?: number } = {}): Promi
   for (let offset = 0; ; offset += 1000) {
     const { data: page } = await db()
       .from('shipsync_packages')
-      .select('id, extra, delivery_note_id, barcode')
+      .select('id, extra, delivery_note_id, barcode, status')
       .eq('local_import', 'Local')
       .range(offset, offset + 999)
     if (!page || page.length === 0) break
@@ -288,6 +288,7 @@ async function importMondayShipmentsInner(_opts: { limit?: number } = {}): Promi
   // e.g. 130201246824) -- the same fault the Import board had, fixed in a9c975db.
   const idByBarcode = new Map<string, string>()
   const extraById = new Map<string, Record<string, any>>()
+  const statusById = new Map<string, string>()
   // A package already routed/dispatched locally (delivery_note_id set) is
   // mid-workflow in OUR system — a re-sync must not clobber its status back
   // to whatever Monday's own snapshot says (usually 'in_office', since
@@ -309,6 +310,7 @@ async function importMondayShipmentsInner(_opts: { limit?: number } = {}): Promi
     const bc = String(r.barcode ?? '').toLowerCase().trim()
     if (bc && !idByBarcode.has(bc)) idByBarcode.set(bc, r.id)
     extraById.set(String(r.id), (r.extra ?? {}) as Record<string, any>)
+    if (r.status) statusById.set(String(r.id), String(r.status))
   }
 
   // Self-heal duplicate rows for the same Monday item — these happen when an
@@ -346,6 +348,12 @@ async function importMondayShipmentsInner(_opts: { limit?: number } = {}): Promi
     // stale rows found this way, some over a year old). A populated Date
     // Delivered now maps to delivered_at and flips status to 'delivered'.
     const deliveredAt = toDate(pick(row, 'date delivered', 'delivered'))
+    // The board's "Invoice No." column. Never mapped before, so the office was
+    // re-keying invoice numbers Monday already held (247 of them). The lookup is
+    // 'invoice no' rather than 'invoice' so it cannot land on the board's
+    // separate "Invoice Number" column, which only ever holds Monday's "New item"
+    // placeholder — also guarded against directly.
+    const invoiceNo = (() => { const v = pick(row, 'invoice no'); return v && v !== 'New item' ? v : null })()
     const record: Record<string, unknown> = {
       // This board has no dedicated tracking/AWB column — the tracking number
       // lives in the item's own name/title instead, so fall back to it.
@@ -363,6 +371,9 @@ async function importMondayShipmentsInner(_opts: { limit?: number } = {}): Promi
       planned_delivery_date: toDate(pick(row, 'delivery date', 'planned')),
       delivered_at: deliveredAt,
       documents: toDocuments(pick(row, 'files', 'file', 'attachment')),
+      // Only when Monday has one: a null here would wipe an invoice number typed
+      // into Polaris on a package Monday has not invoiced yet.
+      ...(invoiceNo ? { invoice_no: invoiceNo } : {}),
       local_import: 'Local',
       status: deliveredAt ? 'delivered' : 'in_office',
       extra: {
@@ -387,6 +398,14 @@ async function importMondayShipmentsInner(_opts: { limit?: number } = {}): Promi
         idByBarcode.delete(awb)
       } else if (activeNoteByMonday.get(item.id)) {
         updateRecord = (({ status: _status, delivered_at: _deliveredAt, ...rest }) => rest)(record as any)
+      } else if ((statusById.get(existingId) ?? 'in_office') !== 'in_office') {
+        // Monday only ever knows two states for a Local package: not yet delivered
+        // and delivered. Anything past that — Delivered - TBI, Completed — was set
+        // by a person in Polaris, and this re-pull was putting it straight back to
+        // "delivered" on the hour, every hour. Jonathan: "it keeps on returning
+        // its status to deliver even i change them to complete." So the sync may
+        // promote a waiting package to delivered, and nothing else.
+        updateRecord = (({ status: _status, ...rest }) => rest)(record as any)
       }
       toUpdate.push({ id: existingId, itemName: item.name, record: updateRecord })
     } else {
