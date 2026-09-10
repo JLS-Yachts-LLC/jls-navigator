@@ -53,7 +53,7 @@ const EMPTY = {
   department: "", rank: "", occupation: "",
   email: "", phone: "",
   // passport
-  passport_number: "", passport_issue_country: "", passport_issue_authority: "",
+  passport_number: "", passport_issue_authority: "",
   passport_issue_date: "", passport_expiry_date: "", passport_place_of_issue: "",
   // visa (visa_applications)
   visa_type: "Crew Visa", destination_country: "UAE", destination_city: "",
@@ -136,7 +136,7 @@ export function VisaWizardPage() {
         marital_status: data.marital_status ?? "", religion: data.religion ?? "", native_language: data.native_language ?? "",
         department: data.department ?? "", rank: data.rank ?? "", occupation: data.occupation ?? "",
         email: data.email ?? "", phone: data.phone ?? "",
-        passport_number: data.passport_number ?? "", passport_issue_country: data.passport_issue_country ?? "",
+        passport_number: data.passport_number ?? "",
         passport_issue_authority: data.passport_issue_authority ?? "", passport_issue_date: data.passport_issue_date ?? "",
         passport_expiry_date: data.passport_expiry_date ?? "", passport_place_of_issue: data.passport_place_of_issue ?? "",
         yacht_id: data.yacht_id ?? "",
@@ -170,7 +170,7 @@ export function VisaWizardPage() {
         marital_status: form.marital_status || null, religion: form.religion || null, native_language: form.native_language || null,
         department: form.department || null, rank: form.rank || null, occupation: form.occupation || null,
         email: form.email || null, phone: form.phone || null,
-        passport_number: form.passport_number || null, passport_issue_country: form.passport_issue_country || null,
+        passport_number: form.passport_number || null,
         passport_issue_authority: form.passport_issue_authority || null, passport_issue_date: form.passport_issue_date || null,
         passport_expiry_date: form.passport_expiry_date || null, passport_place_of_issue: form.passport_place_of_issue || null,
         yacht_id: form.yacht_id || null, updated_at: new Date().toISOString(),
@@ -336,7 +336,6 @@ export function VisaWizardPage() {
                   <Section title="Passport Details">
                     <Grid>
                       <Field label="Passport Number" value={form.passport_number} onChange={(v) => set("passport_number", v)} mono />
-                      <Field label="Passport Issue Country" value={form.passport_issue_country} onChange={(v) => set("passport_issue_country", v)} />
                       <Field label="Passport Issue Authority" value={form.passport_issue_authority} onChange={(v) => set("passport_issue_authority", v)} />
                       <Field label="Issue Date" type="date" value={form.passport_issue_date} onChange={(v) => set("passport_issue_date", v)} />
                       <Field label="Expiry Date" type="date" value={form.passport_expiry_date} onChange={(v) => set("passport_expiry_date", v)} />

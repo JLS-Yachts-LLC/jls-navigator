@@ -1598,7 +1598,9 @@ const CREW_DB_FIELDS = [
   { value: 'phone', label: 'Phone' },
   { value: 'status', label: 'Status' },
   { value: 'passport_number', label: 'Passport Number' },
-  { value: 'passport_issue_country', label: 'Passport Issue Country' },
+  // No 'passport_issue_country' target: that column has been dropped. The passport's
+  // issuing country lives on crew_passports.issuing_country, which this mapping
+  // cannot write — it only targets crew_members.
   { value: 'passport_issue_authority', label: "Passport Issuing Gov't" },
   { value: 'passport_place_of_issue', label: 'Passport Place of Issue' },
   { value: 'passport_issue_date', label: 'Passport Issue Date' },
@@ -1787,7 +1789,6 @@ function autoSuggestCrew(displayName: string): string {
     email: 'email', phone: 'phone', mobile: 'phone', contactno: 'phone',
     status: 'status',
     passport: 'passport_number', passportno: 'passport_number', passportnumber: 'passport_number',
-    passportissuecountry: 'passport_issue_country', issuecountry: 'passport_issue_country', passportcountry: 'passport_issue_country',
     passportissuegovt: 'passport_issue_authority', issuinggovernment: 'passport_issue_authority', passportauthority: 'passport_issue_authority',
     placeofissue: 'passport_place_of_issue', passportplaceofissue: 'passport_place_of_issue',
     passportissuedate: 'passport_issue_date', issuedate: 'passport_issue_date',

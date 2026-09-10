@@ -87,8 +87,9 @@ async function handleGet(crewId: string, request: Request): Promise<Response> {
   // two columns already share a format, unlike nationality_citizenship which holds
   // a demonym ("Filipino", "British") rather than a country name.
   //
-  // crew_members.passport_issue_country exists but is empty for all 531 crew, so
-  // the live value lives on the passport record.
+  // crew_passports is the only home for this: the old flat mirror column
+  // crew_members.passport_issue_country was empty for all 531 crew and has been
+  // dropped, so there is no wrong column left to reach for.
   //
   // Two traps in that data, both hit on the first attempt:
   //   • 167 passport rows carry the placeholder "XX" — and every one of them is

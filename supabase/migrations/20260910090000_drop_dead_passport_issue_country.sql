@@ -1,0 +1,30 @@
+-- Drop crew_members.passport_issue_country — a duplicate of the real thing that
+-- nothing ever wrote.
+--
+-- Found while building the SD-0023 autofill (pre-fill Country of birth from the
+-- passport). Reaching for the obviously-named column would have produced nothing:
+-- it was NULL or blank for all 531 crew. The passport's issuing country actually
+-- lives on `crew_passports.issuing_country`, which 242 crew have a real value for.
+-- Two columns for one fact, one of them always empty, is a trap for whoever writes
+-- the next feature — so the empty one goes.
+--
+-- Verified before dropping that nothing depends on it:
+--   • 0 rows with any value.
+--   • No view, index, policy, constraint or function references it.
+--   • The live "Visa" SharePoint sync (sync_target = crew_members) maps
+--     passport_number but NOT this column, so the sync never wrote it.
+--   • The only UI that read or wrote it was src/components/crew-immigration/
+--     visa-wizard-page.tsx, which no route imports — it is orphaned code. Its
+--     field has been removed in the same commit.
+--   • It was offered as a sync-mapping target in Settings; that option and its
+--     three header aliases are removed too, so nobody can map a SharePoint column
+--     onto a column that no longer exists.
+--
+-- NOT touched, deliberately — three siblings on crew_members are also empty
+-- (passport_issue_authority, passport_issue_date, passport_place_of_issue) but
+-- unlike this one they still have live readers: StepReviewSubmit falls back to
+-- passport_place_of_issue for Place of issue, and sharepoint-sync.server.ts lists
+-- passport_issue_date in its date-coercion set. Removing those means changing read
+-- paths, which is a separate decision. passport_number (336 rows) and
+-- passport_expiry_date (123 rows) are genuinely in use and must stay.
+alter table public.crew_members drop column if exists passport_issue_country;
