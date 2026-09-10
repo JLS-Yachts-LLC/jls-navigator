@@ -5,9 +5,13 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
-    "version": "2.52.1",
+    "version": "2.53.0",
     "date": "2026-09-10",
     "entries": [
+      {
+        "type": "feature",
+        "title": "Pre-fill country of birth from the passport, and ask for mother's full name"
+      },
       {
         "type": "fix",
         "title": "Pin function search paths, and keep the dedupe backups readable"
