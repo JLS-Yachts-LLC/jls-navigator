@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "Drop the last three dead crew_members passport columns"
+      },
+      {
+        "type": "fix",
         "title": "Clear the \"XX\" passport placeholder, and the constraint that caused it"
       },
       {
