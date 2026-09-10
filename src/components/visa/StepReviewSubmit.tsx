@@ -87,7 +87,7 @@ export function StepReviewSubmit({ state, onUpdate, onNext, onBack, onDone }: Pr
   // Personal details that must be present before the application can be submitted.
   const REQUIRED_PERSONAL = new Set<string>([
     'Full name', 'Date of birth', 'Place of birth', 'Country of birth', 'Gender',
-    'Nationality', 'Marital status', "Mother's maiden name", "Father's full name",
+    'Nationality', 'Marital status', "Mother's full name", "Father's full name",
     'Native language', 'Occupation / rank', 'Email', 'Phone',
   ])
 
@@ -191,7 +191,7 @@ export function StepReviewSubmit({ state, onUpdate, onNext, onBack, onDone }: Pr
         { label: 'Nationality', value: pi.nationalityCitizenship ?? c.nationality ?? p.nationality },
         { label: 'Marital status', value: pi.maritalStatus ?? c.marital_status },
         { label: 'Religion', value: pi.religion ?? c.religion },
-        { label: "Mother's maiden name", value: pi.mothersMaidenName ?? c.mothers_maiden_name ?? c.mother_name },
+        { label: "Mother's full name", value: pi.mothersMaidenName ?? c.mothers_maiden_name ?? c.mother_name },
         { label: "Father's full name", value: pi.fathersFullName ?? c.fathers_full_name ?? c.father_name },
         { label: 'Native language', value: pi.nativeLanguage ?? c.native_language },
         { label: 'Occupation / rank', value: pi.occupation ?? c.occupation ?? c.rank },

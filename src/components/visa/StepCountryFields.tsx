@@ -238,7 +238,7 @@ function VesselNameInput({ value, onChange }: { value: string; onChange: (val: s
 }
 
 export function StepCountryFields({ state, onUpdate, onNext, onBack }: StepCountryFieldsProps) {
-  // Auth token for the Additional Personal Information section (mother's maiden
+  // Auth token for the Additional Personal Information section (mother's full
   // name etc.) — that component talks to api.crew.personal-info with a bearer token.
   const [authToken, setAuthToken] = useState('')
   useEffect(() => {
@@ -475,7 +475,7 @@ export function StepCountryFields({ state, onUpdate, onNext, onBack }: StepCount
         ))}
       </div>
 
-      {/* Additional Personal Information (mother's maiden name, etc.) — Mike's
+      {/* Additional Personal Information (mother's full name, etc.) — Mike's
           personal-info capture, surfaced in the wizard's Details step. */}
       {state.crew?.id && authToken && (
         <div style={{ marginTop: 24 }}>

@@ -48,6 +48,8 @@ export interface PersonalInfoApiResponse {
   nationalityCitizenship:  string | null
   placeOfBirth:            string | null
   countryOfBirth:          string | null
+  /** Issuing country of the crew member's passport — pre-fills Country of birth. */
+  passportIssuingCountry:  string | null
   gender:                  string | null
   maritalStatus:           string | null
   nativeLanguage:          string | null

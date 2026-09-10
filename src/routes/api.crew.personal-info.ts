@@ -10,6 +10,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { formatName } from '@/lib/formatName'
+import { COUNTRY_NAMES } from '@/lib/countries'
 
 function getAdmin() {
   return createClient(
@@ -81,10 +82,44 @@ async function handleGet(crewId: string, request: Request): Promise<Response> {
   if (error) return json({ error: error.message }, 500)
   if (!data)  return json({ error: 'Crew member not found' }, 404)
 
+  // The passport's issuing country, used to pre-fill Country of birth — they are
+  // the same for ~87% of the crew on file (206 of the 238 who have both), and the
+  // two columns already share a format, unlike nationality_citizenship which holds
+  // a demonym ("Filipino", "British") rather than a country name.
+  //
+  // crew_members.passport_issue_country exists but is empty for all 531 crew, so
+  // the live value lives on the passport record.
+  //
+  // Two traps in that data, both hit on the first attempt:
+  //   • 167 passport rows carry the placeholder "XX" — and every one of them is
+  //     flagged is_primary, so ordering by is_primary picks the junk first. They
+  //     are filtered out rather than ordered around.
+  //   • Casing is inconsistent ("SOUTH AFRICA" alongside "South Africa"), so the
+  //     value is matched back to the canonical country list before being handed
+  //     to a <select> that lists those names.
+  const { data: passports } = await (admin as any)
+    .from('crew_passports')
+    .select('issuing_country, expiry_date')
+    .eq('crew_id', crewId)
+    .not('issuing_country', 'is', null)
+    .order('expiry_date', { ascending: false, nullsFirst: false })
+
+  const passportIssuingCountry = (() => {
+    for (const p of (passports ?? []) as { issuing_country: string | null }[]) {
+      const raw = (p.issuing_country ?? '').trim()
+      // "XX" and other 2-character placeholders are not countries.
+      if (raw.length <= 2) continue
+      const canonical = COUNTRY_NAMES.find(c => c.toLowerCase() === raw.toLowerCase())
+      return canonical ?? raw
+    }
+    return null
+  })()
+
   return json({
     nationalityCitizenship:  data.nationality_citizenship ?? null,
     placeOfBirth:            data.place_of_birth          ?? null,
     countryOfBirth:          data.country_of_birth        ?? null,
+    passportIssuingCountry,
     gender:                  data.gender                  ?? null,
     maritalStatus:           data.marital_status          ?? null,
     nativeLanguage:          data.native_language         ?? null,

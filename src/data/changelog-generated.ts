@@ -5,9 +5,31 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.52.1",
+    "date": "2026-09-10",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Pin function search paths, and keep the dedupe backups readable"
+      },
+      {
+        "type": "fix",
+        "title": "Take internal RPCs off the unauthenticated API"
+      }
+    ]
+  },
+  {
     "version": "2.52.0",
     "date": "2026-09-09",
     "entries": [
+      {
+        "type": "fix",
+        "title": "Close five public tables that were readable and deletable with the anon key"
+      },
+      {
+        "type": "fix",
+        "title": "Local Packages search finds delivery notes, and looks across every stage"
+      },
       {
         "type": "fix",
         "title": "A Completed status on Local Packages now stays put, and invoice numbers arrive from Monday"

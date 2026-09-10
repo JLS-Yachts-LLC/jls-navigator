@@ -169,7 +169,7 @@ export function CrewPersonalEditDialog({ crewId, open, onOpenChange, onSaved }: 
             {fieldText('countryOfBirth', 'Country of birth')}
             {fieldSelect('maritalStatus', 'Marital status', MARITAL)}
             {fieldText('nativeLanguage', 'Native language')}
-            {fieldText('mothersMaidenName', "Mother's maiden name")}
+            {fieldText('mothersMaidenName', "Mother's full name")}
             {fieldText('fathersFullName', "Father's full name")}
             {fieldText('occupation', 'Occupation / rank')}
             {fieldSelect('religion', 'Religion', RELIGIONS)}
