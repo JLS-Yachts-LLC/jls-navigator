@@ -1,0 +1,32 @@
+-- Finish clearing the crew_members passport mirror.
+--
+-- crew_members carried a flat copy of the passport fields that really live on
+-- crew_passports. 20260910090000 dropped passport_issue_country; these are the
+-- other three, all NULL for every one of the 531 crew:
+--   passport_issue_authority   0 / 531
+--   passport_issue_date        0 / 531
+--   passport_place_of_issue    0 / 531
+--
+-- They were left behind last time because, unlike passport_issue_country, each had
+-- a code reference. All three were removed in the same commit, and none of them
+-- ever carried data:
+--   • StepReviewSubmit read `p.place_of_issue ?? c.passport_place_of_issue` — a
+--     fallback that could never fire, since the column was empty for everyone. Now
+--     reads the passport record only.
+--   • sharepoint-sync.server.ts listed passport_issue_date in DATE_FIELDS, a type
+--     hint for a column no sync mapping targeted.
+--   • Settings offered all three as sync-mapping targets. Checked every one of the
+--     13 sharepoint_sync_configs rows: not one maps any of them.
+--   • visa-wizard-page.tsx had fields for them, but no route imports that file.
+--
+-- STAYING, because they hold real data:
+--   crew_members.passport_number        336 / 531
+--   crew_members.passport_expiry_date   123 / 531
+--
+-- NOT the same thing, despite the similar name: `crew_passports.issue_date` is
+-- populated on all 409 passport rows and is untouched. The only thing ever flagged
+-- about it was its NOT NULL constraint (the trap that produced the 'XX' placeholder
+-- — see 20260910100000), not the column itself.
+alter table public.crew_members drop column if exists passport_issue_authority;
+alter table public.crew_members drop column if exists passport_issue_date;
+alter table public.crew_members drop column if exists passport_place_of_issue;

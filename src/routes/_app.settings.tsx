@@ -1598,12 +1598,11 @@ const CREW_DB_FIELDS = [
   { value: 'phone', label: 'Phone' },
   { value: 'status', label: 'Status' },
   { value: 'passport_number', label: 'Passport Number' },
-  // No 'passport_issue_country' target: that column has been dropped. The passport's
-  // issuing country lives on crew_passports.issuing_country, which this mapping
-  // cannot write — it only targets crew_members.
-  { value: 'passport_issue_authority', label: "Passport Issuing Gov't" },
-  { value: 'passport_place_of_issue', label: 'Passport Place of Issue' },
-  { value: 'passport_issue_date', label: 'Passport Issue Date' },
+  // The passport's issuing country, issuing authority, issue date and place of issue
+  // are deliberately absent: those crew_members mirror columns were empty for all
+  // 531 crew and have been dropped. They live on crew_passports, which this mapping
+  // cannot write — it only targets crew_members. passport_number and
+  // passport_expiry_date below are the two that carry real data.
   { value: 'passport_expiry_date', label: 'Passport Expiry Date' },
   { value: 'seamans_book_number', label: "Seaman's Book No." },
   { value: 'seamans_book_expiry', label: "Seaman's Book Expiry" },
@@ -1789,9 +1788,6 @@ function autoSuggestCrew(displayName: string): string {
     email: 'email', phone: 'phone', mobile: 'phone', contactno: 'phone',
     status: 'status',
     passport: 'passport_number', passportno: 'passport_number', passportnumber: 'passport_number',
-    passportissuegovt: 'passport_issue_authority', issuinggovernment: 'passport_issue_authority', passportauthority: 'passport_issue_authority',
-    placeofissue: 'passport_place_of_issue', passportplaceofissue: 'passport_place_of_issue',
-    passportissuedate: 'passport_issue_date', issuedate: 'passport_issue_date',
     passportexpiry: 'passport_expiry_date', passportexpirydate: 'passport_expiry_date', expirydate: 'passport_expiry_date',
     seamansbook: 'seamans_book_number', seamanbook: 'seamans_book_number', seamansbookno: 'seamans_book_number', sbno: 'seamans_book_number',
     seamansbookexpiry: 'seamans_book_expiry',

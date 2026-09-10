@@ -202,7 +202,10 @@ export function StepReviewSubmit({ state, onUpdate, onNext, onBack, onDone }: Pr
         { label: 'Passport number', value: p.passport_number },
         { label: 'Passport nationality', value: p.nationality },
         { label: 'Issuing country', value: p.issuing_country },
-        { label: 'Place of issue', value: p.place_of_issue ?? c.passport_place_of_issue },
+        // The passport record is the only source; the old crew_members mirror
+        // column this used to fall back to was empty for every crew member and
+        // has been dropped.
+        { label: 'Place of issue', value: p.place_of_issue },
         { label: 'Issue date', value: toDMY(p.issue_date) },
         { label: 'Expiry date', value: toDMY(p.expiry_date) },
       ]) },

@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "Clear the \"XX\" passport placeholder, and the constraint that caused it"
+      },
+      {
+        "type": "fix",
         "title": "Drop the duplicate passport issuing-country column"
       },
       {

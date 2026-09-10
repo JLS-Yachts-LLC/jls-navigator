@@ -2213,7 +2213,10 @@ async function _syncCrew(cfg: SpConfig): Promise<{ synced: number; errors: numbe
     if (c.first_name && c.last_name) byName.set(nameKey(c.first_name, c.last_name), String(c.id))
   }
 
-  const DATE_FIELDS = new Set(['date_of_birth', 'passport_issue_date', 'passport_expiry_date', 'seamans_book_expiry'])
+  // 'passport_issue_date' is gone from this set with the column — the crew_members
+  // passport mirror columns were empty for all 531 crew and have been dropped.
+  // passport_expiry_date stays: it is real, on 123 crew.
+  const DATE_FIELDS = new Set(['date_of_birth', 'passport_expiry_date', 'seamans_book_expiry'])
   let skipped = 0
   const skipSamples: string[] = []
   const updateById = new Map<string, Record<string, any>>()

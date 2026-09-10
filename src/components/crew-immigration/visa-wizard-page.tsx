@@ -53,8 +53,8 @@ const EMPTY = {
   department: "", rank: "", occupation: "",
   email: "", phone: "",
   // passport
-  passport_number: "", passport_issue_authority: "",
-  passport_issue_date: "", passport_expiry_date: "", passport_place_of_issue: "",
+  passport_number: "",
+  passport_expiry_date: "",
   // visa (visa_applications)
   visa_type: "Crew Visa", destination_country: "UAE", destination_city: "",
   planned_arrival: "", planned_departure: "", priority: "normal",
@@ -137,8 +137,7 @@ export function VisaWizardPage() {
         department: data.department ?? "", rank: data.rank ?? "", occupation: data.occupation ?? "",
         email: data.email ?? "", phone: data.phone ?? "",
         passport_number: data.passport_number ?? "",
-        passport_issue_authority: data.passport_issue_authority ?? "", passport_issue_date: data.passport_issue_date ?? "",
-        passport_expiry_date: data.passport_expiry_date ?? "", passport_place_of_issue: data.passport_place_of_issue ?? "",
+        passport_expiry_date: data.passport_expiry_date ?? "",
         yacht_id: data.yacht_id ?? "",
       }));
     }
@@ -171,8 +170,7 @@ export function VisaWizardPage() {
         department: form.department || null, rank: form.rank || null, occupation: form.occupation || null,
         email: form.email || null, phone: form.phone || null,
         passport_number: form.passport_number || null,
-        passport_issue_authority: form.passport_issue_authority || null, passport_issue_date: form.passport_issue_date || null,
-        passport_expiry_date: form.passport_expiry_date || null, passport_place_of_issue: form.passport_place_of_issue || null,
+        passport_expiry_date: form.passport_expiry_date || null,
         yacht_id: form.yacht_id || null, updated_at: new Date().toISOString(),
       };
 
@@ -336,10 +334,7 @@ export function VisaWizardPage() {
                   <Section title="Passport Details">
                     <Grid>
                       <Field label="Passport Number" value={form.passport_number} onChange={(v) => set("passport_number", v)} mono />
-                      <Field label="Passport Issue Authority" value={form.passport_issue_authority} onChange={(v) => set("passport_issue_authority", v)} />
-                      <Field label="Issue Date" type="date" value={form.passport_issue_date} onChange={(v) => set("passport_issue_date", v)} />
                       <Field label="Expiry Date" type="date" value={form.passport_expiry_date} onChange={(v) => set("passport_expiry_date", v)} />
-                      <Field label="Place of Issue" value={form.passport_place_of_issue} onChange={(v) => set("passport_place_of_issue", v)} />
                     </Grid>
                   </Section>
                 </>
