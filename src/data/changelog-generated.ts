@@ -9,6 +9,10 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-09-10",
     "entries": [
       {
+        "type": "fix",
+        "title": "Drop the duplicate passport issuing-country column"
+      },
+      {
         "type": "feature",
         "title": "Pre-fill country of birth from the passport, and ask for mother's full name"
       },
