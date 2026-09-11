@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "Dates from the visa trackers, and phone numbers pasted with their country code"
+      },
+      {
+        "type": "fix",
         "title": "Stop four sources of database errors, one of them hiding lost data"
       }
     ]
