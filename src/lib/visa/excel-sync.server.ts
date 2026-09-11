@@ -44,6 +44,22 @@ export const IMPORT_ALIASES: Record<string, string[]> = {
   first_entry_expiry: ['1ST ENTRY EXPIRY', 'FIRST ENTRY EXPIRY', '1ST ENTRY'],
 }
 
+/**
+ * Normalise a VESSEL name for comparison — keeps digits, unlike normName().
+ *
+ * normName() strips everything that is not a letter, which is right for people
+ * (it absorbs punctuation and accents in a surname) and catastrophic for vessels:
+ * it turns "O2" and "O3" both into "O", so the two are indistinguishable. Since
+ * the yacht lookup is a Map keyed on that value, whichever vessel was inserted
+ * last owned the key, and crew visas from BOTH sheets were linked to that single
+ * yacht — one vessel's crew appearing under another, which is what the floor
+ * reported.
+ *
+ * Five pairs of real vessels collide this way: O2/O3, WISAL 1/WISAL 2,
+ * SAY 42 018/SAY 42016, Pearl/Pearl 63, Red Sapphire/Red Sapphire 1.
+ */
+const normVessel = norm
+
 // Fields on visa_applications that are synced both ways.
 const VISA_SYNC_FIELDS = ['status', 'visa_number', 'visa_issuance_date', 'visa_expiry', 'sign_on_date', 'sign_off_date', 'arrival_date', 'first_entry_expiry'] as const
 const DATE_FIELDS = new Set(['visa_issuance_date', 'visa_expiry', 'sign_on_date', 'sign_off_date', 'arrival_date', 'first_entry_expiry', 'passport_expiry', 'date_of_birth'])
@@ -267,7 +283,29 @@ export async function reconcileCrewVisa(opts: {
 
     const { data: yachts } = await db().from('yachts').select('id, vessel_name')
     const yachtByName = new Map<string, string>()
-    for (const y of (yachts ?? [])) if (y.vessel_name) yachtByName.set(normName(y.vessel_name), y.id)
+    for (const y of (yachts ?? [])) if (y.vessel_name) yachtByName.set(normVessel(y.vessel_name), y.id)
+
+    /**
+     * Sheet name → yacht id. Exact first, then the longest yacht name the sheet
+     * name STARTS WITH.
+     *
+     * The prefix step is needed because sheets get re-dated — "Ocean Victory0125"
+     * is the Ocean Victory sheet, and 138 visas depend on it resolving. Digit
+     * stripping used to give that for free, at the cost of merging O2 with O3.
+     * Exact-before-prefix keeps both: "O2" and "O3" each hit themselves, and a
+     * dated sheet still falls back to its vessel. A shorter name can never win
+     * over an exact match, which is the property that was missing.
+     */
+    const resolveYachtId = (sheetName: string): string | null => {
+      const k = normVessel(sheetName)
+      const exact = yachtByName.get(k)
+      if (exact) return exact
+      let best: string | null = null, bestLen = 0
+      for (const [name, id] of yachtByName) {
+        if (name && name.length > bestLen && k.startsWith(name)) { best = id; bestLen = name.length }
+      }
+      return best
+    }
 
     const { data: visas } = await db().from('visa_applications')
       .select('id, given_name, surname, passport_number, vessel_name, yacht_id, status, visa_number, visa_issuance_date, visa_expiry, sign_on_date, sign_off_date, arrival_date, first_entry_expiry, updated_at')
@@ -275,7 +313,7 @@ export async function reconcileCrewVisa(opts: {
     const byNameVessel = new Map<string, any[]>()
     for (const v of (visas ?? [])) {
       if (v.passport_number) { const k = norm(v.passport_number); if (!byPassport.has(k)) byPassport.set(k, []); byPassport.get(k)!.push(v) }
-      const nk = normName(v.given_name) + '|' + normName(v.surname) + '|' + normName(v.vessel_name)
+      const nk = normName(v.given_name) + '|' + normName(v.surname) + '|' + normVessel(v.vessel_name)
       if (!byNameVessel.has(nk)) byNameVessel.set(nk, []); byNameVessel.get(nk)!.push(v)
     }
     const { data: passports } = await db().from('crew_passports').select('crew_id, passport_number')
@@ -291,7 +329,7 @@ export async function reconcileCrewVisa(opts: {
       if (!sd) { summary.sheets_empty++; continue }
       const mapped: Record<string, number> = {}
       for (const [field, aliases] of Object.entries(IMPORT_ALIASES)) { const c = findCol(sd.headers, aliases); if (c >= 0) mapped[field] = c }
-      const yachtId = yachtByName.get(normName(sheetName)) ?? null
+      const yachtId = resolveYachtId(sheetName)
 
       // A vessel sheet often lists the same crew across multiple rows (past
       // voyages / renewals). Collapse to ONE canonical row per crew — the
@@ -321,10 +359,10 @@ export async function reconcileCrewVisa(opts: {
         let match: any | undefined
         if (passport) {
           const cands = byPassport.get(norm(passport)) ?? []
-          match = cands.find(c => normName(c.vessel_name) === normName(sheetName)) ?? cands[0]
+          match = cands.find(c => normVessel(c.vessel_name) === normVessel(sheetName)) ?? cands[0]
         }
         if (!match && given && surname) {
-          match = (byNameVessel.get(normName(given) + '|' + normName(surname) + '|' + normName(sheetName)) ?? [])[0]
+          match = (byNameVessel.get(normName(given) + '|' + normName(surname) + '|' + normVessel(sheetName)) ?? [])[0]
         }
 
         if (match) {
@@ -449,7 +487,7 @@ export async function syncCrewVisaTwoWay(opts: { vesselOffset?: number; vesselLi
     const byNameVessel = new Map<string, any[]>()
     for (const v of (visas ?? [])) {
       if (v.passport_number) { const k = norm(v.passport_number); if (!byPassport.has(k)) byPassport.set(k, []); byPassport.get(k)!.push(v) }
-      const nk = normName(v.given_name) + '|' + normName(v.surname) + '|' + normName(v.vessel_name)
+      const nk = normName(v.given_name) + '|' + normName(v.surname) + '|' + normVessel(v.vessel_name)
       if (!byNameVessel.has(nk)) byNameVessel.set(nk, []); byNameVessel.get(nk)!.push(v)
     }
     const { data: states } = await db().from('visa_excel_sync_state').select('visa_application_id, snapshot').eq('workbook', 'crew_visa')
@@ -479,8 +517,8 @@ export async function syncCrewVisaTwoWay(opts: { vesselOffset?: number; vesselLi
       for (const vals of groups.values()) {
         const passport = vals.passport_number ?? ''
         let match: any | undefined
-        if (passport) { const c = byPassport.get(norm(passport)) ?? []; match = c.find(x => normName(x.vessel_name) === normName(sheetName)) ?? c[0] }
-        if (!match && vals.given_name && vals.surname) match = (byNameVessel.get(normName(vals.given_name) + '|' + normName(vals.surname) + '|' + normName(sheetName)) ?? [])[0]
+        if (passport) { const c = byPassport.get(norm(passport)) ?? []; match = c.find(x => normVessel(x.vessel_name) === normVessel(sheetName)) ?? c[0] }
+        if (!match && vals.given_name && vals.surname) match = (byNameVessel.get(normName(vals.given_name) + '|' + normName(vals.surname) + '|' + normVessel(sheetName)) ?? [])[0]
         if (!match) { summary.unmatched++; continue }
         summary.matched++
 
