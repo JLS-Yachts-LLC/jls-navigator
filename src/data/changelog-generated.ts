@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "Stop one vessel's crew visas being filed against another"
+      },
+      {
+        "type": "fix",
         "title": "Dates from the visa trackers, and phone numbers pasted with their country code"
       },
       {
