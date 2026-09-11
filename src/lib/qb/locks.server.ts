@@ -9,6 +9,19 @@
  * entity's CURRENT state from QBO (not the event payload), so whichever
  * invocation holds the lock does the complete job; anything it might miss is
  * caught by the 5-minute backstop/reconciler.
+ *
+ * Acquisition goes through the `qb_try_entity_lock` RPC rather than a plain
+ * INSERT, for two reasons:
+ *
+ *   1. Contention used to be signalled by letting the INSERT fail on the primary
+ *      key. That works, but every single collision writes a Postgres ERROR —
+ *      590 of them in one 24h window, enough to trip the infrastructure monitor
+ *      and to bury genuine errors in the log. Normal contention is not an error
+ *      and should not be recorded as one.
+ *   2. Taking over a dead holder's lock used to be SELECT-then-UPDATE, so two
+ *      invocations could both read the same stale row and both conclude they had
+ *      won it — the exact race the lock exists to prevent. The RPC does it as a
+ *      single conditional upsert, so exactly one caller can win.
  */
 import { createClient } from '@supabase/supabase-js'
 
@@ -16,20 +29,18 @@ function admin() {
   return createClient(process.env.SUPABASE_URL ?? '', process.env.SUPABASE_SERVICE_ROLE_KEY ?? '', { auth: { persistSession: false } })
 }
 
-const STALE_MS = 3 * 60_000 // a crashed holder's lock is taken over after 3 min
+/** How long before a crashed holder's lock can be taken over. */
+const STALE_SECONDS = 180
 
 /** Try to acquire the lock. True = we hold it; false = someone else is processing. */
 export async function tryEntityLock(key: string): Promise<boolean> {
-  const sb = admin()
-  const { error } = await sb.from('qb_entity_locks').insert({ key, locked_at: new Date().toISOString() })
-  if (!error) return true
-  // Row exists — take over only if the holder looks dead.
-  const { data } = await sb.from('qb_entity_locks').select('locked_at').eq('key', key).maybeSingle()
-  if (data?.locked_at && Date.now() - new Date(data.locked_at).getTime() > STALE_MS) {
-    await sb.from('qb_entity_locks').update({ locked_at: new Date().toISOString() }).eq('key', key)
-    return true
-  }
-  return false
+  const { data, error } = await admin()
+    .rpc('qb_try_entity_lock', { p_key: key, p_stale_seconds: STALE_SECONDS })
+  // Fail closed: if the lock cannot be evaluated, don't process. The 5-minute
+  // backstop picks the entity up, which is far cheaper than two invocations
+  // hammering the QBO API for the same document.
+  if (error) return false
+  return data === true
 }
 
 export async function releaseEntityLock(key: string): Promise<void> {

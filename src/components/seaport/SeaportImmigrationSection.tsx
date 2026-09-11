@@ -17,10 +17,16 @@ export function SeaportImmigrationSection({ vesselId }: { vesselId: string }) {
         .select("request_id, request_date, status")
         .eq("vessel_id", vesselId).order("request_date", { ascending: false }).limit(6);
       const ids = (reqs ?? []).map((r: any) => r.request_id);
-      const [{ data: arr }, { data: dep }] = await Promise.all([
-        (supabase as any).from("seaport_arrivals").select("request_id").in("request_id", ids.length ? ids : ["x"]),
-        (supabase as any).from("seaport_departures").select("request_id").in("request_id", ids.length ? ids : ["x"]),
-      ]);
+      // A vessel with no requests used to send `.in("request_id", ["x"])` as a
+      // never-match guard, but request_id is a uuid, so Postgres rejected "x" as
+      // invalid syntax — a logged database error on every such render. There is
+      // nothing to look up in that case, so don't ask.
+      const [{ data: arr }, { data: dep }] = ids.length
+        ? await Promise.all([
+            (supabase as any).from("seaport_arrivals").select("request_id").in("request_id", ids),
+            (supabase as any).from("seaport_departures").select("request_id").in("request_id", ids),
+          ])
+        : [{ data: [] }, { data: [] }];
       const by = (rows: any[]) => (rows ?? []).reduce((m, r) => ((m[r.request_id] = (m[r.request_id] ?? 0) + 1), m), {} as Record<string, number>);
       const a = by(arr ?? []); const d = by(dep ?? []);
       return (reqs ?? []).map((r: any) => ({ ...r, arrivals: a[r.request_id] ?? 0, departures: d[r.request_id] ?? 0 }));

@@ -116,15 +116,25 @@ async function fireFlag(
   workingDays: number,
   recipients: string[],
 ): Promise<void> {
-  await sb.from('visa_expiry_flags').insert({
+  // The flag is a record of a VISA expiring; crew_id is a convenience link, and
+  // 5,525 of the 5,985 visa applications on file have no crew member attached.
+  // crew_id used to be NOT NULL, so every flag on an unlinked visa failed — and
+  // because this insert's error was never read, it failed SILENTLY: the
+  // notification still went out and expiry_flags_sent was still stamped, leaving
+  // 247 visas marked as flagged with no audit row behind them. The column is now
+  // nullable and the outcome is checked, so a lost flag can no longer be invisible.
+  const { error } = await sb.from('visa_expiry_flags').insert({
     visa_application_id: visa.id,
-    crew_id: visa.crew_member_id,
+    crew_id: visa.crew_member_id ?? null,
     yacht_id: visa.yacht_id,
     flag_type: flagType,
     expiry_date: visa.visa_expiry,
     suppressed: false,
     notified_users: recipients,
   })
+  if (error) {
+    console.error('[visa-expiry-flags] could not record the flag for visa', visa.id, error.message)
+  }
 
   await sb
     .from('visa_applications')
