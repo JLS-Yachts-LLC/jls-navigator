@@ -72,24 +72,55 @@ function fromExcelSerial(n: number): string | null {
   const d = new Date((Math.round(n) - 25569) * 86400000)
   return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10)
 }
-/** Parse a sheet cell into an ISO date, handling Excel serials + text dates. */
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+const iso = (y: number, m0: number, d: number) =>
+  `${String(y).padStart(4, '0')}-${String(m0 + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+
+/**
+ * Parse a sheet cell into an ISO date, handling Excel serials + text dates.
+ *
+ * These sheets are UK/UAE, so a bare `12/05/1990` means 12 May. This used to try
+ * `new Date(s)` FIRST, which broke that in two separate ways — both reported from
+ * the floor, and both reproduced before this rewrite:
+ *
+ *   "12/05/1990"  → 1990-12-05   day and month SWAPPED, because `new Date` reads a
+ *                                slashed date as American MM/DD. It only misfires
+ *                                when the day is ≤ 12; "25/12/1985" throws and fell
+ *                                through to the correct branch, which is why only
+ *                                some records were wrong ("I have checked a few").
+ *   "12-May-1990" → 1990-05-11   one day EARLY (SD-0017's "1 day before the actual
+ *                                DOB"): `new Date` produced LOCAL midnight and
+ *                                `.toISOString()` then shifted it back across UTC.
+ *
+ * So: unambiguous patterns are matched explicitly and assembled as plain strings,
+ * never round-tripped through a Date. `new Date` survives only as a last resort for
+ * exotic formats, and its LOCAL parts are read so it cannot shift a day either.
+ */
 function parseSheetDate(v: unknown): string | null {
   if (v == null || v === '') return null
   if (typeof v === 'number') return fromExcelSerial(v)
   const s = String(v).trim()
   if (/^\d+(\.\d+)?$/.test(s)) return fromExcelSerial(Number(s))
-  const iso = new Date(s)
-  if (!isNaN(iso.getTime()) && /\d{4}/.test(s)) return iso.toISOString().slice(0, 10)
+
+  // Already ISO — take it literally; there is nothing to interpret.
+  const isoM = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ]|$)/.exec(s)
+  if (isoM) {
+    const y = +isoM[1], mo = +isoM[2] - 1, d = +isoM[3]
+    if (mo >= 0 && mo < 12 && d >= 1 && d <= 31) return iso(y, mo, d)
+  }
+
+  // Day-first: 12/05/1990, 12-05-1990, 12 May 1990, 12-May-90.
   const m = /^(\d{1,2})[\/\-. ]([A-Za-z]{3,}|\d{1,2})[\/\-. ](\d{2,4})$/.exec(s)
   if (m) {
-    const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
-    const mon = /^\d+$/.test(m[2]) ? parseInt(m[2], 10) - 1 : months.indexOf(m[2].slice(0, 3).toLowerCase())
+    const mon = /^\d+$/.test(m[2]) ? parseInt(m[2], 10) - 1 : MONTHS.indexOf(m[2].slice(0, 3).toLowerCase())
     let yr = parseInt(m[3], 10); if (yr < 100) yr += 2000
-    if (mon >= 0 && mon < 12) {
-      const dd = new Date(Date.UTC(yr, mon, parseInt(m[1], 10)))
-      if (!isNaN(dd.getTime())) return dd.toISOString().slice(0, 10)
-    }
+    const day = parseInt(m[1], 10)
+    if (mon >= 0 && mon < 12 && day >= 1 && day <= 31) return iso(yr, mon, day)
   }
+
+  // Anything else — read local parts, not toISOString, so no timezone shift.
+  const d = new Date(s)
+  if (!isNaN(d.getTime()) && /\d{4}/.test(s)) return iso(d.getFullYear(), d.getMonth(), d.getDate())
   return null
 }
 

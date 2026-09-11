@@ -132,6 +132,36 @@ export const PhoneNumberField = forwardRef<PhoneNumberFieldHandle, PhoneNumberFi
 
     const selectedCountryData = countries.find((c) => c.countryCode === selectedCountry) ?? null;
 
+    /**
+     * Accept a whole international number typed or pasted into the local box.
+     *
+     * Crew send their number as they'd dial it — "+1 954 857 3254". That used to
+     * be stripped to 11 digits and rejected with "not valid for that country",
+     * because the country code was still sitting in the local part (and the
+     * selector was usually still on somewhere else entirely). There is no way to
+     * get from that error to the right answer without knowing the field wants the
+     * number WITHOUT its prefix, which is not what the message says.
+     *
+     * So: if the text starts with '+', match the longest dial code we know, switch
+     * the selector to it, and keep only the remainder. Longest-first matters —
+     * "+1" would otherwise swallow "+1264" and similar.
+     */
+    const applyTypedNumber = (raw: string) => {
+      const trimmed = raw.trim();
+      if (trimmed.startsWith('+') && countries.length) {
+        const digits = normalizePhoneDigits(trimmed);
+        const match = countries
+          .filter((c) => digits.startsWith(normalizePhoneDigits(c.dialCode)))
+          .sort((a, b) => normalizePhoneDigits(b.dialCode).length - normalizePhoneDigits(a.dialCode).length)[0];
+        if (match) {
+          setSelectedCountry(match.countryCode);
+          setLocalNumber(digits.slice(normalizePhoneDigits(match.dialCode).length));
+          return;
+        }
+      }
+      setLocalNumber(normalizePhoneDigits(trimmed));
+    };
+
     useEffect(() => {
       // An existing saved value (ISO or dial code) — load the country list only,
       // never auto-resolve a default that would overwrite the saved selection.
@@ -434,7 +464,7 @@ export const PhoneNumberField = forwardRef<PhoneNumberFieldHandle, PhoneNumberFi
               type="tel"
               inputMode="numeric"
               value={selectedCountryData ? formatPhoneForDisplay(localNumber, selectedCountryData.countryCode) : localNumber}
-              onChange={(e) => setLocalNumber(normalizePhoneDigits(e.target.value))}
+              onChange={(e) => applyTypedNumber(e.target.value)}
               onBlur={() => setTouched(true)}
               disabled={disabled || loading || !selectedCountry}
               placeholder={selectedCountryData ? `e.g. ${formatPhoneForDisplay('5'.padEnd(selectedCountryData.minLength, '0'), selectedCountryData.countryCode)}` : 'Select a country first'}
