@@ -5,6 +5,16 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.53.1",
+    "date": "2026-09-11",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Stop four sources of database errors, one of them hiding lost data"
+      }
+    ]
+  },
+  {
     "version": "2.53.0",
     "date": "2026-09-10",
     "entries": [
