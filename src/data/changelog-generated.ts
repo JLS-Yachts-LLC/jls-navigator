@@ -5,6 +5,16 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.53.2",
+    "date": "2026-09-12",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Correct 169 crew dates of birth to the passport record"
+      }
+    ]
+  },
+  {
     "version": "2.53.1",
     "date": "2026-09-11",
     "entries": [

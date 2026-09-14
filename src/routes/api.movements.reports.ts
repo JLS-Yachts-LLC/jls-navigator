@@ -213,11 +213,23 @@ export async function runWeeklyImmigrationReports(): Promise<{ signOn: number; s
   const on = rows.filter((a) => a.event_type !== 'sign_off')
   const off = rows.filter((a) => a.event_type === 'sign_off')
 
-  // Recipients — admin-tier users with an email.
-  const { data: profiles } = await sb.from('user_profiles').select('email, roles:role_id(name)').not('email', 'is', null)
-  const recipients = (profiles ?? [])
-    .filter((p: any) => ['global_admin', 'org_admin'].includes(p.roles?.name))
-    .map((p: any) => p.email as string)
+  // Recipients — ACTIVE admin-tier users with an email.
+  //
+  // `active` was not being checked, so every deactivated admin account kept
+  // receiving this every Monday. Three of the five it was reaching were switched
+  // off, including support@newhorizon-it.co.uk — the vendor's shared support
+  // mailbox, which turned each weekly digest into a Service Desk ticket against
+  // New Horizon with an SLA clock running on it.
+  const { data: profiles } = await sb
+    .from('user_profiles')
+    .select('email, active, roles:role_id(name)')
+    .eq('active', true)
+    .not('email', 'is', null)
+  const recipients = [...new Set(
+    (profiles ?? [])
+      .filter((p: any) => ['global_admin', 'org_admin'].includes(p.roles?.name))
+      .map((p: any) => p.email as string),
+  )]
   if (recipients.length === 0) return { signOn: on.length, signOff: off.length, sent: 0 }
 
   const base = process.env.VITE_APP_URL ?? 'https://polaris.jlsyachts.com'

@@ -55,8 +55,14 @@ export async function movementsNotifyHandler(request: Request): Promise<Response
     vessel = y?.vessel_name ?? ''
   }
 
-  // Recipients — admin-tier users with an email on file.
-  const { data: profiles } = await sb.from('user_profiles').select('email, roles:role_id(name)').not('email', 'is', null)
+  // Recipients — ACTIVE admin-tier users with an email on file. Without the
+  // active check, deactivated admin accounts kept being notified — see the same
+  // fix in api.movements.reports.ts.
+  const { data: profiles } = await sb
+    .from('user_profiles')
+    .select('email, active, roles:role_id(name)')
+    .eq('active', true)
+    .not('email', 'is', null)
   const recipients = [...new Set(
     (profiles ?? [])
       .filter((p: any) => ['global_admin', 'org_admin'].includes(p.roles?.name))
