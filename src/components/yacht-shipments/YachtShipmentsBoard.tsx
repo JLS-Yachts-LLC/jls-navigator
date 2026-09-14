@@ -77,10 +77,18 @@ interface Col {
   sticky?: boolean;
 }
 
-const COLS: Col[] = [
+// The two Monday boards do not share a column set, so neither does the UI.
+// Both start with the yacht itself (Monday's Name column), its LOA and Status.
+const SHARED_COLS: Col[] = [
   { key: "yacht_name", label: "Yacht Name", type: "text", width: "w-56", sticky: true },
   { key: "loa", label: "LOA", type: "text", width: "w-24" },
   { key: "status", label: "Status", type: "status", width: "w-32" },
+];
+
+// Import board: ETA · POL · Arrival Port · Customs Option · Vessel Name ·
+// Remarks · Quotation/Pro Forma No. · Quotations · Formula · Home Marina · Charges
+const IMPORT_COLS: Col[] = [
+  ...SHARED_COLS,
   { key: "eta", label: "ETA", type: "date", width: "w-32" },
   { key: "pol", label: "POL", type: "text", width: "w-32" },
   { key: "arrival_port", label: "Arrival Port", type: "text", width: "w-32" },
@@ -95,6 +103,24 @@ const COLS: Col[] = [
   { key: "home_marina", label: "Home Marina", type: "text", width: "w-36" },
   { key: "charges", label: "Charges", type: "number", width: "w-32" },
 ];
+
+// Export board: Loading Date · Departure Port · Destination Port · Vessel Name ·
+// Cruising Permit Cancelled · P.O.C · Remarks. No ETA, Customs Option or money
+// columns — the Export board doesn't have them, so the tab doesn't either.
+// Loading Date / Departure Port / Destination Port reuse the eta / pol /
+// arrival_port columns; only the labels differ per direction.
+const EXPORT_COLS: Col[] = [
+  ...SHARED_COLS,
+  { key: "eta", label: "Loading Date", type: "date", width: "w-32" },
+  { key: "pol", label: "Departure Port", type: "text", width: "w-36" },
+  { key: "arrival_port", label: "Destination Port", type: "text", width: "w-36" },
+  { key: "vessel_name", label: "Vessel Name", type: "text", width: "w-44" },
+  { key: "cruising_permit_cancelled", label: "Cruising Permit Cancelled", type: "tag", width: "w-48" },
+  { key: "poc", label: "P.O.C", type: "text", width: "w-40" },
+  { key: "remarks", label: "Remarks", type: "text", width: "w-64" },
+];
+
+const COLS_BY_DIRECTION: Record<"import" | "export", Col[]> = { import: IMPORT_COLS, export: EXPORT_COLS };
 
 const fmtDate = (d: string | null) =>
   d ? new Date(d + "T00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "";
@@ -140,6 +166,8 @@ export function YachtShipmentsBoard() {
   // "tracking" has no board/status groups of its own — it renders MyFleetPage
   // instead further down, so this only ever needs to be real for import/export.
   const statusGroups = STATUS_GROUPS_BY_DIRECTION[direction === "tracking" ? "import" : direction];
+  const cols: Col[] = COLS_BY_DIRECTION[direction === "tracking" ? "import" : direction];
+  const showCharges = cols.some((c) => c.key === "charges");
 
   const grouped = useMemo(() => {
     const map = new Map<string, Row[]>();
@@ -215,7 +243,9 @@ export function YachtShipmentsBoard() {
                 <Trash2 className="h-3.5 w-3.5" /> Delete {selected.size} selected
               </Button>
             )}
-            <span className="text-xs text-muted-foreground">{rowsInTab.length} shipments · {fmtAED(totalCharges)} total</span>
+            <span className="text-xs text-muted-foreground">
+              {rowsInTab.length} shipments{showCharges && ` · ${fmtAED(totalCharges)} total`}
+            </span>
           </div>
         )}
       </header>
@@ -277,7 +307,7 @@ export function YachtShipmentsBoard() {
                       ghost of the row scrolling underneath during active
                       scrolling. */}
                   <th className="sticky left-0 top-0 z-20 w-9 border-r border-border/40 bg-card px-3 py-2 will-change-transform"></th>
-                  {COLS.map((c) => (
+                  {cols.map((c) => (
                     <th key={c.key}
                       className={cn(
                         "sticky top-0 z-20 bg-card px-3 py-2 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap will-change-transform",
@@ -297,7 +327,7 @@ export function YachtShipmentsBoard() {
                   return (
                     <Fragment key={g.key}>
                       <tr>
-                        <td colSpan={COLS.length + 2} className="p-0">
+                        <td colSpan={cols.length + 2} className="p-0">
                           {/* sticky left-0 on the INNER wrapper (not the td —
                               a colSpan cell already spans the full row, so
                               making IT sticky does nothing to its content's
@@ -318,7 +348,7 @@ export function YachtShipmentsBoard() {
                           <td className="sticky left-0 z-10 w-9 border-r border-border/40 bg-card px-3 py-2 will-change-transform group-hover:bg-accent/10">
                             <Checkbox checked={selected.has(r.id)} onCheckedChange={() => toggleSelect(r.id)} />
                           </td>
-                          {COLS.map((c) => (
+                          {cols.map((c) => (
                             <td key={c.key} className={cn("overflow-hidden px-1 py-1", c.width, c.sticky && "sticky left-9 z-10 border-r border-border/40 bg-card will-change-transform group-hover:bg-accent/10")}>
                               <EditableCell
                                 col={c}
@@ -340,7 +370,7 @@ export function YachtShipmentsBoard() {
                       {!isCollapsed && (
                         <tr>
                           <td className="sticky left-0 z-10 w-9 border-r border-border/40 bg-card px-3 py-2 will-change-transform"></td>
-                          <td colSpan={COLS.length + 1} className="px-1 py-1">
+                          <td colSpan={cols.length + 1} className="px-1 py-1">
                             {addingIn === g.key ? (
                               <div className="flex items-center gap-2 py-0.5">
                                 <Input

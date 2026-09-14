@@ -209,6 +209,19 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
     }
   }
 
+  // Manual Yacht Shipments sync: `?run=yacht-shipments-sync` pulls both Monday
+  // boards (Import + Export) into yacht_shipments now — same as the hourly cron
+  // and the board's "Sync from Monday" button.
+  if (url.searchParams.get('run') === 'yacht-shipments-sync') {
+    try {
+      const { importYachtShipments } = await import('./lib/yacht-shipments/monday.server')
+      const r = await importYachtShipments()
+      return new Response(JSON.stringify(r), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
+  }
+
   if (url.searchParams.get('run') === 'shipsync-proximity-check') {
     try {
       const { checkDeliveryProximity } = await import('./lib/shipsync/proximity-alert.server')
@@ -1274,6 +1287,17 @@ export default {
           .then(({ importMondayImportBoard }) => importMondayImportBoard())
           .then((r) => console.log(`[shipsync-import-board-cron] synced=${r.synced} errors=${r.errors}`))
           .catch((e) => console.error('[shipsync-import-board-cron] error:', e instanceof Error ? e.message : String(e)))
+      )
+
+      // ── Hourly: mirror the Monday.com Yacht Shipments Import + Export boards
+      //    into yacht_shipments (read-only). Until Sept 2026 this only ran from
+      //    the board's "Sync from Monday" button, so the dashboard drifted weeks
+      //    behind Monday. Skips itself if a manual sync is mid-flight. ──
+      ctx.waitUntil(
+        import('./lib/yacht-shipments/monday.server')
+          .then(({ importYachtShipments }) => importYachtShipments())
+          .then((r) => console.log(`[yacht-shipments-cron] ${r.skipped ? 'skipped (already running)' : `synced=${r.synced} errors=${r.errors} pruned=${r.pruned}`}`))
+          .catch((e) => console.error('[yacht-shipments-cron] error:', e instanceof Error ? e.message : String(e)))
       )
 
       // ── Hourly: QuickBooks pipeline health monitor — broken/expiring company

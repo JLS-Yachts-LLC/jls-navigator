@@ -13,6 +13,16 @@
  * time (same as the ShipSync sync), and the complete raw row is stored
  * verbatim in extra.monday so nothing is lost even where the best-effort
  * mapping onto yacht_shipments' own columns misses something.
+ *
+ * The two boards do NOT share a column set. As of Sept 2026:
+ *   Import: Name · LOA · Status · ETA · POL · Arrival Port · Customs Option ·
+ *           Vessel Name · Remarks · Quotation/Pro Forma No. · Quotations ·
+ *           Formula · Home Marina · Charges
+ *   Export: Name · LOA · Status · Loading Date · Cruising Permit Cancelled ·
+ *           Departure Port · Destination Port · Vessel Name · Remarks · P.O.C
+ * Matching is on exact (case-insensitive) titles wherever a substring could
+ * hit the wrong column ("loa" ⊂ "Loading Date", "vessel" ⊂ "Vessel Name").
+ * Runs hourly from the Worker cron and from the board's "Sync from Monday".
  */
 import { createServerFn } from '@tanstack/react-start'
 import { supabaseAdmin } from '@/integrations/supabase/client.server'
@@ -203,15 +213,28 @@ async function syncOneBoard(
   for (const item of items) {
     const row = byTitle(item, colById)
     const record: Record<string, unknown> = {
-      yacht_name: pick(row, 'yacht name', 'yacht', 'vessel') ?? item.name ?? null,
-      loa: pick(row, 'loa', 'length overall', 'length'),
-      status: pick(row, 'status') ?? null,
-      eta: toDate(pick(row, 'eta', 'estimated arrival')),
-      pol: pick(row, 'pol', 'port of loading', 'origin port'),
-      arrival_port: pick(row, 'arrival port', 'destination port', 'destination', 'pod', 'port of discharge'),
-      customs_option: pick(row, 'customs'),
-      vessel_name: pick(row, 'carrier vessel', 'vessel name', 'carrier'),
-      remarks: pick(row, 'remarks', 'notes', 'comment'),
+      // Monday's Name column IS the yacht on both boards. The old fuzzy lookup
+      // tried any column containing "vessel" first, which hit "Vessel Name" —
+      // the carrier MV — so most rows showed the carrier under Yacht Name.
+      yacht_name: item.name?.trim() || pickExact(row, 'yacht name') || null,
+      // Exact titles only: "loa" as a substring also matches "Loading Date",
+      // and filled the LOA cell with a date whenever the real LOA was blank.
+      loa: pickExact(row, 'loa', 'length overall'),
+      status: pickExact(row, 'status') ?? pick(row, 'status') ?? null,
+      // Import tracks ETA; Export tracks Loading Date. Same column, labelled
+      // per tab in the UI.
+      eta: toDate(pickExact(row, 'eta', 'estimated arrival', 'loading date')),
+      // Import calls it POL; Export calls it Departure Port.
+      pol: pickExact(row, 'pol', 'port of loading', 'departure port', 'origin port'),
+      arrival_port: pickExact(row, 'arrival port', 'destination port', 'destination', 'pod', 'port of discharge'),
+      // Customs Option exists on the Import board only — never let a stale
+      // value sit on an Export row.
+      customs_option: direction === 'import' ? (pickExact(row, 'customs option') ?? pick(row, 'customs')) : null,
+      vessel_name: pickExact(row, 'vessel name', 'carrier vessel', 'carrier'),
+      remarks: pickExact(row, 'remarks', 'notes', 'comment', 'comments'),
+      // Export-board-only columns.
+      cruising_permit_cancelled: pickExact(row, 'cruising permit cancelled'),
+      poc: pickExact(row, 'p.o.c', 'p.o.c.', 'poc', 'point of contact'),
       quota: pickExact(row, 'quota'),
       quotation_ref: pick(row, 'quotation/pro forma', 'pro forma', 'quotation ref', 'booking ref'),
       quotations: pickExact(row, 'quotations'),
