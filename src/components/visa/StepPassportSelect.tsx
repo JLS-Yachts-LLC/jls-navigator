@@ -1584,8 +1584,10 @@ function PassportCard({ passport, selected, onSelect, onEdit, crewFirst, crewMid
 }
 
 // Very basic: try to turn a country name like "British" or "United Kingdom" into a flag emoji.
-// Falls back to a generic passport icon string.
-function getFlagEmoji(nationality: string): string {
+// Falls back to a generic passport icon string. Nationality can be null on file
+// (e.g. a passport added before nationality was captured, or OCR that missed it),
+// so guard against it — an unguarded .toLowerCase() here crashes the whole wizard.
+function getFlagEmoji(nationality: string | null | undefined): string {
   const map: Record<string, string> = {
     british: '🇬🇧',
     'united kingdom': '🇬🇧',
@@ -1631,7 +1633,7 @@ function getFlagEmoji(nationality: string): string {
     indian: '🇮🇳',
     india: '🇮🇳',
   }
-  return map[nationality.toLowerCase()] ?? '🛂'
+  return map[(nationality ?? '').toLowerCase()] ?? '🛂'
 }
 
 // ─── Main Step Component ──────────────────────────────────────────────────────
