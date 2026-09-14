@@ -5,6 +5,16 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.53.3",
+    "date": "2026-09-14",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Stop deactivated admins receiving the immigration emails"
+      }
+    ]
+  },
+  {
     "version": "2.53.2",
     "date": "2026-09-12",
     "entries": [
