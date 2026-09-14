@@ -323,8 +323,16 @@ export function AutomationsPage() {
                           </span>
                           {a.endpoint && <a href={a.endpoint} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline"><ExternalLink className="h-3 w-3" /> {a.source === "n8n" ? "Open in n8n" : "Run URL"}</a>}
                         </div>
-                        {/* Per-automation configuration (e.g. email recipients) */}
-                        {a.key === "weekly-fleet-finance" && <RecipientsEditor automation={a} onSaved={(cfg) => setItems(prev => prev.map(x => x.id === a.id ? { ...x, config: cfg } : x))} />}
+                        {/* Per-automation configuration — who the email goes to,
+                            and when. Driven by a list rather than a single key so
+                            a new scheduled email only has to be named here. */}
+                        {EMAIL_AUTOMATIONS[a.key] && (
+                          <EmailScheduleEditor
+                            automation={a}
+                            defaults={EMAIL_AUTOMATIONS[a.key]}
+                            onSaved={(cfg) => setItems(prev => prev.map(x => x.id === a.id ? { ...x, config: cfg } : x))}
+                          />
+                        )}
                         {a.key === "qb-invoice-pdf" && <InvoicePdfTester />}
                         {a.key === "lightspeed-item-sync" && <LightspeedSkuSyncPanel />}
                         {/* Run metrics — last 30 days */}
@@ -711,42 +719,117 @@ function AllRunsLog({ items, globalSearch }: { items: Automation[]; globalSearch
   );
 }
 
-// Recipients editor for automations that email a configured list (config.recipients).
-function RecipientsEditor({ automation, onSaved }: { automation: Automation; onSaved: (cfg: Record<string, any>) => void }) {
-  const initial = ((automation.config as any)?.recipients ?? []).join(", ");
-  const [value, setValue] = useState<string>(initial);
+/**
+ * The scheduled emails whose recipients and send time are editable here, with the
+ * fallback used when nothing has been configured yet. These mirror the defaults
+ * passed to runScheduledEmail() in the worker — keep the two in step, or the card
+ * will describe a schedule the worker is not using.
+ */
+const EMAIL_AUTOMATIONS: Record<string, { day: string; time: string; blurb: string }> = {
+  "weekly-immigration-report": { day: "mon", time: "07:00", blurb: "Sign-ons and sign-offs planned for the week." },
+  "weekly-fleet-finance":      { day: "mon", time: "08:00", blurb: "Outstanding QuickBooks balances per yacht." },
+  // Deliberately NOT weekly-visa-report: it emails each yacht that has opted in
+  // (yachts.send_visa_reports), not a list typed here, so a "To" box would
+  // describe something this screen does not control.
+};
+
+const DAY_OPTIONS = [
+  { value: "mon", label: "Mondays" }, { value: "tue", label: "Tuesdays" },
+  { value: "wed", label: "Wednesdays" }, { value: "thu", label: "Thursdays" },
+  { value: "fri", label: "Fridays" }, { value: "sat", label: "Saturdays" },
+  { value: "sun", label: "Sundays" }, { value: "daily", label: "Every day" },
+];
+
+/**
+ * Who a scheduled email goes to, and when.
+ *
+ * Both used to be invisible outside the code: the recipient list was "everyone
+ * with an admin role" and the day/time was hardcoded in the worker's cron
+ * dispatch, so changing either meant a deploy. The time is shown and stored in
+ * Dubai time because that is what people mean when they ask for "Monday at 7".
+ */
+function EmailScheduleEditor({ automation, defaults, onSaved }: {
+  automation: Automation;
+  defaults: { day: string; time: string; blurb: string };
+  onSaved: (cfg: Record<string, any>) => void;
+}) {
+  const cfg = (automation.config ?? {}) as any;
+  const initialTo = (cfg.recipients ?? []).join(", ");
+  const initialDay = cfg.schedule?.day ?? defaults.day;
+  const initialTime = cfg.schedule?.time ?? defaults.time;
+
+  const [to, setTo] = useState<string>(initialTo);
+  const [day, setDay] = useState<string>(initialDay);
+  const [time, setTime] = useState<string>(initialTime);
   const [saving, setSaving] = useState(false);
-  const dirty = value.trim() !== initial.trim();
+
+  const dirty = to.trim() !== initialTo.trim() || day !== initialDay || time !== initialTime;
+  const timeValid = /^([01]\d|2[0-3]):[0-5]\d$/.test(time);
+  const usingFallback = !(cfg.recipients ?? []).length;
 
   async function save() {
-    const recipients = value.split(/[,;\s]+/).map((s) => s.trim()).filter((s) => /.+@.+\..+/.test(s));
+    if (!timeValid) { toast.error("Time needs to be HH:MM, 24-hour"); return; }
+    const recipients = to.split(/[,;\s]+/).map((s) => s.trim()).filter((s) => /.+@.+\..+/.test(s));
     setSaving(true);
     try {
-      const cfg = { ...(automation.config ?? {}), recipients };
+      const next = {
+        ...(automation.config ?? {}),
+        recipients,
+        schedule: { day, time, tz: "Asia/Dubai" },
+      };
       const { error } = await (supabase as any).from("automations")
-        .update({ config: cfg, updated_at: new Date().toISOString() }).eq("id", automation.id);
+        .update({ config: next, updated_at: new Date().toISOString() }).eq("id", automation.id);
       if (error) throw error;
-      setValue(recipients.join(", "));
-      onSaved(cfg);
-      toast.success(recipients.length ? `Recipients saved (${recipients.length})` : "Recipients cleared — the email won't send until some are set");
+      setTo(recipients.join(", "));
+      onSaved(next);
+      const when = `${DAY_OPTIONS.find((d) => d.value === day)?.label ?? day} at ${time}`;
+      toast.success(recipients.length
+        ? `Saved — ${when}, to ${recipients.length} recipient${recipients.length === 1 ? "" : "s"}`
+        : `Saved — ${when}. No recipients set, so it falls back to active admins.`);
     } catch (e: any) { toast.error(String(e?.message ?? e)); }
     finally { setSaving(false); }
   }
 
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-2">
-      <span className="text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">Recipients</span>
-      <Input
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        placeholder="e.g. m.peeters@jlsyachts.com, accounts@jlsyachts.com"
-        className="h-7 w-80 max-w-full text-xs"
-      />
-      {dirty && (
-        <Button size="sm" onClick={save} disabled={saving} className="h-7 gap-1 text-xs">
-          {saving && <Loader2 className="h-3 w-3 animate-spin" />} Save
-        </Button>
-      )}
+    <div className="mt-2 space-y-2 rounded-lg border border-border/60 bg-muted/20 p-2.5">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="w-20 shrink-0 text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">Send</span>
+        <select
+          value={day} onChange={(e) => setDay(e.target.value)}
+          className="h-7 rounded-md border border-border bg-background px-2 text-xs"
+        >
+          {DAY_OPTIONS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
+        </select>
+        <span className="text-xs text-muted-foreground">at</span>
+        <Input
+          value={time} onChange={(e) => setTime(e.target.value)}
+          placeholder="07:00"
+          className={cn("h-7 w-20 text-xs", !timeValid && "border-destructive")}
+        />
+        <span className="text-[10.5px] text-muted-foreground">Dubai time</span>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="w-20 shrink-0 text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">To</span>
+        <Input
+          value={to} onChange={(e) => setTo(e.target.value)}
+          placeholder="e.g. immigration@jlsyachts.com, ops@jlsyachts.com"
+          className="h-7 w-80 max-w-full text-xs"
+        />
+      </div>
+
+      <div className="flex items-center gap-2 pl-[5.5rem]">
+        {usingFallback && (
+          <span className="text-[10.5px] text-amber-400">
+            No recipients set — currently falls back to every active admin.
+          </span>
+        )}
+        {dirty && (
+          <Button size="sm" onClick={save} disabled={saving || !timeValid} className="ml-auto h-7 gap-1 text-xs">
+            {saving && <Loader2 className="h-3 w-3 animate-spin" />} Save
+          </Button>
+        )}
+      </div>
     </div>
   );
 }

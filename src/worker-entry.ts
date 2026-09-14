@@ -53,6 +53,7 @@ import { automationEventHandler } from './routes/api.automations.event'
 import { qbWebhookHandler, retryPendingQbWebhookEvents } from './routes/api.qb.webhook'
 import { movementsNotifyHandler } from './routes/api.movements.notify'
 import { movementReportsHandler, runWeeklyImmigrationReports } from './routes/api.movements.reports'
+import { runScheduledEmail, DEFAULT_TZ } from './lib/automation-schedule.server'
 import { visaReportGenerateHandler } from './routes/api.visa.report-generate'
 import { visaReportSendHandler } from './routes/api.visa.report-send'
 import { visaVesselPrefsHandler } from './routes/api.visa.vessel-prefs'
@@ -1371,27 +1372,39 @@ export default {
 
     // (MyShipTracking positions moved to the hourly block above — see isHourly.)
 
-    // Weekly immigration digest — Monday 07:00 GST (03:00 UTC). Emails ops/visa
-    // a summary of this week's planned sign-ons / sign-offs + report links.
-    if (utcHour === 3 && new Date().getUTCDay() === 1 && new Date().getUTCMinutes() < 15) {
-      ctx.waitUntil(
-        trackRun({ key: 'weekly-immigration-report', name: 'Weekly immigration digest', source: 'worker-cron', trigger_type: 'schedule', category: 'Crew' },
-          () => runWeeklyImmigrationReports())
-          .then((r) => console.log(`[weekly-immigration] on=${r.signOn} off=${r.signOff} sent=${r.sent}`))
-          .catch((e) => console.error('[weekly-immigration] error:', e))
+    // Weekly immigration digest — day, time and recipients all come from the
+    // automation's config (Developer → Automations); the values below are only
+    // the fallback for a registry row that has never been configured. It used to
+    // be hardcoded here as "Monday, 03:00 UTC", which meant changing when it went
+    // out, or who got it, required a deploy.
+    ctx.waitUntil(
+      runScheduledEmail(
+        'weekly-immigration-report',
+        { day: 'mon', time: '07:00', tz: DEFAULT_TZ },
+        (recipients) => trackRun(
+          { key: 'weekly-immigration-report', name: 'Weekly immigration digest', source: 'worker-cron', trigger_type: 'schedule', category: 'Crew' },
+          () => runWeeklyImmigrationReports(recipients),
+        ).then((r) => console.log(`[weekly-immigration] on=${r.signOn} off=${r.signOff} sent=${r.sent}`)),
       )
-    }
+        .then((r) => { if (!r.ran && r.note && r.note !== 'not due') console.log(`[weekly-immigration] skipped: ${r.note}`) })
+        .catch((e) => console.error('[weekly-immigration] error:', e))
+    )
 
-    // Weekly Fleet Finance email — Monday 08:00 GST (04:00 UTC). Outstanding QBO
-    // balances per yacht; toggle + recipients live on the Automations page.
-    if (utcHour === 4 && new Date().getUTCDay() === 1 && new Date().getUTCMinutes() < 15) {
-      ctx.waitUntil(
-        trackRun({ key: 'weekly-fleet-finance', name: 'Weekly Fleet Finance email', source: 'worker-cron', trigger_type: 'schedule', category: 'Finance' },
-          () => runWeeklyFleetFinance())
-          .then((r) => console.log(`[fleet-finance] sent=${r.sent} yachts=${r.yachts} outstanding=${r.outstanding}${r.note ? ' note=' + r.note : ''}`))
-          .catch((e) => console.error('[fleet-finance] error:', e))
+    // Weekly Fleet Finance email — outstanding QBO balances per yacht. Toggle,
+    // recipients AND send time all live on the Automations page; the values here
+    // are the fallback for a row that has never been configured.
+    ctx.waitUntil(
+      runScheduledEmail(
+        'weekly-fleet-finance',
+        { day: 'mon', time: '08:00', tz: DEFAULT_TZ },
+        () => trackRun(
+          { key: 'weekly-fleet-finance', name: 'Weekly Fleet Finance email', source: 'worker-cron', trigger_type: 'schedule', category: 'Finance' },
+          () => runWeeklyFleetFinance(),
+        ).then((r) => console.log(`[fleet-finance] sent=${r.sent} yachts=${r.yachts} outstanding=${r.outstanding}${r.note ? ' note=' + r.note : ''}`)),
       )
-    }
+        .then((r) => { if (!r.ran && r.note && r.note !== 'not due') console.log(`[fleet-finance] skipped: ${r.note}`) })
+        .catch((e) => console.error('[fleet-finance] error:', e))
+    )
 
     // Weekly visa report — Friday 08:00 GST (04:00 UTC). Generates + emails a
     // visa-status report to every yacht opted in (send_visa_reports = true).

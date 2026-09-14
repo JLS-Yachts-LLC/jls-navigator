@@ -201,7 +201,9 @@ export async function movementReportsHandler(request: Request): Promise<Response
  * team a summary of this week's planned sign-ons and sign-offs, with links to the
  * full reports (SES Simple content can't attach files, so we link them).
  */
-export async function runWeeklyImmigrationReports(): Promise<{ signOn: number; signOff: number; sent: number }> {
+export async function runWeeklyImmigrationReports(
+  configured?: string[],
+): Promise<{ signOn: number; signOff: number; sent: number }> {
   const sb = admin()
   const monday = mondayOf(null)
   const sunday = addDaysStr(monday, 6)
@@ -213,23 +215,31 @@ export async function runWeeklyImmigrationReports(): Promise<{ signOn: number; s
   const on = rows.filter((a) => a.event_type !== 'sign_off')
   const off = rows.filter((a) => a.event_type === 'sign_off')
 
-  // Recipients — ACTIVE admin-tier users with an email.
+  // Recipients come from the automation's config (Developer → Automations).
   //
-  // `active` was not being checked, so every deactivated admin account kept
-  // receiving this every Monday. Three of the five it was reaching were switched
-  // off, including support@newhorizon-it.co.uk — the vendor's shared support
-  // mailbox, which turned each weekly digest into a Service Desk ticket against
-  // New Horizon with an SLA clock running on it.
-  const { data: profiles } = await sb
-    .from('user_profiles')
-    .select('email, active, roles:role_id(name)')
-    .eq('active', true)
-    .not('email', 'is', null)
-  const recipients = [...new Set(
-    (profiles ?? [])
-      .filter((p: any) => ['global_admin', 'org_admin'].includes(p.roles?.name))
-      .map((p: any) => p.email as string),
-  )]
+  // The fallback — ACTIVE admin-tier users — is only used when nobody has set a
+  // list yet, so this keeps working on a fresh install without silently mailing
+  // an audience nobody chose. Two faults sat here before:
+  //   • "admin-tier user" was being used as a mailing list, so anyone granted
+  //     admin quietly started receiving immigration reports. That is how
+  //     support@newhorizon-it.co.uk — the vendor's shared support mailbox — ended
+  //     up on it, turning each Monday's digest into a Service Desk ticket against
+  //     New Horizon with an SLA clock running.
+  //   • `active` was never checked, so deactivated accounts kept receiving it.
+  //     Three of the five it reached were switched off.
+  let recipients = [...new Set((configured ?? []).filter((e) => /.+@.+\..+/.test(e)))]
+  if (!recipients.length) {
+    const { data: profiles } = await sb
+      .from('user_profiles')
+      .select('email, active, roles:role_id(name)')
+      .eq('active', true)
+      .not('email', 'is', null)
+    recipients = [...new Set(
+      (profiles ?? [])
+        .filter((p: any) => ['global_admin', 'org_admin'].includes(p.roles?.name))
+        .map((p: any) => p.email as string),
+    )]
+  }
   if (recipients.length === 0) return { signOn: on.length, signOff: off.length, sent: 0 }
 
   const base = process.env.VITE_APP_URL ?? 'https://polaris.jlsyachts.com'
