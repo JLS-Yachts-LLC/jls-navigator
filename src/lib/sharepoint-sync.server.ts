@@ -927,10 +927,18 @@ export async function pushRecordToSharePoint(target: string, id: string): Promis
       if (!dbField || dbField === 'vessel_image') continue;
       let v = valueFor(dbField);
       if (v === null || v === undefined || v === '') continue;
-      // Date-only values go out as NOON UTC: SharePoint renders datetimes in the
-      // site's regional timezone, so a bare date (= midnight UTC) would display
-      // as the previous day on any site east of UTC — the mirror of SD-0017.
-      if (typeof v === 'string' && /^d{4}-d{2}-d{2}$/.test(v)) v = `${v}T12:00:00Z`;
+      // Date-only values go out as 08:00 UTC — local NOON on the Dubai (+04:00)
+      // site. A bare date is read by SharePoint as site-local midnight, which
+      // Graph then returns as 20:00Z the day BEFORE, and that is how every date
+      // corrected in Polaris came back a day early (SD-0017 round trip). Local
+      // noon is safe both ways: SharePoint displays the same calendar day, and
+      // spDateOnly() reads an 08:00Z timestamp as that same day. NOT 12:00Z —
+      // that is on the "evening → next day" side of spDateOnly's rounding.
+      //
+      // The pattern is \d{4}-\d{2}-\d{2}. Until 15 Sept 2026 it was written
+      // without the backslashes (matching the letter "d"), so it never matched
+      // and this line was dead code — see the note on spDateOnly().
+      if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) v = `${v}T08:00:00Z`;
       spFields[spCol] = v;
     }
     if (!Object.keys(spFields).length) continue;
@@ -1165,6 +1173,14 @@ async function _syncWithConfig(cfg: SpConfig, sync: SpSyncConfig): Promise<{ syn
  * letting Postgres cast the raw string to a date) therefore recorded every synced
  * date one day early. Round to the nearest calendar day instead: an evening
  * timestamp IS the next day's date; a morning/midnight one is its own.
+ *
+ * 15 Sept 2026: the fix above was committed on 25 Aug with the regex written as
+ * /^(d{4}-d{2}-d{2})[T ](d{2})/ — no backslashes, so it matched the letter "d"
+ * and never a digit. It therefore never matched a real timestamp, every call fell
+ * through to str.slice(0, 10), and the one-day-early import carried on for three
+ * more weeks. It also silently undid the 12 Sept DOB correction: the corrected
+ * dates were pushed to SharePoint as bare dates (the outbound regex had the same
+ * typo), read back as 20:00Z the day before, and sliced to the day before.
  */
 const YACHT_DATE_FIELDS  = new Set(['eta', 'etd', 'cruising_permit_expiry', 'departed_date'])
 const PERMIT_DATE_FIELDS = new Set(['issue_date', 'expiry_date', 'preferred_inspection_date'])
@@ -1173,7 +1189,7 @@ const BOAT_DATE_FIELDS   = new Set(['reg_start_date', 'reg_end_date', 'document_
 function spDateOnly(v: any): string | null {
   if (v == null || v === '') return null
   const str = String(v)
-  const m = str.match(/^(d{4}-d{2}-d{2})[T ](d{2})/)
+  const m = str.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2})/)
   if (!m) return str.slice(0, 10)
   if (Number(m[2]) >= 12) {
     const d = new Date(`${m[1]}T00:00:00Z`)
