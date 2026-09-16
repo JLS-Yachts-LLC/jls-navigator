@@ -12,6 +12,7 @@
  * "Crew Documents" subfolder and belongs to the crew profile, not here.
  */
 import { storageRef } from "@/lib/signed-url";
+import { guardUploadFile, uploadContentType } from "@/lib/upload-guard";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -190,10 +191,12 @@ export function YachtDocumentsCard({ yachtId, vesselName }: { yachtId: string; v
 
   // ── Actions ────────────────────────────────────────────────────────────────
   async function upload(file: File) {
+    if (!guardUploadFile(file)) return;
     setUploading(true);
     try {
       const path = `yachts/${yachtId}/${Date.now()}-${file.name}`;
-      const { error } = await supabase.storage.from("permit-documents").upload(path, file);
+      const { error } = await supabase.storage.from("permit-documents")
+        .upload(path, file, { contentType: uploadContentType(file) });
       if (error) throw error;
       const stored = storageRef("permit-documents", path);
       const { error: insErr } = await (supabase as any).from("yacht_documents").insert([{

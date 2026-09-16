@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchAllRows } from "@/lib/fetch-all";
 import { storageRef } from "@/lib/signed-url";
+import { guardUploadFile, uploadContentType } from "@/lib/upload-guard";
 import { SignedAnchor } from "@/components/ui/signed-file";
 import { fileToBase64 } from "@/lib/file-to-base64";
 import { uploadCrewDocToSharePoint } from "@/lib/visa-sharepoint.server";
@@ -783,10 +784,15 @@ export function CertDialog({
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!guardUploadFile(file, { accepts: "Use a PDF or a scan of the certificate." })) {
+      if (fileRef.current) fileRef.current.value = "";
+      return;
+    }
     setUploading(true);
     try {
       const path = `crew/certifications/${Date.now()}-${file.name}`;
-      const { error } = await supabase.storage.from("permit-documents").upload(path, file);
+      const { error } = await supabase.storage.from("permit-documents")
+        .upload(path, file, { contentType: uploadContentType(file) });
       if (error) throw error;
       setForm(f => ({ ...f, file_url: storageRef("permit-documents", path), file_name: file.name }));
 

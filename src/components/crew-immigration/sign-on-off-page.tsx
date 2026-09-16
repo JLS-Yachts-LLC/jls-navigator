@@ -1,4 +1,5 @@
 import { storageRef } from "@/lib/signed-url";
+import { guardUploadFile, uploadContentType } from "@/lib/upload-guard";
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchAllRows } from "@/lib/fetch-all";
@@ -156,9 +157,11 @@ export function SignOnOffPage() {
       let fileUrl: string | null = null;
       let fileName: string | null = null;
       if (immForm.file) {
+        if (!guardUploadFile(immForm.file)) { setImmBusy(false); return; }
         const ext = immForm.file.name.split(".").pop();
         const path = `immigration/${immForm.yacht_id}/${immForm.emirate}_${Date.now()}.${ext}`;
-        const { error: upErr } = await supabase.storage.from("permit-documents").upload(path, immForm.file, { upsert: true });
+        const { error: upErr } = await supabase.storage.from("permit-documents")
+          .upload(path, immForm.file, { upsert: true, contentType: uploadContentType(immForm.file) });
         if (upErr) throw upErr;
         fileUrl = storageRef("permit-documents", path);
         fileName = immForm.file.name;

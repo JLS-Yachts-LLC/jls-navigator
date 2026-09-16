@@ -1,3 +1,4 @@
+import { uploadRejectionReason, uploadContentType } from "@/lib/upload-guard";
 import { sendPermitEmail, deliveryNote } from "@/lib/permits/send-permit-email";
 import { storageRef } from "@/lib/signed-url";
 import { useState, useEffect, useRef } from "react";
@@ -175,10 +176,14 @@ export function TdraDialog({ yachts, editing, userId, onSaved }: Props) {
   }
 
   async function uploadFile(file: File, folder: string): Promise<string> {
+    // Throw rather than return: every caller already catches and toasts, so the
+    // reason reaches the user the same way an upload failure would.
+    const reason = uploadRejectionReason(file);
+    if (reason) throw new Error(reason);
     const path = `tdra/${folder}/${Date.now()}-${file.name.replace(/\s+/g, "_")}`;
     const { error } = await supabase.storage
       .from("permit-documents")
-      .upload(path, file, { upsert: true });
+      .upload(path, file, { upsert: true, contentType: uploadContentType(file) });
     if (error) throw error;
     return storageRef("permit-documents", path);
   }

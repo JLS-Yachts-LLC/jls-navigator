@@ -1,3 +1,4 @@
+import { guardUploadFile, uploadContentType } from "@/lib/upload-guard";
 import { sendPermitEmail, deliveryNote } from "@/lib/permits/send-permit-email";
 import { storageRef } from "@/lib/signed-url";
 import { useState, useEffect, useRef } from "react";
@@ -76,12 +77,13 @@ export function NavigationLicenseDialog({ yachts, editing, userId, onSaved }: Pr
   }
 
   async function handleFileUpload(file: File) {
+    if (!guardUploadFile(file)) return;
     setUploading(true);
     try {
       const path = `navigation-license/${Date.now()}-${file.name.replace(/\s+/g, "_")}`;
       const { error } = await supabase.storage
         .from("permit-documents")
-        .upload(path, file, { upsert: true });
+        .upload(path, file, { upsert: true, contentType: uploadContentType(file) });
       if (error) throw error;
       set("document_url", storageRef("permit-documents", path));
       setFileName(file.name);

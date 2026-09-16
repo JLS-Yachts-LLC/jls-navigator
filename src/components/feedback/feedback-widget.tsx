@@ -1,3 +1,4 @@
+import { guardUploadFile, uploadContentType } from "@/lib/upload-guard";
 import { storageRef } from "@/lib/signed-url";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
@@ -157,12 +158,11 @@ export function FeedbackWidget() {
     setMinimised(false); // bring the form back so the clip can be described
   }
 
-  // Manual pick — accept documents as well as images, with a size guard.
+  // Manual pick — accept documents as well as images. The shared guard checks the
+  // same 25 MB cap this widget has always enforced, and additionally refuses a
+  // type the bucket would reject, so nobody discovers that after writing up a bug.
   function pickFile(f: File | null) {
-    if (f && f.size > MAX_MB * 1024 * 1024) {
-      toast.error(`“${f.name}” is ${(f.size / 1024 / 1024).toFixed(1)} MB — the limit is ${MAX_MB} MB.`);
-      return;
-    }
+    if (f && !guardUploadFile(f, { accepts: "Attach an image, a PDF or an Office document." })) return;
     setFile(f);
   }
 
@@ -182,8 +182,11 @@ export function FeedbackWidget() {
       if (file) {
         const ext = file.name.split(".").pop() || "png";
         const path = `feedback/${user?.id ?? "anon"}-${Date.now()}.${ext}`;
+        // Resolve the type from the name when the browser reports none — .msg and
+        // .eml routinely have none, and an unlabelled upload is refused by the
+        // bucket's type allow-list.
         const { error: upErr } = await supabase.storage.from("permit-documents")
-          .upload(path, file, { upsert: true, contentType: file.type || undefined });
+          .upload(path, file, { upsert: true, contentType: uploadContentType(file) });
         if (upErr) throw new Error(`Attachment upload failed: ${upErr.message}`);
         screenshotUrl = storageRef("permit-documents", path);
       }

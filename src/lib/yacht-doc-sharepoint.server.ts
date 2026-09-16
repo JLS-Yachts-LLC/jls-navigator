@@ -141,14 +141,25 @@ function parseStoredRef(stored: string): { bucket: string; path: string } | null
 
 const CONTENT_TYPES: Record<string, string> = {
   pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
-  heic: 'image/heic', webp: 'image/webp', gif: 'image/gif', txt: 'text/plain',
+  heic: 'image/heic', heif: 'image/heif', webp: 'image/webp', gif: 'image/gif',
+  bmp: 'image/bmp', tif: 'image/tiff', tiff: 'image/tiff',
+  txt: 'text/plain', csv: 'text/csv', rtf: 'application/rtf',
+  odt: 'application/vnd.oasis.opendocument.text',
+  msg: 'application/vnd.ms-outlook', eml: 'message/rfc822',
   doc: 'application/msword',
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   xls: 'application/vnd.ms-excel',
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 }
-const contentTypeFor = (name: string) =>
-  CONTENT_TYPES[(name.split('.').pop() ?? '').toLowerCase()] ?? 'application/octet-stream'
+/**
+ * Pulling a document IN from SharePoint writes it to the permit-documents bucket,
+ * whose type allow-list does NOT include application/octet-stream — so that as a
+ * fallback would fail the upload for any extension missing from the map above.
+ * Return null instead and let the caller decide; a SharePoint library holds
+ * whatever people put in it, so an unknown extension is a real possibility.
+ */
+const contentTypeFor = (name: string): string | null =>
+  CONTENT_TYPES[(name.split('.').pop() ?? '').toLowerCase()] ?? null
 
 /** Push one stored Polaris file into the vessel's SharePoint folder. */
 export const pushYachtDocToSharePoint = createServerFn({ method: 'POST' })
@@ -172,7 +183,9 @@ export const pushYachtDocToSharePoint = createServerFn({ method: 'POST' })
       if (data.subfolder) segments.push(sanitizeSegment(data.subfolder, 'Folder'))
 
       const safeName = sanitizeSegment(data.fileName, 'document')
-      const up = await uploadBytesIntoFolders(siteId, token, segments, safeName, contentTypeFor(safeName), bytes)
+      // Outbound to SharePoint, which accepts anything — octet-stream is a fine
+      // fallback here, unlike the inbound path below.
+      const up = await uploadBytesIntoFolders(siteId, token, segments, safeName, contentTypeFor(safeName) ?? 'application/octet-stream', bytes)
 
       await (supabaseAdmin as any).from('yacht_document_sharepoint_links').upsert({
         yacht_id: data.yachtId, doc_key: data.docKey,
@@ -204,9 +217,14 @@ export const pullYachtDocFromSharePoint = createServerFn({ method: 'POST' })
 
       const { supabaseAdmin } = await import('@/integrations/supabase/client.server')
       const safeName = data.fileName.replace(/[^\w.\- ]+/g, '_')
+      const contentType = contentTypeFor(safeName)
+      if (!contentType) {
+        const ext = safeName.split('.').pop() ?? ''
+        return { ok: false, error: `“${data.fileName}” is a .${ext} file, which Polaris does not store. Convert it to a PDF in SharePoint and pull it in again.` }
+      }
       const path = `yachts/${data.yachtId}/${Date.now()}-${safeName}`
       const { error: upErr } = await supabaseAdmin.storage.from('permit-documents')
-        .upload(path, bytes, { upsert: true, contentType: contentTypeFor(safeName) })
+        .upload(path, bytes, { upsert: true, contentType })
       if (upErr) return { ok: false, error: `Storage upload failed: ${upErr.message}` }
       const fileUrl = storageRef('permit-documents', path)
 

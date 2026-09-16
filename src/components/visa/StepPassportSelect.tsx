@@ -1,3 +1,4 @@
+import { uploadRejectionReason, uploadContentType } from '@/lib/upload-guard'
 import { storageRef } from '@/lib/signed-url'
 import React, { useState, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
@@ -990,9 +991,12 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
       async function uploadSlot(key: SlotKey): Promise<string | null> {
         const file = files[key]
         if (!file) return null
+        const reason = uploadRejectionReason(file, { accepts: 'Use a PDF or an image.' })
+        if (reason) throw new Error(reason)
         const ext = file.name.split('.').pop()
         const path = `crew/${crewId}/${key}_${Date.now()}.${ext}`
-        const { error: upErr } = await supabase.storage.from('permit-documents').upload(path, file, { upsert: true })
+        const { error: upErr } = await supabase.storage.from('permit-documents')
+          .upload(path, file, { upsert: true, contentType: uploadContentType(file) })
         if (upErr) throw upErr
         return storageRef('permit-documents', path)
       }

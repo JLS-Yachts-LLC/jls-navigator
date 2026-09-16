@@ -9,6 +9,7 @@
  *   • see every copy sent out and what came back.
  */
 import { storageRef } from "@/lib/signed-url";
+import { guardUploadFile, uploadContentType } from "@/lib/upload-guard";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -107,9 +108,11 @@ export function FormsHub() {
   }
 
   async function attachPdf(form: FormRow, file: File) {
+    if (!guardUploadFile(file, { accepts: "Use a PDF." })) return;
     try {
       const path = `forms/${form.slug}/${Date.now()}-${file.name}`;
-      const { error } = await supabase.storage.from("permit-documents").upload(path, file, { upsert: true });
+      const { error } = await supabase.storage.from("permit-documents")
+        .upload(path, file, { upsert: true, contentType: uploadContentType(file) });
       if (error) throw error;
       const stored = storageRef("permit-documents", path);
       const { error: upErr } = await (supabase as any).from("forms")

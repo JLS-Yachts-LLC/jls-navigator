@@ -1,3 +1,4 @@
+import { uploadRejectionReason, uploadContentType } from '@/lib/upload-guard'
 import { storageRef } from '@/lib/signed-url'
 import React, { useRef, useState, useEffect } from 'react'
 import { supabase } from '@/integrations/supabase/client'
@@ -100,6 +101,8 @@ export default function StepDocumentUpload({ state, onUpdate, onNext, onBack }: 
 
   async function handleFileChange(slot: DocumentSlot, file: File | null) {
     if (!file) return
+    const reason = uploadRejectionReason(file, { accepts: 'Use a PDF or an image.' })
+    if (reason) { setErrors(e => ({ ...e, [slot.key]: reason })); return }
     setUploading(u => ({ ...u, [slot.key]: true }))
     setErrors(e => ({ ...e, [slot.key]: '' }))
 
@@ -107,7 +110,7 @@ export default function StepDocumentUpload({ state, onUpdate, onNext, onBack }: 
     const path      = `visa/${crewId}/${state.countryCode}/${slot.key}`
     const { error } = await supabase.storage
       .from('permit-documents')
-      .upload(path, file, { upsert: true })
+      .upload(path, file, { upsert: true, contentType: uploadContentType(file) })
 
     if (error) {
       setErrors(e => ({ ...e, [slot.key]: error.message }))

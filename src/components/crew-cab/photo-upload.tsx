@@ -10,6 +10,7 @@
  * ~80 KB, which matters because these render in list views where a dozen load
  * at once.
  */
+import { uploadRejectionReason, uploadContentType } from "@/lib/upload-guard";
 import { storageRef, useSignedUrl } from "@/lib/signed-url";
 import { SignedImage } from "@/components/ui/signed-file";
 import { useRef, useState } from "react";
@@ -42,6 +43,11 @@ async function shrink(file: File): Promise<Blob> {
 
 /** Upload and return the public URL. `folder` e.g. "drivers/photos". */
 export async function uploadPhoto(file: File, folder: string, id: string): Promise<string> {
+  // Check the original before decoding it: shrink() renders the image to a canvas,
+  // which on a huge camera file is slow and can exhaust memory on a phone. The
+  // shrunk result is always a small JPEG, so it never trips the cap itself.
+  const reason = uploadRejectionReason(file, { accepts: "Use a photo." });
+  if (reason) throw new Error(reason);
   const body = await shrink(file);
   const path = `${folder}/${id}-${Date.now()}.jpg`;
   const { error } = await supabase.storage.from(BUCKET).upload(path, body, {

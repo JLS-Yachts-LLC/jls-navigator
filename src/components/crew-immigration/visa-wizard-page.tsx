@@ -1,4 +1,5 @@
 import { storageRef } from "@/lib/signed-url";
+import { guardUploadFile, uploadContentType } from "@/lib/upload-guard";
 import { useState, useEffect } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
@@ -77,10 +78,12 @@ export function VisaWizardPage() {
   const [uploadingIdx, setUploadingIdx] = useState<number | null>(null);
 
   async function uploadDoc(i: number, file: File) {
+    if (!guardUploadFile(file, { accepts: "Use a PDF or an image." })) return;
     setUploadingIdx(i);
     try {
       const path = `visa-docs/${Date.now()}-${file.name}`;
-      const { error } = await supabase.storage.from("permit-documents").upload(path, file);
+      const { error } = await supabase.storage.from("permit-documents")
+        .upload(path, file, { contentType: uploadContentType(file) });
       if (error) throw error;
       const stored = storageRef("permit-documents", path);
       setDocs((arr) => arr.map((x, xi) => xi === i ? { ...x, status: "uploaded", url: stored } : x));
