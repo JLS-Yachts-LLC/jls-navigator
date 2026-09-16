@@ -25,6 +25,8 @@ import {
   type BadgeVariant,
 } from "./primitives";
 import { ConfirmModal, useToast } from "./feedback";
+import { SignedAnchor } from "@/components/ui/signed-file";
+import { CertDialog } from "@/components/training/training-page";
 import { LeoPanel } from "@/components/leo/LeoPanel";
 import { ManageUsers } from "@/components/admin/manage-users";
 import { MfaSetup } from "@/components/auth/MfaSetup";
@@ -1448,10 +1450,21 @@ export function PolarisLogistics(_props: { yacht?: YachtOption | null; onSwitchV
 // ── Training screen ───────────────────────────────────────────────────────────
 export function PolarisTraining(_props: { yacht?: YachtOption | null; onSwitchVessel?: () => void }) {
   const { yachts, scope, setScope, yacht } = useVesselScope();
-  const { loading, rows, counts } = useVesselTraining(yacht?.id ?? null);
+  const { loading, rows, counts, reload } = useVesselTraining(yacht?.id ?? null);
+  // Add / edit runs through the same dialog as the full Training page, so there
+  // is one form, one upload path and one set of rules — no second copy to drift.
+  const [certOpen, setCertOpen] = useState(false);
   return (
     <>
-      <PageHeader title="Training" actions={<VesselPicker scope={scope} setScope={setScope} yachts={yachts} />} />
+      <PageHeader
+        title="Training"
+        actions={
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <VesselPicker scope={scope} setScope={setScope} yachts={yachts} />
+            <PolarisButton variant="primary" icon="plus" label="Add certification" onClick={() => setCertOpen(true)} />
+          </div>
+        }
+      />
       <SectionLabel>Certifications — {yacht?.vessel_name ?? "All vessels"}</SectionLabel>
       <div className="pds-stats-grid" style={{ marginBottom: 16 }}>
         {loading ? [...Array(4)].map((_, i) => <Skeleton key={i} height={88} radius={12} />) : (
@@ -1465,16 +1478,29 @@ export function PolarisTraining(_props: { yacht?: YachtOption | null; onSwitchVe
       </div>
       <PolarisCard title="Certifications" icon="certificate">
         {loading ? <Skeleton height={120} /> : rows.length === 0 ? (
-          <EmptyState icon="certificate" message="No certifications for this vessel's crew."  />
+          <EmptyState icon="certificate" message="No certifications for this vessel's crew."
+            action={{ label: "Add certification", onClick: () => setCertOpen(true) }} />
         ) : rows.slice(0, 50).map((c) => {
           const b = EXP_BADGE[c.state];
           return (
             <CrewRow key={c.id} name={`${c.crewName} — ${c.certificate ?? "Certificate"}`}
               detail={`${c.issuer ?? "—"}${c.expiry ? ` · expires ${formatDateDMY(c.expiry)}` : ""}`}
-              badge={<StatusBadge variant={b.variant} label={b.label} />} />
+              badge={
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  {c.fileUrl && (
+                    <SignedAnchor stored={c.fileUrl} title={c.fileName ?? undefined}
+                      style={{ fontSize: "var(--pds-fs-label)", color: "var(--pds-accent)", textDecoration: "none", whiteSpace: "nowrap" }}>
+                      View file
+                    </SignedAnchor>
+                  )}
+                  <StatusBadge variant={b.variant} label={b.label} />
+                </div>
+              } />
           );
         })}
       </PolarisCard>
+
+      <CertDialog open={certOpen} editing={null} onClose={() => setCertOpen(false)} onSaved={reload} />
     </>
   );
 }

@@ -1,10 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchAllRows } from "@/lib/fetch-all";
+import { storageRef } from "@/lib/signed-url";
+import { SignedAnchor } from "@/components/ui/signed-file";
+import { fileToBase64 } from "@/lib/file-to-base64";
+import { uploadCrewDocToSharePoint } from "@/lib/visa-sharepoint.server";
 import {
   GraduationCap, Award, Loader2, Plus, Search, Pencil, Trash2,
   AlertTriangle, CheckCircle2, Clock, BookOpen, X, ChevronDown, ChevronUp,
-  UserCog, Users, CalendarRange, CalendarDays,
+  UserCog, Users, CalendarRange, CalendarDays, Upload, Paperclip, ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -43,6 +47,9 @@ type TrainingRecord = {
 
 type Certification = {
   id: string;
+  /** The real crew record. The Beta Training screen filters on this when a vessel
+   *  is picked, so a certification without it is invisible outside "All vessels". */
+  crew_member_id: string | null;
   crew_name: string;
   certificate: string;
   cert_type: "stcw" | "medical" | "safety" | "flag" | "other" | null;
@@ -51,8 +58,13 @@ type Certification = {
   expiry_date: string | null;
   status: "valid" | "expiring" | "expired";
   notes: string | null;
+  /** The certificate itself — storage ref + original filename (see crew_documents). */
+  file_url: string | null;
+  file_name: string | null;
   created_at: string;
 };
+
+type CrewLite = { id: string; first_name: string; last_name: string; yacht_id?: string | null };
 
 type Tab = "instructors" | "students" | "courses" | "classes" | "calendar" | "records" | "certifications";
 const SCHOOL_TABS: Tab[] = ["instructors", "students", "courses", "classes", "calendar"];
@@ -515,6 +527,7 @@ function CertificationsTable({
               <Th>Issue Date</Th>
               <Th>Expiry</Th>
               <Th>Status</Th>
+              <Th>File</Th>
               <th className="w-16" />
             </tr>
           </thead>
@@ -540,6 +553,14 @@ function CertificationsTable({
                     <span className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold", CERT_STATUS_COLORS[c.status])}>
                       {c.status.charAt(0).toUpperCase() + c.status.slice(1)}
                     </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    {c.file_url ? (
+                      <SignedAnchor stored={c.file_url} title={c.file_name ?? undefined}
+                        className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                        <ExternalLink className="h-3 w-3" /> View
+                      </SignedAnchor>
+                    ) : <span className="text-xs text-muted-foreground/40">—</span>}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -697,17 +718,40 @@ function RecordDialog({
 
 // ─── Cert Dialog ──────────────────────────────────────────────────────────────
 
-function CertDialog({
+export function CertDialog({
   open, editing, onClose, onSaved,
 }: {
   open: boolean; editing: Certification | null; onClose: () => void; onSaved: () => void;
 }) {
-  const blank = { crew_name: "", certificate: "", cert_type: "" as Certification["cert_type"] | "", issuing_body: "", issue_date: "", expiry_date: "", status: "valid" as Certification["status"], notes: "" };
+  const blank = {
+    crew_member_id: "", crew_name: "", certificate: "",
+    cert_type: "" as Certification["cert_type"] | "", issuing_body: "",
+    issue_date: "", expiry_date: "", status: "valid" as Certification["status"],
+    notes: "", file_url: "", file_name: "",
+  };
   const [form, setForm] = useState(blank);
   const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [crew, setCrew] = useState<CrewLite[]>([]);
+  const [yachts, setYachts] = useState<{ id: string; vessel_name: string }[]>([]);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  // Crew + vessels drive the picker and the SharePoint folder path.
+  useEffect(() => {
+    if (!open) return;
+    void (async () => {
+      const [c, y] = await Promise.all([
+        fetchAllRows(() => (supabase as any).from("crew_members").select("id, first_name, last_name, yacht_id").order("last_name")),
+        fetchAllRows(() => supabase.from("yachts").select("id, vessel_name").order("vessel_name")),
+      ]);
+      setCrew((c.data ?? []) as CrewLite[]);
+      setYachts((y.data ?? []) as { id: string; vessel_name: string }[]);
+    })();
+  }, [open]);
 
   useEffect(() => {
     setForm(editing ? {
+      crew_member_id: editing.crew_member_id ?? "",
       crew_name:    editing.crew_name,
       certificate:  editing.certificate,
       cert_type:    editing.cert_type ?? "",
@@ -716,14 +760,61 @@ function CertDialog({
       expiry_date:  editing.expiry_date ?? "",
       status:       editing.status,
       notes:        editing.notes ?? "",
+      file_url:     editing.file_url ?? "",
+      file_name:    editing.file_name ?? "",
     } : blank);
   }, [editing, open]);
 
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
 
+  /** Picking a crew member sets BOTH the link and the display name, so the row
+   *  still reads correctly everywhere that only shows crew_name. */
+  function pickCrew(id: string) {
+    const m = crew.find(c => c.id === id);
+    setForm(f => ({
+      ...f,
+      crew_member_id: id,
+      crew_name: m ? `${m.first_name} ${m.last_name}`.trim() : f.crew_name,
+    }));
+  }
+
+  /** Same path as a crew document: Supabase Storage is the source of truth, then
+   *  a best-effort copy into the vessel's SharePoint crew folder. */
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const path = `crew/certifications/${Date.now()}-${file.name}`;
+      const { error } = await supabase.storage.from("permit-documents").upload(path, file);
+      if (error) throw error;
+      setForm(f => ({ ...f, file_url: storageRef("permit-documents", path), file_name: file.name }));
+
+      try {
+        const member = crew.find(c => c.id === form.crew_member_id);
+        const vesselName = member?.yacht_id
+          ? (yachts.find(y => y.id === member.yacht_id)?.vessel_name ?? null)
+          : null;
+        const crewName = member ? `${member.first_name} ${member.last_name}`.trim() : (form.crew_name || "Unknown Crew");
+        const base64 = await fileToBase64(file);
+        await (uploadCrewDocToSharePoint as any)({
+          data: { vesselName, crewName, fileName: file.name, contentType: file.type, base64 },
+        });
+        toast.success("Certificate attached & synced to SharePoint");
+      } catch (spErr) {
+        toast.warning(`Certificate attached, but SharePoint sync failed: ${spErr instanceof Error ? spErr.message : "unknown error"}`);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
   async function save() {
     if (!form.crew_name.trim() || !form.certificate.trim()) {
-      toast.error("Crew name and certificate are required");
+      toast.error("Crew member and certificate are required");
       return;
     }
     setBusy(true);
@@ -738,6 +829,7 @@ function CertDialog({
     }
 
     const payload = {
+      crew_member_id: form.crew_member_id || null,
       crew_name:    form.crew_name.trim(),
       certificate:  form.certificate.trim(),
       cert_type:    form.cert_type || null,
@@ -746,6 +838,8 @@ function CertDialog({
       expiry_date:  form.expiry_date || null,
       status,
       notes:        form.notes.trim() || null,
+      file_url:     form.file_url || null,
+      file_name:    form.file_name || null,
     };
     const { error } = editing
       ? await (supabase as any).from("training_certifications").update(payload).eq("id", editing.id)
@@ -764,8 +858,23 @@ function CertDialog({
           <DialogTitle>{editing ? "Edit Certification" : "Add Certification"}</DialogTitle>
         </DialogHeader>
         <div className="grid grid-cols-2 gap-4 py-2">
+          {/* A picker, not free text: the link is what scopes the certification
+              to a vessel on the Training screen. */}
           <Field label="Crew Member *" full>
-            <Input value={form.crew_name} onChange={e => set("crew_name", e.target.value)} placeholder="Full name" />
+            <Select value={form.crew_member_id || "__none"} onValueChange={v => v !== "__none" && pickCrew(v)}>
+              <SelectTrigger><SelectValue placeholder={form.crew_name || "— Select crew member —"} /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none">— Select crew member —</SelectItem>
+                {crew.map(c => (
+                  <SelectItem key={c.id} value={c.id}>{c.first_name} {c.last_name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {form.crew_name && !form.crew_member_id && (
+              <p className="mt-1 text-[11px] text-amber-500">
+                “{form.crew_name}” isn’t linked to a crew record — pick them above so this shows on their vessel.
+              </p>
+            )}
           </Field>
           <Field label="Certificate *" full>
             <Input value={form.certificate} onChange={e => set("certificate", e.target.value)} placeholder="e.g. STCW Basic Safety Training" />
@@ -792,6 +901,24 @@ function CertDialog({
           <Field label="Expiry Date">
             <Input type="date" value={form.expiry_date} onChange={e => set("expiry_date", e.target.value)} />
           </Field>
+          <Field label="Certificate file" full>
+            <input ref={fileRef} type="file" className="hidden" onChange={handleUpload} />
+            <Button type="button" variant="outline" onClick={() => fileRef.current?.click()} disabled={uploading} className="w-full gap-1.5">
+              {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+              {form.file_name
+                ? <span className="flex items-center gap-1 truncate"><Paperclip className="h-3 w-3 shrink-0" /> {form.file_name}</span>
+                : "Upload the certificate (PDF or scan)"}
+            </Button>
+            {form.file_url && (
+              <div className="mt-1 flex items-center gap-3">
+                <SignedAnchor stored={form.file_url} className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline">
+                  <ExternalLink className="h-3 w-3" /> View attached
+                </SignedAnchor>
+                <button type="button" onClick={() => setForm(f => ({ ...f, file_url: "", file_name: "" }))}
+                  className="text-[11px] text-muted-foreground hover:text-destructive">Remove</button>
+              </div>
+            )}
+          </Field>
           <Field label="Notes" full>
             <Textarea value={form.notes} onChange={e => set("notes", e.target.value)} rows={2} placeholder="Optional notes" />
           </Field>
@@ -802,8 +929,8 @@ function CertDialog({
           </p>
         )}
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={save} disabled={busy}>
+          <Button variant="outline" onClick={onClose} disabled={busy || uploading}>Cancel</Button>
+          <Button onClick={save} disabled={busy || uploading}>
             {busy && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
             {editing ? "Save Changes" : "Add Certification"}
           </Button>
