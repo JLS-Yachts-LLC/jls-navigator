@@ -13,6 +13,7 @@ import { Route as PortalRouteImport } from './routes/portal'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as SkuSyncTokenRouteImport } from './routes/sku-sync.$token'
 import { Route as SignTokenRouteImport } from './routes/sign.$token'
 import { Route as QbUploadTokenRouteImport } from './routes/qb-upload.$token'
 import { Route as LegalQuickbooksDisconnectedRouteImport } from './routes/legal.quickbooks-disconnected'
@@ -173,6 +174,11 @@ const AppRoute = AppRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SkuSyncTokenRoute = SkuSyncTokenRouteImport.update({
+  id: '/sku-sync/$token',
+  path: '/sku-sync/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SignTokenRoute = SignTokenRouteImport.update({
@@ -976,6 +982,7 @@ export interface FileRoutesByFullPath {
   '/legal/quickbooks-disconnected': typeof LegalQuickbooksDisconnectedRoute
   '/qb-upload/$token': typeof QbUploadTokenRoute
   '/sign/$token': typeof SignTokenRoute
+  '/sku-sync/$token': typeof SkuSyncTokenRoute
   '/admin/audit': typeof AppAdminAuditRoute
   '/admin/organisations': typeof AppAdminOrganisationsRoute
   '/admin/permissions': typeof AppAdminPermissionsRoute
@@ -1112,6 +1119,7 @@ export interface FileRoutesByTo {
   '/legal/quickbooks-disconnected': typeof LegalQuickbooksDisconnectedRoute
   '/qb-upload/$token': typeof QbUploadTokenRoute
   '/sign/$token': typeof SignTokenRoute
+  '/sku-sync/$token': typeof SkuSyncTokenRoute
   '/admin/audit': typeof AppAdminAuditRoute
   '/admin/organisations': typeof AppAdminOrganisationsRoute
   '/admin/permissions': typeof AppAdminPermissionsRoute
@@ -1257,6 +1265,7 @@ export interface FileRoutesById {
   '/legal/quickbooks-disconnected': typeof LegalQuickbooksDisconnectedRoute
   '/qb-upload/$token': typeof QbUploadTokenRoute
   '/sign/$token': typeof SignTokenRoute
+  '/sku-sync/$token': typeof SkuSyncTokenRoute
   '/_app/admin/audit': typeof AppAdminAuditRoute
   '/_app/admin/organisations': typeof AppAdminOrganisationsRoute
   '/_app/admin/permissions': typeof AppAdminPermissionsRoute
@@ -1406,6 +1415,7 @@ export interface FileRouteTypes {
     | '/legal/quickbooks-disconnected'
     | '/qb-upload/$token'
     | '/sign/$token'
+    | '/sku-sync/$token'
     | '/admin/audit'
     | '/admin/organisations'
     | '/admin/permissions'
@@ -1542,6 +1552,7 @@ export interface FileRouteTypes {
     | '/legal/quickbooks-disconnected'
     | '/qb-upload/$token'
     | '/sign/$token'
+    | '/sku-sync/$token'
     | '/admin/audit'
     | '/admin/organisations'
     | '/admin/permissions'
@@ -1686,6 +1697,7 @@ export interface FileRouteTypes {
     | '/legal/quickbooks-disconnected'
     | '/qb-upload/$token'
     | '/sign/$token'
+    | '/sku-sync/$token'
     | '/_app/admin/audit'
     | '/_app/admin/organisations'
     | '/_app/admin/permissions'
@@ -1786,6 +1798,7 @@ export interface RootRouteChildren {
   LegalQuickbooksDisconnectedRoute: typeof LegalQuickbooksDisconnectedRoute
   QbUploadTokenRoute: typeof QbUploadTokenRoute
   SignTokenRoute: typeof SignTokenRoute
+  SkuSyncTokenRoute: typeof SkuSyncTokenRoute
   FormsFillTokenRoute: typeof FormsFillTokenRoute
 }
 
@@ -1817,6 +1830,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sku-sync/$token': {
+      id: '/sku-sync/$token'
+      path: '/sku-sync/$token'
+      fullPath: '/sku-sync/$token'
+      preLoaderRoute: typeof SkuSyncTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sign/$token': {
@@ -3298,6 +3318,7 @@ const rootRouteChildren: RootRouteChildren = {
   LegalQuickbooksDisconnectedRoute: LegalQuickbooksDisconnectedRoute,
   QbUploadTokenRoute: QbUploadTokenRoute,
   SignTokenRoute: SignTokenRoute,
+  SkuSyncTokenRoute: SkuSyncTokenRoute,
   FormsFillTokenRoute: FormsFillTokenRoute,
 }
 export const routeTree = rootRouteImport
