@@ -1,11 +1,13 @@
 /**
  * Training documents — files and folders, and nothing else.
  *
- * Two buttons: Add document, Add folder. A document is a file with a name; a
- * folder is a name you can put documents inside. No expiry dates, no crew link,
- * no certificate type — the Training screen previously asked for all of that and
- * none of it was wanted here. (The full certification register, with those
- * fields, still lives on the Training Institute page.)
+ * Add document takes one file or many; Add folder either creates an empty folder
+ * by name, or takes a whole folder from your computer and recreates it here with
+ * its subfolders intact. Dropping files or folders onto the page does the same.
+ * No expiry dates, no crew link, no certificate type — the Training screen
+ * previously asked for all of that and none of it was wanted here. (The full
+ * certification register, with those fields, still lives on the Training
+ * Institute page.)
  *
  * Vessel scope comes from the picker already on the screen rather than from a
  * field in the form: whatever vessel is selected when you add something is what
@@ -18,12 +20,15 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { storageRef } from "@/lib/signed-url";
 import { SignedAnchor } from "@/components/ui/signed-file";
-import { guardUploadFile, uploadContentType } from "@/lib/upload-guard";
+import { uploadRejectionReason, uploadContentType } from "@/lib/upload-guard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -40,6 +45,44 @@ export type TrainingDoc = {
 
 const db = () => supabase as any;
 
+/** A file to add, and the folder path it should land in ("" = right here). */
+type Picked = { file: File; dir: string };
+
+/** How many uploads run at once. Sequential is too slow for a folder of scans;
+ *  unbounded would open hundreds of sockets and stall the browser. */
+const UPLOAD_CONCURRENCY = 4;
+
+/** Strip the leading folder-name segment browsers put on webkitRelativePath. */
+function dirOf(relPath: string): string {
+  const i = relPath.lastIndexOf("/");
+  return i === -1 ? "" : relPath.slice(0, i);
+}
+
+/**
+ * Walk a dropped FileSystemEntry tree into a flat list of files plus every
+ * directory seen (so an empty subfolder is still recreated).
+ *
+ * readEntries() returns at most ~100 entries per call and must be called again
+ * until it returns none — reading once silently truncates a large folder.
+ */
+async function walkEntry(entry: any, prefix: string, out: Picked[], dirs: Set<string>): Promise<void> {
+  if (!entry) return;
+  if (entry.isFile) {
+    const file: File = await new Promise((res, rej) => entry.file(res, rej));
+    out.push({ file, dir: prefix });
+    return;
+  }
+  if (!entry.isDirectory) return;
+  const dir = prefix ? `${prefix}/${entry.name}` : entry.name;
+  dirs.add(dir);
+  const reader = entry.createReader();
+  for (;;) {
+    const batch: any[] = await new Promise((res, rej) => reader.readEntries(res, rej));
+    if (!batch.length) break;
+    for (const child of batch) await walkEntry(child, dir, out, dirs);
+  }
+}
+
 export function TrainingDocuments({ yachtId }: { yachtId: string | null }) {
   const { user } = useAuth();
   const [folders, setFolders] = useState<TrainingFolder[]>([]);
@@ -47,13 +90,17 @@ export function TrainingDocuments({ yachtId }: { yachtId: string | null }) {
   const [loading, setLoading] = useState(true);
   /** Folder ids from the root down to where we are now; empty = top level. */
   const [path, setPath] = useState<string[]>([]);
-  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [dragOver, setDragOver] = useState(false);
   const [folderOpen, setFolderOpen] = useState(false);
   const [folderName, setFolderName] = useState("");
   const [busy, setBusy] = useState(false);
   const [deleteFolder, setDeleteFolder] = useState<TrainingFolder | null>(null);
   const [deleteDoc, setDeleteDoc] = useState<TrainingDoc | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const dirRef = useRef<HTMLInputElement>(null);
+  /** Nested dragenter/dragleave fire constantly; count them so the overlay is stable. */
+  const dragDepth = useRef(0);
 
   const here = path.length ? path[path.length - 1] : null;
 
@@ -77,30 +124,159 @@ export function TrainingDocuments({ yachtId }: { yachtId: string | null }) {
   const childFolders = folders.filter((f) => (f.parent_id ?? null) === here);
   const childDocs = docs.filter((d) => (d.folder_id ?? null) === here);
 
-  async function addDocument(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!guardUploadFile(file)) { e.target.value = ""; return; }
-    setUploading(true);
+  /**
+   * Add files, recreating any folder structure they carry.
+   *
+   * Folders are matched by name under their parent before being created, so
+   * dropping the same folder twice merges into it rather than making a second
+   * copy with the same name.
+   */
+  async function addFiles(picked: Picked[], extraDirs: string[] = []) {
+    if (!picked.length && !extraDirs.length) return;
+
+    // Refuse anything the bucket would reject BEFORE uploading, and collect the
+    // reasons — one toast per bad file would be unusable for a large folder.
+    const skipped: string[] = [];
+    const usable = picked.filter((p) => {
+      const reason = uploadRejectionReason(p.file);
+      if (reason) { skipped.push(reason); return false; }
+      return true;
+    });
+
+    setProgress({ done: 0, total: usable.length });
+    let added = 0;
+    const failed: string[] = [];
+
     try {
-      const path_ = `training/${Date.now()}-${file.name}`;
-      const { error } = await supabase.storage.from("permit-documents")
-        .upload(path_, file, { contentType: uploadContentType(file) });
-      if (error) throw error;
-      const { error: insErr } = await db().from("training_documents").insert([{
-        folder_id: here, yacht_id: yachtId,
-        title: file.name, file_url: storageRef("permit-documents", path_), file_name: file.name,
-        created_by: user?.id ?? null,
-      }]);
-      if (insErr) throw insErr;
-      toast.success(`${file.name} added`);
+      // ── Folders first, so every file has somewhere to go ──
+      const idByDir = new Map<string, string | null>([["", here]]);
+      // Local mirror of what exists, so folders created in this run are reused
+      // by later files without a round trip.
+      const known = folders.map((f) => ({ id: f.id, name: f.name, parent_id: f.parent_id }));
+
+      async function ensureDir(dir: string): Promise<string | null> {
+        if (idByDir.has(dir)) return idByDir.get(dir)!;
+        const i = dir.lastIndexOf("/");
+        const parentDir = i === -1 ? "" : dir.slice(0, i);
+        const name = i === -1 ? dir : dir.slice(i + 1);
+        const parentId = await ensureDir(parentDir);
+
+        const existing = known.find((f) => f.name === name && (f.parent_id ?? null) === parentId);
+        if (existing) { idByDir.set(dir, existing.id); return existing.id; }
+
+        const { data, error } = await db().from("training_document_folders")
+          .insert([{ name, parent_id: parentId, yacht_id: yachtId, created_by: user?.id ?? null }])
+          .select("id, name, parent_id").single();
+        if (error) throw error;
+        known.push({ id: data.id, name: data.name, parent_id: data.parent_id });
+        idByDir.set(dir, data.id);
+        return data.id;
+      }
+
+      // Deepest paths last so parents always exist first.
+      const allDirs = [...new Set([...usable.map((p) => p.dir), ...extraDirs])]
+        .filter(Boolean)
+        .sort((a, b) => a.split("/").length - b.split("/").length);
+      for (const d of allDirs) await ensureDir(d);
+
+      // ── Then the files, a few at a time ──
+      let cursor = 0;
+      async function worker() {
+        for (;;) {
+          const i = cursor++;
+          if (i >= usable.length) return;
+          const { file, dir } = usable[i];
+          try {
+            const key = `training/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${file.name}`;
+            const { error } = await supabase.storage.from("permit-documents")
+              .upload(key, file, { contentType: uploadContentType(file) });
+            if (error) throw error;
+            const { error: insErr } = await db().from("training_documents").insert([{
+              folder_id: idByDir.get(dir) ?? here,
+              yacht_id: yachtId,
+              title: file.name,
+              file_url: storageRef("permit-documents", key),
+              file_name: file.name,
+              created_by: user?.id ?? null,
+            }]);
+            if (insErr) throw insErr;
+            added++;
+          } catch (e) {
+            failed.push(`${file.name}: ${e instanceof Error ? e.message : "upload failed"}`);
+          } finally {
+            setProgress((p) => (p ? { ...p, done: p.done + 1 } : p));
+          }
+        }
+      }
+      await Promise.all(Array.from({ length: Math.min(UPLOAD_CONCURRENCY, usable.length || 1) }, worker));
+
+      // One summary, not one message per file.
+      const parts: string[] = [];
+      if (added) parts.push(`${added} document${added === 1 ? "" : "s"} added`);
+      if (allDirs.length) parts.push(`${allDirs.length} folder${allDirs.length === 1 ? "" : "s"} created`);
+      if (parts.length) toast.success(parts.join(", "));
+      if (skipped.length) {
+        toast.warning(
+          skipped.length === 1 ? skipped[0] : `${skipped.length} files were skipped`,
+          skipped.length > 1 ? { description: skipped.slice(0, 4).join("\n") } : undefined,
+        );
+      }
+      if (failed.length) {
+        toast.error(
+          failed.length === 1 ? failed[0] : `${failed.length} files failed to upload`,
+          failed.length > 1 ? { description: failed.slice(0, 4).join("\n") } : undefined,
+        );
+      }
       await load();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Upload failed");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not add these files");
     } finally {
-      setUploading(false);
-      if (fileRef.current) fileRef.current.value = "";
+      setProgress(null);
     }
+  }
+
+  /** Files chosen from the plain picker — no folder structure. */
+  function onPickFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    void addFiles(files.map((file) => ({ file, dir: "" })));
+  }
+
+  /** A folder chosen from the picker — webkitRelativePath carries the structure. */
+  function onPickDirectory(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    void addFiles(files.map((file) => ({
+      file,
+      dir: dirOf((file as any).webkitRelativePath ?? ""),
+    })));
+  }
+
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault();
+    dragDepth.current = 0;
+    setDragOver(false);
+    // Read the DataTransfer SYNCHRONOUSLY — it is emptied the moment this
+    // handler yields, so collecting entries after an await returns nothing.
+    const entries = Array.from(e.dataTransfer.items ?? [])
+      .map((i: any) => (typeof i.webkitGetAsEntry === "function" ? i.webkitGetAsEntry() : null))
+      .filter(Boolean);
+    const plain = Array.from(e.dataTransfer.files ?? []);
+
+    void (async () => {
+      if (entries.length) {
+        const out: Picked[] = [];
+        const dirs = new Set<string>();
+        try {
+          for (const entry of entries) await walkEntry(entry, "", out, dirs);
+          await addFiles(out, [...dirs]);
+          return;
+        } catch {
+          // Fall through to the plain file list below.
+        }
+      }
+      if (plain.length) await addFiles(plain.map((file) => ({ file, dir: "" })));
+    })();
   }
 
   async function createFolder() {
@@ -159,9 +335,16 @@ export function TrainingDocuments({ yachtId }: { yachtId: string | null }) {
   const subStyle: React.CSSProperties = {
     fontSize: "var(--pds-fs-label)", color: "var(--pds-text-secondary)", marginTop: 2,
   };
+  const uploading = progress !== null;
 
   return (
-    <>
+    <div
+      onDragEnter={(e) => { e.preventDefault(); dragDepth.current++; setDragOver(true); }}
+      onDragOver={(e) => e.preventDefault()}
+      onDragLeave={(e) => { e.preventDefault(); if (--dragDepth.current <= 0) { dragDepth.current = 0; setDragOver(false); } }}
+      onDrop={onDrop}
+      style={{ position: "relative", minHeight: 220 }}
+    >
       {/* Toolbar: where you are, and the two things you can do. */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, fontSize: "var(--pds-fs-body)" }}>
@@ -181,17 +364,50 @@ export function TrainingDocuments({ yachtId }: { yachtId: string | null }) {
           ))}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <input ref={fileRef} type="file" className="hidden" onChange={addDocument} />
+          <input ref={fileRef} type="file" multiple className="hidden" onChange={onPickFiles} />
+          {/* webkitdirectory turns this into a folder picker. Not in the React
+              types, and unsupported on Firefox — hence the plain multi-file
+              picker above as the everywhere-option. */}
+          <input ref={dirRef} type="file" multiple className="hidden" onChange={onPickDirectory}
+            {...({ webkitdirectory: "", directory: "" } as any)} />
+
           <Button size="sm" variant="outline" className="h-9 gap-1.5" disabled={uploading}
             onClick={() => fileRef.current?.click()}>
             {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <TIcon name="upload" size={14} />}
             Add document
           </Button>
-          <Button size="sm" variant="outline" className="h-9 gap-1.5" onClick={() => { setFolderName(""); setFolderOpen(true); }}>
-            <TIcon name="folder-plus" size={14} /> Add folder
-          </Button>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" variant="outline" className="h-9 gap-1.5" disabled={uploading}>
+                <TIcon name="folder-plus" size={14} /> Add folder
+                <TIcon name="chevron-down" size={12} />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => { setFolderName(""); setFolderOpen(true); }}>
+                New empty folder
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => dirRef.current?.click()}>
+                Upload a folder from my computer
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
+
+      {uploading && (
+        <div style={{ marginBottom: 12, fontSize: "var(--pds-fs-label)", color: "var(--pds-text-secondary)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Uploading {progress.done} of {progress.total}…
+          </div>
+          <div style={{ height: 3, borderRadius: 2, background: "var(--pds-surface-3)", overflow: "hidden" }}>
+            <div style={{ height: "100%", width: `${progress.total ? (progress.done / progress.total) * 100 : 0}%`,
+                          background: "var(--pds-accent)", transition: "width .2s" }} />
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div style={{ display: "flex", justifyContent: "center", padding: 40 }}>
@@ -204,7 +420,7 @@ export function TrainingDocuments({ yachtId }: { yachtId: string | null }) {
             {here ? "This folder is empty." : "No documents yet."}
           </p>
           <p style={{ fontSize: "var(--pds-fs-label)", color: "var(--pds-text-secondary)", margin: 0 }}>
-            Use Add document to upload a file, or Add folder to organise them.
+            Drag files or a folder in, or use the buttons above.
           </p>
         </div>
       ) : (
@@ -253,6 +469,24 @@ export function TrainingDocuments({ yachtId }: { yachtId: string | null }) {
               </button>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Drop target — covers the card only while something is being dragged over it. */}
+      {dragOver && !uploading && (
+        <div style={{
+          position: "absolute", inset: -8, borderRadius: 10, zIndex: 5,
+          border: "2px dashed var(--pds-accent)", background: "rgba(0,0,0,0.55)",
+          display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8,
+          pointerEvents: "none",
+        }}>
+          <TIcon name="upload" size={28} color="var(--pds-accent)" />
+          <span style={{ fontSize: "var(--pds-fs-body)", color: "var(--pds-text)" }}>
+            Drop to add {crumbs.length ? `to “${crumbs[crumbs.length - 1].name}”` : "here"}
+          </span>
+          <span style={{ fontSize: "var(--pds-fs-label)", color: "var(--pds-text-secondary)" }}>
+            Folders keep their structure
+          </span>
         </div>
       )}
 
@@ -307,6 +541,6 @@ export function TrainingDocuments({ yachtId }: { yachtId: string | null }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </>
+    </div>
   );
 }
