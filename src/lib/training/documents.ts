@@ -20,6 +20,24 @@ export type Doc = {
 const db = () => supabase as any;
 const BUCKET = "permit-documents";
 
+/**
+ * Resolve a stored reference to { bucket, path }.
+ *
+ * NOT `parseStorageRef(stored, BUCKET)`. Given a default bucket that function
+ * treats the WHOLE value as the path, and our values already carry the bucket
+ * ("permit-documents/training/…"), so the bucket name ended up duplicated inside
+ * the path. Signing then failed and resolveSignedUrl fell back to returning the
+ * raw reference, which fetch() resolved against the site root — the "Could not
+ * fetch the file (404)" on download. storage.copy() reported the same path as
+ * "Object not found" on duplicate. With no default the first segment is read as
+ * the bucket, which is what these values actually hold.
+ */
+function refOf(stored: string) {
+  const ref = parseStorageRef(stored);
+  if (!ref) throw new Error("This document has no file behind it.");
+  return ref;
+}
+
 /** A fresh storage path, unique even when two copies are made in the same ms. */
 function newKey(fileName: string): string {
   return `training/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${fileName}`;
@@ -103,7 +121,7 @@ function triggerDownload(blob: Blob, fileName: string): void {
 }
 
 export async function downloadDoc(doc: Doc): Promise<void> {
-  const url = await resolveSignedUrl(doc.file_url, BUCKET);
+  const url = await resolveSignedUrl(doc.file_url);
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Could not fetch the file (${res.status})`);
   triggerDownload(await res.blob(), doc.file_name ?? doc.title ?? "document");
@@ -130,7 +148,7 @@ export async function downloadFolder(
 
   for (const d of inside) {
     try {
-      const url = await resolveSignedUrl(d.file_url, BUCKET);
+      const url = await resolveSignedUrl(d.file_url);
       const res = await fetch(url);
       if (res.ok) {
         const full = folderPath(d.folder_id, folders);
@@ -146,12 +164,54 @@ export async function downloadFolder(
   return inside.length;
 }
 
+// ── Delete ────────────────────────────────────────────────────────────────────
+
+/**
+ * Remove the stored files too.
+ *
+ * Deleting only the row leaves the object in the bucket forever, costing storage
+ * and counting against nothing — 1,037 such orphans had already accumulated by
+ * 17 Sept 2026 from deleting and re-uploading. Storage is cleared first: an
+ * orphaned OBJECT is invisible clutter, whereas a row whose file has gone is a
+ * document that appears to exist and cannot be opened.
+ */
+async function removeStoredFiles(docs: Doc[]): Promise<void> {
+  const byBucket = new Map<string, string[]>();
+  for (const d of docs) {
+    try {
+      const ref = refOf(d.file_url);
+      const list = byBucket.get(ref.bucket) ?? [];
+      list.push(ref.path);
+      byBucket.set(ref.bucket, list);
+    } catch { /* nothing stored for this row — nothing to clean up */ }
+  }
+  for (const [bucket, paths] of byBucket) {
+    // remove() takes at most 1000 keys per call.
+    for (let i = 0; i < paths.length; i += 1000) {
+      await supabase.storage.from(bucket).remove(paths.slice(i, i + 1000));
+    }
+  }
+}
+
+export async function deleteDoc(doc: Doc): Promise<void> {
+  await removeStoredFiles([doc]);
+  const { error } = await db().from("training_documents").delete().eq("id", doc.id);
+  if (error) throw error;
+}
+
+/** The row delete cascades to subfolders and documents; the files need doing here. */
+export async function deleteFolder(folder: Folder, folders: Folder[], docs: Doc[]): Promise<void> {
+  const ids = selfAndDescendants(folder.id, folders);
+  await removeStoredFiles(docs.filter((d) => d.folder_id && ids.has(d.folder_id)));
+  const { error } = await db().from("training_document_folders").delete().eq("id", folder.id);
+  if (error) throw error;
+}
+
 // ── Duplicate ─────────────────────────────────────────────────────────────────
 
 /** Copy the stored object too, so deleting one copy never breaks the other. */
 async function copyStoredFile(stored: string, fileName: string): Promise<string> {
-  const ref = parseStorageRef(stored, BUCKET);
-  if (!ref) throw new Error("This document has no file to copy.");
+  const ref = refOf(stored);
   const to = newKey(fileName);
   const { error } = await supabase.storage.from(ref.bucket).copy(ref.path, to);
   if (error) throw error;

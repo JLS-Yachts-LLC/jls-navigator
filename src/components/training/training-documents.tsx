@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import { fetchAllRows } from "@/lib/fetch-all";
 import { storageRef } from "@/lib/signed-url";
 import { SignedAnchor } from "@/components/ui/signed-file";
 import { uploadRejectionReason, uploadContentType } from "@/lib/upload-guard";
@@ -39,6 +40,7 @@ import { TIcon } from "@/components/polaris-ui/primitives";
 import {
   renameDoc, renameFolder, moveDoc, moveFolder, downloadDoc, downloadFolder,
   duplicateDoc, duplicateFolder, selfAndDescendants, folderPath,
+  deleteDoc as deleteDocOp, deleteFolder as deleteFolderOp,
   type Folder as OpFolder, type Doc as OpDoc,
 } from "@/lib/training/documents";
 
@@ -124,9 +126,13 @@ export function TrainingDocuments({ yachtId }: { yachtId: string | null }) {
     setLoading(true);
     // A vessel sees its own items AND the fleet-wide ones; "All vessels" sees all.
     const scope = (q: any) => (yachtId ? q.or(`yacht_id.eq.${yachtId},yacht_id.is.null`) : q);
+    // fetchAllRows, NOT a bare select: PostgREST caps a response at 1000 rows, so
+    // once the library passed 1000 documents the oldest silently stopped loading
+    // and folders looked as though their contents were being deleted. Nothing was
+    // ever deleted — the page just never asked for the rest.
     const [f, d] = await Promise.all([
-      scope(db().from("training_document_folders").select("id, name, parent_id, yacht_id").order("name")),
-      scope(db().from("training_documents").select("*").order("created_at", { ascending: false })),
+      fetchAllRows(() => scope(db().from("training_document_folders").select("id, name, parent_id, yacht_id").order("name"))),
+      fetchAllRows(() => scope(db().from("training_documents").select("*").order("created_at", { ascending: false }))),
     ]);
     setFolders((f.data ?? []) as TrainingFolder[]);
     setDocs((d.data ?? []) as TrainingDoc[]);
@@ -312,20 +318,28 @@ export function TrainingDocuments({ yachtId }: { yachtId: string | null }) {
 
   async function removeFolder() {
     if (!deleteFolder) return;
-    const { error } = await db().from("training_document_folders").delete().eq("id", deleteFolder.id);
+    const target = deleteFolder;
     setDeleteFolder(null);
-    if (error) { toast.error(error.message); return; }
-    toast.success("Folder removed");
-    await load();
+    try {
+      await deleteFolderOp(target, folders, docs);
+      toast.success("Folder removed");
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not remove the folder");
+    }
   }
 
   async function removeDoc() {
     if (!deleteDoc) return;
-    const { error } = await db().from("training_documents").delete().eq("id", deleteDoc.id);
+    const target = deleteDoc;
     setDeleteDoc(null);
-    if (error) { toast.error(error.message); return; }
-    toast.success("Document removed");
-    await load();
+    try {
+      await deleteDocOp(target);
+      toast.success("Document removed");
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not remove the document");
+    }
   }
 
   // ── Row actions ─────────────────────────────────────────────────────────────
