@@ -36,12 +36,22 @@ import {
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { TIcon } from "@/components/polaris-ui/primitives";
+import {
+  renameDoc, renameFolder, moveDoc, moveFolder, downloadDoc, downloadFolder,
+  duplicateDoc, duplicateFolder, selfAndDescendants, folderPath,
+  type Folder as OpFolder, type Doc as OpDoc,
+} from "@/lib/training/documents";
 
-export type TrainingFolder = { id: string; name: string; parent_id: string | null; yacht_id: string | null };
-export type TrainingDoc = {
-  id: string; folder_id: string | null; yacht_id: string | null;
-  title: string | null; file_url: string; file_name: string | null; created_at: string;
-};
+export type TrainingFolder = OpFolder;
+export type TrainingDoc = OpDoc;
+
+/** What a row action is working on: a folder, or a document. */
+type Target =
+  | { kind: "folder"; folder: TrainingFolder }
+  | { kind: "doc"; doc: TrainingDoc };
+
+const targetName = (t: Target) =>
+  t.kind === "folder" ? t.folder.name : (t.doc.title ?? t.doc.file_name ?? "Document");
 
 const db = () => supabase as any;
 
@@ -97,6 +107,12 @@ export function TrainingDocuments({ yachtId }: { yachtId: string | null }) {
   const [busy, setBusy] = useState(false);
   const [deleteFolder, setDeleteFolder] = useState<TrainingFolder | null>(null);
   const [deleteDoc, setDeleteDoc] = useState<TrainingDoc | null>(null);
+  // Rename / Move share one target, since only one can be open at a time.
+  const [renaming, setRenaming] = useState<Target | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [moving, setMoving] = useState<Target | null>(null);
+  /** Long-running row action, e.g. zipping a folder — shown on the row itself. */
+  const [working, setWorking] = useState<{ id: string; label: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const dirRef = useRef<HTMLInputElement>(null);
   /** Nested dragenter/dragleave fire constantly; count them so the overlay is stable. */
@@ -312,6 +328,114 @@ export function TrainingDocuments({ yachtId }: { yachtId: string | null }) {
     await load();
   }
 
+  // ── Row actions ─────────────────────────────────────────────────────────────
+
+  function openRename(t: Target) {
+    setRenameValue(targetName(t));
+    setRenaming(t);
+  }
+
+  async function saveRename() {
+    if (!renaming) return;
+    const name = renameValue.trim();
+    if (!name) return;
+    setBusy(true);
+    try {
+      if (renaming.kind === "folder") await renameFolder(renaming.folder.id, name);
+      else await renameDoc(renaming.doc.id, name);
+      setRenaming(null);
+      toast.success("Renamed");
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not rename");
+    } finally { setBusy(false); }
+  }
+
+  async function doMove(destination: string | null) {
+    if (!moving) return;
+    setBusy(true);
+    try {
+      if (moving.kind === "folder") await moveFolder(moving.folder.id, destination, folders);
+      else await moveDoc(moving.doc.id, destination);
+      setMoving(null);
+      const where = destination ? `“${folders.find((f) => f.id === destination)?.name}”` : "All documents";
+      toast.success(`Moved to ${where}`);
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not move");
+    } finally { setBusy(false); }
+  }
+
+  async function doDownload(t: Target) {
+    const id = t.kind === "folder" ? t.folder.id : t.doc.id;
+    setWorking({ id, label: "Preparing…" });
+    try {
+      if (t.kind === "doc") {
+        await downloadDoc(t.doc);
+      } else {
+        const n = await downloadFolder(t.folder, folders, docs,
+          (done, total) => setWorking({ id, label: `Zipping ${done} of ${total}…` }));
+        toast.success(`${n} document${n === 1 ? "" : "s"} downloaded`);
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Download failed");
+    } finally { setWorking(null); }
+  }
+
+  async function doDuplicate(t: Target) {
+    const id = t.kind === "folder" ? t.folder.id : t.doc.id;
+    setWorking({ id, label: "Duplicating…" });
+    try {
+      if (t.kind === "doc") {
+        await duplicateDoc(t.doc, user?.id ?? null);
+        toast.success("Document duplicated");
+      } else {
+        const r = await duplicateFolder(t.folder, folders, docs, user?.id ?? null,
+          (done, total) => setWorking({ id, label: `Copying ${done} of ${total}…` }));
+        toast.success(`Folder duplicated — ${r.folders} folder${r.folders === 1 ? "" : "s"}, ${r.documents} document${r.documents === 1 ? "" : "s"}`);
+      }
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not duplicate");
+    } finally { setWorking(null); }
+  }
+
+  /** Destinations for the move dialog — a folder can't go inside itself. */
+  function moveTargets(t: Target): TrainingFolder[] {
+    const banned = t.kind === "folder" ? selfAndDescendants(t.folder.id, folders) : new Set<string>();
+    return folders
+      .filter((f) => !banned.has(f.id))
+      .map((f) => ({ f, path: folderPath(f.id, folders) }))
+      .sort((a, b) => a.path.localeCompare(b.path))
+      .map(({ f }) => f);
+  }
+
+  /** The row's ⋯ menu — same actions for a folder and a document. */
+  function RowMenu({ target }: { target: Target }) {
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button title="More"
+            className="opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100 transition-opacity"
+            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--pds-text-secondary)", padding: 4 }}>
+            <TIcon name="dots" size={16} />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={() => openRename(target)}>Rename</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setMoving(target)}>Move to folder…</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => void doDownload(target)}>Download</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => void doDuplicate(target)}>Duplicate</DropdownMenuItem>
+          <DropdownMenuItem
+            className="text-destructive focus:text-destructive"
+            onClick={() => target.kind === "folder" ? setDeleteFolder(target.folder) : setDeleteDoc(target.doc)}>
+            Remove
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  }
+
   /** How many documents sit in this folder and everything under it. */
   function countIn(folderId: string): number {
     const stack = [folderId];
@@ -436,16 +560,18 @@ export function TrainingDocuments({ yachtId }: { yachtId: string | null }) {
                   <span style={{ minWidth: 0 }}>
                     <span style={{ ...nameStyle, display: "block" }}>{f.name}</span>
                     <span style={{ ...subStyle, display: "block" }}>
-                      {n === 0 ? "Empty" : `${n} document${n === 1 ? "" : "s"}`}
-                      {f.yacht_id === null && yachtId ? " · all vessels" : ""}
+                      {working?.id === f.id ? working.label : (
+                        <>
+                          {n === 0 ? "Empty" : `${n} document${n === 1 ? "" : "s"}`}
+                          {f.yacht_id === null && yachtId ? " · all vessels" : ""}
+                        </>
+                      )}
                     </span>
                   </span>
                 </button>
-                <button onClick={() => setDeleteFolder(f)} title="Remove folder"
-                  className="opacity-0 group-hover:opacity-100 transition-opacity"
-                  style={{ background: "none", border: "none", cursor: "pointer", color: "var(--pds-text-secondary)", padding: 4 }}>
-                  <TIcon name="trash" size={15} />
-                </button>
+                {working?.id === f.id
+                  ? <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--pds-text-secondary)", margin: 4 }} />
+                  : <RowMenu target={{ kind: "folder", folder: f }} />}
               </div>
             );
           })}
@@ -458,15 +584,17 @@ export function TrainingDocuments({ yachtId }: { yachtId: string | null }) {
                   {d.title ?? d.file_name ?? "Document"}
                 </SignedAnchor>
                 <span style={{ ...subStyle, display: "block" }}>
-                  Added {new Date(d.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
-                  {d.yacht_id === null && yachtId ? " · all vessels" : ""}
+                  {working?.id === d.id ? working.label : (
+                    <>
+                      Added {new Date(d.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                      {d.yacht_id === null && yachtId ? " · all vessels" : ""}
+                    </>
+                  )}
                 </span>
               </div>
-              <button onClick={() => setDeleteDoc(d)} title="Remove document"
-                className="opacity-0 group-hover:opacity-100 transition-opacity"
-                style={{ background: "none", border: "none", cursor: "pointer", color: "var(--pds-text-secondary)", padding: 4 }}>
-                <TIcon name="trash" size={15} />
-              </button>
+              {working?.id === d.id
+                ? <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--pds-text-secondary)", margin: 4 }} />
+                : <RowMenu target={{ kind: "doc", doc: d }} />}
             </div>
           ))}
         </div>
@@ -504,6 +632,60 @@ export function TrainingDocuments({ yachtId }: { yachtId: string | null }) {
             <Button onClick={() => void createFolder()} disabled={!folderName.trim() || busy}>
               {busy && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />} Create
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Rename — one field, same dialog for a folder or a document. */}
+      <Dialog open={!!renaming} onOpenChange={(o) => !o && setRenaming(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Rename {renaming?.kind === "folder" ? "folder" : "document"}</DialogTitle>
+          </DialogHeader>
+          <Input autoFocus value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") void saveRename(); }} />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRenaming(null)} disabled={busy}>Cancel</Button>
+            <Button onClick={() => void saveRename()} disabled={!renameValue.trim() || busy}>
+              {busy && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />} Rename
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Move — pick a destination from the whole tree, indented by depth. */}
+      <Dialog open={!!moving} onOpenChange={(o) => !o && setMoving(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Move “{moving ? targetName(moving) : ""}”</DialogTitle>
+          </DialogHeader>
+          <div style={{ maxHeight: 300, overflowY: "auto", margin: "4px 0" }}>
+            <button onClick={() => void doMove(null)} disabled={busy}
+              className="w-full rounded-md px-2 py-2 text-left text-sm hover:bg-accent/40 disabled:opacity-50">
+              <span className="inline-flex items-center gap-2"><TIcon name="folder" size={15} /> All documents</span>
+            </button>
+            {moving && moveTargets(moving).map((f) => {
+              const path = folderPath(f.id, folders);
+              const depth = path.split("/").length - 1;
+              return (
+                <button key={f.id} onClick={() => void doMove(f.id)} disabled={busy}
+                  className="w-full rounded-md px-2 py-2 text-left text-sm hover:bg-accent/40 disabled:opacity-50"
+                  style={{ paddingLeft: 8 + depth * 16 }}>
+                  <span className="inline-flex items-center gap-2">
+                    <TIcon name="folder" size={15} /> {f.name}
+                  </span>
+                </button>
+              );
+            })}
+            {moving && moveTargets(moving).length === 0 && (
+              <p style={{ fontSize: "var(--pds-fs-label)", color: "var(--pds-text-secondary)", padding: "8px 2px", margin: 0 }}>
+                No other folders yet — create one first, or move this to All documents.
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMoving(null)} disabled={busy}>Cancel</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
