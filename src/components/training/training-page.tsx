@@ -719,7 +719,7 @@ function RecordDialog({
 
 // ─── Cert Dialog ──────────────────────────────────────────────────────────────
 
-export function CertDialog({
+function CertDialog({
   open, editing, onClose, onSaved,
 }: {
   open: boolean; editing: Certification | null; onClose: () => void; onSaved: () => void;
