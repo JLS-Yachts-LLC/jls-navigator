@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Paperclip, ImagePlus, Plus, X, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ZONES, INTERNAL_DEPARTMENTS, calcCbm } from "@/components/shipsync/warehouse/warehouse-constants";
+import { ZONES, INTERNAL_DEPARTMENTS, FREEFORM_DEPARTMENTS, calcCbm } from "@/components/shipsync/warehouse/warehouse-constants";
 import {
   clientItemCrud, internalItemCrud, packageContentCrud,
   nextClientRef, nextInternalRef, nextPackageItemId, uploadWarehouseFile,
@@ -16,6 +16,18 @@ import {
 } from "@/lib/warehouse/data";
 
 const ITEM_STATUSES: ManualStatus[] = ["Stored", "Checked Out", "Returned", "Disposed", "Completed"];
+
+/** "Manager"/"Others" aren't real departments — the name/detail typed for
+ *  them is stored as a " — <detail>" suffix on the department value itself,
+ *  so the Inventory List still shows the whole thing with no schema change. */
+function splitDepartment(stored: string): { base: string; detail: string } {
+  const match = FREEFORM_DEPARTMENTS.map((d) => stored.match(new RegExp(`^${d} — (.*)$`))).find(Boolean);
+  if (match) return { base: stored.slice(0, stored.indexOf(" — ")), detail: match[1] };
+  return { base: stored, detail: "" };
+}
+function combineDepartment(base: string, detail: string): string {
+  return (FREEFORM_DEPARTMENTS as readonly string[]).includes(base) && detail.trim() ? `${base} — ${detail.trim()}` : base;
+}
 
 /** Shared Status + checkout tracking, used by both Client and Internal item
  *  forms — mirrors the source spreadsheet, where a whole item (not just a
@@ -353,7 +365,7 @@ export function InternalItemForm({ kind, editing, existingContents, onSaved, onC
   onSaved: () => Promise<void>;
   onCancel?: () => void;
 }) {
-  const blank = { department: "", description: "", length: "", width: "", height: "", weight: "", dateStored: "", destructionDate: "", zone: "", bay: "", shelf: "", status: "Stored" as ManualStatus, checkedOutDate: "", checkedOutTo: "", actualReturnDate: "" };
+  const blank = { department: "", departmentDetail: "", description: "", length: "", width: "", height: "", weight: "", dateStored: "", destructionDate: "", zone: "", bay: "", shelf: "", status: "Stored" as ManualStatus, checkedOutDate: "", checkedOutTo: "", actualReturnDate: "" };
   const [f, setF] = useState(blank);
   const [docs, setDocs] = useState<WarehouseDoc[]>([]);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
@@ -363,8 +375,9 @@ export function InternalItemForm({ kind, editing, existingContents, onSaved, onC
 
   useEffect(() => {
     if (editing) {
+      const { base, detail } = splitDepartment(editing.department);
       setF({
-        department: editing.department, description: editing.description,
+        department: base, departmentDetail: detail, description: editing.description,
         length: editing.length_cm != null ? String(editing.length_cm) : "", width: editing.width_cm != null ? String(editing.width_cm) : "",
         height: editing.height_cm != null ? String(editing.height_cm) : "", weight: editing.weight_kg != null ? String(editing.weight_kg) : "",
         dateStored: editing.date_stored ?? "", destructionDate: editing.destruction_date ?? "",
@@ -388,7 +401,7 @@ export function InternalItemForm({ kind, editing, existingContents, onSaved, onC
     try {
       const cbm = calcCbm(Number(f.length) || 0, Number(f.width) || 0, Number(f.height) || 0);
       const payload: Partial<WarehouseInternalItem> = {
-        department: f.department, description: f.description.trim(),
+        department: combineDepartment(f.department, f.departmentDetail), description: f.description.trim(),
         length_cm: f.length ? Number(f.length) : null, width_cm: f.width ? Number(f.width) : null, height_cm: f.height ? Number(f.height) : null,
         weight_kg: f.weight ? Number(f.weight) : null, cbm: cbm || null,
         date_stored: f.dateStored || null, destruction_date: kind === "documents" ? (f.destructionDate || null) : null,
@@ -418,11 +431,17 @@ export function InternalItemForm({ kind, editing, existingContents, onSaved, onC
     <div className="rounded-xl border border-border bg-card p-5">
       <div className="grid grid-cols-2 gap-3">
         <Field label="Department *">
-          <Select value={f.department || undefined} onValueChange={(v) => set({ department: v })}>
+          <Select value={f.department || undefined} onValueChange={(v) => set({ department: v, departmentDetail: "" })}>
             <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select department" /></SelectTrigger>
             <SelectContent>{INTERNAL_DEPARTMENTS.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}</SelectContent>
           </Select>
         </Field>
+        {(FREEFORM_DEPARTMENTS as readonly string[]).includes(f.department) && (
+          <Field label={f.department === "Manager" ? "Manager's name" : "Specify"}>
+            <Input value={f.departmentDetail} onChange={(e) => set({ departmentDetail: e.target.value })}
+              placeholder={f.department === "Manager" ? "e.g. Ahmed" : "What is this?"} className="h-9" />
+          </Field>
+        )}
         <Field label="Date Stored"><Input type="date" value={f.dateStored} onChange={(e) => set({ dateStored: e.target.value })} className="h-9" /></Field>
         <Field label="Description *" full><Textarea rows={2} value={f.description} onChange={(e) => set({ description: e.target.value })} className="resize-none text-sm" /></Field>
 

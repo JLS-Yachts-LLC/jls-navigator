@@ -10,33 +10,86 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Compass, Calculator, Plus, Trash2, CheckCircle2, Pencil } from "lucide-react";
 import {
-  ZONES, calcCbm, locationCode, shelfUsage,
+  allZones, calcCbm, locationCode, shelfUsage,
 } from "@/components/shipsync/warehouse/warehouse-constants";
 import { shelfCrud, type Zone, type WarehouseShelf } from "@/lib/warehouse/data";
 import type { WarehouseData } from "@/components/shipsync/ShipSyncWarehouse";
 
 type SubTab = "finder" | Zone;
-const SUB_TABS: { key: SubTab; label: string }[] = [
-  { key: "finder", label: "Shelf Finder" },
-  ...ZONES.map((z) => ({ key: z as SubTab, label: `Zone ${z}` })),
-];
 
 export function ZoneStorageStatus({ data, reload }: { data: WarehouseData; reload: () => Promise<void> }) {
   const [tab, setTab] = useState<SubTab>("finder");
+  const [addingZone, setAddingZone] = useState(false);
+  const zones = allZones(data.shelves);
+  const subTabs: { key: SubTab; label: string }[] = [
+    { key: "finder", label: "Shelf Finder" },
+    ...zones.map((z) => ({ key: z as SubTab, label: `Zone ${z}` })),
+  ];
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap gap-1 rounded-lg border border-border bg-card/50 p-1 w-fit">
-        {SUB_TABS.map((t) => (
-          <button key={t.key} onClick={() => setTab(t.key)}
-            className={cn("rounded-md px-3 py-1.5 text-[12.5px] font-medium transition-all",
-              tab === t.key ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
-            {t.label}
-          </button>
-        ))}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap gap-1 rounded-lg border border-border bg-card/50 p-1 w-fit">
+          {subTabs.map((t) => (
+            <button key={t.key} onClick={() => setTab(t.key)}
+              className={cn("rounded-md px-3 py-1.5 text-[12.5px] font-medium transition-all",
+                tab === t.key ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setAddingZone(true)}>
+          <Plus className="h-3.5 w-3.5" /> Add Zone
+        </Button>
       </div>
 
+      {addingZone && (
+        <AddZoneForm existingZones={zones} onDone={() => setAddingZone(false)}
+          onCreated={(zone) => { setAddingZone(false); setTab(zone); }} onSaved={reload} />
+      )}
+
       {tab === "finder" ? <ShelfFinderAndCalculator data={data} /> : <ZoneDetails zone={tab} data={data} reload={reload} />}
+    </div>
+  );
+}
+
+function AddZoneForm({ existingZones, onDone, onCreated, onSaved }: {
+  existingZones: Zone[]; onDone: () => void; onCreated: (zone: Zone) => void; onSaved: () => Promise<void>;
+}) {
+  const [zone, setZone] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function create() {
+    const code = zone.trim().toUpperCase();
+    if (!code) { toast.error("Enter a zone code, e.g. F"); return; }
+    if (existingZones.includes(code)) { toast.error(`Zone ${code} already exists`); return; }
+    setBusy(true);
+    try {
+      // A zone only "exists" once it has a shelf, so seed it with a starter
+      // shelf the client can immediately edit (dimensions default to 0 so it
+      // reads as a placeholder until they fill in real capacity).
+      await shelfCrud.create({
+        zone: code, bay: "1", shelf: "01",
+        max_length_cm: 0, max_width_cm: 0, max_height_cm: 0, max_cbm: 0, max_weight_kg: null,
+      });
+      toast.success(`Zone ${code} added — edit its first shelf's dimensions below`);
+      await onSaved();
+      onCreated(code);
+    } catch (e: any) { toast.error(e?.message ?? "Save failed"); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-4">
+      <div className="mb-3 font-display text-sm font-semibold">Add a new zone</div>
+      <div className="flex items-end gap-3">
+        <div className="space-y-1.5">
+          <Label className="text-xs">Zone code</Label>
+          <Input value={zone} onChange={(e) => setZone(e.target.value)} placeholder="e.g. F" className="h-9 w-40" maxLength={12} />
+        </div>
+        <Button onClick={create} disabled={busy} className="gap-1.5"><Plus className="h-3.5 w-3.5" /> Add Zone</Button>
+        <Button variant="outline" onClick={onDone} disabled={busy}>Cancel</Button>
+      </div>
     </div>
   );
 }

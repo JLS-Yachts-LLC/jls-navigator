@@ -383,6 +383,21 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
     }
   }
 
+  // One-off cleanup: `?run=local-bulk-complete&dryRun=1` (default) reports
+  // which Local-board "Delivered" packages would move to Completed (delivered
+  // before 1 Sept 2026, or already has an invoice number) without writing;
+  // `&dryRun=0` actually flips their status.
+  if (url.searchParams.get('run') === 'local-bulk-complete') {
+    try {
+      const dryRun = url.searchParams.get('dryRun') !== '0' && url.searchParams.get('dryRun') !== 'false'
+      const { bulkCompleteLocalDelivered } = await import('./lib/shipsync/local-bulk-complete.server')
+      const r = await bulkCompleteLocalDelivered(dryRun)
+      return new Response(JSON.stringify(r), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
+  }
+
   // Read-only diagnostic: `?run=package-debug&barcode=<tracking number>`
   // returns EVERY shipsync_packages row with this exact barcode, regardless
   // of monday_item_id — so a duplicate not created by the Monday sync isn't

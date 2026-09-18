@@ -3,9 +3,19 @@
  * Real data lives in src/lib/warehouse/data.ts; this file is UI-only
  * constants and small pure functions shared across the warehouse screens.
  */
-import type { Zone, WarehouseClientItem, WarehouseInternalItem } from "@/lib/warehouse/data";
+import type { Zone, WarehouseShelf, WarehouseClientItem, WarehouseInternalItem } from "@/lib/warehouse/data";
 
+/** Default seed zones — always shown even with no shelves yet. Any further
+ *  zone the client adds a shelf to shows up automatically via `allZones()`. */
 export const ZONES: Zone[] = ["A", "B", "C", "D", "E"];
+
+/** The zone tabs to render: the default seed list plus any zone code that
+ *  actually has a shelf, so a newly-added zone (see ZoneStorageStatus's
+ *  "Add Zone") appears for everyone once its first shelf is saved. */
+export function allZones(shelves: WarehouseShelf[]): Zone[] {
+  const extra = shelves.map((s) => s.zone).filter((z) => !ZONES.includes(z));
+  return [...ZONES, ...Array.from(new Set(extra)).sort()];
+}
 
 export type CapacityStatus = "Safe" | "Warning" | "Full/Restricted";
 export const CAPACITY_STATUS_STYLE: Record<CapacityStatus, string> = {
@@ -52,7 +62,17 @@ export function deriveStatus(dateField: string | null, manualStatus: string): Di
   return "Stored";
 }
 
-export const INTERNAL_DEPARTMENTS = ["Accounts", "Marketing", "IT", "Logistics", "Training", "Other"] as const;
+export const INTERNAL_DEPARTMENTS = [
+  "Accounts", "Marketing", "IT", "Logistics", "Training", "Operations", "Transport",
+  "Port Agency", "Admin", "Manager", "Waypoint", "Provisioning", "Procurement", "Warehouse", "Others",
+] as const;
+
+/** These two departments are really "a person or a specific thing," not a
+ *  department in their own right — the form asks for a name/detail once one
+ *  of them is picked, stored as a suffix on the department value itself
+ *  (e.g. "Manager — Ahmed") so the Inventory List still shows it without a
+ *  second column. */
+export const FREEFORM_DEPARTMENTS = ["Manager", "Others"] as const;
 
 /** Every storage spot is Zone → Bay → Shelf (three separate fields per the
  *  spec, not one combined code) — this just renders them compactly for
