@@ -398,6 +398,39 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
     }
   }
 
+  // Read-only diagnostic: `?run=local-bulk-audit` — sanity-checks the
+  // local-bulk-complete run: counts shipsync_packages by (local_import,
+  // status) so we can tell whether Import/Export/EDAS rows were touched by
+  // mistake, and `&ids=<comma-separated uuids>` reports the CURRENT status
+  // of specific rows. Writes nothing.
+  if (url.searchParams.get('run') === 'local-bulk-audit') {
+    try {
+      const { supabaseAdmin } = await import('./integrations/supabase/client.server')
+      const sb = supabaseAdmin as any
+      const idsParam = url.searchParams.get('ids')
+      if (idsParam) {
+        const ids = idsParam.split(',').map((s) => s.trim()).filter(Boolean)
+        const { data, error } = await sb.from('shipsync_packages').select('id, local_import, status, delivered_at, invoice_no, updated_at').in('id', ids)
+        return new Response(JSON.stringify({ ok: true, rows: data ?? [], error: error?.message ?? null }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }
+      const counts: Record<string, Record<string, number>> = {}
+      const PAGE = 1000
+      for (let offset = 0; ; offset += PAGE) {
+        const { data, error } = await sb.from('shipsync_packages').select('local_import, status').range(offset, offset + PAGE - 1)
+        if (error) throw new Error(error.message)
+        for (const r of data ?? []) {
+          const li = r.local_import ?? '(null)'
+          counts[li] = counts[li] ?? {}
+          counts[li][r.status] = (counts[li][r.status] ?? 0) + 1
+        }
+        if (!data || data.length < PAGE) break
+      }
+      return new Response(JSON.stringify({ ok: true, counts }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
+  }
+
   // Read-only diagnostic: `?run=package-debug&barcode=<tracking number>`
   // returns EVERY shipsync_packages row with this exact barcode, regardless
   // of monday_item_id — so a duplicate not created by the Monday sync isn't
