@@ -398,7 +398,7 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
     }
   }
 
-  // Read-only diagnostic: `?run=local-bulk-audit` — sanity-checks the
+  // Read-only diagnostic (redeploy nudge): `?run=local-bulk-audit` — sanity-checks the
   // local-bulk-complete run: counts shipsync_packages by (local_import,
   // status) so we can tell whether Import/Export/EDAS rows were touched by
   // mistake, and `&ids=<comma-separated uuids>` reports the CURRENT status
