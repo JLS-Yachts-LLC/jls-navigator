@@ -314,6 +314,19 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
     }
   }
 
+  // Read-only diagnostic: `?run=storage-debug-buckets` lists real Supabase
+  // Storage buckets, to confirm whether `shipsync` still exists under that
+  // exact id after the private-bucket migration's manual step. Writes nothing.
+  if (url.searchParams.get('run') === 'storage-debug-buckets') {
+    try {
+      const { debugStorageBuckets } = await import('./lib/shipsync/storage-debug.server')
+      const r = await debugStorageBuckets()
+      return new Response(JSON.stringify(r), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
+  }
+
   // Read-only diagnostic: `?run=monday-debug-import-assets` checks whether
   // Monday's API actually returns real file/image asset data (not just text)
   // for items on the Import board — scoping step before building a real
