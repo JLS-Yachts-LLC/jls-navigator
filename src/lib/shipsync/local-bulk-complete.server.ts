@@ -30,17 +30,23 @@ export async function bulkCompleteLocalDelivered(dryRun: boolean): Promise<BulkC
   if (error) throw error
 
   const matched = rows ?? []
+  let updated = 0
   if (!dryRun && matched.length) {
     const ids = matched.map((r: any) => r.id)
-    const { error: updateError } = await db().from('shipsync_packages').update({ status: 'completed' }).in('id', ids)
-    if (updateError) throw updateError
+    const BATCH = 150
+    for (let i = 0; i < ids.length; i += BATCH) {
+      const chunk = ids.slice(i, i + BATCH)
+      const { error: updateError } = await db().from('shipsync_packages').update({ status: 'completed' }).in('id', chunk)
+      if (updateError) throw new Error(updateError.message ?? JSON.stringify(updateError))
+      updated += chunk.length
+    }
   }
 
   return {
     ok: true,
     dryRun,
     matched: matched.length,
-    updated: dryRun ? 0 : matched.length,
+    updated,
     sample: matched.slice(0, 20).map((r: any) => ({ id: r.id, boat_name: r.boat_name, status: r.status, delivered_at: r.delivered_at, invoice_no: r.invoice_no })),
   }
 }
