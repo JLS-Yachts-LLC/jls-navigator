@@ -95,6 +95,13 @@ function mondayStatusColor(label: string): string {
   return MONDAY_STATUS_LABELS.find((s) => s.label === label)?.color ?? "#6b7280";
 }
 
+/** A shipment created straight into the "Incoming" group had no Status at
+ *  all until the next Monday sync filled it in — this sets it immediately,
+ *  matching Monday's own "Incoming" label, instead of leaving the cell blank. */
+function statusFieldForGroup(groupTitle: string): { STATUS?: string } {
+  return groupTitle.trim().toLowerCase() === "incoming" ? { STATUS: "Incoming" } : {};
+}
+
 /**
  * What the Status column shows.
  *
@@ -154,6 +161,19 @@ function exportCell(c: CellSpec, p: ShipSyncPackage): { label: string; value: st
 
 function extraOf(p: ShipSyncPackage): Record<string, any> { return (p.extra as any) ?? {}; }
 function mondayText(p: ShipSyncPackage, title: string): string { return mondayRow(p)[title] ?? ""; }
+
+/** Payment Copy used to be a single URL string under the fake Monday key
+ *  "PAYMENT COPY" — now a real array so more than one file can be attached.
+ *  Falls back to that old single value (still shown, still clickable) for
+ *  any row that has one and nothing in the new array yet. */
+function paymentCopies(p: ShipSyncPackage): { name: string; url: string }[] {
+  const stored = (p.extra as any)?.payment_copies as { name: string; url: string }[] | undefined;
+  if (stored && stored.length) return stored;
+  const legacy = mondayText(p, "PAYMENT COPY");
+  if (!legacy) return [];
+  const name = /^https?:\/\//i.test(legacy) ? (legacy.split("/").pop() || "Payment copy") : legacy;
+  return [{ name, url: legacy }];
+}
 
 /** Titles the explicit cells below already cover (including the dropped
  *  Accounts column) — anything else genuinely Monday-only still shows via
@@ -334,11 +354,11 @@ export function ShipSyncImportBoard() {
   }
 
   async function uploadPaymentCopy(p: ShipSyncPackage, files: File[]) {
-    const file = files[0];
-    if (!file) return;
-    const path = `payment-copies/${p.id}/${Date.now()}-${file.name}`;
-    const url = await uploadShipSyncFile(file, path);
-    await commit(p, `${p.id}:paymentCopy`, { extra: { ...extraOf(p), monday: { ...mondayRow(p), "PAYMENT COPY": url } } } as any);
+    const payment_copies = await addPackageDocuments({ id: p.id, documents: paymentCopies(p) } as any, files);
+    // Clears the old single-file field too, so a removed/replaced legacy copy
+    // can't resurrect itself — paymentCopies() falls back to it when the new
+    // array is empty.
+    await commit(p, `${p.id}:paymentCopy`, { extra: { ...extraOf(p), payment_copies, monday: { ...mondayRow(p), "PAYMENT COPY": "" } } } as any);
   }
 
   async function uploadPhoto(p: ShipSyncPackage, file: File | undefined) {
@@ -354,9 +374,10 @@ export function ShipSyncImportBoard() {
     }
   }
 
-  async function removePaymentCopy(p: ShipSyncPackage) {
+  async function removePaymentCopy(p: ShipSyncPackage, index: number) {
     try {
-      await commit(p, `${p.id}:paymentCopy`, { extra: { ...extraOf(p), monday: { ...mondayRow(p), "PAYMENT COPY": "" } } } as any);
+      const payment_copies = await removePackageDocument({ documents: paymentCopies(p) } as any, index);
+      await commit(p, `${p.id}:paymentCopy`, { extra: { ...extraOf(p), payment_copies, monday: { ...mondayRow(p), "PAYMENT COPY": "" } } } as any);
     } catch (e: any) { toast.error(e?.message ?? "Couldn't remove file"); }
   }
 
@@ -386,7 +407,7 @@ export function ShipSyncImportBoard() {
       const itemId = await nextItemId();
       const created = await createPackage({
         barcode: awb, local_import: "Import", status: "in_office",
-        extra: { monday_group_title: g.title, monday_group_position: g.position, monday: { "Item ID": itemId } },
+        extra: { monday_group_title: g.title, monday_group_position: g.position, monday: { "Item ID": itemId, ...statusFieldForGroup(g.title) } },
       });
       setRows((prev) => [...prev, created]);
     } catch (e: any) {
@@ -435,7 +456,7 @@ export function ShipSyncImportBoard() {
       extra: {
         monday_group_title: target.title,
         monday_group_position: target.position,
-        monday: { "Item ID": itemId },
+        monday: { "Item ID": itemId, ...statusFieldForGroup(target.title) },
         // Kept for the clerk and for customs queries — these have no column of
         // their own on the board.
         awb_scan: {
@@ -785,32 +806,32 @@ export function ShipSyncImportBoard() {
                               );
                             }
                             if (c.kind === "paymentCopy") {
-                              const value = mondayText(p, "PAYMENT COPY");
-                              const isUrl = /^https?:\/\//i.test(value);
-                              const label = isUrl ? (value.split("/").pop() || "Payment copy") : value;
+                              const copies = paymentCopies(p);
                               return (
                                 <td key="paymentCopy" className="overflow-hidden px-2 py-1" onClick={(e) => e.stopPropagation()}>
-                                  {!value ? (
+                                  {copies.length === 0 ? (
                                     <button type="button" onClick={() => setPaymentCopyTarget(p)}
                                       className="inline-flex items-center gap-1 rounded border border-dashed border-border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:border-primary hover:text-primary">
                                       <Plus className="h-3 w-3" /> Add file
                                     </button>
                                   ) : (
-                                    <span className="group/doc inline-flex max-w-[110px] items-center gap-1 rounded border border-border pl-1 pr-0.5 py-0.5 text-[10px] text-primary hover:bg-primary/5">
-                                      {isUrl ? (
-                                        <a href={value} target="_blank" rel="noopener noreferrer" title={label} className="flex min-w-0 items-center gap-1 truncate">
-                                          <FileText className="h-3 w-3 shrink-0" /> <span className="truncate">{label}</span>
-                                        </a>
-                                      ) : (
-                                        <span className="flex min-w-0 items-center gap-1 truncate" title={label}>
-                                          <FileText className="h-3 w-3 shrink-0" /> <span className="truncate">{label}</span>
+                                    <div className="flex flex-wrap items-center gap-1">
+                                      {copies.map((d, i) => (
+                                        <span key={i} className="group/doc inline-flex max-w-[100px] items-center gap-1 rounded border border-border pl-1 pr-0.5 py-0.5 text-[10px] text-primary hover:bg-primary/5">
+                                          <SignedAnchor stored={d.url} title={d.name} className="flex min-w-0 items-center gap-1 truncate">
+                                            <FileText className="h-3 w-3 shrink-0" /> <span className="truncate">{d.name}</span>
+                                          </SignedAnchor>
+                                          <button type="button" onClick={() => void removePaymentCopy(p, i)} title="Remove file"
+                                            className="shrink-0 rounded p-0.5 text-muted-foreground/60 opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover/doc:opacity-100">
+                                            <X className="h-3 w-3" />
+                                          </button>
                                         </span>
-                                      )}
-                                      <button type="button" onClick={() => void removePaymentCopy(p)} title="Remove"
-                                        className="shrink-0 rounded p-0.5 text-muted-foreground/60 opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover/doc:opacity-100">
-                                        <X className="h-3 w-3" />
+                                      ))}
+                                      <button type="button" onClick={() => setPaymentCopyTarget(p)} title="Add files"
+                                        className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border border-dashed border-border text-muted-foreground hover:border-primary hover:text-primary">
+                                        <Plus className="h-3 w-3" />
                                       </button>
-                                    </span>
+                                    </div>
                                   )}
                                 </td>
                               );

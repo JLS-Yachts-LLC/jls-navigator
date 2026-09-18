@@ -182,22 +182,59 @@ function toDocuments(v: string | null): { name: string; url: string }[] | null {
 }
 
 /**
- * Fields the Power App owns — written when a package is scanned in or delivered
- * through ShipSync. Monday never knows better about these, so a re-pull must not
- * blank them. That matters now the sync merges onto scanned packages by AWB: the
- * record it builds carries `status: 'in_office'` for every item, which would have
- * reset a delivered shipment on the hour, every hour.
+ * Everything about a shipment that comes from Monday's own columns, built
+ * from a raw title→text row — shared by the insert path and by the merge
+ * logic below, which needs to build this TWICE (once from the row Monday
+ * showed at the last sync, once from what it shows now) to tell whether a
+ * field actually changed on Monday's side, or is only "different" because a
+ * person edited the Polaris copy since.
  */
-const SCAN_OWNED_FIELDS = [
-  'status', 'delivered_at', 'receiver_full_name', 'receiver_designation', 'receiver_email',
-  'signature_url', 'delivery_photo_url', 'item_photo_url', 'office_photo_url',
-  'scan_out_time', 'driver_scan_out_time', 'driver_scanned', 'warehouse_zone', 'documents',
-] as const
+function deriveFields(row: Record<string, string>, itemName: string | null): Record<string, unknown> {
+  return {
+    barcode: itemName ?? pick(row, 'air waybill', 'waybill', 'tracking'),
+    boat_name: pick(row, 'yacht name', 'vessel', 'boat'),
+    courier: pick(row, 'courier'),
+    num_packages: toNumber(pick(row, 'qty', 'number of packages', 'no. of')) ?? 1,
+    supplier: pick(row, 'supplier'),
+    origin: pick(row, 'collection and destination', 'collection', 'origin'),
+    boe_no: pick(row, 'boe'),
+    trade_type: pick(row, 'shipment type'),
+    description: pick(row, 'remarks'),
+    receiver_full_name: pick(row, 'receiver'),
+    delivery_note_no: pick(row, 'dn no'),
+    duty: toNumber(pick(row, 'duty')),
+    vat: toNumber(pick(row, 'vat')),
+    edas_required: toBool(pick(row, 'edas')),
+    received_at: toDate(pick(row, 'date received')),
+    delivered_at: toDate(pick(row, 'date delivered')),
+    documents: toDocuments(pick(row, 'files')),
+  }
+}
 
-/** Monday's version of a shipment, folded onto a row that already exists here. */
+const sameValue = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
+
+/**
+ * Monday's version of a shipment, folded onto a row that already exists here
+ * — a real merge, not an overwrite. A field only actually changes if
+ * Monday's OWN value for it is different from what it showed at the *last*
+ * sync; if Monday hasn't moved on a field, whatever is in Polaris now (an
+ * office edit, or a scan result) is left completely alone instead of being
+ * re-asserted with Monday's current text on every single hourly run.
+ *
+ * This is the fix for "it keeps returning fields/status to what Monday has,
+ * even after I change them" — the previous version only special-cased a
+ * short list of "scan-owned" fields (and only protected them when Monday's
+ * incoming value was blank); every other editable column — courier, BOE No,
+ * supplier, duty, VAT, remarks, quantity, dates — was reasserted from Monday
+ * unconditionally on every run, silently discarding any office edit made in
+ * between syncs even when Monday's own data hadn't changed at all.
+ */
 function mergeOntoExisting(
   record: Record<string, unknown>,
   existingExtra: Record<string, any> | undefined,
+  oldMondayRow: Record<string, string>,
+  newMondayRow: Record<string, string>,
+  itemName: string,
 ): Record<string, unknown> {
   const merged: Record<string, unknown> = { ...record }
 
@@ -206,14 +243,30 @@ function mergeOntoExisting(
   // re-pull.
   delete merged.status
 
-  for (const key of SCAN_OWNED_FIELDS) {
-    const v = merged[key]
-    if (v == null || v === '' || (Array.isArray(v) && v.length === 0)) delete merged[key]
+  const oldItemName = (existingExtra?.monday_item_name as string | undefined) ?? null
+  const oldFields = deriveFields(oldMondayRow, oldItemName)
+  const newFields = deriveFields(newMondayRow, itemName)
+  for (const key of Object.keys(newFields)) {
+    if (sameValue(oldFields[key], newFields[key])) delete merged[key]
   }
 
   // Keep everything already in extra (the SharePoint link, photos, note links)
-  // and let Monday's own keys land on top.
-  merged.extra = { ...(existingExtra ?? {}), ...((record.extra as Record<string, unknown>) ?? {}) }
+  // and let Monday's own keys land on top — except the group: a shipment
+  // moved locally via the "Group" dropdown (moveGroup) writes the exact same
+  // monday_group_title/_id/_position keys a sync does, so overwriting them
+  // unconditionally here undid that move on the very next sync. Only apply
+  // Monday's group if Monday's OWN group has actually changed since the
+  // last sync (tracked separately in monday_synced_group_title, which
+  // moveGroup never touches).
+  const newExtra = { ...((record.extra as Record<string, unknown>) ?? {}) }
+  const oldSyncedGroup = (existingExtra?.monday_synced_group_title as string | null | undefined) ?? null
+  const newSyncedGroup = (newExtra.monday_synced_group_title as string | null | undefined) ?? null
+  if (existingExtra && oldSyncedGroup === newSyncedGroup) {
+    delete newExtra.monday_group_id
+    delete newExtra.monday_group_title
+    delete newExtra.monday_group_position
+  }
+  merged.extra = { ...(existingExtra ?? {}), ...newExtra }
   return merged
 }
 
@@ -260,23 +313,7 @@ async function importInner(): Promise<MondayImportBoardResult> {
   for (const item of items) {
     const row = byTitle(item, colById)
     const record: Record<string, unknown> = {
-      barcode: item.name ?? pick(row, 'air waybill', 'waybill', 'tracking'),
-      boat_name: pick(row, 'yacht name', 'vessel', 'boat'),
-      courier: pick(row, 'courier'),
-      num_packages: toNumber(pick(row, 'qty', 'number of packages', 'no. of')) ?? 1,
-      supplier: pick(row, 'supplier'),
-      origin: pick(row, 'collection and destination', 'collection', 'origin'),
-      boe_no: pick(row, 'boe'),
-      trade_type: pick(row, 'shipment type'),
-      description: pick(row, 'remarks'),
-      receiver_full_name: pick(row, 'receiver'),
-      delivery_note_no: pick(row, 'dn no'),
-      duty: toNumber(pick(row, 'duty')),
-      vat: toNumber(pick(row, 'vat')),
-      edas_required: toBool(pick(row, 'edas')),
-      received_at: toDate(pick(row, 'date received')),
-      delivered_at: toDate(pick(row, 'date delivered')),
-      documents: toDocuments(pick(row, 'files')),
+      ...deriveFields(row, item.name),
       local_import: 'Import',
       status: 'in_office' as const,
       extra: {
@@ -287,6 +324,12 @@ async function importInner(): Promise<MondayImportBoardResult> {
         monday_group_title: item.group?.title ?? null,
         monday_group_position: item.group ? groupOrder.indexOf(item.group.title) : -1,
         monday_group_order: groupOrder,
+        // Ground truth of Monday's OWN group, kept separately from the three
+        // keys above (which double as the effective/displayed group and are
+        // also what moveGroup writes when someone moves a shipment locally)
+        // — without this there'd be no way to tell "Monday moved it" apart
+        // from "a person moved it," since both write the same fields.
+        monday_synced_group_title: item.group?.title ?? null,
         monday: row,
         imported_at: now,
       },
@@ -295,7 +338,9 @@ async function importInner(): Promise<MondayImportBoardResult> {
     const awb = String(record.barcode ?? '').toLowerCase().trim()
     const existingId = idByMonday.get(item.id) ?? (awb ? idByBarcode.get(awb) : undefined)
     if (existingId) {
-      toUpdate.push({ id: existingId, itemName: item.name, record: mergeOntoExisting(record, extraById.get(existingId)) })
+      const existingExtra = extraById.get(existingId)
+      const oldMondayRow = (existingExtra?.monday ?? {}) as Record<string, string>
+      toUpdate.push({ id: existingId, itemName: item.name, record: mergeOntoExisting(record, existingExtra, oldMondayRow, row, item.name) })
       // Claim the AWB so two Monday items sharing one never fight over the row.
       if (awb) idByBarcode.delete(awb)
     } else {

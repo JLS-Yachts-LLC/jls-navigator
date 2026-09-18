@@ -387,7 +387,7 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
           <DialogContent className="max-w-sm">
             <DialogHeader><DialogTitle>Delete run DN-{sel.number}?</DialogTitle></DialogHeader>
             <p className="text-sm text-muted-foreground">
-              This removes the run and returns its {pkgsOnNote.length} parcel{pkgsOnNote.length === 1 ? "" : "s"} to the routing pool (back to In office). This can't be undone.
+              This removes the run and returns its {pkgsOnNote.length} parcel{pkgsOnNote.length === 1 ? "" : "s"} to the routing pool (back to In office / Warehouse). Anything already Delivered, Delivered - TBI, Completed, Collected or Refused is only detached from the run — its status is left as-is. This can't be undone.
             </p>
             <DialogFooter>
               <Button variant="outline" onClick={() => setConfirmDel(false)} disabled={busy}>Cancel</Button>

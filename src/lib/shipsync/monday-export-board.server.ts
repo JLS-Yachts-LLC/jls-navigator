@@ -160,6 +160,59 @@ function toDocuments(v: string | null): { name: string; url: string }[] | null {
   return docs.length ? docs : null
 }
 
+/** Everything about a shipment sourced from Monday's own columns — built
+ *  from a raw title→text row, shared by the insert path and the merge logic
+ *  below (see mergeOntoExisting for why it needs to be built twice). */
+function deriveFields(row: Record<string, string>, itemName: string): Record<string, unknown> {
+  return {
+    barcode: itemName,
+    boat_name: pick(row, 'client')?.toUpperCase() ?? null,
+    courier: pick(row, 'courier/agent', 'courier'),
+    description: pick(row, 'item description'),
+    documents: toDocuments(pick(row, 'files')),
+    received_at: toDate(pick(row, 'requested date')),
+  }
+}
+
+const sameValue = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
+
+/**
+ * Monday's version of a shipment, folded onto a row that already exists here
+ * — a real merge, not an overwrite: this board previously had NO merge
+ * protection at all, so every field (and status) was reasserted from Monday
+ * on every sync, discarding any office edit even when nothing on Monday's
+ * side had actually changed. A field now only changes if Monday's own value
+ * for it differs from what it showed at the *last* sync — see
+ * monday-import-board.server.ts's mergeOntoExisting for the same fix there.
+ */
+function mergeOntoExisting(
+  record: Record<string, unknown>,
+  existingExtra: Record<string, any> | undefined,
+  oldMondayRow: Record<string, string>,
+  newMondayRow: Record<string, string>,
+  itemName: string,
+): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...record }
+  delete merged.status // opening value for a brand-new row only.
+
+  const oldFields = deriveFields(oldMondayRow, (existingExtra?.monday_item_name as string | undefined) ?? itemName)
+  const newFields = deriveFields(newMondayRow, itemName)
+  for (const key of Object.keys(newFields)) {
+    if (sameValue(oldFields[key], newFields[key])) delete merged[key]
+  }
+
+  const newExtra = { ...((record.extra as Record<string, unknown>) ?? {}) }
+  const oldSyncedGroup = (existingExtra?.monday_synced_group_title as string | null | undefined) ?? null
+  const newSyncedGroup = (newExtra.monday_synced_group_title as string | null | undefined) ?? null
+  if (existingExtra && oldSyncedGroup === newSyncedGroup) {
+    delete newExtra.monday_group_id
+    delete newExtra.monday_group_title
+    delete newExtra.monday_group_position
+  }
+  merged.extra = { ...(existingExtra ?? {}), ...newExtra }
+  return merged
+}
+
 export interface MondayExportBoardResult { ok: boolean; synced: number; errors: number; pruned: number; skipped?: boolean; detail: string }
 
 async function importInner(): Promise<MondayExportBoardResult> {
@@ -181,9 +234,11 @@ async function importInner(): Promise<MondayExportBoardResult> {
     if (page.length < 1000) break
   }
   const idByMonday = new Map<string, string>()
+  const extraById = new Map<string, Record<string, any>>()
   for (const r of existingRows) {
     const mid = r.extra?.monday_item_id
     if (mid) idByMonday.set(String(mid), r.id)
+    extraById.set(String(r.id), (r.extra ?? {}) as Record<string, any>)
   }
 
   const now = new Date().toISOString()
@@ -199,13 +254,8 @@ async function importInner(): Promise<MondayExportBoardResult> {
       // column that's always populated, so unlike the Import board (which
       // falls back to item.name only when AWB is blank) this uses it
       // directly, same role a barcode plays elsewhere in ShipSync.
-      barcode: item.name,
-      boat_name: pick(row, 'client')?.toUpperCase() ?? null,
-      courier: pick(row, 'courier/agent', 'courier'),
-      description: pick(row, 'item description'),
+      ...deriveFields(row, item.name),
       num_packages: 1,
-      documents: toDocuments(pick(row, 'files')),
-      received_at: toDate(pick(row, 'requested date')),
       local_import: 'Export',
       status: 'in_office',
       extra: {
@@ -216,14 +266,24 @@ async function importInner(): Promise<MondayExportBoardResult> {
         monday_group_title: item.group?.title ?? null,
         monday_group_position: item.group ? groupOrder.indexOf(item.group.title) : -1,
         monday_group_order: groupOrder,
+        // Ground truth of Monday's OWN group, separate from the three keys
+        // above — moveGroup (the local "Group" dropdown) writes those same
+        // three, so without a separate snapshot the sync can't tell "Monday
+        // moved it" apart from "a person moved it."
+        monday_synced_group_title: item.group?.title ?? null,
         monday: row,
         imported_at: now,
       },
     }
 
     const existingId = idByMonday.get(item.id)
-    if (existingId) toUpdate.push({ id: existingId, itemName: item.name, record })
-    else toInsert.push(record)
+    if (existingId) {
+      const existingExtra = extraById.get(existingId)
+      const oldMondayRow = (existingExtra?.monday ?? {}) as Record<string, string>
+      toUpdate.push({ id: existingId, itemName: item.name, record: mergeOntoExisting(record, existingExtra, oldMondayRow, row, item.name) })
+    } else {
+      toInsert.push(record)
+    }
   }
 
   let synced = 0, errors = 0

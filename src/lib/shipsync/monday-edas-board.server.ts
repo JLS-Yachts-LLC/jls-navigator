@@ -158,6 +158,53 @@ function toDocuments(v: string | null): { name: string; url: string }[] | null {
   return docs.length ? docs : null
 }
 
+/** Everything about an entry sourced from Monday's own columns — built from
+ *  a raw title→text row, shared by the insert path and the merge logic
+ *  below (see monday-import-board.server.ts's mergeOntoExisting for why it
+ *  needs to be built twice). */
+function deriveFields(row: Record<string, string>, itemName: string): Record<string, unknown> {
+  return {
+    barcode: itemName,
+    boat_name: pick(row, 'client')?.toUpperCase() ?? null,
+    documents: toDocuments(pick(row, 'files')),
+    received_at: toDate(pick(row, 'date')),
+  }
+}
+
+const sameValue = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
+
+/** Same real-merge fix as Import/Export (see monday-import-board.server.ts's
+ *  mergeOntoExisting): a field only actually changes if Monday's own value
+ *  for it differs from what it showed at the last sync, and a local group
+ *  move (moveGroup) survives unless Monday's own group has genuinely moved. */
+function mergeOntoExisting(
+  record: Record<string, unknown>,
+  existingExtra: Record<string, any> | undefined,
+  oldMondayRow: Record<string, string>,
+  newMondayRow: Record<string, string>,
+  itemName: string,
+): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...record }
+  delete merged.status
+
+  const oldFields = deriveFields(oldMondayRow, (existingExtra?.monday_item_name as string | undefined) ?? itemName)
+  const newFields = deriveFields(newMondayRow, itemName)
+  for (const key of Object.keys(newFields)) {
+    if (sameValue(oldFields[key], newFields[key])) delete merged[key]
+  }
+
+  const newExtra = { ...((record.extra as Record<string, unknown>) ?? {}) }
+  const oldSyncedGroup = (existingExtra?.monday_synced_group_title as string | null | undefined) ?? null
+  const newSyncedGroup = (newExtra.monday_synced_group_title as string | null | undefined) ?? null
+  if (existingExtra && oldSyncedGroup === newSyncedGroup) {
+    delete newExtra.monday_group_id
+    delete newExtra.monday_group_title
+    delete newExtra.monday_group_position
+  }
+  merged.extra = { ...(existingExtra ?? {}), ...newExtra }
+  return merged
+}
+
 export interface MondayEdasBoardResult { ok: boolean; synced: number; errors: number; pruned: number; skipped?: boolean; detail: string }
 
 async function importInner(): Promise<MondayEdasBoardResult> {
@@ -179,9 +226,11 @@ async function importInner(): Promise<MondayEdasBoardResult> {
     if (page.length < 1000) break
   }
   const idByMonday = new Map<string, string>()
+  const extraById = new Map<string, Record<string, any>>()
   for (const r of existingRows) {
     const mid = r.extra?.monday_item_id
     if (mid) idByMonday.set(String(mid), r.id)
+    extraById.set(String(r.id), (r.extra ?? {}) as Record<string, any>)
   }
 
   const now = new Date().toISOString()
@@ -196,10 +245,7 @@ async function importInner(): Promise<MondayEdasBoardResult> {
       // column (e.g. "955287LGFVF / 1Z955287046104834") are genuinely
       // different values on this board, not a fallback pair — both are
       // shown as their own column (Name / AWB), matching Monday exactly.
-      barcode: item.name,
-      boat_name: pick(row, 'client')?.toUpperCase() ?? null,
-      documents: toDocuments(pick(row, 'files')),
-      received_at: toDate(pick(row, 'date')),
+      ...deriveFields(row, item.name),
       num_packages: 1,
       local_import: 'EDAS',
       status: 'in_office',
@@ -211,14 +257,20 @@ async function importInner(): Promise<MondayEdasBoardResult> {
         monday_group_title: item.group?.title ?? null,
         monday_group_position: item.group ? groupOrder.indexOf(item.group.title) : -1,
         monday_group_order: groupOrder,
+        monday_synced_group_title: item.group?.title ?? null,
         monday: row,
         imported_at: now,
       },
     }
 
     const existingId = idByMonday.get(item.id)
-    if (existingId) toUpdate.push({ id: existingId, itemName: item.name, record })
-    else toInsert.push(record)
+    if (existingId) {
+      const existingExtra = extraById.get(existingId)
+      const oldMondayRow = (existingExtra?.monday ?? {}) as Record<string, string>
+      toUpdate.push({ id: existingId, itemName: item.name, record: mergeOntoExisting(record, existingExtra, oldMondayRow, row, item.name) })
+    } else {
+      toInsert.push(record)
+    }
   }
 
   let synced = 0, errors = 0
