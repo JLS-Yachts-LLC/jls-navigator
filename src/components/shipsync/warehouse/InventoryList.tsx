@@ -3,13 +3,14 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { SignedImage } from "@/components/ui/signed-file";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Users, Building2, Boxes, Plus, Pencil, Trash2 } from "lucide-react";
+import { Users, Building2, Boxes, Plus, Pencil, Trash2, Search } from "lucide-react";
 import {
   DISPLAY_STATUS_STYLE, deriveStatus, locationCode,
 } from "@/components/shipsync/warehouse/warehouse-constants";
@@ -33,6 +34,7 @@ function StatusPill({ label, style }: { label: string; style: string }) {
 
 export function InventoryList({ data, reload }: { data: WarehouseData; reload: () => Promise<void> }) {
   const [category, setCategory] = useState<Category>("client");
+  const [filter, setFilter] = useState("");
   const [selectedRef, setSelectedRef] = useState<string | null>(null);
   const [editingClient, setEditingClient] = useState<WarehouseClientItem | null | undefined>(undefined);
   const [editingInternal, setEditingInternal] = useState<WarehouseInternalItem | null | undefined>(undefined);
@@ -50,6 +52,24 @@ export function InventoryList({ data, reload }: { data: WarehouseData; reload: (
     () => (editingInternal ? data.packageContents.filter((c) => c.ref_no === editingInternal.ref_no) : []),
     [data.packageContents, editingInternal],
   );
+
+  const q = filter.trim().toLowerCase();
+  const filteredClientItems = useMemo(() => {
+    if (!q) return data.clientItems;
+    return data.clientItems.filter((r) =>
+      [r.ref_no, r.client_name, r.description, r.quotation_no, r.invoice_no, r.remarks, locationCode(r)]
+        .join(" ").toLowerCase().includes(q));
+  }, [data.clientItems, q]);
+  const filteredInternalItems = useMemo(() => {
+    if (!q) return data.internalItems;
+    return data.internalItems.filter((r) =>
+      [r.ref_no, r.department, r.description, r.remarks, locationCode(r)].join(" ").toLowerCase().includes(q));
+  }, [data.internalItems, q]);
+  const filteredPackageContents = useMemo(() => {
+    if (!q) return data.packageContents;
+    return data.packageContents.filter((c) =>
+      [c.ref_no, c.item_id, c.client_or_dept, c.item_name, c.remarks].join(" ").toLowerCase().includes(q));
+  }, [data.packageContents, q]);
 
   async function confirmDelete() {
     if (!deleteTarget) return;
@@ -75,6 +95,10 @@ export function InventoryList({ data, reload }: { data: WarehouseData; reload: (
             </button>
           ))}
         </div>
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/50" />
+          <Input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter this list…" className="h-9 w-60 pl-8 text-sm" />
+        </div>
         {category === "client" && (
           <Button size="sm" className="gap-1.5" onClick={() => setEditingClient(null)}><Plus className="h-3.5 w-3.5" /> Add client item</Button>
         )}
@@ -84,14 +108,14 @@ export function InventoryList({ data, reload }: { data: WarehouseData; reload: (
       </div>
 
       {category === "contents" ? (
-        <PackageContentTable rows={data.packageContents} reload={reload} />
+        <PackageContentTable rows={filteredPackageContents} reload={reload} />
       ) : (
         <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[1fr_360px]">
           <div className="min-h-0 overflow-auto rounded-xl border border-border bg-card">
             {category === "client"
-              ? <ClientTable rows={data.clientItems} selectedRef={selectedRef} onSelect={setSelectedRef}
+              ? <ClientTable rows={filteredClientItems} selectedRef={selectedRef} onSelect={setSelectedRef}
                   onEdit={setEditingClient} onDelete={(r) => setDeleteTarget({ kind: "client", id: r.id, label: r.ref_no })} />
-              : <InternalTable rows={data.internalItems} selectedRef={selectedRef} onSelect={setSelectedRef}
+              : <InternalTable rows={filteredInternalItems} selectedRef={selectedRef} onSelect={setSelectedRef}
                   onEdit={setEditingInternal} onDelete={(r) => setDeleteTarget({ kind: "internal", id: r.id, label: r.ref_no })} />}
           </div>
 
@@ -186,7 +210,7 @@ function ClientTable({ rows, selectedRef, onSelect, onEdit, onDelete }: {
   rows: WarehouseClientItem[]; selectedRef: string | null; onSelect: (ref: string) => void;
   onEdit: (item: WarehouseClientItem) => void; onDelete: (item: WarehouseClientItem) => void;
 }) {
-  if (rows.length === 0) return <div className="px-4 py-10 text-center text-sm text-muted-foreground">No client storage items yet.</div>;
+  if (rows.length === 0) return <div className="px-4 py-10 text-center text-sm text-muted-foreground">No client storage items found.</div>;
   return (
     <table className="w-full text-[12.5px]">
       <thead className="sticky top-0 z-10 bg-card shadow-[inset_0_-1px_0_0_var(--border)]">
@@ -229,7 +253,7 @@ function InternalTable({ rows, selectedRef, onSelect, onEdit, onDelete }: {
   rows: WarehouseInternalItem[]; selectedRef: string | null; onSelect: (ref: string) => void;
   onEdit: (item: WarehouseInternalItem) => void; onDelete: (item: WarehouseInternalItem) => void;
 }) {
-  if (rows.length === 0) return <div className="px-4 py-10 text-center text-sm text-muted-foreground">No internal storage items yet.</div>;
+  if (rows.length === 0) return <div className="px-4 py-10 text-center text-sm text-muted-foreground">No internal storage items found.</div>;
   return (
     <table className="w-full text-[12.5px]">
       <thead className="sticky top-0 z-10 bg-card shadow-[inset_0_-1px_0_0_var(--border)]">
@@ -283,7 +307,7 @@ function PackageContentTable({ rows, reload }: { rows: WarehousePackageContent[]
 
   return (
     <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-card">
-      {rows.length === 0 ? <div className="px-4 py-10 text-center text-sm text-muted-foreground">No package contents recorded yet — add a packing list from a client or internal storage item.</div> : (
+      {rows.length === 0 ? <div className="px-4 py-10 text-center text-sm text-muted-foreground">No package contents found. If the list is empty, add a packing list from a client or internal storage item.</div> : (
         <table className="w-full text-[12.5px]">
           <thead className="sticky top-0 z-10 bg-card shadow-[inset_0_-1px_0_0_var(--border)]">
             <tr>

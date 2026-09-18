@@ -105,10 +105,10 @@ function ShelfFinderAndCalculator({ data }: { data: WarehouseData }) {
 
 // ── Storage Charge Calculator ────────────────────────────────────────────────
 
-// Placeholder rates — swap for the real pricing schedule when confirmed.
-const STANDARD_CBM_PER_PACKAGE = 1;
-const BASE_CHARGE_PER_PACKAGE = 50; // AED / month
-const EXCESS_CBM_RATE = 40;         // AED / m³ / month
+// Real pricing schedule, confirmed by the client (email, Sep 2026).
+const STANDARD_CBM_PER_PACKAGE = 3;
+const BASE_CHARGE_PER_PACKAGE = 850; // AED / month
+const EXCESS_CBM_RATE = 285;         // AED / m³ / month
 
 interface CalcRow { id: string; length: string; width: string; height: string; qty: string }
 let rowSeq = 0;
@@ -138,7 +138,7 @@ function StorageChargeCalculator() {
   return (
     <div className="rounded-xl border border-border bg-card p-4">
       <div className="mb-3 flex items-center gap-2 font-display text-sm font-semibold"><Calculator className="h-4 w-4 text-primary/70" /> Storage Charge Calculator</div>
-      <p className="mb-3 text-[12.5px] text-muted-foreground">Enter one or more packages to estimate a monthly storage charge. Rates shown are placeholders — swap for the real pricing schedule.</p>
+      <p className="mb-3 text-[12.5px] text-muted-foreground">Enter one or more packages to estimate a monthly storage charge.</p>
 
       <div className="overflow-x-auto rounded-lg border border-border/60">
         <table className="w-full text-[12.5px]">
