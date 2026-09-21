@@ -19,7 +19,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Users, FolderTree, Loader2, ExternalLink, Merge, RefreshCw, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Users, FolderTree, Loader2, ExternalLink, Merge, RefreshCw, CheckCircle2, AlertTriangle, IdCard, Download } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { nameSimilarity, groupSimilar } from "@/lib/crew-name-match";
@@ -39,7 +39,7 @@ export function CrewDuplicatesPage() {
   const [yachts, setYachts] = useState<Yacht[]>([]);
   const [loading, setLoading] = useState(true);
   const [vessel, setVessel] = useState("all");
-  const [tab, setTab] = useState<"records" | "folders">("records");
+  const [tab, setTab] = useState<"records" | "folders" | "missing">("records");
 
   const [folderGroups, setFolderGroups] = useState<DupGroup[] | null>(null);
   const [scanning, setScanning] = useState(false);
@@ -98,6 +98,48 @@ export function CrewDuplicatesPage() {
     } catch (e: any) {
       toast.error(e?.message ?? "Scan failed");
     } finally { setScanning(false); }
+  }
+
+  /**
+   * Crew with no passport number and/or no date of birth.
+   *
+   * These are what let duplicates happen: without a passport number the only way
+   * to recognise someone is their name and date of birth, which a transliteration
+   * or a mistyped date defeats. 31 of the 36 duplicate pairs found in September
+   * 2026 had no passport number on one side. Active crew first — they are the
+   * ones a visa is about to be raised for.
+   */
+  const missingRows = useMemo(() => {
+    const rank = (c: Crew) =>
+      (!c.passport_number?.trim() && !c.date_of_birth ? 0 : !c.passport_number?.trim() ? 1 : 2);
+    return crew
+      .filter((c) => !c.passport_number?.trim() || !c.date_of_birth)
+      .filter((c) => vessel === "all" || (c.yacht_id ?? "unassigned") === vessel)
+      .sort((a, b) => {
+        const act = (c: Crew) => ((c.status ?? "").toLowerCase() === "active" ? 0 : 1);
+        return act(a) - act(b) || rank(a) - rank(b)
+          || yachtName(a.yacht_id).localeCompare(yachtName(b.yacht_id))
+          || crewName(a).localeCompare(crewName(b));
+      });
+  }, [crew, vessel, yachts]);
+
+  /** The list as a spreadsheet, so the gaps can be worked through offline. */
+  function exportMissing() {
+    const head = ["Crew member", "Vessel", "Rank", "Status", "Missing"];
+    const rows = missingRows.map((c) => [
+      crewName(c), yachtName(c.yacht_id), c.rank ?? "", c.status ?? "",
+      [!c.passport_number?.trim() ? "Passport number" : null, !c.date_of_birth ? "Date of birth" : null]
+        .filter(Boolean).join(" + "),
+    ]);
+    const csv = [head, ...rows]
+      .map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `crew-missing-details-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
   }
 
   /**
@@ -179,12 +221,16 @@ export function CrewDuplicatesPage() {
       </header>
 
       <div className="flex flex-wrap items-center gap-2.5 border-b border-border/40 bg-muted/10 px-6 py-2.5">
-        {(["records", "folders"] as const).map((t) => (
+        {(["records", "folders", "missing"] as const).map((t) => (
           <button key={t} onClick={() => setTab(t)}
             className={cn("flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition",
               tab === t ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-accent")}>
-            {t === "records" ? <Users className="h-3.5 w-3.5" /> : <FolderTree className="h-3.5 w-3.5" />}
-            {t === "records" ? `Crew records${recordGroups.length ? ` (${recordGroups.length})` : ""}` : `SharePoint folders${folderGroups?.length ? ` (${folderGroups.length})` : ""}`}
+            {t === "records" ? <Users className="h-3.5 w-3.5" />
+              : t === "folders" ? <FolderTree className="h-3.5 w-3.5" />
+              : <IdCard className="h-3.5 w-3.5" />}
+            {t === "records" ? `Crew records${recordGroups.length ? ` (${recordGroups.length})` : ""}`
+              : t === "folders" ? `SharePoint folders${folderGroups?.length ? ` (${folderGroups.length})` : ""}`
+              : `Missing details${missingRows.length ? ` (${missingRows.length})` : ""}`}
           </button>
         ))}
         <div className="ml-auto flex items-center gap-2">
@@ -201,12 +247,81 @@ export function CrewDuplicatesPage() {
               {folderGroups ? "Re-scan" : "Scan SharePoint"}
             </Button>
           )}
+          {tab === "missing" && missingRows.length > 0 && (
+            <Button size="sm" variant="outline" onClick={exportMissing} className="h-8 gap-1.5 text-xs">
+              <Download className="h-3.5 w-3.5" /> Export list
+            </Button>
+          )}
         </div>
       </div>
 
       <div className="flex-1 overflow-auto p-6">
         {loading ? (
           <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+        ) : tab === "missing" ? (
+          missingRows.length === 0 ? (
+            <Empty icon={<CheckCircle2 className="h-9 w-9 text-emerald-500/60" />}
+              title="Every crew member has a passport number and a date of birth"
+              body="Nothing to chase — this is what keeps the same person from being recorded twice." />
+          ) : (
+            <div className="space-y-3">
+              <p className="text-[12.5px] text-muted-foreground">
+                A passport number is the only thing unique to a person. Without one, the same crew member arriving
+                from a different source is recognised only by name and date of birth, and a different spelling or a
+                mistyped date creates a second profile. Filling these in — in the SharePoint Visa list — is what
+                stops that happening.
+              </p>
+              <div className="overflow-hidden rounded-xl border border-border bg-card">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border/60 bg-muted/30">
+                      {["Crew Member", "Vessel", "Rank", "Status", "Missing"].map((h) => (
+                        <th key={h} className="px-4 py-2.5 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">{h}</th>
+                      ))}
+                      <th className="w-16" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/40">
+                    {missingRows.slice(0, 400).map((c) => {
+                      const noPp = !c.passport_number?.trim();
+                      const noDob = !c.date_of_birth;
+                      return (
+                        <tr key={c.id} className="hover:bg-muted/20 transition-colors">
+                          <td className="px-4 py-2.5 font-medium">{crewName(c)}</td>
+                          <td className="px-4 py-2.5 text-muted-foreground">{yachtName(c.yacht_id)}</td>
+                          <td className="px-4 py-2.5 text-muted-foreground">{c.rank ?? "—"}</td>
+                          <td className="px-4 py-2.5">
+                            <span className={cn("rounded-full px-2 py-0.5 text-[10.5px]",
+                              (c.status ?? "").toLowerCase() === "active"
+                                ? "bg-emerald-500/15 text-emerald-400" : "bg-muted/60 text-muted-foreground")}>
+                              {c.status ?? "—"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <span className="inline-flex flex-wrap gap-1">
+                              {noPp && <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10.5px] font-medium text-amber-500">Passport number</span>}
+                              {noDob && <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10.5px] font-medium text-amber-500">Date of birth</span>}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <a href={`/crew-immigration/crew/${c.id}`} target="_blank" rel="noreferrer"
+                              className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline">
+                              <ExternalLink className="h-3 w-3" /> Open
+                            </a>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {missingRows.length > 400 && (
+                <p className="text-[11px] text-muted-foreground/70">
+                  Showing the first 400 of {missingRows.length}. Use Export list for the full set.
+                </p>
+              )}
+            </div>
+          )
         ) : tab === "records" ? (
           recordGroups.length === 0 ? (
             <Empty icon={<CheckCircle2 className="h-9 w-9 text-emerald-500/60" />}
