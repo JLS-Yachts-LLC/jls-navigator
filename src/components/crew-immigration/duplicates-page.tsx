@@ -25,7 +25,10 @@ import { cn } from "@/lib/utils";
 import { nameSimilarity, groupSimilar } from "@/lib/crew-name-match";
 import { scanDuplicateCrewFolders, mergeCrewFolders, type DupGroup } from "@/lib/crew-duplicates.server";
 
-type Crew = { id: string; first_name: string | null; middle_name: string | null; last_name: string | null; full_name: string | null; rank: string | null; yacht_id: string | null; status: string | null; passport_number: string | null };
+type Crew = { id: string; first_name: string | null; middle_name: string | null; last_name: string | null; full_name: string | null; rank: string | null; yacht_id: string | null; status: string | null; passport_number: string | null; date_of_birth: string | null; created_at: string | null };
+
+/** What merging one record into another would move — shown before it happens. */
+type MergePreview = { visas: number; passports: number; documents: number; events: number };
 type Yacht = { id: string; vessel_name: string };
 
 const crewName = (c: Crew) =>
@@ -42,13 +45,17 @@ export function CrewDuplicatesPage() {
   const [scanning, setScanning] = useState(false);
   const [merging, setMerging] = useState<string | null>(null);
   const [confirmMerge, setConfirmMerge] = useState<{ group: DupGroup; keep: DupGroup["folders"][0]; drop: DupGroup["folders"][0] } | null>(null);
+  // Merging crew RECORDS: which pair, what it would move, and whether it is running.
+  const [confirmCrew, setConfirmCrew] = useState<{ keep: Crew; drop: Crew } | null>(null);
+  const [preview, setPreview] = useState<MergePreview | null>(null);
+  const [crewMerging, setCrewMerging] = useState(false);
 
   useEffect(() => { void load(); }, []);
   async function load() {
     setLoading(true);
     const [c, y] = await Promise.all([
       fetchAllRows(() => (supabase as any).from("crew_members")
-        .select("id, first_name, middle_name, last_name, full_name, rank, yacht_id, status, passport_number").order("last_name")),
+        .select("id, first_name, middle_name, last_name, full_name, rank, yacht_id, status, passport_number, date_of_birth, created_at").order("last_name")),
       fetchAllRows(() => (supabase as any).from("yachts").select("id, vessel_name").order("vessel_name")),
     ]);
     setCrew((c.data ?? []) as Crew[]);
@@ -91,6 +98,55 @@ export function CrewDuplicatesPage() {
     } catch (e: any) {
       toast.error(e?.message ?? "Scan failed");
     } finally { setScanning(false); }
+  }
+
+  /**
+   * Count what a merge would move, so the confirmation names real numbers rather
+   * than asking someone to agree to something unspecified. Read-only.
+   */
+  async function openCrewMerge(keep: Crew, drop: Crew) {
+    setConfirmCrew({ keep, drop });
+    setPreview(null);
+    const db = supabase as any;
+    const [v, p, d, e] = await Promise.all([
+      db.from("visa_applications").select("id", { count: "exact", head: true }).eq("crew_member_id", drop.id),
+      db.from("crew_passports").select("id", { count: "exact", head: true }).eq("crew_id", drop.id),
+      db.from("crew_documents").select("id", { count: "exact", head: true }).eq("crew_member_id", drop.id),
+      db.from("crew_signon_events").select("id", { count: "exact", head: true }).eq("crew_member_id", drop.id),
+    ]);
+    setPreview({
+      visas: v.count ?? 0, passports: p.count ?? 0,
+      documents: d.count ?? 0, events: e.count ?? 0,
+    });
+  }
+
+  /** One RPC, one transaction — everything moves or nothing does. */
+  async function doCrewMerge() {
+    if (!confirmCrew) return;
+    const { keep, drop } = confirmCrew;
+    setCrewMerging(true);
+    try {
+      const { data, error } = await (supabase as any)
+        .rpc("merge_crew_members", { p_keep: keep.id, p_drop: drop.id });
+      if (error) throw error;
+      const m = (data ?? {}) as Record<string, number>;
+      const moved = [
+        m.visa_applications ? `${m.visa_applications} visa application(s)` : null,
+        m.passports ? `${m.passports} passport(s)` : null,
+        m.documents ? `${m.documents} document(s)` : null,
+        m.sign_on_off_events ? `${m.sign_on_off_events} sign-on/off event(s)` : null,
+      ].filter(Boolean);
+      toast.success(
+        `Merged into ${crewName(keep)}`,
+        moved.length ? { description: `Moved ${moved.join(", ")}.` } : undefined,
+      );
+      setConfirmCrew(null);
+      await load();
+    } catch (e: any) {
+      toast.error(e?.message ?? "Merge failed");
+    } finally {
+      setCrewMerging(false);
+    }
   }
 
   async function doMerge() {
@@ -172,18 +228,34 @@ export function CrewDuplicatesPage() {
                     {g.members.map((m) => (
                       <div key={m.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-[12.5px]">
                         <span className="font-medium">{crewName(m)}</span>
+                        {m.date_of_birth && <span className="text-muted-foreground">{m.date_of_birth}</span>}
                         {m.rank && <span className="text-muted-foreground">{m.rank}</span>}
                         {m.passport_number && <span className="font-mono text-[11px] text-muted-foreground/70">{m.passport_number}</span>}
                         {m.status && <span className="rounded-full bg-muted/60 px-2 py-0.5 text-[10px] text-muted-foreground">{m.status}</span>}
-                        <a href={`/crew-immigration/crew/${m.id}`} target="_blank" rel="noreferrer"
-                          className="ml-auto inline-flex items-center gap-1 text-[11px] text-primary hover:underline">
-                          <ExternalLink className="h-3 w-3" /> Open
-                        </a>
+                        <span className="ml-auto flex items-center gap-2">
+                          <a href={`/crew-immigration/crew/${m.id}`} target="_blank" rel="noreferrer"
+                            className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline">
+                            <ExternalLink className="h-3 w-3" /> Open
+                          </a>
+                          {/* "Keep this one" merges every OTHER record in the group
+                              into it — one at a time, so each is confirmed. */}
+                          {g.members.length === 2 && (
+                            <button
+                              onClick={() => openCrewMerge(m, g.members.find((x) => x.id !== m.id)!)}
+                              className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] hover:border-primary/50 hover:text-primary">
+                              <Merge className="h-3 w-3" /> Keep this one
+                            </button>
+                          )}
+                          {g.members.length > 2 && (
+                            <span className="text-[11px] text-muted-foreground/60">Merge two at a time</span>
+                          )}
+                        </span>
                       </div>
                     ))}
                   </div>
                   <p className="mt-2 text-[11px] text-muted-foreground/70">
-                    Review both records and keep the one with the complete history. Passport numbers differing means these are probably two different people.
+                    “Keep this one” moves the other record's visas, passports, documents and history onto it, then removes the empty duplicate.
+                    {" "}Check the passport numbers first — if they genuinely differ these are probably two different people, and merging them cannot be undone.
                   </p>
                 </div>
               ))}
@@ -236,6 +308,48 @@ export function CrewDuplicatesPage() {
           </div>
         )}
       </div>
+
+      {/* Merging crew RECORDS. Names what will move before asking, and says
+          plainly that it cannot be undone — this destroys one profile. */}
+      <AlertDialog open={!!confirmCrew} onOpenChange={(o) => { if (!o && !crewMerging) setConfirmCrew(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Merge these two crew records?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2.5">
+                <p>
+                  Everything attached to <strong>{confirmCrew ? crewName(confirmCrew.drop) : ""}</strong>
+                  {confirmCrew?.drop.date_of_birth ? ` (${confirmCrew.drop.date_of_birth})` : ""} will be moved onto{" "}
+                  <strong>{confirmCrew ? crewName(confirmCrew.keep) : ""}</strong>
+                  {confirmCrew?.keep.date_of_birth ? ` (${confirmCrew.keep.date_of_birth})` : ""}, and the emptied
+                  record removed.
+                </p>
+                {preview === null ? (
+                  <p className="flex items-center gap-2 text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Checking what would move…</p>
+                ) : (
+                  <ul className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-[12px]">
+                    <li>{preview.visas} visa application{preview.visas === 1 ? "" : "s"}</li>
+                    <li>{preview.passports} passport{preview.passports === 1 ? "" : "s"}</li>
+                    <li>{preview.documents} document{preview.documents === 1 ? "" : "s"}</li>
+                    <li>{preview.events} sign-on/off event{preview.events === 1 ? "" : "s"}</li>
+                  </ul>
+                )}
+                <p className="text-amber-500">
+                  This cannot be undone. If the two passport numbers genuinely differ, these are probably different
+                  people — close this and check before merging.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={crewMerging}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={(e) => { e.preventDefault(); void doCrewMerge(); }}
+              disabled={crewMerging || preview === null} className="gap-1.5">
+              {crewMerging && <Loader2 className="h-4 w-4 animate-spin" />} Merge records
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={!!confirmMerge} onOpenChange={(o) => { if (!o) setConfirmMerge(null); }}>
         <AlertDialogContent>

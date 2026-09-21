@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '@/integrations/supabase/client.server'
 import { fetchAllRows } from './fetch-all'
+import { nameKey as crewNameKey, passportKey } from './crew-name-match'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -2218,15 +2219,26 @@ async function _syncCrew(cfg: SpConfig): Promise<{ synced: number; errors: numbe
   }
 
   const { data: existing } = await fetchAllRows(() => (supabaseAdmin as any)
-    .from('crew_members').select('id, first_name, last_name, passport_number, sharepoint_item_id').order('id'))
+    .from('crew_members')
+    .select('id, first_name, last_name, passport_number, date_of_birth, sharepoint_item_id')
+    .order('id'))
   const bySpId = new Map<string, string>()
   const byPassport = new Map<string, string>()
+  const byNameDob = new Map<string, string>()
   const byName = new Map<string, string>()
-  const nameKey = (f: any, l: any) => `${String(f ?? '').toLowerCase().trim()}|${String(l ?? '').toLowerCase().trim()}`
   for (const c of (existing ?? []) as Record<string, any>[]) {
     if (c.sharepoint_item_id) bySpId.set(String(c.sharepoint_item_id), String(c.id))
-    if (c.passport_number) byPassport.set(String(c.passport_number).toLowerCase().trim(), String(c.id))
-    if (c.first_name && c.last_name) byName.set(nameKey(c.first_name, c.last_name), String(c.id))
+    const pp = passportKey(c.passport_number)
+    if (pp) byPassport.set(pp, String(c.id))
+    if (c.first_name && c.last_name) {
+      const k = crewNameKey(`${c.first_name} ${c.last_name}`)
+      if (k) {
+        if (c.date_of_birth) byNameDob.set(`${k}|${c.date_of_birth}`, String(c.id))
+        // First writer wins, so an established record is preferred over a later
+        // near-duplicate when only the name matches.
+        if (!byName.has(k)) byName.set(k, String(c.id))
+      }
+    }
   }
 
   // 'passport_issue_date' is gone from this set with the column — the crew_members
@@ -2259,10 +2271,21 @@ async function _syncCrew(cfg: SpConfig): Promise<{ synced: number; errors: numbe
       record[dbField] = val
     }
 
+    // Match on a NORMALISED key at every step. Comparing these verbatim is what
+    // created the duplicate profiles: a passport arriving as "LB160417 " did not
+    // equal the stored "LB160417", and "ABHIJIT CHANDRAKANT  KHOLE" with a double
+    // space did not equal the single-spaced name, so a second profile was created
+    // for someone already on file. Name+DOB is tried before name alone so two
+    // genuinely different people who share a name are not merged into one.
+    const ppKey = passportKey(record.passport_number)
+    const nKey = (record.first_name && record.last_name)
+      ? crewNameKey(`${record.first_name} ${record.last_name}`)
+      : ''
     const existingId =
       bySpId.get(String(item.id)) ??
-      (record.passport_number ? byPassport.get(String(record.passport_number).toLowerCase().trim()) : undefined) ??
-      ((record.first_name && record.last_name) ? byName.get(nameKey(record.first_name, record.last_name)) : undefined)
+      (ppKey ? byPassport.get(ppKey) : undefined) ??
+      ((nKey && record.date_of_birth) ? byNameDob.get(`${nKey}|${record.date_of_birth}`) : undefined) ??
+      (nKey ? byName.get(nKey) : undefined)
 
     // Inserts require first + last name (NOT NULL); updates can be partial.
     if (!existingId && (!record.first_name || !record.last_name)) {

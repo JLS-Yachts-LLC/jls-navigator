@@ -33,6 +33,18 @@ export function toTypeableName(s: string | null | undefined): string {
 export const nameKey = (s: string) =>
   toTypeableName(s).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
+/**
+ * Passport key: case- and punctuation-insensitive, with ALL whitespace removed.
+ *
+ * Trimming the ends is not enough. Passport numbers arrive from SharePoint and
+ * from passport OCR with leading and trailing spaces, and occasionally a space
+ * in the middle — "LB160417 ", " M00316738", "BA4074667 ". Comparing those
+ * verbatim made the same passport look like two, which is how one crew member
+ * ended up with two profiles carrying the identical passport number.
+ */
+export const passportKey = (s: string | null | undefined) =>
+  (s ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+
 /** Levenshtein edit distance. */
 function levenshtein(a: string, b: string): number {
   if (a === b) return 0;
