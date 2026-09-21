@@ -2226,8 +2226,12 @@ async function _syncCrew(cfg: SpConfig): Promise<{ synced: number; errors: numbe
   const byPassport = new Map<string, string>()
   const byNameDob = new Map<string, string>()
   const byName = new Map<string, string>()
+  /** First+last name, ignoring any middle name — see the middle-name step below. */
+  const byFirstLast = new Map<string, { id: string; dob: string | null; pp: string }[]>()
+  /** Crew already tied to a SharePoint row — see the re-pointing guard below. */
+  const existingSpIds = new Set<string>()
   for (const c of (existing ?? []) as Record<string, any>[]) {
-    if (c.sharepoint_item_id) bySpId.set(String(c.sharepoint_item_id), String(c.id))
+    if (c.sharepoint_item_id) { bySpId.set(String(c.sharepoint_item_id), String(c.id)); existingSpIds.add(String(c.id)) }
     const pp = passportKey(c.passport_number)
     if (pp) byPassport.set(pp, String(c.id))
     if (c.first_name && c.last_name) {
@@ -2237,6 +2241,9 @@ async function _syncCrew(cfg: SpConfig): Promise<{ synced: number; errors: numbe
         // First writer wins, so an established record is preferred over a later
         // near-duplicate when only the name matches.
         if (!byName.has(k)) byName.set(k, String(c.id))
+        const list = byFirstLast.get(k) ?? []
+        list.push({ id: String(c.id), dob: c.date_of_birth ?? null, pp })
+        byFirstLast.set(k, list)
       }
     }
   }
@@ -2281,11 +2288,41 @@ async function _syncCrew(cfg: SpConfig): Promise<{ synced: number; errors: numbe
     const nKey = (record.first_name && record.last_name)
       ? crewNameKey(`${record.first_name} ${record.last_name}`)
       : ''
-    const existingId =
-      bySpId.get(String(item.id)) ??
+    const byId = bySpId.get(String(item.id))
+    let existingId =
+      byId ??
       (ppKey ? byPassport.get(ppKey) : undefined) ??
       ((nKey && record.date_of_birth) ? byNameDob.get(`${nKey}|${record.date_of_birth}`) : undefined) ??
       (nKey ? byName.get(nKey) : undefined)
+
+    /**
+     * Last resort — the same first and last name, where nothing actually
+     * disagrees.
+     *
+     * A person added to the Visa list a second time comes in as a new row with
+     * no shared identifier: the existing record may hold a date of birth and no
+     * passport, the new row a passport and no date of birth. Nothing above links
+     * them, so a second profile was created (SD-0026, Annabelle Montrone: list
+     * rows 502 and 558).
+     *
+     * Only links when there is exactly ONE candidate and it contradicts nothing:
+     * two dates of birth that differ, or two different passport numbers, mean
+     * keep them apart. Being cautious here matters more than being clever — a
+     * duplicate is visible and can be merged, whereas wrongly fusing two people
+     * is silent and hard to undo. Ambiguity is left for the Duplicate Crew screen.
+     */
+    if (!existingId && nKey) {
+      const compatible = (byFirstLast.get(nKey) ?? []).filter((c) =>
+        !(c.dob && record.date_of_birth && c.dob !== record.date_of_birth) &&
+        !(c.pp && ppKey && c.pp !== ppKey))
+      if (compatible.length === 1) existingId = compatible[0].id
+    }
+
+    // Matched on a name rather than on the item id? Leave the record tied to the
+    // SharePoint row it already belongs to. Re-pointing it makes the original row
+    // look new on the next pull, and the two rows then trade the record back and
+    // forth on every sync.
+    if (existingId && !byId && existingSpIds.has(existingId)) delete record.sharepoint_item_id
 
     // Inserts require first + last name (NOT NULL); updates can be partial.
     if (!existingId && (!record.first_name || !record.last_name)) {
