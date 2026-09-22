@@ -18,6 +18,8 @@ import { StudentsTab } from "@/components/training/StudentsTab";
 import { CoursesTab } from "@/components/training/CoursesTab";
 import { ClassesTab } from "@/components/training/ClassesTab";
 import { CalendarTab } from "@/components/training/CalendarTab";
+import { AttachmentsDialog } from "@/components/training/AttachmentsDialog";
+import { attachmentCounts } from "@/lib/training/attachments";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -126,6 +128,10 @@ export function TrainingPage() {
   const [editingCert, setEditingCert] = useState<Certification | null>(null);
   const [deleteCert, setDeleteCert] = useState<Certification | null>(null);
 
+  // Documents held against a training record.
+  const [filesFor, setFilesFor] = useState<TrainingRecord | null>(null);
+  const [fileCounts, setFileCounts] = useState<Record<string, number>>({});
+
   useEffect(() => { void load(); }, []);
 
   async function load() {
@@ -141,7 +147,22 @@ export function TrainingPage() {
     setRecords((r.data ?? []) as TrainingRecord[]);
     setCerts((c.data ?? []) as Certification[]);
     setLoading(false);
+    void reloadFileCounts();
   }
+
+  /** One query for the whole tab — a count per row would be a round trip per row. */
+  async function reloadFileCounts() {
+    try { setFileCounts(await attachmentCounts("record")); }
+    catch { /* the table is still usable without the badges */ }
+  }
+
+  // Where a document filed against the wrong record can be moved to.
+  const recordMoveTargets = useMemo(
+    () => records
+      .filter((r) => r.id !== filesFor?.id)
+      .map((r) => ({ id: r.id, label: r.crew_name, sub: r.course })),
+    [records, filesFor?.id],
+  );
 
   // ── Stats ────────────────────────────────────────────────────────────────
 
@@ -345,6 +366,8 @@ export function TrainingPage() {
               rows={filteredRecords}
               onEdit={r => { setEditingRecord(r); setRecordOpen(true); }}
               onDelete={r => setDeleteRecord(r)}
+              onOpenFiles={r => setFilesFor(r)}
+              fileCounts={fileCounts}
             />
           ) : (
             <CertificationsTable
@@ -426,6 +449,18 @@ export function TrainingPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {filesFor && (
+        <AttachmentsDialog
+          open
+          onClose={() => setFilesFor(null)}
+          ownerType="record"
+          ownerId={filesFor.id}
+          ownerLabel={`${filesFor.crew_name} — ${filesFor.course}`}
+          moveTargets={recordMoveTargets}
+          onChanged={() => void reloadFileCounts()}
+        />
+      )}
     </div>
   );
 }
@@ -436,10 +471,16 @@ function RecordsTable({
   rows,
   onEdit,
   onDelete,
+  onOpenFiles,
+  fileCounts,
 }: {
   rows: TrainingRecord[];
   onEdit: (r: TrainingRecord) => void;
   onDelete: (r: TrainingRecord) => void;
+  /** Open the documents held against this record. */
+  onOpenFiles: (r: TrainingRecord) => void;
+  /** How many files each record holds, keyed by id. */
+  fileCounts: Record<string, number>;
 }) {
   if (rows.length === 0) {
     return (
@@ -464,6 +505,7 @@ function RecordsTable({
               <Th>Start Date</Th>
               <Th>Completed</Th>
               <Th>Certificate No.</Th>
+              <Th>Documents</Th>
               <th className="w-16" />
             </tr>
           </thead>
@@ -481,6 +523,12 @@ function RecordsTable({
                 <td className="px-4 py-3 text-muted-foreground">{fmtDate(r.start_date)}</td>
                 <td className="px-4 py-3 text-muted-foreground">{fmtDate(r.completion_date)}</td>
                 <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{r.certificate_no ?? "—"}</td>
+                {/* Always visible, unlike Edit and Delete: whether a record has
+                    documents is information, not an action, and hiding it until
+                    hover means scrubbing the table to find out. */}
+                <td className="px-4 py-3">
+                  <RecordFilesButton count={fileCounts[r.id] ?? 0} onClick={() => onOpenFiles(r)} />
+                </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button onClick={() => onEdit(r)} className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"><Pencil className="h-3.5 w-3.5" /></button>
@@ -493,6 +541,27 @@ function RecordsTable({
         </table>
       </div>
     </div>
+  );
+}
+
+/** The paperclip in the Documents column, with the number of files behind it. */
+function RecordFilesButton({ count, onClick }: { count: number; onClick: () => void }) {
+  const label = count ? `${count} document${count === 1 ? "" : "s"}` : "Add a document";
+  return (
+    <button
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium transition",
+        count
+          ? "border-primary/40 bg-primary/10 text-primary hover:bg-primary/20"
+          : "border-border text-muted-foreground hover:bg-accent hover:text-foreground",
+      )}
+    >
+      <Paperclip className="h-3.5 w-3.5" />
+      {count > 0 ? count : "Add"}
+    </button>
   );
 }
 
