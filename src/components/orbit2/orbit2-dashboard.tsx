@@ -14,11 +14,11 @@
 import { useMemo, useState } from "react";
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { Button } from "@/components/ui/button";
-import { Loader2, Download, Plus, CalendarDays, Users } from "lucide-react";
+import { Loader2, Download, Plus, CalendarDays, Users, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   useOrbit2, byCategory, completion, byVessel, byAssignee, scheduled, dateRange,
-  hourOf, durationHours, type Orbit2Task,
+  monthGrid, busiestMonth, hourOf, durationHours, type Orbit2Task,
 } from "./orbit2-data";
 import { colorFor, COMPLETE_COLOR, PENDING_COLOR } from "./orbit2-constants";
 
@@ -33,6 +33,8 @@ const fmtDay = (iso: string) =>
 export function Orbit2Dashboard({ onAddTask }: { onAddTask?: () => void }) {
   const { tasks, yachts, loading } = useOrbit2();
   const [pane, setPane] = useState<"calendar" | "team">("calendar");
+  /** Month shown on the Team Management calendar; null until the tasks decide it. */
+  const [month, setMonth] = useState<{ year: number; month: number } | null>(null);
 
   const cats = useMemo(() => byCategory(tasks), [tasks]);
   const done = useMemo(() => completion(tasks), [tasks]);
@@ -40,6 +42,14 @@ export function Orbit2Dashboard({ onAddTask }: { onAddTask?: () => void }) {
   const team = useMemo(() => byAssignee(tasks), [tasks]);
   const days = useMemo(() => scheduled(tasks), [tasks]);
   const totalHours = cats.reduce((s, c) => s + c.hours, 0);
+
+  // Open on the month the work is actually in, until someone navigates away.
+  const cal = month ?? busiestMonth(tasks);
+  const grid = useMemo(() => monthGrid(tasks, cal.year, cal.month), [tasks, cal.year, cal.month]);
+  function stepMonth(delta: number) {
+    const d = new Date(Date.UTC(cal.year, cal.month + delta, 1));
+    setMonth({ year: d.getUTCFullYear(), month: d.getUTCMonth() });
+  }
 
   /** Every day between the first and last scheduled task, so gaps are visible. */
   const calendarDays = useMemo(() => {
@@ -211,37 +221,76 @@ export function Orbit2Dashboard({ onAddTask }: { onAddTask?: () => void }) {
           )
         ) : (
           team.length === 0 ? <Blank>No tasks yet</Blank> : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border/60 bg-muted/20">
-                  {["Team member", "Tasks", "Complete", "Pending", "Hours", "Progress"].map((h) => (
-                    <th key={h} className="px-4 py-2.5 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/40">
-                {team.map((r) => {
-                  const pct = r.total ? Math.round((r.complete / r.total) * 100) : 0;
-                  return (
-                    <tr key={r.person} className="hover:bg-muted/20">
-                      <td className="px-4 py-2.5 font-medium">{r.person}</td>
-                      <td className="px-4 py-2.5 tabular-nums text-muted-foreground">{r.total}</td>
-                      <td className="px-4 py-2.5 tabular-nums text-muted-foreground">{r.complete}</td>
-                      <td className="px-4 py-2.5 tabular-nums text-muted-foreground">{r.total - r.complete}</td>
-                      <td className="px-4 py-2.5 tabular-nums text-muted-foreground">{r.hours.toFixed(1)}</td>
-                      <td className="px-4 py-2.5">
-                        <div className="flex items-center gap-2">
-                          <div className="h-1.5 w-28 overflow-hidden rounded-full bg-muted/50">
-                            <div className="h-full rounded-full" style={{ width: `${pct}%`, background: COMPLETE_COLOR }} />
-                          </div>
-                          <span className="tabular-nums text-[11px] text-muted-foreground">{pct}%</span>
-                        </div>
-                      </td>
+            /* Who holds how much, beside a month showing who is on which day. */
+            <div className="grid gap-5 p-5 lg:grid-cols-[minmax(240px,320px)_1fr]">
+              <div className="self-start overflow-hidden rounded-lg border border-border">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border bg-muted/20">
+                      <th className="px-3 py-2 text-left font-semibold text-muted-foreground">Operation</th>
+                      <th className="px-3 py-2 text-left font-semibold text-muted-foreground">Total Task Assigned</th>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody className="divide-y divide-border/40">
+                    {team.map((r) => (
+                      <tr key={r.person} className="hover:bg-muted/20">
+                        <td className="px-3 py-2 font-medium">{r.person}</td>
+                        <td className="px-3 py-2 tabular-nums text-muted-foreground">{r.total}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="overflow-hidden rounded-lg border border-border">
+                <div className="flex items-center justify-between border-b border-border bg-muted/20 px-3 py-2">
+                  <button onClick={() => stepMonth(-1)} title="Previous month"
+                    className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <span className="text-sm font-semibold uppercase tracking-wide">
+                    {new Date(Date.UTC(cal.year, cal.month, 1)).toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" })}
+                  </span>
+                  <button onClick={() => stepMonth(1)} title="Next month"
+                    className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+                <table className="w-full table-fixed text-[11px]">
+                  <thead>
+                    <tr className="border-b border-border/60">
+                      {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
+                        <th key={d} className="border-r border-border/40 px-2 py-1.5 font-medium text-muted-foreground last:border-r-0">{d}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {grid.map((week, i) => (
+                      <tr key={i} className="border-b border-border/40 last:border-b-0">
+                        {week.map((cell) => (
+                          <td key={cell.date}
+                            className={cn("h-[74px] border-r border-border/40 align-top last:border-r-0",
+                              !cell.inMonth && "bg-muted/10")}>
+                            <div className={cn("px-1.5 pt-1 text-right text-[10px]",
+                              cell.inMonth ? "text-muted-foreground" : "text-muted-foreground/30")}>
+                              {cell.day}
+                            </div>
+                            <div className="space-y-0.5 px-1.5 pb-1">
+                              {cell.people.slice(0, 3).map((p) => (
+                                <div key={p} className="truncate text-[10.5px] text-foreground/85" title={p}>{p}</div>
+                              ))}
+                              {cell.people.length > 3 && (
+                                <div className="text-[10px] text-muted-foreground">+{cell.people.length - 3} more</div>
+                              )}
+                            </div>
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           )
         )}
       </div>

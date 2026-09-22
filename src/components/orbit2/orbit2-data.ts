@@ -120,6 +120,64 @@ export function byAssignee(tasks: Orbit2Task[]) {
   return [...rows.values()].sort((a, b) => b.total - a.total || a.person.localeCompare(b.person));
 }
 
+/**
+ * Who is working on each day of a month — the Team Management calendar.
+ *
+ * Returns whole weeks (Sunday to Saturday) so the grid is always rectangular,
+ * with days outside the month marked so they can be greyed rather than dropped.
+ * A person is listed once per day however many tasks they hold that day; the
+ * count beside the calendar is what carries volume.
+ */
+export function monthGrid(tasks: Orbit2Task[], year: number, month: number) {
+  const peopleByDate = new Map<string, string[]>();
+  for (const t of tasks) {
+    if (!t.task_date) continue;
+    const person = t.assigned_to?.trim();
+    if (!person) continue;
+    const list = peopleByDate.get(t.task_date) ?? [];
+    if (!list.includes(person)) list.push(person);
+    peopleByDate.set(t.task_date, list);
+  }
+
+  const first = new Date(Date.UTC(year, month, 1));
+  const start = new Date(first);
+  start.setUTCDate(1 - first.getUTCDay()); // back to the Sunday on or before the 1st
+
+  const weeks: { date: string; day: number; inMonth: boolean; people: string[] }[][] = [];
+  const cur = new Date(start);
+  for (let w = 0; w < 6; w++) {
+    const week = [];
+    for (let d = 0; d < 7; d++) {
+      const iso = cur.toISOString().slice(0, 10);
+      week.push({
+        date: iso,
+        day: cur.getUTCDate(),
+        inMonth: cur.getUTCMonth() === month,
+        people: peopleByDate.get(iso) ?? [],
+      });
+      cur.setUTCDate(cur.getUTCDate() + 1);
+    }
+    weeks.push(week);
+    // A month never needs a sixth week once the next one has started.
+    if (cur.getUTCMonth() !== month && w >= 4) break;
+  }
+  return weeks;
+}
+
+/** The month to open on: where the work is, falling back to today. */
+export function busiestMonth(tasks: Orbit2Task[]): { year: number; month: number } {
+  const counts = new Map<string, number>();
+  for (const t of tasks) {
+    if (!t.task_date) continue;
+    const key = t.task_date.slice(0, 7);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const top = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
+  if (!top) { const n = new Date(); return { year: n.getFullYear(), month: n.getMonth() }; }
+  const [y, m] = top[0].split("-").map(Number);
+  return { year: y, month: m - 1 };
+}
+
 /** Tasks that can be placed on the calendar, grouped by day. */
 export function scheduled(tasks: Orbit2Task[]) {
   const days = new Map<string, Orbit2Task[]>();
