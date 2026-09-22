@@ -36,6 +36,7 @@ import { Route as AppProvisioningRouteImport } from './routes/_app.provisioning'
 import { Route as AppProcurementRouteImport } from './routes/_app.procurement'
 import { Route as AppPolarisRedesignRouteImport } from './routes/_app.polaris-redesign'
 import { Route as AppPackagesRouteImport } from './routes/_app.packages'
+import { Route as AppOrbit2RouteImport } from './routes/_app.orbit2'
 import { Route as AppOrbitRouteImport } from './routes/_app.orbit'
 import { Route as AppMyFleetRouteImport } from './routes/_app.my-fleet'
 import { Route as AppMfaSetupRouteImport } from './routes/_app.mfa-setup'
@@ -292,6 +293,11 @@ const AppPolarisRedesignRoute = AppPolarisRedesignRouteImport.update({
 const AppPackagesRoute = AppPackagesRouteImport.update({
   id: '/packages',
   path: '/packages',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppOrbit2Route = AppOrbit2RouteImport.update({
+  id: '/orbit2',
+  path: '/orbit2',
   getParentRoute: () => AppRoute,
 } as any)
 const AppOrbitRoute = AppOrbitRouteImport.update({
@@ -960,6 +966,7 @@ export interface FileRoutesByFullPath {
   '/mfa-setup': typeof AppMfaSetupRoute
   '/my-fleet': typeof AppMyFleetRoute
   '/orbit': typeof AppOrbitRouteWithChildren
+  '/orbit2': typeof AppOrbit2Route
   '/packages': typeof AppPackagesRouteWithChildren
   '/polaris-redesign': typeof AppPolarisRedesignRoute
   '/procurement': typeof AppProcurementRoute
@@ -1102,6 +1109,7 @@ export interface FileRoutesByTo {
   '/mail-export': typeof AppMailExportRoute
   '/mfa-setup': typeof AppMfaSetupRoute
   '/my-fleet': typeof AppMyFleetRoute
+  '/orbit2': typeof AppOrbit2Route
   '/polaris-redesign': typeof AppPolarisRedesignRoute
   '/procurement': typeof AppProcurementRoute
   '/provisioning': typeof AppProvisioningRoute
@@ -1243,6 +1251,7 @@ export interface FileRoutesById {
   '/_app/mfa-setup': typeof AppMfaSetupRoute
   '/_app/my-fleet': typeof AppMyFleetRoute
   '/_app/orbit': typeof AppOrbitRouteWithChildren
+  '/_app/orbit2': typeof AppOrbit2Route
   '/_app/packages': typeof AppPackagesRouteWithChildren
   '/_app/polaris-redesign': typeof AppPolarisRedesignRoute
   '/_app/procurement': typeof AppProcurementRoute
@@ -1393,6 +1402,7 @@ export interface FileRouteTypes {
     | '/mfa-setup'
     | '/my-fleet'
     | '/orbit'
+    | '/orbit2'
     | '/packages'
     | '/polaris-redesign'
     | '/procurement'
@@ -1535,6 +1545,7 @@ export interface FileRouteTypes {
     | '/mail-export'
     | '/mfa-setup'
     | '/my-fleet'
+    | '/orbit2'
     | '/polaris-redesign'
     | '/procurement'
     | '/provisioning'
@@ -1675,6 +1686,7 @@ export interface FileRouteTypes {
     | '/_app/mfa-setup'
     | '/_app/my-fleet'
     | '/_app/orbit'
+    | '/_app/orbit2'
     | '/_app/packages'
     | '/_app/polaris-redesign'
     | '/_app/procurement'
@@ -1991,6 +2003,13 @@ declare module '@tanstack/react-router' {
       path: '/packages'
       fullPath: '/packages'
       preLoaderRoute: typeof AppPackagesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/orbit2': {
+      id: '/_app/orbit2'
+      path: '/orbit2'
+      fullPath: '/orbit2'
+      preLoaderRoute: typeof AppOrbit2RouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/orbit': {
@@ -3193,6 +3212,7 @@ interface AppRouteChildren {
   AppMfaSetupRoute: typeof AppMfaSetupRoute
   AppMyFleetRoute: typeof AppMyFleetRoute
   AppOrbitRoute: typeof AppOrbitRouteWithChildren
+  AppOrbit2Route: typeof AppOrbit2Route
   AppPackagesRoute: typeof AppPackagesRouteWithChildren
   AppPolarisRedesignRoute: typeof AppPolarisRedesignRoute
   AppProcurementRoute: typeof AppProcurementRoute
@@ -3266,6 +3286,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppMfaSetupRoute: AppMfaSetupRoute,
   AppMyFleetRoute: AppMyFleetRoute,
   AppOrbitRoute: AppOrbitRouteWithChildren,
+  AppOrbit2Route: AppOrbit2Route,
   AppPackagesRoute: AppPackagesRouteWithChildren,
   AppPolarisRedesignRoute: AppPolarisRedesignRoute,
   AppProcurementRoute: AppProcurementRoute,
