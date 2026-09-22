@@ -11,7 +11,7 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchAllRows } from "@/lib/fetch-all";
 import {
-  ACTIVE_BOAT_STATUSES, CLOSED_STATUSES, ORBIT2_CATEGORIES, type Orbit2RecordType,
+  CLOSED_STATUSES, ORBIT2_CATEGORIES, type Orbit2RecordType,
 } from "./orbit2-constants";
 
 // ── Row types ───────────────────────────────────────────────────────────────
@@ -221,67 +221,31 @@ export function distribution(projects: Orbit2Project[], noc: Orbit2Noc[]) {
     .map(([name, value]) => ({ name, value, pct: total ? Math.round((value / total) * 100) : 0 }));
 }
 
-/** The month a record belongs to: when it is scheduled, else when it was logged. */
-const monthKeyOf = (scheduled: string | null, created: string) =>
-  (scheduled ?? created).slice(0, 7);
-
 /**
- * Client Engagement Monthly Trend — how much work each month carried, split
- * three ways as the spec names them: Service Category (the Project List as a
- * whole), Bunkering, and EHS NOC.
+ * Client Project Status — complete against pending, one bar per boat or client.
  *
- * Every month between the first and last record appears, including quiet ones —
- * a gap in the trend is part of the trend.
+ * Only clients that actually have records appear; an axis carrying every boat
+ * the company has ever quoted, most of them empty, would say less rather than
+ * more. Busiest first, and capped, because a long tail of one-job clients turns
+ * the axis into a smear.
+ *
+ * Cancelled work is left out entirely: it is neither complete nor pending, and
+ * counting it as either would misreport the same bar in opposite directions.
  */
-export function monthlyTrend(projects: Orbit2Project[], noc: Orbit2Noc[]) {
-  const rows = new Map<string, { month: string; service: number; bunkering: number; noc: number }>();
-  const touch = (key: string) =>
-    rows.get(key) ?? { month: key, service: 0, bunkering: 0, noc: 0 };
-
+export function byClient(projects: Orbit2Project[], limit = 12) {
+  const rows = new Map<string, { client: string; complete: number; pending: number }>();
   for (const p of projects) {
-    const key = monthKeyOf(p.schedule_date, p.created_at);
-    const row = touch(key);
-    if (p.record_type === "bunkering") row.bunkering += 1; else row.service += 1;
+    if (p.status === 'Cancelled') continue;
+    const name = (p.client_name ?? '').trim() || 'Unnamed';
+    // Keyed case-insensitively so one boat typed two ways still draws one bar.
+    const key = name.toLowerCase();
+    const row = rows.get(key) ?? { client: name, complete: 0, pending: 0 };
+    if (p.status === 'Complete') row.complete += 1; else row.pending += 1;
     rows.set(key, row);
   }
-  for (const r of noc) {
-    const key = monthKeyOf(r.permit_date ?? r.receipt_date, r.created_at);
-    const row = touch(key);
-    row.noc += 1;
-    rows.set(key, row);
-  }
-  if (!rows.size) return [];
-
-  const keys = [...rows.keys()].sort();
-  const out: { month: string; label: string; service: number; bunkering: number; noc: number }[] = [];
-  const [y0, m0] = keys[0].split("-").map(Number);
-  const [y1, m1] = keys[keys.length - 1].split("-").map(Number);
-  const cur = new Date(Date.UTC(y0, m0 - 1, 1));
-  const end = new Date(Date.UTC(y1, m1 - 1, 1));
-  // Capped: a stray far-future date must not draw thousands of empty columns.
-  for (let i = 0; cur <= end && i < 36; i++) {
-    const key = cur.toISOString().slice(0, 7);
-    const row = rows.get(key) ?? { month: key, service: 0, bunkering: 0, noc: 0 };
-    out.push({
-      ...row,
-      label: cur.toLocaleDateString("en-GB", { month: "short", year: "2-digit", timeZone: "UTC" }),
-    });
-    cur.setUTCMonth(cur.getUTCMonth() + 1);
-  }
-  return out;
-}
-
-/** The five headline numbers across the top of the dashboard. */
-export function kpis(projects: Orbit2Project[], boats: Orbit2Boat[], boatTasks: Orbit2BoatTask[]) {
-  const active = (kind: "maintenance" | "defect") =>
-    boatTasks.filter((t) => t.kind === kind && ACTIVE_BOAT_STATUSES.includes(t.status)).length;
-  return {
-    approvedQuotes: projects.filter((p) => p.status === "Quotation Approved").length,
-    pendingQuotes: projects.filter((p) => p.status === "Quote in Process/Approval").length,
-    managedVessels: boats.filter((b) => b.active).length,
-    activeMaintenance: active("maintenance"),
-    activeDefects: active("defect"),
-  };
+  return [...rows.values()]
+    .sort((a, b) => (b.complete + b.pending) - (a.complete + a.pending) || a.client.localeCompare(b.client))
+    .slice(0, limit);
 }
 
 /** Complete against everything logged — the Task Complete bar. */

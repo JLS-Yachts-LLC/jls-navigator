@@ -3,8 +3,8 @@
  *
  * Two halves, as the specification splits them:
  *
- *   Upper  Operational Analytics — the KPI cards, the Project Distribution
- *          donut and the Client Engagement Monthly Trend
+ *   Upper  Operational Analytics — the Project Distribution donut, overall
+ *          task completion, and Client Project Status per boat
  *   Lower  Calendar / Team Management — one timeline over the Project List,
  *          Bunkering and Managed Boats alike, and the same work grouped by who
  *          is carrying it
@@ -19,8 +19,7 @@ import {
   ResponsiveContainer, Legend,
 } from "recharts";
 import {
-  Loader2, Download, CalendarDays, Users, ChevronLeft, ChevronRight,
-  FileCheck2, FileClock, Ship, Wrench, TriangleAlert, X,
+  Loader2, Download, CalendarDays, Users, ChevronLeft, ChevronRight, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -29,7 +28,7 @@ import { useAuth } from "@/lib/auth";
 import {
   type Orbit2Project, type Orbit2Noc, type Orbit2Boat, type Orbit2BoatTask,
   type Orbit2ScheduleEntry, type CalendarItem,
-  distribution, monthlyTrend, kpis, completion, calendarItems, calendarDays,
+  distribution, byClient, completion, calendarItems, calendarDays,
   teamLoad, monthGrid, busiestMonth, fmtSchedule, minutesToHhmm,
 } from "./orbit2-data";
 import { colorFor, COMPLETE_COLOR, PENDING_COLOR, ORBIT2_TEAM } from "./orbit2-constants";
@@ -65,8 +64,7 @@ export function Orbit2Dashboard({
   const [scheduling, setScheduling] = useState<{ person: string; date: string } | null>(null);
 
   const dist = useMemo(() => distribution(projects, noc), [projects, noc]);
-  const trend = useMemo(() => monthlyTrend(projects, noc), [projects, noc]);
-  const k = useMemo(() => kpis(projects, boats, boatTasks), [projects, boats, boatTasks]);
+  const clients = useMemo(() => byClient(projects), [projects]);
   const done = useMemo(() => completion(projects), [projects]);
   const items = useMemo(() => calendarItems(projects, boatTasks, boats), [projects, boatTasks, boats]);
   const days = useMemo(() => calendarDays(items), [items]);
@@ -126,15 +124,6 @@ export function Orbit2Dashboard({
         </button>
       </div>
 
-      {/* ── High-Level KPIs ── */}
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <Kpi label="Approved Quotes" value={k.approvedQuotes} icon={FileCheck2} tone="#4CAF80" />
-        <Kpi label="Pending Quotes" value={k.pendingQuotes} icon={FileClock} tone="#E8C020" />
-        <Kpi label="Managed Vessels" value={k.managedVessels} icon={Ship} tone="#7C8FE8" />
-        <Kpi label="Active Planned Maintenance" value={k.activeMaintenance} icon={Wrench} tone="#00C4CC" />
-        <Kpi label="Active Defects & Repairs" value={k.activeDefects} icon={TriangleAlert} tone="#E87050" />
-      </div>
-
       {/* ── Operational analytics ── */}
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px_minmax(0,1.3fr)]">
         <Card title="Project distribution">
@@ -169,19 +158,20 @@ export function Orbit2Dashboard({
           </div>
         </Card>
 
-        <Card title="Client engagement — monthly trend">
-          {trend.length === 0 ? <Blank>Nothing logged yet</Blank> : (
+        <Card title="Client project status">
+          {clients.length === 0 ? <Blank>Nothing logged yet</Blank> : (
             <div className="h-[240px]">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={trend} margin={{ top: 4, right: 8, left: -22, bottom: 4 }}>
+                <BarChart data={clients} margin={{ top: 4, right: 8, left: -22, bottom: 4 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                  <XAxis dataKey="label" tick={{ fontSize: 11 }} interval={0} height={34} />
+                  {/* Angled, because boat names are long and would otherwise be
+                      dropped by the axis rather than shortened. */}
+                  <XAxis dataKey="client" tick={{ fontSize: 11 }} interval={0} angle={-15} textAnchor="end" height={48} />
                   <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
                   <Tooltip contentStyle={tooltipStyle} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Bar dataKey="service" stackId="m" name="Service Category" fill={colorFor("Vessel Services")} />
-                  <Bar dataKey="bunkering" stackId="m" name="Bunkering" fill={colorFor("Bunkering")} />
-                  <Bar dataKey="noc" stackId="m" name="EHS NOC" fill={colorFor("EHS NOC")} radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="complete" stackId="c" name="Complete" fill={COMPLETE_COLOR} />
+                  <Bar dataKey="pending" stackId="c" name="Pending" fill={PENDING_COLOR} radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -539,23 +529,6 @@ function ScheduleDialog({
 }
 
 // ── Small pieces ────────────────────────────────────────────────────────────
-
-function Kpi({
-  label, value, icon: Icon, tone,
-}: { label: string; value: number; icon: React.ComponentType<{ className?: string }>; tone: string }) {
-  return (
-    <div className="rounded-xl border border-border bg-card p-4">
-      <div className="flex items-start justify-between gap-2">
-        <span className="text-[14px] font-medium leading-snug text-muted-foreground">{label}</span>
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg"
-          style={{ background: `${tone}1F`, color: tone }}>
-          <Icon className="h-4 w-4" />
-        </span>
-      </div>
-      <div className="mt-2 font-display text-[28px] font-bold leading-none tabular-nums">{value}</div>
-    </div>
-  );
-}
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
