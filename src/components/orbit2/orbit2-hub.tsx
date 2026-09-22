@@ -1,10 +1,10 @@
 /**
  * Orbit 2 — entry point.
  *
- * Three tabs, matching the client's own layout: Dashboard, Project, Small Boats.
- * The Dashboard is built and reads from the tasks entered here. Project and
- * Small Boats are deliberately empty until their detail is specified — an
- * invented version of either would only have to be unpicked later.
+ * Three tabs: Dashboard, Project, Managed Boats. The Dashboard is built and
+ * reads from the tasks entered here. Project and Managed Boats are deliberately
+ * empty until their detail is specified — an invented version of either would
+ * only have to be unpicked later.
  */
 import { useState } from "react";
 import { LayoutDashboard, FolderKanban, Ship } from "lucide-react";
@@ -17,7 +17,7 @@ type Tab = "dashboard" | "project" | "boats";
 const TABS: { key: Tab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { key: "project", label: "Project", icon: FolderKanban },
-  { key: "boats", label: "Small Boats", icon: Ship },
+  { key: "boats", label: "Managed Boats", icon: Ship },
 ];
 
 export function Orbit2Hub() {
@@ -51,7 +51,7 @@ export function Orbit2Hub() {
         ) : (
           <div className="flex h-64 flex-col items-center justify-center gap-2 text-center">
             <p className="font-display text-base font-semibold">
-              {tab === "project" ? "Project" : "Small Boats"}
+              {tab === "project" ? "Project" : "Managed Boats"}
             </p>
             <p className="max-w-md text-sm text-muted-foreground">
               Not built yet — waiting on the detail for this tab. The Dashboard is live and
