@@ -165,6 +165,39 @@ export type ParsedSale = {
   saleId: string; invoiceNumber: string; customerName: string; email: string | null
   lineItems: Array<{ id: string; is_return: boolean; price: number; price_total: number; product_id: string; quantity: number; tax_total: number }>
   returnFor: string | null; hasLinkedInvoice: boolean; state: string; status: string
+  txnDate: string | null
+}
+
+/** The retail company's clock — the books are kept on UAE business days. */
+const LS_TZ = 'Asia/Dubai'
+
+/**
+ * Lightspeed sale date → QuickBooks TxnDate (YYYY-MM-DD).
+ *
+ * Without this the invoice POST carried no date at all and QuickBooks stamped
+ * the day the API call landed. Because the sync runs off the "sale updated"
+ * webhook, a sale closed or marked paid months later arrived in QBO dated to the
+ * payment, not the sale — invisible on same-day retail, wrong on every
+ * back-dated one.
+ *
+ * Lightspeed timestamps are UTC with no zone marker ("2025-02-21 07:04:31"), so
+ * they are read as UTC and rendered on the retailer's clock; slicing the raw
+ * string would drop an evening sale onto the previous day. Returns null when the
+ * payload has no usable date, which omits TxnDate and leaves QBO's default as a
+ * last resort rather than a silent wrong answer.
+ */
+export function saleTxnDate(payload: any): string | null {
+  const raw = payload?.sale_date ?? payload?.created_at ?? null
+  if (!raw) return null
+  const s = String(raw).trim()
+  if (!s) return null
+  const hasZone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(s)
+  const d = new Date(hasZone ? s.replace(' ', 'T') : `${s.replace(' ', 'T')}Z`)
+  if (Number.isNaN(d.getTime())) return null
+  // en-CA formats as YYYY-MM-DD, which is what QBO expects.
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: LS_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(d)
 }
 
 export function parseSale(payload: any): ParsedSale {
@@ -186,6 +219,7 @@ export function parseSale(payload: any): ParsedSale {
     hasLinkedInvoice: payload.return_for !== null && payload.return_for !== undefined,
     state: String(payload.state ?? ''),
     status: String(payload.status ?? ''),
+    txnDate: saleTxnDate(payload),
   }
 }
 
@@ -270,6 +304,7 @@ export async function syncCredit(payload: any, cfg: LsConfig, realm: string): Pr
     await qboRequest('POST', '/creditmemo?minorversion=73', {
       CustomerRef: { value: customerId },
       DocNumber: docNumber,
+      ...(sale.txnDate ? { TxnDate: sale.txnDate } : {}),
       TxnTaxDetail: { TotalTax: totalTax },
       Line: lines,
     }, realm)
@@ -284,6 +319,7 @@ export async function syncCredit(payload: any, cfg: LsConfig, realm: string): Pr
   await qboRequest('POST', '/creditmemo?minorversion=73', {
     CustomerRef: { value: invoice.CustomerRef.value },
     DocNumber: docNumber,
+    ...(sale.txnDate ? { TxnDate: sale.txnDate } : {}),
     Line: (invoice.Line ?? [])
       .filter((l: any) => l.DetailType === 'SalesItemLineDetail')
       .map((l: any) => ({
@@ -327,6 +363,9 @@ export async function syncInvoice(payload: any, cfg: LsConfig, realm: string): P
   await qboRequest('POST', '/invoice?minorversion=73', {
     CustomerRef: { value: customer.Id },
     DocNumber: sale.invoiceNumber,
+    // The Lightspeed sale date, so settling an old sale today does not re-date
+    // the invoice to today in the books.
+    ...(sale.txnDate ? { TxnDate: sale.txnDate } : {}),
     TxnTaxDetail: { TotalTax: totalTax },
     Line: lines,
   }, realm)
@@ -335,7 +374,7 @@ export async function syncInvoice(payload: any, cfg: LsConfig, realm: string): P
     if (String(e?.message ?? '').includes('Duplicate Document Number')) return `skip-invoice-exists ${sale.invoiceNumber} (raced)`
     throw e
   }
-  return `invoice-created ${sale.invoiceNumber}${missing.length ? ` (skipped items: ${missing.join(', ')})` : ''}`
+  return `invoice-created ${sale.invoiceNumber} dated ${sale.txnDate ?? 'today (no sale_date in payload)'}${missing.length ? ` (skipped items: ${missing.join(', ')})` : ''}`
 }
 
 // ── Dispatcher ─────────────────────────────────────────────────────────────────
