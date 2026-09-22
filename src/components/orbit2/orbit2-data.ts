@@ -1,30 +1,152 @@
 /**
- * Orbit 2 — loading tasks, and turning them into what the dashboard draws.
+ * Orbit 2 — loading the operations records, and turning them into what the
+ * dashboard draws.
  *
  * Kept apart from the rendering so each figure on the page can be read as a
- * definition: what counts as complete, how hours are derived, which vessels
- * appear. The dashboard shows only what has been entered — no seeded or example
- * data — so an empty Orbit 2 shows zeros rather than something invented.
+ * definition: what counts as an active project, which month a job lands in, who
+ * is on shift. Everything is counted from records entered on these pages — with
+ * nothing entered the dashboard reads zero rather than inventing a number.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchAllRows } from "@/lib/fetch-all";
+import {
+  ACTIVE_BOAT_STATUSES, CLOSED_STATUSES, ORBIT2_CATEGORIES, type Orbit2RecordType,
+} from "./orbit2-constants";
 
-export type Orbit2Task = {
+// ── Row types ───────────────────────────────────────────────────────────────
+
+export type Orbit2Project = {
   id: string;
-  title: string;
-  category: string;
-  yacht_id: string | null;
-  status: "pending" | "complete";
-  task_date: string | null;
-  start_time: string | null;
-  end_time: string | null;
-  assigned_to: string | null;
-  notes: string | null;
+  record_type: Orbit2RecordType;
+  task_id: string;
+  client_name: string | null;
+  requestor_name: string | null;
+  email: string | null;
+  whatsapp: string | null;
+  status: string;
+  service_category: string;
+  specific_task: string | null;
+  schedule_date: string | null;
+  schedule_time: string | null;
+  location: string | null;
+  assigned_team: string[];
+  jls_quote: string | null;
+  invoice_number: string | null;
+  supplier: string | null;
+  etc_minutes: number | null;
+  product_grade: string | null;
+  quantity: number | null;
+  quantity_unit: string | null;
+  work_completed_at: string | null;
+  client_notified_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Orbit2Note = {
+  id: string;
+  project_id: string;
+  kind: "remark" | "team_comment";
+  author: string;
+  body: string;
   created_at: string;
 };
 
-export type Yacht = { id: string; vessel_name: string };
+export type Orbit2File = {
+  id: string;
+  project_id: string;
+  slot: "supplier_quote" | "invoice" | "document" | "image";
+  file_name: string;
+  storage_ref: string;
+  created_at: string;
+};
+
+export type Orbit2Noc = {
+  id: string;
+  ref_id: string;
+  client_name: string | null;
+  noc_type: string | null;
+  requested_by: string | null;
+  receipt_date: string | null;
+  permit_date: string | null;
+  noc_document: string | null;
+  noc_invoice: string | null;
+  created_at: string;
+};
+
+export type Orbit2Boat = {
+  id: string;
+  name: string;
+  client_name: string | null;
+  boat_type: string | null;
+  notes: string | null;
+  active: boolean;
+};
+
+export type Orbit2BoatTask = {
+  id: string;
+  boat_id: string;
+  kind: "maintenance" | "defect";
+  title: string;
+  description: string | null;
+  status: string;
+  due_date: string | null;
+  schedule_date: string | null;
+  schedule_time: string | null;
+  assigned_team: string[];
+};
+
+export type Orbit2ScheduleEntry = {
+  id: string;
+  person: string;
+  entry_date: string;
+  kind: "shift" | "off" | "leave";
+  note: string | null;
+};
+
+/** The bucket Orbit 2 attachments live in (shared with the original Orbit module). */
+export const ORBIT2_BUCKET = "orbit-documents";
+
+// ── Loading ─────────────────────────────────────────────────────────────────
+
+const sb = supabase as any;
+/** Paged, so counts keep going past PostgREST's 1000-row response cap. */
+const all = <T,>(build: () => any) => fetchAllRows<T>(build);
+
+/** Everything Orbit 2 holds — the dashboard needs all of it at once. */
+export function useOrbit2() {
+  const [projects, setProjects] = useState<Orbit2Project[]>([]);
+  const [noc, setNoc] = useState<Orbit2Noc[]>([]);
+  const [boats, setBoats] = useState<Orbit2Boat[]>([]);
+  const [boatTasks, setBoatTasks] = useState<Orbit2BoatTask[]>([]);
+  const [schedule, setSchedule] = useState<Orbit2ScheduleEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    // In parallel: five independent tables, and the page cannot draw until it has
+    // all of them, so waiting on them one at a time would just be slower.
+    const [p, n, b, bt, s] = await Promise.all([
+      all<Orbit2Project>(() => sb.from("orbit2_projects").select("*").order("created_at", { ascending: false })),
+      all<Orbit2Noc>(() => sb.from("orbit2_noc_records").select("*").order("created_at", { ascending: false })),
+      all<Orbit2Boat>(() => sb.from("orbit2_boats").select("*").order("name")),
+      all<Orbit2BoatTask>(() => sb.from("orbit2_boat_tasks").select("*").order("created_at", { ascending: false })),
+      all<Orbit2ScheduleEntry>(() => sb.from("orbit2_team_schedule").select("*").order("entry_date")),
+    ]);
+    setProjects((p.data ?? []) as Orbit2Project[]);
+    setNoc((n.data ?? []) as Orbit2Noc[]);
+    setBoats((b.data ?? []) as Orbit2Boat[]);
+    setBoatTasks((bt.data ?? []) as Orbit2BoatTask[]);
+    setSchedule((s.data ?? []) as Orbit2ScheduleEntry[]);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+  return { projects, noc, boats, boatTasks, schedule, loading, reload: load };
+}
+
+// ── Small conversions ───────────────────────────────────────────────────────
 
 /** "14:30:00" → 14.5. Null when the time is missing or unreadable. */
 export function hourOf(t: string | null): number | null {
@@ -35,125 +157,295 @@ export function hourOf(t: string | null): number | null {
   return h >= 0 && h <= 24 ? h : null;
 }
 
+/** ETC is a duration: 150 minutes ↔ "02:30". */
+export function minutesToHhmm(min: number | null | undefined): string {
+  if (min == null) return "";
+  return `${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`;
+}
+
+export function hhmmToMinutes(v: string): number | null {
+  const m = /^(\d{1,3}):([0-5]\d)$/.exec(v.trim());
+  if (!m) return null;
+  return Number(m[1]) * 60 + Number(m[2]);
+}
+
+/** MMM/DD/YYYY – Day – HH:MM, the format the spec asks schedules to read in. */
+export function fmtSchedule(date: string | null, time: string | null): string {
+  if (!date) return "—";
+  const d = new Date(`${date}T00:00:00`);
+  const md = d.toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }).replace(/,/g, "");
+  const [mon, day, year] = md.split(" ");
+  const weekday = d.toLocaleDateString("en-US", { weekday: "short" });
+  return `${mon}/${day}/${year} – ${weekday}${time ? ` – ${time.slice(0, 5)}` : ""}`;
+}
+
+// ── Grouping used by the dashboard ──────────────────────────────────────────
+
 /**
- * How long a task takes. Only a task with BOTH a start and an end contributes —
- * guessing a duration would put invented hours into the donut.
+ * Which slice of the donut a record belongs to.
+ *
+ * Bunkering and EHS NOC are their own headings regardless of any category text,
+ * because they are separate registries rather than services on the Project List.
  */
-export function durationHours(t: Pick<Orbit2Task, "start_time" | "end_time">): number {
-  const s = hourOf(t.start_time);
-  const e = hourOf(t.end_time);
-  if (s === null || e === null || e <= s) return 0;
-  return e - s;
+export function bucketOf(p: Pick<Orbit2Project, "record_type" | "service_category">): string {
+  return p.record_type === "bunkering" ? "Bunkering" : p.service_category;
 }
 
-export function useOrbit2() {
-  const [tasks, setTasks] = useState<Orbit2Task[]>([]);
-  const [yachts, setYachts] = useState<Yacht[]>([]);
-  const [loading, setLoading] = useState(true);
+/** Open work — everything not Complete or Cancelled. */
+export const isActive = (p: { status: string }) => !CLOSED_STATUSES.includes(p.status);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const [t, y] = await Promise.all([
-      // Paged, so the dashboard keeps counting past the 1000-row response cap.
-      fetchAllRows(() => (supabase as any).from("orbit2_tasks").select("*").order("task_date", { ascending: true })),
-      fetchAllRows(() => (supabase as any).from("yachts").select("id, vessel_name").order("vessel_name")),
-    ]);
-    setTasks((t.data ?? []) as Orbit2Task[]);
-    setYachts((y.data ?? []) as Yacht[]);
-    setLoading(false);
-  }, []);
-
-  useEffect(() => { void load(); }, [load]);
-  return { tasks, yachts, loading, reload: load };
-}
-
-/** Hours per service category, largest first — the donut. */
-export function byCategory(tasks: Orbit2Task[]) {
-  const totals = new Map<string, { hours: number; count: number }>();
-  for (const t of tasks) {
-    const cur = totals.get(t.category) ?? { hours: 0, count: 0 };
-    cur.hours += durationHours(t);
-    cur.count += 1;
-    totals.set(t.category, cur);
+/**
+ * Project Distribution — the share of active work each service is carrying.
+ *
+ * NOC records have no status, so every one of them counts: a permit on file is
+ * work the team has taken on.
+ */
+export function distribution(projects: Orbit2Project[], noc: Orbit2Noc[]) {
+  const counts = new Map<string, number>();
+  for (const p of projects) {
+    if (!isActive(p)) continue;
+    const k = bucketOf(p);
+    counts.set(k, (counts.get(k) ?? 0) + 1);
   }
-  return [...totals.entries()]
-    .map(([category, v]) => ({ category, ...v }))
-    .sort((a, b) => b.hours - a.hours || b.count - a.count);
+  if (noc.length) counts.set("EHS NOC", noc.length);
+
+  const total = [...counts.values()].reduce((s, v) => s + v, 0);
+  // Known services first in their declared order, then anything unexpected, so
+  // the slice colours stay put as records are added.
+  const order = [...ORBIT2_CATEGORIES, "Bunkering", "EHS NOC"] as string[];
+  return [...counts.entries()]
+    .sort((a, b) => {
+      const ia = order.indexOf(a[0]), ib = order.indexOf(b[0]);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+    })
+    .map(([name, value]) => ({ name, value, pct: total ? Math.round((value / total) * 100) : 0 }));
 }
 
-/** Complete against everything entered — the Task Complete bar. */
-export function completion(tasks: Orbit2Task[]) {
-  const total = tasks.length;
-  const complete = tasks.filter((t) => t.status === "complete").length;
+/** The month a record belongs to: when it is scheduled, else when it was logged. */
+const monthKeyOf = (scheduled: string | null, created: string) =>
+  (scheduled ?? created).slice(0, 7);
+
+/**
+ * Client Engagement Monthly Trend — how much work each month carried, split
+ * three ways as the spec names them: Service Category (the Project List as a
+ * whole), Bunkering, and EHS NOC.
+ *
+ * Every month between the first and last record appears, including quiet ones —
+ * a gap in the trend is part of the trend.
+ */
+export function monthlyTrend(projects: Orbit2Project[], noc: Orbit2Noc[]) {
+  const rows = new Map<string, { month: string; service: number; bunkering: number; noc: number }>();
+  const touch = (key: string) =>
+    rows.get(key) ?? { month: key, service: 0, bunkering: 0, noc: 0 };
+
+  for (const p of projects) {
+    const key = monthKeyOf(p.schedule_date, p.created_at);
+    const row = touch(key);
+    if (p.record_type === "bunkering") row.bunkering += 1; else row.service += 1;
+    rows.set(key, row);
+  }
+  for (const r of noc) {
+    const key = monthKeyOf(r.permit_date ?? r.receipt_date, r.created_at);
+    const row = touch(key);
+    row.noc += 1;
+    rows.set(key, row);
+  }
+  if (!rows.size) return [];
+
+  const keys = [...rows.keys()].sort();
+  const out: { month: string; label: string; service: number; bunkering: number; noc: number }[] = [];
+  const [y0, m0] = keys[0].split("-").map(Number);
+  const [y1, m1] = keys[keys.length - 1].split("-").map(Number);
+  const cur = new Date(Date.UTC(y0, m0 - 1, 1));
+  const end = new Date(Date.UTC(y1, m1 - 1, 1));
+  // Capped: a stray far-future date must not draw thousands of empty columns.
+  for (let i = 0; cur <= end && i < 36; i++) {
+    const key = cur.toISOString().slice(0, 7);
+    const row = rows.get(key) ?? { month: key, service: 0, bunkering: 0, noc: 0 };
+    out.push({
+      ...row,
+      label: cur.toLocaleDateString("en-GB", { month: "short", year: "2-digit", timeZone: "UTC" }),
+    });
+    cur.setUTCMonth(cur.getUTCMonth() + 1);
+  }
+  return out;
+}
+
+/** The five headline numbers across the top of the dashboard. */
+export function kpis(projects: Orbit2Project[], boats: Orbit2Boat[], boatTasks: Orbit2BoatTask[]) {
+  const active = (kind: "maintenance" | "defect") =>
+    boatTasks.filter((t) => t.kind === kind && ACTIVE_BOAT_STATUSES.includes(t.status)).length;
+  return {
+    approvedQuotes: projects.filter((p) => p.status === "Quotation Approved").length,
+    pendingQuotes: projects.filter((p) => p.status === "Quote in Process/Approval").length,
+    managedVessels: boats.filter((b) => b.active).length,
+    activeMaintenance: active("maintenance"),
+    activeDefects: active("defect"),
+  };
+}
+
+/** Complete against everything logged — the Task Complete bar. */
+export function completion(projects: Orbit2Project[]) {
+  const total = projects.length;
+  const complete = projects.filter((p) => p.status === "Complete").length;
   return { total, complete, pending: total - complete, pct: total ? Math.round((complete / total) * 100) : 0 };
 }
 
+// ── Calendar ────────────────────────────────────────────────────────────────
+
+/** A scheduled thing, whatever registry it came from. */
+export type CalendarItem = {
+  id: string;
+  ref: string;
+  title: string;
+  bucket: string;
+  status: string;
+  date: string;
+  hour: number;
+  durationHours: number;
+  team: string[];
+  source: "project" | "bunkering" | "boat";
+};
+
 /**
- * Complete and pending per vessel — Client Project Status.
+ * Everything with a date and a start time, from the Project List, Bunkering and
+ * Managed Boats alike — the spec's one calendar over all three.
  *
- * Only vessels that actually have tasks appear; an axis of every yacht in the
- * fleet with nothing on it would say less, not more. Busiest first.
+ * A job with no ETC is drawn as one hour: it has to occupy something, and an
+ * hour is the smallest block that stays readable at this scale.
  */
-export function byVessel(tasks: Orbit2Task[], yachts: Yacht[]) {
-  const name = (id: string | null) => yachts.find((y) => y.id === id)?.vessel_name ?? "Unassigned";
-  const rows = new Map<string, { vessel: string; complete: number; pending: number }>();
-  for (const t of tasks) {
-    const key = t.yacht_id ?? "unassigned";
-    const row = rows.get(key) ?? { vessel: name(t.yacht_id), complete: 0, pending: 0 };
-    if (t.status === "complete") row.complete += 1; else row.pending += 1;
-    rows.set(key, row);
+export function calendarItems(projects: Orbit2Project[], boatTasks: Orbit2BoatTask[], boats: Orbit2Boat[]): CalendarItem[] {
+  const out: CalendarItem[] = [];
+  for (const p of projects) {
+    const h = hourOf(p.schedule_time);
+    if (!p.schedule_date || h === null) continue;
+    out.push({
+      id: p.id,
+      ref: p.task_id,
+      title: p.client_name ?? p.task_id,
+      bucket: bucketOf(p),
+      status: p.status,
+      date: p.schedule_date,
+      hour: h,
+      durationHours: p.etc_minutes ? p.etc_minutes / 60 : 1,
+      team: p.assigned_team ?? [],
+      source: p.record_type === "bunkering" ? "bunkering" : "project",
+    });
   }
-  return [...rows.values()].sort((a, b) => (b.complete + b.pending) - (a.complete + a.pending));
+  const boatName = (id: string) => boats.find((b) => b.id === id)?.name ?? "Managed boat";
+  for (const t of boatTasks) {
+    const h = hourOf(t.schedule_time);
+    if (!t.schedule_date || h === null) continue;
+    out.push({
+      id: t.id,
+      ref: t.kind === "defect" ? "Defect" : "Maintenance",
+      title: `${boatName(t.boat_id)} — ${t.title}`,
+      bucket: "Vessel Equipment",
+      status: t.status,
+      date: t.schedule_date,
+      hour: h,
+      durationHours: 1,
+      team: t.assigned_team ?? [],
+      source: "boat",
+    });
+  }
+  return out;
 }
 
-/** Who has what, and how much of it is done — Team Management. */
-export function byAssignee(tasks: Orbit2Task[]) {
-  const rows = new Map<string, { person: string; total: number; complete: number; hours: number }>();
-  for (const t of tasks) {
-    const person = t.assigned_to?.trim() || "Unassigned";
-    const row = rows.get(person) ?? { person, total: 0, complete: 0, hours: 0 };
-    row.total += 1;
-    if (t.status === "complete") row.complete += 1;
-    row.hours += durationHours(t);
-    rows.set(person, row);
+/** Calendar rows, one per day, with gaps kept so a quiet week reads as quiet. */
+export function calendarDays(items: CalendarItem[]) {
+  if (!items.length) return [];
+  const byDate = new Map<string, CalendarItem[]>();
+  for (const it of items) {
+    const list = byDate.get(it.date) ?? [];
+    list.push(it);
+    byDate.set(it.date, list);
   }
+  const dates = [...byDate.keys()].sort();
+  const out: { date: string; items: CalendarItem[] }[] = [];
+  const cur = new Date(`${dates[0]}T00:00:00Z`);
+  const end = new Date(`${dates[dates.length - 1]}T00:00:00Z`);
+  // A runaway range would lock the browser up drawing rows nobody asked for.
+  for (let i = 0; cur <= end && i < 400; i++) {
+    const iso = cur.toISOString().slice(0, 10);
+    out.push({ date: iso, items: (byDate.get(iso) ?? []).sort((a, b) => a.hour - b.hour) });
+    cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+  return out;
+}
+
+// ── Team Management ─────────────────────────────────────────────────────────
+
+/** Who holds how much — the Operation / Total Task Assigned table. */
+export function teamLoad(projects: Orbit2Project[], boatTasks: Orbit2BoatTask[]) {
+  const rows = new Map<string, { person: string; total: number; complete: number }>();
+  const add = (person: string, done: boolean) => {
+    const row = rows.get(person) ?? { person, total: 0, complete: 0 };
+    row.total += 1;
+    if (done) row.complete += 1;
+    rows.set(person, row);
+  };
+  for (const p of projects) for (const person of p.assigned_team ?? []) add(person, p.status === "Complete");
+  for (const t of boatTasks) for (const person of t.assigned_team ?? []) add(person, t.status === "Complete");
   return [...rows.values()].sort((a, b) => b.total - a.total || a.person.localeCompare(b.person));
 }
 
+export type MonthCell = {
+  date: string;
+  day: number;
+  inMonth: boolean;
+  /** Who is working that day, and on what. */
+  work: { person: string; label: string }[];
+  /** Shift / off / leave entries recorded against that day. */
+  schedule: Orbit2ScheduleEntry[];
+};
+
 /**
- * Who is working on each day of a month — the Team Management calendar.
+ * The Team Management month grid.
  *
- * Returns whole weeks (Sunday to Saturday) so the grid is always rectangular,
- * with days outside the month marked so they can be greyed rather than dropped.
- * A person is listed once per day however many tasks they hold that day; the
- * count beside the calendar is what carries volume.
+ * Whole weeks (Sunday to Saturday) so the grid is always rectangular, with days
+ * outside the month marked rather than dropped. `person` filters the whole grid
+ * down to one individual — the spec's click-a-name behaviour.
  */
-export function monthGrid(tasks: Orbit2Task[], year: number, month: number) {
-  const peopleByDate = new Map<string, string[]>();
-  for (const t of tasks) {
-    if (!t.task_date) continue;
-    const person = t.assigned_to?.trim();
-    if (!person) continue;
-    const list = peopleByDate.get(t.task_date) ?? [];
-    if (!list.includes(person)) list.push(person);
-    peopleByDate.set(t.task_date, list);
+export function monthGrid(
+  items: CalendarItem[],
+  schedule: Orbit2ScheduleEntry[],
+  year: number,
+  month: number,
+  person?: string | null,
+): MonthCell[][] {
+  const workByDate = new Map<string, { person: string; label: string }[]>();
+  for (const it of items) {
+    for (const p of it.team) {
+      if (person && p !== person) continue;
+      const list = workByDate.get(it.date) ?? [];
+      list.push({ person: p, label: it.bucket });
+      workByDate.set(it.date, list);
+    }
+  }
+  const schedByDate = new Map<string, Orbit2ScheduleEntry[]>();
+  for (const e of schedule) {
+    if (person && e.person !== person) continue;
+    const list = schedByDate.get(e.entry_date) ?? [];
+    list.push(e);
+    schedByDate.set(e.entry_date, list);
   }
 
   const first = new Date(Date.UTC(year, month, 1));
-  const start = new Date(first);
-  start.setUTCDate(1 - first.getUTCDay()); // back to the Sunday on or before the 1st
+  const cur = new Date(first);
+  cur.setUTCDate(1 - first.getUTCDay()); // back to the Sunday on or before the 1st
 
-  const weeks: { date: string; day: number; inMonth: boolean; people: string[] }[][] = [];
-  const cur = new Date(start);
+  const weeks: MonthCell[][] = [];
   for (let w = 0; w < 6; w++) {
-    const week = [];
+    const week: MonthCell[] = [];
     for (let d = 0; d < 7; d++) {
       const iso = cur.toISOString().slice(0, 10);
       week.push({
         date: iso,
         day: cur.getUTCDate(),
         inMonth: cur.getUTCMonth() === month,
-        people: peopleByDate.get(iso) ?? [],
+        work: workByDate.get(iso) ?? [],
+        schedule: schedByDate.get(iso) ?? [],
       });
       cur.setUTCDate(cur.getUTCDate() + 1);
     }
@@ -165,45 +457,42 @@ export function monthGrid(tasks: Orbit2Task[], year: number, month: number) {
 }
 
 /** The month to open on: where the work is, falling back to today. */
-export function busiestMonth(tasks: Orbit2Task[]): { year: number; month: number } {
+export function busiestMonth(items: CalendarItem[]): { year: number; month: number } {
   const counts = new Map<string, number>();
-  for (const t of tasks) {
-    if (!t.task_date) continue;
-    const key = t.task_date.slice(0, 7);
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  }
+  for (const it of items) counts.set(it.date.slice(0, 7), (counts.get(it.date.slice(0, 7)) ?? 0) + 1);
   const top = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
   if (!top) { const n = new Date(); return { year: n.getFullYear(), month: n.getMonth() }; }
   const [y, m] = top[0].split("-").map(Number);
   return { year: y, month: m - 1 };
 }
 
-/** Tasks that can be placed on the calendar, grouped by day. */
-export function scheduled(tasks: Orbit2Task[]) {
-  const days = new Map<string, Orbit2Task[]>();
-  for (const t of tasks) {
-    if (!t.task_date || hourOf(t.start_time) === null) continue;
-    const list = days.get(t.task_date) ?? [];
-    list.push(t);
-    days.set(t.task_date, list);
+// ── Typeahead ───────────────────────────────────────────────────────────────
+
+/**
+ * Past entries for a free-text field, so the same client is not typed three
+ * different ways. Case-insensitive, first spelling wins.
+ */
+export function suggestionsFor(values: (string | null | undefined)[], extra: string[] = []): string[] {
+  const seen = new Map<string, string>();
+  for (const v of [...values, ...extra]) {
+    const s = (v ?? "").trim();
+    if (!s) continue;
+    const key = s.toLowerCase();
+    if (!seen.has(key)) seen.set(key, s);
   }
-  return [...days.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, items]) => ({
-      date,
-      items: items.sort((x, y) => (hourOf(x.start_time)! - hourOf(y.start_time)!)),
-    }));
+  return [...seen.values()].sort((a, b) => a.localeCompare(b));
 }
 
-/** Every date between the first and last scheduled day, so gaps still show. */
-export function dateRange(from: string, to: string): string[] {
-  const out: string[] = [];
-  const d = new Date(`${from}T00:00:00Z`);
-  const end = new Date(`${to}T00:00:00Z`);
-  // A runaway range would lock the browser up drawing rows nobody asked for.
-  for (let i = 0; d <= end && i < 400; i++) {
-    out.push(d.toISOString().slice(0, 10));
-    d.setUTCDate(d.getUTCDate() + 1);
-  }
-  return out;
+/** The suggestion list for a partly-typed value, best matches first. */
+export function matchSuggestions(all: string[], typed: string, limit = 8): string[] {
+  const q = typed.trim().toLowerCase();
+  if (!q) return all.slice(0, limit);
+  const starts = all.filter((s) => s.toLowerCase().startsWith(q));
+  const contains = all.filter((s) => !s.toLowerCase().startsWith(q) && s.toLowerCase().includes(q));
+  return [...starts, ...contains].slice(0, limit);
 }
+
+/** Does this exactly match something already on file? Drives the duplicate hint. */
+export const isExisting = (all: string[], typed: string) =>
+  all.some((s) => s.toLowerCase() === typed.trim().toLowerCase());
+

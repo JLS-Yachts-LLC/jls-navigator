@@ -57,6 +57,7 @@ import { runScheduledEmail, DEFAULT_TZ } from './lib/automation-schedule.server'
 import { visaReportGenerateHandler } from './routes/api.visa.report-generate'
 import { visaReportSendHandler } from './routes/api.visa.report-send'
 import { visaVesselPrefsHandler } from './routes/api.visa.vessel-prefs'
+import { orbit2NotifyHandler } from './routes/api.orbit2.notify'
 import { nativeLanguageResolveDefaultHandler } from './routes/api.native-language.resolve-default'
 import { nativeLanguageSaveHandler } from './routes/api.native-language.save'
 import { runWeeklyVisaReports } from './lib/visa-reporting/runWeeklyVisaReports.server'
@@ -1178,6 +1179,11 @@ export default {
     }
     if (url.pathname === '/api/visa/vessel-prefs' && (request.method === 'GET' || request.method === 'POST')) {
       return visaVesselPrefsHandler(request)
+    }
+
+    // Orbit 2: client acknowledgement (email + WhatsApp) once a team is assigned
+    if (url.pathname === '/api/orbit2/notify' && request.method === 'POST') {
+      return orbit2NotifyHandler(request)
     }
 
     // ── Admin Panel API (TanStack API routes aren't dispatched by the CF handler,

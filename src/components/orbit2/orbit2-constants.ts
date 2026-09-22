@@ -1,16 +1,60 @@
 /**
- * Orbit 2 — the service categories, and the colour each one carries.
+ * Orbit 2 — the vocabulary the whole module shares.
  *
- * One colour per category, used by the donut, the calendar blocks and anywhere
- * else a category appears, so a colour always means the same service wherever
- * you see it. Taken from the client's own dashboard.
+ * Statuses, service categories, the team roster and the colours each carries.
+ * One place, so a status means the same thing and carries the same colour on the
+ * dashboard, in the table and on the calendar.
  */
+
+// ── Record type ─────────────────────────────────────────────────────────────
+export type Orbit2RecordType = "project" | "bunkering";
+
+// ── Status ──────────────────────────────────────────────────────────────────
+export const ORBIT2_STATUSES = [
+  "Not Yet Initiated",
+  "Quote in Process/Approval",
+  "Quotation Approved",
+  "On Hold",
+  "Cancelled",
+  "Scheduled/Assigned",
+  "Working On It",
+  "Complete",
+] as const;
+
+export type Orbit2Status = (typeof ORBIT2_STATUSES)[number];
+
+/**
+ * The two statuses the mobile app owns.
+ *
+ * "Working On It" is set when the field crew taps Attend and "Complete" when
+ * they tap Done. Setting either by hand in the web UI overrides what the crew
+ * actually reported, so it is restricted to the admins below.
+ */
+export const MOBILE_OWNED_STATUSES: readonly string[] = ["Working On It", "Complete"];
+
+export const STATUS_COLOR: Record<string, string> = {
+  "Not Yet Initiated": "#4A7090",
+  "Quote in Process/Approval": "#E8C020",
+  "Quotation Approved": "#4CAF80",
+  "On Hold": "#E87020",
+  Cancelled: "#E87050",
+  "Scheduled/Assigned": "#7C8FE8",
+  "Working On It": "#00C4CC",
+  Complete: "#4C7DF0",
+};
+
+export const statusColor = (s: string) => STATUS_COLOR[s] ?? "#4A7090";
+
+/** Statuses that mean the job is off the books — excluded from "active" counts. */
+export const CLOSED_STATUSES: readonly string[] = ["Complete", "Cancelled"];
+
+// ── Service categories ──────────────────────────────────────────────────────
+/** What the Project List tracks. Bunkering is its own tab, not an option here. */
 export const ORBIT2_CATEGORIES = [
   "Vessel Services",
   "Vessel Equipment",
-  "Bunkering",
-  "Technical Support",
   "Port Compliance",
+  "Technical Support",
 ] as const;
 
 export type Orbit2Category = (typeof ORBIT2_CATEGORIES)[number];
@@ -18,15 +62,37 @@ export type Orbit2Category = (typeof ORBIT2_CATEGORIES)[number];
 export const CATEGORY_COLOR: Record<string, string> = {
   "Vessel Services": "#7C8FE8",
   "Vessel Equipment": "#9A70E8",
-  "Bunkering": "#E8559F",
-  "Technical Support": "#E87050",
   "Port Compliance": "#E8C020",
+  "Technical Support": "#E87050",
+  Bunkering: "#E8559F",
+  "EHS NOC": "#4CAF80",
 };
 
-/** Anything entered outside the five known services still needs a colour. */
+/** Anything entered outside the known services still needs a colour. */
 export const OTHER_COLOR = "#4A7090";
 export const colorFor = (category: string) => CATEGORY_COLOR[category] ?? OTHER_COLOR;
 
-/** Complete / Pending, as shown on Client Project Status. */
+// ── Team ────────────────────────────────────────────────────────────────────
+/**
+ * Assign Team is a closed list, per spec — these are the people who go out on
+ * jobs. Free text here would put names on the calendar that no one can be
+ * rostered against.
+ */
+export const ORBIT2_TEAM = [
+  "Lovin", "Keith", "Rusty", "Alex", "Kasam", "Anish", "Gajender", "Rehman",
+] as const;
+
+/** Who may override a status the mobile app normally sets. */
+export const ORBIT2_ADMINS: readonly string[] = ["Lovin", "Rusty", "Keith"];
+
+// ── Bunkering ───────────────────────────────────────────────────────────────
+export const QUANTITY_UNITS = ["LTR", "USG", "MT", "CBM"] as const;
+
+// ── Managed Boats ───────────────────────────────────────────────────────────
+export const BOAT_TASK_STATUSES = ["Pending", "Ongoing", "Complete"] as const;
+/** Pending or Ongoing — what the dashboard's "Active" KPIs count. */
+export const ACTIVE_BOAT_STATUSES: readonly string[] = ["Pending", "Ongoing"];
+
+// ── Complete / Pending, as drawn on the dashboard ───────────────────────────
 export const COMPLETE_COLOR = "#4C7DF0";
 export const PENDING_COLOR = "#B07CF0";
