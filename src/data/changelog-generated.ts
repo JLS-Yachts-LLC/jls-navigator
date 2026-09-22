@@ -5,9 +5,137 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.59.0",
+    "date": "2026-09-22",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Keep the Lightspeed sale date on the QuickBooks invoice"
+      },
+      {
+        "type": "feature",
+        "title": "Build Orbit 2 to the Polaris Orbit functional specification"
+      },
+      {
+        "type": "feature",
+        "title": "Team Management as a task count beside a month calendar"
+      },
+      {
+        "type": "feature",
+        "title": "New Orbit 2 module with the Dashboard built"
+      }
+    ]
+  },
+  {
+    "version": "2.58.0",
+    "date": "2026-09-21",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Recognise someone added to the Visa list twice. SD-0026"
+      },
+      {
+        "type": "feature",
+        "title": "Missing details tab — the crew records that let duplicates happen"
+      },
+      {
+        "type": "feature",
+        "title": "Merge duplicate crew records, and stop making new ones. SD-0026"
+      }
+    ]
+  },
+  {
+    "version": "2.57.0",
+    "date": "2026-09-18",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Batch the Local bulk-complete update to avoid an oversized request"
+      },
+      {
+        "type": "feature",
+        "title": "Free-text department detail, Add Zone, Local delivered bulk-complete diagnostic"
+      },
+      {
+        "type": "fix",
+        "title": "Stop delivered/completed packages reverting, sync overwrites, and more"
+      },
+      {
+        "type": "feature",
+        "title": "Inventory List filter, real Storage Charge Calculator rates"
+      },
+      {
+        "type": "feature",
+        "title": "Same photo backfill for Export and Local Packages boards"
+      }
+    ]
+  },
+  {
+    "version": "2.56.0",
+    "date": "2026-09-17",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Documents were never deleted, and download/duplicate looked in the wrong place"
+      },
+      {
+        "type": "feature",
+        "title": "Rename, move, download and duplicate documents and folders"
+      },
+      {
+        "type": "feature",
+        "title": "Add a whole folder, by picker or by dropping it in"
+      },
+      {
+        "type": "feature",
+        "title": "Documents and folders on the Training screen, nothing else"
+      }
+    ]
+  },
+  {
+    "version": "2.55.0",
+    "date": "2026-09-16",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Say why a file was refused, before uploading it"
+      },
+      {
+        "type": "fix",
+        "title": "Cap size and restrict types on the shared upload bucket"
+      },
+      {
+        "type": "feature",
+        "title": "Attach the certificate to a certification, and add them from the Training screen"
+      },
+      {
+        "type": "feature",
+        "title": "Login-free link for the Lightspeed to QuickBooks SKU sync"
+      }
+    ]
+  },
+  {
+    "version": "2.54.1",
+    "date": "2026-09-15",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Dates really do stop arriving one day early — the 25 Aug fix never ran"
+      }
+    ]
+  },
+  {
     "version": "2.54.0",
     "date": "2026-09-14",
     "entries": [
+      {
+        "type": "fix",
+        "title": "Export tab now mirrors the Monday Export board, and the sync runs hourly"
+      },
+      {
+        "type": "fix",
+        "title": "Visa wizard crash when a passport has no nationality on file"
+      },
       {
         "type": "feature",
         "title": "Set who gets the scheduled emails, and when, without a deploy"
