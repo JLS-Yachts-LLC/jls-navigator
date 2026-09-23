@@ -5,9 +5,27 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.60.0",
+    "date": "2026-09-23",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Attach real files to each registration record"
+      }
+    ]
+  },
+  {
     "version": "2.59.0",
     "date": "2026-09-22",
     "entries": [
+      {
+        "type": "feature",
+        "title": "Files on training records and student records"
+      },
+      {
+        "type": "fix",
+        "title": "Drop the KPI cards, restore Client Project Status"
+      },
       {
         "type": "fix",
         "title": "Keep the Lightspeed sale date on the QuickBooks invoice"
