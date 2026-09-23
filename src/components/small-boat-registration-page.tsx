@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { doPushToSharePoint } from "@/lib/sharepoint-push.server";
+import { BoatDocuments } from "@/components/small-boats/boat-documents";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -727,22 +728,12 @@ export function SmallBoatRegistrationPage() {
 
               {/* ── Documents ── */}
               <TabsContent value="documents" className="px-1">
-                <div className="mb-3 flex items-center justify-between">
-                  <p className="text-xs text-muted-foreground">Tick documents that have been received / are in order.</p>
-                  <span className="text-xs font-medium text-foreground">
-                    {DOC_FIELDS.filter(f => (form as any)[f.key]).length} / {DOC_FIELDS.length} received
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 gap-0.5">
-                  {DOC_FIELDS.map(f => (
-                    <BoolCheck
-                      key={f.key}
-                      value={(form as any)[f.key] as boolean}
-                      onChange={v => setF(f.key as any, v)}
-                      label={f.label}
-                    />
-                  ))}
-                </div>
+                <BoatDocuments
+                  boatId={editing?.id ?? null}
+                  docFields={DOC_FIELDS}
+                  flags={Object.fromEntries(DOC_FIELDS.map(f => [f.key, !!(form as any)[f.key]]))}
+                  onSetReceived={(key, received) => setF(key as any, received as any)}
+                />
               </TabsContent>
 
               {/* ── Other ── */}
