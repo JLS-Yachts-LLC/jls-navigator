@@ -7,7 +7,7 @@
  * everywhere it could be typed.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Paperclip, X, Upload, Loader2, Check } from "lucide-react";
+import { Paperclip, X, Upload, Loader2, Check, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
@@ -152,6 +152,7 @@ export function FileSlot({
   disabled?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   async function pick(file: File | undefined) {
@@ -180,7 +181,16 @@ export function FileSlot({
   }
 
   return (
-    <div className="rounded-md border border-border bg-muted/10 p-2.5">
+    <div
+      onDragOver={(e) => { if (!disabled) { e.preventDefault(); setDragOver(true); } }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragOver(false);
+        if (!disabled) void pick(e.dataTransfer.files?.[0]);
+      }}
+      className={cn("rounded-md border border-border bg-muted/10 p-2.5 transition",
+        dragOver && "border-primary bg-primary/5")}>
       <div className="mb-1.5 flex items-center justify-between gap-2">
         <span className="text-[14px] font-medium text-muted-foreground">{label}</span>
         <button type="button" disabled={disabled || busy} onClick={() => inputRef.current?.click()}
@@ -191,7 +201,9 @@ export function FileSlot({
       <input ref={inputRef} type="file" accept={accept} className="hidden"
         onChange={(e) => void pick(e.target.files?.[0])} />
       {files.length === 0 ? (
-        <p className="text-[14px] text-muted-foreground/70">None attached</p>
+        <p className="text-[14px] text-muted-foreground/70">
+          {dragOver ? "Drop to attach" : "None attached — drag a file here, or Attach"}
+        </p>
       ) : (
         <ul className="space-y-1">
           {files.map((f) => (
@@ -222,26 +234,46 @@ export function FileSlot({
  *
  * Every entry carries its author and the moment it was written, prepended by the
  * system rather than typed, so the log reads as a record instead of a notepad.
- * Existing entries are never editable — that is what makes it worth reading.
+ * Existing entries are append-only by default — that is what makes it worth
+ * reading — unless the caller passes `onEdit` and `canEdit`, which opens up
+ * inline correction to whichever names/roles the caller decides may tamper
+ * with the record (Remarks, for admins; Team Comments still never allow it).
  */
 export function NoteLog({
-  title, notes, onAdd, placeholder, readOnly, emptyText,
+  title, notes, onAdd, onEdit, canEdit, placeholder, readOnly, emptyText,
 }: {
   title: string;
-  notes: { id: string; author: string; body: string; created_at: string }[];
+  notes: { id: string; author: string; body: string; created_at: string; edited_at?: string | null }[];
   onAdd?: (body: string) => Promise<void>;
+  onEdit?: (id: string, body: string) => Promise<void>;
+  canEdit?: boolean;
   placeholder?: string;
   readOnly?: boolean;
   emptyText?: string;
 }) {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
 
   async function add() {
     const body = draft.trim();
     if (!body || !onAdd) return;
     setBusy(true);
     try { await onAdd(body); setDraft(""); } finally { setBusy(false); }
+  }
+
+  function startEdit(n: { id: string; body: string }) {
+    setEditingId(n.id);
+    setEditDraft(n.body);
+  }
+
+  async function saveEdit() {
+    const body = editDraft.trim();
+    if (!body || !onEdit || !editingId) return;
+    setSavingEdit(true);
+    try { await onEdit(editingId, body); setEditingId(null); } finally { setSavingEdit(false); }
   }
 
   return (
@@ -254,10 +286,38 @@ export function NoteLog({
               {emptyText ?? "Nothing logged yet."}
             </li>
           ) : notes.map((n) => (
-            <li key={n.id} className="px-3 py-2 text-[14px] leading-relaxed">
-              <span className="font-semibold">{n.author}</span>
-              <span className="text-muted-foreground"> [{stamp(n.created_at)}]: </span>
-              <span className="whitespace-pre-wrap">{n.body}</span>
+            <li key={n.id} className="group px-3 py-2 text-[14px] leading-relaxed">
+              {editingId === n.id ? (
+                <div className="flex items-center gap-2">
+                  <input className={cn(inputCls, "py-1 text-[14px]")} value={editDraft} autoFocus
+                    onChange={(e) => setEditDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") { e.preventDefault(); void saveEdit(); }
+                      if (e.key === "Escape") setEditingId(null);
+                    }} />
+                  <button type="button" onClick={() => void saveEdit()} disabled={savingEdit || !editDraft.trim()}
+                    className="shrink-0 rounded-md bg-primary px-2.5 py-1 text-[13px] font-medium text-primary-foreground disabled:opacity-50">
+                    {savingEdit ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save"}
+                  </button>
+                  <button type="button" onClick={() => setEditingId(null)} disabled={savingEdit}
+                    className="shrink-0 rounded-md border border-border px-2.5 py-1 text-[13px] hover:bg-accent">
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <span className="font-semibold">{n.author}</span>
+                  <span className="text-muted-foreground"> [{stamp(n.created_at)}]: </span>
+                  <span className="whitespace-pre-wrap">{n.body}</span>
+                  {n.edited_at && <span className="text-muted-foreground/70"> (edited)</span>}
+                  {canEdit && onEdit && (
+                    <button type="button" onClick={() => startEdit(n)} title="Edit this remark"
+                      className="ml-1.5 hidden rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground group-hover:inline-block">
+                      <Pencil className="h-3 w-3" />
+                    </button>
+                  )}
+                </>
+              )}
             </li>
           ))}
         </ul>

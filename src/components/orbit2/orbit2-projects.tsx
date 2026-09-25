@@ -235,6 +235,15 @@ export function Orbit2Projects({
     setNotes((data ?? []) as Orbit2Note[]);
   }
 
+  /** Correcting an existing Remark — restricted to Orbit 2 admins (see identity.isAdmin). */
+  async function editNote(id: string, body: string) {
+    if (!selected) return;
+    const { error } = await sb.from("orbit2_notes").update({ body, edited_at: new Date().toISOString() }).eq("id", id);
+    if (error) { toast.error(error.message); return; }
+    const { data } = await sb.from("orbit2_notes").select("*").eq("project_id", selected.id).order("created_at");
+    setNotes((data ?? []) as Orbit2Note[]);
+  }
+
   async function attach(slot: Orbit2File["slot"], file: File, ref: string) {
     if (!selected) return;
     const { error } = await sb.from("orbit2_files").insert({
@@ -313,6 +322,7 @@ export function Orbit2Projects({
               onSubmit={submit}
               onCancel={cancel}
               onAddNote={addNote}
+              onEditNote={editNote}
               onAttach={attach}
               onDetach={detach}
               onNotified={reload}
@@ -437,7 +447,7 @@ function StatusSelect({
 function DetailPanel({
   bunkering, creating, draft, setDraft, selected, saving, isAdmin, notes, files,
   clientOptions, locationOptions, supplierOptions,
-  onSubmit, onCancel, onAddNote, onAttach, onDetach, onNotified,
+  onSubmit, onCancel, onAddNote, onEditNote, onAttach, onDetach, onNotified,
 }: {
   bunkering: boolean;
   creating: boolean;
@@ -454,6 +464,7 @@ function DetailPanel({
   onSubmit: () => void;
   onCancel: () => void;
   onAddNote: (kind: "remark" | "team_comment", body: string) => Promise<void>;
+  onEditNote: (id: string, body: string) => Promise<void>;
   onAttach: (slot: Orbit2File["slot"], file: File, ref: string) => Promise<void>;
   onDetach: (f: { id: string }) => void;
   onNotified: () => Promise<void> | void;
@@ -616,7 +627,8 @@ function DetailPanel({
 
           <NoteLog title="Remarks" notes={notes.filter((n) => n.kind === "remark")}
             placeholder="Add a remark — your name and the time are added automatically"
-            onAdd={(b) => onAddNote("remark", b)} />
+            onAdd={(b) => onAddNote("remark", b)}
+            onEdit={onEditNote} canEdit={isAdmin} />
 
           <NoteLog title="Team Comments" notes={notes.filter((n) => n.kind === "team_comment")}
             emptyText="Nothing from the field team yet — comments logged in the mobile app appear here."

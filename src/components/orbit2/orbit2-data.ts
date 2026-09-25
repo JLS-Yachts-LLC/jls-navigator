@@ -51,6 +51,8 @@ export type Orbit2Note = {
   author: string;
   body: string;
   created_at: string;
+  /** Set the moment an admin corrects an entry — the log still shows it happened. */
+  edited_at: string | null;
 };
 
 export type Orbit2File = {
@@ -62,6 +64,8 @@ export type Orbit2File = {
   created_at: string;
 };
 
+export type Orbit2NocStatus = "To be Invoiced" | "Invoiced";
+
 export type Orbit2Noc = {
   id: string;
   ref_id: string;
@@ -72,6 +76,8 @@ export type Orbit2Noc = {
   permit_date: string | null;
   noc_document: string | null;
   noc_invoice: string | null;
+  status: Orbit2NocStatus;
+  invoice_number: string | null;
   created_at: string;
 };
 
@@ -418,6 +424,20 @@ export function monthGrid(
     if (cur.getUTCMonth() !== month && w >= 4) break;
   }
   return weeks;
+}
+
+/** Every date from `start` to `end` inclusive, for a batch leave/off entry. */
+export function datesBetween(start: string, end: string): string[] {
+  const out: string[] = [];
+  const cur = new Date(`${start}T00:00:00Z`);
+  const endD = new Date(`${end}T00:00:00Z`);
+  // A year is more range than anyone files leave in one go — the cap is just to
+  // keep a typo'd end date from generating an unbounded batch.
+  for (let i = 0; cur <= endD && i < 366; i++) {
+    out.push(cur.toISOString().slice(0, 10));
+    cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+  return out;
 }
 
 /** The month to open on: where the work is, falling back to today. */

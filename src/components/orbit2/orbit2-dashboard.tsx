@@ -29,9 +29,10 @@ import {
   type Orbit2Project, type Orbit2Noc, type Orbit2Boat, type Orbit2BoatTask,
   type Orbit2ScheduleEntry, type CalendarItem,
   distribution, byClient, completion, calendarItems, calendarDays,
-  teamLoad, monthGrid, busiestMonth, fmtSchedule, minutesToHhmm,
+  teamLoad, monthGrid, busiestMonth, fmtSchedule, minutesToHhmm, datesBetween,
 } from "./orbit2-data";
 import { colorFor, COMPLETE_COLOR, PENDING_COLOR, ORBIT2_TEAM } from "./orbit2-constants";
+import { TeamPicker } from "./orbit2-fields";
 
 const sb = supabase as any;
 
@@ -62,6 +63,7 @@ export function Orbit2Dashboard({
   const [month, setMonth] = useState<{ year: number; month: number } | null>(null);
   const [person, setPerson] = useState<string | null>(null);
   const [scheduling, setScheduling] = useState<{ person: string; date: string } | null>(null);
+  const [batchScheduling, setBatchScheduling] = useState(false);
 
   const dist = useMemo(() => distribution(projects, noc), [projects, noc]);
   const clients = useMemo(() => byClient(projects), [projects]);
@@ -197,6 +199,7 @@ export function Orbit2Dashboard({
             <TeamPane
               team={team} grid={grid} cal={cal} person={person} setPerson={setPerson}
               onStepMonth={stepMonth} onSchedule={(p, d) => setScheduling({ person: p, date: d })}
+              onBatchSchedule={() => setBatchScheduling(true)}
             />
           )}
       </div>
@@ -206,8 +209,16 @@ export function Orbit2Dashboard({
           person={scheduling.person}
           date={scheduling.date}
           existing={schedule.find((e) => e.person === scheduling.person && e.entry_date === scheduling.date) ?? null}
+          dayItems={items.filter((it) => it.date === scheduling.date && it.team.includes(scheduling.person))}
           onClose={() => setScheduling(null)}
           onSaved={async () => { setScheduling(null); await reload(); }}
+        />
+      )}
+
+      {batchScheduling && (
+        <BatchScheduleDialog
+          onClose={() => setBatchScheduling(false)}
+          onSaved={async () => { setBatchScheduling(false); await reload(); }}
         />
       )}
     </div>
@@ -305,7 +316,7 @@ function CalendarPane({
 // ── Team Management ─────────────────────────────────────────────────────────
 
 function TeamPane({
-  team, grid, cal, person, setPerson, onStepMonth, onSchedule,
+  team, grid, cal, person, setPerson, onStepMonth, onSchedule, onBatchSchedule,
 }: {
   team: { person: string; total: number; complete: number }[];
   grid: ReturnType<typeof monthGrid>;
@@ -314,6 +325,7 @@ function TeamPane({
   setPerson: (p: string | null) => void;
   onStepMonth: (d: number) => void;
   onSchedule: (person: string, date: string) => void;
+  onBatchSchedule: () => void;
 }) {
   // Everyone on the roster appears, carrying work or not — a name with zero
   // beside it is the point of the table.
@@ -362,10 +374,22 @@ function TeamPane({
           <span className="text-[15px] font-semibold uppercase tracking-wide">
             {new Date(Date.UTC(cal.year, cal.month, 1)).toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" })}
           </span>
-          <button onClick={() => onStepMonth(1)} title="Next month"
-            className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
-            <ChevronRight className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={onBatchSchedule}
+              className="rounded-md border border-border px-2.5 py-1 text-[14px] font-medium hover:bg-accent">
+              Batch leave / off
+            </button>
+            <button onClick={() => onStepMonth(1)} title="Next month"
+              className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-3 border-b border-border/50 px-3 py-1.5 text-[14px] text-muted-foreground">
+          <ColorSwatch swatch="bg-primary/15 text-primary">Shift</ColorSwatch>
+          <ColorSwatch swatch="bg-muted text-muted-foreground">Off</ColorSwatch>
+          <ColorSwatch swatch="bg-amber-500/20 text-amber-600">Leave</ColorSwatch>
+          <ColorSwatch swatch="bg-emerald-500/15 text-emerald-600">Assigned</ColorSwatch>
         </div>
         <table className="w-full table-fixed text-[14px]">
           <thead>
@@ -382,7 +406,16 @@ function TeamPane({
                   // Only a chosen person can have a shift recorded against a day —
                   // "who is off" has no meaning without a who.
                   const canSchedule = Boolean(person) && cellDay.inMonth;
-                  const people = [...new Set(cellDay.work.map((w) => w.person))];
+                  // One badge per (person, category) pair — the same person on two
+                  // different jobs the same day is two things worth seeing, not one.
+                  const seen = new Set<string>();
+                  const workEntries: { person: string; label: string }[] = [];
+                  for (const w of cellDay.work) {
+                    const key = `${w.person}\u0000${w.label}`;
+                    if (seen.has(key)) continue;
+                    seen.add(key);
+                    workEntries.push(w);
+                  }
                   return (
                     <td key={cellDay.date}
                       onClick={() => canSchedule && onSchedule(person!, cellDay.date)}
@@ -404,11 +437,14 @@ function TeamPane({
                             {person ? SCHEDULE_LABEL[e.kind] : `${e.person} ${SCHEDULE_LABEL[e.kind]}`}
                           </div>
                         ))}
-                        {people.slice(0, 3).map((p) => (
-                          <div key={p} className="truncate text-[14px] text-foreground/85" title={p}>{p}</div>
+                        {workEntries.slice(0, 3).map((w, i) => (
+                          <div key={`${w.person}-${w.label}-${i}`} title={`${w.person} — ${w.label}`}
+                            className="truncate rounded bg-emerald-500/15 px-1 text-[14px] font-medium text-emerald-600">
+                            {person ? w.label : `${w.person} — ${w.label}`}
+                          </div>
                         ))}
-                        {people.length > 3 && (
-                          <div className="text-[14px] text-muted-foreground">+{people.length - 3} more</div>
+                        {workEntries.length > 3 && (
+                          <div className="text-[14px] text-muted-foreground">+{workEntries.length - 3} more</div>
                         )}
                       </div>
                     </td>
@@ -427,11 +463,14 @@ const SCHEDULE_LABEL: Record<string, string> = { shift: "Shift", off: "Off", lea
 
 /** Direct Schedule Inputs — one person, one day: shift, off, or leave. */
 function ScheduleDialog({
-  person, date, existing, onClose, onSaved,
+  person, date, existing, dayItems, onClose, onSaved,
 }: {
   person: string;
   date: string;
   existing: Orbit2ScheduleEntry | null;
+  /** That person's actual task assignments on this date — the comprehensive
+   *  detail the spec asks a date click to reveal, not just a category tag. */
+  dayItems: CalendarItem[];
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
@@ -493,6 +532,24 @@ function ScheduleDialog({
           </button>
         </div>
 
+        {dayItems.length > 0 && (
+          <div className="mb-3 max-h-40 overflow-auto rounded-md border border-border">
+            <div className="border-b border-border/60 bg-muted/20 px-3 py-1.5 text-[14px] font-medium text-muted-foreground">
+              Tasks that day
+            </div>
+            <ul className="divide-y divide-border/40">
+              {dayItems.map((it) => (
+                <li key={`${it.source}-${it.id}`} className="px-3 py-2 text-[14px]">
+                  <div className="font-medium">{it.ref} · {it.title}</div>
+                  <div className="text-muted-foreground">
+                    {it.bucket} · {it.status} · {String(Math.floor(it.hour)).padStart(2, "0")}:{String(Math.round((it.hour % 1) * 60)).padStart(2, "0")}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         <div className="mb-3 flex gap-2">
           {(["shift", "off", "leave"] as const).map((k) => (
             <button key={k} onClick={() => setKind(k)}
@@ -528,6 +585,112 @@ function ScheduleDialog({
   );
 }
 
+/**
+ * Batch-processing for calendar entries — filing a continuous block of leave
+ * or off days for one or more crew in a single action, rather than clicking
+ * through the month grid one date at a time.
+ */
+function BatchScheduleDialog({
+  onClose, onSaved,
+}: { onClose: () => void; onSaved: () => Promise<void> }) {
+  const { user } = useAuth();
+  const [team, setTeam] = useState<string[]>([]);
+  const [kind, setKind] = useState<"off" | "leave">("leave");
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    function esc(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
+    document.addEventListener("keydown", esc);
+    return () => document.removeEventListener("keydown", esc);
+  }, [onClose]);
+
+  const dates = start && end && start <= end ? datesBetween(start, end) : [];
+
+  async function save() {
+    if (team.length === 0) { toast.error("Choose at least one crew member."); return; }
+    if (!start || !end) { toast.error("Choose a start and end date."); return; }
+    if (start > end) { toast.error("End date must be on or after the start date."); return; }
+    setBusy(true);
+    try {
+      const rows = team.flatMap((person) =>
+        dates.map((entry_date) => ({ person, entry_date, kind, note: note.trim() || null, created_by: user?.id ?? null })));
+      const { error } = await sb.from("orbit2_team_schedule").upsert(rows, { onConflict: "person,entry_date" });
+      if (error) throw error;
+      toast.success(`${SCHEDULE_LABEL[kind]} recorded for ${team.length} crew member${team.length === 1 ? "" : "s"} over ${dates.length} day${dates.length === 1 ? "" : "s"}`);
+      await onSaved();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not save");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-xl"
+        onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <h3 className="font-display text-[22px] font-semibold tracking-tight">Batch leave / off</h3>
+          <button onClick={onClose} className="rounded p-1 text-muted-foreground hover:bg-accent">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <label className="mb-3 block">
+          <span className="mb-1 block text-[14px] font-medium text-muted-foreground">Crew</span>
+          <TeamPicker value={team} onChange={setTeam} />
+        </label>
+
+        <div className="mb-3 flex gap-2">
+          {(["leave", "off"] as const).map((k) => (
+            <button key={k} onClick={() => setKind(k)}
+              className={cn("flex-1 rounded-md border px-3 py-2 text-[15px] font-medium transition",
+                kind === k ? "border-primary bg-primary/15 text-primary" : "border-border hover:bg-accent")}>
+              {SCHEDULE_LABEL[k]}
+            </button>
+          ))}
+        </div>
+
+        <div className="mb-3 grid grid-cols-2 gap-2.5">
+          <label className="block">
+            <span className="mb-1 block text-[14px] font-medium text-muted-foreground">Start date</span>
+            <input type="date" className="w-full rounded-md border border-border bg-background px-3 py-2 text-base outline-none focus:border-primary"
+              value={start} onChange={(e) => setStart(e.target.value)} />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-[14px] font-medium text-muted-foreground">End date</span>
+            <input type="date" className="w-full rounded-md border border-border bg-background px-3 py-2 text-base outline-none focus:border-primary"
+              value={end} onChange={(e) => setEnd(e.target.value)} min={start || undefined} />
+          </label>
+        </div>
+
+        {dates.length > 0 && (
+          <p className="mb-3 text-[14px] text-muted-foreground">
+            {dates.length} day{dates.length === 1 ? "" : "s"} × {team.length || 0} crew member{team.length === 1 ? "" : "s"}
+          </p>
+        )}
+
+        <label className="mb-4 block">
+          <span className="mb-1 block text-[14px] font-medium text-muted-foreground">Note (optional)</span>
+          <input className="w-full rounded-md border border-border bg-background px-3 py-2 text-base outline-none focus:border-primary"
+            value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Annual leave" />
+        </label>
+
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} disabled={busy}
+            className="rounded-md border border-border px-3 py-2 text-[15px] hover:bg-accent">Cancel</button>
+          <button onClick={() => void save()} disabled={busy || dates.length === 0 || team.length === 0}
+            className="flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-[15px] font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50">
+            {busy && <Loader2 className="h-4 w-4 animate-spin" />} Save
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Small pieces ────────────────────────────────────────────────────────────
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
@@ -536,6 +699,15 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
       <div className="mb-2 text-[14px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">{title}</div>
       {children}
     </div>
+  );
+}
+
+function ColorSwatch({ swatch, children }: { swatch: string; children: React.ReactNode }) {
+  return (
+    <span className="flex items-center gap-1.5">
+      <span className={cn("h-2.5 w-2.5 rounded-sm", swatch)} />
+      {children}
+    </span>
   );
 }
 
