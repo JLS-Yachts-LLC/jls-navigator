@@ -576,7 +576,7 @@ async function fetchViaGraphShares(fullUrl: string, graphToken: string, spItemId
   const path = `sharepoint/${spItemId}-${tag}.${ext}`
   const { error } = await supabaseAdmin.storage.from('vessel-images').upload(path, ab, { upsert: true, contentType: ct })
   if (error) return { url: null, reason: `Supabase upload failed: ${error.message}` }
-  return { url: supabaseAdmin.storage.from('vessel-images').getPublicUrl(path).data.publicUrl }
+  return { url: versionedPublicUrl(path) }
 }
 
 async function fetchSpImageToSupabase(
@@ -796,6 +796,21 @@ async function fetchFileUrlToSupabase(
   return { url: null, reason: `${viaGraph.reason ?? 'Graph /shares failed'}; ${direct.reason ?? 'direct fetch failed'}` }
 }
 
+/**
+ * The public URL for a vessel-images object, stamped with the moment it was
+ * written.
+ *
+ * Every SharePoint download for an item lands on the same storage key (upsert on
+ * "sharepoint/<itemId>-<name>"), and the bucket is public, so without this a
+ * corrected photo keeps the old URL and the browser and CDN go on serving the old
+ * bytes — a re-sync would look as though it had done nothing. The query string is
+ * ignored by Storage and only exists to make the URL new.
+ */
+function versionedPublicUrl(path: string): string {
+  const base = supabaseAdmin.storage.from('vessel-images').getPublicUrl(path).data.publicUrl
+  return `${base}?v=${Date.now()}`
+}
+
 /** Fetch a URL with the given bearer token and upload the bytes to Supabase vessel-images. */
 async function uploadUrlToSupabase(
   url: string,
@@ -820,7 +835,7 @@ async function uploadUrlToSupabase(
       .from('vessel-images')
       .upload(path, ab, { upsert: true, contentType: ct })
     if (error) return { url: null, reason: `Supabase upload failed: ${error.message}` }
-    return { url: supabaseAdmin.storage.from('vessel-images').getPublicUrl(path).data.publicUrl }
+    return { url: versionedPublicUrl(path) }
   } catch (e) {
     return { url: null, reason: `Network error: ${e instanceof Error ? e.message : String(e)}` }
   }
@@ -1814,7 +1829,7 @@ async function storeNewestImage(
   const path = `shipsync/${spItemId}-${tag}${ext.toLowerCase()}`
   const { error } = await supabaseAdmin.storage.from('vessel-images').upload(path, ab, { upsert: true, contentType: ct })
   if (error) return { url: null, reason: `Supabase upload failed: ${error.message}` }
-  return { url: supabaseAdmin.storage.from('vessel-images').getPublicUrl(path).data.publicUrl }
+  return { url: versionedPublicUrl(path) }
 }
 /**
  * Photos fetched per sync run — the rest are picked up on the next run. Each one

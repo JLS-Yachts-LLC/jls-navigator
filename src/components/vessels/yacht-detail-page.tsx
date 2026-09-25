@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { createServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { updateOrThrow } from "@/lib/db-write";
+import { guardUploadFile, uploadContentType } from "@/lib/upload-guard";
 import { softDeleteEntity } from "@/lib/recycle-bin";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -34,6 +35,24 @@ const doPushToSharePoint = createServerFn({ method: 'POST' })
       // SharePoint push is non-critical — log but don't surface to user
     }
   })
+
+/**
+ * Delete the file behind a vessel photo, when it is one of ours.
+ *
+ * Only public URLs inside the vessel-images bucket are touched. Anything else
+ * in vessel_image — a legacy SharePoint descriptor, an external link — is not a
+ * file we own, so it is left alone. Best effort: the row has already moved on,
+ * and a stray object in Storage is a better outcome than a failed replace.
+ */
+async function removeVesselImageObject(url: string): Promise<void> {
+  const m = /\/storage\/v1\/object\/public\/vessel-images\/([^?#]+)/.exec(url);
+  if (!m) return;
+  try {
+    await supabase.storage.from("vessel-images").remove([decodeURIComponent(m[1])]);
+  } catch {
+    /* orphaned object, not a failed action */
+  }
+}
 
 const doSyncImage = createServerFn({ method: 'POST' })
   .inputValidator((d: { yachtId: string }) => d)
@@ -132,12 +151,12 @@ export function YachtDetail({
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({});
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  /** A photo change in flight — replace, sync or remove — so the buttons lock together. */
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [confirmRemovePhoto, setConfirmRemovePhoto] = useState(false);
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [imgLoadError, setImgLoadError] = useState(false);
-  const [syncingImage, setSyncingImage] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmArchive, setConfirmArchive] = useState(false);
   const [tab, setTab] = useState<"details" | "documents" | "crew" | "permits" | "visas" | "finance" | "activity">("details");
@@ -159,16 +178,12 @@ export function YachtDetail({
       next[k] = String(v);
     }
     setForm(next);
-    setImageFile(null);
-    setImagePreview(null);
     setErrors({});
     setEditing(true);
   }
 
   function cancelEdit() {
     setEditing(false);
-    setImageFile(null);
-    setImagePreview(null);
     setErrors({});
   }
 
@@ -181,11 +196,77 @@ export function YachtDetail({
     });
   }
 
-  function pickImage(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    setImageFile(f);
-    setImagePreview(URL.createObjectURL(f));
+  // ── Photo ──────────────────────────────────────────────────────────────────
+  // Replace, sync and remove act on the photo alone and save immediately, so a
+  // wrong picture can be fixed without opening the whole record for editing.
+  // The Port & Agency Team hit exactly this: a corrected photo in SharePoint never
+  // reached Polaris, because the sync only ever fills in a photo that is missing
+  // and deliberately leaves an existing one alone.
+
+  /** Set vessel_image to a new value (or null) and drop the file it used to point at. */
+  async function commitPhoto(nextUrl: string | null, successMessage: string) {
+    const previous = typeof y?.vessel_image === "string" ? y.vessel_image : null;
+    await updateOrThrow(
+      supabase.from("yachts").update({ vessel_image: nextUrl } as never).eq("id", id).select("id"),
+      "vessel",
+    );
+    // Only after the row has moved on — a failed update must not leave the record
+    // pointing at a file that has just been deleted.
+    if (previous && previous !== nextUrl) await removeVesselImageObject(previous);
+    setImgLoadError(false);
+    toast.success(successMessage);
+    await load();
+  }
+
+  async function replacePhoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !user) return;
+    if (!guardUploadFile(file, { accepts: "Use a JPG, PNG or WebP photo." })) return;
+    if (!file.type.startsWith("image/")) { toast.error("That file is not an image."); return; }
+    setPhotoBusy(true);
+    try {
+      const path = `${user.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_")}`;
+      const { error: upErr } = await supabase.storage
+        .from("vessel-images")
+        .upload(path, file, { contentType: uploadContentType(file) });
+      if (upErr) throw upErr;
+      await commitPhoto(supabase.storage.from("vessel-images").getPublicUrl(path).data.publicUrl, "Photo replaced");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to replace the photo");
+    } finally {
+      setPhotoBusy(false);
+    }
+  }
+
+  async function syncPhoto() {
+    setPhotoBusy(true);
+    try {
+      const result = await doSyncImage({ data: { yachtId: id } });
+      if (result?.url) {
+        setImgLoadError(false);
+        await load();
+        toast.success("Photo synced from SharePoint");
+      } else {
+        toast.error(result?.reason ?? "No photo found in SharePoint for this yacht");
+      }
+    } catch {
+      toast.error("Failed to sync the photo");
+    } finally {
+      setPhotoBusy(false);
+    }
+  }
+
+  async function removePhoto() {
+    setConfirmRemovePhoto(false);
+    setPhotoBusy(true);
+    try {
+      await commitPhoto(null, "Photo removed");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to remove the photo");
+    } finally {
+      setPhotoBusy(false);
+    }
   }
 
   async function save() {
@@ -217,14 +298,8 @@ export function YachtDetail({
       delete payload.created_at;
       delete payload.updated_at;
       delete payload.created_by;
+      // The photo has its own controls and saves on its own — see replacePhoto.
       delete payload.vessel_image;
-
-      if (imageFile) {
-        const path = `${user.id}/${Date.now()}-${imageFile.name.replace(/[^a-zA-Z0-9.\-_]/g, "_")}`;
-        const { error: upErr } = await supabase.storage.from("vessel-images").upload(path, imageFile);
-        if (upErr) throw upErr;
-        payload.vessel_image = supabase.storage.from("vessel-images").getPublicUrl(path).data.publicUrl;
-      }
 
       // .select() + updateOrThrow: an update RLS refuses matches no rows and
       // returns no error, which used to toast success while nothing changed.
@@ -236,8 +311,6 @@ export function YachtDetail({
       // Non-blocking push to SharePoint (fire and forget)
       doPushToSharePoint({ data: { yachtId: id } }).catch(() => {});
       setEditing(false);
-      setImageFile(null);
-      setImagePreview(null);
       await load();
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Failed to save");
@@ -284,8 +357,7 @@ export function YachtDetail({
 
   // Only render real http(s) URLs — legacy rows can hold a raw SharePoint image
   // descriptor (JSON) in vessel_image, which is not directly displayable.
-  const storedImage = typeof y.vessel_image === "string" && /^https?:\/\//.test(y.vessel_image) ? y.vessel_image : null;
-  const displayImage = imagePreview ?? storedImage;
+  const displayImage = typeof y.vessel_image === "string" && /^https?:\/\//.test(y.vessel_image) ? y.vessel_image : null;
 
   return (
     <div className="flex h-full flex-col">
@@ -409,39 +481,36 @@ export function YachtDetail({
                   <div className="flex h-full items-center justify-center"><Ship className="h-12 w-12 text-muted-foreground/40" /></div>
                 )}
               </div>
-              <div className="border-t border-border p-3 flex flex-col gap-2">
-                {!editing && (!displayImage || imgLoadError) && (
+              {/* Photo controls — always available, not only in edit mode, and
+                  Sync stays available when a photo already exists: that is the
+                  case where SharePoint has a corrected picture and Polaris is
+                  still showing the old one. */}
+              <div className="border-t border-border p-3 grid grid-cols-1 gap-2">
+                <label className={cn(
+                  "inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-xs hover:bg-accent",
+                  photoBusy && "pointer-events-none opacity-50",
+                )}>
+                  <Upload className="h-3.5 w-3.5" /> {displayImage && !imgLoadError ? "Replace photo" : "Upload photo"}
+                  <input type="file" accept="image/*" className="hidden" disabled={photoBusy} onChange={(e) => void replacePhoto(e)} />
+                </label>
+                <button
+                  type="button"
+                  disabled={photoBusy}
+                  onClick={() => void syncPhoto()}
+                  className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-xs hover:bg-accent disabled:opacity-50"
+                >
+                  <RefreshCw className={cn("h-3.5 w-3.5", photoBusy && "animate-spin")} />
+                  {displayImage && !imgLoadError ? "Re-sync photo from SharePoint" : "Sync photo from SharePoint"}
+                </button>
+                {displayImage && (
                   <button
                     type="button"
-                    disabled={syncingImage}
-                    onClick={async () => {
-                      setSyncingImage(true);
-                      try {
-                        const result = await doSyncImage({ data: { yachtId: id } });
-                        if (result?.url) {
-                          setImgLoadError(false);
-                          await load();
-                          toast.success("Image synced from SharePoint");
-                        } else {
-                          toast.error(result?.reason ?? "No image found in SharePoint for this yacht");
-                        }
-                      } catch {
-                        toast.error("Failed to sync image");
-                      } finally {
-                        setSyncingImage(false);
-                      }
-                    }}
-                    className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-xs hover:bg-accent disabled:opacity-50"
+                    disabled={photoBusy}
+                    onClick={() => setConfirmRemovePhoto(true)}
+                    className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-xs text-destructive hover:bg-destructive/10 disabled:opacity-50"
                   >
-                    <RefreshCw className={`h-3.5 w-3.5 ${syncingImage ? "animate-spin" : ""}`} />
-                    {syncingImage ? "Syncing…" : "Sync Image from SharePoint"}
+                    <Trash2 className="h-3.5 w-3.5" /> Remove photo
                   </button>
-                )}
-                {editing && (
-                  <label className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-xs hover:bg-accent">
-                    <Upload className="h-3.5 w-3.5" /> Replace image
-                    <input type="file" accept="image/*" className="hidden" onChange={pickImage} />
-                  </label>
                 )}
               </div>
               <div className="p-4 text-sm space-y-2">
@@ -493,6 +562,24 @@ export function YachtDetail({
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={toggleArchive} className="bg-amber-500 text-white hover:bg-amber-500/90">
               Archive
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={confirmRemovePhoto} onOpenChange={setConfirmRemovePhoto}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove photo?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The photo on <strong>{yachtName}</strong> will be taken down and the placeholder shown instead.
+              Nothing else on the record changes. You can upload a new photo or sync one from SharePoint afterwards.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void removePhoto()} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Remove photo
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
