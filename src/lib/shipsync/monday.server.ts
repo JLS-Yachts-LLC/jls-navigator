@@ -217,6 +217,7 @@ const SCAN_OWNED_FIELDS = [
 function mergeOntoScanned(
   record: Record<string, unknown>,
   existingExtra: Record<string, any> | undefined,
+  existingStatus: string | undefined,
 ): Record<string, unknown> {
   const merged: Record<string, unknown> = { ...record }
 
@@ -224,6 +225,15 @@ function mergeOntoScanned(
   // absence of information, not a contradiction, and must not undo a delivery
   // the app has already recorded.
   if (merged.status === 'in_office') { delete merged.status; delete merged.delivered_at }
+  // Same protection as the Monday-id-matched branch below: once the office has
+  // moved a package past plain 'delivered' (Delivered - TBI, Completed,
+  // Collected, Refused, or it's mid-route), a re-sync must not put it back to
+  // 'delivered' just because this item still matches by AWB and Monday's own
+  // Date Delivered column is populated. This half of the AWB-matched path was
+  // missed when the byMondayId path got this same fix — packages matched by
+  // AWB (i.e. scanned in before ever being linked to a Monday item id) kept
+  // reverting Completed back to Delivered on every sync.
+  else if ((existingStatus ?? 'in_office') !== 'in_office') { delete merged.status }
 
   for (const key of SCAN_OWNED_FIELDS) {
     const v = merged[key]
@@ -394,7 +404,7 @@ async function importMondayShipmentsInner(_opts: { limit?: number } = {}): Promi
     if (existingId) {
       let updateRecord: Record<string, unknown> = record
       if (byAwb) {
-        updateRecord = mergeOntoScanned(record, extraById.get(existingId))
+        updateRecord = mergeOntoScanned(record, extraById.get(existingId), statusById.get(existingId))
         // Claim it, so two Monday items sharing a waybill can't both land here.
         idByBarcode.delete(awb)
       } else if (activeNoteByMonday.get(item.id)) {
