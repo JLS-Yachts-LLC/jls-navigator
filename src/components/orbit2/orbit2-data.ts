@@ -46,7 +46,9 @@ export type Orbit2Project = {
 
 export type Orbit2Note = {
   id: string;
-  project_id: string;
+  /** Exactly one of these two is set — a note belongs to a project record or a boat job. */
+  project_id: string | null;
+  boat_task_id: string | null;
   kind: "remark" | "team_comment";
   author: string;
   body: string;
@@ -57,8 +59,10 @@ export type Orbit2Note = {
 
 export type Orbit2File = {
   id: string;
-  project_id: string;
-  slot: "supplier_quote" | "invoice" | "document" | "image";
+  /** Exactly one of these two is set — a file belongs to a project record or a boat job. */
+  project_id: string | null;
+  boat_task_id: string | null;
+  slot: "supplier_quote" | "invoice" | "document" | "image" | "service_report" | "certificate" | "final_invoice";
   file_name: string;
   storage_ref: string;
   created_at: string;
@@ -88,12 +92,83 @@ export type Orbit2Boat = {
   boat_type: string | null;
   notes: string | null;
   active: boolean;
+  // ── Vessel spec ──
+  hull_number: string | null;
+  hull_material: string | null;
+  year_of_build: number | null;
+  max_beam_m: number | null;
+  max_length_m: number | null;
+  max_passengers: number | null;
+  mmsi: string | null;
+  image_ref: string | null;
+  /** Set when this boat's spec fields were inherited from Vessel Overview. */
+  inherited_yacht_id: string | null;
+  // ── Compliance — DMA / FMA / RYA ──
+  dma_last_inspection: string | null;
+  dma_report_ref: string | null;
+  fma_last_inspection: string | null;
+  fma_report_ref: string | null;
+  rya_last_inspection: string | null;
+  rya_report_ref: string | null;
+};
+
+export const BOAT_DOC_CATEGORIES = [
+  "vessel_invoice", "builders_certificate", "customs_clearance", "marine_insurance",
+  "vhf_radio_licensing", "marine_vessel_license", "berth_agreement",
+  "liferaft_certificate", "fire_extinguisher_certificate", "other",
+  "dma_checklist", "fma_checklist", "rya_checklist",
+] as const;
+export type Orbit2BoatDocCategory = (typeof BOAT_DOC_CATEGORIES)[number];
+
+export const BOAT_DOC_CATEGORY_LABEL: Record<Orbit2BoatDocCategory, string> = {
+  vessel_invoice: "Vessel Invoice / Bill of Sale",
+  builders_certificate: "Builder's Certificate",
+  customs_clearance: "Customs Clearance Certificate",
+  marine_insurance: "Marine Insurance Policy",
+  vhf_radio_licensing: "VHF Radio Licensing",
+  marine_vessel_license: "Marine Vessel License",
+  berth_agreement: "Berth Agreement",
+  liferaft_certificate: "Liferaft Certificates",
+  fire_extinguisher_certificate: "Fire extinguishers",
+  other: "Other Documents",
+  dma_checklist: "DMA Checklist",
+  fma_checklist: "FMA Checklist",
+  rya_checklist: "RYA Checklist",
+};
+
+export type Orbit2BoatDocument = {
+  id: string;
+  boat_id: string;
+  category: Orbit2BoatDocCategory;
+  file_name: string;
+  storage_ref: string;
+  created_at: string;
+};
+
+export const INVENTORY_UNITS = ["Box", "Set", "Pcs", "CM", "KG", "Meter"] as const;
+export type Orbit2InventoryUnit = (typeof INVENTORY_UNITS)[number];
+
+export type Orbit2BoatInventoryItem = {
+  id: string;
+  boat_id: string;
+  item: string;
+  qty: number | null;
+  unit: Orbit2InventoryUnit | null;
+  condition: string | null;
+  expiry_date: string | null;
+  on_board: boolean;
+  remarks: string | null;
+  image_ref: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type Orbit2BoatTask = {
   id: string;
   boat_id: string;
   kind: "maintenance" | "defect";
+  /** Auto-generated MVT26-XXXX — the spec's Job Number. */
+  job_no: string | null;
   title: string;
   description: string | null;
   status: string;
@@ -101,6 +176,10 @@ export type Orbit2BoatTask = {
   schedule_date: string | null;
   schedule_time: string | null;
   assigned_team: string[];
+  /** Duration, in minutes — Estimated Time Required, entered as hh:mm. */
+  est_minutes: number | null;
+  technician: string | null;
+  remarks: string | null;
 };
 
 export type Orbit2ScheduleEntry = {
@@ -126,30 +205,38 @@ export function useOrbit2() {
   const [noc, setNoc] = useState<Orbit2Noc[]>([]);
   const [boats, setBoats] = useState<Orbit2Boat[]>([]);
   const [boatTasks, setBoatTasks] = useState<Orbit2BoatTask[]>([]);
+  const [boatDocuments, setBoatDocuments] = useState<Orbit2BoatDocument[]>([]);
+  const [boatInventory, setBoatInventory] = useState<Orbit2BoatInventoryItem[]>([]);
   const [schedule, setSchedule] = useState<Orbit2ScheduleEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
-    // In parallel: five independent tables, and the page cannot draw until it has
-    // all of them, so waiting on them one at a time would just be slower.
-    const [p, n, b, bt, s] = await Promise.all([
+    // In parallel: seven independent tables, and the page cannot draw until it
+    // has all of them, so waiting on them one at a time would just be slower.
+    const [p, n, b, bt, bd, bi, s] = await Promise.all([
       all<Orbit2Project>(() => sb.from("orbit2_projects").select("*").order("created_at", { ascending: false })),
       all<Orbit2Noc>(() => sb.from("orbit2_noc_records").select("*").order("created_at", { ascending: false })),
       all<Orbit2Boat>(() => sb.from("orbit2_boats").select("*").order("name")),
       all<Orbit2BoatTask>(() => sb.from("orbit2_boat_tasks").select("*").order("created_at", { ascending: false })),
+      all<Orbit2BoatDocument>(() => sb.from("orbit2_boat_documents").select("*").order("created_at", { ascending: false })),
+      all<Orbit2BoatInventoryItem>(() => sb.from("orbit2_boat_inventory").select("*").order("item")),
       all<Orbit2ScheduleEntry>(() => sb.from("orbit2_team_schedule").select("*").order("entry_date")),
     ]);
     setProjects((p.data ?? []) as Orbit2Project[]);
     setNoc((n.data ?? []) as Orbit2Noc[]);
     setBoats((b.data ?? []) as Orbit2Boat[]);
     setBoatTasks((bt.data ?? []) as Orbit2BoatTask[]);
+    setBoatDocuments((bd.data ?? []) as Orbit2BoatDocument[]);
+    setBoatInventory((bi.data ?? []) as Orbit2BoatInventoryItem[]);
     setSchedule((s.data ?? []) as Orbit2ScheduleEntry[]);
     setLoading(false);
   }, []);
 
   useEffect(() => { void load(); }, [load]);
-  return { projects, noc, boats, boatTasks, schedule, loading, reload: load };
+  return {
+    projects, noc, boats, boatTasks, boatDocuments, boatInventory, schedule, loading, reload: load,
+  };
 }
 
 // ── Small conversions ───────────────────────────────────────────────────────

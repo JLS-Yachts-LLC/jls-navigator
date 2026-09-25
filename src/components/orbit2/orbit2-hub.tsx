@@ -40,7 +40,9 @@ export function Orbit2Hub() {
   const [sub, setSub] = useState<Sub>("list");
   const [prefill, setPrefill] = useState<Orbit2Prefill | null>(null);
 
-  const { projects, noc, boats, boatTasks, schedule, loading, reload } = useOrbit2();
+  const {
+    projects, noc, boats, boatTasks, boatDocuments, boatInventory, schedule, loading, reload,
+  } = useOrbit2();
 
   // Managed boats feed the client typeahead everywhere a boat can be named.
   const boatNames = suggestionsFor(boats.map((b) => b.name));
@@ -91,7 +93,10 @@ export function Orbit2Hub() {
             schedule={schedule} loading={loading} reload={reload} onCreateAt={createAt}
           />
         ) : tab === "boats" ? (
-          <Orbit2Boats boats={boats} boatTasks={boatTasks} loading={loading} reload={reload} />
+          <Orbit2Boats
+            boats={boats} boatTasks={boatTasks} boatDocuments={boatDocuments} boatInventory={boatInventory}
+            loading={loading} reload={reload}
+          />
         ) : sub === "noc" ? (
           <Orbit2Noc
             rows={noc} loading={loading} reload={reload}

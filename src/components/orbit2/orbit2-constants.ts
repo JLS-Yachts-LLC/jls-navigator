@@ -93,6 +93,24 @@ export const BOAT_TASK_STATUSES = ["Pending", "Ongoing", "Complete"] as const;
 /** Pending or Ongoing — what the dashboard's "Active" KPIs count. */
 export const ACTIVE_BOAT_STATUSES: readonly string[] = ["Pending", "Ongoing"];
 
+/**
+ * The Jobs board's Category dropdown, per spec, is just Maintenance/Repair —
+ * kept as a UI label over the existing `kind` column (maintenance/defect)
+ * rather than renaming it, since the dashboard's Active Planned Maintenance /
+ * Active Defects & Repairs KPIs already read `kind` directly.
+ */
+export const BOAT_JOB_CATEGORIES = ["Maintenance", "Repair"] as const;
+export type BoatJobCategory = (typeof BOAT_JOB_CATEGORIES)[number];
+export const boatJobCategoryToKind = (c: BoatJobCategory): "maintenance" | "defect" =>
+  c === "Repair" ? "defect" : "maintenance";
+export const kindToBoatJobCategory = (k: "maintenance" | "defect"): BoatJobCategory =>
+  k === "defect" ? "Repair" : "Maintenance";
+
+/** Inventory List condition — the three values the client's own sheet uses. */
+export const BOAT_INVENTORY_CONDITIONS = ["Good / Serviceable", "Damaged / Defective", "Missing / Lost"] as const;
+export const boatInventoryConditionColor = (c: string | null) =>
+  c === "Damaged / Defective" ? "#E87050" : c === "Missing / Lost" ? "#E24B4A" : "#4CAF80";
+
 // ── Complete / Pending, as drawn on the dashboard ───────────────────────────
 export const COMPLETE_COLOR = "#4C7DF0";
 export const PENDING_COLOR = "#B07CF0";
