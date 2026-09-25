@@ -12,9 +12,9 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Search, Loader2, Trash2, Camera, FileText, ScanLine, ChevronDown, ChevronRight, X } from "lucide-react";
+import { Plus, Search, Loader2, Trash2, Camera, FileText, ScanLine, ChevronDown, ChevronRight, X, ArrowDownToLine } from "lucide-react";
 import { BarcodeScannerDialog } from "@/components/shipsync/BarcodeScanner";
-import { StatusBadge, fmtDate, DocumentDropzoneDialog, TableChartToggle, ShipSyncChartsPanel, TONE_HEX } from "@/components/shipsync/shared";
+import { StatusBadge, fmtDate, DocumentDropzoneDialog, TableChartToggle, ShipSyncChartsPanel, TONE_HEX, downloadCsv } from "@/components/shipsync/shared";
 import { ALL_ZONES, STATUS_META, type PackageStatus, type ShipSyncPackage } from "@/lib/shipsync/model";
 import { createPackage, patchPackage, deletePackage, uploadShipSyncImage, addPackageDocuments, removePackageDocument } from "@/lib/shipsync/data";
 import type { ShipSyncData } from "@/components/shipsync-page";
@@ -286,6 +286,30 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
     } catch (e: any) { toast.error(e?.message ?? "Couldn't remove file"); }
   }
 
+  /**
+   * Same headers as the table (minus the checkbox/photo/documents/action
+   * columns, which don't mean anything as plain text) — you export what
+   * you're looking at, respecting the current stage and search.
+   */
+  function exportSpreadsheet() {
+    const headers = ["Air waybill/tracking info", "Client", "Date Received", "Consignee", "Receiver",
+      "Number of Packages", "Courier", "Shipment Type", "Delivery Note Number", "Driver",
+      "Date Delivered", "Invoice Number", "Remarks", "Status"];
+    const rows = filtered.map((p) => {
+      const note = data.notes.find((n) => n.id === p.delivery_note_id);
+      const driver = data.drivers.find((d) => d.id === p.driver_id);
+      return [
+        p.barcode ?? "", p.boat_name ?? "", fmtDate(p.received_at), p.package_owner ?? "",
+        p.receiver_full_name ?? "", p.num_packages ?? 1, p.courier ?? "", p.local_import ?? "",
+        p.delivery_note_no ?? note?.number ?? "", driver?.name ?? "", fmtDate(p.delivered_at),
+        p.invoice_no ?? "", p.description ?? "", STATUS_META[p.status]?.label ?? p.status,
+      ];
+    });
+    if (rows.length === 0) { toast.error("Nothing to export"); return; }
+    downloadCsv(`shipsync-local-${new Date().toISOString().slice(0, 10)}.csv`, headers, rows);
+    toast.success(`Exported ${rows.length} package${rows.length === 1 ? "" : "s"}`);
+  }
+
   async function confirmDelete() {
     if (!delTarget) return;
     try { await deletePackage(delTarget.id); toast.success("Package removed"); await reload(); }
@@ -338,6 +362,10 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
         </span>
         <TableChartToggle value={view} onChange={setView} />
         <Button size="sm" onClick={openNew} className="ml-auto h-9 gap-1.5"><Plus className="h-4 w-4" /> Check in package</Button>
+        <Button size="sm" variant="outline" onClick={exportSpreadsheet} className="h-9 gap-1.5"
+          title="Download the packages shown as a CSV — opens straight in Excel">
+          <ArrowDownToLine className="h-4 w-4" /> Export
+        </Button>
       </div>
 
       {/* Only while rows are ticked. The count is of the selection, not the
