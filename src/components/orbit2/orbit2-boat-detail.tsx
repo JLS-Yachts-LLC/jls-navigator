@@ -84,16 +84,27 @@ export function Orbit2BoatDetail({
   }
 
   return (
-    <div className="space-y-5 p-5">
-      <div className="flex items-start justify-between gap-3">
-        <button onClick={onBack} className="flex items-center gap-1.5 text-[14px] font-medium text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" /> All boats
-        </button>
+    // Sits under the fleet page's filter tabs (see orbit2-boats.tsx), so no
+    // padding of its own.
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <button onClick={onBack} title="All boats" aria-label="All boats"
+            className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
+            <ArrowLeft className="h-5 w-5" />
+          </button>
+          <h2 className="truncate font-display text-[22px] font-semibold tracking-tight">{boat.name}</h2>
+        </div>
         <button onClick={() => void removeBoat()} title={`Remove ${boat.name}`}
           className="rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive">
           <Trash2 className="h-4 w-4" />
         </button>
       </div>
+
+      {/* The design's two columns: the vessel and its paperwork on the left, the
+          work on it — Jobs and Inventory List — on the right. Stacks below xl. */}
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)]">
+      <div className="min-w-0 space-y-5">
 
       {/* ── Vessel spec ── */}
       <div className="grid gap-4 rounded-xl border border-border bg-card p-4 sm:grid-cols-[160px_1fr]">
@@ -103,11 +114,10 @@ export function Orbit2BoatDetail({
             : <Ship className="h-8 w-8 text-muted-foreground/40" />}
         </div>
         <div>
-          <h2 className="font-display text-[22px] font-semibold tracking-tight">{boat.name}</h2>
           <p className="mb-3 text-[14px] text-muted-foreground">
             {[boat.client_name].filter(Boolean).join(" · ") || "No client recorded"}
           </p>
-          <div className="grid gap-2.5 sm:grid-cols-4">
+          <div className="grid gap-2.5 sm:grid-cols-3">
             <SpecField label="Vessel Type" value={boat.boat_type} onSave={(v) => patchBoat({ boat_type: v })} />
             <SpecField label="Hull Number" value={boat.hull_number} onSave={(v) => patchBoat({ hull_number: v })} />
             <SpecField label="Hull Material" value={boat.hull_material} onSave={(v) => patchBoat({ hull_material: v })} />
@@ -116,6 +126,7 @@ export function Orbit2BoatDetail({
             <SpecField label="Max Length (m)" value={boat.max_length_m} type="number" onSave={(v) => patchBoat({ max_length_m: v ? Number(v) : null })} />
             <SpecField label="Max Passenger" value={boat.max_passengers} type="number" onSave={(v) => patchBoat({ max_passengers: v ? Number(v) : null })} />
             <SpecField label="MMSI" value={boat.mmsi} onSave={(v) => patchBoat({ mmsi: v })} />
+            <SpecField label="IMO" value={boat.imo_no} onSave={(v) => patchBoat({ imo_no: v.trim() || null })} />
           </div>
         </div>
       </div>
@@ -132,7 +143,7 @@ export function Orbit2BoatDetail({
       </div>
 
       {/* ── DMA / FMA / RYA compliance ── */}
-      <div className="grid gap-3 lg:grid-cols-3">
+      <div className="grid gap-3 md:grid-cols-3">
         {(["dma", "fma", "rya"] as const).map((regime) => (
           <ComplianceCard key={regime} regime={regime} boat={boat}
             checklist={docsFor(`${regime}_checklist` as Orbit2BoatDocCategory)}
@@ -156,8 +167,10 @@ export function Orbit2BoatDetail({
         </div>
       </div>
 
+      </div>
+
       {/* ── Jobs / Inventory ── */}
-      <div className="rounded-xl border border-border bg-card">
+      <div className="min-w-0 self-start rounded-xl border border-border bg-card">
         <div className="flex items-center gap-1 border-b border-border/60 px-4 py-2.5">
           {(["jobs", "inventory"] as const).map((s) => (
             <button key={s} onClick={() => setSection(s)}
@@ -170,6 +183,7 @@ export function Orbit2BoatDetail({
         {section === "jobs"
           ? <JobsBoard boat={boat} tasks={tasks} reload={reload} />
           : <InventoryBoard boat={boat} inventory={inventory} reload={reload} />}
+      </div>
       </div>
     </div>
   );
@@ -216,8 +230,11 @@ function ComplianceCard({
           onBlur={() => { if (date !== lastInspection) onSaveDate(date); }} />
       </Field>
       <div className="mb-2.5">
-        <SingleFileField label="Technical Inspection Pass Report" value={reportRef}
-          onUpload={onUploadReport} onRemove={onRemoveReport} />
+        {/* RYA's document is its safety checklist, not a technical pass — the
+            design's own wording for each regime. */}
+        <SingleFileField
+          label={regime === "rya" ? "Vessel Inspection and Safety Checklist" : "Technical Inspection Pass Report"}
+          value={reportRef} onUpload={onUploadReport} onRemove={onRemoveReport} />
       </div>
       <FileSlot label="Checklist" files={checklist} onUpload={onUploadChecklist} onRemove={onRemoveChecklist} />
     </div>
