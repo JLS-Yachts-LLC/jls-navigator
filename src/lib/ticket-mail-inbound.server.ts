@@ -169,8 +169,6 @@ const AUTOMATED_SUBJECT = [
   /\bunsubscribe\b/i,
 ]
 
-const domainOf = (addr: string) => addr.trim().toLowerCase().split('@')[1] ?? ''
-
 /**
  * Should this unreferenced email be left alone rather than raising a ticket?
  * Returns the reason to record, or null to go ahead.
@@ -179,10 +177,14 @@ const domainOf = (addr: string) => addr.trim().toLowerCase().split('@')[1] ?? ''
  * acknowledged by their desk; if that acknowledgement raised a Polaris ticket it
  * would be mirrored straight back, acknowledged again, and so on. Their mail can
  * still be appended to a ticket it references — this only stops it creating one.
+ *
+ * It matches the support mailbox address exactly, not the newhorizon-it.co.uk
+ * domain. Every automated message from their desk is sent by that one mailbox, so
+ * the domain-wide version bought nothing and cost real work: a New Horizon
+ * engineer emailing the IT desk from their own address raised no ticket at all.
  */
 function shouldNotRaiseTicket(from: string, subject: string, headers: Record<string, string>): string | null {
-  const d = domainOf(from)
-  if (d && (d === domainOf(NH_SUPPORT_MAILBOX) || d.endsWith(`.${domainOf(NH_SUPPORT_MAILBOX)}`))) {
+  if (from.trim().toLowerCase() === NH_SUPPORT_MAILBOX.trim().toLowerCase()) {
     return 'new_horizon_no_ref'
   }
   if (AUTOMATED_SUBJECT.some(re => re.test(subject))) return 'automated'
