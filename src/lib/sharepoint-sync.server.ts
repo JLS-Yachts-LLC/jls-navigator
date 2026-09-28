@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '@/integrations/supabase/client.server'
 import { fetchAllRows } from './fetch-all'
+import { nameKey as crewNameKey, passportKey } from './crew-name-match'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -575,7 +576,7 @@ async function fetchViaGraphShares(fullUrl: string, graphToken: string, spItemId
   const path = `sharepoint/${spItemId}-${tag}.${ext}`
   const { error } = await supabaseAdmin.storage.from('vessel-images').upload(path, ab, { upsert: true, contentType: ct })
   if (error) return { url: null, reason: `Supabase upload failed: ${error.message}` }
-  return { url: supabaseAdmin.storage.from('vessel-images').getPublicUrl(path).data.publicUrl }
+  return { url: versionedPublicUrl(path) }
 }
 
 async function fetchSpImageToSupabase(
@@ -795,6 +796,21 @@ async function fetchFileUrlToSupabase(
   return { url: null, reason: `${viaGraph.reason ?? 'Graph /shares failed'}; ${direct.reason ?? 'direct fetch failed'}` }
 }
 
+/**
+ * The public URL for a vessel-images object, stamped with the moment it was
+ * written.
+ *
+ * Every SharePoint download for an item lands on the same storage key (upsert on
+ * "sharepoint/<itemId>-<name>"), and the bucket is public, so without this a
+ * corrected photo keeps the old URL and the browser and CDN go on serving the old
+ * bytes — a re-sync would look as though it had done nothing. The query string is
+ * ignored by Storage and only exists to make the URL new.
+ */
+function versionedPublicUrl(path: string): string {
+  const base = supabaseAdmin.storage.from('vessel-images').getPublicUrl(path).data.publicUrl
+  return `${base}?v=${Date.now()}`
+}
+
 /** Fetch a URL with the given bearer token and upload the bytes to Supabase vessel-images. */
 async function uploadUrlToSupabase(
   url: string,
@@ -819,7 +835,7 @@ async function uploadUrlToSupabase(
       .from('vessel-images')
       .upload(path, ab, { upsert: true, contentType: ct })
     if (error) return { url: null, reason: `Supabase upload failed: ${error.message}` }
-    return { url: supabaseAdmin.storage.from('vessel-images').getPublicUrl(path).data.publicUrl }
+    return { url: versionedPublicUrl(path) }
   } catch (e) {
     return { url: null, reason: `Network error: ${e instanceof Error ? e.message : String(e)}` }
   }
@@ -927,10 +943,18 @@ export async function pushRecordToSharePoint(target: string, id: string): Promis
       if (!dbField || dbField === 'vessel_image') continue;
       let v = valueFor(dbField);
       if (v === null || v === undefined || v === '') continue;
-      // Date-only values go out as NOON UTC: SharePoint renders datetimes in the
-      // site's regional timezone, so a bare date (= midnight UTC) would display
-      // as the previous day on any site east of UTC — the mirror of SD-0017.
-      if (typeof v === 'string' && /^d{4}-d{2}-d{2}$/.test(v)) v = `${v}T12:00:00Z`;
+      // Date-only values go out as 08:00 UTC — local NOON on the Dubai (+04:00)
+      // site. A bare date is read by SharePoint as site-local midnight, which
+      // Graph then returns as 20:00Z the day BEFORE, and that is how every date
+      // corrected in Polaris came back a day early (SD-0017 round trip). Local
+      // noon is safe both ways: SharePoint displays the same calendar day, and
+      // spDateOnly() reads an 08:00Z timestamp as that same day. NOT 12:00Z —
+      // that is on the "evening → next day" side of spDateOnly's rounding.
+      //
+      // The pattern is \d{4}-\d{2}-\d{2}. Until 15 Sept 2026 it was written
+      // without the backslashes (matching the letter "d"), so it never matched
+      // and this line was dead code — see the note on spDateOnly().
+      if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) v = `${v}T08:00:00Z`;
       spFields[spCol] = v;
     }
     if (!Object.keys(spFields).length) continue;
@@ -1165,6 +1189,14 @@ async function _syncWithConfig(cfg: SpConfig, sync: SpSyncConfig): Promise<{ syn
  * letting Postgres cast the raw string to a date) therefore recorded every synced
  * date one day early. Round to the nearest calendar day instead: an evening
  * timestamp IS the next day's date; a morning/midnight one is its own.
+ *
+ * 15 Sept 2026: the fix above was committed on 25 Aug with the regex written as
+ * /^(d{4}-d{2}-d{2})[T ](d{2})/ — no backslashes, so it matched the letter "d"
+ * and never a digit. It therefore never matched a real timestamp, every call fell
+ * through to str.slice(0, 10), and the one-day-early import carried on for three
+ * more weeks. It also silently undid the 12 Sept DOB correction: the corrected
+ * dates were pushed to SharePoint as bare dates (the outbound regex had the same
+ * typo), read back as 20:00Z the day before, and sliced to the day before.
  */
 const YACHT_DATE_FIELDS  = new Set(['eta', 'etd', 'cruising_permit_expiry', 'departed_date'])
 const PERMIT_DATE_FIELDS = new Set(['issue_date', 'expiry_date', 'preferred_inspection_date'])
@@ -1173,7 +1205,7 @@ const BOAT_DATE_FIELDS   = new Set(['reg_start_date', 'reg_end_date', 'document_
 function spDateOnly(v: any): string | null {
   if (v == null || v === '') return null
   const str = String(v)
-  const m = str.match(/^(d{4}-d{2}-d{2})[T ](d{2})/)
+  const m = str.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2})/)
   if (!m) return str.slice(0, 10)
   if (Number(m[2]) >= 12) {
     const d = new Date(`${m[1]}T00:00:00Z`)
@@ -1797,7 +1829,7 @@ async function storeNewestImage(
   const path = `shipsync/${spItemId}-${tag}${ext.toLowerCase()}`
   const { error } = await supabaseAdmin.storage.from('vessel-images').upload(path, ab, { upsert: true, contentType: ct })
   if (error) return { url: null, reason: `Supabase upload failed: ${error.message}` }
-  return { url: supabaseAdmin.storage.from('vessel-images').getPublicUrl(path).data.publicUrl }
+  return { url: versionedPublicUrl(path) }
 }
 /**
  * Photos fetched per sync run — the rest are picked up on the next run. Each one
@@ -2202,15 +2234,33 @@ async function _syncCrew(cfg: SpConfig): Promise<{ synced: number; errors: numbe
   }
 
   const { data: existing } = await fetchAllRows(() => (supabaseAdmin as any)
-    .from('crew_members').select('id, first_name, last_name, passport_number, sharepoint_item_id').order('id'))
+    .from('crew_members')
+    .select('id, first_name, last_name, passport_number, date_of_birth, sharepoint_item_id')
+    .order('id'))
   const bySpId = new Map<string, string>()
   const byPassport = new Map<string, string>()
+  const byNameDob = new Map<string, string>()
   const byName = new Map<string, string>()
-  const nameKey = (f: any, l: any) => `${String(f ?? '').toLowerCase().trim()}|${String(l ?? '').toLowerCase().trim()}`
+  /** First+last name, ignoring any middle name — see the middle-name step below. */
+  const byFirstLast = new Map<string, { id: string; dob: string | null; pp: string }[]>()
+  /** Crew already tied to a SharePoint row — see the re-pointing guard below. */
+  const existingSpIds = new Set<string>()
   for (const c of (existing ?? []) as Record<string, any>[]) {
-    if (c.sharepoint_item_id) bySpId.set(String(c.sharepoint_item_id), String(c.id))
-    if (c.passport_number) byPassport.set(String(c.passport_number).toLowerCase().trim(), String(c.id))
-    if (c.first_name && c.last_name) byName.set(nameKey(c.first_name, c.last_name), String(c.id))
+    if (c.sharepoint_item_id) { bySpId.set(String(c.sharepoint_item_id), String(c.id)); existingSpIds.add(String(c.id)) }
+    const pp = passportKey(c.passport_number)
+    if (pp) byPassport.set(pp, String(c.id))
+    if (c.first_name && c.last_name) {
+      const k = crewNameKey(`${c.first_name} ${c.last_name}`)
+      if (k) {
+        if (c.date_of_birth) byNameDob.set(`${k}|${c.date_of_birth}`, String(c.id))
+        // First writer wins, so an established record is preferred over a later
+        // near-duplicate when only the name matches.
+        if (!byName.has(k)) byName.set(k, String(c.id))
+        const list = byFirstLast.get(k) ?? []
+        list.push({ id: String(c.id), dob: c.date_of_birth ?? null, pp })
+        byFirstLast.set(k, list)
+      }
+    }
   }
 
   // 'passport_issue_date' is gone from this set with the column — the crew_members
@@ -2243,10 +2293,51 @@ async function _syncCrew(cfg: SpConfig): Promise<{ synced: number; errors: numbe
       record[dbField] = val
     }
 
-    const existingId =
-      bySpId.get(String(item.id)) ??
-      (record.passport_number ? byPassport.get(String(record.passport_number).toLowerCase().trim()) : undefined) ??
-      ((record.first_name && record.last_name) ? byName.get(nameKey(record.first_name, record.last_name)) : undefined)
+    // Match on a NORMALISED key at every step. Comparing these verbatim is what
+    // created the duplicate profiles: a passport arriving as "LB160417 " did not
+    // equal the stored "LB160417", and "ABHIJIT CHANDRAKANT  KHOLE" with a double
+    // space did not equal the single-spaced name, so a second profile was created
+    // for someone already on file. Name+DOB is tried before name alone so two
+    // genuinely different people who share a name are not merged into one.
+    const ppKey = passportKey(record.passport_number)
+    const nKey = (record.first_name && record.last_name)
+      ? crewNameKey(`${record.first_name} ${record.last_name}`)
+      : ''
+    const byId = bySpId.get(String(item.id))
+    let existingId =
+      byId ??
+      (ppKey ? byPassport.get(ppKey) : undefined) ??
+      ((nKey && record.date_of_birth) ? byNameDob.get(`${nKey}|${record.date_of_birth}`) : undefined) ??
+      (nKey ? byName.get(nKey) : undefined)
+
+    /**
+     * Last resort — the same first and last name, where nothing actually
+     * disagrees.
+     *
+     * A person added to the Visa list a second time comes in as a new row with
+     * no shared identifier: the existing record may hold a date of birth and no
+     * passport, the new row a passport and no date of birth. Nothing above links
+     * them, so a second profile was created (SD-0026, Annabelle Montrone: list
+     * rows 502 and 558).
+     *
+     * Only links when there is exactly ONE candidate and it contradicts nothing:
+     * two dates of birth that differ, or two different passport numbers, mean
+     * keep them apart. Being cautious here matters more than being clever — a
+     * duplicate is visible and can be merged, whereas wrongly fusing two people
+     * is silent and hard to undo. Ambiguity is left for the Duplicate Crew screen.
+     */
+    if (!existingId && nKey) {
+      const compatible = (byFirstLast.get(nKey) ?? []).filter((c) =>
+        !(c.dob && record.date_of_birth && c.dob !== record.date_of_birth) &&
+        !(c.pp && ppKey && c.pp !== ppKey))
+      if (compatible.length === 1) existingId = compatible[0].id
+    }
+
+    // Matched on a name rather than on the item id? Leave the record tied to the
+    // SharePoint row it already belongs to. Re-pointing it makes the original row
+    // look new on the next pull, and the two rows then trade the record back and
+    // forth on every sync.
+    if (existingId && !byId && existingSpIds.has(existingId)) delete record.sharepoint_item_id
 
     // Inserts require first + last name (NOT NULL); updates can be partial.
     if (!existingId && (!record.first_name || !record.last_name)) {

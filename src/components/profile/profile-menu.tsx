@@ -9,6 +9,7 @@
  * readable by staff only, which is exactly the audience for a staff photo, and
  * it avoids a new bucket with new policies for one small feature.
  */
+import { guardUploadFile, uploadContentType } from "@/lib/upload-guard";
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
@@ -105,8 +106,12 @@ export function EditProfileDialog({ open, onClose, profile }: {
     if (!file || !user?.id) return;
     setUploading(true);
     try {
+      // Guard the ORIGINAL: a huge camera file would otherwise be decoded and
+      // resized in the browser before anyone found out it was too big to store.
+      if (!guardUploadFile(file, { accepts: "Use a JPG or PNG image." })) return;
       // A phone photo is several megabytes and this renders at 30px — shrink it
-      // on the way up rather than storing a camera original.
+      // on the way up rather than storing a camera original. The result is
+      // always a small JPEG, so it never trips the cap.
       const { file: shrunk } = await compressImageToMaxKB(file, 300);
       const ext = (shrunk.type.split("/")[1] ?? "jpg").replace("jpeg", "jpg");
       const path = `${AVATAR_PREFIX}/${user.id}-${Date.now()}.${ext}`;

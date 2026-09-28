@@ -1,4 +1,5 @@
 import { storageRef } from "@/lib/signed-url";
+import { guardUploadFile, uploadContentType } from "@/lib/upload-guard";
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { updateOrThrow } from "@/lib/db-write";
@@ -55,10 +56,12 @@ export function GatePassDialog({
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!guardUploadFile(file)) { e.target.value = ""; return; }
     setUploading(true);
     try {
       const path = `permits/${Date.now()}-${file.name}`;
-      const { error } = await supabase.storage.from("permit-documents").upload(path, file);
+      const { error } = await supabase.storage.from("permit-documents")
+        .upload(path, file, { contentType: uploadContentType(file) });
       if (error) throw error;
       const stored = storageRef("permit-documents", path);
       set("document_url", stored);

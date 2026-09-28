@@ -1,4 +1,5 @@
 import { storageRef } from "@/lib/signed-url";
+import { guardUploadFile, uploadContentType } from "@/lib/upload-guard";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchAllRows } from "@/lib/fetch-all";
@@ -93,10 +94,12 @@ export function CrewDocumentsPage() {
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!guardUploadFile(file)) { e.target.value = ""; return; }
     setUploading(true);
     try {
       const path = `crew/${Date.now()}-${file.name}`;
-      const { error } = await supabase.storage.from("permit-documents").upload(path, file);
+      const { error } = await supabase.storage.from("permit-documents")
+        .upload(path, file, { contentType: uploadContentType(file) });
       if (error) throw error;
       const stored = storageRef("permit-documents", path);
       setForm((f) => ({ ...f, file_url: stored, file_name: file.name }));

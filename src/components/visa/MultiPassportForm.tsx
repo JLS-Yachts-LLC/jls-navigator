@@ -1,3 +1,4 @@
+import { uploadRejectionReason, uploadContentType } from "@/lib/upload-guard";
 import { storageRef } from '@/lib/signed-url'
 import React, { useState, useRef } from 'react'
 import { COLORS, FONTS } from '@/lib/tokens'
@@ -81,6 +82,8 @@ export default function MultiPassportForm({
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
+    const reason = uploadRejectionReason(file, { accepts: 'Use a PDF or an image of the passport.' })
+    if (reason) { setError(reason); e.target.value = ''; return }
     setUploading(true)
     setError(null)
     try {
@@ -88,7 +91,7 @@ export default function MultiPassportForm({
       const path = `crew/${crewId}/passport_${Date.now()}.${ext}`
       const { error: upErr } = await supabase.storage
         .from('permit-documents')
-        .upload(path, file, { upsert: true })
+        .upload(path, file, { upsert: true, contentType: uploadContentType(file) })
       if (upErr) throw upErr
       setForm(f => ({ ...f, document_url: storageRef('permit-documents', path) }))
     } catch (err: any) {

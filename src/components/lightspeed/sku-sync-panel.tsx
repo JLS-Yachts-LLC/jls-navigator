@@ -11,6 +11,10 @@ import { cn } from "@/lib/utils";
  * up in Lightspeed Retail and created (or updated) as an item in the retail
  * QuickBooks company — the on-demand counterpart of the webhook product sync.
  * Reused on the Automations page and the Waypoint Chandlery suppliers screen.
+ *
+ * With `linkToken` set it runs on the public /sku-sync/<token> page instead: the
+ * token goes in the query string and no Supabase session is needed — the API
+ * accepts the link token in place of an admin session (see api.lightspeed.sync).
  */
 type LsSkuResult = { sku: string; action: "created" | "updated" | "not-found" | "error"; detail: string };
 type LsSyncResult = { ok: boolean; processed: number; created: number; updated: number; notFound: number; errors: number; results: LsSkuResult[] };
@@ -22,7 +26,7 @@ const ACTION_CLS: Record<string, string> = {
   error: "bg-red-500/15 text-red-500",
 };
 
-export function LightspeedSkuSyncPanel({ compact = false }: { compact?: boolean }) {
+export function LightspeedSkuSyncPanel({ compact = false, linkToken }: { compact?: boolean; linkToken?: string }) {
   const [skus, setSkus] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<LsSyncResult | null>(null);
@@ -32,13 +36,15 @@ export function LightspeedSkuSyncPanel({ compact = false }: { compact?: boolean 
     setBusy(true);
     setResult(null);
     try {
-      const { data: { session } } = await (supabase as any).auth.getSession();
-      const token = session?.access_token ?? "";
-      const res = await fetch("/api/lightspeed/sync", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ skus }),
-      });
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      let url = "/api/lightspeed/sync";
+      if (linkToken) {
+        url += `?token=${encodeURIComponent(linkToken)}`;
+      } else {
+        const { data: { session } } = await (supabase as any).auth.getSession();
+        headers.Authorization = `Bearer ${session?.access_token ?? ""}`;
+      }
+      const res = await fetch(url, { method: "POST", headers, body: JSON.stringify({ skus }) });
       const j = await res.json();
       if (!res.ok && !j.results) throw new Error(j.error ?? `HTTP ${res.status}`);
       setResult(j as LsSyncResult);
@@ -61,20 +67,20 @@ export function LightspeedSkuSyncPanel({ compact = false }: { compact?: boolean 
         value={skus}
         onChange={(e) => setSkus(e.target.value)}
         placeholder={"One or more SKUs, separated by commas or new lines\ne.g. SY-10432, SY-10433"}
-        rows={3}
-        className="text-xs font-mono"
+        rows={linkToken ? 5 : 3}
+        className={linkToken ? "text-sm font-mono" : "text-xs font-mono"}
       />
       <div className="mt-2 flex items-center gap-2">
-        <Button size="sm" className="h-7 gap-1 text-xs" disabled={!skus.trim() || busy} onClick={() => void run()}>
+        <Button size="sm" className={linkToken ? "h-9 gap-1.5 text-sm" : "h-7 gap-1 text-xs"} disabled={!skus.trim() || busy} onClick={() => void run()}>
           {busy && <Loader2 className="h-3 w-3 animate-spin" />} Run SKU sync
         </Button>
-        <span className="text-[11px] text-muted-foreground">
+        <span className={linkToken ? "text-sm text-muted-foreground" : "text-[11px] text-muted-foreground"}>
           Looks up each SKU in Lightspeed, then creates or updates the matching item in the retail QuickBooks company.
         </span>
       </div>
       {result && (
         <div className="mt-2.5 max-h-64 overflow-y-auto rounded-md border border-border/50">
-          <table className="w-full text-xs">
+          <table className={cn("w-full", linkToken ? "text-sm" : "text-xs")}>
             <thead>
               <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground/60">
                 <th className="px-2 py-1.5">SKU</th>

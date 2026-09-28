@@ -106,6 +106,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: "Port Calls", module: "agency", icon: "anchor", screen: "port-calls" },
       { label: "Berth Billing", module: "finance", icon: "receipt-2", screen: "berth-billing", roles: ["global_admin"] },
       { label: "Orbit", module: "orbit", icon: "orbit", screen: "orbit" },
+      { label: "Orbit 2", module: "orbit", icon: "chart-donut", screen: "orbit2" },
       {
         // Captain's Portal triage — requests raised by client captains at /portal.
         label: "Client Requests",

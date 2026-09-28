@@ -6,7 +6,7 @@ import { storageRef, parseStorageRefOrPath } from '@/lib/signed-url'
 import { supabase } from '@/integrations/supabase/client'
 import { shrinkImage } from './image-shrink'
 import {
-  nextDeliveryNumber,
+  nextDeliveryNumber, DONE_STATUSES,
   type ShipSyncPackage, type ShipSyncDriver, type ShipSyncDeliveryNote, type ShipSyncDestination,
   type ShipSyncDeliverySchedule, type ShipSyncVehicle, type PackageStatus,
 } from './model'
@@ -213,23 +213,38 @@ export async function setNoteDriver(noteId: string, driverId: string | null): Pr
  *  delivered_at: a package coming off a note can't still carry a real
  *  delivery timestamp, or it ends up reading "In office" while delivered_at
  *  says otherwise — a silently contradictory, undetectable-in-UI state. */
+/** A package already Delivered / Delivered-TBI / Completed / Collected /
+ *  Refused is done — removing it from a note or deleting the note it was on
+ *  should only ever detach that link, never drag a finished package back
+ *  into the routing pool. Was unconditionally resetting status + delivered_at
+ *  on every done package too, which is what "delivered items keep returning
+ *  to in office" actually was. */
 export async function unassignPackage(id: string): Promise<void> {
-  const { data: pkg } = await db().from('shipsync_packages').select('warehouse_zone').eq('id', id).maybeSingle()
+  const { data: pkg } = await db().from('shipsync_packages').select('warehouse_zone, status').eq('id', id).maybeSingle()
+  if (pkg && DONE_STATUSES.includes(pkg.status as PackageStatus)) {
+    await patchPackage(id, { delivery_note_id: null, driver_id: null })
+    return
+  }
   const status: PackageStatus = pkg?.warehouse_zone ? 'in_storage' : 'in_office'
   await patchPackage(id, { delivery_note_id: null, driver_id: null, status, scan_out_time: null, delivered_at: null })
 }
 
-/** Delete a dispatched run: send all its parcels back to the routing pool, then
- *  remove the delivery note. Same status/delivered_at correctness as
- *  unassignPackage above, applied per-parcel since a route can span several
- *  boats with different warehouse states. */
+/** Delete a dispatched run: send its still-active parcels back to the routing
+ *  pool, then remove the delivery note. A parcel already Delivered /
+ *  Delivered-TBI / Completed / Collected / Refused only gets detached from
+ *  the note (its FK would otherwise dangle) — its status and delivered_at
+ *  are left alone, same reasoning as unassignPackage above. */
 export async function deleteRun(noteId: string): Promise<void> {
-  const { data: pkgs } = await db().from('shipsync_packages').select('id, warehouse_zone').eq('delivery_note_id', noteId)
-  const inStorageIds = (pkgs ?? []).filter((p: any) => p.warehouse_zone).map((p: any) => p.id)
-  const inOfficeIds = (pkgs ?? []).filter((p: any) => !p.warehouse_zone).map((p: any) => p.id)
+  const { data: pkgs } = await db().from('shipsync_packages').select('id, warehouse_zone, status').eq('delivery_note_id', noteId)
+  const active = (pkgs ?? []).filter((p: any) => !DONE_STATUSES.includes(p.status as PackageStatus))
+  const done = (pkgs ?? []).filter((p: any) => DONE_STATUSES.includes(p.status as PackageStatus))
+  const inStorageIds = active.filter((p: any) => p.warehouse_zone).map((p: any) => p.id)
+  const inOfficeIds = active.filter((p: any) => !p.warehouse_zone).map((p: any) => p.id)
+  const doneIds = done.map((p: any) => p.id)
   const baseReset = { delivery_note_id: null, driver_id: null, scan_out_time: null, driver_scanned: false, driver_scan_out_time: null, delivered_at: null }
   if (inStorageIds.length) await db().from('shipsync_packages').update({ ...baseReset, status: 'in_storage' as PackageStatus }).in('id', inStorageIds)
   if (inOfficeIds.length) await db().from('shipsync_packages').update({ ...baseReset, status: 'in_office' as PackageStatus }).in('id', inOfficeIds)
+  if (doneIds.length) await db().from('shipsync_packages').update({ delivery_note_id: null, driver_id: null }).in('id', doneIds)
   const { error } = await db().from('shipsync_delivery_notes').delete().eq('id', noteId)
   if (error) throw error
 }

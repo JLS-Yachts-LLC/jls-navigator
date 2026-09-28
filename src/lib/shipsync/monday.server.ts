@@ -18,6 +18,7 @@
  */
 import { createServerFn } from '@tanstack/react-start'
 import { supabaseAdmin } from '@/integrations/supabase/client.server'
+import { storageRef } from '@/lib/signed-url'
 
 const db = () => supabaseAdmin as any
 
@@ -216,6 +217,7 @@ const SCAN_OWNED_FIELDS = [
 function mergeOntoScanned(
   record: Record<string, unknown>,
   existingExtra: Record<string, any> | undefined,
+  existingStatus: string | undefined,
 ): Record<string, unknown> {
   const merged: Record<string, unknown> = { ...record }
 
@@ -223,6 +225,15 @@ function mergeOntoScanned(
   // absence of information, not a contradiction, and must not undo a delivery
   // the app has already recorded.
   if (merged.status === 'in_office') { delete merged.status; delete merged.delivered_at }
+  // Same protection as the Monday-id-matched branch below: once the office has
+  // moved a package past plain 'delivered' (Delivered - TBI, Completed,
+  // Collected, Refused, or it's mid-route), a re-sync must not put it back to
+  // 'delivered' just because this item still matches by AWB and Monday's own
+  // Date Delivered column is populated. This half of the AWB-matched path was
+  // missed when the byMondayId path got this same fix — packages matched by
+  // AWB (i.e. scanned in before ever being linked to a Monday item id) kept
+  // reverting Completed back to Delivered on every sync.
+  else if ((existingStatus ?? 'in_office') !== 'in_office') { delete merged.status }
 
   for (const key of SCAN_OWNED_FIELDS) {
     const v = merged[key]
@@ -393,7 +404,7 @@ async function importMondayShipmentsInner(_opts: { limit?: number } = {}): Promi
     if (existingId) {
       let updateRecord: Record<string, unknown> = record
       if (byAwb) {
-        updateRecord = mergeOntoScanned(record, extraById.get(existingId))
+        updateRecord = mergeOntoScanned(record, extraById.get(existingId), statusById.get(existingId))
         // Claim it, so two Monday items sharing a waybill can't both land here.
         idByBarcode.delete(awb)
       } else if (activeNoteByMonday.get(item.id)) {
@@ -533,6 +544,101 @@ export async function debugMondayBoard(): Promise<{ columns: string[]; totalItem
   const colById = new Map(columns.map((c) => [c.id, c] as const))
   const samples = items.slice(0, 8).map((it) => ({ __itemName: it.name, ...byTitle(it, colById) }))
   return { columns: columns.map((c) => c.title), totalItems: items.length, samples }
+}
+
+const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.heif', '.bmp'])
+
+interface BackfillPhotosResult {
+  ok: boolean
+  itemsScanned: number
+  itemsWithImageAsset: number
+  updated: number
+  skippedAlreadyHasPhoto: number
+  skippedNoMatchingRow: number
+  errors: number
+  dryRun: boolean
+  samples: string[]
+}
+
+/**
+ * Same backfill as the Import/Export boards' (see
+ * monday-import-board.server.ts for the full rationale): Monday has no
+ * dedicated photo column, so this pulls the first image-type asset off each
+ * item's Files column and copies it onto the matching shipsync_packages
+ * row's item_photo_url. Never overwrites a photo a row already has — most
+ * Local rows already carry one from the driver PWA, so this mainly fills in
+ * older/office-only rows that never got a scan.
+ */
+export async function backfillLocalBoardPhotos(dryRun: boolean): Promise<BackfillPhotosResult> {
+  const cfg = await getMondayConfig()
+
+  const items: { id: string; assets: { public_url: string; name: string; file_extension: string }[] }[] = []
+  const firstPage = await mondayGraphQL(
+    cfg.apiToken,
+    `query ($board: [ID!]) { boards (ids: $board) { items_page (limit: 100) { cursor items { id assets { public_url name file_extension } } } } }`,
+    { board: [cfg.boardId] },
+  )
+  let ip = firstPage?.boards?.[0]?.items_page
+  items.push(...(ip?.items ?? []))
+  let cursor: string | null = ip?.cursor ?? null
+  for (let page = 0; cursor && page < 100; page++) {
+    const next = await mondayGraphQL(
+      cfg.apiToken,
+      `query ($cursor: String!) { next_items_page (cursor: $cursor, limit: 100) { cursor items { id assets { public_url name file_extension } } } }`,
+      { cursor },
+    )
+    ip = next?.next_items_page
+    items.push(...(ip?.items ?? []))
+    cursor = ip?.cursor ?? null
+  }
+
+  const withImage = items
+    .map((it) => ({ id: it.id, asset: (it.assets ?? []).find((a) => IMAGE_EXTENSIONS.has((a.file_extension ?? '').toLowerCase())) }))
+    .filter((it): it is { id: string; asset: NonNullable<typeof it.asset> } => !!it.asset)
+
+  let updated = 0, skippedAlreadyHasPhoto = 0, skippedNoMatchingRow = 0, errors = 0
+  const samples: string[] = []
+
+  for (const { id: itemId, asset } of withImage) {
+    try {
+      const { data: rows } = await db()
+        .from('shipsync_packages')
+        .select('id, item_photo_url')
+        .eq('local_import', 'Local')
+        .contains('extra', { monday_item_id: itemId })
+        .limit(1)
+      const row = rows?.[0]
+      if (!row) { skippedNoMatchingRow++; continue }
+      if (row.item_photo_url) { skippedAlreadyHasPhoto++; continue }
+
+      if (dryRun) {
+        updated++
+        if (samples.length < 15) samples.push(`${itemId} -> ${row.id} would get "${asset.name}"`)
+        continue
+      }
+
+      const res = await fetch(asset.public_url)
+      if (!res.ok) { errors++; continue }
+      const bytes = await res.arrayBuffer()
+      const ext = (asset.file_extension || '.jpg').replace(/^\./, '').toLowerCase()
+      const path = `packages/${row.id}/item_${Date.now()}.${ext}`
+      const up = await supabaseAdmin.storage.from('shipsync').upload(path, bytes, {
+        upsert: true, contentType: `image/${ext === 'jpg' ? 'jpeg' : ext}`,
+      })
+      if (up.error) { errors++; continue }
+      const url = storageRef('shipsync', path)
+      await db().from('shipsync_packages').update({ item_photo_url: url }).eq('id', row.id)
+      updated++
+      if (samples.length < 15) samples.push(`${itemId} -> ${row.id} (${asset.name})`)
+    } catch {
+      errors++
+    }
+  }
+
+  return {
+    ok: true, itemsScanned: items.length, itemsWithImageAsset: withImage.length,
+    updated, skippedAlreadyHasPhoto, skippedNoMatchingRow, errors, dryRun, samples,
+  }
 }
 
 /**

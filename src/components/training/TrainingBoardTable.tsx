@@ -12,7 +12,7 @@
  * table, `groupBy` just isn't passed for them.
  */
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
-import { Loader2, ChevronDown, ChevronRight, Plus, Trash2 } from "lucide-react";
+import { Loader2, ChevronDown, ChevronRight, Plus, Trash2, Paperclip } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -62,6 +62,7 @@ export interface TrainingRow { id: string; [key: string]: any }
 
 export function TrainingBoardTable({
   rows, columns, groupBy, groupLabels, onPatch, onCreate, onDelete, newRowLabel = "name",
+  onOpenFiles, fileCounts,
 }: {
   rows: TrainingRow[];
   columns: TrainingCol[];
@@ -74,6 +75,10 @@ export function TrainingBoardTable({
   onDelete: (id: string) => Promise<void>;
   /** Column key the "Add" row's free-text input writes to (almost always name/full_name). */
   newRowLabel?: string;
+  /** Give each row a paperclip that opens its files. Omit for no files column. */
+  onOpenFiles?: (row: TrainingRow) => void;
+  /** How many files each row holds, keyed by row id — the badge on the clip. */
+  fileCounts?: Record<string, number>;
 }) {
   const [savingCell, setSavingCell] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -112,7 +117,9 @@ export function TrainingBoardTable({
     await onCreate(name, group);
   }
 
-  const colCount = columns.length + 2; // + delete button + leading spacer where relevant
+  // + delete button + leading spacer where relevant, and the files clip when asked
+  // for — the group-header colspan has to grow with it or the header stops short.
+  const colCount = columns.length + 2 + (onOpenFiles ? 1 : 0);
 
   function renderCell(row: TrainingRow, col: TrainingCol) {
     const value = row[col.key];
@@ -183,6 +190,7 @@ export function TrainingBoardTable({
                 {!isCollapsed && visible.map((row) => (
                   <tr key={row.id} className="shadow-[inset_0_-1px_0_0_color-mix(in_oklab,var(--border)_40%,transparent)] hover:bg-accent/10">
                     {columns.map((c) => <td key={c.key} className={cn("overflow-hidden px-1 py-0.5", c.width)}>{renderCell(row, c)}</td>)}
+                    {onOpenFiles && <RowFilesCell count={fileCounts?.[row.id] ?? 0} onOpen={() => onOpenFiles(row)} />}
                     <RowDeleteCell onDelete={() => onDelete(row.id)} />
                   </tr>
                 ))}
@@ -198,6 +206,7 @@ export function TrainingBoardTable({
               {rows.map((row) => (
                 <tr key={row.id} className="shadow-[inset_0_-1px_0_0_color-mix(in_oklab,var(--border)_40%,transparent)] hover:bg-accent/10">
                   {columns.map((c) => <td key={c.key} className={cn("overflow-hidden px-1 py-0.5", c.width)}>{renderCell(row, c)}</td>)}
+                  {onOpenFiles && <RowFilesCell count={fileCounts?.[row.id] ?? 0} onOpen={() => onOpenFiles(row)} />}
                   <RowDeleteCell onDelete={() => onDelete(row.id)} />
                 </tr>
               ))}
@@ -209,6 +218,30 @@ export function TrainingBoardTable({
         </tbody>
       </table>
     </div>
+  );
+}
+
+/**
+ * The paperclip on a row, with the number of files behind it. A record that
+ * carries documents then reads differently from one that does not, without
+ * anyone having to open it to find out.
+ */
+function RowFilesCell({ count, onOpen }: { count: number; onOpen: () => void }) {
+  const label = count ? `${count} file${count === 1 ? "" : "s"}` : "Attach a file";
+  return (
+    <td className="px-1 py-0.5">
+      <Button
+        variant="ghost"
+        size="sm"
+        title={label}
+        aria-label={label}
+        onClick={onOpen}
+        className={cn("h-7 gap-1 px-1.5", count ? "text-primary" : "text-muted-foreground/40 hover:text-foreground")}
+      >
+        <Paperclip className="h-3.5 w-3.5" />
+        {count > 0 && <span className="text-[12px] font-semibold tabular-nums">{count}</span>}
+      </Button>
+    </td>
   );
 }
 

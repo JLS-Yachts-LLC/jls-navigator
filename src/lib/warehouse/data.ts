@@ -7,7 +7,10 @@ import { supabase } from '@/integrations/supabase/client'
 
 const db = () => supabase as any
 
-export type Zone = 'A' | 'B' | 'C' | 'D' | 'E'
+/** Zone used to be a fixed A–E literal; the client asked to be able to add
+ *  their own zones, so it's now open-ended text (validated at the DB layer
+ *  instead of a hardcoded check constraint — see the 20260918 migration). */
+export type Zone = string
 export type ManualStatus = 'Stored' | 'Checked Out' | 'Returned' | 'Disposed' | 'Completed'
 export type PackageContentManualStatus = ManualStatus
 export interface WarehouseDoc { name: string; url: string }

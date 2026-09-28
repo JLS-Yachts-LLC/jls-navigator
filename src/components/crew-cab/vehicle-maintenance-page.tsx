@@ -7,6 +7,7 @@
  * damage form (bottom sheet on phones, side panel on desktop). The model
  * reshapes to the vehicle's body type — coupe, sedan, estate, pickup or van.
  */
+import { guardUploadFile, uploadContentType } from "@/lib/upload-guard";
 import { SignedAnchor } from "@/components/ui/signed-file";
 import { storageRef } from "@/lib/signed-url";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -237,8 +238,10 @@ export function VehicleMaintenancePage() {
     try {
       let photoUrl: string | null = null;
       if (photo) {
+        if (!guardUploadFile(photo, { accepts: "Use a photo." })) { setSaving(false); return; }
         const path = `vehicles/damage/${vehicle.id}/${Date.now()}-${photo.name}`;
-        const { error } = await supabase.storage.from("permit-documents").upload(path, photo, { upsert: true });
+        const { error } = await supabase.storage.from("permit-documents")
+          .upload(path, photo, { upsert: true, contentType: uploadContentType(photo) });
         if (error) throw error;
         photoUrl = storageRef("permit-documents", path);
       }
@@ -307,8 +310,10 @@ export function VehicleMaintenancePage() {
     try {
       let photoUrl: string | null = null;
       if (srPhoto) {
+        if (!guardUploadFile(srPhoto, { accepts: "Use a photo." })) { setSaving(false); return; }
         const path = `vehicles/service-requests/${vehicle.id}/${Date.now()}-${srPhoto.name}`;
-        const { error } = await supabase.storage.from("permit-documents").upload(path, srPhoto, { upsert: true });
+        const { error } = await supabase.storage.from("permit-documents")
+          .upload(path, srPhoto, { upsert: true, contentType: uploadContentType(srPhoto) });
         if (error) throw error;
         photoUrl = storageRef("permit-documents", path);
       }

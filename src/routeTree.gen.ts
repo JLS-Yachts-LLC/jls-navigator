@@ -13,6 +13,7 @@ import { Route as PortalRouteImport } from './routes/portal'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as SkuSyncTokenRouteImport } from './routes/sku-sync.$token'
 import { Route as SignTokenRouteImport } from './routes/sign.$token'
 import { Route as QbUploadTokenRouteImport } from './routes/qb-upload.$token'
 import { Route as LegalQuickbooksDisconnectedRouteImport } from './routes/legal.quickbooks-disconnected'
@@ -35,6 +36,7 @@ import { Route as AppProvisioningRouteImport } from './routes/_app.provisioning'
 import { Route as AppProcurementRouteImport } from './routes/_app.procurement'
 import { Route as AppPolarisRedesignRouteImport } from './routes/_app.polaris-redesign'
 import { Route as AppPackagesRouteImport } from './routes/_app.packages'
+import { Route as AppOrbit2RouteImport } from './routes/_app.orbit2'
 import { Route as AppOrbitRouteImport } from './routes/_app.orbit'
 import { Route as AppMyFleetRouteImport } from './routes/_app.my-fleet'
 import { Route as AppMfaSetupRouteImport } from './routes/_app.mfa-setup'
@@ -175,6 +177,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SkuSyncTokenRoute = SkuSyncTokenRouteImport.update({
+  id: '/sku-sync/$token',
+  path: '/sku-sync/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SignTokenRoute = SignTokenRouteImport.update({
   id: '/sign/$token',
   path: '/sign/$token',
@@ -286,6 +293,11 @@ const AppPolarisRedesignRoute = AppPolarisRedesignRouteImport.update({
 const AppPackagesRoute = AppPackagesRouteImport.update({
   id: '/packages',
   path: '/packages',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppOrbit2Route = AppOrbit2RouteImport.update({
+  id: '/orbit2',
+  path: '/orbit2',
   getParentRoute: () => AppRoute,
 } as any)
 const AppOrbitRoute = AppOrbitRouteImport.update({
@@ -954,6 +966,7 @@ export interface FileRoutesByFullPath {
   '/mfa-setup': typeof AppMfaSetupRoute
   '/my-fleet': typeof AppMyFleetRoute
   '/orbit': typeof AppOrbitRouteWithChildren
+  '/orbit2': typeof AppOrbit2Route
   '/packages': typeof AppPackagesRouteWithChildren
   '/polaris-redesign': typeof AppPolarisRedesignRoute
   '/procurement': typeof AppProcurementRoute
@@ -976,6 +989,7 @@ export interface FileRoutesByFullPath {
   '/legal/quickbooks-disconnected': typeof LegalQuickbooksDisconnectedRoute
   '/qb-upload/$token': typeof QbUploadTokenRoute
   '/sign/$token': typeof SignTokenRoute
+  '/sku-sync/$token': typeof SkuSyncTokenRoute
   '/admin/audit': typeof AppAdminAuditRoute
   '/admin/organisations': typeof AppAdminOrganisationsRoute
   '/admin/permissions': typeof AppAdminPermissionsRoute
@@ -1095,6 +1109,7 @@ export interface FileRoutesByTo {
   '/mail-export': typeof AppMailExportRoute
   '/mfa-setup': typeof AppMfaSetupRoute
   '/my-fleet': typeof AppMyFleetRoute
+  '/orbit2': typeof AppOrbit2Route
   '/polaris-redesign': typeof AppPolarisRedesignRoute
   '/procurement': typeof AppProcurementRoute
   '/provisioning': typeof AppProvisioningRoute
@@ -1112,6 +1127,7 @@ export interface FileRoutesByTo {
   '/legal/quickbooks-disconnected': typeof LegalQuickbooksDisconnectedRoute
   '/qb-upload/$token': typeof QbUploadTokenRoute
   '/sign/$token': typeof SignTokenRoute
+  '/sku-sync/$token': typeof SkuSyncTokenRoute
   '/admin/audit': typeof AppAdminAuditRoute
   '/admin/organisations': typeof AppAdminOrganisationsRoute
   '/admin/permissions': typeof AppAdminPermissionsRoute
@@ -1235,6 +1251,7 @@ export interface FileRoutesById {
   '/_app/mfa-setup': typeof AppMfaSetupRoute
   '/_app/my-fleet': typeof AppMyFleetRoute
   '/_app/orbit': typeof AppOrbitRouteWithChildren
+  '/_app/orbit2': typeof AppOrbit2Route
   '/_app/packages': typeof AppPackagesRouteWithChildren
   '/_app/polaris-redesign': typeof AppPolarisRedesignRoute
   '/_app/procurement': typeof AppProcurementRoute
@@ -1257,6 +1274,7 @@ export interface FileRoutesById {
   '/legal/quickbooks-disconnected': typeof LegalQuickbooksDisconnectedRoute
   '/qb-upload/$token': typeof QbUploadTokenRoute
   '/sign/$token': typeof SignTokenRoute
+  '/sku-sync/$token': typeof SkuSyncTokenRoute
   '/_app/admin/audit': typeof AppAdminAuditRoute
   '/_app/admin/organisations': typeof AppAdminOrganisationsRoute
   '/_app/admin/permissions': typeof AppAdminPermissionsRoute
@@ -1384,6 +1402,7 @@ export interface FileRouteTypes {
     | '/mfa-setup'
     | '/my-fleet'
     | '/orbit'
+    | '/orbit2'
     | '/packages'
     | '/polaris-redesign'
     | '/procurement'
@@ -1406,6 +1425,7 @@ export interface FileRouteTypes {
     | '/legal/quickbooks-disconnected'
     | '/qb-upload/$token'
     | '/sign/$token'
+    | '/sku-sync/$token'
     | '/admin/audit'
     | '/admin/organisations'
     | '/admin/permissions'
@@ -1525,6 +1545,7 @@ export interface FileRouteTypes {
     | '/mail-export'
     | '/mfa-setup'
     | '/my-fleet'
+    | '/orbit2'
     | '/polaris-redesign'
     | '/procurement'
     | '/provisioning'
@@ -1542,6 +1563,7 @@ export interface FileRouteTypes {
     | '/legal/quickbooks-disconnected'
     | '/qb-upload/$token'
     | '/sign/$token'
+    | '/sku-sync/$token'
     | '/admin/audit'
     | '/admin/organisations'
     | '/admin/permissions'
@@ -1664,6 +1686,7 @@ export interface FileRouteTypes {
     | '/_app/mfa-setup'
     | '/_app/my-fleet'
     | '/_app/orbit'
+    | '/_app/orbit2'
     | '/_app/packages'
     | '/_app/polaris-redesign'
     | '/_app/procurement'
@@ -1686,6 +1709,7 @@ export interface FileRouteTypes {
     | '/legal/quickbooks-disconnected'
     | '/qb-upload/$token'
     | '/sign/$token'
+    | '/sku-sync/$token'
     | '/_app/admin/audit'
     | '/_app/admin/organisations'
     | '/_app/admin/permissions'
@@ -1786,6 +1810,7 @@ export interface RootRouteChildren {
   LegalQuickbooksDisconnectedRoute: typeof LegalQuickbooksDisconnectedRoute
   QbUploadTokenRoute: typeof QbUploadTokenRoute
   SignTokenRoute: typeof SignTokenRoute
+  SkuSyncTokenRoute: typeof SkuSyncTokenRoute
   FormsFillTokenRoute: typeof FormsFillTokenRoute
 }
 
@@ -1817,6 +1842,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sku-sync/$token': {
+      id: '/sku-sync/$token'
+      path: '/sku-sync/$token'
+      fullPath: '/sku-sync/$token'
+      preLoaderRoute: typeof SkuSyncTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sign/$token': {
@@ -1971,6 +2003,13 @@ declare module '@tanstack/react-router' {
       path: '/packages'
       fullPath: '/packages'
       preLoaderRoute: typeof AppPackagesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/orbit2': {
+      id: '/_app/orbit2'
+      path: '/orbit2'
+      fullPath: '/orbit2'
+      preLoaderRoute: typeof AppOrbit2RouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/orbit': {
@@ -3173,6 +3212,7 @@ interface AppRouteChildren {
   AppMfaSetupRoute: typeof AppMfaSetupRoute
   AppMyFleetRoute: typeof AppMyFleetRoute
   AppOrbitRoute: typeof AppOrbitRouteWithChildren
+  AppOrbit2Route: typeof AppOrbit2Route
   AppPackagesRoute: typeof AppPackagesRouteWithChildren
   AppPolarisRedesignRoute: typeof AppPolarisRedesignRoute
   AppProcurementRoute: typeof AppProcurementRoute
@@ -3246,6 +3286,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppMfaSetupRoute: AppMfaSetupRoute,
   AppMyFleetRoute: AppMyFleetRoute,
   AppOrbitRoute: AppOrbitRouteWithChildren,
+  AppOrbit2Route: AppOrbit2Route,
   AppPackagesRoute: AppPackagesRouteWithChildren,
   AppPolarisRedesignRoute: AppPolarisRedesignRoute,
   AppProcurementRoute: AppProcurementRoute,
@@ -3298,6 +3339,7 @@ const rootRouteChildren: RootRouteChildren = {
   LegalQuickbooksDisconnectedRoute: LegalQuickbooksDisconnectedRoute,
   QbUploadTokenRoute: QbUploadTokenRoute,
   SignTokenRoute: SignTokenRoute,
+  SkuSyncTokenRoute: SkuSyncTokenRoute,
   FormsFillTokenRoute: FormsFillTokenRoute,
 }
 export const routeTree = rootRouteImport

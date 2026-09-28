@@ -57,6 +57,7 @@ import { runScheduledEmail, DEFAULT_TZ } from './lib/automation-schedule.server'
 import { visaReportGenerateHandler } from './routes/api.visa.report-generate'
 import { visaReportSendHandler } from './routes/api.visa.report-send'
 import { visaVesselPrefsHandler } from './routes/api.visa.vessel-prefs'
+import { orbit2NotifyHandler } from './routes/api.orbit2.notify'
 import { nativeLanguageResolveDefaultHandler } from './routes/api.native-language.resolve-default'
 import { nativeLanguageSaveHandler } from './routes/api.native-language.save'
 import { runWeeklyVisaReports } from './lib/visa-reporting/runWeeklyVisaReports.server'
@@ -209,6 +210,19 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
     }
   }
 
+  // Manual Yacht Shipments sync: `?run=yacht-shipments-sync` pulls both Monday
+  // boards (Import + Export) into yacht_shipments now — same as the hourly cron
+  // and the board's "Sync from Monday" button.
+  if (url.searchParams.get('run') === 'yacht-shipments-sync') {
+    try {
+      const { importYachtShipments } = await import('./lib/yacht-shipments/monday.server')
+      const r = await importYachtShipments()
+      return new Response(JSON.stringify(r), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
+  }
+
   if (url.searchParams.get('run') === 'shipsync-proximity-check') {
     try {
       const { checkDeliveryProximity } = await import('./lib/shipsync/proximity-alert.server')
@@ -301,6 +315,19 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
     }
   }
 
+  // Read-only diagnostic: `?run=storage-debug-buckets` lists real Supabase
+  // Storage buckets, to confirm whether `shipsync` still exists under that
+  // exact id after the private-bucket migration's manual step. Writes nothing.
+  if (url.searchParams.get('run') === 'storage-debug-buckets') {
+    try {
+      const { debugStorageBuckets } = await import('./lib/shipsync/storage-debug.server')
+      const r = await debugStorageBuckets()
+      return new Response(JSON.stringify(r), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
+  }
+
   // Read-only diagnostic: `?run=monday-debug-import-assets` checks whether
   // Monday's API actually returns real file/image asset data (not just text)
   // for items on the Import board — scoping step before building a real
@@ -326,6 +353,80 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
       const { backfillImportBoardPhotos } = await import('./lib/shipsync/monday-import-board.server')
       const r = await backfillImportBoardPhotos(dryRun)
       return new Response(JSON.stringify(r), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
+  }
+
+  // Same backfill, Export board. `?run=monday-backfill-export-photos&dryRun=1`
+  // reports without writing; `&dryRun=0` actually writes.
+  if (url.searchParams.get('run') === 'monday-backfill-export-photos') {
+    try {
+      const dryRun = url.searchParams.get('dryRun') !== '0' && url.searchParams.get('dryRun') !== 'false'
+      const { backfillExportBoardPhotos } = await import('./lib/shipsync/monday-export-board.server')
+      const r = await backfillExportBoardPhotos(dryRun)
+      return new Response(JSON.stringify(r), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
+  }
+
+  // Same backfill, Local board. `?run=monday-backfill-local-photos&dryRun=1`
+  // reports without writing; `&dryRun=0` actually writes.
+  if (url.searchParams.get('run') === 'monday-backfill-local-photos') {
+    try {
+      const dryRun = url.searchParams.get('dryRun') !== '0' && url.searchParams.get('dryRun') !== 'false'
+      const { backfillLocalBoardPhotos } = await import('./lib/shipsync/monday.server')
+      const r = await backfillLocalBoardPhotos(dryRun)
+      return new Response(JSON.stringify(r), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
+  }
+
+  // One-off cleanup: `?run=local-bulk-complete&dryRun=1` (default) reports
+  // which Local-board "Delivered" packages would move to Completed (delivered
+  // before 1 Sept 2026, or already has an invoice number) without writing;
+  // `&dryRun=0` actually flips their status.
+  if (url.searchParams.get('run') === 'local-bulk-complete') {
+    try {
+      const dryRun = url.searchParams.get('dryRun') !== '0' && url.searchParams.get('dryRun') !== 'false'
+      const { bulkCompleteLocalDelivered } = await import('./lib/shipsync/local-bulk-complete.server')
+      const r = await bulkCompleteLocalDelivered(dryRun)
+      return new Response(JSON.stringify(r), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
+  }
+
+  // Read-only diagnostic (redeploy nudge): `?run=local-bulk-audit` — sanity-checks the
+  // local-bulk-complete run: counts shipsync_packages by (local_import,
+  // status) so we can tell whether Import/Export/EDAS rows were touched by
+  // mistake, and `&ids=<comma-separated uuids>` reports the CURRENT status
+  // of specific rows. Writes nothing.
+  if (url.searchParams.get('run') === 'local-bulk-audit') {
+    try {
+      const { supabaseAdmin } = await import('./integrations/supabase/client.server')
+      const sb = supabaseAdmin as any
+      const idsParam = url.searchParams.get('ids')
+      if (idsParam) {
+        const ids = idsParam.split(',').map((s) => s.trim()).filter(Boolean)
+        const { data, error } = await sb.from('shipsync_packages').select('id, local_import, status, delivered_at, invoice_no, updated_at').in('id', ids)
+        return new Response(JSON.stringify({ ok: true, rows: data ?? [], error: error?.message ?? null }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }
+      const counts: Record<string, Record<string, number>> = {}
+      const PAGE = 1000
+      for (let offset = 0; ; offset += PAGE) {
+        const { data, error } = await sb.from('shipsync_packages').select('local_import, status').range(offset, offset + PAGE - 1)
+        if (error) throw new Error(error.message)
+        for (const r of data ?? []) {
+          const li = r.local_import ?? '(null)'
+          counts[li] = counts[li] ?? {}
+          counts[li][r.status] = (counts[li][r.status] ?? 0) + 1
+        }
+        if (!data || data.length < PAGE) break
+      }
+      return new Response(JSON.stringify({ ok: true, counts }), { status: 200, headers: { 'Content-Type': 'application/json' } })
     } catch (e) {
       return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
     }
@@ -1080,6 +1181,11 @@ export default {
       return visaVesselPrefsHandler(request)
     }
 
+    // Orbit 2: client acknowledgement (email + WhatsApp) once a team is assigned
+    if (url.pathname === '/api/orbit2/notify' && request.method === 'POST') {
+      return orbit2NotifyHandler(request)
+    }
+
     // ── Admin Panel API (TanStack API routes aren't dispatched by the CF handler,
     //    so each is wired here). Order: more-specific paths first. ──
     if (url.pathname === '/api/admin/audit/export' && request.method === 'GET') {
@@ -1274,6 +1380,17 @@ export default {
           .then(({ importMondayImportBoard }) => importMondayImportBoard())
           .then((r) => console.log(`[shipsync-import-board-cron] synced=${r.synced} errors=${r.errors}`))
           .catch((e) => console.error('[shipsync-import-board-cron] error:', e instanceof Error ? e.message : String(e)))
+      )
+
+      // ── Hourly: mirror the Monday.com Yacht Shipments Import + Export boards
+      //    into yacht_shipments (read-only). Until Sept 2026 this only ran from
+      //    the board's "Sync from Monday" button, so the dashboard drifted weeks
+      //    behind Monday. Skips itself if a manual sync is mid-flight. ──
+      ctx.waitUntil(
+        import('./lib/yacht-shipments/monday.server')
+          .then(({ importYachtShipments }) => importYachtShipments())
+          .then((r) => console.log(`[yacht-shipments-cron] ${r.skipped ? 'skipped (already running)' : `synced=${r.synced} errors=${r.errors} pruned=${r.pruned}`}`))
+          .catch((e) => console.error('[yacht-shipments-cron] error:', e instanceof Error ? e.message : String(e)))
       )
 
       // ── Hourly: QuickBooks pipeline health monitor — broken/expiring company
