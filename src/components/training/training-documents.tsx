@@ -146,6 +146,49 @@ export function TrainingDocuments({ yachtId }: { yachtId: string | null }) {
   const childFolders = folders.filter((f) => (f.parent_id ?? null) === here);
   const childDocs = docs.filter((d) => (d.folder_id ?? null) === here);
 
+  // ── Search ────────────────────────────────────────────────────────────────
+  // Searches the whole library, not just the folder you are in: with well over a
+  // thousand documents across nested folders, "find it" usually means "I don't know which
+  // folder it's in". Every word typed must appear somewhere in the name, in any
+  // order, so "hot work permit" still finds "Permit – Hot Work (Deck)".
+  const [query, setQuery] = useState("");
+  const searching = query.trim().length > 0;
+  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const matches = (name: string | null | undefined) => {
+    const n = (name ?? "").toLowerCase();
+    return words.every((w) => n.includes(w));
+  };
+  /** Enough to find anything; a one-letter search matching 1,000 rows is not a result list. */
+  const SEARCH_LIMIT = 200;
+  const folderHits = searching ? folders.filter((f) => matches(f.name)) : [];
+  const docHits = searching
+    ? docs.filter((d) => matches(d.title) || matches(d.file_name))
+    : [];
+  const hitCount = folderHits.length + docHits.length;
+
+  /** Folder ids from the top level down to this folder — what `path` expects. */
+  function ancestry(folderId: string | null): string[] {
+    const out: string[] = [];
+    const seen = new Set<string>();
+    let cur = folderId;
+    while (cur && !seen.has(cur)) {
+      seen.add(cur);
+      out.unshift(cur);
+      cur = folders.find((f) => f.id === cur)?.parent_id ?? null;
+    }
+    return out;
+  }
+
+  /** Leave the search and open this folder, so the result can be seen in place. */
+  function openFolder(folderId: string | null) {
+    setPath(ancestry(folderId));
+    setQuery("");
+  }
+
+  /** "Folder / Subfolder", or "All documents" for the top level. */
+  const locationOf = (folderId: string | null) =>
+    folderId ? folderPath(folderId, folders).split("/").join(" / ") : "All documents";
+
   /**
    * Add files, recreating any folder structure they carry.
    *
@@ -486,6 +529,14 @@ export function TrainingDocuments({ yachtId }: { yachtId: string | null }) {
       {/* Toolbar: where you are, and the two things you can do. */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, fontSize: "var(--pds-fs-body)" }}>
+          {searching ? (
+            <span style={{ color: "var(--pds-text-secondary)" }}>
+              {hitCount === 0
+                ? "No matches"
+                : `${hitCount} match${hitCount === 1 ? "" : "es"} across all folders`}
+            </span>
+          ) : (
+          <>
           <button onClick={() => setPath([])}
             style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: path.length ? "var(--pds-accent)" : "var(--pds-text-secondary)" }}>
             All documents
@@ -500,8 +551,30 @@ export function TrainingDocuments({ yachtId }: { yachtId: string | null }) {
               </button>
             </span>
           ))}
+          </>
+          )}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          {/* Search by name — sits before the add buttons, where the eye lands. */}
+          <div style={{ position: "relative" }}>
+            <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", display: "flex", pointerEvents: "none" }}>
+              <TIcon name="search" size={14} color="var(--pds-text-secondary)" />
+            </span>
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Escape") setQuery(""); }}
+              placeholder="Search documents by name…"
+              aria-label="Search documents by name"
+              className="h-9 w-64 pl-8 pr-8"
+            />
+            {searching && (
+              <button onClick={() => setQuery("")} title="Clear search" aria-label="Clear search"
+                style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", padding: 2, cursor: "pointer", display: "flex", color: "var(--pds-text-secondary)" }}>
+                <TIcon name="x" size={14} />
+              </button>
+            )}
+          </div>
           <input ref={fileRef} type="file" multiple className="hidden" onChange={onPickFiles} />
           {/* webkitdirectory turns this into a folder picker. Not in the React
               types, and unsupported on Firefox — hence the plain multi-file
@@ -551,6 +624,73 @@ export function TrainingDocuments({ yachtId }: { yachtId: string | null }) {
         <div style={{ display: "flex", justifyContent: "center", padding: 40 }}>
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>
+      ) : searching ? (
+        hitCount === 0 ? (
+          <div style={{ textAlign: "center", padding: "36px 16px" }}>
+            <TIcon name="search" size={36} color="rgba(69,144,186,0.35)" style={{ display: "block", margin: "0 auto 12px" }} />
+            <p style={{ fontSize: "var(--pds-fs-body)", color: "var(--pds-text-secondary)", margin: "0 0 4px" }}>
+              Nothing called “{query.trim()}”.
+            </p>
+            <p style={{ fontSize: "var(--pds-fs-label)", color: "var(--pds-text-secondary)", margin: 0 }}>
+              Try fewer or shorter words — every word has to appear in the name.
+            </p>
+          </div>
+        ) : (
+          <div>
+            {/* Each result says where it lives, and that line opens the folder —
+                a search that finds a file but not its home only half helps. */}
+            {folderHits.slice(0, SEARCH_LIMIT).map((f) => {
+              const n = countIn(f.id);
+              return (
+                <div key={f.id} style={rowStyle} className="group">
+                  <button onClick={() => openFolder(f.id)}
+                    style={{ display: "flex", alignItems: "center", gap: 12, background: "none", border: "none", padding: 0, cursor: "pointer", flex: 1, minWidth: 0, textAlign: "left" }}>
+                    <TIcon name="folder" size={18} color="var(--pds-gold-light)" />
+                    <span style={{ minWidth: 0 }}>
+                      <span style={{ ...nameStyle, display: "block" }}>{f.name}</span>
+                      <span style={{ ...subStyle, display: "block" }}>
+                        In {locationOf(f.parent_id ?? null)} · {n === 0 ? "empty" : `${n} document${n === 1 ? "" : "s"}`}
+                      </span>
+                    </span>
+                  </button>
+                  <RowMenu target={{ kind: "folder", folder: f }} />
+                </div>
+              );
+            })}
+
+            {docHits.slice(0, Math.max(0, SEARCH_LIMIT - folderHits.length)).map((d) => (
+              <div key={d.id} style={rowStyle} className="group">
+                <TIcon name="file-description" size={18} color="var(--pds-text-secondary)" />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <SignedAnchor stored={d.file_url} style={{ ...nameStyle, display: "block", textDecoration: "none" }}>
+                    {d.title ?? d.file_name ?? "Document"}
+                  </SignedAnchor>
+                  <span style={{ ...subStyle, display: "block" }}>
+                    {working?.id === d.id ? working.label : (
+                      <>
+                        In{" "}
+                        <button onClick={() => openFolder(d.folder_id ?? null)} title="Open this folder"
+                          style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "var(--pds-accent)", font: "inherit" }}>
+                          {locationOf(d.folder_id ?? null)}
+                        </button>
+                        {" · "}Added {new Date(d.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                      </>
+                    )}
+                  </span>
+                </div>
+                {working?.id === d.id
+                  ? <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--pds-text-secondary)", margin: 4 }} />
+                  : <RowMenu target={{ kind: "doc", doc: d }} />}
+              </div>
+            ))}
+
+            {hitCount > SEARCH_LIMIT && (
+              <p style={{ fontSize: "var(--pds-fs-label)", color: "var(--pds-text-secondary)", padding: "12px 0 0", margin: 0 }}>
+                Showing the first {SEARCH_LIMIT} of {hitCount} — add another word to narrow it down.
+              </p>
+            )}
+          </div>
+        )
       ) : childFolders.length === 0 && childDocs.length === 0 ? (
         <div style={{ textAlign: "center", padding: "36px 16px" }}>
           <TIcon name="folder" size={40} color="rgba(69,144,186,0.35)" style={{ display: "block", margin: "0 auto 12px" }} />
