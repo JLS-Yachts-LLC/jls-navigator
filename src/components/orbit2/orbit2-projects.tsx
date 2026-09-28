@@ -24,7 +24,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { SignedImage } from "@/components/ui/signed-file";
 import {
-  ORBIT2_CATEGORIES, ORBIT2_STATUSES, MOBILE_OWNED_STATUSES, QUANTITY_UNITS,
+  ORBIT2_CATEGORIES, ORBIT2_STATUSES, MOBILE_OWNED_STATUSES, ADMIN_ONLY_STATUSES, QUANTITY_UNITS, isComplete,
   statusColor, type Orbit2RecordType,
 } from "./orbit2-constants";
 import {
@@ -428,7 +428,7 @@ function RecordTable({
 /**
  * The status dropdown, colour-coded.
  *
- * "Working On It" and "Complete" are what the field crew reports from the mobile
+ * "Working On It" and "Complete - Team" are what the field crew reports from the mobile
  * app. A non-admin can still see them on a record that has reached them — they
  * just cannot select them, so the web view never contradicts what the crew said.
  */
@@ -437,22 +437,36 @@ export function StatusSelect({
 }: { value: string; isAdmin: boolean; onChange: (v: string) => void; className?: string }) {
   // Mirrors orbit2_guard_status() exactly, so the menu never offers a change the
   // database will refuse:
-  //   - "Working On It" / "Complete" are the crew's (Attend / Done); an admin
-  //     may set them here as an override.
-  //   - A Complete job can only be reopened by an admin.
+  //   - "Working On It" / "Complete - Team" are the crew's (Attend / Done); an
+  //     admin may set them here as an override.
+  //   - Re-assigned and the two invoicing stages are admin-only.
+  //   - Once a job is complete, only an admin can move it on or reopen it.
+  const crewOwned = (s: string) => MOBILE_OWNED_STATUSES.includes(s);
+  const adminOnly = (s: string) => ADMIN_ONLY_STATUSES.includes(s);
   const locked = (s: string) =>
-    !isAdmin && s !== value && (MOBILE_OWNED_STATUSES.includes(s) || value === "Complete");
+    !isAdmin && s !== value && (crewOwned(s) || adminOnly(s) || isComplete(value));
 
   function pick(next: string) {
     if (next === value) return;
-    // An override is on the record (the database writes it to Remarks) and
-    // "Complete" stamps the completion time — worth one deliberate click.
-    if (isAdmin && MOBILE_OWNED_STATUSES.includes(next)
-      && !confirm(`Set "${next}" as an admin override?\n\nThe field crew normally set this from the mobile app. The override is recorded in Remarks under your name.`)) {
+    // Worth one deliberate click each: an override is on the record, and
+    // Re-assign sends the job back to the crew and clears its completion time.
+    if (isAdmin && crewOwned(next)
+      && !confirm(`Set "${next}" as an admin override?\n\nThe field crew normally set this from the mobile app. The change is recorded in Remarks under your name.`)) {
+      return;
+    }
+    if (isAdmin && next === "Re-assigned"
+      && !confirm("Re-assign this job?\n\nIt goes back into the assigned crew's mobile app for them to Attend again, and its Work Completion time is cleared until they press Done. Change Assign Team first if someone else should do it.")) {
       return;
     }
     onChange(next);
   }
+
+  const suffix = (s: string) => {
+    if (s === value) return "";
+    if (crewOwned(s)) return isAdmin ? " — admin override" : " (mobile app)";
+    if (!isAdmin && (adminOnly(s) || isComplete(value))) return " (admin only)";
+    return "";
+  };
 
   return (
     <select
@@ -464,9 +478,7 @@ export function StatusSelect({
     >
       {ORBIT2_STATUSES.map((s) => (
         <option key={s} value={s} className="bg-background text-foreground" disabled={locked(s)}>
-          {s}
-          {s !== value && MOBILE_OWNED_STATUSES.includes(s) ? (isAdmin ? " — admin override" : " (mobile app)") : ""}
-          {s !== value && !MOBILE_OWNED_STATUSES.includes(s) && value === "Complete" && !isAdmin ? " (admin only)" : ""}
+          {s}{suffix(s)}
         </option>
       ))}
     </select>

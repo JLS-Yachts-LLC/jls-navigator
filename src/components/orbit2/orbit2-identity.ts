@@ -2,7 +2,7 @@
  * Orbit 2 — who is using the module, and what they are allowed to override.
  *
  * Two things depend on this: Remarks and Team Comments stamp the author's name,
- * and the admin-only controls (setting "Working On It" / "Complete" from the
+ * and the admin-only controls (setting "Working On It" / "Complete - Team" from the
  * desktop, correcting a Remark) appear only for an Orbit 2 admin.
  */
 import { useEffect, useState } from "react";

@@ -11,7 +11,7 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchAllRows } from "@/lib/fetch-all";
 import {
-  CLOSED_STATUSES, ORBIT2_CATEGORIES, type Orbit2RecordType,
+  CLOSED_STATUSES, ORBIT2_CATEGORIES, isComplete, type Orbit2RecordType,
 } from "./orbit2-constants";
 
 // ── Row types ───────────────────────────────────────────────────────────────
@@ -333,7 +333,7 @@ export function byClient(projects: Orbit2Project[], limit = 12) {
     // Keyed case-insensitively so one boat typed two ways still draws one bar.
     const key = name.toLowerCase();
     const row = rows.get(key) ?? { client: name, complete: 0, pending: 0 };
-    if (p.status === 'Complete') row.complete += 1; else row.pending += 1;
+    if (isComplete(p.status)) row.complete += 1; else row.pending += 1;
     rows.set(key, row);
   }
   return [...rows.values()]
@@ -344,7 +344,8 @@ export function byClient(projects: Orbit2Project[], limit = 12) {
 /** Complete against everything logged — the Task Complete bar. */
 export function completion(projects: Orbit2Project[]) {
   const total = projects.length;
-  const complete = projects.filter((p) => p.status === "Complete").length;
+  // Any of the three completion stages — the crew's part is done either way.
+  const complete = projects.filter((p) => isComplete(p.status)).length;
   return { total, complete, pending: total - complete, pct: total ? Math.round((complete / total) * 100) : 0 };
 }
 
@@ -442,7 +443,8 @@ export function teamLoad(projects: Orbit2Project[], boatTasks: Orbit2BoatTask[])
     if (done) row.complete += 1;
     rows.set(person, row);
   };
-  for (const p of projects) for (const person of p.assigned_team ?? []) add(person, p.status === "Complete");
+  for (const p of projects) for (const person of p.assigned_team ?? []) add(person, isComplete(p.status));
+  // Managed Boats jobs keep their own Pending / Ongoing / Complete.
   for (const t of boatTasks) for (const person of t.assigned_team ?? []) add(person, t.status === "Complete");
   return [...rows.values()].sort((a, b) => b.total - a.total || a.person.localeCompare(b.person));
 }

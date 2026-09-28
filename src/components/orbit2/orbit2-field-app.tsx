@@ -9,7 +9,7 @@
  *   3. Attend            — status becomes "Working On It", and the Team Comments
  *                          log records "<name>: Attended"
  *   4. Log progress      — comments and photos, any time before completion
- *   5. Done              — status becomes "Complete"; the database stamps Work
+ *   5. Done              — status becomes "Complete - Team"; the database stamps Work
  *                          Completion with its own clock, not the phone's
  *
  * Nothing is held on the phone. Every tap is written straight to the same
@@ -318,7 +318,8 @@ export function TaskDetail({
         .from("orbit2_projects")
         .update({ status: "Working On It" })
         .eq("id", task.id)
-        .eq("status", "Scheduled/Assigned")
+        // Scheduled/Assigned, or sent back to the crew by the office (Re-assigned).
+        .in("status", ["Scheduled/Assigned", "Re-assigned"])
         .select("id");
       if (error) throw new Error(error.message);
       if (!data?.length) {
@@ -397,7 +398,7 @@ export function TaskDetail({
       // the wrong time cannot misreport when the job finished.
       const { data, error } = await sb
         .from("orbit2_projects")
-        .update({ status: "Complete" })
+        .update({ status: "Complete - Team" })
         .eq("id", task.id)
         .eq("status", "Working On It")
         .select("id");
