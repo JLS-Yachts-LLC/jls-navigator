@@ -10,6 +10,18 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "Ticket emails can only be sent by signed-in staff, and only say what is on the ticket"
+      },
+      {
+        "type": "fix",
+        "title": "Permits can be edited again by staff with Agency access"
+      },
+      {
+        "type": "fix",
+        "title": "Staff with vessel edit access can now edit every yacht, not just ones they added"
+      },
+      {
+        "type": "fix",
         "title": "Tickets raised from forwarded email no longer carry banners, signatures and disclaimers"
       },
       {
