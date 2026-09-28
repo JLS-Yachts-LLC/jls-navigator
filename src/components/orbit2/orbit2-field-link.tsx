@@ -12,11 +12,23 @@ import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ORBIT_FIELD_PATH } from "./orbit2-constants";
 
+/**
+ * The address the crew are given — always the real domain.
+ *
+ * Not window.location.origin: Polaris also answers on its *.workers.dev address,
+ * and an office user who happened to be on that would hand every phone the raw
+ * Cloudflare hostname. Same rule as appBaseUrl() for emailed links (that one is
+ * server-only): the configured URL if set, else polaris.jlsyachts.com.
+ */
+const APP_BASE = (
+  (import.meta.env.VITE_APP_URL as string | undefined) || "https://polaris.jlsyachts.com"
+).replace(/\/$/, "");
+
 export function FieldAppButton() {
   const [open, setOpen] = useState(false);
   const [qr, setQr] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const url = typeof window === "undefined" ? ORBIT_FIELD_PATH : `${window.location.origin}${ORBIT_FIELD_PATH}`;
+  const url = `${APP_BASE}${ORBIT_FIELD_PATH}`;
 
   useEffect(() => {
     if (!open || qr) return;
@@ -45,7 +57,10 @@ export function FieldAppButton() {
       </button>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-sm">
+        {/* minmax(0,1fr): the dialog is a grid, and a grid column otherwise grows
+            to fit its widest child — here the full URL — which pushed the QR code
+            off-centre and ran the link box past the dialog's edge. */}
+        <DialogContent className="max-w-sm grid-cols-[minmax(0,1fr)]">
           <DialogHeader>
             <DialogTitle className="text-[22px]">Orbit field app</DialogTitle>
           </DialogHeader>
@@ -62,7 +77,7 @@ export function FieldAppButton() {
           </div>
           <p className="text-center text-[14px] text-muted-foreground">Scan with a phone camera to open it</p>
 
-          <div className="flex items-center gap-2 rounded-md border border-border bg-muted/20 px-3 py-2">
+          <div className="flex min-w-0 items-center gap-2 rounded-md border border-border bg-muted/20 px-3 py-2">
             <span className="min-w-0 flex-1 truncate text-[14px]" title={url}>{url}</span>
             <button onClick={() => void copy()} title="Copy link" aria-label="Copy link"
               className="shrink-0 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
