@@ -1090,6 +1090,17 @@ export default {
       return itTicketsNotifyHandler(request)
     }
 
+    // Yacht IT Network — both reach New Horizon with the shared secret, so the
+    // browser goes through here rather than calling them directly.
+    if (url.pathname === '/api/yacht-network/sync' && request.method === 'POST') {
+      const { yachtNetworkSyncHandler } = await import('./lib/yacht-network/api.server')
+      return yachtNetworkSyncHandler(request)
+    }
+    if (url.pathname === '/api/yacht-network/datto' && request.method === 'GET') {
+      const { yachtNetworkDattoHandler } = await import('./lib/yacht-network/api.server')
+      return yachtNetworkDattoHandler(request)
+    }
+
     if (url.pathname === '/api/internal-services/renewal-check' && request.method === 'POST') {
       return internalServicesRenewalCheckHandler(request)
     }
@@ -1303,6 +1314,17 @@ export default {
           .then((m) => m.pollTicketMailbox())
           .then((r) => { if (r && (r.appended || r.created || r.errors.length)) console.log('[ticket-mail]', JSON.stringify(r)) })
           .catch((e) => console.error('[ticket-mail] error:', e instanceof Error ? e.message : String(e)))
+      );
+
+      // ── Every 5 min: two-way sync of the Yacht IT Network with New Horizon ──
+      //    Keeps each vessel's register and map the same on both desks. Every
+      //    few hours the run is a full pass rather than incremental — see
+      //    lib/yacht-network/sync.server. Outcome lands on yacht_it_sync_state.
+      ctx.waitUntil(
+        import('./lib/yacht-network/sync.server')
+          .then((m) => m.runYachtItSync())
+          .then((r) => { if (r && !r.ok) console.error('[yacht-it-sync] failed:', r.error) })
+          .catch((e) => console.error('[yacht-it-sync] error:', e instanceof Error ? e.message : String(e)))
       );
 
       // invocation — see syncPrioritisedLists().

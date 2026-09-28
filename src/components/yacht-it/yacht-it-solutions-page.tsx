@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Headset, Ship, KeyRound, Boxes, FileText, Smartphone, Code2, DatabaseBackup, FolderKanban } from "lucide-react";
+import { Headset, Ship, KeyRound, Boxes, FileText, Smartphone, Code2, DatabaseBackup, FolderKanban, Network } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ServiceDeskPage } from "@/components/service-desk/service-desk-page";
 import { ItYachtsPage } from "@/components/yacht-it/it-yachts-page";
@@ -9,6 +9,7 @@ import { SimCardsPage } from "@/components/yacht-it/sim-cards-page";
 import { AppDeveloperPage } from "@/components/yacht-it/app-developer-page";
 import { BackupsPage } from "@/components/yacht-it/backups-page";
 import { ProjectsPage } from "@/components/yacht-it/projects-page";
+import { YachtNetworkPage } from "@/components/yacht-network/yacht-network-page";
 
 /**
  * Yacht IT Solutions — single sidebar entry that surfaces its sections as tabs.
@@ -24,6 +25,7 @@ const TABS = [
   { key: "projects", label: "Projects", icon: FolderKanban },
   { key: "app-developer", label: "App Developer", icon: Code2 },
   { key: "it-yachts", label: "IT Yachts", icon: Ship },
+  { key: "network", label: "Network", icon: Network },
   { key: "licensing", label: "Licensing", icon: KeyRound },
   { key: "sim-cards", label: "SIM Cards", icon: Smartphone },
   { key: "client", label: "Client Subscriptions and Services", icon: FileText },
@@ -63,6 +65,7 @@ export function YachtItSolutionsPage() {
         {tab === "projects" && <ProjectsPage />}
         {tab === "app-developer" && <AppDeveloperPage />}
         {tab === "it-yachts" && <ItYachtsPage />}
+        {tab === "network" && <YachtNetworkPage />}
         {tab === "licensing" && <LicensingPage />}
         {tab === "sim-cards" && <SimCardsPage />}
         {tab === "client" && <InternalServicesPage scope="client" />}
