@@ -38,7 +38,10 @@ import { toast } from "sonner";
 
 export const Route = createFileRoute("/_app/yachts/new")({
   component: NewYacht,
-  head: () => ({ meta: [{ title: "Add Yacht — Polaris" }] }),
+  // ?fleet=jls — opened from the JLS Boats tab, so the new vessel is one of ours.
+  validateSearch: (search: Record<string, unknown>): { fleet?: "client" | "jls" } =>
+    search.fleet === "jls" ? { fleet: "jls" } : {},
+  head: () => ({ meta: [{ title: "Add Vessel — Polaris" }] }),
 });
 
 const NUMERIC_KEYS = new Set([
@@ -65,6 +68,7 @@ function labelFor(key: string) {
 function NewYacht() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const isJls = Route.useSearch().fleet === "jls";
   const [form, setForm] = useState<Record<string, string>>({ status: "Active" });
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -93,7 +97,9 @@ function NewYacht() {
         vessel_image = supabase.storage.from("vessel-images").getPublicUrl(path).data.publicUrl;
       }
 
-      const payload: Record<string, unknown> = { created_by: user.id, vessel_image };
+      const payload: Record<string, unknown> = {
+        created_by: user.id, vessel_image, fleet: isJls ? "jls" : "client",
+      };
       for (const [k, v] of Object.entries(form)) {
         if (v === "" || v === undefined) continue;
         if (NUMERIC_KEYS.has(k)) payload[k] = Number(v);
@@ -102,10 +108,14 @@ function NewYacht() {
 
       const { data, error } = await supabase.from("yachts").insert([payload as never]).select("id").single();
       if (error) throw error;
-      toast.success("Yacht added");
-      // Non-blocking: push data to SP list + create folder in SP Documents/Yacht/
-      doPushToSharePoint({ data: { yachtId: data.id } }).catch(() => {});
-      doCreateSpFolder({ data: { vesselName: form.vessel_name!, yachtId: data.id } }).catch(() => {});
+      toast.success(isJls ? "JLS boat added" : "Yacht added");
+      // Non-blocking: push data to SP list + create folder in SP Documents/Yacht/.
+      // Not for our own boats — the SharePoint Yachts list and its folders are the
+      // client fleet, and a JLS boat there would read as a client vessel.
+      if (!isJls) {
+        doPushToSharePoint({ data: { yachtId: data.id } }).catch(() => {});
+        doCreateSpFolder({ data: { vesselName: form.vessel_name!, yachtId: data.id } }).catch(() => {});
+      }
       navigate({ to: "/yachts/$id", params: { id: data.id } });
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Failed to save");
@@ -121,10 +131,10 @@ function NewYacht() {
           <Button asChild variant="ghost" size="sm" className="gap-1.5">
             <Link to="/yachts"><ArrowLeft className="h-3.5 w-3.5" /> Back</Link>
           </Button>
-          <h1 className="font-display text-lg font-semibold">Add Yacht</h1>
+          <h1 className="font-display text-lg font-semibold">{isJls ? "Add JLS Boat" : "Add Yacht"}</h1>
         </div>
         <Button onClick={submit} disabled={busy} className="gap-1.5">
-          <Save className="h-4 w-4" /> {busy ? "Saving…" : "Save Yacht"}
+          <Save className="h-4 w-4" /> {busy ? "Saving…" : isJls ? "Save Boat" : "Save Yacht"}
         </Button>
       </header>
 

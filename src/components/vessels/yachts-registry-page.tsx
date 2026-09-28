@@ -155,7 +155,19 @@ function YachtLink({ id, onOpen, className, children }: {
   return <Link to="/yachts/$id" params={{ id } as any} className={className}>{children}</Link>;
 }
 
-export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void } = {}) {
+/**
+ * Which fleet the registry shows. "client" is the Vessel Overview — the yachts
+ * the Port & Agency Team services. "jls" is the JLS Boats tab — the company's
+ * own boats, on the same screen but never mixed into the client list or pushed
+ * to the client SharePoint list (see yachts.fleet).
+ */
+export type YachtFleet = "client" | "jls";
+
+export function YachtsPage({
+  onOpenYacht, fleet = "client",
+}: { onOpenYacht?: (id: string) => void; fleet?: YachtFleet } = {}) {
+  const isJls = fleet === "jls";
+  const noun = isJls ? "boat" : "yacht";
   // Init from localStorage (runs once)
   const [init] = useState(initViewState);
 
@@ -166,8 +178,10 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
   const [activityMap, setActivityMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
-  // Default view: In Country vessels, alphabetical (Matt, 2 Jul 2026).
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("in country");
+  // Default view: In Country vessels, alphabetical (Matt, 2 Jul 2026). JLS Boats
+  // open on everything — our own boats are ours wherever they are, and a boat
+  // just added (status "Active") would otherwise be filtered straight out of view.
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(isJls ? "all" : "in country");
   // AIS movement filter — set by clicking a vessel's movement icon or a pill.
   const [movementFilter, setMovementFilter] = useState<"all" | Movement>("all");
   const toggleMovementFilter = (m: Movement) => setMovementFilter((cur) => (cur === m ? "all" : m));
@@ -226,9 +240,10 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
 
   async function load() {
     setLoading(true);
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from("yachts")
       .select("*")
+      .eq("fleet", fleet)
       .order("created_at", { ascending: false });
     if (error) { toast.error(error.message); setLoading(false); return; }
     const rows = (data ?? []) as Yacht[];
@@ -447,7 +462,7 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
             <span className="opacity-40">/</span>
             <span className="text-foreground">Yachts</span>
           </div>
-          <h1 className="font-display text-base font-semibold tracking-tight">Yacht Registry</h1>
+          <h1 className="font-display text-base font-semibold tracking-tight">{isJls ? "JLS Boats" : "Yacht Registry"}</h1>
         </div>
         <div className="flex items-center gap-2">
           {/* Search */}
@@ -456,7 +471,7 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
             <Input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Search yachts…"
+              placeholder={`Search ${noun}s…`}
               className="h-8 w-56 pl-8"
             />
           </div>
@@ -665,7 +680,9 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
           )}
           {canEditVessels && (
             <Button asChild size="sm" className="h-8 gap-1.5 text-xs">
-              <Link to="/yachts/new"><Plus className="h-3.5 w-3.5" /> Add Yacht</Link>
+              <Link to="/yachts/new" search={{ fleet } as any}>
+                <Plus className="h-3.5 w-3.5" /> {isJls ? "Add JLS Boat" : "Add Yacht"}
+              </Link>
             </Button>
           )}
         </div>
@@ -731,7 +748,7 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
         {loading ? (
           <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">Loading…</div>
         ) : filtered.length === 0 ? (
-          <EmptyState hasFilter={!!q || statusFilter !== "all" || movementFilter !== "all" || archiveView === "archived"} />
+          <EmptyState fleet={fleet} hasFilter={!!q || statusFilter !== "all" || movementFilter !== "all" || archiveView === "archived"} />
         ) : view === "list" ? (
           <ListView
             rows={filtered}
@@ -814,19 +831,26 @@ function SortIcon({ col, sortKey, sortDir }: { col: YachtColumnKey; sortKey: Yac
     : <ChevronDown className="h-3 w-3 text-primary" />;
 }
 
-function EmptyState({ hasFilter }: { hasFilter: boolean }) {
+function EmptyState({ hasFilter, fleet }: { hasFilter: boolean; fleet: YachtFleet }) {
+  const isJls = fleet === "jls";
   return (
     <div className="flex h-64 flex-col items-center justify-center rounded-lg border border-dashed border-border text-center">
       <Ship className="h-10 w-10 text-muted-foreground/60" />
       <h3 className="mt-3 font-display text-lg font-semibold">
-        {hasFilter ? "No matching yachts" : "No yachts yet"}
+        {hasFilter
+          ? (isJls ? "No matching boats" : "No matching yachts")
+          : (isJls ? "No JLS boats yet" : "No yachts yet")}
       </h3>
       <p className="text-sm text-muted-foreground">
-        {hasFilter ? "Try adjusting your search or filter." : "Add your first vessel to get started."}
+        {hasFilter
+          ? "Try adjusting your search or filter."
+          : isJls ? "Add the company's own boats here." : "Add your first vessel to get started."}
       </p>
       {!hasFilter && (
         <Button asChild className="mt-4 gap-1.5">
-          <Link to="/yachts/new"><Plus className="h-4 w-4" /> Add Yacht</Link>
+          <Link to="/yachts/new" search={{ fleet } as any}>
+            <Plus className="h-4 w-4" /> {isJls ? "Add JLS Boat" : "Add Yacht"}
+          </Link>
         </Button>
       )}
     </div>
