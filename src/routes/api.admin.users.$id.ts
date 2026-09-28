@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { requireAdminAccess } from '@/lib/admin/access'
 import { logAuditEvent } from '@/lib/admin/audit'
 import { sendAuthLinkViaSES } from '@/lib/admin/auth-email.server'
+import { appBaseUrl } from '@/lib/app-url.server'
 
 function getAdmin() {
   return createClient(
@@ -101,7 +102,7 @@ const handlers = {
       const email = profile?.email
       if (!email) return json({ error: 'No email on file for this user' }, 404)
 
-      const base = process.env.VITE_APP_URL ?? new URL(request.url).origin
+      const base = appBaseUrl()
       const isReset = body.action === 'reset_password'
 
       // Primary: branded Polaris email. Fallback: Supabase's native send.

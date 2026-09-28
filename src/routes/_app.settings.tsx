@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { supabase } from '@/integrations/supabase/client'
 import { supabaseAdmin } from '@/integrations/supabase/client.server'
+import { appBaseUrl } from '@/lib/app-url.server'
 import { toast } from 'sonner'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -84,7 +85,9 @@ const getUsers = createServerFn({ method: 'GET' }).handler(async (): Promise<Use
 const doInviteUser = createServerFn({ method: 'POST' })
   .inputValidator((d: { email: string }) => d)
   .handler(async ({ data }) => {
-    const { error } = await supabaseAdmin.auth.admin.inviteUserByEmail(data.email)
+    const { error } = await supabaseAdmin.auth.admin.inviteUserByEmail(data.email, {
+      redirectTo: `${appBaseUrl()}/auth`,
+    })
     if (error) throw new Error(error.message)
   })
 
@@ -104,7 +107,9 @@ const doSetDepartment = createServerFn({ method: 'POST' })
 const doResetPassword = createServerFn({ method: 'POST' })
   .inputValidator((d: { email: string }) => d)
   .handler(async ({ data }) => {
-    const { error } = await supabaseAdmin.auth.resetPasswordForEmail(data.email)
+    const { error } = await supabaseAdmin.auth.resetPasswordForEmail(data.email, {
+      redirectTo: `${appBaseUrl()}/auth`,
+    })
     if (error) throw new Error(error.message)
   })
 

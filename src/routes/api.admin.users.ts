@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { requireAdminAccess } from '@/lib/admin/access'
 import { logAuditEvent } from '@/lib/admin/audit'
 import { sendAuthLinkViaSES } from '@/lib/admin/auth-email.server'
+import { appBaseUrl } from '@/lib/app-url.server'
 
 function getAdmin() {
   return createClient(
@@ -175,7 +176,7 @@ const handlers = {
       return json({ error: 'Insufficient permission to grant this role' }, 403)
     }
 
-    const base = process.env.VITE_APP_URL ?? new URL(request.url).origin
+    const base = appBaseUrl()
 
     // Resolve/create the auth user WITHOUT sending Supabase's default email — we
     // deliver a branded Polaris invite via SES ourselves (below).
