@@ -9,7 +9,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { errorMessage } from "@/lib/error-message";
-import { Loader2, Plus, Ship } from "lucide-react";
+import { Download, Loader2, Plus, Ship } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
@@ -34,6 +34,7 @@ type YachtOption = {
   vessel_name: string;
   vessel_type: string | null;
   mmsi: string | null;
+  imo_no: string | null;
   built_year: number | null;
   breadth_m: number | null;
   length_overall_m: number | null;
@@ -84,25 +85,48 @@ export function Orbit2Boats({
 
   const selected = selectedId ? boats.find((b) => b.id === selectedId) ?? null : null;
 
+  /**
+   * "Registered" means a Marine Vessel License is on file — the registration
+   * document the design lists — rather than a separate tick-box that could
+   * disagree with the paperwork actually uploaded.
+   */
+  const registered = useMemo(
+    () => new Set(boatDocuments.filter((d) => d.category === "marine_vessel_license").map((d) => d.boat_id)),
+    [boatDocuments],
+  );
+
+  function exportToExcel() {
+    const head = ["Boat", "Client", "Vessel Type", "Hull Number", "Hull Material", "Year of Build",
+      "Max Beam (m)", "Max Length (m)", "Max Passengers", "MMSI", "IMO", "Registered",
+      "Planned Maintenance (open)", "Defects & Repairs (open)", "Status",
+      "DMA Last Inspection", "FMA Last Inspection", "RYA Last Inspection"];
+    const rows = boats.map((b) => {
+      const c = activeByBoat.get(b.id) ?? { maintenance: 0, defect: 0 };
+      return [b.name, b.client_name ?? "", b.boat_type ?? "", b.hull_number ?? "", b.hull_material ?? "",
+        b.year_of_build ?? "", b.max_beam_m ?? "", b.max_length_m ?? "", b.max_passengers ?? "",
+        b.mmsi ?? "", b.imo_no ?? "", registered.has(b.id) ? "Registered" : "Not registered",
+        c.maintenance, c.defect, boatStatus(c).label,
+        b.dma_last_inspection ?? "", b.fma_last_inspection ?? "", b.rya_last_inspection ?? ""];
+    });
+    const csv = [head, ...rows]
+      .map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `orbit2-managed-boats-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  }
+
   if (loading) {
     return <div className="flex h-64 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
   }
 
-  if (selected) {
-    return (
-      <Orbit2BoatDetail
-        boat={selected}
-        tasks={boatTasks.filter((t) => t.boat_id === selected.id)}
-        documents={boatDocuments.filter((d) => d.boat_id === selected.id)}
-        inventory={boatInventory.filter((i) => i.boat_id === selected.id)}
-        onBack={() => setSelectedId(null)}
-        reload={reload}
-      />
-    );
-  }
-
   return (
     <div className="space-y-4 p-5">
+      {/* The filter tabs stay at the top of a vessel's profile too, as in the
+          design — picking one from the profile goes back to that filtered list. */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-1 rounded-lg border border-border bg-card/50 p-1">
           {([
@@ -110,20 +134,35 @@ export function Orbit2Boats({
             ["maintenance", `Maintenance: ${counts.maintenance}`],
             ["defect", `Defects & Repairs: ${counts.defect}`],
           ] as const).map(([key, label]) => (
-            <button key={key} onClick={() => setFilter(key)}
+            <button key={key} onClick={() => { setFilter(key); setSelectedId(null); }}
               className={cn("rounded-md px-3 py-1.5 text-[15px] font-medium transition",
-                filter === key ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent")}>
+                filter === key && !selected ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent")}>
               {label}
             </button>
           ))}
         </div>
-        <button onClick={() => setAdding(true)}
-          className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-[15px] font-medium text-primary-foreground hover:opacity-90">
-          <Plus className="h-4 w-4" /> Add New Boat
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={exportToExcel} disabled={!boats.length}
+            className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-[15px] font-medium hover:bg-accent disabled:opacity-50">
+            <Download className="h-4 w-4" /> Export to Excel
+          </button>
+          <button onClick={() => setAdding(true)}
+            className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-[15px] font-medium text-primary-foreground hover:opacity-90">
+            <Plus className="h-4 w-4" /> Add New Boat
+          </button>
+        </div>
       </div>
 
-      {filtered.length === 0 ? (
+      {selected ? (
+        <Orbit2BoatDetail
+          boat={selected}
+          tasks={boatTasks.filter((t) => t.boat_id === selected.id)}
+          documents={boatDocuments.filter((d) => d.boat_id === selected.id)}
+          inventory={boatInventory.filter((i) => i.boat_id === selected.id)}
+          onBack={() => setSelectedId(null)}
+          reload={reload}
+        />
+      ) : filtered.length === 0 ? (
         <div className="flex h-64 flex-col items-center justify-center gap-2 text-center text-[15px] text-muted-foreground">
           <Ship className="h-8 w-8 opacity-40" />
           {boats.length === 0 ? "No boats under management yet." : "No boats match this filter."}
@@ -140,23 +179,21 @@ export function Orbit2Boats({
                     ? <SignedImage stored={b.image_ref} alt={b.name} className="h-full w-full object-cover" />
                     : <Ship className="h-8 w-8 text-muted-foreground/40" />}
                 </div>
-                <div className="space-y-1.5 p-3">
-                  <div className="truncate text-[15px] font-semibold">{b.name}</div>
-                  <div className="truncate text-[14px] text-muted-foreground">
-                    {[b.client_name, b.boat_type].filter(Boolean).join(" · ") || "—"}
+                <div className="space-y-1 p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="min-w-0 truncate text-[15px] font-semibold">{b.name}</span>
+                    {registered.has(b.id) ? (
+                      <span className="shrink-0 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[14px] font-semibold text-emerald-500">Registered</span>
+                    ) : (
+                      <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[14px] font-medium text-muted-foreground"
+                        title="No Marine Vessel License uploaded">Not registered</span>
+                    )}
                   </div>
-                  {(c.maintenance > 0 || c.defect > 0) ? (
-                    <div className="flex flex-wrap gap-1.5 pt-0.5 text-[13px]">
-                      {c.maintenance > 0 && (
-                        <span className="rounded-full bg-amber-500/15 px-2 py-0.5 font-medium text-amber-600">{c.maintenance} maintenance</span>
-                      )}
-                      {c.defect > 0 && (
-                        <span className="rounded-full bg-orange-500/15 px-2 py-0.5 font-medium text-orange-600">{c.defect} defect{c.defect === 1 ? "" : "s"}</span>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="pt-0.5 text-[13px] text-emerald-600">No open jobs</div>
-                  )}
+                  <CardLine label="Planned Maintenance" value={c.maintenance ? `${c.maintenance} open` : "None"}
+                    tone={c.maintenance ? "text-amber-500" : undefined} />
+                  <CardLine label="Defects & Repairs" value={c.defect ? `${c.defect} open` : "None"}
+                    tone={c.defect ? "text-orange-500" : undefined} />
+                  <CardLine label="Status" value={boatStatus(c).label} tone={boatStatus(c).tone} />
                 </div>
               </button>
             );
@@ -175,6 +212,25 @@ export function Orbit2Boats({
   );
 }
 
+/**
+ * A boat's overall state, from its open jobs. An open defect outranks planned
+ * maintenance: a boat with a fault is not "in maintenance", it is broken.
+ */
+function boatStatus(c: { maintenance: number; defect: number }): { label: string; tone: string } {
+  if (c.defect > 0) return { label: "Awaiting repair", tone: "text-orange-500" };
+  if (c.maintenance > 0) return { label: "Maintenance scheduled", tone: "text-amber-500" };
+  return { label: "Operational", tone: "text-emerald-500" };
+}
+
+function CardLine({ label, value, tone }: { label: string; value: string; tone?: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-2 text-[14px]">
+      <span className="text-muted-foreground">{label}:</span>
+      <span className={cn("truncate font-medium", tone)}>{value}</span>
+    </div>
+  );
+}
+
 // ── Add New Boat wizard ──────────────────────────────────────────────────────
 
 type SpecForm = {
@@ -188,13 +244,14 @@ type SpecForm = {
   max_length_m: string;
   max_passengers: string;
   mmsi: string;
+  imo_no: string;
   image_ref: string | null;
   inherited_yacht_id: string | null;
 };
 
 const emptySpec: SpecForm = {
   name: "", client_name: "", boat_type: "", hull_number: "", hull_material: "",
-  year_of_build: "", max_beam_m: "", max_length_m: "", max_passengers: "", mmsi: "",
+  year_of_build: "", max_beam_m: "", max_length_m: "", max_passengers: "", mmsi: "", imo_no: "",
   image_ref: null, inherited_yacht_id: null,
 };
 
@@ -219,7 +276,7 @@ function AddBoatWizard({
   useEffect(() => {
     void (async () => {
       const { data } = await fetchAllRows<YachtOption>(() =>
-        sb.from("yachts").select("id, vessel_name, vessel_type, mmsi, built_year, breadth_m, length_overall_m, max_guests, vessel_image")
+        sb.from("yachts").select("id, vessel_name, vessel_type, mmsi, imo_no, built_year, breadth_m, length_overall_m, max_guests, vessel_image")
           .eq("archive", false).order("vessel_name"));
       setYachts((data ?? []) as YachtOption[]);
     })();
@@ -236,6 +293,7 @@ function AddBoatWizard({
       name: f.name || y.vessel_name,
       boat_type: y.vessel_type ?? f.boat_type,
       mmsi: y.mmsi ?? f.mmsi,
+      imo_no: y.imo_no ?? f.imo_no,
       year_of_build: y.built_year != null ? String(y.built_year) : f.year_of_build,
       max_beam_m: y.breadth_m != null ? String(y.breadth_m) : f.max_beam_m,
       max_length_m: y.length_overall_m != null ? String(y.length_overall_m) : f.max_length_m,
@@ -277,6 +335,7 @@ function AddBoatWizard({
         max_length_m: form.max_length_m ? Number(form.max_length_m) : null,
         max_passengers: form.max_passengers ? Number(form.max_passengers) : null,
         mmsi: form.mmsi.trim() || null,
+        imo_no: form.imo_no.trim() || null,
         image_ref: form.image_ref,
         inherited_yacht_id: form.inherited_yacht_id,
         created_by: user?.id ?? null,
@@ -364,6 +423,7 @@ function AddBoatWizard({
                 <Field label="Maximum Length (m)"><input className={inputCls} type="number" step="any" value={form.max_length_m} onChange={(e) => set("max_length_m", e.target.value)} /></Field>
                 <Field label="Max Passenger"><input className={inputCls} type="number" value={form.max_passengers} onChange={(e) => set("max_passengers", e.target.value)} /></Field>
                 <Field label="MMSI"><input className={inputCls} value={form.mmsi} onChange={(e) => set("mmsi", e.target.value)} /></Field>
+                <Field label="IMO"><input className={inputCls} value={form.imo_no} onChange={(e) => set("imo_no", e.target.value)} /></Field>
               </div>
 
               <p className="text-[14px] text-muted-foreground">

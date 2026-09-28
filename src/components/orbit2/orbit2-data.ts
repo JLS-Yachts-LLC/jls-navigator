@@ -100,6 +100,7 @@ export type Orbit2Boat = {
   max_length_m: number | null;
   max_passengers: number | null;
   mmsi: string | null;
+  imo_no: string | null;
   image_ref: string | null;
   /** Set when this boat's spec fields were inherited from Vessel Overview. */
   inherited_yacht_id: string | null;
