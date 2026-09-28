@@ -71,6 +71,32 @@ const GATEWAY_BANNER = [
   /^\s*You don't often get email from/i,
 ]
 
+/**
+ * Legal footers. Unlike the other boilerplate these are removed line by line
+ * wherever they appear, because on a forward they sit *between* the covering
+ * note and the message being forwarded — cutting at the first one would throw
+ * away the very thing the ticket is about.
+ */
+const DISCLAIMER = [
+  /^This (?:e-?mail|message)(?: and any attachments?)?\b.*\b(?:confidential|intended solely|intended recipient)/i,
+  /^(?:Confidentiality|Disclaimer|Legal)\b.*\b(?:notice|statement)/i,
+  /^If you are not the intended recipient/i,
+  /^Please contact the sender if you believe/i,
+  /^Any views or opinions expressed are solely those of the author/i,
+]
+
+/**
+ * Where a forwarded original begins. Everything from here down is the point of
+ * the email and is kept whole — see extractForwardedText.
+ */
+const FORWARD_MARKER = [
+  /^\s*-{2,}\s*(?:original|forwarded) message\s*-{2,}\s*$/i,
+  /^\s*-{3,}\s*Forwarded message\b/i,
+  /^\s*Begin forwarded message\s*:/i,
+  /^\s*_{4,}\s*$/,
+  /^From\s*:\s/i,
+]
+
 /** Everything from here down is quoted history, headers or boilerplate. */
 const HARD_BOUNDARY = [
   /^-{2,}\s*$/, /^_{4,}\s*$/, /^\*{4,}\s*$/,
@@ -83,10 +109,9 @@ const HARD_BOUNDARY = [
   /^There.s an update on your ticket/i,
   /^The IT support team has added an update/i,
   /^Reply to this email if you need anything further/i,
-  /^This (?:e-?mail|message)(?: and any attachments?)?\b.*\b(?:confidential|intended solely|intended recipient)/i,
-  /^(?:Confidentiality|Disclaimer|Legal)\b.*\b(?:notice|statement)/i,
-  /^If you are not the intended recipient/i,
-  /^Please contact the sender if you believe/i,
+  // A footer ends a reply outright; on a forward the same patterns are applied
+  // line by line instead. One list, so the two can never drift apart.
+  ...DISCLAIMER,
 ]
 
 /** Signature lines — a boundary only once real message text has been seen, so a
@@ -139,6 +164,47 @@ export function extractReplyText(raw: string): string {
   // Nothing survived (e.g. the mail was only a signature) — keep the first real
   // line rather than appending an empty message.
   return (lines.map(l => l.trim()).find(Boolean) ?? '').slice(0, 500)
+}
+
+/**
+ * Reduce a forwarded email to something worth reading on a ticket.
+ *
+ * A forward is not a reply, and running it through extractReplyText destroyed it:
+ * that stripper stops at the first `From:` or `---------- Forwarded message`
+ * line, which on a forward is exactly where the content starts. So new tickets
+ * kept the body untouched instead — and got the gateway's "Trusted Sender"
+ * banner, the sender's signature block and a full legal disclaimer along with it,
+ * on both desks.
+ *
+ * The fix is to split rather than truncate. The covering note above the forward
+ * behaves like a reply, so extractReplyText handles it correctly and drops the
+ * signature and footer that sit at its end. Everything from the forward marker
+ * down is kept whole, minus the banner and disclaimer lines, which are removed
+ * individually wherever they appear.
+ *
+ * Returns the original body untouched if the result comes back empty — losing an
+ * email to an over-eager pattern would be far worse than a noisy ticket.
+ */
+export function extractForwardedText(raw: string): string {
+  const norm = String(raw ?? '').replace(/\r/g, '').replace(ZERO_WIDTH, '').replace(NBSP, ' ')
+  const lines = norm.split('\n')
+
+  const at = lines.findIndex(l => FORWARD_MARKER.some(re => re.test(l.trim())))
+  // No forward marker: this is an ordinary email, so treat it as one.
+  if (at === -1) return extractReplyText(norm) || norm.trim().slice(0, 8000)
+
+  const note = extractReplyText(lines.slice(0, at).join('\n'))
+  const body = tidy(
+    lines.slice(at).filter((l) => {
+      const t = l.trim()
+      if (GATEWAY_BANNER.some(re => re.test(t))) return false
+      if (DISCLAIMER.some(re => re.test(t))) return false
+      return true
+    }),
+  )
+
+  const out = [note, body].filter(Boolean).join('\n\n').trim()
+  return (out || norm.trim()).slice(0, 8000)
 }
 
 // ─── Poller ────────────────────────────────────────────────────────────────────
@@ -231,10 +297,9 @@ function cleanSubject(subject: string): string {
 /**
  * Turn an unreferenced email into a Polaris ticket.
  *
- * The body is kept whole rather than run through extractReplyText. That stripper
- * exists to reduce a reply to what the person typed, and a forward is the opposite
- * case: its content sits below the `From:` line the stripper treats as the end of
- * the message, so reducing it would leave a ticket with nothing in it.
+ * Trimmed by extractForwardedText, not extractReplyText: a forward's content sits
+ * below the boundary the reply stripper cuts at, so reducing it that way would
+ * leave a ticket with nothing in it.
  */
 async function raiseTicketFromMail(
   db: any,
@@ -243,7 +308,7 @@ async function raiseTicketFromMail(
   subject: string,
   plain: string,
 ): Promise<{ id: string; ticket_no: string | null } | null> {
-  const body = plain.replace(/\r/g, '').trim().slice(0, 8000)
+  const body = extractForwardedText(plain)
   const title = cleanSubject(subject).slice(0, 200)
   if (!body && !title) return null
 
