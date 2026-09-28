@@ -8,6 +8,7 @@
  * and Inventory List, is a page in its own right, not a tab of this one).
  */
 import { useEffect, useMemo, useState } from "react";
+import { errorMessage } from "@/lib/error-message";
 import { Loader2, Plus, Ship } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -255,7 +256,7 @@ function AddBoatWizard({
       if (error) throw error;
       set("image_ref", storageRef(ORBIT2_BUCKET, path));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Upload failed");
+      toast.error(errorMessage(e, "Upload failed"));
     } finally {
       setBusyImage(false);
     }
@@ -286,7 +287,7 @@ function AddBoatWizard({
       await reload();
       setTab("inventory");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not save");
+      toast.error(errorMessage(e, "Could not save"));
     } finally {
       setSaving(false);
     }
@@ -306,7 +307,7 @@ function AddBoatWizard({
       if (error) throw error;
       onCreated(createdId);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not save the inventory rows");
+      toast.error(errorMessage(e, "Could not save the inventory rows"));
     } finally {
       setSaving(false);
     }

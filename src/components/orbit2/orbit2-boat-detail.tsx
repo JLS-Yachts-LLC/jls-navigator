@@ -5,6 +5,7 @@
  * that needs a real boat_id to exist.
  */
 import { useEffect, useMemo, useState } from "react";
+import { errorMessage } from "@/lib/error-message";
 import {
   Loader2, ArrowLeft, Plus, Search, Trash2, X, Ship,
 } from "lucide-react";
@@ -240,7 +241,7 @@ function SingleFileField({
       if (error) throw error;
       await onUpload(file, storageRef(ORBIT2_BUCKET, path));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Upload failed");
+      toast.error(errorMessage(e, "Upload failed"));
     } finally {
       setBusy(false);
     }
@@ -438,7 +439,7 @@ function JobEditor({
         return;
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not save");
+      toast.error(errorMessage(e, "Could not save"));
     } finally {
       setSaving(false);
     }
@@ -577,7 +578,7 @@ function InventoryBoard({ boat, inventory, reload }: { boat: Orbit2Boat; invento
       if (error) throw error;
       await patch(row, { image_ref: storageRef(ORBIT2_BUCKET, path) });
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Upload failed");
+      toast.error(errorMessage(e, "Upload failed"));
     }
   }
 

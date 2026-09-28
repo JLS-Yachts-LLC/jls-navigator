@@ -459,6 +459,10 @@ export async function pushYachtToSharePoint(yachtId: string): Promise<void> {
     .eq('id', yachtId)
     .maybeSingle()
   if (!yacht) return
+  // JLS's own boats live in Polaris only. The SharePoint Yachts list is the
+  // client fleet the Port Agency App reads, and one of our boats appearing
+  // there would show up to the team as a client vessel.
+  if ((yacht as Record<string, any>).fleet === 'jls') return
 
   // Build SP fields object from mapping (spColumn → dbField)
   const spFields: Record<string, any> = {}

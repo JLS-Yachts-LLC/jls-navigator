@@ -16,6 +16,7 @@
  *   Product Grade, Quantity —                 shown
  */
 import { useEffect, useMemo, useState } from "react";
+import { errorMessage } from "@/lib/error-message";
 import { Loader2, Plus, Search, X, Send } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -23,7 +24,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { SignedImage } from "@/components/ui/signed-file";
 import {
-  ORBIT2_CATEGORIES, ORBIT2_STATUSES, MOBILE_OWNED_STATUSES, QUANTITY_UNITS,
+  ORBIT2_CATEGORIES, ORBIT2_STATUSES, MOBILE_OWNED_STATUSES, ADMIN_ONLY_STATUSES, QUANTITY_UNITS, isComplete,
   statusColor, type Orbit2RecordType,
 } from "./orbit2-constants";
 import {
@@ -208,9 +209,12 @@ export function Orbit2Projects({
         if (error) throw error;
         toast.success(`${selected.task_id} saved`);
         await reload();
+        // A status override made in the panel adds a Remark of its own.
+        const { data } = await sb.from("orbit2_notes").select("*").eq("project_id", selected.id).order("created_at");
+        setNotes((data ?? []) as Orbit2Note[]);
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not save");
+      toast.error(errorMessage(e, "Could not save"));
     } finally {
       setSaving(false);
     }
@@ -221,7 +225,12 @@ export function Orbit2Projects({
     const { error } = await sb.from("orbit2_projects").update({ status }).eq("id", p.id);
     if (error) { toast.error(error.message); return; }
     await reload();
-    if (selectedId === p.id) setDraft((d) => ({ ...d, status }));
+    if (selectedId === p.id) {
+      setDraft((d) => ({ ...d, status }));
+      // An admin override writes its own Remark — show it without a reload.
+      const { data } = await sb.from("orbit2_notes").select("*").eq("project_id", p.id).order("created_at");
+      setNotes((data ?? []) as Orbit2Note[]);
+    }
   }
 
   async function addNote(kind: "remark" | "team_comment", body: string) {
@@ -238,7 +247,9 @@ export function Orbit2Projects({
   /** Correcting an existing Remark — restricted to Orbit 2 admins (see identity.isAdmin). */
   async function editNote(id: string, body: string) {
     if (!selected) return;
-    const { error } = await sb.from("orbit2_notes").update({ body, edited_at: new Date().toISOString() }).eq("id", id);
+    // edited_at is not sent: the database stamps it (and refuses the edit
+    // outright unless you are an Orbit 2 admin — see orbit2_guard_notes).
+    const { error } = await sb.from("orbit2_notes").update({ body }).eq("id", id);
     if (error) { toast.error(error.message); return; }
     const { data } = await sb.from("orbit2_notes").select("*").eq("project_id", selected.id).order("created_at");
     setNotes((data ?? []) as Orbit2Note[]);
@@ -417,25 +428,57 @@ function RecordTable({
 /**
  * The status dropdown, colour-coded.
  *
- * "Working On It" and "Complete" are what the field crew reports from the mobile
+ * "Working On It" and "Complete - Team" are what the field crew reports from the mobile
  * app. A non-admin can still see them on a record that has reached them — they
  * just cannot select them, so the web view never contradicts what the crew said.
  */
-function StatusSelect({
+export function StatusSelect({
   value, isAdmin, onChange, className,
 }: { value: string; isAdmin: boolean; onChange: (v: string) => void; className?: string }) {
+  // Mirrors orbit2_guard_status() exactly, so the menu never offers a change the
+  // database will refuse:
+  //   - "Working On It" / "Complete - Team" are the crew's (Attend / Done); an
+  //     admin may set them here as an override.
+  //   - Re-assigned and the two invoicing stages are admin-only.
+  //   - Once a job is complete, only an admin can move it on or reopen it.
+  const crewOwned = (s: string) => MOBILE_OWNED_STATUSES.includes(s);
+  const adminOnly = (s: string) => ADMIN_ONLY_STATUSES.includes(s);
+  const locked = (s: string) =>
+    !isAdmin && s !== value && (crewOwned(s) || adminOnly(s) || isComplete(value));
+
+  function pick(next: string) {
+    if (next === value) return;
+    // Worth one deliberate click each: an override is on the record, and
+    // Re-assign sends the job back to the crew and clears its completion time.
+    if (isAdmin && crewOwned(next)
+      && !confirm(`Set "${next}" as an admin override?\n\nThe field crew normally set this from the mobile app. The change is recorded in Remarks under your name.`)) {
+      return;
+    }
+    if (isAdmin && next === "Re-assigned"
+      && !confirm("Re-assign this job?\n\nIt goes back into the assigned crew's mobile app for them to Attend again, and its Work Completion time is cleared until they press Done. Change Assign Team first if someone else should do it.")) {
+      return;
+    }
+    onChange(next);
+  }
+
+  const suffix = (s: string) => {
+    if (s === value) return "";
+    if (crewOwned(s)) return isAdmin ? " — admin override" : " (mobile app)";
+    if (!isAdmin && (adminOnly(s) || isComplete(value))) return " (admin only)";
+    return "";
+  };
+
   return (
     <select
       value={value}
-      onChange={(e) => onChange(e.target.value)}
+      onChange={(e) => pick(e.target.value)}
       className={cn("w-full min-w-[11rem] rounded-md border px-2 py-1 text-[14px] font-medium outline-none",
         className)}
       style={{ borderColor: `${statusColor(value)}66`, background: `${statusColor(value)}1A`, color: statusColor(value) }}
     >
       {ORBIT2_STATUSES.map((s) => (
-        <option key={s} value={s} className="bg-background text-foreground"
-          disabled={!isAdmin && MOBILE_OWNED_STATUSES.includes(s) && s !== value}>
-          {s}{!isAdmin && MOBILE_OWNED_STATUSES.includes(s) && s !== value ? " (mobile app)" : ""}
+        <option key={s} value={s} className="bg-background text-foreground" disabled={locked(s)}>
+          {s}{suffix(s)}
         </option>
       ))}
     </select>
@@ -711,7 +754,7 @@ function ClientNotify({ project, onSent }: { project: Orbit2Project; onSent: () 
       if (body.warning) toast.warning(body.warning);
       await onSent();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not notify the client");
+      toast.error(errorMessage(e, "Could not notify the client"));
     } finally {
       setBusy(false);
     }
