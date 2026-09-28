@@ -1301,7 +1301,7 @@ export default {
       ctx.waitUntil(
         import('./lib/ticket-mail-inbound.server')
           .then((m) => m.pollTicketMailbox())
-          .then((r) => { if (r && (r.appended || r.errors.length)) console.log('[ticket-mail]', JSON.stringify(r)) })
+          .then((r) => { if (r && (r.appended || r.created || r.errors.length)) console.log('[ticket-mail]', JSON.stringify(r)) })
           .catch((e) => console.error('[ticket-mail] error:', e instanceof Error ? e.message : String(e)))
       );
 
