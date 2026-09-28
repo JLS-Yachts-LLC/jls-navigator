@@ -191,6 +191,8 @@ export function YachtsPage({
   // add / archive / inline-edit controls are hidden for everyone else.
   const { canAccessModule } = useAccess();
   const canEditVessels = canAccessModule("agency", "edit");
+  // Adding is a separate, lower grant — it matches the database's INSERT policy.
+  const canCreateVessels = canAccessModule("agency", "create");
   const [archiveView, setArchiveView] = useState<"active" | "archived">("active");
   /** Show only vessels this user is the responsible agent for. */
   const [mineOnly, setMineOnly] = useState(false);
@@ -678,7 +680,7 @@ export function YachtsPage({
               <Link to="/my-fleet"><Radar className="h-3.5 w-3.5" /> Live Fleet Map</Link>
             </Button>
           )}
-          {canEditVessels && (
+          {canCreateVessels && (
             <Button asChild size="sm" className="h-8 gap-1.5 text-xs">
               <Link to="/yachts/new" search={{ fleet } as any}>
                 <Plus className="h-3.5 w-3.5" /> {isJls ? "Add JLS Boat" : "Add Yacht"}
@@ -748,7 +750,7 @@ export function YachtsPage({
         {loading ? (
           <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">Loading…</div>
         ) : filtered.length === 0 ? (
-          <EmptyState fleet={fleet} hasFilter={!!q || statusFilter !== "all" || movementFilter !== "all" || archiveView === "archived"} />
+          <EmptyState fleet={fleet} canCreate={canCreateVessels} hasFilter={!!q || statusFilter !== "all" || movementFilter !== "all" || archiveView === "archived"} />
         ) : view === "list" ? (
           <ListView
             rows={filtered}
@@ -831,7 +833,7 @@ function SortIcon({ col, sortKey, sortDir }: { col: YachtColumnKey; sortKey: Yac
     : <ChevronDown className="h-3 w-3 text-primary" />;
 }
 
-function EmptyState({ hasFilter, fleet }: { hasFilter: boolean; fleet: YachtFleet }) {
+function EmptyState({ hasFilter, fleet, canCreate }: { hasFilter: boolean; fleet: YachtFleet; canCreate: boolean }) {
   const isJls = fleet === "jls";
   return (
     <div className="flex h-64 flex-col items-center justify-center rounded-lg border border-dashed border-border text-center">
@@ -846,7 +848,7 @@ function EmptyState({ hasFilter, fleet }: { hasFilter: boolean; fleet: YachtFlee
           ? "Try adjusting your search or filter."
           : isJls ? "Add the company's own boats here." : "Add your first vessel to get started."}
       </p>
-      {!hasFilter && (
+      {!hasFilter && canCreate && (
         <Button asChild className="mt-4 gap-1.5">
           <Link to="/yachts/new" search={{ fleet } as any}>
             <Plus className="h-4 w-4" /> {isJls ? "Add JLS Boat" : "Add Yacht"}

@@ -5,6 +5,106 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.62.0",
+    "date": "2026-09-28",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Tickets raised from forwarded email no longer carry banners, signatures and disclaimers"
+      },
+      {
+        "type": "feature",
+        "title": "Managed Boats brought in line with the Manage Boat design"
+      },
+      {
+        "type": "fix",
+        "title": "Password reset now works for accounts with two-factor authentication"
+      },
+      {
+        "type": "fix",
+        "title": "Log a mail poll run that only raised new tickets"
+      },
+      {
+        "type": "fix",
+        "title": "Email to the IT desk from a New Horizon engineer now raises a ticket"
+      },
+      {
+        "type": "feature",
+        "title": "Manual tickets and forwarded email now also raise a ticket with New Horizon-IT"
+      },
+      {
+        "type": "feature",
+        "title": "Completion stages and Re-assign for admins"
+      },
+      {
+        "type": "fix",
+        "title": "Non-admins could not create Project List or Bunkering records"
+      },
+      {
+        "type": "feature",
+        "title": "Add to Home Screen for the Orbit field app"
+      },
+      {
+        "type": "feature",
+        "title": "Add Jonathan Lopez to the field team roster"
+      },
+      {
+        "type": "feature",
+        "title": "Real Orbit 2 admin permission, enforced by the database; multi-file drop"
+      },
+      {
+        "type": "feature",
+        "title": "Team Management — full day detail, custom-date batches, clash overview"
+      },
+      {
+        "type": "fix",
+        "title": "Mobile App dialog — centred layout, and always the real domain"
+      },
+      {
+        "type": "feature",
+        "title": "The Orbit field app for the operations team's phones"
+      },
+      {
+        "type": "feature",
+        "title": "Search training documents by name"
+      },
+      {
+        "type": "feature",
+        "title": "JLS Boats tab — the company's own boats on the Vessel Overview screen"
+      },
+      {
+        "type": "fix",
+        "title": "Password reset and sign-in links now always point at polaris.jlsyachts.com"
+      }
+    ]
+  },
+  {
+    "version": "2.61.0",
+    "date": "2026-09-25",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Export to Excel on the Local Package board"
+      },
+      {
+        "type": "feature",
+        "title": "Build Managed Boats out to the full Manage Boat spec"
+      },
+      {
+        "type": "feature",
+        "title": "Calendar batch-leave + task detail, drag-and-drop uploads, editable remarks, NOC status/invoice"
+      },
+      {
+        "type": "fix",
+        "title": "Stop AWB-matched Local packages reverting Completed to Delivered"
+      },
+      {
+        "type": "fix",
+        "title": "Replace, re-sync or remove a vessel photo without editing the record"
+      }
+    ]
+  },
+  {
     "version": "2.60.0",
     "date": "2026-09-23",
     "entries": [

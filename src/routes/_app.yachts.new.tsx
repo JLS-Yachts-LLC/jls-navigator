@@ -29,6 +29,7 @@ const doCreateSpFolder = createServerFn({ method: 'POST' })
     }
   })
 import { useAuth } from "@/lib/auth";
+import { useAccess } from "@/lib/auth/useAccess";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -67,6 +68,11 @@ function labelFor(key: string) {
 
 function NewYacht() {
   const { user } = useAuth();
+  // Adding a vessel needs agency create — the same rule the database enforces
+  // (policy "Agency creators insert yachts"). This page used to have no check,
+  // so anyone could add a yacht they then could not edit.
+  const { canAccessModule } = useAccess();
+  const canCreate = canAccessModule("agency", "create");
   const navigate = useNavigate();
   const isJls = Route.useSearch().fleet === "jls";
   const [form, setForm] = useState<Record<string, string>>({ status: "Active" });
@@ -122,6 +128,21 @@ function NewYacht() {
     } finally {
       setBusy(false);
     }
+  }
+
+  if (!canCreate) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
+        <h1 className="font-display text-lg font-semibold">You can't add vessels</h1>
+        <p className="max-w-sm text-sm text-muted-foreground">
+          Adding a vessel needs create access to the Agency module. Ask an administrator
+          if you should have it.
+        </p>
+        <Button asChild variant="outline" size="sm" className="gap-1.5">
+          <Link to="/yachts"><ArrowLeft className="h-3.5 w-3.5" /> Back to vessels</Link>
+        </Button>
+      </div>
+    );
   }
 
   return (
