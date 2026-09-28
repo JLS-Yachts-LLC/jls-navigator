@@ -28,6 +28,16 @@ export const Route = createFileRoute("/orbit-app")({
       { name: "apple-mobile-web-app-capable", content: "yes" },
       { name: "apple-mobile-web-app-title", content: "Orbit" },
       { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
+      // The manifest's theme colour, so the browser chrome matches before install.
+      // Brand Teal Blue — the same value PolarisLogo uses.
+      { name: "theme-color", content: "#07435E" },
+    ],
+    links: [
+      // Only this page links the manifest, so only the field app is installable —
+      // the desktop Polaris is not offered as a phone app.
+      { rel: "manifest", href: "/orbit-app.webmanifest" },
+      // iOS ignores manifest icons and reads this instead.
+      { rel: "apple-touch-icon", href: "/orbit-icons/apple-touch-icon.png" },
     ],
   }),
 });

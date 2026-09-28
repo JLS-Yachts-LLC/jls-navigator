@@ -39,6 +39,7 @@ import {
 } from "./orbit2-data";
 import { useOrbit2Identity } from "./orbit2-identity";
 import { stamp } from "./orbit2-fields";
+import { InstallBanner, InstallButton, InstallSheet } from "./orbit2-install";
 
 const sb = supabase as any;
 const VIEW_AS_KEY = "orbit2.field.viewAs";
@@ -79,6 +80,7 @@ export function Orbit2FieldApp() {
   const [tasks, setTasks] = useState<Orbit2Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [howToInstall, setHowToInstall] = useState(false);
 
   const load = useCallback(async () => {
     if (!teamName) { setTasks([]); setLoading(false); return; }
@@ -131,12 +133,15 @@ export function Orbit2FieldApp() {
                 <UserRound className="h-4 w-4 text-muted-foreground" /> {teamName}
               </span>
             )}
+            <InstallButton onHowTo={() => setHowToInstall(true)} />
             <button onClick={() => void signOut()} title="Sign out" aria-label="Sign out"
               className="rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-foreground">
               <LogOut className="h-5 w-5" />
             </button>
           </div>
         </header>
+
+        <InstallSheet open={howToInstall} onClose={() => setHowToInstall(false)} />
 
         {/* ── Who am I ── */}
         {!identity.name ? (
@@ -172,6 +177,7 @@ export function Orbit2FieldApp() {
             onOpen={setOpenId}
             onRefresh={() => void load()}
             onChangePerson={!ownName ? () => { store.del(VIEW_AS_KEY); setViewAs(null); } : undefined}
+            banner={<InstallBanner onHowTo={() => setHowToInstall(true)} />}
           />
         )}
       </div>
@@ -182,7 +188,7 @@ export function Orbit2FieldApp() {
 // ── 1. Only my jobs ─────────────────────────────────────────────────────────
 
 export function TaskList({
-  tasks, loading, teamName, viewingAs, onOpen, onRefresh, onChangePerson,
+  tasks, loading, teamName, viewingAs, onOpen, onRefresh, onChangePerson, banner,
 }: {
   tasks: Orbit2Project[];
   loading: boolean;
@@ -191,9 +197,12 @@ export function TaskList({
   onOpen: (id: string) => void;
   onRefresh: () => void;
   onChangePerson?: () => void;
+  /** Shown above the list — the Add to Home Screen prompt. */
+  banner?: React.ReactNode;
 }) {
   return (
     <main className="flex-1 space-y-3 px-4 py-4">
+      {banner}
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-[16px] font-semibold">
           {viewingAs ? `${teamName}'s jobs` : "My jobs"}
