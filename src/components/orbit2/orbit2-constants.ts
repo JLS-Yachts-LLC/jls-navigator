@@ -80,6 +80,9 @@ export const colorFor = (category: string) => CATEGORY_COLOR[category] ?? OTHER_
  */
 export const ORBIT2_TEAM = [
   "Lovin", "Keith", "Rusty", "Alex", "Kasam", "Anish", "Gajender", "Rehman",
+  // Added 28 Sep 2026 to test the field app. Matched, like everyone here, on the
+  // first word of the Polaris display name — his account reads "Jonathan Lopez".
+  "Jonathan",
 ] as const;
 
 /** Where the field app lives — the dashboard link, the QR code and the sign-in return all use it. */
