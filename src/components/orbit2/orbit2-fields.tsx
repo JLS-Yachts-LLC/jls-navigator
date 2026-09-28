@@ -151,58 +151,93 @@ export function FileSlot({
   accept?: string;
   disabled?: boolean;
 }) {
-  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  // dragenter/dragleave fire for every child the pointer crosses; counting them
+  // keeps the highlight steady instead of flickering over the file list.
+  const dragDepth = useRef(0);
+  const busy = progress !== null;
+  const imagesOnly = accept === "image/*";
 
-  async function pick(file: File | undefined) {
-    if (!file) return;
-    if (!guardUploadFile(file, { accepts: "Use a PDF or an image." })) return;
-    if (!/^(application\/pdf|image\/)/.test(file.type || "")) {
-      toast.error("Only PDF and image files can be attached here.");
-      return;
+  /** Why this file can't go in this slot, or null. PDFs and images only, per spec. */
+  function rejection(file: File): string | null {
+    const ok = imagesOnly ? /^image\//.test(file.type || "") : /^(application\/pdf|image\/)/.test(file.type || "");
+    return ok ? null : `${file.name}: only ${imagesOnly ? "images" : "PDFs and images"} can be attached here.`;
+  }
+
+  /**
+   * Upload every file dropped or picked, one after another.
+   *
+   * One bad file is reported and skipped rather than abandoning the rest, and
+   * the platform upload guard (size cap, type allow-list) still runs on each.
+   */
+  async function addFiles(list: FileList | File[] | null | undefined) {
+    const picked = Array.from(list ?? []);
+    if (!picked.length || disabled) return;
+    const usable: File[] = [];
+    for (const f of picked) {
+      const why = rejection(f);
+      if (why) { toast.error(why); continue; }
+      if (!guardUploadFile(f, { accepts: imagesOnly ? "Use an image." : "Use a PDF or an image." })) continue;
+      usable.push(f);
     }
-    setBusy(true);
+    if (!usable.length) { if (inputRef.current) inputRef.current.value = ""; return; }
+
+    setProgress({ done: 0, total: usable.length });
+    let added = 0;
     try {
-      // Random prefix: two people uploading "invoice.pdf" must not overwrite
-      // each other, and the original name is kept alongside for display.
-      const path = `orbit2/${crypto.randomUUID()}-${file.name.replace(/[^\w.-]+/g, "_")}`;
-      const { error } = await supabase.storage
-        .from(ORBIT2_BUCKET)
-        .upload(path, file, { contentType: uploadContentType(file), upsert: false });
-      if (error) throw error;
-      await onUpload(file, storageRef(ORBIT2_BUCKET, path));
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Upload failed");
+      for (const file of usable) {
+        try {
+          // Random prefix: two people uploading "invoice.pdf" must not overwrite
+          // each other, and the original name is kept alongside for display.
+          const path = `orbit2/${crypto.randomUUID()}-${file.name.replace(/[^\w.-]+/g, "_")}`;
+          const { error } = await supabase.storage
+            .from(ORBIT2_BUCKET)
+            .upload(path, file, { contentType: uploadContentType(file), upsert: false });
+          if (error) throw error;
+          await onUpload(file, storageRef(ORBIT2_BUCKET, path));
+          added += 1;
+        } catch (e) {
+          toast.error(`${file.name}: ${e instanceof Error ? e.message : "upload failed"}`);
+        }
+        setProgress((p) => (p ? { ...p, done: p.done + 1 } : p));
+      }
+      if (added > 1) toast.success(`${added} files attached to ${label}`);
     } finally {
-      setBusy(false);
+      setProgress(null);
       if (inputRef.current) inputRef.current.value = "";
     }
   }
 
   return (
     <div
-      onDragOver={(e) => { if (!disabled) { e.preventDefault(); setDragOver(true); } }}
-      onDragLeave={() => setDragOver(false)}
+      onDragEnter={(e) => { if (disabled) return; e.preventDefault(); dragDepth.current += 1; setDragOver(true); }}
+      onDragOver={(e) => { if (!disabled) e.preventDefault(); }}
+      onDragLeave={() => { dragDepth.current = Math.max(0, dragDepth.current - 1); if (dragDepth.current === 0) setDragOver(false); }}
       onDrop={(e) => {
         e.preventDefault();
+        dragDepth.current = 0;
         setDragOver(false);
-        if (!disabled) void pick(e.dataTransfer.files?.[0]);
+        void addFiles(e.dataTransfer.files);
       }}
-      className={cn("rounded-md border border-border bg-muted/10 p-2.5 transition",
-        dragOver && "border-primary bg-primary/5")}>
+      className={cn("rounded-md border border-dashed border-border bg-muted/10 p-2.5 transition",
+        dragOver && "border-primary bg-primary/10 ring-1 ring-primary/40")}>
       <div className="mb-1.5 flex items-center justify-between gap-2">
         <span className="text-[14px] font-medium text-muted-foreground">{label}</span>
         <button type="button" disabled={disabled || busy} onClick={() => inputRef.current?.click()}
           className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[14px] font-medium text-primary hover:bg-primary/10 disabled:opacity-50">
-          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />} Attach
+          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+          {busy ? `${progress.done}/${progress.total}` : "Attach"}
         </button>
       </div>
-      <input ref={inputRef} type="file" accept={accept} className="hidden"
-        onChange={(e) => void pick(e.target.files?.[0])} />
-      {files.length === 0 ? (
+      <input ref={inputRef} type="file" accept={accept} multiple className="hidden"
+        onChange={(e) => void addFiles(e.target.files)} />
+      {dragOver ? (
+        <p className="py-1 text-center text-[14px] font-medium text-primary">Drop to attach — several files at once is fine</p>
+      ) : files.length === 0 ? (
         <p className="text-[14px] text-muted-foreground/70">
-          {dragOver ? "Drop to attach" : "None attached — drag a file here, or Attach"}
+          None attached — drag files here, or Attach
         </p>
       ) : (
         <ul className="space-y-1">

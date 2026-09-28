@@ -95,8 +95,9 @@ export const ORBIT_FIELD_PATH = "/orbit-app";
  */
 export const FIELD_STATUSES: readonly string[] = ["Scheduled/Assigned", "Working On It", "On Hold"];
 
-/** Who may override a status the mobile app normally sets. */
-export const ORBIT2_ADMINS: readonly string[] = ["Lovin", "Rusty", "Keith"];
+// Who is an Orbit 2 admin is not a list here: it is "Admin" on the Orbit module
+// in the Admin panel, checked by the database function orbit2_is_admin() — see
+// orbit2-identity.ts and migration 20260928110000_orbit2_admin_locks.sql.
 
 // ── Bunkering ───────────────────────────────────────────────────────────────
 export const QUANTITY_UNITS = ["LTR", "USG", "MT", "CBM"] as const;

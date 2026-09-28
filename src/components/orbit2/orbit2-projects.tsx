@@ -208,6 +208,9 @@ export function Orbit2Projects({
         if (error) throw error;
         toast.success(`${selected.task_id} saved`);
         await reload();
+        // A status override made in the panel adds a Remark of its own.
+        const { data } = await sb.from("orbit2_notes").select("*").eq("project_id", selected.id).order("created_at");
+        setNotes((data ?? []) as Orbit2Note[]);
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not save");
@@ -221,7 +224,12 @@ export function Orbit2Projects({
     const { error } = await sb.from("orbit2_projects").update({ status }).eq("id", p.id);
     if (error) { toast.error(error.message); return; }
     await reload();
-    if (selectedId === p.id) setDraft((d) => ({ ...d, status }));
+    if (selectedId === p.id) {
+      setDraft((d) => ({ ...d, status }));
+      // An admin override writes its own Remark — show it without a reload.
+      const { data } = await sb.from("orbit2_notes").select("*").eq("project_id", p.id).order("created_at");
+      setNotes((data ?? []) as Orbit2Note[]);
+    }
   }
 
   async function addNote(kind: "remark" | "team_comment", body: string) {
@@ -238,7 +246,9 @@ export function Orbit2Projects({
   /** Correcting an existing Remark — restricted to Orbit 2 admins (see identity.isAdmin). */
   async function editNote(id: string, body: string) {
     if (!selected) return;
-    const { error } = await sb.from("orbit2_notes").update({ body, edited_at: new Date().toISOString() }).eq("id", id);
+    // edited_at is not sent: the database stamps it (and refuses the edit
+    // outright unless you are an Orbit 2 admin — see orbit2_guard_notes).
+    const { error } = await sb.from("orbit2_notes").update({ body }).eq("id", id);
     if (error) { toast.error(error.message); return; }
     const { data } = await sb.from("orbit2_notes").select("*").eq("project_id", selected.id).order("created_at");
     setNotes((data ?? []) as Orbit2Note[]);
@@ -421,21 +431,41 @@ function RecordTable({
  * app. A non-admin can still see them on a record that has reached them — they
  * just cannot select them, so the web view never contradicts what the crew said.
  */
-function StatusSelect({
+export function StatusSelect({
   value, isAdmin, onChange, className,
 }: { value: string; isAdmin: boolean; onChange: (v: string) => void; className?: string }) {
+  // Mirrors orbit2_guard_status() exactly, so the menu never offers a change the
+  // database will refuse:
+  //   - "Working On It" / "Complete" are the crew's (Attend / Done); an admin
+  //     may set them here as an override.
+  //   - A Complete job can only be reopened by an admin.
+  const locked = (s: string) =>
+    !isAdmin && s !== value && (MOBILE_OWNED_STATUSES.includes(s) || value === "Complete");
+
+  function pick(next: string) {
+    if (next === value) return;
+    // An override is on the record (the database writes it to Remarks) and
+    // "Complete" stamps the completion time — worth one deliberate click.
+    if (isAdmin && MOBILE_OWNED_STATUSES.includes(next)
+      && !confirm(`Set "${next}" as an admin override?\n\nThe field crew normally set this from the mobile app. The override is recorded in Remarks under your name.`)) {
+      return;
+    }
+    onChange(next);
+  }
+
   return (
     <select
       value={value}
-      onChange={(e) => onChange(e.target.value)}
+      onChange={(e) => pick(e.target.value)}
       className={cn("w-full min-w-[11rem] rounded-md border px-2 py-1 text-[14px] font-medium outline-none",
         className)}
       style={{ borderColor: `${statusColor(value)}66`, background: `${statusColor(value)}1A`, color: statusColor(value) }}
     >
       {ORBIT2_STATUSES.map((s) => (
-        <option key={s} value={s} className="bg-background text-foreground"
-          disabled={!isAdmin && MOBILE_OWNED_STATUSES.includes(s) && s !== value}>
-          {s}{!isAdmin && MOBILE_OWNED_STATUSES.includes(s) && s !== value ? " (mobile app)" : ""}
+        <option key={s} value={s} className="bg-background text-foreground" disabled={locked(s)}>
+          {s}
+          {s !== value && MOBILE_OWNED_STATUSES.includes(s) ? (isAdmin ? " — admin override" : " (mobile app)") : ""}
+          {s !== value && !MOBILE_OWNED_STATUSES.includes(s) && value === "Complete" && !isAdmin ? " (admin only)" : ""}
         </option>
       ))}
     </select>
