@@ -19,6 +19,7 @@
  * is kept locally so a suspended tab does not lose it.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { errorMessage } from "@/lib/error-message";
 import { useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeft, Camera, CheckCircle2, ChevronRight, Loader2, LogOut, MapPin,
@@ -329,7 +330,7 @@ export function TaskDetail({
       toast.success("Attended — the office can see you're on site.");
       await Promise.all([onChanged(), loadActivity()]);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not mark as attended");
+      toast.error(errorMessage(e, "Could not mark as attended"));
     } finally {
       setBusy(null);
     }
@@ -345,7 +346,7 @@ export function TaskDetail({
       setDraft("");
       await loadActivity();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not save the comment");
+      toast.error(errorMessage(e, "Could not save the comment"));
     } finally {
       setBusy(null);
     }
@@ -377,7 +378,7 @@ export function TaskDetail({
       toast.success("Photo added to the job");
       await loadActivity();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not upload the photo");
+      toast.error(errorMessage(e, "Could not upload the photo"));
     } finally {
       setBusy(null);
       if (cameraRef.current) cameraRef.current.value = "";
@@ -411,7 +412,7 @@ export function TaskDetail({
       toast.success(`${task.task_id} complete`);
       onClosed();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not mark as done");
+      toast.error(errorMessage(e, "Could not mark as done"));
     } finally {
       setBusy(null);
     }

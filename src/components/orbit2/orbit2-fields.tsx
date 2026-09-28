@@ -7,6 +7,7 @@
  * everywhere it could be typed.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
+import { errorMessage } from "@/lib/error-message";
 import { Paperclip, X, Upload, Loader2, Check, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -199,7 +200,7 @@ export function FileSlot({
           await onUpload(file, storageRef(ORBIT2_BUCKET, path));
           added += 1;
         } catch (e) {
-          toast.error(`${file.name}: ${e instanceof Error ? e.message : "upload failed"}`);
+          toast.error(`${file.name}: ${errorMessage(e, "upload failed")}`);
         }
         setProgress((p) => (p ? { ...p, done: p.done + 1 } : p));
       }

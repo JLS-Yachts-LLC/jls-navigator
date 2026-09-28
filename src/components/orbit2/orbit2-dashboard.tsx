@@ -14,6 +14,7 @@
  * a dashboard that invents numbers is worse than an empty one.
  */
 import { useEffect, useMemo, useState } from "react";
+import { errorMessage } from "@/lib/error-message";
 import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend,
@@ -592,7 +593,7 @@ function DayDialog({
       }
       await onSaved();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not save");
+      toast.error(errorMessage(e, "Could not save"));
     } finally {
       setBusy(null);
     }
@@ -811,7 +812,7 @@ function BatchScheduleDialog({
       }
       await onSaved();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not save");
+      toast.error(errorMessage(e, "Could not save"));
       setBusy(false);
     }
   }

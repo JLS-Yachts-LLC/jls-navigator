@@ -16,6 +16,7 @@
  *   Product Grade, Quantity —                 shown
  */
 import { useEffect, useMemo, useState } from "react";
+import { errorMessage } from "@/lib/error-message";
 import { Loader2, Plus, Search, X, Send } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -213,7 +214,7 @@ export function Orbit2Projects({
         setNotes((data ?? []) as Orbit2Note[]);
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not save");
+      toast.error(errorMessage(e, "Could not save"));
     } finally {
       setSaving(false);
     }
@@ -741,7 +742,7 @@ function ClientNotify({ project, onSent }: { project: Orbit2Project; onSent: () 
       if (body.warning) toast.warning(body.warning);
       await onSent();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not notify the client");
+      toast.error(errorMessage(e, "Could not notify the client"));
     } finally {
       setBusy(false);
     }

@@ -9,6 +9,7 @@
  * Save invites a page of edits to be lost in one navigation.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
+import { errorMessage } from "@/lib/error-message";
 import { Loader2, Plus, Search, Paperclip, Upload, X, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -92,7 +93,7 @@ export function Orbit2Noc({
       toast.success(`${data.ref_id} added`);
       await reload();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not add a row");
+      toast.error(errorMessage(e, "Could not add a row"));
     } finally {
       setAdding(false);
     }
@@ -311,7 +312,7 @@ function AttachCell({ value, onSave }: { value: string | null; onSave: (v: strin
       if (error) throw error;
       onSave(storageRef(ORBIT2_BUCKET, path));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Upload failed");
+      toast.error(errorMessage(e, "Upload failed"));
     } finally {
       setBusy(false);
       if (input.current) input.current.value = "";
