@@ -133,18 +133,25 @@ function SyncStatus({ canEdit, onSynced }: { canEdit: boolean; onSynced?: () => 
 
   if (!status) return null;
   const failing = !!status.last_error;
+  // The sync runs every five minutes, but a tick can be dropped (a redeploy
+  // landing on it drops the invocation outright, leaving nothing to log). One
+  // miss is harmless; a long silence means it has stopped, and should say so.
+  const stale = !failing && status.enabled !== false &&
+    (!status.last_ok_at || Date.now() - Date.parse(status.last_ok_at) > 30 * 60_000);
 
   return (
     <div className="inline-flex items-center gap-2 text-[11px]">
       <span
-        className={failing ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}
-        title={failing ? status.last_error : undefined}
+        className={failing || stale ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}
+        title={failing ? status.last_error : stale ? "It normally runs every five minutes." : undefined}
       >
         {status.enabled === false
           ? "New Horizon sync is switched off"
           : failing
             ? `Last sync with New Horizon failed · ${ago(status.last_run_at)}`
-            : `Synced with New Horizon-IT · ${ago(status.last_ok_at)}`}
+            : stale
+              ? `Not synced with New Horizon-IT since ${ago(status.last_ok_at)}`
+              : `Synced with New Horizon-IT · ${ago(status.last_ok_at)}`}
       </span>
       {canEdit && status.enabled !== false && (
         <button

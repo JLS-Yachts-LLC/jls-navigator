@@ -57,11 +57,17 @@ interface Remote {
 
 /** Where New Horizon is and how to prove it's us, or null when switched off. */
 async function remote(sb: any): Promise<Remote | null> {
-  const { data: cfg } = await sb
+  const { data: cfg, error } = await sb
     .from('yacht_it_sync_config')
     .select('remote_url, shared_secret, enabled')
     .eq('id', 1)
     .maybeSingle()
+  // Not the same as switched off. Reading this as "disabled" made a run that
+  // never got started indistinguishable from one that was never meant to.
+  if (error) {
+    console.error('[yacht-it-sync] could not read sync config:', error.message)
+    return null
+  }
   if (!cfg?.enabled) return null
   const secret = (process.env.YACHT_IT_SYNC_SECRET as string | undefined) || cfg.shared_secret
   const base = ((process.env.YACHT_IT_SYNC_URL as string | undefined) || cfg.remote_url || '').replace(/\/$/, '')
