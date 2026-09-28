@@ -8,6 +8,7 @@ import {
   sendTicketEmail, TICKET_MAIL_SENDER,
   ticketCreatedEmail, ticketReplyEmail, ticketResolvedEmail, ticketStaffNotifyEmail,
 } from '@/lib/graph-mail.server'
+import { mirrorTicketToNewHorizon } from '@/lib/nh-mirror.server'
 
 function getAdmin() {
   const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? ''
@@ -51,6 +52,11 @@ export async function itTicketsNotifyHandler(request: Request): Promise<Response
         await sendTicketEmail({ to, subject: ack.subject, html: ack.html })
         sent.push('requester')
       }
+      // And raise it on the New Horizon desk, so a manual ticket is tracked in
+      // both places rather than only here. Its own errors are recorded on the
+      // ticket — a mirror that fails must not fail the notification.
+      const mirror = await mirrorTicketToNewHorizon(ticketId, 'Polaris Service Desk', db)
+      if (mirror.mirrored) sent.push('new-horizon')
     } else if (event === 'reply') {
       if (!to) return json({ ok: true, skipped: 'no requester email' })
       const e = ticketReplyEmail({ ticket_no: ref, subject: t.subject, name, message })

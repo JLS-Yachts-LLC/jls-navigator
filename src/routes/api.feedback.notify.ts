@@ -6,19 +6,29 @@
  *      tracked item to work on — not just an email. The reporter's text also
  *      becomes the first message on the ticket thread, since the Service Desk is
  *      worked conversation-first.
- *   2. Emails both support mailboxes — itsupport@jlsyachts.com and
- *      support@newhorizon-it.co.uk — with the ticket reference in the subject.
+ *   2. Emails the JLS support mailbox — itsupport@jlsyachts.com — with the ticket
+ *      reference in the subject.
+ *   3. Raises the same item on the New Horizon-IT desk, through the shared mirror
+ *      that manual tickets and forwarded email also use (see nh-mirror.server.ts).
+ *
+ * New Horizon used to be a second To: address on the email above, carrying an
+ * `Original-Sender:` line so their desk attributed the ticket to the reporter.
+ * It now goes through the mirror instead: one path for all three sources, and the
+ * requester on their side is the JLS IT desk rather than whichever individual
+ * happened to file it. The reporter is still named in the body and description.
  *
  * Idempotent: the created ticket id is written back to feedback.ticket_id, so
- * re-notifying the same feedback re-sends the email but never duplicates a ticket.
- * Both steps are independent — a mail failure never loses the ticket, and a ticket
+ * re-notifying the same feedback re-sends the email but never duplicates a ticket
+ * — and the mirror has its own exactly-once guard.
+ * The steps are independent — a mail failure never loses the ticket, and a ticket
  * failure never swallows the email.
  */
 import { supabaseAdmin } from '@/integrations/supabase/client.server'
 import { sendTicketEmail } from '@/lib/graph-mail.server'
+import { mirrorTicketToNewHorizon, sendNewHorizonMirror } from '@/lib/nh-mirror.server'
 
-/** Both support mailboxes. Internal domains, so the client-email guard allows them. */
-const SUPPORT_RECIPIENTS = ['itsupport@jlsyachts.com', 'support@newhorizon-it.co.uk']
+/** The JLS support mailbox. Internal domain, so the client-email guard allows it. */
+const SUPPORT_RECIPIENTS = ['itsupport@jlsyachts.com']
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
@@ -36,24 +46,6 @@ async function recordNotifyOutcome(feedbackId: string, error: string | null): Pr
   } catch (e) {
     console.error('[feedback-notify] could not record the notification outcome:', e)
   }
-}
-
-/**
- * Name the person who actually filed the report, in the `Original-Sender:` form
- * the Service Desk's inbound mail already understands.
- *
- * This email is sent from the Polaris system mailbox, which is also the address
- * registered as JLS CRM's error mailbox — so without this the Service Desk reads
- * every report as "the app reporting itself" and files it as an app error under
- * "IT Support", even when it is a feature request from a named person.
- */
-function originalSenderBlock(email: string | null, name: string | null): string {
-  if (!email) return ''
-  // Separate paragraphs, not one with a <br>: each must survive HTML-to-text as
-  // its own line, because both are matched at the start of a line.
-  return `<p style="margin:6px 0 0;font-size:11px;color:#cbd5e1;">Original-Sender: ${esc(email)}</p>${
-    name ? `<p style="margin:0;font-size:11px;color:#cbd5e1;">Original-Sender-Name: ${esc(name)}</p>` : ''
-  }`
 }
 
 export async function feedbackNotifyHandler(request: Request): Promise<Response> {
@@ -176,8 +168,31 @@ export async function feedbackNotifyHandler(request: Request): Promise<Response>
     ${f.screenshot_url ? `<p style="margin:14px 0;"><a href="${esc(f.screenshot_url)}">📎 View screenshot</a></p>` : ''}
     ${log}
     <p style="margin-top:18px;font-size:11px;color:#94a3b8;">Logged in Polaris → Feedback${ticketNo ? ` and tracked as ${esc(ticketNo)} in the Service Desk (Polaris queue)` : ''}. Reply to the submitter to follow up.</p>
-    ${originalSenderBlock(reporterEmail, reporterName)}
   </div>`
+
+  // ── 3. Raise it on the New Horizon desk ─────────────────────────────────────
+  // Before the email, so a mail failure below cannot stop it: New Horizon hearing
+  // about a bug is the point of this endpoint, and it used to be lost whenever the
+  // single send to both mailboxes threw. When no ticket could be created there is
+  // nothing to mirror exactly-once against, so send it directly — a report reaching
+  // New Horizon twice is recoverable; one that never arrives is not.
+  if (ticketId) {
+    await mirrorTicketToNewHorizon(ticketId, 'Polaris feedback')
+  } else {
+    try {
+      await sendNewHorizonMirror({
+        ref: null,
+        subject: `${isBug ? 'Bug' : 'Feature request'}: ${summary}`,
+        body: ticketDescription(f),
+        origin: 'Polaris feedback',
+        priority: priorityFor(f),
+        raisedByEmail: reporterEmail,
+        raisedByName: reporterName,
+      })
+    } catch (e) {
+      console.error('[feedback-notify] New Horizon mirror failed:', e)
+    }
+  }
 
   try {
     await sendTicketEmail({

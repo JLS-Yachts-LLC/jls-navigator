@@ -12,9 +12,16 @@
  *  • Our own outbound notifications are recognised and skipped, so a ticket can
  *    never echo its own emails back into itself.
  *  • The body is reduced to what the person actually wrote (see extractReplyText).
+ *
+ * Mail with no reference used to be left for the team to work by hand in the
+ * mailbox, which meant a forwarded problem was tracked nowhere. It now raises a
+ * Polaris ticket and is mirrored to New Horizon — subject to the suppression rules
+ * in `shouldNotRaiseTicket`, because "every email becomes a ticket" would otherwise
+ * include every newsletter and out-of-office the mailbox receives.
  */
 import { createClient } from '@supabase/supabase-js'
 import { TICKET_MAIL_SENDER, getMailGraphTokenForRead } from '@/lib/graph-mail.server'
+import { mirrorTicketToNewHorizon, NH_SUPPORT_MAILBOX } from '@/lib/nh-mirror.server'
 
 function admin() {
   const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? ''
@@ -23,7 +30,25 @@ function admin() {
 }
 
 /** `[SD-0019] …` anywhere in the subject (also matches JLS-0003-style refs). */
-const TICKET_REF = /\[?\b([A-Z]{2,5}-\d{2,6})\b\]?/
+const TICKET_REF = /\b[A-Z]{2,5}-\d{2,6}\b/g
+
+/**
+ * Find the Polaris ticket a subject line refers to.
+ *
+ * Every reference in the subject is tried, not just the first. New Horizon replies
+ * to a mirrored ticket arrive as `[NH-0123] Re: [SD-0021] …`, and taking the first
+ * match alone meant their reply — the record of the work actually being done —
+ * matched nothing and was dropped.
+ */
+async function matchTicket(db: any, subject: string): Promise<{ id: string; ticket_no: string; status: string } | null> {
+  const refs = [...new Set((subject.match(TICKET_REF) ?? []).map(r => r.toUpperCase()))]
+  for (const ref of refs) {
+    const { data } = await db.from('it_tickets')
+      .select('id, ticket_no, status').ilike('ticket_no', ref).maybeSingle()
+    if (data) return data
+  }
+  return null
+}
 
 // ─── Body cleanup ──────────────────────────────────────────────────────────────
 // Real replies arrive wrapped in three kinds of noise, all of which made the
@@ -127,10 +152,148 @@ type GraphMessage = {
   body?: { content?: string; contentType?: string }
 }
 
-export type InboundResult = { scanned: number; appended: number; skipped: number; errors: string[] }
+// ─── Which unreferenced mail deserves a ticket ────────────────────────────────
+
+/** Headers that mark a message as machine-generated rather than written by a person. */
+const AUTO_HEADERS = [
+  'auto-submitted', 'x-auto-response-suppress', 'x-autoreply', 'x-autorespond',
+  'precedence', 'list-unsubscribe', 'list-id',
+]
+
+/** Subjects that are never a request for help, whatever the headers say. */
+const AUTOMATED_SUBJECT = [
+  /^\s*(automatic reply|automatische antwort|out of office)\b/i,
+  /^\s*undeliverable\b/i,
+  /^\s*(delivery status notification|mail delivery (failed|subsystem)|returned mail)\b/i,
+  /^\s*(read receipt|delivery receipt|not read)\b/i,
+  /\bunsubscribe\b/i,
+]
+
+const domainOf = (addr: string) => addr.trim().toLowerCase().split('@')[1] ?? ''
+
+/**
+ * Should this unreferenced email be left alone rather than raising a ticket?
+ * Returns the reason to record, or null to go ahead.
+ *
+ * The New Horizon rule is a loop guard, not tidiness. A mirrored ticket is
+ * acknowledged by their desk; if that acknowledgement raised a Polaris ticket it
+ * would be mirrored straight back, acknowledged again, and so on. Their mail can
+ * still be appended to a ticket it references — this only stops it creating one.
+ */
+function shouldNotRaiseTicket(from: string, subject: string, headers: Record<string, string>): string | null {
+  const d = domainOf(from)
+  if (d && (d === domainOf(NH_SUPPORT_MAILBOX) || d.endsWith(`.${domainOf(NH_SUPPORT_MAILBOX)}`))) {
+    return 'new_horizon_no_ref'
+  }
+  if (AUTOMATED_SUBJECT.some(re => re.test(subject))) return 'automated'
+  for (const name of AUTO_HEADERS) {
+    const v = (headers[name] ?? '').toLowerCase()
+    if (!v) continue
+    // `Auto-Submitted: no` is the explicit "a person sent this" value.
+    if (name === 'auto-submitted' && v === 'no') continue
+    if (name === 'precedence' && !['bulk', 'junk', 'list', 'auto_reply'].includes(v)) continue
+    return 'automated'
+  }
+  return null
+}
+
+/**
+ * Read a message's internet headers.
+ *
+ * Fetched per message rather than added to the list query's $select: only mail
+ * that is about to become a ticket needs them, which is rare, and a $select Graph
+ * dislikes would take the whole poller down instead of one message. A failure here
+ * is not fatal — the subject checks still apply.
+ */
+async function headersFor(token: string, mailbox: string, id: string): Promise<Record<string, string>> {
+  try {
+    const res = await fetch(
+      `https://graph.microsoft.com/v1.0/users/${mailbox}/messages/${encodeURIComponent(id)}?$select=internetMessageHeaders`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+    if (!res.ok) return {}
+    const list = ((await res.json()) as any)?.internetMessageHeaders ?? []
+    const out: Record<string, string> = {}
+    for (const h of list) if (h?.name) out[String(h.name).toLowerCase()] = String(h.value ?? '')
+    return out
+  } catch {
+    return {}
+  }
+}
+
+/** Strip the `RE:`/`FW:` chain an email accumulates, so the ticket reads cleanly. */
+function cleanSubject(subject: string): string {
+  return subject.replace(/^(\s*(re|fw|fwd|tr|aw)\s*:\s*)+/i, '').trim()
+}
+
+/**
+ * Turn an unreferenced email into a Polaris ticket.
+ *
+ * The body is kept whole rather than run through extractReplyText. That stripper
+ * exists to reduce a reply to what the person typed, and a forward is the opposite
+ * case: its content sits below the `From:` line the stripper treats as the end of
+ * the message, so reducing it would leave a ticket with nothing in it.
+ */
+async function raiseTicketFromMail(
+  db: any,
+  msg: GraphMessage,
+  from: string,
+  subject: string,
+  plain: string,
+): Promise<{ id: string; ticket_no: string | null } | null> {
+  const body = plain.replace(/\r/g, '').trim().slice(0, 8000)
+  const title = cleanSubject(subject).slice(0, 200)
+  if (!body && !title) return null
+
+  const senderName = msg.from?.emailAddress?.name || from
+  const received = msg.receivedDateTime ?? new Date().toISOString()
+  const description = [
+    body || '(the email had no body)',
+    '',
+    '— Raised from email to itsupport@jlsyachts.com —',
+    `From: ${senderName} <${from}>`,
+    `Received: ${received}`,
+    `Subject: ${subject}`,
+  ].join('\n')
+
+  const { data: t, error } = await db.from('it_tickets').insert([{
+    subject: title || '(no subject)',
+    description,
+    // The mailbox is the IT desk's, so an emailed problem is general IT work
+    // until someone triages it — not an assertion about the Polaris app.
+    category: 'general',
+    priority: 'normal',
+    status: 'open',
+    requested_by: senderName,
+    requester_email: from,
+  }]).select('id, ticket_no').single()
+  if (error) throw new Error(error.message)
+  if (!t) return null
+
+  // The email itself opens the thread, so the ticket reads as the conversation
+  // it already is rather than starting blank.
+  await db.from('it_ticket_messages').insert([{
+    ticket_id: t.id,
+    body: body || '(the email had no body)',
+    internal: false,
+    author_name: `${senderName} (email)`,
+    created_at: received,
+  }]).then(() => {}, () => {})
+
+  return t
+}
+
+export type InboundResult = {
+  scanned: number
+  appended: number
+  /** Unreferenced mail that became a new Polaris ticket. */
+  created: number
+  skipped: number
+  errors: string[]
+}
 
 export async function pollTicketMailbox(): Promise<InboundResult | null> {
-  const result: InboundResult = { scanned: 0, appended: 0, skipped: 0, errors: [] }
+  const result: InboundResult = { scanned: 0, appended: 0, created: 0, skipped: 0, errors: [] }
   let token: string
   try {
     token = await getMailGraphTokenForRead()
@@ -177,23 +340,6 @@ export async function pollTicketMailbox(): Promise<InboundResult | null> {
         continue
       }
 
-      const ref = subject.match(TICKET_REF)?.[1]?.toUpperCase()
-      if (!ref) {
-        // A fresh email with no ticket reference — the team handles those in the
-        // mailbox; record it so we don't re-examine it every five minutes.
-        await db.from('ticket_mail_processed').insert({ message_id: msg.id, outcome: 'no_ticket_ref' })
-        result.skipped++
-        continue
-      }
-
-      const { data: ticket } = await db.from('it_tickets')
-        .select('id, ticket_no, status').ilike('ticket_no', ref).maybeSingle()
-      if (!ticket) {
-        await db.from('ticket_mail_processed').insert({ message_id: msg.id, outcome: 'no_ticket_ref' })
-        result.skipped++
-        continue
-      }
-
       const plain = msg.body?.contentType === 'html'
         ? String(msg.body?.content ?? '')
             .replace(/<br\s*\/?>(?=\s*)/gi, '\n')
@@ -201,9 +347,37 @@ export async function pollTicketMailbox(): Promise<InboundResult | null> {
             .replace(/<[^>]+>/g, '')
             .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
         : String(msg.body?.content ?? '')
+
+      const ticket = await matchTicket(db, subject)
+      if (!ticket) {
+        // No ticket of ours is named — this is something new arriving in the
+        // mailbox. Raise it, unless it is the kind of mail nobody works.
+        const headers = await headersFor(token, mailbox, msg.id)
+        const suppress = shouldNotRaiseTicket(from, subject, headers)
+        if (suppress) {
+          await db.from('ticket_mail_processed').insert({ message_id: msg.id, outcome: suppress })
+          result.skipped++
+          continue
+        }
+        const created = await raiseTicketFromMail(db, msg, from, subject, plain)
+        if (!created) {
+          await db.from('ticket_mail_processed').insert({ message_id: msg.id, outcome: 'empty_body' })
+          result.skipped++
+          continue
+        }
+        await db.from('ticket_mail_processed')
+          .insert({ message_id: msg.id, ticket_id: created.id, outcome: 'created' })
+        result.created++
+        console.log(`[ticket-mail] raised ${created.ticket_no} from mail by ${from}`)
+        // Mirrored after the dedupe row is written: if the mirror throws the
+        // ticket still exists and the email is never reprocessed into a second one.
+        await mirrorTicketToNewHorizon(created.id, 'Email to itsupport@jlsyachts.com', db)
+        continue
+      }
+
       const text = extractReplyText(plain)
       if (!text) {
-        await db.from('ticket_mail_processed').insert({ message_id: msg.id, ticket_id: ticket.id, outcome: 'no_ticket_ref' })
+        await db.from('ticket_mail_processed').insert({ message_id: msg.id, ticket_id: ticket.id, outcome: 'empty_body' })
         result.skipped++
         continue
       }
