@@ -16,8 +16,21 @@ import {
 } from "@/lib/auth/workspace";
 import { Eye, EyeOff } from "lucide-react";
 
+/**
+ * Where to go after signing in, when the sign-in was an interruption rather than
+ * the destination — e.g. a crew member opening the Orbit field app on their
+ * phone. Only a same-site path is honoured ("/x", never "//host" or "https://"),
+ * so the link cannot be used to bounce someone to another site after login.
+ */
+const safeNext = (v: unknown): string | undefined =>
+  typeof v === "string" && /^\/(?![/\\])/.test(v) ? v : undefined;
+
 export const Route = createFileRoute("/auth")({
   component: AuthPage,
+  validateSearch: (search: Record<string, unknown>): { next?: string } => {
+    const next = safeNext(search.next);
+    return next ? { next } : {};
+  },
   head: () => ({ meta: [{ title: "Sign in — Polaris" }] }),
 });
 
@@ -26,6 +39,7 @@ type Mode = "signin" | "set-password" | "forgot-password" | "link-expired";
 function AuthPage() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
+  const { next } = Route.useSearch();
   const [mode, setMode] = useState<Mode>("signin");
   const [linkError, setLinkError] = useState<string | null>(null);
   const [email, setEmail] = useState("");
@@ -74,23 +88,25 @@ function AuthPage() {
         const c = await deriveClaims(supabase, user);
         setClaims(c);
         const ws = await getAvailableWorkspaces(supabase, c);
+        // The workspace selector still shows when there is more than one — the
+        // rule is never to skip it. `next` only replaces where it lands afterwards.
         if (ws.length > 1) {
           setWorkspaces(ws); // show selector
         } else if (ws.length === 1) {
           storeWorkspace(ws[0]);
-          navigate({ to: resolveWorkspaceLandingPath(c, ws[0]) as any });
+          navigate({ to: (next ?? resolveWorkspaceLandingPath(c, ws[0])) as any });
         } else {
-          navigate({ to: resolveLandingPath(c) as any });
+          navigate({ to: (next ?? resolveLandingPath(c)) as any });
         }
       } catch {
-        navigate({ to: "/polaris-redesign" as any });
+        navigate({ to: (next ?? "/polaris-redesign") as any });
       }
     })();
-  }, [loading, user, mode, resolving, workspaces, navigate]);
+  }, [loading, user, mode, resolving, workspaces, navigate, next]);
 
   function pickWorkspace(ws: WorkspaceContext) {
     storeWorkspace(ws);
-    navigate({ to: resolveWorkspaceLandingPath(claims ?? ({} as PolarisClaims), ws) as any });
+    navigate({ to: (next ?? resolveWorkspaceLandingPath(claims ?? ({} as PolarisClaims), ws)) as any });
   }
 
   async function handleSignIn(e: React.FormEvent) {

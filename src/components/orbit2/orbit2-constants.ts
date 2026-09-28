@@ -82,6 +82,19 @@ export const ORBIT2_TEAM = [
   "Lovin", "Keith", "Rusty", "Alex", "Kasam", "Anish", "Gajender", "Rehman",
 ] as const;
 
+/** Where the field app lives — the dashboard link, the QR code and the sign-in return all use it. */
+export const ORBIT_FIELD_PATH = "/orbit-app";
+
+/**
+ * What the field app lists: work the crew can actually go and do.
+ *
+ * Not the quote stages (Not Yet Initiated, Quote in Process/Approval, Quotation
+ * Approved) — those are the office's, and an Attend tapped on one would jump a
+ * job nobody has scheduled straight to "Working On It". On Hold stays visible
+ * so a crew member knows the job exists and why it isn't moving.
+ */
+export const FIELD_STATUSES: readonly string[] = ["Scheduled/Assigned", "Working On It", "On Hold"];
+
 /** Who may override a status the mobile app normally sets. */
 export const ORBIT2_ADMINS: readonly string[] = ["Lovin", "Rusty", "Keith"];
 

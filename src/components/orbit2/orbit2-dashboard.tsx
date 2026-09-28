@@ -31,6 +31,7 @@ import {
   distribution, byClient, completion, calendarItems, calendarDays,
   teamLoad, monthGrid, busiestMonth, fmtSchedule, minutesToHhmm, datesBetween,
 } from "./orbit2-data";
+import { FieldAppButton } from "./orbit2-field-link";
 import { colorFor, COMPLETE_COLOR, PENDING_COLOR, ORBIT2_TEAM } from "./orbit2-constants";
 import { TeamPicker } from "./orbit2-fields";
 
@@ -120,10 +121,13 @@ export function Orbit2Dashboard({
             ? "Nothing logged yet — every figure below fills in as records are added."
             : `${projects.length} project record${projects.length === 1 ? "" : "s"} · ${noc.length} NOC · ${boats.length} managed boat${boats.length === 1 ? "" : "s"}`}
         </p>
+        <div className="flex flex-wrap items-center gap-2">
+        <FieldAppButton />
         <button onClick={exportToExcel} disabled={!projects.length}
           className="flex h-9 items-center gap-1.5 rounded-md border border-border px-3 text-[15px] font-medium hover:bg-accent disabled:opacity-50">
           <Download className="h-4 w-4" /> Export to Excel
         </button>
+        </div>
       </div>
 
       {/* ── Operational analytics ── */}
