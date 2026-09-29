@@ -1,8 +1,9 @@
 /**
  * Orbit 2 — Managed Boats.
  *
- * The dashboard: three filter tabs over the fleet (Total Vessels / Maintenance
- * / Defects & Repairs), a vessel card grid, and the "+ Add New Boat" wizard.
+ * The dashboard: four filter tabs over the fleet (Total Vessel / Maintenance
+ * / Defects & Repairs / In-Use), a vessel card grid, and the "+ Add New Boat"
+ * wizard. In-Use = a Booked job that is Pending or Ongoing.
  * Selecting a boat hands off to Orbit2BoatDetail (its own file — the detail
  * screen, with the vessel spec, documents, DMA/FMA/RYA compliance, Jobs board
  * and Inventory List, is a page in its own right, not a tab of this one).
@@ -42,7 +43,10 @@ type YachtOption = {
   vessel_image: string | null;
 };
 
-type Filter = "all" | "maintenance" | "defect";
+type Filter = "all" | "maintenance" | "defect" | "booked";
+/** Open jobs on one boat, by what they mean for the board. */
+type OpenCounts = { maintenance: number; defect: number; booked: number };
+const noOpen = (): OpenCounts => ({ maintenance: 0, defect: 0, booked: 0 });
 
 export function Orbit2Boats({
   boats, boatTasks, boatDocuments, boatInventory, loading, reload,
@@ -59,26 +63,27 @@ export function Orbit2Boats({
   const [adding, setAdding] = useState(false);
 
   const activeByBoat = useMemo(() => {
-    const m = new Map<string, { maintenance: number; defect: number }>();
+    const m = new Map<string, OpenCounts>();
     for (const t of boatTasks) {
       if (!ACTIVE_BOAT_STATUSES.includes(t.status)) continue;
-      const c = m.get(t.boat_id) ?? { maintenance: 0, defect: 0 };
+      const c = m.get(t.boat_id) ?? noOpen();
       // An inventory check is neither maintenance nor a defect — it does not make
       // a boat read as "in maintenance" on the fleet page.
       if (t.kind === "inventory") continue;
-      c[t.kind === "defect" ? "defect" : "maintenance"] += 1;
+      c[t.kind === "defect" ? "defect" : t.kind === "booked" ? "booked" : "maintenance"] += 1;
       m.set(t.boat_id, c);
     }
     return m;
   }, [boatTasks]);
 
   const counts = useMemo(() => {
-    let maintenance = 0, defect = 0;
+    let maintenance = 0, defect = 0, booked = 0;
     for (const c of activeByBoat.values()) {
       if (c.maintenance > 0) maintenance += 1;
       if (c.defect > 0) defect += 1;
+      if (c.booked > 0) booked += 1;
     }
-    return { all: boats.length, maintenance, defect };
+    return { all: boats.length, maintenance, defect, booked };
   }, [activeByBoat, boats.length]);
 
   const filtered = useMemo(() => {
@@ -101,14 +106,14 @@ export function Orbit2Boats({
   function exportToExcel() {
     const head = ["Boat", "Client", "Vessel Type", "Hull Number", "Hull Material", "Year of Build",
       "Max Beam (m)", "Max Length (m)", "Max Passengers", "MMSI", "IMO", "Registered",
-      "Planned Maintenance (open)", "Defects & Repairs (open)", "Status",
+      "Planned Maintenance (open)", "Defects & Repairs (open)", "Bookings (open)", "Status",
       "DMA Last Inspection", "FMA Last Inspection", "RYA Last Inspection"];
     const rows = boats.map((b) => {
-      const c = activeByBoat.get(b.id) ?? { maintenance: 0, defect: 0 };
+      const c = activeByBoat.get(b.id) ?? noOpen();
       return [b.name, b.client_name ?? "", b.boat_type ?? "", b.hull_number ?? "", b.hull_material ?? "",
         b.year_of_build ?? "", b.max_beam_m ?? "", b.max_length_m ?? "", b.max_passengers ?? "",
         b.mmsi ?? "", b.imo_no ?? "", registered.has(b.id) ? "Registered" : "Not registered",
-        c.maintenance, c.defect, boatStatus(c).label,
+        c.maintenance, c.defect, c.booked, boatStatus(c).label,
         b.dma_last_inspection ?? "", b.fma_last_inspection ?? "", b.rya_last_inspection ?? ""];
     });
     const csv = [head, ...rows]
@@ -136,6 +141,7 @@ export function Orbit2Boats({
             ["all", `Total Vessel: ${counts.all}`],
             ["maintenance", `Maintenance: ${counts.maintenance}`],
             ["defect", `Defects & Repairs: ${counts.defect}`],
+            ["booked", `In-Use: ${counts.booked}`],
           ] as const).map(([key, label]) => (
             <button key={key} onClick={() => { setFilter(key); setSelectedId(null); }}
               className={cn("rounded-md px-3 py-1.5 text-[15px] font-medium transition",
@@ -173,7 +179,7 @@ export function Orbit2Boats({
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {filtered.map((b) => {
-            const c = activeByBoat.get(b.id) ?? { maintenance: 0, defect: 0 };
+            const c = activeByBoat.get(b.id) ?? noOpen();
             return (
               <button key={b.id} onClick={() => setSelectedId(b.id)}
                 className="flex flex-col overflow-hidden rounded-xl border border-border bg-card text-left transition hover:border-primary/50 hover:shadow-sm">
@@ -196,6 +202,8 @@ export function Orbit2Boats({
                     tone={c.maintenance ? "text-amber-500" : undefined} />
                   <CardLine label="Defects & Repairs" value={c.defect ? `${c.defect} open` : "None"}
                     tone={c.defect ? "text-orange-500" : undefined} />
+                  <CardLine label="Bookings" value={c.booked ? `${c.booked} open` : "None"}
+                    tone={c.booked ? "text-sky-500" : undefined} />
                   <CardLine label="Status" value={boatStatus(c).label} tone={boatStatus(c).tone} />
                 </div>
               </button>
@@ -217,11 +225,13 @@ export function Orbit2Boats({
 
 /**
  * A boat's overall state, from its open jobs. An open defect outranks planned
- * maintenance: a boat with a fault is not "in maintenance", it is broken.
+ * maintenance: a boat with a fault is not "in maintenance", it is broken. Both
+ * outrank a booking — a booked boat that is broken is still broken.
  */
-function boatStatus(c: { maintenance: number; defect: number }): { label: string; tone: string } {
+function boatStatus(c: OpenCounts): { label: string; tone: string } {
   if (c.defect > 0) return { label: "Awaiting repair", tone: "text-orange-500" };
   if (c.maintenance > 0) return { label: "Maintenance scheduled", tone: "text-amber-500" };
+  if (c.booked > 0) return { label: "In use", tone: "text-sky-500" };
   return { label: "Operational", tone: "text-emerald-500" };
 }
 

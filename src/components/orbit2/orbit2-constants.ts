@@ -137,13 +137,14 @@ export const ACTIVE_BOAT_STATUSES: readonly string[] = ["Pending", "Ongoing"];
  * Boat job categories. Inventory (client request, 29 Sep 2026) sends a crew
  * member to physically check the boat's Inventory List from their phone.
  */
-export const BOAT_JOB_CATEGORIES = ["Maintenance", "Repair", "Inventory"] as const;
+/** Booked = the boat is scheduled for use (training, rental, …) rather than worked on. */
+export const BOAT_JOB_CATEGORIES = ["Maintenance", "Repair", "Inventory", "Booked"] as const;
 export type BoatJobCategory = (typeof BOAT_JOB_CATEGORIES)[number];
-export type BoatJobKind = "maintenance" | "defect" | "inventory";
+export type BoatJobKind = "maintenance" | "defect" | "inventory" | "booked";
 export const boatJobCategoryToKind = (c: BoatJobCategory): BoatJobKind =>
-  c === "Repair" ? "defect" : c === "Inventory" ? "inventory" : "maintenance";
+  c === "Repair" ? "defect" : c === "Inventory" ? "inventory" : c === "Booked" ? "booked" : "maintenance";
 export const kindToBoatJobCategory = (k: BoatJobKind): BoatJobCategory =>
-  k === "defect" ? "Repair" : k === "inventory" ? "Inventory" : "Maintenance";
+  k === "defect" ? "Repair" : k === "inventory" ? "Inventory" : k === "booked" ? "Booked" : "Maintenance";
 
 /** Inventory List condition — the three values the client's own sheet uses. */
 export const BOAT_INVENTORY_CONDITIONS = ["Good / Serviceable", "Damaged / Defective", "Missing / Lost"] as const;
