@@ -705,7 +705,7 @@ function InventoryBoard({ boat, inventory, reload }: { boat: Orbit2Boat; invento
           <table className="w-full text-[14px]">
             <thead>
               <tr className="border-y border-border/60 bg-muted/10">
-                {["Item No.", "Item", "Qty", "Unit", "Condition", "Expiry Date", "On Board", "Remarks", "Image", ""].map((c) => (
+                {["Item No.", "Item", "Qty", "Unit", "Condition", "Expiry Date", "On Board", "Remarks", "Last Checked", "Image", ""].map((c) => (
                   <th key={c} className="whitespace-nowrap px-3 py-2 text-left font-semibold text-muted-foreground">{c}</th>
                 ))}
               </tr>
@@ -734,6 +734,12 @@ function InventoryBoard({ boat, inventory, reload }: { boat: Orbit2Boat; invento
                     </select>
                   </td>
                   <td className="max-w-[12rem] px-3 py-1.5 text-muted-foreground"><span className="line-clamp-2">{r.remarks || "—"}</span></td>
+                  {/* Filled in by the crew from the field app's Inventory job — who confirmed the line, and when. */}
+                  <td className="whitespace-nowrap px-3 py-1.5 text-[13px] text-muted-foreground">
+                    {r.checked_at
+                      ? <span className="text-emerald-600">{r.checked_by ?? "Crew"} · {new Date(r.checked_at).toLocaleDateString("en-GB")}</span>
+                      : "Not yet"}
+                  </td>
                   <td className="px-3 py-1.5">
                     {r.image_ref ? (
                       <button onClick={() => setLightbox(r.image_ref)} className="block h-8 w-8 overflow-hidden rounded border border-border">

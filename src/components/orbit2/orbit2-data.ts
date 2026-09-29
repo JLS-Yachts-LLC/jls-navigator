@@ -11,7 +11,8 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchAllRows } from "@/lib/fetch-all";
 import {
-  CLOSED_STATUSES, ORBIT2_CATEGORIES, isComplete, type Orbit2RecordType,
+  CLOSED_STATUSES, ORBIT2_CATEGORIES, isComplete, kindToBoatJobCategory,
+  type Orbit2RecordType, type BoatJobKind,
 } from "./orbit2-constants";
 
 // ── Row types ───────────────────────────────────────────────────────────────
@@ -162,6 +163,9 @@ export type Orbit2BoatInventoryItem = {
   on_board: boolean;
   remarks: string | null;
   image_ref: string | null;
+  /** Who physically confirmed this line on the last inventory check, and when. */
+  checked_at: string | null;
+  checked_by: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -169,7 +173,7 @@ export type Orbit2BoatInventoryItem = {
 export type Orbit2BoatTask = {
   id: string;
   boat_id: string;
-  kind: "maintenance" | "defect";
+  kind: BoatJobKind;
   /** Auto-generated MVT26-XXXX — the spec's Job Number. */
   job_no: string | null;
   title: string;
@@ -399,7 +403,7 @@ export function calendarItems(projects: Orbit2Project[], boatTasks: Orbit2BoatTa
     if (!t.schedule_date || h === null) continue;
     out.push({
       id: t.id,
-      ref: t.kind === "defect" ? "Defect" : "Maintenance",
+      ref: t.job_no ?? kindToBoatJobCategory(t.kind),
       title: `${boatName(t.boat_id)} — ${t.title}`,
       bucket: "Vessel Equipment",
       status: t.status,
@@ -569,7 +573,7 @@ export function assignments(
     out.push({
       id: t.id,
       source: "boat",
-      ref: t.job_no ?? (t.kind === "defect" ? "Defect" : "Maintenance"),
+      ref: t.job_no ?? kindToBoatJobCategory(t.kind),
       title: `${boatName(t.boat_id)} — ${t.title}`,
       bucket: "Vessel Equipment",
       status: t.status,

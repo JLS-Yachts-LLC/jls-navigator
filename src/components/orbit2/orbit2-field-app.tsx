@@ -23,7 +23,7 @@ import { errorMessage } from "@/lib/error-message";
 import { useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeft, Camera, CheckCircle2, ChevronRight, Loader2, LogOut, MapPin,
-  RefreshCw, Send, UserRound,
+  RefreshCw, Send, Ship, UserRound,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -33,11 +33,12 @@ import { compressImageToMaxKB } from "@/lib/image-compress";
 import { guardUploadFile, uploadContentType } from "@/lib/upload-guard";
 import { storageRef } from "@/lib/signed-url";
 import { SignedImage } from "@/components/ui/signed-file";
-import { ORBIT2_TEAM, FIELD_STATUSES, ORBIT_FIELD_PATH, statusColor } from "./orbit2-constants";
+import { ORBIT2_TEAM, FIELD_STATUSES, ORBIT_FIELD_PATH, statusColor, kindToBoatJobCategory } from "./orbit2-constants";
 import {
   ORBIT2_BUCKET, fmtSchedule, bucketOf,
-  type Orbit2Project, type Orbit2Note, type Orbit2File,
+  type Orbit2Project, type Orbit2Note, type Orbit2File, type Orbit2BoatTask, type Orbit2Boat,
 } from "./orbit2-data";
+import { BoatJobDetail } from "./orbit2-field-boat";
 import { useOrbit2Identity } from "./orbit2-identity";
 import { stamp } from "./orbit2-fields";
 import { InstallBanner, InstallButton, InstallSheet } from "./orbit2-install";
@@ -79,6 +80,8 @@ export function Orbit2FieldApp() {
   const teamName = ownName ?? (identity.isAdmin ? viewAs : null);
 
   const [tasks, setTasks] = useState<Orbit2Project[]>([]);
+  /** Managed Boats jobs assigned to this person — Maintenance, Repair and Inventory. */
+  const [boatJobs, setBoatJobs] = useState<BoatJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [openId, setOpenId] = useState<string | null>(null);
   const [howToInstall, setHowToInstall] = useState(false);
@@ -90,15 +93,31 @@ export function Orbit2FieldApp() {
     // Filtering. "Active" means work the crew can do (FIELD_STATUSES): a job
     // leaves the list the moment it completes or is cancelled, and does not
     // appear until the office has scheduled it.
-    const { data, error } = await sb
-      .from("orbit2_projects")
-      .select("*")
-      .contains("assigned_team", [teamName])
-      .in("status", FIELD_STATUSES as string[])
-      .order("schedule_date", { ascending: true, nullsFirst: false })
-      .order("schedule_time", { ascending: true, nullsFirst: false });
-    if (error) toast.error(error.message);
-    setTasks((data ?? []) as Orbit2Project[]);
+    const [projects, boatTasks] = await Promise.all([
+      sb.from("orbit2_projects")
+        .select("*")
+        .contains("assigned_team", [teamName])
+        .in("status", FIELD_STATUSES as string[])
+        .order("schedule_date", { ascending: true, nullsFirst: false })
+        .order("schedule_time", { ascending: true, nullsFirst: false }),
+      // Managed Boats jobs use the boat register's own statuses: Pending and
+      // Ongoing are the crew's; Complete leaves the list.
+      sb.from("orbit2_boat_tasks")
+        .select("*")
+        .contains("assigned_team", [teamName])
+        .in("status", ["Pending", "Ongoing"])
+        .order("schedule_date", { ascending: true, nullsFirst: false }),
+    ]);
+    if (projects.error) toast.error(projects.error.message);
+    if (boatTasks.error) toast.error(boatTasks.error.message);
+    setTasks((projects.data ?? []) as Orbit2Project[]);
+
+    const bt = (boatTasks.data ?? []) as Orbit2BoatTask[];
+    const boatIds = [...new Set(bt.map((t) => t.boat_id))];
+    const boats = boatIds.length
+      ? ((await sb.from("orbit2_boats").select("*").in("id", boatIds)).data ?? []) as Orbit2Boat[]
+      : [];
+    setBoatJobs(bt.flatMap((t) => { const b = boats.find((x) => x.id === t.boat_id); return b ? [{ task: t, boat: b }] : []; }));
     setLoading(false);
   }, [teamName]);
 
@@ -113,6 +132,7 @@ export function Orbit2FieldApp() {
   }, [load]);
 
   const open = tasks.find((t) => t.id === openId) ?? null;
+  const openBoat = boatJobs.find((j) => j.task.id === openId) ?? null;
 
   async function signOut() {
     await supabase.auth.signOut();
@@ -159,6 +179,17 @@ export function Orbit2FieldApp() {
               </p>
             </Centered>
           )
+        ) : openBoat ? (
+          <BoatJobDetail
+            key={openBoat.task.id}
+            task={openBoat.task}
+            boat={openBoat.boat}
+            authorName={identity.name}
+            userId={user?.id ?? null}
+            onBack={() => setOpenId(null)}
+            onChanged={load}
+            onClosed={() => { setOpenId(null); void load(); }}
+          />
         ) : open ? (
           <TaskDetail
             key={open.id}
@@ -172,6 +203,7 @@ export function Orbit2FieldApp() {
         ) : (
           <TaskList
             tasks={tasks}
+            boatJobs={boatJobs}
             loading={loading}
             teamName={teamName}
             viewingAs={!ownName}
@@ -188,10 +220,14 @@ export function Orbit2FieldApp() {
 
 // ── 1. Only my jobs ─────────────────────────────────────────────────────────
 
+/** A Managed Boats job with the boat it belongs to. */
+export type BoatJob = { task: Orbit2BoatTask; boat: Orbit2Boat };
+
 export function TaskList({
-  tasks, loading, teamName, viewingAs, onOpen, onRefresh, onChangePerson, banner,
+  tasks, boatJobs = [], loading, teamName, viewingAs, onOpen, onRefresh, onChangePerson, banner,
 }: {
   tasks: Orbit2Project[];
+  boatJobs?: BoatJob[];
   loading: boolean;
   teamName: string;
   viewingAs: boolean;
@@ -207,7 +243,7 @@ export function TaskList({
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-[16px] font-semibold">
           {viewingAs ? `${teamName}'s jobs` : "My jobs"}
-          {!loading && <span className="font-normal text-muted-foreground"> · {tasks.length}</span>}
+          {!loading && <span className="font-normal text-muted-foreground"> · {tasks.length + boatJobs.length}</span>}
         </h1>
         <div className="flex items-center gap-1">
           {onChangePerson && (
@@ -223,9 +259,9 @@ export function TaskList({
         </div>
       </div>
 
-      {loading && tasks.length === 0 ? (
+      {loading && tasks.length === 0 && boatJobs.length === 0 ? (
         <Centered><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></Centered>
-      ) : tasks.length === 0 ? (
+      ) : tasks.length === 0 && boatJobs.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border px-6 py-12 text-center">
           <CheckCircle2 className="mx-auto mb-3 h-9 w-9 text-muted-foreground/50" />
           <p className="text-[16px] font-semibold">No active jobs</p>
@@ -234,7 +270,28 @@ export function TaskList({
           </p>
         </div>
       ) : (
-        tasks.map((t) => (
+        <>
+        {boatJobs.map(({ task: t, boat }) => (
+          <button key={t.id} onClick={() => onOpen(t.id)}
+            className="block w-full rounded-xl border border-border bg-card p-4 text-left shadow-sm transition active:scale-[0.99] hover:border-primary/50">
+            <div className="flex items-start justify-between gap-3 text-[14px] text-muted-foreground">
+              <span>{fmtSchedule(t.schedule_date, t.schedule_time)}</span>
+              <span className="flex shrink-0 items-center gap-1"><Ship className="h-3.5 w-3.5" /> Managed boat</span>
+            </div>
+            <div className="mt-2 flex items-center justify-between gap-3">
+              <span className="min-w-0 truncate text-[18px] font-semibold">{boat.name}</span>
+              <span className="shrink-0 text-[15px] font-medium text-primary">{kindToBoatJobCategory(t.kind)}</span>
+            </div>
+            <div className="mt-1 truncate text-[15px] text-muted-foreground">{t.job_no ? `${t.job_no} · ` : ""}{t.title}</div>
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <StatusChip status={t.status} />
+              <span className="flex items-center gap-0.5 text-[14px] font-semibold uppercase tracking-wide text-emerald-500">
+                Tap to open <ChevronRight className="h-4 w-4" />
+              </span>
+            </div>
+          </button>
+        ))}
+        {tasks.map((t) => (
           <button key={t.id} onClick={() => onOpen(t.id)}
             className="block w-full rounded-xl border border-border bg-card p-4 text-left shadow-sm transition active:scale-[0.99] hover:border-primary/50">
             <div className="flex items-start justify-between gap-3 text-[14px] text-muted-foreground">
@@ -256,7 +313,8 @@ export function TaskList({
               </span>
             </div>
           </button>
-        ))
+        ))}
+        </>
       )}
     </main>
   );

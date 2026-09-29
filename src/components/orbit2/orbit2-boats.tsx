@@ -63,6 +63,9 @@ export function Orbit2Boats({
     for (const t of boatTasks) {
       if (!ACTIVE_BOAT_STATUSES.includes(t.status)) continue;
       const c = m.get(t.boat_id) ?? { maintenance: 0, defect: 0 };
+      // An inventory check is neither maintenance nor a defect — it does not make
+      // a boat read as "in maintenance" on the fleet page.
+      if (t.kind === "inventory") continue;
       c[t.kind === "defect" ? "defect" : "maintenance"] += 1;
       m.set(t.boat_id, c);
     }
