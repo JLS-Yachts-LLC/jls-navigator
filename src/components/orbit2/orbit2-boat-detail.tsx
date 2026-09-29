@@ -626,6 +626,9 @@ function InventoryBoard({ boat, inventory, reload }: { boat: Orbit2Boat; invento
   const [adding, setAdding] = useState(false);
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [form, setForm] = useState({ item: "", qty: "", unit: "Pcs", condition: BOAT_INVENTORY_CONDITIONS[0] as string, expiry: "", remarks: "" });
+  const itemRef = useRef<HTMLInputElement>(null);
+  /** How many items this sitting has added — shown so a long stock-take keeps its bearings. */
+  const [addedCount, setAddedCount] = useState(0);
 
   async function patch(row: Orbit2BoatInventoryItem, values: Record<string, unknown>) {
     const { error } = await sb.from("orbit2_boat_inventory").update(values).eq("id", row.id);
@@ -640,11 +643,24 @@ function InventoryBoard({ boat, inventory, reload }: { boat: Orbit2Boat; invento
       condition: form.condition, expiry_date: form.expiry || null, remarks: form.remarks.trim() || null,
       created_by: user?.id ?? null,
     });
-    if (error) { toast.error(error.message); return; }
-    setForm({ item: "", qty: "", unit: "Pcs", condition: BOAT_INVENTORY_CONDITIONS[0], expiry: "", remarks: "" });
-    setAdding(false);
+    if (error) { toast.error(errorMessage(error, "Could not add the item")); return; }
+    // Stay in the form: a stock-take is many items in a row, so clear the fields
+    // and put the cursor back on Item rather than closing and reopening each time.
+    // Unit and Condition are kept — consecutive items usually share them.
+    toast.success(`${form.item.trim()} added`);
+    setForm((f) => ({ ...f, item: "", qty: "", expiry: "", remarks: "" }));
+    setAddedCount((n) => n + 1);
+    itemRef.current?.focus();
     await reload();
   }
+
+  function closeAdd() {
+    setAdding(false);
+    setAddedCount(0);
+  }
+
+  /** Enter in any field adds the item, so a keyboard-driven count never needs the mouse. */
+  const onEnter = (e: React.KeyboardEvent) => { if (e.key === "Enter") { e.preventDefault(); void addItem(); } };
 
   async function uploadImage(row: Orbit2BoatInventoryItem, file: File | undefined) {
     if (!file) return;
@@ -676,8 +692,8 @@ function InventoryBoard({ boat, inventory, reload }: { boat: Orbit2Boat; invento
       </div>
 
       {adding && (
-        <div className="grid gap-2.5 border-b border-border/50 bg-muted/15 p-4 sm:grid-cols-3">
-          <Field label="Item"><input className={inputCls} autoFocus value={form.item} onChange={(e) => setForm((f) => ({ ...f, item: e.target.value }))} /></Field>
+        <div className="grid gap-2.5 border-b border-border/50 bg-muted/15 p-4 sm:grid-cols-3" onKeyDown={onEnter}>
+          <Field label="Item"><input ref={itemRef} className={inputCls} autoFocus value={form.item} onChange={(e) => setForm((f) => ({ ...f, item: e.target.value }))} /></Field>
           <Field label="Qty"><input className={inputCls} type="number" value={form.qty} onChange={(e) => setForm((f) => ({ ...f, qty: e.target.value }))} /></Field>
           <Field label="Unit">
             <select className={inputCls} value={form.unit} onChange={(e) => setForm((f) => ({ ...f, unit: e.target.value }))}>
@@ -691,9 +707,14 @@ function InventoryBoard({ boat, inventory, reload }: { boat: Orbit2Boat; invento
           </Field>
           <Field label="Expiry Date"><input className={inputCls} type="date" value={form.expiry} onChange={(e) => setForm((f) => ({ ...f, expiry: e.target.value }))} /></Field>
           <Field label="Remarks"><input className={inputCls} value={form.remarks} onChange={(e) => setForm((f) => ({ ...f, remarks: e.target.value }))} /></Field>
-          <div className="flex items-end justify-end gap-2 sm:col-span-3">
-            <button onClick={() => setAdding(false)} className="rounded-md border border-border px-3 py-1.5 text-[15px] hover:bg-accent">Cancel</button>
-            <button onClick={() => void addItem()} className="rounded-md bg-primary px-3 py-1.5 text-[15px] font-medium text-primary-foreground hover:opacity-90">Add</button>
+          <div className="flex items-center justify-between gap-2 sm:col-span-3">
+            <span className="text-[14px] text-muted-foreground">
+              {addedCount > 0 ? `${addedCount} added this session · ` : ""}Enter adds and keeps the form open for the next item.
+            </span>
+            <div className="flex gap-2">
+              <button onClick={closeAdd} className="rounded-md border border-border px-3 py-1.5 text-[15px] hover:bg-accent">{addedCount > 0 ? "Done" : "Cancel"}</button>
+              <button onClick={() => void addItem()} className="rounded-md bg-primary px-3 py-1.5 text-[15px] font-medium text-primary-foreground hover:opacity-90">Add &amp; next</button>
+            </div>
           </div>
         </div>
       )}

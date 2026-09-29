@@ -291,7 +291,7 @@ function InventoryCheck({
         )}
       </div>
 
-      {adding && editable && <AddItemForm boatId={boat.id} userId={userId} authorName={authorName} onAdded={async () => { setAdding(false); await load(); }} />}
+      {adding && editable && <AddItemForm boatId={boat.id} userId={userId} authorName={authorName} onAdded={load} onDone={() => setAdding(false)} />}
 
       {loading ? (
         <div className="flex h-24 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
@@ -439,10 +439,18 @@ function InventoryRow({
   );
 }
 
-/** An item that is on the boat but not on the list. Added as checked — the crew member is looking at it. */
-function AddItemForm({ boatId, userId, authorName, onAdded }: { boatId: string; userId: string | null; authorName: string; onAdded: () => Promise<void> }) {
+/**
+ * An item that is on the boat but not on the list. Added as checked — the crew
+ * member is looking at it. The form stays open after each add so a locker full
+ * of unlisted items can be entered one after another; Done closes it.
+ */
+function AddItemForm({ boatId, userId, authorName, onAdded, onDone }: {
+  boatId: string; userId: string | null; authorName: string; onAdded: () => Promise<void>; onDone: () => void;
+}) {
   const [form, setForm] = useState({ item: "", qty: "", unit: "Pcs", condition: BOAT_INVENTORY_CONDITIONS[0] as string, remarks: "" });
   const [busy, setBusy] = useState(false);
+  const [added, setAdded] = useState(0);
+  const itemRef = useRef<HTMLInputElement>(null);
 
   async function add() {
     if (!form.item.trim()) { toast.error("Give the item a name."); return; }
@@ -455,13 +463,20 @@ function AddItemForm({ boatId, userId, authorName, onAdded }: { boatId: string; 
     setBusy(false);
     if (error) { toast.error(errorMessage(error, "Could not add the item")); return; }
     toast.success(`${form.item.trim()} added to the inventory`);
+    // Keep unit and condition — the next item on the shelf usually matches.
+    setForm((f) => ({ ...f, item: "", qty: "", remarks: "" }));
+    setAdded((n) => n + 1);
+    itemRef.current?.focus();
     await onAdded();
   }
 
   return (
     <div className="space-y-2 border-b border-border/60 bg-muted/10 p-4">
-      <div className="text-[15px] font-semibold">Add a missing item</div>
-      <input autoFocus value={form.item} placeholder="Item name" onChange={(e) => setForm((f) => ({ ...f, item: e.target.value }))}
+      <div className="flex items-center justify-between">
+        <span className="text-[15px] font-semibold">Add a missing item</span>
+        {added > 0 && <span className="text-[14px] text-muted-foreground">{added} added</span>}
+      </div>
+      <input ref={itemRef} autoFocus value={form.item} placeholder="Item name" onChange={(e) => setForm((f) => ({ ...f, item: e.target.value }))}
         className="w-full rounded-md border border-border bg-background px-3 py-2 text-[16px] outline-none focus:border-primary" />
       <div className="grid grid-cols-2 gap-2">
         <input type="number" inputMode="decimal" value={form.qty} placeholder="Qty" onChange={(e) => setForm((f) => ({ ...f, qty: e.target.value }))}
@@ -477,10 +492,14 @@ function AddItemForm({ boatId, userId, authorName, onAdded }: { boatId: string; 
       </select>
       <input value={form.remarks} placeholder="Remarks (optional)" onChange={(e) => setForm((f) => ({ ...f, remarks: e.target.value }))}
         className="w-full rounded-md border border-border bg-background px-3 py-2 text-[16px] outline-none focus:border-primary" />
-      <button onClick={() => void add()} disabled={busy}
-        className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-primary text-[15px] font-semibold text-primary-foreground disabled:opacity-50">
-        {busy && <Loader2 className="h-4 w-4 animate-spin" />} Add to inventory
-      </button>
+      <div className="grid grid-cols-[1fr_2fr] gap-2">
+        <button onClick={onDone} disabled={busy}
+          className="h-11 rounded-lg border border-border text-[15px] font-semibold disabled:opacity-50">{added > 0 ? "Done" : "Cancel"}</button>
+        <button onClick={() => void add()} disabled={busy}
+          className="flex h-11 items-center justify-center gap-2 rounded-lg bg-primary text-[15px] font-semibold text-primary-foreground disabled:opacity-50">
+          {busy && <Loader2 className="h-4 w-4 animate-spin" />} {added > 0 ? "Add next item" : "Add to inventory"}
+        </button>
+      </div>
     </div>
   );
 }
