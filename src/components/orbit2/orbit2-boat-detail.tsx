@@ -4,10 +4,10 @@
  * because that file is the fleet-level dashboard and wizard — this is everything
  * that needs a real boat_id to exist.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { errorMessage } from "@/lib/error-message";
 import {
-  Loader2, ArrowLeft, Plus, Search, Trash2, X, Ship,
+  Loader2, ArrowLeft, Plus, Search, Trash2, X, Ship, Pencil,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -51,10 +51,12 @@ export function Orbit2BoatDetail({
   const { user } = useAuth();
   const [section, setSection] = useState<"jobs" | "inventory">("jobs");
 
-  async function patchBoat(patch: Record<string, unknown>) {
+  /** Save fields on the boat. Returns false when the database refused, so a caller can avoid claiming success. */
+  async function patchBoat(patch: Record<string, unknown>): Promise<boolean> {
     const { error } = await sb.from("orbit2_boats").update(patch).eq("id", boat.id);
-    if (error) { toast.error(error.message); return; }
+    if (error) { toast.error(errorMessage(error, "Could not save")); return false; }
     await reload();
+    return true;
   }
 
   async function removeBoat() {
@@ -93,7 +95,10 @@ export function Orbit2BoatDetail({
             className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
             <ArrowLeft className="h-5 w-5" />
           </button>
-          <h2 className="truncate font-display text-[22px] font-semibold tracking-tight">{boat.name}</h2>
+          <EditableName
+            value={boat.name}
+            onSave={async (name) => { if (await patchBoat({ name })) toast.success(`Renamed to ${name}`); }}
+          />
         </div>
         <button onClick={() => void removeBoat()} title={`Remove ${boat.name}`}
           className="rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive">
@@ -150,7 +155,7 @@ export function Orbit2BoatDetail({
             onUploadChecklist={(f, r) => uploadDoc(`${regime}_checklist` as Orbit2BoatDocCategory, f, r)}
             onRemoveChecklist={removeDoc}
             onSaveDate={(v) => patchBoat({ [`${regime}_last_inspection`]: v || null })}
-            onUploadReport={async (file, ref) => patchBoat({ [`${regime}_report_ref`]: ref })}
+            onUploadReport={async (_file, ref) => { await patchBoat({ [`${regime}_report_ref`]: ref }); }}
             onRemoveReport={() => patchBoat({ [`${regime}_report_ref`]: null })}
           />
         ))}
@@ -192,6 +197,53 @@ export function Orbit2BoatDetail({
 // ── Small pieces ──────────────────────────────────────────────────────────
 
 /** One vessel-spec field, saved on blur — the boat detail equivalent of the NOC grid's cells. */
+/**
+ * The boat's name as the page heading, editable in place (client request,
+ * 29 Sep 2026). A pencil beside the name turns it into a field; Enter or
+ * clicking away saves, Escape puts the old name back. An empty name is refused
+ * rather than saved — a boat with no name cannot be found again.
+ */
+function EditableName({ value, onSave }: { value: string; onSave: (v: string) => Promise<void> | void }) {
+  const [editing, setEditing] = useState(false);
+  const [v, setV] = useState(value);
+  // Enter saves directly and blur saves too; the field closing after Enter can
+  // fire blur as well, so the first to run wins and the other is a no-op.
+  const done = useRef(false);
+  useEffect(() => { if (!editing) setV(value); }, [value, editing]);
+
+  function open() { done.current = false; setEditing(true); }
+
+  async function commit() {
+    if (done.current) return;
+    done.current = true;
+    const next = v.trim();
+    setEditing(false);
+    if (!next) { setV(value); toast.error("The boat needs a name."); return; }
+    if (next === value) return;
+    await onSave(next);
+  }
+
+  if (editing) {
+    return (
+      <input autoFocus value={v} aria-label="Boat name"
+        onChange={(e) => setV(e.target.value)}
+        onBlur={() => void commit()}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") void commit();
+          if (e.key === "Escape") { done.current = true; setV(value); setEditing(false); }
+        }}
+        className="min-w-0 flex-1 rounded-md border border-primary bg-background px-2 py-1 font-display text-[22px] font-semibold tracking-tight outline-none" />
+    );
+  }
+  return (
+    <button onClick={open} title="Rename this boat"
+      className="group flex min-w-0 items-center gap-2 rounded-md px-1 py-0.5 text-left hover:bg-accent">
+      <h2 className="truncate font-display text-[22px] font-semibold tracking-tight">{value}</h2>
+      <Pencil className="h-4 w-4 shrink-0 text-muted-foreground opacity-60 group-hover:opacity-100" />
+    </button>
+  );
+}
+
 function SpecField({
   label, value, onSave, type = "text",
 }: { label: string; value: string | number | null; onSave: (v: string) => void; type?: "text" | "number" }) {
