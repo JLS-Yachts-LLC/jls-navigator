@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { errorMessage } from "@/lib/error-message";
 import {
-  Loader2, ArrowLeft, Plus, Search, Trash2, X, Ship, Pencil,
+  Loader2, ArrowLeft, Plus, Search, Trash2, X, Ship, Pencil, Camera, Upload,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -622,62 +622,19 @@ function JobEditor({
 // ── Inventory List board ─────────────────────────────────────────────────────
 
 function InventoryBoard({ boat, inventory, reload }: { boat: Orbit2Boat; inventory: Orbit2BoatInventoryItem[]; reload: () => Promise<void> | void }) {
-  const { user } = useAuth();
-  const [adding, setAdding] = useState(false);
   const [lightbox, setLightbox] = useState<string | null>(null);
-  const [form, setForm] = useState({ item: "", qty: "", unit: "Pcs", condition: BOAT_INVENTORY_CONDITIONS[0] as string, expiry: "", remarks: "" });
-  const itemRef = useRef<HTMLInputElement>(null);
-  /** How many items this sitting has added — shown so a long stock-take keeps its bearings. */
-  const [addedCount, setAddedCount] = useState(0);
+  // null = closed · "new" = adding · a row = viewing / editing that item
+  const [editor, setEditor] = useState<null | "new" | Orbit2BoatInventoryItem>(null);
 
   async function patch(row: Orbit2BoatInventoryItem, values: Record<string, unknown>) {
     const { error } = await sb.from("orbit2_boat_inventory").update(values).eq("id", row.id);
-    if (error) { toast.error(error.message); return; }
+    if (error) { toast.error(errorMessage(error, "Could not save")); return; }
     await reload();
-  }
-
-  async function addItem() {
-    if (!form.item.trim()) { toast.error("Give the item a name."); return; }
-    const { error } = await sb.from("orbit2_boat_inventory").insert({
-      boat_id: boat.id, item: form.item.trim(), qty: form.qty ? Number(form.qty) : null, unit: form.unit,
-      condition: form.condition, expiry_date: form.expiry || null, remarks: form.remarks.trim() || null,
-      created_by: user?.id ?? null,
-    });
-    if (error) { toast.error(errorMessage(error, "Could not add the item")); return; }
-    // Stay in the form: a stock-take is many items in a row, so clear the fields
-    // and put the cursor back on Item rather than closing and reopening each time.
-    // Unit and Condition are kept — consecutive items usually share them.
-    toast.success(`${form.item.trim()} added`);
-    setForm((f) => ({ ...f, item: "", qty: "", expiry: "", remarks: "" }));
-    setAddedCount((n) => n + 1);
-    itemRef.current?.focus();
-    await reload();
-  }
-
-  function closeAdd() {
-    setAdding(false);
-    setAddedCount(0);
-  }
-
-  /** Enter in any field adds the item, so a keyboard-driven count never needs the mouse. */
-  const onEnter = (e: React.KeyboardEvent) => { if (e.key === "Enter") { e.preventDefault(); void addItem(); } };
-
-  async function uploadImage(row: Orbit2BoatInventoryItem, file: File | undefined) {
-    if (!file) return;
-    if (!guardUploadFile(file, { accepts: "Use an image." })) return;
-    try {
-      const path = `orbit2/boats/inventory/${crypto.randomUUID()}-${file.name.replace(/[^\w.-]+/g, "_")}`;
-      const { error } = await supabase.storage.from(ORBIT2_BUCKET).upload(path, file, { contentType: uploadContentType(file), upsert: false });
-      if (error) throw error;
-      await patch(row, { image_ref: storageRef(ORBIT2_BUCKET, path) });
-    } catch (e) {
-      toast.error(errorMessage(e, "Upload failed"));
-    }
   }
 
   async function remove(row: Orbit2BoatInventoryItem) {
     const { error } = await sb.from("orbit2_boat_inventory").delete().eq("id", row.id);
-    if (error) { toast.error(error.message); return; }
+    if (error) { toast.error(errorMessage(error, "Could not delete")); return; }
     await reload();
   }
 
@@ -685,39 +642,11 @@ function InventoryBoard({ boat, inventory, reload }: { boat: Orbit2Boat; invento
     <div>
       <div className="flex items-center justify-between gap-3 px-4 py-2.5">
         <span className="text-[15px] text-muted-foreground">{inventory.length} item{inventory.length === 1 ? "" : "s"}</span>
-        <button onClick={() => setAdding((v) => !v)}
+        <button onClick={() => setEditor("new")}
           className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-[15px] font-medium text-primary-foreground hover:opacity-90">
           <Plus className="h-4 w-4" /> Add Item
         </button>
       </div>
-
-      {adding && (
-        <div className="grid gap-2.5 border-b border-border/50 bg-muted/15 p-4 sm:grid-cols-3" onKeyDown={onEnter}>
-          <Field label="Item"><input ref={itemRef} className={inputCls} autoFocus value={form.item} onChange={(e) => setForm((f) => ({ ...f, item: e.target.value }))} /></Field>
-          <Field label="Qty"><input className={inputCls} type="number" value={form.qty} onChange={(e) => setForm((f) => ({ ...f, qty: e.target.value }))} /></Field>
-          <Field label="Unit">
-            <select className={inputCls} value={form.unit} onChange={(e) => setForm((f) => ({ ...f, unit: e.target.value }))}>
-              {INVENTORY_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
-            </select>
-          </Field>
-          <Field label="Condition">
-            <select className={inputCls} value={form.condition} onChange={(e) => setForm((f) => ({ ...f, condition: e.target.value }))}>
-              {BOAT_INVENTORY_CONDITIONS.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </Field>
-          <Field label="Expiry Date"><input className={inputCls} type="date" value={form.expiry} onChange={(e) => setForm((f) => ({ ...f, expiry: e.target.value }))} /></Field>
-          <Field label="Remarks"><input className={inputCls} value={form.remarks} onChange={(e) => setForm((f) => ({ ...f, remarks: e.target.value }))} /></Field>
-          <div className="flex items-center justify-between gap-2 sm:col-span-3">
-            <span className="text-[14px] text-muted-foreground">
-              {addedCount > 0 ? `${addedCount} added this session · ` : ""}Enter adds and keeps the form open for the next item.
-            </span>
-            <div className="flex gap-2">
-              <button onClick={closeAdd} className="rounded-md border border-border px-3 py-1.5 text-[15px] hover:bg-accent">{addedCount > 0 ? "Done" : "Cancel"}</button>
-              <button onClick={() => void addItem()} className="rounded-md bg-primary px-3 py-1.5 text-[15px] font-medium text-primary-foreground hover:opacity-90">Add &amp; next</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {inventory.length === 0 ? (
         <p className="px-4 py-8 text-center text-[15px] text-muted-foreground">Nothing logged yet.</p>
@@ -735,7 +664,10 @@ function InventoryBoard({ boat, inventory, reload }: { boat: Orbit2Boat; invento
               {inventory.map((r, i) => (
                 <tr key={r.id} className="hover:bg-muted/10">
                   <td className="px-3 py-1.5 text-muted-foreground">{i + 1}</td>
-                  <td className="px-3 py-1.5">{r.item}</td>
+                  <td className="px-3 py-1.5">
+                    {/* The item name opens the full record — every detail viewable and editable in one place. */}
+                    <button onClick={() => setEditor(r)} className="text-left font-medium text-primary hover:underline">{r.item}</button>
+                  </td>
                   <td className="px-3 py-1.5 tabular-nums text-muted-foreground">{r.qty ?? "—"}</td>
                   <td className="px-3 py-1.5 text-muted-foreground">{r.unit ?? "—"}</td>
                   <td className="px-3 py-1.5">
@@ -767,13 +699,13 @@ function InventoryBoard({ boat, inventory, reload }: { boat: Orbit2Boat; invento
                         <SignedImage stored={r.image_ref} alt={r.item} className="h-full w-full object-cover" />
                       </button>
                     ) : (
-                      <label className="cursor-pointer text-[13px] text-primary hover:underline">
-                        Add
-                        <input type="file" accept="image/*" className="hidden" onChange={(e) => void uploadImage(r, e.target.files?.[0])} />
-                      </label>
+                      <button onClick={() => setEditor(r)} className="text-[13px] text-primary hover:underline">Add</button>
                     )}
                   </td>
-                  <td className="px-3 py-1.5 text-right">
+                  <td className="whitespace-nowrap px-3 py-1.5 text-right">
+                    <button onClick={() => setEditor(r)} title="View / edit" className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
                     <button onClick={() => void remove(r)} title="Delete" className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive">
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
@@ -785,6 +717,11 @@ function InventoryBoard({ boat, inventory, reload }: { boat: Orbit2Boat; invento
         </div>
       )}
 
+      {editor && (
+        <InventoryItemEditor boat={boat} existing={editor === "new" ? null : editor}
+          onClose={() => setEditor(null)} onDelete={remove} reload={reload} />
+      )}
+
       {lightbox && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6" onClick={() => setLightbox(null)}>
           <button onClick={() => setLightbox(null)} className="absolute right-5 top-5 rounded-full bg-white/10 p-2 text-white hover:bg-white/20">
@@ -793,6 +730,227 @@ function InventoryBoard({ boat, inventory, reload }: { boat: Orbit2Boat; invento
           <SignedImage stored={lightbox} alt="" className="max-h-full max-w-full rounded-lg object-contain" />
         </div>
       )}
+    </div>
+  );
+}
+
+// ── One inventory item — add, view, edit ─────────────────────────────────────
+
+type ItemForm = { item: string; qty: string; unit: string; condition: string; expiry: string; on_board: boolean; remarks: string };
+const emptyItem = (): ItemForm => ({ item: "", qty: "", unit: "Pcs", condition: BOAT_INVENTORY_CONDITIONS[0], expiry: "", on_board: true, remarks: "" });
+
+/**
+ * The full record for one inventory line. Adding offers "Save & Add Another"
+ * so a stock-take runs item after item without leaving the form (Unit and
+ * Condition carry over — consecutive items usually share them). Opening an
+ * existing line shows everything the office and the crew have recorded, all
+ * editable, including replacing or removing the photo.
+ */
+function InventoryItemEditor({ boat, existing, onClose, onDelete, reload }: {
+  boat: Orbit2Boat;
+  existing: Orbit2BoatInventoryItem | null;
+  onClose: () => void;
+  onDelete: (row: Orbit2BoatInventoryItem) => Promise<void>;
+  reload: () => Promise<void> | void;
+}) {
+  const { user } = useAuth();
+  const [form, setForm] = useState<ItemForm>(existing ? {
+    item: existing.item, qty: existing.qty != null ? String(existing.qty) : "", unit: existing.unit ?? "Pcs",
+    condition: existing.condition ?? BOAT_INVENTORY_CONDITIONS[0], expiry: existing.expiry_date ?? "",
+    on_board: existing.on_board, remarks: existing.remarks ?? "",
+  } : emptyItem());
+  // The photo: a freshly chosen file (uploaded on save), the stored reference, or nothing.
+  const [photo, setPhoto] = useState<{ file: File; preview: string } | null>(null);
+  const [imageRef, setImageRef] = useState<string | null>(existing?.image_ref ?? null);
+  const [saving, setSaving] = useState(false);
+  const [added, setAdded] = useState(0);
+  const itemRef = useRef<HTMLInputElement>(null);
+  const set = <K extends keyof ItemForm>(k: K, v: ItemForm[K]) => setForm((f) => ({ ...f, [k]: v }));
+
+  useEffect(() => () => { if (photo) URL.revokeObjectURL(photo.preview); }, [photo]);
+
+  function pickPhoto(file: File | undefined) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { toast.error("Use an image."); return; }
+    if (!guardUploadFile(file, { accepts: "Use an image." })) return;
+    setPhoto({ file, preview: URL.createObjectURL(file) });
+  }
+
+  async function uploadPhoto(file: File): Promise<string> {
+    const path = `orbit2/boats/inventory/${crypto.randomUUID()}-${file.name.replace(/[^\w.-]+/g, "_")}`;
+    const { error } = await supabase.storage.from(ORBIT2_BUCKET).upload(path, file, { contentType: uploadContentType(file), upsert: false });
+    if (error) throw error;
+    return storageRef(ORBIT2_BUCKET, path);
+  }
+
+  /** Save the record. `andAnother` keeps the form open, cleared for the next item. */
+  async function save(andAnother = false) {
+    if (!form.item.trim()) { toast.error("Give the item a name."); itemRef.current?.focus(); return; }
+    setSaving(true);
+    try {
+      const ref = photo ? await uploadPhoto(photo.file) : imageRef;
+      const values = {
+        item: form.item.trim(), qty: form.qty === "" ? null : Number(form.qty), unit: form.unit, condition: form.condition,
+        expiry_date: form.expiry || null, on_board: form.on_board, remarks: form.remarks.trim() || null, image_ref: ref,
+      };
+      const { error } = existing
+        ? await sb.from("orbit2_boat_inventory").update(values).eq("id", existing.id)
+        : await sb.from("orbit2_boat_inventory").insert({ ...values, boat_id: boat.id, created_by: user?.id ?? null });
+      if (error) throw error;
+      toast.success(`${values.item} ${existing ? "updated" : "added"}`);
+      await reload();
+      if (andAnother) {
+        setForm((f) => ({ ...emptyItem(), unit: f.unit, condition: f.condition }));
+        setPhoto(null);
+        setImageRef(null);
+        setAdded((n) => n + 1);
+        itemRef.current?.focus();
+      } else {
+        onClose();
+      }
+    } catch (e) {
+      toast.error(errorMessage(e, "Could not save the item"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const onEnter = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && (e.target as HTMLElement).tagName === "INPUT") { e.preventDefault(); void save(!existing); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-xl border border-border bg-card shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-border px-5 py-3">
+          <span className="text-[15px] font-semibold text-muted-foreground">
+            {existing ? `Item · ${existing.item}` : added > 0 ? `New Item · ${added} added` : "New Item"} — {boat.name}
+          </span>
+          <button onClick={onClose} className="rounded p-1 text-muted-foreground hover:bg-accent"><X className="h-4 w-4" /></button>
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-3 overflow-auto p-5" onKeyDown={onEnter}>
+          <Field label="Item"><input ref={itemRef} className={inputCls} autoFocus value={form.item} onChange={(e) => set("item", e.target.value)} /></Field>
+          <div className="grid grid-cols-2 gap-2.5">
+            <Field label="Qty"><input className={inputCls} type="number" value={form.qty} onChange={(e) => set("qty", e.target.value)} /></Field>
+            <Field label="Unit">
+              <select className={inputCls} value={form.unit} onChange={(e) => set("unit", e.target.value)}>
+                {INVENTORY_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+              </select>
+            </Field>
+            <Field label="Condition">
+              <select className={inputCls} value={form.condition} onChange={(e) => set("condition", e.target.value)}>
+                {BOAT_INVENTORY_CONDITIONS.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </Field>
+            <Field label="Expiry Date"><input className={inputCls} type="date" value={form.expiry} onChange={(e) => set("expiry", e.target.value)} /></Field>
+          </div>
+          <Field label="On Board">
+            <div className="flex gap-2">
+              {[true, false].map((v) => (
+                <button key={String(v)} type="button" onClick={() => set("on_board", v)}
+                  className={cn("flex-1 rounded-md border px-3 py-2 text-[15px] font-medium",
+                    form.on_board === v ? "border-primary bg-primary/15 text-primary" : "border-border hover:bg-accent")}>
+                  {v ? "Yes" : "No"}
+                </button>
+              ))}
+            </div>
+          </Field>
+          <Field label="Remarks">
+            <textarea className={cn(inputCls, "min-h-[60px] resize-y")} value={form.remarks} onChange={(e) => set("remarks", e.target.value)} />
+          </Field>
+          <ImagePicker preview={photo?.preview ?? null} stored={photo ? null : imageRef} onPick={pickPhoto}
+            onClear={() => { setPhoto(null); setImageRef(null); }} />
+          {existing && (
+            <p className="text-[14px] text-muted-foreground">
+              {existing.checked_at
+                ? <>Last checked by <span className="text-emerald-600">{existing.checked_by ?? "crew"}</span> on {new Date(existing.checked_at).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}.</>
+                : "Not yet checked by the crew."}
+              {" "}Added {new Date(existing.created_at).toLocaleDateString("en-GB")}.
+            </p>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-5 py-3">
+          {existing ? (
+            <button onClick={() => void onDelete(existing).then(onClose)} disabled={saving}
+              className="rounded-md border border-border px-3 py-2 text-[15px] text-destructive hover:bg-destructive/10 disabled:opacity-50">Delete</button>
+          ) : <span />}
+          <div className="flex flex-wrap justify-end gap-2">
+            <button onClick={onClose} disabled={saving} className="rounded-md bg-[#E05252] px-4 py-2 text-[15px] font-semibold text-white hover:opacity-90 disabled:opacity-50">
+              {added > 0 ? "Done" : "Cancel"}
+            </button>
+            {!existing && (
+              <button onClick={() => void save(true)} disabled={saving}
+                className="flex items-center gap-1.5 rounded-md border border-[#3FA76A] px-4 py-2 text-[15px] font-semibold text-[#3FA76A] hover:bg-[#3FA76A]/10 disabled:opacity-50">
+                {saving && <Loader2 className="h-4 w-4 animate-spin" />} Save &amp; Add Another
+              </button>
+            )}
+            <button onClick={() => void save(false)} disabled={saving}
+              className="flex items-center gap-1.5 rounded-md bg-[#3FA76A] px-5 py-2 text-[15px] font-semibold text-white hover:opacity-90 disabled:opacity-50">
+              {saving && <Loader2 className="h-4 w-4 animate-spin" />} Save
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The item's photo: drag one in, take one with the device camera, or upload a
+ * file. `preview` is a just-picked file not yet saved; `stored` is what is on
+ * record. On a laptop without a camera the Take Photo button still opens the
+ * file chooser, so nothing is lost.
+ */
+function ImagePicker({ preview, stored, onPick, onClear }: {
+  preview: string | null; stored: string | null; onPick: (f: File | undefined) => void; onClear: () => void;
+}) {
+  const [dragOver, setDragOver] = useState(false);
+  const uploadRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const has = !!(preview || stored);
+
+  return (
+    <div>
+      <div className="mb-1 text-[14px] font-medium text-muted-foreground">Image</div>
+      <div
+        onDragEnter={(e) => { e.preventDefault(); setDragOver(true); }}
+        onDragOver={(e) => e.preventDefault()}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => { e.preventDefault(); setDragOver(false); onPick(e.dataTransfer.files?.[0]); }}
+        className={cn("flex gap-3 rounded-md border border-dashed border-border bg-muted/10 p-3 transition",
+          dragOver && "border-primary bg-primary/10 ring-1 ring-primary/40")}>
+        <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-background">
+          {preview ? <img src={preview} alt="" className="h-full w-full object-cover" />
+            : stored ? <SignedImage stored={stored} alt="" className="h-full w-full object-cover" />
+            : <Camera className="h-6 w-6 text-muted-foreground/50" />}
+        </div>
+        <div className="flex min-w-0 flex-1 flex-col justify-center gap-1.5">
+          <p className="text-[14px] text-muted-foreground">
+            {dragOver ? <span className="font-medium text-primary">Drop the image here</span>
+              : has ? (preview ? "New photo — saved with the item." : "On record.") : "Drag an image here, or:"}
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            <button type="button" onClick={() => cameraRef.current?.click()}
+              className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-[14px] font-medium hover:bg-accent">
+              <Camera className="h-3.5 w-3.5" /> Take Photo
+            </button>
+            <button type="button" onClick={() => uploadRef.current?.click()}
+              className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-[14px] font-medium hover:bg-accent">
+              <Upload className="h-3.5 w-3.5" /> Upload
+            </button>
+            {has && (
+              <button type="button" onClick={onClear}
+                className="flex items-center gap-1 rounded-md px-2.5 py-1 text-[14px] font-medium text-destructive hover:bg-destructive/10">
+                <X className="h-3.5 w-3.5" /> Remove
+              </button>
+            )}
+          </div>
+        </div>
+        <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { onPick(e.target.files?.[0]); e.target.value = ""; }} />
+        <input ref={uploadRef} type="file" accept="image/*" className="hidden" onChange={(e) => { onPick(e.target.files?.[0]); e.target.value = ""; }} />
+      </div>
     </div>
   );
 }

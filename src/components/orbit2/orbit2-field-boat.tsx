@@ -13,7 +13,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { errorMessage } from "@/lib/error-message";
-import { ArrowLeft, Camera, Check, ChevronDown, ChevronUp, Loader2, Plus, Send, Ship } from "lucide-react";
+import { ArrowLeft, Camera, Check, ChevronDown, ChevronUp, Loader2, Plus, Send, Ship, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
@@ -448,26 +448,47 @@ function AddItemForm({ boatId, userId, authorName, onAdded, onDone }: {
   boatId: string; userId: string | null; authorName: string; onAdded: () => Promise<void>; onDone: () => void;
 }) {
   const [form, setForm] = useState({ item: "", qty: "", unit: "Pcs", condition: BOAT_INVENTORY_CONDITIONS[0] as string, remarks: "" });
+  // A photo taken or chosen for this item — uploaded when the item is saved.
+  const [photo, setPhoto] = useState<{ file: File; preview: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [added, setAdded] = useState(0);
   const itemRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const uploadRef = useRef<HTMLInputElement>(null);
 
-  async function add() {
-    if (!form.item.trim()) { toast.error("Give the item a name."); return; }
+  useEffect(() => () => { if (photo) URL.revokeObjectURL(photo.preview); }, [photo]);
+
+  function pick(file: File | undefined) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { toast.error("That isn't a photo."); return; }
+    setPhoto({ file, preview: URL.createObjectURL(file) });
+  }
+
+  /** Save the item. `andAnother` keeps the form open, cleared for the next one. */
+  async function save(andAnother: boolean) {
+    if (!form.item.trim()) { toast.error("Give the item a name."); itemRef.current?.focus(); return; }
     setBusy(true);
-    const { error } = await sb.from("orbit2_boat_inventory").insert({
-      boat_id: boatId, item: form.item.trim(), qty: form.qty === "" ? null : Number(form.qty), unit: form.unit,
-      condition: form.condition, remarks: form.remarks.trim() || null, on_board: true,
-      checked_at: new Date().toISOString(), checked_by: authorName, created_by: userId,
-    });
-    setBusy(false);
-    if (error) { toast.error(errorMessage(error, "Could not add the item")); return; }
-    toast.success(`${form.item.trim()} added to the inventory`);
-    // Keep unit and condition — the next item on the shelf usually matches.
-    setForm((f) => ({ ...f, item: "", qty: "", remarks: "" }));
-    setAdded((n) => n + 1);
-    itemRef.current?.focus();
-    await onAdded();
+    try {
+      const image_ref = photo ? await uploadPhoto(photo.file, "boats/inventory") : null;
+      const { error } = await sb.from("orbit2_boat_inventory").insert({
+        boat_id: boatId, item: form.item.trim(), qty: form.qty === "" ? null : Number(form.qty), unit: form.unit,
+        condition: form.condition, remarks: form.remarks.trim() || null, on_board: true, image_ref,
+        checked_at: new Date().toISOString(), checked_by: authorName, created_by: userId,
+      });
+      if (error) throw new Error(error.message);
+      toast.success(`${form.item.trim()} added to the inventory`);
+      await onAdded();
+      if (!andAnother) { onDone(); return; }
+      // Keep unit and condition — the next item on the shelf usually matches.
+      setForm((f) => ({ ...f, item: "", qty: "", remarks: "" }));
+      setPhoto(null);
+      setAdded((n) => n + 1);
+      itemRef.current?.focus();
+    } catch (e) {
+      toast.error(errorMessage(e, "Could not add the item"));
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -492,12 +513,39 @@ function AddItemForm({ boatId, userId, authorName, onAdded, onDone }: {
       </select>
       <input value={form.remarks} placeholder="Remarks (optional)" onChange={(e) => setForm((f) => ({ ...f, remarks: e.target.value }))}
         className="w-full rounded-md border border-border bg-background px-3 py-2 text-[16px] outline-none focus:border-primary" />
-      <div className="grid grid-cols-[1fr_2fr] gap-2">
+
+      {/* Photo — take one now or pick one from the phone. */}
+      <div className="flex items-center gap-2">
+        <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-background">
+          {photo ? <img src={photo.preview} alt="" className="h-full w-full object-cover" /> : <Camera className="h-5 w-5 text-muted-foreground/50" />}
+        </div>
+        <button type="button" onClick={() => cameraRef.current?.click()} disabled={busy}
+          className="flex h-11 flex-1 items-center justify-center gap-1.5 rounded-lg border border-border text-[15px] font-semibold disabled:opacity-50">
+          <Camera className="h-4 w-4" /> Take photo
+        </button>
+        <button type="button" onClick={() => uploadRef.current?.click()} disabled={busy}
+          className="flex h-11 flex-1 items-center justify-center gap-1.5 rounded-lg border border-border text-[15px] font-semibold disabled:opacity-50">
+          <Upload className="h-4 w-4" /> Upload
+        </button>
+        {photo && (
+          <button type="button" onClick={() => setPhoto(null)} aria-label="Remove photo" className="rounded-md p-2 text-destructive">
+            <X className="h-5 w-5" />
+          </button>
+        )}
+        <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ""; }} />
+        <input ref={uploadRef} type="file" accept="image/*" className="hidden" onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ""; }} />
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 pt-1">
         <button onClick={onDone} disabled={busy}
           className="h-11 rounded-lg border border-border text-[15px] font-semibold disabled:opacity-50">{added > 0 ? "Done" : "Cancel"}</button>
-        <button onClick={() => void add()} disabled={busy}
+        <button onClick={() => void save(false)} disabled={busy}
           className="flex h-11 items-center justify-center gap-2 rounded-lg bg-primary text-[15px] font-semibold text-primary-foreground disabled:opacity-50">
-          {busy && <Loader2 className="h-4 w-4 animate-spin" />} {added > 0 ? "Add next item" : "Add to inventory"}
+          {busy && <Loader2 className="h-4 w-4 animate-spin" />} Save
+        </button>
+        <button onClick={() => void save(true)} disabled={busy}
+          className="col-span-2 flex h-11 items-center justify-center gap-2 rounded-lg border border-primary/60 bg-primary/10 text-[15px] font-semibold text-primary disabled:opacity-50">
+          {busy && <Loader2 className="h-4 w-4 animate-spin" />} Save &amp; Add Another
         </button>
       </div>
     </div>
