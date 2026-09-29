@@ -101,6 +101,8 @@ export type Orbit2Boat = {
   max_passengers: number | null;
   mmsi: string | null;
   imo_no: string | null;
+  /** 2–5 letters that start this boat's job numbers, e.g. "SB" → SB26-0001. Unique per boat. */
+  job_prefix: string | null;
   image_ref: string | null;
   /** Set when this boat's spec fields were inherited from Vessel Overview. */
   inherited_yacht_id: string | null;
@@ -673,4 +675,17 @@ export function matchSuggestions(all: string[], typed: string, limit = 8): strin
 /** Does this exactly match something already on file? Drives the duplicate hint. */
 export const isExisting = (all: string[], typed: string) =>
   all.some((s) => s.toLowerCase() === typed.trim().toLowerCase());
+
+/**
+ * The job-number prefix a boat gets by default — the same rule as the database's
+ * orbit2_default_job_prefix(): initials of a multi-word name ("Southern Bight" →
+ * SB), the first three letters of a single word ("Imperium" → IMP). Offered as
+ * the starting value in Add New Boat; the office can type something else.
+ */
+export function defaultJobPrefix(name: string): string {
+  const words = name.toUpperCase().replace(/[^A-Z0-9 ]/g, " ").split(/\s+/).filter(Boolean);
+  if (words.length >= 2) return words.map((w) => w[0]).join("").slice(0, 5);
+  if (words.length === 1) return words[0].slice(0, 3);
+  return "";
+}
 

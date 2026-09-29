@@ -20,7 +20,7 @@ import { guardUploadFile, uploadContentType } from "@/lib/upload-guard";
 import { fetchAllRows } from "@/lib/fetch-all";
 import { ACTIVE_BOAT_STATUSES } from "./orbit2-constants";
 import {
-  ORBIT2_BUCKET, INVENTORY_UNITS,
+  ORBIT2_BUCKET, INVENTORY_UNITS, defaultJobPrefix,
   type Orbit2Boat, type Orbit2BoatTask, type Orbit2BoatDocument, type Orbit2BoatInventoryItem,
 } from "./orbit2-data";
 import { Field, inputCls } from "./orbit2-fields";
@@ -245,13 +245,14 @@ type SpecForm = {
   max_passengers: string;
   mmsi: string;
   imo_no: string;
+  job_prefix: string;
   image_ref: string | null;
   inherited_yacht_id: string | null;
 };
 
 const emptySpec: SpecForm = {
   name: "", client_name: "", boat_type: "", hull_number: "", hull_material: "",
-  year_of_build: "", max_beam_m: "", max_length_m: "", max_passengers: "", mmsi: "", imo_no: "",
+  year_of_build: "", max_beam_m: "", max_length_m: "", max_passengers: "", mmsi: "", imo_no: "", job_prefix: "",
   image_ref: null, inherited_yacht_id: null,
 };
 
@@ -336,6 +337,8 @@ function AddBoatWizard({
         max_passengers: form.max_passengers ? Number(form.max_passengers) : null,
         mmsi: form.mmsi.trim() || null,
         imo_no: form.imo_no.trim() || null,
+        // Blank → the database derives one from the name (and keeps it unique).
+        job_prefix: form.job_prefix.trim().toUpperCase() || null,
         image_ref: form.image_ref,
         inherited_yacht_id: form.inherited_yacht_id,
         created_by: user?.id ?? null,
@@ -398,10 +401,23 @@ function AddBoatWizard({
               <div className="grid gap-3 sm:grid-cols-[1fr_140px]">
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Field label="Boat name *">
-                    <input className={inputCls} value={form.name} onChange={(e) => set("name", e.target.value)} />
+                    <input className={inputCls} value={form.name}
+                      onChange={(e) => {
+                        const name = e.target.value;
+                        // Follow the name until the prefix has been typed by hand.
+                        setForm((f) => ({
+                          ...f, name,
+                          job_prefix: f.job_prefix === defaultJobPrefix(f.name) ? defaultJobPrefix(name) : f.job_prefix,
+                        }));
+                      }} />
                   </Field>
                   <Field label="Client">
                     <input className={inputCls} value={form.client_name} onChange={(e) => set("client_name", e.target.value)} />
+                  </Field>
+                  <Field label="Job number prefix"
+                    hint={form.job_prefix ? `Jobs will be numbered ${form.job_prefix}${String(new Date().getFullYear()).slice(2)}-0001, -0002 …` : "2–5 letters; suggested from the name"}>
+                    <input className={cn(inputCls, "uppercase")} value={form.job_prefix} maxLength={5}
+                      onChange={(e) => set("job_prefix", e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} />
                   </Field>
                 </div>
                 <Field label="Image">

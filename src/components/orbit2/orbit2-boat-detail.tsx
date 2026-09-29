@@ -132,6 +132,14 @@ export function Orbit2BoatDetail({
             <SpecField label="Max Passenger" value={boat.max_passengers} type="number" onSave={(v) => patchBoat({ max_passengers: v ? Number(v) : null })} />
             <SpecField label="MMSI" value={boat.mmsi} onSave={(v) => patchBoat({ mmsi: v })} />
             <SpecField label="IMO" value={boat.imo_no} onSave={(v) => patchBoat({ imo_no: v.trim() || null })} />
+            <SpecField label={`Job number prefix (${boat.job_prefix ?? "…"}${String(new Date().getFullYear()).slice(2)}-0001 …)`}
+              value={boat.job_prefix}
+              onSave={async (v) => {
+                const p = v.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+                if (p.length < 2 || p.length > 5) { toast.error("The prefix must be 2–5 letters or digits."); return; }
+                // Existing job numbers keep their prefix; only new jobs use this one.
+                await patchBoat({ job_prefix: p });
+              }} />
           </div>
         </div>
       </div>
