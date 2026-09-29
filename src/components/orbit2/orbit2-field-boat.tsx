@@ -27,6 +27,7 @@ import {
   type Orbit2Boat, type Orbit2BoatTask, type Orbit2BoatInventoryItem, type Orbit2Note, type Orbit2File,
 } from "./orbit2-data";
 import { stamp } from "./orbit2-fields";
+import { useAttendance, CrewAttendance } from "./orbit2-attendance";
 
 const sb = supabase as any;
 
@@ -42,11 +43,13 @@ async function uploadPhoto(file: File, folder: string): Promise<string> {
 }
 
 export function BoatJobDetail({
-  task, boat, authorName, userId, onBack, onChanged, onClosed,
+  task, boat, authorName, person, userId, onBack, onChanged, onClosed,
 }: {
   task: Orbit2BoatTask;
   boat: Orbit2Boat;
   authorName: string;
+  /** Roster name — the one in assigned_team — for per-crew attendance. */
+  person: string;
   userId: string | null;
   onBack: () => void;
   onChanged: () => Promise<void> | void;
@@ -54,6 +57,9 @@ export function BoatJobDetail({
 }) {
   const working = task.status === "Ongoing";
   const isInventory = task.kind === "inventory";
+  const att = useAttendance({ boat_task_id: task.id }, task.assigned_team ?? [], person);
+  const waitingCompanion = working && !!att.mine?.done_at;
+  const needsMyAttend = working && att.loaded && !att.mine;
   const [notes, setNotes] = useState<Orbit2Note[]>([]);
   const [images, setImages] = useState<Orbit2File[]>([]);
   const [busy, setBusy] = useState<null | "attend" | "done" | "comment" | "photo">(null);
@@ -87,7 +93,11 @@ export function BoatJobDetail({
   async function attend() {
     setBusy("attend");
     try {
-      if (!(await setStatus("Pending", "Ongoing"))) { toast.error("The office has changed this job — refreshed."); onClosed(); return; }
+      // Pending, or already Ongoing because a companion attended first.
+      const { data, error } = await sb.from("orbit2_boat_tasks").update({ status: "Ongoing" }).eq("id", task.id).in("status", ["Pending", "Ongoing"]).select("id");
+      if (error) throw new Error(error.message);
+      if (!data?.length) { toast.error("The office has changed this job — refreshed."); onClosed(); return; }
+      await att.markAttended(userId);
       await logComment("Attended").catch(() => {});
       toast.success("Attended — the office can see you're on site.");
       await Promise.all([onChanged(), loadActivity()]);
@@ -122,8 +132,15 @@ export function BoatJobDetail({
     setBusy("done");
     try {
       if (draft.trim()) { await logComment(draft.trim()); setDraft(""); }
-      if (!(await setStatus("Ongoing", "Complete"))) { toast.error("The office changed this job's status — refreshed."); await onChanged(); return; }
+      const list = await att.markDone(userId);
       await logComment("Done").catch(() => {});
+      if (!att.allDone(list)) {
+        const waiting = att.crew.filter((p) => !list.some((r) => r.person === p && r.done_at));
+        toast.success(`Your part is done — waiting for ${waiting.join(", ")}.`);
+        await Promise.all([onChanged(), loadActivity()]);
+        return;
+      }
+      if (!(await setStatus("Ongoing", "Complete"))) { toast.error("The office changed this job's status — refreshed."); await onChanged(); return; }
       toast.success(`${task.job_no ?? "Job"} complete`);
       onClosed();
     } catch (e) { toast.error(errorMessage(e, "Could not mark as done")); }
@@ -162,6 +179,8 @@ export function BoatJobDetail({
             </div>
           </div>
         </section>
+
+        <CrewAttendance crew={att.crew} rows={att.rows} me={person} />
 
         {/* The inventory check — the point of an Inventory job. */}
         {isInventory && (
@@ -222,13 +241,27 @@ export function BoatJobDetail({
         <div className="mx-auto max-w-md">
           {confirmDone ? (
             <div className="space-y-2">
-              <p className="text-center text-[15px]">Mark <span className="font-semibold">{task.job_no}</span> complete? The office sees it immediately.</p>
+              <p className="text-center text-[15px]">
+                {att.crew.length > 1 && att.waitingOn.filter((p) => p !== person).length > 0
+                  ? <>Mark your part of <span className="font-semibold">{task.job_no}</span> done? The job completes once everyone assigned has pressed Done.</>
+                  : <>Mark <span className="font-semibold">{task.job_no}</span> complete? The office sees it immediately.</>}
+              </p>
               <div className="grid grid-cols-2 gap-2">
                 <button onClick={() => setConfirmDone(false)} className="h-12 rounded-lg border border-border text-[16px] font-semibold">Not yet</button>
                 <button onClick={() => void done()} className="h-12 rounded-lg bg-destructive text-[16px] font-bold text-destructive-foreground">Yes, done</button>
               </div>
             </div>
-          ) : working ? (
+          ) : waitingCompanion ? (
+            <div className="space-y-1">
+              <button disabled
+                className="flex h-14 w-full items-center justify-center gap-2 rounded-full bg-muted text-[18px] font-bold text-muted-foreground shadow-lg">
+                Waiting Companion
+              </button>
+              <p className="text-center text-[14px] text-muted-foreground">
+                Your part is done — waiting for {att.waitingOn.join(", ")} to press Done.
+              </p>
+            </div>
+          ) : working && !needsMyAttend ? (
             <button onClick={() => setConfirmDone(true)} disabled={busy !== null}
               className="flex h-14 w-full items-center justify-center gap-2 rounded-full bg-destructive text-[18px] font-bold text-destructive-foreground shadow-lg disabled:opacity-50">
               {busy === "done" && <Loader2 className="h-5 w-5 animate-spin" />} Done

@@ -39,6 +39,7 @@ import {
   type Orbit2Project, type Orbit2Note, type Orbit2File, type Orbit2BoatTask, type Orbit2Boat,
 } from "./orbit2-data";
 import { BoatJobDetail } from "./orbit2-field-boat";
+import { useAttendance, CrewAttendance } from "./orbit2-attendance";
 import { useOrbit2Identity } from "./orbit2-identity";
 import { stamp } from "./orbit2-fields";
 import { InstallBanner, InstallButton, InstallSheet } from "./orbit2-install";
@@ -185,6 +186,7 @@ export function Orbit2FieldApp() {
             task={openBoat.task}
             boat={openBoat.boat}
             authorName={identity.name}
+            person={teamName ?? identity.name}
             userId={user?.id ?? null}
             onBack={() => setOpenId(null)}
             onChanged={load}
@@ -195,6 +197,7 @@ export function Orbit2FieldApp() {
             key={open.id}
             task={open}
             authorName={identity.name}
+            person={teamName ?? identity.name}
             userId={user?.id ?? null}
             onBack={() => setOpenId(null)}
             onChanged={load}
@@ -323,10 +326,12 @@ export function TaskList({
 // ── 2–5. One job ────────────────────────────────────────────────────────────
 
 export function TaskDetail({
-  task, authorName, userId, onBack, onChanged, onClosed,
+  task, authorName, person, userId, onBack, onChanged, onClosed,
 }: {
   task: Orbit2Project;
   authorName: string;
+  /** Roster name — the one in assigned_team — for per-crew attendance. */
+  person: string;
   userId: string | null;
   onBack: () => void;
   onChanged: () => Promise<void> | void;
@@ -334,6 +339,11 @@ export function TaskDetail({
 }) {
   const working = task.status === "Working On It";
   const onHold = task.status === "On Hold";
+  const att = useAttendance({ project_id: task.id }, task.assigned_team ?? [], person);
+  // I have pressed Done but a companion has not — the job stays open for them.
+  const waitingCompanion = working && !!att.mine?.done_at;
+  // The job is under way (a companion attended first) but I have not yet arrived.
+  const needsMyAttend = working && att.loaded && !att.mine;
   const [notes, setNotes] = useState<Orbit2Note[]>([]);
   const [images, setImages] = useState<Orbit2File[]>([]);
   const [busy, setBusy] = useState<null | "attend" | "done" | "comment" | "photo">(null);
@@ -369,15 +379,15 @@ export function TaskDetail({
   async function attend() {
     setBusy("attend");
     try {
-      // Guarded on the job still being scheduled, so a job the office cancelled or
-      // put on hold while the crew were driving to it cannot be re-opened by
-      // tapping Attend on a screen that was loaded before the change.
+      // Guarded on the job still being open to the crew, so a job the office
+      // cancelled or put on hold while the crew were driving to it cannot be
+      // re-opened by tapping Attend on a screen that was loaded before the change.
+      // "Working On It" is included because a companion may have attended first.
       const { data, error } = await sb
         .from("orbit2_projects")
         .update({ status: "Working On It" })
         .eq("id", task.id)
-        // Scheduled/Assigned, or sent back to the crew by the office (Re-assigned).
-        .in("status", ["Scheduled/Assigned", "Re-assigned"])
+        .in("status", ["Scheduled/Assigned", "Re-assigned", "Working On It"])
         .select("id");
       if (error) throw new Error(error.message);
       if (!data?.length) {
@@ -385,6 +395,7 @@ export function TaskDetail({
         onClosed();
         return;
       }
+      await att.markAttended(userId);
       await logComment("Attended").catch(() => { /* the status change is what matters */ });
       toast.success("Attended — the office can see you're on site.");
       await Promise.all([onChanged(), loadActivity()]);
@@ -451,6 +462,18 @@ export function TaskDetail({
     try {
       // Anything still typed goes in first, so it is not lost when the job closes.
       if (draft.trim()) { await logComment(draft.trim()); setDraft(""); }
+      // My part is finished, whatever the companions are doing.
+      const list = await att.markDone(userId);
+      await logComment("Done").catch(() => {});
+      store.del(draftKey(task.id));
+      if (!att.allDone(list)) {
+        // Someone assigned has not pressed Done yet — the job stays Working On It
+        // and this phone shows "Waiting Companion" until they do.
+        const waiting = att.crew.filter((p) => !list.some((r) => r.person === p && r.done_at));
+        toast.success(`Your part is done — waiting for ${waiting.join(", ")}.`);
+        await Promise.all([onChanged(), loadActivity()]);
+        return;
+      }
       // Work Completion Date & Time is NOT sent: the orbit2_projects trigger stamps
       // it from the database clock when status becomes Complete, so a phone with
       // the wrong time cannot misreport when the job finished.
@@ -466,8 +489,6 @@ export function TaskDetail({
         await onChanged();
         return;
       }
-      await logComment("Done").catch(() => {});
-      store.del(draftKey(task.id));
       toast.success(`${task.task_id} complete`);
       onClosed();
     } catch (e) {
@@ -523,6 +544,8 @@ export function TaskDetail({
         </section>
 
         {/* 4. Progress — only once attended, as in the specification */}
+        <CrewAttendance crew={att.crew} rows={att.rows} me={person} />
+
         {working && (
           <section className="space-y-4 rounded-xl border border-border bg-card p-4">
             <div>
@@ -584,7 +607,9 @@ export function TaskDetail({
           {confirmDone ? (
             <div className="space-y-2">
               <p className="text-center text-[15px]">
-                Mark <span className="font-semibold">{task.task_id}</span> complete? The office sees it immediately.
+                {att.crew.length > 1 && att.waitingOn.filter((p) => p !== person).length > 0
+                  ? <>Mark your part of <span className="font-semibold">{task.task_id}</span> done? The job completes once everyone assigned has pressed Done.</>
+                  : <>Mark <span className="font-semibold">{task.task_id}</span> complete? The office sees it immediately.</>}
               </p>
               <div className="grid grid-cols-2 gap-2">
                 <button onClick={() => setConfirmDone(false)}
@@ -593,7 +618,17 @@ export function TaskDetail({
                   className="h-12 rounded-lg bg-destructive text-[16px] font-bold text-destructive-foreground">Yes, done</button>
               </div>
             </div>
-          ) : working ? (
+          ) : waitingCompanion ? (
+            <div className="space-y-1">
+              <button disabled
+                className="flex h-14 w-full items-center justify-center gap-2 rounded-full bg-muted text-[18px] font-bold text-muted-foreground shadow-lg">
+                Waiting Companion
+              </button>
+              <p className="text-center text-[14px] text-muted-foreground">
+                Your part is done — waiting for {att.waitingOn.join(", ")} to press Done.
+              </p>
+            </div>
+          ) : working && !needsMyAttend ? (
             <button onClick={() => setConfirmDone(true)} disabled={busy !== null}
               className="flex h-14 w-full items-center justify-center gap-2 rounded-full bg-destructive text-[18px] font-bold text-destructive-foreground shadow-lg disabled:opacity-50">
               {busy === "done" && <Loader2 className="h-5 w-5 animate-spin" />} Done
