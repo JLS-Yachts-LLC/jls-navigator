@@ -114,6 +114,10 @@ export type Orbit2Boat = {
   fma_report_ref: string | null;
   rya_last_inspection: string | null;
   rya_report_ref: string | null;
+  /** Which of dma / fma / rya this boat must pass. A jet ski, say, needs no FMA. */
+  inspections_required: string[] | null;
+  /** Which RYA checklist applies — pwc | powerboat | cruising — by the craft's classification. */
+  rya_checklist: string | null;
 };
 
 export const BOAT_DOC_CATEGORIES = [

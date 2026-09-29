@@ -27,6 +27,8 @@ import {
   type Orbit2BoatInventoryItem, type Orbit2Note, type Orbit2File,
 } from "./orbit2-data";
 import { Field, inputCls, Typeahead, TeamPicker, FileSlot, NoteLog, type UploadedFile } from "./orbit2-fields";
+import { InspectionsRequired, InspectionChecklist, INSPECTION_REGIMES, type InspectionRegime } from "./orbit2-boat-checklist";
+import { useOrbit2Identity } from "./orbit2-identity";
 
 const sb = supabase as any;
 
@@ -49,6 +51,7 @@ export function Orbit2BoatDetail({
   reload: () => Promise<void> | void;
 }) {
   const { user } = useAuth();
+  const identity = useOrbit2Identity();
   const [section, setSection] = useState<"jobs" | "inventory">("jobs");
 
   /** Save fields on the boat. Returns false when the database refused, so a caller can avoid claiming success. */
@@ -155,10 +158,11 @@ export function Orbit2BoatDetail({
         </div>
       </div>
 
-      {/* ── DMA / FMA / RYA compliance ── */}
+      {/* ── DMA / FMA / RYA compliance — only the regimes this boat needs ── */}
+      <InspectionsRequired boat={boat} onSave={patchBoat} />
       <div className="grid gap-3 md:grid-cols-3">
-        {(["dma", "fma", "rya"] as const).map((regime) => (
-          <ComplianceCard key={regime} regime={regime} boat={boat}
+        {INSPECTION_REGIMES.filter((r) => (boat.inspections_required ?? INSPECTION_REGIMES).includes(r)).map((regime) => (
+          <ComplianceCard key={regime} regime={regime} boat={boat} isAdmin={identity.isAdmin} authorName={identity.name || "Office"}
             checklist={docsFor(`${regime}_checklist` as Orbit2BoatDocCategory)}
             onUploadChecklist={(f, r) => uploadDoc(`${regime}_checklist` as Orbit2BoatDocCategory, f, r)}
             onRemoveChecklist={removeDoc}
@@ -266,10 +270,12 @@ function SpecField({
 }
 
 function ComplianceCard({
-  regime, boat, checklist, onUploadChecklist, onRemoveChecklist, onSaveDate, onUploadReport, onRemoveReport,
+  regime, boat, isAdmin, authorName, checklist, onUploadChecklist, onRemoveChecklist, onSaveDate, onUploadReport, onRemoveReport,
 }: {
-  regime: "dma" | "fma" | "rya";
+  regime: InspectionRegime;
   boat: Orbit2Boat;
+  isAdmin: boolean;
+  authorName: string;
   checklist: UploadedFile[];
   onUploadChecklist: (f: File, ref: string) => Promise<void> | void;
   onRemoveChecklist: (f: UploadedFile) => void;
@@ -296,7 +302,11 @@ function ComplianceCard({
           label={regime === "rya" ? "Vessel Inspection and Safety Checklist" : "Technical Inspection Pass Report"}
           value={reportRef} onUpload={onUploadReport} onRemove={onRemoveReport} />
       </div>
-      <FileSlot label="Checklist" files={checklist} onUpload={onUploadChecklist} onRemove={onRemoveChecklist} />
+      {/* The items this inspection requires, ticked per boat — see orbit2-boat-checklist. */}
+      <div className="mb-2.5">
+        <InspectionChecklist boat={boat} regime={regime} isAdmin={isAdmin} authorName={authorName} />
+      </div>
+      <FileSlot label="Completed checklist / supporting files" files={checklist} onUpload={onUploadChecklist} onRemove={onRemoveChecklist} />
     </div>
   );
 }
