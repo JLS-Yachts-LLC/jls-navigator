@@ -17,7 +17,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { errorMessage } from "@/lib/error-message";
-import { Loader2, Plus, Search, X, Send } from "lucide-react";
+import { Loader2, Plus, Search, X, Send, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
@@ -38,6 +38,13 @@ const sb = supabase as any;
 
 /** A record being edited — everything optional until Submit validates it. */
 type Draft = Partial<Orbit2Project> & { assigned_team: string[] };
+
+type ProjectView = "all" | "Complete - To be Invoiced" | "Complete - Invoiced";
+const PROJECT_VIEWS: { key: ProjectView; label: string }[] = [
+  { key: "all", label: "All Projects" },
+  { key: "Complete - To be Invoiced", label: "To Be Invoiced" },
+  { key: "Complete - Invoiced", label: "Invoiced" },
+];
 
 /**
  * A date and time handed over from the calendar's Quick Task Initialization.
@@ -91,15 +98,32 @@ export function Orbit2Projects({
   const locationOptions = useMemo(() => suggestionsFor(projects.map((p) => p.location)), [projects]);
   const supplierOptions = useMemo(() => suggestionsFor(projects.map((p) => p.supplier)), [projects]);
 
+  /**
+   * The three views (client request, 29 Sep 2026): everything, or the two
+   * invoicing stages on their own. They follow the status exactly, so a job
+   * appears under "To Be Invoiced" the moment an admin moves it there and
+   * leaves when it is marked Invoiced — the same rule as the EHS NOC tabs.
+   */
+  const [view, setView] = useState<ProjectView>("all");
+  const inView = useMemo(
+    () => (view === "all" ? rows : rows.filter((p) => p.status === view)),
+    [rows, view],
+  );
+  const viewCounts = useMemo(() => ({
+    all: rows.length,
+    "Complete - To be Invoiced": rows.filter((p) => p.status === "Complete - To be Invoiced").length,
+    "Complete - Invoiced": rows.filter((p) => p.status === "Complete - Invoiced").length,
+  }), [rows]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((p) =>
+    if (!q) return inView;
+    return inView.filter((p) =>
       [p.task_id, p.client_name, p.status, p.service_category, p.specific_task,
        p.requestor_name, p.location, p.jls_quote, p.invoice_number, p.supplier,
        (p.assigned_team ?? []).join(" ")]
         .some((v) => (v ?? "").toLowerCase().includes(q)));
-  }, [rows, query]);
+  }, [inView, query]);
 
   const selected = selectedId ? rows.find((p) => p.id === selectedId) ?? null : null;
 
@@ -221,6 +245,21 @@ export function Orbit2Projects({
   }
 
   /** Status straight from the table, without opening the record. */
+  /**
+   * Delete a record outright. Its Remarks, Team Comments and attachments go
+   * with it (foreign-key cascade), which is why it asks first and says so.
+   * Admin-only, and the database enforces the same rule (orbit2_guard_delete).
+   */
+  async function deleteRecord(p: Orbit2Project) {
+    if (!confirm(`Delete ${p.task_id}${p.client_name ? ` (${p.client_name})` : ""}?\n\nIts remarks, team comments and attachments are deleted with it. This cannot be undone.`)) return;
+    const { error } = await sb.from("orbit2_projects").delete().eq("id", p.id);
+    if (error) { toast.error(errorMessage(error, "Could not delete")); return; }
+    toast.success(`${p.task_id} deleted`);
+    setSelectedId(null);
+    setCreating(false);
+    await reload();
+  }
+
   async function setStatus(p: Orbit2Project, status: string) {
     const { error } = await sb.from("orbit2_projects").update({ status }).eq("id", p.id);
     if (error) { toast.error(error.message); return; }
@@ -279,12 +318,29 @@ export function Orbit2Projects({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      {/* ── Views ── */}
+      <div className="flex flex-wrap items-center gap-1 border-b border-border/40 px-5 py-2">
+        {PROJECT_VIEWS.map((v) => (
+          <button key={v.key} onClick={() => setView(v.key)}
+            className={cn("flex items-center gap-1.5 rounded-md px-3 py-1 text-[15px] font-medium transition",
+              view === v.key ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/60")}>
+            {bunkering && v.key === "all" ? "All Bunkering" : v.label}
+            <span className={cn("rounded-full px-1.5 py-0.5 text-[13px]",
+              view === v.key ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground")}>
+              {viewCounts[v.key]}
+            </span>
+          </button>
+        ))}
+      </div>
+
       {/* ── Search + New ── */}
       <div className="flex items-center justify-between gap-3 border-b border-border/50 px-5 py-3">
         <p className="text-[15px] text-muted-foreground">
           {rows.length === 0
             ? `No ${bunkering ? "bunkering" : "project"} records yet.`
-            : `${filtered.length} of ${rows.length} record${rows.length === 1 ? "" : "s"}`}
+            : inView.length === 0
+              ? `Nothing ${view === "Complete - Invoiced" ? "invoiced" : "waiting to be invoiced"} yet.`
+              : `${filtered.length} of ${inView.length} record${inView.length === 1 ? "" : "s"}`}
         </p>
         <div className="flex items-center gap-2">
           <div className="relative">
@@ -332,6 +388,7 @@ export function Orbit2Projects({
               supplierOptions={supplierOptions}
               onSubmit={submit}
               onCancel={cancel}
+              onDelete={identity.isAdmin ? deleteRecord : undefined}
               onAddNote={addNote}
               onEditNote={editNote}
               onAttach={attach}
@@ -490,7 +547,7 @@ export function StatusSelect({
 function DetailPanel({
   bunkering, creating, draft, setDraft, selected, saving, isAdmin, notes, files,
   clientOptions, locationOptions, supplierOptions,
-  onSubmit, onCancel, onAddNote, onEditNote, onAttach, onDetach, onNotified,
+  onSubmit, onCancel, onDelete, onAddNote, onEditNote, onAttach, onDetach, onNotified,
 }: {
   bunkering: boolean;
   creating: boolean;
@@ -506,6 +563,8 @@ function DetailPanel({
   supplierOptions: string[];
   onSubmit: () => void;
   onCancel: () => void;
+  /** Present only for an Orbit 2 admin — see deleteRecord. */
+  onDelete?: (p: Orbit2Project) => void;
   onAddNote: (kind: "remark" | "team_comment", body: string) => Promise<void>;
   onEditNote: (id: string, body: string) => Promise<void>;
   onAttach: (slot: Orbit2File["slot"], file: File, ref: string) => Promise<void>;
@@ -703,7 +762,16 @@ function DetailPanel({
       )}
 
       {/* ── Form actions ── */}
-      <div className="flex justify-end gap-2 border-t border-border/50 pt-3">
+      <div className="flex items-center justify-between gap-2 border-t border-border/50 pt-3">
+        {/* Delete sits apart from Cancel/Submit, on the far left, so it is
+            never the button a hand reaches for by habit. Only on a saved record. */}
+        {selected && !creating && onDelete ? (
+          <button onClick={() => onDelete(selected)} disabled={saving}
+            className="flex items-center gap-1.5 rounded-md border border-destructive/40 px-3 py-2 text-[15px] font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50">
+            <Trash2 className="h-4 w-4" /> Delete
+          </button>
+        ) : <span />}
+        <div className="flex gap-2">
         <button onClick={onCancel} disabled={saving}
           className="rounded-md bg-[#E05252] px-5 py-2 text-[15px] font-semibold text-white hover:opacity-90 disabled:opacity-50">
           Cancel
@@ -712,6 +780,7 @@ function DetailPanel({
           className="flex items-center gap-1.5 rounded-md bg-[#3FA76A] px-5 py-2 text-[15px] font-semibold text-white hover:opacity-90 disabled:opacity-50">
           {saving && <Loader2 className="h-4 w-4 animate-spin" />} Submit
         </button>
+        </div>
       </div>
     </div>
   );
