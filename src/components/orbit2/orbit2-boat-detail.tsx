@@ -162,7 +162,7 @@ export function Orbit2BoatDetail({
       <InspectionsRequired boat={boat} onSave={patchBoat} />
       <div className="grid gap-3 md:grid-cols-3">
         {INSPECTION_REGIMES.filter((r) => (boat.inspections_required ?? INSPECTION_REGIMES).includes(r)).map((regime) => (
-          <ComplianceCard key={regime} regime={regime} boat={boat} isAdmin={identity.isAdmin} authorName={identity.name || "Office"}
+          <ComplianceCard key={regime} regime={regime} boat={boat} inventory={inventory} isAdmin={identity.isAdmin} authorName={identity.name || "Office"}
             checklist={docsFor(`${regime}_checklist` as Orbit2BoatDocCategory)}
             onUploadChecklist={(f, r) => uploadDoc(`${regime}_checklist` as Orbit2BoatDocCategory, f, r)}
             onRemoveChecklist={removeDoc}
@@ -270,10 +270,11 @@ function SpecField({
 }
 
 function ComplianceCard({
-  regime, boat, isAdmin, authorName, checklist, onUploadChecklist, onRemoveChecklist, onSaveDate, onUploadReport, onRemoveReport,
+  regime, boat, inventory, isAdmin, authorName, checklist, onUploadChecklist, onRemoveChecklist, onSaveDate, onUploadReport, onRemoveReport,
 }: {
   regime: InspectionRegime;
   boat: Orbit2Boat;
+  inventory: Orbit2BoatInventoryItem[];
   isAdmin: boolean;
   authorName: string;
   checklist: UploadedFile[];
@@ -304,7 +305,7 @@ function ComplianceCard({
       </div>
       {/* The items this inspection requires, ticked per boat — see orbit2-boat-checklist. */}
       <div className="mb-2.5">
-        <InspectionChecklist boat={boat} regime={regime} isAdmin={isAdmin} authorName={authorName} />
+        <InspectionChecklist boat={boat} regime={regime} inventory={inventory} isAdmin={isAdmin} authorName={authorName} />
       </div>
       <FileSlot label="Completed checklist / supporting files" files={checklist} onUpload={onUploadChecklist} onRemove={onRemoveChecklist} />
     </div>
