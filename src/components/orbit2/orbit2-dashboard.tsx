@@ -314,7 +314,7 @@ function CalendarPane({
                       title={`${it.ref} · ${it.title} · ${it.bucket} · ${it.status}${it.team.length ? ` · ${it.team.join(", ")}` : ""}`}
                       className="absolute top-1 bottom-1 cursor-default overflow-hidden rounded px-1.5 text-[14px] font-medium leading-[24px] text-black/80"
                       style={{ left: `${left}%`, width: `${width}%`, background: colorFor(it.bucket) }}>
-                      {it.bucket}
+                      {it.label}
                     </div>
                   );
                 })}
@@ -719,7 +719,7 @@ function TaskDetailCard({
             <span className="text-primary">{w.ref}</span> · {w.title}
           </div>
           <div className="text-[14px] text-muted-foreground">
-            {w.bucket} · {time}{duration ? ` · ETC ${minutesToHhmm(duration)}` : ""}
+            {w.label} · {time}{duration ? ` · ETC ${minutesToHhmm(duration)}` : ""}
           </div>
         </div>
         <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[14px] font-medium">{w.status}</span>

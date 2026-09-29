@@ -364,6 +364,8 @@ export type CalendarItem = {
   ref: string;
   title: string;
   bucket: string;
+  /** What the calendar chip / roster cell says — the service for a project, the boat for a Managed Boats job. */
+  label: string;
   status: string;
   date: string;
   hour: number;
@@ -389,6 +391,7 @@ export function calendarItems(projects: Orbit2Project[], boatTasks: Orbit2BoatTa
       ref: p.task_id,
       title: p.client_name ?? p.task_id,
       bucket: bucketOf(p),
+      label: bucketOf(p),
       status: p.status,
       date: p.schedule_date,
       hour: h,
@@ -406,6 +409,8 @@ export function calendarItems(projects: Orbit2Project[], boatTasks: Orbit2BoatTa
       ref: t.job_no ?? kindToBoatJobCategory(t.kind),
       title: `${boatName(t.boat_id)} — ${t.title}`,
       bucket: "Vessel Equipment",
+      // The boat is what matters on the calendar — "MY TORNADO · Booked", not the bucket.
+      label: `${boatName(t.boat_id)} · ${kindToBoatJobCategory(t.kind)}`,
       status: t.status,
       date: t.schedule_date,
       hour: h,
@@ -476,7 +481,7 @@ export type MonthCell = {
 export function monthGrid(
   // Only the date, the team and the service are read — so the time-optional
   // Assignment list works here as well as the calendar's timed items.
-  items: Pick<CalendarItem, "date" | "team" | "bucket">[],
+  items: Pick<CalendarItem, "date" | "team" | "label">[],
   schedule: Orbit2ScheduleEntry[],
   year: number,
   month: number,
@@ -487,7 +492,7 @@ export function monthGrid(
     for (const p of it.team) {
       if (person && p !== person) continue;
       const list = workByDate.get(it.date) ?? [];
-      list.push({ person: p, label: it.bucket });
+      list.push({ person: p, label: it.label });
       workByDate.set(it.date, list);
     }
   }
@@ -541,6 +546,8 @@ export type Assignment = {
   ref: string;
   title: string;
   bucket: string;
+  /** What the calendar chip / roster cell says — the service for a project, the boat for a Managed Boats job. */
+  label: string;
   status: string;
   date: string;
   time: string | null;
@@ -561,6 +568,7 @@ export function assignments(
       ref: p.task_id,
       title: p.client_name ?? p.task_id,
       bucket: bucketOf(p),
+      label: bucketOf(p),
       status: p.status,
       date: p.schedule_date,
       time: p.schedule_time,
@@ -576,6 +584,8 @@ export function assignments(
       ref: t.job_no ?? kindToBoatJobCategory(t.kind),
       title: `${boatName(t.boat_id)} — ${t.title}`,
       bucket: "Vessel Equipment",
+      // The boat is what matters on the calendar — "MY TORNADO · Booked", not the bucket.
+      label: `${boatName(t.boat_id)} · ${kindToBoatJobCategory(t.kind)}`,
       status: t.status,
       date: t.schedule_date,
       time: t.schedule_time,
