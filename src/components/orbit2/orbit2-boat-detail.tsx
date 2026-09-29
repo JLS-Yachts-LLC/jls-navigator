@@ -539,7 +539,7 @@ function JobEditor({
     setNotes((data ?? []) as Orbit2Note[]);
   }
 
-  async function attach(slot: "service_report" | "certificate" | "final_invoice", file: File, ref: string) {
+  async function attach(slot: "service_report" | "certificate" | "final_invoice" | "image", file: File, ref: string) {
     if (!existing) return;
     const { error } = await sb.from("orbit2_files").insert({ boat_task_id: existing.id, slot, file_name: file.name, storage_ref: ref, uploaded_by: user?.id ?? null });
     if (error) { toast.error(error.message); return; }
@@ -554,6 +554,8 @@ function JobEditor({
   }
 
   const slot = (s: Orbit2File["slot"]) => files.filter((f) => f.slot === s).map((f) => ({ id: f.id, file_name: f.file_name, storage_ref: f.storage_ref }));
+  const images = files.filter((f) => f.slot === "image");
+  const [lightbox, setLightbox] = useState<string | null>(null);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
@@ -598,9 +600,40 @@ function JobEditor({
               <NoteLog title="Team Comments" notes={notes.filter((n) => n.kind === "team_comment")}
                 emptyText="Nothing from the field team yet." placeholder="Add a note on the crew's behalf"
                 onAdd={(b) => addNote("team_comment", b)} />
+
+              {/* Images — captured by the crew in the mobile app, or attached here. */}
+              <div>
+                <div className="mb-1 text-[14px] font-medium text-muted-foreground">Images</div>
+                {images.length > 0 && (
+                  <div className="mb-2 grid grid-cols-4 gap-2">
+                    {images.map((f) => (
+                      <div key={f.id} className="group relative aspect-square overflow-hidden rounded-md border border-border bg-muted/20">
+                        <button type="button" onClick={() => setLightbox(f.storage_ref)} className="block h-full w-full" title="View full size">
+                          <SignedImage stored={f.storage_ref} alt={f.file_name} className="h-full w-full object-cover" />
+                        </button>
+                        <button type="button" onClick={() => void detach(f)} title="Remove image"
+                          className="absolute right-1 top-1 hidden rounded bg-background/90 p-0.5 text-destructive group-hover:block">
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <FileSlot label={images.length ? "Add another image" : "No images yet — photos from the mobile app appear here"} files={[]} accept="image/*"
+                  onUpload={(f, r) => attach("image", f, r)} />
+              </div>
             </>
           )}
         </div>
+
+        {lightbox && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-6" onClick={(e) => { e.stopPropagation(); setLightbox(null); }}>
+            <button onClick={() => setLightbox(null)} className="absolute right-5 top-5 rounded-full bg-white/10 p-2 text-white hover:bg-white/20">
+              <X className="h-5 w-5" />
+            </button>
+            <SignedImage stored={lightbox} alt="" className="max-h-full max-w-full rounded-lg object-contain" />
+          </div>
+        )}
 
         <div className="flex justify-between gap-2 border-t border-border px-5 py-3">
           {existing ? (
