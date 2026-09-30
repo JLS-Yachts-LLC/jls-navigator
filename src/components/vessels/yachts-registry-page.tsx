@@ -400,12 +400,17 @@ export function YachtsPage({
     return !!la && Date.now() - new Date(la).getTime() > 30 * 86400000;
   };
 
+  // A typed search looks across the whole fleet, whatever the status pill says.
+  // The page opens on "In country", and a yacht that is Arriving or Departed
+  // was invisible to the search box — on 30 Sep 2026 that produced a duplicate
+  // Amara created by hand while the synced one sat under the filter.
+  const searching = q.trim().length > 0;
   const filtered = useMemo(() => {
     let rows = baseRows;
-    if (statusFilter !== "all") {
+    if (!searching && statusFilter !== "all") {
       rows = rows.filter((y) => String(y.status ?? "").toLowerCase().trim() === statusFilter);
     }
-    if (movementFilter !== "all") {
+    if (!searching && movementFilter !== "all") {
       rows = rows.filter((y) => movementOf(y) === movementFilter);
     }
     if (q.trim()) {
@@ -430,7 +435,7 @@ export function YachtsPage({
       rows = [...rows].sort((a, b) => lastActivityOf(b).localeCompare(lastActivityOf(a)));
     }
     return rows;
-  }, [baseRows, q, statusFilter, movementFilter, sortKey, sortDir, activityMap]);
+  }, [baseRows, q, searching, statusFilter, movementFilter, sortKey, sortDir, activityMap]);
 
   // Movement counts for the pills (within the current status filter).
   const movementOptions = useMemo(() => {
@@ -473,10 +478,15 @@ export function YachtsPage({
             <Input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder={`Search ${noun}s…`}
+              placeholder={`Search all ${noun}s…`}
               className="h-8 w-56 pl-8"
             />
           </div>
+          {searching && (statusFilter !== "all" || movementFilter !== "all") && (
+            <span className="text-[12px] text-muted-foreground">
+              Searching all statuses · {filtered.length} match{filtered.length === 1 ? "" : "es"}
+            </span>
+          )}
 
           {/* My vessels — only the ones this user is the responsible agent for */}
           <button
