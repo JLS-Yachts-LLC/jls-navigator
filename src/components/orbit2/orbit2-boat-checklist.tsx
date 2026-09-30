@@ -16,13 +16,17 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ArrowDown, ArrowUp, Check, Link2, Link2Off, ListChecks, Loader2, Pencil, Plus, RefreshCw, RotateCcw, Trash2, X,
+  ArrowDown, ArrowUp, Check, FileDown, Link2, Link2Off, ListChecks, Loader2, Pencil, Plus, RefreshCw, RotateCcw, Trash2, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { errorMessage } from "@/lib/error-message";
 import { SignedImage } from "@/components/ui/signed-file";
+import { useAuth } from "@/lib/auth";
+import { storageRef } from "@/lib/signed-url";
+import { fillRyaForm, RYA_FORM_FILE, type RyaFormKey } from "@/lib/orbit2/rya-form";
+import { ORBIT2_BUCKET } from "./orbit2-data";
 import { Field, inputCls, stamp } from "./orbit2-fields";
 import type { Orbit2Boat, Orbit2BoatInventoryItem } from "./orbit2-data";
 
@@ -42,6 +46,8 @@ export const ryaChecklistLabel = (k: string | null) => RYA_CHECKLISTS.find((c) =
 export type ChecklistTemplateItem = {
   id: string; regime: InspectionRegime; category: RyaChecklist | null;
   section: string | null; item: string; qty: number | null; unit: string | null; ref: string | null;
+  /** Where this item's Check cell is on the RYA's own PDF (page, PDF points). */
+  pdf_page: number | null; pdf_x: number | null; pdf_y: number | null;
   sort_order: number; active: boolean;
 };
 export type BoatChecklistState = {
@@ -133,8 +139,10 @@ function useChecklist(boat: Orbit2Boat, regime: InspectionRegime) {
 }
 
 /** The compact card content: progress, inventory coverage, and the button to the full list. */
-export function InspectionChecklist({ boat, regime, inventory, isAdmin, authorName }: {
+export function InspectionChecklist({ boat, regime, inventory, isAdmin, authorName, onDocumentAdded }: {
   boat: Orbit2Boat; regime: InspectionRegime; inventory: Orbit2BoatInventoryItem[]; isAdmin: boolean; authorName: string;
+  /** Called after a generated RYA form has been filed against the boat. */
+  onDocumentAdded?: () => Promise<void> | void;
 }) {
   const cl = useChecklist(boat, regime);
   const [open, setOpen] = useState(false);
@@ -171,7 +179,7 @@ export function InspectionChecklist({ boat, regime, inventory, isAdmin, authorNa
       </button>
       {open && (
         <ChecklistModal boat={boat} regime={regime} inventory={inventory} isAdmin={isAdmin} authorName={authorName}
-          cl={cl} onClose={() => setOpen(false)} />
+          cl={cl} onClose={() => setOpen(false)} onDocumentAdded={onDocumentAdded} />
       )}
     </div>
   );
@@ -192,11 +200,12 @@ function Progress({ label, value, total, tone }: { label: string; value: number;
 
 // ── The full checklist ───────────────────────────────────────────────────────
 
-function ChecklistModal({ boat, regime, inventory, isAdmin, authorName, cl, onClose }: {
+function ChecklistModal({ boat, regime, inventory, isAdmin, authorName, cl, onClose, onDocumentAdded }: {
   boat: Orbit2Boat; regime: InspectionRegime; inventory: Orbit2BoatInventoryItem[]; isAdmin: boolean; authorName: string;
-  cl: ReturnType<typeof useChecklist>; onClose: () => void;
+  cl: ReturnType<typeof useChecklist>; onClose: () => void; onDocumentAdded?: () => Promise<void> | void;
 }) {
   const [editing, setEditing] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [filter, setFilter] = useState<"all" | "open" | "missing">("all");
@@ -288,6 +297,12 @@ function ChecklistModal({ boat, regime, inventory, isAdmin, authorName, cl, onCl
             ))}
           </div>
           <div className="flex items-center gap-1.5">
+            {!editing && regime === "rya" && cl.category && items.length > 0 && (
+              <button type="button" onClick={() => setGenerating(true)} title="Fill the RYA's own checklist PDF from these ticks"
+                className="flex items-center gap-1 rounded-md bg-primary px-2.5 py-1.5 text-[13px] font-semibold text-primary-foreground hover:opacity-90">
+                <FileDown className="h-3.5 w-3.5" /> Generate RYA form
+              </button>
+            )}
             {!editing && (
               <>
                 <button type="button" onClick={() => void syncFromInventory()} disabled={syncing} title="Tick every item the Inventory List already covers"
@@ -336,6 +351,123 @@ function ChecklistModal({ boat, regime, inventory, isAdmin, authorName, cl, onCl
               </ul>
             </div>
           ))}
+        </div>
+      </div>
+      {generating && cl.category && (
+        <RyaFormDialog boat={boat} form={cl.category} items={items} stateFor={stateFor} authorName={authorName}
+          onClose={() => setGenerating(false)} onFiled={onDocumentAdded} />
+      )}
+    </div>
+  );
+}
+
+// ── Generate the RYA's own PDF from the ticks ────────────────────────────────
+
+const fmtDate = (iso: string) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString("en-GB") : "");
+
+function RyaFormDialog({ boat, form, items, stateFor, authorName, onClose, onFiled }: {
+  boat: Orbit2Boat; form: RyaFormKey; items: ChecklistTemplateItem[]; stateFor: Map<string, BoatChecklistState>;
+  authorName: string; onClose: () => void; onFiled?: () => Promise<void> | void;
+}) {
+  const { user } = useAuth();
+  const today = new Date().toISOString().slice(0, 10);
+  const [f, setF] = useState({
+    rtcName: "JLS Yacht Training Institute",
+    boatName: boat.name,
+    boatType: boat.boat_type ?? "",
+    persons: boat.max_passengers != null ? String(boat.max_passengers) : "",
+    inspectionDate: boat.rya_last_inspection ?? today,
+    inspectionPlace: "Dubai, UAE",
+    inspectorName: authorName,
+    crossUnchecked: false,
+    file: true,
+  });
+  const [busy, setBusy] = useState(false);
+  const set = (k: keyof typeof f, v: string | boolean) => setF((x) => ({ ...x, [k]: v }));
+  const checked = items.filter((i) => stateFor.get(i.id)?.checked).length;
+  const unplaced = items.filter((i) => i.pdf_page == null).length;
+
+  async function generate() {
+    setBusy(true);
+    try {
+      const bytes = await fillRyaForm(form, {
+        rtcName: f.rtcName, boatName: f.boatName, boatType: f.boatType, persons: f.persons,
+        inspectionDate: fmtDate(f.inspectionDate), inspectionPlace: f.inspectionPlace, inspectorName: f.inspectorName,
+      }, items.map((i) => ({ pdf_page: i.pdf_page, pdf_x: i.pdf_x, pdf_y: i.pdf_y, checked: !!stateFor.get(i.id)?.checked })),
+      { crossUnchecked: f.crossUnchecked });
+      const name = `${RYA_FORM_FILE[form]} — ${boat.name} — ${f.inspectionDate}.pdf`.replace(/[\\/:*?"<>|]+/g, "-");
+      const blob = new Blob([bytes as BlobPart], { type: "application/pdf" });
+
+      // Download for the inspector…
+      const url = URL.createObjectURL(blob);
+      const a = Object.assign(document.createElement("a"), { href: url, download: name });
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+
+      // …and file a copy under the boat's RYA checklist documents.
+      if (f.file) {
+        const path = `orbit2/boats/${boat.id}/rya/${crypto.randomUUID()}-${name.replace(/[^\w.-]+/g, "_")}`;
+        const up = await supabase.storage.from(ORBIT2_BUCKET).upload(path, blob, { contentType: "application/pdf", upsert: false });
+        if (up.error) throw new Error(up.error.message);
+        const { error } = await sb.from("orbit2_boat_documents").insert({
+          boat_id: boat.id, category: "rya_checklist", file_name: name, storage_ref: storageRef(ORBIT2_BUCKET, path), uploaded_by: user?.id ?? null,
+        });
+        if (error) throw new Error(error.message);
+        await onFiled?.();
+      }
+      toast.success(`${RYA_FORM_FILE[form]} generated — ${checked} of ${items.length} items ticked`);
+      onClose();
+    } catch (e) {
+      toast.error(errorMessage(e, "Could not generate the form"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const field = (label: string, k: keyof typeof f, type = "text") => (
+    <Field label={label}>
+      <input className={cn(inputCls, "h-9 py-1 text-[14px]")} type={type} value={String(f[k])} onChange={(e) => set(k, e.target.value)} />
+    </Field>
+  );
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="w-full max-w-lg rounded-2xl border border-border bg-card shadow-xl">
+        <div className="flex items-center justify-between border-b border-border px-5 py-3">
+          <div>
+            <div className="font-semibold">Generate {RYA_FORM_FILE[form]}</div>
+            <div className="text-[13px] text-muted-foreground">The RYA's own PDF, with the header filled and {checked} of {items.length} items ticked from Polaris.</div>
+          </div>
+          <button type="button" onClick={onClose} className="rounded p-1 text-muted-foreground hover:bg-accent"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="space-y-3 p-5">
+          {field("RTC name", "rtcName")}
+          <div className="grid grid-cols-2 gap-3">
+            {field("Name of boat", "boatName")}
+            {field("Inspection date", "inspectionDate", "date")}
+            {form !== "pwc" && field("Boat type", "boatType")}
+            {form !== "pwc" && field("No. of persons", "persons")}
+            {form !== "pwc" && field("Inspection place", "inspectionPlace")}
+            {field("Inspector's name", "inspectorName")}
+          </div>
+          <label className="flex items-center gap-2 text-[14px]">
+            <input type="checkbox" className="h-4 w-4 accent-primary" checked={f.crossUnchecked} onChange={(e) => set("crossUnchecked", e.target.checked)} />
+            Mark items not ticked with an ✗ (otherwise left blank)
+          </label>
+          <label className="flex items-center gap-2 text-[14px]">
+            <input type="checkbox" className="h-4 w-4 accent-primary" checked={f.file} onChange={(e) => set("file", e.target.checked)} />
+            File a copy under this boat's RYA checklist documents
+          </label>
+          {unplaced > 0 && (
+            <p className="text-[13px] text-warning">{unplaced} item{unplaced === 1 ? "" : "s"} added in Polaris {unplaced === 1 ? "has" : "have"} no position on the RYA form and will not appear on it.</p>
+          )}
+        </div>
+        <div className="flex justify-end gap-2 border-t border-border px-5 py-3">
+          <button type="button" onClick={onClose} disabled={busy} className="rounded-md border border-border px-4 py-2 text-[14px] font-medium hover:bg-accent disabled:opacity-50">Cancel</button>
+          <button type="button" onClick={() => void generate()} disabled={busy}
+            className="flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-[14px] font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-50">
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />} Generate & download
+          </button>
         </div>
       </div>
     </div>
