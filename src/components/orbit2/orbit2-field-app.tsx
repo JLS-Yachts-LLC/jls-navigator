@@ -23,7 +23,7 @@ import { errorMessage } from "@/lib/error-message";
 import { useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeft, Camera, CheckCircle2, ChevronRight, Loader2, LogOut, MapPin,
-  RefreshCw, Send, Ship, UserRound,
+  RefreshCw, Send, Ship, UserRound, ClipboardCheck, LayoutGrid,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -40,12 +40,14 @@ import {
 } from "./orbit2-data";
 import { BoatJobDetail } from "./orbit2-field-boat";
 import { useAttendance, CrewAttendance } from "./orbit2-attendance";
+import { FieldAdmin } from "./orbit2-field-admin";
 import { useOrbit2Identity } from "./orbit2-identity";
 import { stamp } from "./orbit2-fields";
 import { InstallBanner, InstallButton, InstallSheet } from "./orbit2-install";
 
 const sb = supabase as any;
 const VIEW_AS_KEY = "orbit2.field.viewAs";
+const TAB_KEY = "orbit2.field.tab";
 const draftKey = (taskId: string) => `orbit2.field.draft.${taskId}`;
 
 /** localStorage can throw (private mode, blocked storage) — never let it break the app. */
@@ -86,6 +88,11 @@ export function Orbit2FieldApp() {
   const [loading, setLoading] = useState(true);
   const [openId, setOpenId] = useState<string | null>(null);
   const [howToInstall, setHowToInstall] = useState(false);
+  // Admins get two tabs — My Job (the crew view, also for covering a colleague)
+  // and Admin Management (the office's work, phone-shaped). Crew see only My Job.
+  const [tab, setTab] = useState<"my" | "admin">(() => (store.get(TAB_KEY) === "admin" ? "admin" : "my"));
+  const showTabs = identity.isAdmin;
+  const pickTab = (t: "my" | "admin") => { store.set(TAB_KEY, t); setTab(t); setOpenId(null); };
 
   const load = useCallback(async () => {
     if (!teamName) { setTasks([]); setLoading(false); return; }
@@ -168,6 +175,10 @@ export function Orbit2FieldApp() {
         {/* ── Who am I ── */}
         {!identity.name ? (
           <Centered><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></Centered>
+        ) : showTabs && tab === "admin" ? (
+          <div className="flex flex-1 flex-col pb-20">
+            <FieldAdmin authorName={identity.name} userId={user?.id ?? null} />
+          </div>
         ) : !teamName ? (
           identity.isAdmin ? (
             <ViewAsPicker onPick={(n) => { store.set(VIEW_AS_KEY, n); setViewAs(n); }} />
@@ -216,6 +227,22 @@ export function Orbit2FieldApp() {
             banner={<InstallBanner onHowTo={() => setHowToInstall(true)} />}
           />
         )}
+
+        {/* ── Tabs (admins only). Hidden while a job is open — its Attend / Done bar owns the bottom edge. ── */}
+        {showTabs && identity.name && !openId && (
+          <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-border/70 bg-card/95 backdrop-blur"
+            style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+            <div className="mx-auto grid max-w-md grid-cols-2">
+              {([["my", "My Job", ClipboardCheck], ["admin", "Admin Management", LayoutGrid]] as const).map(([k, label, Icon]) => (
+                <button key={k} onClick={() => pickTab(k)}
+                  className={cn("flex h-14 flex-col items-center justify-center gap-0.5 text-[13px] font-semibold",
+                    tab === k ? "text-primary" : "text-muted-foreground")}>
+                  <Icon className="h-5 w-5" /> {label}
+                </button>
+              ))}
+            </div>
+          </nav>
+        )}
       </div>
     </div>
   );
@@ -241,7 +268,7 @@ export function TaskList({
   banner?: React.ReactNode;
 }) {
   return (
-    <main className="flex-1 space-y-3 px-4 py-4">
+    <main className="flex-1 space-y-3 px-4 py-4 pb-24">
       {banner}
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-[16px] font-semibold">
