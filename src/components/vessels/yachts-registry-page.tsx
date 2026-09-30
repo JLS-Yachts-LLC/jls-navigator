@@ -25,6 +25,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { YachtAgentPicker } from "./YachtAgentPicker";
+import { VesselProvenance, SameNameBadge, VesselConfirmDetails, normVesselName } from "./VesselProvenance";
 
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -173,6 +174,25 @@ export function YachtsPage({
 
   const [view, setView] = useState<"list" | "cards" | "small">(loadView);
   const [yachts, setYachts] = useState<Yacht[]>([]);
+  // Vessels grouped by name, across the whole fleet — archived included, and
+  // whatever the filters show — so a record whose twin is hidden is still
+  // flagged. Two same-named cards with nothing else to tell them apart is how the
+  // wrong Amara got archived (SD-0039).
+  const sameName = useMemo(() => {
+    const byName = new Map<string, Yacht[]>();
+    for (const y of yachts) {
+      const k = normVesselName(y.vessel_name);
+      if (!k) continue;
+      const list = byName.get(k) ?? [];
+      list.push(y);
+      byName.set(k, list);
+    }
+    return (y: Yacht) => (byName.get(normVesselName(y.vessel_name)) ?? []).filter((o) => o.id !== y.id);
+  }, [yachts]);
+  const dupIds = useMemo(
+    () => new Set(yachts.filter((y) => sameName(y).length > 0).map((y) => y.id)),
+    [yachts, sameName],
+  );
   // Fleet-wide unpaid QBO balance per yacht (matched by yacht link or QBO customer).
   const [outstanding, setOutstanding] = useState<Record<string, number>>({});
   const [activityMap, setActivityMap] = useState<Record<string, string>>({});
@@ -777,11 +797,12 @@ export function YachtsPage({
             outstanding={outstanding}
             onMovementFilter={toggleMovementFilter}
             staffNames={staffNames}
+            dupIds={dupIds}
             onAgentChanged={(id, next) => setYachts((prev) => prev.map((y) =>
               y.id === id ? { ...y, agent_user_id: next } : y))}
           />
         ) : (
-          <CardsView rows={filtered} staleIds={new Set(filtered.filter(isStale).map((y) => y.id))} small={view === "small"} onArchive={canEditVessels ? setArchiveTarget : undefined} onOpenYacht={onOpenYacht} onMovementFilter={toggleMovementFilter} staffNames={staffNames} />
+          <CardsView rows={filtered} staleIds={new Set(filtered.filter(isStale).map((y) => y.id))} small={view === "small"} onArchive={canEditVessels ? setArchiveTarget : undefined} onOpenYacht={onOpenYacht} onMovementFilter={toggleMovementFilter} staffNames={staffNames} dupIds={dupIds} />
         )}
       </div>
 
@@ -795,6 +816,7 @@ export function YachtsPage({
               ) : (
                 <><strong>{String(archiveTarget?.vessel_name ?? "This yacht")}</strong> will be hidden from the active fleet — it won’t appear in the Yachts list, dashboard counts, or vessel pickers. Nothing is deleted, and you can restore it any time from the Archived view.</>
               )}
+              {archiveTarget && <VesselConfirmDetails y={archiveTarget} sameName={sameName(archiveTarget)} />}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -943,8 +965,10 @@ function trackUrl(y: Yacht): string {
 
 function ListView({
   rows, visible, sortKey, sortDir, onSort, quickEditId, setQuickEditId, updateStatus, onArchive, canEdit, onOpenYacht, outstanding = {}, onMovementFilter,
-  staffNames = {}, onAgentChanged,
+  staffNames = {}, onAgentChanged, dupIds,
 }: {
+  /** Vessels whose name another record also uses — shown with where each came from. */
+  dupIds?: Set<string>;
   rows: Yacht[];
   visible: YachtColumnKey[];
   outstanding?: Record<string, number>;
@@ -996,13 +1020,21 @@ function ListView({
                   {c.key === "vessel_name" ? (
                     <span className="inline-flex items-center gap-1">
                       <MovementBadge y={y} onFilter={onMovementFilter} size={13} />
-                      <YachtLink
-                        id={y.id}
-                        onOpen={onOpenYacht}
-                        className="font-medium text-foreground hover:text-primary"
-                      >
-                        {fmt(y[c.key])}
-                      </YachtLink>
+                      <span className="flex flex-col">
+                        <YachtLink
+                          id={y.id}
+                          onOpen={onOpenYacht}
+                          className="font-medium text-foreground hover:text-primary"
+                        >
+                          {fmt(y[c.key])}
+                        </YachtLink>
+                        {dupIds?.has(y.id) && (
+                          <span className="flex flex-wrap items-center gap-1.5">
+                            <VesselProvenance y={y} />
+                            <SameNameBadge />
+                          </span>
+                        )}
+                      </span>
                     </span>
                   ) : c.key === "status" ? (
                     quickEditId === y.id ? (
@@ -1114,7 +1146,7 @@ function ListView({
   );
 }
 
-function CardsView({ rows, staleIds, small, onArchive, onOpenYacht, onMovementFilter, staffNames = {} }: { rows: Yacht[]; staleIds: Set<string>; small?: boolean; onArchive?: (y: Yacht) => void; onOpenYacht?: (id: string) => void; onMovementFilter?: (m: Movement) => void; staffNames?: Record<string, string> }) {
+function CardsView({ rows, staleIds, small, onArchive, onOpenYacht, onMovementFilter, staffNames = {}, dupIds }: { rows: Yacht[]; staleIds: Set<string>; small?: boolean; onArchive?: (y: Yacht) => void; onOpenYacht?: (id: string) => void; onMovementFilter?: (m: Movement) => void; staffNames?: Record<string, string>; dupIds?: Set<string> }) {
   return (
     <div
       className={
@@ -1169,6 +1201,13 @@ function CardsView({ rows, staleIds, small, onArchive, onOpenYacht, onMovementFi
                 <StatusPill status={y.status as string | null} />
               </div>
               <div className="line-clamp-1 text-[11px] text-muted-foreground">{fmt(y.vessel_type)} · {fmt(y.flag)}</div>
+              {/* No room for it on every small card — only where it matters. */}
+              {dupIds?.has(y.id) && (
+                <div className="space-y-1">
+                  <VesselProvenance y={y} className="text-[10px]" />
+                  <SameNameBadge />
+                </div>
+              )}
             </div>
           ) : (
             <div className="space-y-2 p-4">
@@ -1180,6 +1219,10 @@ function CardsView({ rows, staleIds, small, onArchive, onOpenYacht, onMovementFi
                 <StatusPill status={y.status as string | null} />
               </div>
               <div className="text-xs text-muted-foreground">{fmt(y.vessel_type)} · {fmt(y.flag)}</div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <VesselProvenance y={y} />
+                {dupIds?.has(y.id) && <SameNameBadge />}
+              </div>
               <div className="grid grid-cols-2 gap-2 pt-2 text-xs">
                 <div><div className="text-muted-foreground">Berth</div><div className="font-medium">{fmt(y.berth)}</div></div>
                 <div><div className="text-muted-foreground">LOA</div><div className="font-medium tabular-nums">{fmt(y.length_overall_m)} m</div></div>

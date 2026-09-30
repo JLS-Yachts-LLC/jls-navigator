@@ -20,6 +20,7 @@ import { z } from "zod";
 import { YachtDocumentsCard } from "@/components/vessels/YachtDocumentsCard";
 import { YachtActivityLog } from "./YachtActivityLog";
 import { YachtAgentPicker } from "@/components/vessels/YachtAgentPicker";
+import { VesselProvenance, SameNameBadge, VesselConfirmDetails } from "@/components/vessels/VesselProvenance";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -161,12 +162,27 @@ export function YachtDetail({
   const [confirmArchive, setConfirmArchive] = useState(false);
   const [tab, setTab] = useState<"details" | "documents" | "crew" | "permits" | "visas" | "finance" | "activity">("details");
 
+  // Other records with this vessel's name, so the page — and above all the
+  // archive and delete confirmations — can say which one this is (SD-0039).
+  const [sameName, setSameName] = useState<Record<string, unknown>[]>([]);
+
   useEffect(() => { void load(); }, [id]);
   async function load() {
     setLoading(true);
     const { data, error } = await supabase.from("yachts").select("*").eq("id", id).maybeSingle();
     if (error) toast.error(error.message);
     setY(data as Record<string, unknown> | null);
+    const name = String((data as any)?.vessel_name ?? "").trim();
+    if (name) {
+      // Untyped: the generated types predate sharepoint_item_id.
+      const { data: others } = await (supabase as any).from("yachts")
+        .select("id, vessel_name, sharepoint_item_id, created_at, imo_no, eta, archive")
+        .ilike("vessel_name", name)
+        .neq("id", id as string);
+      setSameName((others ?? []) as Record<string, unknown>[]);
+    } else {
+      setSameName([]);
+    }
     setLoading(false);
   }
 
@@ -377,6 +393,10 @@ export function YachtDetail({
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               {String(y.vessel_type ?? "—")} · {String(y.flag ?? "—")} · IMO {String(y.imo_no ?? "—")}
             </div>
+            <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+              <VesselProvenance y={y} />
+              {sameName.length > 0 && <SameNameBadge />}
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -556,6 +576,7 @@ export function YachtDetail({
               <strong>{yachtName}</strong> will be hidden from the active fleet — it won’t appear in the Yachts
               list (Active view), the dashboard counts, or vessel pickers across the app. None of its data is
               deleted, and you can restore it any time from the Archived view.
+              <VesselConfirmDetails y={y} sameName={sameName} />
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -590,7 +611,11 @@ export function YachtDetail({
           <AlertDialogHeader>
             <AlertDialogTitle>Delete yacht?</AlertDialogTitle>
             <AlertDialogDescription>
-              <strong>{yachtName}</strong> and all its data will be permanently removed. This cannot be undone.
+              {/* It said "permanently removed. This cannot be undone." — but del()
+                  moves the vessel to the Recycle Bin, restorable for 90 days. */}
+              <strong>{yachtName}</strong> will be removed and moved to the Recycle Bin, where it can be
+              restored for 90 days.
+              <VesselConfirmDetails y={y} sameName={sameName} />
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
