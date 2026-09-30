@@ -34,7 +34,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { YACHT_COLUMNS } from "@/lib/yacht-fields";
-import { ArrowLeft, Save, Upload } from "lucide-react";
+import { useAgencyTeam } from "@/components/vessels/YachtAgentPicker";
+import { ArrowLeft, Save, Upload, UserCog } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_app/yachts/new")({
@@ -79,6 +80,11 @@ function NewYacht() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Chosen here rather than afterwards: whoever adds a vessel usually knows who
+  // will look after it, and it was otherwise a second step on another page
+  // that nobody found (SD-0036).
+  const agencyTeam = useAgencyTeam();
+  const [agentUserId, setAgentUserId] = useState("");
 
   function set(key: string, val: string) { setForm((f) => ({ ...f, [key]: val })); }
 
@@ -110,6 +116,10 @@ function NewYacht() {
         if (v === "" || v === undefined) continue;
         if (NUMERIC_KEYS.has(k)) payload[k] = Number(v);
         else payload[k] = v;
+      }
+      if (agentUserId) {
+        payload.agent_user_id = agentUserId;
+        payload.agent_assigned_at = new Date().toISOString();
       }
 
       const { data, error } = await supabase.from("yachts").insert([payload as never]).select("id").single();
@@ -173,6 +183,25 @@ function NewYacht() {
                 <input type="file" accept="image/*" className="hidden" onChange={pickImage} />
               </label>
             </div>
+          </section>
+
+          {/* Who looks after this vessel's paperwork */}
+          <section className="rounded-lg border border-border bg-card p-5">
+            <h2 className="font-display text-sm font-semibold mb-1 text-muted-foreground uppercase tracking-wider inline-flex items-center gap-2">
+              <UserCog className="h-4 w-4" /> Responsible Agent
+            </h2>
+            <p className="mb-3 text-xs text-muted-foreground">
+              The Agency team member accountable for this vessel's permits and documents. You can change
+              it later on the vessel's page.
+            </p>
+            <select
+              value={agentUserId}
+              onChange={(e) => setAgentUserId(e.target.value)}
+              className="h-9 w-full max-w-sm rounded-md border border-input bg-background px-2 text-sm"
+            >
+              <option value="">Unassigned</option>
+              {agencyTeam.map((s) => <option key={s.userId} value={s.userId}>{s.label}</option>)}
+            </select>
           </section>
 
           {SECTIONS.map((s) => (
