@@ -40,11 +40,35 @@ const TICKET_REF = /\b[A-Z]{2,5}-\d{2,6}\b/g
  * match alone meant their reply — the record of the work actually being done —
  * matched nothing and was dropped.
  */
-async function matchTicket(db: any, subject: string): Promise<{ id: string; ticket_no: string; status: string } | null> {
+async function matchTicket(db: any, subject: string, conversationId?: string): Promise<{ id: string; ticket_no: string; status: string } | null> {
   const refs = [...new Set((subject.match(TICKET_REF) ?? []).map(r => r.toUpperCase()))]
   for (const ref of refs) {
     const { data } = await db.from('it_tickets')
       .select('id, ticket_no, status').ilike('ticket_no', ref).maybeSingle()
+    if (data) return data
+  }
+
+  // No reference of ours — but the mail may still belong to a ticket that an
+  // earlier email in the same thread raised. A vendor thread carries the vendor's
+  // own reference ("[#444627] … VSAT Offline"), and on 30 Sep 2026 three mails in
+  // one such thread became three tickets, each mirrored to New Horizon.
+  //  1. Same Outlook conversation as the mail that raised a ticket.
+  if (conversationId) {
+    const { data } = await db.from('it_tickets')
+      .select('id, ticket_no, status').eq('mail_conversation_id', conversationId)
+      .order('created_at', { ascending: true }).limit(1).maybeSingle()
+    if (data) return data
+  }
+  //  2. Same subject (Re:/FW: stripped) as a ticket raised from email in the last
+  //     30 days — covers tickets from before the conversation id was stored, and
+  //     a correspondent who starts a fresh mail with the same subject.
+  const title = cleanSubject(subject).slice(0, 200)
+  if (title.length >= 8) {
+    const since = new Date(Date.now() - 30 * 864e5).toISOString()
+    const { data } = await db.from('it_tickets')
+      .select('id, ticket_no, status').ilike('subject', title)
+      .not('requester_email', 'is', null).gte('created_at', since)
+      .order('created_at', { ascending: true }).limit(1).maybeSingle()
     if (data) return data
   }
   return null
@@ -212,6 +236,8 @@ export function extractForwardedText(raw: string): string {
 type GraphMessage = {
   id: string
   subject?: string
+  /** Outlook's thread id — every reply and forward in one conversation shares it. */
+  conversationId?: string
   bodyPreview?: string
   receivedDateTime?: string
   from?: { emailAddress?: { address?: string; name?: string } }
@@ -253,6 +279,9 @@ function shouldNotRaiseTicket(from: string, subject: string, headers: Record<str
   if (from.trim().toLowerCase() === NH_SUPPORT_MAILBOX.trim().toLowerCase()) {
     return 'new_horizon_no_ref'
   }
+  // Nobody is asking for help from a no-reply address. Microsoft Defender's
+  // vulnerability digests (defender-noreply@) raised two tickets on 30 Sep 2026.
+  if (/^(no-?reply|do-?not-?reply|donotreply|mailer-daemon|postmaster|[\w.-]*-noreply)@/i.test(from.trim())) return 'automated'
   if (AUTOMATED_SUBJECT.some(re => re.test(subject))) return 'automated'
   for (const name of AUTO_HEADERS) {
     const v = (headers[name] ?? '').toLowerCase()
@@ -333,6 +362,7 @@ async function raiseTicketFromMail(
     status: 'open',
     requested_by: senderName,
     requester_email: from,
+    mail_conversation_id: msg.conversationId ?? null,
   }]).select('id, ticket_no').single()
   if (error) throw new Error(error.message)
   if (!t) return null
@@ -376,7 +406,7 @@ export async function pollTicketMailbox(): Promise<InboundResult | null> {
   const since = new Date(Date.now() - 7 * 864e5).toISOString()
   const url =
     `https://graph.microsoft.com/v1.0/users/${mailbox}/mailFolders/inbox/messages` +
-    `?$top=25&$orderby=receivedDateTime desc&$select=id,subject,from,receivedDateTime,body` +
+    `?$top=25&$orderby=receivedDateTime desc&$select=id,subject,from,receivedDateTime,body,conversationId` +
     `&$filter=${encodeURIComponent(`receivedDateTime ge ${since}`)}`
 
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
@@ -415,7 +445,7 @@ export async function pollTicketMailbox(): Promise<InboundResult | null> {
             .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
         : String(msg.body?.content ?? '')
 
-      const ticket = await matchTicket(db, subject)
+      const ticket = await matchTicket(db, subject, msg.conversationId)
       if (!ticket) {
         // No ticket of ours is named — this is something new arriving in the
         // mailbox. Raise it, unless it is the kind of mail nobody works.
