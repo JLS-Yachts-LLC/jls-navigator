@@ -22,6 +22,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { errorMessage } from "@/lib/error-message";
+import { SignedImage } from "@/components/ui/signed-file";
 import { Field, inputCls, stamp } from "./orbit2-fields";
 import type { Orbit2Boat, Orbit2BoatInventoryItem } from "./orbit2-data";
 
@@ -346,8 +347,11 @@ function ChecklistRow({ item, state, inventory, match, busy, onToggle, onLink }:
   match: { rows: Orbit2BoatInventoryItem[]; manual: boolean }; busy: boolean; onToggle: () => void; onLink: (id: string | null) => void;
 }) {
   const [picking, setPicking] = useState(false);
+  const [lightbox, setLightbox] = useState<string | null>(null);
   const on = !!state?.checked;
   const spec = [item.qty != null ? `${item.qty}${item.unit ? ` ${item.unit}` : ""}` : null].filter(Boolean).join("");
+  // The matched inventory rows' photos — what the boat actually carries, at a glance.
+  const photos = match.rows.filter((r) => r.image_ref);
 
   return (
     <li className={cn("flex items-start gap-3 px-5 py-2.5", on && "bg-emerald-500/[0.04]")}>
@@ -390,6 +394,24 @@ function ChecklistRow({ item, state, inventory, match, busy, onToggle, onLink }:
           )}
         </div>
       </div>
+      {photos.length > 0 && (
+        <div className="flex shrink-0 gap-1.5">
+          {photos.map((r) => (
+            <button key={r.id} type="button" onClick={() => setLightbox(r.image_ref)} title={`${r.item} — click to enlarge`}
+              className="h-12 w-12 overflow-hidden rounded-md border border-border bg-muted/20 transition hover:border-primary/60">
+              <SignedImage stored={r.image_ref!} alt={r.item} className="h-full w-full object-cover" />
+            </button>
+          ))}
+        </div>
+      )}
+      {lightbox && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-6" onMouseDown={(e) => { e.stopPropagation(); setLightbox(null); }}>
+          <button type="button" onClick={() => setLightbox(null)} className="absolute right-5 top-5 rounded-full bg-white/10 p-2 text-white hover:bg-white/20">
+            <X className="h-5 w-5" />
+          </button>
+          <SignedImage stored={lightbox} alt="" className="max-h-full max-w-full rounded-lg object-contain" />
+        </div>
+      )}
     </li>
   );
 }
