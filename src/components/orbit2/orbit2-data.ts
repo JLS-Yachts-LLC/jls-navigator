@@ -7,7 +7,7 @@
  * is on shift. Everything is counted from records entered on these pages — with
  * nothing entered the dashboard reads zero rather than inventing a number.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchAllRows } from "@/lib/fetch-all";
 import {
@@ -220,9 +220,14 @@ export function useOrbit2() {
   const [boatInventory, setBoatInventory] = useState<Orbit2BoatInventoryItem[]>([]);
   const [schedule, setSchedule] = useState<Orbit2ScheduleEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  // `loading` is only true before the first load. A refresh after a save keeps
+  // the current screen on view — otherwise the page swaps to a spinner, which
+  // unmounts whatever dialog asked for the refresh (the Inventory "Save & Add
+  // Another" form used to vanish this way).
+  const loadedOnce = useRef(false);
 
   const load = useCallback(async () => {
-    setLoading(true);
+    if (!loadedOnce.current) setLoading(true);
     // In parallel: seven independent tables, and the page cannot draw until it
     // has all of them, so waiting on them one at a time would just be slower.
     const [p, n, b, bt, bd, bi, s] = await Promise.all([
@@ -241,6 +246,7 @@ export function useOrbit2() {
     setBoatDocuments((bd.data ?? []) as Orbit2BoatDocument[]);
     setBoatInventory((bi.data ?? []) as Orbit2BoatInventoryItem[]);
     setSchedule((s.data ?? []) as Orbit2ScheduleEntry[]);
+    loadedOnce.current = true;
     setLoading(false);
   }, []);
 
