@@ -24,6 +24,8 @@ export type DetectedRow = {
   page: number | null;
   x: number | null;
   y: number | null;
+  /** On Yes/No forms: where the No box is on the same line, for the ✗ of an item not ticked. */
+  noX?: number | null;
 };
 
 export type DetectedForm = {
@@ -130,14 +132,21 @@ const HEADER_LABELS: [RegExp, string][] = [
 const normLabel = (s: string) => s.toLowerCase().replace(/[’'.:]/g, "").replace(/\s+/g, " ").trim();
 
 /** "Name of boat", "Inspection date"… above the first table: where each value is written. */
-function detectHeaderFields(lines: Line[], width: number): FormHeaderField[] {
-  const found: { key: string; label: string; x: number; r: number; y: number; next: number | null }[] = [];
+function detectHeaderFields(lines: Line[], width: number, page = 1): FormHeaderField[] {
+  const found: { key: string; label: string; x: number; r: number; y: number; next: number | null; colon: boolean }[] = [];
   for (const line of lines) {
     line.segs.forEach((sg, i) => {
       const n = normLabel(sg.s);
       const hit = HEADER_LABELS.find(([re]) => re.test(n));
-      if (!hit || found.some((f) => f.key === hit[1])) return;
-      found.push({ key: hit[1], label: sg.s.trim().replace(/:$/, ""), x: sg.x, r: sg.x + sg.w, y: line.y, next: line.segs[i + 1]?.x ?? null });
+      if (!hit) return;
+      // "Date:" is a field to fill in; a bare "Date" is more often a table column heading.
+      const colon = /:\s*$/.test(sg.s) || /^\s*:/.test(line.segs[i + 1]?.s ?? "");
+      const prev = found.findIndex((f) => f.key === hit[1]);
+      if (prev >= 0 && (found[prev].colon || !colon)) return;
+      // Skip punctuation printed in the box ("  /  /") when working out how much room there is.
+      const next = line.segs.slice(i + 1).find((s) => /[A-Za-z0-9]{2,}/.test(s.s))?.x ?? null;
+      const entry = { key: hit[1], label: sg.s.trim().replace(/:$/, ""), x: sg.x, r: sg.x + sg.w, y: line.y, next, colon };
+      if (prev >= 0) found[prev] = entry; else found.push(entry);
     });
   }
   // Labels stacked in one column share a value column: just right of the widest of them.
@@ -145,8 +154,134 @@ function detectHeaderFields(lines: Line[], width: number): FormHeaderField[] {
     const column = found.filter((g) => Math.abs(g.x - f.x) <= 6);
     const x = Math.round(Math.max(...column.map((g) => g.r)) + 6);
     const maxWidth = Math.max(60, Math.round((f.next != null && f.next > x ? f.next - 8 : width - 36) - x));
-    return { key: f.key, label: f.label, page: 1, x, y: f.y, maxWidth };
+    return { key: f.key, label: f.label, page, x, y: f.y, maxWidth };
   });
+}
+
+const LATIN = /[A-Za-z]/;
+/**
+ * The title: in the top third of the first page, the tallest line of real words — not a
+ * line of Arabic or symbols the UI cannot draw, a "Label:" or a column heading. A
+ * "(Inspection Checklist)" line straight under it is kept with it.
+ */
+function pickTitle(lines: Line[], pageHeight = 792): string | null {
+  const letters = (l: Line) => (joinSegs(l.segs.filter((s) => LATIN.test(s.s))).match(/[A-Za-z]/g) ?? []).length;
+  const candidates = lines.filter((l) => l.y > pageHeight * 0.66 && letters(l) >= 6 && !/:\s*$/.test(joinSegs(l.segs))
+    // Not a column heading, page number or document code ("RTS-TEC-INS-23", "Ver.# : 08").
+    && !l.segs.every((s) => !LATIN.test(s.s) || /^(no\.?|yes|ref|item|check|territorial|inland|waters?|page|date|owner|ver)/i.test(s.s.trim())
+      || /^[A-Z0-9][A-Z0-9-]*\d/.test(s.s.trim())));
+  // The highest such line: titles head the page, above the header block and the table.
+  const best = [...candidates].sort((a, b) => b.y - a.y)[0];
+  if (!best) return null;
+  const text = (l: Line) => joinSegs(l.segs.filter((s) => LATIN.test(s.s) && !/^[A-Z0-9][A-Z0-9-]*\d/.test(s.s.trim()))).replace(/\s*ref:.*$/i, "").trim();
+  const below = lines.find((l) => l.y < best.y && best.y - l.y <= 20 && l.segs.some((s) => /checklist/i.test(s.s)) && !/checklist/i.test(text(best)));
+  const sub = below ? joinSegs(below.segs.filter((s) => /checklist/i.test(s.s))) : "";
+  return [text(best), sub].filter(Boolean).join(" ") || null;
+}
+
+// ── Forms with a Yes box and a No box on every row ───────────────────────────
+//
+// The DMA inspection checklists have no Check column: each row carries printed
+// "☐ ☐" boxes under "No" and "Yes", the English item text beside them, the
+// Arabic above it and the item number on the right. Sections are the titles on
+// the "No | Yes | Territorial Waters | Inland Waters" header rows.
+
+const BOX = /^[□☐❑❒▢◻]$/;
+const HEADER_WORD = /^(no\.?|yes|y|n|n\/a|na|territorial|inland|waters?|requirements?|items?|description|ref(erence)?|check(ed)?|remarks?|comments?|ok)$/i;
+
+function detectBoxRows(pages: { width: number; height: number; lines: Line[] }[]): { rows: DetectedRow[]; headerFields: FormHeaderField[] } | null {
+  // Page furniture — the running header and footer, the same words at the same height on
+  // every page — is not content. A row of empty boxes looks the same everywhere, so never counts.
+  const key = (l: Line) => `${joinSegs(l.segs)}@${Math.round(l.y / 3)}`;
+  const seen = new Map<string, number>();
+  for (const p of pages) for (const k of new Set(p.lines.map(key))) seen.set(k, (seen.get(k) ?? 0) + 1);
+  const repeated = (l: Line) => pages.length > 1 && !l.segs.some((s) => BOX.test(s.s.trim())) && (seen.get(key(l)) ?? 0) > 1;
+
+  // The box columns, from where the boxes actually are.
+  const xs: number[] = [];
+  for (const p of pages) for (const l of p.lines) for (const s of l.segs) if (BOX.test(s.s.trim())) xs.push(s.x);
+  if (xs.length < 6) return null;
+  const clusters: { x: number; n: number }[] = [];
+  for (const x of xs) {
+    const c = clusters.find((k) => Math.abs(k.x - x) <= 4);
+    if (c) { c.x = (c.x * c.n + x) / (c.n + 1); c.n += 1; } else clusters.push({ x, n: 1 });
+  }
+  const cols = clusters.filter((c) => c.n >= Math.max(3, xs.length * 0.15)).sort((a, b) => a.x - b.x);
+  if (!cols.length) return null;
+
+  // Which column is Yes: the one under a "Yes" heading; otherwise the first.
+  const centres = (re: RegExp) => pages.flatMap((p) => p.lines.flatMap((l) => l.segs.filter((s) => re.test(s.s.trim())).map((s) => s.x + s.w / 2)));
+  const median = (v: number[]) => [...v].sort((a, b) => a - b)[Math.floor(v.length / 2)];
+  const nearest = (cands: { x: number }[], target: number) => cands.reduce((b, c) => (Math.abs(c.x + 5 - target) < Math.abs(b.x + 5 - target) ? c : b));
+  const yesHeads = centres(/^(yes|نعم)$/i), noHeads = centres(/^(no|لا)$/i);
+  const yesX = (yesHeads.length ? nearest(cols, median(yesHeads)) : cols[0]).x;
+  const others = cols.filter((c) => c.x !== yesX);
+  const noX = others.length ? (noHeads.length ? nearest(others, median(noHeads)) : others[0]).x : null;
+  const textLeft = Math.max(...cols.map((c) => c.x)) + 30;
+  const isYesBox = (s: Seg) => BOX.test(s.s.trim()) && Math.abs(s.x - yesX) <= 4;
+  /** The English words on a line, right of the boxes: no Arabic, no item numbers, no tick marks. */
+  const words = (l: Line) => joinSegs(l.segs.filter((s) => s.x >= textLeft && LATIN.test(s.s) && !HEADER_WORD.test(s.s.trim())));
+
+  const rows: DetectedRow[] = [];
+  let carry: DetectedRow | null = null; // a row whose words fell onto the next page
+  for (let p = 0; p < pages.length; p++) {
+    const lines = pages[p].lines.filter((l) => l.y > 20 && !repeated(l));
+    const used = new Set<Line>();
+    const boxLines = lines.filter((l) => l.segs.some(isYesBox));
+    if (carry && boxLines.length) {
+      const top = lines.filter((l) => l.y > boxLines[0].y && words(l)).sort((a, b) => a.y - b.y)[0];
+      if (top) { carry.text = words(top); used.add(top); }
+    }
+    carry = null;
+
+    type Ev = { y: number; row: DetectedRow };
+    const events: Ev[] = [];
+    // Section titles sit on the Yes / No header rows.
+    for (const l of lines) {
+      if (!l.segs.some((s) => /^(yes|نعم)$/i.test(s.s.trim()))) continue;
+      const band = lines.filter((b) => Math.abs(b.y - l.y) <= 8);
+      band.forEach((b) => used.add(b));
+      const title = band.sort((a, b) => b.y - a.y).map(words).filter(Boolean).join(" ").trim();
+      if (title && !events.some((e) => e.row.kind === "section" && e.row.text === title)) {
+        events.push({ y: l.y + 0.5, row: { kind: "section", text: title, ref: "", page: null, x: null, y: null } });
+      }
+    }
+    for (const bl of boxLines) {
+      const yes = bl.segs.find(isYesBox)!;
+      const no = noX != null ? bl.segs.find((s) => BOX.test(s.s.trim()) && Math.abs(s.x - noX) <= 4) : undefined;
+      // The item's words: the nearest line of English level with or just below the boxes.
+      const cand = lines
+        .filter((l) => !used.has(l) && l.y <= bl.y + 4 && l.y > bl.y - 16 && words(l))
+        .sort((a, b) => Math.abs(a.y - bl.y) - Math.abs(b.y - bl.y))[0];
+      if (cand) used.add(cand);
+      const row: DetectedRow = {
+        kind: "item", text: cand ? words(cand) : "", ref: "", page: p + 1,
+        x: Math.round(yes.x + 1), y: bl.y, noX: no ? Math.round(no.x + 1) : null,
+      };
+      events.push({ y: bl.y, row });
+      if (!cand && bl === boxLines[boxLines.length - 1]) carry = row;
+    }
+    events.sort((a, b) => b.y - a.y).forEach((e) => rows.push(e.row));
+  }
+  rows.forEach((r) => { if (r.kind === "item" && !r.text) r.text = "(item text not found — type it in)"; });
+
+  // Header fields can be anywhere on these forms — the inspector's sign-off is on the last page.
+  const headerFields: FormHeaderField[] = [];
+  pages.forEach((pg, i) => {
+    for (const f of detectHeaderFields(pg.lines.filter((l) => !repeated(l)), pg.width, i + 1)) {
+      if (!headerFields.some((h) => h.key === f.key)) headerFields.push(f);
+    }
+  });
+  // A sign-off "Date:" beside the inspector's name is the inspection date, not a table column.
+  const insp = headerFields.find((h) => h.key === "inspectorName");
+  const date = headerFields.find((h) => h.key === "inspectionDate");
+  if (insp && date && (date.page !== insp.page || Math.abs(date.y - insp.y) > 4)) {
+    const pg = pages[insp.page - 1];
+    const line = pg?.lines.find((l) => Math.abs(l.y - insp.y) <= 2);
+    const seg = line?.segs.find((s) => /^date\s*:?$/i.test(s.s.trim()));
+    if (seg) Object.assign(date, { page: insp.page, x: Math.round(seg.x + seg.w + 6), y: insp.y, maxWidth: Math.max(60, Math.round(pg.width - 36 - (seg.x + seg.w + 6))) });
+  }
+  return { rows, headerFields };
 }
 
 // ── Walking the tables ───────────────────────────────────────────────────────
@@ -177,11 +312,8 @@ export function detectFromPages(pages: { width: number; height: number; lines: L
       if (!band.cols) {
         // Above the first table on the first page with one: the form's header block.
         if (p === 0 || !headerFields.length) {
-          headerFields = headerFields.length ? headerFields : detectHeaderFields(band.lines, width);
-          if (!title) {
-            const tallest = [...band.lines].sort((a, b) => Math.max(...b.segs.map((s) => s.h)) - Math.max(...a.segs.map((s) => s.h)))[0];
-            title = tallest ? joinSegs(tallest.segs).replace(/\s*ref:.*$/i, "").trim() || null : null;
-          }
+          headerFields = headerFields.length ? headerFields : detectHeaderFields(band.lines, width, p + 1);
+          if (!title) title = pickTitle(band.lines, pages[p].height);
         }
         continue;
       }
@@ -280,7 +412,23 @@ export function detectFromPages(pages: { width: number; height: number; lines: L
     }
   }
 
-  const items = rows.filter((r) => r.kind === "item").length;
+  // No Check column found? The form may tick a Yes box on every row instead.
+  let items = rows.filter((r) => r.kind === "item").length;
+  if (items < 3) {
+    const box = detectBoxRows(pages);
+    const boxItems = box?.rows.filter((r) => r.kind === "item").length ?? 0;
+    if (box && boxItems > items) {
+      rows.splice(0, rows.length, ...box.rows);
+      if (box.headerFields.length) headerFields = box.headerFields;
+      title = pickTitle(pages[0].lines, pages[0].height) ?? title;
+      items = boxItems;
+      warnings.push("Read as a Yes / No form: ticks go in the Yes box, and \"mark items not ticked\" puts the ✗ in the No box.");
+      if (box.rows.some((r) => r.kind === "item" && r.text.startsWith("(item text not found"))) {
+        warnings.push("Some rows' wording could not be read — they are marked \"(item text not found)\"; type them in.");
+      }
+    }
+  }
+  if ((!title || /:\s*$/.test(title)) && pages[0]) title = pickTitle(pages[0].lines, pages[0].height);
   if (!items) warnings.push("No checklist table was found — the PDF may be a scan (no text layer) or have no \"Check\" column. Add the items by hand and click where each tick goes.");
   if (!headerFields.length) warnings.push("No header fields (boat name, date, inspector) were recognised — add them by clicking on the page.");
   return { pageCount: pages.length, pageSizes: pages.map(({ width, height }) => ({ width, height })), title, rows, headerFields, warnings };

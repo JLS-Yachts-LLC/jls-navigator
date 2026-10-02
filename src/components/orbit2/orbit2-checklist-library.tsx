@@ -51,7 +51,7 @@ const formUse = (f: ChecklistFormDef) =>
 
 /** Download the form with every box ticked and every header field labelled — to check the layout on paper. */
 async function testFill(f: ChecklistFormDef) {
-  const { data } = await sb.from("orbit2_checklist_templates").select("pdf_page, pdf_x, pdf_y").eq("form_id", f.id).eq("active", true);
+  const { data } = await sb.from("orbit2_checklist_templates").select("pdf_page, pdf_x, pdf_y, pdf_no_x").eq("form_id", f.id).eq("active", true);
   const values: Record<string, string> = {};
   for (const h of f.header_fields ?? []) values[h.key === "custom" ? `custom:${h.label}` : h.key] = `[${h.label}]`;
   const bytes = await fillChecklistForm(f, values, ((data ?? []) as any[]).map((r) => ({ ...r, checked: true })));

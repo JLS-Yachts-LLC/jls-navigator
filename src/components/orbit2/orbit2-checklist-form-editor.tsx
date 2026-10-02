@@ -28,7 +28,11 @@ import { inputCls } from "./orbit2-fields";
 
 const sb = supabase as any;
 
-type Row = { uid: string; id?: string; kind: "item" | "section"; text: string; ref: string; page: number | null; x: number | null; y: number | null };
+type Row = {
+  uid: string; id?: string; kind: "item" | "section"; text: string; ref: string; page: number | null; x: number | null; y: number | null;
+  /** Yes/No forms: the No box on the same line (red marker). */
+  noX?: number | null;
+};
 type HField = FormHeaderField & { uid: string };
 type Use = "additional" | "dma" | "fma";
 type Selected = { type: "row" | "field"; uid: string } | null;
@@ -91,7 +95,7 @@ export function ChecklistFormEditor({ input, onClose, onSaved }: {
               section = t.section ?? null;
               if (section) out.push({ uid: uid(), kind: "section", text: section, ref: "", page: null, x: null, y: null });
             }
-            out.push({ uid: uid(), id: t.id, kind: "item", text: t.item, ref: t.ref ?? "", page: t.pdf_page, x: t.pdf_x != null ? Number(t.pdf_x) : null, y: t.pdf_y != null ? Number(t.pdf_y) : null });
+            out.push({ uid: uid(), id: t.id, kind: "item", text: t.item, ref: t.ref ?? "", page: t.pdf_page, x: t.pdf_x != null ? Number(t.pdf_x) : null, y: t.pdf_y != null ? Number(t.pdf_y) : null, noX: t.pdf_no_x != null ? Number(t.pdf_no_x) : null });
           }
           setRows(out);
           loadedIds.current = new Set(out.filter((r) => r.id).map((r) => r.id!));
@@ -177,7 +181,12 @@ export function ChecklistFormEditor({ input, onClose, onSaved }: {
     const rect = e.currentTarget.getBoundingClientRect();
     const px = (e.clientX - rect.left) / scale;
     const py = size.height - (e.clientY - rect.top) / scale;
-    if (selected.type === "row") patchRow(selected.uid, { page: pageIdx + 1, x: Math.round(px - TICK / 2), y: Math.round(py - TICK / 2 + 1) });
+    if (selected.type === "row") {
+      const r = rows.find((x) => x.uid === selected.uid);
+      const nx = Math.round(px - TICK / 2);
+      const noX = r?.noX != null && r.x != null ? r.noX + (nx - r.x) : r?.noX ?? null;
+      patchRow(selected.uid, { page: pageIdx + 1, x: nx, y: Math.round(py - TICK / 2 + 1), noX });
+    }
     else patchField(selected.uid, { page: pageIdx + 1, x: Math.round(px), y: Math.round(py - 3) });
     setPlacing(false);
   }
@@ -195,7 +204,7 @@ export function ChecklistFormEditor({ input, onClose, onSaved }: {
       const values: Record<string, string> = {};
       for (const f of fields) values[f.key === "custom" ? `custom:${f.label}` : f.key] = `[${f.label}]`;
       const out = await fillChecklistForm({ pdf_ref: null, header_fields: fields, name: name || "Checklist" }, values,
-        items.map((r) => ({ pdf_page: r.page, pdf_x: r.x, pdf_y: r.y, checked: true })), { pdfBytes: bytes });
+        items.map((r) => ({ pdf_page: r.page, pdf_x: r.x, pdf_y: r.y, pdf_no_x: r.noX ?? null, checked: true })), { pdfBytes: bytes });
       const url = URL.createObjectURL(new Blob([out as BlobPart], { type: "application/pdf" }));
       window.open(url, "_blank");
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
@@ -242,7 +251,7 @@ export function ChecklistFormEditor({ input, onClose, onSaved }: {
         order += 1;
         const values = {
           form_id: formId, regime, category: existing?.category ?? null, section, item: r.text.trim() || "(untitled)", ref: r.ref.trim() || null,
-          pdf_page: r.page, pdf_x: r.x, pdf_y: r.y, sort_order: order, active: true,
+          pdf_page: r.page, pdf_x: r.x, pdf_y: r.y, pdf_no_x: r.noX ?? null, sort_order: order, active: true,
         };
         if (r.id) {
           keepIds.add(r.id);
@@ -321,7 +330,7 @@ export function ChecklistFormEditor({ input, onClose, onSaved }: {
                   <button onClick={() => setPlacing(false)} className="ml-1 rounded-full bg-primary-foreground/20 px-1.5">Cancel</button>
                 </span>
               ) : (
-                <span className="text-muted-foreground">Green ✓ = item ticks · blue = header fields. Select a row, then <b>Place</b> to move it.</span>
+                <span className="text-muted-foreground">Green ✓ = item ticks{rows.some((r) => r.noX != null) ? " · red = No box" : ""} · blue = header fields. Select a row, then <b>Place</b> to move it.</span>
               )}
               <div className="flex items-center gap-1">
                 <button onClick={() => setZoom((z) => Math.max(0.6, z - 0.2))} className="rounded p-1 hover:bg-accent"><Minus className="h-4 w-4" /></button>
@@ -342,6 +351,11 @@ export function ChecklistFormEditor({ input, onClose, onSaved }: {
                         style={{ left: r.x! * scale, top: (size.height - r.y! - TICK + 1) * scale, width: TICK * scale, height: TICK * scale }}>
                         {selected?.uid === r.uid ? "✓" : itemNo.get(r.uid)}
                       </button>
+                    ))}
+                    {rows.filter((r) => r.kind === "item" && r.page === pageIdx + 1 && r.noX != null && r.y != null).map((r) => (
+                      <span key={`${r.uid}-no`} title={`No box — ${r.text}`}
+                        className="pointer-events-none absolute rounded-sm border border-red-500 bg-red-500/25"
+                        style={{ left: r.noX! * scale, top: (size.height - r.y! - TICK + 1) * scale, width: TICK * scale, height: TICK * scale }} />
                     ))}
                     {fields.filter((f) => f.page === pageIdx + 1).map((f) => (
                       <button key={f.uid} type="button"

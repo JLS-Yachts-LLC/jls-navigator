@@ -58,6 +58,8 @@ export type ChecklistTemplateItem = {
   section: string | null; item: string; qty: number | null; unit: string | null; ref: string | null;
   /** Where this item's Check cell is on the form's own PDF (page, PDF points). */
   pdf_page: number | null; pdf_x: number | null; pdf_y: number | null;
+  /** Yes/No forms: the No box on the same line. */
+  pdf_no_x: number | null;
   sort_order: number; active: boolean;
 };
 export type BoatChecklistState = {
@@ -561,7 +563,7 @@ function FormFillDialog({ boat, form, regime, items, stateFor, inventory, author
     try {
       const filled = { ...values, ...(values.inspectionDate ? { inspectionDate: fmtDate(values.inspectionDate) } : {}) };
       const bytes = await fillChecklistForm(form, filled,
-        items.map((i) => ({ pdf_page: i.pdf_page, pdf_x: i.pdf_x, pdf_y: i.pdf_y, checked: !!stateFor.get(i.id)?.checked })),
+        items.map((i) => ({ pdf_page: i.pdf_page, pdf_x: i.pdf_x, pdf_y: i.pdf_y, pdf_no_x: i.pdf_no_x, checked: !!stateFor.get(i.id)?.checked })),
         { crossUnchecked: opts.crossUnchecked, appendix: opts.notes ? appendix : [], boatName: values.boatName ?? boat.name,
           inspectionDate: fmtDate(dateValue), inspectorName: values.inspectorName ?? authorName });
       const name = `${form.name} — ${boat.name} — ${dateValue}.pdf`.replace(/[\\/:*?"<>|]+/g, "-");
@@ -618,7 +620,7 @@ function FormFillDialog({ boat, form, regime, items, stateFor, inventory, author
           )}
           <label className="flex items-center gap-2 text-[14px]">
             <input type="checkbox" className="h-4 w-4 accent-primary" checked={opts.crossUnchecked} onChange={(e) => setOpts((o) => ({ ...o, crossUnchecked: e.target.checked }))} />
-            Mark items not ticked with an ✗ (otherwise left blank)
+            Mark items not ticked with an ✗{items.some((i) => i.pdf_no_x != null) ? " in the No box" : ""} (otherwise left blank)
           </label>
           <label className="flex items-center gap-2 text-[14px]">
             <input type="checkbox" className="h-4 w-4 accent-primary" checked={opts.notes} onChange={(e) => setOpts((o) => ({ ...o, notes: e.target.checked }))} disabled={appendix.length === 0} />

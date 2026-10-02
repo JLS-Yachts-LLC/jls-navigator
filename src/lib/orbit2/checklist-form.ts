@@ -52,7 +52,11 @@ export const HEADER_FIELD_KEYS: { key: string; label: string }[] = [
   { key: "custom", label: "Other (typed when generating)" },
 ];
 
-export type TickItem = { pdf_page: number | null; pdf_x: number | null; pdf_y: number | null; checked: boolean };
+export type TickItem = {
+  pdf_page: number | null; pdf_x: number | null; pdf_y: number | null; checked: boolean;
+  /** Yes/No forms: the No box on the same line — where an unticked item's ✗ goes. */
+  pdf_no_x?: number | null;
+};
 
 /** One line of the appended notes page: what was found, said and photographed. */
 export type AppendixRow = {
@@ -113,7 +117,8 @@ export async function fillChecklistForm(
       p.drawText("✓", { x: Number(it.pdf_x), y: Number(it.pdf_y) - 1, size: 11, font: tick, color: INK });
       drawn += 1;
     } else if (opts.crossUnchecked) {
-      p.drawText("✗", { x: Number(it.pdf_x) + 1, y: Number(it.pdf_y) - 1, size: 9, font: tick, color: rgb(0.7, 0.15, 0.1) });
+      const x = it.pdf_no_x != null ? Number(it.pdf_no_x) : Number(it.pdf_x) + 1;
+      p.drawText("✗", { x, y: Number(it.pdf_y) - 1, size: 9, font: tick, color: rgb(0.7, 0.15, 0.1) });
     }
   }
 
