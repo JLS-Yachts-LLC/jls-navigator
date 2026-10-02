@@ -17,7 +17,7 @@ import { SignedImage, SignedAnchor } from "@/components/ui/signed-file";
 import { storageRef } from "@/lib/signed-url";
 import { guardUploadFile, uploadContentType } from "@/lib/upload-guard";
 import {
-  BOAT_TASK_STATUSES, BOAT_JOB_CATEGORIES, boatJobCategoryToKind, kindToBoatJobCategory,
+  BOAT_TASK_STATUSES, BOAT_JOB_CATEGORIES, boatJobCategoryToKind, kindToBoatJobCategory, checklistCategoryFor,
   BOAT_INVENTORY_CONDITIONS, boatInventoryConditionColor,
 } from "./orbit2-constants";
 import {
@@ -27,7 +27,7 @@ import {
   type Orbit2BoatInventoryItem, type Orbit2Note, type Orbit2File,
 } from "./orbit2-data";
 import { Field, inputCls, Typeahead, TeamPicker, FileSlot, NoteLog, type UploadedFile } from "./orbit2-fields";
-import { InspectionsRequired, InspectionChecklist, INSPECTION_REGIMES, type InspectionRegime } from "./orbit2-boat-checklist";
+import { InspectionsRequired, InspectionChecklist, INSPECTION_REGIMES, ryaChecklistLabel, type InspectionRegime } from "./orbit2-boat-checklist";
 import { useOrbit2Identity } from "./orbit2-identity";
 
 const sb = supabase as any;
@@ -53,6 +53,8 @@ export function Orbit2BoatDetail({
   const { user } = useAuth();
   const identity = useOrbit2Identity();
   const [section, setSection] = useState<"jobs" | "inventory">("jobs");
+  /** "Assign Team" pressed on one of the inspection checklists — raise a job for it. */
+  const [checklistJob, setChecklistJob] = useState<InspectionRegime | null>(null);
 
   /** Save fields on the boat. Returns false when the database refused, so a caller can avoid claiming success. */
   async function patchBoat(patch: Record<string, unknown>): Promise<boolean> {
@@ -160,9 +162,20 @@ export function Orbit2BoatDetail({
 
       {/* ── DMA / FMA / RYA compliance — only the regimes this boat needs ── */}
       <InspectionsRequired boat={boat} onSave={patchBoat} />
+      {checklistJob && (
+        <JobEditor boat={boat} existing={null} technicianOptions={[]}
+          preset={{
+            category: checklistCategoryFor(checklistJob),
+            title: `${checklistJob.toUpperCase()} inspection checklist${checklistJob === "rya" && boat.rya_checklist ? ` — ${ryaChecklistLabel(boat.rya_checklist)}` : ""}`,
+          }}
+          onClose={() => setChecklistJob(null)}
+          onCreated={() => { setChecklistJob(null); setSection("jobs"); }}
+          reload={reload} />
+      )}
       <div className="grid gap-3 md:grid-cols-3">
         {INSPECTION_REGIMES.filter((r) => (boat.inspections_required ?? INSPECTION_REGIMES).includes(r)).map((regime) => (
           <ComplianceCard key={regime} regime={regime} boat={boat} inventory={inventory} isAdmin={identity.isAdmin} authorName={identity.name || "Office"} onDocumentAdded={reload}
+            onAssignTeam={() => setChecklistJob(regime)}
             checklist={docsFor(`${regime}_checklist` as Orbit2BoatDocCategory)}
             onUploadChecklist={(f, r) => uploadDoc(`${regime}_checklist` as Orbit2BoatDocCategory, f, r)}
             onRemoveChecklist={removeDoc}
@@ -270,7 +283,7 @@ function SpecField({
 }
 
 function ComplianceCard({
-  regime, boat, inventory, isAdmin, authorName, checklist, onUploadChecklist, onRemoveChecklist, onSaveDate, onUploadReport, onRemoveReport, onDocumentAdded,
+  regime, boat, inventory, isAdmin, authorName, checklist, onUploadChecklist, onRemoveChecklist, onSaveDate, onUploadReport, onRemoveReport, onDocumentAdded, onAssignTeam,
 }: {
   regime: InspectionRegime;
   boat: Orbit2Boat;
@@ -278,6 +291,7 @@ function ComplianceCard({
   isAdmin: boolean;
   authorName: string;
   onDocumentAdded: () => Promise<void> | void;
+  onAssignTeam: () => void;
   checklist: UploadedFile[];
   onUploadChecklist: (f: File, ref: string) => Promise<void> | void;
   onRemoveChecklist: (f: UploadedFile) => void;
@@ -306,7 +320,7 @@ function ComplianceCard({
       </div>
       {/* The items this inspection requires, ticked per boat — see orbit2-boat-checklist. */}
       <div className="mb-2.5">
-        <InspectionChecklist boat={boat} regime={regime} inventory={inventory} isAdmin={isAdmin} authorName={authorName} onDocumentAdded={onDocumentAdded} />
+        <InspectionChecklist boat={boat} regime={regime} inventory={inventory} isAdmin={isAdmin} authorName={authorName} onDocumentAdded={onDocumentAdded} onAssignTeam={onAssignTeam} />
       </div>
       <FileSlot label="Completed checklist / supporting files" files={checklist} onUpload={onUploadChecklist} onRemove={onRemoveChecklist} />
     </div>
@@ -450,11 +464,13 @@ type JobForm = {
 };
 
 function JobEditor({
-  boat, existing, technicianOptions, onClose, onCreated, reload,
+  boat, existing, technicianOptions, onClose, onCreated, reload, preset,
 }: {
   boat: Orbit2Boat;
   existing: Orbit2BoatTask | null;
   technicianOptions: string[];
+  /** Starting values for a new job — e.g. the category when raised from a checklist's Assign Team. */
+  preset?: Partial<JobForm>;
   onClose: () => void;
   onCreated: (id: string) => void;
   reload: () => Promise<void> | void;
@@ -473,6 +489,7 @@ function JobEditor({
   } : {
     category: "Maintenance", title: "", schedule_date: "", schedule_time: "", est: "",
     team: [], technician: "", remarks: "", status: "Pending",
+    ...preset,
   });
   const [saving, setSaving] = useState(false);
   const [notes, setNotes] = useState<Orbit2Note[]>([]);

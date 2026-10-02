@@ -138,13 +138,22 @@ export const ACTIVE_BOAT_STATUSES: readonly string[] = ["Pending", "Ongoing"];
  * member to physically check the boat's Inventory List from their phone.
  */
 /** Booked = the boat is scheduled for use (training, rental, …) rather than worked on. */
-export const BOAT_JOB_CATEGORIES = ["Maintenance", "Repair", "Inventory", "Booked"] as const;
+/** The three checklist categories raise a job that carries an inspection checklist to the crew's phone. */
+export const BOAT_JOB_CATEGORIES = ["Maintenance", "Repair", "Inventory", "Booked", "RYA Checklist", "DMA Checklist", "FMA Checklist"] as const;
 export type BoatJobCategory = (typeof BOAT_JOB_CATEGORIES)[number];
-export type BoatJobKind = "maintenance" | "defect" | "inventory" | "booked";
+export type BoatJobKind = "maintenance" | "defect" | "inventory" | "booked" | "rya_checklist" | "dma_checklist" | "fma_checklist";
 export const boatJobCategoryToKind = (c: BoatJobCategory): BoatJobKind =>
-  c === "Repair" ? "defect" : c === "Inventory" ? "inventory" : c === "Booked" ? "booked" : "maintenance";
+  c === "Repair" ? "defect" : c === "Inventory" ? "inventory" : c === "Booked" ? "booked"
+  : c === "RYA Checklist" ? "rya_checklist" : c === "DMA Checklist" ? "dma_checklist" : c === "FMA Checklist" ? "fma_checklist" : "maintenance";
 export const kindToBoatJobCategory = (k: BoatJobKind): BoatJobCategory =>
-  k === "defect" ? "Repair" : k === "inventory" ? "Inventory" : k === "booked" ? "Booked" : "Maintenance";
+  k === "defect" ? "Repair" : k === "inventory" ? "Inventory" : k === "booked" ? "Booked"
+  : k === "rya_checklist" ? "RYA Checklist" : k === "dma_checklist" ? "DMA Checklist" : k === "fma_checklist" ? "FMA Checklist" : "Maintenance";
+/** Which inspection a checklist job is for — null for every other kind of job. */
+export const checklistRegimeOf = (k: BoatJobKind): "rya" | "dma" | "fma" | null =>
+  k === "rya_checklist" ? "rya" : k === "dma_checklist" ? "dma" : k === "fma_checklist" ? "fma" : null;
+/** The job category that carries a given inspection's checklist. */
+export const checklistCategoryFor = (regime: "rya" | "dma" | "fma"): BoatJobCategory =>
+  regime === "rya" ? "RYA Checklist" : regime === "dma" ? "DMA Checklist" : "FMA Checklist";
 
 /** Inventory List condition — the three values the client's own sheet uses. */
 export const BOAT_INVENTORY_CONDITIONS = ["Good / Serviceable", "Damaged / Defective", "Missing / Lost"] as const;

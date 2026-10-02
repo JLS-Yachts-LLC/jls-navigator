@@ -14,9 +14,9 @@
  * ticks everything the inventory already covers. Orbit admins keep the item
  * lists themselves up to date from the same screen.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowDown, ArrowUp, Check, FileDown, Link2, Link2Off, ListChecks, Loader2, Pencil, Plus, RefreshCw, RotateCcw, Trash2, X,
+  ArrowDown, ArrowUp, Camera, Check, FileDown, Link2, Link2Off, ListChecks, Loader2, MessageSquare, Pencil, Plus, RefreshCw, RotateCcw, Trash2, Upload, UserPlus, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -25,7 +25,9 @@ import { errorMessage } from "@/lib/error-message";
 import { SignedImage } from "@/components/ui/signed-file";
 import { useAuth } from "@/lib/auth";
 import { storageRef } from "@/lib/signed-url";
-import { fillRyaForm, RYA_FORM_FILE, type RyaFormKey } from "@/lib/orbit2/rya-form";
+import { fillRyaForm, RYA_FORM_FILE, type RyaFormKey, type RyaAppendixRow } from "@/lib/orbit2/rya-form";
+import { compressImageToMaxKB } from "@/lib/image-compress";
+import { guardUploadFile, uploadContentType } from "@/lib/upload-guard";
 import { ORBIT2_BUCKET } from "./orbit2-data";
 import { Field, inputCls, stamp } from "./orbit2-fields";
 import type { Orbit2Boat, Orbit2BoatInventoryItem } from "./orbit2-data";
@@ -53,6 +55,8 @@ export type ChecklistTemplateItem = {
 export type BoatChecklistState = {
   id: string; boat_id: string; template_id: string; checked: boolean; checked_at: string | null; checked_by: string | null;
   remarks: string | null; inventory_item_id: string | null;
+  /** A photo taken against this line during the check. */
+  image_ref: string | null;
 };
 
 // ── Matching checklist items to the boat's inventory ─────────────────────────
@@ -139,10 +143,12 @@ function useChecklist(boat: Orbit2Boat, regime: InspectionRegime) {
 }
 
 /** The compact card content: progress, inventory coverage, and the button to the full list. */
-export function InspectionChecklist({ boat, regime, inventory, isAdmin, authorName, onDocumentAdded }: {
+export function InspectionChecklist({ boat, regime, inventory, isAdmin, authorName, onDocumentAdded, onAssignTeam }: {
   boat: Orbit2Boat; regime: InspectionRegime; inventory: Orbit2BoatInventoryItem[]; isAdmin: boolean; authorName: string;
   /** Called after a generated RYA form has been filed against the boat. */
   onDocumentAdded?: () => Promise<void> | void;
+  /** "Assign Team" on the checklist — the caller opens a new job of the matching Checklist category. */
+  onAssignTeam?: () => void;
 }) {
   const cl = useChecklist(boat, regime);
   const [open, setOpen] = useState(false);
@@ -179,7 +185,7 @@ export function InspectionChecklist({ boat, regime, inventory, isAdmin, authorNa
       </button>
       {open && (
         <ChecklistModal boat={boat} regime={regime} inventory={inventory} isAdmin={isAdmin} authorName={authorName}
-          cl={cl} onClose={() => setOpen(false)} onDocumentAdded={onDocumentAdded} />
+          cl={cl} onClose={() => setOpen(false)} onDocumentAdded={onDocumentAdded} onAssignTeam={onAssignTeam} />
       )}
     </div>
   );
@@ -200,47 +206,47 @@ function Progress({ label, value, total, tone }: { label: string; value: number;
 
 // ── The full checklist ───────────────────────────────────────────────────────
 
-function ChecklistModal({ boat, regime, inventory, isAdmin, authorName, cl, onClose, onDocumentAdded }: {
+/** Inventory rows for an item — the hand-made link wins, otherwise matched by name. */
+export function linkedRows(it: ChecklistTemplateItem, state: BoatChecklistState | undefined, inventory: Orbit2BoatInventoryItem[]): { rows: Orbit2BoatInventoryItem[]; manual: boolean } {
+  if (state?.inventory_item_id) {
+    const row = inventory.find((r) => r.id === state.inventory_item_id);
+    return { rows: row ? [row] : [], manual: true };
+  }
+  return { rows: matchInventory(it.item, inventory), manual: false };
+}
+
+type ChecklistFilter = "all" | "open" | "missing" | "noted";
+const hasNote = (s: BoatChecklistState | undefined) => !!(s?.remarks || s?.image_ref);
+
+/** Upload a photo taken against a checklist line — small enough for mobile data. */
+async function uploadChecklistPhoto(file: File): Promise<string> {
+  if (!file.type.startsWith("image/")) throw new Error("That isn't a photo.");
+  const { file: small } = await compressImageToMaxKB(file, 1500);
+  if (!guardUploadFile(small)) throw new Error("That photo can't be uploaded.");
+  const path = `orbit2/boats/checklist/${crypto.randomUUID()}-${small.name.replace(/[^\w.-]+/g, "_")}`;
+  const { error } = await supabase.storage.from(ORBIT2_BUCKET).upload(path, small, { contentType: uploadContentType(small), upsert: false });
+  if (error) throw new Error(error.message);
+  return storageRef(ORBIT2_BUCKET, path);
+}
+
+function ChecklistModal({ boat, regime, inventory, isAdmin, authorName, cl, onClose, onDocumentAdded, onAssignTeam }: {
   boat: Orbit2Boat; regime: InspectionRegime; inventory: Orbit2BoatInventoryItem[]; isAdmin: boolean; authorName: string;
-  cl: ReturnType<typeof useChecklist>; onClose: () => void; onDocumentAdded?: () => Promise<void> | void;
+  cl: ReturnType<typeof useChecklist>; onClose: () => void; onDocumentAdded?: () => Promise<void> | void; onAssignTeam?: () => void;
 }) {
+  const { user } = useAuth();
   const [editing, setEditing] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [busyId, setBusyId] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
-  const [filter, setFilter] = useState<"all" | "open" | "missing">("all");
+  const [filter, setFilter] = useState<ChecklistFilter>("all");
   const { items, stateFor, reload } = cl;
 
-  /** Inventory rows for an item — the hand-made link wins, otherwise matched by name. */
-  const linked = useCallback((it: ChecklistTemplateItem): { rows: Orbit2BoatInventoryItem[]; manual: boolean } => {
-    const s = stateFor.get(it.id);
-    if (s?.inventory_item_id) {
-      const row = inventory.find((r) => r.id === s.inventory_item_id);
-      return { rows: row ? [row] : [], manual: true };
-    }
-    return { rows: matchInventory(it.item, inventory), manual: false };
-  }, [stateFor, inventory]);
-
   const done = items.filter((i) => stateFor.get(i.id)?.checked).length;
-  const covered = items.filter((i) => linked(i).rows.length > 0).length;
-
-  async function save(it: ChecklistTemplateItem, values: Partial<BoatChecklistState>) {
-    setBusyId(it.id);
-    const { error } = await sb.from("orbit2_boat_checklist").upsert(
-      { boat_id: boat.id, template_id: it.id, ...values }, { onConflict: "boat_id,template_id" });
-    setBusyId(null);
-    if (error) { toast.error(errorMessage(error, "Could not save")); return; }
-    await reload();
-  }
-  const toggle = (it: ChecklistTemplateItem) => {
-    const checked = !stateFor.get(it.id)?.checked;
-    return save(it, { checked, checked_at: checked ? new Date().toISOString() : null, checked_by: checked ? authorName : null });
-  };
-  const link = (it: ChecklistTemplateItem, inventory_item_id: string | null) => save(it, { inventory_item_id });
+  const covered = items.filter((i) => linkedRows(i, stateFor.get(i.id), inventory).rows.length > 0).length;
+  const noted = items.filter((i) => hasNote(stateFor.get(i.id))).length;
 
   /** Tick every item the inventory already covers. */
   async function syncFromInventory() {
-    const todo = items.filter((i) => !stateFor.get(i.id)?.checked && linked(i).rows.length > 0);
+    const todo = items.filter((i) => !stateFor.get(i.id)?.checked && linkedRows(i, stateFor.get(i.id), inventory).rows.length > 0);
     if (!todo.length) { toast.info("Everything the inventory covers is already ticked."); return; }
     setSyncing(true);
     const now = new Date().toISOString();
@@ -254,7 +260,7 @@ function ChecklistModal({ boat, regime, inventory, isAdmin, authorName, cl, onCl
   }
 
   async function reset() {
-    if (!confirm(`Clear all ${regime.toUpperCase()} ticks for ${boat.name}? Inventory links are kept. Use this when starting a new inspection.`)) return;
+    if (!confirm(`Clear all ${regime.toUpperCase()} ticks for ${boat.name}? Remarks, photos and inventory links are kept. Use this when starting a new inspection.`)) return;
     const { error } = await sb.from("orbit2_boat_checklist").update({ checked: false, checked_at: null, checked_by: null })
       .eq("boat_id", boat.id).in("template_id", items.map((i) => i.id));
     if (error) { toast.error(errorMessage(error, "Could not reset")); return; }
@@ -262,17 +268,10 @@ function ChecklistModal({ boat, regime, inventory, isAdmin, authorName, cl, onCl
     await reload();
   }
 
-  const visible = items.filter((i) => {
-    if (filter === "open") return !stateFor.get(i.id)?.checked;
-    if (filter === "missing") return linked(i).rows.length === 0;
-    return true;
-  });
-  // Section headings, in sheet order.
-  const grouped: { section: string | null; items: ChecklistTemplateItem[] }[] = [];
-  for (const it of visible) {
-    const last = grouped.at(-1);
-    if (last && last.section === (it.section ?? null)) last.items.push(it); else grouped.push({ section: it.section ?? null, items: [it] });
-  }
+  const filters: [ChecklistFilter, string][] = [
+    ["all", `All · ${items.length}`], ["open", `Not checked · ${items.length - done}`],
+    ["missing", `Not in inventory · ${items.length - covered}`], ["noted", `With notes · ${noted}`],
+  ];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -290,13 +289,19 @@ function ChecklistModal({ boat, regime, inventory, isAdmin, authorName, cl, onCl
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 px-5 py-2">
-          <div className="flex gap-1 rounded-lg border border-border p-0.5">
-            {([["all", `All · ${items.length}`], ["open", `Not checked · ${items.length - done}`], ["missing", `Not in inventory · ${items.length - covered}`]] as const).map(([k, label]) => (
+          <div className="flex flex-wrap gap-1 rounded-lg border border-border p-0.5">
+            {filters.map(([k, label]) => (
               <button key={k} type="button" onClick={() => setFilter(k)}
                 className={cn("rounded-md px-2.5 py-1 text-[13px] font-medium", filter === k ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent")}>{label}</button>
             ))}
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {!editing && onAssignTeam && (
+              <button type="button" onClick={onAssignTeam} title="Raise a checklist job for the crew — it goes on the Jobs board and their phones"
+                className="flex items-center gap-1 rounded-md bg-emerald-600 px-2.5 py-1.5 text-[13px] font-semibold text-white hover:opacity-90">
+                <UserPlus className="h-3.5 w-3.5" /> Assign Team
+              </button>
+            )}
             {!editing && regime === "rya" && cl.category && items.length > 0 && (
               <button type="button" onClick={() => setGenerating(true)} title="Fill the RYA's own checklist PDF from these ticks"
                 className="flex items-center gap-1 rounded-md bg-primary px-2.5 py-1.5 text-[13px] font-semibold text-primary-foreground hover:opacity-90">
@@ -334,30 +339,140 @@ function ChecklistModal({ boat, regime, inventory, isAdmin, authorName, cl, onCl
             <p className="px-5 py-10 text-center text-[15px] text-muted-foreground">
               No items in this checklist yet{isAdmin ? " — use Edit items to add them, or send the official list to be loaded." : "."}
             </p>
-          ) : visible.length === 0 ? (
-            <p className="px-5 py-10 text-center text-[15px] text-muted-foreground">Nothing matches this filter.</p>
-          ) : grouped.map((g, gi) => (
-            <div key={`${g.section ?? ""}-${gi}`}>
-              {g.section && (
-                <div className="sticky top-0 z-10 border-y border-border/60 bg-muted/40 px-5 py-1.5 text-[13px] font-semibold uppercase tracking-wide text-muted-foreground backdrop-blur">
-                  {g.section}
-                </div>
-              )}
-              <ul className="divide-y divide-border/40">
-                {g.items.map((it) => (
-                  <ChecklistRow key={it.id} item={it} state={stateFor.get(it.id)} inventory={inventory} match={linked(it)}
-                    busy={busyId === it.id} onToggle={() => void toggle(it)} onLink={(id) => void link(it, id)} />
-                ))}
-              </ul>
-            </div>
-          ))}
+          ) : (
+            <ChecklistBody boat={boat} cl={cl} inventory={inventory} authorName={authorName} userId={user?.id ?? null} editable filter={filter} />
+          )}
         </div>
       </div>
       {generating && cl.category && (
-        <RyaFormDialog boat={boat} form={cl.category} items={items} stateFor={stateFor} authorName={authorName}
+        <RyaFormDialog boat={boat} form={cl.category} items={items} stateFor={stateFor} inventory={inventory} authorName={authorName}
           onClose={() => setGenerating(false)} onFiled={onDocumentAdded} />
       )}
     </div>
+  );
+}
+
+/**
+ * The checklist lines themselves — grouped by section, each with its tick,
+ * inventory match, remark and photo. Shared by the office's View checklist and
+ * the crew's checklist job on the phone, so both work the same rows.
+ */
+export function ChecklistBody({ boat, cl, inventory, authorName, userId, editable, filter, padX = "px-5" }: {
+  boat: Orbit2Boat; cl: ReturnType<typeof useChecklist>; inventory: Orbit2BoatInventoryItem[]; authorName: string; userId: string | null;
+  editable: boolean; filter: ChecklistFilter; padX?: string;
+}) {
+  const { items, stateFor, reload } = cl;
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  async function save(it: ChecklistTemplateItem, values: Partial<BoatChecklistState>) {
+    setBusyId(it.id);
+    const { error } = await sb.from("orbit2_boat_checklist").upsert(
+      { boat_id: boat.id, template_id: it.id, ...values }, { onConflict: "boat_id,template_id" });
+    setBusyId(null);
+    if (error) { toast.error(errorMessage(error, "Could not save")); return; }
+    await reload();
+  }
+  const toggle = (it: ChecklistTemplateItem) => {
+    const checked = !stateFor.get(it.id)?.checked;
+    return save(it, { checked, checked_at: checked ? new Date().toISOString() : null, checked_by: checked ? authorName : null });
+  };
+  const link = (it: ChecklistTemplateItem, inventory_item_id: string | null) => save(it, { inventory_item_id });
+  const remark = (it: ChecklistTemplateItem, text: string) => save(it, { remarks: text.trim() || null });
+  async function photo(it: ChecklistTemplateItem, file: File | undefined) {
+    if (!file) return;
+    setBusyId(it.id);
+    try {
+      const ref = await uploadChecklistPhoto(file);
+      await save(it, { image_ref: ref });
+      toast.success("Photo added to the line");
+    } catch (e) { toast.error(errorMessage(e, "Could not upload the photo")); setBusyId(null); }
+  }
+  void userId;
+
+  const visible = items.filter((i) => {
+    const st = stateFor.get(i.id);
+    if (filter === "open") return !st?.checked;
+    if (filter === "missing") return linkedRows(i, st, inventory).rows.length === 0;
+    if (filter === "noted") return hasNote(st);
+    return true;
+  });
+  const grouped: { section: string | null; items: ChecklistTemplateItem[] }[] = [];
+  for (const it of visible) {
+    const last = grouped.at(-1);
+    if (last && last.section === (it.section ?? null)) last.items.push(it); else grouped.push({ section: it.section ?? null, items: [it] });
+  }
+
+  if (visible.length === 0) return <p className={cn("py-10 text-center text-[15px] text-muted-foreground", padX)}>Nothing matches this filter.</p>;
+  return (
+    <>
+      {grouped.map((g, gi) => (
+        <div key={`${g.section ?? ""}-${gi}`}>
+          {g.section && (
+            <div className={cn("sticky top-0 z-10 border-y border-border/60 bg-muted/40 py-1.5 text-[13px] font-semibold uppercase tracking-wide text-muted-foreground backdrop-blur", padX)}>
+              {g.section}
+            </div>
+          )}
+          <ul className="divide-y divide-border/40">
+            {g.items.map((it) => (
+              <ChecklistRow key={it.id} item={it} state={stateFor.get(it.id)} inventory={inventory} match={linkedRows(it, stateFor.get(it.id), inventory)}
+                busy={busyId === it.id} editable={editable} padX={padX}
+                onToggle={() => void toggle(it)} onLink={(id) => void link(it, id)} onRemark={(t) => void remark(it, t)}
+                onPhoto={(file) => void photo(it, file)} onRemovePhoto={() => void save(it, { image_ref: null })} />
+            ))}
+          </ul>
+        </div>
+      ))}
+    </>
+  );
+}
+
+/**
+ * The checklist as the crew work it on the phone, inside an RYA / DMA / FMA
+ * Checklist job: progress, a couple of filters, and the lines to tick, remark
+ * and photograph. Read-only until the job is attended.
+ */
+export function ChecklistWork({ boat, regime, editable, authorName, userId }: {
+  boat: Orbit2Boat; regime: InspectionRegime; editable: boolean; authorName: string; userId: string | null;
+}) {
+  const cl = useChecklist(boat, regime);
+  const [inventory, setInventory] = useState<Orbit2BoatInventoryItem[]>([]);
+  const [filter, setFilter] = useState<ChecklistFilter>("all");
+  useEffect(() => {
+    void sb.from("orbit2_boat_inventory").select("*").eq("boat_id", boat.id).order("item")
+      .then(({ data }: { data: Orbit2BoatInventoryItem[] | null }) => setInventory(data ?? []));
+  }, [boat.id]);
+  const done = cl.items.filter((i) => cl.stateFor.get(i.id)?.checked).length;
+  const noted = cl.items.filter((i) => hasNote(cl.stateFor.get(i.id))).length;
+
+  return (
+    <section className="rounded-xl border border-border bg-card">
+      <div className="border-b border-border/60 px-4 py-3">
+        <div className="flex items-center gap-2 text-[15px] font-semibold">
+          <ListChecks className="h-4 w-4 text-muted-foreground" /> {regime.toUpperCase()} checklist{cl.category ? ` — ${ryaChecklistLabel(cl.category)}` : ""}
+        </div>
+        <div className="text-[14px] text-muted-foreground">
+          {cl.loading ? "Loading…" : `${done} of ${cl.items.length} checked · ${noted} with notes`}
+          {!editable && !cl.loading && " · press Attend to start"}
+        </div>
+        {!cl.loading && cl.items.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1">
+            {([["all", "All"], ["open", "Not checked"], ["noted", "With notes"]] as [ChecklistFilter, string][]).map(([k, label]) => (
+              <button key={k} type="button" onClick={() => setFilter(k)}
+                className={cn("rounded-full border px-3 py-1 text-[14px] font-medium", filter === k ? "border-primary bg-primary/15 text-primary" : "border-border text-muted-foreground")}>{label}</button>
+            ))}
+          </div>
+        )}
+      </div>
+      {cl.loading ? (
+        <div className="flex h-24 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+      ) : regime === "rya" && !cl.category ? (
+        <p className="px-4 py-6 text-center text-[15px] text-muted-foreground">The office has not set this boat's RYA classification yet.</p>
+      ) : cl.items.length === 0 ? (
+        <p className="px-4 py-6 text-center text-[15px] text-muted-foreground">No items in the {regime.toUpperCase()} checklist yet.</p>
+      ) : (
+        <ChecklistBody boat={boat} cl={cl} inventory={inventory} authorName={authorName} userId={userId} editable={editable} filter={filter} padX="px-4" />
+      )}
+    </section>
   );
 }
 
@@ -365,8 +480,8 @@ function ChecklistModal({ boat, regime, inventory, isAdmin, authorName, cl, onCl
 
 const fmtDate = (iso: string) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString("en-GB") : "");
 
-function RyaFormDialog({ boat, form, items, stateFor, authorName, onClose, onFiled }: {
-  boat: Orbit2Boat; form: RyaFormKey; items: ChecklistTemplateItem[]; stateFor: Map<string, BoatChecklistState>;
+function RyaFormDialog({ boat, form, items, stateFor, inventory, authorName, onClose, onFiled }: {
+  boat: Orbit2Boat; form: RyaFormKey; items: ChecklistTemplateItem[]; stateFor: Map<string, BoatChecklistState>; inventory: Orbit2BoatInventoryItem[];
   authorName: string; onClose: () => void; onFiled?: () => Promise<void> | void;
 }) {
   const { user } = useAuth();
@@ -380,7 +495,16 @@ function RyaFormDialog({ boat, form, items, stateFor, authorName, onClose, onFil
     inspectionPlace: "Dubai, UAE",
     inspectorName: authorName,
     crossUnchecked: false,
+    notes: true,
     file: true,
+  });
+  // The lines that carry evidence: a remark, or a photo taken on the check. A remarked
+  // line without its own photo borrows the matched inventory item's picture.
+  const appendix: RyaAppendixRow[] = items.flatMap((i) => {
+    const st = stateFor.get(i.id);
+    if (!st?.remarks && !st?.image_ref) return [];
+    const inv = linkedRows(i, st, inventory).rows.find((r) => r.image_ref);
+    return [{ section: i.section, item: i.item, checked: !!st.checked, checkedBy: st.checked_by ?? null, remarks: st.remarks ?? null, imageRef: st.image_ref ?? inv?.image_ref ?? null }];
   });
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof f, v: string | boolean) => setF((x) => ({ ...x, [k]: v }));
@@ -394,7 +518,7 @@ function RyaFormDialog({ boat, form, items, stateFor, authorName, onClose, onFil
         rtcName: f.rtcName, boatName: f.boatName, boatType: f.boatType, persons: f.persons,
         inspectionDate: fmtDate(f.inspectionDate), inspectionPlace: f.inspectionPlace, inspectorName: f.inspectorName,
       }, items.map((i) => ({ pdf_page: i.pdf_page, pdf_x: i.pdf_x, pdf_y: i.pdf_y, checked: !!stateFor.get(i.id)?.checked })),
-      { crossUnchecked: f.crossUnchecked });
+      { crossUnchecked: f.crossUnchecked, appendix: f.notes ? appendix : [] });
       const name = `${RYA_FORM_FILE[form]} — ${boat.name} — ${f.inspectionDate}.pdf`.replace(/[\\/:*?"<>|]+/g, "-");
       const blob = new Blob([bytes as BlobPart], { type: "application/pdf" });
 
@@ -455,6 +579,10 @@ function RyaFormDialog({ boat, form, items, stateFor, authorName, onClose, onFil
             Mark items not ticked with an ✗ (otherwise left blank)
           </label>
           <label className="flex items-center gap-2 text-[14px]">
+            <input type="checkbox" className="h-4 w-4 accent-primary" checked={f.notes} onChange={(e) => set("notes", e.target.checked)} disabled={appendix.length === 0} />
+            Append the inspection notes &amp; photos page{appendix.length ? ` (${appendix.length} line${appendix.length === 1 ? "" : "s"} with remarks or photos)` : " (no remarks or photos yet)"}
+          </label>
+          <label className="flex items-center gap-2 text-[14px]">
             <input type="checkbox" className="h-4 w-4 accent-primary" checked={f.file} onChange={(e) => set("file", e.target.checked)} />
             File a copy under this boat's RYA checklist documents
           </label>
@@ -474,22 +602,27 @@ function RyaFormDialog({ boat, form, items, stateFor, authorName, onClose, onFil
   );
 }
 
-function ChecklistRow({ item, state, inventory, match, busy, onToggle, onLink }: {
+function ChecklistRow({ item, state, inventory, match, busy, editable, padX, onToggle, onLink, onRemark, onPhoto, onRemovePhoto }: {
   item: ChecklistTemplateItem; state: BoatChecklistState | undefined; inventory: Orbit2BoatInventoryItem[];
-  match: { rows: Orbit2BoatInventoryItem[]; manual: boolean }; busy: boolean; onToggle: () => void; onLink: (id: string | null) => void;
+  match: { rows: Orbit2BoatInventoryItem[]; manual: boolean }; busy: boolean; editable: boolean; padX: string;
+  onToggle: () => void; onLink: (id: string | null) => void; onRemark: (text: string) => void; onPhoto: (file: File | undefined) => void; onRemovePhoto: () => void;
 }) {
   const [picking, setPicking] = useState(false);
   const [lightbox, setLightbox] = useState<string | null>(null);
+  const [draft, setDraft] = useState<string | null>(null); // null = not editing the remark
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const uploadRef = useRef<HTMLInputElement>(null);
   const on = !!state?.checked;
   const spec = [item.qty != null ? `${item.qty}${item.unit ? ` ${item.unit}` : ""}` : null].filter(Boolean).join("");
   // The matched inventory rows' photos — what the boat actually carries, at a glance.
   const photos = match.rows.filter((r) => r.image_ref);
+  const commitRemark = () => { if (draft !== null && draft.trim() !== (state?.remarks ?? "")) onRemark(draft); setDraft(null); };
 
   return (
-    <li className={cn("flex items-start gap-3 px-5 py-2.5", on && "bg-emerald-500/[0.04]")}>
-      <button type="button" onClick={onToggle} disabled={busy} aria-label={on ? "Untick" : "Tick"}
-        className={cn("mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded border-2 transition",
-          on ? "border-emerald-500 bg-emerald-500 text-white" : "border-border hover:border-emerald-500")}>
+    <li className={cn("flex items-start gap-3 py-2.5", padX, on && "bg-emerald-500/[0.04]")}>
+      <button type="button" onClick={onToggle} disabled={busy || !editable} aria-label={on ? "Untick" : "Tick"}
+        className={cn("mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded border-2 transition disabled:cursor-default",
+          on ? "border-emerald-500 bg-emerald-500 text-white" : "border-border", editable && !on && "hover:border-emerald-500")}>
         {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : on && <Check className="h-4 w-4" />}
       </button>
       <div className="min-w-0 flex-1">
@@ -508,7 +641,7 @@ function ChecklistRow({ item, state, inventory, match, busy, onToggle, onLink }:
             <span className="text-muted-foreground">Not in inventory</span>
           )}
           {on && state?.checked_at && <span className="text-emerald-600">{state.checked_by ?? "Checked"} · {stamp(state.checked_at)}</span>}
-          {picking ? (
+          {editable && (picking ? (
             <select autoFocus className={cn(inputCls, "h-7 w-auto max-w-[18rem] py-0 text-[13px]")} defaultValue={state?.inventory_item_id ?? ""}
               onChange={(e) => { onLink(e.target.value || null); setPicking(false); }} onBlur={() => setPicking(false)}>
               <option value="">— no inventory item —</option>
@@ -518,24 +651,63 @@ function ChecklistRow({ item, state, inventory, match, busy, onToggle, onLink }:
             <button type="button" onClick={() => setPicking(true)} className="flex items-center gap-1 text-muted-foreground hover:text-foreground" title="Link to an inventory item">
               <Link2 className="h-3.5 w-3.5" /> {match.manual ? "Change link" : match.rows.length ? "Change" : "Link inventory item"}
             </button>
-          )}
-          {match.manual && (
+          ))}
+          {editable && match.manual && (
             <button type="button" onClick={() => onLink(null)} className="flex items-center gap-1 text-muted-foreground hover:text-destructive" title="Remove the link">
               <Link2Off className="h-3.5 w-3.5" /> Unlink
             </button>
           )}
         </div>
+
+        {/* Remark — what the inspector found. Logged against the line and printed on the RYA form's notes page. */}
+        {draft !== null ? (
+          <input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={commitRemark}
+            onKeyDown={(e) => { if (e.key === "Enter") commitRemark(); if (e.key === "Escape") setDraft(null); }}
+            placeholder="Remark for this line…" className={cn(inputCls, "mt-1.5 h-9 py-1 text-[14px]")} />
+        ) : state?.remarks ? (
+          <button type="button" disabled={!editable} onClick={() => setDraft(state.remarks ?? "")}
+            className="mt-1.5 flex w-full items-start gap-1.5 rounded-md bg-amber-500/10 px-2.5 py-1.5 text-left text-[14px] text-amber-700 dark:text-amber-300 disabled:cursor-default">
+            <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span className="whitespace-pre-wrap">{state.remarks}</span>
+          </button>
+        ) : editable ? (
+          <button type="button" onClick={() => setDraft("")} className="mt-1 flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground">
+            <MessageSquare className="h-3.5 w-3.5" /> Add remark
+          </button>
+        ) : null}
       </div>
-      {photos.length > 0 && (
-        <div className="flex shrink-0 gap-1.5">
-          {photos.map((r) => (
-            <button key={r.id} type="button" onClick={() => setLightbox(r.image_ref)} title={`${r.item} — click to enlarge`}
-              className="h-12 w-12 overflow-hidden rounded-md border border-border bg-muted/20 transition hover:border-primary/60">
-              <SignedImage stored={r.image_ref!} alt={r.item} className="h-full w-full object-cover" />
+
+      {/* Photos: the line's own photo first, then the matched inventory items'. */}
+      <div className="flex shrink-0 items-start gap-1.5">
+        {state?.image_ref && (
+          <div className="group relative">
+            <button type="button" onClick={() => setLightbox(state.image_ref)} title="Photo taken on the check — click to enlarge"
+              className="h-12 w-12 overflow-hidden rounded-md border-2 border-amber-500/60 bg-muted/20 transition hover:border-primary/60">
+              <SignedImage stored={state.image_ref} alt={item.item} className="h-full w-full object-cover" />
             </button>
-          ))}
-        </div>
-      )}
+            {editable && (
+              <button type="button" onClick={onRemovePhoto} title="Remove photo"
+                className="absolute -right-1.5 -top-1.5 hidden rounded-full bg-background p-0.5 text-destructive shadow group-hover:block"><X className="h-3 w-3" /></button>
+            )}
+          </div>
+        )}
+        {photos.map((r) => (
+          <button key={r.id} type="button" onClick={() => setLightbox(r.image_ref)} title={`${r.item} — click to enlarge`}
+            className="h-12 w-12 overflow-hidden rounded-md border border-border bg-muted/20 transition hover:border-primary/60">
+            <SignedImage stored={r.image_ref!} alt={r.item} className="h-full w-full object-cover" />
+          </button>
+        ))}
+        {editable && !state?.image_ref && (
+          <div className="flex h-12 w-12 flex-col items-center justify-center gap-0.5 rounded-md border border-dashed border-border text-muted-foreground">
+            <div className="flex gap-1">
+              <button type="button" onClick={() => cameraRef.current?.click()} disabled={busy} title="Take a photo" className="rounded p-0.5 hover:bg-accent hover:text-foreground"><Camera className="h-4 w-4" /></button>
+              <button type="button" onClick={() => uploadRef.current?.click()} disabled={busy} title="Upload a photo" className="rounded p-0.5 hover:bg-accent hover:text-foreground"><Upload className="h-4 w-4" /></button>
+            </div>
+            <span className="text-[9px] leading-none">photo</span>
+          </div>
+        )}
+        <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { onPhoto(e.target.files?.[0]); e.target.value = ""; }} />
+        <input ref={uploadRef} type="file" accept="image/*" className="hidden" onChange={(e) => { onPhoto(e.target.files?.[0]); e.target.value = ""; }} />
+      </div>
       {lightbox && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-6" onMouseDown={(e) => { e.stopPropagation(); setLightbox(null); }}>
           <button type="button" onClick={() => setLightbox(null)} className="absolute right-5 top-5 rounded-full bg-white/10 p-2 text-white hover:bg-white/20">

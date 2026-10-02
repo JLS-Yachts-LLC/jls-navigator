@@ -23,7 +23,8 @@ import { errorMessage } from "@/lib/error-message";
 import { SignedImage } from "@/components/ui/signed-file";
 import {
   ORBIT2_STATUSES, ORBIT2_CATEGORIES, ORBIT2_TEAM, BOAT_JOB_CATEGORIES, BOAT_TASK_STATUSES,
-  statusColor, colorFor, isComplete, boatJobCategoryToKind, kindToBoatJobCategory, boatInventoryConditionColor,
+  statusColor, colorFor, isComplete, boatJobCategoryToKind, kindToBoatJobCategory, boatInventoryConditionColor, checklistCategoryFor,
+  type BoatJobCategory,
 } from "./orbit2-constants";
 import {
   useOrbit2, assignments, fmtSchedule, hhmmToMinutes, minutesToHhmm,
@@ -431,7 +432,8 @@ function BoatSheet({ boat, tasks, inventory, authorName, userId, onClose, reload
   onClose: () => void; reload: () => Promise<void> | void;
 }) {
   const [tab, setTab] = useState<"jobs" | "inventory" | "inspections">("jobs");
-  const [job, setJob] = useState<Orbit2BoatTask | "new" | null>(null);
+  // An existing job, a blank new one, or a new one started from a checklist's Assign Team.
+  const [job, setJob] = useState<Orbit2BoatTask | "new" | { category: BoatJobCategory } | null>(null);
   const [showDone, setShowDone] = useState(false);
   const jobs = tasks.filter((t) => showDone || t.status !== "Complete").sort((a, b) => (b.schedule_date ?? "").localeCompare(a.schedule_date ?? ""));
 
@@ -502,22 +504,28 @@ function BoatSheet({ boat, tasks, inventory, authorName, userId, onClose, reload
           {INSPECTION_REGIMES.filter((r) => (boat.inspections_required ?? INSPECTION_REGIMES).includes(r)).map((regime: InspectionRegime) => (
             <div key={regime} className="rounded-xl border border-border bg-card p-3">
               <div className="mb-2 text-[15px] font-semibold uppercase tracking-wide">{regime}{regime !== "rya" ? "" : ""} <span className="text-[13px] font-normal text-muted-foreground">last inspection {boat[`${regime}_last_inspection`] ? new Date(`${boat[`${regime}_last_inspection`]}T00:00:00`).toLocaleDateString("en-GB") : "—"}</span></div>
-              <InspectionChecklist boat={boat} regime={regime} inventory={inventory} isAdmin authorName={authorName} onDocumentAdded={reload} />
+              <InspectionChecklist boat={boat} regime={regime} inventory={inventory} isAdmin authorName={authorName} onDocumentAdded={reload}
+                onAssignTeam={() => setJob({ category: checklistCategoryFor(regime) })} />
             </div>
           ))}
         </div>
       )}
 
-      {job && <BoatJobSheet boat={boat} job={job === "new" ? null : job} userId={userId} onClose={() => setJob(null)} reload={reload} />}
+      {job && (
+        <BoatJobSheet boat={boat} job={typeof job === "object" && "id" in job ? job : null}
+          preset={typeof job === "object" && "category" in job ? job.category : undefined}
+          userId={userId} onClose={() => setJob(null)} reload={reload} />
+      )}
     </Sheet>
   );
 }
 
-function BoatJobSheet({ boat, job, userId, onClose, reload }: {
-  boat: Orbit2Boat; job: Orbit2BoatTask | null; userId: string | null; onClose: () => void; reload: () => Promise<void> | void;
+function BoatJobSheet({ boat, job, preset, userId, onClose, reload }: {
+  boat: Orbit2Boat; job: Orbit2BoatTask | null; preset?: BoatJobCategory; userId: string | null; onClose: () => void; reload: () => Promise<void> | void;
 }) {
   const [f, setF] = useState({
-    category: job ? kindToBoatJobCategory(job.kind) : BOAT_JOB_CATEGORIES[0], title: job?.title ?? "", status: job?.status ?? "Pending",
+    category: job ? kindToBoatJobCategory(job.kind) : (preset ?? BOAT_JOB_CATEGORIES[0]),
+    title: job?.title ?? (preset ? `${preset.replace(" Checklist", "")} inspection checklist` : ""), status: job?.status ?? "Pending",
     schedule_date: job?.schedule_date ?? "", schedule_time: job?.schedule_time?.slice(0, 5) ?? "", est: minutesToHhmm(job?.est_minutes ?? null),
     team: job?.assigned_team ?? [] as string[], technician: job?.technician ?? "", remarks: job?.remarks ?? "",
   });

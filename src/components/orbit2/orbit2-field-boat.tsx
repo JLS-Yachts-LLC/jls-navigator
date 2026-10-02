@@ -21,7 +21,8 @@ import { compressImageToMaxKB } from "@/lib/image-compress";
 import { guardUploadFile, uploadContentType } from "@/lib/upload-guard";
 import { storageRef } from "@/lib/signed-url";
 import { SignedImage } from "@/components/ui/signed-file";
-import { BOAT_INVENTORY_CONDITIONS, boatInventoryConditionColor, kindToBoatJobCategory } from "./orbit2-constants";
+import { BOAT_INVENTORY_CONDITIONS, boatInventoryConditionColor, kindToBoatJobCategory, checklistRegimeOf } from "./orbit2-constants";
+import { ChecklistWork } from "./orbit2-boat-checklist";
 import {
   ORBIT2_BUCKET, INVENTORY_UNITS, fmtSchedule, minutesToHhmm,
   type Orbit2Boat, type Orbit2BoatTask, type Orbit2BoatInventoryItem, type Orbit2Note, type Orbit2File,
@@ -57,6 +58,8 @@ export function BoatJobDetail({
 }) {
   const working = task.status === "Ongoing";
   const isInventory = task.kind === "inventory";
+  /** RYA / DMA / FMA Checklist jobs carry the inspection checklist itself. */
+  const checklistRegime = checklistRegimeOf(task.kind);
   const att = useAttendance({ boat_task_id: task.id }, task.assigned_team ?? [], person);
   const waitingCompanion = working && !!att.mine?.done_at;
   const needsMyAttend = working && att.loaded && !att.mine;
@@ -185,6 +188,9 @@ export function BoatJobDetail({
         {/* The inventory check — the point of an Inventory job. */}
         {isInventory && (
           <InventoryCheck boat={boat} editable={working} authorName={authorName} userId={userId} />
+        )}
+        {checklistRegime && (
+          <ChecklistWork boat={boat} regime={checklistRegime} editable={working} authorName={authorName} userId={userId} />
         )}
 
         {working && (
