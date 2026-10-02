@@ -3,14 +3,12 @@
  *
  * The home screen is the spec's role-based dashboard: seven modules in three
  * groups. A driver sees only Deliveries; everyone else sees everything. Modules
- * not yet built show a "Soon" badge rather than a dead button, and Deliveries
- * opens the existing, proven driver app until the new one replaces it.
+ * not yet built show a "Soon" badge rather than a dead button.
  *
  * It reads and writes the same shipsync_* tables the office ShipSync boards use,
  * so nothing here is a second copy of the data.
  */
 import { useState } from "react";
-import { Link } from "@tanstack/react-router";
 import {
   PackagePlus, PackageMinus, Warehouse, PackageOpen, LayoutGrid, Truck, ClipboardList, Loader2,
 } from "lucide-react";
@@ -19,6 +17,8 @@ import { useLogisticsIdentity } from "./logistics-identity";
 import { Screen } from "./logistics-ui";
 import { CheckinParcel } from "./checkin-parcel";
 import { CheckoutParcels } from "./checkout-parcels";
+import { Deliveries } from "./deliveries";
+import { ManageDeliveries } from "./manage-deliveries";
 
 type Module =
   | "checkin" | "checkout" | "store-in" | "warehouse-out" | "manage-warehouse" | "deliveries" | "manage-deliveries";
@@ -27,8 +27,6 @@ type Tile = {
   key: Module; label: string; icon: React.ComponentType<{ className?: string }>;
   /** Built in this app yet? */
   ready: boolean;
-  /** Where a tile that isn't built here yet can still send people. */
-  href?: string;
 };
 
 const GROUPS: { title: string; tiles: Tile[] }[] = [
@@ -42,8 +40,8 @@ const GROUPS: { title: string; tiles: Tile[] }[] = [
     { key: "manage-warehouse", label: "Manage Warehouse", icon: LayoutGrid, ready: false },
   ] },
   { title: "Delivery Management", tiles: [
-    { key: "deliveries", label: "Deliveries", icon: Truck, ready: true, href: "/shipsync/driver" },
-    { key: "manage-deliveries", label: "Manage Deliveries", icon: ClipboardList, ready: false },
+    { key: "deliveries", label: "Deliveries", icon: Truck, ready: true },
+    { key: "manage-deliveries", label: "Manage Deliveries", icon: ClipboardList, ready: true },
   ] },
 ];
 
@@ -57,6 +55,8 @@ export function LogisticsApp() {
 
   if (open === "checkin") return <CheckinParcel onBack={() => setOpen(null)} />;
   if (open === "checkout") return <CheckoutParcels onBack={() => setOpen(null)} />;
+  if (open === "deliveries") return <Deliveries identity={id} onBack={() => setOpen(null)} />;
+  if (open === "manage-deliveries") return <ManageDeliveries onBack={() => setOpen(null)} />;
 
   // A driver's phone shows Deliveries and nothing else.
   const groups = id.driverOnly
@@ -88,7 +88,6 @@ function TileButton({ tile, onOpen }: { tile: Tile; onOpen: () => void }) {
     tile.ready ? "hover:border-primary hover:bg-primary/5 active:bg-primary/10" : "opacity-60");
 
   if (!tile.ready) return <div className={cls} aria-disabled="true">{body}</div>;
-  if (tile.href) return <Link to={tile.href as any} className={cls}>{body}</Link>;
   return <button type="button" onClick={onOpen} className={cls}>{body}</button>;
 }
 

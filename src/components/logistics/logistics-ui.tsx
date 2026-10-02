@@ -165,3 +165,15 @@ export function FooterButtons({
     </div>
   );
 }
+
+/** A bottom sheet over the current screen — pickers, confirmations and short forms. */
+export function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 sm:items-center" onClick={onClose}>
+      <div className="max-h-[85vh] w-full max-w-md space-y-3 overflow-y-auto rounded-t-2xl border border-border bg-card p-5 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="font-display text-[19px] font-bold">{title}</div>
+        {children}
+      </div>
+    </div>
+  );
+}

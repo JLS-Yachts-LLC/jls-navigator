@@ -104,7 +104,9 @@ export async function emailProofOfDelivery(noteId: string, toOverride?: string, 
      <p style="margin:8px 0;font-size:12px;color:#7a828a">JLS Yachts Logistics</p>`,
   )
   const txt = pre ? `Delivery scheduled for ${note.boat_name ?? ''} (${ref}). Pre-delivery note: ${pdfUrl}` : `Delivery complete for ${note.boat_name ?? ''} (${ref}). Delivery note: ${pdfUrl}`
-  await sendEmail({ to: [to], cc: [LOGISTICS], subject, html, text: txt })
+  // `to` may be several addresses (client and driver) separated by , or ;
+  const recipients = to.split(/[,;]/).map((a) => a.trim()).filter(Boolean)
+  await sendEmail({ to: recipients, cc: [LOGISTICS], subject, html, text: txt })
   return { to }
 }
 

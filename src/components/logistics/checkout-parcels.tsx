@@ -27,7 +27,7 @@ import {
   type CheckoutNote, type ParcelLite, type CrewMember,
 } from "./logistics-data";
 import { generateNotePdf, shipsyncApi } from "./logistics-api";
-import { Screen, Lbl, inputCls, PhotoField } from "./logistics-ui";
+import { Screen, Lbl, inputCls, PhotoField, Sheet } from "./logistics-ui";
 
 type Mode = "jls" | "third" | "client";
 
@@ -309,17 +309,6 @@ function ParcelTable({ parcels, withBoat, onRemove }: { parcels: ParcelLite[]; w
         </tbody>
         <tfoot><tr className="bg-muted/20 font-semibold"><td className="px-2 py-2" colSpan={withBoat ? 4 : 3}>TOTAL</td><td className="px-2 py-2 tabular-nums">{total}</td>{onRemove && <td />}</tr></tfoot>
       </table>
-    </div>
-  );
-}
-
-function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 sm:items-center" onClick={onClose}>
-      <div className="max-h-[85vh] w-full max-w-md space-y-3 overflow-y-auto rounded-t-2xl border border-border bg-card p-5 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="font-display text-[19px] font-bold">{title}</div>
-        {children}
-      </div>
     </div>
   );
 }

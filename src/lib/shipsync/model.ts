@@ -107,6 +107,8 @@ export interface ShipSyncDeliveryNote {
   predelivery_pdf_url: string | null
   delivery_pdf_url: string | null
   delivered_at: string | null
+  /** Set when a driver taps Complete Later in the Logistics app; cleared on completion. */
+  awaiting_completion_at?: string | null
   created_at: string
   updated_at: string
 }
