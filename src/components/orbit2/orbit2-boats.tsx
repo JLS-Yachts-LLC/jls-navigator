@@ -187,7 +187,7 @@ export function Orbit2Boats({
             return (
               <button key={b.id} onClick={() => setSelectedId(b.id)}
                 className="flex flex-col overflow-hidden rounded-xl border border-border bg-card text-left transition hover:border-primary/50 hover:shadow-sm">
-                <div className="flex aspect-video items-center justify-center bg-muted/30">
+                <div className="flex aspect-video items-center justify-center overflow-hidden bg-muted/30">
                   {b.image_ref
                     ? <SignedImage stored={b.image_ref} alt={b.name} className="h-full w-full object-cover" />
                     : <Ship className="h-8 w-8 text-muted-foreground/40" />}
