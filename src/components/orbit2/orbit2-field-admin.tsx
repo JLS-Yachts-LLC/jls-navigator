@@ -32,6 +32,7 @@ import {
 } from "./orbit2-data";
 import { stamp } from "./orbit2-fields";
 import { InspectionsRequired, InspectionChecklist, INSPECTION_REGIMES, type InspectionRegime } from "./orbit2-boat-checklist";
+import { BoatAdditionalChecklists, useChecklistForms } from "./orbit2-checklist-library";
 import { useEffect } from "react";
 
 const sb = supabase as any;
@@ -433,7 +434,7 @@ function BoatSheet({ boat, tasks, inventory, authorName, userId, onClose, reload
 }) {
   const [tab, setTab] = useState<"jobs" | "inventory" | "inspections">("jobs");
   // An existing job, a blank new one, or a new one started from a checklist's Assign Team.
-  const [job, setJob] = useState<Orbit2BoatTask | "new" | { category: BoatJobCategory } | null>(null);
+  const [job, setJob] = useState<Orbit2BoatTask | "new" | { category: BoatJobCategory; formId?: string; title?: string } | null>(null);
   const [showDone, setShowDone] = useState(false);
   const jobs = tasks.filter((t) => showDone || t.status !== "Complete").sort((a, b) => (b.schedule_date ?? "").localeCompare(a.schedule_date ?? ""));
 
@@ -508,24 +509,30 @@ function BoatSheet({ boat, tasks, inventory, authorName, userId, onClose, reload
                 onAssignTeam={() => setJob({ category: checklistCategoryFor(regime) })} />
             </div>
           ))}
+          <BoatAdditionalChecklists boat={boat} inventory={inventory} isAdmin authorName={authorName} onDocumentAdded={reload}
+            onAssignTeam={(f) => setJob({ category: "Checklist", formId: f.id, title: f.name })} />
         </div>
       )}
 
       {job && (
         <BoatJobSheet boat={boat} job={typeof job === "object" && "id" in job ? job : null}
           preset={typeof job === "object" && "category" in job ? job.category : undefined}
+          presetForm={typeof job === "object" && "category" in job && job.formId ? { id: job.formId, title: job.title ?? "" } : undefined}
           userId={userId} onClose={() => setJob(null)} reload={reload} />
       )}
     </Sheet>
   );
 }
 
-function BoatJobSheet({ boat, job, preset, userId, onClose, reload }: {
-  boat: Orbit2Boat; job: Orbit2BoatTask | null; preset?: BoatJobCategory; userId: string | null; onClose: () => void; reload: () => Promise<void> | void;
+function BoatJobSheet({ boat, job, preset, presetForm, userId, onClose, reload }: {
+  boat: Orbit2Boat; job: Orbit2BoatTask | null; preset?: BoatJobCategory; presetForm?: { id: string; title: string };
+  userId: string | null; onClose: () => void; reload: () => Promise<void> | void;
 }) {
+  const { forms: libraryForms } = useChecklistForms();
   const [f, setF] = useState({
     category: job ? kindToBoatJobCategory(job.kind) : (preset ?? BOAT_JOB_CATEGORIES[0]),
-    title: job?.title ?? (preset ? `${preset.replace(" Checklist", "")} inspection checklist` : ""), status: job?.status ?? "Pending",
+    title: job?.title ?? (presetForm?.title || (preset && preset !== "Checklist" ? `${preset.replace(" Checklist", "")} inspection checklist` : "")), status: job?.status ?? "Pending",
+    checklist_form_id: job?.checklist_form_id ?? presetForm?.id ?? "",
     schedule_date: job?.schedule_date ?? "", schedule_time: job?.schedule_time?.slice(0, 5) ?? "", est: minutesToHhmm(job?.est_minutes ?? null),
     team: job?.assigned_team ?? [] as string[], technician: job?.technician ?? "", remarks: job?.remarks ?? "",
   });
@@ -538,10 +545,12 @@ function BoatJobSheet({ boat, job, preset, userId, onClose, reload }: {
     // field app's job query is `.contains("assigned_team", [name])`, which
     // never matches an empty array.
     if (f.team.length === 0) { toast.error("Assign at least one crew member."); return; }
+    if (f.category === "Checklist" && !f.checklist_form_id) { toast.error("Choose which checklist the job is for."); return; }
     setSaving(true);
     try {
       const payload = {
         boat_id: boat.id, kind: boatJobCategoryToKind(f.category), title: f.title.trim(), status: f.status,
+        checklist_form_id: f.category === "Checklist" ? f.checklist_form_id || null : null,
         schedule_date: f.schedule_date || null, schedule_time: f.schedule_time || null, est_minutes: f.est.trim() ? hhmmToMinutes(f.est.trim()) : null,
         assigned_team: f.team, technician: f.technician.trim() || null, remarks: f.remarks.trim() || null,
       };
@@ -569,6 +578,17 @@ function BoatJobSheet({ boat, job, preset, userId, onClose, reload }: {
             {BOAT_JOB_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
         </L>
+        {f.category === "Checklist" && (
+          <L label="Checklist">
+            <select className={inputCls} value={f.checklist_form_id} onChange={(e) => {
+              const form = libraryForms.find((x) => x.id === e.target.value);
+              setF((v) => ({ ...v, checklist_form_id: e.target.value, title: v.title.trim() ? v.title : form?.name ?? "" }));
+            }}>
+              <option value="">Choose a checklist…</option>
+              {libraryForms.filter((x) => !x.regime).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+            </select>
+          </L>
+        )}
         <L label="Status">
           <select className={inputCls} value={f.status} onChange={(e) => set("status", e.target.value)}>
             {BOAT_TASK_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}

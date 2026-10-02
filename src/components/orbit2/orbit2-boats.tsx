@@ -26,6 +26,8 @@ import {
 } from "./orbit2-data";
 import { Field, inputCls } from "./orbit2-fields";
 import { Orbit2BoatDetail } from "./orbit2-boat-detail";
+import { ChecklistLibraryButton } from "./orbit2-checklist-library";
+import { useOrbit2Identity } from "./orbit2-identity";
 
 const sb = supabase as any;
 
@@ -60,6 +62,7 @@ export function Orbit2Boats({
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
+  const { isAdmin } = useOrbit2Identity();
   const [adding, setAdding] = useState(false);
 
   const activeByBoat = useMemo(() => {
@@ -151,6 +154,7 @@ export function Orbit2Boats({
           ))}
         </div>
         <div className="flex items-center gap-2">
+          <ChecklistLibraryButton isAdmin={isAdmin} />
           <button onClick={exportToExcel} disabled={!boats.length}
             className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-[15px] font-medium hover:bg-accent disabled:opacity-50">
             <Download className="h-4 w-4" /> Export to Excel

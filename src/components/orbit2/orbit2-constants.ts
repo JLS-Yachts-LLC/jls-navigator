@@ -139,15 +139,18 @@ export const ACTIVE_BOAT_STATUSES: readonly string[] = ["Pending", "Ongoing"];
  */
 /** Booked = the boat is scheduled for use (training, rental, …) rather than worked on. */
 /** The three checklist categories raise a job that carries an inspection checklist to the crew's phone. */
-export const BOAT_JOB_CATEGORIES = ["Maintenance", "Repair", "Inventory", "Booked", "RYA Checklist", "DMA Checklist", "FMA Checklist"] as const;
+/** "Checklist" is any other checklist from the library — the job names which one (checklist_form_id). */
+export const BOAT_JOB_CATEGORIES = ["Maintenance", "Repair", "Inventory", "Booked", "RYA Checklist", "DMA Checklist", "FMA Checklist", "Checklist"] as const;
 export type BoatJobCategory = (typeof BOAT_JOB_CATEGORIES)[number];
-export type BoatJobKind = "maintenance" | "defect" | "inventory" | "booked" | "rya_checklist" | "dma_checklist" | "fma_checklist";
+export type BoatJobKind = "maintenance" | "defect" | "inventory" | "booked" | "rya_checklist" | "dma_checklist" | "fma_checklist" | "checklist";
 export const boatJobCategoryToKind = (c: BoatJobCategory): BoatJobKind =>
   c === "Repair" ? "defect" : c === "Inventory" ? "inventory" : c === "Booked" ? "booked"
-  : c === "RYA Checklist" ? "rya_checklist" : c === "DMA Checklist" ? "dma_checklist" : c === "FMA Checklist" ? "fma_checklist" : "maintenance";
+  : c === "RYA Checklist" ? "rya_checklist" : c === "DMA Checklist" ? "dma_checklist" : c === "FMA Checklist" ? "fma_checklist"
+  : c === "Checklist" ? "checklist" : "maintenance";
 export const kindToBoatJobCategory = (k: BoatJobKind): BoatJobCategory =>
   k === "defect" ? "Repair" : k === "inventory" ? "Inventory" : k === "booked" ? "Booked"
-  : k === "rya_checklist" ? "RYA Checklist" : k === "dma_checklist" ? "DMA Checklist" : k === "fma_checklist" ? "FMA Checklist" : "Maintenance";
+  : k === "rya_checklist" ? "RYA Checklist" : k === "dma_checklist" ? "DMA Checklist" : k === "fma_checklist" ? "FMA Checklist"
+  : k === "checklist" ? "Checklist" : "Maintenance";
 /** Which inspection a checklist job is for — null for every other kind of job. */
 export const checklistRegimeOf = (k: BoatJobKind): "rya" | "dma" | "fma" | null =>
   k === "rya_checklist" ? "rya" : k === "dma_checklist" ? "dma" : k === "fma_checklist" ? "fma" : null;

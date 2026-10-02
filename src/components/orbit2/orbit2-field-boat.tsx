@@ -198,6 +198,9 @@ export function BoatJobDetail({
         {checklistRegime && (
           <ChecklistWork boat={boat} regime={checklistRegime} editable={working} authorName={authorName} userId={userId} />
         )}
+        {task.kind === "checklist" && task.checklist_form_id && (
+          <ChecklistWork boat={boat} formId={task.checklist_form_id} editable={working} authorName={authorName} userId={userId} />
+        )}
 
         {working && (
           <section className="space-y-4 rounded-xl border border-border bg-card p-4">
