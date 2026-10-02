@@ -11,10 +11,10 @@
  *
  * Nothing is written until Save / Assign / Release, so Cancel really does discard
  * — and a cancelled check-out never uses up a delivery-note number. The two
- * "Move to storage" routes belong to the warehouse module and arrive with it.
+ * "Move to storage" routes hand over to MoveToStorage (the warehouse side).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FileText, Loader2, ScanLine, Search, Trash2 } from "lucide-react";
+import { FileText, Loader2, ScanLine, Search } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { errorMessage } from "@/lib/error-message";
@@ -28,22 +28,25 @@ import {
 } from "./logistics-data";
 import { generateNotePdf, shipsyncApi } from "./logistics-api";
 import { Screen, Lbl, inputCls, PhotoField, Sheet } from "./logistics-ui";
+import { MoveToStorage } from "./move-to-storage";
+import { ParcelTable, SearchToAdd } from "./parcel-pickers";
 
 type Mode = "jls" | "third" | "client";
 
 export function CheckoutParcels({ onBack }: { onBack: () => void }) {
-  const [view, setView] = useState<{ kind: "list" } | { kind: "build"; note: ShipSyncDeliveryNote | null } | { kind: "detail"; row: CheckoutNote }>({ kind: "list" });
+  const [view, setView] = useState<{ kind: "list" } | { kind: "build"; note: ShipSyncDeliveryNote | null } | { kind: "detail"; row: CheckoutNote } | { kind: "storage"; mode: "box" | "individual" }>({ kind: "list" });
+  if (view.kind === "storage") return <MoveToStorage mode={view.mode} onDone={() => setView({ kind: "list" })} />;
   if (view.kind === "build") {
     return <Builder note={view.note} onDone={() => setView({ kind: "list" })} />;
   }
   if (view.kind === "detail") return <Detail row={view.row} onBack={() => setView({ kind: "list" })} />;
-  return <List onBack={onBack} onNew={() => setView({ kind: "build", note: null })}
+  return <List onBack={onBack} onNew={() => setView({ kind: "build", note: null })} onStorage={(mode) => setView({ kind: "storage", mode })}
     onOpen={(row) => setView(row.driverName ? { kind: "detail", row } : { kind: "build", note: row.note })} />;
 }
 
 // ── List ─────────────────────────────────────────────────────────────────────
 
-function List({ onBack, onNew, onOpen }: { onBack: () => void; onNew: () => void; onOpen: (r: CheckoutNote) => void }) {
+function List({ onBack, onNew, onStorage, onOpen }: { onBack: () => void; onNew: () => void; onStorage: (m: "box" | "individual") => void; onOpen: (r: CheckoutNote) => void }) {
   const [rows, setRows] = useState<CheckoutNote[] | null>(null);
   const [choosing, setChoosing] = useState(false);
 
@@ -71,10 +74,8 @@ function List({ onBack, onNew, onOpen }: { onBack: () => void; onNew: () => void
           <button type="button" onClick={() => { setChoosing(false); onNew(); }} className="h-12 w-full rounded-lg bg-primary text-[16px] font-semibold text-primary-foreground">
             Check-out Parcel for Release
           </button>
-          {["Move Parcel to Storage as 1 Box", "Move Parcel to Storage as Individual"].map((l) => (
-            <div key={l} className="flex h-12 w-full items-center justify-between rounded-lg border border-border px-4 text-[16px] font-semibold opacity-60">
-              {l}<span className="rounded-full bg-muted px-2 py-0.5 text-[12px] font-medium text-muted-foreground">Soon</span>
-            </div>
+          {([["box", "Move Parcel to Storage as 1 Box"], ["individual", "Move Parcel to Storage as Individual"]] as const).map(([m, l]) => (
+            <button key={m} type="button" onClick={() => { setChoosing(false); onStorage(m); }} className="h-12 w-full rounded-lg border border-border text-[16px] font-semibold hover:border-primary">{l}</button>
           ))}
         </Sheet>
       )}
@@ -285,80 +286,6 @@ function FootBtn({ color, onClick, disabled, loading, children }: { color: strin
 }
 
 // ── Pieces ───────────────────────────────────────────────────────────────────
-
-function ParcelTable({ parcels, withBoat, onRemove }: { parcels: ParcelLite[]; withBoat?: boolean; onRemove?: (id: string) => void }) {
-  const total = parcels.reduce((n, p) => n + (p.num_packages ?? 1), 0);
-  return (
-    <div className="overflow-hidden rounded-lg border border-border">
-      <table className="w-full text-[13px]">
-        <thead className="bg-muted/30 text-left text-muted-foreground">
-          <tr>{withBoat && <th className="px-2 py-2">Client/Boat</th>}<th className="px-2 py-2">AWB</th><th className="px-2 py-2">Consignee</th><th className="px-2 py-2">Courier</th><th className="px-2 py-2">Qty</th>{onRemove && <th />}</tr>
-        </thead>
-        <tbody className="divide-y divide-border/50">
-          {parcels.length === 0 && <tr><td colSpan={6} className="px-2 py-6 text-center text-muted-foreground">Scan or search to add parcels.</td></tr>}
-          {parcels.map((p) => (
-            <tr key={p.id}>
-              {withBoat && <td className="px-2 py-2">{p.boat_name ?? "—"}</td>}
-              <td className="px-2 py-2 font-mono">{p.barcode ?? "—"}</td>
-              <td className="px-2 py-2">{p.package_owner ?? "—"}</td>
-              <td className="px-2 py-2">{p.courier ?? "—"}</td>
-              <td className="px-2 py-2 tabular-nums">{p.num_packages ?? 1}</td>
-              {onRemove && <td className="px-1"><button type="button" aria-label="Remove" onClick={() => onRemove(p.id)} className="rounded p-2 text-muted-foreground hover:text-destructive"><Trash2 className="h-4 w-4" /></button></td>}
-            </tr>
-          ))}
-        </tbody>
-        <tfoot><tr className="bg-muted/20 font-semibold"><td className="px-2 py-2" colSpan={withBoat ? 4 : 3}>TOTAL</td><td className="px-2 py-2 tabular-nums">{total}</td>{onRemove && <td />}</tr></tfoot>
-      </table>
-    </div>
-  );
-}
-
-/** The manual fallback: pick a boat, tick what to send, Add Selected Items. */
-function SearchToAdd({ onClose, onAdd, taken }: { onClose: () => void; onAdd: (p: ParcelLite[]) => void; taken: Set<string> }) {
-  const [boats, setBoats] = useState<string[] | null>(null);
-  const [boat, setBoat] = useState("");
-  const [items, setItems] = useState<ParcelLite[] | null>(null);
-  const [ticked, setTicked] = useState<Set<string>>(new Set());
-
-  useEffect(() => { void loadBoatsWithParcels().then(setBoats); }, []);
-  useEffect(() => { if (boat) { setItems(null); setTicked(new Set()); void loadReleasableForBoat(boat).then((r) => setItems(r.filter((p) => !taken.has(p.id)))); } }, [boat]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const toggle = (id: string) => setTicked((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; }); // eslint-disable-line @typescript-eslint/no-unused-expressions
-  const allOn = !!items?.length && items.every((p) => ticked.has(p.id));
-
-  return (
-    <Sheet title="Select Client/Boat Name" onClose={onClose}>
-      {boats === null ? <Loader2 className="mx-auto h-5 w-5 animate-spin" /> : (
-        <select className={inputCls} value={boat} onChange={(e) => setBoat(e.target.value)}>
-          <option value="">{boats.length ? "Select boat…" : "Nothing is waiting to go out"}</option>
-          {boats.map((b) => <option key={b} value={b}>{b}</option>)}
-        </select>
-      )}
-      {boat && (items === null ? <Loader2 className="mx-auto h-5 w-5 animate-spin" /> : items.length === 0 ? <p className="text-[14px] text-muted-foreground">Nothing left for {boat}.</p> : (
-        <>
-          <label className="flex items-center gap-3 text-[15px] font-medium">
-            <input type="checkbox" className="h-5 w-5" checked={allOn} onChange={() => setTicked(allOn ? new Set() : new Set(items.map((p) => p.id)))} /> Check All items
-          </label>
-          <ul className="divide-y divide-border/50 rounded-lg border border-border">
-            {items.map((p) => (
-              <li key={p.id}>
-                <label className="flex items-center gap-3 px-3 py-3 text-[15px]">
-                  <input type="checkbox" className="h-5 w-5" checked={ticked.has(p.id)} onChange={() => toggle(p.id)} />
-                  <span className="min-w-0 flex-1"><span className="block truncate font-mono text-[14px]">{p.barcode ?? "—"}</span>
-                    <span className="block truncate text-[13px] text-muted-foreground">{[p.package_owner, p.courier].filter(Boolean).join(" · ") || "—"} · Qty {p.num_packages ?? 1}</span></span>
-                </label>
-              </li>
-            ))}
-          </ul>
-        </>
-      ))}
-      <button type="button" disabled={ticked.size === 0} onClick={() => onAdd((items ?? []).filter((p) => ticked.has(p.id)))}
-        className="h-12 w-full rounded-lg bg-primary text-[16px] font-semibold text-primary-foreground disabled:opacity-50">
-        Add Selected Items{ticked.size ? ` (${ticked.size})` : ""}
-      </button>
-    </Sheet>
-  );
-}
 
 /** Position → Name → Email from the boat's crew list, or free text for a 3rd party. */
 function ClientCollection({

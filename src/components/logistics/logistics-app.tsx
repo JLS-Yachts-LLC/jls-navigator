@@ -19,6 +19,8 @@ import { CheckinParcel } from "./checkin-parcel";
 import { CheckoutParcels } from "./checkout-parcels";
 import { Deliveries } from "./deliveries";
 import { ManageDeliveries } from "./manage-deliveries";
+import { StoreIn } from "./store-in";
+import { ManageWarehouse } from "./manage-warehouse";
 
 type Module =
   | "checkin" | "checkout" | "store-in" | "warehouse-out" | "manage-warehouse" | "deliveries" | "manage-deliveries";
@@ -35,9 +37,9 @@ const GROUPS: { title: string; tiles: Tile[] }[] = [
     { key: "checkout", label: "Check-Out - Parcels", icon: PackageMinus, ready: true },
   ] },
   { title: "Warehouse Management", tiles: [
-    { key: "store-in", label: "Warehouse - Store In", icon: Warehouse, ready: false },
+    { key: "store-in", label: "Warehouse - Store In", icon: Warehouse, ready: true },
     { key: "warehouse-out", label: "Warehouse - Out", icon: PackageOpen, ready: false },
-    { key: "manage-warehouse", label: "Manage Warehouse", icon: LayoutGrid, ready: false },
+    { key: "manage-warehouse", label: "Manage Warehouse", icon: LayoutGrid, ready: true },
   ] },
   { title: "Delivery Management", tiles: [
     { key: "deliveries", label: "Deliveries", icon: Truck, ready: true },
@@ -55,6 +57,8 @@ export function LogisticsApp() {
 
   if (open === "checkin") return <CheckinParcel onBack={() => setOpen(null)} />;
   if (open === "checkout") return <CheckoutParcels onBack={() => setOpen(null)} />;
+  if (open === "store-in") return <StoreIn onBack={() => setOpen(null)} />;
+  if (open === "manage-warehouse") return <ManageWarehouse onBack={() => setOpen(null)} />;
   if (open === "deliveries") return <Deliveries identity={id} onBack={() => setOpen(null)} />;
   if (open === "manage-deliveries") return <ManageDeliveries onBack={() => setOpen(null)} />;
 

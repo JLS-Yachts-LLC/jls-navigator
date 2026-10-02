@@ -55,24 +55,25 @@ export async function loadNoteParcels(noteId: string): Promise<ParcelLite[]> {
 /** Boats that currently have something waiting to go out, for the "Search to add" picker. */
 export async function loadBoatsWithParcels(): Promise<string[]> {
   const { data } = await sb.from("shipsync_packages").select("boat_name")
-    .in("status", [...RELEASABLE]).is("delivery_note_id", null).not("boat_name", "is", null).limit(2000);
+    .in("status", [...RELEASABLE]).is("delivery_note_id", null).is("extra->>warehouse_ref", null).not("boat_name", "is", null).limit(2000);
   return Array.from(new Set<string>((data ?? []).map((r: any) => r.boat_name as string))).sort();
 }
 
 export async function loadReleasableForBoat(boat: string): Promise<ParcelLite[]> {
   const exact = boat.replace(/[\\%_]/g, (c) => `\\${c}`);
   const { data } = await sb.from("shipsync_packages").select(PARCEL_COLS)
-    .ilike("boat_name", exact).in("status", [...RELEASABLE]).is("delivery_note_id", null).order("created_at");
+    .ilike("boat_name", exact).in("status", [...RELEASABLE]).is("delivery_note_id", null).is("extra->>warehouse_ref", null).order("created_at");
   return (data ?? []) as ParcelLite[];
 }
 
 /** A scanned label: the parcel with that AWB, but only if it is free to send out. */
 export async function findReleasableByAwb(awb: string): Promise<{ parcel?: ParcelLite; reason?: string }> {
   const exact = awb.trim().replace(/[\\%_]/g, (c) => `\\${c}`);
-  const { data } = await sb.from("shipsync_packages").select(`${PARCEL_COLS}, delivery_note_id`).ilike("barcode", exact).limit(2);
+  const { data } = await sb.from("shipsync_packages").select(`${PARCEL_COLS}, delivery_note_id, extra`).ilike("barcode", exact).limit(2);
   const row = data?.[0];
   if (!row) return { reason: `${awb} isn't checked in.` };
   if (row.delivery_note_id) return { reason: `${awb} is already on a delivery note.` };
+  if (row.extra?.warehouse_ref) return { reason: `${awb} is in the warehouse (${row.extra.warehouse_ref}) — release it through Warehouse - Out.` };
   if (!(RELEASABLE as readonly string[]).includes(row.status)) return { reason: `${awb} is ${row.status.replace(/_/g, " ")}, not waiting to go out.` };
   return { parcel: row as ParcelLite };
 }
