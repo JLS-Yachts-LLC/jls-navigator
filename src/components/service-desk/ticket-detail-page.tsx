@@ -1,3 +1,4 @@
+import { notifyTicket, type TicketEvent } from "@/lib/service-desk/notify-ticket";
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Route } from "@/routes/_app.it-tickets.$ticketId";
@@ -155,7 +156,7 @@ export function TicketDetailPage() {
       // Public replies email the requester (from itsupport@jlsyachts.com).
       // Send & complete emails once — the resolved notice carrying the reply.
       if (complete) notify("resolved");
-      else if (!internal) notify("reply", replyBody);
+      else if (!internal) notify("reply");
 
       if (complete) toast.success(`${ticket.ticket_no} resolved`);
       setReply(""); setInternal(false);
@@ -164,12 +165,10 @@ export function TicketDetailPage() {
     finally { setSending(false); }
   }
 
-  // Fire a Graph email notification for this ticket (fire-and-forget).
-  function notify(event: "created" | "reply" | "resolved", message?: string) {
-    fetch("/api/it-tickets/notify", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ticketId, event, message }),
-    }).catch(() => {});
+  // Fire a Graph email notification for this ticket (fire-and-forget). The server
+  // reads the text from the ticket, so nothing but the event is sent.
+  function notify(event: TicketEvent) {
+    notifyTicket(ticketId, event);
   }
 
   // Inline metadata update — persists immediately.

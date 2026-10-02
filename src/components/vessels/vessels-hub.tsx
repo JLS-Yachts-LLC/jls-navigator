@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { Ship, Navigation, BarChart3, Sailboat } from "lucide-react";
+import { Ship, Navigation, BarChart3, Sailboat, Anchor } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { YachtsPage } from "@/components/vessels/yachts-registry-page";
+import { YachtsPage, type YachtFleet } from "@/components/vessels/yachts-registry-page";
 import { YachtDetail } from "@/components/vessels/yacht-detail-page";
 import { MyFleetPage } from "@/components/my-fleet-page";
 import { VesselReportScreen } from "@/components/visa/VesselReportScreen";
@@ -22,6 +22,8 @@ import { SmallBoatRegistrationPage } from "@/components/small-boat-registration-
 const TABS = [
   { key: "overview", label: "Vessel Overview", icon: Ship },
   { key: "smallboats", label: "Small Boats", icon: Sailboat },
+  // The company's own boats — the Vessel Overview screen, filtered to fleet = jls.
+  { key: "jlsboats", label: "JLS Boats", icon: Anchor },
   { key: "tracking", label: "Live Tracking", icon: Navigation },
   { key: "reports", label: "Vessel Reports", icon: BarChart3 },
 ] as const;
@@ -60,6 +62,10 @@ export function VesselsHub() {
           <BetaVesselOverview onTrack={(id) => { setTrackFocusId(id); setTab("tracking"); }} />
         ) : tab === "smallboats" ? (
           <SmallBoatRegistrationPage />
+        ) : tab === "jlsboats" ? (
+          // key: a fresh instance per fleet, so no list or open detail carries
+          // over between the client fleet and ours.
+          <BetaVesselOverview key="jls" fleet="jls" onTrack={(id) => { setTrackFocusId(id); setTab("tracking"); }} />
         ) : tab === "tracking" ? (
           <MyFleetPage focusYachtId={trackFocusId} />
         ) : (
@@ -71,12 +77,14 @@ export function VesselsHub() {
 }
 
 /** Overview tab: vessel list ↔ inline detail, both inside the Beta shell. */
-function BetaVesselOverview({ onTrack }: { onTrack?: (id: string) => void }) {
+function BetaVesselOverview({
+  onTrack, fleet = "client",
+}: { onTrack?: (id: string) => void; fleet?: YachtFleet }) {
   const [yachtId, setYachtId] = useState<string | null>(null);
   return yachtId ? (
     <YachtDetail yachtId={yachtId} embedded onBack={() => setYachtId(null)} onTrack={onTrack} />
   ) : (
-    <YachtsPage onOpenYacht={setYachtId} />
+    <YachtsPage onOpenYacht={setYachtId} fleet={fleet} />
   );
 }
 

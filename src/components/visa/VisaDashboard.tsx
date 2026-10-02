@@ -1,3 +1,4 @@
+import { guardUploadFile, uploadContentType } from '@/lib/upload-guard'
 import { fileVisaToSharePoint, reportVisaFiling } from '@/lib/visa/file-to-sharepoint'
 import { storageRef } from '@/lib/signed-url'
 import { useState, useEffect, useMemo, useRef, type CSSProperties } from 'react'
@@ -670,11 +671,13 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
   // Quick-attach the issued visa document, which moves the application to Approved.
   async function attachVisa(app: VisaApplication, file: File | null) {
     if (!file) return
+    if (!guardUploadFile(file, { accepts: 'Use a PDF or an image of the visa.' })) return
     setAttaching(app.id)
     try {
       const ext  = file.name.split('.').pop() || 'pdf'
       const path = `visa/${app.id}/visa-document.${ext}`
-      const { error: upErr } = await supabase.storage.from('permit-documents').upload(path, file, { upsert: true })
+      const { error: upErr } = await supabase.storage.from('permit-documents')
+        .upload(path, file, { upsert: true, contentType: uploadContentType(file) })
       if (upErr) throw upErr
       const url = storageRef('permit-documents', path)
       const { fileToBase64 } = await import('@/lib/file-to-base64')

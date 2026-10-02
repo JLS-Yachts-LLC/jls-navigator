@@ -5,8 +5,11 @@
  * FMA and DMA permits, cruising permits, sanitation, insurance. Without it,
  * responsibility is tribal knowledge and things lapse quietly.
  *
- * Staff are read from user_profiles (active, internal), so the list is the same
- * people Manage Users shows.
+ * The choice is the Agency team — agency_team_members(), i.e. whoever can edit
+ * Agency vessels other than admins — not every account in Polaris. It used to
+ * list all fourteen active users, finance and logistics included, which is why
+ * the Agency lead asked whether assigning a vessel to her team was possible at
+ * all (SD-0036).
  */
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -15,7 +18,33 @@ import { UserCog, Loader2, Check } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
-type Staff = { userId: string; label: string };
+export type Staff = { userId: string; label: string };
+
+/**
+ * The Agency team, plus whoever `keepUserId` names if they fall outside it — a
+ * vessel assigned before someone moved department must still show its agent
+ * rather than silently reading "Unassigned".
+ */
+export function useAgencyTeam(keepUserId?: string | null) {
+  const [staff, setStaff] = useState<Staff[]>([]);
+
+  const load = useCallback(async () => {
+    const { data } = await (supabase as any).rpc("agency_team_members");
+    const team: Staff[] = ((data ?? []) as any[]).map((u) => ({ userId: u.user_id, label: u.label }));
+    if (keepUserId && !team.some((s) => s.userId === keepUserId)) {
+      const { data: p } = await (supabase as any)
+        .from("user_profiles").select("display_name, email").eq("user_id", keepUserId).maybeSingle();
+      team.push({
+        userId: keepUserId,
+        label: `${p?.display_name?.trim() || p?.email || "Unknown user"} (not in Agency)`,
+      });
+    }
+    setStaff(team);
+  }, [keepUserId]);
+
+  useEffect(() => { void load(); }, [load]);
+  return staff;
+}
 
 export function YachtAgentPicker({
   yachtId, agentUserId, onChanged, compact = false,
@@ -26,24 +55,12 @@ export function YachtAgentPicker({
   onChanged?: (next: string | null) => void;
   compact?: boolean;
 }) {
-  const [staff, setStaff] = useState<Staff[]>([]);
+  const staff = useAgencyTeam(agentUserId);
   const [value, setValue] = useState<string>(agentUserId ?? "");
   const [saving, setSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
 
   useEffect(() => { setValue(agentUserId ?? ""); }, [agentUserId]);
-
-  const load = useCallback(async () => {
-    const { data } = await (supabase as any)
-      .from("user_profiles")
-      .select("user_id, display_name, email, active")
-      .order("display_name");
-    setStaff(((data ?? []) as any[])
-      .filter(u => u.active !== false)
-      .map(u => ({ userId: u.user_id, label: u.display_name?.trim() || u.email || "Unnamed user" })));
-  }, []);
-
-  useEffect(() => { void load(); }, [load]);
 
   async function assign(next: string) {
     setSaving(true);

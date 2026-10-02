@@ -16,8 +16,21 @@ import {
 } from "@/lib/auth/workspace";
 import { Eye, EyeOff } from "lucide-react";
 
+/**
+ * Where to go after signing in, when the sign-in was an interruption rather than
+ * the destination — e.g. a crew member opening the Orbit field app on their
+ * phone. Only a same-site path is honoured ("/x", never "//host" or "https://"),
+ * so the link cannot be used to bounce someone to another site after login.
+ */
+const safeNext = (v: unknown): string | undefined =>
+  typeof v === "string" && /^\/(?![/\\])/.test(v) ? v : undefined;
+
 export const Route = createFileRoute("/auth")({
   component: AuthPage,
+  validateSearch: (search: Record<string, unknown>): { next?: string } => {
+    const next = safeNext(search.next);
+    return next ? { next } : {};
+  },
   head: () => ({ meta: [{ title: "Sign in — Polaris" }] }),
 });
 
@@ -26,6 +39,7 @@ type Mode = "signin" | "set-password" | "forgot-password" | "link-expired";
 function AuthPage() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
+  const { next } = Route.useSearch();
   const [mode, setMode] = useState<Mode>("signin");
   const [linkError, setLinkError] = useState<string | null>(null);
   const [email, setEmail] = useState("");
@@ -33,6 +47,16 @@ function AuthPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  // Was this a reset for an existing account, or a first-time invite? Both land
+  // here, and telling someone resetting their password that they "have been
+  // invited to Polaris" reads as the wrong link.
+  const [isRecovery, setIsRecovery] = useState(false);
+
+  // Set when the account has MFA and the link's session is not yet MFA-verified.
+  // See the effect below for why this step has to exist at all.
+  const [mfaFactorId, setMfaFactorId] = useState<string | null>(null);
+  const [mfaCode, setMfaCode] = useState("");
 
   // Post-auth workspace step
   const [workspaces, setWorkspaces] = useState<WorkspaceContext[] | null>(null);
@@ -61,9 +85,39 @@ function AuthPage() {
       return;
     }
     if (hash.includes("type=invite") || hash.includes("type=recovery")) {
+      setIsRecovery(hash.includes("type=recovery"));
       setMode("set-password");
     }
   }, []);
+
+  /**
+   * An invite or recovery link signs you in at aal1. Supabase refuses
+   * updateUser({ password }) at aal1 once the account has a verified TOTP factor
+   * — "AAL2 session is required to update email or password when MFA is enabled"
+   * — so anyone with MFA on could open their reset link, type a new password and
+   * get nothing but that error, with no way forward on the page.
+   *
+   * Asking for a code here is what raises the session to aal2, and it is also the
+   * right thing to require: a password reset for an MFA account should prove the
+   * second factor, not bypass it because the first one arrived by email.
+   */
+  useEffect(() => {
+    if (mode !== "set-password" || !user) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+        if (cancelled || aal?.nextLevel !== "aal2" || aal?.currentLevel === "aal2") return;
+        const { data: factors } = await supabase.auth.mfa.listFactors();
+        const totp = ((factors?.totp ?? []) as any[]).find((f) => f.status === "verified");
+        if (totp && !cancelled) setMfaFactorId(totp.id);
+      } catch {
+        // Leave the step hidden — the save reports the real error rather than
+        // this page inventing one.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [mode, user]);
 
   // After authentication, derive claims → route directly or show workspace chooser.
   useEffect(() => {
@@ -74,23 +128,25 @@ function AuthPage() {
         const c = await deriveClaims(supabase, user);
         setClaims(c);
         const ws = await getAvailableWorkspaces(supabase, c);
+        // The workspace selector still shows when there is more than one — the
+        // rule is never to skip it. `next` only replaces where it lands afterwards.
         if (ws.length > 1) {
           setWorkspaces(ws); // show selector
         } else if (ws.length === 1) {
           storeWorkspace(ws[0]);
-          navigate({ to: resolveWorkspaceLandingPath(c, ws[0]) as any });
+          navigate({ to: (next ?? resolveWorkspaceLandingPath(c, ws[0])) as any });
         } else {
-          navigate({ to: resolveLandingPath(c) as any });
+          navigate({ to: (next ?? resolveLandingPath(c)) as any });
         }
       } catch {
-        navigate({ to: "/polaris-redesign" as any });
+        navigate({ to: (next ?? "/polaris-redesign") as any });
       }
     })();
-  }, [loading, user, mode, resolving, workspaces, navigate]);
+  }, [loading, user, mode, resolving, workspaces, navigate, next]);
 
   function pickWorkspace(ws: WorkspaceContext) {
     storeWorkspace(ws);
-    navigate({ to: resolveWorkspaceLandingPath(claims ?? ({} as PolarisClaims), ws) as any });
+    navigate({ to: (next ?? resolveWorkspaceLandingPath(claims ?? ({} as PolarisClaims), ws)) as any });
   }
 
   async function handleSignIn(e: React.FormEvent) {
@@ -113,13 +169,29 @@ function AuthPage() {
       toast.error("Passwords do not match");
       return;
     }
+    if (mfaFactorId && !/^\d{6}$/.test(mfaCode.trim())) {
+      toast.error("Enter the 6-digit code from your authenticator app");
+      return;
+    }
     setBusy(true);
     try {
+      // Raise the session to aal2 first when the account has MFA, or the update
+      // below is rejected outright.
+      if (mfaFactorId) {
+        const { data: ch, error: chErr } = await supabase.auth.mfa.challenge({ factorId: mfaFactorId });
+        if (chErr) throw chErr;
+        const { error: vErr } = await supabase.auth.mfa.verify({
+          factorId: mfaFactorId, challengeId: ch.id, code: mfaCode.trim(),
+        });
+        if (vErr) throw vErr;
+      }
       const { error } = await supabase.auth.updateUser({ password });
       if (error) throw error;
-      toast.success("Password set — welcome to JLS Yachts");
+      toast.success(isRecovery ? "Password updated" : "Password set — welcome to JLS Yachts");
+      setMfaCode("");
       setMode("signin");
     } catch (e: unknown) {
+      setMfaCode("");
       toast.error(e instanceof Error ? e.message : "Failed to set password");
     } finally {
       setBusy(false);
@@ -152,7 +224,9 @@ function AuthPage() {
 
   const titles: Record<Mode, { heading: string; sub: string }> = {
     "signin": { heading: "Welcome back", sub: "Sign in to your account." },
-    "set-password": { heading: "Set your password", sub: "You have been invited to Polaris. Choose a password to activate your account." },
+    "set-password": isRecovery
+      ? { heading: "Choose a new password", sub: "Set a new password for your Polaris account." }
+      : { heading: "Set your password", sub: "You have been invited to Polaris. Choose a password to activate your account." },
     "forgot-password": { heading: "Reset password", sub: "Enter your email and we'll send you a reset link." },
     "link-expired": { heading: "Link expired", sub: "Request a fresh link below — it only takes a moment." },
   };
@@ -216,8 +290,21 @@ function AuthPage() {
                     <Label htmlFor="confirm-password">Confirm password</Label>
                     <Input id="confirm-password" type="password" required minLength={8} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
                   </div>
+                  {mfaFactorId && (
+                    <div className="space-y-1.5">
+                      <Label htmlFor="mfa-code">Authentication code</Label>
+                      <Input id="mfa-code" inputMode="numeric" autoComplete="one-time-code" required
+                        maxLength={6} value={mfaCode}
+                        onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, ""))}
+                        placeholder="6-digit code" className="tracking-[0.3em]" />
+                      <p className="text-xs text-muted-foreground">
+                        Your account uses two-factor authentication. Enter the current code from your
+                        authenticator app to confirm this change.
+                      </p>
+                    </div>
+                  )}
                   <Button type="submit" disabled={busy} className="w-full">
-                    {busy ? "Saving…" : "Activate account"}
+                    {busy ? "Saving…" : isRecovery ? "Update password" : "Activate account"}
                   </Button>
                 </form>
               )}

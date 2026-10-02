@@ -25,6 +25,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { YachtAgentPicker } from "./YachtAgentPicker";
+import { VesselProvenance, SameNameBadge, VesselConfirmDetails, normVesselName } from "./VesselProvenance";
 
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -155,19 +156,52 @@ function YachtLink({ id, onOpen, className, children }: {
   return <Link to="/yachts/$id" params={{ id } as any} className={className}>{children}</Link>;
 }
 
-export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void } = {}) {
+/**
+ * Which fleet the registry shows. "client" is the Vessel Overview — the yachts
+ * the Port & Agency Team services. "jls" is the JLS Boats tab — the company's
+ * own boats, on the same screen but never mixed into the client list or pushed
+ * to the client SharePoint list (see yachts.fleet).
+ */
+export type YachtFleet = "client" | "jls";
+
+export function YachtsPage({
+  onOpenYacht, fleet = "client",
+}: { onOpenYacht?: (id: string) => void; fleet?: YachtFleet } = {}) {
+  const isJls = fleet === "jls";
+  const noun = isJls ? "boat" : "yacht";
   // Init from localStorage (runs once)
   const [init] = useState(initViewState);
 
   const [view, setView] = useState<"list" | "cards" | "small">(loadView);
   const [yachts, setYachts] = useState<Yacht[]>([]);
+  // Vessels grouped by name, across the whole fleet — archived included, and
+  // whatever the filters show — so a record whose twin is hidden is still
+  // flagged. Two same-named cards with nothing else to tell them apart is how the
+  // wrong Amara got archived (SD-0039).
+  const sameName = useMemo(() => {
+    const byName = new Map<string, Yacht[]>();
+    for (const y of yachts) {
+      const k = normVesselName(y.vessel_name);
+      if (!k) continue;
+      const list = byName.get(k) ?? [];
+      list.push(y);
+      byName.set(k, list);
+    }
+    return (y: Yacht) => (byName.get(normVesselName(y.vessel_name)) ?? []).filter((o) => o.id !== y.id);
+  }, [yachts]);
+  const dupIds = useMemo(
+    () => new Set(yachts.filter((y) => sameName(y).length > 0).map((y) => y.id)),
+    [yachts, sameName],
+  );
   // Fleet-wide unpaid QBO balance per yacht (matched by yacht link or QBO customer).
   const [outstanding, setOutstanding] = useState<Record<string, number>>({});
   const [activityMap, setActivityMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
-  // Default view: In Country vessels, alphabetical (Matt, 2 Jul 2026).
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("in country");
+  // Default view: In Country vessels, alphabetical (Matt, 2 Jul 2026). JLS Boats
+  // open on everything — our own boats are ours wherever they are, and a boat
+  // just added (status "Active") would otherwise be filtered straight out of view.
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(isJls ? "all" : "in country");
   // AIS movement filter — set by clicking a vessel's movement icon or a pill.
   const [movementFilter, setMovementFilter] = useState<"all" | Movement>("all");
   const toggleMovementFilter = (m: Movement) => setMovementFilter((cur) => (cur === m ? "all" : m));
@@ -177,6 +211,8 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
   // add / archive / inline-edit controls are hidden for everyone else.
   const { canAccessModule } = useAccess();
   const canEditVessels = canAccessModule("agency", "edit");
+  // Adding is a separate, lower grant — it matches the database's INSERT policy.
+  const canCreateVessels = canAccessModule("agency", "create");
   const [archiveView, setArchiveView] = useState<"active" | "archived">("active");
   /** Show only vessels this user is the responsible agent for. */
   const [mineOnly, setMineOnly] = useState(false);
@@ -226,9 +262,10 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
 
   async function load() {
     setLoading(true);
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from("yachts")
       .select("*")
+      .eq("fleet", fleet)
       .order("created_at", { ascending: false });
     if (error) { toast.error(error.message); setLoading(false); return; }
     const rows = (data ?? []) as Yacht[];
@@ -383,12 +420,17 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
     return !!la && Date.now() - new Date(la).getTime() > 30 * 86400000;
   };
 
+  // A typed search looks across the whole fleet, whatever the status pill says.
+  // The page opens on "In country", and a yacht that is Arriving or Departed
+  // was invisible to the search box — on 30 Sep 2026 that produced a duplicate
+  // Amara created by hand while the synced one sat under the filter.
+  const searching = q.trim().length > 0;
   const filtered = useMemo(() => {
     let rows = baseRows;
-    if (statusFilter !== "all") {
+    if (!searching && statusFilter !== "all") {
       rows = rows.filter((y) => String(y.status ?? "").toLowerCase().trim() === statusFilter);
     }
-    if (movementFilter !== "all") {
+    if (!searching && movementFilter !== "all") {
       rows = rows.filter((y) => movementOf(y) === movementFilter);
     }
     if (q.trim()) {
@@ -413,7 +455,7 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
       rows = [...rows].sort((a, b) => lastActivityOf(b).localeCompare(lastActivityOf(a)));
     }
     return rows;
-  }, [baseRows, q, statusFilter, movementFilter, sortKey, sortDir, activityMap]);
+  }, [baseRows, q, searching, statusFilter, movementFilter, sortKey, sortDir, activityMap]);
 
   // Movement counts for the pills (within the current status filter).
   const movementOptions = useMemo(() => {
@@ -447,7 +489,7 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
             <span className="opacity-40">/</span>
             <span className="text-foreground">Yachts</span>
           </div>
-          <h1 className="font-display text-base font-semibold tracking-tight">Yacht Registry</h1>
+          <h1 className="font-display text-base font-semibold tracking-tight">{isJls ? "JLS Boats" : "Yacht Registry"}</h1>
         </div>
         <div className="flex items-center gap-2">
           {/* Search */}
@@ -456,10 +498,15 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
             <Input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Search yachts…"
+              placeholder={`Search all ${noun}s…`}
               className="h-8 w-56 pl-8"
             />
           </div>
+          {searching && (statusFilter !== "all" || movementFilter !== "all") && (
+            <span className="text-[12px] text-muted-foreground">
+              Searching all statuses · {filtered.length} match{filtered.length === 1 ? "" : "es"}
+            </span>
+          )}
 
           {/* My vessels — only the ones this user is the responsible agent for */}
           <button
@@ -663,9 +710,11 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
               <Link to="/my-fleet"><Radar className="h-3.5 w-3.5" /> Live Fleet Map</Link>
             </Button>
           )}
-          {canEditVessels && (
+          {canCreateVessels && (
             <Button asChild size="sm" className="h-8 gap-1.5 text-xs">
-              <Link to="/yachts/new"><Plus className="h-3.5 w-3.5" /> Add Yacht</Link>
+              <Link to="/yachts/new" search={{ fleet } as any}>
+                <Plus className="h-3.5 w-3.5" /> {isJls ? "Add JLS Boat" : "Add Yacht"}
+              </Link>
             </Button>
           )}
         </div>
@@ -731,7 +780,7 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
         {loading ? (
           <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">Loading…</div>
         ) : filtered.length === 0 ? (
-          <EmptyState hasFilter={!!q || statusFilter !== "all" || movementFilter !== "all" || archiveView === "archived"} />
+          <EmptyState fleet={fleet} canCreate={canCreateVessels} hasFilter={!!q || statusFilter !== "all" || movementFilter !== "all" || archiveView === "archived"} />
         ) : view === "list" ? (
           <ListView
             rows={filtered}
@@ -748,11 +797,12 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
             outstanding={outstanding}
             onMovementFilter={toggleMovementFilter}
             staffNames={staffNames}
+            dupIds={dupIds}
             onAgentChanged={(id, next) => setYachts((prev) => prev.map((y) =>
               y.id === id ? { ...y, agent_user_id: next } : y))}
           />
         ) : (
-          <CardsView rows={filtered} staleIds={new Set(filtered.filter(isStale).map((y) => y.id))} small={view === "small"} onArchive={canEditVessels ? setArchiveTarget : undefined} onOpenYacht={onOpenYacht} onMovementFilter={toggleMovementFilter} staffNames={staffNames} />
+          <CardsView rows={filtered} staleIds={new Set(filtered.filter(isStale).map((y) => y.id))} small={view === "small"} onArchive={canEditVessels ? setArchiveTarget : undefined} onOpenYacht={onOpenYacht} onMovementFilter={toggleMovementFilter} staffNames={staffNames} dupIds={dupIds} />
         )}
       </div>
 
@@ -766,6 +816,7 @@ export function YachtsPage({ onOpenYacht }: { onOpenYacht?: (id: string) => void
               ) : (
                 <><strong>{String(archiveTarget?.vessel_name ?? "This yacht")}</strong> will be hidden from the active fleet — it won’t appear in the Yachts list, dashboard counts, or vessel pickers. Nothing is deleted, and you can restore it any time from the Archived view.</>
               )}
+              {archiveTarget && <VesselConfirmDetails y={archiveTarget} sameName={sameName(archiveTarget)} />}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -814,19 +865,26 @@ function SortIcon({ col, sortKey, sortDir }: { col: YachtColumnKey; sortKey: Yac
     : <ChevronDown className="h-3 w-3 text-primary" />;
 }
 
-function EmptyState({ hasFilter }: { hasFilter: boolean }) {
+function EmptyState({ hasFilter, fleet, canCreate }: { hasFilter: boolean; fleet: YachtFleet; canCreate: boolean }) {
+  const isJls = fleet === "jls";
   return (
     <div className="flex h-64 flex-col items-center justify-center rounded-lg border border-dashed border-border text-center">
       <Ship className="h-10 w-10 text-muted-foreground/60" />
       <h3 className="mt-3 font-display text-lg font-semibold">
-        {hasFilter ? "No matching yachts" : "No yachts yet"}
+        {hasFilter
+          ? (isJls ? "No matching boats" : "No matching yachts")
+          : (isJls ? "No JLS boats yet" : "No yachts yet")}
       </h3>
       <p className="text-sm text-muted-foreground">
-        {hasFilter ? "Try adjusting your search or filter." : "Add your first vessel to get started."}
+        {hasFilter
+          ? "Try adjusting your search or filter."
+          : isJls ? "Add the company's own boats here." : "Add your first vessel to get started."}
       </p>
-      {!hasFilter && (
+      {!hasFilter && canCreate && (
         <Button asChild className="mt-4 gap-1.5">
-          <Link to="/yachts/new"><Plus className="h-4 w-4" /> Add Yacht</Link>
+          <Link to="/yachts/new" search={{ fleet } as any}>
+            <Plus className="h-4 w-4" /> {isJls ? "Add JLS Boat" : "Add Yacht"}
+          </Link>
         </Button>
       )}
     </div>
@@ -907,8 +965,10 @@ function trackUrl(y: Yacht): string {
 
 function ListView({
   rows, visible, sortKey, sortDir, onSort, quickEditId, setQuickEditId, updateStatus, onArchive, canEdit, onOpenYacht, outstanding = {}, onMovementFilter,
-  staffNames = {}, onAgentChanged,
+  staffNames = {}, onAgentChanged, dupIds,
 }: {
+  /** Vessels whose name another record also uses — shown with where each came from. */
+  dupIds?: Set<string>;
   rows: Yacht[];
   visible: YachtColumnKey[];
   outstanding?: Record<string, number>;
@@ -960,13 +1020,21 @@ function ListView({
                   {c.key === "vessel_name" ? (
                     <span className="inline-flex items-center gap-1">
                       <MovementBadge y={y} onFilter={onMovementFilter} size={13} />
-                      <YachtLink
-                        id={y.id}
-                        onOpen={onOpenYacht}
-                        className="font-medium text-foreground hover:text-primary"
-                      >
-                        {fmt(y[c.key])}
-                      </YachtLink>
+                      <span className="flex flex-col">
+                        <YachtLink
+                          id={y.id}
+                          onOpen={onOpenYacht}
+                          className="font-medium text-foreground hover:text-primary"
+                        >
+                          {fmt(y[c.key])}
+                        </YachtLink>
+                        {dupIds?.has(y.id) && (
+                          <span className="flex flex-wrap items-center gap-1.5">
+                            <VesselProvenance y={y} />
+                            <SameNameBadge />
+                          </span>
+                        )}
+                      </span>
                     </span>
                   ) : c.key === "status" ? (
                     quickEditId === y.id ? (
@@ -1078,7 +1146,7 @@ function ListView({
   );
 }
 
-function CardsView({ rows, staleIds, small, onArchive, onOpenYacht, onMovementFilter, staffNames = {} }: { rows: Yacht[]; staleIds: Set<string>; small?: boolean; onArchive?: (y: Yacht) => void; onOpenYacht?: (id: string) => void; onMovementFilter?: (m: Movement) => void; staffNames?: Record<string, string> }) {
+function CardsView({ rows, staleIds, small, onArchive, onOpenYacht, onMovementFilter, staffNames = {}, dupIds }: { rows: Yacht[]; staleIds: Set<string>; small?: boolean; onArchive?: (y: Yacht) => void; onOpenYacht?: (id: string) => void; onMovementFilter?: (m: Movement) => void; staffNames?: Record<string, string>; dupIds?: Set<string> }) {
   return (
     <div
       className={
@@ -1133,6 +1201,13 @@ function CardsView({ rows, staleIds, small, onArchive, onOpenYacht, onMovementFi
                 <StatusPill status={y.status as string | null} />
               </div>
               <div className="line-clamp-1 text-[11px] text-muted-foreground">{fmt(y.vessel_type)} · {fmt(y.flag)}</div>
+              {/* No room for it on every small card — only where it matters. */}
+              {dupIds?.has(y.id) && (
+                <div className="space-y-1">
+                  <VesselProvenance y={y} className="text-[10px]" />
+                  <SameNameBadge />
+                </div>
+              )}
             </div>
           ) : (
             <div className="space-y-2 p-4">
@@ -1144,6 +1219,10 @@ function CardsView({ rows, staleIds, small, onArchive, onOpenYacht, onMovementFi
                 <StatusPill status={y.status as string | null} />
               </div>
               <div className="text-xs text-muted-foreground">{fmt(y.vessel_type)} · {fmt(y.flag)}</div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <VesselProvenance y={y} />
+                {dupIds?.has(y.id) && <SameNameBadge />}
+              </div>
               <div className="grid grid-cols-2 gap-2 pt-2 text-xs">
                 <div><div className="text-muted-foreground">Berth</div><div className="font-medium">{fmt(y.berth)}</div></div>
                 <div><div className="text-muted-foreground">LOA</div><div className="font-medium tabular-nums">{fmt(y.length_overall_m)} m</div></div>

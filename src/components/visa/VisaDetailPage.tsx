@@ -1,3 +1,4 @@
+import { guardUploadFile, uploadContentType } from '@/lib/upload-guard'
 import { storageRef } from "@/lib/signed-url";
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
@@ -117,12 +118,14 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
   // document into the SharePoint crew folder automatically (best-effort).
   async function attachVisaFile(file: File | null) {
     if (!file) return;
+    if (!guardUploadFile(file, { accepts: "Use a PDF or an image of the visa." })) return;
     setAttaching(true);
     try {
       const db = supabase as any;
       const ext = file.name.split(".").pop() || "pdf";
       const path = `visa/${id}/visa-document.${ext}`;
-      const { error: upErr } = await supabase.storage.from("permit-documents").upload(path, file, { upsert: true });
+      const { error: upErr } = await supabase.storage.from("permit-documents")
+        .upload(path, file, { upsert: true, contentType: uploadContentType(file) });
       if (upErr) throw upErr;
       const url = storageRef("permit-documents", path);
       const base64 = await fileToBase64(file);

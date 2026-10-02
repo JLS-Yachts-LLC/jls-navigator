@@ -1,3 +1,4 @@
+import { guardUploadFile, uploadContentType } from '@/lib/upload-guard'
 import { storageRef } from '@/lib/signed-url'
 import { useRef, useState } from 'react'
 import { supabase } from '@/integrations/supabase/client'
@@ -155,13 +156,17 @@ export function VisaBulkUpload({ countryCode, onClose, onChanged }: {
     return { plan: 'create', app: null, seed }
   }
 
-  async function addFiles(files: FileList | null) {
-    if (!files?.length) return
-    for (const file of Array.from(files)) {
+  async function addFiles(fileList: FileList | null) {
+    // Refuse anything the bucket would reject up front, before a scan burns an
+    // OCR call on a file that could never be stored.
+    const files = Array.from(fileList ?? [])
+      .filter(f => guardUploadFile(f, { accepts: 'Use a PDF, JPG or PNG.' }))
+    if (!files.length) return
+    for (const file of files) {
       const key = `${file.name}-${file.size}-${rows.length}-${Math.round(performance.now())}`
       let base64 = ''
       try { base64 = await fileToBase64(file) } catch { /* skip */ }
-      setRows(prev => [...prev, { key, fileName: file.name, base64, contentType: file.type, status: 'scanning' }])
+      setRows(prev => [...prev, { key, fileName: file.name, base64, contentType: uploadContentType(file) ?? file.type, status: 'scanning' }])
       try {
         const r = await fetch('/api/visa/passport-ocr', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -183,8 +188,12 @@ export function VisaBulkUpload({ countryCode, onClose, onChanged }: {
   /** Put the file in storage and return its public URL. */
   async function uploadDoc(row: Row, path: string): Promise<string> {
     const bytes = Uint8Array.from(atob(row.base64), c => c.charCodeAt(0))
+    // NOT octet-stream as the fallback: the bucket's type allow-list rejects it,
+    // so a file the browser reported no type for would fail here having already
+    // been scanned. addFiles() resolves the type from the name, and these are
+    // always a PDF or an image by the time they reach this point.
     const { error } = await supabase.storage.from('permit-documents')
-      .upload(path, bytes, { contentType: row.contentType || 'application/octet-stream', upsert: true })
+      .upload(path, bytes, { contentType: row.contentType || 'application/pdf', upsert: true })
     if (error) throw error
     return storageRef('permit-documents', path)
   }

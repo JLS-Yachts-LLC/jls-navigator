@@ -1,3 +1,4 @@
+import { notifyTicket } from "@/lib/service-desk/notify-ticket";
 import { useState, useEffect, useMemo } from "react";
 import { Link } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
@@ -118,7 +119,7 @@ export function ServiceDeskPage() {
       }]).select("id").single();
       if (error) throw error;
       // Email notification (support mailbox + requester acknowledgement) via Graph.
-      if (data?.id) fetch("/api/it-tickets/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ticketId: data.id, event: "created" }) }).catch(() => {});
+      if (data?.id) notifyTicket(data.id, "created");
       toast.success("Ticket created");
       setOpen(false); setForm(EMPTY_FORM);
       void load();

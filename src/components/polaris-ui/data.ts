@@ -174,14 +174,18 @@ async function crewForVessel(yachtId: string | null): Promise<{ ids: string[]; n
 export interface CertRow {
   id: string; crewName: string; certificate: string | null; issuer: string | null;
   expiry: string | null; state: "active" | "expiring_soon" | "expired" | "none";
+  fileUrl: string | null; fileName: string | null;
 }
 export interface VesselTraining {
   loading: boolean;
   rows: CertRow[];
   counts: { total: number; valid: number; expiring: number; expired: number };
+  /** Re-read after the screen adds a certification. */
+  reload: () => void;
 }
 export function useVesselTraining(yachtId: string | null): VesselTraining {
-  const [state, setState] = useState<VesselTraining>({
+  const [nonce, setNonce] = useState(0);
+  const [state, setState] = useState<Omit<VesselTraining, "reload">>({
     loading: true, rows: [], counts: { total: 0, valid: 0, expiring: 0, expired: 0 },
   });
   useEffect(() => {
@@ -192,7 +196,7 @@ export function useVesselTraining(yachtId: string | null): VesselTraining {
       if (yachtId && !ids.length) { setState({ loading: false, rows: [], counts: { total: 0, valid: 0, expiring: 0, expired: 0 } }); return; }
       let q = (supabase as any)
         .from("training_certifications")
-        .select("id, crew_member_id, crew_name, certificate, cert_type, issuing_body, expiry_date")
+        .select("id, crew_member_id, crew_name, certificate, cert_type, issuing_body, expiry_date, file_url, file_name")
         .order("expiry_date", { ascending: true })
         .limit(yachtId ? 400 : 5000);
       if (yachtId) q = q.in("crew_member_id", ids);
@@ -204,6 +208,8 @@ export function useVesselTraining(yachtId: string | null): VesselTraining {
         issuer: c.issuing_body ?? null,
         expiry: c.expiry_date ?? null,
         state: expiryState(c.expiry_date ?? null),
+        fileUrl: c.file_url ?? null,
+        fileName: c.file_name ?? null,
       }));
       const counts = {
         total: rows.length,
@@ -213,8 +219,8 @@ export function useVesselTraining(yachtId: string | null): VesselTraining {
       };
       setState({ loading: false, rows, counts });
     })();
-  }, [yachtId]);
-  return state;
+  }, [yachtId, nonce]);
+  return { ...state, reload: () => setNonce((n) => n + 1) };
 }
 
 // ── Crew documents for the vessel's crew ──────────────────────────────────────

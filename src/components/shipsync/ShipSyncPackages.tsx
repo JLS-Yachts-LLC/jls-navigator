@@ -12,9 +12,9 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Search, Loader2, Trash2, Camera, FileText, ScanLine, ChevronDown, ChevronRight, X } from "lucide-react";
+import { Plus, Search, Loader2, Trash2, Camera, FileText, ScanLine, ChevronDown, ChevronRight, X, ArrowDownToLine } from "lucide-react";
 import { BarcodeScannerDialog } from "@/components/shipsync/BarcodeScanner";
-import { StatusBadge, fmtDate, DocumentDropzoneDialog, TableChartToggle, ShipSyncChartsPanel, TONE_HEX } from "@/components/shipsync/shared";
+import { StatusBadge, fmtDate, DocumentDropzoneDialog, TableChartToggle, ShipSyncChartsPanel, TONE_HEX, downloadCsv } from "@/components/shipsync/shared";
 import { ALL_ZONES, STATUS_META, type PackageStatus, type ShipSyncPackage } from "@/lib/shipsync/model";
 import { createPackage, patchPackage, deletePackage, uploadShipSyncImage, addPackageDocuments, removePackageDocument } from "@/lib/shipsync/data";
 import type { ShipSyncData } from "@/components/shipsync-page";
@@ -47,7 +47,7 @@ const MANUAL_STATUS_OPTIONS = STATUS_OPTIONS.filter((s) => s !== "assigned" && s
 const PRIORITIES = [{ v: 1, l: "1 — High" }, { v: 2, l: "2 — Normal" }, { v: 3, l: "3 — Low" }];
 
 type Form = Partial<ShipSyncPackage>;
-const EMPTY: Form = { status: "in_office", num_packages: 1, local_import: "Local" };
+const EMPTY: Form = { status: "in_storage", num_packages: 1, local_import: "Local" };
 
 /**
  * The list splits by where a package is in its journey, so what's still waiting
@@ -245,7 +245,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
         priority: form.priority ?? null,
         local_import: form.local_import ?? null,
         warehouse_zone: form.warehouse_zone ?? null,
-        status: form.status ?? "in_office",
+        status: form.status ?? "in_storage",
         delivery_note_no: form.delivery_note_no?.trim() || null,
         invoice_no: form.invoice_no?.trim() || null,
         received_by: form.received_by?.trim() || null,
@@ -284,6 +284,30 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
       await patchPackage(p.id, { documents });
       await reload();
     } catch (e: any) { toast.error(e?.message ?? "Couldn't remove file"); }
+  }
+
+  /**
+   * Same headers as the table (minus the checkbox/photo/documents/action
+   * columns, which don't mean anything as plain text) — you export what
+   * you're looking at, respecting the current stage and search.
+   */
+  function exportSpreadsheet() {
+    const headers = ["Air waybill/tracking info", "Client", "Date Received", "Consignee", "Receiver",
+      "Number of Packages", "Courier", "Shipment Type", "Delivery Note Number", "Driver",
+      "Date Delivered", "Invoice Number", "Remarks", "Status"];
+    const rows = filtered.map((p) => {
+      const note = data.notes.find((n) => n.id === p.delivery_note_id);
+      const driver = data.drivers.find((d) => d.id === p.driver_id);
+      return [
+        p.barcode ?? "", p.boat_name ?? "", fmtDate(p.received_at), p.package_owner ?? "",
+        p.receiver_full_name ?? "", p.num_packages ?? 1, p.courier ?? "", p.local_import ?? "",
+        p.delivery_note_no ?? note?.number ?? "", driver?.name ?? "", fmtDate(p.delivered_at),
+        p.invoice_no ?? "", p.description ?? "", STATUS_META[p.status]?.label ?? p.status,
+      ];
+    });
+    if (rows.length === 0) { toast.error("Nothing to export"); return; }
+    downloadCsv(`shipsync-local-${new Date().toISOString().slice(0, 10)}.csv`, headers, rows);
+    toast.success(`Exported ${rows.length} package${rows.length === 1 ? "" : "s"}`);
   }
 
   async function confirmDelete() {
@@ -338,6 +362,10 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
         </span>
         <TableChartToggle value={view} onChange={setView} />
         <Button size="sm" onClick={openNew} className="ml-auto h-9 gap-1.5"><Plus className="h-4 w-4" /> Check in package</Button>
+        <Button size="sm" variant="outline" onClick={exportSpreadsheet} className="h-9 gap-1.5"
+          title="Download the packages shown as a CSV — opens straight in Excel">
+          <ArrowDownToLine className="h-4 w-4" /> Export
+        </Button>
       </div>
 
       {/* Only while rows are ticked. The count is of the selection, not the
@@ -375,7 +403,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
                   aria-label="Select every package shown"
                 />
               </th>
-              {["Air waybill/tracking info", "Client", "Date Received", "Received Photo", "Consignee", "Receiver", "Number of Packages", "Courier", "Shipment Type", "Delivery Note Number", "Driver", "Date Delivered", "Delivery Photo", "Documents", "Invoice Number", "Status"].map((h, i) => (
+              {["Air waybill/tracking info", "Client", "Date Received", "Received Photo", "Consignee", "Receiver", "Number of Packages", "Courier", "Shipment Type", "Delivery Note Number", "Driver", "Date Delivered", "Delivery Photo", "Documents", "Invoice Number", "Remarks", "Status"].map((h, i) => (
                 <th key={`${h}-${i}`} className="px-3 py-2.5 whitespace-nowrap">{h}</th>
               ))}
               <th></th>
@@ -492,6 +520,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
                           )}
                         </td>
                         <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{p.invoice_no ?? "—"}</td>
+                        <td className="px-3 py-2.5 max-w-[200px] truncate text-muted-foreground">{p.description || "—"}</td>
                         <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
                           <Select value={p.status} onValueChange={(v) => quickStatus(p, v as PackageStatus)}>
                             <SelectTrigger className="h-7 w-[132px] border-none bg-transparent p-0 hover:bg-accent/40"><StatusBadge status={p.status} /></SelectTrigger>

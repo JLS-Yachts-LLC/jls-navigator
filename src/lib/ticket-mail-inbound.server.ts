@@ -12,9 +12,16 @@
  *  • Our own outbound notifications are recognised and skipped, so a ticket can
  *    never echo its own emails back into itself.
  *  • The body is reduced to what the person actually wrote (see extractReplyText).
+ *
+ * Mail with no reference used to be left for the team to work by hand in the
+ * mailbox, which meant a forwarded problem was tracked nowhere. It now raises a
+ * Polaris ticket and is mirrored to New Horizon — subject to the suppression rules
+ * in `shouldNotRaiseTicket`, because "every email becomes a ticket" would otherwise
+ * include every newsletter and out-of-office the mailbox receives.
  */
 import { createClient } from '@supabase/supabase-js'
 import { TICKET_MAIL_SENDER, getMailGraphTokenForRead } from '@/lib/graph-mail.server'
+import { mirrorTicketToNewHorizon, NH_SUPPORT_MAILBOX } from '@/lib/nh-mirror.server'
 
 function admin() {
   const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? ''
@@ -23,7 +30,49 @@ function admin() {
 }
 
 /** `[SD-0019] …` anywhere in the subject (also matches JLS-0003-style refs). */
-const TICKET_REF = /\[?\b([A-Z]{2,5}-\d{2,6})\b\]?/
+const TICKET_REF = /\b[A-Z]{2,5}-\d{2,6}\b/g
+
+/**
+ * Find the Polaris ticket a subject line refers to.
+ *
+ * Every reference in the subject is tried, not just the first. New Horizon replies
+ * to a mirrored ticket arrive as `[NH-0123] Re: [SD-0021] …`, and taking the first
+ * match alone meant their reply — the record of the work actually being done —
+ * matched nothing and was dropped.
+ */
+async function matchTicket(db: any, subject: string, conversationId?: string): Promise<{ id: string; ticket_no: string; status: string } | null> {
+  const refs = [...new Set((subject.match(TICKET_REF) ?? []).map(r => r.toUpperCase()))]
+  for (const ref of refs) {
+    const { data } = await db.from('it_tickets')
+      .select('id, ticket_no, status').ilike('ticket_no', ref).maybeSingle()
+    if (data) return data
+  }
+
+  // No reference of ours — but the mail may still belong to a ticket that an
+  // earlier email in the same thread raised. A vendor thread carries the vendor's
+  // own reference ("[#444627] … VSAT Offline"), and on 30 Sep 2026 three mails in
+  // one such thread became three tickets, each mirrored to New Horizon.
+  //  1. Same Outlook conversation as the mail that raised a ticket.
+  if (conversationId) {
+    const { data } = await db.from('it_tickets')
+      .select('id, ticket_no, status').eq('mail_conversation_id', conversationId)
+      .order('created_at', { ascending: true }).limit(1).maybeSingle()
+    if (data) return data
+  }
+  //  2. Same subject (Re:/FW: stripped) as a ticket raised from email in the last
+  //     30 days — covers tickets from before the conversation id was stored, and
+  //     a correspondent who starts a fresh mail with the same subject.
+  const title = cleanSubject(subject).slice(0, 200)
+  if (title.length >= 8) {
+    const since = new Date(Date.now() - 30 * 864e5).toISOString()
+    const { data } = await db.from('it_tickets')
+      .select('id, ticket_no, status').ilike('subject', title)
+      .not('requester_email', 'is', null).gte('created_at', since)
+      .order('created_at', { ascending: true }).limit(1).maybeSingle()
+    if (data) return data
+  }
+  return null
+}
 
 // ─── Body cleanup ──────────────────────────────────────────────────────────────
 // Real replies arrive wrapped in three kinds of noise, all of which made the
@@ -46,6 +95,32 @@ const GATEWAY_BANNER = [
   /^\s*You don't often get email from/i,
 ]
 
+/**
+ * Legal footers. Unlike the other boilerplate these are removed line by line
+ * wherever they appear, because on a forward they sit *between* the covering
+ * note and the message being forwarded — cutting at the first one would throw
+ * away the very thing the ticket is about.
+ */
+const DISCLAIMER = [
+  /^This (?:e-?mail|message)(?: and any attachments?)?\b.*\b(?:confidential|intended solely|intended recipient)/i,
+  /^(?:Confidentiality|Disclaimer|Legal)\b.*\b(?:notice|statement)/i,
+  /^If you are not the intended recipient/i,
+  /^Please contact the sender if you believe/i,
+  /^Any views or opinions expressed are solely those of the author/i,
+]
+
+/**
+ * Where a forwarded original begins. Everything from here down is the point of
+ * the email and is kept whole — see extractForwardedText.
+ */
+const FORWARD_MARKER = [
+  /^\s*-{2,}\s*(?:original|forwarded) message\s*-{2,}\s*$/i,
+  /^\s*-{3,}\s*Forwarded message\b/i,
+  /^\s*Begin forwarded message\s*:/i,
+  /^\s*_{4,}\s*$/,
+  /^From\s*:\s/i,
+]
+
 /** Everything from here down is quoted history, headers or boilerplate. */
 const HARD_BOUNDARY = [
   /^-{2,}\s*$/, /^_{4,}\s*$/, /^\*{4,}\s*$/,
@@ -58,10 +133,9 @@ const HARD_BOUNDARY = [
   /^There.s an update on your ticket/i,
   /^The IT support team has added an update/i,
   /^Reply to this email if you need anything further/i,
-  /^This (?:e-?mail|message)(?: and any attachments?)?\b.*\b(?:confidential|intended solely|intended recipient)/i,
-  /^(?:Confidentiality|Disclaimer|Legal)\b.*\b(?:notice|statement)/i,
-  /^If you are not the intended recipient/i,
-  /^Please contact the sender if you believe/i,
+  // A footer ends a reply outright; on a forward the same patterns are applied
+  // line by line instead. One list, so the two can never drift apart.
+  ...DISCLAIMER,
 ]
 
 /** Signature lines — a boundary only once real message text has been seen, so a
@@ -116,21 +190,207 @@ export function extractReplyText(raw: string): string {
   return (lines.map(l => l.trim()).find(Boolean) ?? '').slice(0, 500)
 }
 
+/**
+ * Reduce a forwarded email to something worth reading on a ticket.
+ *
+ * A forward is not a reply, and running it through extractReplyText destroyed it:
+ * that stripper stops at the first `From:` or `---------- Forwarded message`
+ * line, which on a forward is exactly where the content starts. So new tickets
+ * kept the body untouched instead — and got the gateway's "Trusted Sender"
+ * banner, the sender's signature block and a full legal disclaimer along with it,
+ * on both desks.
+ *
+ * The fix is to split rather than truncate. The covering note above the forward
+ * behaves like a reply, so extractReplyText handles it correctly and drops the
+ * signature and footer that sit at its end. Everything from the forward marker
+ * down is kept whole, minus the banner and disclaimer lines, which are removed
+ * individually wherever they appear.
+ *
+ * Returns the original body untouched if the result comes back empty — losing an
+ * email to an over-eager pattern would be far worse than a noisy ticket.
+ */
+export function extractForwardedText(raw: string): string {
+  const norm = String(raw ?? '').replace(/\r/g, '').replace(ZERO_WIDTH, '').replace(NBSP, ' ')
+  const lines = norm.split('\n')
+
+  const at = lines.findIndex(l => FORWARD_MARKER.some(re => re.test(l.trim())))
+  // No forward marker: this is an ordinary email, so treat it as one.
+  if (at === -1) return extractReplyText(norm) || norm.trim().slice(0, 8000)
+
+  const note = extractReplyText(lines.slice(0, at).join('\n'))
+  const body = tidy(
+    lines.slice(at).filter((l) => {
+      const t = l.trim()
+      if (GATEWAY_BANNER.some(re => re.test(t))) return false
+      if (DISCLAIMER.some(re => re.test(t))) return false
+      return true
+    }),
+  )
+
+  const out = [note, body].filter(Boolean).join('\n\n').trim()
+  return (out || norm.trim()).slice(0, 8000)
+}
+
 // ─── Poller ────────────────────────────────────────────────────────────────────
 
 type GraphMessage = {
   id: string
   subject?: string
+  /** Outlook's thread id — every reply and forward in one conversation shares it. */
+  conversationId?: string
   bodyPreview?: string
   receivedDateTime?: string
   from?: { emailAddress?: { address?: string; name?: string } }
   body?: { content?: string; contentType?: string }
 }
 
-export type InboundResult = { scanned: number; appended: number; skipped: number; errors: string[] }
+// ─── Which unreferenced mail deserves a ticket ────────────────────────────────
+
+/** Headers that mark a message as machine-generated rather than written by a person. */
+const AUTO_HEADERS = [
+  'auto-submitted', 'x-auto-response-suppress', 'x-autoreply', 'x-autorespond',
+  'precedence', 'list-unsubscribe', 'list-id',
+]
+
+/** Subjects that are never a request for help, whatever the headers say. */
+const AUTOMATED_SUBJECT = [
+  /^\s*(automatic reply|automatische antwort|out of office)\b/i,
+  /^\s*undeliverable\b/i,
+  /^\s*(delivery status notification|mail delivery (failed|subsystem)|returned mail)\b/i,
+  /^\s*(read receipt|delivery receipt|not read)\b/i,
+  /\bunsubscribe\b/i,
+]
+
+/**
+ * Should this unreferenced email be left alone rather than raising a ticket?
+ * Returns the reason to record, or null to go ahead.
+ *
+ * The New Horizon rule is a loop guard, not tidiness. A mirrored ticket is
+ * acknowledged by their desk; if that acknowledgement raised a Polaris ticket it
+ * would be mirrored straight back, acknowledged again, and so on. Their mail can
+ * still be appended to a ticket it references — this only stops it creating one.
+ *
+ * It matches the support mailbox address exactly, not the newhorizon-it.co.uk
+ * domain. Every automated message from their desk is sent by that one mailbox, so
+ * the domain-wide version bought nothing and cost real work: a New Horizon
+ * engineer emailing the IT desk from their own address raised no ticket at all.
+ */
+function shouldNotRaiseTicket(from: string, subject: string, headers: Record<string, string>): string | null {
+  if (from.trim().toLowerCase() === NH_SUPPORT_MAILBOX.trim().toLowerCase()) {
+    return 'new_horizon_no_ref'
+  }
+  // Nobody is asking for help from a no-reply address. Microsoft Defender's
+  // vulnerability digests (defender-noreply@) raised two tickets on 30 Sep 2026.
+  if (/^(no-?reply|do-?not-?reply|donotreply|mailer-daemon|postmaster|[\w.-]*-noreply)@/i.test(from.trim())) return 'automated'
+  if (AUTOMATED_SUBJECT.some(re => re.test(subject))) return 'automated'
+  for (const name of AUTO_HEADERS) {
+    const v = (headers[name] ?? '').toLowerCase()
+    if (!v) continue
+    // `Auto-Submitted: no` is the explicit "a person sent this" value.
+    if (name === 'auto-submitted' && v === 'no') continue
+    if (name === 'precedence' && !['bulk', 'junk', 'list', 'auto_reply'].includes(v)) continue
+    return 'automated'
+  }
+  return null
+}
+
+/**
+ * Read a message's internet headers.
+ *
+ * Fetched per message rather than added to the list query's $select: only mail
+ * that is about to become a ticket needs them, which is rare, and a $select Graph
+ * dislikes would take the whole poller down instead of one message. A failure here
+ * is not fatal — the subject checks still apply.
+ */
+async function headersFor(token: string, mailbox: string, id: string): Promise<Record<string, string>> {
+  try {
+    const res = await fetch(
+      `https://graph.microsoft.com/v1.0/users/${mailbox}/messages/${encodeURIComponent(id)}?$select=internetMessageHeaders`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+    if (!res.ok) return {}
+    const list = ((await res.json()) as any)?.internetMessageHeaders ?? []
+    const out: Record<string, string> = {}
+    for (const h of list) if (h?.name) out[String(h.name).toLowerCase()] = String(h.value ?? '')
+    return out
+  } catch {
+    return {}
+  }
+}
+
+/** Strip the `RE:`/`FW:` chain an email accumulates, so the ticket reads cleanly. */
+function cleanSubject(subject: string): string {
+  return subject.replace(/^(\s*(re|fw|fwd|tr|aw)\s*:\s*)+/i, '').trim()
+}
+
+/**
+ * Turn an unreferenced email into a Polaris ticket.
+ *
+ * Trimmed by extractForwardedText, not extractReplyText: a forward's content sits
+ * below the boundary the reply stripper cuts at, so reducing it that way would
+ * leave a ticket with nothing in it.
+ */
+async function raiseTicketFromMail(
+  db: any,
+  msg: GraphMessage,
+  from: string,
+  subject: string,
+  plain: string,
+): Promise<{ id: string; ticket_no: string | null } | null> {
+  const body = extractForwardedText(plain)
+  const title = cleanSubject(subject).slice(0, 200)
+  if (!body && !title) return null
+
+  const senderName = msg.from?.emailAddress?.name || from
+  const received = msg.receivedDateTime ?? new Date().toISOString()
+  const description = [
+    body || '(the email had no body)',
+    '',
+    '— Raised from email to itsupport@jlsyachts.com —',
+    `From: ${senderName} <${from}>`,
+    `Received: ${received}`,
+    `Subject: ${subject}`,
+  ].join('\n')
+
+  const { data: t, error } = await db.from('it_tickets').insert([{
+    subject: title || '(no subject)',
+    description,
+    // The mailbox is the IT desk's, so an emailed problem is general IT work
+    // until someone triages it — not an assertion about the Polaris app.
+    category: 'general',
+    priority: 'normal',
+    status: 'open',
+    requested_by: senderName,
+    requester_email: from,
+    mail_conversation_id: msg.conversationId ?? null,
+  }]).select('id, ticket_no').single()
+  if (error) throw new Error(error.message)
+  if (!t) return null
+
+  // The email itself opens the thread, so the ticket reads as the conversation
+  // it already is rather than starting blank.
+  await db.from('it_ticket_messages').insert([{
+    ticket_id: t.id,
+    body: body || '(the email had no body)',
+    internal: false,
+    author_name: `${senderName} (email)`,
+    created_at: received,
+  }]).then(() => {}, () => {})
+
+  return t
+}
+
+export type InboundResult = {
+  scanned: number
+  appended: number
+  /** Unreferenced mail that became a new Polaris ticket. */
+  created: number
+  skipped: number
+  errors: string[]
+}
 
 export async function pollTicketMailbox(): Promise<InboundResult | null> {
-  const result: InboundResult = { scanned: 0, appended: 0, skipped: 0, errors: [] }
+  const result: InboundResult = { scanned: 0, appended: 0, created: 0, skipped: 0, errors: [] }
   let token: string
   try {
     token = await getMailGraphTokenForRead()
@@ -146,7 +406,7 @@ export async function pollTicketMailbox(): Promise<InboundResult | null> {
   const since = new Date(Date.now() - 7 * 864e5).toISOString()
   const url =
     `https://graph.microsoft.com/v1.0/users/${mailbox}/mailFolders/inbox/messages` +
-    `?$top=25&$orderby=receivedDateTime desc&$select=id,subject,from,receivedDateTime,body` +
+    `?$top=25&$orderby=receivedDateTime desc&$select=id,subject,from,receivedDateTime,body,conversationId` +
     `&$filter=${encodeURIComponent(`receivedDateTime ge ${since}`)}`
 
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
@@ -177,23 +437,6 @@ export async function pollTicketMailbox(): Promise<InboundResult | null> {
         continue
       }
 
-      const ref = subject.match(TICKET_REF)?.[1]?.toUpperCase()
-      if (!ref) {
-        // A fresh email with no ticket reference — the team handles those in the
-        // mailbox; record it so we don't re-examine it every five minutes.
-        await db.from('ticket_mail_processed').insert({ message_id: msg.id, outcome: 'no_ticket_ref' })
-        result.skipped++
-        continue
-      }
-
-      const { data: ticket } = await db.from('it_tickets')
-        .select('id, ticket_no, status').ilike('ticket_no', ref).maybeSingle()
-      if (!ticket) {
-        await db.from('ticket_mail_processed').insert({ message_id: msg.id, outcome: 'no_ticket_ref' })
-        result.skipped++
-        continue
-      }
-
       const plain = msg.body?.contentType === 'html'
         ? String(msg.body?.content ?? '')
             .replace(/<br\s*\/?>(?=\s*)/gi, '\n')
@@ -201,9 +444,37 @@ export async function pollTicketMailbox(): Promise<InboundResult | null> {
             .replace(/<[^>]+>/g, '')
             .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
         : String(msg.body?.content ?? '')
+
+      const ticket = await matchTicket(db, subject, msg.conversationId)
+      if (!ticket) {
+        // No ticket of ours is named — this is something new arriving in the
+        // mailbox. Raise it, unless it is the kind of mail nobody works.
+        const headers = await headersFor(token, mailbox, msg.id)
+        const suppress = shouldNotRaiseTicket(from, subject, headers)
+        if (suppress) {
+          await db.from('ticket_mail_processed').insert({ message_id: msg.id, outcome: suppress })
+          result.skipped++
+          continue
+        }
+        const created = await raiseTicketFromMail(db, msg, from, subject, plain)
+        if (!created) {
+          await db.from('ticket_mail_processed').insert({ message_id: msg.id, outcome: 'empty_body' })
+          result.skipped++
+          continue
+        }
+        await db.from('ticket_mail_processed')
+          .insert({ message_id: msg.id, ticket_id: created.id, outcome: 'created' })
+        result.created++
+        console.log(`[ticket-mail] raised ${created.ticket_no} from mail by ${from}`)
+        // Mirrored after the dedupe row is written: if the mirror throws the
+        // ticket still exists and the email is never reprocessed into a second one.
+        await mirrorTicketToNewHorizon(created.id, 'Email to itsupport@jlsyachts.com', db)
+        continue
+      }
+
       const text = extractReplyText(plain)
       if (!text) {
-        await db.from('ticket_mail_processed').insert({ message_id: msg.id, ticket_id: ticket.id, outcome: 'no_ticket_ref' })
+        await db.from('ticket_mail_processed').insert({ message_id: msg.id, ticket_id: ticket.id, outcome: 'empty_body' })
         result.skipped++
         continue
       }

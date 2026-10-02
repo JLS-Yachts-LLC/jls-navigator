@@ -29,16 +29,21 @@ const doCreateSpFolder = createServerFn({ method: 'POST' })
     }
   })
 import { useAuth } from "@/lib/auth";
+import { useAccess } from "@/lib/auth/useAccess";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { YACHT_COLUMNS } from "@/lib/yacht-fields";
-import { ArrowLeft, Save, Upload } from "lucide-react";
+import { useAgencyTeam } from "@/components/vessels/YachtAgentPicker";
+import { ArrowLeft, Save, Upload, UserCog } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_app/yachts/new")({
   component: NewYacht,
-  head: () => ({ meta: [{ title: "Add Yacht — Polaris" }] }),
+  // ?fleet=jls — opened from the JLS Boats tab, so the new vessel is one of ours.
+  validateSearch: (search: Record<string, unknown>): { fleet?: "client" | "jls" } =>
+    search.fleet === "jls" ? { fleet: "jls" } : {},
+  head: () => ({ meta: [{ title: "Add Vessel — Polaris" }] }),
 });
 
 const NUMERIC_KEYS = new Set([
@@ -64,11 +69,22 @@ function labelFor(key: string) {
 
 function NewYacht() {
   const { user } = useAuth();
+  // Adding a vessel needs agency create — the same rule the database enforces
+  // (policy "Agency creators insert yachts"). This page used to have no check,
+  // so anyone could add a yacht they then could not edit.
+  const { canAccessModule } = useAccess();
+  const canCreate = canAccessModule("agency", "create");
   const navigate = useNavigate();
+  const isJls = Route.useSearch().fleet === "jls";
   const [form, setForm] = useState<Record<string, string>>({ status: "Active" });
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Chosen here rather than afterwards: whoever adds a vessel usually knows who
+  // will look after it, and it was otherwise a second step on another page
+  // that nobody found (SD-0036).
+  const agencyTeam = useAgencyTeam();
+  const [agentUserId, setAgentUserId] = useState("");
 
   function set(key: string, val: string) { setForm((f) => ({ ...f, [key]: val })); }
 
@@ -93,25 +109,50 @@ function NewYacht() {
         vessel_image = supabase.storage.from("vessel-images").getPublicUrl(path).data.publicUrl;
       }
 
-      const payload: Record<string, unknown> = { created_by: user.id, vessel_image };
+      const payload: Record<string, unknown> = {
+        created_by: user.id, vessel_image, fleet: isJls ? "jls" : "client",
+      };
       for (const [k, v] of Object.entries(form)) {
         if (v === "" || v === undefined) continue;
         if (NUMERIC_KEYS.has(k)) payload[k] = Number(v);
         else payload[k] = v;
       }
+      if (agentUserId) {
+        payload.agent_user_id = agentUserId;
+        payload.agent_assigned_at = new Date().toISOString();
+      }
 
       const { data, error } = await supabase.from("yachts").insert([payload as never]).select("id").single();
       if (error) throw error;
-      toast.success("Yacht added");
-      // Non-blocking: push data to SP list + create folder in SP Documents/Yacht/
-      doPushToSharePoint({ data: { yachtId: data.id } }).catch(() => {});
-      doCreateSpFolder({ data: { vesselName: form.vessel_name!, yachtId: data.id } }).catch(() => {});
+      toast.success(isJls ? "JLS boat added" : "Yacht added");
+      // Non-blocking: push data to SP list + create folder in SP Documents/Yacht/.
+      // Not for our own boats — the SharePoint Yachts list and its folders are the
+      // client fleet, and a JLS boat there would read as a client vessel.
+      if (!isJls) {
+        doPushToSharePoint({ data: { yachtId: data.id } }).catch(() => {});
+        doCreateSpFolder({ data: { vesselName: form.vessel_name!, yachtId: data.id } }).catch(() => {});
+      }
       navigate({ to: "/yachts/$id", params: { id: data.id } });
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Failed to save");
     } finally {
       setBusy(false);
     }
+  }
+
+  if (!canCreate) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
+        <h1 className="font-display text-lg font-semibold">You can't add vessels</h1>
+        <p className="max-w-sm text-sm text-muted-foreground">
+          Adding a vessel needs create access to the Agency module. Ask an administrator
+          if you should have it.
+        </p>
+        <Button asChild variant="outline" size="sm" className="gap-1.5">
+          <Link to="/yachts"><ArrowLeft className="h-3.5 w-3.5" /> Back to vessels</Link>
+        </Button>
+      </div>
+    );
   }
 
   return (
@@ -121,10 +162,10 @@ function NewYacht() {
           <Button asChild variant="ghost" size="sm" className="gap-1.5">
             <Link to="/yachts"><ArrowLeft className="h-3.5 w-3.5" /> Back</Link>
           </Button>
-          <h1 className="font-display text-lg font-semibold">Add Yacht</h1>
+          <h1 className="font-display text-lg font-semibold">{isJls ? "Add JLS Boat" : "Add Yacht"}</h1>
         </div>
         <Button onClick={submit} disabled={busy} className="gap-1.5">
-          <Save className="h-4 w-4" /> {busy ? "Saving…" : "Save Yacht"}
+          <Save className="h-4 w-4" /> {busy ? "Saving…" : isJls ? "Save Boat" : "Save Yacht"}
         </Button>
       </header>
 
@@ -142,6 +183,25 @@ function NewYacht() {
                 <input type="file" accept="image/*" className="hidden" onChange={pickImage} />
               </label>
             </div>
+          </section>
+
+          {/* Who looks after this vessel's paperwork */}
+          <section className="rounded-lg border border-border bg-card p-5">
+            <h2 className="font-display text-sm font-semibold mb-1 text-muted-foreground uppercase tracking-wider inline-flex items-center gap-2">
+              <UserCog className="h-4 w-4" /> Responsible Agent
+            </h2>
+            <p className="mb-3 text-xs text-muted-foreground">
+              The Agency team member accountable for this vessel's permits and documents. You can change
+              it later on the vessel's page.
+            </p>
+            <select
+              value={agentUserId}
+              onChange={(e) => setAgentUserId(e.target.value)}
+              className="h-9 w-full max-w-sm rounded-md border border-input bg-background px-2 text-sm"
+            >
+              <option value="">Unassigned</option>
+              {agencyTeam.map((s) => <option key={s.userId} value={s.userId}>{s.label}</option>)}
+            </select>
           </section>
 
           {SECTIONS.map((s) => (

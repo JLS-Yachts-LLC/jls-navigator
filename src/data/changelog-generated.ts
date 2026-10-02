@@ -5,9 +5,267 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.62.0",
+    "date": "2026-09-28",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Ticket emails can only be sent by signed-in staff, and only say what is on the ticket"
+      },
+      {
+        "type": "fix",
+        "title": "Permits can be edited again by staff with Agency access"
+      },
+      {
+        "type": "fix",
+        "title": "Staff with vessel edit access can now edit every yacht, not just ones they added"
+      },
+      {
+        "type": "fix",
+        "title": "Tickets raised from forwarded email no longer carry banners, signatures and disclaimers"
+      },
+      {
+        "type": "feature",
+        "title": "Managed Boats brought in line with the Manage Boat design"
+      },
+      {
+        "type": "fix",
+        "title": "Password reset now works for accounts with two-factor authentication"
+      },
+      {
+        "type": "fix",
+        "title": "Log a mail poll run that only raised new tickets"
+      },
+      {
+        "type": "fix",
+        "title": "Email to the IT desk from a New Horizon engineer now raises a ticket"
+      },
+      {
+        "type": "feature",
+        "title": "Manual tickets and forwarded email now also raise a ticket with New Horizon-IT"
+      },
+      {
+        "type": "feature",
+        "title": "Completion stages and Re-assign for admins"
+      },
+      {
+        "type": "fix",
+        "title": "Non-admins could not create Project List or Bunkering records"
+      },
+      {
+        "type": "feature",
+        "title": "Add to Home Screen for the Orbit field app"
+      },
+      {
+        "type": "feature",
+        "title": "Add Jonathan Lopez to the field team roster"
+      },
+      {
+        "type": "feature",
+        "title": "Real Orbit 2 admin permission, enforced by the database; multi-file drop"
+      },
+      {
+        "type": "feature",
+        "title": "Team Management — full day detail, custom-date batches, clash overview"
+      },
+      {
+        "type": "fix",
+        "title": "Mobile App dialog — centred layout, and always the real domain"
+      },
+      {
+        "type": "feature",
+        "title": "The Orbit field app for the operations team's phones"
+      },
+      {
+        "type": "feature",
+        "title": "Search training documents by name"
+      },
+      {
+        "type": "feature",
+        "title": "JLS Boats tab — the company's own boats on the Vessel Overview screen"
+      },
+      {
+        "type": "fix",
+        "title": "Password reset and sign-in links now always point at polaris.jlsyachts.com"
+      }
+    ]
+  },
+  {
+    "version": "2.61.0",
+    "date": "2026-09-25",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Export to Excel on the Local Package board"
+      },
+      {
+        "type": "feature",
+        "title": "Build Managed Boats out to the full Manage Boat spec"
+      },
+      {
+        "type": "feature",
+        "title": "Calendar batch-leave + task detail, drag-and-drop uploads, editable remarks, NOC status/invoice"
+      },
+      {
+        "type": "fix",
+        "title": "Stop AWB-matched Local packages reverting Completed to Delivered"
+      },
+      {
+        "type": "fix",
+        "title": "Replace, re-sync or remove a vessel photo without editing the record"
+      }
+    ]
+  },
+  {
+    "version": "2.60.0",
+    "date": "2026-09-23",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Attach real files to each registration record"
+      }
+    ]
+  },
+  {
+    "version": "2.59.0",
+    "date": "2026-09-22",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Files on training records and student records"
+      },
+      {
+        "type": "fix",
+        "title": "Drop the KPI cards, restore Client Project Status"
+      },
+      {
+        "type": "fix",
+        "title": "Keep the Lightspeed sale date on the QuickBooks invoice"
+      },
+      {
+        "type": "feature",
+        "title": "Build Orbit 2 to the Polaris Orbit functional specification"
+      },
+      {
+        "type": "feature",
+        "title": "Team Management as a task count beside a month calendar"
+      },
+      {
+        "type": "feature",
+        "title": "New Orbit 2 module with the Dashboard built"
+      }
+    ]
+  },
+  {
+    "version": "2.58.0",
+    "date": "2026-09-21",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Recognise someone added to the Visa list twice. SD-0026"
+      },
+      {
+        "type": "feature",
+        "title": "Missing details tab — the crew records that let duplicates happen"
+      },
+      {
+        "type": "feature",
+        "title": "Merge duplicate crew records, and stop making new ones. SD-0026"
+      }
+    ]
+  },
+  {
+    "version": "2.57.0",
+    "date": "2026-09-18",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Batch the Local bulk-complete update to avoid an oversized request"
+      },
+      {
+        "type": "feature",
+        "title": "Free-text department detail, Add Zone, Local delivered bulk-complete diagnostic"
+      },
+      {
+        "type": "fix",
+        "title": "Stop delivered/completed packages reverting, sync overwrites, and more"
+      },
+      {
+        "type": "feature",
+        "title": "Inventory List filter, real Storage Charge Calculator rates"
+      },
+      {
+        "type": "feature",
+        "title": "Same photo backfill for Export and Local Packages boards"
+      }
+    ]
+  },
+  {
+    "version": "2.56.0",
+    "date": "2026-09-17",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Documents were never deleted, and download/duplicate looked in the wrong place"
+      },
+      {
+        "type": "feature",
+        "title": "Rename, move, download and duplicate documents and folders"
+      },
+      {
+        "type": "feature",
+        "title": "Add a whole folder, by picker or by dropping it in"
+      },
+      {
+        "type": "feature",
+        "title": "Documents and folders on the Training screen, nothing else"
+      }
+    ]
+  },
+  {
+    "version": "2.55.0",
+    "date": "2026-09-16",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Say why a file was refused, before uploading it"
+      },
+      {
+        "type": "fix",
+        "title": "Cap size and restrict types on the shared upload bucket"
+      },
+      {
+        "type": "feature",
+        "title": "Attach the certificate to a certification, and add them from the Training screen"
+      },
+      {
+        "type": "feature",
+        "title": "Login-free link for the Lightspeed to QuickBooks SKU sync"
+      }
+    ]
+  },
+  {
+    "version": "2.54.1",
+    "date": "2026-09-15",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Dates really do stop arriving one day early — the 25 Aug fix never ran"
+      }
+    ]
+  },
+  {
     "version": "2.54.0",
     "date": "2026-09-14",
     "entries": [
+      {
+        "type": "fix",
+        "title": "Export tab now mirrors the Monday Export board, and the sync runs hourly"
+      },
+      {
+        "type": "fix",
+        "title": "Visa wizard crash when a passport has no nationality on file"
+      },
       {
         "type": "feature",
         "title": "Set who gets the scheduled emails, and when, without a deploy"

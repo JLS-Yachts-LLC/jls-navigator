@@ -44,6 +44,7 @@ import { FeedbackPage } from "@/components/feedback/feedback-page";
 import { CrewPlacementPage } from "@/components/crew-placement/crew-placement-page";
 import { PortCallsHub } from "@/components/port-calls/PortCallsHub";
 import { OrbitHub } from "@/components/orbit/orbit-hub";
+import { Orbit2Hub } from "@/components/orbit2/orbit2-hub";
 import { BerthBillingHub } from "@/components/berth-billing/BerthBillingHub";
 import { PermitsHub } from "@/components/permits/permits-hub";
 import { ClientRequestsPage } from "@/components/portal/client-requests-page";
@@ -222,6 +223,10 @@ function PolarisRedesignApp() {
         ) : screen === "orbit" ? (
           <div style={{ height: "100%" }}>
             <OrbitHub />
+          </div>
+        ) : screen === "orbit2" ? (
+          <div style={{ height: "100%" }}>
+            <Orbit2Hub />
           </div>
         ) : EMBED_SCREENS[screen] ? (
           <div style={{ height: "100%" }}>

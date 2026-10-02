@@ -1,0 +1,380 @@
+/**
+ * Orbit 2 — the form controls the Project, Bunkering and NOC screens share.
+ *
+ * Typeahead, labelled field, team picker, attachment slot and note log. They
+ * live together because the spec asks for the same behaviours in three places
+ * and the point of Smart Auto-Suggest is that the same name is offered
+ * everywhere it could be typed.
+ */
+import { useEffect, useMemo, useRef, useState } from "react";
+import { errorMessage } from "@/lib/error-message";
+import { Paperclip, X, Upload, Loader2, Check, Pencil } from "lucide-react";
+import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+import { supabase } from "@/integrations/supabase/client";
+import { guardUploadFile, uploadContentType } from "@/lib/upload-guard";
+import { storageRef } from "@/lib/signed-url";
+import { SignedAnchor } from "@/components/ui/signed-file";
+import { ORBIT2_TEAM } from "./orbit2-constants";
+import { ORBIT2_BUCKET, matchSuggestions, isExisting } from "./orbit2-data";
+
+// ── Layout ──────────────────────────────────────────────────────────────────
+
+export function Field({
+  label, children, hint, className,
+}: { label: string; children: React.ReactNode; hint?: string; className?: string }) {
+  return (
+    <label className={cn("block", className)}>
+      <span className="mb-1 block text-[14px] font-medium text-muted-foreground">{label}</span>
+      {children}
+      {hint && <span className="mt-1 block text-[14px] text-muted-foreground/80">{hint}</span>}
+    </label>
+  );
+}
+
+/** One input style everywhere, at the platform's 16px minimum for form fields. */
+export const inputCls =
+  "w-full rounded-md border border-border bg-background px-3 py-2 text-base " +
+  "outline-none transition focus:border-primary focus:ring-1 focus:ring-primary/40 " +
+  "disabled:cursor-not-allowed disabled:opacity-60";
+
+// ── Smart Auto-Suggest ──────────────────────────────────────────────────────
+
+/**
+ * Free-text input that offers what has been entered before.
+ *
+ * The suggestion list is advice, not a constraint — a genuinely new client must
+ * still be typeable. What it does do is say when a value already exists, which
+ * is what stops the same boat being logged under three spellings.
+ */
+export function Typeahead({
+  value, onChange, options, placeholder, disabled, id,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: string[];
+  placeholder?: string;
+  disabled?: boolean;
+  id?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const matches = useMemo(() => matchSuggestions(options, value), [options, value]);
+  const known = value.trim() !== "" && isExisting(options, value);
+
+  useEffect(() => {
+    function away(e: MouseEvent) {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", away);
+    return () => document.removeEventListener("mousedown", away);
+  }, []);
+
+  return (
+    <div ref={boxRef} className="relative">
+      <input
+        id={id}
+        className={inputCls}
+        value={value}
+        disabled={disabled}
+        placeholder={placeholder}
+        autoComplete="off"
+        onChange={(e) => { onChange(e.target.value); setOpen(true); }}
+        onFocus={() => { setFocused(true); setOpen(true); }}
+        onBlur={() => setFocused(false)}
+      />
+      {known && !focused && (
+        <Check className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-emerald-500"
+          aria-label="Matches an existing entry" />
+      )}
+      {open && matches.length > 0 && (
+        <ul className="absolute z-30 mt-1 max-h-56 w-full overflow-auto rounded-md border border-border bg-popover py-1 shadow-lg">
+          {matches.map((m) => (
+            <li key={m}>
+              <button type="button"
+                className="block w-full px-3 py-1.5 text-left text-[15px] hover:bg-accent"
+                onMouseDown={(e) => { e.preventDefault(); onChange(m); setOpen(false); }}>
+                {m}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// ── Assign Team ─────────────────────────────────────────────────────────────
+
+/** A closed checklist — only the eight authorised names, per spec. */
+export function TeamPicker({
+  value, onChange, disabled,
+}: { value: string[]; onChange: (v: string[]) => void; disabled?: boolean }) {
+  const toggle = (name: string) =>
+    onChange(value.includes(name) ? value.filter((v) => v !== name) : [...value, name]);
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {ORBIT2_TEAM.map((name) => {
+        const on = value.includes(name);
+        return (
+          <button key={name} type="button" disabled={disabled} onClick={() => toggle(name)}
+            className={cn(
+              "rounded-full border px-3 py-1 text-[14px] font-medium transition disabled:opacity-60",
+              on ? "border-primary bg-primary/15 text-primary"
+                 : "border-border text-muted-foreground hover:bg-accent")}>
+            {name}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Attachments ─────────────────────────────────────────────────────────────
+
+export type UploadedFile = { id: string; file_name: string; storage_ref: string };
+
+/**
+ * One attachment slot — Supplier Quote, Invoice, a general document, an image.
+ *
+ * PDF and images only, per spec, and the platform upload guard applies on top
+ * (size cap and type allow-list). The file goes to Storage and only its
+ * reference is handed back; the caller decides where that reference is recorded.
+ */
+export function FileSlot({
+  label, files, onUpload, onRemove, accept = "application/pdf,image/*", disabled,
+}: {
+  label: string;
+  files: UploadedFile[];
+  onUpload: (file: File, ref: string) => Promise<void> | void;
+  onRemove?: (f: UploadedFile) => void;
+  accept?: string;
+  disabled?: boolean;
+}) {
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  // dragenter/dragleave fire for every child the pointer crosses; counting them
+  // keeps the highlight steady instead of flickering over the file list.
+  const dragDepth = useRef(0);
+  const busy = progress !== null;
+  const imagesOnly = accept === "image/*";
+
+  /** Why this file can't go in this slot, or null. PDFs and images only, per spec. */
+  function rejection(file: File): string | null {
+    const ok = imagesOnly ? /^image\//.test(file.type || "") : /^(application\/pdf|image\/)/.test(file.type || "");
+    return ok ? null : `${file.name}: only ${imagesOnly ? "images" : "PDFs and images"} can be attached here.`;
+  }
+
+  /**
+   * Upload every file dropped or picked, one after another.
+   *
+   * One bad file is reported and skipped rather than abandoning the rest, and
+   * the platform upload guard (size cap, type allow-list) still runs on each.
+   */
+  async function addFiles(list: FileList | File[] | null | undefined) {
+    const picked = Array.from(list ?? []);
+    if (!picked.length || disabled) return;
+    const usable: File[] = [];
+    for (const f of picked) {
+      const why = rejection(f);
+      if (why) { toast.error(why); continue; }
+      if (!guardUploadFile(f, { accepts: imagesOnly ? "Use an image." : "Use a PDF or an image." })) continue;
+      usable.push(f);
+    }
+    if (!usable.length) { if (inputRef.current) inputRef.current.value = ""; return; }
+
+    setProgress({ done: 0, total: usable.length });
+    let added = 0;
+    try {
+      for (const file of usable) {
+        try {
+          // Random prefix: two people uploading "invoice.pdf" must not overwrite
+          // each other, and the original name is kept alongside for display.
+          const path = `orbit2/${crypto.randomUUID()}-${file.name.replace(/[^\w.-]+/g, "_")}`;
+          const { error } = await supabase.storage
+            .from(ORBIT2_BUCKET)
+            .upload(path, file, { contentType: uploadContentType(file), upsert: false });
+          if (error) throw error;
+          await onUpload(file, storageRef(ORBIT2_BUCKET, path));
+          added += 1;
+        } catch (e) {
+          toast.error(`${file.name}: ${errorMessage(e, "upload failed")}`);
+        }
+        setProgress((p) => (p ? { ...p, done: p.done + 1 } : p));
+      }
+      if (added > 1) toast.success(`${added} files attached to ${label}`);
+    } finally {
+      setProgress(null);
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  }
+
+  return (
+    <div
+      onDragEnter={(e) => { if (disabled) return; e.preventDefault(); dragDepth.current += 1; setDragOver(true); }}
+      onDragOver={(e) => { if (!disabled) e.preventDefault(); }}
+      onDragLeave={() => { dragDepth.current = Math.max(0, dragDepth.current - 1); if (dragDepth.current === 0) setDragOver(false); }}
+      onDrop={(e) => {
+        e.preventDefault();
+        dragDepth.current = 0;
+        setDragOver(false);
+        void addFiles(e.dataTransfer.files);
+      }}
+      className={cn("rounded-md border border-dashed border-border bg-muted/10 p-2.5 transition",
+        dragOver && "border-primary bg-primary/10 ring-1 ring-primary/40")}>
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <span className="text-[14px] font-medium text-muted-foreground">{label}</span>
+        <button type="button" disabled={disabled || busy} onClick={() => inputRef.current?.click()}
+          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[14px] font-medium text-primary hover:bg-primary/10 disabled:opacity-50">
+          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+          {busy ? `${progress.done}/${progress.total}` : "Attach"}
+        </button>
+      </div>
+      <input ref={inputRef} type="file" accept={accept} multiple className="hidden"
+        onChange={(e) => void addFiles(e.target.files)} />
+      {dragOver ? (
+        <p className="py-1 text-center text-[14px] font-medium text-primary">Drop to attach — several files at once is fine</p>
+      ) : files.length === 0 ? (
+        <p className="text-[14px] text-muted-foreground/70">
+          None attached — drag files here, or Attach
+        </p>
+      ) : (
+        <ul className="space-y-1">
+          {files.map((f) => (
+            <li key={f.id} className="flex items-center gap-1.5">
+              <Paperclip className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <SignedAnchor stored={f.storage_ref} className="flex-1 truncate text-[14px] text-primary hover:underline"
+                title={f.file_name}>
+                {f.file_name}
+              </SignedAnchor>
+              {onRemove && (
+                <button type="button" onClick={() => onRemove(f)} title="Remove attachment"
+                  className="rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// ── Note log ────────────────────────────────────────────────────────────────
+
+/**
+ * Remarks and Team Comments.
+ *
+ * Every entry carries its author and the moment it was written, prepended by the
+ * system rather than typed, so the log reads as a record instead of a notepad.
+ * Existing entries are append-only by default — that is what makes it worth
+ * reading — unless the caller passes `onEdit` and `canEdit`, which opens up
+ * inline correction to whichever names/roles the caller decides may tamper
+ * with the record (Remarks, for admins; Team Comments still never allow it).
+ */
+export function NoteLog({
+  title, notes, onAdd, onEdit, canEdit, placeholder, readOnly, emptyText,
+}: {
+  title: string;
+  notes: { id: string; author: string; body: string; created_at: string; edited_at?: string | null }[];
+  onAdd?: (body: string) => Promise<void>;
+  onEdit?: (id: string, body: string) => Promise<void>;
+  canEdit?: boolean;
+  placeholder?: string;
+  readOnly?: boolean;
+  emptyText?: string;
+}) {
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  async function add() {
+    const body = draft.trim();
+    if (!body || !onAdd) return;
+    setBusy(true);
+    try { await onAdd(body); setDraft(""); } finally { setBusy(false); }
+  }
+
+  function startEdit(n: { id: string; body: string }) {
+    setEditingId(n.id);
+    setEditDraft(n.body);
+  }
+
+  async function saveEdit() {
+    const body = editDraft.trim();
+    if (!body || !onEdit || !editingId) return;
+    setSavingEdit(true);
+    try { await onEdit(editingId, body); setEditingId(null); } finally { setSavingEdit(false); }
+  }
+
+  return (
+    <div>
+      <div className="mb-1 text-[14px] font-medium text-muted-foreground">{title}</div>
+      <div className="rounded-md border border-border bg-background">
+        <ul className="max-h-44 divide-y divide-border/40 overflow-auto">
+          {notes.length === 0 ? (
+            <li className="px-3 py-2.5 text-[14px] text-muted-foreground/70">
+              {emptyText ?? "Nothing logged yet."}
+            </li>
+          ) : notes.map((n) => (
+            <li key={n.id} className="group px-3 py-2 text-[14px] leading-relaxed">
+              {editingId === n.id ? (
+                <div className="flex items-center gap-2">
+                  <input className={cn(inputCls, "py-1 text-[14px]")} value={editDraft} autoFocus
+                    onChange={(e) => setEditDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") { e.preventDefault(); void saveEdit(); }
+                      if (e.key === "Escape") setEditingId(null);
+                    }} />
+                  <button type="button" onClick={() => void saveEdit()} disabled={savingEdit || !editDraft.trim()}
+                    className="shrink-0 rounded-md bg-primary px-2.5 py-1 text-[13px] font-medium text-primary-foreground disabled:opacity-50">
+                    {savingEdit ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save"}
+                  </button>
+                  <button type="button" onClick={() => setEditingId(null)} disabled={savingEdit}
+                    className="shrink-0 rounded-md border border-border px-2.5 py-1 text-[13px] hover:bg-accent">
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <span className="font-semibold">{n.author}</span>
+                  <span className="text-muted-foreground"> [{stamp(n.created_at)}]: </span>
+                  <span className="whitespace-pre-wrap">{n.body}</span>
+                  {n.edited_at && <span className="text-muted-foreground/70"> (edited)</span>}
+                  {canEdit && onEdit && (
+                    <button type="button" onClick={() => startEdit(n)} title="Edit this remark"
+                      className="ml-1.5 hidden rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground group-hover:inline-block">
+                      <Pencil className="h-3 w-3" />
+                    </button>
+                  )}
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+        {!readOnly && onAdd && (
+          <div className="flex gap-2 border-t border-border/60 p-2">
+            <input className={cn(inputCls, "py-1.5 text-[15px]")} value={draft} placeholder={placeholder}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void add(); } }} />
+            <button type="button" onClick={() => void add()} disabled={busy || !draft.trim()}
+              className="shrink-0 rounded-md bg-primary px-3 py-1.5 text-[15px] font-medium text-primary-foreground disabled:opacity-50">
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Add"}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** DD/MM/YYYY – HH:MM, as the spec's example log lines read. */
+export function stamp(iso: string): string {
+  const d = new Date(iso);
+  return `${d.toLocaleDateString("en-GB")} – ${d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`;
+}

@@ -12,6 +12,7 @@
  */
 import { createClient } from '@supabase/supabase-js'
 import { sendAuthLinkViaSES } from '@/lib/admin/auth-email.server'
+import { appBaseUrl } from '@/lib/app-url.server'
 
 function getAdmin() {
   return createClient(
@@ -36,7 +37,7 @@ export async function authForgotPasswordHandler(request: Request): Promise<Respo
       .from('user_profiles').select('user_id').ilike('email', email).maybeSingle()
     if (!profile) return generic
 
-    const base = process.env.VITE_APP_URL ?? new URL(request.url).origin
+    const base = appBaseUrl()
     await sendAuthLinkViaSES(sb, {
       email,
       type: 'recovery',

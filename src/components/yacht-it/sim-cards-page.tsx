@@ -4,12 +4,13 @@
  * what we charge, renewal dates and status. Yacht IT Solutions hub tab.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, Pencil, Plus, Search, Signal, Smartphone, Trash2, X } from "lucide-react";
+import { FileSpreadsheet, Loader2, Pencil, Plus, Search, Signal, Smartphone, Trash2, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
+import { SimImportDialog } from "./sim-import-dialog";
 
 const db = supabase as any;
 
@@ -44,6 +45,7 @@ export function SimCardsPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [editing, setEditing] = useState<Sim | "new" | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Sim | null>(null);
+  const [importing, setImporting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -104,9 +106,15 @@ export function SimCardsPage() {
           <h1 className="font-display text-xl font-bold">SIM Cards</h1>
           <p className="mt-0.5 text-xs text-muted-foreground">Etisalat &amp; Du SIMs resold to yachts.</p>
         </div>
-        <Button size="sm" className="gap-1.5" onClick={() => setEditing("new")}>
-          <Plus className="h-3.5 w-3.5" /> Add SIM
-        </Button>
+        <div className="flex gap-2">
+          {/* Bulk load from the provider's sheet or our template — see sim-import-dialog. */}
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setImporting(true)}>
+            <FileSpreadsheet className="h-3.5 w-3.5" /> Import from Excel
+          </Button>
+          <Button size="sm" className="gap-1.5" onClick={() => setEditing("new")}>
+            <Plus className="h-3.5 w-3.5" /> Add SIM
+          </Button>
+        </div>
       </header>
 
       {/* KPI strip */}
@@ -150,7 +158,12 @@ export function SimCardsPage() {
             <Smartphone className="h-9 w-9 text-muted-foreground/50" />
             <h3 className="mt-3 font-display text-lg font-semibold">No SIM cards {rows.length ? "match" : "yet"}</h3>
             <p className="text-sm text-muted-foreground">{rows.length ? "Adjust the filters above." : "Add the first Etisalat or Du SIM to start the register."}</p>
-            {!rows.length && <Button size="sm" className="mt-4 gap-1.5" onClick={() => setEditing("new")}><Plus className="h-3.5 w-3.5" /> Add SIM</Button>}
+            {!rows.length && (
+              <div className="mt-4 flex gap-2">
+                <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setImporting(true)}><FileSpreadsheet className="h-3.5 w-3.5" /> Import from Excel</Button>
+                <Button size="sm" className="gap-1.5" onClick={() => setEditing("new")}><Plus className="h-3.5 w-3.5" /> Add SIM</Button>
+              </div>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto rounded-xl border border-border bg-card">
@@ -206,6 +219,11 @@ export function SimCardsPage() {
         )}
       </div>
 
+      {importing && (
+        <SimImportDialog yachts={yachts} existing={rows}
+                         onClose={() => setImporting(false)}
+                         onImported={() => { setImporting(false); void load(); }} />
+      )}
       {editing && (
         <SimDialog sim={editing === "new" ? null : editing} yachts={yachts}
                    onClose={() => setEditing(null)}

@@ -1,9 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Loader2, RefreshCw, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { TrainingBoardTable, type TrainingCol } from "@/components/training/TrainingBoardTable";
+import { AttachmentsDialog } from "@/components/training/AttachmentsDialog";
+import { attachmentCounts } from "@/lib/training/attachments";
 import { loadStudents, studentCrud, type TrainingStudent } from "@/lib/training/data";
 import { syncTrainingStudents } from "@/lib/training/monday.server";
 
@@ -41,8 +43,30 @@ export function StudentsTab() {
   const [syncing, setSyncing] = useState(false);
   const [search, setSearch] = useState("");
 
+  /** Whose files are open, and how many each student holds. */
+  const [filesFor, setFilesFor] = useState<TrainingStudent | null>(null);
+  const [fileCounts, setFileCounts] = useState<Record<string, number>>({});
+
   async function reload() { setRows(await loadStudents()); }
-  useEffect(() => { setLoading(true); void reload().finally(() => setLoading(false)); }, []);
+
+  // One query for the whole tab — a count per row would be a round trip per row.
+  async function reloadCounts() {
+    try { setFileCounts(await attachmentCounts("student")); }
+    catch { /* the table is still usable without the badges */ }
+  }
+
+  useEffect(() => {
+    setLoading(true);
+    void Promise.all([reload(), reloadCounts()]).finally(() => setLoading(false));
+  }, []);
+
+  // Where a mis-filed document can be moved to: every other student.
+  const moveTargets = useMemo(
+    () => rows
+      .filter((r) => r.id !== filesFor?.id)
+      .map((r) => ({ id: r.id, label: r.full_name || "Unnamed student", sub: r.class_name ?? undefined })),
+    [rows, filesFor?.id],
+  );
 
   async function sync() {
     setSyncing(true);
@@ -92,7 +116,21 @@ export function StudentsTab() {
           try { await studentCrud.remove(id); setRows((prev) => prev.filter((r) => r.id !== id)); }
           catch (e: any) { toast.error(e?.message ?? "Delete failed"); }
         }}
+        onOpenFiles={(row) => setFilesFor(row as TrainingStudent)}
+        fileCounts={fileCounts}
       />
+
+      {filesFor && (
+        <AttachmentsDialog
+          open
+          onClose={() => setFilesFor(null)}
+          ownerType="student"
+          ownerId={filesFor.id}
+          ownerLabel={filesFor.full_name || "Unnamed student"}
+          moveTargets={moveTargets}
+          onChanged={() => void reloadCounts()}
+        />
+      )}
     </div>
   );
 }
