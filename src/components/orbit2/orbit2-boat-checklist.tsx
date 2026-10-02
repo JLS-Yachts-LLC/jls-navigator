@@ -57,6 +57,8 @@ export type BoatChecklistState = {
   remarks: string | null; inventory_item_id: string | null;
   /** A photo taken against this line during the check. */
   image_ref: string | null;
+  /** The team has said this line has no inventory item — no automatic match, no sync. */
+  inventory_unlinked: boolean;
 };
 
 // ── Matching checklist items to the boat's inventory ─────────────────────────
@@ -207,12 +209,14 @@ function Progress({ label, value, total, tone }: { label: string; value: number;
 // ── The full checklist ───────────────────────────────────────────────────────
 
 /** Inventory rows for an item — the hand-made link wins, otherwise matched by name. */
-export function linkedRows(it: ChecklistTemplateItem, state: BoatChecklistState | undefined, inventory: Orbit2BoatInventoryItem[]): { rows: Orbit2BoatInventoryItem[]; manual: boolean } {
+export function linkedRows(it: ChecklistTemplateItem, state: BoatChecklistState | undefined, inventory: Orbit2BoatInventoryItem[]): { rows: Orbit2BoatInventoryItem[]; manual: boolean; unlinked: boolean } {
   if (state?.inventory_item_id) {
     const row = inventory.find((r) => r.id === state.inventory_item_id);
-    return { rows: row ? [row] : [], manual: true };
+    return { rows: row ? [row] : [], manual: true, unlinked: false };
   }
-  return { rows: matchInventory(it.item, inventory), manual: false };
+  // "Unlink" on a by-name match: the team has said this is not the item, so stay unmatched.
+  if (state?.inventory_unlinked) return { rows: [], manual: false, unlinked: true };
+  return { rows: matchInventory(it.item, inventory), manual: false, unlinked: false };
 }
 
 type ChecklistFilter = "all" | "open" | "missing" | "noted";
@@ -376,7 +380,10 @@ export function ChecklistBody({ boat, cl, inventory, authorName, userId, editabl
     const checked = !stateFor.get(it.id)?.checked;
     return save(it, { checked, checked_at: checked ? new Date().toISOString() : null, checked_by: checked ? authorName : null });
   };
-  const link = (it: ChecklistTemplateItem, inventory_item_id: string | null) => save(it, { inventory_item_id });
+  const link = (it: ChecklistTemplateItem, choice: string | null) =>
+    save(it, choice === "auto" ? { inventory_item_id: null, inventory_unlinked: false }
+      : choice === null ? { inventory_item_id: null, inventory_unlinked: true }
+      : { inventory_item_id: choice, inventory_unlinked: false });
   const remark = (it: ChecklistTemplateItem, text: string) => save(it, { remarks: text.trim() || null });
   async function photo(it: ChecklistTemplateItem, file: File | undefined) {
     if (!file) return;
@@ -604,7 +611,7 @@ function RyaFormDialog({ boat, form, items, stateFor, inventory, authorName, onC
 
 function ChecklistRow({ item, state, inventory, match, busy, editable, padX, onToggle, onLink, onRemark, onPhoto, onRemovePhoto }: {
   item: ChecklistTemplateItem; state: BoatChecklistState | undefined; inventory: Orbit2BoatInventoryItem[];
-  match: { rows: Orbit2BoatInventoryItem[]; manual: boolean }; busy: boolean; editable: boolean; padX: string;
+  match: { rows: Orbit2BoatInventoryItem[]; manual: boolean; unlinked: boolean }; busy: boolean; editable: boolean; padX: string;
   onToggle: () => void; onLink: (id: string | null) => void; onRemark: (text: string) => void; onPhoto: (file: File | undefined) => void; onRemovePhoto: () => void;
 }) {
   const [picking, setPicking] = useState(false);
@@ -638,13 +645,14 @@ function ChecklistRow({ item, state, inventory, match, busy, editable, padX, onT
               {match.manual && <span className="text-muted-foreground"> · linked</span>}
             </span>
           ) : (
-            <span className="text-muted-foreground">Not in inventory</span>
+            <span className="text-muted-foreground">Not in inventory{match.unlinked ? " · unlinked" : ""}</span>
           )}
           {on && state?.checked_at && <span className="text-emerald-600">{state.checked_by ?? "Checked"} · {stamp(state.checked_at)}</span>}
           {editable && (picking ? (
-            <select autoFocus className={cn(inputCls, "h-7 w-auto max-w-[18rem] py-0 text-[13px]")} defaultValue={state?.inventory_item_id ?? ""}
+            <select autoFocus className={cn(inputCls, "h-7 w-auto max-w-[18rem] py-0 text-[13px]")} defaultValue={state?.inventory_item_id ?? (match.unlinked ? "" : "auto")}
               onChange={(e) => { onLink(e.target.value || null); setPicking(false); }} onBlur={() => setPicking(false)}>
               <option value="">— no inventory item —</option>
+              <option value="auto">— match by name automatically —</option>
               {inventory.map((r) => <option key={r.id} value={r.id}>{r.item}{r.qty != null ? ` · ${r.qty} ${r.unit ?? ""}` : ""}</option>)}
             </select>
           ) : (
@@ -652,9 +660,15 @@ function ChecklistRow({ item, state, inventory, match, busy, editable, padX, onT
               <Link2 className="h-3.5 w-3.5" /> {match.manual ? "Change link" : match.rows.length ? "Change" : "Link inventory item"}
             </button>
           ))}
-          {editable && match.manual && (
-            <button type="button" onClick={() => onLink(null)} className="flex items-center gap-1 text-muted-foreground hover:text-destructive" title="Remove the link">
+          {editable && match.rows.length > 0 && (
+            <button type="button" onClick={() => onLink(null)} className="flex items-center gap-1 text-muted-foreground hover:text-destructive"
+              title={match.manual ? "Remove the link" : "This is not the item — stop matching it by name"}>
               <Link2Off className="h-3.5 w-3.5" /> Unlink
+            </button>
+          )}
+          {editable && match.unlinked && (
+            <button type="button" onClick={() => onLink("auto")} className="flex items-center gap-1 text-muted-foreground hover:text-foreground" title="Match by name again">
+              <RefreshCw className="h-3.5 w-3.5" /> Match automatically
             </button>
           )}
         </div>
