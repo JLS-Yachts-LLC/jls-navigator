@@ -529,6 +529,11 @@ function JobEditor({
 
   async function save() {
     if (!form.title.trim()) { toast.error("Give the job a description."); return; }
+    // An empty crew list saves fine but is invisible on every phone — the
+    // field app's job query is `.contains("assigned_team", [name])`, which
+    // never matches an empty array. Catch it here rather than let "Assign
+    // Team" silently create a job nobody's assigned to.
+    if (form.team.length === 0) { toast.error("Assign at least one crew member."); return; }
     setSaving(true);
     try {
       if (existing) {

@@ -350,8 +350,14 @@ function AddBoatWizard({
         max_passengers: form.max_passengers ? Number(form.max_passengers) : null,
         mmsi: form.mmsi.trim() || null,
         imo_no: form.imo_no.trim() || null,
-        // Blank → the database derives one from the name (and keeps it unique).
-        job_prefix: form.job_prefix.trim().toUpperCase() || null,
+        // Still the office's own auto-filled suggestion (never hand-edited)?
+        // Send null and let the database derive it instead — it owns this
+        // rule (orbit2_default_job_prefix) and keeps it unique; sending our
+        // own copy of the algorithm's guess here is how the two could drift
+        // apart and persist a prefix the server's own rule wouldn't pick.
+        job_prefix: form.job_prefix.trim().toUpperCase() === defaultJobPrefix(form.name)
+          ? null
+          : form.job_prefix.trim().toUpperCase() || null,
         image_ref: form.image_ref,
         inherited_yacht_id: form.inherited_yacht_id,
         created_by: user?.id ?? null,

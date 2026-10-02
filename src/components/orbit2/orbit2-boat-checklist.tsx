@@ -318,7 +318,7 @@ function ChecklistModal({ boat, regime, inventory, isAdmin, authorName, cl, onCl
                   className="flex items-center gap-1 rounded-md border border-sky-500/50 bg-sky-500/10 px-2.5 py-1.5 text-[13px] font-semibold text-sky-500 hover:bg-sky-500/20 disabled:opacity-50">
                   {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Sync from inventory
                 </button>
-                {done > 0 && (
+                {isAdmin && done > 0 && (
                   <button type="button" onClick={() => void reset()} title="Clear all ticks for a new inspection"
                     className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-[13px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground">
                     <RotateCcw className="h-3.5 w-3.5" /> Reset
