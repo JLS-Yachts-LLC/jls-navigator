@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as PortalRouteImport } from './routes/portal'
 import { Route as OrbitAppRouteImport } from './routes/orbit-app'
+import { Route as LogisticsAppRouteImport } from './routes/logistics-app'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
@@ -167,6 +168,11 @@ const PortalRoute = PortalRouteImport.update({
 const OrbitAppRoute = OrbitAppRouteImport.update({
   id: '/orbit-app',
   path: '/orbit-app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LogisticsAppRoute = LogisticsAppRouteImport.update({
+  id: '/logistics-app',
+  path: '/logistics-app',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthRoute = AuthRouteImport.update({
@@ -937,6 +943,7 @@ const AppCrewImmigrationCrewAddCrewMemberIdPassportRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/logistics-app': typeof LogisticsAppRoute
   '/orbit-app': typeof OrbitAppRoute
   '/portal': typeof PortalRoute
   '/admin': typeof AppAdminRouteWithChildren
@@ -1087,6 +1094,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/logistics-app': typeof LogisticsAppRoute
   '/orbit-app': typeof OrbitAppRoute
   '/portal': typeof PortalRoute
   '/agency': typeof AppAgencyRoute
@@ -1224,6 +1232,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_app': typeof AppRouteWithChildren
   '/auth': typeof AuthRoute
+  '/logistics-app': typeof LogisticsAppRoute
   '/orbit-app': typeof OrbitAppRoute
   '/portal': typeof PortalRoute
   '/_app/admin': typeof AppAdminRouteWithChildren
@@ -1376,6 +1385,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/auth'
+    | '/logistics-app'
     | '/orbit-app'
     | '/portal'
     | '/admin'
@@ -1526,6 +1536,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/auth'
+    | '/logistics-app'
     | '/orbit-app'
     | '/portal'
     | '/agency'
@@ -1662,6 +1673,7 @@ export interface FileRouteTypes {
     | '/'
     | '/_app'
     | '/auth'
+    | '/logistics-app'
     | '/orbit-app'
     | '/portal'
     | '/_app/admin'
@@ -1814,6 +1826,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRouteWithChildren
   AuthRoute: typeof AuthRoute
+  LogisticsAppRoute: typeof LogisticsAppRoute
   OrbitAppRoute: typeof OrbitAppRoute
   PortalRoute: typeof PortalRoute
   DTokenRoute: typeof DTokenRoute
@@ -1841,6 +1854,13 @@ declare module '@tanstack/react-router' {
       path: '/orbit-app'
       fullPath: '/orbit-app'
       preLoaderRoute: typeof OrbitAppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/logistics-app': {
+      id: '/logistics-app'
+      path: '/logistics-app'
+      fullPath: '/logistics-app'
+      preLoaderRoute: typeof LogisticsAppRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth': {
@@ -3351,6 +3371,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
   AuthRoute: AuthRoute,
+  LogisticsAppRoute: LogisticsAppRoute,
   OrbitAppRoute: OrbitAppRoute,
   PortalRoute: PortalRoute,
   DTokenRoute: DTokenRoute,
