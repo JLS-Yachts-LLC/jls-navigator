@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { useLogisticsIdentity } from "./logistics-identity";
 import { Screen } from "./logistics-ui";
 import { CheckinParcel } from "./checkin-parcel";
+import { CheckoutParcels } from "./checkout-parcels";
 
 type Module =
   | "checkin" | "checkout" | "store-in" | "warehouse-out" | "manage-warehouse" | "deliveries" | "manage-deliveries";
@@ -33,7 +34,7 @@ type Tile = {
 const GROUPS: { title: string; tiles: Tile[] }[] = [
   { title: "Received Packages/Parcels", tiles: [
     { key: "checkin", label: "Check-in - Parcels", icon: PackagePlus, ready: true },
-    { key: "checkout", label: "Check-Out - Parcels", icon: PackageMinus, ready: false },
+    { key: "checkout", label: "Check-Out - Parcels", icon: PackageMinus, ready: true },
   ] },
   { title: "Warehouse Management", tiles: [
     { key: "store-in", label: "Warehouse - Store In", icon: Warehouse, ready: false },
@@ -55,6 +56,7 @@ export function LogisticsApp() {
   }
 
   if (open === "checkin") return <CheckinParcel onBack={() => setOpen(null)} />;
+  if (open === "checkout") return <CheckoutParcels onBack={() => setOpen(null)} />;
 
   // A driver's phone shows Deliveries and nothing else.
   const groups = id.driverOnly
