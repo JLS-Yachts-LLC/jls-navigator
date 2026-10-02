@@ -627,7 +627,7 @@ export function TrainingDocuments({ yachtId }: { yachtId: string | null }) {
       ) : searching ? (
         hitCount === 0 ? (
           <div style={{ textAlign: "center", padding: "36px 16px" }}>
-            <TIcon name="search" size={36} color="rgba(69,144,186,0.35)" style={{ display: "block", margin: "0 auto 12px" }} />
+            <TIcon name="search" size={36} color="rgba(201,162,39,0.35)" style={{ display: "block", margin: "0 auto 12px" }} />
             <p style={{ fontSize: "var(--pds-fs-body)", color: "var(--pds-text-secondary)", margin: "0 0 4px" }}>
               Nothing called “{query.trim()}”.
             </p>
@@ -693,7 +693,7 @@ export function TrainingDocuments({ yachtId }: { yachtId: string | null }) {
         )
       ) : childFolders.length === 0 && childDocs.length === 0 ? (
         <div style={{ textAlign: "center", padding: "36px 16px" }}>
-          <TIcon name="folder" size={40} color="rgba(69,144,186,0.35)" style={{ display: "block", margin: "0 auto 12px" }} />
+          <TIcon name="folder" size={40} color="rgba(201,162,39,0.35)" style={{ display: "block", margin: "0 auto 12px" }} />
           <p style={{ fontSize: "var(--pds-fs-body)", color: "var(--pds-text-secondary)", margin: "0 0 4px" }}>
             {here ? "This folder is empty." : "No documents yet."}
           </p>

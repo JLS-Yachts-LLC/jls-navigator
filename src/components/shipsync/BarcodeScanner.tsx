@@ -87,7 +87,7 @@ export function BarcodeScannerDialog({ open, onClose, onDetected, title = "Scan 
         {supported ? (
           <div className="relative overflow-hidden rounded-xl border border-border bg-black">
             <video ref={videoRef} playsInline muted className="h-56 w-full object-cover" />
-            <div className="pointer-events-none absolute inset-x-8 top-1/2 h-0.5 -translate-y-1/2 bg-primary/80 shadow-[0_0_12px_2px_rgba(69,144,186,0.6)]" />
+            <div className="pointer-events-none absolute inset-x-8 top-1/2 h-0.5 -translate-y-1/2 bg-primary/80 shadow-[0_0_12px_2px_rgba(201,162,39,0.6)]" />
             {starting && <div className="absolute inset-0 flex items-center justify-center bg-black/40"><Loader2 className="h-5 w-5 animate-spin text-white" /></div>}
           </div>
         ) : (

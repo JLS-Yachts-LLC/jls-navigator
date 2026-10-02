@@ -218,7 +218,7 @@ export function NativeLanguageSelect({
           borderRadius:   '7px',
           cursor:         'pointer',
           background:     isSelected
-                            ? 'rgba(69,144,186,0.18)'
+                            ? 'rgba(201,162,39,0.18)'
                             : isHighlighted
                               ? 'rgba(255,255,255,0.07)'
                               : 'transparent',
@@ -231,7 +231,7 @@ export function NativeLanguageSelect({
               fontFamily: "'DINPro','Inter',sans-serif",
               fontSize:   '15px',
               fontWeight: isSelected ? '500' : '400',
-              color:      isSelected ? '#96CBC7' : '#FFFFFF',
+              color:      isSelected ? '#E9CC72' : '#FFFFFF',
             }}
           >
             {option.name}
@@ -249,7 +249,7 @@ export function NativeLanguageSelect({
           )}
         </span>
         {isSelected && (
-          <i className="ti ti-check" aria-hidden="true" style={{ fontSize: '14px', color: '#96CBC7' }} />
+          <i className="ti ti-check" aria-hidden="true" style={{ fontSize: '14px', color: '#E9CC72' }} />
         )}
       </div>
     );
@@ -285,12 +285,12 @@ export function NativeLanguageSelect({
           border:         error
                             ? '1px solid #EF4444'
                             : open
-                              ? '1px solid #4590BA'
+                              ? '1px solid #C9A227'
                               : '1px solid rgba(255,255,255,0.18)',
           background:     'rgba(255,255,255,0.04)',
           cursor:         disabled ? 'not-allowed' : 'pointer',
           opacity:        disabled ? 0.5 : 1,
-          boxShadow:      open ? '0 0 0 3px rgba(69,144,186,0.20)' : 'none',
+          boxShadow:      open ? '0 0 0 3px rgba(201,162,39,0.20)' : 'none',
           transition:     'border 0.15s ease, box-shadow 0.15s ease',
         }}
       >
@@ -322,9 +322,9 @@ export function NativeLanguageSelect({
                 fontWeight:   '500',
                 padding:      '2px 8px',
                 borderRadius: '20px',
-                background:   'rgba(150,203,199,0.16)',
-                color:        '#96CBC7',
-                border:       '1px solid rgba(150,203,199,0.40)',
+                background:   'rgba(233,204,114,0.16)',
+                color:        '#E9CC72',
+                border:       '1px solid rgba(233,204,114,0.40)',
               }}
             >
               <i className={`ti ${SOURCE_BADGE[defaultSource].icon}`} aria-hidden="true" style={{ fontSize: '10px' }} />

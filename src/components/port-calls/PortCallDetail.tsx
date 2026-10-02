@@ -193,7 +193,7 @@ export function PortCallDetail({
 
   if (loading)
     return (
-      <div style={{ padding: 24, fontSize: 14, color: "#96CBC7" }}>
+      <div style={{ padding: 24, fontSize: 14, color: "#E9CC72" }}>
         Loading Port Call…
       </div>
     );
@@ -225,7 +225,7 @@ export function PortCallDetail({
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          borderBottom: "1px solid rgba(150,203,199,0.24)",
+          borderBottom: "1px solid rgba(233,204,114,0.24)",
           paddingBottom: 12,
         }}
       >
@@ -234,7 +234,7 @@ export function PortCallDetail({
             style={{
               fontFamily: "'Halis GR','Barlow',sans-serif",
               fontSize: 20,
-              color: "#96CBC7",
+              color: "#E9CC72",
               margin: 0,
             }}
           >
@@ -243,7 +243,7 @@ export function PortCallDetail({
           <p
             style={{
               fontSize: 13,
-              color: "rgba(150,203,199,0.7)",
+              color: "rgba(233,204,114,0.7)",
               margin: "4px 0 0",
             }}
           >
@@ -294,12 +294,12 @@ export function PortCallDetail({
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
-              border: "1px dashed rgba(150,203,199,0.3)",
+              border: "1px dashed rgba(233,204,114,0.3)",
               borderRadius: 8,
               padding: 16,
             }}
           >
-            <span style={{ fontSize: 13, color: "rgba(150,203,199,0.7)" }}>
+            <span style={{ fontSize: 13, color: "rgba(233,204,114,0.7)" }}>
               Inward Clearance has not been started for this Port Call.
             </span>
             <PolarisButton
@@ -328,7 +328,7 @@ export function PortCallDetail({
                   alignItems: "center",
                   justifyContent: "space-between",
                   borderRadius: 8,
-                  border: "1px solid rgba(150,203,199,0.24)",
+                  border: "1px solid rgba(233,204,114,0.24)",
                   padding: "8px 12px",
                 }}
               >
@@ -349,7 +349,7 @@ export function PortCallDetail({
                           : step.status === "rejected"
                             ? "#D14343"
                             : step.status === "in_progress"
-                              ? "#4590BA"
+                              ? "#C9A227"
                               : "#5A7A80",
                     }}
                   >
@@ -397,7 +397,7 @@ export function PortCallDetail({
                 borderRadius: 8,
                 padding: "8px 12px",
                 background:
-                  i % 2 === 1 ? "rgba(150,203,199,0.06)" : "transparent",
+                  i % 2 === 1 ? "rgba(233,204,114,0.06)" : "transparent",
               }}
             >
               <span style={{ fontSize: 14, color: "#F0F4F8" }}>

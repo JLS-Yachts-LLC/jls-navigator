@@ -218,7 +218,7 @@ function CrewRow({ record, onClick, isLast }: CrewRowProps) {
               fontFamily:   "'DINPro','Inter',sans-serif",
               fontSize:     '13px',
               fontWeight:   '500',
-              color:        '#07435E',
+              color:        '#0A1838',
             }}
           >
             {initials(record.crewName)}
@@ -247,7 +247,7 @@ function CrewRow({ record, onClick, isLast }: CrewRowProps) {
             fontFamily:   "'DINPro','Inter',sans-serif",
             fontSize:     '15px',
             fontWeight:   '500',
-            color:        '#07435E',
+            color:        '#0A1838',
             whiteSpace:   'nowrap',
             overflow:     'hidden',
             textOverflow: 'ellipsis',
@@ -389,7 +389,7 @@ export function VisaCrewTable({
                 fontFamily: "'Halis GR','Inter',sans-serif",
                 fontSize:   '15px',
                 fontWeight: '500',
-                color:      '#07435E',
+                color:      '#0A1838',
               }}
             >
               {title}
@@ -471,7 +471,7 @@ export function VisaCrewTable({
                   padding:      '8px 18px',
                   borderRadius: '8px',
                   border:       'none',
-                  background:   '#4590BA',
+                  background:   '#C9A227',
                   color:        '#FFFFFF',
                   cursor:       'pointer',
                 }}
@@ -511,11 +511,11 @@ export function VisaCrewTable({
                   fontFamily:     "'DINPro','Inter',sans-serif",
                   fontSize:       '13px',
                   fontWeight:     '500',
-                  color:          '#4590BA',
+                  color:          '#C9A227',
                   cursor:         'pointer',
                 }}
                 onMouseEnter={(e) => {
-                  (e.currentTarget).style.background = 'rgba(69,144,186,0.06)';
+                  (e.currentTarget).style.background = 'rgba(201,162,39,0.06)';
                 }}
                 onMouseLeave={(e) => {
                   (e.currentTarget).style.background = '#FAFAFA';

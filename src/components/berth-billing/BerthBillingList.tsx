@@ -32,8 +32,8 @@ function StatusPill({ ok, label }: { ok: boolean; label: string }) {
         padding: "2px 10px",
         fontSize: 12,
         fontWeight: 500,
-        background: ok ? "rgba(150,203,199,0.18)" : "rgba(255,255,255,0.06)",
-        color: ok ? "#96CBC7" : "rgba(255,255,255,0.5)",
+        background: ok ? "rgba(233,204,114,0.18)" : "rgba(255,255,255,0.06)",
+        color: ok ? "#E9CC72" : "rgba(255,255,255,0.5)",
       }}
     >
       {label}
@@ -108,13 +108,13 @@ export function BerthBillingList({
             style={{
               fontFamily: "'Halis GR','Barlow',sans-serif",
               fontSize: 20,
-              color: "#96CBC7",
+              color: "#E9CC72",
               margin: 0,
             }}
           >
             Marina Berth Billing
           </h2>
-          <p style={{ fontSize: 13, color: "rgba(150,203,199,0.7)", margin: "4px 0 0" }}>
+          <p style={{ fontSize: 13, color: "rgba(233,204,114,0.7)", margin: "4px 0 0" }}>
             Live occupancy, invoicing and supplier payment status.
           </p>
         </div>
@@ -154,12 +154,12 @@ export function BerthBillingList({
             onClick={() => setFilter(f)}
             style={{
               borderRadius: 8,
-              border: "1px solid rgba(150,203,199,0.24)",
+              border: "1px solid rgba(233,204,114,0.24)",
               padding: "6px 14px",
               fontSize: 13,
               fontWeight: 500,
               cursor: "pointer",
-              background: filter === f ? "#4590BA" : "transparent",
+              background: filter === f ? "#C9A227" : "transparent",
               color: filter === f ? "#fff" : "rgba(255,255,255,0.7)",
             }}
           >
@@ -199,7 +199,7 @@ export function BerthBillingList({
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
-              <tr style={{ textAlign: "left", color: "rgba(150,203,199,0.7)" }}>
+              <tr style={{ textAlign: "left", color: "rgba(233,204,114,0.7)" }}>
                 {[
                   "Vessel",
                   "Client",
@@ -227,10 +227,10 @@ export function BerthBillingList({
                   onClick={() => onOpenOccupancy(r.occupancy_id)}
                   style={{
                     cursor: "pointer",
-                    background: i % 2 === 1 ? "rgba(150,203,199,0.06)" : "transparent",
+                    background: i % 2 === 1 ? "rgba(233,204,114,0.06)" : "transparent",
                   }}
                 >
-                  <td style={{ padding: "8px 12px", fontWeight: 500, color: "#96CBC7" }}>{r.vessel}</td>
+                  <td style={{ padding: "8px 12px", fontWeight: 500, color: "#E9CC72" }}>{r.vessel}</td>
                   <td style={{ padding: "8px 12px", color: "#F0F4F8" }}>{r.client}</td>
                   <td style={{ padding: "8px 12px", color: "#F0F4F8" }}>
                     {r.marina} · {r.berth}

@@ -308,9 +308,10 @@ export function PolarisTopBar({
         <span
           style={{
             color: "var(--pds-gold)",
-            fontSize: 16,
+            fontFamily: "var(--pds-font-display)",
+            fontSize: 19,
             fontWeight: 600,
-            letterSpacing: "0.08em",
+            letterSpacing: "0.14em",
           }}
         >
           POLARIS

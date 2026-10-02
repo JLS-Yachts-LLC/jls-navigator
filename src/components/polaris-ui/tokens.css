@@ -1,33 +1,34 @@
 /**
  * Polaris Redesign — design tokens (ticket #195).
- * OFFICIAL BRAND palette (Polaris Brand Guidelines v1.0): teal-to-deep-blue —
- * Jamaica Bay #96CBC7 · Dodger Blue #4590BA · Teal Blue #07435E. No navy/gold.
+ * THEME: "Navy & warm gold" (Option A, chosen October 2026 from the gold theme
+ * mockups). Replaces the earlier teal-to-deep-blue palette (Jamaica Bay #96CBC7 ·
+ * Dodger Blue #4590BA · Teal Blue #07435E) — revert this file and the pds-embed
+ * block in src/styles.css to go back.
  * Scoped under .pds so it never collides with the existing app theme variables.
  *
- * Note: the --pds-navy / --pds-gold var NAMES are retained (to avoid churning
- * every component) but now hold official brand values — navy* = Teal Blue family,
- * gold = Dodger Blue (interactive), gold-light = Jamaica Bay (headings/active).
+ * --pds-navy* = navy surfaces, --pds-gold = warm gold (interactive accent),
+ * --pds-gold-light = light gold (headings / active text on dark).
  *
- * Type scale is the RECONCILED scale: 12px floor (uppercase micro-labels), ≥14px
- * reading text, weights 500/600 (§16). Fonts are SANS only (no serif): Halis GR /
- * DINPro when self-hosted .woff2 are added, falling back to Barlow today.
+ * Type: Jost (geometric sans) for all UI and body text; Cormorant Garamond for
+ * display only — page titles, card titles and big metric numbers. Floors: 12px
+ * uppercase micro-labels, ≥14px reading text.
  */
 
 .pds {
-  /* Core brand — official (Teal Blue family + Dodger Blue + Jamaica Bay) */
-  --pds-navy: #07435e; /* Teal Blue — primary dark surface (topbar/nav) */
-  --pds-navy-deep: #061e2b; /* deepest teal-black — page background */
-  --pds-navy-mid: #0a2e40; /* content-area background */
-  --pds-gold: #4590ba; /* Dodger Blue — primary interactive/CTA accent */
-  --pds-gold-light: #96cbc7; /* Jamaica Bay — headings / active text on dark */
-  --pds-gold-muted: rgba(69, 144, 186, 0.15); /* Dodger Blue tint */
+  /* Core theme — navy surfaces + warm gold accent */
+  --pds-navy: #0A1838; /* navy — primary dark surface (topbar/nav) */
+  --pds-navy-deep: #07112A; /* deepest navy — page background */
+  --pds-navy-mid: #0D1E44; /* content-area background */
+  --pds-gold: #C9A227; /* warm gold — primary interactive/CTA accent */
+  --pds-gold-light: #E9CC72; /* light gold — headings / active text on dark */
+  --pds-gold-muted: rgba(201,162,39, 0.16); /* gold tint */
 
   /* Brand gradient (light → dark, 135deg) — hero/login/email header only */
   --pds-gradient: linear-gradient(
     135deg,
-    #96cbc7 0%,
-    #4590ba 50%,
-    #07435e 100%
+    #E9CC72 0%,
+    #C9A227 50%,
+    #0A1838 100%
   );
 
   /* Traffic light system (immutable — never rebrand) */
@@ -40,29 +41,29 @@
   --pds-expired: #e24b4a;
   --pds-expired-bg: #fee2e2;
   --pds-expired-text: #991b1b;
-  --pds-neutral: #96cbc7; /* Jamaica Bay — neutral/no-record */
+  --pds-neutral: #a7b3ca; /* neutral/no-record */
 
   /* Text on dark */
-  --pds-text: #f0f4f8;
-  --pds-text-secondary: #a8c4ce; /* light teal-grey */
-  --pds-text-hint: rgba(150, 203, 199, 0.5); /* Jamaica Bay 50% */
+  --pds-text: #eff1f6;
+  --pds-text-secondary: #A7B3CA; /* cool grey */
+  --pds-text-hint: #7584a2; /* muted label grey */
 
   /* Surfaces */
-  --pds-surface-1: #07435e;
+  --pds-surface-1: #0A1838;
   --pds-surface-2: rgba(255, 255, 255, 0.04);
   --pds-surface-3: rgba(255, 255, 255, 0.08);
 
-  /* Borders (Jamaica Bay tints) */
-  --pds-border: rgba(150, 203, 199, 0.16);
-  --pds-border-soft: rgba(150, 203, 199, 0.1);
-  --pds-border-gold: rgba(150, 203, 199, 0.3);
-  --pds-border-gold-strong: rgba(150, 203, 199, 0.5);
+  /* Borders (light gold tints) */
+  --pds-border: rgba(233,204,114, 0.13);
+  --pds-border-soft: rgba(233,204,114, 0.1);
+  --pds-border-gold: rgba(233,204,114, 0.3);
+  --pds-border-gold-strong: rgba(233,204,114, 0.5);
 
   /* Type scale (reconciled) */
-  --pds-fs-hero: 28px;
+  --pds-fs-hero: 32px;
   --pds-fs-metric: 24px;
-  --pds-fs-title: 20px;
-  --pds-fs-card-title: 15px;
+  --pds-fs-title: 24px;
+  --pds-fs-card-title: 18px;
   --pds-fs-body: 14px;
   --pds-fs-nav: 14px;
   --pds-fs-label: 13px;
@@ -92,16 +93,16 @@
   --pds-topbar-h: 48px;
   --pds-nav-w: 200px;
 
-  /* Fonts — SANS only (no serif, §16). Halis GR / DINPro when self-hosted .woff2
-     are added; Barlow is the sans fallback today (NOT Georgia/Crimson serif). */
+  /* Fonts — Cormorant Garamond for display (titles, card titles, metric numbers),
+     Jost for everything else. Loaded from Google Fonts in src/routes/__root.tsx. */
   --pds-font-display:
-    "Halis GR", "Barlow", -apple-system, BlinkMacSystemFont, "Segoe UI",
-    sans-serif;
+    "Cormorant Garamond", Garamond, "Times New Roman", serif;
   --pds-font-body:
-    "DINPro", "Barlow", -apple-system, BlinkMacSystemFont, "Segoe UI",
-    sans-serif;
+    "Jost", Futura, "Century Gothic", -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
 
   font-family: var(--pds-font-body);
+  font-variant-numeric: lining-nums;
   color: var(--pds-text);
 }
 

@@ -6,9 +6,9 @@
  * POLARIS-PHONE-BETA-INTEGRATION.md). Modeled on the same interaction
  * pattern as src/components/visa/VisaOccupationSelect.tsx, restyled with
  * the official brand palette shared across both modules:
- *  Jamaica Bay  #96CBC7 (selected text, checkmark)
- *  Dodger Blue  #4590BA (focus ring, border)
- *  Teal Blue    #07435E (popup background)
+ *  Light gold   #E9CC72 (selected text, checkmark)
+ *  Warm gold    #C9A227 (focus ring, border)
+ *  Navy         #0A1838 (popup background)
  */
 import { useEffect, useRef, useState } from "react";
 
@@ -66,12 +66,12 @@ export function StatusSelect({
           padding: "6px 10px",
           borderRadius: 8,
           border: open
-            ? "1px solid #4590BA"
-            : "1px solid rgba(150,203,199,0.3)",
+            ? "1px solid #C9A227"
+            : "1px solid rgba(233,204,114,0.3)",
           background: "rgba(255,255,255,0.04)",
           cursor: disabled ? "not-allowed" : "pointer",
           opacity: disabled ? 0.5 : 1,
-          boxShadow: open ? "0 0 0 3px rgba(69,144,186,0.20)" : "none",
+          boxShadow: open ? "0 0 0 3px rgba(201,162,39,0.20)" : "none",
         }}
       >
         <span
@@ -100,7 +100,7 @@ export function StatusSelect({
             zIndex: 50,
             borderRadius: 8,
             border: "1px solid rgba(255,255,255,0.12)",
-            background: "#07435E",
+            background: "#0A1838",
             boxShadow: "0 12px 28px rgba(0,0,0,0.35)",
             padding: 4,
           }}
@@ -124,7 +124,7 @@ export function StatusSelect({
                   borderRadius: 6,
                   cursor: "pointer",
                   background: isSelected
-                    ? "rgba(69,144,186,0.18)"
+                    ? "rgba(201,162,39,0.18)"
                     : "transparent",
                 }}
               >
@@ -132,7 +132,7 @@ export function StatusSelect({
                   style={{
                     fontFamily: "'DINPro','Barlow',sans-serif",
                     fontSize: 13,
-                    color: isSelected ? "#96CBC7" : "#FFFFFF",
+                    color: isSelected ? "#E9CC72" : "#FFFFFF",
                   }}
                 >
                   {option.label}

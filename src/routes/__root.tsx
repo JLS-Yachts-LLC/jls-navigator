@@ -46,6 +46,8 @@ export const Route = createRootRoute({
       // Barlow — sans fallback for the official brand fonts (Halis GR / DINPro) in
       // the redesign system until the licensed .woff2 files are self-hosted. No serif.
       { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&display=swap" },
+      // New View theme: Jost (UI/body) + Cormorant Garamond (titles, card titles, metric numbers).
+      { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500;600;700&family=Cormorant+Garamond:wght@500;600;700&display=swap" },
     ],
   }),
   shellComponent: RootShell,

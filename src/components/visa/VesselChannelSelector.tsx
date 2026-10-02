@@ -93,13 +93,13 @@ function ChannelCard({ option, selected, disabled, onSelect }: ChannelCardProps)
         padding:         '16px',
         borderRadius:    '12px',
         border:          selected
-                           ? '1px solid #4590BA'
+                           ? '1px solid #C9A227'
                            : '1px solid #E5E7EB',
         borderLeft:      selected
-                           ? '4px solid #4590BA'
+                           ? '4px solid #C9A227'
                            : '4px solid transparent',
         background:      selected
-                           ? 'rgba(69,144,186,0.06)'
+                           ? 'rgba(201,162,39,0.06)'
                            : '#FFFFFF',
         cursor:          isDisabled ? 'not-allowed' : 'pointer',
         opacity:         isDisabled ? 0.5 : 1,
@@ -109,8 +109,8 @@ function ChannelCard({ option, selected, disabled, onSelect }: ChannelCardProps)
       }}
       onMouseEnter={(e) => {
         if (isDisabled || selected) return;
-        (e.currentTarget as HTMLDivElement).style.borderColor = '#96CBC7';
-        (e.currentTarget as HTMLDivElement).style.borderLeftColor = '#96CBC7';
+        (e.currentTarget as HTMLDivElement).style.borderColor = '#E9CC72';
+        (e.currentTarget as HTMLDivElement).style.borderLeftColor = '#E9CC72';
         (e.currentTarget as HTMLDivElement).style.boxShadow = '0 2px 8px rgba(7,67,94,0.07)';
       }}
       onMouseLeave={(e) => {
@@ -127,7 +127,7 @@ function ChannelCard({ option, selected, disabled, onSelect }: ChannelCardProps)
             width:        '36px',
             height:       '36px',
             borderRadius: '8px',
-            background:   selected ? 'rgba(69,144,186,0.12)' : 'rgba(7,67,94,0.06)',
+            background:   selected ? 'rgba(201,162,39,0.12)' : 'rgba(7,67,94,0.06)',
             display:      'flex',
             alignItems:   'center',
             justifyContent: 'center',
@@ -138,7 +138,7 @@ function ChannelCard({ option, selected, disabled, onSelect }: ChannelCardProps)
             aria-hidden="true"
             style={{
               fontSize: '18px',
-              color:    selected ? '#4590BA' : '#07435E',
+              color:    selected ? '#C9A227' : '#0A1838',
             }}
           />
         </div>
@@ -151,7 +151,7 @@ function ChannelCard({ option, selected, disabled, onSelect }: ChannelCardProps)
               width:        '20px',
               height:       '20px',
               borderRadius: '50%',
-              background:   '#4590BA',
+              background:   '#C9A227',
               display:      'flex',
               alignItems:   'center',
               justifyContent: 'center',
@@ -168,7 +168,7 @@ function ChannelCard({ option, selected, disabled, onSelect }: ChannelCardProps)
           fontFamily: "'Halis GR','Inter',sans-serif",
           fontSize:   '15px',
           fontWeight: '500',
-          color:      selected ? '#4590BA' : '#07435E',
+          color:      selected ? '#C9A227' : '#0A1838',
         }}
       >
         {option.label}
@@ -196,9 +196,9 @@ function ChannelCard({ option, selected, disabled, onSelect }: ChannelCardProps)
             fontWeight:   '500',
             padding:      '2px 8px',
             borderRadius: '20px',
-            background:   'rgba(150,203,199,0.20)',
-            color:        '#07435E',
-            border:       '1px solid rgba(150,203,199,0.50)',
+            background:   'rgba(233,204,114,0.20)',
+            color:        '#0A1838',
+            border:       '1px solid rgba(233,204,114,0.50)',
           }}
         >
           {option.badge}
@@ -263,7 +263,7 @@ export function VesselChannelSelector({
             marginTop:    '10px',
             fontFamily:   "'DINPro','Inter',sans-serif",
             fontSize:     '13px',
-            color:        '#4590BA',
+            color:        '#C9A227',
           }}
         >
           <i className="ti ti-info-circle" aria-hidden="true" style={{ fontSize: '14px' }} />

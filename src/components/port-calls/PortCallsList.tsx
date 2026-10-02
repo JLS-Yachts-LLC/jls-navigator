@@ -58,7 +58,7 @@ export function PortCallsList({
           style={{
             fontFamily: "'Halis GR','Barlow',sans-serif",
             fontSize: 20,
-            color: "#96CBC7",
+            color: "#E9CC72",
             margin: 0,
           }}
         >
@@ -100,7 +100,7 @@ export function PortCallsList({
                 borderRadius: 8,
                 padding: "12px 16px",
                 background:
-                  i % 2 === 1 ? "rgba(150,203,199,0.06)" : "transparent",
+                  i % 2 === 1 ? "rgba(233,204,114,0.06)" : "transparent",
                 color: "inherit",
               }}
             >
@@ -113,7 +113,7 @@ export function PortCallsList({
                 <div
                   style={{
                     fontSize: 12,
-                    color: "rgba(150,203,199,0.7)",
+                    color: "rgba(233,204,114,0.7)",
                     marginTop: 2,
                   }}
                 >
@@ -122,7 +122,7 @@ export function PortCallsList({
                   {row.assigned_office ? ` · ${row.assigned_office}` : ""}
                 </div>
               </div>
-              <div style={{ fontSize: 12, color: "#96CBC7" }}>
+              <div style={{ fontSize: 12, color: "#E9CC72" }}>
                 {row.steps_completed}/{row.steps_total} steps
               </div>
             </button>

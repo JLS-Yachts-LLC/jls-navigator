@@ -265,8 +265,13 @@ export const FONTS = {
 ```
 
 **Typography rules:**
-- `Space Grotesk` everywhere except Leo's streaming briefing text (use `Inter` there)
-- No serif typefaces — ever
+- `Space Grotesk` everywhere except Leo's streaming briefing text (use `Inter` there) — Old View
+- **New View (default) theme — "Navy & warm gold" (Oct 2026):** `Jost` for all UI/body text,
+  `Cormorant Garamond` for display only (page titles, card titles, big metric numbers),
+  `Inter` for Leo's briefing prose. Colours/fonts live in `src/components/polaris-ui/tokens.css`
+  (`--pds-*`) and the `.pds-embed` block in `src/styles.css`; use those tokens, not hex.
+- No serif typefaces, except Cormorant Garamond for New View display headings (and the
+  Playfair Display logo wordmark)
 - Labels: 9–10px, uppercase, `letter-spacing: 0.18–0.22em`, `font-weight: 600`
 - Body / stream: 13px, `line-height: 1.75`, `color: #C8D8E8`
 
@@ -999,8 +1004,8 @@ SUPABASE_SERVICE_ROLE_KEY=...         # server only
 3. **Always stream Leo's response** — never wait for the full response before rendering.
 4. **Parse `<insights>` on the client** — extract JSON after `</insights>` tag closes.
 5. **All colours from `lib/tokens.ts`** — no hardcoded hex values anywhere else.
-6. **Space Grotesk for all UI text** — Inter only for Leo's streaming prose.
-7. **No serif fonts anywhere** — ever.
+6. **UI fonts** — New View: Jost for UI text, Cormorant Garamond for display headings only; Old View: Space Grotesk. Inter only for Leo's streaming prose.
+7. **No other serif fonts** — Cormorant (New View display) and the Playfair logo wordmark are the only exceptions.
 8. **RLS on all Supabase tables** — users never see data outside their scope.
 9. **Fetch context in parallel** — `Promise.all`, never sequential awaits on login.
 10. **`UserContextSwitcher` is dev/demo only** — gated behind env check + `devMode` param.
