@@ -20,6 +20,7 @@ import { loadYachtNames } from "@/lib/shipsync/data";
 import { INTERNAL_DEPARTMENTS, FREEFORM_DEPARTMENTS } from "@/components/shipsync/warehouse/warehouse-constants";
 import { Screen, Lbl, inputCls, SuggestInput, PhotoField, FooterButtons } from "./logistics-ui";
 import { LocationPicker, DimsFields, FilesField, type Dims } from "./warehouse-ui";
+import { labelsFor } from "./warehouse-labels";
 import {
   loadShelves, storeClient, storeInternal, storageCharge, calcCbm,
   type WarehouseShelf, type Location, type PackingLine,
@@ -83,7 +84,7 @@ export function StoreIn({ onBack }: { onBack: () => void }) {
             ...common, kind, destructionDate: dueDate,
             department: freeform && deptDetail.trim() ? `${owner} — ${deptDetail.trim()}` : owner,
           });
-      toast.success(`Stored — ${ref}`);
+      toast.success(`Stored — ${ref}`, { duration: 15000, action: { label: "Print label", onClick: () => labelsFor(ref) } });
       reset();
     } catch (e) {
       toast.error(errorMessage(e, "Could not save"));

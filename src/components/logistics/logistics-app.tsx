@@ -20,6 +20,8 @@ import { CheckoutParcels } from "./checkout-parcels";
 import { Deliveries } from "./deliveries";
 import { ManageDeliveries } from "./manage-deliveries";
 import { StoreIn } from "./store-in";
+import { WarehouseOut } from "./warehouse-out";
+import { PendingBanner, useCheckinQueue } from "./checkin-pending";
 import { ManageWarehouse } from "./manage-warehouse";
 
 type Module =
@@ -38,7 +40,7 @@ const GROUPS: { title: string; tiles: Tile[] }[] = [
   ] },
   { title: "Warehouse Management", tiles: [
     { key: "store-in", label: "Warehouse - Store In", icon: Warehouse, ready: true },
-    { key: "warehouse-out", label: "Warehouse - Out", icon: PackageOpen, ready: false },
+    { key: "warehouse-out", label: "Warehouse - Out", icon: PackageOpen, ready: true },
     { key: "manage-warehouse", label: "Manage Warehouse", icon: LayoutGrid, ready: true },
   ] },
   { title: "Delivery Management", tiles: [
@@ -50,6 +52,8 @@ const GROUPS: { title: string; tiles: Tile[] }[] = [
 export function LogisticsApp() {
   const id = useLogisticsIdentity();
   const [open, setOpen] = useState<Module | null>(null);
+  // Check-ins saved without signal upload from here, whichever screen is open.
+  const queue = useCheckinQueue(true);
 
   if (id.loading) {
     return <div className="flex h-dvh items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
@@ -58,6 +62,7 @@ export function LogisticsApp() {
   if (open === "checkin") return <CheckinParcel onBack={() => setOpen(null)} />;
   if (open === "checkout") return <CheckoutParcels onBack={() => setOpen(null)} />;
   if (open === "store-in") return <StoreIn onBack={() => setOpen(null)} />;
+  if (open === "warehouse-out") return <WarehouseOut onBack={() => setOpen(null)} />;
   if (open === "manage-warehouse") return <ManageWarehouse onBack={() => setOpen(null)} />;
   if (open === "deliveries") return <Deliveries identity={id} onBack={() => setOpen(null)} />;
   if (open === "manage-deliveries") return <ManageDeliveries onBack={() => setOpen(null)} />;
@@ -69,6 +74,7 @@ export function LogisticsApp() {
 
   return (
     <Screen title="JLS YACHTS - LOGISTICS" subtitle={`HI ${id.greeting}`}>
+      <PendingBanner queue={queue} />
       {groups.map((g) => (
         <section key={g.title} className="space-y-2">
           <h2 className="text-center text-[14px] font-medium uppercase tracking-wide text-muted-foreground">{g.title}</h2>

@@ -276,7 +276,7 @@ function Builder({ note: initial, onDone }: { note: ShipSyncDeliveryNote | null;
   );
 }
 
-function FootBtn({ color, onClick, disabled, loading, children }: { color: string; onClick: () => void; disabled?: boolean; loading?: boolean; children: React.ReactNode }) {
+export function FootBtn({ color, onClick, disabled, loading, children }: { color: string; onClick: () => void; disabled?: boolean; loading?: boolean; children: React.ReactNode }) {
   return (
     <button type="button" onClick={onClick} disabled={disabled}
       className={cn("flex h-12 items-center justify-center rounded-lg text-[14px] font-semibold text-white disabled:opacity-50", color)}>
@@ -288,7 +288,7 @@ function FootBtn({ color, onClick, disabled, loading, children }: { color: strin
 // ── Pieces ───────────────────────────────────────────────────────────────────
 
 /** Position → Name → Email from the boat's crew list, or free text for a 3rd party. */
-function ClientCollection({
+export function ClientCollection({
   boats, h, setH, photo, setPhoto, sig,
 }: {
   boats: string[]; h: { name: string; position: string; email: string }; setH: (v: { name: string; position: string; email: string }) => void;

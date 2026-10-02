@@ -28,5 +28,11 @@ export const Route = createFileRoute("/logistics-app")({
       { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
       { name: "theme-color", content: "#07435E" },
     ],
+    links: [
+      // Only this page links the manifest, so only the logistics app is installable.
+      { rel: "manifest", href: "/logistics-app.webmanifest" },
+      // iOS ignores manifest icons and reads this instead.
+      { rel: "apple-touch-icon", href: "/logistics-icons/apple-touch-icon.png" },
+    ],
   }),
 });

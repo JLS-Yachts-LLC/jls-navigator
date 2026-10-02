@@ -13,23 +13,21 @@
  * round against its own screenshots; this follows the screenshots, where BOE
  * Number and Remarks always show and Amount/Method follow Payment = YES.)
  *
- * Saving writes the same shipsync_packages row the office boards read, so a
- * parcel checked in here is on the Local / Import board straight away. Local
- * parcels land in Warehouse (the office's default); Import and Transit are given
- * a Monday-style Item ID and joined to the "Incoming" group when the board has
- * one, exactly as the desktop does for a shipment raised in the app.
+ * Saving writes the same shipsync_packages row the office boards read (see
+ * checkin-commit.ts). With no signal the check-in is parked on the phone and
+ * uploaded when it is back online (logistics-offline.ts).
  */
 import { useEffect, useState } from "react";
 import { ScanLine } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
 import { errorMessage } from "@/lib/error-message";
 import { BarcodeScannerDialog } from "@/components/shipsync/BarcodeScanner";
-import { createPackage, patchPackage, uploadShipSyncImage, loadYachtNames, loadDestinations } from "@/lib/shipsync/data";
-import { nextItemId, STATUS_META, type PackageStatus, type ShipSyncPackage } from "@/lib/shipsync/model";
+import { loadYachtNames, loadDestinations } from "@/lib/shipsync/data";
+import { STATUS_META, type ShipSyncPackage } from "@/lib/shipsync/model";
 import { Screen, Lbl, inputCls, SuggestInput, PhotoField, FooterButtons } from "./logistics-ui";
-
-const sb = supabase as any;
+import { createCheckin, updateCheckin, findByAwb, isNetworkError, type CheckinPayload } from "./checkin-commit";
+import { queueCheckin } from "./logistics-offline";
+import { PendingBanner, useCheckinQueue } from "./checkin-pending";
 
 type ShipType = "Local" | "Import" | "Transit";
 const SHIP_TYPES: ShipType[] = ["Local", "Import", "Transit"];
@@ -52,6 +50,7 @@ export function CheckinParcel({ onBack }: { onBack: () => void }) {
   const [saving, setSaving] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [dupe, setDupe] = useState<ShipSyncPackage | null>(null);
+  const queue = useCheckinQueue(false);
   const set = (p: Partial<Form>) => setF((x) => ({ ...x, ...p }));
 
   useEffect(() => {
@@ -65,84 +64,63 @@ export function CheckinParcel({ onBack }: { onBack: () => void }) {
   const showMoney = f.payment === "YES";
   const showRemarks = showMoney || customs;
 
-  /** The parcel row for this form — shared by a fresh check-in and an update of an existing one. */
-  function fields(): Partial<ShipSyncPackage> {
+  /** Everything this form saves, as plain data — `id` is fixed now so a retry (or a later upload) can't create the parcel twice. */
+  function payload(id: string): CheckinPayload {
     return {
-      barcode: f.awb.trim(),
-      boat_name: f.boat.trim().toUpperCase() || null,
-      package_owner: f.consignee.trim() || null,
-      courier: f.courier.trim() || null,
-      num_packages: Math.max(1, Number(f.qty) || 1),
-      local_import: f.shipType,
-      boe_no: customs ? f.boe.trim() || null : null,
-      description: showRemarks ? f.remarks.trim() || null : null,
-      received_at: new Date().toISOString(),
+      id, awb: f.awb.trim(), customs,
+      fields: {
+        barcode: f.awb.trim(),
+        boat_name: f.boat.trim().toUpperCase() || null,
+        package_owner: f.consignee.trim() || null,
+        courier: f.courier.trim() || null,
+        num_packages: Math.max(1, Number(f.qty) || 1),
+        local_import: f.shipType,
+        boe_no: customs ? f.boe.trim() || null : null,
+        description: showRemarks ? f.remarks.trim() || null : null,
+        received_at: new Date().toISOString(),
+      },
+      payment: { required: f.payment === "YES", amount: showMoney && f.amount ? Number(f.amount) : null, method: showMoney ? f.method || null : null },
     };
   }
 
-  /** Payment has no column of its own; it rides in `extra` beside the rest of the intake detail. */
-  function paymentExtra() {
-    return {
-      payment: {
-        required: f.payment === "YES",
-        amount: showMoney && f.amount ? Number(f.amount) : null,
-        method: showMoney ? f.method || null : null,
-      },
-    };
+  /** No signal: keep the check-in (photo and all) on the phone; it uploads itself later. */
+  async function saveOffline(p: CheckinPayload): Promise<boolean> {
+    try {
+      await queueCheckin(p, photo);
+      toast.success(`${p.awb} saved on this phone — it uploads when you're back online`);
+      reset();
+      return true;
+    } catch (e) {
+      toast.error(errorMessage(e, "No signal, and it couldn't be saved on this phone either"));
+      return false;
+    }
   }
 
   async function submit() {
     if (!f.awb.trim()) { toast.error("Scan or type the AWB / reference number."); return; }
     if (!f.boat.trim()) { toast.error("Enter the client / boat name."); return; }
+    const p = payload(crypto.randomUUID());
     setSaving(true);
     try {
-      // ilike for a case-insensitive exact match — with the pattern characters
-      // escaped, so an AWB containing "_" or "%" is not read as a wildcard.
-      const exact = f.awb.trim().replace(/[\\%_]/g, (c) => `\\${c}`);
-      const { data: existing } = await sb.from("shipsync_packages").select("*").ilike("barcode", exact).limit(1);
-      if (existing?.[0]) { setDupe(existing[0] as ShipSyncPackage); return; }
-      await create();
+      if (!navigator.onLine) { await saveOffline(p); return; }
+      const existing = await findByAwb(p.awb);
+      if (existing) { setDupe(existing); return; }
+      const status = await createCheckin(p, photo);
+      toast.success(`${p.awb} checked in — ${STATUS_META[status].label}`);
+      reset();
     } catch (e) {
-      toast.error(errorMessage(e, "Could not save the parcel"));
+      if (isNetworkError(e)) await saveOffline(p);
+      else toast.error(errorMessage(e, "Could not save the parcel"));
     } finally {
       setSaving(false);
     }
   }
 
-  async function create() {
-    const id = crypto.randomUUID();
-    const item_photo_url = photo ? await uploadShipSyncImage(photo, `packages/${id}/item_${Date.now()}.jpg`) : null;
-    const extra: Record<string, unknown> = { ...paymentExtra(), checked_in_via: "logistics-app" };
-    let status: PackageStatus = "in_storage";
-
-    if (customs) {
-      // Same shape the Import board gives a shipment raised in the app: a
-      // Monday-style Item ID, and the "Incoming" group if the board has one.
-      status = "in_office";
-      const itemId = await nextItemId();
-      const { data: sample } = await sb.from("shipsync_packages").select("extra")
-        .in("local_import", ["Import", "Transit"]).eq("extra->>monday_group_title", "Incoming").limit(1);
-      const g = sample?.[0]?.extra;
-      if (g) { extra.monday_group_title = "Incoming"; extra.monday_group_position = g.monday_group_position; }
-      extra.monday = { "Item ID": itemId, ...(g ? { STATUS: "Incoming" } : {}) };
-    }
-
-    await createPackage({ id, ...fields(), status, item_photo_url, extra } as any);
-    toast.success(`${f.awb.trim()} checked in — ${STATUS_META[status].label}`);
-    reset();
-  }
-
-  /** The AWB already exists (often a Monday item raised before the parcel arrived) — check it in rather than duplicate it. */
   async function updateExisting() {
     if (!dupe) return;
     setSaving(true);
     try {
-      const id = dupe.id;
-      const item_photo_url = photo ? await uploadShipSyncImage(photo, `packages/${id}/item_${Date.now()}.jpg`) : dupe.item_photo_url;
-      await patchPackage(id, {
-        ...fields(), item_photo_url,
-        extra: { ...(dupe.extra ?? {}), ...paymentExtra(), checked_in_via: "logistics-app" },
-      } as any);
+      await updateCheckin(dupe, payload(dupe.id), photo);
       toast.success(`${f.awb.trim()} updated with this check-in`);
       setDupe(null);
       reset();
@@ -159,6 +137,8 @@ export function CheckinParcel({ onBack }: { onBack: () => void }) {
   return (
     <Screen title="Check-in · Parcels" onBack={onBack}
       footer={<FooterButtons onCancel={onBack} onSave={() => void submit()} saving={saving} />}>
+      <PendingBanner queue={queue} />
+
       <Lbl label="AirWayBill">
         <div className="flex gap-2">
           <input className={inputCls} value={f.awb} placeholder="Scan or type the AWB or Reference Number"

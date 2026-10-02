@@ -20,6 +20,7 @@ import { loadShelves, moveParcelsToStorage, calcCbm, type WarehouseShelf, type L
 import { ParcelTable, SearchToAdd } from "./parcel-pickers";
 import { Screen, Lbl, inputCls, PhotoField } from "./logistics-ui";
 import { LocationPicker, DimsFields, type Dims } from "./warehouse-ui";
+import { labelsFor } from "./warehouse-labels";
 
 export function MoveToStorage({ mode, onDone }: { mode: "box" | "individual"; onDone: () => void }) {
   const [parcels, setParcels] = useState<ParcelLite[]>([]);
@@ -61,7 +62,7 @@ export function MoveToStorage({ mode, onDone }: { mode: "box" | "individual"; on
     setBusy(true);
     try {
       const ref = await moveParcelsToStorage(parcels, { mode, ...dims, quotation, loc, photo });
-      toast.success(`${parcels.length} parcel${parcels.length === 1 ? "" : "s"} stored — ${ref}`);
+      toast.success(`${parcels.length} parcel${parcels.length === 1 ? "" : "s"} stored — ${ref}`, { duration: 15000, action: { label: "Print label", onClick: () => labelsFor(ref) } });
       onDone();
     } catch (e) {
       toast.error(errorMessage(e, "Could not move to storage"));

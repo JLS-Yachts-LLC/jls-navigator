@@ -11,7 +11,7 @@
  *                    the new Zone → Bay → Shelf, Save.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, Pencil, Plus, ScanLine, Search } from "lucide-react";
+import { Loader2, Pencil, Plus, Printer, ScanLine, Search } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { errorMessage } from "@/lib/error-message";
@@ -19,6 +19,7 @@ import { BarcodeScannerDialog } from "@/components/shipsync/BarcodeScanner";
 import { SignedImage } from "@/components/ui/signed-file";
 import { Screen, Lbl, inputCls, Sheet } from "./logistics-ui";
 import { LocationPicker } from "./warehouse-ui";
+import { labelsFor } from "./warehouse-labels";
 import {
   loadShelves, loadClientItems, loadInternalItems, loadStoredItems, findItems, refForAwb, patchStored, shelfCrud,
   recommendShelves, shelfUsage, shelfUsedDims, bayList, shelfList, allZones, zoneLabel, calcCbm, locationCode,
@@ -221,6 +222,9 @@ function ItemSheet({ item, onClose, onChanged }: { item: StoredItem; onClose: ()
           </div>
         </div>
       )}
+      <button type="button" onClick={() => labelsFor(item.ref_no)} className="flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-border font-semibold">
+        <Printer className="h-4 w-4" /> Print label{item.inside.length ? "s" : ""}
+      </button>
       <p className="text-[12px] text-muted-foreground">Check-out status is set by Warehouse - Out. To move this item, use Relocate Storage.</p>
     </Sheet>
   );
