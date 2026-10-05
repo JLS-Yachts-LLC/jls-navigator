@@ -18,7 +18,7 @@ import {
   MapPin, FileText, Download, ExternalLink, Clock, CheckCircle2,
   Bell, Compass, Wrench, CalendarRange, ShieldCheck, Menu, AlertTriangle, Eye,
   Pencil, Trash2, UserPlus, RotateCcw, ImagePlus,
-  ClipboardCheck, NotebookPen, Anchor, IdCard,
+  ClipboardCheck, NotebookPen, Anchor, IdCard, CalendarDays,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { portalFetch } from "@/lib/portal/portal-fetch";
@@ -34,6 +34,7 @@ import { MovementsSection } from "@/components/portal/sections/movements-section
 import { QuoteDetail } from "@/components/portal/sections/quote-detail";
 import { GatePassesSection } from "@/components/portal/sections/gatepasses-section";
 import { OrdersSection } from "@/components/portal/sections/orders-section";
+import { CalendarSection } from "@/components/portal/sections/calendar-section";
 import { CharterSection } from "@/components/portal/sections/charter-section";
 import { IsmSection } from "@/components/portal/sections/ism-section";
 import { canApproveRequisition, hiddenSections, canSeeFinance, canManageVessel } from "@/lib/portal/portal-positions";
@@ -625,7 +626,7 @@ function MfaVerifyScreen({ onDone, onSignOut }: { onDone: () => void; onSignOut:
 // ═══════════════════════════════════════════════════════════════════════════
 type Tab =
   | "home"
-  | "alerts" | "positions" | "crew" | "documents" | "pms" | "balances" | "invoices" | "charter" | "ism" | "stock" | "checklists" | "hours" | "handover" | "movements" | "gatepasses" | "orders"
+  | "alerts" | "positions" | "crew" | "documents" | "pms" | "balances" | "invoices" | "charter" | "ism" | "stock" | "checklists" | "hours" | "handover" | "movements" | "gatepasses" | "orders" | "calendar"
   | "requests" | "logistics" | "chat" | "directory"
   | "finances"; // legacy alias used by the Home module launcher → routes to Invoices/Finance
 
@@ -642,6 +643,7 @@ const NAV_GROUPS: NavGroup[] = [
     module: "core",
     items: [
       { key: "alerts", label: "Alerts", icon: Bell },
+      { key: "calendar", label: "Compliance calendar", icon: CalendarDays },
       { key: "positions", label: "Positions", icon: Compass },
       { key: "movements", label: "Arrivals & departures", icon: Anchor },
       { key: "gatepasses", label: "Gate passes", icon: IdCard },
@@ -880,6 +882,10 @@ function PortalShell({ link, email, onSignOut, preview = false }: { link: Captai
         {tab === "movements" && (
           <MovementsSection yachtId={link.yacht_id} canEdit={!preview}
                             onOpenRequest={(id) => { setTab("requests"); setOpenRequestId(id); }} />
+        )}
+        {tab === "calendar" && (
+          <CalendarSection yachtId={link.yacht_id} includeIsm={allowedKeys.has("ism")} includeGatePasses={allowedKeys.has("gatepasses")}
+                           onRenew={(cat) => setNewRequestCat(cat)} />
         )}
         {tab === "orders" && (
           <OrdersSection canEdit={!preview} onOpenRequest={(id) => { setTab("requests"); setOpenRequestId(id); }} />

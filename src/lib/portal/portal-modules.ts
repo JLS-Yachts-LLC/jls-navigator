@@ -24,6 +24,7 @@ export const PORTAL_MODULES: Record<PortalModuleKey, {
     blurb: "Everything JLS does for the vessel as its agent. Included for every client.",
     features: [
       { key: "alerts",    label: "Alerts",                     blurb: "Expiring permits, visas and passports; overdue invoices; deliveries" },
+      { key: "calendar",  label: "Compliance calendar",        blurb: "Every expiry JLS tracks for the vessel, month by month" },
       { key: "positions", label: "Positions",                  blurb: "AIS position and voyage" },
       { key: "crew",      label: "Crew, visas & immigration",  blurb: "Crew list, visa status, sign-on and sign-off" },
       { key: "movements", label: "Arrivals & departures",      blurb: "Pre-arrival / cruising permit form and seaport sign-on / sign-off requests" },
@@ -54,6 +55,7 @@ export const PORTAL_MODULES: Record<PortalModuleKey, {
 /** Which module + feature each portal section (tab key) belongs to. */
 export const SECTION_FEATURE: Record<string, { module: PortalModuleKey; feature: string }> = {
   alerts:    { module: "core", feature: "alerts" },
+  calendar:  { module: "core", feature: "calendar" },
   positions: { module: "core", feature: "positions" },
   crew:      { module: "core", feature: "crew" },
   movements: { module: "core", feature: "movements" },
