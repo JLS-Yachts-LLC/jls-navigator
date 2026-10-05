@@ -117,29 +117,20 @@ function StaffPanel() {
 // ── Portal modules per vessel ────────────────────────────────────────────────
 /**
  * The two portal modules for one vessel. Core (Agency with JLS) is always on —
- * staff can only hide features. Management (On board) is off until switched on,
- * normally as a 60-day trial first. Changes save straight away.
+ * staff can only hide features. Management (On board) is off until switched on.
+ * Changes save straight away.
  */
 function VesselModules({ rows, onSave }: {
   rows: VesselModuleRow[];
-  onSave: (module: PortalModuleKey, patch: Partial<Pick<VesselModuleRow, "enabled" | "trial_ends_at" | "features">>) => void;
+  onSave: (module: PortalModuleKey, patch: Partial<Pick<VesselModuleRow, "enabled" | "features">>) => void;
 }) {
   const [open, setOpen] = useState<PortalModuleKey | null>(null);
   const state = moduleState(rows);
-  const mgmt = rows.find((r) => r.module === "management");
-  const trialEnds = state.management.trialEndsAt;
-
-  const startTrial = () => {
-    const ends = new Date(); ends.setDate(ends.getDate() + 60);
-    onSave("management", { enabled: true, trial_ends_at: ends.toISOString() });
-  };
   const toggleFeature = (module: PortalModuleKey, key: string, on: boolean) => {
     const features = { ...(rows.find((r) => r.module === module)?.features ?? {}) };
     if (on) delete features[key]; else features[key] = false;
     onSave(module, { features });
   };
-
-  const fmt = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 
   return (
     <div className="border-b border-border/60 bg-background/20 px-4 py-2.5 text-xs">
@@ -157,10 +148,9 @@ function VesselModules({ rows, onSave }: {
         {/* Management */}
         <div className="inline-flex items-center gap-2">
           <button type="button" role="switch" aria-checked={state.management.enabled}
-                  onClick={() => state.management.enabled
-                    ? onSave("management", { enabled: false, trial_ends_at: null })
-                    : startTrial()}
-                  title={state.management.enabled ? "Switch Management off for this vessel" : "Start a 60-day Management trial"}
+                  aria-label="Management module"
+                  onClick={() => onSave("management", { enabled: !state.management.enabled })}
+                  title={state.management.enabled ? "Switch Management off for this vessel" : "Switch Management on for this vessel"}
                   className={cn("relative h-5 w-9 rounded-full transition", state.management.enabled ? "bg-teal-500" : "bg-border")}>
             <span className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-white transition", state.management.enabled ? "left-[18px]" : "left-0.5")} />
           </button>
@@ -168,24 +158,9 @@ function VesselModules({ rows, onSave }: {
                   className="inline-flex items-center gap-2 text-left hover:text-foreground" title={PORTAL_MODULES.management.blurb}>
             <span className={cn("font-semibold", state.management.enabled ? "text-teal-300" : "text-muted-foreground")}>{PORTAL_MODULES.management.short}</span>
             <span className="text-muted-foreground">· {PORTAL_MODULES.management.label}</span>
-            {state.management.enabled && trialEnds && (
-              <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-300">Trial · ends {fmt(trialEnds)}</span>
-            )}
-            {state.management.trialExpired && !state.management.enabled && mgmt?.enabled && (
-              <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">Trial ended {fmt(trialEnds!)}</span>
-            )}
-            {state.management.enabled && !trialEnds && <span className="text-muted-foreground">· on</span>}
-            {!state.management.enabled && !mgmt?.enabled && <span className="text-muted-foreground">· off</span>}
+            <span className="text-muted-foreground">· {state.management.enabled ? "on" : "off"}</span>
             <ChevronDown className={cn("h-3 w-3 text-muted-foreground transition", open === "management" && "rotate-180")} />
           </button>
-          {state.management.enabled && trialEnds && (
-            <button type="button" onClick={() => onSave("management", { trial_ends_at: null })}
-                    className="text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">Make permanent</button>
-          )}
-          {!state.management.enabled && mgmt?.enabled && state.management.trialExpired && (
-            <button type="button" onClick={() => onSave("management", { enabled: true, trial_ends_at: null })}
-                    className="text-[11px] text-teal-300 underline-offset-2 hover:underline">Switch on</button>
-          )}
         </div>
       </div>
 
@@ -232,7 +207,7 @@ function VesselUsersPanel() {
         .order("created_at", { ascending: false }),
       db.from("yachts").select("id, vessel_name, preferred_document_delivery").order("vessel_name"),
       db.from("orbit2_boats").select("id, name, client_name").eq("active", true).order("name"),
-      db.from("yacht_portal_modules").select("id, yacht_id, boat_id, module, enabled, trial_ends_at, features"),
+      db.from("yacht_portal_modules").select("id, yacht_id, boat_id, module, enabled, features"),
     ]);
     setRows(accounts ?? []);
     setYachts(ys ?? []);
@@ -246,16 +221,15 @@ function VesselUsersPanel() {
     moduleRows.filter((m) => (yachtId ? m.yacht_id === yachtId : m.boat_id === boatId));
 
   /**
-   * Switch a module on/off, start or end a trial, or hide/show a feature for
+   * Switch a module on/off, or hide/show a feature for
    * one vessel. One row per vessel+module; writing the whole row keeps it simple.
    */
   async function saveModule(yachtId: string | null, boatId: string | null, module: PortalModuleKey,
-                            patch: Partial<Pick<VesselModuleRow, "enabled" | "trial_ends_at" | "features">>) {
+                            patch: Partial<Pick<VesselModuleRow, "enabled" | "features">>) {
     const existing = modulesFor(yachtId, boatId).find((m) => m.module === module);
     const row = {
       yacht_id: yachtId, boat_id: boatId, module,
       enabled: existing?.enabled ?? (module === "core"),
-      trial_ends_at: existing?.trial_ends_at ?? null,
       features: existing?.features ?? {},
       ...patch,
       updated_by: (session as any)?.user?.id ?? null,

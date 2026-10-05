@@ -502,7 +502,7 @@ function PortalShell({ link, email, onSignOut, preview = false }: { link: Captai
   // Which modules the vessel has switched on (no rows = core only).
   useEffect(() => {
     db.from("yacht_portal_modules")
-      .select("module, enabled, trial_ends_at, features")
+      .select("module, enabled, features")
       .eq("yacht_id", link.yacht_id)
       .then(({ data }: any) => setModuleRows(data ?? []));
   }, [link.yacht_id]);
@@ -592,9 +592,6 @@ function PortalShell({ link, email, onSignOut, preview = false }: { link: Captai
                 <div className="flex items-center gap-1.5 px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/60">
                   <span className={cn("h-1.5 w-1.5 rounded-full", g.module === "management" ? "bg-teal-400/80" : "bg-primary/80")} />
                   <span className="flex-1">{g.title}</span>
-                  {g.module === "management" && modules.management.trialEndsAt && (
-                    <span className="normal-case tracking-normal text-muted-foreground/50" title={`Trial ends ${fmtDate(modules.management.trialEndsAt)}`}>Trial</span>
-                  )}
                 </div>
               )}
               <div className="space-y-0.5">
@@ -779,11 +776,6 @@ function ModuleLauncher({ onOpen, unread, financeOk, modules, allowedKeys }: {
             <span className="h-2 w-2 rounded-full bg-teal-400/80" />
             <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">On board</h2>
             <span className="hidden text-[11px] text-muted-foreground/60 sm:inline">Your crew's own tools — JLS only sees what you send across</span>
-            {modules.management.trialEndsAt && (
-              <span className="ml-auto rounded-full border border-teal-500/30 bg-teal-500/10 px-2 py-0.5 text-[10px] font-semibold text-teal-300">
-                Trial · ends {fmtDate(modules.management.trialEndsAt)}
-              </span>
-            )}
           </div>
           <ModuleTiles defs={management} onOpen={onOpen} unread={0} />
         </section>

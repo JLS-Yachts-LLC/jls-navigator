@@ -5,7 +5,7 @@
  *   core        "Agency with JLS" — everything JLS does for the vessel as its
  *               agent. Included for every client; staff can hide features.
  *   management  "On board" — the crew's own tools. Off until staff switch it on
- *               for the vessel, usually on a trial first.
+ *               for the vessel.
  *
  * Rows live in yacht_portal_modules; no row means the default (core on,
  * management off). `features` records only the features switched OFF for that
@@ -66,16 +66,12 @@ export const SECTION_FEATURE: Record<string, { module: PortalModuleKey; feature:
 export type PortalModuleRow = {
   module: PortalModuleKey;
   enabled: boolean;
-  trial_ends_at: string | null;
   features: Record<string, boolean> | null;
 };
 
 export type ModuleState = {
-  /** Switched on for this vessel (a trial that has run out counts as off). */
+  /** Switched on for this vessel. */
   enabled: boolean;
-  /** Set while the module is on trial; null once it's a full subscription. */
-  trialEndsAt: string | null;
-  trialExpired: boolean;
   /** Feature keys hidden for this vessel. */
   hidden: Set<string>;
 };
@@ -84,15 +80,13 @@ export type PortalModuleState = Record<PortalModuleKey, ModuleState>;
 const DEFAULT_ENABLED: Record<PortalModuleKey, boolean> = { core: true, management: false };
 
 /** Fold the vessel's rows (or none) into one state per module. */
-export function moduleState(rows: PortalModuleRow[] | null | undefined, now = new Date()): PortalModuleState {
+export function moduleState(rows: PortalModuleRow[] | null | undefined): PortalModuleState {
   const out = {} as PortalModuleState;
   for (const key of Object.keys(PORTAL_MODULES) as PortalModuleKey[]) {
     const row = rows?.find((r) => r.module === key);
-    const trialEndsAt = row?.trial_ends_at ?? null;
-    const trialExpired = !!trialEndsAt && new Date(trialEndsAt) < now;
-    const enabled = row ? row.enabled && !trialExpired : DEFAULT_ENABLED[key];
+    const enabled = row ? row.enabled : DEFAULT_ENABLED[key];
     const hidden = new Set(Object.entries(row?.features ?? {}).filter(([, on]) => on === false).map(([k]) => k));
-    out[key] = { enabled, trialEndsAt, trialExpired, hidden };
+    out[key] = { enabled, hidden };
   }
   return out;
 }

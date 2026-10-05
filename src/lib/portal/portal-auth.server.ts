@@ -61,7 +61,7 @@ const json = (b: unknown, s = 200) =>
 export async function portalModulesFor(yachtId: string): Promise<PortalModuleState> {
   const { data } = await admin()
     .from('yacht_portal_modules')
-    .select('module, enabled, trial_ends_at, features')
+    .select('module, enabled, features')
     .eq('yacht_id', yachtId)
   return moduleState((data ?? []) as PortalModuleRow[])
 }
