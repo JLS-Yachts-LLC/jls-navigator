@@ -25,6 +25,8 @@ export type PortalYacht = {
   qboCustomerId: string | null
   /** True when a staff admin is previewing this vessel's portal. */
   preview: boolean
+  /** captain_accounts.position of the (previewed) account — see portal-positions. */
+  position: string | null
 }
 
 function admin() {
@@ -50,12 +52,13 @@ export async function resolvePortalYacht(
 
   let caller: { id: string; email: string }
   let yachtId: string
+  let position: string | null
   if (previewAccountId) {
     const access = await requireAdminAccess(request)
     if (!access.ok) return { ok: false, response: access.response }
     const { data: acct } = await sb
       .from('captain_accounts')
-      .select('yacht_id')
+      .select('yacht_id, position')
       .eq('id', previewAccountId)
       .eq('active', true)
       .not('yacht_id', 'is', null)
@@ -63,6 +66,7 @@ export async function resolvePortalYacht(
     if (!acct?.yacht_id) return { ok: false, response: json({ error: 'Client account not found' }, 404) }
     caller = { id: access.user.id, email: access.user.email }
     yachtId = acct.yacht_id
+    position = acct.position ?? null
   } else {
     const { data: { user }, error } = await sb.auth.getUser(token)
     if (error || !user) return { ok: false, response: json({ error: 'Not authenticated' }, 401) }
@@ -70,7 +74,7 @@ export async function resolvePortalYacht(
     // The user must have an ACTIVE captain account — this is the isolation boundary.
     const { data: acct } = await sb
       .from('captain_accounts')
-      .select('yacht_id')
+      .select('yacht_id, position')
       .eq('user_id', user.id)
       .eq('active', true)
       // A boat-owner link has no yacht — see resolvePortalBoats() for those.
@@ -80,6 +84,7 @@ export async function resolvePortalYacht(
     if (!acct?.yacht_id) return { ok: false, response: json({ error: 'No vessel linked to this account' }, 403) }
     caller = { id: user.id, email: user.email ?? '' }
     yachtId = acct.yacht_id
+    position = acct.position ?? null
   }
 
   const { data: yacht } = await sb
@@ -98,6 +103,7 @@ export async function resolvePortalYacht(
       vesselName: yacht.vessel_name,
       qboCustomerId: (yacht as any).qbo_customer_id ?? null,
       preview: !!previewAccountId,
+      position,
     },
   }
 }

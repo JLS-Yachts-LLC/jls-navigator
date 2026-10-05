@@ -15,6 +15,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
+import { PORTAL_POSITIONS, positionLabel } from "@/lib/portal/portal-positions";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { UserTable } from "@/components/admin/users/UserTable";
@@ -39,8 +40,6 @@ const vesselNameOf = (r: CaptainRow) => r.yachts?.vessel_name ?? r.orbit2_boats?
 const openPreview = (r: CaptainRow) =>
   window.open(`/portal?previewCaptain=${encodeURIComponent(r.id)}`, "_blank");
 
-export const PORTAL_POSITIONS = ["captain", "owner", "representative", "purser", "other"] as const;
-const positionLabel = (p: string) => p.charAt(0).toUpperCase() + p.slice(1);
 
 export function ManageUsers() {
   const [tab, setTab] = useState<"staff" | "vessel">("staff");

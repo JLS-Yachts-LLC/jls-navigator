@@ -8,6 +8,7 @@
  * falling back to a DisplayName lookup on the vessel name). Nothing is ever written.
  */
 import { resolvePortalYacht } from '@/lib/portal/portal-auth.server'
+import { canSeeFinance } from '@/lib/portal/portal-positions'
 
 const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } })
@@ -33,6 +34,7 @@ export async function portalFinanceHandler(request: Request): Promise<Response> 
   const auth = await resolvePortalYacht(request)
   if (!auth.ok) return auth.response
   const { yacht } = auth
+  if (!canSeeFinance(yacht.position)) return json({ error: "Your position doesn't include the vessel's accounts." }, 403)
 
   const url = new URL(request.url)
   const invoicePdfId = url.searchParams.get('invoicePdf')

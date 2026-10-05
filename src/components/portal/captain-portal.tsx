@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { portalFetch } from "@/lib/portal/portal-fetch";
+import { hiddenSections, canSeeFinance } from "@/lib/portal/portal-positions";
 import { cn } from "@/lib/utils";
 import { BoatPortal } from "./boat-portal";
 // /portal is a standalone route (no staff shell), so pull the design tokens in
@@ -454,18 +455,9 @@ const NAV_GROUPS: NavGroup[] = [
 ];
 const ALL_NAV_ITEMS: NavItem[] = NAV_GROUPS.flatMap((g) => g.items);
 
-// Per-position module visibility. The Captain (and any unknown/blank position)
-// sees the whole app; Owner / Representative / Purser get a tailored subset —
-// operational sections (PMS, ISM) are hidden for non-operational roles, and the
-// Purser is finance/paperwork-focused. Tweak these lists to taste.
-// Keys are lowercase, as captain_accounts.position stores them.
-const HIDDEN_BY_POSITION: Record<string, Tab[]> = {
-  owner: ["pms", "ism"],
-  representative: ["pms", "ism"],
-  purser: ["pms", "ism", "positions", "charter"],
-};
+// Per-position module visibility — the lists live in lib/portal/portal-positions.
 function navGroupsFor(position: string | null): NavGroup[] {
-  const hide = new Set(HIDDEN_BY_POSITION[(position ?? "").trim().toLowerCase()] ?? []);
+  const hide = hiddenSections(position);
   return NAV_GROUPS
     .map((g) => ({ ...g, items: g.items.filter((i) => !hide.has(i.key)) }))
     .filter((g) => g.items.length > 0);
@@ -515,10 +507,13 @@ function PortalShell({ link, email, onSignOut, preview = false }: { link: Captai
   // Modules this position may see (Captain / unknown = all).
   const navGroups = navGroupsFor(link.position);
   const allowedKeys = new Set(navGroups.flatMap((g) => g.items.map((i) => i.key)));
+  const financeOk = canSeeFinance(link.position);
   // If the current tab isn't visible for this position, fall back to Home.
+  // ("finances" is the Home tile's legacy key for the Invoices section.)
   useEffect(() => {
-    if (tab !== "home" && tab !== "finances" && !allowedKeys.has(tab)) setTab("home");
-  }, [tab, allowedKeys]);
+    const visible = tab === "home" || (tab === "finances" ? financeOk : allowedKeys.has(tab));
+    if (!visible) setTab("home");
+  }, [tab, allowedKeys, financeOk]);
 
   const activeItem = ALL_NAV_ITEMS.find((i) => i.key === tab);
 
@@ -627,7 +622,7 @@ function PortalShell({ link, email, onSignOut, preview = false }: { link: Captai
                    onSeeRequests={() => setTab("requests")}
                    onOpenRequest={(id) => { setTab("requests"); setOpenRequestId(id); }}
                    onOpenModule={(t) => { setTab(t); setOpenRequestId(null); }}
-                   unread={unread}
+                   unread={unread} financeOk={financeOk}
                    refreshKey={refreshKey} />
         )}
         {tab === "chat" && (
@@ -645,7 +640,7 @@ function PortalShell({ link, email, onSignOut, preview = false }: { link: Captai
         {(tab === "invoices" || tab === "finances") && <FinancesTab />}
         {tab === "balances" && <BalancesTab />}
         {tab === "logistics" && <LogisticsTab />}
-        {tab === "alerts" && <AlertsTab onOpen={(t) => { setTab(t); setOpenRequestId(null); }} />}
+        {tab === "alerts" && <AlertsTab financeOk={financeOk} onOpen={(t) => { setTab(t); setOpenRequestId(null); }} />}
         {tab === "positions" && yacht && <PositionsTab yacht={yacht} />}
         {tab === "pms" && (
           <ComingSoonTab icon={Wrench} title="Planned Maintenance (PMS)"
@@ -689,12 +684,12 @@ const MODULES: ModuleDef[] = [
   { key: "chat",      label: "Support & Directory",  blurb: "Chat with JLS + key contacts",          icon: MessageSquare, accent: "text-primary bg-primary/10 border-primary/25" },
 ];
 
-function ModuleLauncher({ onOpen, unread }: { onOpen: (t: Tab) => void; unread: number }) {
+function ModuleLauncher({ onOpen, unread, financeOk }: { onOpen: (t: Tab) => void; unread: number; financeOk: boolean }) {
   return (
     <section>
       <h2 className="mb-3 text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">Modules</h2>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-        {MODULES.map((m) => (
+        {MODULES.filter((m) => financeOk || m.key !== "finances").map((m) => (
           <button
             key={m.key}
             onClick={() => onOpen(m.key)}
@@ -721,9 +716,9 @@ function ModuleLauncher({ onOpen, unread }: { onOpen: (t: Tab) => void; unread: 
 }
 
 // ── Home ─────────────────────────────────────────────────────────────────────
-function HomeTab({ yacht, onNewRequest, onSeeRequests, onOpenRequest, onOpenModule, unread, refreshKey }: {
+function HomeTab({ yacht, onNewRequest, onSeeRequests, onOpenRequest, onOpenModule, unread, financeOk, refreshKey }: {
   yacht: Yacht; onNewRequest: (cat: string) => void; onSeeRequests: () => void;
-  onOpenRequest: (id: string) => void; onOpenModule: (t: Tab) => void; unread: number; refreshKey: number;
+  onOpenRequest: (id: string) => void; onOpenModule: (t: Tab) => void; unread: number; financeOk: boolean; refreshKey: number;
 }) {
   const [recent, setRecent] = useState<PortalRequest[]>([]);
   useEffect(() => {
@@ -773,7 +768,7 @@ function HomeTab({ yacht, onNewRequest, onSeeRequests, onOpenRequest, onOpenModu
       </Card>
 
       {/* Module launcher — the DeepBlue-style front door */}
-      <ModuleLauncher onOpen={onOpenModule} unread={unread} />
+      <ModuleLauncher onOpen={onOpenModule} unread={unread} financeOk={financeOk} />
 
       {/* Quick requests */}
       <section>
@@ -1677,7 +1672,7 @@ const expiringWithin = (d: string | null | undefined, days: number) => {
   return n <= days && n >= -3650; // upcoming or recently lapsed, not ancient records
 };
 
-function AlertsTab({ onOpen }: { onOpen: (t: Tab) => void }) {
+function AlertsTab({ onOpen, financeOk }: { onOpen: (t: Tab) => void; financeOk: boolean }) {
   const [alerts, setAlerts] = useState<PortalAlert[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -1689,7 +1684,7 @@ function AlertsTab({ onOpen }: { onOpen: (t: Tab) => void }) {
         db.from("crew_members").select("id, full_name, first_name, last_name, passport_expiry_date"),
         db.from("visa_applications").select("id, given_name, surname, visa_expiry"),
         db.from("permits").select("id, permit_type, expiry_date"),
-        authedFetch("/api/portal/finance").then((r) => r.json()).catch(() => null),
+        financeOk ? authedFetch("/api/portal/finance").then((r) => r.json()).catch(() => null) : Promise.resolve(null),
         authedFetch("/api/portal/logistics").then((r) => r.json()).catch(() => null),
       ]);
       const out: PortalAlert[] = [];
@@ -1744,7 +1739,7 @@ function AlertsTab({ onOpen }: { onOpen: (t: Tab) => void }) {
       setAlerts(out);
       setLoading(false);
     })();
-  }, []);
+  }, [financeOk]);
 
   if (loading) return <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
 
