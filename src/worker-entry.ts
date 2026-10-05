@@ -1101,6 +1101,25 @@ export default {
       return yachtNetworkDattoHandler(request)
     }
 
+    // Communications → WhatsApp. The webhook and the opt-in endpoints are public
+    // by necessity (Meta, and a client following an email link); the webhook is
+    // signature-checked and the opt-in is gated on its unguessable token.
+    if (url.pathname.startsWith('/api/whatsapp/')) {
+      const wa = await import('./lib/whatsapp/api.server')
+      const route = `${request.method} ${url.pathname}`
+      switch (route) {
+        case 'GET /api/whatsapp/status': return wa.whatsappStatusHandler(request)
+        case 'POST /api/whatsapp/templates/submit': return wa.whatsappTemplateSubmitHandler(request)
+        case 'POST /api/whatsapp/templates/sync': return wa.whatsappTemplateSyncHandler(request)
+        case 'POST /api/whatsapp/campaigns/send': return wa.whatsappCampaignSendHandler(request)
+        case 'POST /api/whatsapp/optin/invite': return wa.whatsappOptinInviteHandler(request)
+        case 'GET /api/whatsapp/optin': return wa.whatsappOptinGetHandler(request)
+        case 'POST /api/whatsapp/optin': return wa.whatsappOptinPostHandler(request)
+        case 'GET /api/whatsapp/webhook': return wa.whatsappWebhookVerifyHandler(request)
+        case 'POST /api/whatsapp/webhook': return wa.whatsappWebhookHandler(request)
+      }
+    }
+
     if (url.pathname === '/api/internal-services/renewal-check' && request.method === 'POST') {
       return internalServicesRenewalCheckHandler(request)
     }
