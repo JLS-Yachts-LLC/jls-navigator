@@ -73,6 +73,29 @@ export async function phoneInfo(cfg: WaConfig) {
   return graph(cfg, `${cfg.phoneNumberId}?fields=display_phone_number,verified_name,quality_rating,messaging_limit_tier`);
 }
 
+/** The WhatsApp Business Account's name, and which apps receive its webhooks. */
+export async function accountInfo(cfg: WaConfig): Promise<{ name: string | null; apps: Array<{ id: string; name: string }> }> {
+  const [acct, subs] = await Promise.all([
+    graph(cfg, `${cfg.wabaId}?fields=name`),
+    graph(cfg, `${cfg.wabaId}/subscribed_apps`),
+  ]);
+  return {
+    name: acct?.name ?? null,
+    apps: ((subs?.data ?? []) as any[]).map((s) => ({
+      id: String(s.whatsapp_business_api_data?.id ?? s.id ?? ""),
+      name: String(s.whatsapp_business_api_data?.name ?? s.name ?? ""),
+    })),
+  };
+}
+
+/**
+ * Subscribe the token's app to the account, so Meta delivers this number's
+ * messages and receipts to our webhook. Idempotent.
+ */
+export async function subscribeApp(cfg: WaConfig): Promise<void> {
+  await graph(cfg, `${cfg.wabaId}/subscribed_apps`, { method: "POST" });
+}
+
 export interface TemplateDef {
   name: string;
   language: string;

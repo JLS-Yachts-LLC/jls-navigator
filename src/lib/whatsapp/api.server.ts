@@ -2,7 +2,8 @@
  * Communications → WhatsApp — HTTP handlers.
  *
  *   GET  /api/whatsapp/status               connection + number health       (communications view)
- *   POST /api/whatsapp/templates/submit     send a template to Meta's review  (edit)
+ *   POST /api/whatsapp/subscribe            send the account's webhooks to us  (edit)
+ *   POST /api/whatsapp/templates/submit    send a template to Meta's review  (edit)
  *   POST /api/whatsapp/templates/sync       refresh every template's status  (edit)
  *   POST /api/whatsapp/campaigns/send       send the next batch of a campaign (edit)
  *   POST /api/whatsapp/reply                message one contact: text or template (edit)
@@ -22,7 +23,7 @@ import { requireAccess } from "@/lib/auth/requireAccess.server";
 import { appBaseUrl } from "@/lib/app-url.server";
 import { sendGraphEmail } from "@/lib/graph-mail.server";
 import {
-  waConfig, sendingEnabled, configPresence, phoneInfo, createTemplate, listTemplates,
+  waConfig, sendingEnabled, configPresence, phoneInfo, accountInfo, subscribeApp, createTemplate, listTemplates,
   sendTemplate, sendText, markRead, downloadMedia, verifySignature, verifyToken, MetaError,
 } from "@/lib/whatsapp/cloud-api.server";
 import {
@@ -59,17 +60,36 @@ export async function whatsappStatusHandler(request: Request): Promise<Response>
   const presence = configPresence();
   const cfg = waConfig();
   let number: unknown = null;
+  let account: Awaited<ReturnType<typeof accountInfo>> | null = null;
   let error: string | null = null;
+  let accountError: string | null = null;
   if (cfg) {
     try { number = await phoneInfo(cfg); } catch (e) { error = e instanceof Error ? e.message : String(e); }
+    try { account = await accountInfo(cfg); } catch (e) { accountError = e instanceof Error ? e.message : String(e); }
   }
   return json({
     connected: !!cfg && !error,
     presence,
     number,
+    account,
+    account_error: accountError,
     error,
     webhook_url: `${appBaseUrl()}/api/whatsapp/webhook`,
   });
+}
+
+/** Point the account's webhooks at this app (the one the token belongs to). */
+export async function whatsappSubscribeHandler(request: Request): Promise<Response> {
+  const access = await requireAccess(request, { module: "communications", level: "edit" });
+  if (!access.ok) return access.response;
+  const cfg = waConfig();
+  if (!cfg) return json({ error: "WhatsApp isn't connected yet." }, 409);
+  try {
+    await subscribeApp(cfg);
+    return json({ ok: true, account: await accountInfo(cfg) });
+  } catch (e) {
+    return json({ error: e instanceof Error ? e.message : String(e) }, e instanceof MetaError ? 422 : 500);
+  }
 }
 
 // ─── Templates ────────────────────────────────────────────────────────────────

@@ -13,6 +13,8 @@ interface Status {
   presence: Record<string, boolean>;
   number: { display_phone_number?: string; verified_name?: string; quality_rating?: string; messaging_limit_tier?: string } | null;
   error: string | null;
+  account: { name: string | null; apps: Array<{ id: string; name: string }> } | null;
+  account_error: string | null;
   webhook_url: string;
 }
 
@@ -51,6 +53,20 @@ export function WaOverview() {
 
   useEffect(() => { void load(); }, []);
 
+  const [subscribing, setSubscribing] = useState(false);
+  async function subscribe() {
+    setSubscribing(true);
+    try {
+      await waApi("subscribe", {});
+      toast.success("Webhooks linked", { description: "Meta now delivers this number's messages and receipts to Polaris." });
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't link webhooks");
+    } finally {
+      setSubscribing(false);
+    }
+  }
+
   if (loading && !status) {
     return <div className="grid place-items-center py-20 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /></div>;
   }
@@ -88,6 +104,37 @@ export function WaOverview() {
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
           </Button>
         </div>
+
+        {status?.connected && (
+          <div className="mt-4 rounded-lg border border-border p-3 text-sm">
+            {status.account ? (
+              <>
+                <p>
+                  WhatsApp account: <strong>{status.account.name ?? "—"}</strong>
+                </p>
+                {status.account.apps.length > 0 ? (
+                  <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                    Messages and receipts are delivered to: {status.account.apps.map((a) => a.name || a.id).join(", ")}
+                  </p>
+                ) : (
+                  <p className="mt-1 flex items-center gap-1.5 text-xs text-amber-600">
+                    <XCircle className="h-3.5 w-3.5" />
+                    No app receives this account's messages yet — replies won't reach Polaris.
+                  </p>
+                )}
+                <Button size="sm" variant="outline" className="mt-2 h-7 text-xs" disabled={subscribing} onClick={() => void subscribe()}>
+                  {subscribing && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
+                  {status.account.apps.length ? "Re-link webhooks" : "Link webhooks to Polaris"}
+                </Button>
+              </>
+            ) : (
+              <p className="text-xs text-red-500">
+                Couldn't read the WhatsApp account{status.account_error ? `: ${status.account_error}` : ""}. Check WHATSAPP_WABA_ID and that the token has access to that account.
+              </p>
+            )}
+          </div>
+        )}
 
         <div className="mt-4 grid gap-1.5">
           {SECRETS.map(([key, name, hint]) => (
