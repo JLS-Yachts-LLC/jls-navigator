@@ -5,6 +5,9 @@
  *   POST /api/whatsapp/templates/submit     send a template to Meta's review  (edit)
  *   POST /api/whatsapp/templates/sync       refresh every template's status  (edit)
  *   POST /api/whatsapp/campaigns/send       send the next batch of a campaign (edit)
+ *   POST /api/whatsapp/reply                message one contact: text or template (edit)
+ *   POST /api/whatsapp/conversations/read   mark a thread read (+ blue ticks)  (view)
+ *   GET  /api/whatsapp/media?inbound=…      a file a client sent               (view)
  *   POST /api/whatsapp/optin/invite         email opt-in invitations          (edit)
  *   GET  /api/whatsapp/optin?token=…        public: what the invitation shows
  *   POST /api/whatsapp/optin                public: the client's answer
@@ -20,11 +23,11 @@ import { appBaseUrl } from "@/lib/app-url.server";
 import { sendGraphEmail } from "@/lib/graph-mail.server";
 import {
   waConfig, sendingEnabled, configPresence, phoneInfo, createTemplate, listTemplates,
-  sendTemplate, verifySignature, verifyToken, MetaError,
+  sendTemplate, sendText, markRead, downloadMedia, verifySignature, verifyToken, MetaError,
 } from "@/lib/whatsapp/cloud-api.server";
 import {
   OPTIN_WORDING_VERSION, OPTIN_CATEGORY_TEXT, OPTIN_STOP_TEXT, optinStatement, toE164, stopIntent,
-  placeholderCount, MARKETING_OPT_OUT_BUTTON,
+  placeholderCount, MARKETING_OPT_OUT_BUTTON, fillTemplate, SERVICE_WINDOW_MS,
 } from "@/lib/whatsapp/shared";
 
 const json = (body: unknown, status = 200) =>
@@ -198,6 +201,9 @@ export async function whatsappCampaignSendHandler(request: Request): Promise<Res
       });
       await db.from("wa_messages").update({
         status: "sent", wa_message_id: wamid, sent_at: new Date().toISOString(), phone_e164: m.phone_e164,
+        // What the client actually saw, so it reads naturally in their thread.
+        body: fillTemplate(t.body_text, values.slice(0, needed), m.contact_name || "there"),
+        template_id: t.id,
       }).eq("id", m.message_id);
       sent++;
     } catch (e) {
@@ -217,6 +223,153 @@ export async function whatsappCampaignSendHandler(request: Request): Promise<Res
     await db.from("wa_campaigns").update({ status: "sent", finished_at: new Date().toISOString() }).eq("id", c.id);
   }
   return json({ ok: true, sent, failed, remaining: remaining ?? 0, done });
+}
+
+// ─── Conversations ────────────────────────────────────────────────────────────
+
+const MAX_TEXT = 4096;
+
+/**
+ * Message one contact from their thread.
+ *
+ *  - text: a reply inside the 24-hour window after their last message. WhatsApp
+ *    treats this as the client's own conversation, so it's allowed whatever their
+ *    marketing consent — they wrote to us.
+ *  - template: starting (or restarting) a conversation. This is business-initiated,
+ *    so it needs an approved template AND their consent for that kind of message.
+ */
+export async function whatsappReplyHandler(request: Request): Promise<Response> {
+  const access = await requireAccess(request, { module: "communications", level: "edit" });
+  if (!access.ok) return access.response;
+  const cfg = waConfig();
+  if (!cfg) return json({ error: "WhatsApp isn't connected yet — see the Overview tab." }, 409);
+  if (!sendingEnabled()) {
+    return json({ error: "Sending is switched off. Set WHATSAPP_SENDING_ENABLED = true on the Worker to send for real." }, 409);
+  }
+
+  const body = (await request.json().catch(() => ({}))) as {
+    contactId?: string; text?: string; replyTo?: string | null; templateId?: string; variables?: string[];
+  };
+  const db = admin();
+  const { data: contact } = await db.from("wa_contacts")
+    .select("id, name, phone_e164, consent_status").eq("id", body.contactId).maybeSingle();
+  if (!contact) return json({ error: "Contact not found" }, 404);
+
+  const now = new Date().toISOString();
+  const record = async (row: Record<string, unknown>) => {
+    const { data, error } = await db.from("wa_messages").insert({
+      contact_id: contact.id, sent_by: access.claims.userId, queued_at: now, ...row,
+    }).select("*").single();
+    if (error) throw new Error(error.message);
+    return data;
+  };
+
+  // ── Free-text reply ──
+  if (typeof body.text === "string") {
+    const text = body.text.trim();
+    if (!text) return json({ error: "Write a message first." }, 400);
+    if (text.length > MAX_TEXT) return json({ error: `WhatsApp messages are limited to ${MAX_TEXT} characters.` }, 400);
+
+    const { data: last } = await db.from("wa_inbound").select("from_phone, received_at")
+      .eq("contact_id", contact.id).order("received_at", { ascending: false }).limit(1).maybeSingle();
+    if (!last || Date.now() - Date.parse(last.received_at) > SERVICE_WINDOW_MS) {
+      return json({
+        error: "The 24-hour reply window has closed. WhatsApp only allows an approved template until they message again.",
+        window_closed: true,
+      }, 409);
+    }
+    // Reply to the number they wrote from.
+    const to = String(last.from_phone);
+    try {
+      const wamid = await sendText(cfg, { toE164: to, text, replyTo: body.replyTo ?? null });
+      return json({ ok: true, message: await record({ kind: "reply", body: text, phone_e164: to, status: "sent", sent_at: now, wa_message_id: wamid }) });
+    } catch (e) {
+      const msg = (e instanceof Error ? e.message : String(e)).slice(0, 500);
+      await record({ kind: "reply", body: text, phone_e164: to, status: "failed", failed_at: now, error_message: msg,
+        error_code: e instanceof MetaError && e.code != null ? String(e.code) : null }).catch(() => {});
+      return json({ error: msg }, e instanceof MetaError ? 422 : 500);
+    }
+  }
+
+  // ── Template ──
+  const { data: t } = await db.from("wa_templates").select("*").eq("id", body.templateId).maybeSingle();
+  if (!t) return json({ error: "Choose a template." }, 400);
+  if (t.status !== "approved") return json({ error: "That template isn't approved by Meta yet." }, 409);
+  const { data: blocked } = await db.rpc("wa_can_message", { p_contact_id: contact.id, p_category: t.category });
+  if (blocked) {
+    return json({ error: `Can't send ${t.category === "MARKETING" ? "a marketing" : "an updates"} template to ${contact.name}: ${blocked}.` }, 409);
+  }
+  const needed = placeholderCount(t.body_text);
+  const values = (Array.isArray(body.variables) ? body.variables : []).map(String).slice(0, needed);
+  if (values.length < needed || values.some((v) => !v.trim())) {
+    return json({ error: `Fill in all ${needed} value(s) for the template's placeholders.` }, 400);
+  }
+  const filled = values.map((v) => v.replace(/\{\{\s*name\s*\}\}/gi, contact.name || "there"));
+  const shown = fillTemplate(t.body_text, filled);
+  try {
+    const wamid = await sendTemplate(cfg, { toE164: contact.phone_e164, name: t.name, language: t.language, bodyValues: filled });
+    return json({ ok: true, message: await record({
+      kind: "template", template_id: t.id, body: shown, phone_e164: contact.phone_e164, status: "sent", sent_at: now, wa_message_id: wamid,
+    }) });
+  } catch (e) {
+    const msg = (e instanceof Error ? e.message : String(e)).slice(0, 500);
+    await record({ kind: "template", template_id: t.id, body: shown, phone_e164: contact.phone_e164, status: "failed",
+      failed_at: now, error_message: msg, error_code: e instanceof MetaError && e.code != null ? String(e.code) : null }).catch(() => {});
+    return json({ error: msg }, e instanceof MetaError ? 422 : 500);
+  }
+}
+
+/** Opening a thread clears its unread count and shows the client blue ticks. */
+export async function whatsappConversationReadHandler(request: Request): Promise<Response> {
+  const access = await requireAccess(request, { module: "communications", level: "view" });
+  if (!access.ok) return access.response;
+  const { contactId } = (await request.json().catch(() => ({}))) as { contactId?: string };
+  if (!contactId) return json({ error: "No contact" }, 400);
+  const db = admin();
+  const { data: conv } = await db.from("wa_conversations").select("id, unread_count").eq("contact_id", contactId).maybeSingle();
+  if (!conv) return json({ ok: true });
+  if (conv.unread_count > 0) {
+    await db.from("wa_conversations").update({ unread_count: 0 }).eq("id", conv.id);
+    const cfg = waConfig();
+    if (cfg && sendingEnabled()) {
+      const { data: last } = await db.from("wa_inbound").select("wa_message_id")
+        .eq("contact_id", contactId).order("received_at", { ascending: false }).limit(1).maybeSingle();
+      // Marking the newest message read marks everything before it too.
+      if (last?.wa_message_id) await markRead(cfg, last.wa_message_id).catch(() => {});
+    }
+  }
+  return json({ ok: true });
+}
+
+/** A photo, document or voice note from a client, fetched through Meta on demand. */
+export async function whatsappMediaHandler(request: Request): Promise<Response> {
+  const access = await requireAccess(request, { module: "communications", level: "view" });
+  if (!access.ok) return access.response;
+  const cfg = waConfig();
+  if (!cfg) return json({ error: "WhatsApp isn't connected." }, 409);
+  const id = new URL(request.url).searchParams.get("inbound") ?? "";
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return json({ error: "Bad id" }, 400);
+  const { data: m } = await admin().from("wa_inbound").select("media_id, media_mime, raw").eq("id", id).maybeSingle();
+  if (!m?.media_id) return json({ error: "No file on this message" }, 404);
+  try {
+    const f = await downloadMedia(cfg, m.media_id);
+    const filename = String(m.raw?.document?.filename ?? "").replace(/[^\w.\- ]/g, "_") || "whatsapp-file";
+    // The file is the client's, served from our origin: only show types that can't
+    // run script. Anything else (HTML, SVG, …) downloads as an opaque file.
+    const mime = String(m.media_mime || f.mime).split(";")[0].trim().toLowerCase();
+    const viewable = /^(image\/(jpeg|png|webp|gif)|audio\/[\w.+-]+|video\/(mp4|3gpp)|application\/pdf)$/.test(mime);
+    return new Response(f.body, {
+      headers: {
+        "Content-Type": viewable ? mime : "application/octet-stream",
+        "Content-Disposition": `${viewable ? "inline" : "attachment"}; filename="${filename}"`,
+        "Content-Security-Policy": "sandbox; default-src 'none'",
+        "Cache-Control": "private, max-age=3600",
+        "X-Content-Type-Options": "nosniff",
+      },
+    });
+  } catch (e) {
+    return json({ error: e instanceof Error ? e.message : String(e) }, 502);
+  }
 }
 
 // ─── Opt-in by email ──────────────────────────────────────────────────────────
@@ -411,10 +564,20 @@ export async function whatsappWebhookHandler(request: Request): Promise<Response
             p_error: err ? String(err.error_data?.details ?? err.title ?? err.message ?? "").slice(0, 500) : null,
           });
         }
+        // The sender's WhatsApp profile name, keyed by their number.
+        const profileNames = new Map<string, string>();
+        for (const ct of v.contacts ?? []) {
+          if (ct?.wa_id && ct?.profile?.name) profileNames.set(String(ct.wa_id), String(ct.profile.name).slice(0, 120));
+        }
         // Replies — and the opt-outs among them.
         for (const m of v.messages ?? []) {
+          const mediaKind = ["image", "document", "audio", "video", "sticker"].find((k) => m[k]?.id);
+          const media = mediaKind ? m[mediaKind] : null;
           const text: string | null =
-            m.text?.body ?? m.button?.text ?? m.interactive?.button_reply?.title ?? null;
+            m.text?.body ?? m.button?.text ?? m.interactive?.button_reply?.title ?? m.interactive?.list_reply?.title
+            ?? m.reaction?.emoji ?? media?.caption ?? media?.filename
+            ?? (m.location ? [m.location.name, m.location.address, `${m.location.latitude}, ${m.location.longitude}`].filter(Boolean).join(" — ") : null)
+            ?? null;
           const payloadText: string | null = m.button?.payload ?? m.interactive?.button_reply?.id ?? null;
           const intent = stopIntent(text) ?? stopIntent(payloadText);
           let action: string | null = null;
@@ -427,14 +590,29 @@ export async function whatsappWebhookHandler(request: Request): Promise<Response
             action = intent === "marketing" ? "marketing_opt_out" : "opt_out";
           }
           const fromPhone = `+${String(m.from).replace(/\D/g, "")}`;
+          const profileName = profileNames.get(String(m.from)) ?? null;
           let contactId = contacts[0]?.id ?? null;
           if (!contactId) {
-            const { data: c } = await db.from("wa_contacts").select("id").eq("phone_e164", fromPhone).limit(1).maybeSingle();
+            const { data: c } = await db.from("wa_contacts").select("id").eq("phone_e164", fromPhone)
+              .order("created_at").limit(1).maybeSingle();
             contactId = c?.id ?? null;
+          }
+          if (!contactId) {
+            // Someone new wrote to us. They get a contact so the thread has a home;
+            // writing in isn't consent to be messaged later, so none is recorded.
+            const { data: created } = await db.from("wa_contacts").insert({
+              name: profileName || fromPhone, phone_e164: fromPhone, source: "manual",
+              notes: "Created when they first messaged JLS on WhatsApp.",
+            }).select("id").single();
+            contactId = created?.id ?? null;
           }
           await db.from("wa_inbound").upsert({
             wa_message_id: String(m.id), from_phone: fromPhone, contact_id: contactId,
             type: m.type ?? null, body: text, button_payload: payloadText, action,
+            profile_name: profileName,
+            media_id: media?.id ? String(media.id) : null,
+            media_mime: media?.mime_type ? String(media.mime_type) : null,
+            context_wamid: m.context?.id ? String(m.context.id) : null,
             received_at: m.timestamp ? new Date(Number(m.timestamp) * 1000).toISOString() : new Date().toISOString(),
             raw: m,
           }, { onConflict: "wa_message_id", ignoreDuplicates: true });

@@ -141,6 +141,47 @@ export async function sendTemplate(cfg: WaConfig, opts: {
 }
 
 /**
+ * Send free text. Only allowed inside the 24-hour customer service window —
+ * the caller checks that; Meta refuses it otherwise (error 131047).
+ */
+export async function sendText(cfg: WaConfig, opts: { toE164: string; text: string; replyTo?: string | null }): Promise<string> {
+  const out = await graph(cfg, `${cfg.phoneNumberId}/messages`, {
+    method: "POST",
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: opts.toE164.replace(/^\+/, ""),
+      type: "text",
+      text: { body: opts.text, preview_url: true },
+      ...(opts.replyTo ? { context: { message_id: opts.replyTo } } : {}),
+    }),
+  });
+  const id = out?.messages?.[0]?.id;
+  if (!id) throw new MetaError("Meta accepted the request but returned no message id");
+  return String(id);
+}
+
+/** Blue ticks: tell the client their message has been read. */
+export async function markRead(cfg: WaConfig, wamid: string): Promise<void> {
+  await graph(cfg, `${cfg.phoneNumberId}/messages`, {
+    method: "POST",
+    body: JSON.stringify({ messaging_product: "whatsapp", status: "read", message_id: wamid }),
+  });
+}
+
+/** Download a photo, document or voice note a client sent. Meta's URLs need the token and expire. */
+export async function downloadMedia(cfg: WaConfig, mediaId: string): Promise<{ body: ArrayBuffer; mime: string }> {
+  const meta = await graph(cfg, encodeURIComponent(mediaId));
+  if (!meta?.url) throw new MetaError("Meta has no download for this file — it may have expired (30 days).");
+  const res = await fetch(String(meta.url), {
+    headers: { Authorization: `Bearer ${cfg.token}` },
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!res.ok) throw new MetaError(`Meta returned ${res.status} for the file`, undefined, res.status);
+  return { body: await res.arrayBuffer(), mime: String(meta.mime_type || res.headers.get("content-type") || "application/octet-stream") };
+}
+
+/**
  * Prove a webhook came from Meta: X-Hub-Signature-256 is an HMAC-SHA256 of the
  * raw body with the app secret. Compared in constant time.
  */

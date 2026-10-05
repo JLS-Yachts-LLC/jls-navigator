@@ -15,6 +15,7 @@ import { Route as LogisticsAppRouteImport } from './routes/logistics-app'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as WhatsappOptinTokenRouteImport } from './routes/whatsapp-optin.$token'
 import { Route as SkuSyncTokenRouteImport } from './routes/sku-sync.$token'
 import { Route as SignTokenRouteImport } from './routes/sign.$token'
 import { Route as QbUploadTokenRouteImport } from './routes/qb-upload.$token'
@@ -187,6 +188,11 @@ const AppRoute = AppRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WhatsappOptinTokenRoute = WhatsappOptinTokenRouteImport.update({
+  id: '/whatsapp-optin/$token',
+  path: '/whatsapp-optin/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SkuSyncTokenRoute = SkuSyncTokenRouteImport.update({
@@ -1004,6 +1010,7 @@ export interface FileRoutesByFullPath {
   '/qb-upload/$token': typeof QbUploadTokenRoute
   '/sign/$token': typeof SignTokenRoute
   '/sku-sync/$token': typeof SkuSyncTokenRoute
+  '/whatsapp-optin/$token': typeof WhatsappOptinTokenRoute
   '/admin/audit': typeof AppAdminAuditRoute
   '/admin/organisations': typeof AppAdminOrganisationsRoute
   '/admin/permissions': typeof AppAdminPermissionsRoute
@@ -1144,6 +1151,7 @@ export interface FileRoutesByTo {
   '/qb-upload/$token': typeof QbUploadTokenRoute
   '/sign/$token': typeof SignTokenRoute
   '/sku-sync/$token': typeof SkuSyncTokenRoute
+  '/whatsapp-optin/$token': typeof WhatsappOptinTokenRoute
   '/admin/audit': typeof AppAdminAuditRoute
   '/admin/organisations': typeof AppAdminOrganisationsRoute
   '/admin/permissions': typeof AppAdminPermissionsRoute
@@ -1293,6 +1301,7 @@ export interface FileRoutesById {
   '/qb-upload/$token': typeof QbUploadTokenRoute
   '/sign/$token': typeof SignTokenRoute
   '/sku-sync/$token': typeof SkuSyncTokenRoute
+  '/whatsapp-optin/$token': typeof WhatsappOptinTokenRoute
   '/_app/admin/audit': typeof AppAdminAuditRoute
   '/_app/admin/organisations': typeof AppAdminOrganisationsRoute
   '/_app/admin/permissions': typeof AppAdminPermissionsRoute
@@ -1446,6 +1455,7 @@ export interface FileRouteTypes {
     | '/qb-upload/$token'
     | '/sign/$token'
     | '/sku-sync/$token'
+    | '/whatsapp-optin/$token'
     | '/admin/audit'
     | '/admin/organisations'
     | '/admin/permissions'
@@ -1586,6 +1596,7 @@ export interface FileRouteTypes {
     | '/qb-upload/$token'
     | '/sign/$token'
     | '/sku-sync/$token'
+    | '/whatsapp-optin/$token'
     | '/admin/audit'
     | '/admin/organisations'
     | '/admin/permissions'
@@ -1734,6 +1745,7 @@ export interface FileRouteTypes {
     | '/qb-upload/$token'
     | '/sign/$token'
     | '/sku-sync/$token'
+    | '/whatsapp-optin/$token'
     | '/_app/admin/audit'
     | '/_app/admin/organisations'
     | '/_app/admin/permissions'
@@ -1837,6 +1849,7 @@ export interface RootRouteChildren {
   QbUploadTokenRoute: typeof QbUploadTokenRoute
   SignTokenRoute: typeof SignTokenRoute
   SkuSyncTokenRoute: typeof SkuSyncTokenRoute
+  WhatsappOptinTokenRoute: typeof WhatsappOptinTokenRoute
   FormsFillTokenRoute: typeof FormsFillTokenRoute
 }
 
@@ -1882,6 +1895,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/whatsapp-optin/$token': {
+      id: '/whatsapp-optin/$token'
+      path: '/whatsapp-optin/$token'
+      fullPath: '/whatsapp-optin/$token'
+      preLoaderRoute: typeof WhatsappOptinTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sku-sync/$token': {
@@ -3382,6 +3402,7 @@ const rootRouteChildren: RootRouteChildren = {
   QbUploadTokenRoute: QbUploadTokenRoute,
   SignTokenRoute: SignTokenRoute,
   SkuSyncTokenRoute: SkuSyncTokenRoute,
+  WhatsappOptinTokenRoute: WhatsappOptinTokenRoute,
   FormsFillTokenRoute: FormsFillTokenRoute,
 }
 export const routeTree = rootRouteImport

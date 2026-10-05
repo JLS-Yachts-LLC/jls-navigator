@@ -117,6 +117,13 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    label: "Communications",
+    items: [
+      // Client messaging: inbox, contacts + consent, broadcast lists, templates, sends.
+      { label: "WhatsApp", module: "communications", icon: "brand-whatsapp", screen: "whatsapp", roles: ["global_admin"] },
+    ],
+  },
+  {
     label: "Reports",
     items: [
       {

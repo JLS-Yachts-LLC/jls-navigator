@@ -122,3 +122,14 @@ export const CONSENT_LABEL: Record<string, string> = {
   opted_in: "Opted in",
   opted_out: "Opted out",
 };
+
+/**
+ * WhatsApp's customer service window: free-text replies are allowed for 24 hours
+ * after the client's last message. Outside it, only an approved template can be sent.
+ */
+export const SERVICE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+export function windowRemaining(lastInboundAt: string | null | undefined, now = Date.now()): number {
+  if (!lastInboundAt) return 0;
+  return Math.max(0, Date.parse(lastInboundAt) + SERVICE_WINDOW_MS - now);
+}
