@@ -14,7 +14,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { sendGraphEmail } from '@/lib/graph-mail.server'
 import { logAutomationRun } from '@/lib/automations.server'
-import { outboundEmailEnabled } from '@/lib/mail-guard.server'
+import { clientEmailEnabled, outboundEmailEnabled } from '@/lib/mail-guard.server'
 import { appBaseUrl } from '@/lib/app-url.server'
 
 function admin() {
@@ -131,5 +131,74 @@ export async function sendPortalAlerts(): Promise<{ sent: number; failed: number
     key: KEY, name: 'Client Portal — staff alerts by email', source: 'worker', trigger_type: 'schedule', category: 'Client Portal',
     status: failed ? 'error' : 'success', detail: `${sent} sent${failed ? `, ${failed} failed` : ''}`,
   }).catch(() => {})
+  return { sent, failed }
+}
+
+// ── Owner notices: tell a boat owner when JLS completes a job on their boat ──
+
+function ownerNoticeHtml(n: { title: string; body: string | null }, boatName: string): string {
+  const link = `${appBaseUrl()}/portal`
+  return `<!doctype html><html><body style="margin:0;background:#f4f5f7;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a">
+  <div style="max-width:560px;margin:0 auto;padding:24px">
+    <div style="background:#0a1838;color:#e9cc72;padding:14px 20px;border-radius:12px 12px 0 0;font-size:12px;letter-spacing:.16em;text-transform:uppercase;font-weight:600">JLS Yachts · ${esc(boatName)}</div>
+    <div style="background:#ffffff;padding:20px;border-radius:0 0 12px 12px;border:1px solid #e2e8f0;border-top:0">
+      <h1 style="margin:0 0 10px;font-size:18px;line-height:1.35">${esc(n.title)}</h1>
+      ${n.body ? `<p style="margin:0 0 16px;font-size:14px;line-height:1.55">${esc(n.body)}</p>` : ''}
+      <p style="margin:0"><a href="${link}" style="display:inline-block;background:#c9a227;color:#0a1838;text-decoration:none;font-weight:600;font-size:14px;padding:10px 16px;border-radius:8px">Open your Client Portal</a></p>
+    </div>
+  </div></body></html>`
+}
+
+/**
+ * Email waiting owner notices (portal_owner_notices, raised when an Orbit 2 boat
+ * job is marked Complete) to that boat's portal owners. With client email
+ * switched off on the Worker they're marked not sent rather than kept — a stale
+ * "job completed" weeks later helps nobody.
+ */
+export async function sendOwnerNotices(): Promise<{ sent: number; failed: number; skipped?: string }> {
+  const sb = admin() as any
+  if (!outboundEmailEnabled() || !clientEmailEnabled()) {
+    await sb.from('portal_owner_notices')
+      .update({ sent_at: new Date().toISOString(), send_error: 'Not sent — client email is switched off' })
+      .is('sent_at', null)
+    return { sent: 0, failed: 0, skipped: 'client email off' }
+  }
+  const { data: pending, error } = await sb.from('portal_owner_notices')
+    .select('id, boat_id, title, body').is('sent_at', null).order('created_at').limit(BATCH)
+  if (error) throw error
+  if (!pending?.length) return { sent: 0, failed: 0 }
+
+  // Claim before sending so an overlapping tick can't send twice.
+  const ids = pending.map((p: any) => p.id)
+  const { data: claimed } = await sb.from('portal_owner_notices')
+    .update({ sent_at: new Date().toISOString() }).in('id', ids).is('sent_at', null).select('id')
+  const mine = new Set((claimed ?? []).map((c: any) => c.id))
+  const rows = pending.filter((p: any) => mine.has(p.id))
+
+  const boatIds = [...new Set(rows.map((r: any) => r.boat_id as string))] as string[]
+  const [{ data: owners }, { data: boats }] = await Promise.all([
+    sb.from('captain_accounts').select('boat_id, email').in('boat_id', boatIds).eq('active', true)
+      .not('email', 'is', null).not('user_id', 'is', null),
+    sb.from('orbit2_boats').select('id, name').in('id', boatIds),
+  ])
+  const nameOf = new Map<string, string>((boats ?? []).map((b: any) => [b.id, b.name]))
+
+  let sent = 0
+  let failed = 0
+  for (const n of rows) {
+    const to = [...new Set((owners ?? []).filter((o: any) => o.boat_id === n.boat_id).map((o: any) => String(o.email)))] as string[]
+    if (!to.length) {
+      await sb.from('portal_owner_notices').update({ send_error: 'No owner with a login and email' }).eq('id', n.id)
+      continue
+    }
+    const boatName = nameOf.get(n.boat_id) ?? 'Your boat'
+    try {
+      await sendGraphEmail({ to, subject: `${boatName}: ${n.title}`.slice(0, 200), html: ownerNoticeHtml(n, boatName), text: `${n.title}\n\n${n.body ?? ''}` })
+      sent++
+    } catch (e: any) {
+      failed++
+      await sb.from('portal_owner_notices').update({ sent_at: null, send_error: String(e?.message ?? e).slice(0, 500) }).eq('id', n.id)
+    }
+  }
   return { sent, failed }
 }

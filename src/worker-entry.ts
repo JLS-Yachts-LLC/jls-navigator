@@ -1432,6 +1432,13 @@ export default {
           .then((r) => { if (r.sent || r.failed) console.log('[portal-alerts]', JSON.stringify(r)) })
           .catch((e) => console.error('[portal-alerts] error:', e instanceof Error ? e.message : String(e)))
       );
+      // …and tell boat owners when JLS completes a job on their boat.
+      ctx.waitUntil(
+        import('./lib/portal/alerts.server')
+          .then((m) => m.sendOwnerNotices())
+          .then((r) => { if (r.sent || r.failed) console.log('[portal-owner-notices]', JSON.stringify(r)) })
+          .catch((e) => console.error('[portal-owner-notices] error:', e instanceof Error ? e.message : String(e)))
+      );
 
       // ── Every 5 min: two-way sync of the Yacht IT Network with New Horizon ──
       //    Keeps each vessel's register and map the same on both desks. Every
