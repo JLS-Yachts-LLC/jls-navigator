@@ -991,6 +991,11 @@ export default {
       const { portalOrdersHandler } = await import('./routes/api.portal.orders')
       return portalOrdersHandler(request)
     }
+    // Client portal — uploads: checklist / job photos, drill files, certificates, client documents.
+    if (url.pathname === '/api/portal/upload') {
+      const { portalUploadHandler } = await import('./routes/api.portal.upload')
+      return portalUploadHandler(request)
+    }
     // Client portal — the vessel's own logo / badge.
     if (url.pathname === '/api/portal/vessel-logo') {
       const { portalVesselLogoHandler } = await import('./routes/api.portal.vessel-logo')

@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { CheckCircle2, ClipboardList, Gauge, Loader2, Pencil, Wrench } from "lucide-react";
 import { pmsStatus } from "@/lib/portal/onboard";
 import {
-  AddButton, RecordFormModal, SectionCard, SectionEmpty, SectionHeader, SectionLoading, StatusBadge,
+  AddButton, AttachedFiles, RecordFormModal, SectionCard, SectionEmpty, SectionHeader, SectionLoading, StatusBadge,
   daysUntil, fmtDate, onboardRequest, type FormField,
 } from "./section-ui";
 
@@ -146,6 +146,7 @@ export function PmsSection({ yachtId, canEdit }: { yachtId: string; canEdit: boo
                       {[eq?.name, interval(t), t.assigned_to].filter(Boolean).join(" · ")}
                       {t.last_done_date && ` · last done ${fmtDate(t.last_done_date)}`}
                     </div>
+                    <div className="mt-2"><AttachedFiles refTable="pms_tasks" refId={t.id} target="job_photo" canEdit={canEdit} /></div>
                   </div>
                   <div className="text-right text-xs">
                     {st === "done" ? <span className="text-muted-foreground">Completed</span>

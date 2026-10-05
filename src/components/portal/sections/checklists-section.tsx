@@ -18,7 +18,7 @@ import {
   CHECKLIST_FREQUENCIES, CHECKLIST_LIBRARY, checklistDue, frequencyLabel, newItemId, runProgress,
   type ChecklistItem, type ChecklistResult,
 } from "@/lib/portal/checklists";
-import { AddButton, SectionCard, SectionEmpty, SectionHeader, SectionLoading, StatusBadge, fmtDate } from "./section-ui";
+import { AddButton, AttachedFiles, SectionCard, SectionEmpty, SectionHeader, SectionLoading, StatusBadge, fmtDate } from "./section-ui";
 
 const db = supabase as any;
 
@@ -476,6 +476,9 @@ function RunScreen({ run, canEdit, onClose, onChanged, onFinished }: {
                         )}
                       </div>
                       {done && r?.by && <div className="px-11 pb-1 text-[10px] text-muted-foreground">{r.by}{r.at ? ` · ${fmtWhen(r.at)}` : ""}</div>}
+                      <div className="px-11 pb-1.5">
+                        <AttachedFiles refTable="onboard_checklist_runs" refId={run.id} itemKey={it.id} target="checklist_photo" canEdit={live} />
+                      </div>
                       {noteOpen === it.id && (
                         live ? (
                           <div className="flex gap-2 px-2 pb-2">

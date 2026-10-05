@@ -18,7 +18,7 @@ import {
   MapPin, FileText, Download, ExternalLink, Clock, CheckCircle2,
   Bell, Compass, Wrench, CalendarRange, ShieldCheck, Menu, AlertTriangle, Eye,
   Pencil, Trash2, UserPlus, RotateCcw, ImagePlus,
-  ClipboardCheck, NotebookPen, Anchor, IdCard, CalendarDays,
+  ClipboardCheck, NotebookPen, Anchor, IdCard, CalendarDays, Upload,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { portalFetch } from "@/lib/portal/portal-fetch";
@@ -894,7 +894,7 @@ function PortalShell({ link, email, onSignOut, preview = false }: { link: Captai
           <GatePassesSection canEdit={!preview} onOpenRequest={(id) => { setTab("requests"); setOpenRequestId(id); }} />
         )}
         {tab === "crew" && <CrewTab yachtId={link.yacht_id} />}
-        {tab === "documents" && <DocumentsTab yachtId={link.yacht_id} />}
+        {tab === "documents" && <DocumentsTab yachtId={link.yacht_id} canSend={!preview} />}
         {(tab === "invoices" || tab === "finances") && <FinancesTab onOpenRequest={(id) => { setTab("requests"); setOpenRequestId(id); }} />}
         {tab === "balances" && <BalancesTab />}
         {tab === "logistics" && <LogisticsTab />}
@@ -1730,6 +1730,69 @@ function RemoveCrewModal({ crew, onClose, onRemoved }: { crew: PortalCrew; onClo
 }
 
 // ── Documents (permits + visas) ──────────────────────────────────────────────
+const CLIENT_DOC_TYPES = [
+  { value: "crew_document", label: "Crew document (passport, visa, certificate)" },
+  { value: "vessel_certificate", label: "Vessel certificate" },
+  { value: "insurance", label: "Insurance" },
+  { value: "registration", label: "Registration / licence" },
+  { value: "contract", label: "Contract or agreement" },
+  { value: "other", label: "Something else" },
+];
+
+/** A document the client sends to JLS — stored with the vessel's documents and flagged to the team. */
+function SendDocumentModal({ onClose, onSent }: { onClose: () => void; onSent: (title: string) => void }) {
+  const [file, setFile] = useState<File | null>(null);
+  const [title, setTitle] = useState("");
+  const [docType, setDocType] = useState("crew_document");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!file) return;
+    setBusy(true); setError(null);
+    try {
+      const { uploadPortalFile } = await import("@/components/portal/sections/section-ui");
+      await uploadPortalFile({ target: "client_document", file, title: title.trim() || file.name, doc_type: docType });
+      onSent(title.trim() || file.name);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not send the document."); setBusy(false);
+    }
+  };
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center"
+         onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <form onSubmit={submit} className="w-full max-w-lg rounded-t-3xl border border-border bg-card p-5 sm:rounded-3xl sm:p-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-bold">Send JLS a document</h2>
+          <button type="button" onClick={onClose} aria-label="Close" className="flex h-9 w-9 items-center justify-center rounded-xl text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
+        </div>
+        <div className="mt-4 space-y-4">
+          <div>
+            <FieldLabel>File</FieldLabel>
+            <input type="file" required accept=".pdf,.jpg,.jpeg,.png,.heic,.heif,.webp,.doc,.docx,.xlsx" aria-label="Document file"
+                   onChange={(e) => { const f = e.target.files?.[0] ?? null; setFile(f); if (f && !title) setTitle(f.name.replace(/\.[^.]+$/, "")); }}
+                   className="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-lg file:border-0 file:bg-primary file:px-3 file:py-2 file:text-xs file:font-semibold file:text-primary-foreground" />
+          </div>
+          <div>
+            <FieldLabel>What is it?</FieldLabel>
+            <select className={inputCls} value={docType} onChange={(e) => setDocType(e.target.value)}>
+              {CLIENT_DOC_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <FieldLabel>Title</FieldLabel>
+            <input className={inputCls} maxLength={160} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Chief Engineer passport — renewed" />
+          </div>
+          {error && <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-red-300">{error}</div>}
+          <PrimaryButton type="submit" disabled={busy || !file} className="w-full">
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Send to JLS
+          </PrimaryButton>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 /**
  * A document the vessel can open. The stored location never reaches the browser:
  * the button asks /api/portal/documents/open, which re-checks that the document
@@ -1771,7 +1834,10 @@ type VesselDoc = PortalDoc & {
   id: string; title: string | null; file_name: string | null; doc_type: string | null; created_at: string | null;
 };
 
-function DocumentsTab({ yachtId }: { yachtId: string }) {
+function DocumentsTab({ yachtId, canSend = false }: { yachtId: string; canSend?: boolean }) {
+  const [sending, setSending] = useState(false);
+  const [sentNote, setSentNote] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [permits, setPermits] = useState<PortalPermit[]>([]);
   const [visas, setVisas] = useState<PortalVisa[]>([]);
   const [vesselDocs, setVesselDocs] = useState<VesselDoc[]>([]);
@@ -1796,7 +1862,7 @@ function DocumentsTab({ yachtId }: { yachtId: string }) {
       }
     })();
     return () => { alive = false; };
-  }, [yachtId]);
+  }, [yachtId, reloadKey]);
 
   const typeLabel = (t: string) => t.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
@@ -1805,6 +1871,21 @@ function DocumentsTab({ yachtId }: { yachtId: string }) {
 
   return (
     <div className="space-y-6">
+      {canSend && (
+        <Card className="flex flex-wrap items-center gap-3 p-4">
+          <Upload className="h-5 w-5 shrink-0 text-primary" />
+          <div className="min-w-0 flex-1 text-sm">
+            <div className="font-semibold">Send JLS a document</div>
+            <div className="text-xs text-muted-foreground">A crew passport, a renewed certificate, insurance, a contract — PDF, photo or Word, up to 15 MB.</div>
+          </div>
+          <PrimaryButton onClick={() => setSending(true)} className="min-h-9 px-4 text-xs"><Upload className="h-4 w-4" /> Send a document</PrimaryButton>
+        </Card>
+      )}
+      {sentNote && <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">{sentNote}</div>}
+      {sending && (
+        <SendDocumentModal onClose={() => setSending(false)}
+                           onSent={(title) => { setSending(false); setSentNote(`"${title}" sent to JLS — it's in your vessel documents below.`); setReloadKey((k) => k + 1); }} />
+      )}
       <section>
         <h1 className="mb-3 text-lg font-bold">Permits</h1>
         {permits.length === 0 ? (

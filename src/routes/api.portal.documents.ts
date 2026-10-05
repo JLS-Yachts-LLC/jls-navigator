@@ -57,6 +57,12 @@ const KINDS = {
     fileColumn: 'file_path',
     bucket: 'esign-documents',
   },
+  // Photos and files the crew attach to their own records (checklists, drills, jobs).
+  portal_file: {
+    table: 'portal_files',
+    fileColumn: 'storage_ref',
+    bucket: 'permit-documents',
+  },
 } as const
 
 type Kind = keyof typeof KINDS

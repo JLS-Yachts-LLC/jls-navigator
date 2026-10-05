@@ -3,9 +3,10 @@
  * cards, headers, badges, and the one add/edit form every record kind uses.
  * Kept in step with the portal's Card/typography so a section drops straight in.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
-import { CheckCircle2, Loader2, Plus, Trash2, X } from "lucide-react";
+import { Camera, CheckCircle2, Loader2, Paperclip, Plus, Trash2, X } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 import { portalFetch } from "@/lib/portal/portal-fetch";
 import type { OnboardKind } from "@/lib/portal/onboard";
 
@@ -130,6 +131,80 @@ export function RecordFormModal({ title, kind, fields, initial, onClose, onSaved
           </div>
         </form>
       </div>
+    </div>
+  );
+}
+
+export type UploadTarget = "checklist_photo" | "drill_file" | "job_photo" | "ism_cert" | "client_document";
+
+/** Upload one file through /api/portal/upload; throws the server's message on failure. */
+export async function uploadPortalFile(fields: { target: UploadTarget; file: File; id?: string; item?: string; title?: string; doc_type?: string }) {
+  const form = new FormData();
+  for (const [k, v] of Object.entries(fields)) if (v != null) form.append(k, v as string | Blob);
+  const res = await portalFetch("/api/portal/upload", { method: "POST", body: form });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.error ?? "Could not upload that file.");
+  return body;
+}
+
+/** Open a file from portal_files (signed, short-lived, logged). */
+export async function openPortalFile(id: string) {
+  const res = await portalFetch(`/api/portal/documents/open?type=portal_file&id=${id}`, { redirect: "follow" });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error ?? "That file could not be opened.");
+  window.open(res.url, "_blank", "noreferrer");
+}
+
+type PortalFile = { id: string; file_name: string; item_key: string | null; created_at: string; uploaded_by_name: string | null };
+
+/**
+ * The files attached to one record (optionally one item within it), with an
+ * Add button when the person can edit. Photos only where `accept` says so.
+ */
+export function AttachedFiles({ refTable, refId, itemKey = null, target, canEdit, accept = "image/*", label = "Add photo" }: {
+  refTable: string; refId: string; itemKey?: string | null; target: UploadTarget; canEdit: boolean; accept?: string; label?: string;
+}) {
+  const [files, setFiles] = useState<PortalFile[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const inputId = `f-${refId}-${itemKey ?? "all"}`;
+
+  const load = async () => {
+    let q = (supabase as any).from("portal_files").select("id, file_name, item_key, created_at, uploaded_by_name")
+      .eq("ref_table", refTable).eq("ref_id", refId);
+    q = itemKey ? q.eq("item_key", itemKey) : q;
+    const { data } = await q.order("created_at");
+    setFiles(data ?? []);
+  };
+  useEffect(() => { void load(); }, [refTable, refId, itemKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const onPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setBusy(true); setError(null);
+    try { await uploadPortalFile({ target, file, id: refId, item: itemKey ?? undefined }); await load(); }
+    catch (err) { setError(err instanceof Error ? err.message : "Could not upload."); }
+    finally { setBusy(false); }
+  };
+
+  if (!files.length && !canEdit) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {files.map((f, i) => (
+        <button key={f.id} type="button" onClick={() => void openPortalFile(f.id).catch((e) => alert(e.message))}
+                title={`${f.file_name}${f.uploaded_by_name ? ` · ${f.uploaded_by_name}` : ""}`}
+                className="inline-flex items-center gap-1 rounded-lg border border-border bg-background/40 px-2 py-1 text-[11px] text-muted-foreground transition hover:text-foreground">
+          <Paperclip className="h-3 w-3" /> {files.length > 3 ? `${i + 1}` : f.file_name.length > 18 ? `${f.file_name.slice(0, 16)}…` : f.file_name}
+        </button>
+      ))}
+      {canEdit && (
+        <label htmlFor={inputId}
+               className={cn("inline-flex cursor-pointer items-center gap-1 rounded-lg border border-dashed border-border px-2 py-1 text-[11px] font-medium text-muted-foreground transition hover:border-primary/50 hover:text-foreground", busy && "pointer-events-none opacity-50")}>
+          {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Camera className="h-3 w-3" />} {label}
+          <input id={inputId} type="file" accept={accept} capture={accept === "image/*" ? "environment" : undefined} className="sr-only" onChange={(e) => void onPick(e)} />
+        </label>
+      )}
+      {error && <span className="text-[11px] text-red-300">{error}</span>}
     </div>
   );
 }

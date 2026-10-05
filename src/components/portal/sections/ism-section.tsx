@@ -8,11 +8,11 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { portalFetch } from "@/lib/portal/portal-fetch";
 import { cn } from "@/lib/utils";
-import { FileText, Flame, Pencil, ShieldCheck } from "lucide-react";
+import { FileText, Flame, Loader2, Pencil, ShieldCheck } from "lucide-react";
 import { certStatus } from "@/lib/portal/onboard";
 import {
-  AddButton, RecordFormModal, SectionCard, SectionEmpty, SectionHeader, SectionLoading, StatusBadge,
-  daysUntil, fmtDate, onboardRequest, type FormField,
+  AddButton, AttachedFiles, RecordFormModal, SectionCard, SectionEmpty, SectionHeader, SectionLoading, StatusBadge,
+  daysUntil, fmtDate, onboardRequest, uploadPortalFile, type FormField,
 } from "./section-ui";
 
 const db = supabase as any;
@@ -145,6 +145,9 @@ export function IsmSection({ yachtId, canEdit }: { yachtId: string; canEdit: boo
                     <div className={cn(d != null && d < 0 ? "text-red-400" : d != null && d <= 60 ? "text-amber-400" : "text-muted-foreground")}>
                       {c.expiry_date ? `Expires ${fmtDate(c.expiry_date)}` : "No expiry"}
                     </div>
+                    {canEdit && !c.file_path && (
+                      <CertFileButton certId={c.id} onDone={() => void load()} />
+                    )}
                     {c.file_path && (
                       <button onClick={() => void openDoc(c.id)} className="mt-1 inline-flex items-center gap-1 text-primary hover:underline">
                         <FileText className="h-3 w-3" /> View
@@ -175,6 +178,7 @@ export function IsmSection({ yachtId, canEdit }: { yachtId: string; canEdit: boo
                     {[d.conducted_by, d.location].filter(Boolean).join(" · ") || "—"}
                   </div>
                   {d.participants && <div className="mt-1 line-clamp-1 text-[11px] text-muted-foreground/80">{d.participants}</div>}
+                  <div className="mt-2"><AttachedFiles refTable="ism_drills" refId={d.id} target="drill_file" canEdit={canEdit} accept=".pdf,image/*" label="Add record" /></div>
                 </div>
                 <div className="text-right text-xs text-muted-foreground">{fmtDate(d.conducted_at)}</div>
                 {canEdit && (
@@ -218,5 +222,25 @@ export function IsmSection({ yachtId, canEdit }: { yachtId: string; canEdit: boo
         />
       )}
     </div>
+  );
+}
+
+/** Attach the certificate's own file (PDF or photo). */
+function CertFileButton({ certId, onDone }: { certId: string; onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const onPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setBusy(true);
+    try { await uploadPortalFile({ target: "ism_cert", file, id: certId }); onDone(); }
+    catch (err) { alert(err instanceof Error ? err.message : "Could not upload."); }
+    finally { setBusy(false); }
+  };
+  return (
+    <label className={cn("mt-1 inline-flex cursor-pointer items-center gap-1 text-primary hover:underline", busy && "pointer-events-none opacity-50")}>
+      {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <FileText className="h-3 w-3" />} Attach
+      <input type="file" accept=".pdf,image/*" className="sr-only" onChange={(e) => void onPick(e)} />
+    </label>
   );
 }
