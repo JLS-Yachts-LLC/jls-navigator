@@ -147,3 +147,29 @@ export function restOver7Days(byDay: Map<string, number>, day: string): number |
   }
   return total;
 }
+
+/**
+ * Read a day's rest as typed in the grid: "10", or split periods like "6+4".
+ * Returns the total, the periods, and the split to store (null for one period),
+ * or an error message.
+ */
+export function parseRest(input: string): { total: number; periods: number[]; split: string | null } | { error: string } {
+  const parts = input.replace(/\s+/g, "").split("+").filter(Boolean);
+  if (!parts.length) return { error: "Enter the hours of rest" };
+  const periods = parts.map(Number);
+  if (periods.some((n) => !Number.isFinite(n) || n < 0 || n > 24)) return { error: "Each period must be between 0 and 24 hours" };
+  const quarter = (n: number) => Math.round(n * 4) / 4;
+  const rounded = periods.map(quarter);
+  const total = quarter(rounded.reduce((s, n) => s + n, 0));
+  if (total > 24) return { error: "That adds up to more than 24 hours" };
+  return { total, periods: rounded, split: rounded.length > 1 ? rounded.join("+") : null };
+}
+
+/** The MLC split rule: no more than two periods, one of them at least 6 hours. */
+export function restSplitIssue(split: string | null | undefined): string | null {
+  if (!split) return null;
+  const periods = split.split("+").map(Number);
+  if (periods.length > 2) return "Split into more than two rest periods";
+  if (Math.max(...periods) < 6) return "No rest period of at least 6 hours";
+  return null;
+}

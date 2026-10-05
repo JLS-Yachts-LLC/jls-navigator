@@ -30,7 +30,7 @@ import { createClient } from '@supabase/supabase-js'
 import { resolvePortalYacht, portalModulesFor, type PortalYacht } from '@/lib/portal/portal-auth.server'
 import { hiddenSections } from '@/lib/portal/portal-positions'
 import { sectionEnabled } from '@/lib/portal/portal-modules'
-import { ONBOARD_KINDS, nextDueDate, nextDueHours, pmsStatus, certStatus, type OnboardKind } from '@/lib/portal/onboard'
+import { ONBOARD_KINDS, nextDueDate, nextDueHours, parseRest, pmsStatus, certStatus, type OnboardKind } from '@/lib/portal/onboard'
 import { logAuditEvent } from '@/lib/admin/audit'
 
 const json = (b: unknown, s = 200) =>
@@ -278,15 +278,17 @@ export async function portalOnboardHandler(request: Request): Promise<Response> 
         if (error) throw error
         return json({ ok: true, rest_hours: null })
       }
-      const hours = Number(body.rest_hours)
-      if (!Number.isFinite(hours) || hours < 0 || hours > 24) return json({ error: 'Hours of rest must be between 0 and 24' }, 400)
+      // "10", or split periods like "6+4" (kept so the MLC split rule can be checked).
+      const parsed = parseRest(String(body.rest_hours))
+      if ('error' in parsed) return json({ error: parsed.error }, 400)
+      const hours = parsed.total
       const notes = typeof body.notes === 'string' ? body.notes.trim().slice(0, 500) || null : undefined
       const { error } = await sb.from('onboard_rest_hours').upsert({
-        yacht_id: yacht.yachtId, crew_member_id: crewId, day, rest_hours: Math.round(hours * 4) / 4,
+        yacht_id: yacht.yachtId, crew_member_id: crewId, day, rest_hours: hours, rest_split: parsed.split,
         recorded_by_name: await callerName(sb, yacht), ...(notes !== undefined ? { notes } : {}),
       }, { onConflict: 'crew_member_id,day' })
       if (error) throw error
-      return json({ ok: true, rest_hours: Math.round(hours * 4) / 4 })
+      return json({ ok: true, rest_hours: hours, rest_split: parsed.split })
     }
 
     if (request.method === 'POST' && url.searchParams.get('action') === 'adjust') {

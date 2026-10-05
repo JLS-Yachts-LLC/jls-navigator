@@ -8,13 +8,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { AlertTriangle, ChevronLeft, ChevronRight, Clock, Loader2 } from "lucide-react";
-import { REST_MIN_24H, REST_MIN_7D, restOver7Days } from "@/lib/portal/onboard";
+import { REST_MIN_24H, REST_MIN_7D, parseRest, restOver7Days, restSplitIssue } from "@/lib/portal/onboard";
 import { SectionCard, SectionEmpty, SectionHeader, SectionLoading, onboardRequest } from "./section-ui";
 
 const db = supabase as any;
 
 type Crew = { id: string; full_name: string | null; first_name: string | null; last_name: string | null; rank: string | null };
-type RestRow = { crew_member_id: string; day: string; rest_hours: number };
+type RestRow = { crew_member_id: string; day: string; rest_hours: number; rest_split: string | null };
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 const addDays = (d: Date, n: number) => new Date(d.getTime() + n * 86400000);
@@ -44,7 +44,7 @@ export function HoursSection({ yachtId, canEdit }: { yachtId: string; canEdit: b
     const to = iso(addDays(weekStart, 6));
     const [c, r]: any[] = await Promise.all([
       db.from("crew_members").select("id, full_name, first_name, last_name, rank, status").eq("yacht_id", yachtId).order("last_name"),
-      db.from("onboard_rest_hours").select("crew_member_id, day, rest_hours").eq("yacht_id", yachtId).gte("day", from).lte("day", to),
+      db.from("onboard_rest_hours").select("crew_member_id, day, rest_hours, rest_split").eq("yacht_id", yachtId).gte("day", from).lte("day", to),
     ]);
     setCrew((c.data ?? []).filter((x: any) => !x.status || ["active", "on_leave"].includes(x.status)));
     setRows((r.data ?? []).map((x: any) => ({ ...x, rest_hours: Number(x.rest_hours) })));
@@ -60,12 +60,18 @@ export function HoursSection({ yachtId, canEdit }: { yachtId: string; canEdit: b
     }
     return m;
   }, [rows]);
+  const splitOf = (crewId: string, day: string) => rows.find((r) => r.crew_member_id === crewId && r.day === day)?.rest_split ?? null;
 
   const save = async (crewId: string, day: string, value: string) => {
     const current = byCrew.get(crewId)?.get(day);
-    const next = value.trim() === "" ? null : Number(value);
-    if (next === (current ?? null)) return;
-    if (next != null && (!Number.isFinite(next) || next < 0 || next > 24)) { setError("Hours of rest must be between 0 and 24."); return; }
+    const shown = splitOf(crewId, day) ?? (current != null ? String(current) : "");
+    if (value.replace(/\s+/g, "") === shown) return;
+    let next: string | null = null;
+    if (value.trim() !== "") {
+      const parsed = parseRest(value);
+      if ("error" in parsed) { setError(parsed.error); return; }
+      next = value.trim();
+    }
     const key = `${crewId}:${day}`;
     setSaving(key); setError(null);
     try {
@@ -74,7 +80,7 @@ export function HoursSection({ yachtId, canEdit }: { yachtId: string; canEdit: b
       });
       setRows((prev) => {
         const rest = prev.filter((r) => !(r.crew_member_id === crewId && r.day === day));
-        return res.rest_hours == null ? rest : [...rest, { crew_member_id: crewId, day, rest_hours: Number(res.rest_hours) }];
+        return res.rest_hours == null ? rest : [...rest, { crew_member_id: crewId, day, rest_hours: Number(res.rest_hours), rest_split: res.rest_split ?? null }];
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not save.");
@@ -88,9 +94,13 @@ export function HoursSection({ yachtId, canEdit }: { yachtId: string; canEdit: b
   const weekDays = days.map(iso);
   let shortDays = 0;
   let shortWeeks = 0;
+  let badSplits = 0;
   for (const c of crew) {
     const m = byCrew.get(c.id) ?? new Map();
-    for (const d of weekDays) if (m.has(d) && m.get(d)! < REST_MIN_24H) shortDays++;
+    for (const d of weekDays) {
+      if (m.has(d) && m.get(d)! < REST_MIN_24H) shortDays++;
+      if (restSplitIssue(splitOf(c.id, d))) badSplits++;
+    }
     const wk = restOver7Days(m, weekDays[6]);
     if (wk != null && wk < REST_MIN_7D) shortWeeks++;
   }
@@ -117,12 +127,14 @@ export function HoursSection({ yachtId, canEdit }: { yachtId: string; canEdit: b
           <button type="button" onClick={() => setWeekStart(mondayOf(new Date()))} className="text-xs font-medium text-primary hover:underline">This week</button>
         )}
         {loading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-        {(shortDays > 0 || shortWeeks > 0) && (
+        {(shortDays > 0 || shortWeeks > 0 || badSplits > 0) && (
           <span className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-red-500/30 bg-red-500/10 px-3 py-1 text-xs font-semibold text-red-300">
             <AlertTriangle className="h-3.5 w-3.5" />
             {shortDays > 0 && `${shortDays} day${shortDays === 1 ? "" : "s"} under ${REST_MIN_24H} h`}
             {shortDays > 0 && shortWeeks > 0 && " · "}
             {shortWeeks > 0 && `${shortWeeks} under ${REST_MIN_7D} h for the week`}
+            {(shortDays > 0 || shortWeeks > 0) && badSplits > 0 && " · "}
+            {badSplits > 0 && `${badSplits} split${badSplits === 1 ? "" : "s"} outside the MLC rule`}
           </span>
         )}
       </div>
@@ -157,28 +169,31 @@ export function HoursSection({ yachtId, canEdit }: { yachtId: string; canEdit: b
                     </td>
                     {weekDays.map((d) => {
                       const v = m.get(d);
-                      const short = v != null && v < REST_MIN_24H;
+                      const split = splitOf(c.id, d);
+                      const splitIssue = restSplitIssue(split);
+                      const short = (v != null && v < REST_MIN_24H) || !!splitIssue;
                       const future = d > today;
                       const key = `${c.id}:${d}`;
                       return (
                         <td key={d} className="px-1 py-1.5 text-center">
                           {canEdit && !future ? (
                             <input
-                              key={`${key}:${v ?? ""}`}
+                              key={`${key}:${split ?? v ?? ""}`}
                               aria-label={`Hours of rest for ${nameOf(c)} on ${d}`}
-                              type="number" inputMode="decimal" min={0} max={24} step={0.25}
-                              defaultValue={v ?? ""}
+                              title={splitIssue ?? (split ? `Rest taken as ${split.replace(/\+/g, " + ")} hours` : undefined)}
+                              type="text" inputMode="decimal" pattern="[0-9.+ ]*"
+                              defaultValue={split ?? v ?? ""}
                               onBlur={(e) => void save(c.id, d, e.target.value)}
                               onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
                               className={cn(
-                                "h-10 w-14 rounded-lg border bg-background/40 text-center text-sm tabular-nums outline-none transition focus:border-primary/60",
+                                "h-10 w-16 rounded-lg border bg-background/40 text-center text-sm tabular-nums outline-none transition focus:border-primary/60",
                                 short ? "border-red-500/50 text-red-300" : "border-border",
                                 saving === key && "opacity-50",
                               )}
                             />
                           ) : (
-                            <span className={cn("tabular-nums", short ? "text-red-300" : v == null ? "text-muted-foreground/40" : "")}>
-                              {v == null ? "—" : fmtHours(v)}
+                            <span title={splitIssue ?? undefined} className={cn("tabular-nums", short ? "text-red-300" : v == null ? "text-muted-foreground/40" : "")}>
+                              {v == null ? "—" : split ?? fmtHours(v)}
                             </span>
                           )}
                         </td>
@@ -197,9 +212,9 @@ export function HoursSection({ yachtId, canEdit }: { yachtId: string; canEdit: b
       )}
       {error && <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-red-300">{error}</div>}
       <p className="text-xs text-muted-foreground">
-        Enter the hours of rest each person had in the 24 hours of that day. The 7-day total is for the 7 days ending on the week's last day,
-        and shows once all seven are filled in. Rest can be split into no more than two periods, one of them at least 6 hours — check that on
-        the vessel's own record.
+        Enter the hours of rest each person had in the 24 hours of that day — or the periods, like 6+4, when rest was split. Rest may be split
+        into no more than two periods, one of them at least 6 hours; a split outside that is flagged. The 7-day total is for the 7 days ending
+        on the week's last day, and shows once all seven are filled in.
       </p>
     </div>
   );
