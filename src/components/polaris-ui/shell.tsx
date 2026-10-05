@@ -6,6 +6,7 @@
  */
 import { ProfileMenu, ProfileAvatar } from "@/components/profile/profile-menu";
 import { useEffect, useState, type ReactNode } from "react";
+import { useUserPreference } from "@/lib/user-preferences";
 import { TIcon } from "./primitives";
 import { PolarisMark } from "@/components/brand/PolarisMark";
 import { useFeatureBadges, BADGE_META } from "@/lib/feature-badges";
@@ -387,17 +388,15 @@ function NavList({
 }) {
   const badges = useFeatureBadges();
   const { claims } = useAccess();
-  // Sections the user has folded away. Remembered per browser; the section
-  // holding the open screen always shows, so you never lose your place.
-  const [closed, setClosed] = useState<Set<string>>(() => {
-    try { return new Set(JSON.parse(window.localStorage.getItem(NAV_CLOSED_KEY) ?? "[]")); } catch { return new Set(); }
-  });
+  // Sections the person has folded away — saved to their account, so it's the
+  // same layout on any device. The section holding the open screen always shows.
+  const [closedList, setClosedList] = useUserPreference<string[]>("nav.closedGroups", [], { key: NAV_CLOSED_KEY, parse: JSON.parse });
+  const closed = new Set(Array.isArray(closedList) ? closedList : []);
   function toggleGroup(label: string) {
-    setClosed((prev) => {
-      const next = new Set(prev);
+    setClosedList((prev) => {
+      const next = new Set(Array.isArray(prev) ? prev : []);
       next.has(label) ? next.delete(label) : next.add(label);
-      try { window.localStorage.setItem(NAV_CLOSED_KEY, JSON.stringify([...next])); } catch { /* private mode */ }
-      return next;
+      return [...next];
     });
   }
   return (
@@ -529,16 +528,11 @@ function DesktopNav({
   active: string;
   onNavigate: (s: string) => void;
 }) {
-  const [pinned, setPinned] = useState<boolean>(() => {
-    if (typeof window === "undefined") return true;
-    return window.localStorage.getItem(NAV_PIN_KEY) !== "false";
-  });
+  // Menu pinned open or collapsed to icons — saved to the person's account.
+  const [pinnedPref, setPinned] = useUserPreference<boolean>("nav.pinned", true, { key: NAV_PIN_KEY, parse: (raw) => raw !== "false" });
+  const pinned = pinnedPref !== false;
   const [hover, setHover] = useState(false);
   const expanded = pinned || hover;
-
-  useEffect(() => {
-    try { window.localStorage.setItem(NAV_PIN_KEY, pinned ? "true" : "false"); } catch { /* ignore */ }
-  }, [pinned]);
 
   const toggle = (
     <button
