@@ -20,6 +20,7 @@ type Row = {
   title: string; details: string | null; priority: string; status: string;
   needed_by: string | null; created_at: string; updated_at: string;
   yachts?: { vessel_name: string } | null;
+  orbit2_boats?: { name: string } | null;
 };
 type Msg = {
   id: string; sender_name: string | null; sender_role: string; body: string; created_at: string;
@@ -84,7 +85,7 @@ function RequestsPanel() {
   const load = useCallback(async () => {
     setLoading(true);
     const { data } = await db.from("captain_requests")
-      .select("*, yachts(vessel_name)")
+      .select("*, yachts(vessel_name), orbit2_boats(name)")
       .order("created_at", { ascending: false });
     setRows(data ?? []); setLoading(false);
   }, []);
@@ -163,7 +164,7 @@ function RequestsPanel() {
                   return (
                     <tr key={r.id} className="cursor-pointer" onClick={() => setOpenId(openId === r.id ? null : r.id)}>
                       <td className="font-medium tabular-nums">{r.reference}</td>
-                      <td className="font-medium">{r.yachts?.vessel_name ?? "—"}</td>
+                      <td className="font-medium">{r.yachts?.vessel_name ?? (r.orbit2_boats?.name ? `${r.orbit2_boats.name} (boat)` : "—")}</td>
                       <td className="text-foreground/75">{cat?.label ?? r.category}</td>
                       <td className="max-w-[280px] truncate text-foreground/85">{r.title}</td>
                       <td className={cn("text-foreground/75", r.priority === "urgent" && "font-semibold text-red-300", r.priority === "high" && "text-amber-300")}>{r.priority}</td>

@@ -9,15 +9,20 @@
  *
  * Home (photo, spec and what needs attention), Compliance, Documents, Jobs and
  * Safety kit come from /api/portal/boats/detail (boat-sections.tsx). Requests
- * follow in a later phase and show as "soon".
+ * and Chat are the yacht portal's own screens, pointed at the boat: requests
+ * carry boat_id, and each boat's portal account has its own chat thread.
  */
 import { useCallback, useEffect, useState } from "react";
 import {
   BoatAlertsCard, BoatCompliance, BoatDocuments, BoatJobs, BoatSafetyKit, boatAlerts, type BoatDetail,
 } from "@/components/portal/boat-sections";
 import {
+  NewRequestSheet, PortalChatTab, PreviewContext, RequestsTab, type ChatAccount, type PortalChat,
+} from "@/components/portal/captain-portal";
+import { supabase } from "@/integrations/supabase/client";
+import {
   AlertTriangle, ClipboardList, Eye, FileCheck2, Home, LifeBuoy, Loader2, LogOut,
-  Menu, ShieldCheck, Ship, Wrench, X,
+  Menu, MessageSquare, ShieldCheck, Ship, Wrench, X,
 } from "lucide-react";
 import { PolarisMark } from "@/components/brand/PolarisMark";
 import { portalFetch } from "@/lib/portal/portal-fetch";
@@ -40,16 +45,15 @@ type PortalBoat = {
   };
 };
 
-type BoatTab = "home" | "compliance" | "documents" | "jobs" | "safety";
+type BoatTab = "home" | "compliance" | "documents" | "jobs" | "safety" | "requests" | "chat";
 const NAV: Array<{ key: BoatTab; label: string; icon: any }> = [
   { key: "home", label: "My Boat", icon: Home },
   { key: "compliance", label: "Compliance", icon: ShieldCheck },
   { key: "documents", label: "Documents", icon: FileCheck2 },
   { key: "jobs", label: "Jobs", icon: Wrench },
   { key: "safety", label: "Safety kit", icon: ClipboardList },
-];
-const SOON = [
-  { label: "Requests", icon: LifeBuoy },
+  { key: "requests", label: "Requests", icon: LifeBuoy },
+  { key: "chat", label: "Chat with JLS", icon: MessageSquare },
 ];
 
 export function BoatPortal({ displayName, email, previewAccountId, onSignOut }: {
@@ -66,6 +70,11 @@ export function BoatPortal({ displayName, email, previewAccountId, onSignOut }: 
   const [tab, setTab] = useState<BoatTab>("home");
   const [detail, setDetail] = useState<BoatDetail | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [account, setAccount] = useState<ChatAccount | null>(null);
+  const [chat, setChat] = useState<PortalChat | null>(null);
+  const [openRequestId, setOpenRequestId] = useState<string | null>(null);
+  const [newRequest, setNewRequest] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const load = useCallback(async () => {
     setError(null);
@@ -103,10 +112,48 @@ export function BoatPortal({ displayName, email, previewAccountId, onSignOut }: 
     return () => { alive = false; };
   }, [boatId, previewAccountId]);
 
+  // The portal account for the selected boat — each boat on a login is its own
+  // account, and its own chat thread. In preview, the previewed owner's.
+  useEffect(() => {
+    if (!boatId) { setAccount(null); return; }
+    let alive = true;
+    void (async () => {
+      const db = supabase as any;
+      let userId: string | null = null;
+      if (previewAccountId) {
+        const { data: pa } = await db.from("captain_accounts").select("id, user_id, boat_id").eq("id", previewAccountId).maybeSingle();
+        if (!pa?.user_id) { if (alive) setAccount(pa ? { id: pa.id, yacht_id: null, boat_id: pa.boat_id } : null); return; }
+        userId = pa.user_id;
+      } else {
+        userId = (await supabase.auth.getUser()).data.user?.id ?? null;
+      }
+      if (!userId) return;
+      const { data } = await db.from("captain_accounts").select("id, boat_id")
+        .eq("user_id", userId).eq("boat_id", boatId).eq("active", true).maybeSingle();
+      if (alive) setAccount(data ? { id: data.id, yacht_id: null, boat_id: data.boat_id } : null);
+    })();
+    return () => { alive = false; };
+  }, [boatId, previewAccountId]);
+
+  const loadChat = useCallback(async () => {
+    if (!account) { setChat(null); return; }
+    const { data } = await (supabase as any).from("portal_chats")
+      .select("id, captain_account_id, claimed_by_name, last_message_at, last_sender_role, portal_unread")
+      .eq("captain_account_id", account.id).maybeSingle();
+    setChat(data ?? null);
+  }, [account]);
+  useEffect(() => {
+    void loadChat();
+    const t = setInterval(() => void loadChat(), 20000);
+    return () => clearInterval(t);
+  }, [loadChat]);
+  const unread = chat?.portal_unread ?? 0;
+
   const boat = boats?.find((b) => b.id === boatId) ?? null;
   const preview = !!previewAccountId;
 
   return (
+    <PreviewContext.Provider value={preview}>
     <div className="flex min-h-screen w-full">
       {preview && (
         <div className="fixed inset-x-0 top-0 z-[60] flex items-center justify-center gap-3 bg-amber-500 px-4 py-1.5 text-[12px] font-semibold text-black">
@@ -167,9 +214,10 @@ export function BoatPortal({ displayName, email, previewAccountId, onSignOut }: 
         <nav className="flex-1 space-y-4 overflow-y-auto px-3 pb-4">
           <div className="space-y-0.5">
             {NAV.map((n) => {
-              const count = n.key === "home" && detail ? boatAlerts(detail).filter((a) => a.tone !== "sky").length : 0;
+              const count = n.key === "home" && detail ? boatAlerts(detail).filter((a) => a.tone !== "sky").length
+                : n.key === "chat" ? unread : 0;
               return (
-                <button key={n.key} type="button" onClick={() => { setTab(n.key); setNavOpen(false); }}
+                <button key={n.key} type="button" onClick={() => { setTab(n.key); setOpenRequestId(null); setNavOpen(false); }}
                         className={cn("flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition",
                           tab === n.key ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-background/60 hover:text-foreground")}>
                   <n.icon className="h-4 w-4 shrink-0" /> <span className="flex-1 text-left">{n.label}</span>
@@ -177,18 +225,6 @@ export function BoatPortal({ displayName, email, previewAccountId, onSignOut }: 
                 </button>
               );
             })}
-          </div>
-          <div>
-            <div className="px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/60">Coming soon</div>
-            <div className="space-y-0.5">
-              {SOON.map((s) => (
-                <div key={s.label} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium text-muted-foreground/50">
-                  <s.icon className="h-4 w-4 shrink-0" />
-                  <span className="flex-1 text-left">{s.label}</span>
-                  <span className="rounded-full border border-border/60 px-1.5 text-[9px] uppercase tracking-wider">soon</span>
-                </div>
-              ))}
-            </div>
           </div>
         </nav>
 
@@ -224,6 +260,13 @@ export function BoatPortal({ displayName, email, previewAccountId, onSignOut }: 
             <div className="rounded-2xl border border-border bg-card/80 p-8 text-center text-sm text-muted-foreground">
               No boats are linked to your account yet. Contact JLS Yachts and we'll set it up.
             </div>
+          ) : tab === "requests" ? (
+            <RequestsTab yachtId={null} boatId={boat.id} openRequestId={openRequestId} setOpenRequestId={setOpenRequestId}
+                         onNewRequest={() => setNewRequest(true)} displayName={displayName ?? email} refreshKey={refreshKey} />
+          ) : tab === "chat" ? (
+            account
+              ? <PortalChatTab link={account} displayName={displayName ?? email} chat={chat} onChatChanged={() => void loadChat()} />
+              : <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
           ) : tab === "home" ? (
             <BoatHome boat={boat} detail={detail} onOpen={(t) => setTab(t as BoatTab)} />
           ) : detailError ? (
@@ -236,7 +279,13 @@ export function BoatPortal({ displayName, email, previewAccountId, onSignOut }: 
             : <BoatSafetyKit detail={detail} />}
         </main>
       </div>
+      {newRequest && boat && (
+        <NewRequestSheet yachtId={null} boatId={boat.id} initialCategory="general"
+                         onClose={() => setNewRequest(false)}
+                         onCreated={(id) => { setNewRequest(false); setTab("requests"); setOpenRequestId(id); setRefreshKey((k) => k + 1); }} />
+      )}
     </div>
+    </PreviewContext.Provider>
   );
 }
 

@@ -46,11 +46,13 @@ const db = supabase as any;
 
 // Admin "preview as captain" mode: an admin opens /portal?previewCaptain=<id> to
 // see a captain's portal read-only. Writes are blocked (this isn't their session).
-const PreviewContext = createContext(false);
+export const PreviewContext = createContext(false);
 const usePreview = () => useContext(PreviewContext);
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type CaptainLink = { id: string; yacht_id: string; display_name: string | null; position: string | null };
+/** The portal account a chat belongs to — a yacht's or a managed boat's. */
+export type ChatAccount = { id: string; yacht_id: string | null; boat_id?: string | null };
 /** A small-boat owner's link (captain_accounts.boat_id) — served by BoatPortal, not PortalShell. */
 type BoatOwnerLink = { id: string; display_name: string | null };
 type AccountRow = { id: string; yacht_id: string | null; boat_id: string | null; display_name: string | null; position: string | null };
@@ -496,7 +498,7 @@ function navGroupsFor(position: string | null, modules: PortalModuleState): NavG
     .filter((g) => g.items.length > 0);
 }
 
-type PortalChat = {
+export type PortalChat = {
   id: string; captain_account_id: string; claimed_by_name: string | null;
   last_message_at: string | null; last_sender_role: string | null; portal_unread: number;
 };
@@ -1003,8 +1005,10 @@ function RequestRow({ r, onClick }: { r: PortalRequest; onClick: () => void }) {
   );
 }
 
-function RequestsTab({ yachtId, openRequestId, setOpenRequestId, onNewRequest, displayName, refreshKey }: {
-  yachtId: string; openRequestId: string | null; setOpenRequestId: (id: string | null) => void;
+export function RequestsTab({ yachtId, boatId = null, openRequestId, setOpenRequestId, onNewRequest, displayName, refreshKey }: {
+  /** The vessel whose requests to list — a yacht, or (boat owners) a managed boat. */
+  yachtId: string | null; boatId?: string | null;
+  openRequestId: string | null; setOpenRequestId: (id: string | null) => void;
   onNewRequest: () => void; displayName: string; refreshKey: number;
 }) {
   const [rows, setRows] = useState<PortalRequest[]>([]);
@@ -1012,11 +1016,14 @@ function RequestsTab({ yachtId, openRequestId, setOpenRequestId, onNewRequest, d
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data } = await db.from("captain_requests")
-      .select("id, reference, category, title, details, priority, status, needed_by, created_at, updated_at")
-      .order("created_at", { ascending: false });
+    // Filter to the vessel explicitly: a portal login's RLS already scopes it,
+    // but in staff preview it's what keeps one client's list to their own.
+    let q = db.from("captain_requests")
+      .select("id, reference, category, title, details, priority, status, needed_by, created_at, updated_at");
+    q = boatId ? q.eq("boat_id", boatId) : q.eq("yacht_id", yachtId);
+    const { data } = await q.order("created_at", { ascending: false });
     setRows(data ?? []); setLoading(false);
-  }, []);
+  }, [yachtId, boatId]);
   useEffect(() => { void load(); }, [load, refreshKey]);
 
   if (openRequestId) {
@@ -1164,8 +1171,8 @@ function RequestDetail({ requestId, displayName, onBack }: { requestId: string; 
 }
 
 // ── New request sheet ────────────────────────────────────────────────────────
-function NewRequestSheet({ yachtId, initialCategory, onClose, onCreated }: {
-  yachtId: string; initialCategory: string; onClose: () => void; onCreated: (id: string) => void;
+export function NewRequestSheet({ yachtId, boatId = null, initialCategory, onClose, onCreated }: {
+  yachtId: string | null; boatId?: string | null; initialCategory: string; onClose: () => void; onCreated: (id: string) => void;
 }) {
   const [category, setCategory] = useState(initialCategory);
   const [title, setTitle] = useState("");
@@ -1183,7 +1190,7 @@ function NewRequestSheet({ yachtId, initialCategory, onClose, onCreated }: {
     setBusy(true); setError(null);
     const { data: { user } } = await supabase.auth.getUser();
     const { data, error } = await db.from("captain_requests").insert({
-      yacht_id: yachtId, created_by: user?.id, category,
+      ...(boatId ? { boat_id: boatId } : { yacht_id: yachtId }), created_by: user?.id, category,
       title: title.trim(), details: details.trim() || null,
       priority, needed_by: neededBy || null,
     }).select("id").single();
@@ -2362,8 +2369,8 @@ function BalancesTab() {
 }
 
 // ── Chat (staff ⇄ portal) ─────────────────────────────────────────────────────
-function PortalChatTab({ link, displayName, chat, onChatChanged }: {
-  link: CaptainLink; displayName: string;
+export function PortalChatTab({ link, displayName, chat, onChatChanged }: {
+  link: ChatAccount; displayName: string;
   chat: PortalChat | null; onChatChanged: () => void;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -2406,7 +2413,7 @@ function PortalChatTab({ link, displayName, chat, onChatChanged }: {
       let chatId = chat?.id;
       if (!chatId) {
         const { data: created, error } = await db.from("portal_chats")
-          .insert({ captain_account_id: link.id, yacht_id: link.yacht_id })
+          .insert({ captain_account_id: link.id, ...(link.boat_id ? { boat_id: link.boat_id } : { yacht_id: link.yacht_id }) })
           .select("id").single();
         if (error || !created) return;
         chatId = created.id;

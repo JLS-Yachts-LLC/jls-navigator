@@ -18,7 +18,7 @@ type StaffChat = {
   claimed_by: string | null; claimed_by_name: string | null;
   last_message_at: string | null; last_sender_role: string | null;
   portal_unread: number; staff_unread: number;
-  captain_accounts?: { display_name: string | null; email: string | null; position: string | null; yachts?: { vessel_name: string } | null } | null;
+  captain_accounts?: { display_name: string | null; email: string | null; position: string | null; yachts?: { vessel_name: string } | null; orbit2_boats?: { name: string } | null } | null;
 };
 type ChatMsg = { id: string; sender_name: string | null; sender_role: string; body: string; created_at: string };
 
@@ -39,7 +39,7 @@ export function StaffChatsPanel() {
 
   const load = useCallback(async () => {
     const { data } = await db.from("portal_chats")
-      .select("*, captain_accounts(display_name, email, position, yachts(vessel_name))")
+      .select("*, captain_accounts(display_name, email, position, yachts(vessel_name), orbit2_boats(name))")
       .order("last_message_at", { ascending: false, nullsFirst: false });
     setChats(data ?? []);
     setLoading(false);
@@ -86,7 +86,7 @@ export function StaffChatsPanel() {
                       )}>
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate text-sm font-semibold">
-                    {c.captain_accounts?.yachts?.vessel_name ?? "—"} · {c.captain_accounts?.display_name ?? c.captain_accounts?.email ?? "Portal user"}
+                    {c.captain_accounts?.yachts?.vessel_name ?? c.captain_accounts?.orbit2_boats?.name ?? "—"} · {c.captain_accounts?.display_name ?? c.captain_accounts?.email ?? "Portal user"}
                   </span>
                   {c.staff_unread > 0 && (
                     <span className="flex h-4 min-w-[16px] shrink-0 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
@@ -192,7 +192,7 @@ function StaffChatThread({ chat, onChanged }: { chat: StaffChat; onChanged: () =
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 px-4 py-3">
         <div>
           <div className="text-sm font-semibold">
-            {chat.captain_accounts?.yachts?.vessel_name ?? "—"} · {chat.captain_accounts?.display_name ?? chat.captain_accounts?.email ?? "Portal user"}
+            {chat.captain_accounts?.yachts?.vessel_name ?? chat.captain_accounts?.orbit2_boats?.name ?? "—"} · {chat.captain_accounts?.display_name ?? chat.captain_accounts?.email ?? "Portal user"}
           </div>
           <div className="text-[11px] text-muted-foreground">{chat.captain_accounts?.email ?? ""}</div>
         </div>
@@ -259,7 +259,7 @@ function StartChatDialog({ existing, onClose, onStarted }: {
 
   useEffect(() => {
     db.from("captain_accounts")
-      .select("id, display_name, email, yacht_id, active, user_id, yachts(vessel_name)")
+      .select("id, display_name, email, yacht_id, boat_id, active, user_id, yachts(vessel_name), orbit2_boats(name)")
       .eq("active", true).not("user_id", "is", null)
       .then(({ data }: any) => setAccounts(data ?? []));
   }, []);
@@ -272,7 +272,7 @@ function StartChatDialog({ existing, onClose, onStarted }: {
       const already = existing.find((c) => c.captain_account_id === acc.id);
       if (already) { onStarted(already.id); return; }
       const { data: created, error } = await db.from("portal_chats").insert({
-        captain_account_id: acc.id, yacht_id: acc.yacht_id,
+        captain_account_id: acc.id, ...(acc.boat_id ? { boat_id: acc.boat_id } : { yacht_id: acc.yacht_id }),
         claimed_by: user?.id, claimed_by_name: staffDisplayName(user?.email),
         claimed_at: new Date().toISOString(),
       }).select("id").single();
@@ -295,7 +295,7 @@ function StartChatDialog({ existing, onClose, onStarted }: {
           <option value="">Choose a portal user…</option>
           {accounts.map((a) => (
             <option key={a.id} value={a.id}>
-              {(a.yachts?.vessel_name ?? "—")} — {a.display_name ?? a.email}
+              {(a.yachts?.vessel_name ?? a.orbit2_boats?.name ?? "—")} — {a.display_name ?? a.email}
             </option>
           ))}
         </select>
