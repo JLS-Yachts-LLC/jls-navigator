@@ -961,6 +961,11 @@ export default {
       const { portalRequisitionsHandler } = await import('./routes/api.portal.requisitions')
       return portalRequisitionsHandler(request)
     }
+    // Client portal — On board checklists and the runs through them.
+    if (url.pathname === '/api/portal/checklists') {
+      const { portalChecklistsHandler } = await import('./routes/api.portal.checklists')
+      return portalChecklistsHandler(request)
+    }
     // Client portal — the vessel's own logo / badge.
     if (url.pathname === '/api/portal/vessel-logo') {
       const { portalVesselLogoHandler } = await import('./routes/api.portal.vessel-logo')
