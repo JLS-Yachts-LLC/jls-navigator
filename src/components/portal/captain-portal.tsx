@@ -22,11 +22,13 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { portalFetch } from "@/lib/portal/portal-fetch";
 import { PortalBrandHeader, WrongAddressScreen, checkPortalAddress } from "./portal-address";
+import { isLowStock } from "@/lib/portal/onboard";
 import { moduleState, sectionEnabled, type PortalModuleState, type PortalModuleRow } from "@/lib/portal/portal-modules";
 import { PmsSection } from "@/components/portal/sections/pms-section";
+import { StockSection } from "@/components/portal/sections/stock-section";
 import { CharterSection } from "@/components/portal/sections/charter-section";
 import { IsmSection } from "@/components/portal/sections/ism-section";
-import { hiddenSections, canSeeFinance, canManageVessel } from "@/lib/portal/portal-positions";
+import { canApproveRequisition, hiddenSections, canSeeFinance, canManageVessel } from "@/lib/portal/portal-positions";
 import { cn } from "@/lib/utils";
 import { BoatPortal } from "./boat-portal";
 // /portal is a standalone route (no staff shell), so pull the design tokens in
@@ -432,7 +434,7 @@ function MfaVerifyScreen({ onDone, onSignOut }: { onDone: () => void; onSignOut:
 // ═══════════════════════════════════════════════════════════════════════════
 type Tab =
   | "home"
-  | "alerts" | "positions" | "crew" | "documents" | "pms" | "balances" | "invoices" | "charter" | "ism"
+  | "alerts" | "positions" | "crew" | "documents" | "pms" | "balances" | "invoices" | "charter" | "ism" | "stock"
   | "requests" | "logistics" | "chat" | "directory"
   | "finances"; // legacy alias used by the Home module launcher → routes to Invoices/Finance
 
@@ -464,6 +466,7 @@ const NAV_GROUPS: NavGroup[] = [
     title: "On board",
     module: "management",
     items: [
+      { key: "stock", label: "Stock & requisitions", icon: Package },
       { key: "pms", label: "Jobs & maintenance", icon: Wrench },
       { key: "charter", label: "Guests & charter", icon: CalendarRange },
       { key: "ism", label: "ISM & safety", icon: ShieldCheck },
@@ -681,11 +684,15 @@ function PortalShell({ link, email, onSignOut, preview = false }: { link: Captai
         {(tab === "invoices" || tab === "finances") && <FinancesTab />}
         {tab === "balances" && <BalancesTab />}
         {tab === "logistics" && <LogisticsTab />}
-        {tab === "alerts" && <AlertsTab financeOk={financeOk} onOpen={(t) => { setTab(t); setOpenRequestId(null); }} />}
+        {tab === "alerts" && <AlertsTab yachtId={link.yacht_id} financeOk={financeOk} stockOk={allowedKeys.has("stock")} onOpen={(t) => { setTab(t); setOpenRequestId(null); }} />}
         {tab === "positions" && yacht && <PositionsTab yacht={yacht} />}
         {/* On board (Management module). The tabs only appear when the vessel
             has the module and this position can see them; editing is off in
             staff preview (the server refuses it there too). */}
+        {tab === "stock" && (
+          <StockSection yachtId={link.yacht_id} canEdit={!preview} canApprove={canApproveRequisition(link.position)}
+                        onOpenRequest={(id) => { setTab("requests"); setOpenRequestId(id); }} />
+        )}
         {tab === "pms" && <PmsSection yachtId={link.yacht_id} canEdit={!preview} />}
         {tab === "charter" && <CharterSection yachtId={link.yacht_id} canEdit={!preview} showFees={canSeeFinance(link.position)} />}
         {tab === "ism" && <IsmSection yachtId={link.yacht_id} canEdit={!preview} />}
@@ -721,6 +728,7 @@ const CORE_MODULES: ModuleDef[] = [
 ];
 // Management tiles — the crew's own tools; shown only when the vessel has the module.
 const MANAGEMENT_MODULES: ModuleDef[] = [
+  { key: "stock",   label: "Stock & requisitions", blurb: "What's on board, what's low & orders to JLS", icon: Package,       accent: "text-teal-300 bg-teal-500/10 border-teal-500/25" },
   { key: "pms",     label: "Jobs & maintenance", blurb: "Planned maintenance, running hours & defects", icon: Wrench,        accent: "text-teal-300 bg-teal-500/10 border-teal-500/25" },
   { key: "charter", label: "Guests & charter",   blurb: "Bookings, itineraries & guest preferences",   icon: CalendarRange, accent: "text-teal-300 bg-teal-500/10 border-teal-500/25" },
   { key: "ism",     label: "ISM & safety",       blurb: "Certificates, drills & the safety record",    icon: ShieldCheck,   accent: "text-teal-300 bg-teal-500/10 border-teal-500/25" },
@@ -2035,20 +2043,21 @@ const expiringWithin = (d: string | null | undefined, days: number) => {
   return n <= days && n >= -3650; // upcoming or recently lapsed, not ancient records
 };
 
-function AlertsTab({ onOpen, financeOk }: { onOpen: (t: Tab) => void; financeOk: boolean }) {
+function AlertsTab({ yachtId, onOpen, financeOk, stockOk }: { yachtId: string; onOpen: (t: Tab) => void; financeOk: boolean; stockOk: boolean }) {
   const [alerts, setAlerts] = useState<PortalAlert[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     void (async () => {
       setLoading(true);
-      const [reqR, crewR, visaR, permitR, finR, logR] = await Promise.allSettled([
+      const [reqR, crewR, visaR, permitR, finR, logR, stockR] = await Promise.allSettled([
         db.from("captain_requests").select("id, reference, title, status"),
         db.from("crew_members").select("id, full_name, first_name, last_name, passport_expiry_date"),
         db.from("visa_applications").select("id, given_name, surname, visa_expiry"),
         db.from("permits").select("id, permit_type, expiry_date"),
         financeOk ? authedFetch("/api/portal/finance").then((r) => r.json()).catch(() => null) : Promise.resolve(null),
         authedFetch("/api/portal/logistics").then((r) => r.json()).catch(() => null),
+        stockOk ? db.from("onboard_stock_items").select("quantity, min_quantity, par_quantity").eq("yacht_id", yachtId) : Promise.resolve({ data: [] }),
       ]);
       const out: PortalAlert[] = [];
 
@@ -2091,6 +2100,12 @@ function AlertsTab({ onOpen, financeOk }: { onOpen: (t: Tab) => void; financeOk:
         else if (active.length) out.push({ id: "log-active", severity: "medium", icon: Package, title: `${active.length} package${active.length > 1 ? "s" : ""} awaiting delivery`, go: "logistics" });
       }
 
+      // Stock at or below its minimum (On board)
+      if (stockR.status === "fulfilled") {
+        const low = ((stockR.value as any).data ?? []).filter(isLowStock).length;
+        if (low) out.push({ id: "stock-low", severity: "medium", icon: Package, title: `${low} stock item${low > 1 ? "s" : ""} at or below minimum`, detail: "Raise a requisition to top up", go: "stock" });
+      }
+
       // Open service requests
       if (reqR.status === "fulfilled") {
         const open = (reqR.value.data ?? []).filter((r: any) => !["closed", "cancelled", "completed", "resolved"].includes((r.status ?? "").toLowerCase()));
@@ -2102,7 +2117,7 @@ function AlertsTab({ onOpen, financeOk }: { onOpen: (t: Tab) => void; financeOk:
       setAlerts(out);
       setLoading(false);
     })();
-  }, [financeOk]);
+  }, [financeOk, stockOk, yachtId]);
 
   if (loading) return <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
 

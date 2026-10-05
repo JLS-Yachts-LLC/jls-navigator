@@ -11,6 +11,7 @@ export const ONBOARD_KINDS = {
   charter:       { table: "charter_bookings", section: "charter" },
   ism_cert:      { table: "ism_certificates", section: "ism" },
   ism_drill:     { table: "ism_drills",       section: "ism" },
+  stock_item:    { table: "onboard_stock_items", section: "stock" },
 } as const;
 export type OnboardKind = keyof typeof ONBOARD_KINDS;
 
@@ -79,4 +80,47 @@ export function certStatus(stored: string | null, expiry: string | null, now = n
   if (d != null && d < 0) return "expired";
   if (d != null && d <= 60) return "expiring";
   return "valid";
+}
+
+/** Stock departments, in the order the portal lists them. */
+export const STOCK_DEPARTMENTS = [
+  { value: "galley", label: "Galley" },
+  { value: "interior", label: "Interior" },
+  { value: "bar", label: "Bar" },
+  { value: "deck", label: "Deck" },
+  { value: "engine", label: "Engine room" },
+  { value: "safety", label: "Safety" },
+  { value: "other", label: "Other" },
+] as const;
+
+export type StockLike = { quantity: number | null; min_quantity: number | null; par_quantity: number | null };
+
+/** At or below its minimum level (an item with no minimum is never "low"). */
+export function isLowStock(i: StockLike): boolean {
+  return i.min_quantity != null && Number(i.quantity ?? 0) <= Number(i.min_quantity);
+}
+
+/**
+ * How many to order to bring an item back up: to its par level when it has
+ * one, else to twice its minimum — never less than one.
+ */
+export function suggestedOrder(i: StockLike): number {
+  const have = Number(i.quantity ?? 0);
+  const target = i.par_quantity != null ? Number(i.par_quantity) : i.min_quantity != null ? Number(i.min_quantity) * 2 : have + 1;
+  return Math.max(1, Math.ceil(target - have));
+}
+
+/** Requisition statuses, as the crew read them. */
+export const REQUISITION_STATUS_LABEL: Record<string, string> = {
+  draft: "Draft",
+  submitted: "Awaiting approval",
+  approved: "Approved",
+  sent: "With JLS",
+  received: "Received",
+  cancelled: "Cancelled",
+};
+
+/** Which JLS request category a requisition goes to, by department. */
+export function requestCategoryFor(department: string): "provisioning" | "general" {
+  return ["galley", "interior", "bar"].includes(department) ? "provisioning" : "general";
 }

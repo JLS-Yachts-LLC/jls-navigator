@@ -956,6 +956,11 @@ export default {
       const { portalOnboardHandler } = await import('./routes/api.portal.onboard')
       return portalOnboardHandler(request)
     }
+    // Client portal — On board requisitions: raise, approve, send to JLS, receive.
+    if (url.pathname === '/api/portal/requisitions') {
+      const { portalRequisitionsHandler } = await import('./routes/api.portal.requisitions')
+      return portalRequisitionsHandler(request)
+    }
     // Client portal — the vessel's own logo / badge.
     if (url.pathname === '/api/portal/vessel-logo') {
       const { portalVesselLogoHandler } = await import('./routes/api.portal.vessel-logo')

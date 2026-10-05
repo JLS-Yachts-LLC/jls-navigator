@@ -38,6 +38,7 @@ export const PORTAL_MODULES: Record<PortalModuleKey, {
     short: "Management",
     blurb: "The crew's own tools for running the vessel. JLS sees nothing here unless the crew send it across.",
     features: [
+      { key: "stock",   label: "Stock & requisitions", blurb: "What's on board, minimum levels, and requisitions sent to JLS" },
       { key: "pms",     label: "Jobs & maintenance", blurb: "Planned maintenance, running hours and defects" },
       { key: "charter", label: "Guests & charter",   blurb: "Bookings, itineraries and guest preferences" },
       { key: "ism",     label: "ISM & safety",       blurb: "Certificates, drills and the safety-management record" },
@@ -58,6 +59,7 @@ export const SECTION_FEATURE: Record<string, { module: PortalModuleKey; feature:
   logistics: { module: "core", feature: "logistics" },
   chat:      { module: "core", feature: "chat" },
   directory: { module: "core", feature: "chat" },
+  stock:     { module: "management", feature: "stock" },
   pms:       { module: "management", feature: "pms" },
   charter:   { module: "management", feature: "charter" },
   ism:       { module: "management", feature: "ism" },

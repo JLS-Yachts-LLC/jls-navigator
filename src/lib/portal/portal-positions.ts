@@ -23,8 +23,8 @@ const POSITION_LABELS: Record<string, string> = {
 export const positionLabel = (p: string) => POSITION_LABELS[p] ?? p.charAt(0).toUpperCase() + p.slice(1);
 
 const HIDDEN_BY_POSITION: Record<string, string[]> = {
-  owner: ["pms", "ism"],
-  representative: ["pms", "ism"],
+  owner: ["pms", "ism", "stock"],
+  representative: ["pms", "ism", "stock"],
   purser: ["pms", "ism", "positions", "charter"],
   chief_stewardess: ["pms", "ism", "balances", "invoices"],
   chef: ["pms", "ism", "balances", "invoices"],
@@ -56,4 +56,17 @@ export function canManageCrew(position: string | null | undefined): boolean {
 /** Whether this position may change the vessel's own profile (its logo). Same people as crew. */
 export function canManageVessel(position: string | null | undefined): boolean {
   return canManageCrew(position);
+}
+
+/**
+ * Positions that approve requisitions raised on board and send them to JLS.
+ * Anyone who can see Stock can raise one; the Captain, Relief Captain, Chief
+ * Officer and Purser (and a blank position, which is treated as the Captain)
+ * sign them off. Approving is what turns a crew list into an order with JLS.
+ */
+const REQUISITION_APPROVERS = new Set(["", "captain", "relief_captain", "chief_officer", "purser"]);
+
+/** Whether this position may approve a requisition and send it to JLS. */
+export function canApproveRequisition(position: string | null | undefined): boolean {
+  return REQUISITION_APPROVERS.has((position ?? "").trim().toLowerCase());
 }

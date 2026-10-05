@@ -7,9 +7,11 @@
  *   PATCH  /api/portal/onboard?kind=<kind>&id=        → edit one
  *   POST   /api/portal/onboard?kind=pms_task&id=&action=done
  *                                                     → mark a job done (body: { date?, hours? })
+ *   POST   /api/portal/onboard?kind=stock_item&id=&action=adjust
+ *                                                     → change a stock count (body: { delta })
  *   DELETE /api/portal/onboard?kind=<kind>&id=        → remove one
  *
- * kind = pms_task | pms_equipment | charter | ism_cert | ism_drill
+ * kind = pms_task | pms_equipment | charter | ism_cert | ism_drill | stock_item
  *
  * The tables are read-only to portal logins at the database (captain_select
  * only), so writes come through here with the service role, hard-filtered to the
@@ -70,15 +72,21 @@ const FIELDS: Record<OnboardKind, FieldSpec> = {
     drill_type: 'text', conducted_at: 'date', conducted_by: 'text', participants: 'longtext',
     location: 'text', notes: 'longtext',
   },
+  stock_item: {
+    name: 'text', department: { oneOf: ['galley', 'interior', 'bar', 'deck', 'engine', 'safety', 'other'] },
+    category: 'text', location: 'text', unit: 'text', quantity: 'num', min_quantity: 'num', par_quantity: 'num',
+    supplier_ref: 'text', notes: 'longtext',
+  },
 }
 
 /** The one field each kind can't be saved without. */
 const REQUIRED: Record<OnboardKind, string> = {
   pms_task: 'title', pms_equipment: 'name', charter: 'charterer_name', ism_cert: 'title', ism_drill: 'drill_type',
+  stock_item: 'name',
 }
 const REQUIRED_LABEL: Record<OnboardKind, string> = {
   pms_task: 'A job title', pms_equipment: 'An equipment name', charter: "The charterer's name",
-  ism_cert: 'A certificate title', ism_drill: 'The drill type',
+  ism_cert: 'A certificate title', ism_drill: 'The drill type', stock_item: 'An item name',
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -237,6 +245,18 @@ export async function portalOnboardHandler(request: Request): Promise<Response> 
 
     const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
     if (!body || typeof body !== 'object') return json({ error: 'Expected a JSON body' }, 400)
+
+    if (request.method === 'POST' && url.searchParams.get('action') === 'adjust') {
+      if (kind !== 'stock_item') return json({ error: 'Only stock can be adjusted' }, 400)
+      const item = await ownRow(sb, yacht, kind, id)
+      if (!item) return json({ error: 'Stock item not found' }, 404)
+      const delta = Number(body.delta)
+      if (!Number.isFinite(delta) || delta === 0 || Math.abs(delta) > 1e6) return json({ error: 'Enter how many to add or take away' }, 400)
+      const quantity = Math.max(0, Number(item.quantity ?? 0) + delta)
+      const { error } = await sb.from('onboard_stock_items').update({ quantity }).eq('id', item.id).eq('yacht_id', yacht.yachtId)
+      if (error) throw error
+      return json({ ok: true, quantity })
+    }
 
     if (request.method === 'POST' && url.searchParams.get('action') === 'done') {
       if (kind !== 'pms_task') return json({ error: 'Only jobs can be marked done' }, 400)
