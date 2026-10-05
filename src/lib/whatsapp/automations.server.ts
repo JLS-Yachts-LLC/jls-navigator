@@ -194,9 +194,13 @@ export async function planAutomation(db: any, a: any, today = dubaiToday()): Pro
     vessel: vesselName.get(d.yachtId) ?? "your yacht",
     vesselOn: on.has(d.yachtId),
     fields: { ...d.fields, vessel_name: vesselName.get(d.yachtId) ?? "your yacht" },
-    recipients: ((contacts ?? []) as any[]).filter((c) => c.yacht_id === d.yachtId).map((c) => ({
-      contactId: c.id, name: c.name, phone: c.phone_e164, alreadySent: sent.has(`${d.sourceId}|${d.threshold}|${c.id}`),
-    })),
+    // One message per number: two records for the same person (not yet merged)
+    // share a phone. Already-reminded records win, so the rest count as sent too.
+    recipients: [...((contacts ?? []) as any[]).filter((c) => c.yacht_id === d.yachtId)
+      .map((c) => ({ contactId: c.id, name: c.name, phone: c.phone_e164, alreadySent: sent.has(`${d.sourceId}|${d.threshold}|${c.id}`) }))
+      .sort((x, y) => Number(y.alreadySent) - Number(x.alreadySent))
+      .reduce((m, r) => (m.has(r.phone) ? m : m.set(r.phone, r)), new Map<string, { contactId: string; name: string; phone: string; alreadySent: boolean }>())
+      .values()],
   })).sort((x, y) => x.daysLeft - y.daysLeft);
 }
 

@@ -8,7 +8,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Search, Upload, Plus, Mail, ShieldCheck, ShieldOff, History, Pencil, Loader2, CheckCircle2, FileSpreadsheet } from "lucide-react";
+import { Search, Upload, Plus, Mail, ShieldCheck, ShieldOff, History, Pencil, Loader2, CheckCircle2, FileSpreadsheet, Merge } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,6 +18,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { toE164, OPTIN_CATEGORY_TEXT } from "@/lib/whatsapp/shared";
 import { db, waApi, ConsentChip, Chip, fmtDate, Empty, type WaContact } from "./wa-common";
 import { BulkConsentDialog, CsvImportDialog } from "./wa-bulk";
+import { MergeDuplicatesDialog, findDuplicateGroups } from "./wa-merge";
 
 type Filter = "all" | WaContact["consent_status"];
 
@@ -32,6 +33,8 @@ export function WaContacts({ canEdit }: { canEdit: boolean }) {
   const [consentFor, setConsentFor] = useState<{ c: WaContact; mode: "in" | "out" } | null>(null);
   const [bulk, setBulk] = useState<"in" | "out" | null>(null);
   const [csvOpen, setCsvOpen] = useState(false);
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const dupGroups = useMemo(() => findDuplicateGroups(rows).length, [rows]);
   const [historyFor, setHistoryFor] = useState<WaContact | null>(null);
 
   async function load() {
@@ -65,10 +68,11 @@ export function WaContacts({ canEdit }: { canEdit: boolean }) {
         db().from("country_dial_codes").select("dial_code"),
         db().from("yachts").select("id, vessel_name, contact_person, email_address, contact_no, archive"),
         db().from("agency_contacts").select("id, name, email, phone, vessel_id"),
-        db().from("wa_contacts").select("source, source_id"),
+        db().from("wa_contacts").select("source, source_id, merged_sources"),
       ]);
       const dial = ((codes ?? []) as any[]).map((r) => r.dial_code);
-      const have = new Set(((existing ?? []) as any[]).map((r) => `${r.source}:${r.source_id}`));
+      // Includes records merged into another contact, so a merged duplicate isn't re-imported.
+      const have = new Set(((existing ?? []) as any[]).flatMap((r) => [`${r.source}:${r.source_id}`, ...(r.merged_sources ?? [])]));
       const fresh: any[] = [];
       for (const v of (vessels ?? []) as any[]) {
         if (v.archive || have.has(`vessel:${v.id}`)) continue;
@@ -159,6 +163,12 @@ export function WaContacts({ canEdit }: { canEdit: boolean }) {
                   <ShieldOff className="h-4 w-4" /> Opt out ({selected.size})
                 </Button>
               </>
+            )}
+            {dupGroups > 0 && (
+              <Button size="sm" variant="outline" onClick={() => setMergeOpen(true)} className="gap-1.5 border-amber-500/50 text-amber-700 dark:text-amber-300"
+                title="Contacts sharing a WhatsApp number on the same yacht">
+                <Merge className="h-4 w-4" /> Duplicates ({dupGroups})
+              </Button>
             )}
             <Button size="sm" variant="outline" onClick={() => setCsvOpen(true)} className="gap-1.5">
               <FileSpreadsheet className="h-4 w-4" /> Import CSV
@@ -255,6 +265,7 @@ export function WaContacts({ canEdit }: { canEdit: boolean }) {
           onClose={() => setBulk(null)} onDone={() => { setSelected(new Set()); void load(); }} />
       )}
       {csvOpen && <CsvImportDialog onClose={() => setCsvOpen(false)} onDone={() => void load()} />}
+      {mergeOpen && <MergeDuplicatesDialog rows={rows} onClose={() => setMergeOpen(false)} onDone={() => { setSelected(new Set()); void load(); }} />}
       {editing && <ContactDialog contact={editing === "new" ? null : editing} onClose={() => setEditing(null)} onSaved={load} />}
       {consentFor && <ConsentDialog contact={consentFor.c} mode={consentFor.mode} onClose={() => setConsentFor(null)} onSaved={load} />}
       {historyFor && <HistoryDialog contact={historyFor} onClose={() => setHistoryFor(null)} />}
