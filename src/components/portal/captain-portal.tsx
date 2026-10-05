@@ -21,6 +21,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { portalFetch } from "@/lib/portal/portal-fetch";
 import { cn } from "@/lib/utils";
+import { BoatPortal } from "./boat-portal";
 // /portal is a standalone route (no staff shell), so pull the design tokens in
 // directly — the `pds` wrapper class below reads them.
 import "@/components/polaris-ui/tokens.css";
@@ -34,6 +35,9 @@ const usePreview = () => useContext(PreviewContext);
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type CaptainLink = { id: string; yacht_id: string; display_name: string | null; position: string | null };
+/** A small-boat owner's link (captain_accounts.boat_id) — served by BoatPortal, not PortalShell. */
+type BoatOwnerLink = { id: string; display_name: string | null };
+type AccountRow = { id: string; yacht_id: string | null; boat_id: string | null; display_name: string | null; position: string | null };
 type Yacht = {
   id: string; vessel_name: string; vessel_type: string | null; flag: string | null;
   status: string | null; berth: string | null; location: string | null;
@@ -155,6 +159,7 @@ type Stage = "loading" | "signed-out" | "not-captain" | "mfa-enroll" | "mfa-veri
 export function CaptainPortal() {
   const [stage, setStage] = useState<Stage>("loading");
   const [link, setLink] = useState<CaptainLink | null>(null);
+  const [boatOwner, setBoatOwner] = useState<BoatOwnerLink | null>(null);
   const [userEmail, setUserEmail] = useState<string>("");
   const [preview, setPreview] = useState(false);
 
@@ -172,17 +177,24 @@ export function CaptainPortal() {
       : null;
     if (previewId) {
       const { data: cap } = await db.from("captain_accounts")
-        .select("id, yacht_id, display_name, position")
-        .eq("id", previewId).eq("active", true).maybeSingle();
-      if (cap) { setLink(cap); setPreview(true); setStage("ready"); return; }
+        .select("id, yacht_id, boat_id, display_name, position")
+        .eq("id", previewId).eq("active", true).maybeSingle() as { data: AccountRow | null };
+      if (cap?.yacht_id) { setLink({ ...cap, yacht_id: cap.yacht_id }); setPreview(true); setStage("ready"); return; }
+      if (cap?.boat_id) { setBoatOwner(cap); setPreview(true); setStage("ready"); return; }
       setStage("not-captain"); return;
     }
 
+    // A login is linked to a yacht, or to one or more managed boats (one row
+    // per boat). A yacht link wins if a login somehow has both.
     const { data: links } = await db.from("captain_accounts")
-      .select("id, yacht_id, display_name, position")
-      .eq("user_id", session.user.id).eq("active", true).limit(1);
-    if (!links?.length) { setStage("not-captain"); return; }
-    setLink(links[0]);
+      .select("id, yacht_id, boat_id, display_name, position")
+      .eq("user_id", session.user.id).eq("active", true)
+      .order("created_at", { ascending: true }) as { data: AccountRow[] | null };
+    const yachtLink = links?.find((l) => l.yacht_id);
+    const boatLink = links?.find((l) => l.boat_id);
+    if (yachtLink) setLink({ ...yachtLink, yacht_id: yachtLink.yacht_id! });
+    else if (boatLink) setBoatOwner(boatLink);
+    else { setStage("not-captain"); return; }
 
     const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
     if (aal?.currentLevel === "aal2") { setStage("ready"); return; }
@@ -195,6 +207,7 @@ export function CaptainPortal() {
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
     setLink(null);
+    setBoatOwner(null);
     setStage("signed-out");
   }, []);
 
@@ -209,6 +222,10 @@ export function CaptainPortal() {
       {stage === "not-captain" && <NotCaptainScreen email={userEmail} onSignOut={signOut} />}
       {stage === "mfa-enroll" && <MfaEnrollScreen onDone={bootstrap} onSignOut={signOut} />}
       {stage === "mfa-verify" && <MfaVerifyScreen onDone={bootstrap} onSignOut={signOut} />}
+      {stage === "ready" && !link && boatOwner && (
+        <BoatPortal displayName={boatOwner.display_name} email={userEmail}
+                    previewAccountId={preview ? boatOwner.id : null} onSignOut={signOut} />
+      )}
       {stage === "ready" && link && (
         <PreviewContext.Provider value={preview}>
           <PortalShell link={link} email={userEmail} onSignOut={signOut} preview={preview} />

@@ -17,7 +17,7 @@ import {
   Menu, ShieldCheck, Ship, Wrench, X,
 } from "lucide-react";
 import { PolarisMark } from "@/components/brand/PolarisMark";
-import { supabase } from "@/integrations/supabase/client";
+import { portalFetch } from "@/lib/portal/portal-fetch";
 import { cn } from "@/lib/utils";
 
 type PortalBoat = {
@@ -36,14 +36,6 @@ type PortalBoat = {
     imo: string | null;
   };
 };
-
-/** Portal API call as this login — or, in an admin preview, as the previewed owner. */
-async function boatFetch(path: string, previewAccountId: string | null): Promise<Response> {
-  const { data: { session } } = await supabase.auth.getSession();
-  const headers: Record<string, string> = { Authorization: `Bearer ${session?.access_token ?? ""}` };
-  if (previewAccountId) headers["X-Portal-Preview"] = previewAccountId;
-  return fetch(path, { headers });
-}
 
 const SOON = [
   { label: "Compliance", icon: ShieldCheck },
@@ -68,7 +60,7 @@ export function BoatPortal({ displayName, email, previewAccountId, onSignOut }: 
   const load = useCallback(async () => {
     setError(null);
     try {
-      const res = await boatFetch("/api/portal/boats", previewAccountId);
+      const res = await portalFetch("/api/portal/boats");
       const body = await res.json().catch(() => ({}));
       if (!res.ok) { setError(body?.error ?? "Could not load your boats."); setBoats([]); return; }
       const list: PortalBoat[] = body.boats ?? [];
