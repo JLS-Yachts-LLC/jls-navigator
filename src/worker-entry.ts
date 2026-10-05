@@ -986,6 +986,11 @@ export default {
       const { portalGatePassesHandler } = await import('./routes/api.portal.gatepasses')
       return portalGatePassesHandler(request)
     }
+    // Client portal — the Owner's brief (one month at a glance).
+    if (url.pathname === '/api/portal/brief') {
+      const { portalBriefHandler } = await import('./routes/api.portal.brief')
+      return portalBriefHandler(request)
+    }
     // Client portal — itemised orders to JLS.
     if (url.pathname === '/api/portal/orders') {
       const { portalOrdersHandler } = await import('./routes/api.portal.orders')

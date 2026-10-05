@@ -18,7 +18,7 @@ import {
   MapPin, FileText, Download, ExternalLink, Clock, CheckCircle2,
   Bell, Compass, Wrench, CalendarRange, ShieldCheck, Menu, AlertTriangle, Eye,
   Pencil, Trash2, UserPlus, RotateCcw, ImagePlus,
-  ClipboardCheck, NotebookPen, Anchor, IdCard, CalendarDays, Upload,
+  ClipboardCheck, NotebookPen, Anchor, IdCard, CalendarDays, Upload, BookOpen,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { portalFetch, setPortalYacht } from "@/lib/portal/portal-fetch";
@@ -35,6 +35,7 @@ import { QuoteDetail } from "@/components/portal/sections/quote-detail";
 import { GatePassesSection } from "@/components/portal/sections/gatepasses-section";
 import { OrdersSection } from "@/components/portal/sections/orders-section";
 import { CalendarSection } from "@/components/portal/sections/calendar-section";
+import { BriefSection } from "@/components/portal/sections/brief-section";
 import { EsignPanel } from "@/components/portal/sections/esign-section";
 import { CharterSection } from "@/components/portal/sections/charter-section";
 import { IsmSection } from "@/components/portal/sections/ism-section";
@@ -645,7 +646,7 @@ function MfaVerifyScreen({ onDone, onSignOut }: { onDone: () => void; onSignOut:
 // Portal shell + tabs
 // ═══════════════════════════════════════════════════════════════════════════
 type Tab =
-  | "home"
+  | "home" | "brief"
   | "alerts" | "positions" | "crew" | "documents" | "pms" | "balances" | "invoices" | "charter" | "ism" | "stock" | "checklists" | "hours" | "handover" | "movements" | "gatepasses" | "orders" | "calendar"
   | "requests" | "logistics" | "chat" | "directory"
   | "finances"; // legacy alias used by the Home module launcher → routes to Invoices/Finance
@@ -657,7 +658,7 @@ type NavGroup = { title?: string; module?: "core" | "management"; items: NavItem
 // everything JLS does for the vessel as its agent; ON BOARD (management) is the
 // crew's own tools, shown only when the vessel has that module switched on.
 const NAV_GROUPS: NavGroup[] = [
-  { items: [{ key: "home", label: "Home", icon: Home }] },
+  { items: [{ key: "home", label: "Home", icon: Home }, { key: "brief", label: "Owner's brief", icon: BookOpen }] },
   {
     title: "Agency with JLS",
     module: "core",
@@ -945,6 +946,7 @@ function PortalShell({ link, email, onSignOut, preview = false, vessels = [], on
         {tab === "charter" && <CharterSection yachtId={link.yacht_id} canEdit={!preview} showFees={canSeeFinance(link.position)} />}
         {tab === "ism" && <IsmSection yachtId={link.yacht_id} canEdit={!preview} />}
         {tab === "directory" && <DirectoryTab />}
+        {tab === "brief" && <BriefSection yachtId={link.yacht_id} preview={preview} onOpen={(t) => { setTab(t); setOpenRequestId(null); }} />}
         </main>
       </div>
 
@@ -967,6 +969,7 @@ function PortalShell({ link, email, onSignOut, preview = false, vessels = [], on
 type ModuleDef = { key: Tab; label: string; blurb: string; icon: any; accent: string };
 // Core tiles — everything JLS does for the vessel as its agent.
 const CORE_MODULES: ModuleDef[] = [
+  { key: "brief",     label: "Owner's brief",          blurb: "The month at a glance — spend, compliance & what's next", icon: BookOpen, accent: "text-primary bg-primary/10 border-primary/25" },
   { key: "orders",    label: "Order from JLS",         blurb: "Provisioning, fuel, uniform, spares — item by item", icon: ShoppingCart, accent: "text-primary bg-primary/10 border-primary/25" },
   { key: "requests",  label: "Requests",               blurb: "Permits, IT, visas & anything else",           icon: LifeBuoy,   accent: "text-primary bg-primary/10 border-primary/25" },
   { key: "movements", label: "Arrivals & departures",  blurb: "Pre-arrival form & crew sign-on / sign-off",   icon: Anchor,     accent: "text-primary bg-primary/10 border-primary/25" },

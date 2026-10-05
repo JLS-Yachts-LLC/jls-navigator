@@ -23,6 +23,7 @@ export const PORTAL_MODULES: Record<PortalModuleKey, {
     short: "Core",
     blurb: "Everything JLS does for the vessel as its agent. Included for every client.",
     features: [
+      { key: "brief",     label: "Owner's brief",              blurb: "A monthly summary for the owner — spend, compliance, what happened and what's next, with the agent's note" },
       { key: "alerts",    label: "Alerts",                     blurb: "Expiring permits, visas and passports; overdue invoices; deliveries" },
       { key: "calendar",  label: "Compliance calendar",        blurb: "Every expiry JLS tracks for the vessel, month by month" },
       { key: "positions", label: "Positions",                  blurb: "AIS position and voyage" },
@@ -54,6 +55,7 @@ export const PORTAL_MODULES: Record<PortalModuleKey, {
 
 /** Which module + feature each portal section (tab key) belongs to. */
 export const SECTION_FEATURE: Record<string, { module: PortalModuleKey; feature: string }> = {
+  brief:     { module: "core", feature: "brief" },
   alerts:    { module: "core", feature: "alerts" },
   calendar:  { module: "core", feature: "calendar" },
   positions: { module: "core", feature: "positions" },
