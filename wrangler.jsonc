@@ -21,6 +21,9 @@
     // workers.dev address the Worker also answers on.
     "VITE_APP_URL": "https://polaris.jlsyachts.com",
     "DOCUMENT_SHARE_BASE_URL": "https://polaris.jlsyachts.com",
+    // The Meta app ("Polaris", developers.facebook.com) behind the WhatsApp token.
+    // Public id, not a secret — needed to upload template header images for review.
+    "WHATSAPP_APP_ID": "1075020985286511",
 
     // ── Outbound email — MANUAL SENDS ON, AUTOMATIC SENDS OFF (1 Sep 2026) ───
     // Frozen on 2026-08-15 after client vessels received "<vessel> - TDRA" notices

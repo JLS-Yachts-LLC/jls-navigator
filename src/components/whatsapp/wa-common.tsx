@@ -4,9 +4,26 @@
  */
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
-import { CONSENT_LABEL } from "@/lib/whatsapp/shared";
+import { CONSENT_LABEL, type HeaderFormat, type WaButton } from "@/lib/whatsapp/shared";
 
 export const db = () => supabase as any;
+
+export const MEDIA_BUCKET = "whatsapp-media";
+
+/** Store a header file; returns its path in the private bucket. */
+export async function uploadWaMedia(file: File, folder: "templates" | "sends"): Promise<string> {
+  const safe = file.name.replace(/[^\w.\-]+/g, "_").slice(-80) || "file";
+  const path = `${folder}/${crypto.randomUUID()}/${safe}`;
+  const { error } = await supabase.storage.from(MEDIA_BUCKET).upload(path, file, { contentType: file.type, upsert: false });
+  if (error) throw new Error(error.message);
+  return path;
+}
+
+/** A short-lived link to show a stored header file in the browser. */
+export async function waMediaUrl(path: string): Promise<string | null> {
+  const { data } = await supabase.storage.from(MEDIA_BUCKET).createSignedUrl(path, 3600);
+  return data?.signedUrl ?? null;
+}
 
 export interface WaContact {
   id: string;
@@ -32,6 +49,11 @@ export interface WaTemplate {
   name: string;
   language: string;
   category: "MARKETING" | "UTILITY";
+  header_format: HeaderFormat;
+  header_media_path: string | null;
+  header_media_mime: string | null;
+  header_media_name: string | null;
+  buttons: WaButton[];
   header_text: string | null;
   body_text: string;
   footer_text: string | null;

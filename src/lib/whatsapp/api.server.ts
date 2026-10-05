@@ -25,10 +25,12 @@ import { sendGraphEmail } from "@/lib/graph-mail.server";
 import {
   waConfig, sendingEnabled, configPresence, phoneInfo, accountInfo, subscribeApp, createTemplate, listTemplates,
   sendTemplate, sendText, markRead, downloadMedia, verifySignature, verifyToken, MetaError,
+  editTemplate, uploadForReview, uploadMedia, type WaConfig,
 } from "@/lib/whatsapp/cloud-api.server";
 import {
   OPTIN_WORDING_VERSION, OPTIN_CATEGORY_TEXT, OPTIN_STOP_TEXT, optinStatement, toE164, stopIntent,
-  placeholderCount, MARKETING_OPT_OUT_BUTTON, fillTemplate, SERVICE_WINDOW_MS,
+  placeholderCount, fillTemplate, SERVICE_WINDOW_MS,
+  normalizeButtons, buttonsError, hasOptOut, dynamicUrlButtons, type WaButton,
 } from "@/lib/whatsapp/shared";
 
 const json = (body: unknown, status = 200) =>
@@ -51,6 +53,67 @@ async function dialCodes(db: any): Promise<string[]> {
   const { data } = await db.from("country_dial_codes").select("dial_code");
   return ((data ?? []) as any[]).map((r) => String(r.dial_code));
 }
+
+// ─── Template media + buttons ─────────────────────────────────────────────────
+
+const MEDIA_BUCKET = "whatsapp-media";
+const MEDIA_ID_TTL_MS = 25 * 86_400_000; // Meta keeps uploads 30 days
+
+async function readMedia(db: any, path: string, mime?: string | null, name?: string | null) {
+  const { data, error } = await db.storage.from(MEDIA_BUCKET).download(path);
+  if (error || !data) throw new Error(`Couldn't read the header file: ${error?.message ?? "missing"}`);
+  return {
+    body: await (data as Blob).arrayBuffer(),
+    mime: mime || (data as Blob).type || "application/octet-stream",
+    name: name || path.split("/").pop() || "file",
+  };
+}
+
+/**
+ * Everything a send of template `t` needs beyond the body values: the header
+ * file's media id (uploaded once and reused) and any link-button values.
+ * A send may use its own header file instead of the template's.
+ */
+async function templateExtras(db: any, cfg: WaConfig, t: any, opts: {
+  buttonValues?: string[]; override?: { table: "wa_campaigns"; id: string; path: string | null; mime: string | null; mediaId: string | null };
+}) {
+  if (t.category === "MARKETING" && !hasOptOut(t)) {
+    throw new Error("This marketing template has no opt-out button. Edit it (the Stop promotions button is added) and resubmit before sending.");
+  }
+  let header: { format: "IMAGE" | "VIDEO" | "DOCUMENT"; mediaId: string; filename: string | null } | null = null;
+  if (t.header_format && t.header_format !== "TEXT") {
+    const own = opts.override?.path ? opts.override : null;
+    if (own) {
+      let mediaId = own.mediaId;
+      if (!mediaId) {
+        mediaId = await uploadMedia(cfg, await readMedia(db, own.path!, own.mime));
+        await db.from(own.table).update({ header_media_id: mediaId }).eq("id", own.id);
+      }
+      header = { format: t.header_format, mediaId, filename: own.path!.split("/").pop() ?? null };
+    } else {
+      if (!t.header_media_path) throw new Error("This template needs its header file — add it on the Templates tab.");
+      let mediaId: string | null = t.header_media_id;
+      const fresh = t.header_media_uploaded_at && Date.now() - Date.parse(t.header_media_uploaded_at) < MEDIA_ID_TTL_MS;
+      if (!mediaId || !fresh) {
+        mediaId = await uploadMedia(cfg, await readMedia(db, t.header_media_path, t.header_media_mime, t.header_media_name));
+        await db.from("wa_templates").update({ header_media_id: mediaId, header_media_uploaded_at: new Date().toISOString() }).eq("id", t.id);
+        t.header_media_id = mediaId;
+        t.header_media_uploaded_at = new Date().toISOString();
+      }
+      header = { format: t.header_format, mediaId, filename: t.header_media_name ?? null };
+    }
+  }
+  const buttons: WaButton[] = Array.isArray(t.buttons) ? t.buttons : [];
+  const urlButtons = dynamicUrlButtons(buttons).map((index) => {
+    const raw = String(opts.buttonValues?.[index] ?? "").trim();
+    if (!raw) throw new Error(`Fill in the link value for the "${buttons[index].text}" button.`);
+    return { index, value: raw };
+  });
+  return { header, urlButtons };
+}
+
+/** {{name}} in a value becomes the recipient's name. */
+const withName = (v: string, name: string | null | undefined) => v.replace(/\{\{\s*name\s*\}\}/gi, name || "there");
 
 // ─── Status ───────────────────────────────────────────────────────────────────
 
@@ -120,20 +183,36 @@ export async function whatsappTemplateSubmitHandler(request: Request): Promise<R
     return json({ error: `Meta needs an example for each of the ${needed} placeholder(s) in the message.` }, 400);
   }
 
+  // Every marketing template carries the opt-out button, so a client can stop
+  // promotions without having to block JLS.
+  const buttons = normalizeButtons(Array.isArray(t.buttons) ? t.buttons : [], t.category);
+  const bErr = buttonsError(buttons);
+  if (bErr) return json({ error: bErr }, 400);
+
   try {
-    const out = await createTemplate(cfg, {
+    let header_handle: string | null = null;
+    if (t.header_format !== "TEXT") {
+      if (!t.header_media_path) return json({ error: "Add the example image, video or PDF for the header first." }, 400);
+      header_handle = await uploadForReview(cfg, await readMedia(db, t.header_media_path, t.header_media_mime, t.header_media_name));
+    }
+    const def = {
       name: t.name,
       language: t.language,
       category: t.category,
+      header_format: t.header_format,
       header_text: t.header_text,
+      header_handle,
       body_text: t.body_text,
       footer_text: t.footer_text,
       sample_values: samples.slice(0, needed),
-      // Every marketing template carries the opt-out button, so a client can
-      // stop promotions without having to block JLS.
-      buttons: t.category === "MARKETING" ? [MARKETING_OPT_OUT_BUTTON] : [],
-    });
+      buttons,
+    };
+    // A template Meta already knows (an edit of an approved one) is changed in place.
+    const out = t.meta_template_id
+      ? await editTemplate(cfg, t.meta_template_id, def).then(() => ({ id: t.meta_template_id as string, status: "PENDING" }))
+      : await createTemplate(cfg, def);
     await db.from("wa_templates").update({
+      buttons,
       meta_template_id: out.id,
       status: META_STATUS[out.status.toUpperCase()] ?? "pending",
       rejection_reason: null,
@@ -148,12 +227,15 @@ export async function whatsappTemplateSubmitHandler(request: Request): Promise<R
 
 /**
  * A template from Meta, in Polaris's shape — or why it can't be sent from here.
- * Polaris sends text templates (optional text header, body placeholders, footer,
- * static buttons). A marketing template must carry an opt-out, the same promise
- * every template written in Polaris keeps.
+ * A media header comes in without its file (Meta's example link expires); the
+ * Templates tab asks for one before it can be sent. A marketing template with no
+ * opt-out comes in too, but sends are refused until it's edited to carry one.
  */
 function parseRemoteTemplate(r: { category: string; components?: any[] }):
-  { category: "MARKETING" | "UTILITY"; header_text: string | null; body_text: string; footer_text: string | null; sample_values: string[] }
+  {
+    category: "MARKETING" | "UTILITY"; header_format: "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT"; header_text: string | null;
+    body_text: string; footer_text: string | null; sample_values: string[]; buttons: WaButton[];
+  }
   | { reason: string } {
   const category = String(r.category).toUpperCase();
   if (category !== "MARKETING" && category !== "UTILITY") return { reason: `${category.toLowerCase()} templates aren't used here` };
@@ -161,23 +243,26 @@ function parseRemoteTemplate(r: { category: string; components?: any[] }):
   const header = comps.find((c) => c.type === "HEADER");
   const body = comps.find((c) => c.type === "BODY");
   const footer = comps.find((c) => c.type === "FOOTER");
-  const buttons: any[] = comps.find((c) => c.type === "BUTTONS")?.buttons ?? [];
+  const rawButtons: any[] = comps.find((c) => c.type === "BUTTONS")?.buttons ?? [];
   if (!body?.text) return { reason: "no message body" };
-  if (header && header.format !== "TEXT") return { reason: `${String(header.format).toLowerCase()} header — not supported yet` };
+  const format = String(header?.format ?? "TEXT").toUpperCase();
+  if (!["TEXT", "IMAGE", "VIDEO", "DOCUMENT"].includes(format)) return { reason: `${format.toLowerCase()} header — not supported yet` };
   if (header?.text && /\{\{/.test(header.text)) return { reason: "placeholder in the header — not supported yet" };
-  if (buttons.some((b) => b.type === "URL" && /\{\{/.test(b.url ?? ""))) return { reason: "button with a variable link — not supported yet" };
-  if (buttons.some((b) => !["QUICK_REPLY", "URL", "PHONE_NUMBER"].includes(b.type))) return { reason: "button type not supported yet" };
-  if (category === "MARKETING") {
-    const optOut = buttons.some((b) => b.type === "QUICK_REPLY" && /stop|unsubscribe|opt.?out/i.test(b.text ?? ""))
-      || /stop|unsubscribe|opt.?out/i.test(footer?.text ?? "");
-    if (!optOut) return { reason: "marketing template without an opt-out — recreate it in Polaris so it gets the Stop promotions button" };
+  if (rawButtons.some((b) => !["QUICK_REPLY", "URL", "PHONE_NUMBER"].includes(b.type))) {
+    return { reason: `${String(rawButtons.find((b) => !["QUICK_REPLY", "URL", "PHONE_NUMBER"].includes(b.type))?.type).toLowerCase().replace(/_/g, " ")} button — not supported yet` };
   }
+  const buttons: WaButton[] = rawButtons.map((b) =>
+    b.type === "URL" ? { type: "URL", text: String(b.text), url: String(b.url), example: Array.isArray(b.example) ? String(b.example[0] ?? "") : undefined }
+      : b.type === "PHONE_NUMBER" ? { type: "PHONE_NUMBER", text: String(b.text), phone_number: String(b.phone_number) }
+        : { type: "QUICK_REPLY", text: String(b.text) });
   return {
     category,
-    header_text: header?.text ?? null,
+    header_format: format as "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT",
+    header_text: format === "TEXT" ? header?.text ?? null : null,
     body_text: String(body.text),
     footer_text: footer?.text ?? null,
     sample_values: ((body.example?.body_text?.[0] ?? []) as any[]).map(String),
+    buttons,
   };
 }
 
@@ -245,6 +330,17 @@ export async function whatsappCampaignSendHandler(request: Request): Promise<Res
     return json({ error: `Fill in all ${needed} value(s) for the template's placeholders.` }, 400);
   }
 
+  // Header file and link buttons — checked before anyone is queued.
+  let extras: Awaited<ReturnType<typeof templateExtras>>;
+  try {
+    extras = await templateExtras(db, cfg, t, {
+      buttonValues: (Array.isArray(c.button_values) ? c.button_values : []).map(String),
+      override: { table: "wa_campaigns", id: c.id, path: c.header_media_path, mime: c.header_media_mime, mediaId: c.header_media_id },
+    });
+  } catch (e) {
+    return json({ error: e instanceof Error ? e.message : String(e) }, 409);
+  }
+
   if (c.status === "draft") {
     const { error: qErr } = await db.rpc("wa_queue_campaign", { p_campaign: c.id });
     if (qErr) return json({ error: qErr.message }, 500);
@@ -261,7 +357,9 @@ export async function whatsappCampaignSendHandler(request: Request): Promise<Res
         toE164: m.phone_e164,
         name: t.name,
         language: t.language,
-        bodyValues: values.slice(0, needed).map((v) => v.replace(/\{\{\s*name\s*\}\}/gi, m.contact_name || "there")),
+        bodyValues: values.slice(0, needed).map((v) => withName(v, m.contact_name)),
+        header: extras.header,
+        urlButtons: extras.urlButtons.map((b) => ({ index: b.index, value: withName(b.value, m.contact_name) })),
       });
       await db.from("wa_messages").update({
         status: "sent", wa_message_id: wamid, sent_at: new Date().toISOString(), phone_e164: m.phone_e164,
@@ -313,6 +411,7 @@ export async function whatsappReplyHandler(request: Request): Promise<Response> 
 
   const body = (await request.json().catch(() => ({}))) as {
     contactId?: string; text?: string; replyTo?: string | null; templateId?: string; variables?: string[];
+    buttonValues?: string[];
   };
   const db = admin();
   const { data: contact } = await db.from("wa_contacts")
@@ -368,10 +467,20 @@ export async function whatsappReplyHandler(request: Request): Promise<Response> 
   if (values.length < needed || values.some((v) => !v.trim())) {
     return json({ error: `Fill in all ${needed} value(s) for the template's placeholders.` }, 400);
   }
-  const filled = values.map((v) => v.replace(/\{\{\s*name\s*\}\}/gi, contact.name || "there"));
+  const filled = values.map((v) => withName(v, contact.name));
   const shown = fillTemplate(t.body_text, filled);
+  let extras: Awaited<ReturnType<typeof templateExtras>>;
   try {
-    const wamid = await sendTemplate(cfg, { toE164: contact.phone_e164, name: t.name, language: t.language, bodyValues: filled });
+    extras = await templateExtras(db, cfg, t, { buttonValues: (body.buttonValues ?? []).map(String) });
+  } catch (e) {
+    return json({ error: e instanceof Error ? e.message : String(e) }, 409);
+  }
+  try {
+    const wamid = await sendTemplate(cfg, {
+      toE164: contact.phone_e164, name: t.name, language: t.language, bodyValues: filled,
+      header: extras.header,
+      urlButtons: extras.urlButtons.map((b) => ({ index: b.index, value: withName(b.value, contact.name) })),
+    });
     return json({ ok: true, message: await record({
       kind: "template", template_id: t.id, body: shown, phone_e164: contact.phone_e164, status: "sent", sent_at: now, wa_message_id: wamid,
     }) });

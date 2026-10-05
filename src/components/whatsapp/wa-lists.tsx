@@ -8,7 +8,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Plus, Loader2, Users, UserMinus, Archive, Search, History, Radio } from "lucide-react";
+import { Plus, Loader2, Users, UserMinus, Archive, Search, History, Radio, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -95,6 +95,7 @@ function ListDetail({ list, canEdit, onChanged }: { list: WaList; canEdit: boole
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<Member | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [renaming, setRenaming] = useState(false);
   const [q, setQ] = useState("");
 
   async function load() {
@@ -123,7 +124,16 @@ function ListDetail({ list, canEdit, onChanged }: { list: WaList; canEdit: boole
     <div className="space-y-3">
       <div className="flex flex-wrap items-start gap-2">
         <div className="min-w-0 flex-1">
-          <h2 className="text-lg font-semibold">{list.name}</h2>
+          <h2 className="flex items-center gap-1.5 text-lg font-semibold">
+            {list.name}
+            {canEdit && (
+              <button onClick={() => setRenaming(true)} title="Rename list"
+                className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </h2>
+          {list.description && <p className="text-xs text-muted-foreground">{list.description}</p>}
           <p className="text-xs text-muted-foreground">
             {current.length} member{current.length === 1 ? "" : "s"} · {reachable} reachable now (opted in with a number)
           </p>
@@ -191,22 +201,24 @@ function ListDetail({ list, canEdit, onChanged }: { list: WaList; canEdit: boole
 
       {adding && <AddMembersDialog list={list} existing={new Set(current.map((m) => m.contact_id))}
         onClose={() => setAdding(false)} onSaved={() => { void load(); onChanged(); }} />}
+      {renaming && <ListDialog list={list} onClose={() => setRenaming(false)} onSaved={() => onChanged()} />}
       {removing && <RemoveDialog member={removing} onClose={() => setRemoving(null)} onSaved={() => { void load(); onChanged(); }} />}
     </div>
   );
 }
 
-function ListDialog({ onClose, onSaved }: { onClose: () => void; onSaved: (id: string) => void }) {
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
+function ListDialog({ list, onClose, onSaved }: { list?: WaList; onClose: () => void; onSaved: (id: string) => void }) {
+  const [name, setName] = useState(list?.name ?? "");
+  const [description, setDescription] = useState(list?.description ?? "");
   const [saving, setSaving] = useState(false);
   async function save() {
     if (!name.trim()) { toast.error("Name the list"); return; }
     setSaving(true);
     const { data: u } = await supabase.auth.getUser();
-    const { data, error } = await db().from("wa_lists")
-      .insert({ name: name.trim(), description: description.trim() || null, kind: "broadcast", created_by: u.user?.id ?? null })
-      .select("id").single();
+    const fields = { name: name.trim(), description: description.trim() || null };
+    const { data, error } = list
+      ? await db().from("wa_lists").update(fields).eq("id", list.id).select("id").single()
+      : await db().from("wa_lists").insert({ ...fields, kind: "broadcast", created_by: u.user?.id ?? null }).select("id").single();
     setSaving(false);
     if (error) { toast.error(error.message); return; }
     onSaved(data.id);
@@ -215,14 +227,14 @@ function ListDialog({ onClose, onSaved }: { onClose: () => void; onSaved: (id: s
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>New broadcast list</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{list ? "Edit list" : "New broadcast list"}</DialogTitle></DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1.5"><Label>Name</Label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Captains — Dubai Marina" /></div>
           <div className="space-y-1.5"><Label>Description</Label><Textarea rows={2} value={description} onChange={(e) => setDescription(e.target.value)} /></div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => void save()} disabled={saving}>{saving && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}Create</Button>
+          <Button onClick={() => void save()} disabled={saving}>{saving && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}{list ? "Save" : "Create"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

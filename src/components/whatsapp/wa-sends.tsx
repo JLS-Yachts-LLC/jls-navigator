@@ -5,16 +5,17 @@
  * anyone without consent for that kind of message, then sends in batches of
  * 100 until done. Delivery and read receipts arrive by webhook.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Plus, Loader2, Send, ChevronLeft, Trash2 } from "lucide-react";
+import { Plus, Loader2, Send, ChevronLeft, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
-import { placeholderCount, fillTemplate } from "@/lib/whatsapp/shared";
-import { db, waApi, MessageStatusChip, Chip, fmtDate, Empty, type WaTemplate, type WaList } from "./wa-common";
+import { placeholderCount, dynamicUrlButtons, HEADER_MEDIA, type HeaderFormat, type WaButton } from "@/lib/whatsapp/shared";
+import { db, waApi, uploadWaMedia, MessageStatusChip, Chip, fmtDate, Empty, type WaTemplate, type WaList } from "./wa-common";
+import { WaTemplatePreview, templateBlocker } from "./wa-templates";
 
 interface Campaign {
   id: string;
@@ -22,6 +23,8 @@ interface Campaign {
   list_id: string | null;
   template_id: string | null;
   variables: string[];
+  button_values: string[];
+  header_media_path: string | null;
   status: "draft" | "sending" | "sent" | "failed" | "cancelled";
   created_at: string;
   started_at: string | null;
@@ -194,14 +197,15 @@ function SendDetail({ c, canEdit, onBack, onChanged }: { c: Campaign; canEdit: b
       </div>
 
       {c.template && (
-        <div className="max-w-md rounded-xl border border-border bg-card px-3 py-2 text-sm">
-          {c.template.header_text && <p className="font-semibold">{c.template.header_text}</p>}
-          <p className="whitespace-pre-wrap">{fillTemplate(c.template.body_text, values, "Captain Smith")}</p>
-          {c.template.footer_text && <p className="mt-1 text-xs text-muted-foreground">{c.template.footer_text}</p>}
+        <div className="max-w-md">
+          <WaTemplatePreview t={c.template} values={values.map((v) => v.replace(/\{\{\s*name\s*\}\}/gi, "Captain Smith"))} mediaPath={c.header_media_path} />
         </div>
       )}
       {c.template && c.template.status !== "approved" && (
         <p className="text-xs text-amber-600">The template is {c.template.status} — it can be sent once Meta approves it.</p>
+      )}
+      {c.template && !c.header_media_path && templateBlocker(c.template) && (
+        <p className="text-xs text-amber-600">{templateBlocker(c.template)} (Templates tab).</p>
       )}
 
       {c.status === "draft" && preview && (
@@ -260,7 +264,11 @@ function NewSendDialog({ onClose, onSaved }: { onClose: () => void; onSaved: (id
   const [listId, setListId] = useState("");
   const [templateId, setTemplateId] = useState("");
   const [values, setValues] = useState<string[]>([]);
+  const [buttonValues, setButtonValues] = useState<string[]>([]);
+  const [media, setMedia] = useState<{ path: string; mime: string; name: string } | null>(null);
+  const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     void db().from("wa_lists").select("*").eq("archived", false).order("name").then(({ data }: any) => setLists(data ?? []));
@@ -269,14 +277,30 @@ function NewSendDialog({ onClose, onSaved }: { onClose: () => void; onSaved: (id
 
   const t = templates.find((x) => x.id === templateId);
   const needed = t ? placeholderCount(t.body_text) : 0;
+  const linkButtons = t ? dynamicUrlButtons(t.buttons) : [];
+  const spec = t && t.header_format !== "TEXT" ? HEADER_MEDIA[t.header_format as Exclude<HeaderFormat, "TEXT">] : null;
+
+  async function pickFile(f: File | undefined) {
+    if (!f || !spec) return;
+    if (!spec.accept.split(",").includes(f.type)) { toast.error(`That file type isn't allowed — ${spec.label}`); return; }
+    if (f.size > spec.maxMb * 1024 * 1024) { toast.error(`Too big — ${spec.label}`); return; }
+    setUploading(true);
+    try { setMedia({ path: await uploadWaMedia(f, "sends"), mime: f.type, name: f.name }); }
+    catch (e) { toast.error(e instanceof Error ? e.message : "Upload failed"); }
+    finally { setUploading(false); }
+  }
 
   async function save() {
     if (!name.trim() || !listId || !t) { toast.error("Name it, and choose a list and a template"); return; }
     if (values.slice(0, needed).filter((v) => v?.trim()).length < needed) { toast.error("Fill in every value"); return; }
+    if (linkButtons.some((i) => !buttonValues[i]?.trim())) { toast.error("Fill in the link for each website button"); return; }
+    if (spec && !media && !t.header_media_path) { toast.error(`This template needs a header ${t.header_format.toLowerCase()} — choose one`); return; }
     setSaving(true);
     const { data: u } = await supabase.auth.getUser();
     const { data, error } = await db().from("wa_campaigns").insert({
       name: name.trim(), list_id: listId, template_id: t.id, variables: values.slice(0, needed), created_by: u.user?.id ?? null,
+      button_values: (t.buttons ?? []).map((_, i) => buttonValues[i] ?? ""),
+      header_media_path: media?.path ?? null, header_media_mime: media?.mime ?? null,
     }).select("id").single();
     setSaving(false);
     if (error) { toast.error(error.message); return; }
@@ -302,7 +326,7 @@ function NewSendDialog({ onClose, onSaved }: { onClose: () => void; onSaved: (id
           </div>
           <div className="space-y-1.5">
             <Label>Template</Label>
-            <select value={templateId} onChange={(e) => { setTemplateId(e.target.value); setValues([]); }} className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm">
+            <select value={templateId} onChange={(e) => { setTemplateId(e.target.value); setValues([]); setButtonValues([]); setMedia(null); }} className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm">
               <option value="">{templates.length ? "Choose an approved template…" : "No approved templates yet"}</option>
               {templates.map((x) => <option key={x.id} value={x.id}>{x.name} ({x.category === "MARKETING" ? "news & offers" : "updates"})</option>)}
             </select>
@@ -316,11 +340,38 @@ function NewSendDialog({ onClose, onSaved }: { onClose: () => void; onSaved: (id
               ))}
             </div>
           )}
-          {t && (
-            <div className="rounded-lg border border-border bg-muted/40 p-2 text-xs">
-              <p className="whitespace-pre-wrap">{fillTemplate(t.body_text, values, "Captain Smith")}</p>
+          {linkButtons.length > 0 && t && (
+            <div className="space-y-1.5">
+              <Label>Website button links</Label>
+              {linkButtons.map((i) => {
+                const b = t.buttons[i] as Extract<WaButton, { type: "URL" }>;
+                return (
+                  <div key={i} className="flex items-center gap-1 text-xs">
+                    <span className="shrink-0 text-muted-foreground">{b.url.replace(/\{\{\s*1\s*\}\}$/, "")}</span>
+                    <Input value={buttonValues[i] ?? ""} className="h-8" placeholder={b.example || "value"}
+                      onChange={(e) => setButtonValues((v) => { const n = [...v]; n[i] = e.target.value; return n; })} />
+                  </div>
+                );
+              })}
             </div>
           )}
+          {spec && t && (
+            <div className="space-y-1.5">
+              <Label>Header {t.header_format.toLowerCase()}</Label>
+              <div className="flex items-center gap-2">
+                <input ref={fileRef} type="file" accept={spec.accept} className="hidden" onChange={(e) => { void pickFile(e.target.files?.[0]); e.target.value = ""; }} />
+                <Button type="button" size="sm" variant="outline" className="gap-1.5" disabled={uploading} onClick={() => fileRef.current?.click()}>
+                  {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                  {media ? "Replace" : t.header_media_path ? "Use a different file" : "Choose file"}
+                </Button>
+                <span className="truncate text-[11px] text-muted-foreground">
+                  {media ? media.name : t.header_media_path ? "Using the template's own file" : spec.label}
+                </span>
+                {media && <button type="button" className="text-[11px] underline" onClick={() => setMedia(null)}>use template's</button>}
+              </div>
+            </div>
+          )}
+          {t && <WaTemplatePreview t={t} values={values.map((v) => v.replace(/\{\{\s*name\s*\}\}/gi, "Captain Smith"))} mediaPath={media?.path} />}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>

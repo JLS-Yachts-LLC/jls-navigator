@@ -18,7 +18,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
-import { windowRemaining, placeholderCount, fillTemplate } from "@/lib/whatsapp/shared";
+import { windowRemaining, placeholderCount, dynamicUrlButtons } from "@/lib/whatsapp/shared";
+import { WaTemplatePreview, templateBlocker } from "./wa-templates";
 import { db, waApi, waBlobUrl, ConsentChip, Chip, Empty, type WaContact, type WaTemplate } from "./wa-common";
 
 interface Conversation {
@@ -461,21 +462,23 @@ function TemplateComposer({ contact, onSent }: { contact: WaContact; onSent: () 
 
   const t = templates.find((x) => x.id === tid) ?? null;
   const needed = t ? placeholderCount(t.body_text) : 0;
+  const linkButtons = t ? dynamicUrlButtons(t.buttons) : [];
+  const [buttonValues, setButtonValues] = useState<string[]>([]);
   const blocked = !t ? null
-    : !contact.phone_e164 ? "they have no WhatsApp number"
+    : templateBlocker(t)?.toLowerCase() ?? (!contact.phone_e164 ? "they have no WhatsApp number"
     : contact.consent_status === "opted_out" ? "they have opted out"
     : contact.consent_status !== "opted_in" ? "they haven't opted in yet"
     : t.category === "MARKETING" && !contact.consent_marketing ? "they haven't agreed to news & offers"
     : t.category === "UTILITY" && !contact.consent_updates ? "they haven't agreed to updates"
-    : null;
+    : null);
 
   async function send() {
     if (!t) return;
     setSending(true);
     try {
-      await waApi("reply", { contactId: contact.id, templateId: t.id, variables: values.slice(0, needed) });
+      await waApi("reply", { contactId: contact.id, templateId: t.id, variables: values.slice(0, needed), buttonValues });
       toast.success("Template sent");
-      setTid(""); setValues([]);
+      setTid(""); setValues([]); setButtonValues([]);
       onSent();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Not sent");
@@ -492,7 +495,7 @@ function TemplateComposer({ contact, onSent }: { contact: WaContact; onSent: () 
         and only one they've agreed to receive.
       </p>
       <div className="flex flex-wrap items-center gap-2">
-        <select value={tid} onChange={(e) => { setTid(e.target.value); setValues([]); }}
+        <select value={tid} onChange={(e) => { setTid(e.target.value); setValues([]); setButtonValues([]); }}
           className="h-8 min-w-[220px] rounded-md border border-border bg-background px-2 text-sm">
           <option value="">{templates.length ? "Choose an approved template…" : "No approved templates yet"}</option>
           {templates.map((x) => <option key={x.id} value={x.id}>{x.name} ({x.category === "MARKETING" ? "news & offers" : "updates"})</option>)}
@@ -501,15 +504,19 @@ function TemplateComposer({ contact, onSent }: { contact: WaContact; onSent: () 
           <Input key={i} value={values[i] ?? ""} placeholder={`{{${i + 1}}}`} className="h-8 w-40"
             onChange={(e) => setValues((v) => { const n = [...v]; n[i] = e.target.value; return n; })} />
         ))}
-        <Button size="sm" onClick={() => void send()} disabled={!t || !!blocked || sending || values.slice(0, needed).filter((v) => v?.trim()).length < needed} className="gap-1.5">
+        {t && linkButtons.map((i) => (
+          <Input key={`b${i}`} value={buttonValues[i] ?? ""} className="h-8 w-48"
+            placeholder={`${t.buttons[i].text} link: ${(t.buttons[i] as any).example || "value"}`}
+            onChange={(e) => setButtonValues((v) => { const n = [...v]; n[i] = e.target.value; return n; })} />
+        ))}
+        <Button size="sm" onClick={() => void send()} className="gap-1.5"
+          disabled={!t || !!blocked || sending || values.slice(0, needed).filter((v) => v?.trim()).length < needed || linkButtons.some((i) => !buttonValues[i]?.trim())}>
           {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Send template
         </Button>
       </div>
       {t && (
-        <div className="rounded-lg border border-border bg-muted/40 p-2 text-xs">
-          {t.header_text && <p className="font-semibold">{t.header_text}</p>}
-          <p className="whitespace-pre-wrap">{fillTemplate(t.body_text, values, contact.name)}</p>
-          {t.footer_text && <p className="mt-1 text-muted-foreground">{t.footer_text}</p>}
+        <div className="max-w-sm">
+          <WaTemplatePreview t={t} values={values.map((v) => v.replace(/\{\{\s*name\s*\}\}/gi, contact.name))} />
         </div>
       )}
       {blocked && <p className="text-xs text-red-500">Can't send this template: {blocked}.</p>}

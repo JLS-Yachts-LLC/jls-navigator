@@ -133,3 +133,66 @@ export function windowRemaining(lastInboundAt: string | null | undefined, now = 
   if (!lastInboundAt) return 0;
   return Math.max(0, Date.parse(lastInboundAt) + SERVICE_WINDOW_MS - now);
 }
+
+// ─── Template buttons ─────────────────────────────────────────────────────────
+
+export type WaButton =
+  | { type: "QUICK_REPLY"; text: string }
+  | { type: "URL"; text: string; url: string; example?: string }
+  | { type: "PHONE_NUMBER"; text: string; phone_number: string };
+
+const OPT_OUT_RE = /stop|unsubscribe|opt.?out/i;
+
+/** Does a template give the reader a way to opt out? Required for marketing. */
+export function hasOptOut(t: { buttons?: WaButton[] | null; footer_text?: string | null }): boolean {
+  return (t.buttons ?? []).some((b) => b.type === "QUICK_REPLY" && OPT_OUT_RE.test(b.text))
+    || OPT_OUT_RE.test(t.footer_text ?? "");
+}
+
+/**
+ * Meta wants quick replies grouped together, ahead of link and call buttons.
+ * Marketing templates always carry the opt-out quick reply.
+ */
+export function normalizeButtons(buttons: WaButton[], category: TemplateCategory): WaButton[] {
+  const quick = buttons.filter((b) => b.type === "QUICK_REPLY");
+  const rest = buttons.filter((b) => b.type !== "QUICK_REPLY");
+  if (category === "MARKETING" && !quick.some((b) => OPT_OUT_RE.test(b.text))) {
+    quick.push({ type: "QUICK_REPLY", text: MARKETING_OPT_OUT_BUTTON });
+  }
+  return [...quick, ...rest];
+}
+
+/** What Meta would reject, in plain words — or null. */
+export function buttonsError(buttons: WaButton[]): string | null {
+  if (buttons.length > 10) return "At most 10 buttons.";
+  if (buttons.filter((b) => b.type === "URL").length > 2) return "At most 2 website buttons.";
+  if (buttons.filter((b) => b.type === "PHONE_NUMBER").length > 1) return "At most 1 call button.";
+  for (const b of buttons) {
+    if (!b.text.trim()) return "Every button needs a label.";
+    if (b.text.length > 25) return `"${b.text}" is too long — button labels are limited to 25 characters.`;
+    if (b.type === "URL") {
+      if (!/^https:\/\/[^\s]+$/i.test(b.url)) return `"${b.text}": the link must start with https://`;
+      const vars = b.url.match(/\{\{\s*\d+\s*\}\}/g) ?? [];
+      if (vars.length > 1 || (vars.length === 1 && !/\{\{\s*1\s*\}\}$/.test(b.url))) {
+        return `"${b.text}": a link can have one {{1}}, and only at the very end.`;
+      }
+      if (vars.length && !b.example?.trim()) return `"${b.text}": give an example for the {{1}} part of the link.`;
+    }
+    if (b.type === "PHONE_NUMBER" && !/^\+[1-9]\d{6,14}$/.test(b.phone_number.replace(/[\s-]/g, ""))) {
+      return `"${b.text}": enter the phone number with its country code, e.g. +97143313555.`;
+    }
+  }
+  return null;
+}
+
+/** Indexes of link buttons whose URL ends in {{1}} — each needs a value per send. */
+export const dynamicUrlButtons = (buttons: WaButton[] | null | undefined) =>
+  (buttons ?? []).flatMap((b, i) => (b.type === "URL" && /\{\{\s*1\s*\}\}$/.test(b.url) ? [i] : []));
+
+export type HeaderFormat = "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT";
+
+export const HEADER_MEDIA: Record<Exclude<HeaderFormat, "TEXT">, { accept: string; label: string; maxMb: number }> = {
+  IMAGE: { accept: "image/jpeg,image/png", label: "Image (JPG or PNG, up to 5 MB)", maxMb: 5 },
+  VIDEO: { accept: "video/mp4,video/3gpp", label: "Video (MP4, up to 16 MB)", maxMb: 16 },
+  DOCUMENT: { accept: "application/pdf", label: "PDF document (up to 16 MB)", maxMb: 16 },
+};
