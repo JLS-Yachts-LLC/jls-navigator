@@ -10,6 +10,10 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Polaris now has its own star icon in the browser tab and on phone home screens"
+      },
+      {
+        "type": "feature",
         "title": "WhatsApp under Communications — a shared inbox to read and reply to clients (24-hour reply window, approved templates outside it, read receipts, photos and files, assign and close), contacts with emailed opt-in and recorded consent, broadcast lists, Meta template submission, and sends with delivery tracking and automatic opt-outs"
       },
       {
