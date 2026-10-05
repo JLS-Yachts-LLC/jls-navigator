@@ -8,7 +8,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Search, Upload, Plus, Mail, ShieldCheck, ShieldOff, History, Pencil, Loader2, CheckCircle2 } from "lucide-react";
+import { Search, Upload, Plus, Mail, ShieldCheck, ShieldOff, History, Pencil, Loader2, CheckCircle2, FileSpreadsheet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +17,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { toE164, OPTIN_CATEGORY_TEXT } from "@/lib/whatsapp/shared";
 import { db, waApi, ConsentChip, Chip, fmtDate, Empty, type WaContact } from "./wa-common";
+import { BulkConsentDialog, CsvImportDialog } from "./wa-bulk";
 
 type Filter = "all" | WaContact["consent_status"];
 
@@ -29,6 +30,8 @@ export function WaContacts({ canEdit }: { canEdit: boolean }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [editing, setEditing] = useState<WaContact | "new" | null>(null);
   const [consentFor, setConsentFor] = useState<{ c: WaContact; mode: "in" | "out" } | null>(null);
+  const [bulk, setBulk] = useState<"in" | "out" | null>(null);
+  const [csvOpen, setCsvOpen] = useState(false);
   const [historyFor, setHistoryFor] = useState<WaContact | null>(null);
 
   async function load() {
@@ -144,11 +147,22 @@ export function WaContacts({ canEdit }: { canEdit: boolean }) {
         {canEdit && (
           <div className="ml-auto flex gap-2">
             {selected.size > 0 && (
-              <Button size="sm" onClick={() => void inviteSelected()} disabled={busy === "invite"} className="gap-1.5">
-                {busy === "invite" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
-                Email opt-in invitation ({selected.size})
-              </Button>
+              <>
+                <Button size="sm" onClick={() => void inviteSelected()} disabled={busy === "invite"} className="gap-1.5">
+                  {busy === "invite" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+                  Email opt-in invitation ({selected.size})
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setBulk("in")} className="gap-1.5" title="Record a consent each person gave by phone, in person or in writing">
+                  <ShieldCheck className="h-4 w-4" /> Record consent ({selected.size})
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setBulk("out")} className="gap-1.5 text-red-500">
+                  <ShieldOff className="h-4 w-4" /> Opt out ({selected.size})
+                </Button>
+              </>
             )}
+            <Button size="sm" variant="outline" onClick={() => setCsvOpen(true)} className="gap-1.5">
+              <FileSpreadsheet className="h-4 w-4" /> Import CSV
+            </Button>
             <Button size="sm" variant="outline" onClick={() => void importContacts()} disabled={busy === "import"} className="gap-1.5">
               {busy === "import" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
               Import from vessels &amp; agency contacts
@@ -236,6 +250,11 @@ export function WaContacts({ canEdit }: { canEdit: boolean }) {
         </div>
       )}
 
+      {bulk && (
+        <BulkConsentDialog mode={bulk} contacts={rows.filter((r) => selected.has(r.id))}
+          onClose={() => setBulk(null)} onDone={() => { setSelected(new Set()); void load(); }} />
+      )}
+      {csvOpen && <CsvImportDialog onClose={() => setCsvOpen(false)} onDone={() => void load()} />}
       {editing && <ContactDialog contact={editing === "new" ? null : editing} onClose={() => setEditing(null)} onSaved={load} />}
       {consentFor && <ConsentDialog contact={consentFor.c} mode={consentFor.mode} onClose={() => setConsentFor(null)} onSaved={load} />}
       {historyFor && <HistoryDialog contact={historyFor} onClose={() => setHistoryFor(null)} />}
