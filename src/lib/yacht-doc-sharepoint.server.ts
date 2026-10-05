@@ -207,7 +207,7 @@ export const pushYachtDocToSharePoint = createServerFn({ method: 'POST' })
  */
 export const pullYachtDocFromSharePoint = createServerFn({ method: 'POST' })
   .inputValidator((d: { yachtId: string; itemId: string; fileName: string }) => d)
-  .handler(async ({ data }): Promise<{ ok: boolean; error?: string }> => {
+  .handler(async ({ data }): Promise<{ ok: boolean; error?: string; id?: string }> => {
     try {
       const { token, siteId } = await spContext()
       const res = await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/drive/items/${data.itemId}/content`,
@@ -241,7 +241,9 @@ export const pullYachtDocFromSharePoint = createServerFn({ method: 'POST' })
         uploaded_at: new Date().toISOString(),
       }, { onConflict: 'yacht_id,doc_key' })
 
-      return { ok: true }
+      // The new document's id — "Release to portal" on a SharePoint-only file
+      // imports it and then releases this row.
+      return { ok: true, id: String(row.id) }
     } catch (e: any) {
       return { ok: false, error: e?.message ?? String(e) }
     }

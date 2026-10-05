@@ -44,6 +44,8 @@ const KINDS = {
     table: 'yacht_documents',
     fileColumn: 'file_url',
     bucket: 'permit-documents',
+    // Vessel documents are shared one by one: only those staff have released.
+    releasedColumn: 'portal_visible',
   },
   visa: {
     table: 'visa_applications',
@@ -74,6 +76,7 @@ export async function portalDocumentsHandler(request: Request): Promise<Response
       sb.from('yacht_documents')
         .select('id, title, file_name, doc_type, created_at, file_url')
         .eq('yacht_id', yacht.yachtId)
+        .eq('portal_visible', true)
         .order('created_at', { ascending: false }),
       sb.from('visa_applications')
         .select('id, given_name, surname, visa_type, status, destination_country, visa_expiry, visa_number, visa_document_url')
@@ -256,9 +259,10 @@ export async function portalDocumentOpenHandler(request: Request): Promise<Respo
   // such document" came back as the same empty result, so an account walking
   // other vessels' ids was indistinguishable from one following a dead link.
   // Fetch by id and compare owners here, where the difference can be recorded.
+  const releasedColumn = 'releasedColumn' in spec ? spec.releasedColumn : null
   const { data: row } = await sb
     .from(spec.table)
-    .select(`id, yacht_id, ${spec.fileColumn}`)
+    .select(`id, yacht_id, ${spec.fileColumn}${releasedColumn ? `, ${releasedColumn}` : ''}`)
     .eq('id', id)
     .maybeSingle() as { data: any }
 
@@ -278,6 +282,13 @@ export async function portalDocumentOpenHandler(request: Request): Promise<Respo
       await record('not_found', { sourceTable: spec.table, sourceId: id })
     }
     // Byte-for-byte what a non-existent id returns, above.
+    return json({ error: 'Document not found' }, 404)
+  }
+
+  // The vessel's own document, but not released to the portal: as far as the
+  // caller is concerned it does not exist.
+  if (releasedColumn && row[releasedColumn] !== true) {
+    await record('not_found', { sourceTable: spec.table, sourceId: id })
     return json({ error: 'Document not found' }, 404)
   }
 

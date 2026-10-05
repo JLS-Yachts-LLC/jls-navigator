@@ -8,6 +8,11 @@
  *   • "Import" pulls a SharePoint-only file down into Polaris.
  *   • "Sync both ways" does every outstanding one in a single pass.
  *
+ * "Release" shares one document with the vessel's Client Portal, read-only
+ * (yacht_documents.portal_visible — the portal lists and opens only released
+ * rows). A SharePoint-only file is imported first, since the portal serves files
+ * from Polaris storage.
+ *
  * Crew paperwork is deliberately absent — it lives under the vessel's
  * "Crew Documents" subfolder and belongs to the crew profile, not here.
  */
@@ -20,8 +25,9 @@ import { Input } from "@/components/ui/input";
 import {
   FileText, FolderPlus, Folder, FolderOpen, ChevronRight, ExternalLink, Cloud, CloudOff,
   Loader2, Trash2, UploadCloud, DownloadCloud, ShieldQuestion, GripVertical, RefreshCw,
-  Upload, ArrowLeftRight, Copy,
+  Upload, ArrowLeftRight, Copy, Eye, EyeOff,
 } from "lucide-react";
+import { updateOrThrow } from "@/lib/db-write";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { SignedAnchor } from "@/components/ui/signed-file";
@@ -36,6 +42,7 @@ import { compareFileNames, groupSimilarNames, DUPLICATE_THRESHOLD } from "@/lib/
 type DocRow = {
   id: string; doc_type: string | null; title: string | null;
   file_url: string | null; file_name: string | null; expiry_date: string | null;
+  portal_visible: boolean | null;
 };
 type FolderRow = { id: string; name: string };
 type SpItem = {
@@ -53,6 +60,10 @@ type Item = {
   spName: string;
   /** SharePoint counterpart, when we found or recorded one. */
   sp?: { id: string; webUrl: string | null } | null;
+  /** yacht_documents id — absent for SharePoint-only files. */
+  docId?: string;
+  /** Released to the vessel's Client Portal. */
+  released?: boolean;
 };
 
 const fmtDate = (d: string | null) =>
@@ -88,7 +99,7 @@ export function YachtDocumentsCard({ yachtId, vesselName }: { yachtId: string; v
   const loadPolaris = useCallback(async () => {
     const db = supabase as any;
     const [{ data: d }, { data: f }, { data: p }, { data: l }, { data: dis }] = await Promise.all([
-      db.from("yacht_documents").select("id, doc_type, title, file_url, file_name, expiry_date")
+      db.from("yacht_documents").select("id, doc_type, title, file_url, file_name, expiry_date, portal_visible")
         .eq("yacht_id", yachtId).order("created_at", { ascending: false }),
       db.from("yacht_document_folders").select("id, name").eq("yacht_id", yachtId).order("name"),
       db.from("yacht_document_placements").select("doc_key, folder_id").eq("yacht_id", yachtId),
@@ -139,6 +150,8 @@ export function YachtDocumentsCard({ yachtId, vesselName }: { yachtId: string; v
         stored: d.file_url ?? undefined,
         spName: d.file_name || label,
         sp: match ? { id: match.id, webUrl: match.webUrl } : recorded?.spItemId ? { id: recorded.spItemId, webUrl: recorded.webUrl } : null,
+        docId: d.id,
+        released: !!d.portal_visible,
       });
     }
 
@@ -159,6 +172,7 @@ export function YachtDocumentsCard({ yachtId, vesselName }: { yachtId: string; v
 
   const polarisOnly = items.filter(i => i.stored && !i.sp);
   const sharePointOnly = items.filter(i => !i.stored);
+  const releasedCount = items.filter(i => i.released).length;
 
   /**
    * Likely duplicate count, for the badge on the Duplicates button. Same rule the
@@ -241,6 +255,40 @@ export function YachtDocumentsCard({ yachtId, vesselName }: { yachtId: string; v
       if (!res?.ok) { toast.error(res?.error ?? "Import failed"); return; }
       toast.success(`“${it.label}” imported into Polaris`);
       await Promise.all([loadPolaris(), loadSharePoint()]);
+    } finally {
+      setBusyKey(b => ({ ...b, [it.docKey]: false }));
+    }
+  }
+
+  /**
+   * Share a document with the vessel's Client Portal (read-only), or withdraw it.
+   * A SharePoint-only file is imported first — the portal opens files from
+   * Polaris storage through its own ownership-checked endpoint, never SharePoint.
+   */
+  async function setReleased(it: Item, release: boolean) {
+    setBusyKey(b => ({ ...b, [it.docKey]: true }));
+    try {
+      let docId = it.docId;
+      if (!docId) {
+        if (!release || !it.sp) return;
+        const res = await (pullYachtDocFromSharePoint as any)({
+          data: { yachtId, itemId: it.sp.id, fileName: it.spName },
+        });
+        if (!res?.ok || !res.id) { toast.error(res?.error ?? "Import failed"); return; }
+        docId = res.id as string;
+      }
+      await updateOrThrow(
+        (supabase as any).from("yacht_documents").update({
+          portal_visible: release,
+          portal_released_at: release ? new Date().toISOString() : null,
+          portal_released_by: release ? user?.id ?? null : null,
+        }).eq("id", docId).eq("yacht_id", yachtId).select("id"),
+        "document",
+      );
+      toast.success(release ? `“${it.label}” released to the Client Portal` : `“${it.label}” withdrawn from the Client Portal`);
+      await Promise.all([loadPolaris(), it.docId ? Promise.resolve() : loadSharePoint()]);
+    } catch (e: any) {
+      toast.error(e?.message ?? "Could not change portal visibility");
     } finally {
       setBusyKey(b => ({ ...b, [it.docKey]: false }));
     }
@@ -341,6 +389,7 @@ export function YachtDocumentsCard({ yachtId, vesselName }: { yachtId: string; v
       onDragStart={setDragKey} onDragEnd={() => setDragKey(null)}
       onSend={() => void sendToSharePoint(it)}
       onImport={() => void importFromSharePoint(it)}
+      onRelease={(release) => void setReleased(it, release)}
     />
   );
 
@@ -385,6 +434,11 @@ export function YachtDocumentsCard({ yachtId, vesselName }: { yachtId: string; v
         </div>
       </div>
 
+      {releasedCount > 0 && (
+        <p className="mb-1 flex items-center gap-1.5 text-[11.5px] text-emerald-400/90">
+          <Eye className="h-3 w-3" /> {releasedCount} released to the Client Portal (read-only)
+        </p>
+      )}
       {/* What's out of step */}
       {!sp.loading && (polarisOnly.length > 0 || sharePointOnly.length > 0) && (
         <p className="mb-2 text-[11.5px] text-muted-foreground">
@@ -486,11 +540,11 @@ export function YachtDocumentsCard({ yachtId, vesselName }: { yachtId: string; v
 }
 
 function DocRowView({
-  it, busy, onDragStart, onDragEnd, onSend, onImport,
+  it, busy, onDragStart, onDragEnd, onSend, onImport, onRelease,
 }: {
   it: Item; busy: boolean;
   onDragStart: (k: string) => void; onDragEnd: () => void;
-  onSend: () => void; onImport: () => void;
+  onSend: () => void; onImport: () => void; onRelease: (release: boolean) => void;
 }) {
   const inPolaris = !!it.stored;
   const inSharePoint = !!it.sp;
@@ -533,6 +587,22 @@ function DocRowView({
         <Button size="sm" variant="outline" className="h-6 shrink-0 gap-1 px-1.5 text-[10.5px]" onClick={onImport} disabled={busy}
           title="Copy this SharePoint file into Polaris">
           {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <DownloadCloud className="h-3 w-3" />} Import
+        </Button>
+      )}
+
+      {it.released ? (
+        <Button size="sm" variant="outline" className="h-6 shrink-0 gap-1 border-emerald-500/40 px-1.5 text-[10.5px] text-emerald-400 hover:text-emerald-300"
+          onClick={() => onRelease(false)} disabled={busy}
+          title="Visible in the vessel's Client Portal (read-only) — click to withdraw it">
+          {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Eye className="h-3 w-3" />} In portal
+        </Button>
+      ) : (
+        <Button size="sm" variant="outline" className="h-6 shrink-0 gap-1 px-1.5 text-[10.5px]"
+          onClick={() => onRelease(true)} disabled={busy}
+          title={inPolaris
+            ? "Release to the vessel's Client Portal — the client can open it, read-only"
+            : "Import this file into Polaris and release it to the vessel's Client Portal (read-only)"}>
+          {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <EyeOff className="h-3 w-3" />} Release
         </Button>
       )}
 
