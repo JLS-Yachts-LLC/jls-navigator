@@ -20,6 +20,7 @@ import { z } from "zod";
 import { YachtDocumentsCard } from "@/components/vessels/YachtDocumentsCard";
 import { YachtActivityLog } from "./YachtActivityLog";
 import { YachtAgentPicker } from "@/components/vessels/YachtAgentPicker";
+import { VesselLogoCard } from "@/components/vessels/VesselLogoCard";
 import { VesselProvenance, SameNameBadge, VesselConfirmDetails } from "@/components/vessels/VesselProvenance";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -316,6 +317,8 @@ export function YachtDetail({
       delete payload.created_by;
       // The photo has its own controls and saves on its own — see replacePhoto.
       delete payload.vessel_image;
+      // So is the logo — and the portal can change it too, so never write back a stale copy.
+      delete payload.logo_url;
 
       // .select() + updateOrThrow: an update RLS refuses matches no rows and
       // returns no error, which used to toast success while nothing changed.
@@ -487,6 +490,12 @@ export function YachtDetail({
               yachtId={String(y.id)}
               agentUserId={(y as any).agent_user_id ?? null}
               onChanged={(next) => setY((prev: any) => (prev ? { ...prev, agent_user_id: next } : prev))}
+            />
+            <VesselLogoCard
+              yachtId={String(y.id)}
+              vesselName={yachtName}
+              logoUrl={typeof (y as any).logo_url === "string" ? (y as any).logo_url : null}
+              onChanged={(next) => setY((prev: any) => (prev ? { ...prev, logo_url: next } : prev))}
             />
             <div className="overflow-hidden rounded-lg border border-border bg-card">
               <div className="aspect-video bg-muted">

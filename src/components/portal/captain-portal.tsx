@@ -17,11 +17,11 @@ import {
   Shield, Shirt, ShoppingCart, Users, X, Wallet, Truck, Package,
   MapPin, FileText, Download, ExternalLink, Clock, CheckCircle2,
   Bell, Compass, Wrench, CalendarRange, ShieldCheck, Menu, AlertTriangle, Eye,
-  Pencil, Trash2, UserPlus, RotateCcw,
+  Pencil, Trash2, UserPlus, RotateCcw, ImagePlus,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { portalFetch } from "@/lib/portal/portal-fetch";
-import { hiddenSections, canSeeFinance } from "@/lib/portal/portal-positions";
+import { hiddenSections, canSeeFinance, canManageVessel } from "@/lib/portal/portal-positions";
 import { cn } from "@/lib/utils";
 import { BoatPortal } from "./boat-portal";
 // /portal is a standalone route (no staff shell), so pull the design tokens in
@@ -47,6 +47,7 @@ type Yacht = {
   ais_position_at: string | null; ais_speed: number | null;
   port_of_registry: string | null; length_overall_m: number | null;
   radio_call_sign: string | null; mmsi: string | null; imo_no: string | null;
+  logo_url: string | null;
 };
 type PortalRequest = {
   id: string; reference: string | null; category: string; title: string;
@@ -483,7 +484,7 @@ function PortalShell({ link, email, onSignOut, preview = false }: { link: Captai
 
   useEffect(() => {
     db.from("yachts")
-      .select("id, vessel_name, vessel_type, flag, status, berth, location, vessel_image, ais_destination, ais_position_at, ais_speed, port_of_registry, length_overall_m, radio_call_sign, mmsi, imo_no")
+      .select("id, vessel_name, vessel_type, flag, status, berth, location, vessel_image, ais_destination, ais_position_at, ais_speed, port_of_registry, length_overall_m, radio_call_sign, mmsi, imo_no, logo_url")
       .eq("id", link.yacht_id).maybeSingle()
       .then(({ data }: any) => setYacht(data ?? null));
   }, [link.yacht_id]);
@@ -547,6 +548,11 @@ function PortalShell({ link, email, onSignOut, preview = false }: { link: Captai
 
         {/* Vessel identity */}
         <div className="mx-3 mb-3 rounded-xl border border-border/60 bg-background/40 p-3">
+          {yacht?.logo_url && (
+            <div className="mb-2.5 flex h-14 items-center justify-center rounded-lg bg-white px-3 py-2">
+              <img src={yacht.logo_url} alt={`${yacht.vessel_name} logo`} className="max-h-full max-w-full object-contain" />
+            </div>
+          )}
           <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/70">Your vessel</div>
           <div className="mt-0.5 truncate text-sm font-bold">{yacht?.vessel_name ?? "…"}</div>
           <div className="truncate text-[11px] text-muted-foreground">{link.display_name ?? email}</div>
@@ -624,7 +630,9 @@ function PortalShell({ link, email, onSignOut, preview = false }: { link: Captai
                    onOpenRequest={(id) => { setTab("requests"); setOpenRequestId(id); }}
                    onOpenModule={(t) => { setTab(t); setOpenRequestId(null); }}
                    unread={unread} financeOk={financeOk}
-                   refreshKey={refreshKey} />
+                   refreshKey={refreshKey}
+                   canEditLogo={canManageVessel(link.position) && !preview}
+                   onLogoChanged={(logo_url) => setYacht((y) => (y ? { ...y, logo_url } : y))} />
         )}
         {tab === "chat" && (
           <PortalChatTab link={link} displayName={link.display_name ?? email}
@@ -717,9 +725,76 @@ function ModuleLauncher({ onOpen, unread, financeOk }: { onOpen: (t: Tab) => voi
 }
 
 // ── Home ─────────────────────────────────────────────────────────────────────
-function HomeTab({ yacht, onNewRequest, onSeeRequests, onOpenRequest, onOpenModule, unread, financeOk, refreshKey }: {
+// ── Vessel logo ─────────────────────────────────────────────────────────────
+/**
+ * The vessel's badge on the Home hero. Shown on a white tile so a dark or
+ * transparent logo still reads on the portal's navy. Positions that may manage
+ * the vessel can upload, replace or remove it — through /api/portal/vessel-logo,
+ * since portal logins have no Storage write of their own.
+ */
+function VesselLogo({ yacht, canEdit, onChanged }: { yacht: Yacht; canEdit: boolean; onChanged: (url: string | null) => void }) {
+  const [busy, setBusy] = useState(false);
+  if (!yacht.logo_url && !canEdit) return null;
+
+  const send = async (init: RequestInit) => {
+    setBusy(true);
+    try {
+      const res = await portalFetch("/api/portal/vessel-logo", init);
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error ?? "Could not save the logo.");
+      onChanged(body.logoUrl ?? null);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Could not save the logo.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const upload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) { alert("That image is over 2 MB — please use a smaller one."); return; }
+    const form = new FormData();
+    form.append("file", file);
+    void send({ method: "POST", body: form });
+  };
+
+  return (
+    <div className="flex shrink-0 flex-col items-center gap-1">
+      {yacht.logo_url ? (
+        <div className="flex h-16 w-28 items-center justify-center rounded-xl bg-white px-2.5 py-2 sm:h-20 sm:w-36">
+          <img src={yacht.logo_url} alt={`${yacht.vessel_name} logo`} className="max-h-full max-w-full object-contain" />
+        </div>
+      ) : (
+        <label className={cn(
+          "flex h-16 w-28 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-border text-[11px] text-muted-foreground transition hover:border-primary/50 hover:text-foreground sm:h-20 sm:w-36",
+          busy && "pointer-events-none opacity-50",
+        )}>
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />} Add vessel logo
+          <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={upload} />
+        </label>
+      )}
+      {canEdit && yacht.logo_url && (
+        <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+          <label className={cn("cursor-pointer hover:text-foreground", busy && "pointer-events-none opacity-50")}>
+            {busy ? "Saving…" : "Change"}
+            <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={upload} />
+          </label>
+          <span aria-hidden>·</span>
+          <button type="button" disabled={busy} className="hover:text-red-300"
+                  onClick={() => { if (confirm("Remove the vessel logo?")) void send({ method: "DELETE" }); }}>
+            Remove
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HomeTab({ yacht, onNewRequest, onSeeRequests, onOpenRequest, onOpenModule, unread, financeOk, refreshKey, canEditLogo, onLogoChanged }: {
   yacht: Yacht; onNewRequest: (cat: string) => void; onSeeRequests: () => void;
   onOpenRequest: (id: string) => void; onOpenModule: (t: Tab) => void; unread: number; financeOk: boolean; refreshKey: number;
+  canEditLogo: boolean; onLogoChanged: (url: string | null) => void;
 }) {
   const [recent, setRecent] = useState<PortalRequest[]>([]);
   useEffect(() => {
@@ -744,9 +819,12 @@ function HomeTab({ yacht, onNewRequest, onSeeRequests, onOpenRequest, onOpenModu
         )}
         <div className="p-5 sm:p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Your vessel</div>
-              <h1 className="mt-0.5 text-2xl font-bold tracking-tight">{yacht.vessel_name}</h1>
+            <div className="flex items-center gap-4">
+              <VesselLogo yacht={yacht} canEdit={canEditLogo} onChanged={onLogoChanged} />
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Your vessel</div>
+                <h1 className="mt-0.5 text-2xl font-bold tracking-tight">{yacht.vessel_name}</h1>
+              </div>
             </div>
             {yacht.status && (
               <span className="rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">

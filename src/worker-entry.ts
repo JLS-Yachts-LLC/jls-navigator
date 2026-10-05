@@ -933,6 +933,11 @@ export default {
       const { portalCrewHandler } = await import('./routes/api.portal.crew')
       return portalCrewHandler(request)
     }
+    // Client portal — the vessel's own logo / badge.
+    if (url.pathname === '/api/portal/vessel-logo') {
+      const { portalVesselLogoHandler } = await import('./routes/api.portal.vessel-logo')
+      return portalVesselLogoHandler(request)
+    }
     // Client portal — a small-boat owner's boats (Orbit 2 Managed Boats).
     if (url.pathname === '/api/portal/boats') {
       const { portalBoatsHandler } = await import('./routes/api.portal.boats')

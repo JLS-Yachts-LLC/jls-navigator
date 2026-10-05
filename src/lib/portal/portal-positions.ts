@@ -52,3 +52,8 @@ const CREW_VIEW_ONLY = new Set(["chief_stewardess", "chef"]);
 export function canManageCrew(position: string | null | undefined): boolean {
   return !CREW_VIEW_ONLY.has((position ?? "").trim().toLowerCase());
 }
+
+/** Whether this position may change the vessel's own profile (its logo). Same people as crew. */
+export function canManageVessel(position: string | null | undefined): boolean {
+  return canManageCrew(position);
+}
