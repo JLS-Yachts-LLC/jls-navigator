@@ -130,9 +130,10 @@ export async function createTemplate(cfg: WaConfig, t: TemplateDef): Promise<{ i
 /** Every template on the account, with Meta's current verdict. */
 export async function listTemplates(cfg: WaConfig): Promise<Array<{
   id: string; name: string; language: string; status: string; category: string; rejected_reason?: string;
+  components?: any[];
 }>> {
   const out: any[] = [];
-  let path = `${cfg.wabaId}/message_templates?fields=id,name,language,status,category,rejected_reason&limit=200`;
+  let path = `${cfg.wabaId}/message_templates?fields=id,name,language,status,category,rejected_reason,components&limit=200`;
   for (let page = 0; page < 10 && path; page++) {
     const r = await graph(cfg, path);
     out.push(...(r.data ?? []));

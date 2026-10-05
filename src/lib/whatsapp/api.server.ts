@@ -146,6 +146,41 @@ export async function whatsappTemplateSubmitHandler(request: Request): Promise<R
   }
 }
 
+/**
+ * A template from Meta, in Polaris's shape — or why it can't be sent from here.
+ * Polaris sends text templates (optional text header, body placeholders, footer,
+ * static buttons). A marketing template must carry an opt-out, the same promise
+ * every template written in Polaris keeps.
+ */
+function parseRemoteTemplate(r: { category: string; components?: any[] }):
+  { category: "MARKETING" | "UTILITY"; header_text: string | null; body_text: string; footer_text: string | null; sample_values: string[] }
+  | { reason: string } {
+  const category = String(r.category).toUpperCase();
+  if (category !== "MARKETING" && category !== "UTILITY") return { reason: `${category.toLowerCase()} templates aren't used here` };
+  const comps = r.components ?? [];
+  const header = comps.find((c) => c.type === "HEADER");
+  const body = comps.find((c) => c.type === "BODY");
+  const footer = comps.find((c) => c.type === "FOOTER");
+  const buttons: any[] = comps.find((c) => c.type === "BUTTONS")?.buttons ?? [];
+  if (!body?.text) return { reason: "no message body" };
+  if (header && header.format !== "TEXT") return { reason: `${String(header.format).toLowerCase()} header — not supported yet` };
+  if (header?.text && /\{\{/.test(header.text)) return { reason: "placeholder in the header — not supported yet" };
+  if (buttons.some((b) => b.type === "URL" && /\{\{/.test(b.url ?? ""))) return { reason: "button with a variable link — not supported yet" };
+  if (buttons.some((b) => !["QUICK_REPLY", "URL", "PHONE_NUMBER"].includes(b.type))) return { reason: "button type not supported yet" };
+  if (category === "MARKETING") {
+    const optOut = buttons.some((b) => b.type === "QUICK_REPLY" && /stop|unsubscribe|opt.?out/i.test(b.text ?? ""))
+      || /stop|unsubscribe|opt.?out/i.test(footer?.text ?? "");
+    if (!optOut) return { reason: "marketing template without an opt-out — recreate it in Polaris so it gets the Stop promotions button" };
+  }
+  return {
+    category,
+    header_text: header?.text ?? null,
+    body_text: String(body.text),
+    footer_text: footer?.text ?? null,
+    sample_values: ((body.example?.body_text?.[0] ?? []) as any[]).map(String),
+  };
+}
+
 export async function whatsappTemplateSyncHandler(request: Request): Promise<Response> {
   const access = await requireAccess(request, { module: "communications", level: "edit" });
   if (!access.ok) return access.response;
@@ -154,17 +189,26 @@ export async function whatsappTemplateSyncHandler(request: Request): Promise<Res
   try {
     const remote = await listTemplates(cfg);
     const db = admin();
-    let updated = 0;
+    let updated = 0, imported = 0;
+    const skipped: Array<{ name: string; reason: string }> = [];
     for (const r of remote) {
+      const status = META_STATUS[String(r.status).toUpperCase()] ?? "pending";
+      const rejection = r.rejected_reason && r.rejected_reason !== "NONE" ? r.rejected_reason : null;
       const { data } = await db.from("wa_templates").update({
-        meta_template_id: r.id,
-        status: META_STATUS[String(r.status).toUpperCase()] ?? "pending",
-        rejection_reason: r.rejected_reason && r.rejected_reason !== "NONE" ? r.rejected_reason : null,
-        status_updated_at: new Date().toISOString(),
+        meta_template_id: r.id, status, rejection_reason: rejection, status_updated_at: new Date().toISOString(),
       }).eq("name", r.name).eq("language", r.language).select("id");
-      updated += (data ?? []).length;
+      if ((data ?? []).length) { updated += data.length; continue; }
+
+      // Made in WhatsApp Manager rather than here: bring it in if Polaris can send it.
+      const parsed = parseRemoteTemplate(r);
+      if ("reason" in parsed) { skipped.push({ name: r.name, reason: parsed.reason }); continue; }
+      const { error } = await db.from("wa_templates").insert({
+        ...parsed, name: r.name, language: r.language, meta_template_id: r.id, status, rejection_reason: rejection,
+        submitted_at: new Date().toISOString(), status_updated_at: new Date().toISOString(),
+      });
+      if (error) skipped.push({ name: r.name, reason: error.message }); else imported++;
     }
-    return json({ ok: true, onMeta: remote.length, updated });
+    return json({ ok: true, onMeta: remote.length, updated, imported, skipped });
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : String(e) }, 502);
   }

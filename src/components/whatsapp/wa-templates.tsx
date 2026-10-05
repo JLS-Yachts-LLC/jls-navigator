@@ -48,8 +48,14 @@ export function WaTemplates({ canEdit }: { canEdit: boolean }) {
   async function sync() {
     setBusy("sync");
     try {
-      const r = await waApi<{ onMeta: number; updated: number }>("templates/sync", {});
-      toast.success(`Checked ${r.onMeta} template${r.onMeta === 1 ? "" : "s"} on Meta`, { description: `${r.updated} updated here.` });
+      const r = await waApi<{ onMeta: number; updated: number; imported: number; skipped: Array<{ name: string; reason: string }> }>("templates/sync", {});
+      const parts = [
+        `${r.imported} imported`, `${r.updated} updated`,
+        ...r.skipped.map((s) => `${s.name}: ${s.reason}`),
+      ];
+      (r.skipped.length ? toast.warning : toast.success)(
+        `Found ${r.onMeta} template${r.onMeta === 1 ? "" : "s"} on this WhatsApp account`,
+        { description: parts.join(" · "), duration: r.skipped.length ? 15000 : 5000 });
       await load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Sync failed");
