@@ -1089,6 +1089,11 @@ export default {
       return lightspeedWebhookHandler(request)
     }
 
+    // Public: Client Portal password reset (rate limited, portal logins only).
+    if (url.pathname === '/api/portal/forgot-password' && request.method === 'POST') {
+      const { portalForgotPasswordHandler } = await import('./routes/api.portal.forgot-password')
+      return portalForgotPasswordHandler(request)
+    }
     // Public: password-reset email via SES (Supabase's own mailer is unconfigured).
     if (url.pathname === '/api/auth/forgot-password' && request.method === 'POST') {
       const { authForgotPasswordHandler } = await import('./routes/api.auth.forgot-password')

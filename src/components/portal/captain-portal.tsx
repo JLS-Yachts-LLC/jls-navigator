@@ -174,7 +174,16 @@ function Brand({ compact }: { compact?: boolean }) {
 // ═══════════════════════════════════════════════════════════════════════════
 // Root component — auth state machine
 // ═══════════════════════════════════════════════════════════════════════════
-type Stage = "loading" | "signed-out" | "not-captain" | "wrong-address" | "mfa-enroll" | "mfa-verify" | "ready";
+type Stage = "loading" | "signed-out" | "not-captain" | "wrong-address" | "mfa-enroll" | "mfa-verify" | "ready" | "reset-password" | "link-expired";
+
+// Read once, before the Supabase client consumes the URL: a password-reset link
+// lands here as #access_token=…&type=recovery (or #error=… once it has expired).
+const LANDED_WITH = typeof window === "undefined" ? null : (() => {
+  const params = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  if (params.get("error") || params.get("error_code")) return "link-expired" as const;
+  if (params.get("type") === "recovery") return "recovery" as const;
+  return null;
+})();
 
 export function CaptainPortal() {
   const [stage, setStage] = useState<Stage>("loading");
@@ -184,8 +193,18 @@ export function CaptainPortal() {
   const [preview, setPreview] = useState(false);
   const [wrongHome, setWrongHome] = useState<string | null>(null);
 
+  const [resetHandled, setResetHandled] = useState(false);
+
   const bootstrap = useCallback(async () => {
+    if (LANDED_WITH === "link-expired" && !resetHandled) {
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+      setStage("link-expired"); return;
+    }
     const { data: { session } } = await supabase.auth.getSession();
+    if (LANDED_WITH === "recovery" && session && !resetHandled) {
+      setUserEmail(session.user.email ?? "");
+      setStage("reset-password"); return;
+    }
     if (!session) { setStage("signed-out"); return; }
     setUserEmail(session.user.email ?? "");
 
@@ -226,7 +245,7 @@ export function CaptainPortal() {
     if (aal?.currentLevel === "aal2") { setStage("ready"); return; }
     if (aal?.nextLevel === "aal2") { setStage("mfa-verify"); return; }
     setStage("mfa-enroll");
-  }, []);
+  }, [resetHandled]);
 
   useEffect(() => { void bootstrap(); }, [bootstrap]);
 
@@ -245,6 +264,20 @@ export function CaptainPortal() {
         </div>
       )}
       {stage === "signed-out" && <LoginScreen onSignedIn={bootstrap} />}
+      {stage === "reset-password" && (
+        <ResetPasswordScreen email={userEmail}
+                             onDone={() => { window.history.replaceState(null, "", window.location.pathname + window.location.search); setResetHandled(true); }}
+                             onSignOut={signOut} />
+      )}
+      {stage === "link-expired" && (
+        <AuthFrame>
+          <h1 className="text-xl font-bold">That link has expired</h1>
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            Password reset links only work for a short time and only once. Ask for a new one from the sign-in page.
+          </p>
+          <PrimaryButton onClick={() => { setResetHandled(true); setStage("signed-out"); }} className="mt-6 w-full">Back to sign in</PrimaryButton>
+        </AuthFrame>
+      )}
       {stage === "not-captain" && <NotCaptainScreen email={userEmail} onSignOut={signOut} />}
       {stage === "wrong-address" && wrongHome && <WrongAddressScreen home={wrongHome} onSignOut={signOut} />}
       {stage === "mfa-enroll" && <MfaEnrollScreen onDone={bootstrap} onSignOut={signOut} />}
@@ -281,6 +314,46 @@ function LoginScreen({ onSignedIn }: { onSignedIn: () => void }) {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [forgot, setForgot] = useState<"off" | "form" | "sent">("off");
+
+  const requestReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true); setError(null);
+    await fetch("/api/portal/forgot-password", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: email.trim() }),
+    }).catch(() => null);
+    setBusy(false);
+    setForgot("sent");
+  };
+
+  if (forgot !== "off") {
+    return (
+      <AuthFrame>
+        <h1 className="text-xl font-bold">Reset your password</h1>
+        {forgot === "sent" ? (
+          <>
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+              If <span className="text-foreground">{email.trim()}</span> has a Client Portal login, we've emailed it a link to choose a new
+              password. It works for a short time only. Nothing arrived? Check junk, or contact JLS Yachts.
+            </p>
+            <PrimaryButton onClick={() => setForgot("off")} className="mt-6 w-full">Back to sign in</PrimaryButton>
+          </>
+        ) : (
+          <form onSubmit={requestReset} className="mt-6 space-y-4">
+            <p className="text-sm text-muted-foreground">Enter the email you sign in with and we'll send you a reset link.</p>
+            <div>
+              <FieldLabel>Email</FieldLabel>
+              <input className={inputCls} type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+            </div>
+            <PrimaryButton type="submit" disabled={busy} className="w-full">
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />} Send reset link
+            </PrimaryButton>
+            <button type="button" onClick={() => setForgot("off")} className="w-full text-center text-xs text-muted-foreground hover:text-foreground">Back to sign in</button>
+          </form>
+        )}
+      </AuthFrame>
+    );
+  }
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -310,7 +383,89 @@ function LoginScreen({ onSignedIn }: { onSignedIn: () => void }) {
         <PrimaryButton type="submit" disabled={busy} className="w-full">
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Shield className="h-4 w-4" />} Sign in
         </PrimaryButton>
+        <button type="button" onClick={() => { setError(null); setForgot("form"); }}
+                className="w-full text-center text-xs text-muted-foreground hover:text-foreground">Forgot your password?</button>
       </form>
+    </AuthFrame>
+  );
+}
+
+/**
+ * Where a password-reset link lands. Supabase only lets a password change once
+ * the session is MFA-verified, so a client with an authenticator confirms a
+ * code first; then they choose the new password and carry on into the portal.
+ */
+function ResetPasswordScreen({ email, onDone, onSignOut }: { email: string; onDone: () => void; onSignOut: () => void }) {
+  const [needsCode, setNeedsCode] = useState<boolean | null>(null);
+  const [code, setCode] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void supabase.auth.mfa.getAuthenticatorAssuranceLevel().then(({ data }) => {
+      setNeedsCode(data?.nextLevel === "aal2" && data?.currentLevel !== "aal2");
+    });
+  }, []);
+
+  const verify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true); setError(null);
+    const { data: factors } = await supabase.auth.mfa.listFactors();
+    const totp = factors?.totp?.[0];
+    if (!totp) { setBusy(false); setError("No authenticator found on this account."); return; }
+    const { error } = await supabase.auth.mfa.challengeAndVerify({ factorId: totp.id, code: code.trim() });
+    setBusy(false);
+    if (error) { setError("That code didn't work — check the time on your phone and try the newest code."); return; }
+    setNeedsCode(false);
+  };
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (password.length < 10) { setError("Use at least 10 characters."); return; }
+    if (password !== confirm) { setError("The two passwords don't match."); return; }
+    setBusy(true); setError(null);
+    const { error } = await supabase.auth.updateUser({ password });
+    setBusy(false);
+    if (error) { setError(error.message); return; }
+    onDone();
+  };
+
+  return (
+    <AuthFrame>
+      <h1 className="text-xl font-bold">Choose a new password</h1>
+      <p className="mt-1 text-sm text-muted-foreground">{email}</p>
+      {needsCode === null ? (
+        <div className="mt-6 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+      ) : needsCode ? (
+        <form onSubmit={verify} className="mt-6 space-y-4">
+          <p className="text-sm text-muted-foreground">First, enter the 6-digit code from your authenticator app.</p>
+          <input className={cn(inputCls, "text-center font-mono text-lg tracking-[0.4em]")} inputMode="numeric" autoComplete="one-time-code"
+                 maxLength={6} required value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))} aria-label="Authenticator code" />
+          {error && <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-red-300">{error}</div>}
+          <PrimaryButton type="submit" disabled={busy || code.length !== 6} className="w-full">
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Shield className="h-4 w-4" />} Continue
+          </PrimaryButton>
+          <p className="text-center text-xs text-muted-foreground">Lost your phone? Contact JLS Yachts and we'll reset your authenticator.</p>
+        </form>
+      ) : (
+        <form onSubmit={save} className="mt-6 space-y-4">
+          <div>
+            <FieldLabel>New password</FieldLabel>
+            <input className={inputCls} type="password" autoComplete="new-password" required minLength={10} value={password} onChange={(e) => setPassword(e.target.value)} />
+          </div>
+          <div>
+            <FieldLabel>Type it again</FieldLabel>
+            <input className={inputCls} type="password" autoComplete="new-password" required value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+          </div>
+          {error && <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-red-300">{error}</div>}
+          <PrimaryButton type="submit" disabled={busy} className="w-full">
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} Save and continue
+          </PrimaryButton>
+        </form>
+      )}
+      <button onClick={onSignOut} className="mt-4 w-full text-center text-xs text-muted-foreground hover:text-foreground">Cancel and sign out</button>
     </AuthFrame>
   );
 }
@@ -424,7 +579,7 @@ function MfaVerifyScreen({ onDone, onSignOut }: { onDone: () => void; onSignOut:
   return (
     <AuthFrame>
       <h1 className="text-xl font-bold">Two-factor check</h1>
-      <p className="mt-1 text-sm text-muted-foreground">Enter the 6-digit code from your authenticator app.</p>
+      <p className="mt-1 text-sm text-muted-foreground">Enter the 6-digit code from your authenticator app. Lost your phone? Contact JLS Yachts and we'll reset it.</p>
       <form onSubmit={submit} className="mt-6 space-y-4">
         <input className={cn(inputCls, "text-center text-xl tracking-[0.5em] font-mono")} inputMode="numeric"
                autoComplete="one-time-code" maxLength={6} required autoFocus value={code}

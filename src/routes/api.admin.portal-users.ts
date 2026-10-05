@@ -86,6 +86,21 @@ export async function adminPortalUsersHandler(request: Request): Promise<Respons
     return json({ success: true });
   }
 
+  // Lost phone / new phone: remove the client's authenticator factors. At their
+  // next sign-in the portal asks them to scan a new QR code.
+  if (body.action === "reset-mfa") {
+    if (!account.user_id) return json({ error: "No login linked to this account yet" }, 400);
+    const { data: factors, error: listErr } = await (sb.auth.admin as any).mfa.listFactors({ userId: account.user_id });
+    if (listErr) return json({ error: listErr.message }, 500);
+    const list = (factors?.factors ?? []) as Array<{ id: string }>;
+    for (const f of list) {
+      const { error } = await (sb.auth.admin as any).mfa.deleteFactor({ id: f.id, userId: account.user_id });
+      if (error) return json({ error: error.message }, 500);
+    }
+    await audit(`Portal authenticator reset (${list.length} factor${list.length === 1 ? "" : "s"} removed)`);
+    return json({ success: true, removed: list.length });
+  }
+
   if (body.action === "reset-password") {
     if (!account.user_id) return json({ error: "No login linked to this captain yet" }, 400);
     const pwd = tempPassword();

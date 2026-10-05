@@ -285,6 +285,16 @@ function VesselUsersPanel() {
     } catch (e: any) { toast.error(e.message); } finally { setBusyId(null); }
   };
 
+  /** Lost or replaced phone: clear their authenticator; they scan a new QR at next sign-in. */
+  const resetMfa = async (r: CaptainRow) => {
+    if (!confirm(`Reset the authenticator for ${r.email}? They'll set up a new one the next time they sign in.`)) return;
+    setBusyId(r.id);
+    try {
+      const data = await api({ action: "reset-mfa", accountId: r.id });
+      toast.success(data.removed ? `Authenticator reset — ${r.email} will set up a new one at next sign-in` : "No authenticator was set up yet");
+    } catch (e: any) { toast.error(e.message); } finally { setBusyId(null); }
+  };
+
   const resetPassword = async (r: CaptainRow) => {
     if (!confirm(`Reset the portal password for ${r.email}?`)) return;
     setBusyId(r.id);
@@ -480,6 +490,10 @@ function VesselUsersPanel() {
                                   <Button size="sm" variant="ghost" className="h-7 gap-1 px-2 text-xs" title="Reset password"
                                           onClick={() => void resetPassword(r)}>
                                     <KeyRound className="h-3 w-3" /> Reset
+                                  </Button>
+                                  <Button size="sm" variant="ghost" className="h-7 gap-1 px-2 text-xs" title="Reset authenticator (lost or new phone)"
+                                          onClick={() => void resetMfa(r)}>
+                                    <ShieldCheck className="h-3 w-3" /> 2FA
                                   </Button>
                                   <Button size="sm" variant="ghost" className="h-7 gap-1 px-2 text-xs text-muted-foreground" title="Deactivate portal access"
                                           onClick={() => void unlink(r)}>
