@@ -227,7 +227,35 @@ async function markDone(sb: Sb, yacht: PortalYacht, task: any, body: Record<stri
   update.status = recurring ? pmsStatus(merged, update.last_done_hours) : 'done'
   const { error } = await sb.from('pms_tasks').update(update).eq('id', task.id).eq('yacht_id', yacht.yachtId)
   if (error) throw error
+
+  // The spares this job uses come off the vessel's stock (never below zero).
+  const spares = Array.isArray(task.spares) ? task.spares as Array<{ stock_item_id: string; qty: number }> : []
+  if (spares.length) {
+    const { data: items } = await sb.from('onboard_stock_items').select('id, quantity')
+      .eq('yacht_id', yacht.yachtId).in('id', spares.map((x) => x.stock_item_id))
+    for (const it of (items ?? []) as any[]) {
+      const used = spares.filter((x) => x.stock_item_id === it.id).reduce((n, x) => n + Number(x.qty || 0), 0)
+      await sb.from('onboard_stock_items').update({ quantity: Math.max(0, Number(it.quantity ?? 0) - used) })
+        .eq('id', it.id).eq('yacht_id', yacht.yachtId)
+    }
+  }
   return update
+}
+
+/** A job's spares, validated: this vessel's stock items, positive quantities. */
+async function cleanSpares(sb: Sb, yacht: PortalYacht, raw: unknown): Promise<Array<{ stock_item_id: string; qty: number }>> {
+  if (!Array.isArray(raw)) throw new BadRequest('Spares must be a list')
+  if (raw.length > 30) throw new BadRequest('A job can list at most 30 spares')
+  const out = (raw as any[]).map((r) => ({ stock_item_id: String(r?.stock_item_id ?? ''), qty: Number(r?.qty) }))
+  if (out.some((r) => !UUID_RE.test(r.stock_item_id) || !Number.isFinite(r.qty) || r.qty <= 0 || r.qty > 10000)) {
+    throw new BadRequest('Each spare needs a stock item and a quantity above zero')
+  }
+  if (out.length) {
+    const { data } = await sb.from('onboard_stock_items').select('id').eq('yacht_id', yacht.yachtId).in('id', out.map((r) => r.stock_item_id))
+    const own = new Set((data ?? []).map((r: any) => r.id))
+    if (out.some((r) => !own.has(r.stock_item_id))) throw new BadRequest("A spare is not on this vessel's stock list")
+  }
+  return out
 }
 
 export async function portalOnboardHandler(request: Request): Promise<Response> {
@@ -334,6 +362,7 @@ export async function portalOnboardHandler(request: Request): Promise<Response> 
       if (REQUIRED[kind] in fields && !fields[REQUIRED[kind]]) return json({ error: `${REQUIRED_LABEL[kind]} is required` }, 400)
       const merged = await withDerivedStatus(sb, yacht, kind, { ...existing, ...fields })
       const update: Record<string, any> = { ...fields }
+      if (kind === 'pms_task' && 'spares' in body) update.spares = await cleanSpares(sb, yacht, body.spares)
       if ((kind === 'pms_task' || kind === 'ism_cert') && merged.status !== existing.status) update.status = merged.status
       if (kind === 'pms_task' && merged.interval_unit !== existing.interval_unit) update.interval_unit = merged.interval_unit
       if (Object.keys(update).length) {

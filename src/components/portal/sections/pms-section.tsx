@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
-import { CheckCircle2, ClipboardList, Gauge, Loader2, Pencil, Wrench } from "lucide-react";
+import { CheckCircle2, ClipboardList, Gauge, Loader2, Package, Pencil, Plus, Trash2, Wrench, X } from "lucide-react";
 import { pmsStatus } from "@/lib/portal/onboard";
 import {
   AddButton, AttachedFiles, RecordFormModal, SectionCard, SectionEmpty, SectionHeader, SectionLoading, StatusBadge,
@@ -21,7 +21,9 @@ type PmsTask = {
   interval_kind: string | null; interval_value: number | null; interval_unit: string | null;
   last_done_date: string | null; last_done_hours: number | null;
   next_due_date: string | null; next_due_hours: number | null; status: string; assigned_to: string | null; notes: string | null;
+  spares: Array<{ stock_item_id: string; qty: number }> | null;
 };
+type StockOption = { id: string; name: string; unit: string | null; quantity: number };
 type PmsEquipment = {
   id: string; name: string; category: string | null; maker: string | null; model: string | null;
   serial_number: string | null; location: string | null; running_hours: number | null; notes: string | null;
@@ -70,17 +72,22 @@ export function PmsSection({ yachtId, canEdit }: { yachtId: string; canEdit: boo
   const [editingTask, setEditingTask] = useState<PmsTask | "new" | null>(null);
   const [editingEquip, setEditingEquip] = useState<PmsEquipment | "new" | null>(null);
   const [completing, setCompleting] = useState<PmsTask | null>(null);
+  const [stock, setStock] = useState<StockOption[]>([]);
+  const [sparesFor, setSparesFor] = useState<PmsTask | null>(null);
 
   const load = useCallback(async () => {
     const [t, e]: any[] = await Promise.all([
       db.from("pms_tasks")
-        .select("id, equipment_id, title, description, interval_kind, interval_value, interval_unit, last_done_date, last_done_hours, next_due_date, next_due_hours, status, assigned_to, notes")
+        .select("id, equipment_id, title, description, interval_kind, interval_value, interval_unit, last_done_date, last_done_hours, next_due_date, next_due_hours, status, assigned_to, notes, spares")
         .eq("yacht_id", yachtId),
       db.from("pms_equipment")
         .select("id, name, category, maker, model, serial_number, location, running_hours, notes")
         .eq("yacht_id", yachtId).order("name"),
     ]);
     setTasks(t.data ?? []); setEquipment(e.data ?? []); setLoading(false);
+    // Stock (when the vessel keeps it here) — the spares a job uses come from it.
+    const { data: st } = await db.from("onboard_stock_items").select("id, name, unit, quantity").eq("yacht_id", yachtId).order("name");
+    setStock(st ?? []);
   }, [yachtId]);
   useEffect(() => { void load(); }, [load]);
 
@@ -146,7 +153,29 @@ export function PmsSection({ yachtId, canEdit }: { yachtId: string; canEdit: boo
                       {[eq?.name, interval(t), t.assigned_to].filter(Boolean).join(" · ")}
                       {t.last_done_date && ` · last done ${fmtDate(t.last_done_date)}`}
                     </div>
-                    <div className="mt-2"><AttachedFiles refTable="pms_tasks" refId={t.id} target="job_photo" canEdit={canEdit} /></div>
+                    {(t.spares?.length ?? 0) > 0 && (
+                      <div className="mt-1.5 flex flex-wrap gap-1.5 text-[11px]">
+                        {t.spares!.map((sp) => {
+                          const item = stock.find((x) => x.id === sp.stock_item_id);
+                          const short = item && Number(item.quantity) < sp.qty;
+                          return (
+                            <span key={sp.stock_item_id} className={cn("rounded-full border px-2 py-0.5", short ? "border-amber-500/40 text-amber-300" : "border-border text-muted-foreground")}
+                                  title={item ? `${item.quantity} in stock` : "No longer on the stock list"}>
+                              {sp.qty} × {item?.name ?? "removed item"}{short ? " · short" : ""}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      <AttachedFiles refTable="pms_tasks" refId={t.id} target="job_photo" canEdit={canEdit} />
+                      {canEdit && stock.length > 0 && (
+                        <button type="button" onClick={() => setSparesFor(t)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-dashed border-border px-2 py-1 text-[11px] font-medium text-muted-foreground transition hover:border-primary/50 hover:text-foreground">
+                          <Package className="h-3 w-3" /> {(t.spares?.length ?? 0) > 0 ? "Edit spares" : "Spares used"}
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <div className="text-right text-xs">
                     {st === "done" ? <span className="text-muted-foreground">Completed</span>
@@ -246,6 +275,9 @@ export function PmsSection({ yachtId, canEdit }: { yachtId: string; canEdit: boo
           deleteLabel="Delete equipment"
         />
       )}
+      {sparesFor && (
+        <SparesModal task={sparesFor} stock={stock} onClose={() => setSparesFor(null)} onSaved={() => { setSparesFor(null); void load(); }} />
+      )}
       {completing && (
         <MarkDoneModal task={completing} equipment={equipOf(completing.equipment_id)}
                        onClose={() => setCompleting(null)} onDone={() => { setCompleting(null); void load(); }} />
@@ -309,6 +341,56 @@ function MarkDoneModal({ task, equipment, onClose, onDone }: {
           </button>
         </div>
       </form>
+    </div>
+  );
+}
+
+/** The spares a job uses each time it's done — taken off stock when it's marked done. */
+function SparesModal({ task, stock, onClose, onSaved }: {
+  task: PmsTask; stock: StockOption[]; onClose: () => void; onSaved: () => void;
+}) {
+  const [rows, setRows] = useState<Array<{ key: number; stock_item_id: string; qty: string }>>(() =>
+    (task.spares?.length ? task.spares : [{ stock_item_id: "", qty: 1 }]).map((sp, i) => ({ key: i, stock_item_id: sp.stock_item_id, qty: String(sp.qty) })));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const set = (key: number, patch: Partial<{ stock_item_id: string; qty: string }>) => setRows((r) => r.map((x) => (x.key === key ? { ...x, ...patch } : x)));
+  const save = async () => {
+    setBusy(true); setError(null);
+    const spares = rows.filter((r) => r.stock_item_id).map((r) => ({ stock_item_id: r.stock_item_id, qty: Number(r.qty) }));
+    try { await onboardRequest("pms_task", { method: "PATCH", id: task.id, body: JSON.stringify({ spares }) }); onSaved(); }
+    catch (e) { setError(e instanceof Error ? e.message : "Could not save."); setBusy(false); }
+  };
+  const cls = "rounded-xl border border-border bg-background/50 px-3 py-2.5 text-sm outline-none focus:border-primary/60";
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center"
+         onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="w-full max-w-lg rounded-t-3xl border border-border bg-card p-5 sm:rounded-3xl sm:p-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-bold">Spares used</h2>
+          <button type="button" onClick={onClose} aria-label="Close" className="flex h-9 w-9 items-center justify-center rounded-xl text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
+        </div>
+        <p className="mt-1 text-sm text-muted-foreground">{task.title} — these come off your stock each time the job is marked done.</p>
+        <div className="mt-4 space-y-2">
+          {rows.map((r, i) => (
+            <div key={r.key} className="grid grid-cols-[minmax(0,1fr)_80px_36px] items-center gap-2">
+              <select aria-label={`Spare ${i + 1}`} className={cls} value={r.stock_item_id} onChange={(e) => set(r.key, { stock_item_id: e.target.value })}>
+                <option value="">Choose a stock item…</option>
+                {stock.map((st) => <option key={st.id} value={st.id}>{st.name} ({st.quantity}{st.unit ? ` ${st.unit}` : ""} in stock)</option>)}
+              </select>
+              <input aria-label={`Quantity of spare ${i + 1}`} type="number" min={0} step="any" className={cn(cls, "px-2 text-right")} value={r.qty} onChange={(e) => set(r.key, { qty: e.target.value })} />
+              <button type="button" onClick={() => setRows((x) => x.filter((y) => y.key !== r.key))} aria-label={`Remove spare ${i + 1}`}
+                      className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:text-red-300"><Trash2 className="h-3.5 w-3.5" /></button>
+            </div>
+          ))}
+        </div>
+        <button type="button" onClick={() => setRows((x) => [...x, { key: Date.now(), stock_item_id: "", qty: "1" }])}
+                className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"><Plus className="h-3.5 w-3.5" /> Add a spare</button>
+        {error && <div className="mt-3 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-red-300">{error}</div>}
+        <button type="button" onClick={() => void save()} disabled={busy}
+                className="mt-5 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 text-sm font-semibold text-primary-foreground transition hover:brightness-110 disabled:opacity-50">
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} Save spares
+        </button>
+      </div>
     </div>
   );
 }
