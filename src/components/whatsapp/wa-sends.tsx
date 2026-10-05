@@ -310,7 +310,7 @@ function NewSendDialog({ onClose, onSaved }: { onClose: () => void; onSaved: (id
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
         <DialogHeader>
           <DialogTitle>New send</DialogTitle>
           <DialogDescription>Saved as a draft — you'll see who it reaches before anything is sent.</DialogDescription>

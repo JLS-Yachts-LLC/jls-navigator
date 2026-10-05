@@ -539,7 +539,7 @@ function StartDialog({ onClose, onPick }: { onClose: () => void; onPick: (contac
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-h-[90vh] max-w-md overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Message a contact</DialogTitle>
           <DialogDescription>Only contacts who have opted in can be messaged first — and the first message must be an approved template.</DialogDescription>

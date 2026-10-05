@@ -281,7 +281,7 @@ function ContactDialog({ contact, onClose, onSaved }: { contact: WaContact | nul
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-h-[90vh] max-w-md overflow-y-auto">
         <DialogHeader><DialogTitle>{contact ? "Edit contact" : "Add contact"}</DialogTitle></DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1.5"><Label>Name</Label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
@@ -345,7 +345,7 @@ function ConsentDialog({ contact, mode, onClose, onSaved }: {
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-h-[90vh] max-w-md overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{mode === "in" ? `Record consent — ${contact.name}` : `Record opt-out — ${contact.name}`}</DialogTitle>
           <DialogDescription>
@@ -400,7 +400,7 @@ function HistoryDialog({ contact, onClose }: { contact: WaContact; onClose: () =
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-xl">
+      <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Consent history — {contact.name}</DialogTitle>
           <DialogDescription>Every change, as it happened. This record can't be edited or deleted.</DialogDescription>

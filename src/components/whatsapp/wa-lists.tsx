@@ -226,7 +226,7 @@ function ListDialog({ list, onClose, onSaved }: { list?: WaList; onClose: () => 
   }
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-h-[90vh] max-w-md overflow-y-auto">
         <DialogHeader><DialogTitle>{list ? "Edit list" : "New broadcast list"}</DialogTitle></DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1.5"><Label>Name</Label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Captains — Dubai Marina" /></div>
@@ -275,7 +275,7 @@ function AddMembersDialog({ list, existing, onClose, onSaved }: {
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Add to {list.name}</DialogTitle>
           <DialogDescription>Opted-out contacts aren't offered. Anyone not yet opted in can be added, but won't be messaged until they agree.</DialogDescription>
@@ -338,7 +338,7 @@ function RemoveDialog({ member, onClose, onSaved }: { member: Member; onClose: (
   }
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-sm">
+      <DialogContent className="max-h-[90vh] max-w-sm overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Remove {member.contact.name}?</DialogTitle>
           <DialogDescription>They come off this list only. To stop all WhatsApp messages, record an opt-out on the Contacts tab.</DialogDescription>
