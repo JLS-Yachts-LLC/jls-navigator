@@ -14,13 +14,22 @@ async function findActiveApplication(crewId: string): Promise<{ id: string; stat
   const db = supabase as any
   const { data } = await db
     .from('visa_applications')
-    .select('id, status')
+    .select('id, status, visa_expiry, visa_expiry_date')
     .eq('crew_member_id', crewId)
     .in('status', ACTIVE_STATUSES)
     .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-  return data ?? null
+    .limit(50)
+  // An approved visa whose expiry date has passed is finished, even though its
+  // saved status still reads "approved" (nothing flips it to expired, and the
+  // vessel reports rely on it staying approved). It must not block a new
+  // application — SD-0045: a crew member with a lapsed visa (and import
+  // duplicates of it) could not be re-applied for until every copy was edited.
+  const today = new Date().toLocaleDateString('en-CA')
+  const live = (data ?? []).find((a: { status: string; visa_expiry: string | null; visa_expiry_date: string | null }) => {
+    const expiry = (a.visa_expiry_date ?? a.visa_expiry ?? '').slice(0, 10)
+    return !(a.status === 'approved' && expiry && expiry < today)
+  })
+  return live ? { id: live.id, status: live.status } : null
 }
 
 interface WizardState {
