@@ -35,7 +35,7 @@ export async function itTicketsNotifyHandler(request: Request): Promise<Response
   const uid = access.claims.userId
   const [{ data: profile }, { data: captain }] = await Promise.all([
     db.from('user_profiles').select('user_id').eq('user_id', uid).maybeSingle(),
-    db.from('captain_accounts').select('user_id').eq('user_id', uid).eq('active', true).maybeSingle(),
+    db.from('captain_accounts').select('user_id').eq('user_id', uid).eq('active', true).limit(1).maybeSingle(),
   ])
   if (!profile || captain) return json({ ok: false, error: 'Forbidden' }, 403)
 

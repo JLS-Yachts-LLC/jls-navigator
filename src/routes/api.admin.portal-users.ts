@@ -66,10 +66,11 @@ export async function adminPortalUsersHandler(request: Request): Promise<Respons
 
   const { data: account } = await sb
     .from("captain_accounts")
-    .select("id, user_id, email, display_name, yacht_id, yachts(vessel_name)")
+    .select("id, user_id, email, display_name, yacht_id, boat_id, yachts(vessel_name), orbit2_boats(name)")
     .eq("id", body.accountId).maybeSingle();
   if (!account) return json({ error: "Captain account not found" }, 404);
-  const vessel = (account as any).yachts?.vessel_name ?? "vessel";
+  // A row is linked to a yacht, or to a small boat managed in Orbit 2.
+  const vessel = (account as any).yachts?.vessel_name ?? (account as any).orbit2_boats?.name ?? "vessel";
 
   const audit = (detail: string) => logAuditEvent({
     event_type: "PERM",
@@ -134,6 +135,21 @@ export async function adminPortalUsersHandler(request: Request): Promise<Respons
         return json({ error: `${email} is a STAFF account — captains need their own dedicated email/login.` }, 400);
       }
       userId = existing.id;
+
+      // Already a working portal login on another vessel — a boat owner being
+      // given a second boat, say. Link this row to it and leave the password
+      // alone: resetting it would lock them out of the boats they already use.
+      const { data: otherActive } = await sb.from("captain_accounts").select("id")
+        .eq("user_id", userId).eq("active", true).neq("id", account.id).limit(1);
+      if (otherActive?.length) {
+        await stripStaffIdentity(sb, userId);
+        const { error: linkErr } = await sb.from("captain_accounts")
+          .update({ user_id: userId, email, active: true }).eq("id", account.id);
+        if (linkErr) return json({ error: linkErr.message }, 500);
+        await audit(`Portal login ${email} linked (existing login, password unchanged)`);
+        return json({ success: true, linkedExisting: true });
+      }
+
       pwd = tempPassword();
       // Tag it the same way a freshly created login is tagged, so the auth.users
       // triggers keep standing down for it.
