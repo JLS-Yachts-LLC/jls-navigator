@@ -880,6 +880,24 @@ export default {
       return handleSharePointWebhook(request, ctx)
     }
 
+    // A client's own portal address (<slug>.polaris.jlsyachts.com): "/" opens
+    // their portal; an address that isn't set up goes to the main portal.
+    if (url.host !== new URL(process.env.VITE_APP_URL || 'https://polaris.jlsyachts.com').host
+        && (url.pathname === '/' || url.pathname === '/portal' || url.pathname === '/portal/')) {
+      const { routeClientHost } = await import('./lib/portal/portal-domains.server')
+      const redirect = await routeClientHost(request)
+      if (redirect) return redirect
+    }
+    if (url.pathname === '/api/portal/brand') {
+      return (await import('./lib/portal/portal-domains.server')).portalBrandHandler(request)
+    }
+    if (url.pathname === '/api/portal/address') {
+      return (await import('./lib/portal/portal-domains.server')).portalAddressHandler(request)
+    }
+    if (url.pathname === '/api/admin/portal-domains') {
+      return (await import('./lib/portal/portal-domains.server')).adminPortalDomainsHandler(request)
+    }
+
     // Captain-portal login admin (kept at the top of the dispatch — see #debug note)
     if (url.pathname === '/api/admin/portal-users') {
       return adminPortalUsersHandler(request)

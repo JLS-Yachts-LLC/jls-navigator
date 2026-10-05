@@ -16,6 +16,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { PORTAL_POSITIONS, positionLabel } from "@/lib/portal/portal-positions";
+import { PortalAddresses } from "./portal-addresses";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { UserTable } from "@/components/admin/users/UserTable";
@@ -121,7 +122,7 @@ function VesselUsersPanel() {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
-  const [reveal, setReveal] = useState<{ email: string; password: string } | null>(null);
+  const [reveal, setReveal] = useState<{ email: string; password: string; portalUrl?: string } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -159,7 +160,7 @@ function VesselUsersPanel() {
     setBusyId(r.id);
     try {
       const data = await api({ action: "create-login", accountId: r.id, email });
-      if (data.tempPassword) setReveal({ email, password: data.tempPassword });
+      if (data.tempPassword) setReveal({ email, password: data.tempPassword, portalUrl: data.portalUrl });
       toast.success(data.linkedExisting
         ? `Linked to ${email}'s existing login — their password is unchanged`
         : "Portal login ready");
@@ -186,7 +187,7 @@ function VesselUsersPanel() {
     setBusyId(r.id);
     try {
       const data = await api({ action: "reset-password", accountId: r.id });
-      setReveal({ email: r.email ?? "", password: data.tempPassword });
+      setReveal({ email: r.email ?? "", password: data.tempPassword, portalUrl: data.portalUrl });
     } catch (e: any) { toast.error(e.message); } finally { setBusyId(null); }
   };
 
@@ -265,6 +266,8 @@ function VesselUsersPanel() {
           </Button>
         </div>
       </div>
+
+      <PortalAddresses />
 
       {loading ? (
         <div className="flex h-32 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
@@ -402,7 +405,7 @@ function VesselUsersPanel() {
 
 function AddVesselUserDialog({ yachts, boats, onClose, onCreated, api }: {
   yachts: YachtOpt[]; boats: BoatOpt[]; onClose: () => void;
-  onCreated: (reveal: { email: string; password: string } | null) => void;
+  onCreated: (reveal: { email: string; password: string; portalUrl?: string } | null) => void;
   api: (payload: Record<string, unknown>) => Promise<any>;
 }) {
   // "y:<yacht id>" or "b:<orbit2 boat id>" — a portal user is linked to one or the other.
@@ -432,7 +435,7 @@ function AddVesselUserDialog({ yachts, boats, onClose, onCreated, api }: {
         toast.success(data.linkedExisting
           ? `Added to ${email.trim()}'s existing login — their password is unchanged`
           : "Vessel user created with login");
-        onCreated(data.tempPassword ? { email: email.trim(), password: data.tempPassword } : null);
+        onCreated(data.tempPassword ? { email: email.trim(), password: data.tempPassword, portalUrl: data.portalUrl } : null);
       } else {
         toast.success("Vessel user added — attach a login when ready");
         onCreated(null);
@@ -505,10 +508,10 @@ function AddVesselUserDialog({ yachts, boats, onClose, onCreated, api }: {
   );
 }
 
-function TempPasswordDialog({ data, onClose }: { data: { email: string; password: string }; onClose: () => void }) {
+function TempPasswordDialog({ data, onClose }: { data: { email: string; password: string; portalUrl?: string }; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
-    await navigator.clipboard.writeText(`Portal: ${window.location.origin}/portal\nEmail: ${data.email}\nTemporary password: ${data.password}`);
+    await navigator.clipboard.writeText(`Portal: ${data.portalUrl ?? `${window.location.origin}/portal`}\nEmail: ${data.email}\nTemporary password: ${data.password}`);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
@@ -517,7 +520,7 @@ function TempPasswordDialog({ data, onClose }: { data: { email: string; password
       <div className="w-full max-w-md space-y-4 rounded-2xl border border-border bg-card p-5">
         <h3 className="font-semibold">Temporary password — shown once</h3>
         <p className="text-xs text-muted-foreground">
-          Pass these to the captain securely. They sign in at <span className="font-mono text-foreground/80">/portal</span>,
+          Pass these to the captain securely. They sign in at <span className="font-mono text-foreground/80">{data.portalUrl ?? "/portal"}</span>,
           set up two-factor authentication on first login, and should change the password.
         </p>
         <div className="space-y-2 rounded-xl border border-border bg-background/50 p-4 text-sm">

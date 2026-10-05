@@ -12,6 +12,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminAccess } from "@/lib/admin/access";
 import { logAuditEvent } from "@/lib/admin/audit";
+import { portalSignInUrl } from "@/lib/portal/portal-domains.server";
 
 function getAdmin() {
   return createClient(
@@ -91,7 +92,7 @@ export async function adminPortalUsersHandler(request: Request): Promise<Respons
     const { error } = await sb.auth.admin.updateUserById(account.user_id, { password: pwd });
     if (error) return json({ error: error.message }, 500);
     await audit("Portal password reset");
-    return json({ success: true, tempPassword: pwd });
+    return json({ success: true, tempPassword: pwd, portalUrl: await portalSignInUrl(account.yacht_id) });
   }
 
   // Change the login email — e.g. the captain lost access to the old mailbox.
@@ -176,7 +177,7 @@ export async function adminPortalUsersHandler(request: Request): Promise<Respons
       .update({ user_id: userId, email, active: true }).eq("id", account.id);
     if (linkErr) return json({ error: linkErr.message }, 500);
     await audit(`Portal login ${existing ? "linked" : "created"} for ${email}`);
-    return json({ success: true, tempPassword: pwd });
+    return json({ success: true, tempPassword: pwd, portalUrl: await portalSignInUrl(account.yacht_id) });
   }
 
   return json({ error: `Unknown action: ${body.action}` }, 400);

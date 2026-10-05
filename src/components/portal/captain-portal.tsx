@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { portalFetch } from "@/lib/portal/portal-fetch";
+import { PortalBrandHeader, WrongAddressScreen, checkPortalAddress } from "./portal-address";
 import { hiddenSections, canSeeFinance, canManageVessel } from "@/lib/portal/portal-positions";
 import { cn } from "@/lib/utils";
 import { BoatPortal } from "./boat-portal";
@@ -157,7 +158,7 @@ function Brand({ compact }: { compact?: boolean }) {
 // ═══════════════════════════════════════════════════════════════════════════
 // Root component — auth state machine
 // ═══════════════════════════════════════════════════════════════════════════
-type Stage = "loading" | "signed-out" | "not-captain" | "mfa-enroll" | "mfa-verify" | "ready";
+type Stage = "loading" | "signed-out" | "not-captain" | "wrong-address" | "mfa-enroll" | "mfa-verify" | "ready";
 
 export function CaptainPortal() {
   const [stage, setStage] = useState<Stage>("loading");
@@ -165,6 +166,7 @@ export function CaptainPortal() {
   const [boatOwner, setBoatOwner] = useState<BoatOwnerLink | null>(null);
   const [userEmail, setUserEmail] = useState<string>("");
   const [preview, setPreview] = useState(false);
+  const [wrongHome, setWrongHome] = useState<string | null>(null);
 
   const bootstrap = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -199,6 +201,11 @@ export function CaptainPortal() {
     else if (boatLink) setBoatOwner(boatLink);
     else { setStage("not-captain"); return; }
 
+    // Signed in at another client's own address (e.g. aquila.polaris…): send
+    // them to theirs. Branding only — RLS already limits them to their vessel.
+    const address = await checkPortalAddress();
+    if (address && !address.matches) { setWrongHome(address.home); setStage("wrong-address"); return; }
+
     const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
     if (aal?.currentLevel === "aal2") { setStage("ready"); return; }
     if (aal?.nextLevel === "aal2") { setStage("mfa-verify"); return; }
@@ -223,6 +230,7 @@ export function CaptainPortal() {
       )}
       {stage === "signed-out" && <LoginScreen onSignedIn={bootstrap} />}
       {stage === "not-captain" && <NotCaptainScreen email={userEmail} onSignOut={signOut} />}
+      {stage === "wrong-address" && wrongHome && <WrongAddressScreen home={wrongHome} onSignOut={signOut} />}
       {stage === "mfa-enroll" && <MfaEnrollScreen onDone={bootstrap} onSignOut={signOut} />}
       {stage === "mfa-verify" && <MfaVerifyScreen onDone={bootstrap} onSignOut={signOut} />}
       {stage === "ready" && !link && boatOwner && (
@@ -242,7 +250,7 @@ export function CaptainPortal() {
 function AuthFrame({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center px-4 py-10">
-      <div className="mb-8"><Brand /></div>
+      <div className="mb-8"><PortalBrandHeader fallback={<Brand />} /></div>
       <Card className="w-full max-w-md p-6 sm:p-8">{children}</Card>
       <p className="mt-6 max-w-md text-center text-[11px] leading-relaxed text-muted-foreground/70">
         Secure client portal · access is limited to your own vessel and protected by
