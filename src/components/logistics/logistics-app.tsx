@@ -23,6 +23,7 @@ import { StoreIn } from "./store-in";
 import { WarehouseOut } from "./warehouse-out";
 import { PendingBanner, useCheckinQueue } from "./checkin-pending";
 import { ManageWarehouse } from "./manage-warehouse";
+import { useOrbitFieldOnlyRedirect } from "@/lib/orbit-field-only";
 
 type Module =
   | "checkin" | "checkout" | "store-in" | "warehouse-out" | "manage-warehouse" | "deliveries" | "manage-deliveries";
@@ -51,11 +52,13 @@ const GROUPS: { title: string; tiles: Tile[] }[] = [
 
 export function LogisticsApp() {
   const id = useLogisticsIdentity();
+  // Orbit field crew use the Orbit 2 mobile app only — send them there.
+  const fieldOnly = useOrbitFieldOnlyRedirect();
   const [open, setOpen] = useState<Module | null>(null);
   // Check-ins saved without signal upload from here, whichever screen is open.
   const queue = useCheckinQueue(true);
 
-  if (id.loading) {
+  if (id.loading || fieldOnly) {
     return <div className="flex h-dvh items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
   }
 

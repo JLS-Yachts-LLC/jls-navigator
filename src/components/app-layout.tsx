@@ -8,6 +8,7 @@ import { DeployWatcher } from "@/components/deploy-watcher";
 import { WorkingIndicator } from "@/components/working-indicator";
 import { useAuth } from "@/lib/auth";
 import { usePolarisRole } from "@/lib/use-polaris-role";
+import { useOrbitFieldOnlyRedirect } from "@/lib/orbit-field-only";
 import { supabase } from "@/integrations/supabase/client";
 import { recordVisit } from "@/lib/recent-tabs";
 import { recordAction, installErrorCapture } from "@/lib/action-log";
@@ -19,6 +20,8 @@ import { installErrorLogging, setLogUser } from "@/lib/error-logger";
 export function AppLayout() {
   const { user, session, loading } = useAuth();
   const role = usePolarisRole();
+  // Orbit field crew use the Orbit 2 mobile app only — send them there.
+  const fieldOnly = useOrbitFieldOnlyRedirect();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -53,7 +56,7 @@ export function AppLayout() {
     if (user) { recordVisit(location.pathname); recordAction(`Navigated to ${location.pathname}`); }
   }, [location.pathname, user]);
 
-  if (loading) {
+  if (loading || fieldOnly) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
         <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
