@@ -16,6 +16,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { PORTAL_POSITIONS, positionLabel } from "@/lib/portal/portal-positions";
+import { PortalAlertRecipients } from "@/components/admin/portal-alert-recipients";
 import { PORTAL_MODULES, moduleState, type PortalModuleKey, type PortalModuleRow } from "@/lib/portal/portal-modules";
 import { PortalAddresses } from "./portal-addresses";
 import { Button } from "@/components/ui/button";
@@ -370,6 +371,7 @@ function VesselUsersPanel() {
       </div>
 
       <PortalAddresses />
+      <PortalAlertRecipients />
 
       {loading ? (
         <div className="flex h-32 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>

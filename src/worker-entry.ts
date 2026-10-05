@@ -1408,6 +1408,17 @@ export default {
           .catch((e) => console.error('[ticket-mail] error:', e instanceof Error ? e.message : String(e)))
       );
 
+      // ── Every 5 min: email staff about new Client Portal activity ──
+      //    The bell already rang when the client acted (database trigger); this
+      //    sends the email half. Paused from Automations → "Client Portal — staff
+      //    alerts by email". See lib/portal/alerts.server.
+      ctx.waitUntil(
+        import('./lib/portal/alerts.server')
+          .then((m) => m.sendPortalAlerts())
+          .then((r) => { if (r.sent || r.failed) console.log('[portal-alerts]', JSON.stringify(r)) })
+          .catch((e) => console.error('[portal-alerts] error:', e instanceof Error ? e.message : String(e)))
+      );
+
       // ── Every 5 min: two-way sync of the Yacht IT Network with New Horizon ──
       //    Keeps each vessel's register and map the same on both desks. Every
       //    few hours the run is a full pass rather than incremental — see

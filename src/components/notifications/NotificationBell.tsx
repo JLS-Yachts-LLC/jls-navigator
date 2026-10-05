@@ -75,7 +75,13 @@ export function NotificationBell() {
 
   function open(n: Notification) {
     if (!n.read_at) void markRead([n.id]);
-    if (n.action_url) navigate({ to: n.action_url as any }).catch(() => {});
+    if (n.action_url) {
+      // A link may carry a query (e.g. /polaris-redesign?screen=client-requests);
+      // the router wants the path and the search params separately.
+      const [path, query] = n.action_url.split("?");
+      const search = query ? Object.fromEntries(new URLSearchParams(query)) : undefined;
+      navigate({ to: path as any, ...(search ? { search: search as any } : {}) }).catch(() => {});
+    }
   }
 
   return (
