@@ -928,6 +928,11 @@ export default {
       const { portalDocumentOpenHandler } = await import('./routes/api.portal.documents')
       return portalDocumentOpenHandler(request)
     }
+    // Client portal — a small-boat owner's boats (Orbit 2 Managed Boats).
+    if (url.pathname === '/api/portal/boats') {
+      const { portalBoatsHandler } = await import('./routes/api.portal.boats')
+      return portalBoatsHandler(request)
+    }
 
     // What the permits sync would write, without writing it (admin only).
     if (url.pathname === '/api/sharepoint/permits-dry-run') {
