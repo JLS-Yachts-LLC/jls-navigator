@@ -5,8 +5,15 @@
  * lives outside Supabase (QuickBooks) or under service-role-only tables.
  *
  * The caller must send `Authorization: Bearer <supabase access_token>`.
+ *
+ * Admin preview ("View as" → a client account): the portal page sends
+ * `X-Portal-Preview: <captain_account_id>` with the ADMIN's own token. That is
+ * only honoured for a staff admin (requireAdminAccess, which also refuses any
+ * captain login), and resolves to the previewed account's vessel. The routes are
+ * read-only, and anything they record is recorded under the admin's own id.
  */
 import { createClient } from '@supabase/supabase-js'
+import { requireAdminAccess } from '@/lib/admin/access'
 
 export type PortalYacht = {
   userId: string
@@ -16,6 +23,8 @@ export type PortalYacht = {
   yachtId: string
   vesselName: string
   qboCustomerId: string | null
+  /** True when a staff admin is previewing this vessel's portal. */
+  preview: boolean
 }
 
 function admin() {
@@ -46,6 +55,8 @@ export async function resolvePortalYacht(
     .select('yacht_id')
     .eq('user_id', user.id)
     .eq('active', true)
+    // A boat-owner link has no yacht — see resolvePortalBoats() for those.
+    .not('yacht_id', 'is', null)
     .limit(1)
     .maybeSingle()
   if (!acct?.yacht_id) return { ok: false, response: json({ error: 'No vessel linked to this account' }, 403) }
