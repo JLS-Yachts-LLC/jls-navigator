@@ -18,7 +18,7 @@ import {
   MapPin, FileText, Download, ExternalLink, Clock, CheckCircle2,
   Bell, Compass, Wrench, CalendarRange, ShieldCheck, Menu, AlertTriangle, Eye,
   Pencil, Trash2, UserPlus, RotateCcw, ImagePlus,
-  ClipboardCheck, NotebookPen,
+  ClipboardCheck, NotebookPen, Anchor,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { portalFetch } from "@/lib/portal/portal-fetch";
@@ -30,6 +30,7 @@ import { StockSection } from "@/components/portal/sections/stock-section";
 import { ChecklistsSection } from "@/components/portal/sections/checklists-section";
 import { HoursSection } from "@/components/portal/sections/hours-section";
 import { HandoverSection } from "@/components/portal/sections/handover-section";
+import { MovementsSection } from "@/components/portal/sections/movements-section";
 import { CharterSection } from "@/components/portal/sections/charter-section";
 import { IsmSection } from "@/components/portal/sections/ism-section";
 import { canApproveRequisition, hiddenSections, canSeeFinance, canManageVessel } from "@/lib/portal/portal-positions";
@@ -438,7 +439,7 @@ function MfaVerifyScreen({ onDone, onSignOut }: { onDone: () => void; onSignOut:
 // ═══════════════════════════════════════════════════════════════════════════
 type Tab =
   | "home"
-  | "alerts" | "positions" | "crew" | "documents" | "pms" | "balances" | "invoices" | "charter" | "ism" | "stock" | "checklists" | "hours" | "handover"
+  | "alerts" | "positions" | "crew" | "documents" | "pms" | "balances" | "invoices" | "charter" | "ism" | "stock" | "checklists" | "hours" | "handover" | "movements"
   | "requests" | "logistics" | "chat" | "directory"
   | "finances"; // legacy alias used by the Home module launcher → routes to Invoices/Finance
 
@@ -456,6 +457,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { key: "alerts", label: "Alerts", icon: Bell },
       { key: "positions", label: "Positions", icon: Compass },
+      { key: "movements", label: "Arrivals & departures", icon: Anchor },
       { key: "crew", label: "Crew & immigration", icon: Users },
       { key: "documents", label: "Documents", icon: FileCheck2 },
       { key: "requests", label: "Requests & orders", icon: LifeBuoy },
@@ -686,6 +688,10 @@ function PortalShell({ link, email, onSignOut, preview = false }: { link: Captai
                        onNewRequest={() => setNewRequestCat("general")}
                        displayName={link.display_name ?? email} refreshKey={refreshKey} />
         )}
+        {tab === "movements" && (
+          <MovementsSection yachtId={link.yacht_id} canEdit={!preview}
+                            onOpenRequest={(id) => { setTab("requests"); setOpenRequestId(id); }} />
+        )}
         {tab === "crew" && <CrewTab yachtId={link.yacht_id} />}
         {tab === "documents" && <DocumentsTab yachtId={link.yacht_id} />}
         {(tab === "invoices" || tab === "finances") && <FinancesTab />}
@@ -730,7 +736,8 @@ type ModuleDef = { key: Tab; label: string; blurb: string; icon: any; accent: st
 // Core tiles — everything JLS does for the vessel as its agent.
 const CORE_MODULES: ModuleDef[] = [
   { key: "requests",  label: "Requests & orders",      blurb: "Provisioning, bunkering, uniform, permits & more", icon: LifeBuoy,   accent: "text-primary bg-primary/10 border-primary/25" },
-  { key: "crew",      label: "Crew & immigration",     blurb: "Roster, visas, sign-on & sign-off",            icon: Users,      accent: "text-primary bg-primary/10 border-primary/25" },
+  { key: "movements", label: "Arrivals & departures",  blurb: "Pre-arrival form & crew sign-on / sign-off",   icon: Anchor,     accent: "text-primary bg-primary/10 border-primary/25" },
+  { key: "crew",      label: "Crew & immigration",     blurb: "Roster, visas & passports",                    icon: Users,      accent: "text-primary bg-primary/10 border-primary/25" },
   { key: "finances",  label: "Invoices & balances",    blurb: "Invoices, quotations & statement",             icon: Wallet,     accent: "text-primary bg-primary/10 border-primary/25" },
   { key: "logistics", label: "Deliveries",             blurb: "Live driver position, deliveries & PODs",      icon: Truck,      accent: "text-primary bg-primary/10 border-primary/25" },
   { key: "documents", label: "Documents",              blurb: "Vessel papers, permits & visas",               icon: FileCheck2, accent: "text-primary bg-primary/10 border-primary/25" },

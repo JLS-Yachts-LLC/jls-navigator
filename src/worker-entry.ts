@@ -966,6 +966,16 @@ export default {
       const { portalChecklistsHandler } = await import('./routes/api.portal.checklists')
       return portalChecklistsHandler(request)
     }
+    // Client portal — Pre-Arrival / Cruising Permit form.
+    if (url.pathname === '/api/portal/prearrival') {
+      const { portalPrearrivalHandler } = await import('./routes/api.portal.prearrival')
+      return portalPrearrivalHandler(request)
+    }
+    // Client portal — Seaport Immigration sign-on / sign-off requests.
+    if (url.pathname === '/api/portal/seaport') {
+      const { portalSeaportHandler } = await import('./routes/api.portal.seaport')
+      return portalSeaportHandler(request)
+    }
     // Client portal — the vessel's own logo / badge.
     if (url.pathname === '/api/portal/vessel-logo') {
       const { portalVesselLogoHandler } = await import('./routes/api.portal.vessel-logo')

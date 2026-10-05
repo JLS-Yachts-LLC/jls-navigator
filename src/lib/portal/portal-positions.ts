@@ -26,8 +26,8 @@ const HIDDEN_BY_POSITION: Record<string, string[]> = {
   owner: ["pms", "ism", "stock", "checklists", "hours", "handover"],
   representative: ["pms", "ism", "stock", "checklists", "hours", "handover"],
   purser: ["pms", "ism", "positions", "charter"],
-  chief_stewardess: ["pms", "ism", "balances", "invoices"],
-  chef: ["pms", "ism", "balances", "invoices"],
+  chief_stewardess: ["pms", "ism", "balances", "invoices", "movements"],
+  chef: ["pms", "ism", "balances", "invoices", "movements"],
 };
 
 /** Portal section keys hidden from this position. */
