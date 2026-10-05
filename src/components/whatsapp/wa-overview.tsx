@@ -11,7 +11,10 @@ import { db, waApi, Chip } from "./wa-common";
 interface Status {
   connected: boolean;
   presence: Record<string, boolean>;
-  number: { display_phone_number?: string; verified_name?: string; quality_rating?: string; messaging_limit_tier?: string } | null;
+  number: {
+    display_phone_number?: string; verified_name?: string; quality_rating?: string; messaging_limit_tier?: string;
+    name_status?: string; new_name_status?: string;
+  } | null;
   error: string | null;
   account: { name: string | null; apps: Array<{ id: string; name: string }> } | null;
   account_error: string | null;
@@ -88,12 +91,15 @@ export function WaOverview() {
           <div>
             <h2 className="font-semibold">WhatsApp Business connection</h2>
             {status?.connected && status.number ? (
+              <>
               <p className="mt-1 text-sm text-muted-foreground">
                 Sending as <strong className="text-foreground">{status.number.verified_name}</strong>{" "}
                 ({status.number.display_phone_number})
                 {quality && <> · quality <Chip t={quality === "GREEN" ? "green" : quality === "YELLOW" ? "amber" : "red"}>{quality.toLowerCase()}</Chip></>}
                 {status.number.messaging_limit_tier && <> · limit {status.number.messaging_limit_tier.replace("TIER_", "").toLowerCase()} / day</>}
               </p>
+              <NameStatus current={status.number.name_status} pending={status.number.new_name_status} />
+              </>
             ) : (
               <p className="mt-1 text-sm text-muted-foreground">
                 {status?.error ? `Meta refused the connection: ${status.error}` : "Not connected yet. Everything else can be set up meanwhile."}
@@ -179,6 +185,30 @@ export function WaOverview() {
         </ul>
       </div>
     </div>
+  );
+}
+
+/** Meta's review of the business display name — clients see the name in chats once it's approved. */
+const NAME_STATUS: Record<string, { label: string; t: "green" | "amber" | "red" | "grey" }> = {
+  APPROVED: { label: "approved", t: "green" },
+  AVAILABLE_WITHOUT_REVIEW: { label: "approved", t: "green" },
+  PENDING_REVIEW: { label: "in review", t: "amber" },
+  DECLINED: { label: "declined", t: "red" },
+  EXPIRED: { label: "expired", t: "red" },
+  NONE: { label: "not submitted", t: "grey" },
+};
+
+function NameStatus({ current, pending }: { current?: string; pending?: string }) {
+  if (!current && !pending) return null;
+  const now = current ? NAME_STATUS[current] ?? { label: current.toLowerCase().replace(/_/g, " "), t: "grey" as const } : null;
+  const next = pending && pending !== "NONE"
+    ? NAME_STATUS[pending] ?? { label: pending.toLowerCase().replace(/_/g, " "), t: "grey" as const } : null;
+  return (
+    <p className="mt-1 text-xs text-muted-foreground">
+      Display name {now && <Chip t={now.t}>{now.label}</Chip>}
+      {next && <> · requested change <Chip t={next.t}>{next.label}</Chip></>}
+      {now?.t !== "green" && " — until it's approved, clients who haven't saved the number see “Unknown user” in chats."}
+    </p>
   );
 }
 

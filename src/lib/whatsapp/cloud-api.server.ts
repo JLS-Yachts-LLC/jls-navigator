@@ -73,7 +73,7 @@ async function graph(cfg: WaConfig, path: string, init: RequestInit = {}): Promi
 
 /** The connected number, as Meta knows it. */
 export async function phoneInfo(cfg: WaConfig) {
-  return graph(cfg, `${cfg.phoneNumberId}?fields=display_phone_number,verified_name,quality_rating,messaging_limit_tier`);
+  return graph(cfg, `${cfg.phoneNumberId}?fields=display_phone_number,verified_name,quality_rating,messaging_limit_tier,name_status,new_name_status`);
 }
 
 /** The WhatsApp Business Account's name, and which apps receive its webhooks. */
