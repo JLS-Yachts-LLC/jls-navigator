@@ -2494,6 +2494,18 @@ function BalancesTab() {
   const [data, setData] = useState<FinanceData | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const [statementBusy, setStatementBusy] = useState(false);
+
+  /** Today's open-item statement, aged, on JLS letterhead. */
+  async function openStatement() {
+    setStatementBusy(true);
+    try {
+      const res = await authedFetch("/api/portal/finance?statement=1");
+      if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error ?? "Could not create the statement.");
+      window.open(URL.createObjectURL(await res.blob()), "_blank");
+    } catch (e: any) { alert(e?.message ?? "Could not create the statement."); }
+    finally { setStatementBusy(false); }
+  }
 
   useEffect(() => {
     void (async () => {
@@ -2519,9 +2531,17 @@ function BalancesTab() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-lg font-bold">Balances</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Account statement for {data.vessel}.</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-lg font-bold">Balances</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Account statement for {data.vessel}.</p>
+        </div>
+        {data.linked && (
+          <button type="button" onClick={() => void openStatement()} disabled={statementBusy}
+                  className="inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-border px-3 text-xs font-medium transition hover:border-primary/50 disabled:opacity-50">
+            {statementBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Statement PDF
+          </button>
+        )}
       </div>
       {!data.linked ? (
         <Card className="p-6 text-center text-sm text-muted-foreground">

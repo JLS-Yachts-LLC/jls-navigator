@@ -45,6 +45,30 @@ export async function portalFinanceHandler(request: Request): Promise<Response> 
   try {
     const customerId = await resolveCustomerId(yacht)
 
+    // ── Statement of account PDF (open items, aged) ──
+    if (url.searchParams.get('statement')) {
+      if (!customerId) return json({ error: 'No billing account linked to your vessel yet.' }, 404)
+      const { qboQuery } = await import('@/lib/qb/qbo.server')
+      const res = await qboQuery(
+        `select * from Invoice where CustomerRef = '${ql(customerId)}' and Balance > '0' orderby TxnDate maxresults 500`,
+      )
+      const invoices = (res?.QueryResponse?.Invoice ?? []).map((i: any) => ({
+        docNumber: i.DocNumber ?? null, date: i.TxnDate ?? null, dueDate: i.DueDate ?? null,
+        total: Number(i.TotalAmt ?? 0), balance: Number(i.Balance ?? 0), currency: i.CurrencyRef?.value ?? 'AED',
+      }))
+      const billTo = (res?.QueryResponse?.Invoice?.[0]?.CustomerRef?.name as string | undefined) ?? null
+      const { buildStatementPdf } = await import('@/lib/portal/statement-pdf.server')
+      const bytes = await buildStatementPdf({ vesselName: yacht.vesselName, billTo, invoices })
+      const stamp = new Date().toISOString().slice(0, 10)
+      return new Response(bytes as unknown as BodyInit, {
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': `inline; filename="Statement - ${yacht.vesselName.replace(/[^\w .-]+/g, '')} - ${stamp}.pdf"`,
+          'Cache-Control': 'no-store',
+        },
+      })
+    }
+
     // ── Verified invoice PDF download ──
     if (invoicePdfId) {
       if (!customerId) return json({ error: 'No billing account linked to your vessel yet.' }, 404)
