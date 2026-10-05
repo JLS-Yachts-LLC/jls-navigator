@@ -991,6 +991,15 @@ export default {
       const { portalVesselLogoHandler } = await import('./routes/api.portal.vessel-logo')
       return portalVesselLogoHandler(request)
     }
+    // Client portal — one managed boat in detail, and opening its documents.
+    if (url.pathname === '/api/portal/boats/detail') {
+      const { portalBoatDetailHandler } = await import('./routes/api.portal.boat-detail')
+      return portalBoatDetailHandler(request)
+    }
+    if (url.pathname === '/api/portal/boats/open') {
+      const { portalBoatOpenHandler } = await import('./routes/api.portal.boat-detail')
+      return portalBoatOpenHandler(request)
+    }
     // Client portal — a small-boat owner's boats (Orbit 2 Managed Boats).
     if (url.pathname === '/api/portal/boats') {
       const { portalBoatsHandler } = await import('./routes/api.portal.boats')

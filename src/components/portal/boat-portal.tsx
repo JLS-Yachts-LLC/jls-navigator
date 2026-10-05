@@ -7,11 +7,14 @@
  * directly — it all comes from /api/portal/boats, scoped server-side to the
  * boats on the login and stripped of the office's internal fields.
  *
- * Phase 1: the boat picker and the boat itself (photo + spec). Compliance,
- * Documents, Jobs, Safety kit and Requests follow in later phases; they are
- * shown in the menu as "soon" so an owner can see what is coming.
+ * Home (photo, spec and what needs attention), Compliance, Documents, Jobs and
+ * Safety kit come from /api/portal/boats/detail (boat-sections.tsx). Requests
+ * follow in a later phase and show as "soon".
  */
 import { useCallback, useEffect, useState } from "react";
+import {
+  BoatAlertsCard, BoatCompliance, BoatDocuments, BoatJobs, BoatSafetyKit, boatAlerts, type BoatDetail,
+} from "@/components/portal/boat-sections";
 import {
   AlertTriangle, ClipboardList, Eye, FileCheck2, Home, LifeBuoy, Loader2, LogOut,
   Menu, ShieldCheck, Ship, Wrench, X,
@@ -37,11 +40,15 @@ type PortalBoat = {
   };
 };
 
+type BoatTab = "home" | "compliance" | "documents" | "jobs" | "safety";
+const NAV: Array<{ key: BoatTab; label: string; icon: any }> = [
+  { key: "home", label: "My Boat", icon: Home },
+  { key: "compliance", label: "Compliance", icon: ShieldCheck },
+  { key: "documents", label: "Documents", icon: FileCheck2 },
+  { key: "jobs", label: "Jobs", icon: Wrench },
+  { key: "safety", label: "Safety kit", icon: ClipboardList },
+];
 const SOON = [
-  { label: "Compliance", icon: ShieldCheck },
-  { label: "Documents", icon: FileCheck2 },
-  { label: "Jobs", icon: Wrench },
-  { label: "Safety kit", icon: ClipboardList },
   { label: "Requests", icon: LifeBuoy },
 ];
 
@@ -56,6 +63,9 @@ export function BoatPortal({ displayName, email, previewAccountId, onSignOut }: 
   const [error, setError] = useState<string | null>(null);
   const [boatId, setBoatId] = useState<string | null>(null);
   const [navOpen, setNavOpen] = useState(false);
+  const [tab, setTab] = useState<BoatTab>("home");
+  const [detail, setDetail] = useState<BoatDetail | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -73,6 +83,25 @@ export function BoatPortal({ displayName, email, previewAccountId, onSignOut }: 
   }, [previewAccountId]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // The selected boat's compliance, documents, jobs and safety kit.
+  useEffect(() => {
+    if (!boatId) { setDetail(null); return; }
+    let alive = true;
+    setDetail(null); setDetailError(null);
+    void (async () => {
+      try {
+        const res = await portalFetch(`/api/portal/boats/detail?boat=${encodeURIComponent(boatId)}`);
+        const body = await res.json().catch(() => ({}));
+        if (!alive) return;
+        if (!res.ok) setDetailError(body?.error ?? "Could not load your boat's details.");
+        else setDetail(body);
+      } catch {
+        if (alive) setDetailError("Could not reach JLS Yachts — check your connection and try again.");
+      }
+    })();
+    return () => { alive = false; };
+  }, [boatId, previewAccountId]);
 
   const boat = boats?.find((b) => b.id === boatId) ?? null;
   const preview = !!previewAccountId;
@@ -137,9 +166,17 @@ export function BoatPortal({ displayName, email, previewAccountId, onSignOut }: 
 
         <nav className="flex-1 space-y-4 overflow-y-auto px-3 pb-4">
           <div className="space-y-0.5">
-            <div className="flex w-full items-center gap-2.5 rounded-lg bg-primary/15 px-2.5 py-2 text-sm font-medium text-primary">
-              <Home className="h-4 w-4 shrink-0" /> <span className="flex-1 text-left">My Boat</span>
-            </div>
+            {NAV.map((n) => {
+              const count = n.key === "home" && detail ? boatAlerts(detail).filter((a) => a.tone !== "sky").length : 0;
+              return (
+                <button key={n.key} type="button" onClick={() => { setTab(n.key); setNavOpen(false); }}
+                        className={cn("flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition",
+                          tab === n.key ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-background/60 hover:text-foreground")}>
+                  <n.icon className="h-4 w-4 shrink-0" /> <span className="flex-1 text-left">{n.label}</span>
+                  {count > 0 && <span className="flex h-4 min-w-[16px] items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-bold text-black">{count}</span>}
+                </button>
+              );
+            })}
           </div>
           <div>
             <div className="px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/60">Coming soon</div>
@@ -169,7 +206,7 @@ export function BoatPortal({ displayName, email, previewAccountId, onSignOut }: 
             <Menu className="h-4 w-4" />
           </button>
           <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-semibold">My Boat</div>
+            <div className="truncate text-sm font-semibold">{NAV.find((n) => n.key === tab)?.label ?? "My Boat"}</div>
             <div className="truncate text-[11px] text-muted-foreground">{boat?.name ?? ""}</div>
           </div>
         </header>
@@ -187,16 +224,23 @@ export function BoatPortal({ displayName, email, previewAccountId, onSignOut }: 
             <div className="rounded-2xl border border-border bg-card/80 p-8 text-center text-sm text-muted-foreground">
               No boats are linked to your account yet. Contact JLS Yachts and we'll set it up.
             </div>
-          ) : (
-            <BoatHome boat={boat} />
-          )}
+          ) : tab === "home" ? (
+            <BoatHome boat={boat} detail={detail} onOpen={(t) => setTab(t as BoatTab)} />
+          ) : detailError ? (
+            <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-red-300">{detailError}</div>
+          ) : !detail ? (
+            <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+          ) : tab === "compliance" ? <BoatCompliance boatId={boat.id} detail={detail} />
+            : tab === "documents" ? <BoatDocuments boatId={boat.id} detail={detail} />
+            : tab === "jobs" ? <BoatJobs detail={detail} />
+            : <BoatSafetyKit detail={detail} />}
         </main>
       </div>
     </div>
   );
 }
 
-function BoatHome({ boat }: { boat: PortalBoat }) {
+function BoatHome({ boat, detail, onOpen }: { boat: PortalBoat; detail: BoatDetail | null; onOpen: (tab: string) => void }) {
   const s = boat.spec;
   const rows: [string, string | null][] = [
     ["Type", boat.boatType],
@@ -229,6 +273,8 @@ function BoatHome({ boat }: { boat: PortalBoat }) {
         </div>
       </div>
 
+      {detail && <BoatAlertsCard detail={detail} onOpen={onOpen} />}
+
       <div className="rounded-2xl border border-border bg-card/80 p-5">
         <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Boat details</h2>
         <dl className="grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -241,9 +287,6 @@ function BoatHome({ boat }: { boat: PortalBoat }) {
         </dl>
       </div>
 
-      <p className="text-center text-xs text-muted-foreground/70">
-        Inspections, documents, jobs and your safety kit are on the way to this portal.
-      </p>
     </div>
   );
 }
