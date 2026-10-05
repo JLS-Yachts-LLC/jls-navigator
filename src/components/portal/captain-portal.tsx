@@ -21,7 +21,7 @@ import {
   ClipboardCheck, NotebookPen, Anchor, IdCard, CalendarDays, Upload,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { portalFetch } from "@/lib/portal/portal-fetch";
+import { portalFetch, setPortalYacht } from "@/lib/portal/portal-fetch";
 import { PortalBrandHeader, WrongAddressScreen, checkPortalAddress } from "./portal-address";
 import { isLowStock } from "@/lib/portal/onboard";
 import { moduleState, sectionEnabled, type PortalModuleState, type PortalModuleRow } from "@/lib/portal/portal-modules";
@@ -60,7 +60,10 @@ type CaptainLink = { id: string; yacht_id: string; display_name: string | null; 
 export type ChatAccount = { id: string; yacht_id: string | null; boat_id?: string | null };
 /** A small-boat owner's link (captain_accounts.boat_id) — served by BoatPortal, not PortalShell. */
 type BoatOwnerLink = { id: string; display_name: string | null };
-type AccountRow = { id: string; yacht_id: string | null; boat_id: string | null; display_name: string | null; position: string | null };
+type AccountRow = { id: string; yacht_id: string | null; boat_id: string | null; display_name: string | null; position: string | null; yachts?: { vessel_name: string } | null };
+/** A yacht this login can switch to (logins linked to several yachts). */
+type VesselChoice = { link: CaptainLink; name: string };
+const YACHT_KEY = "polaris.portal.yacht";
 type Yacht = {
   id: string; vessel_name: string; vessel_type: string | null; flag: string | null;
   status: string | null; berth: string | null; location: string | null;
@@ -191,7 +194,14 @@ const LANDED_WITH = typeof window === "undefined" ? null : (() => {
 
 export function CaptainPortal() {
   const [stage, setStage] = useState<Stage>("loading");
-  const [link, setLink] = useState<CaptainLink | null>(null);
+  const [link, setLinkState] = useState<CaptainLink | null>(null);
+  const [vessels, setVessels] = useState<VesselChoice[]>([]);
+  /** Put a yacht on screen: remembered in this browser and named on every portal API call. */
+  const setLink = useCallback((l: CaptainLink | null) => {
+    setLinkState(l);
+    setPortalYacht(l?.yacht_id ?? null);
+    if (l) { try { window.localStorage.setItem(YACHT_KEY, l.yacht_id); } catch { /* private mode */ } }
+  }, []);
   const [boatOwner, setBoatOwner] = useState<BoatOwnerLink | null>(null);
   const [userEmail, setUserEmail] = useState<string>("");
   const [preview, setPreview] = useState(false);
@@ -236,10 +246,18 @@ export function CaptainPortal() {
     // A login is linked to a yacht, or to one or more managed boats (one row
     // per boat). A yacht link wins if a login somehow has both.
     const { data: links } = await db.from("captain_accounts")
-      .select("id, yacht_id, boat_id, display_name, position")
+      .select("id, yacht_id, boat_id, display_name, position, yachts(vessel_name)")
       .eq("user_id", session.user.id).eq("active", true)
       .order("created_at", { ascending: true }) as { data: AccountRow[] | null };
-    const yachtLink = links?.find((l) => l.yacht_id);
+    // Several yachts on one login: offer a switcher, and open the one used last.
+    const yachtLinks = (links ?? []).filter((l) => l.yacht_id);
+    setVessels(yachtLinks.map((l) => ({
+      link: { id: l.id, yacht_id: l.yacht_id!, display_name: l.display_name, position: l.position },
+      name: l.yachts?.vessel_name ?? "Vessel",
+    })));
+    let lastYacht: string | null = null;
+    try { lastYacht = window.localStorage.getItem(YACHT_KEY); } catch { /* private mode */ }
+    const yachtLink = yachtLinks.find((l) => l.yacht_id === lastYacht) ?? yachtLinks[0];
     const boatLink = links?.find((l) => l.boat_id);
     if (yachtLink) setLink({ ...yachtLink, yacht_id: yachtLink.yacht_id! });
     else if (boatLink) setBoatOwner(boatLink);
@@ -314,7 +332,8 @@ export function CaptainPortal() {
       )}
       {stage === "ready" && link && (
         <PreviewContext.Provider value={preview}>
-          <PortalShell link={link} email={userEmail} onSignOut={signOut} preview={preview} />
+          <PortalShell key={link.id} link={link} email={userEmail} onSignOut={signOut} preview={preview}
+                       vessels={preview ? [] : vessels} onSwitchVessel={(l) => setLink(l)} />
         </PreviewContext.Provider>
       )}
     </div>
@@ -691,7 +710,10 @@ type ChatMessage = {
   id: string; sender_name: string | null; sender_role: "staff" | "portal"; body: string; created_at: string;
 };
 
-function PortalShell({ link, email, onSignOut, preview = false }: { link: CaptainLink; email: string; onSignOut: () => void; preview?: boolean }) {
+function PortalShell({ link, email, onSignOut, preview = false, vessels = [], onSwitchVessel }: {
+  link: CaptainLink; email: string; onSignOut: () => void; preview?: boolean;
+  vessels?: VesselChoice[]; onSwitchVessel?: (l: CaptainLink) => void;
+}) {
   const [tab, setTab] = useState<Tab>("home");
   const [yacht, setYacht] = useState<Yacht | null>(null);
   const [newRequestCat, setNewRequestCat] = useState<string | null>(null);
@@ -782,8 +804,16 @@ function PortalShell({ link, email, onSignOut, preview = false }: { link: Captai
               <img src={yacht.logo_url} alt={`${yacht.vessel_name} logo`} className="max-h-full max-w-full object-contain" />
             </div>
           )}
-          <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/70">Your vessel</div>
-          <div className="mt-0.5 truncate text-sm font-bold">{yacht?.vessel_name ?? "…"}</div>
+          <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/70">{vessels.length > 1 ? "Your vessels" : "Your vessel"}</div>
+          {vessels.length > 1 && onSwitchVessel ? (
+            <select aria-label="Switch vessel" value={link.yacht_id}
+                    onChange={(e) => { const v = vessels.find((x) => x.link.yacht_id === e.target.value); if (v) onSwitchVessel(v.link); }}
+                    className="mt-1 w-full rounded-lg border border-border bg-background/60 px-2 py-1.5 text-sm font-bold outline-none focus:border-primary/50">
+              {vessels.map((v) => <option key={v.link.id} value={v.link.yacht_id}>{v.name}</option>)}
+            </select>
+          ) : (
+            <div className="mt-0.5 truncate text-sm font-bold">{yacht?.vessel_name ?? "…"}</div>
+          )}
           <div className="truncate text-[11px] text-muted-foreground">{link.display_name ?? email}</div>
         </div>
 
@@ -2409,10 +2439,10 @@ function AlertsTab({ yachtId, onOpen, financeOk, stockOk, gatePassOk }: { yachtI
     void (async () => {
       setLoading(true);
       const [reqR, crewR, visaR, permitR, finR, logR, stockR, passR] = await Promise.allSettled([
-        db.from("captain_requests").select("id, reference, title, status"),
-        db.from("crew_members").select("id, full_name, first_name, last_name, passport_expiry_date"),
-        db.from("visa_applications").select("id, given_name, surname, visa_expiry"),
-        db.from("permits").select("id, permit_type, expiry_date"),
+        db.from("captain_requests").select("id, reference, title, status").eq("yacht_id", yachtId),
+        db.from("crew_members").select("id, full_name, first_name, last_name, passport_expiry_date").eq("yacht_id", yachtId),
+        db.from("visa_applications").select("id, given_name, surname, visa_expiry").eq("yacht_id", yachtId),
+        db.from("permits").select("id, permit_type, expiry_date").eq("yacht_id", yachtId),
         financeOk ? authedFetch("/api/portal/finance").then((r) => r.json()).catch(() => null) : Promise.resolve(null),
         authedFetch("/api/portal/logistics").then((r) => r.json()).catch(() => null),
         stockOk ? db.from("onboard_stock_items").select("quantity, min_quantity, par_quantity").eq("yacht_id", yachtId) : Promise.resolve({ data: [] }),

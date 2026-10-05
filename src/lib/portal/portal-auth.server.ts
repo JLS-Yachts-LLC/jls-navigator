@@ -99,15 +99,23 @@ export async function resolvePortalYacht(
     if (error || !user) return { ok: false, response: json({ error: 'Not authenticated' }, 401) }
 
     // The user must have an ACTIVE captain account — this is the isolation boundary.
-    const { data: acct } = await sb
+    // A login can be linked to several yachts; the portal names the one on screen
+    // in X-Portal-Yacht, honoured only when this login really has that link.
+    const wanted = request.headers.get('X-Portal-Yacht')?.trim()
+    let q = sb
       .from('captain_accounts')
       .select('yacht_id, position')
       .eq('user_id', user.id)
       .eq('active', true)
       // A boat-owner link has no yacht — see resolvePortalBoats() for those.
       .not('yacht_id', 'is', null)
-      .limit(1)
-      .maybeSingle()
+    if (wanted && /^[0-9a-f-]{36}$/i.test(wanted)) q = q.eq('yacht_id', wanted)
+    let { data: acct } = await q.order('created_at', { ascending: true }).limit(1).maybeSingle()
+    if (!acct && wanted) {
+      ;({ data: acct } = await sb.from('captain_accounts').select('yacht_id, position')
+        .eq('user_id', user.id).eq('active', true).not('yacht_id', 'is', null)
+        .order('created_at', { ascending: true }).limit(1).maybeSingle())
+    }
     if (!acct?.yacht_id) return { ok: false, response: json({ error: 'No vessel linked to this account' }, 403) }
     caller = { id: user.id, email: user.email ?? '' }
     yachtId = acct.yacht_id
