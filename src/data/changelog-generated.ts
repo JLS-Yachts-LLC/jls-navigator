@@ -10,6 +10,18 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "The client portal's sign-in now shows the Polaris star"
+      },
+      {
+        "type": "feature",
+        "title": "WhatsApp sends go to each number only once, and duplicate contacts can be merged — a Duplicates button groups records sharing a number on the same yacht, merges keep their lists, messages, replies and consent history on one record, and merged imports aren't re-created"
+      },
+      {
+        "type": "feature",
+        "title": "Bulk WhatsApp consent and CSV contact import — record consent or opt-outs for many selected contacts at once (each with its own audited entry and a required note), and import contacts from a CSV with a downloadable template, a row-by-row preview that matches yachts and existing contacts, and optional consent columns"
+      },
+      {
+        "type": "feature",
         "title": "The login page and the top of every screen now show the Polaris star from the browser tab"
       },
       {
