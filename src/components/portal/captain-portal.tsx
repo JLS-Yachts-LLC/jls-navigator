@@ -927,7 +927,7 @@ function PortalShell({ link, email, onSignOut, preview = false, vessels = [], on
         {tab === "documents" && <DocumentsTab yachtId={link.yacht_id} canSend={!preview} />}
         {(tab === "invoices" || tab === "finances") && <FinancesTab onOpenRequest={(id) => { setTab("requests"); setOpenRequestId(id); }} />}
         {tab === "balances" && <BalancesTab />}
-        {tab === "logistics" && <LogisticsTab />}
+        {tab === "logistics" && <LogisticsTab yachtId={link.yacht_id} canBook={!preview} onOpenRequest={(id) => { setTab("requests"); setOpenRequestId(id); }} />}
         {tab === "alerts" && <AlertsTab yachtId={link.yacht_id} financeOk={financeOk} stockOk={allowedKeys.has("stock")} gatePassOk={allowedKeys.has("gatepasses")} onOpen={(t) => { setTab(t); setOpenRequestId(null); }} />}
         {tab === "positions" && yacht && <PositionsTab yacht={yacht} />}
         {/* On board (Management module). The tabs only appear when the vessel
@@ -2236,6 +2236,93 @@ function FinancesTab({ onOpenRequest }: { onOpenRequest: (requestId: string) => 
 }
 
 // ── Logistics (ShipSync packages & deliveries, vessel-scoped) ─────────────────
+/**
+ * Ask JLS to collect something from the boat — returns, items for repair,
+ * outgoing parcels, luggage. Raised as a Client Request the logistics team
+ * schedules; the conversation and driver details follow on that request.
+ */
+function CollectionSheet({ yachtId, onClose, onBooked }: {
+  yachtId: string; onClose: () => void; onBooked: (r: { id: string; reference: string | null }) => void;
+}) {
+  const [what, setWhat] = useState("");
+  const [pieces, setPieces] = useState("1");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("JLS Yachts office");
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [window_, setWindow] = useState("Any time");
+  const [contact, setContact] = useState("");
+  const [notes, setNotes] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    db.from("yachts").select("berth, location").eq("id", yachtId).maybeSingle().then(({ data }: any) => {
+      const where = [data?.berth && `Berth ${data.berth}`, data?.location].filter(Boolean).join(", ");
+      if (where) setFrom((f) => f || where);
+    });
+  }, [yachtId]);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true); setError(null);
+    const { data: { user } } = await supabase.auth.getUser();
+    const when = new Date(`${date}T00:00:00Z`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+    const details = [
+      `Collection: ${what.trim()}`,
+      `Pieces: ${pieces || "1"}`,
+      `Collect from: ${from.trim() || "the vessel"}`,
+      `Deliver to: ${to.trim() || "JLS Yachts office"}`,
+      `When: ${when}, ${window_}`,
+      contact.trim() ? `On-board contact: ${contact.trim()}` : null,
+      notes.trim() ? `\nNotes: ${notes.trim()}` : null,
+    ].filter(Boolean).join("\n");
+    const { data, error } = await db.from("captain_requests").insert({
+      yacht_id: yachtId, created_by: user?.id, category: "general",
+      title: `Collection — ${what.trim()}`.slice(0, 200), details,
+      priority: date <= new Date().toISOString().slice(0, 10) ? "high" : "normal", needed_by: date,
+    }).select("id, reference").single();
+    setBusy(false);
+    if (error || !data) { setError(error?.message ?? "Could not book the collection."); return; }
+    onBooked({ id: data.id, reference: data.reference ?? null });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center"
+         onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <form onSubmit={submit} className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-3xl border border-border bg-card p-5 sm:rounded-3xl sm:p-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-bold">Book a collection</h2>
+          <button type="button" onClick={onClose} aria-label="Close" className="flex h-9 w-9 items-center justify-center rounded-xl text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <div className="col-span-2"><FieldLabel>What needs collecting?</FieldLabel>
+            <input className={inputCls} required maxLength={160} value={what} onChange={(e) => setWhat(e.target.value)} placeholder="e.g. Tender outboard for repair, returns to supplier" /></div>
+          <div><FieldLabel>Pieces</FieldLabel>
+            <input className={inputCls} type="number" min={1} value={pieces} onChange={(e) => setPieces(e.target.value)} /></div>
+          <div><FieldLabel>Date</FieldLabel>
+            <input className={inputCls} type="date" required min={new Date().toISOString().slice(0, 10)} value={date} onChange={(e) => setDate(e.target.value)} /></div>
+          <div className="col-span-2"><FieldLabel>Time</FieldLabel>
+            <select className={inputCls} value={window_} onChange={(e) => setWindow(e.target.value)}>
+              {["Any time", "Morning (08:00–12:00)", "Afternoon (12:00–17:00)", "Evening (17:00–20:00)"].map((w) => <option key={w}>{w}</option>)}
+            </select></div>
+          <div className="col-span-2"><FieldLabel>Collect from</FieldLabel>
+            <input className={inputCls} maxLength={200} value={from} onChange={(e) => setFrom(e.target.value)} placeholder="Marina and berth" /></div>
+          <div className="col-span-2"><FieldLabel>Deliver to</FieldLabel>
+            <input className={inputCls} maxLength={200} value={to} onChange={(e) => setTo(e.target.value)} /></div>
+          <div className="col-span-2"><FieldLabel>On-board contact</FieldLabel>
+            <input className={inputCls} maxLength={120} value={contact} onChange={(e) => setContact(e.target.value)} placeholder="Name and phone" /></div>
+          <div className="col-span-2"><FieldLabel>Notes</FieldLabel>
+            <textarea className={cn(inputCls, "min-h-[64px]")} maxLength={1000} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Size, weight, anything fragile…" /></div>
+        </div>
+        {error && <div className="mt-3 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-red-300">{error}</div>}
+        <PrimaryButton type="submit" disabled={busy || !what.trim()} className="mt-5 w-full">
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Truck className="h-4 w-4" />} Book collection
+        </PrimaryButton>
+      </form>
+    </div>
+  );
+}
+
 type LogisticsData = {
   vessel: string;
   packages: {
@@ -2293,7 +2380,9 @@ function PackageRow({ p }: { p: LogPackage }) {
   );
 }
 
-function LogisticsTab() {
+function LogisticsTab({ yachtId, canBook = false, onOpenRequest }: { yachtId: string; canBook?: boolean; onOpenRequest?: (id: string) => void }) {
+  const [booking, setBooking] = useState(false);
+  const [booked, setBooked] = useState<{ id: string; reference: string | null } | null>(null);
   const [data, setData] = useState<LogisticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -2325,10 +2414,24 @@ function LogisticsTab() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-lg font-bold">Logistics</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Packages and deliveries for {data.vessel}.</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-lg font-bold">Logistics</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Packages and deliveries for {data.vessel}.</p>
+        </div>
+        {canBook && (
+          <PrimaryButton onClick={() => setBooking(true)} className="min-h-9 px-4 text-xs"><Truck className="h-4 w-4" /> Book a collection</PrimaryButton>
+        )}
       </div>
+      {booked && (
+        <button type="button" onClick={() => onOpenRequest?.(booked.id)}
+                className="flex w-full items-center gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-left text-sm text-emerald-200">
+          <CheckCircle2 className="h-4 w-4 shrink-0" />
+          <span className="flex-1">Collection booked{booked.reference ? ` as ${booked.reference}` : ""} — JLS will confirm the driver and time.</span>
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      )}
+      {booking && <CollectionSheet yachtId={yachtId} onClose={() => setBooking(false)} onBooked={(r) => { setBooking(false); setBooked(r); }} />}
 
       {/* Active deliveries + live driver tracking */}
       {liveDeliveries.length > 0 && (
