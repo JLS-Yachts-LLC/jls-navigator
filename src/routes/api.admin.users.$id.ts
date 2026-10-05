@@ -230,11 +230,15 @@ const handlers = {
 
     const { data: profile } = await sb.from('user_profiles').select('email').eq('user_id', id).maybeSingle()
 
+    // Delete the login first: if Postgres refuses it (a foreign key still
+    // points at the user), nothing else has been touched and the account is
+    // left intact rather than half-deleted with no profile or role.
+    const { error: authErr } = await sb.auth.admin.deleteUser(id)
+    if (authErr && !/not found/i.test(authErr.message)) return json({ error: authErr.message }, 500)
+
     await sb.from('user_profiles').delete().eq('user_id', id)
     await sb.from('user_roles').delete().eq('user_id', id)
     await sb.from('captain_accounts').delete().eq('user_id', id)
-    const { error: authErr } = await sb.auth.admin.deleteUser(id)
-    if (authErr && !/not found/i.test(authErr.message)) return json({ error: authErr.message }, 500)
 
     await logAuditEvent({
       event_type:  'ADMIN',
