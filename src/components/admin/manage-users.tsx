@@ -10,12 +10,13 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Anchor, Check, Copy, Eye, KeyRound, Link2, Loader2, Plus, ShieldCheck, Ship, Trash2, UserRound, Users, X,
+  Anchor, Check, ChevronDown, Copy, Eye, KeyRound, Link2, Loader2, Plus, ShieldCheck, Ship, Trash2, UserRound, Users, X,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { PORTAL_POSITIONS, positionLabel } from "@/lib/portal/portal-positions";
+import { PORTAL_MODULES, moduleState, type PortalModuleKey, type PortalModuleRow } from "@/lib/portal/portal-modules";
 import { PortalAddresses } from "./portal-addresses";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -32,6 +33,7 @@ type CaptainRow = {
   orbit2_boats?: { name: string } | null;
 };
 type YachtOpt = { id: string; vessel_name: string; preferred_document_delivery?: string | null };
+type VesselModuleRow = PortalModuleRow & { id: string; yacht_id: string | null; boat_id: string | null };
 type BoatOpt = { id: string; name: string; client_name: string | null };
 
 /** The yacht or managed boat a portal row is linked to. */
@@ -112,6 +114,102 @@ function StaffPanel() {
   );
 }
 
+// ── Portal modules per vessel ────────────────────────────────────────────────
+/**
+ * The two portal modules for one vessel. Core (Agency with JLS) is always on —
+ * staff can only hide features. Management (On board) is off until switched on,
+ * normally as a 60-day trial first. Changes save straight away.
+ */
+function VesselModules({ rows, onSave }: {
+  rows: VesselModuleRow[];
+  onSave: (module: PortalModuleKey, patch: Partial<Pick<VesselModuleRow, "enabled" | "trial_ends_at" | "features">>) => void;
+}) {
+  const [open, setOpen] = useState<PortalModuleKey | null>(null);
+  const state = moduleState(rows);
+  const mgmt = rows.find((r) => r.module === "management");
+  const trialEnds = state.management.trialEndsAt;
+
+  const startTrial = () => {
+    const ends = new Date(); ends.setDate(ends.getDate() + 60);
+    onSave("management", { enabled: true, trial_ends_at: ends.toISOString() });
+  };
+  const toggleFeature = (module: PortalModuleKey, key: string, on: boolean) => {
+    const features = { ...(rows.find((r) => r.module === module)?.features ?? {}) };
+    if (on) delete features[key]; else features[key] = false;
+    onSave(module, { features });
+  };
+
+  const fmt = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+
+  return (
+    <div className="border-b border-border/60 bg-background/20 px-4 py-2.5 text-xs">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+        {/* Core */}
+        <button type="button" onClick={() => setOpen(open === "core" ? null : "core")}
+                className="inline-flex items-center gap-2 text-left hover:text-foreground" title={PORTAL_MODULES.core.blurb}>
+          <span className="h-2 w-2 rounded-full bg-primary" />
+          <span className="font-semibold text-primary">{PORTAL_MODULES.core.short}</span>
+          <span className="text-muted-foreground">· {PORTAL_MODULES.core.label} · included</span>
+          {state.core.hidden.size > 0 && <span className="text-muted-foreground">· {state.core.hidden.size} hidden</span>}
+          <ChevronDown className={cn("h-3 w-3 text-muted-foreground transition", open === "core" && "rotate-180")} />
+        </button>
+
+        {/* Management */}
+        <div className="inline-flex items-center gap-2">
+          <button type="button" role="switch" aria-checked={state.management.enabled}
+                  onClick={() => state.management.enabled
+                    ? onSave("management", { enabled: false, trial_ends_at: null })
+                    : startTrial()}
+                  title={state.management.enabled ? "Switch Management off for this vessel" : "Start a 60-day Management trial"}
+                  className={cn("relative h-5 w-9 rounded-full transition", state.management.enabled ? "bg-teal-500" : "bg-border")}>
+            <span className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-white transition", state.management.enabled ? "left-[18px]" : "left-0.5")} />
+          </button>
+          <button type="button" onClick={() => setOpen(open === "management" ? null : "management")}
+                  className="inline-flex items-center gap-2 text-left hover:text-foreground" title={PORTAL_MODULES.management.blurb}>
+            <span className={cn("font-semibold", state.management.enabled ? "text-teal-300" : "text-muted-foreground")}>{PORTAL_MODULES.management.short}</span>
+            <span className="text-muted-foreground">· {PORTAL_MODULES.management.label}</span>
+            {state.management.enabled && trialEnds && (
+              <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-300">Trial · ends {fmt(trialEnds)}</span>
+            )}
+            {state.management.trialExpired && !state.management.enabled && mgmt?.enabled && (
+              <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">Trial ended {fmt(trialEnds!)}</span>
+            )}
+            {state.management.enabled && !trialEnds && <span className="text-muted-foreground">· on</span>}
+            {!state.management.enabled && !mgmt?.enabled && <span className="text-muted-foreground">· off</span>}
+            <ChevronDown className={cn("h-3 w-3 text-muted-foreground transition", open === "management" && "rotate-180")} />
+          </button>
+          {state.management.enabled && trialEnds && (
+            <button type="button" onClick={() => onSave("management", { trial_ends_at: null })}
+                    className="text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">Make permanent</button>
+          )}
+          {!state.management.enabled && mgmt?.enabled && state.management.trialExpired && (
+            <button type="button" onClick={() => onSave("management", { enabled: true, trial_ends_at: null })}
+                    className="text-[11px] text-teal-300 underline-offset-2 hover:underline">Switch on</button>
+          )}
+        </div>
+      </div>
+
+      {open && (
+        <div className="mt-2.5 grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-4">
+          {PORTAL_MODULES[open].features.map((f) => {
+            const on = !state[open].hidden.has(f.key);
+            return (
+              <label key={f.key} title={f.blurb}
+                     className={cn("flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-1.5", on ? "border-border bg-background/40" : "border-border/40 text-muted-foreground")}>
+                <input type="checkbox" checked={on} onChange={(e) => toggleFeature(open, f.key, e.target.checked)} className="h-3.5 w-3.5" />
+                <span className="truncate">{f.label}</span>
+              </label>
+            );
+          })}
+          <div className="col-span-full text-[11px] text-muted-foreground">
+            Untick a feature to hide it from everyone on this vessel. What each person sees inside is still decided by their position.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Vessel Users (captain portal accounts) ───────────────────────────────────
 function VesselUsersPanel() {
   const { session } = useAuth();
@@ -124,20 +222,50 @@ function VesselUsersPanel() {
   const [addOpen, setAddOpen] = useState(false);
   const [reveal, setReveal] = useState<{ email: string; password: string; portalUrl?: string } | null>(null);
 
+  const [moduleRows, setModuleRows] = useState<VesselModuleRow[]>([]);
+
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: accounts }, { data: ys }, { data: bs }] = await Promise.all([
+    const [{ data: accounts }, { data: ys }, { data: bs }, { data: mods }] = await Promise.all([
       db.from("captain_accounts")
         .select("id, user_id, yacht_id, boat_id, display_name, email, active, position, created_at, yachts(vessel_name), orbit2_boats(name)")
         .order("created_at", { ascending: false }),
       db.from("yachts").select("id, vessel_name, preferred_document_delivery").order("vessel_name"),
       db.from("orbit2_boats").select("id, name, client_name").eq("active", true).order("name"),
+      db.from("yacht_portal_modules").select("id, yacht_id, boat_id, module, enabled, trial_ends_at, features"),
     ]);
     setRows(accounts ?? []);
     setYachts(ys ?? []);
     setBoats(bs ?? []);
+    setModuleRows(mods ?? []);
     setLoading(false);
   }, []);
+
+  /** Rows for one vessel (a yacht or a managed boat). */
+  const modulesFor = (yachtId: string | null, boatId: string | null) =>
+    moduleRows.filter((m) => (yachtId ? m.yacht_id === yachtId : m.boat_id === boatId));
+
+  /**
+   * Switch a module on/off, start or end a trial, or hide/show a feature for
+   * one vessel. One row per vessel+module; writing the whole row keeps it simple.
+   */
+  async function saveModule(yachtId: string | null, boatId: string | null, module: PortalModuleKey,
+                            patch: Partial<Pick<VesselModuleRow, "enabled" | "trial_ends_at" | "features">>) {
+    const existing = modulesFor(yachtId, boatId).find((m) => m.module === module);
+    const row = {
+      yacht_id: yachtId, boat_id: boatId, module,
+      enabled: existing?.enabled ?? (module === "core"),
+      trial_ends_at: existing?.trial_ends_at ?? null,
+      features: existing?.features ?? {},
+      ...patch,
+      updated_by: (session as any)?.user?.id ?? null,
+    };
+    const { data, error } = existing
+      ? await db.from("yacht_portal_modules").update(row).eq("id", existing.id).select().single()
+      : await db.from("yacht_portal_modules").insert(row).select().single();
+    if (error) { toast.error(error.message); return; }
+    setModuleRows((prev) => existing ? prev.map((m) => (m.id === existing.id ? data : m)) : [...prev, data]);
+  }
   useEffect(() => { void load(); }, [load]);
 
   const api = useCallback(async (payload: Record<string, unknown>): Promise<any> => {
@@ -304,6 +432,10 @@ function VesselUsersPanel() {
                   </select>
                 </label>}
               </div>
+              <VesselModules
+                rows={modulesFor(g.yachtId, g.isBoat ? g.key.slice(2) : null)}
+                onSave={(module, patch) => saveModule(g.yachtId, g.isBoat ? g.key.slice(2) : null, module, patch)}
+              />
               <table className="data-table">
                 <thead>
                   <tr>

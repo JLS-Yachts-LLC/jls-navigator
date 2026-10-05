@@ -14,6 +14,7 @@
  */
 import { createClient } from '@supabase/supabase-js'
 import { requireAdminAccess } from '@/lib/admin/access'
+import { moduleState, type PortalModuleRow, type PortalModuleState } from '@/lib/portal/portal-modules'
 
 export type PortalYacht = {
   userId: string
@@ -51,6 +52,19 @@ function admin() {
 
 const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json' } })
+
+/**
+ * The vessel's portal modules (yacht_portal_modules), folded the same way the
+ * portal UI folds them, so a server route can refuse a section the vessel has
+ * switched off rather than only hiding it in the menu.
+ */
+export async function portalModulesFor(yachtId: string): Promise<PortalModuleState> {
+  const { data } = await admin()
+    .from('yacht_portal_modules')
+    .select('module, enabled, trial_ends_at, features')
+    .eq('yacht_id', yachtId)
+  return moduleState((data ?? []) as PortalModuleRow[])
+}
 
 /** Resolve the authenticated portal user to their active vessel, or a ready-to-return error Response. */
 export async function resolvePortalYacht(

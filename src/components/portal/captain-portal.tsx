@@ -22,6 +22,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { portalFetch } from "@/lib/portal/portal-fetch";
 import { PortalBrandHeader, WrongAddressScreen, checkPortalAddress } from "./portal-address";
+import { moduleState, sectionEnabled, type PortalModuleState, type PortalModuleRow } from "@/lib/portal/portal-modules";
 import { hiddenSections, canSeeFinance, canManageVessel } from "@/lib/portal/portal-positions";
 import { cn } from "@/lib/utils";
 import { BoatPortal } from "./boat-portal";
@@ -433,43 +434,47 @@ type Tab =
   | "finances"; // legacy alias used by the Home module launcher → routes to Invoices/Finance
 
 type NavItem = { key: Tab; label: string; icon: any };
-type NavGroup = { title?: string; items: NavItem[] };
+type NavGroup = { title?: string; module?: "core" | "management"; items: NavItem[] };
 
-// Left "My Yacht" navigation — the Yacht Management App shell. The MY YACHT group is
-// the vessel's operational record; SUPPORT is how the client reaches JLS.
+// Left navigation, in the portal's two modules. AGENCY WITH JLS (core) is
+// everything JLS does for the vessel as its agent; ON BOARD (management) is the
+// crew's own tools, shown only when the vessel has that module switched on.
 const NAV_GROUPS: NavGroup[] = [
   { items: [{ key: "home", label: "Home", icon: Home }] },
   {
-    title: "My Yacht",
+    title: "Agency with JLS",
+    module: "core",
     items: [
       { key: "alerts", label: "Alerts", icon: Bell },
       { key: "positions", label: "Positions", icon: Compass },
-      { key: "crew", label: "Crew", icon: Users },
+      { key: "crew", label: "Crew & immigration", icon: Users },
       { key: "documents", label: "Documents", icon: FileCheck2 },
-      { key: "pms", label: "PMS", icon: Wrench },
+      { key: "requests", label: "Requests & orders", icon: LifeBuoy },
       { key: "balances", label: "Balances", icon: Wallet },
       { key: "invoices", label: "Invoices", icon: FileText },
-      { key: "charter", label: "Charter", icon: CalendarRange },
-      { key: "ism", label: "ISM", icon: ShieldCheck },
+      { key: "logistics", label: "Deliveries", icon: Truck },
+      { key: "chat", label: "Chat", icon: MessageSquare },
+      { key: "directory", label: "Directory", icon: Phone },
     ],
   },
   {
-    title: "Support",
+    title: "On board",
+    module: "management",
     items: [
-      { key: "requests", label: "Requests", icon: LifeBuoy },
-      { key: "logistics", label: "Logistics", icon: Truck },
-      { key: "chat", label: "Chat", icon: MessageSquare },
-      { key: "directory", label: "Directory", icon: Phone },
+      { key: "pms", label: "Jobs & maintenance", icon: Wrench },
+      { key: "charter", label: "Guests & charter", icon: CalendarRange },
+      { key: "ism", label: "ISM & safety", icon: ShieldCheck },
     ],
   },
 ];
 const ALL_NAV_ITEMS: NavItem[] = NAV_GROUPS.flatMap((g) => g.items);
 
-// Per-position module visibility — the lists live in lib/portal/portal-positions.
-function navGroupsFor(position: string | null): NavGroup[] {
+// What this person sees: the vessel's modules (lib/portal/portal-modules) narrowed
+// by their position (lib/portal/portal-positions).
+function navGroupsFor(position: string | null, modules: PortalModuleState): NavGroup[] {
   const hide = hiddenSections(position);
   return NAV_GROUPS
-    .map((g) => ({ ...g, items: g.items.filter((i) => !hide.has(i.key)) }))
+    .map((g) => ({ ...g, items: g.items.filter((i) => !hide.has(i.key) && sectionEnabled(i.key, modules)) }))
     .filter((g) => g.items.length > 0);
 }
 
@@ -489,6 +494,16 @@ function PortalShell({ link, email, onSignOut, preview = false }: { link: Captai
   const [refreshKey, setRefreshKey] = useState(0);
   const [chat, setChat] = useState<PortalChat | null>(null);
   const [navOpen, setNavOpen] = useState(false); // mobile sidebar drawer
+  const [moduleRows, setModuleRows] = useState<PortalModuleRow[] | null>(null);
+
+  // Which modules the vessel has switched on (no rows = core only).
+  useEffect(() => {
+    db.from("yacht_portal_modules")
+      .select("module, enabled, trial_ends_at, features")
+      .eq("yacht_id", link.yacht_id)
+      .then(({ data }: any) => setModuleRows(data ?? []));
+  }, [link.yacht_id]);
+  const modules = useMemo(() => moduleState(moduleRows), [moduleRows]);
 
   useEffect(() => {
     db.from("yachts")
@@ -514,16 +529,17 @@ function PortalShell({ link, email, onSignOut, preview = false }: { link: Captai
   const unread = chat?.portal_unread ?? 0;
   const openNewRequest = (cat: string) => { setNewRequestCat(cat); };
 
-  // Modules this position may see (Captain / unknown = all).
-  const navGroups = navGroupsFor(link.position);
-  const allowedKeys = new Set(navGroups.flatMap((g) => g.items.map((i) => i.key)));
-  const financeOk = canSeeFinance(link.position);
-  // If the current tab isn't visible for this position, fall back to Home.
+  // Sections this person may see: the vessel's modules, narrowed by position.
+  const navGroups = useMemo(() => navGroupsFor(link.position, modules), [link.position, modules]);
+  const allowedKeys = useMemo(() => new Set(navGroups.flatMap((g) => g.items.map((i) => i.key))), [navGroups]);
+  const financeOk = canSeeFinance(link.position) && sectionEnabled("finances", modules);
+  // If the current tab isn't visible for this person, fall back to Home.
   // ("finances" is the Home tile's legacy key for the Invoices section.)
   useEffect(() => {
+    if (moduleRows === null) return; // still loading the vessel's modules
     const visible = tab === "home" || (tab === "finances" ? financeOk : allowedKeys.has(tab));
     if (!visible) setTab("home");
-  }, [tab, allowedKeys, financeOk]);
+  }, [tab, allowedKeys, financeOk, moduleRows]);
 
   const activeItem = ALL_NAV_ITEMS.find((i) => i.key === tab);
 
@@ -569,7 +585,15 @@ function PortalShell({ link, email, onSignOut, preview = false }: { link: Captai
         <nav className="flex-1 space-y-4 overflow-y-auto px-3 pb-4">
           {navGroups.map((g, gi) => (
             <div key={gi}>
-              {g.title && <div className="px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/60">{g.title}</div>}
+              {g.title && (
+                <div className="flex items-center gap-1.5 px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/60">
+                  <span className={cn("h-1.5 w-1.5 rounded-full", g.module === "management" ? "bg-teal-400/80" : "bg-primary/80")} />
+                  <span className="flex-1">{g.title}</span>
+                  {g.module === "management" && modules.management.trialEndsAt && (
+                    <span className="normal-case tracking-normal text-muted-foreground/50" title={`Trial ends ${fmtDate(modules.management.trialEndsAt)}`}>Trial</span>
+                  )}
+                </div>
+              )}
               <div className="space-y-0.5">
                 {g.items.map((t) => (
                   <button key={t.key} onClick={() => { setTab(t.key); setOpenRequestId(null); setNavOpen(false); }}
@@ -637,7 +661,7 @@ function PortalShell({ link, email, onSignOut, preview = false }: { link: Captai
                    onSeeRequests={() => setTab("requests")}
                    onOpenRequest={(id) => { setTab("requests"); setOpenRequestId(id); }}
                    onOpenModule={(t) => { setTab(t); setOpenRequestId(null); }}
-                   unread={unread} financeOk={financeOk}
+                   unread={unread} financeOk={financeOk} modules={modules} allowedKeys={allowedKeys}
                    refreshKey={refreshKey}
                    canEditLogo={canManageVessel(link.position) && !preview}
                    onLogoChanged={(logo_url) => setYacht((y) => (y ? { ...y, logo_url } : y))} />
@@ -692,43 +716,82 @@ function PortalShell({ link, email, onSignOut, preview = false }: { link: Captai
 // (DeepBlue-style). Each tile opens one of the tabs. Tiles reflow 2-up on mobile
 // and 3-up on desktop; the tab bar / bottom bar remain for quick switching.
 type ModuleDef = { key: Tab; label: string; blurb: string; icon: any; accent: string };
-const MODULES: ModuleDef[] = [
-  { key: "requests",  label: "Service Requests",     blurb: "Provisioning, uniform, permits & more", icon: LifeBuoy,     accent: "text-sky-400 bg-sky-500/10 border-sky-500/25" },
-  { key: "crew",      label: "Crew, Visas & Permits", blurb: "Roster, visa status & compliance",      icon: Users,        accent: "text-violet-400 bg-violet-500/10 border-violet-500/25" },
-  { key: "finances",  label: "Finance",              blurb: "Invoices, quotes & statements",         icon: Wallet,       accent: "text-emerald-400 bg-emerald-500/10 border-emerald-500/25" },
-  { key: "logistics", label: "Logistics & Deliveries", blurb: "Parcels, shipments & ETAs",           icon: Truck,        accent: "text-amber-400 bg-amber-500/10 border-amber-500/25" },
-  { key: "documents", label: "Documents & e-Sign",   blurb: "Shared documents & signing",            icon: FileCheck2,   accent: "text-teal-400 bg-teal-500/10 border-teal-500/25" },
-  { key: "chat",      label: "Support & Directory",  blurb: "Chat with JLS + key contacts",          icon: MessageSquare, accent: "text-primary bg-primary/10 border-primary/25" },
+// Core tiles — everything JLS does for the vessel as its agent.
+const CORE_MODULES: ModuleDef[] = [
+  { key: "requests",  label: "Requests & orders",      blurb: "Provisioning, bunkering, uniform, permits & more", icon: LifeBuoy,   accent: "text-primary bg-primary/10 border-primary/25" },
+  { key: "crew",      label: "Crew & immigration",     blurb: "Roster, visas, sign-on & sign-off",            icon: Users,      accent: "text-primary bg-primary/10 border-primary/25" },
+  { key: "finances",  label: "Invoices & balances",    blurb: "Invoices, quotations & statement",             icon: Wallet,     accent: "text-primary bg-primary/10 border-primary/25" },
+  { key: "logistics", label: "Deliveries",             blurb: "Live driver position, deliveries & PODs",      icon: Truck,      accent: "text-primary bg-primary/10 border-primary/25" },
+  { key: "documents", label: "Documents",              blurb: "Vessel papers, permits & visas",               icon: FileCheck2, accent: "text-primary bg-primary/10 border-primary/25" },
+  { key: "chat",      label: "Chat & directory",       blurb: "Your agent, live chat & key contacts",         icon: MessageSquare, accent: "text-primary bg-primary/10 border-primary/25" },
+];
+// Management tiles — the crew's own tools; shown only when the vessel has the module.
+const MANAGEMENT_MODULES: ModuleDef[] = [
+  { key: "pms",     label: "Jobs & maintenance", blurb: "Planned maintenance, running hours & defects", icon: Wrench,        accent: "text-teal-300 bg-teal-500/10 border-teal-500/25" },
+  { key: "charter", label: "Guests & charter",   blurb: "Bookings, itineraries & guest preferences",   icon: CalendarRange, accent: "text-teal-300 bg-teal-500/10 border-teal-500/25" },
+  { key: "ism",     label: "ISM & safety",       blurb: "Certificates, drills & the safety record",    icon: ShieldCheck,   accent: "text-teal-300 bg-teal-500/10 border-teal-500/25" },
 ];
 
-function ModuleLauncher({ onOpen, unread, financeOk }: { onOpen: (t: Tab) => void; unread: number; financeOk: boolean }) {
+function ModuleTiles({ defs, onOpen, unread }: { defs: ModuleDef[]; onOpen: (t: Tab) => void; unread: number }) {
   return (
-    <section>
-      <h2 className="mb-3 text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">Modules</h2>
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-        {MODULES.filter((m) => financeOk || m.key !== "finances").map((m) => (
-          <button
-            key={m.key}
-            onClick={() => onOpen(m.key)}
-            className="group relative flex flex-col rounded-2xl border border-border bg-card/60 p-4 text-left transition hover:border-primary/50 hover:bg-card"
-          >
-            <div className={cn("flex h-11 w-11 items-center justify-center rounded-xl border", m.accent)}>
-              <m.icon className="h-5 w-5" />
-            </div>
-            {m.key === "chat" && unread > 0 && (
-              <span className="absolute right-3 top-3 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
-                {unread > 9 ? "9+" : unread}
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+      {defs.map((m) => (
+        <button
+          key={m.key}
+          onClick={() => onOpen(m.key)}
+          className="group relative flex flex-col rounded-2xl border border-border bg-card/60 p-4 text-left transition hover:border-primary/50 hover:bg-card"
+        >
+          <div className={cn("flex h-11 w-11 items-center justify-center rounded-xl border", m.accent)}>
+            <m.icon className="h-5 w-5" />
+          </div>
+          {m.key === "chat" && unread > 0 && (
+            <span className="absolute right-3 top-3 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+              {unread > 9 ? "9+" : unread}
+            </span>
+          )}
+          <div className="mt-3 flex items-center gap-1 text-sm font-semibold">
+            {m.label}
+            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50 transition group-hover:translate-x-0.5 group-hover:text-primary" />
+          </div>
+          <div className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{m.blurb}</div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ModuleLauncher({ onOpen, unread, financeOk, modules, allowedKeys }: {
+  onOpen: (t: Tab) => void; unread: number; financeOk: boolean; modules: PortalModuleState; allowedKeys: Set<Tab>;
+}) {
+  // A tile shows only when its section is on for the vessel AND this position.
+  const core = CORE_MODULES.filter((m) => (m.key === "finances" ? financeOk : allowedKeys.has(m.key)));
+  const management = modules.management.enabled ? MANAGEMENT_MODULES.filter((m) => allowedKeys.has(m.key)) : [];
+  return (
+    <div className="space-y-6">
+      <section>
+        <div className="mb-3 flex items-center gap-2">
+          <span className="h-2 w-2 rounded-full bg-primary/80" />
+          <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">Agency with JLS</h2>
+          <span className="hidden text-[11px] text-muted-foreground/60 sm:inline">Everything we do for your vessel as your agent</span>
+        </div>
+        <ModuleTiles defs={core} onOpen={onOpen} unread={unread} />
+      </section>
+      {management.length > 0 && (
+        <section>
+          <div className="mb-3 flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-teal-400/80" />
+            <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">On board</h2>
+            <span className="hidden text-[11px] text-muted-foreground/60 sm:inline">Your crew's own tools — JLS only sees what you send across</span>
+            {modules.management.trialEndsAt && (
+              <span className="ml-auto rounded-full border border-teal-500/30 bg-teal-500/10 px-2 py-0.5 text-[10px] font-semibold text-teal-300">
+                Trial · ends {fmtDate(modules.management.trialEndsAt)}
               </span>
             )}
-            <div className="mt-3 flex items-center gap-1 text-sm font-semibold">
-              {m.label}
-              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50 transition group-hover:translate-x-0.5 group-hover:text-primary" />
-            </div>
-            <div className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{m.blurb}</div>
-          </button>
-        ))}
-      </div>
-    </section>
+          </div>
+          <ModuleTiles defs={management} onOpen={onOpen} unread={0} />
+        </section>
+      )}
+    </div>
   );
 }
 
@@ -799,9 +862,10 @@ function VesselLogo({ yacht, canEdit, onChanged }: { yacht: Yacht; canEdit: bool
   );
 }
 
-function HomeTab({ yacht, onNewRequest, onSeeRequests, onOpenRequest, onOpenModule, unread, financeOk, refreshKey, canEditLogo, onLogoChanged }: {
+function HomeTab({ yacht, onNewRequest, onSeeRequests, onOpenRequest, onOpenModule, unread, financeOk, modules, allowedKeys, refreshKey, canEditLogo, onLogoChanged }: {
   yacht: Yacht; onNewRequest: (cat: string) => void; onSeeRequests: () => void;
-  onOpenRequest: (id: string) => void; onOpenModule: (t: Tab) => void; unread: number; financeOk: boolean; refreshKey: number;
+  onOpenRequest: (id: string) => void; onOpenModule: (t: Tab) => void; unread: number; financeOk: boolean;
+  modules: PortalModuleState; allowedKeys: Set<Tab>; refreshKey: number;
   canEditLogo: boolean; onLogoChanged: (url: string | null) => void;
 }) {
   const [recent, setRecent] = useState<PortalRequest[]>([]);
@@ -855,7 +919,7 @@ function HomeTab({ yacht, onNewRequest, onSeeRequests, onOpenRequest, onOpenModu
       </Card>
 
       {/* Module launcher — the DeepBlue-style front door */}
-      <ModuleLauncher onOpen={onOpenModule} unread={unread} financeOk={financeOk} />
+      <ModuleLauncher onOpen={onOpenModule} unread={unread} financeOk={financeOk} modules={modules} allowedKeys={allowedKeys} />
 
       {/* Quick requests */}
       <section>

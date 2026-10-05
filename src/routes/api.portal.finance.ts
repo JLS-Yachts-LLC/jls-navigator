@@ -7,8 +7,9 @@
  * Invoices/estimates are matched to the vessel's QBO Customer (yachts.qbo_customer_id,
  * falling back to a DisplayName lookup on the vessel name). Nothing is ever written.
  */
-import { resolvePortalYacht } from '@/lib/portal/portal-auth.server'
+import { resolvePortalYacht, portalModulesFor } from '@/lib/portal/portal-auth.server'
 import { canSeeFinance } from '@/lib/portal/portal-positions'
+import { sectionEnabled } from '@/lib/portal/portal-modules'
 
 const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } })
@@ -35,6 +36,7 @@ export async function portalFinanceHandler(request: Request): Promise<Response> 
   if (!auth.ok) return auth.response
   const { yacht } = auth
   if (!canSeeFinance(yacht.position)) return json({ error: "Your position doesn't include the vessel's accounts." }, 403)
+  if (!sectionEnabled('finances', await portalModulesFor(yacht.yachtId))) return json({ error: "Invoices and balances aren't switched on for this vessel." }, 403)
 
   const url = new URL(request.url)
   const invoicePdfId = url.searchParams.get('invoicePdf')
