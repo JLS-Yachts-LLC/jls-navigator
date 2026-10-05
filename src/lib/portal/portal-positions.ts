@@ -70,3 +70,13 @@ const REQUISITION_APPROVERS = new Set(["", "captain", "relief_captain", "chief_o
 export function canApproveRequisition(position: string | null | undefined): boolean {
   return REQUISITION_APPROVERS.has((position ?? "").trim().toLowerCase());
 }
+
+/**
+ * Positions that can approve or decline a JLS quotation: the requisition
+ * approvers plus the Owner and Representative, who sign off spend. Anyone who
+ * can see the vessel's accounts can still ask a question about a quotation.
+ */
+export function canApproveQuote(position: string | null | undefined): boolean {
+  const p = (position ?? "").trim().toLowerCase();
+  return canSeeFinance(p) && (canApproveRequisition(p) || p === "owner" || p === "representative");
+}

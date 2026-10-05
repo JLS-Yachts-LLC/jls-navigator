@@ -31,6 +31,7 @@ import { ChecklistsSection } from "@/components/portal/sections/checklists-secti
 import { HoursSection } from "@/components/portal/sections/hours-section";
 import { HandoverSection } from "@/components/portal/sections/handover-section";
 import { MovementsSection } from "@/components/portal/sections/movements-section";
+import { QuoteDetail } from "@/components/portal/sections/quote-detail";
 import { CharterSection } from "@/components/portal/sections/charter-section";
 import { IsmSection } from "@/components/portal/sections/ism-section";
 import { canApproveRequisition, hiddenSections, canSeeFinance, canManageVessel } from "@/lib/portal/portal-positions";
@@ -694,7 +695,7 @@ function PortalShell({ link, email, onSignOut, preview = false }: { link: Captai
         )}
         {tab === "crew" && <CrewTab yachtId={link.yacht_id} />}
         {tab === "documents" && <DocumentsTab yachtId={link.yacht_id} />}
-        {(tab === "invoices" || tab === "finances") && <FinancesTab />}
+        {(tab === "invoices" || tab === "finances") && <FinancesTab onOpenRequest={(id) => { setTab("requests"); setOpenRequestId(id); }} />}
         {tab === "balances" && <BalancesTab />}
         {tab === "logistics" && <LogisticsTab />}
         {tab === "alerts" && <AlertsTab yachtId={link.yacht_id} financeOk={financeOk} stockOk={allowedKeys.has("stock")} onOpen={(t) => { setTab(t); setOpenRequestId(null); }} />}
@@ -1761,11 +1762,23 @@ const QUOTE_BADGE: Record<string, string> = {
   rejected: "bg-red-500/15 text-red-400",
 };
 
-function FinancesTab() {
+type QuoteDecision = { qbo_estimate_id: string; decision: "approved" | "declined" | "query"; decided_by_name: string | null; created_at: string };
+
+function FinancesTab({ onOpenRequest }: { onOpenRequest: (requestId: string) => void }) {
   const [data, setData] = useState<FinanceData | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [view, setView] = useState<"invoices" | "quotations">("invoices");
+  const [decisions, setDecisions] = useState<QuoteDecision[]>([]);
+  const [canApprove, setCanApprove] = useState(false);
+  const [openQuote, setOpenQuote] = useState<string | null>(null);
+
+  const loadDecisions = useCallback(async () => {
+    const res = await authedFetch("/api/portal/quotes").catch(() => null);
+    const j = res && res.ok ? await res.json() : null;
+    setDecisions(j?.decisions ?? []);
+    setCanApprove(!!j?.canApprove);
+  }, []);
 
   useEffect(() => {
     void (async () => {
@@ -1778,7 +1791,11 @@ function FinancesTab() {
       } catch (e: any) { setErr(e.message ?? "Could not load finances"); }
       finally { setLoading(false); }
     })();
-  }, []);
+    void loadDecisions();
+  }, [loadDecisions]);
+
+  /** The client's final word on a quotation (approve / decline), if any. */
+  const decisionOf = (id: string) => decisions.find((d) => d.qbo_estimate_id === id && d.decision !== "query");
 
   async function openInvoicePdf(id: string) {
     const res = await authedFetch(`/api/portal/finance?invoicePdf=${encodeURIComponent(id)}`);
@@ -1792,6 +1809,7 @@ function FinancesTab() {
   if (!data) return null;
 
   const list = view === "invoices" ? data.invoices : data.quotations;
+  const toReview = data.quotations.filter((q) => q.status === "pending" && !decisionOf(q.id));
 
   return (
     <div className="space-y-4">
@@ -1813,6 +1831,18 @@ function FinancesTab() {
             <Card className="p-4"><div className="text-[11px] uppercase tracking-wide text-muted-foreground">Invoices</div><div className="mt-1 text-lg font-bold">{data.summary.invoiceCount}</div></Card>
             <Card className="p-4"><div className="text-[11px] uppercase tracking-wide text-muted-foreground">Quotations</div><div className="mt-1 text-lg font-bold">{data.summary.quotationCount}</div></Card>
           </div>
+
+          {toReview.length > 0 && canApprove && (
+            <button type="button" onClick={() => (toReview.length === 1 ? setOpenQuote(toReview[0].id) : setView("quotations"))}
+                    className="flex w-full items-center gap-3 rounded-2xl border border-primary/40 bg-primary/10 p-4 text-left transition hover:bg-primary/15">
+              <FileText className="h-5 w-5 shrink-0 text-primary" />
+              <span className="flex-1 text-sm">
+                <span className="font-semibold">{toReview.length === 1 ? `Quotation ${toReview[0].docNumber ?? ""} is waiting for your approval` : `${toReview.length} quotations are waiting for your approval`}</span>
+                <span className="block text-xs text-muted-foreground">Review the lines and approve, decline or ask JLS a question.</span>
+              </span>
+              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            </button>
+          )}
 
           {/* Toggle */}
           <div className="inline-flex rounded-xl border border-border p-1 text-sm">
@@ -1847,21 +1877,41 @@ function FinancesTab() {
                   </button>
                 </Card>
               ))}
-              {view === "quotations" && data.quotations.map((q) => (
-                <Card key={q.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 p-4">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold">Quotation {q.docNumber ?? q.id}</span>
-                      <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase", QUOTE_BADGE[q.status] ?? "bg-slate-500/15 text-slate-300")}>{q.status}</span>
+              {view === "quotations" && data.quotations.map((q) => {
+                const d = decisionOf(q.id);
+                return (
+                  <button key={q.id} type="button" onClick={() => setOpenQuote(q.id)}
+                          className="flex w-full flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-border bg-card/80 p-4 text-left transition hover:border-primary/50">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-semibold">Quotation {q.docNumber ?? q.id}</span>
+                        {d ? (
+                          <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase", d.decision === "approved" ? "bg-emerald-500/15 text-emerald-400" : "bg-red-500/15 text-red-400")}>
+                            {d.decision === "approved" ? "you approved" : "you declined"}
+                          </span>
+                        ) : (
+                          <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase", QUOTE_BADGE[q.status] ?? "bg-slate-500/15 text-slate-300")}>
+                            {q.status === "pending" ? "awaiting approval" : q.status}
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">
+                        Dated {fmtDate(q.date)}{q.expiryDate ? ` · Valid to ${fmtDate(q.expiryDate)}` : ""}
+                        {d?.decided_by_name && ` · ${d.decided_by_name}, ${fmtDate(d.created_at)}`}
+                      </div>
                     </div>
-                    <div className="mt-0.5 text-xs text-muted-foreground">Dated {fmtDate(q.date)}{q.expiryDate ? ` · Valid to ${fmtDate(q.expiryDate)}` : ""}</div>
-                  </div>
-                  <div className="text-right font-semibold">{money(q.total, q.currency)}</div>
-                </Card>
-              ))}
+                    <div className="text-right font-semibold">{money(q.total, q.currency)}</div>
+                    <ChevronRight className="h-4 w-4 text-muted-foreground/60" />
+                  </button>
+                );
+              })}
             </div>
           )}
         </>
+      )}
+      {openQuote && (
+        <QuoteDetail id={openQuote} onClose={() => setOpenQuote(null)} onDecided={() => void loadDecisions()}
+                     onOpenRequest={(id) => { setOpenQuote(null); onOpenRequest(id); }} />
       )}
     </div>
   );

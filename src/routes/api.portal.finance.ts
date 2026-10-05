@@ -24,7 +24,8 @@ function invoiceStatus(inv: any): 'paid' | 'overdue' | 'open' {
   return 'open'
 }
 
-async function resolveCustomerId(yacht: { qboCustomerId: string | null; vesselName: string }): Promise<string | null> {
+/** The vessel's QuickBooks customer: the linked id, else a lookup by vessel name. */
+export async function resolveCustomerId(yacht: { qboCustomerId: string | null; vesselName: string }): Promise<string | null> {
   if (yacht.qboCustomerId) return yacht.qboCustomerId
   const { findQboCustomer } = await import('@/lib/qb/invoice.server')
   const hit = await findQboCustomer(yacht.vesselName).catch(() => null)

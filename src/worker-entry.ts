@@ -976,6 +976,11 @@ export default {
       const { portalSeaportHandler } = await import('./routes/api.portal.seaport')
       return portalSeaportHandler(request)
     }
+    // Client portal — review and approve / decline / query JLS quotations.
+    if (url.pathname === '/api/portal/quotes') {
+      const { portalQuotesHandler } = await import('./routes/api.portal.quotes')
+      return portalQuotesHandler(request)
+    }
     // Client portal — the vessel's own logo / badge.
     if (url.pathname === '/api/portal/vessel-logo') {
       const { portalVesselLogoHandler } = await import('./routes/api.portal.vessel-logo')
