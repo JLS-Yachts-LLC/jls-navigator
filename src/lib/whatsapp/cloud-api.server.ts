@@ -38,6 +38,9 @@ export function waConfig(): WaConfig | null {
 
 export const sendingEnabled = () => /^(true|1|yes)$/i.test(env("WHATSAPP_SENDING_ENABLED"));
 
+/** Master switch for scheduled expiry reminders. Off unless explicitly "true". */
+export const automationsEnabled = () => /^(true|1|yes)$/i.test(env("WHATSAPP_AUTOMATIONS_ENABLED"));
+
 /** Which settings are present — names only, never values. */
 export function configPresence() {
   return {
@@ -47,6 +50,7 @@ export function configPresence() {
     app_secret: !!env("WHATSAPP_APP_SECRET"),
     verify_token: !!env("WHATSAPP_VERIFY_TOKEN"),
     sending_enabled: sendingEnabled(),
+    automations_enabled: automationsEnabled(),
   };
 }
 

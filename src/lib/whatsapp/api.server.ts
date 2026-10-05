@@ -74,7 +74,7 @@ async function readMedia(db: any, path: string, mime?: string | null, name?: str
  * file's media id (uploaded once and reused) and any link-button values.
  * A send may use its own header file instead of the template's.
  */
-async function templateExtras(db: any, cfg: WaConfig, t: any, opts: {
+export async function templateExtras(db: any, cfg: WaConfig, t: any, opts: {
   buttonValues?: string[]; override?: { table: "wa_campaigns"; id: string; path: string | null; mime: string | null; mediaId: string | null };
 }) {
   if (t.category === "MARKETING" && !hasOptOut(t)) {

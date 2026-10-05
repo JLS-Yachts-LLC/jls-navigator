@@ -250,8 +250,15 @@ function ContactDialog({ contact, onClose, onSaved }: { contact: WaContact | nul
   const [email, setEmail] = useState(contact?.email ?? "");
   const [phone, setPhone] = useState(contact?.phone_e164 ?? "");
   const [notes, setNotes] = useState(contact?.notes ?? "");
+  const [yachtId, setYachtId] = useState(contact?.yacht_id ?? "");
+  const [yachts, setYachts] = useState<Array<{ id: string; vessel_name: string | null }>>([]);
   const [saving, setSaving] = useState(false);
   const locked = !!contact?.phone_confirmed;
+
+  useEffect(() => {
+    void db().from("yachts").select("id, vessel_name, archive").order("vessel_name")
+      .then(({ data }: any) => setYachts(((data ?? []) as any[]).filter((y) => !y.archive || y.id === contact?.yacht_id)));
+  }, [contact?.yacht_id]);
 
   async function save() {
     if (!name.trim()) { toast.error("Give the contact a name"); return; }
@@ -263,7 +270,7 @@ function ContactDialog({ contact, onClose, onSaved }: { contact: WaContact | nul
         phone_e164 = toE164(phone, ((codes ?? []) as any[]).map((r) => r.dial_code));
         if (!phone_e164) throw new Error("Enter the number with its country code, e.g. +971 50 123 4567");
       }
-      const row: any = { name: name.trim(), email: email.trim() || null, notes: notes.trim() || null };
+      const row: any = { name: name.trim(), email: email.trim() || null, notes: notes.trim() || null, yacht_id: yachtId || null };
       if (!locked) row.phone_e164 = phone_e164;
       const { error } = contact
         ? await db().from("wa_contacts").update(row).eq("id", contact.id)
@@ -290,6 +297,15 @@ function ContactDialog({ contact, onClose, onSaved }: { contact: WaContact | nul
             <Label>WhatsApp number</Label>
             <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+971 50 123 4567" disabled={locked} />
             {locked && <p className="text-[11px] text-muted-foreground">Confirmed by the client when they opted in. To change it, send them a new invitation.</p>}
+          </div>
+          <div className="space-y-1.5">
+            <Label>Yacht</Label>
+            <select value={yachtId} onChange={(e) => setYachtId(e.target.value)}
+              className="h-8 w-full rounded-md border border-border bg-background px-2 text-sm">
+              <option value="">Not linked to a yacht</option>
+              {yachts.map((y) => <option key={y.id} value={y.id}>{y.vessel_name ?? "—"}</option>)}
+            </select>
+            <p className="text-[11px] text-muted-foreground">Expiry reminders for a yacht go to its linked contacts who opted in to updates.</p>
           </div>
           <div className="space-y-1.5"><Label>Notes</Label><Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} /></div>
           <p className="text-[11px] text-muted-foreground">Adding a contact doesn't opt them in — that takes their agreement.</p>

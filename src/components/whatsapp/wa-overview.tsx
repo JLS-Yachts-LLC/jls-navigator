@@ -28,6 +28,7 @@ const SECRETS: Array<[string, string, string]> = [
   ["app_secret", "WHATSAPP_APP_SECRET", "Meta app → App settings → Basic → App secret (verifies webhooks)"],
   ["verify_token", "WHATSAPP_VERIFY_TOKEN", "Any phrase you choose — enter the same in the Meta app's webhook settings"],
   ["sending_enabled", "WHATSAPP_SENDING_ENABLED", "Set to true when you're ready to send for real"],
+  ["automations_enabled", "WHATSAPP_AUTOMATIONS_ENABLED", "In wrangler.jsonc — \"true\" allows the daily expiry reminders (off by default)"],
 ];
 
 export function WaOverview() {

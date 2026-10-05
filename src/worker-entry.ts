@@ -1113,6 +1113,12 @@ export default {
         case 'POST /api/whatsapp/templates/sync': return wa.whatsappTemplateSyncHandler(request)
         case 'POST /api/whatsapp/campaigns/send': return wa.whatsappCampaignSendHandler(request)
         case 'POST /api/whatsapp/subscribe': return wa.whatsappSubscribeHandler(request)
+        case 'GET /api/whatsapp/automations/preview':
+          return (await import('./lib/whatsapp/automations.server')).whatsappAutomationPreviewHandler(request)
+        case 'POST /api/whatsapp/automations/test':
+          return (await import('./lib/whatsapp/automations.server')).whatsappAutomationTestHandler(request)
+        case 'POST /api/whatsapp/automations/starter':
+          return (await import('./lib/whatsapp/automations.server')).whatsappAutomationStarterHandler(request)
         case 'POST /api/whatsapp/reply':return wa.whatsappReplyHandler(request)
         case 'POST /api/whatsapp/conversations/read': return wa.whatsappConversationReadHandler(request)
         case 'GET /api/whatsapp/media': return wa.whatsappMediaHandler(request)
@@ -1596,6 +1602,18 @@ export default {
           .then(({ passports, visas, staleDocs }) =>
             console.log(`[visa-compliance] passports=${passports} visas=${visas} staleDocs=${staleDocs}`))
           .catch((e) => console.error('[visa-compliance] error:', e))
+      )
+    }
+
+    // WhatsApp expiry reminders to opted-in vessel contacts — daily at 06:00 UTC
+    // (10:00 Dubai). Off unless WHATSAPP_AUTOMATIONS_ENABLED is true AND the
+    // reminder AND the yacht are switched on; one message per document per stage.
+    if (isHourly && utcHour === 6) {
+      ctx.waitUntil(
+        import('./lib/whatsapp/automations.server')
+          .then((m) => m.runExpiryReminders())
+          .then((r) => console.log(`[wa-expiry-reminders] ${JSON.stringify(r)}`))
+          .catch((e) => console.error('[wa-expiry-reminders] error:', e))
       )
     }
 

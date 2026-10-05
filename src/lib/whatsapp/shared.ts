@@ -234,3 +234,64 @@ export function placeholderContext(body: string, n: number, span = 28): string {
   const after = body.slice(m.index + m[0].length, m.index + m[0].length + span).replace(/\s+/g, " ");
   return `${m.index > span ? "…" : ""}${before}{{${n}}}${after}${m.index + m[0].length + span < body.length ? "…" : ""}`;
 }
+
+// ─── Expiry reminders (automations) ───────────────────────────────────────────
+
+export type AutomationKind = "crew_visa" | "crew_passport" | "vessel_permit";
+
+export interface AutomationField { key: string; label: string; sample: string }
+
+const COMMON_FIELDS: AutomationField[] = [
+  { key: "contact_name", label: "Recipient name", sample: "Captain Smith" },
+  { key: "contact_first_name", label: "Recipient first name", sample: "Captain" },
+  { key: "vessel_name", label: "Yacht name", sample: "M/Y Serenity" },
+  { key: "expiry_date", label: "Expiry date", sample: "19 Oct 2026" },
+  { key: "days_left", label: "Days left", sample: "14" },
+];
+
+/** What each reminder can put into its template's {{1}}, {{2}}… */
+export const AUTOMATION_FIELDS: Record<AutomationKind, AutomationField[]> = {
+  crew_visa: [{ key: "crew_name", label: "Crew member", sample: "John Doe" }, { key: "visa_type", label: "Visa type", sample: "employment visa" }, ...COMMON_FIELDS],
+  crew_passport: [{ key: "crew_name", label: "Crew member", sample: "John Doe" }, ...COMMON_FIELDS],
+  vessel_permit: [{ key: "permit_type", label: "Permit", sample: "gate pass" }, { key: "permit_number", label: "Permit number", sample: "GP-10234" }, ...COMMON_FIELDS],
+};
+
+export const PERMIT_LABEL: Record<string, string> = {
+  cruising_mothership: "cruising permit", cruising_tenders: "tender cruising permit", sanitation: "sanitation certificate",
+  dma: "DMA permit", gate_pass: "gate pass", tdra: "TDRA licence", navigation_license: "navigation licence",
+  exit_entry: "exit & entry permit",
+};
+export const permitLabel = (t: string | null | undefined) =>
+  (t && PERMIT_LABEL[t]) || (t ? t.replace(/_/g, " ") : "permit");
+
+export type VariableSource = { field: string } | { text: string };
+
+/** Starter wording for each reminder — saved as a draft template to submit to Meta. */
+export const STARTER_TEMPLATES: Record<AutomationKind, { name: string; body: string; map: VariableSource[] }> = {
+  crew_visa: {
+    name: "crew_visa_expiry_reminder",
+    body: "Hello {{1}}, this is a reminder from JLS Yachts that the UAE {{2}} for {{3}} on {{4}} expires on {{5}} ({{6}} days from today). Reply here and we'll arrange the renewal.",
+    map: [{ field: "contact_name" }, { field: "visa_type" }, { field: "crew_name" }, { field: "vessel_name" }, { field: "expiry_date" }, { field: "days_left" }],
+  },
+  crew_passport: {
+    name: "crew_passport_expiry_reminder",
+    body: "Hello {{1}}, this is a reminder from JLS Yachts that the passport for {{2}} on {{3}} expires on {{4}}. A valid passport is needed for UAE visa renewals — reply here if you need any help.",
+    map: [{ field: "contact_name" }, { field: "crew_name" }, { field: "vessel_name" }, { field: "expiry_date" }],
+  },
+  vessel_permit: {
+    name: "vessel_permit_expiry_reminder",
+    body: "Hello {{1}}, this is a reminder from JLS Yachts that the {{2}} for {{3}} expires on {{4}} ({{5}} days from today). Reply here and we'll arrange the renewal.",
+    map: [{ field: "contact_name" }, { field: "permit_type" }, { field: "vessel_name" }, { field: "expiry_date" }, { field: "days_left" }],
+  },
+};
+
+/**
+ * Which reminder stage an expiry is in: the smallest threshold at or above the
+ * days left. A missed day still sends (at most once per stage); an expiry
+ * already past, or further out than every threshold, gets nothing.
+ */
+export function dueThreshold(daysLeft: number, thresholds: number[]): number | null {
+  if (daysLeft < 0) return null;
+  const at = [...thresholds].sort((a, b) => a - b).find((t) => daysLeft <= t);
+  return at ?? null;
+}
