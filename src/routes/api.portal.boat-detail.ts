@@ -16,6 +16,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { resolvePortalBoats, type PortalBoatOwner } from '@/lib/portal/portal-boats-auth.server'
 import { parseStorageRefOrPath } from '@/lib/signed-url'
+import { boatHiddenSections, type PortalModuleRow } from '@/lib/portal/portal-modules'
 
 const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } })
@@ -97,6 +98,10 @@ export async function portalBoatDetailHandler(request: Request): Promise<Respons
   if (!boatR.data) return json({ error: 'Boat not found' }, 404)
   for (const r of [docsR, jobsR, kitR]) if (r.error) return json({ error: 'Could not load your boat' }, 500)
 
+  // Sections staff have switched off for this boat aren't served at all.
+  const { data: modRows } = await sb.from('yacht_portal_modules').select('module, enabled, features').eq('boat_id', boatId)
+  const off = boatHiddenSections((modRows ?? []) as PortalModuleRow[])
+
   const b: any = boatR.data
   const required: string[] = Array.isArray(b.inspections_required) ? b.inspections_required : []
   const compliance = (Object.keys(REGIMES) as Regime[]).filter((r) => required.includes(r)).map((r) => {
@@ -113,16 +118,17 @@ export async function portalBoatDetailHandler(request: Request): Promise<Respons
   })
 
   return json({
-    compliance,
-    documents: (docsR.data ?? []).map((d: any) => ({
+    hidden: [...off],
+    compliance: off.has('compliance') ? [] : compliance,
+    documents: off.has('documents') ? [] : (docsR.data ?? []).map((d: any) => ({
       id: d.id, category: d.category, categoryLabel: DOC_LABEL[d.category] ?? 'Other', fileName: d.file_name, addedAt: d.created_at,
     })),
-    jobs: (jobsR.data ?? []).map((j: any) => ({
+    jobs: off.has('jobs') ? [] : (jobsR.data ?? []).map((j: any) => ({
       id: j.id, jobNo: j.job_no ?? null, kind: j.kind, kindLabel: JOB_LABEL[j.kind] ?? 'Job', title: j.title,
       status: j.status, dueDate: j.due_date ?? null, scheduledDate: j.schedule_date ?? null,
       scheduledTime: j.schedule_time ? String(j.schedule_time).slice(0, 5) : null, updatedAt: j.updated_at,
     })),
-    safetyKit: (kitR.data ?? []).map((i: any) => ({
+    safetyKit: off.has('safety') ? [] : (kitR.data ?? []).map((i: any) => ({
       id: i.id, item: i.item, qty: i.qty, unit: i.unit ?? null, condition: i.condition ?? null,
       expiryDate: i.expiry_date, onBoard: i.on_board !== false,
     })),
@@ -151,6 +157,13 @@ export async function portalBoatOpenHandler(request: Request): Promise<Response>
   const type = url.searchParams.get('type')
   const sb = admin()
   if (!ownsBoat(owner, boatId)) return json({ error: 'Document not found' }, 404)
+  {
+    const { data: modRows } = await sb.from('yacht_portal_modules').select('module, enabled, features').eq('boat_id', boatId)
+    const off = boatHiddenSections((modRows ?? []) as PortalModuleRow[])
+    if ((type === 'document' && off.has('documents')) || (type === 'inspection' && off.has('compliance') && off.has('documents'))) {
+      return json({ error: 'Document not found' }, 404)
+    }
+  }
 
   let stored = ''
   let sourceTable = ''

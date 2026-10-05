@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import { PORTAL_POSITIONS, positionLabel } from "@/lib/portal/portal-positions";
 import { PortalAlertRecipients } from "@/components/admin/portal-alert-recipients";
 import { PORTAL_THEMES } from "@/lib/portal/portal-theme";
-import { PORTAL_MODULES, moduleState, type PortalModuleKey, type PortalModuleRow } from "@/lib/portal/portal-modules";
+import { BOAT_FEATURES, PORTAL_MODULES, boatHiddenSections, moduleState, type PortalModuleKey, type PortalModuleRow } from "@/lib/portal/portal-modules";
 import { PortalAddresses } from "./portal-addresses";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -205,6 +205,45 @@ function VesselModules({ rows, onSave }: {
           <div className="col-span-full text-[11px] text-muted-foreground">
             Untick a feature to hide it from everyone on this vessel. What each person sees inside is still decided by their position.
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** A managed boat's portal sections — one list, any of which can be switched off for the boat. */
+function BoatModules({ rows, onSave }: {
+  rows: VesselModuleRow[];
+  onSave: (patch: Partial<Pick<VesselModuleRow, "enabled" | "features">>) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const hidden = boatHiddenSections(rows);
+  const toggle = (key: string, on: boolean) => {
+    const features = { ...(rows.find((r) => r.module === "core")?.features ?? {}) };
+    if (on) delete features[key]; else features[key] = false;
+    onSave({ features });
+  };
+  return (
+    <div className="border-b border-border/60 bg-background/20 px-4 py-2.5 text-xs">
+      <button type="button" onClick={() => setOpen(!open)} className="inline-flex items-center gap-2 text-left hover:text-foreground">
+        <span className="h-2 w-2 rounded-full bg-primary" />
+        <span className="font-semibold text-primary">Boat owner portal</span>
+        <span className="text-muted-foreground">· {BOAT_FEATURES.length - hidden.size} of {BOAT_FEATURES.length} sections on</span>
+        <ChevronDown className={cn("h-3 w-3 text-muted-foreground transition", open && "rotate-180")} />
+      </button>
+      {open && (
+        <div className="mt-2.5 grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+          {BOAT_FEATURES.map((f) => {
+            const on = !hidden.has(f.key);
+            return (
+              <label key={f.key} title={f.blurb}
+                     className={cn("flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-1.5", on ? "border-border bg-background/40" : "border-border/40 text-muted-foreground")}>
+                <input type="checkbox" checked={on} onChange={(e) => toggle(f.key, e.target.checked)} className="h-3.5 w-3.5" />
+                <span className="truncate">{f.label}</span>
+              </label>
+            );
+          })}
+          <div className="col-span-full text-[11px] text-muted-foreground">Untick a section to hide it from the boat's owner. The boat's home page is always shown.</div>
         </div>
       )}
     </div>
@@ -444,10 +483,17 @@ function VesselUsersPanel() {
                   </select>
                 </label>}
               </div>
-              <VesselModules
-                rows={modulesFor(g.yachtId, g.isBoat ? g.key.slice(2) : null)}
-                onSave={(module, patch) => saveModule(g.yachtId, g.isBoat ? g.key.slice(2) : null, module, patch)}
-              />
+              {g.isBoat ? (
+                <BoatModules
+                  rows={modulesFor(null, g.key.slice(2))}
+                  onSave={(patch) => saveModule(null, g.key.slice(2), "core", patch)}
+                />
+              ) : (
+                <VesselModules
+                  rows={modulesFor(g.yachtId, null)}
+                  onSave={(module, patch) => saveModule(g.yachtId, null, module, patch)}
+                />
+              )}
               <table className="data-table">
                 <thead>
                   <tr>

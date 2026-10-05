@@ -115,3 +115,23 @@ export function sectionEnabled(section: string, state: PortalModuleState): boole
   const m = state[map.module];
   return m.enabled && !m.hidden.has(map.feature);
 }
+
+/**
+ * Small-boat owners' portal sections. A managed boat has no Core / Management
+ * split — it's one set of sections, any of which staff can switch off for the
+ * boat. Stored like a vessel's: the boat's "core" row, `features` holding only
+ * the keys switched OFF. Home is always on.
+ */
+export const BOAT_FEATURES: PortalFeature[] = [
+  { key: "compliance", label: "Compliance",    blurb: "DMA / FMA / RYA inspections — last done and next due" },
+  { key: "documents",  label: "Documents",     blurb: "The boat's papers and inspection reports" },
+  { key: "jobs",       label: "Jobs",          blurb: "Work JLS has scheduled or done on the boat" },
+  { key: "safety",     label: "Safety kit",    blurb: "Flares, extinguishers, life jackets — expiry dates" },
+  { key: "requests",   label: "Requests",      blurb: "Ask JLS for anything, and follow it through" },
+  { key: "chat",       label: "Chat with JLS", blurb: "Live chat with the team" },
+];
+
+/** The boat's switched-off sections, from its rows (none = everything on). */
+export function boatHiddenSections(rows: PortalModuleRow[] | null | undefined): Set<string> {
+  return moduleState(rows).core.hidden;
+}

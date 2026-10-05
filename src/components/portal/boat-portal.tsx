@@ -28,6 +28,7 @@ import {
 import { PolarisMark } from "@/components/brand/PolarisMark";
 import { portalFetch } from "@/lib/portal/portal-fetch";
 import { cn } from "@/lib/utils";
+import { boatHiddenSections } from "@/lib/portal/portal-modules";
 
 type PortalBoat = {
   id: string;
@@ -76,6 +77,7 @@ export function BoatPortal({ displayName, email, previewAccountId, onSignOut }: 
   const [openRequestId, setOpenRequestId] = useState<string | null>(null);
   const [newRequest, setNewRequest] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     setError(null);
@@ -93,6 +95,17 @@ export function BoatPortal({ displayName, email, previewAccountId, onSignOut }: 
   }, [previewAccountId]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // Sections staff have switched off for this boat (Settings → Client Portal).
+  useEffect(() => {
+    if (!boatId) { setHidden(new Set()); return; }
+    let alive = true;
+    void (supabase as any).from("yacht_portal_modules").select("module, enabled, features").eq("boat_id", boatId)
+      .then(({ data }: any) => { if (alive) setHidden(boatHiddenSections(data ?? [])); });
+    return () => { alive = false; };
+  }, [boatId]);
+  const nav = NAV.filter((n) => n.key === "home" || !hidden.has(n.key));
+  useEffect(() => { if (tab !== "home" && hidden.has(tab)) setTab("home"); }, [hidden, tab]);
 
   // The selected boat's compliance, documents, jobs and safety kit.
   useEffect(() => {
@@ -214,7 +227,7 @@ export function BoatPortal({ displayName, email, previewAccountId, onSignOut }: 
 
         <nav className="flex-1 space-y-4 overflow-y-auto px-3 pb-4">
           <div className="space-y-0.5">
-            {NAV.map((n) => {
+            {nav.map((n) => {
               const count = n.key === "home" && detail ? boatAlerts(detail).filter((a) => a.tone !== "sky").length
                 : n.key === "chat" ? unread : 0;
               return (
@@ -270,7 +283,7 @@ export function BoatPortal({ displayName, email, previewAccountId, onSignOut }: 
               ? <PortalChatTab link={account} displayName={displayName ?? email} chat={chat} onChatChanged={() => void loadChat()} />
               : <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
           ) : tab === "home" ? (
-            <BoatHome boat={boat} detail={detail} onOpen={(t) => setTab(t as BoatTab)} />
+            <BoatHome boat={boat} detail={detail} onOpen={(t) => { if (!hidden.has(t)) setTab(t as BoatTab); }} />
           ) : detailError ? (
             <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-red-300">{detailError}</div>
           ) : !detail ? (
