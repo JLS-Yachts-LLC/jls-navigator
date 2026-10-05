@@ -34,6 +34,13 @@ export const Route = createRootRoute({
       { name: "description", content: "Polaris — The Management Platform for Yacht Operations" },
     ],
     links: [
+      // Favicon — built by scripts/make-favicons.mjs. The .ico declares
+      // sizes="32x32" so browsers that understand SVG prefer the sharper SVG.
+      // No apple-touch-icon link here on purpose: the Orbit and Logistics field
+      // apps declare their own, and iOS falls back to /apple-touch-icon.png
+      // (served from public/) everywhere else.
+      { rel: "icon", href: "/favicon.ico", sizes: "32x32" },
+      { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
       { rel: "stylesheet", href: appCss },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },

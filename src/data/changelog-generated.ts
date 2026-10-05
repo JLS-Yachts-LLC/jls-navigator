@@ -5,9 +5,197 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.66.0",
+    "date": "2026-10-05",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "WhatsApp under Communications — a shared inbox to read and reply to clients (24-hour reply window, approved templates outside it, read receipts, photos and files, assign and close), contacts with emailed opt-in and recorded consent, broadcast lists, Meta template submission, and sends with delivery tracking and automatic opt-outs"
+      },
+      {
+        "type": "fix",
+        "title": "Gate passes can now be emailed to their contact, like every other permit"
+      },
+      {
+        "type": "feature",
+        "title": "Dubai Maritime City (DMC) can now be chosen as the port on Exit & Entry permits"
+      }
+    ]
+  },
+  {
+    "version": "2.65.0",
+    "date": "2026-10-02",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Warehouse Out, QR labels, offline check-in, receipt email, installable app"
+      },
+      {
+        "type": "feature",
+        "title": "New View theme is now \"Navy & warm gold\" with Jost and Cormorant headings"
+      },
+      {
+        "type": "feature",
+        "title": "Warehouse Store In, Manage Warehouse, and Move Parcel to Storage"
+      },
+      {
+        "type": "feature",
+        "title": "Deliveries (driver) and Manage Deliveries (admin)"
+      },
+      {
+        "type": "feature",
+        "title": "Check-Out Parcels — delivery notes by scan or search, three ways out"
+      },
+      {
+        "type": "fix",
+        "title": "Managed Boats photos keep the same 16:9 size as the Vessels cards"
+      },
+      {
+        "type": "feature",
+        "title": "Link the Logistics mobile app from the ShipSync page"
+      },
+      {
+        "type": "feature",
+        "title": "Polaris Logistics mobile app — shell, role-based home, Check-in Parcels"
+      },
+      {
+        "type": "feature",
+        "title": "Checklist library reads Yes/No-box forms like the DMA inspection checklists"
+      },
+      {
+        "type": "feature",
+        "title": "Checklist library — drop in any checklist PDF and it fills itself like the RYA forms"
+      },
+      {
+        "type": "fix",
+        "title": "Close gaps found in a bug-hunt over last week's Managed Boats work"
+      },
+      {
+        "type": "fix",
+        "title": "Wire up email sending on the Exit/Entry permit dialog"
+      },
+      {
+        "type": "fix",
+        "title": "Checklist lines matched by name can be unlinked"
+      },
+      {
+        "type": "feature",
+        "title": "Inspection checklists as jobs — Assign Team, remarks and photos per line, notes page on the RYA form"
+      }
+    ]
+  },
+  {
+    "version": "2.64.0",
+    "date": "2026-09-30",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Field app — \"Admin Management\" tab for Orbit admins on the phone"
+      },
+      {
+        "type": "fix",
+        "title": "Vessels with the same name can now be told apart before archiving or deleting one"
+      },
+      {
+        "type": "fix",
+        "title": "Inbound mail joins the ticket its thread already has; no-reply senders raise nothing"
+      },
+      {
+        "type": "fix",
+        "title": "The Vessel Overview search looks across all statuses"
+      },
+      {
+        "type": "feature",
+        "title": "Assign a vessel to an Agency team member when adding it, choosing from the Agency team only"
+      },
+      {
+        "type": "feature",
+        "title": "RYA Cruising checklist — add \"Boom preventer attachment & line\" (TCC13)"
+      },
+      {
+        "type": "feature",
+        "title": "One-click RYA Training Checklist PDF, filled from the boat's Polaris ticks"
+      },
+      {
+        "type": "fix",
+        "title": "\"Save & Add Another\" no longer closes the Inventory item form on desktop"
+      },
+      {
+        "type": "feature",
+        "title": "Checklist rows show the matched inventory item's photo"
+      }
+    ]
+  },
+  {
+    "version": "2.63.0",
+    "date": "2026-09-29",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "RYA inspection checklists from the OPS workbook, matched against the boat's inventory"
+      },
+      {
+        "type": "feature",
+        "title": "Managed Boats — required inspections and per-boat DMA / FMA / RYA checklists"
+      },
+      {
+        "type": "feature",
+        "title": "SIM Cards — bulk import from Excel / CSV"
+      },
+      {
+        "type": "fix",
+        "title": "Calendar and roster show the boat name for Managed Boats jobs"
+      },
+      {
+        "type": "feature",
+        "title": "Field app — per-crew Attend / Done on multi-crew jobs, \"Waiting Companion\""
+      },
+      {
+        "type": "fix",
+        "title": "Photos captured on the mobile app now show on the boat job in the office"
+      },
+      {
+        "type": "feature",
+        "title": "\"Booked\" job category and an In-Use board on Managed Boats"
+      },
+      {
+        "type": "feature",
+        "title": "Inventory List — item editor with Save & Add Another, photo by drag / camera / upload, view and edit"
+      },
+      {
+        "type": "fix",
+        "title": "Inventory List — the Add Item form stays open for the next item"
+      },
+      {
+        "type": "feature",
+        "title": "Inventory job category — crew check and update a boat's inventory from the field app"
+      },
+      {
+        "type": "feature",
+        "title": "Each managed boat numbers its own jobs — MVT26-0001, SB26-0001, IMP26-0001"
+      },
+      {
+        "type": "feature",
+        "title": "Rename a managed boat in place"
+      },
+      {
+        "type": "feature",
+        "title": "Project List — All / To Be Invoiced / Invoiced views, and Delete"
+      }
+    ]
+  },
+  {
     "version": "2.62.0",
     "date": "2026-09-28",
     "entries": [
+      {
+        "type": "fix",
+        "title": "The Network tab now warns when the New Horizon sync has stopped running"
+      },
+      {
+        "type": "feature",
+        "title": "Add the Yacht IT Network register and map, kept in two-way sync with New Horizon-IT"
+      },
       {
         "type": "fix",
         "title": "Ticket emails can only be sent by signed-in staff, and only say what is on the ticket"

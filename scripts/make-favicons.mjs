@@ -27,7 +27,7 @@ const pub = path.join(root, "public");
 // the facet facing up/left is white, the other Jamaica Bay — the same light and
 // shade split the logo gives its points.
 const STAR = `
-  <polygon points="42.6,21.4 35,32 42.6,42.6 32,35 21.4,42.6 29,32 21.4,21.4 32,29" fill="#4590BA"/>
+  <polygon points="45.4,18.6 35.2,32 45.4,45.4 32,35.2 18.6,45.4 28.8,32 18.6,18.6 32,28.8" fill="#4590BA"/>
   <polygon points="32,5 27.5,27.5 32,32"  fill="#FFFFFF"/>
   <polygon points="32,5 36.5,27.5 32,32"  fill="#96CBC7"/>
   <polygon points="54,32 36.5,27.5 32,32" fill="#FFFFFF"/>
@@ -51,9 +51,9 @@ const faviconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
 `;
 
 // iOS rounds the corners itself, so: full-bleed square, star with more margin.
-const touchSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-10 -10 84 84">
+const touchSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-6 -6 76 76">
   ${GRADIENT}
-  <rect x="-10" y="-10" width="84" height="84" fill="url(#t)"/>${STAR}
+  <rect x="-6" y="-6" width="76" height="76" fill="url(#t)"/>${STAR}
 </svg>`;
 
 // Rasterise big, then downscale: much cleaner small sizes than rendering tiny.
