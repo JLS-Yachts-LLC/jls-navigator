@@ -10,6 +10,46 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "The login page and the top of every screen now show the Polaris star from the browser tab"
+      },
+      {
+        "type": "feature",
+        "title": "Automatic WhatsApp expiry reminders for crew visas, crew passports and vessel permits — each reminder and each yacht has its own switch (all off by default, plus a platform master switch), configurable days before expiry, starter Utility templates, a preview of exactly what would send today, and a test send; contacts can be linked to a yacht"
+      },
+      {
+        "type": "feature",
+        "title": "Drag-and-drop personal fields into WhatsApp template values — Name, First name and Yacht name chips can be dragged or clicked into any value or link box and are filled in for each recipient, with each box showing the part of the message it fills"
+      },
+      {
+        "type": "feature",
+        "title": "WhatsApp sends show who tapped each reply button — an RSVP tally per button (with No reply yet), each recipient's answer, and a downloadable response list; button taps are labelled in the inbox"
+      },
+      {
+        "type": "feature",
+        "title": "The WhatsApp Setup tab shows whether Meta has approved the business display name, and any name change waiting for review"
+      },
+      {
+        "type": "feature",
+        "title": "Orbit Field Crew role — the Orbit 2 mobile app and nothing else"
+      },
+      {
+        "type": "fix",
+        "title": "WhatsApp windows scroll on smaller screens, so the Save draft and Send buttons are always reachable"
+      },
+      {
+        "type": "feature",
+        "title": "WhatsApp templates can open with an image, video or PDF and carry buttons — quick replies, website links (with a per-send ending) and a call button — with a live preview; sends can use their own image; templates from WhatsApp Manager import with their media and buttons; lists can be renamed"
+      },
+      {
+        "type": "feature",
+        "title": "Sync with Meta now imports WhatsApp templates made in WhatsApp Manager, and says why any it can't use were left out"
+      },
+      {
+        "type": "feature",
+        "title": "The WhatsApp Setup tab shows which WhatsApp account Polaris is connected to and whether its messages reach Polaris, with a button to link the account's webhooks"
+      },
+      {
+        "type": "feature",
         "title": "Polaris now has its own star icon in the browser tab and on phone home screens"
       },
       {
