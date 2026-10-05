@@ -189,7 +189,7 @@ async function recordAccess(
 async function reportDenial(
   sb: ReturnType<typeof admin>,
   request: Request,
-  yacht: { userId: string; email: string; vesselName: string },
+  yacht: { userId: string; email: string; vesselName: string; preview: boolean },
   sourceTable: string,
   id: string,
 ): Promise<void> {
@@ -206,10 +206,11 @@ async function reportDenial(
     await logAuditEvent({
       event_type: 'SEC',
       module: 'portal',
-      // A portal login has no staff profile for audit_log.user_id to reference.
-      actor_id: null,
+      // A portal login has no staff profile for audit_log.user_id to reference;
+      // an admin previewing the portal does.
+      actor_id: yacht.preview ? yacht.userId : null,
       actor_email: yacht.email || '(client portal)',
-      actor_role: 'captain',
+      actor_role: yacht.preview ? 'staff (portal preview)' : 'captain',
       target_type: sourceTable,
       target_id: id,
       target_label: `${sourceTable}/${id}`,

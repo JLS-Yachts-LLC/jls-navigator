@@ -46,36 +46,58 @@ export async function resolvePortalYacht(
   if (!token) return { ok: false, response: json({ error: 'Not authenticated' }, 401) }
 
   const sb = admin()
-  const { data: { user }, error } = await sb.auth.getUser(token)
-  if (error || !user) return { ok: false, response: json({ error: 'Not authenticated' }, 401) }
+  const previewAccountId = request.headers.get('X-Portal-Preview')?.trim()
 
-  // The user must have an ACTIVE captain account — this is the isolation boundary.
-  const { data: acct } = await sb
-    .from('captain_accounts')
-    .select('yacht_id')
-    .eq('user_id', user.id)
-    .eq('active', true)
-    // A boat-owner link has no yacht — see resolvePortalBoats() for those.
-    .not('yacht_id', 'is', null)
-    .limit(1)
-    .maybeSingle()
-  if (!acct?.yacht_id) return { ok: false, response: json({ error: 'No vessel linked to this account' }, 403) }
+  let caller: { id: string; email: string }
+  let yachtId: string
+  if (previewAccountId) {
+    const access = await requireAdminAccess(request)
+    if (!access.ok) return { ok: false, response: access.response }
+    const { data: acct } = await sb
+      .from('captain_accounts')
+      .select('yacht_id')
+      .eq('id', previewAccountId)
+      .eq('active', true)
+      .not('yacht_id', 'is', null)
+      .maybeSingle()
+    if (!acct?.yacht_id) return { ok: false, response: json({ error: 'Client account not found' }, 404) }
+    caller = { id: access.user.id, email: access.user.email }
+    yachtId = acct.yacht_id
+  } else {
+    const { data: { user }, error } = await sb.auth.getUser(token)
+    if (error || !user) return { ok: false, response: json({ error: 'Not authenticated' }, 401) }
+
+    // The user must have an ACTIVE captain account — this is the isolation boundary.
+    const { data: acct } = await sb
+      .from('captain_accounts')
+      .select('yacht_id')
+      .eq('user_id', user.id)
+      .eq('active', true)
+      // A boat-owner link has no yacht — see resolvePortalBoats() for those.
+      .not('yacht_id', 'is', null)
+      .limit(1)
+      .maybeSingle()
+    if (!acct?.yacht_id) return { ok: false, response: json({ error: 'No vessel linked to this account' }, 403) }
+    caller = { id: user.id, email: user.email ?? '' }
+    yachtId = acct.yacht_id
+  }
 
   const { data: yacht } = await sb
     .from('yachts')
     .select('id, vessel_name, qbo_customer_id')
-    .eq('id', acct.yacht_id)
+    .eq('id', yachtId)
     .maybeSingle()
   if (!yacht) return { ok: false, response: json({ error: 'Vessel not found' }, 404) }
 
   return {
     ok: true,
     yacht: {
-      userId: user.id,
-      email: user.email ?? '',
+      userId: caller.id,
+      email: caller.email,
       yachtId: yacht.id,
       vesselName: yacht.vessel_name,
       qboCustomerId: (yacht as any).qbo_customer_id ?? null,
+      preview: !!previewAccountId,
     },
   }
 }

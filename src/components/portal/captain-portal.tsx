@@ -19,6 +19,7 @@ import {
   Bell, Compass, Wrench, CalendarRange, ShieldCheck, Menu, AlertTriangle, Eye,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { portalFetch } from "@/lib/portal/portal-fetch";
 import { cn } from "@/lib/utils";
 // /portal is a standalone route (no staff shell), so pull the design tokens in
 // directly — the `pds` wrapper class below reads them.
@@ -440,13 +441,14 @@ const ALL_NAV_ITEMS: NavItem[] = NAV_GROUPS.flatMap((g) => g.items);
 // sees the whole app; Owner / Representative / Purser get a tailored subset —
 // operational sections (PMS, ISM) are hidden for non-operational roles, and the
 // Purser is finance/paperwork-focused. Tweak these lists to taste.
+// Keys are lowercase, as captain_accounts.position stores them.
 const HIDDEN_BY_POSITION: Record<string, Tab[]> = {
-  Owner: ["pms", "ism"],
-  Representative: ["pms", "ism"],
-  Purser: ["pms", "ism", "positions", "charter"],
+  owner: ["pms", "ism"],
+  representative: ["pms", "ism"],
+  purser: ["pms", "ism", "positions", "charter"],
 };
 function navGroupsFor(position: string | null): NavGroup[] {
-  const hide = new Set(HIDDEN_BY_POSITION[position ?? ""] ?? []);
+  const hide = new Set(HIDDEN_BY_POSITION[(position ?? "").trim().toLowerCase()] ?? []);
   return NAV_GROUPS
     .map((g) => ({ ...g, items: g.items.filter((i) => !hide.has(i.key)) }))
     .filter((g) => g.items.length > 0);
@@ -897,7 +899,7 @@ function RequestDetail({ requestId, displayName, onBack }: { requestId: string; 
   };
 
   const cancel = async () => {
-    if (!req || !confirm("Cancel this request?")) return;
+    if (!req || readOnly || !confirm("Cancel this request?")) return;
     await db.from("captain_requests").update({ status: "cancelled" }).eq("id", req.id);
     void load();
   };
@@ -928,7 +930,7 @@ function RequestDetail({ requestId, displayName, onBack }: { requestId: string; 
           {req.needed_by && <span>Needed by {fmtDate(req.needed_by)}</span>}
           <span>Priority: {req.priority}</span>
         </div>
-        {(req.status === "new" || req.status === "acknowledged") && (
+        {!readOnly && (req.status === "new" || req.status === "acknowledged") && (
           <button onClick={cancel} className="mt-4 text-xs text-muted-foreground underline-offset-2 hover:text-red-300 hover:underline">
             Cancel this request
           </button>
@@ -1128,11 +1130,7 @@ function OpenDocumentButton({ kind, id, label = "Open" }: { kind: string; id: st
   async function open() {
     setBusy(true);
     try {
-      const { data: { session } } = await db.auth.getSession();
-      const res = await fetch(`/api/portal/documents/open?type=${kind}&id=${id}`, {
-        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
-        redirect: "follow",
-      });
+      const res = await portalFetch(`/api/portal/documents/open?type=${kind}&id=${id}`, { redirect: "follow" });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body?.error ?? "That document could not be opened.");
@@ -1173,10 +1171,7 @@ function DocumentsTab({ yachtId }: { yachtId: string }) {
     let alive = true;
     void (async () => {
       try {
-        const { data: { session } } = await db.auth.getSession();
-        const res = await fetch("/api/portal/documents", {
-          headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
-        });
+        const res = await portalFetch("/api/portal/documents");
         const body = await res.json();
         if (!res.ok) throw new Error(body?.error ?? "Could not load documents");
         if (!alive) return;
@@ -1340,10 +1335,7 @@ function DirectoryTab() {
 }
 
 // ── Finances (QuickBooks, vessel-scoped) ─────────────────────────────────────
-async function authedFetch(path: string): Promise<Response> {
-  const { data: { session } } = await supabase.auth.getSession();
-  return fetch(path, { headers: { Authorization: `Bearer ${session?.access_token ?? ""}` } });
-}
+const authedFetch = (path: string) => portalFetch(path);
 const money = (n: number, ccy: string) =>
   `${ccy} ${Number(n || 0).toLocaleString("en-AE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 

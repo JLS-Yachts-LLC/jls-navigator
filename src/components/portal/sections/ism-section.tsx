@@ -4,6 +4,7 @@
  */
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { portalFetch } from "@/lib/portal/portal-fetch";
 import { cn } from "@/lib/utils";
 import { ShieldCheck, Flame, FileText } from "lucide-react";
 import { SectionCard, SectionHeader, SectionLoading, SectionEmpty, StatusBadge, fmtDate, daysUntil } from "./section-ui";
@@ -57,10 +58,7 @@ export function IsmSection({ yachtId }: { yachtId: string }) {
    */
   async function openDoc(certId: string) {
     try {
-      const { data: { session } } = await db.auth.getSession();
-      const res = await fetch(`/api/portal/documents/open?type=ism_cert&id=${certId}`, {
-        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
-      });
+      const res = await portalFetch(`/api/portal/documents/open?type=ism_cert&id=${certId}`);
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body?.error ?? "That certificate could not be opened.");
