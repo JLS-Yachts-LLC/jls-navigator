@@ -7,6 +7,7 @@
 import { ProfileMenu, ProfileAvatar } from "@/components/profile/profile-menu";
 import { useEffect, useState, type ReactNode } from "react";
 import { TIcon } from "./primitives";
+import { PolarisMark } from "@/components/brand/PolarisMark";
 import { useFeatureBadges, BADGE_META } from "@/lib/feature-badges";
 import { ViewAsSwitcher, OnlineUsers } from "@/components/top-bar";
 import { FeedbackWidget } from "@/components/feedback/feedback-widget";
@@ -114,6 +115,13 @@ export const NAV_GROUPS: NavGroup[] = [
         screen: "client-requests",
         roles: ["global_admin"],
       },
+    ],
+  },
+  {
+    label: "Communications",
+    items: [
+      // Client messaging: inbox, contacts + consent, broadcast lists, templates, sends.
+      { label: "WhatsApp", module: "communications", icon: "brand-whatsapp", screen: "whatsapp", roles: ["global_admin"] },
     ],
   },
   {
@@ -305,15 +313,21 @@ export function PolarisTopBar({
             <TIcon name="menu-2" size={22} color="var(--pds-text-secondary)" />
           </button>
         )}
-        <span
-          style={{
-            color: "var(--pds-gold)",
-            fontSize: 16,
-            fontWeight: 600,
-            letterSpacing: "0.08em",
-          }}
-        >
-          POLARIS
+        <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {/* Same star as the favicon and the login logo. Decorative here —
+              the word POLARIS beside it already names the product. */}
+          <PolarisMark size={26} title="" />
+          <span
+            style={{
+              color: "var(--pds-gold)",
+              fontFamily: "var(--pds-font-display)",
+              fontSize: 19,
+              fontWeight: 600,
+              letterSpacing: "0.14em",
+            }}
+          >
+            POLARIS
+          </span>
         </span>
         {/* Selected screen heading (moved out of the per-page tab bars). */}
         {activeLabel && (
@@ -637,12 +651,16 @@ export function PolarisShell({
           >
             <span
               style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
                 color: "var(--pds-gold)",
                 fontSize: 16,
                 fontWeight: 600,
                 letterSpacing: "0.08em",
               }}
             >
+              <PolarisMark size={22} title="" />
               POLARIS
             </span>
             <button

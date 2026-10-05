@@ -104,7 +104,41 @@ export async function emailProofOfDelivery(noteId: string, toOverride?: string, 
      <p style="margin:8px 0;font-size:12px;color:#7a828a">JLS Yachts Logistics</p>`,
   )
   const txt = pre ? `Delivery scheduled for ${note.boat_name ?? ''} (${ref}). Pre-delivery note: ${pdfUrl}` : `Delivery complete for ${note.boat_name ?? ''} (${ref}). Delivery note: ${pdfUrl}`
-  await sendEmail({ to: [to], cc: [LOGISTICS], subject, html, text: txt })
+  // `to` may be several addresses (client and driver) separated by , or ;
+  const recipients = to.split(/[,;]/).map((a) => a.trim()).filter(Boolean)
+  await sendEmail({ to: recipients, cc: [LOGISTICS], subject, html, text: txt })
+  return { to }
+}
+
+/**
+ * Email the receipt for a Warehouse - Out check-out that has been released:
+ * who collected, and what left the warehouse. Sent to the collector (and copied to
+ * Logistics) — the mobile app calls it for client collections.
+ */
+export async function emailWarehouseReceipt(checkoutId: string, to: string): Promise<{ to: string }> {
+  const { data: co } = await db().from('warehouse_checkouts').select('*').eq('id', checkoutId).maybeSingle()
+  if (!co) throw new Error('Check-out not found')
+  if (co.status !== 'released') throw new Error('That check-out has not been released yet')
+  const recipients = to.split(/[,;]/).map((a: string) => a.trim()).filter(Boolean)
+  if (recipients.length === 0) throw new Error('No recipient email')
+  const { data: items } = await db().from('warehouse_checkout_items').select('*').eq('checkout_id', checkoutId).order('created_at')
+
+  const ref = `DN ${co.number}`
+  const client = esc(co.boat_name ?? '')
+  const who = [co.receiver_name, co.receiver_position].filter(Boolean).map(esc).join(' — ')
+  const rows = (items ?? []).map((i: any) =>
+    `<tr><td style="padding:4px 10px 4px 0;font-family:monospace">${esc(i.kind === 'content' ? i.item_id ?? i.ref_no : i.ref_no)}</td>` +
+    `<td style="padding:4px 10px 4px 0;color:#555">${esc(i.description ?? '')}</td>` +
+    `<td style="padding:4px 0;color:#555;text-align:right">${i.kind === 'content' ? `Qty ${Number(i.qty_out ?? 0)}` : 'Whole package'}</td></tr>`).join('')
+  const when = co.released_at ? new Date(co.released_at).toLocaleString('en-GB', { timeZone: 'Asia/Dubai', dateStyle: 'medium', timeStyle: 'short' }) : ''
+  const html = shell(
+    `<h1 style="margin:0 0 10px;font-size:18px;color:#0d1520">Warehouse release — ${client}</h1>
+     <p style="margin:8px 0;font-size:14px;color:#333">The items below for <strong>${ref}</strong> were collected from the warehouse${when ? ` on ${esc(when)}` : ''}${who ? ` by ${who}` : ''}.</p>
+     <table style="margin:12px 0;font-size:13px;color:#333">${rows}</table>
+     <p style="margin:8px 0;font-size:12px;color:#7a828a">JLS Yachts Logistics</p>`,
+  )
+  const txt = `Warehouse release ${ref}${co.boat_name ? ` — ${co.boat_name}` : ''}: ${(items ?? []).length} item(s) collected${co.receiver_name ? ` by ${co.receiver_name}` : ''}.`
+  await sendEmail({ to: recipients, cc: [LOGISTICS], subject: `Warehouse release — ${co.boat_name ?? ''} (${ref})`, html, text: txt })
   return { to }
 }
 

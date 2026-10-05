@@ -26,6 +26,8 @@ import {
 } from "./orbit2-data";
 import { Field, inputCls } from "./orbit2-fields";
 import { Orbit2BoatDetail } from "./orbit2-boat-detail";
+import { ChecklistLibraryButton } from "./orbit2-checklist-library";
+import { useOrbit2Identity } from "./orbit2-identity";
 
 const sb = supabase as any;
 
@@ -60,6 +62,7 @@ export function Orbit2Boats({
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
+  const { isAdmin } = useOrbit2Identity();
   const [adding, setAdding] = useState(false);
 
   const activeByBoat = useMemo(() => {
@@ -151,6 +154,7 @@ export function Orbit2Boats({
           ))}
         </div>
         <div className="flex items-center gap-2">
+          <ChecklistLibraryButton isAdmin={isAdmin} />
           <button onClick={exportToExcel} disabled={!boats.length}
             className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-[15px] font-medium hover:bg-accent disabled:opacity-50">
             <Download className="h-4 w-4" /> Export to Excel
@@ -183,7 +187,7 @@ export function Orbit2Boats({
             return (
               <button key={b.id} onClick={() => setSelectedId(b.id)}
                 className="flex flex-col overflow-hidden rounded-xl border border-border bg-card text-left transition hover:border-primary/50 hover:shadow-sm">
-                <div className="flex aspect-video items-center justify-center bg-muted/30">
+                <div className="flex aspect-video items-center justify-center overflow-hidden bg-muted/30">
                   {b.image_ref
                     ? <SignedImage stored={b.image_ref} alt={b.name} className="h-full w-full object-cover" />
                     : <Ship className="h-8 w-8 text-muted-foreground/40" />}
@@ -350,8 +354,14 @@ function AddBoatWizard({
         max_passengers: form.max_passengers ? Number(form.max_passengers) : null,
         mmsi: form.mmsi.trim() || null,
         imo_no: form.imo_no.trim() || null,
-        // Blank → the database derives one from the name (and keeps it unique).
-        job_prefix: form.job_prefix.trim().toUpperCase() || null,
+        // Still the office's own auto-filled suggestion (never hand-edited)?
+        // Send null and let the database derive it instead — it owns this
+        // rule (orbit2_default_job_prefix) and keeps it unique; sending our
+        // own copy of the algorithm's guess here is how the two could drift
+        // apart and persist a prefix the server's own rule wouldn't pick.
+        job_prefix: form.job_prefix.trim().toUpperCase() === defaultJobPrefix(form.name)
+          ? null
+          : form.job_prefix.trim().toUpperCase() || null,
         image_ref: form.image_ref,
         inherited_yacht_id: form.inherited_yacht_id,
         created_by: user?.id ?? null,

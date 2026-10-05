@@ -412,7 +412,7 @@
 
 /* ── Beta-embedded standard pages ──────────────────────────────────────────────
    Standard app pages (Visa, Sign On/Off, Yacht IT Solutions) rendered INSIDE the
-   Polaris Beta remap the shadcn theme tokens to the pds teal/blue brand, so they
+   Polaris Beta remap the shadcn theme tokens to the pds navy/gold theme, so they
    match the Beta look & feel without any change to component code or behaviour.
    Applied via className="dark pds-embed" (dark enables dark: variants; pds-embed
    is defined last so it wins the token values). */
@@ -431,35 +431,35 @@
 [role="dialog"],
 [role="alertdialog"],
 [vaul-drawer] {
-  --background:            #0a2e40;             /* content-area teal */
+  --background:            #0D1E44;             /* content-area navy */
   --foreground:            #f0f4f8;             /* light text */
-  --card:                  #0c384f;             /* slightly lifted surface */
+  --card:                  #112552;             /* slightly lifted surface */
   --card-foreground:       #f0f4f8;
-  --popover:               #0c384f;
+  --popover:               #112552;
   --popover-foreground:    #f0f4f8;
-  --primary:               #4590ba;             /* Dodger Blue — interactive */
-  --primary-foreground:    #061e2b;
+  --primary:               #C9A227;             /* warm gold — interactive */
+  --primary-foreground:    #07112A;
   --secondary:             rgba(255,255,255,0.06);
   --secondary-foreground:  #f0f4f8;
   --muted:                 rgba(255,255,255,0.05);
-  --muted-foreground:      #a8c4ce;             /* light teal-grey */
-  --accent:                rgba(69,144,186,0.18);
-  --accent-foreground:     #96cbc7;             /* Jamaica Bay */
-  --border:                rgba(150,203,199,0.4);
-  --input:                 rgba(150,203,199,0.4);
-  --ring:                  #4590ba;
+  --muted-foreground:      #A7B3CA;             /* cool grey */
+  --accent:                rgba(201,162,39,0.16);
+  --accent-foreground:     #E9CC72;             /* light gold */
+  --border:                rgba(233,204,114,0.22);
+  --input:                 rgba(233,204,114,0.3);
+  --ring:                  #C9A227;
   --destructive:           #e24b4a;
   --destructive-foreground:#ffffff;
-  --sidebar:               #07435e;
+  --sidebar:               #0A1838;
   --sidebar-foreground:    #f0f4f8;
   --sidebar-accent:        rgba(255,255,255,0.06);
-  --sidebar-accent-foreground: #96cbc7;
-  --sidebar-border:        rgba(150,203,199,0.4);
+  --sidebar-accent-foreground: #E9CC72;
+  --sidebar-border:        rgba(233,204,114,0.22);
   /* Font parity with the Beta shell/nav: raw CSS that references
      --font-sans / --font-display (data-table headers, h1–h4, pills, label-caps)
      resolves these per-element, so embedded pages render in the shell font. */
   --font-sans:    var(--pds-font-body);
-  --font-display: var(--pds-font-display);
+  --font-display: var(--pds-font-body);
   --font-body:    var(--pds-font-body);
   font-family: var(--pds-font-body);
   /* `body` resolves `color: var(--foreground)` against the BASE theme and that
@@ -470,17 +470,30 @@
      `bg-transparent` with no colour of their own, so they inherit this. */
   color: var(--foreground);
 }
-.pds-embed { background: #0a2e40; }
+.pds-embed { background: #0D1E44; }
 /* @theme inline bakes the Space Grotesk stack into the font-sans/font-display
    utility classes, so the variable remap above can't reach them — override the
    classes directly for embedded pages and portaled surfaces. */
 .pds-embed :is(.font-display), .pds-theme :is(.font-display),
 [data-radix-popper-content-wrapper] :is(.font-display),
-[role="dialog"] :is(.font-display), [role="alertdialog"] :is(.font-display) { font-family: var(--pds-font-display); }
+[role="dialog"] :is(.font-display), [role="alertdialog"] :is(.font-display) { font-family: var(--pds-font-body); }
+/* Big headings on embedded pages get the Cormorant display face, like the Beta's
+   own screens (page titles, section titles, big numbers). Small display text stays Jost. */
+.pds-embed :is(h1, h2),
+.pds-embed .font-display:is(.text-lg, .text-xl, .text-2xl, .text-3xl, .text-4xl,
+  .text-\[1\.25rem\], .text-\[19px\], .text-\[20px\], .text-\[22px\], .text-\[28px\]) {
+  font-family: var(--pds-font-display);
+  font-variant-numeric: lining-nums;
+}
 .pds-embed :is(.font-sans, .font-body), .pds-theme :is(.font-sans, .font-body),
 [data-radix-popper-content-wrapper] :is(.font-sans, .font-body),
 [role="dialog"] :is(.font-sans, .font-body), [role="alertdialog"] :is(.font-sans, .font-body) { font-family: var(--pds-font-body); }
 
+/* Portaled surfaces render outside .pds, so define the pds font variables here too. */
+:root {
+  --pds-font-display: "Cormorant Garamond", Garamond, "Times New Roman", serif;
+  --pds-font-body: "Jost", Futura, "Century Gothic", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
 /* Portaled surfaces should also carry the Beta shell font on their own root. */
 [data-radix-popper-content-wrapper], [data-sonner-toaster],
 [role="dialog"], [role="alertdialog"], [vaul-drawer] { font-family: var(--pds-font-body); }

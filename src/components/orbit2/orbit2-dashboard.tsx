@@ -719,7 +719,7 @@ function TaskDetailCard({
             <span className="text-primary">{w.ref}</span> · {w.title}
           </div>
           <div className="text-[14px] text-muted-foreground">
-            {w.label} · {time}{duration ? ` · ETC ${minutesToHhmm(duration)}` : ""}
+            {w.label} · {time}{duration != null ? ` · ETC ${minutesToHhmm(duration)}` : ""}
           </div>
         </div>
         <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[14px] font-medium">{w.status}</span>

@@ -17,9 +17,9 @@
  * is themed with the official Polaris palette. No native popup involved.
  *
  * Palette:
- *  Jamaica Bay  #96CBC7
- *  Dodger Blue  #4590BA
- *  Teal Blue    #07435E
+ *  Light gold   #E9CC72
+ *  Warm gold    #C9A227
+ *  Navy         #0A1838
  */
 
 import React, { useState, useRef, useEffect } from 'react';
@@ -110,10 +110,10 @@ export function VisaOccupationSelect({
             onKeyDown={(e) => { if (e.key === 'Escape') setOpen(false); if (e.key === 'Enter') { e.preventDefault(); setOpen(false); } }}
             style={{
               width: '100%', padding: '12px 40px 12px 16px', borderRadius: '10px',
-              border: error ? '1px solid #EF4444' : open ? '1px solid #4590BA' : '1px solid rgba(255,255,255,0.18)',
+              border: error ? '1px solid #EF4444' : open ? '1px solid #C9A227' : '1px solid rgba(255,255,255,0.18)',
               background: 'rgba(255,255,255,0.04)', color: '#FFFFFF',
               fontFamily: "'DINPro','Inter',sans-serif", fontSize: '15px', fontWeight: 500,
-              outline: 'none', boxShadow: open ? '0 0 0 3px rgba(69,144,186,0.20)' : 'none',
+              outline: 'none', boxShadow: open ? '0 0 0 3px rgba(201,162,39,0.20)' : 'none',
               opacity: disabled ? 0.5 : 1, cursor: disabled ? 'not-allowed' : 'text',
             }}
           />
@@ -147,16 +147,16 @@ export function VisaOccupationSelect({
                   style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                     padding: '10px 12px', borderRadius: '7px', cursor: 'pointer',
-                    background: isSelected ? 'rgba(69,144,186,0.18)' : 'transparent',
+                    background: isSelected ? 'rgba(201,162,39,0.18)' : 'transparent',
                   }}
                   onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLDivElement).style.background = 'rgba(255,255,255,0.07)'; }}
                   onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
                 >
                   <span style={{ fontFamily: "'DINPro','Inter',sans-serif", fontSize: '15px',
-                                 fontWeight: isSelected ? 500 : 400, color: isSelected ? '#96CBC7' : '#FFFFFF' }}>
+                                 fontWeight: isSelected ? 500 : 400, color: isSelected ? '#E9CC72' : '#FFFFFF' }}>
                     {option.label}
                   </span>
-                  {isSelected && <i className="ti ti-check" aria-hidden="true" style={{ fontSize: '14px', color: '#96CBC7' }} />}
+                  {isSelected && <i className="ti ti-check" aria-hidden="true" style={{ fontSize: '14px', color: '#E9CC72' }} />}
                 </div>
               );
             })}
@@ -265,12 +265,12 @@ export function VisaOccupationSelect({
           border:          error
                              ? '1px solid #EF4444'
                              : open
-                               ? '1px solid #4590BA'
+                               ? '1px solid #C9A227'
                                : '1px solid rgba(255,255,255,0.18)',
           background:      'rgba(255,255,255,0.04)',
           cursor:          disabled ? 'not-allowed' : 'pointer',
           opacity:         disabled ? 0.5 : 1,
-          boxShadow:       open ? '0 0 0 3px rgba(69,144,186,0.20)' : 'none',
+          boxShadow:       open ? '0 0 0 3px rgba(201,162,39,0.20)' : 'none',
           transition:      'border 0.15s ease, box-shadow 0.15s ease',
         }}
       >
@@ -334,7 +334,7 @@ export function VisaOccupationSelect({
                   borderRadius:   '7px',
                   cursor:         'pointer',
                   background:     isSelected
-                                    ? 'rgba(69,144,186,0.18)'
+                                    ? 'rgba(201,162,39,0.18)'
                                     : isHighlighted
                                       ? 'rgba(255,255,255,0.07)'
                                       : 'transparent',
@@ -346,7 +346,7 @@ export function VisaOccupationSelect({
                     fontFamily: "'DINPro','Inter',sans-serif",
                     fontSize:   '15px',
                     fontWeight: isSelected ? '500' : '400',
-                    color:      isSelected ? '#96CBC7' : '#FFFFFF',
+                    color:      isSelected ? '#E9CC72' : '#FFFFFF',
                   }}
                 >
                   {option.label}
@@ -355,7 +355,7 @@ export function VisaOccupationSelect({
                   <i
                     className="ti ti-check"
                     aria-hidden="true"
-                    style={{ fontSize: '14px', color: '#96CBC7' }}
+                    style={{ fontSize: '14px', color: '#E9CC72' }}
                   />
                 )}
               </div>

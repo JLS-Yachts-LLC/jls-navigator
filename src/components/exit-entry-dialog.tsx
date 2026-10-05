@@ -20,6 +20,9 @@ type SubType = "Exit" | "Entry";
 const PORT_OPTIONS = [
   "Dubai Marina",
   "Port Rashid",
+  // Requested by the Agency team (SD-0043). Written out in full like the others,
+  // with the abbreviation everyone actually uses, so a search for either finds it.
+  "Dubai Maritime City (DMC)",
   "Hamdan Port",
   "Port Zayed",
   "Mina Seyahi",

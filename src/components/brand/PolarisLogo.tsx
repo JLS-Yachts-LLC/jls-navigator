@@ -17,6 +17,8 @@
  */
 
 import React from "react";
+import { PolarisMarkShapes, useMarkGradientId } from "./PolarisMark";
+import { POLARIS_STAR } from "./polaris-star";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -38,10 +40,11 @@ interface PolarisLogoProps {
   /**
    * theme — switches wordmark colour.
    *
-   *  'light'  Navy wordmark (#1B2A4A) for white/light backgrounds  ← default
+   *  'light'  Teal Blue wordmark (#07435E) for white/light backgrounds  ← default
    *  'dark'   White wordmark (#FFFFFF) for navy/dark backgrounds
    *
-   * The star mark (teal + amber) is identical in both themes.
+   * The star mark is identical in both themes: it carries its own Teal Blue
+   * tile, so it reads on any background.
    */
   theme?: LogoTheme;
 
@@ -68,55 +71,27 @@ const SIZE_MAP: Record<LogoSize, { width: number; height: number }> = {
 
 /**
  * Brand colours — OFFICIAL Polaris palette (Brand Guidelines v1.0): Teal Blue /
- * Dodger Blue / Jamaica Bay. (var names retained: navy = Teal Blue wordmark,
- * teal = Dodger Blue, amber = Teal Blue accent, muted = Jamaica Bay.) The star-mark
- * SHAPE is unchanged — the guidelines describe a helm/lighthouse mark, which is a
- * separate asset change pending MD sign-off. CLAUDE.md §16 colour table is now stale.
+ * Dodger Blue / Jamaica Bay. The star mark's own colours live with its geometry
+ * in ./polaris-star.ts.
  */
 const BRAND = {
   navy: "#07435E", // Teal Blue — wordmark on light backgrounds
   white: "#FFFFFF",
-  teal: "#4590BA", // Dodger Blue
-  tealMuted: "#96CBC7", // Jamaica Bay
-  amber: "#07435E", // Teal Blue
-  amberMuted: "#96CBC7", // Jamaica Bay
 } as const;
 
-// ─── Sub-component: Star Mark ─────────────────────────────────────────────────
-// Extracted so it can be reused in both 'full' and 'mark-only' variants.
-// viewBox coordinates are relative to a 76 × 100 unit grid.
-
-const StarMark: React.FC = () => (
-  <>
-    {/* Cardinal points */}
-    <polygon points="38,10 42,48 38,50 34,48" fill={BRAND.teal} />
-    <polygon points="38,90 42,52 38,50 34,52" fill={BRAND.amber} />
-    <polygon points="10,50 46,46 48,50 46,54" fill={BRAND.teal} />
-    <polygon points="66,50 30,46 28,50 30,54" fill={BRAND.amber} />
-
-    {/* Diagonal half-points — muted colours, slightly transparent */}
-    <polygon
-      points="17,17 44,44 40,48 36,44"
-      fill={BRAND.tealMuted}
-      opacity="0.8"
-    />
-    <polygon
-      points="59,17 32,44 36,48 40,44"
-      fill={BRAND.amberMuted}
-      opacity="0.8"
-    />
-    <polygon
-      points="17,83 44,56 40,52 36,56"
-      fill={BRAND.tealMuted}
-      opacity="0.8"
-    />
-    <polygon
-      points="59,83 32,56 36,52 40,56"
-      fill={BRAND.amber}
-      opacity="0.85"
-    />
-  </>
-);
+/**
+ * Star mark placement inside the full logo's 420 × 100 viewBox: the 64-unit
+ * tile scaled to 60 units and centred on the logo's mid-line (y = 50), so it
+ * stands a little taller than the wordmark's capitals.
+ *
+ * The mark changed in October 2026 from the original eight thin, overlapping,
+ * semi-transparent points to the tiled faceted star the favicon uses, so the
+ * login screen, the app chrome and the browser tab all show one star. The old
+ * points blurred at small sizes and half of them disappeared on dark backgrounds.
+ */
+const MARK_SCALE = 60 / POLARIS_STAR.size;
+const MARK_X = 6;
+const MARK_Y = 50 - 30;
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -129,20 +104,21 @@ export const PolarisLogo: React.FC<PolarisLogoProps> = ({
   const { width, height } = SIZE_MAP[size];
   const textFill = theme === "dark" ? BRAND.white : BRAND.navy;
   const taglineOpacity = theme === "dark" ? "0.5" : "0.55";
+  const gradientId = useMarkGradientId();
 
   // ── Mark-only variant (collapsed sidebar, favicon context) ────────────────
   if (variant === "mark-only") {
     return (
       <svg
         xmlns="http://www.w3.org/2000/svg"
-        viewBox="0 0 76 100"
+        viewBox={`0 0 ${POLARIS_STAR.size} ${POLARIS_STAR.size}`}
         width={height} // Square — use height as both dims
         height={height}
         role="img"
         aria-label="Polaris"
         className={className}
       >
-        <StarMark />
+        <PolarisMarkShapes gradientId={gradientId} />
       </svg>
     );
   }
@@ -158,8 +134,10 @@ export const PolarisLogo: React.FC<PolarisLogoProps> = ({
       aria-label="Polaris — Behind Yachting Operation"
       className={className}
     >
-      {/* Star mark sits in the left-hand 76 units of the 420-unit viewBox */}
-      <StarMark />
+      {/* Star mark sits in the left-hand ~70 units of the 420-unit viewBox */}
+      <g transform={`translate(${MARK_X} ${MARK_Y}) scale(${MARK_SCALE})`}>
+        <PolarisMarkShapes gradientId={gradientId} />
+      </g>
 
       {/* Primary wordmark */}
       <text

@@ -5,9 +5,253 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.66.0",
+    "date": "2026-10-05",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "The client portal's sign-in now shows the Polaris star"
+      },
+      {
+        "type": "feature",
+        "title": "WhatsApp sends go to each number only once, and duplicate contacts can be merged — a Duplicates button groups records sharing a number on the same yacht, merges keep their lists, messages, replies and consent history on one record, and merged imports aren't re-created"
+      },
+      {
+        "type": "feature",
+        "title": "Bulk WhatsApp consent and CSV contact import — record consent or opt-outs for many selected contacts at once (each with its own audited entry and a required note), and import contacts from a CSV with a downloadable template, a row-by-row preview that matches yachts and existing contacts, and optional consent columns"
+      },
+      {
+        "type": "feature",
+        "title": "The login page and the top of every screen now show the Polaris star from the browser tab"
+      },
+      {
+        "type": "feature",
+        "title": "Automatic WhatsApp expiry reminders for crew visas, crew passports and vessel permits — each reminder and each yacht has its own switch (all off by default, plus a platform master switch), configurable days before expiry, starter Utility templates, a preview of exactly what would send today, and a test send; contacts can be linked to a yacht"
+      },
+      {
+        "type": "feature",
+        "title": "Drag-and-drop personal fields into WhatsApp template values — Name, First name and Yacht name chips can be dragged or clicked into any value or link box and are filled in for each recipient, with each box showing the part of the message it fills"
+      },
+      {
+        "type": "feature",
+        "title": "WhatsApp sends show who tapped each reply button — an RSVP tally per button (with No reply yet), each recipient's answer, and a downloadable response list; button taps are labelled in the inbox"
+      },
+      {
+        "type": "feature",
+        "title": "The WhatsApp Setup tab shows whether Meta has approved the business display name, and any name change waiting for review"
+      },
+      {
+        "type": "feature",
+        "title": "Orbit Field Crew role — the Orbit 2 mobile app and nothing else"
+      },
+      {
+        "type": "fix",
+        "title": "WhatsApp windows scroll on smaller screens, so the Save draft and Send buttons are always reachable"
+      },
+      {
+        "type": "feature",
+        "title": "WhatsApp templates can open with an image, video or PDF and carry buttons — quick replies, website links (with a per-send ending) and a call button — with a live preview; sends can use their own image; templates from WhatsApp Manager import with their media and buttons; lists can be renamed"
+      },
+      {
+        "type": "feature",
+        "title": "Sync with Meta now imports WhatsApp templates made in WhatsApp Manager, and says why any it can't use were left out"
+      },
+      {
+        "type": "feature",
+        "title": "The WhatsApp Setup tab shows which WhatsApp account Polaris is connected to and whether its messages reach Polaris, with a button to link the account's webhooks"
+      },
+      {
+        "type": "feature",
+        "title": "Polaris now has its own star icon in the browser tab and on phone home screens"
+      },
+      {
+        "type": "feature",
+        "title": "WhatsApp under Communications — a shared inbox to read and reply to clients (24-hour reply window, approved templates outside it, read receipts, photos and files, assign and close), contacts with emailed opt-in and recorded consent, broadcast lists, Meta template submission, and sends with delivery tracking and automatic opt-outs"
+      },
+      {
+        "type": "fix",
+        "title": "Gate passes can now be emailed to their contact, like every other permit"
+      },
+      {
+        "type": "feature",
+        "title": "Dubai Maritime City (DMC) can now be chosen as the port on Exit & Entry permits"
+      }
+    ]
+  },
+  {
+    "version": "2.65.0",
+    "date": "2026-10-02",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Warehouse Out, QR labels, offline check-in, receipt email, installable app"
+      },
+      {
+        "type": "feature",
+        "title": "New View theme is now \"Navy & warm gold\" with Jost and Cormorant headings"
+      },
+      {
+        "type": "feature",
+        "title": "Warehouse Store In, Manage Warehouse, and Move Parcel to Storage"
+      },
+      {
+        "type": "feature",
+        "title": "Deliveries (driver) and Manage Deliveries (admin)"
+      },
+      {
+        "type": "feature",
+        "title": "Check-Out Parcels — delivery notes by scan or search, three ways out"
+      },
+      {
+        "type": "fix",
+        "title": "Managed Boats photos keep the same 16:9 size as the Vessels cards"
+      },
+      {
+        "type": "feature",
+        "title": "Link the Logistics mobile app from the ShipSync page"
+      },
+      {
+        "type": "feature",
+        "title": "Polaris Logistics mobile app — shell, role-based home, Check-in Parcels"
+      },
+      {
+        "type": "feature",
+        "title": "Checklist library reads Yes/No-box forms like the DMA inspection checklists"
+      },
+      {
+        "type": "feature",
+        "title": "Checklist library — drop in any checklist PDF and it fills itself like the RYA forms"
+      },
+      {
+        "type": "fix",
+        "title": "Close gaps found in a bug-hunt over last week's Managed Boats work"
+      },
+      {
+        "type": "fix",
+        "title": "Wire up email sending on the Exit/Entry permit dialog"
+      },
+      {
+        "type": "fix",
+        "title": "Checklist lines matched by name can be unlinked"
+      },
+      {
+        "type": "feature",
+        "title": "Inspection checklists as jobs — Assign Team, remarks and photos per line, notes page on the RYA form"
+      }
+    ]
+  },
+  {
+    "version": "2.64.0",
+    "date": "2026-09-30",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Field app — \"Admin Management\" tab for Orbit admins on the phone"
+      },
+      {
+        "type": "fix",
+        "title": "Vessels with the same name can now be told apart before archiving or deleting one"
+      },
+      {
+        "type": "fix",
+        "title": "Inbound mail joins the ticket its thread already has; no-reply senders raise nothing"
+      },
+      {
+        "type": "fix",
+        "title": "The Vessel Overview search looks across all statuses"
+      },
+      {
+        "type": "feature",
+        "title": "Assign a vessel to an Agency team member when adding it, choosing from the Agency team only"
+      },
+      {
+        "type": "feature",
+        "title": "RYA Cruising checklist — add \"Boom preventer attachment & line\" (TCC13)"
+      },
+      {
+        "type": "feature",
+        "title": "One-click RYA Training Checklist PDF, filled from the boat's Polaris ticks"
+      },
+      {
+        "type": "fix",
+        "title": "\"Save & Add Another\" no longer closes the Inventory item form on desktop"
+      },
+      {
+        "type": "feature",
+        "title": "Checklist rows show the matched inventory item's photo"
+      }
+    ]
+  },
+  {
+    "version": "2.63.0",
+    "date": "2026-09-29",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "RYA inspection checklists from the OPS workbook, matched against the boat's inventory"
+      },
+      {
+        "type": "feature",
+        "title": "Managed Boats — required inspections and per-boat DMA / FMA / RYA checklists"
+      },
+      {
+        "type": "feature",
+        "title": "SIM Cards — bulk import from Excel / CSV"
+      },
+      {
+        "type": "fix",
+        "title": "Calendar and roster show the boat name for Managed Boats jobs"
+      },
+      {
+        "type": "feature",
+        "title": "Field app — per-crew Attend / Done on multi-crew jobs, \"Waiting Companion\""
+      },
+      {
+        "type": "fix",
+        "title": "Photos captured on the mobile app now show on the boat job in the office"
+      },
+      {
+        "type": "feature",
+        "title": "\"Booked\" job category and an In-Use board on Managed Boats"
+      },
+      {
+        "type": "feature",
+        "title": "Inventory List — item editor with Save & Add Another, photo by drag / camera / upload, view and edit"
+      },
+      {
+        "type": "fix",
+        "title": "Inventory List — the Add Item form stays open for the next item"
+      },
+      {
+        "type": "feature",
+        "title": "Inventory job category — crew check and update a boat's inventory from the field app"
+      },
+      {
+        "type": "feature",
+        "title": "Each managed boat numbers its own jobs — MVT26-0001, SB26-0001, IMP26-0001"
+      },
+      {
+        "type": "feature",
+        "title": "Rename a managed boat in place"
+      },
+      {
+        "type": "feature",
+        "title": "Project List — All / To Be Invoiced / Invoiced views, and Delete"
+      }
+    ]
+  },
+  {
     "version": "2.62.0",
     "date": "2026-09-28",
     "entries": [
+      {
+        "type": "fix",
+        "title": "The Network tab now warns when the New Horizon sync has stopped running"
+      },
+      {
+        "type": "feature",
+        "title": "Add the Yacht IT Network register and map, kept in two-way sync with New Horizon-IT"
+      },
       {
         "type": "fix",
         "title": "Ticket emails can only be sent by signed-in staff, and only say what is on the ticket"

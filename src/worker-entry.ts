@@ -1101,6 +1101,35 @@ export default {
       return yachtNetworkDattoHandler(request)
     }
 
+    // Communications → WhatsApp. The webhook and the opt-in endpoints are public
+    // by necessity (Meta, and a client following an email link); the webhook is
+    // signature-checked and the opt-in is gated on its unguessable token.
+    if (url.pathname.startsWith('/api/whatsapp/')) {
+      const wa = await import('./lib/whatsapp/api.server')
+      const route = `${request.method} ${url.pathname}`
+      switch (route) {
+        case 'GET /api/whatsapp/status': return wa.whatsappStatusHandler(request)
+        case 'POST /api/whatsapp/templates/submit': return wa.whatsappTemplateSubmitHandler(request)
+        case 'POST /api/whatsapp/templates/sync': return wa.whatsappTemplateSyncHandler(request)
+        case 'POST /api/whatsapp/campaigns/send': return wa.whatsappCampaignSendHandler(request)
+        case 'POST /api/whatsapp/subscribe': return wa.whatsappSubscribeHandler(request)
+        case 'GET /api/whatsapp/automations/preview':
+          return (await import('./lib/whatsapp/automations.server')).whatsappAutomationPreviewHandler(request)
+        case 'POST /api/whatsapp/automations/test':
+          return (await import('./lib/whatsapp/automations.server')).whatsappAutomationTestHandler(request)
+        case 'POST /api/whatsapp/automations/starter':
+          return (await import('./lib/whatsapp/automations.server')).whatsappAutomationStarterHandler(request)
+        case 'POST /api/whatsapp/reply':return wa.whatsappReplyHandler(request)
+        case 'POST /api/whatsapp/conversations/read': return wa.whatsappConversationReadHandler(request)
+        case 'GET /api/whatsapp/media': return wa.whatsappMediaHandler(request)
+        case 'POST /api/whatsapp/optin/invite': return wa.whatsappOptinInviteHandler(request)
+        case 'GET /api/whatsapp/optin': return wa.whatsappOptinGetHandler(request)
+        case 'POST /api/whatsapp/optin': return wa.whatsappOptinPostHandler(request)
+        case 'GET /api/whatsapp/webhook': return wa.whatsappWebhookVerifyHandler(request)
+        case 'POST /api/whatsapp/webhook': return wa.whatsappWebhookHandler(request)
+      }
+    }
+
     if (url.pathname === '/api/internal-services/renewal-check' && request.method === 'POST') {
       return internalServicesRenewalCheckHandler(request)
     }
@@ -1573,6 +1602,18 @@ export default {
           .then(({ passports, visas, staleDocs }) =>
             console.log(`[visa-compliance] passports=${passports} visas=${visas} staleDocs=${staleDocs}`))
           .catch((e) => console.error('[visa-compliance] error:', e))
+      )
+    }
+
+    // WhatsApp expiry reminders to opted-in vessel contacts — daily at 06:00 UTC
+    // (10:00 Dubai). Off unless WHATSAPP_AUTOMATIONS_ENABLED is true AND the
+    // reminder AND the yacht are switched on; one message per document per stage.
+    if (isHourly && utcHour === 6) {
+      ctx.waitUntil(
+        import('./lib/whatsapp/automations.server')
+          .then((m) => m.runExpiryReminders())
+          .then((r) => console.log(`[wa-expiry-reminders] ${JSON.stringify(r)}`))
+          .catch((e) => console.error('[wa-expiry-reminders] error:', e))
       )
     }
 

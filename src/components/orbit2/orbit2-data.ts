@@ -191,6 +191,8 @@ export type Orbit2BoatTask = {
   est_minutes: number | null;
   technician: string | null;
   remarks: string | null;
+  /** For a "Checklist" job: which library checklist it carries. */
+  checklist_form_id: string | null;
 };
 
 export type Orbit2ScheduleEntry = {

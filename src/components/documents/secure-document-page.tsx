@@ -50,7 +50,7 @@ export function SecureDocumentPage() {
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900">
-      <header className="border-b border-slate-200 bg-[#07435e] px-6 py-4 text-white">
+      <header className="border-b border-slate-200 bg-[#0A1838] px-6 py-4 text-white">
         <div className="mx-auto flex max-w-2xl items-center gap-2">
           <ShieldCheck className="h-5 w-5" />
           <span className="font-semibold">JLS Yachts</span>
@@ -106,12 +106,12 @@ export function SecureDocumentPage() {
             </dl>
 
             {meta.purpose && (
-              <p className="mt-5 border-l-2 border-[#07435e] pl-3 text-sm leading-relaxed text-slate-600">
+              <p className="mt-5 border-l-2 border-[#0A1838] pl-3 text-sm leading-relaxed text-slate-600">
                 {meta.purpose}
               </p>
             )}
 
-            <Button asChild size="lg" className="mt-6 w-full gap-2 bg-[#07435e] hover:bg-[#0a5679] sm:w-auto">
+            <Button asChild size="lg" className="mt-6 w-full gap-2 bg-[#0A1838] hover:bg-[#142B5C] sm:w-auto">
               {/* A normal navigation, not fetch: the endpoint redirects to a
                   short-lived signed URL and the browser handles the download. */}
               <a href={`/api/documents/open?token=${encodeURIComponent(token)}`} rel="noreferrer">

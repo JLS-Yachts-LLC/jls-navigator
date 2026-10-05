@@ -1,9 +1,9 @@
 /**
- * ShipSync server API — POST /api/shipsync/note-pdf and /api/shipsync/email-pod.
+ * ShipSync server API — POST /api/shipsync/note-pdf, /email-pod and /email-warehouse-receipt.
  * Authenticated (bearer). Generates delivery-note PDFs and sends POD emails.
  */
 import { supabaseAdmin } from '@/integrations/supabase/client.server'
-import { generateNotePdf, emailProofOfDelivery } from '@/lib/shipsync/automations.server'
+import { generateNotePdf, emailProofOfDelivery, emailWarehouseReceipt } from '@/lib/shipsync/automations.server'
 import { pushShipSyncToSharePoint, importShipSyncFromSharePoint } from '@/lib/shipsync/sharepoint.server'
 
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json' } })
@@ -28,6 +28,11 @@ export async function shipsyncApiHandler(request: Request): Promise<Response> {
     if (url.pathname === '/api/shipsync/email-pod') {
       if (!body.noteId) return json({ ok: false, error: 'noteId required' }, 400)
       const res = await emailProofOfDelivery(body.noteId, body.to, body.kind === 'predelivery' ? 'predelivery' : 'delivery')
+      return json({ ok: true, ...res })
+    }
+    if (url.pathname === '/api/shipsync/email-warehouse-receipt') {
+      if (!body.checkoutId || !body.to) return json({ ok: false, error: 'checkoutId and to required' }, 400)
+      const res = await emailWarehouseReceipt(body.checkoutId, body.to)
       return json({ ok: true, ...res })
     }
     if (url.pathname === '/api/shipsync/sp-push') {

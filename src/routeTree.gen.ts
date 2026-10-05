@@ -11,9 +11,11 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as PortalRouteImport } from './routes/portal'
 import { Route as OrbitAppRouteImport } from './routes/orbit-app'
+import { Route as LogisticsAppRouteImport } from './routes/logistics-app'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as WhatsappOptinTokenRouteImport } from './routes/whatsapp-optin.$token'
 import { Route as SkuSyncTokenRouteImport } from './routes/sku-sync.$token'
 import { Route as SignTokenRouteImport } from './routes/sign.$token'
 import { Route as QbUploadTokenRouteImport } from './routes/qb-upload.$token'
@@ -169,6 +171,11 @@ const OrbitAppRoute = OrbitAppRouteImport.update({
   path: '/orbit-app',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LogisticsAppRoute = LogisticsAppRouteImport.update({
+  id: '/logistics-app',
+  path: '/logistics-app',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
@@ -181,6 +188,11 @@ const AppRoute = AppRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WhatsappOptinTokenRoute = WhatsappOptinTokenRouteImport.update({
+  id: '/whatsapp-optin/$token',
+  path: '/whatsapp-optin/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SkuSyncTokenRoute = SkuSyncTokenRouteImport.update({
@@ -937,6 +949,7 @@ const AppCrewImmigrationCrewAddCrewMemberIdPassportRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/logistics-app': typeof LogisticsAppRoute
   '/orbit-app': typeof OrbitAppRoute
   '/portal': typeof PortalRoute
   '/admin': typeof AppAdminRouteWithChildren
@@ -997,6 +1010,7 @@ export interface FileRoutesByFullPath {
   '/qb-upload/$token': typeof QbUploadTokenRoute
   '/sign/$token': typeof SignTokenRoute
   '/sku-sync/$token': typeof SkuSyncTokenRoute
+  '/whatsapp-optin/$token': typeof WhatsappOptinTokenRoute
   '/admin/audit': typeof AppAdminAuditRoute
   '/admin/organisations': typeof AppAdminOrganisationsRoute
   '/admin/permissions': typeof AppAdminPermissionsRoute
@@ -1087,6 +1101,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/logistics-app': typeof LogisticsAppRoute
   '/orbit-app': typeof OrbitAppRoute
   '/portal': typeof PortalRoute
   '/agency': typeof AppAgencyRoute
@@ -1136,6 +1151,7 @@ export interface FileRoutesByTo {
   '/qb-upload/$token': typeof QbUploadTokenRoute
   '/sign/$token': typeof SignTokenRoute
   '/sku-sync/$token': typeof SkuSyncTokenRoute
+  '/whatsapp-optin/$token': typeof WhatsappOptinTokenRoute
   '/admin/audit': typeof AppAdminAuditRoute
   '/admin/organisations': typeof AppAdminOrganisationsRoute
   '/admin/permissions': typeof AppAdminPermissionsRoute
@@ -1224,6 +1240,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_app': typeof AppRouteWithChildren
   '/auth': typeof AuthRoute
+  '/logistics-app': typeof LogisticsAppRoute
   '/orbit-app': typeof OrbitAppRoute
   '/portal': typeof PortalRoute
   '/_app/admin': typeof AppAdminRouteWithChildren
@@ -1284,6 +1301,7 @@ export interface FileRoutesById {
   '/qb-upload/$token': typeof QbUploadTokenRoute
   '/sign/$token': typeof SignTokenRoute
   '/sku-sync/$token': typeof SkuSyncTokenRoute
+  '/whatsapp-optin/$token': typeof WhatsappOptinTokenRoute
   '/_app/admin/audit': typeof AppAdminAuditRoute
   '/_app/admin/organisations': typeof AppAdminOrganisationsRoute
   '/_app/admin/permissions': typeof AppAdminPermissionsRoute
@@ -1376,6 +1394,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/auth'
+    | '/logistics-app'
     | '/orbit-app'
     | '/portal'
     | '/admin'
@@ -1436,6 +1455,7 @@ export interface FileRouteTypes {
     | '/qb-upload/$token'
     | '/sign/$token'
     | '/sku-sync/$token'
+    | '/whatsapp-optin/$token'
     | '/admin/audit'
     | '/admin/organisations'
     | '/admin/permissions'
@@ -1526,6 +1546,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/auth'
+    | '/logistics-app'
     | '/orbit-app'
     | '/portal'
     | '/agency'
@@ -1575,6 +1596,7 @@ export interface FileRouteTypes {
     | '/qb-upload/$token'
     | '/sign/$token'
     | '/sku-sync/$token'
+    | '/whatsapp-optin/$token'
     | '/admin/audit'
     | '/admin/organisations'
     | '/admin/permissions'
@@ -1662,6 +1684,7 @@ export interface FileRouteTypes {
     | '/'
     | '/_app'
     | '/auth'
+    | '/logistics-app'
     | '/orbit-app'
     | '/portal'
     | '/_app/admin'
@@ -1722,6 +1745,7 @@ export interface FileRouteTypes {
     | '/qb-upload/$token'
     | '/sign/$token'
     | '/sku-sync/$token'
+    | '/whatsapp-optin/$token'
     | '/_app/admin/audit'
     | '/_app/admin/organisations'
     | '/_app/admin/permissions'
@@ -1814,6 +1838,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRouteWithChildren
   AuthRoute: typeof AuthRoute
+  LogisticsAppRoute: typeof LogisticsAppRoute
   OrbitAppRoute: typeof OrbitAppRoute
   PortalRoute: typeof PortalRoute
   DTokenRoute: typeof DTokenRoute
@@ -1824,6 +1849,7 @@ export interface RootRouteChildren {
   QbUploadTokenRoute: typeof QbUploadTokenRoute
   SignTokenRoute: typeof SignTokenRoute
   SkuSyncTokenRoute: typeof SkuSyncTokenRoute
+  WhatsappOptinTokenRoute: typeof WhatsappOptinTokenRoute
   FormsFillTokenRoute: typeof FormsFillTokenRoute
 }
 
@@ -1841,6 +1867,13 @@ declare module '@tanstack/react-router' {
       path: '/orbit-app'
       fullPath: '/orbit-app'
       preLoaderRoute: typeof OrbitAppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/logistics-app': {
+      id: '/logistics-app'
+      path: '/logistics-app'
+      fullPath: '/logistics-app'
+      preLoaderRoute: typeof LogisticsAppRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth': {
@@ -1862,6 +1895,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/whatsapp-optin/$token': {
+      id: '/whatsapp-optin/$token'
+      path: '/whatsapp-optin/$token'
+      fullPath: '/whatsapp-optin/$token'
+      preLoaderRoute: typeof WhatsappOptinTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sku-sync/$token': {
@@ -3351,6 +3391,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
   AuthRoute: AuthRoute,
+  LogisticsAppRoute: LogisticsAppRoute,
   OrbitAppRoute: OrbitAppRoute,
   PortalRoute: PortalRoute,
   DTokenRoute: DTokenRoute,
@@ -3361,6 +3402,7 @@ const rootRouteChildren: RootRouteChildren = {
   QbUploadTokenRoute: QbUploadTokenRoute,
   SignTokenRoute: SignTokenRoute,
   SkuSyncTokenRoute: SkuSyncTokenRoute,
+  WhatsappOptinTokenRoute: WhatsappOptinTokenRoute,
   FormsFillTokenRoute: FormsFillTokenRoute,
 }
 export const routeTree = rootRouteImport

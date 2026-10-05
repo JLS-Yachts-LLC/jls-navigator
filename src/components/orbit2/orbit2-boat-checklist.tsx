@@ -13,10 +13,15 @@
  * what the boat already carries and what is missing. "Sync from inventory"
  * ticks everything the inventory already covers. Orbit admins keep the item
  * lists themselves up to date from the same screen.
+ *
+ * Since 2 Oct 2026 the same machinery serves every checklist in the library
+ * (orbit2-checklist-library): a checklist is identified either by a regime —
+ * the boat's DMA / FMA / RYA checklist — or directly by its form id for an
+ * "additional" checklist a boat carries.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowDown, ArrowUp, Camera, Check, FileDown, Link2, Link2Off, ListChecks, Loader2, MessageSquare, Pencil, Plus, RefreshCw, RotateCcw, Trash2, Upload, UserPlus, X,
+  ArrowDown, ArrowUp, Camera, Check, Crosshair, FileDown, Link2, Link2Off, ListChecks, Loader2, MessageSquare, Pencil, Plus, RefreshCw, RotateCcw, Trash2, Upload, UserPlus, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -25,7 +30,8 @@ import { errorMessage } from "@/lib/error-message";
 import { SignedImage } from "@/components/ui/signed-file";
 import { useAuth } from "@/lib/auth";
 import { storageRef } from "@/lib/signed-url";
-import { fillRyaForm, RYA_FORM_FILE, type RyaFormKey, type RyaAppendixRow } from "@/lib/orbit2/rya-form";
+import { fillChecklistForm, type ChecklistFormDef, type AppendixRow } from "@/lib/orbit2/checklist-form";
+import { ChecklistFormEditor } from "./orbit2-checklist-form-editor";
 import { compressImageToMaxKB } from "@/lib/image-compress";
 import { guardUploadFile, uploadContentType } from "@/lib/upload-guard";
 import { ORBIT2_BUCKET } from "./orbit2-data";
@@ -46,10 +52,14 @@ export const RYA_CHECKLISTS: { key: RyaChecklist; label: string; hint: string }[
 export const ryaChecklistLabel = (k: string | null) => RYA_CHECKLISTS.find((c) => c.key === k)?.label ?? "Not set";
 
 export type ChecklistTemplateItem = {
-  id: string; regime: InspectionRegime; category: RyaChecklist | null;
+  id: string; regime: InspectionRegime | null; category: RyaChecklist | null;
+  /** The library form this item belongs to (orbit2_checklist_forms). */
+  form_id: string | null;
   section: string | null; item: string; qty: number | null; unit: string | null; ref: string | null;
-  /** Where this item's Check cell is on the RYA's own PDF (page, PDF points). */
+  /** Where this item's Check cell is on the form's own PDF (page, PDF points). */
   pdf_page: number | null; pdf_x: number | null; pdf_y: number | null;
+  /** Yes/No forms: the No box on the same line. */
+  pdf_no_x: number | null;
   sort_order: number; active: boolean;
 };
 export type BoatChecklistState = {
@@ -123,36 +133,55 @@ export function InspectionsRequired({ boat, onSave }: { boat: Orbit2Boat; onSave
 
 // ── Loading one checklist for one boat ───────────────────────────────────────
 
-function useChecklist(boat: Orbit2Boat, regime: InspectionRegime) {
+/** Which checklist: the boat's DMA / FMA / RYA one, or a library form by id. */
+export type ChecklistSource = { regime?: InspectionRegime; formId?: string };
+
+function useChecklist(boat: Orbit2Boat, source: ChecklistSource) {
+  const regime = source.formId ? null : source.regime ?? null;
+  const formId = source.formId ?? null;
   const category: RyaChecklist | null = regime === "rya" ? (boat.rya_checklist as RyaChecklist | null) : null;
+  const [form, setForm] = useState<ChecklistFormDef | null>(null);
   const [items, setItems] = useState<ChecklistTemplateItem[]>([]);
   const [states, setStates] = useState<BoatChecklistState[]>([]);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
-    let q = sb.from("orbit2_checklist_templates").select("*").eq("regime", regime).eq("active", true).order("sort_order");
-    q = category ? q.eq("category", category) : q.is("category", null);
-    const [t, s] = await Promise.all([q, sb.from("orbit2_boat_checklist").select("*").eq("boat_id", boat.id)]);
+    let q = sb.from("orbit2_checklist_templates").select("*").eq("active", true).order("sort_order");
+    let f = sb.from("orbit2_checklist_forms").select("*").eq("active", true);
+    if (formId) { q = q.eq("form_id", formId); f = f.eq("id", formId); }
+    else {
+      q = q.eq("regime", regime);
+      q = category ? q.eq("category", category) : q.is("category", null);
+      f = f.eq("regime", regime);
+      f = category ? f.eq("category", category) : f.is("category", null);
+    }
+    const [t, s, fm] = await Promise.all([q, sb.from("orbit2_boat_checklist").select("*").eq("boat_id", boat.id), f.limit(1).maybeSingle()]);
     if (t.error) toast.error(errorMessage(t.error, "Could not load the checklist"));
     setItems((t.data ?? []) as ChecklistTemplateItem[]);
     setStates((s.data ?? []) as BoatChecklistState[]);
+    setForm((fm.data ?? null) as ChecklistFormDef | null);
     setLoading(false);
-  }, [regime, category, boat.id]);
+  }, [regime, category, formId, boat.id]);
   useEffect(() => { void load(); }, [load]);
 
   const stateFor = useMemo(() => new Map(states.map((s) => [s.template_id, s])), [states]);
-  return { category, items, states, stateFor, loading, reload: load };
+  // How the checklist names itself in headings and messages.
+  const short = formId ? (form?.code || form?.name || "Checklist") : (regime ?? "").toUpperCase();
+  const label = formId
+    ? (form?.name ?? "Checklist")
+    : `${regime} inspection checklist${category ? ` · ${ryaChecklistLabel(category)}` : ""}`;
+  return { regime, category, formId, form, items, states, stateFor, loading, reload: load, short, label };
 }
 
 /** The compact card content: progress, inventory coverage, and the button to the full list. */
-export function InspectionChecklist({ boat, regime, inventory, isAdmin, authorName, onDocumentAdded, onAssignTeam }: {
-  boat: Orbit2Boat; regime: InspectionRegime; inventory: Orbit2BoatInventoryItem[]; isAdmin: boolean; authorName: string;
+export function InspectionChecklist({ boat, regime, formId, inventory, isAdmin, authorName, onDocumentAdded, onAssignTeam }: {
+  boat: Orbit2Boat; regime?: InspectionRegime; formId?: string; inventory: Orbit2BoatInventoryItem[]; isAdmin: boolean; authorName: string;
   /** Called after a generated RYA form has been filed against the boat. */
   onDocumentAdded?: () => Promise<void> | void;
   /** "Assign Team" on the checklist — the caller opens a new job of the matching Checklist category. */
   onAssignTeam?: () => void;
 }) {
-  const cl = useChecklist(boat, regime);
+  const cl = useChecklist(boat, { regime, formId });
   const [open, setOpen] = useState(false);
   const done = cl.items.filter((i) => cl.stateFor.get(i.id)?.checked).length;
   const covered = cl.items.filter((i) => cl.stateFor.get(i.id)?.inventory_item_id || matchInventory(i.item, inventory).length).length;
@@ -170,6 +199,7 @@ export function InspectionChecklist({ boat, regime, inventory, isAdmin, authorNa
       <div className="flex items-center gap-2 text-[14px] font-medium">
         <ListChecks className="h-4 w-4 text-muted-foreground" />
         Checklist{cl.category ? ` — ${ryaChecklistLabel(cl.category)}` : ""}
+        {cl.form?.pdf_ref && <span className="ml-auto rounded bg-primary/10 px-1.5 py-0.5 text-[11px] font-semibold text-primary" title="Fills the form PDF">PDF</span>}
       </div>
       {cl.loading ? (
         <div className="flex h-10 items-center"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
@@ -186,7 +216,7 @@ export function InspectionChecklist({ boat, regime, inventory, isAdmin, authorNa
         <ListChecks className="h-4 w-4" /> View checklist
       </button>
       {open && (
-        <ChecklistModal boat={boat} regime={regime} inventory={inventory} isAdmin={isAdmin} authorName={authorName}
+        <ChecklistModal boat={boat} inventory={inventory} isAdmin={isAdmin} authorName={authorName}
           cl={cl} onClose={() => setOpen(false)} onDocumentAdded={onDocumentAdded} onAssignTeam={onAssignTeam} />
       )}
     </div>
@@ -233,13 +263,14 @@ async function uploadChecklistPhoto(file: File): Promise<string> {
   return storageRef(ORBIT2_BUCKET, path);
 }
 
-function ChecklistModal({ boat, regime, inventory, isAdmin, authorName, cl, onClose, onDocumentAdded, onAssignTeam }: {
-  boat: Orbit2Boat; regime: InspectionRegime; inventory: Orbit2BoatInventoryItem[]; isAdmin: boolean; authorName: string;
+function ChecklistModal({ boat, inventory, isAdmin, authorName, cl, onClose, onDocumentAdded, onAssignTeam }: {
+  boat: Orbit2Boat; inventory: Orbit2BoatInventoryItem[]; isAdmin: boolean; authorName: string;
   cl: ReturnType<typeof useChecklist>; onClose: () => void; onDocumentAdded?: () => Promise<void> | void; onAssignTeam?: () => void;
 }) {
   const { user } = useAuth();
   const [editing, setEditing] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [layout, setLayout] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [filter, setFilter] = useState<ChecklistFilter>("all");
   const { items, stateFor, reload } = cl;
@@ -264,11 +295,11 @@ function ChecklistModal({ boat, regime, inventory, isAdmin, authorName, cl, onCl
   }
 
   async function reset() {
-    if (!confirm(`Clear all ${regime.toUpperCase()} ticks for ${boat.name}? Remarks, photos and inventory links are kept. Use this when starting a new inspection.`)) return;
+    if (!confirm(`Clear all ${cl.short} ticks for ${boat.name}? Remarks, photos and inventory links are kept. Use this when starting a new inspection.`)) return;
     const { error } = await sb.from("orbit2_boat_checklist").update({ checked: false, checked_at: null, checked_by: null })
       .eq("boat_id", boat.id).in("template_id", items.map((i) => i.id));
     if (error) { toast.error(errorMessage(error, "Could not reset")); return; }
-    toast.success(`${regime.toUpperCase()} checklist reset`);
+    toast.success(`${cl.short} checklist reset`);
     await reload();
   }
 
@@ -282,7 +313,7 @@ function ChecklistModal({ boat, regime, inventory, isAdmin, authorName, cl, onCl
       <div className="flex max-h-[92vh] w-full max-w-4xl flex-col rounded-2xl border border-border bg-card shadow-xl">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-3">
           <div>
-            <div className="text-[14px] uppercase tracking-wide text-muted-foreground">{regime} inspection checklist{cl.category ? ` · ${ryaChecklistLabel(cl.category)}` : ""}</div>
+            <div className="text-[14px] uppercase tracking-wide text-muted-foreground">{cl.label}</div>
             <div className="font-display text-[22px] font-bold leading-tight">{boat.name}</div>
           </div>
           <div className="flex items-center gap-4 text-[14px]">
@@ -306,10 +337,16 @@ function ChecklistModal({ boat, regime, inventory, isAdmin, authorName, cl, onCl
                 <UserPlus className="h-3.5 w-3.5" /> Assign Team
               </button>
             )}
-            {!editing && regime === "rya" && cl.category && items.length > 0 && (
-              <button type="button" onClick={() => setGenerating(true)} title="Fill the RYA's own checklist PDF from these ticks"
+            {!editing && cl.form?.pdf_ref && items.length > 0 && (
+              <button type="button" onClick={() => setGenerating(true)} title="Fill the checklist's own PDF from these ticks"
                 className="flex items-center gap-1 rounded-md bg-primary px-2.5 py-1.5 text-[13px] font-semibold text-primary-foreground hover:opacity-90">
-                <FileDown className="h-3.5 w-3.5" /> Generate RYA form
+                <FileDown className="h-3.5 w-3.5" /> Generate {cl.regime === "rya" ? "RYA " : ""}form
+              </button>
+            )}
+            {!editing && isAdmin && cl.form?.pdf_ref && (
+              <button type="button" onClick={() => setLayout(true)} title="Where each tick and header value is written on the PDF"
+                className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-[13px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground">
+                <Crosshair className="h-3.5 w-3.5" /> Form layout
               </button>
             )}
             {!editing && (
@@ -318,7 +355,7 @@ function ChecklistModal({ boat, regime, inventory, isAdmin, authorName, cl, onCl
                   className="flex items-center gap-1 rounded-md border border-sky-500/50 bg-sky-500/10 px-2.5 py-1.5 text-[13px] font-semibold text-sky-500 hover:bg-sky-500/20 disabled:opacity-50">
                   {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Sync from inventory
                 </button>
-                {done > 0 && (
+                {isAdmin && done > 0 && (
                   <button type="button" onClick={() => void reset()} title="Clear all ticks for a new inspection"
                     className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-[13px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground">
                     <RotateCcw className="h-3.5 w-3.5" /> Reset
@@ -338,7 +375,7 @@ function ChecklistModal({ boat, regime, inventory, isAdmin, authorName, cl, onCl
 
         <div className="min-h-0 flex-1 overflow-y-auto">
           {editing ? (
-            <TemplateEditor items={items} regime={regime} category={cl.category} onChanged={reload} />
+            <TemplateEditor items={items} scope={{ regime: cl.form?.regime ?? cl.regime, category: cl.form?.category ?? cl.category, form_id: cl.form?.id ?? null }} label={cl.short} onChanged={reload} />
           ) : items.length === 0 ? (
             <p className="px-5 py-10 text-center text-[15px] text-muted-foreground">
               No items in this checklist yet{isAdmin ? " — use Edit items to add them, or send the official list to be loaded." : "."}
@@ -348,9 +385,12 @@ function ChecklistModal({ boat, regime, inventory, isAdmin, authorName, cl, onCl
           )}
         </div>
       </div>
-      {generating && cl.category && (
-        <RyaFormDialog boat={boat} form={cl.category} items={items} stateFor={stateFor} inventory={inventory} authorName={authorName}
+      {generating && cl.form && (
+        <FormFillDialog boat={boat} form={cl.form} regime={cl.regime} items={items} stateFor={stateFor} inventory={inventory} authorName={authorName}
           onClose={() => setGenerating(false)} onFiled={onDocumentAdded} />
+      )}
+      {layout && cl.form && (
+        <ChecklistFormEditor input={{ form: cl.form }} onClose={() => setLayout(false)} onSaved={() => { setLayout(false); void reload(); }} />
       )}
     </div>
   );
@@ -438,10 +478,10 @@ export function ChecklistBody({ boat, cl, inventory, authorName, userId, editabl
  * Checklist job: progress, a couple of filters, and the lines to tick, remark
  * and photograph. Read-only until the job is attended.
  */
-export function ChecklistWork({ boat, regime, editable, authorName, userId }: {
-  boat: Orbit2Boat; regime: InspectionRegime; editable: boolean; authorName: string; userId: string | null;
+export function ChecklistWork({ boat, regime, formId, editable, authorName, userId }: {
+  boat: Orbit2Boat; regime?: InspectionRegime; formId?: string; editable: boolean; authorName: string; userId: string | null;
 }) {
-  const cl = useChecklist(boat, regime);
+  const cl = useChecklist(boat, { regime, formId });
   const [inventory, setInventory] = useState<Orbit2BoatInventoryItem[]>([]);
   const [filter, setFilter] = useState<ChecklistFilter>("all");
   useEffect(() => {
@@ -455,7 +495,7 @@ export function ChecklistWork({ boat, regime, editable, authorName, userId }: {
     <section className="rounded-xl border border-border bg-card">
       <div className="border-b border-border/60 px-4 py-3">
         <div className="flex items-center gap-2 text-[15px] font-semibold">
-          <ListChecks className="h-4 w-4 text-muted-foreground" /> {regime.toUpperCase()} checklist{cl.category ? ` — ${ryaChecklistLabel(cl.category)}` : ""}
+          <ListChecks className="h-4 w-4 text-muted-foreground" /> {cl.formId ? cl.label : `${cl.short} checklist${cl.category ? ` — ${ryaChecklistLabel(cl.category)}` : ""}`}
         </div>
         <div className="text-[14px] text-muted-foreground">
           {cl.loading ? "Loading…" : `${done} of ${cl.items.length} checked · ${noted} with notes`}
@@ -475,7 +515,7 @@ export function ChecklistWork({ boat, regime, editable, authorName, userId }: {
       ) : regime === "rya" && !cl.category ? (
         <p className="px-4 py-6 text-center text-[15px] text-muted-foreground">The office has not set this boat's RYA classification yet.</p>
       ) : cl.items.length === 0 ? (
-        <p className="px-4 py-6 text-center text-[15px] text-muted-foreground">No items in the {regime.toUpperCase()} checklist yet.</p>
+        <p className="px-4 py-6 text-center text-[15px] text-muted-foreground">No items in the {cl.short} checklist yet.</p>
       ) : (
         <ChecklistBody boat={boat} cl={cl} inventory={inventory} authorName={authorName} userId={userId} editable={editable} filter={filter} padX="px-4" />
       )}
@@ -483,50 +523,50 @@ export function ChecklistWork({ boat, regime, editable, authorName, userId }: {
   );
 }
 
-// ── Generate the RYA's own PDF from the ticks ────────────────────────────────
+// ── Generate the checklist's own PDF from the ticks ──────────────────────────
 
 const fmtDate = (iso: string) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString("en-GB") : "");
+const fieldKey = (f: { key: string; label: string }) => (f.key === "custom" ? `custom:${f.label}` : f.key);
 
-function RyaFormDialog({ boat, form, items, stateFor, inventory, authorName, onClose, onFiled }: {
-  boat: Orbit2Boat; form: RyaFormKey; items: ChecklistTemplateItem[]; stateFor: Map<string, BoatChecklistState>; inventory: Orbit2BoatInventoryItem[];
-  authorName: string; onClose: () => void; onFiled?: () => Promise<void> | void;
+function FormFillDialog({ boat, form, regime, items, stateFor, inventory, authorName, onClose, onFiled }: {
+  boat: Orbit2Boat; form: ChecklistFormDef; regime: InspectionRegime | null; items: ChecklistTemplateItem[]; stateFor: Map<string, BoatChecklistState>;
+  inventory: Orbit2BoatInventoryItem[]; authorName: string; onClose: () => void; onFiled?: () => Promise<void> | void;
 }) {
   const { user } = useAuth();
   const today = new Date().toISOString().slice(0, 10);
-  const [f, setF] = useState({
-    rtcName: "JLS Yacht Training Institute",
-    boatName: boat.name,
-    boatType: boat.boat_type ?? "",
-    persons: boat.max_passengers != null ? String(boat.max_passengers) : "",
-    inspectionDate: boat.rya_last_inspection ?? today,
-    inspectionPlace: "Dubai, UAE",
-    inspectorName: authorName,
-    crossUnchecked: false,
-    notes: true,
-    file: true,
-  });
+  const lastInspection = regime ? (boat as Record<string, any>)[`${regime}_last_inspection`] as string | null : null;
+  // One input per distinct header field on this form, pre-filled from the boat where Polaris knows the answer.
+  const defaults: Record<string, string> = {
+    rtcName: "JLS Yacht Training Institute", boatName: boat.name, boatType: boat.boat_type ?? "",
+    persons: boat.max_passengers != null ? String(boat.max_passengers) : "", inspectionDate: lastInspection ?? today,
+    inspectionPlace: "Dubai, UAE", inspectorName: authorName,
+  };
+  const inputs = (form.header_fields ?? []).filter((f, i, all) => all.findIndex((g) => fieldKey(g) === fieldKey(f)) === i);
+  const [values, setValues] = useState<Record<string, string>>(() =>
+    Object.fromEntries(inputs.map((f) => [fieldKey(f), f.key === "custom" ? "" : defaults[f.key] ?? ""])));
+  const [opts, setOpts] = useState({ crossUnchecked: false, notes: true, file: true });
   // The lines that carry evidence: a remark, or a photo taken on the check. A remarked
   // line without its own photo borrows the matched inventory item's picture.
-  const appendix: RyaAppendixRow[] = items.flatMap((i) => {
+  const appendix: AppendixRow[] = items.flatMap((i) => {
     const st = stateFor.get(i.id);
     if (!st?.remarks && !st?.image_ref) return [];
     const inv = linkedRows(i, st, inventory).rows.find((r) => r.image_ref);
     return [{ section: i.section, item: i.item, checked: !!st.checked, checkedBy: st.checked_by ?? null, remarks: st.remarks ?? null, imageRef: st.image_ref ?? inv?.image_ref ?? null }];
   });
   const [busy, setBusy] = useState(false);
-  const set = (k: keyof typeof f, v: string | boolean) => setF((x) => ({ ...x, [k]: v }));
   const checked = items.filter((i) => stateFor.get(i.id)?.checked).length;
   const unplaced = items.filter((i) => i.pdf_page == null).length;
+  const dateValue = values.inspectionDate ?? today;
 
   async function generate() {
     setBusy(true);
     try {
-      const bytes = await fillRyaForm(form, {
-        rtcName: f.rtcName, boatName: f.boatName, boatType: f.boatType, persons: f.persons,
-        inspectionDate: fmtDate(f.inspectionDate), inspectionPlace: f.inspectionPlace, inspectorName: f.inspectorName,
-      }, items.map((i) => ({ pdf_page: i.pdf_page, pdf_x: i.pdf_x, pdf_y: i.pdf_y, checked: !!stateFor.get(i.id)?.checked })),
-      { crossUnchecked: f.crossUnchecked, appendix: f.notes ? appendix : [] });
-      const name = `${RYA_FORM_FILE[form]} — ${boat.name} — ${f.inspectionDate}.pdf`.replace(/[\\/:*?"<>|]+/g, "-");
+      const filled = { ...values, ...(values.inspectionDate ? { inspectionDate: fmtDate(values.inspectionDate) } : {}) };
+      const bytes = await fillChecklistForm(form, filled,
+        items.map((i) => ({ pdf_page: i.pdf_page, pdf_x: i.pdf_x, pdf_y: i.pdf_y, pdf_no_x: i.pdf_no_x, checked: !!stateFor.get(i.id)?.checked })),
+        { crossUnchecked: opts.crossUnchecked, appendix: opts.notes ? appendix : [], boatName: values.boatName ?? boat.name,
+          inspectionDate: fmtDate(dateValue), inspectorName: values.inspectorName ?? authorName });
+      const name = `${form.name} — ${boat.name} — ${dateValue}.pdf`.replace(/[\\/:*?"<>|]+/g, "-");
       const blob = new Blob([bytes as BlobPart], { type: "application/pdf" });
 
       // Download for the inspector…
@@ -535,18 +575,18 @@ function RyaFormDialog({ boat, form, items, stateFor, inventory, authorName, onC
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 10_000);
 
-      // …and file a copy under the boat's RYA checklist documents.
-      if (f.file) {
-        const path = `orbit2/boats/${boat.id}/rya/${crypto.randomUUID()}-${name.replace(/[^\w.-]+/g, "_")}`;
+      // …and file a copy under the boat's checklist documents.
+      if (opts.file) {
+        const path = `orbit2/boats/${boat.id}/checklists/${crypto.randomUUID()}-${name.replace(/[^\w.-]+/g, "_")}`;
         const up = await supabase.storage.from(ORBIT2_BUCKET).upload(path, blob, { contentType: "application/pdf", upsert: false });
         if (up.error) throw new Error(up.error.message);
         const { error } = await sb.from("orbit2_boat_documents").insert({
-          boat_id: boat.id, category: "rya_checklist", file_name: name, storage_ref: storageRef(ORBIT2_BUCKET, path), uploaded_by: user?.id ?? null,
+          boat_id: boat.id, category: regime ? `${regime}_checklist` : "other", file_name: name, storage_ref: storageRef(ORBIT2_BUCKET, path), uploaded_by: user?.id ?? null,
         });
         if (error) throw new Error(error.message);
         await onFiled?.();
       }
-      toast.success(`${RYA_FORM_FILE[form]} generated — ${checked} of ${items.length} items ticked`);
+      toast.success(`${form.name} generated — ${checked} of ${items.length} items ticked`);
       onClose();
     } catch (e) {
       toast.error(errorMessage(e, "Could not generate the form"));
@@ -555,46 +595,43 @@ function RyaFormDialog({ boat, form, items, stateFor, inventory, authorName, onC
     }
   }
 
-  const field = (label: string, k: keyof typeof f, type = "text") => (
-    <Field label={label}>
-      <input className={cn(inputCls, "h-9 py-1 text-[14px]")} type={type} value={String(f[k])} onChange={(e) => set(k, e.target.value)} />
-    </Field>
-  );
-
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="w-full max-w-lg rounded-2xl border border-border bg-card shadow-xl">
         <div className="flex items-center justify-between border-b border-border px-5 py-3">
           <div>
-            <div className="font-semibold">Generate {RYA_FORM_FILE[form]}</div>
-            <div className="text-[13px] text-muted-foreground">The RYA's own PDF, with the header filled and {checked} of {items.length} items ticked from Polaris.</div>
+            <div className="font-semibold">Generate {form.name}</div>
+            <div className="text-[13px] text-muted-foreground">The form's own PDF, with the header filled and {checked} of {items.length} items ticked from Polaris.</div>
           </div>
           <button type="button" onClick={onClose} className="rounded p-1 text-muted-foreground hover:bg-accent"><X className="h-4 w-4" /></button>
         </div>
         <div className="space-y-3 p-5">
-          {field("RTC name", "rtcName")}
-          <div className="grid grid-cols-2 gap-3">
-            {field("Name of boat", "boatName")}
-            {field("Inspection date", "inspectionDate", "date")}
-            {form !== "pwc" && field("Boat type", "boatType")}
-            {form !== "pwc" && field("No. of persons", "persons")}
-            {form !== "pwc" && field("Inspection place", "inspectionPlace")}
-            {field("Inspector's name", "inspectorName")}
-          </div>
+          {inputs.length === 0 ? (
+            <p className="text-[13px] text-muted-foreground">This form has no header fields set up — an admin can add them under Form layout.</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              {inputs.map((f) => (
+                <Field key={fieldKey(f)} label={f.label}>
+                  <input className={cn(inputCls, "h-9 py-1 text-[14px]")} type={f.key === "inspectionDate" ? "date" : "text"}
+                    value={values[fieldKey(f)] ?? ""} onChange={(e) => setValues((v) => ({ ...v, [fieldKey(f)]: e.target.value }))} />
+                </Field>
+              ))}
+            </div>
+          )}
           <label className="flex items-center gap-2 text-[14px]">
-            <input type="checkbox" className="h-4 w-4 accent-primary" checked={f.crossUnchecked} onChange={(e) => set("crossUnchecked", e.target.checked)} />
-            Mark items not ticked with an ✗ (otherwise left blank)
+            <input type="checkbox" className="h-4 w-4 accent-primary" checked={opts.crossUnchecked} onChange={(e) => setOpts((o) => ({ ...o, crossUnchecked: e.target.checked }))} />
+            Mark items not ticked with an ✗{items.some((i) => i.pdf_no_x != null) ? " in the No box" : ""} (otherwise left blank)
           </label>
           <label className="flex items-center gap-2 text-[14px]">
-            <input type="checkbox" className="h-4 w-4 accent-primary" checked={f.notes} onChange={(e) => set("notes", e.target.checked)} disabled={appendix.length === 0} />
+            <input type="checkbox" className="h-4 w-4 accent-primary" checked={opts.notes} onChange={(e) => setOpts((o) => ({ ...o, notes: e.target.checked }))} disabled={appendix.length === 0} />
             Append the inspection notes &amp; photos page{appendix.length ? ` (${appendix.length} line${appendix.length === 1 ? "" : "s"} with remarks or photos)` : " (no remarks or photos yet)"}
           </label>
           <label className="flex items-center gap-2 text-[14px]">
-            <input type="checkbox" className="h-4 w-4 accent-primary" checked={f.file} onChange={(e) => set("file", e.target.checked)} />
-            File a copy under this boat's RYA checklist documents
+            <input type="checkbox" className="h-4 w-4 accent-primary" checked={opts.file} onChange={(e) => setOpts((o) => ({ ...o, file: e.target.checked }))} />
+            File a copy under this boat's checklist documents
           </label>
           {unplaced > 0 && (
-            <p className="text-[13px] text-warning">{unplaced} item{unplaced === 1 ? "" : "s"} added in Polaris {unplaced === 1 ? "has" : "have"} no position on the RYA form and will not appear on it.</p>
+            <p className="text-[13px] text-warning">{unplaced} item{unplaced === 1 ? "" : "s"} {unplaced === 1 ? "has" : "have"} no position on the form and will not appear on it — set them under Form layout.</p>
           )}
         </div>
         <div className="flex justify-end gap-2 border-t border-border px-5 py-3">
@@ -736,8 +773,11 @@ function ChecklistRow({ item, state, inventory, match, busy, editable, padX, onT
 
 // ── Admin: the item list itself ──────────────────────────────────────────────
 
-function TemplateEditor({ items, regime, category, onChanged }: {
-  items: ChecklistTemplateItem[]; regime: InspectionRegime; category: RyaChecklist | null; onChanged: () => Promise<void>;
+function TemplateEditor({ items, scope, label, onChanged }: {
+  items: ChecklistTemplateItem[];
+  /** What a new item belongs to — its regime / category and, for library checklists, its form. */
+  scope: { regime: InspectionRegime | null; category: string | null; form_id: string | null };
+  label: string; onChanged: () => Promise<void>;
 }) {
   const [draft, setDraft] = useState({ section: items.at(-1)?.section ?? "", item: "", qty: "", unit: "", ref: "" });
   const [renaming, setRenaming] = useState<{ id: string; item: string; section: string; qty: string; unit: string; ref: string } | null>(null);
@@ -758,7 +798,7 @@ function TemplateEditor({ items, regime, category, onChanged }: {
     if (!item) return;
     const sort_order = (items.at(-1)?.sort_order ?? 0) + 1;
     if (await run("add the item", () => sb.from("orbit2_checklist_templates").insert({
-      regime, category, item, section: draft.section.trim() || null, qty: num(draft.qty), unit: draft.unit.trim() || null, ref: draft.ref.trim() || null, sort_order,
+      ...scope, item, section: draft.section.trim() || null, qty: num(draft.qty), unit: draft.unit.trim() || null, ref: draft.ref.trim() || null, sort_order,
     }))) setDraft((d) => ({ ...d, item: "", qty: "", unit: "", ref: "" }));
   };
   const saveRename = async () => {
@@ -786,7 +826,7 @@ function TemplateEditor({ items, regime, category, onChanged }: {
   return (
     <div>
       <p className="border-b border-border/60 bg-muted/20 px-5 py-2 text-[13px] text-muted-foreground">
-        Changes here apply to every boat using the {regime.toUpperCase()}{category ? ` ${ryaChecklistLabel(category)}` : ""} checklist.
+        Changes here apply to every boat using the {label} checklist. New items have no position on the form PDF until placed under Form layout.
       </p>
       <ul className="divide-y divide-border/40">
         {items.map((it, i) => (

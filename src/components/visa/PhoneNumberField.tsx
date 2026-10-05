@@ -350,11 +350,11 @@ export const PhoneNumberField = forwardRef<PhoneNumberFieldHandle, PhoneNumberFi
                 gap: '8px',
                 padding: '12px 12px',
                 borderRadius: '10px',
-                border: dropdownOpen ? '1px solid #4590BA' : '1px solid rgba(255,255,255,0.18)',
+                border: dropdownOpen ? '1px solid #C9A227' : '1px solid rgba(255,255,255,0.18)',
                 background: 'rgba(255,255,255,0.04)',
                 cursor: disabled ? 'not-allowed' : 'pointer',
                 opacity: disabled ? 0.5 : 1,
-                boxShadow: dropdownOpen ? '0 0 0 3px rgba(69,144,186,0.20)' : 'none',
+                boxShadow: dropdownOpen ? '0 0 0 3px rgba(201,162,39,0.20)' : 'none',
                 transition: 'border 0.15s ease, box-shadow 0.15s ease',
                 height: '48px',
               }}
@@ -485,8 +485,8 @@ export const PhoneNumberField = forwardRef<PhoneNumberFieldHandle, PhoneNumberFi
                 transition: 'border 0.15s ease',
               }}
               onFocus={(e) => {
-                e.currentTarget.style.border = '1px solid #4590BA';
-                e.currentTarget.style.boxShadow = '0 0 0 3px rgba(69,144,186,0.20)';
+                e.currentTarget.style.border = '1px solid #C9A227';
+                e.currentTarget.style.boxShadow = '0 0 0 3px rgba(201,162,39,0.20)';
               }}
             />
           </div>
@@ -505,9 +505,9 @@ export const PhoneNumberField = forwardRef<PhoneNumberFieldHandle, PhoneNumberFi
               fontWeight: 500,
               padding: '2px 8px',
               borderRadius: '20px',
-              background: 'rgba(150,203,199,0.16)',
-              color: '#96CBC7',
-              border: '1px solid rgba(150,203,199,0.40)',
+              background: 'rgba(233,204,114,0.16)',
+              color: '#E9CC72',
+              border: '1px solid rgba(233,204,114,0.40)',
             }}
           >
             <i className={`ti ${SOURCE_BADGE[defaultSource].icon}`} aria-hidden="true" style={{ fontSize: '10px' }} />
@@ -557,13 +557,13 @@ function CountryRow({
         padding: '9px 12px',
         borderRadius: '7px',
         cursor: 'pointer',
-        background: isSelected ? 'rgba(69,144,186,0.18)' : isHighlighted ? 'rgba(255,255,255,0.07)' : 'transparent',
+        background: isSelected ? 'rgba(201,162,39,0.18)' : isHighlighted ? 'rgba(255,255,255,0.07)' : 'transparent',
         transition: 'background 0.1s ease',
       }}
     >
       <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
         <span style={{ fontSize: '16px' }}>{country.flagEmoji}</span>
-        <span style={{ fontFamily: "'DINPro','Inter',sans-serif", fontSize: '14px', fontWeight: isSelected ? 500 : 400, color: isSelected ? '#96CBC7' : '#FFFFFF' }}>
+        <span style={{ fontFamily: "'DINPro','Inter',sans-serif", fontSize: '14px', fontWeight: isSelected ? 500 : 400, color: isSelected ? '#E9CC72' : '#FFFFFF' }}>
           {country.countryName}
         </span>
       </span>

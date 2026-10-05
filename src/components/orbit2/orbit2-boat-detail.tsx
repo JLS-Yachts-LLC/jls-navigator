@@ -29,6 +29,7 @@ import {
 import { Field, inputCls, Typeahead, TeamPicker, FileSlot, NoteLog, type UploadedFile } from "./orbit2-fields";
 import { InspectionsRequired, InspectionChecklist, INSPECTION_REGIMES, ryaChecklistLabel, type InspectionRegime } from "./orbit2-boat-checklist";
 import { useOrbit2Identity } from "./orbit2-identity";
+import { BoatAdditionalChecklists, useChecklistForms } from "./orbit2-checklist-library";
 
 const sb = supabase as any;
 
@@ -55,6 +56,8 @@ export function Orbit2BoatDetail({
   const [section, setSection] = useState<"jobs" | "inventory">("jobs");
   /** "Assign Team" pressed on one of the inspection checklists — raise a job for it. */
   const [checklistJob, setChecklistJob] = useState<InspectionRegime | null>(null);
+  /** …or on one of the boat's additional (library) checklists. */
+  const [formJob, setFormJob] = useState<{ id: string; name: string } | null>(null);
 
   /** Save fields on the boat. Returns false when the database refused, so a caller can avoid claiming success. */
   async function patchBoat(patch: Record<string, unknown>): Promise<boolean> {
@@ -172,6 +175,13 @@ export function Orbit2BoatDetail({
           onCreated={() => { setChecklistJob(null); setSection("jobs"); }}
           reload={reload} />
       )}
+      {formJob && (
+        <JobEditor boat={boat} existing={null} technicianOptions={[]}
+          preset={{ category: "Checklist", title: formJob.name, checklist_form_id: formJob.id }}
+          onClose={() => setFormJob(null)}
+          onCreated={() => { setFormJob(null); setSection("jobs"); }}
+          reload={reload} />
+      )}
       <div className="grid gap-3 md:grid-cols-3">
         {INSPECTION_REGIMES.filter((r) => (boat.inspections_required ?? INSPECTION_REGIMES).includes(r)).map((regime) => (
           <ComplianceCard key={regime} regime={regime} boat={boat} inventory={inventory} isAdmin={identity.isAdmin} authorName={identity.name || "Office"} onDocumentAdded={reload}
@@ -185,6 +195,10 @@ export function Orbit2BoatDetail({
           />
         ))}
       </div>
+
+      {/* ── Any other checklists this boat carries, from the library ── */}
+      <BoatAdditionalChecklists boat={boat} inventory={inventory} isAdmin={identity.isAdmin} authorName={identity.name || "Office"}
+        onDocumentAdded={reload} onAssignTeam={(f) => setFormJob({ id: f.id, name: f.name })} />
 
       {/* ── Supplementary documentation ── */}
       <div className="rounded-xl border border-border bg-card p-4">
@@ -453,6 +467,8 @@ function JobsBoard({ boat, tasks, reload }: { boat: Orbit2Boat; tasks: Orbit2Boa
 
 type JobForm = {
   category: (typeof BOAT_JOB_CATEGORIES)[number];
+  /** For a "Checklist" job: the library checklist it carries. */
+  checklist_form_id: string;
   title: string;
   schedule_date: string;
   schedule_time: string;
@@ -478,6 +494,7 @@ function JobEditor({
   const { user } = useAuth();
   const [form, setForm] = useState<JobForm>(existing ? {
     category: kindToBoatJobCategory(existing.kind),
+    checklist_form_id: existing.checklist_form_id ?? "",
     title: existing.title,
     schedule_date: existing.schedule_date ?? "",
     schedule_time: (existing.schedule_time ?? "").slice(0, 5),
@@ -487,11 +504,12 @@ function JobEditor({
     remarks: existing.remarks ?? "",
     status: existing.status,
   } : {
-    category: "Maintenance", title: "", schedule_date: "", schedule_time: "", est: "",
+    category: "Maintenance", checklist_form_id: "", title: "", schedule_date: "", schedule_time: "", est: "",
     team: [], technician: "", remarks: "", status: "Pending",
     ...preset,
   });
   const [saving, setSaving] = useState(false);
+  const { forms: libraryForms } = useChecklistForms();
   const [notes, setNotes] = useState<Orbit2Note[]>([]);
   const [files, setFiles] = useState<Orbit2File[]>([]);
 
@@ -516,6 +534,7 @@ function JobEditor({
     return {
       boat_id: boat.id,
       kind: boatJobCategoryToKind(form.category),
+      checklist_form_id: form.category === "Checklist" ? form.checklist_form_id || null : null,
       title: form.title.trim(),
       schedule_date: form.schedule_date || null,
       schedule_time: form.schedule_time || null,
@@ -529,6 +548,12 @@ function JobEditor({
 
   async function save() {
     if (!form.title.trim()) { toast.error("Give the job a description."); return; }
+    // An empty crew list saves fine but is invisible on every phone — the
+    // field app's job query is `.contains("assigned_team", [name])`, which
+    // never matches an empty array. Catch it here rather than let "Assign
+    // Team" silently create a job nobody's assigned to.
+    if (form.team.length === 0) { toast.error("Assign at least one crew member."); return; }
+    if (form.category === "Checklist" && !form.checklist_form_id) { toast.error("Choose which checklist the job is for."); return; }
     setSaving(true);
     try {
       if (existing) {
@@ -600,6 +625,17 @@ function JobEditor({
               {BOAT_JOB_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           </Field>
+          {form.category === "Checklist" && (
+            <Field label="Checklist">
+              <select className={inputCls} value={form.checklist_form_id} onChange={(e) => {
+                const f = libraryForms.find((x) => x.id === e.target.value);
+                setForm((v) => ({ ...v, checklist_form_id: e.target.value, title: v.title.trim() ? v.title : f?.name ?? "" }));
+              }}>
+                <option value="">Choose a checklist from the library…</option>
+                {libraryForms.filter((f) => !f.regime).map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+              </select>
+            </Field>
+          )}
           <Field label="Description">
             <textarea className={cn(inputCls, "min-h-[72px] resize-y")} value={form.title} onChange={(e) => set("title", e.target.value)} />
           </Field>

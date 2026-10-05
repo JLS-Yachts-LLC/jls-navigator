@@ -49,6 +49,7 @@ import { BerthBillingHub } from "@/components/berth-billing/BerthBillingHub";
 import { PermitsHub } from "@/components/permits/permits-hub";
 import { ClientRequestsPage } from "@/components/portal/client-requests-page";
 import { SyncHubPage } from "@/components/dev/sync-hub-page";
+import { WhatsAppHub } from "@/components/whatsapp/whatsapp-hub";
 
 /** Beta screens that simply embed an existing full app page (Beta styling is inherited
  *  from the shell's pds-embed content area). */
@@ -63,6 +64,7 @@ const EMBED_SCREENS: Record<string, React.ComponentType> = {
   "admin-automations": AutomationsPage,
   "admin-errors": ErrorLogPage,
   "admin-feedback": FeedbackPage,
+  whatsapp: WhatsAppHub,
 };
 
 export const Route = createFileRoute("/_app/polaris-redesign")({

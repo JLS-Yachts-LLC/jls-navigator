@@ -122,7 +122,7 @@ export function BerthOccupancyDetail({
 
   if (loading)
     return (
-      <div style={{ padding: 24, fontSize: 14, color: "#96CBC7" }}>Loading berth occupancy…</div>
+      <div style={{ padding: 24, fontSize: 14, color: "#E9CC72" }}>Loading berth occupancy…</div>
     );
 
   return (
@@ -146,15 +146,15 @@ export function BerthOccupancyDetail({
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          borderBottom: "1px solid rgba(150,203,199,0.24)",
+          borderBottom: "1px solid rgba(233,204,114,0.24)",
           paddingBottom: 12,
         }}
       >
         <div>
-          <h2 style={{ fontFamily: "'Halis GR','Barlow',sans-serif", fontSize: 20, color: "#96CBC7", margin: 0 }}>
+          <h2 style={{ fontFamily: "'Halis GR','Barlow',sans-serif", fontSize: 20, color: "#E9CC72", margin: 0 }}>
             {summary?.vessel ?? "—"}
           </h2>
-          <p style={{ fontSize: 13, color: "rgba(150,203,199,0.7)", margin: "4px 0 0" }}>
+          <p style={{ fontSize: 13, color: "rgba(233,204,114,0.7)", margin: "4px 0 0" }}>
             {summary?.marina ?? "—"} · Berth {summary?.berth ?? "—"} · {summary?.client ?? "—"}
           </p>
         </div>
@@ -189,8 +189,8 @@ export function BerthOccupancyDetail({
           { label: "Rate", value: `${currency(summary?.rate ?? 0)} / ${summary?.billing_period === "monthly" ? "mo" : "day"}` },
           { label: "Revenue Earned", value: currency(summary?.revenue_earned ?? 0) },
         ].map((s) => (
-          <div key={s.label} style={{ border: "1px solid rgba(150,203,199,0.24)", borderRadius: 8, padding: 12 }}>
-            <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", color: "rgba(150,203,199,0.7)" }}>
+          <div key={s.label} style={{ border: "1px solid rgba(233,204,114,0.24)", borderRadius: 8, padding: 12 }}>
+            <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", color: "rgba(233,204,114,0.7)" }}>
               {s.label}
             </div>
             <div style={{ fontSize: 16, color: "#F0F4F8", marginTop: 4 }}>{s.value}</div>
@@ -201,7 +201,7 @@ export function BerthOccupancyDetail({
       <section>
         <SectionLabel>Billing Lines</SectionLabel>
         {billingLines.length === 0 ? (
-          <div style={{ fontSize: 13, color: "rgba(150,203,199,0.7)" }}>No billing lines calculated yet.</div>
+          <div style={{ fontSize: 13, color: "rgba(233,204,114,0.7)" }}>No billing lines calculated yet.</div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             {billingLines.map((line, i) => (
@@ -213,14 +213,14 @@ export function BerthOccupancyDetail({
                   justifyContent: "space-between",
                   borderRadius: 8,
                   padding: "8px 12px",
-                  background: i % 2 === 1 ? "rgba(150,203,199,0.06)" : "transparent",
+                  background: i % 2 === 1 ? "rgba(233,204,114,0.06)" : "transparent",
                 }}
               >
                 <span style={{ fontSize: 13, color: "#F0F4F8" }}>
                   {line.period_start} → {line.period_end}{" "}
-                  <span style={{ color: "rgba(150,203,199,0.7)" }}>({line.calculation_type})</span>
+                  <span style={{ color: "rgba(233,204,114,0.7)" }}>({line.calculation_type})</span>
                 </span>
-                <span style={{ fontSize: 13, color: "#96CBC7", fontWeight: 500 }}>
+                <span style={{ fontSize: 13, color: "#E9CC72", fontWeight: 500 }}>
                   {currency(line.total_amount, line.currency)}
                 </span>
               </div>
@@ -239,7 +239,7 @@ export function BerthOccupancyDetail({
           />
         </div>
         {invoices.length === 0 ? (
-          <div style={{ fontSize: 13, color: "rgba(150,203,199,0.7)" }}>No invoices raised for this occupancy yet.</div>
+          <div style={{ fontSize: 13, color: "rgba(233,204,114,0.7)" }}>No invoices raised for this occupancy yet.</div>
         ) : (
           <ol style={{ display: "flex", flexDirection: "column", gap: 8, listStyle: "none", margin: 0, padding: 0 }}>
             {invoices.map((inv) => {
@@ -252,7 +252,7 @@ export function BerthOccupancyDetail({
                     alignItems: "center",
                     justifyContent: "space-between",
                     borderRadius: 8,
-                    border: "1px solid rgba(150,203,199,0.24)",
+                    border: "1px solid rgba(233,204,114,0.24)",
                     padding: "8px 12px",
                   }}
                 >
@@ -260,7 +260,7 @@ export function BerthOccupancyDetail({
                     <div style={{ fontSize: 14, color: "#F0F4F8" }}>
                       {inv.invoice_number ?? "(draft — no number yet)"}
                     </div>
-                    <div style={{ fontSize: 12, color: "rgba(150,203,199,0.7)", marginTop: 2 }}>
+                    <div style={{ fontSize: 12, color: "rgba(233,204,114,0.7)", marginTop: 2 }}>
                       {INVOICE_STATUS_LABEL[inv.status]} · {currency(inv.total_amount, inv.currency)}
                     </div>
                   </div>

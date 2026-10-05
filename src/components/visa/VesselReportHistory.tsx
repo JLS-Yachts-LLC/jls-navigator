@@ -219,7 +219,7 @@ function ReportRow({ record, onView, isLast }: ReportRowProps) {
             fontFamily: "'DINPro','Inter',sans-serif",
             fontSize:   '16px',
             fontWeight: '500',
-            color:      '#07435E',
+            color:      '#0A1838',
             lineHeight: '1',
           }}
         >
@@ -253,7 +253,7 @@ function ReportRow({ record, onView, isLast }: ReportRowProps) {
               fontFamily:   "'DINPro','Inter',sans-serif",
               fontSize:     '15px',
               fontWeight:   '500',
-              color:        '#07435E',
+              color:        '#0A1838',
               whiteSpace:   'nowrap',
               overflow:     'hidden',
               textOverflow: 'ellipsis',
@@ -311,13 +311,13 @@ function ReportRow({ record, onView, isLast }: ReportRowProps) {
             borderRadius: '8px',
             border:       '1px solid #E5E7EB',
             background:   '#FFFFFF',
-            color:        '#4590BA',
+            color:        '#C9A227',
             cursor:       'pointer',
             whiteSpace:   'nowrap',
             transition:   'border-color 0.12s ease',
           }}
           onMouseEnter={(e) => {
-            (e.currentTarget).style.borderColor = '#4590BA';
+            (e.currentTarget).style.borderColor = '#C9A227';
           }}
           onMouseLeave={(e) => {
             (e.currentTarget).style.borderColor = '#E5E7EB';
@@ -367,14 +367,14 @@ export function VesselReportHistory({
             <i
               className="ti ti-history"
               aria-hidden="true"
-              style={{ fontSize: '16px', color: '#4590BA' }}
+              style={{ fontSize: '16px', color: '#C9A227' }}
             />
             <span
               style={{
                 fontFamily: "'Halis GR','Inter',sans-serif",
                 fontSize:   '16px',
                 fontWeight: '500',
-                color:      '#07435E',
+                color:      '#0A1838',
               }}
             >
               Report history
@@ -490,7 +490,7 @@ export function VesselReportHistory({
                   borderRadius: '8px',
                   border:       '1px solid #E5E7EB',
                   background:   '#FFFFFF',
-                  color:        page === 1 ? '#D1D5DB' : '#4590BA',
+                  color:        page === 1 ? '#D1D5DB' : '#C9A227',
                   cursor:       page === 1 ? 'default' : 'pointer',
                 }}
               >
@@ -512,7 +512,7 @@ export function VesselReportHistory({
                   borderRadius: '8px',
                   border:       '1px solid #E5E7EB',
                   background:   '#FFFFFF',
-                  color:        page === totalPages ? '#D1D5DB' : '#4590BA',
+                  color:        page === totalPages ? '#D1D5DB' : '#C9A227',
                   cursor:       page === totalPages ? 'default' : 'pointer',
                 }}
               >

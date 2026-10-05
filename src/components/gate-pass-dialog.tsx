@@ -10,8 +10,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Mail, Paperclip, Save, X, Info } from "lucide-react";
+import { Loader2, Mail, Paperclip, Save, X } from "lucide-react";
 import { toast } from "sonner";
+import { sendPermitEmail, deliveryNote } from "@/lib/permits/send-permit-email";
 
 type Yacht = { id: string; vessel_name: string };
 
@@ -38,6 +39,7 @@ export function GatePassDialog({
   onSaved: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const [emailBusy, setEmailBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -73,40 +75,47 @@ export function GatePassDialog({
     }
   }
 
-  async function doSave() {
-    if (!userId) return;
+  /** Save the gate pass and return its id; throws on failure. */
+  async function doSave(): Promise<string> {
+    if (!userId) throw new Error("Not authenticated");
+    const payload = {
+      permit_type: "gate_pass" as const,
+      yacht_id: form.yacht_id ?? null,
+      permit_number: form.permit_number || null,
+      status: (form.status ?? "pending") as PermitStatus,
+      issue_date: form.issue_date || null,
+      expiry_date: form.expiry_date || null,
+      issuing_authority: form.issuing_authority || null,
+      holder_name: form.holder_name || null,
+      contact_email: form.contact_email || null,
+      jls_quotation_number: form.jls_quotation_number || null,
+      dma_phase: null,
+      document_url: form.document_url || null,
+      notes: form.notes || null,
+    };
+
+    if (editing) {
+      await updateOrThrow(
+        supabase.from("permits").update(payload).eq("id", editing.id).select("id"),
+        "gate pass",
+      );
+      toast.success("Gate pass updated");
+      return editing.id;
+    }
+    const { data, error } = await supabase
+      .from("permits")
+      .insert([{ ...payload, created_by: userId } as never])
+      .select("id")
+      .single();
+    if (error) throw error;
+    toast.success("Gate pass created");
+    return (data as { id: string }).id;
+  }
+
+  async function handleSaveOnly() {
     setBusy(true);
     try {
-      const payload = {
-        permit_type: "gate_pass" as const,
-        yacht_id: form.yacht_id ?? null,
-        permit_number: form.permit_number || null,
-        status: (form.status ?? "pending") as PermitStatus,
-        issue_date: form.issue_date || null,
-        expiry_date: form.expiry_date || null,
-        issuing_authority: form.issuing_authority || null,
-        holder_name: form.holder_name || null,
-        contact_email: form.contact_email || null,
-        jls_quotation_number: form.jls_quotation_number || null,
-        dma_phase: null,
-        document_url: form.document_url || null,
-        notes: form.notes || null,
-      };
-
-      if (editing) {
-        await updateOrThrow(
-          supabase.from("permits").update(payload).eq("id", editing.id).select("id"),
-          "gate pass",
-        );
-        toast.success("Gate pass updated");
-      } else {
-        const { error } = await supabase
-          .from("permits")
-          .insert([{ ...payload, created_by: userId } as never]);
-        if (error) throw error;
-        toast.success("Gate pass created");
-      }
-
+      await doSave();
       onSaved();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Save failed");
@@ -114,6 +123,31 @@ export function GatePassDialog({
       setBusy(false);
     }
   }
+
+  // Save, then send the gate pass to its contact through the app's permit mailer
+  // — the same path every other permit dialog uses. Gate Pass was the one form
+  // left without it, still showing a placeholder that said email "is not yet
+  // configured" long after it was (SD-0041).
+  async function handleEmailSave() {
+    if (!form.contact_email) {
+      toast.error("Add an email address first");
+      return;
+    }
+    setEmailBusy(true);
+    try {
+      const permitId = await doSave();
+      const body = await sendPermitEmail(permitId);
+      toast.success(`Sent to ${body.to}`, { description: deliveryNote(body, "gate pass") });
+      onSaved();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Send failed";
+      toast.error(msg, { duration: /switched off|disabled/i.test(msg) ? 12000 : 6000 });
+    } finally {
+      setEmailBusy(false);
+    }
+  }
+
+  const isBusy = busy || emailBusy || uploading;
 
   const attachmentName = form.document_url
     ? decodeURIComponent(form.document_url.split("/").pop() ?? "attachment")
@@ -300,25 +334,25 @@ export function GatePassDialog({
         </div>
       </div>
 
-      {form.contact_email && (
-        <div className="flex items-start gap-2 rounded-md border border-blue-500/20 bg-blue-500/10 px-3 py-2 text-xs text-blue-400">
-          <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-          <span>
-            Email notifications are not yet configured. The gate pass will be saved but{" "}
-            <strong>{form.contact_email}</strong> will not receive an automated email.
-          </span>
-        </div>
-      )}
-
       <DialogFooter>
         <Button
           type="button"
-          disabled={busy}
-          onClick={doSave}
+          variant="outline"
+          disabled={isBusy}
+          onClick={handleSaveOnly}
           className="gap-1.5"
         >
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           {editing ? "Save Changes" : "Create Gate Pass"}
+        </Button>
+        <Button
+          type="button"
+          disabled={isBusy}
+          onClick={handleEmailSave}
+          className="gap-1.5"
+        >
+          {emailBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+          Email &amp; Save
         </Button>
       </DialogFooter>
     </DialogContent>

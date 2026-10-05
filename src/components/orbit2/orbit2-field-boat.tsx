@@ -33,14 +33,20 @@ import { useAttendance, CrewAttendance } from "./orbit2-attendance";
 const sb = supabase as any;
 
 /** Upload a phone photo, small enough for mobile data, and hand back its storage reference. */
-async function uploadPhoto(file: File, folder: string): Promise<string> {
+/**
+ * Returns the ref to record AND a `cleanup` to call if whatever write was
+ * meant to use that ref then fails — without it, a failed DB write after a
+ * successful upload leaves an orphaned file in storage forever (and a retry
+ * uploads a second copy instead of reusing it).
+ */
+async function uploadPhoto(file: File, folder: string): Promise<{ ref: string; cleanup: () => void }> {
   if (!file.type.startsWith("image/")) throw new Error("That isn't a photo.");
   const { file: small } = await compressImageToMaxKB(file, 1500);
   if (!guardUploadFile(small)) throw new Error("That photo can't be uploaded.");
   const path = `orbit2/${folder}/${crypto.randomUUID()}-${small.name.replace(/[^\w.-]+/g, "_")}`;
   const { error } = await supabase.storage.from(ORBIT2_BUCKET).upload(path, small, { contentType: uploadContentType(small), upsert: false });
   if (error) throw new Error(error.message);
-  return storageRef(ORBIT2_BUCKET, path);
+  return { ref: storageRef(ORBIT2_BUCKET, path), cleanup: () => { void supabase.storage.from(ORBIT2_BUCKET).remove([path]).catch(() => {}); } };
 }
 
 export function BoatJobDetail({
@@ -121,9 +127,9 @@ export function BoatJobDetail({
     if (!file) return;
     setBusy("photo");
     try {
-      const ref = await uploadPhoto(file, "field/boats");
+      const { ref, cleanup } = await uploadPhoto(file, "field/boats");
       const { error } = await sb.from("orbit2_files").insert({ boat_task_id: task.id, slot: "image", file_name: file.name, storage_ref: ref, uploaded_by: userId });
-      if (error) throw new Error(error.message);
+      if (error) { cleanup(); throw new Error(error.message); }
       toast.success("Photo added to the job");
       await loadActivity();
     } catch (e) { toast.error(errorMessage(e, "Could not upload the photo")); }
@@ -191,6 +197,9 @@ export function BoatJobDetail({
         )}
         {checklistRegime && (
           <ChecklistWork boat={boat} regime={checklistRegime} editable={working} authorName={authorName} userId={userId} />
+        )}
+        {task.kind === "checklist" && task.checklist_form_id && (
+          <ChecklistWork boat={boat} formId={task.checklist_form_id} editable={working} authorName={authorName} userId={userId} />
         )}
 
         {working && (
@@ -382,8 +391,12 @@ function InventoryRow({
   async function photo(file: File | undefined) {
     if (!file) return;
     setBusy(true);
-    try { await onPatch({ image_ref: await uploadPhoto(file, "boats/inventory") }); toast.success(`Photo added to ${row.item}`); }
-    catch (e) { toast.error(errorMessage(e, "Could not upload the photo")); }
+    try {
+      const { ref, cleanup } = await uploadPhoto(file, "boats/inventory");
+      const ok = await onPatch({ image_ref: ref });
+      if (!ok) { cleanup(); return; }
+      toast.success(`Photo added to ${row.item}`);
+    } catch (e) { toast.error(errorMessage(e, "Could not upload the photo")); }
     finally { setBusy(false); if (photoRef.current) photoRef.current.value = ""; }
   }
 
@@ -508,13 +521,13 @@ function AddItemForm({ boatId, userId, authorName, onAdded, onDone }: {
     if (!form.item.trim()) { toast.error("Give the item a name."); itemRef.current?.focus(); return; }
     setBusy(true);
     try {
-      const image_ref = photo ? await uploadPhoto(photo.file, "boats/inventory") : null;
+      const uploaded = photo ? await uploadPhoto(photo.file, "boats/inventory") : null;
       const { error } = await sb.from("orbit2_boat_inventory").insert({
         boat_id: boatId, item: form.item.trim(), qty: form.qty === "" ? null : Number(form.qty), unit: form.unit,
-        condition: form.condition, remarks: form.remarks.trim() || null, on_board: true, image_ref,
+        condition: form.condition, remarks: form.remarks.trim() || null, on_board: true, image_ref: uploaded?.ref ?? null,
         checked_at: new Date().toISOString(), checked_by: authorName, created_by: userId,
       });
-      if (error) throw new Error(error.message);
+      if (error) { uploaded?.cleanup(); throw new Error(error.message); }
       toast.success(`${form.item.trim()} added to the inventory`);
       await onAdded();
       if (!andAnother) { onDone(); return; }

@@ -13,9 +13,9 @@
  *  - Cards are clickable — onClick scrolls to the relevant section
  *
  * Palette:
- *  Jamaica Bay  #96CBC7  (teal accent)
- *  Dodger Blue  #4590BA  (primary — total count)
- *  Teal Blue    #07435E  (nav, dark text)
+ *  Light gold   #E9CC72  (teal accent)
+ *  Warm gold    #C9A227  (primary — total count)
+ *  Navy         #0A1838  (nav, dark text)
  *  Active       #22C55E  (green — safe)
  *  Expiring     #F59E0B  (amber — attention)
  *  Expired      #EF4444  (red — critical)
@@ -51,9 +51,9 @@ const VARIANT_TOKENS: Record<
   { borderColor: string; iconColor: string; bgTint: string; icon: string; ariaLabel: string }
 > = {
   total: {
-    borderColor: '#4590BA',
-    iconColor:   '#4590BA',
-    bgTint:      'rgba(69,144,186,0.06)',
+    borderColor: '#C9A227',
+    iconColor:   '#C9A227',
+    bgTint:      'rgba(201,162,39,0.06)',
     icon:        'ti-files',
     ariaLabel:   'Total visa records',
   },
@@ -147,7 +147,7 @@ export function VisaStatCard({ variant, label, count, subLabel, onClick }: VisaS
             fontSize:    '40px',
             fontWeight:  '500',
             lineHeight:  '1',
-            color:       '#07435E',
+            color:       '#0A1838',
             marginBottom: '6px',
             letterSpacing: '-0.5px',
           }}
