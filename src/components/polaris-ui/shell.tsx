@@ -389,7 +389,7 @@ function NavList({
   const badges = useFeatureBadges();
   const { claims } = useAccess();
   // Sections the person has folded away — saved to their account, so it's the
-  // same layout on any device. The section holding the open screen always shows.
+  // same layout on any device. A folded section holding the open screen is highlighted.
   const [closedList, setClosedList] = useUserPreference<string[]>("nav.closedGroups", [], { key: NAV_CLOSED_KEY, parse: JSON.parse });
   const closed = new Set(Array.isArray(closedList) ? closedList : []);
   function toggleGroup(label: string) {
@@ -410,8 +410,10 @@ function NavList({
     >
       {visibleGroups(role, claims).map((g) => {
         const holdsActive = g.items.some((i) => i.screen === active);
-        // The icon-only rail always shows every icon.
-        const folded = !collapsed && closed.has(g.label) && !holdsActive;
+        // The icon-only rail always shows every icon. A folded section holding
+        // the open screen is highlighted instead, so you can see where you are.
+        const folded = !collapsed && closed.has(g.label);
+        const here = folded && holdsActive;
         return (
         <div key={g.label}>
           {collapsed ? (
@@ -421,7 +423,7 @@ function NavList({
               type="button"
               onClick={() => toggleGroup(g.label)}
               aria-expanded={!folded}
-              title={holdsActive && closed.has(g.label) ? "Stays open while you're on one of its screens" : folded ? `Show ${g.label}` : `Hide ${g.label}`}
+              title={here ? `You're in ${g.label} — click to show it` : folded ? `Show ${g.label}` : `Hide ${g.label}`}
               style={{
                 width: "100%",
                 display: "flex",
@@ -431,7 +433,7 @@ function NavList({
                 fontWeight: 600,
                 letterSpacing: "0.1em",
                 textTransform: "uppercase",
-                color: "var(--pds-text-hint)",
+                color: here ? "var(--pds-gold-light)" : "var(--pds-text-hint)",
                 padding: "0 8px 6px",
                 background: "transparent",
                 border: "none",
@@ -439,11 +441,12 @@ function NavList({
                 textAlign: "left",
               }}
             >
+              {here && <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--pds-gold)" }} />}
               <span style={{ flex: 1 }}>{g.label}</span>
               {folded && (
                 <span style={{ fontSize: 9, letterSpacing: 0, opacity: 0.8 }}>{g.items.length}</span>
               )}
-              <TIcon name={folded ? "chevron-right" : "chevron-down"} size={12} color="var(--pds-text-hint)" />
+              <TIcon name={folded ? "chevron-right" : "chevron-down"} size={12} color={here ? "var(--pds-gold)" : "var(--pds-text-hint)"} />
             </button>
           )}
           {!folded && g.items.map((item) => {
