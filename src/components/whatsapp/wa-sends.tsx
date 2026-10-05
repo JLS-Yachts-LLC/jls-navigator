@@ -7,7 +7,8 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Plus, Loader2, Send, ChevronLeft, Trash2, Upload } from "lucide-react";
+import { Plus, Loader2, Send, ChevronLeft, Trash2, Upload, Download } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -102,18 +103,62 @@ export function WaSends({ canEdit }: { canEdit: boolean }) {
   );
 }
 
+/** A recipient's answer to a send: a button they tapped, or a reply quoting it. */
+interface Response {
+  text: string;
+  kind: "button" | "text";
+  at: string;
+  optOut: boolean;
+}
+
+/**
+ * Replies tied to a send. WhatsApp links a button tap (and a quoted reply) to
+ * the message it answers, so each one is matched to its recipient exactly —
+ * the latest answer wins if someone taps twice.
+ */
+async function loadResponses(wamids: string[]): Promise<Map<string, Response>> {
+  const out = new Map<string, Response>();
+  for (let i = 0; i < wamids.length; i += 150) {
+    const { data } = await db().from("wa_inbound")
+      .select("context_wamid, type, body, button_payload, action, received_at")
+      .in("context_wamid", wamids.slice(i, i + 150))
+      .order("received_at", { ascending: true });
+    for (const r of (data ?? []) as any[]) {
+      const text = String(r.body ?? r.button_payload ?? "").trim();
+      if (!text) continue;
+      out.set(r.context_wamid, {
+        text, at: r.received_at,
+        kind: r.type === "button" || r.type === "interactive" ? "button" : "text",
+        optOut: !!r.action,
+      });
+    }
+  }
+  return out;
+}
+
+const NO_REPLY = "__none__";
+const TEXT_REPLY = "__text__";
+const responseKey = (r: Response | undefined) => (!r ? NO_REPLY : r.kind === "button" ? `b:${r.text}` : TEXT_REPLY);
+
+function csvCell(v: unknown) {
+  const s = String(v ?? "");
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
 function SendDetail({ c, canEdit, onBack, onChanged }: { c: Campaign; canEdit: boolean; onBack: () => void; onChanged: () => void }) {
   const [msgs, setMsgs] = useState<any[] | null>(null);
   const [preview, setPreview] = useState<{ eligible: number; blocked: Record<string, number> } | null>(null);
   const [sending, setSending] = useState(false);
   const [progress, setProgress] = useState<{ sent: number; failed: number; remaining: number } | null>(null);
   const [filter, setFilter] = useState("all");
+  const [responses, setResponses] = useState<Map<string, Response>>(new Map());
 
   async function load() {
     const { data } = await db().from("wa_messages")
-      .select("id, status, skip_reason, error_message, phone_e164, sent_at, delivered_at, read_at, contact:wa_contacts(name, yacht:yachts(vessel_name))")
+      .select("id, status, skip_reason, error_message, phone_e164, wa_message_id, sent_at, delivered_at, read_at, contact:wa_contacts(name, email, yacht:yachts(vessel_name))")
       .eq("campaign_id", c.id).order("queued_at");
     setMsgs(data ?? []);
+    setResponses(await loadResponses(((data ?? []) as any[]).map((m) => m.wa_message_id).filter(Boolean)));
   }
 
   // Before sending: who on the list would actually receive it, and why the rest won't.
@@ -177,6 +222,45 @@ function SendDetail({ c, canEdit, onBack, onChanged }: { c: Campaign; canEdit: b
   }, [msgs]);
   const values = (c.variables ?? []).map(String);
 
+  // RSVP-style tally: every quick-reply button on the template, then free-text
+  // replies, then delivered messages with no answer yet.
+  const reached = (msgs ?? []).filter((m) => ["sent", "delivered", "read"].includes(m.status));
+  const quickButtons = (c.template?.buttons ?? []).filter((b) => b.type === "QUICK_REPLY").map((b) => b.text);
+  const tally = useMemo(() => {
+    const n = new Map<string, number>();
+    for (const m of reached) {
+      const k = responseKey(responses.get(m.wa_message_id));
+      n.set(k, (n.get(k) ?? 0) + 1);
+    }
+    return n;
+  }, [reached, responses]);
+  const tallyRows: Array<{ key: string; label: string; tone: "green" | "blue" | "red" | "grey" }> = [
+    ...quickButtons.map((t) => ({ key: `b:${t}`, label: t, tone: (/stop|unsubscribe|opt.?out/i.test(t) ? "red" : "green") as "green" | "red" })),
+    // A button no longer on the template (e.g. edited since) still counts.
+    ...[...tally.keys()].filter((k) => k.startsWith("b:") && !quickButtons.includes(k.slice(2)))
+      .map((k) => ({ key: k, label: k.slice(2), tone: "green" as const })),
+    { key: TEXT_REPLY, label: "Wrote a reply", tone: "blue" },
+    { key: NO_REPLY, label: "No reply yet", tone: "grey" },
+  ];
+
+  function downloadResponses() {
+    const rows = [["Name", "Vessel", "Email", "WhatsApp", "Delivery", "Response", "Responded at"]];
+    for (const m of msgs ?? []) {
+      const r = responses.get(m.wa_message_id);
+      rows.push([
+        m.contact?.name ?? "", m.contact?.yacht?.vessel_name ?? "", m.contact?.email ?? "", m.phone_e164 ?? "",
+        m.status === "skipped" ? `skipped — ${m.skip_reason ?? ""}` : m.status,
+        r ? (r.kind === "text" ? `Replied: ${r.text}` : r.text) : "", r ? new Date(r.at).toLocaleString() : "",
+      ]);
+    }
+    const blob = new Blob(["﻿" + rows.map((r) => r.map(csvCell).join(",")).join("\r\n")], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${c.name.replace(/[^\w\- ]+/g, "").trim() || "send"} - responses.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
   return (
     <div className="space-y-4">
       <button onClick={onBack} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"><ChevronLeft className="h-3.5 w-3.5" /> All sends</button>
@@ -223,6 +307,29 @@ function SendDetail({ c, canEdit, onBack, onChanged }: { c: Campaign; canEdit: b
       {c.status !== "draft" && (
         msgs === null ? <Loader2 className="mx-auto h-5 w-5 animate-spin text-muted-foreground" /> : (
           <>
+            {reached.length > 0 && (
+              <div className="rounded-xl border border-border p-4">
+                <div className="mb-2 flex items-center gap-2">
+                  <h3 className="flex-1 text-sm font-semibold">Responses</h3>
+                  <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={downloadResponses}>
+                    <Download className="h-3.5 w-3.5" /> Download list
+                  </Button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {tallyRows.map((r) => (
+                    <button key={r.key} onClick={() => setFilter(filter === `resp:${r.key}` ? "all" : `resp:${r.key}`)}
+                      className={cn("rounded-lg border px-3 py-2 text-left",
+                        filter === `resp:${r.key}` ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50")}>
+                      <span className="block text-xl font-semibold tabular-nums">{tally.get(r.key) ?? 0}</span>
+                      <Chip t={r.tone}>{r.label}</Chip>
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-2 text-[11px] text-muted-foreground">
+                  Taps on the message's buttons, matched to each recipient. Tap a box to see who. A "Stop promotions" tap also opts them out automatically.
+                </p>
+              </div>
+            )}
             <div className="flex flex-wrap gap-1">
               {["all", "read", "delivered", "sent", "queued", "failed", "skipped"].filter((f) => f === "all" || counts[f]).map((f) => (
                 <button key={f} onClick={() => setFilter(f)}
@@ -234,19 +341,33 @@ function SendDetail({ c, canEdit, onBack, onChanged }: { c: Campaign; canEdit: b
             <div className="overflow-x-auto rounded-xl border border-border">
               <table className="w-full text-sm">
                 <thead className="border-b border-border bg-muted/40 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-                  <tr><th className="px-3 py-2">Recipient</th><th className="px-3 py-2">Number</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Detail</th></tr>
+                  <tr><th className="px-3 py-2">Recipient</th><th className="px-3 py-2">Number</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Response</th><th className="px-3 py-2">Detail</th></tr>
                 </thead>
                 <tbody>
-                  {msgs.filter((m) => filter === "all" || m.status === filter).map((m) => (
+                  {msgs.filter((m) => filter === "all" || m.status === filter
+                    || (filter.startsWith("resp:") && ["sent", "delivered", "read"].includes(m.status)
+                        && responseKey(responses.get(m.wa_message_id)) === filter.slice(5))).map((m) => {
+                    const r: Response | undefined = responses.get(m.wa_message_id);
+                    return (
                     <tr key={m.id} className="border-b border-border/60 last:border-0">
                       <td className="px-3 py-2">{m.contact?.name}<span className="ml-1 text-xs text-muted-foreground">{m.contact?.yacht?.vessel_name}</span></td>
                       <td className="px-3 py-2 font-mono text-xs">{m.phone_e164 ?? "—"}</td>
                       <td className="px-3 py-2"><MessageStatusChip s={m.status} /></td>
+                      <td className="px-3 py-2 text-xs">
+                        {r ? (
+                          <span title={fmtDate(r.at)}>
+                            {r.kind === "button"
+                              ? <Chip t={r.optOut ? "red" : "green"}>{r.text}</Chip>
+                              : <span className="text-muted-foreground">“{r.text.length > 60 ? `${r.text.slice(0, 60)}…` : r.text}”</span>}
+                          </span>
+                        ) : <span className="text-muted-foreground">—</span>}
+                      </td>
                       <td className="px-3 py-2 text-xs text-muted-foreground">
                         {m.skip_reason ?? m.error_message ?? fmtDate(m.read_at ?? m.delivered_at ?? m.sent_at)}
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

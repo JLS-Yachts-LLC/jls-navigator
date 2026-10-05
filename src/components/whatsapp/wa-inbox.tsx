@@ -344,6 +344,9 @@ function Thread({ contactId, conv, canEdit, staff, me, onBack, onChanged }: {
                     <p className="mb-1 text-[10px] font-medium uppercase tracking-wide opacity-75">Broadcast{m.campaignName ? ` · ${m.campaignName}` : ""}</p>
                   )}
                   {m.kind === "template" && <p className="mb-1 text-[10px] font-medium uppercase tracking-wide opacity-75">Template</p>}
+                  {m.dir === "in" && (m.type === "button" || m.type === "interactive") && (
+                    <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-emerald-600">Tapped a button</p>
+                  )}
                   {quoted && (
                     <div className={cn("mb-1.5 rounded-md border-l-2 px-2 py-1 text-xs opacity-80",
                       m.dir === "out" ? "border-white/60 bg-white/10" : "border-emerald-500 bg-muted")}>
