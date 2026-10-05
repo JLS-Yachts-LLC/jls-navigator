@@ -981,6 +981,11 @@ export default {
       const { portalQuotesHandler } = await import('./routes/api.portal.quotes')
       return portalQuotesHandler(request)
     }
+    // Client portal — gate pass requests and renewals.
+    if (url.pathname === '/api/portal/gatepasses') {
+      const { portalGatePassesHandler } = await import('./routes/api.portal.gatepasses')
+      return portalGatePassesHandler(request)
+    }
     // Client portal — the vessel's own logo / badge.
     if (url.pathname === '/api/portal/vessel-logo') {
       const { portalVesselLogoHandler } = await import('./routes/api.portal.vessel-logo')

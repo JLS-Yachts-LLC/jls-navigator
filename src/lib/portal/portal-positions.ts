@@ -23,8 +23,8 @@ const POSITION_LABELS: Record<string, string> = {
 export const positionLabel = (p: string) => POSITION_LABELS[p] ?? p.charAt(0).toUpperCase() + p.slice(1);
 
 const HIDDEN_BY_POSITION: Record<string, string[]> = {
-  owner: ["pms", "ism", "stock", "checklists", "hours", "handover"],
-  representative: ["pms", "ism", "stock", "checklists", "hours", "handover"],
+  owner: ["pms", "ism", "stock", "checklists", "hours", "handover", "gatepasses"],
+  representative: ["pms", "ism", "stock", "checklists", "hours", "handover", "gatepasses"],
   purser: ["pms", "ism", "positions", "charter"],
   chief_stewardess: ["pms", "ism", "balances", "invoices", "movements"],
   chef: ["pms", "ism", "balances", "invoices", "movements"],

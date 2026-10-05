@@ -18,7 +18,7 @@ import {
   MapPin, FileText, Download, ExternalLink, Clock, CheckCircle2,
   Bell, Compass, Wrench, CalendarRange, ShieldCheck, Menu, AlertTriangle, Eye,
   Pencil, Trash2, UserPlus, RotateCcw, ImagePlus,
-  ClipboardCheck, NotebookPen, Anchor,
+  ClipboardCheck, NotebookPen, Anchor, IdCard,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { portalFetch } from "@/lib/portal/portal-fetch";
@@ -32,6 +32,7 @@ import { HoursSection } from "@/components/portal/sections/hours-section";
 import { HandoverSection } from "@/components/portal/sections/handover-section";
 import { MovementsSection } from "@/components/portal/sections/movements-section";
 import { QuoteDetail } from "@/components/portal/sections/quote-detail";
+import { GatePassesSection } from "@/components/portal/sections/gatepasses-section";
 import { CharterSection } from "@/components/portal/sections/charter-section";
 import { IsmSection } from "@/components/portal/sections/ism-section";
 import { canApproveRequisition, hiddenSections, canSeeFinance, canManageVessel } from "@/lib/portal/portal-positions";
@@ -440,7 +441,7 @@ function MfaVerifyScreen({ onDone, onSignOut }: { onDone: () => void; onSignOut:
 // ═══════════════════════════════════════════════════════════════════════════
 type Tab =
   | "home"
-  | "alerts" | "positions" | "crew" | "documents" | "pms" | "balances" | "invoices" | "charter" | "ism" | "stock" | "checklists" | "hours" | "handover" | "movements"
+  | "alerts" | "positions" | "crew" | "documents" | "pms" | "balances" | "invoices" | "charter" | "ism" | "stock" | "checklists" | "hours" | "handover" | "movements" | "gatepasses"
   | "requests" | "logistics" | "chat" | "directory"
   | "finances"; // legacy alias used by the Home module launcher → routes to Invoices/Finance
 
@@ -459,6 +460,7 @@ const NAV_GROUPS: NavGroup[] = [
       { key: "alerts", label: "Alerts", icon: Bell },
       { key: "positions", label: "Positions", icon: Compass },
       { key: "movements", label: "Arrivals & departures", icon: Anchor },
+      { key: "gatepasses", label: "Gate passes", icon: IdCard },
       { key: "crew", label: "Crew & immigration", icon: Users },
       { key: "documents", label: "Documents", icon: FileCheck2 },
       { key: "requests", label: "Requests & orders", icon: LifeBuoy },
@@ -693,12 +695,15 @@ function PortalShell({ link, email, onSignOut, preview = false }: { link: Captai
           <MovementsSection yachtId={link.yacht_id} canEdit={!preview}
                             onOpenRequest={(id) => { setTab("requests"); setOpenRequestId(id); }} />
         )}
+        {tab === "gatepasses" && (
+          <GatePassesSection canEdit={!preview} onOpenRequest={(id) => { setTab("requests"); setOpenRequestId(id); }} />
+        )}
         {tab === "crew" && <CrewTab yachtId={link.yacht_id} />}
         {tab === "documents" && <DocumentsTab yachtId={link.yacht_id} />}
         {(tab === "invoices" || tab === "finances") && <FinancesTab onOpenRequest={(id) => { setTab("requests"); setOpenRequestId(id); }} />}
         {tab === "balances" && <BalancesTab />}
         {tab === "logistics" && <LogisticsTab />}
-        {tab === "alerts" && <AlertsTab yachtId={link.yacht_id} financeOk={financeOk} stockOk={allowedKeys.has("stock")} onOpen={(t) => { setTab(t); setOpenRequestId(null); }} />}
+        {tab === "alerts" && <AlertsTab yachtId={link.yacht_id} financeOk={financeOk} stockOk={allowedKeys.has("stock")} gatePassOk={allowedKeys.has("gatepasses")} onOpen={(t) => { setTab(t); setOpenRequestId(null); }} />}
         {tab === "positions" && yacht && <PositionsTab yacht={yacht} />}
         {/* On board (Management module). The tabs only appear when the vessel
             has the module and this position can see them; editing is off in
@@ -738,6 +743,7 @@ type ModuleDef = { key: Tab; label: string; blurb: string; icon: any; accent: st
 const CORE_MODULES: ModuleDef[] = [
   { key: "requests",  label: "Requests & orders",      blurb: "Provisioning, bunkering, uniform, permits & more", icon: LifeBuoy,   accent: "text-primary bg-primary/10 border-primary/25" },
   { key: "movements", label: "Arrivals & departures",  blurb: "Pre-arrival form & crew sign-on / sign-off",   icon: Anchor,     accent: "text-primary bg-primary/10 border-primary/25" },
+  { key: "gatepasses", label: "Gate passes",          blurb: "Contractors, visitors, vehicles — request & renew", icon: IdCard, accent: "text-primary bg-primary/10 border-primary/25" },
   { key: "crew",      label: "Crew & immigration",     blurb: "Roster, visas & passports",                    icon: Users,      accent: "text-primary bg-primary/10 border-primary/25" },
   { key: "finances",  label: "Invoices & balances",    blurb: "Invoices, quotations & statement",             icon: Wallet,     accent: "text-primary bg-primary/10 border-primary/25" },
   { key: "logistics", label: "Deliveries",             blurb: "Live driver position, deliveries & PODs",      icon: Truck,      accent: "text-primary bg-primary/10 border-primary/25" },
@@ -2113,14 +2119,14 @@ const expiringWithin = (d: string | null | undefined, days: number) => {
   return n <= days && n >= -3650; // upcoming or recently lapsed, not ancient records
 };
 
-function AlertsTab({ yachtId, onOpen, financeOk, stockOk }: { yachtId: string; onOpen: (t: Tab) => void; financeOk: boolean; stockOk: boolean }) {
+function AlertsTab({ yachtId, onOpen, financeOk, stockOk, gatePassOk }: { yachtId: string; onOpen: (t: Tab) => void; financeOk: boolean; stockOk: boolean; gatePassOk: boolean }) {
   const [alerts, setAlerts] = useState<PortalAlert[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     void (async () => {
       setLoading(true);
-      const [reqR, crewR, visaR, permitR, finR, logR, stockR] = await Promise.allSettled([
+      const [reqR, crewR, visaR, permitR, finR, logR, stockR, passR] = await Promise.allSettled([
         db.from("captain_requests").select("id, reference, title, status"),
         db.from("crew_members").select("id, full_name, first_name, last_name, passport_expiry_date"),
         db.from("visa_applications").select("id, given_name, surname, visa_expiry"),
@@ -2128,6 +2134,7 @@ function AlertsTab({ yachtId, onOpen, financeOk, stockOk }: { yachtId: string; o
         financeOk ? authedFetch("/api/portal/finance").then((r) => r.json()).catch(() => null) : Promise.resolve(null),
         authedFetch("/api/portal/logistics").then((r) => r.json()).catch(() => null),
         stockOk ? db.from("onboard_stock_items").select("quantity, min_quantity, par_quantity").eq("yacht_id", yachtId) : Promise.resolve({ data: [] }),
+        gatePassOk ? authedFetch("/api/portal/gatepasses").then((r) => r.json()).catch(() => null) : Promise.resolve(null),
       ]);
       const out: PortalAlert[] = [];
 
@@ -2176,6 +2183,14 @@ function AlertsTab({ yachtId, onOpen, financeOk, stockOk }: { yachtId: string; o
         if (low) out.push({ id: "stock-low", severity: "medium", icon: Package, title: `${low} stock item${low > 1 ? "s" : ""} at or below minimum`, detail: "Raise a requisition to top up", go: "stock" });
       }
 
+      // Issued gate passes running out within 3 days
+      if (passR.status === "fulfilled" && passR.value?.requests) {
+        const today = new Date().toISOString().slice(0, 10);
+        const soon = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+        const ending = passR.value.requests.filter((p: any) => p.captain_requests?.status === "completed" && p.valid_to >= today && p.valid_to <= soon).length;
+        if (ending) out.push({ id: "gp-ending", severity: "medium", icon: IdCard, title: `${ending} gate pass${ending > 1 ? "es" : ""} running out`, detail: "Renew if they're still needed", go: "gatepasses" });
+      }
+
       // Open service requests
       if (reqR.status === "fulfilled") {
         const open = (reqR.value.data ?? []).filter((r: any) => !["closed", "cancelled", "completed", "resolved"].includes((r.status ?? "").toLowerCase()));
@@ -2187,7 +2202,7 @@ function AlertsTab({ yachtId, onOpen, financeOk, stockOk }: { yachtId: string; o
       setAlerts(out);
       setLoading(false);
     })();
-  }, [financeOk, stockOk, yachtId]);
+  }, [financeOk, stockOk, gatePassOk, yachtId]);
 
   if (loading) return <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
 
