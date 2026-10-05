@@ -12,6 +12,7 @@
  * records without changing anything in the database; `include` wins when both
  * are present (the dialog sends whichever list is shorter to keep the URL small).
  */
+import { emailBrandLockup } from "@/lib/email/brand-mark";
 import { PDFDocument, StandardFonts, rgb, PDFFont } from 'pdf-lib'
 import { createClient } from '@supabase/supabase-js'
 import { sendEmail } from '@/lib/ses.server'
@@ -277,8 +278,8 @@ function buildEmailHtml(rows: VisaRow[], vesselName: string): string {
   return `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;margin:0;background:#f4f6f9">
 <div style="max-width:900px;margin:0 auto;background:#fff;border-radius:8px;overflow:hidden">
 <div style="background:#142e5a;color:#fff;padding:24px 32px">
-  <div style="font-size:20px;font-weight:700">JLS Yachts — Visa Report</div>
-  <div style="font-size:14px;opacity:0.75;margin-top:4px">Vessel: ${vesselName}</div>
+  ${emailBrandLockup(`<div style="font-size:20px;font-weight:700;color:#fff">JLS Yachts — Visa Report</div>
+  <div style="font-size:14px;opacity:0.75;margin-top:4px;color:#fff">Vessel: ${vesselName}</div>`, 38)}
 </div>
 <div style="padding:20px 32px;background:#e8f0fb;font-size:13px;color:#1a2a3a">
   <strong>${rows.length}</strong> records &nbsp;·&nbsp;

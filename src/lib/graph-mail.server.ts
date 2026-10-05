@@ -7,6 +7,7 @@
  *
  * Sender defaults to itsupport@jlsyachts.com (override with TICKET_MAIL_SENDER).
  */
+import { emailBrandLockup } from "@/lib/email/brand-mark";
 import { getSpConfig, getGraphToken } from '@/lib/sharepoint-sync.server'
 import { guardRecipients, ClientEmailDisabledError } from '@/lib/mail-guard.server'
 
@@ -176,7 +177,7 @@ function shell(content: string): string {
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f8;padding:28px 16px;"><tr><td align="center">
     <table width="100%" style="max-width:560px;background:#fff;border-radius:10px;overflow:hidden;border:1px solid #e4e8ec;">
       <tr><td style="background:#0d1b2a;padding:18px 26px;">
-        <span style="color:#fff;font-size:16px;font-weight:700;letter-spacing:-0.2px;">JLS Yachts — IT Support</span>
+        ${emailBrandLockup('<span style="color:#fff;font-size:16px;font-weight:700;letter-spacing:-0.2px;">JLS Yachts — IT Support</span>', 26)}
       </td></tr>
       <tr><td style="padding:26px;">${content}</td></tr>
       <tr><td style="padding:14px 26px;border-top:1px solid #f0f0f0;background:#fafafa;">

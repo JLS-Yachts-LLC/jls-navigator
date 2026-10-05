@@ -12,6 +12,7 @@
  * applies: while client email is switched off the send is refused loudly and
  * logged as 'blocked' — never silently dropped.
  */
+import { emailBrandLockup } from "@/lib/email/brand-mark";
 import { createClient } from '@supabase/supabase-js'
 
 function admin() {
@@ -138,8 +139,8 @@ export function renderPermitEmail(
 <html><body style="margin:0;padding:0;background:#eef2f5">
   <div style="max-width:640px;margin:0 auto;padding:24px 16px;font-family:Segoe UI,Helvetica,Arial,sans-serif;color:#1d2b36;font-size:14px">
     <div style="background:${BRAND};color:#fff;padding:16px 20px;border-radius:8px 8px 0 0">
-      <div style="font-size:17px;font-weight:600;letter-spacing:.2px">JLS Yachts</div>
-      <div style="font-size:12.5px;opacity:.8;margin-top:2px">${esc(label)}</div>
+      ${emailBrandLockup(`<div style="font-size:17px;font-weight:600;letter-spacing:.2px;color:#fff">JLS Yachts</div>
+      <div style="font-size:12.5px;opacity:.8;margin-top:2px;color:#fff">${esc(label)}</div>`, 34)}
     </div>
     <div style="background:#fff;padding:20px;border:1px solid #dfe5ea;border-top:none;border-radius:0 0 8px 8px">
       ${intro}

@@ -4,6 +4,7 @@
  * WITHOUT a session (the anonymous signer), so they authorise purely on the
  * unguessable signing token and operate via `supabaseAdmin`.
  */
+import { emailBrandLockup } from "@/lib/email/brand-mark";
 import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
@@ -67,7 +68,7 @@ function inviteHtml(doc: any, link: string): string {
   return `<!DOCTYPE html><html><body style="margin:0;background:#f8fafc;font-family:Inter,Arial,sans-serif;color:#0f172a;">
   <table width="100%" cellpadding="0" cellspacing="0" style="padding:32px 16px;"><tr><td align="center">
     <table width="560" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08);">
-      <tr><td style="background:#0f172a;padding:22px 32px;color:#fff;font-size:18px;font-weight:700;">JLS Yachts · Aquila One</td></tr>
+      <tr><td style="background:#0f172a;padding:22px 32px;">${emailBrandLockup('<span style="color:#fff;font-size:18px;font-weight:700;">JLS Yachts · Aquila One</span>', 28)}</td></tr>
       <tr><td style="padding:32px;">
         <p style="margin:0 0 6px;font-size:15px;color:#64748b;">Dear ${doc.signer_name},</p>
         <p style="margin:0 0 20px;font-size:15px;line-height:1.6;">You have a document waiting for your electronic signature: <strong>${doc.title}</strong>${doc.reference ? ` <span style="color:#94a3b8;">(${doc.reference})</span>` : ""}.</p>

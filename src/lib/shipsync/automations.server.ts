@@ -2,6 +2,7 @@
  * ShipSync automations — delivery-note PDF generation/storage and the
  * proof-of-delivery email. Mirrors the PowerApp flows, server-side.
  */
+import { emailBrandLockup } from "@/lib/email/brand-mark";
 import { storageRef } from '@/lib/signed-url'
 import { supabaseAdmin } from '@/integrations/supabase/client.server'
 import { sendEmail } from '@/lib/ses.server'
@@ -147,7 +148,7 @@ function shell(content: string): string {
   return `<!DOCTYPE html><html><body style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;background:#f4f6f8;margin:0;padding:24px">
   <table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">
     <table width="100%" style="max-width:560px;background:#fff;border-radius:10px;border:1px solid #e4e8ec;overflow:hidden">
-      <tr><td style="background:#0d1520;padding:16px 24px"><span style="color:#fff;font-size:16px;font-weight:700">JLS Yachts — ShipSync</span></td></tr>
+      <tr><td style="background:#0d1520;padding:16px 24px">${emailBrandLockup('<span style="color:#fff;font-size:16px;font-weight:700">JLS Yachts — ShipSync</span>', 26)}</td></tr>
       <tr><td style="padding:24px">${content}</td></tr>
     </table></td></tr></table></body></html>`
 }

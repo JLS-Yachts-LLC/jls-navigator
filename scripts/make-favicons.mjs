@@ -72,7 +72,15 @@ fs.writeFileSync(path.join(pub, "favicon.svg"), faviconSvg);
 fs.writeFileSync(path.join(pub, "favicon.ico"), ico(icoImages));
 fs.writeFileSync(path.join(pub, "apple-touch-icon.png"), await png(touchSvg, 180));
 
-for (const f of ["favicon.svg", "favicon.ico", "apple-touch-icon.png"]) {
+// Email headers (src/lib/email/brand-mark.ts). Email clients won't render inline
+// SVG and Gmail blocks data: images, so emails load this hosted PNG instead. 144
+// px is 4x the largest size it is shown at, so it stays sharp on high-DPI phones;
+// the rounded corners are transparent, so Outlook — which ignores CSS
+// border-radius on images — still shows a rounded tile.
+fs.mkdirSync(path.join(pub, "email"), { recursive: true });
+fs.writeFileSync(path.join(pub, "email", "polaris-star.png"), await png(faviconSvg, 144));
+
+for (const f of ["favicon.svg", "favicon.ico", "apple-touch-icon.png", "email/polaris-star.png"]) {
   console.log(f.padEnd(22), fs.statSync(path.join(pub, f)).size, "bytes");
 }
 

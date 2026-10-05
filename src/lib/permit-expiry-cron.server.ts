@@ -13,6 +13,7 @@
  * Use previewExpiryDigest() to see exactly what would be sent without sending.
  * Recipients: PERMIT_ALERT_TO (comma-separated), default the Port Ops mailbox.
  */
+import { emailBrandLockup } from "@/lib/email/brand-mark";
 import { sendEmail } from "@/lib/ses.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
@@ -130,8 +131,8 @@ export function buildDigest(permits: ExpiringPermit[]): { subject: string; html:
 <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;padding:28px 16px;"><tr><td align="center">
 <table width="760" cellpadding="0" cellspacing="0" style="max-width:100%;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.08);">
   <tr><td style="background:#0f172a;padding:20px 24px;">
-    <div style="font-size:17px;font-weight:700;color:#fff;">Polaris — Permit Renewals</div>
-    <div style="font-size:11px;color:#94a3b8;margin-top:3px;">Internal digest for Port Operations · ${permits.length} permit${permits.length === 1 ? "" : "s"} expiring within 30 days</div>
+    ${emailBrandLockup(`<div style="font-size:17px;font-weight:700;color:#fff;">Polaris — Permit Renewals</div>
+    <div style="font-size:11px;color:#94a3b8;margin-top:3px;">Internal digest for Port Operations · ${permits.length} permit${permits.length === 1 ? "" : "s"} expiring within 30 days</div>`, 36)}
   </td></tr>
   <tr><td style="padding:0;">
     <table width="100%" cellpadding="0" cellspacing="0">

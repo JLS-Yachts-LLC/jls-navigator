@@ -6,6 +6,7 @@
  * (generateLink does NOT send an email — no rate limit) and deliver it ourselves
  * through the app's proven AWS SES sender.
  */
+import { emailBrandLockup } from "@/lib/email/brand-mark";
 import { sendEmail } from '@/lib/ses.server'
 
 type AuthLinkType = 'invite' | 'magiclink' | 'recovery'
@@ -15,7 +16,7 @@ function emailHtml(heading: string, intro: string, cta: string, link: string): s
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">
     <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#0f1d2e;border:1px solid #1e2d40;border-radius:12px;overflow:hidden">
       <tr><td style="padding:22px 28px;border-bottom:1px solid #1e2d40">
-        <span style="font-family:Arial,sans-serif;font-size:18px;font-weight:700;letter-spacing:.14em;color:#e8edf5">POLARIS</span>
+        ${emailBrandLockup('<span style="font-family:Arial,sans-serif;font-size:18px;font-weight:700;letter-spacing:.14em;color:#e8edf5">POLARIS</span>', 28)}
       </td></tr>
       <tr><td style="padding:28px">
         <h1 style="margin:0 0 12px;font-size:18px;color:#e8edf5">${heading}</h1>

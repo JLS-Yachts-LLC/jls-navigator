@@ -8,6 +8,7 @@
  * (POLARIS navy / gold brand).
  */
 
+import { emailBrandLockup } from "@/lib/email/brand-mark";
 import { formatDateDMY } from "./statusHelpers";
 
 export interface VisaReportEmailCrewRow {
@@ -154,8 +155,8 @@ export function buildVisaReportEmail(props: VisaReportEmailProps): {
   <tr><td style="background:${C.gradient};padding:22px 28px;">
     <table width="100%" cellpadding="0" cellspacing="0"><tr>
       <td>
-        <div style="font-size:24px;font-weight:700;color:#FFFFFF;letter-spacing:2px;">POLARIS</div>
-        <div style="font-size:13px;color:${C.goldLight};letter-spacing:1px;margin-top:2px;">Navigate &middot; Manage &middot; Excel</div>
+        ${emailBrandLockup(`<div style="font-size:24px;font-weight:700;color:#FFFFFF;letter-spacing:2px;">POLARIS</div>
+        <div style="font-size:13px;color:${C.goldLight};letter-spacing:1px;margin-top:2px;">Navigate &middot; Manage &middot; Excel</div>`, 40)}
       </td>
       <td align="right" style="vertical-align:top;">
         <div style="font-size:14px;color:${C.mutedBlue};">${esc(longDate(props.reportDate))}</div>
