@@ -27,6 +27,19 @@ export type PortalYacht = {
   preview: boolean
   /** captain_accounts.position of the (previewed) account — see portal-positions. */
   position: string | null
+  /** The session passed two-factor (JWT `aal` = aal2) — the same test the
+   *  portal's RLS makes with portal_aal2(). Always true for an admin preview. */
+  mfaVerified: boolean
+}
+
+function claimsOf(token: string): Record<string, unknown> | null {
+  try {
+    const part = token.split('.')[1] ?? ''
+    const b64 = part.replace(/-/g, '+').replace(/_/g, '/')
+    return JSON.parse(atob(b64.padEnd(Math.ceil(b64.length / 4) * 4, '=')))
+  } catch {
+    return null
+  }
 }
 
 function admin() {
@@ -104,6 +117,7 @@ export async function resolvePortalYacht(
       qboCustomerId: (yacht as any).qbo_customer_id ?? null,
       preview: !!previewAccountId,
       position,
+      mfaVerified: !!previewAccountId || claimsOf(token)?.aal === 'aal2',
     },
   }
 }

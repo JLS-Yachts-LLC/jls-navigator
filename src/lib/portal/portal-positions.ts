@@ -40,3 +40,15 @@ export function canSeeFinance(position: string | null | undefined): boolean {
   const hidden = hiddenSections(position);
   return !hidden.has("invoices") && !hidden.has("balances");
 }
+
+/**
+ * Positions that only view the crew list. Interior crew (Chief Stewardess, Chef)
+ * see their shipmates but adding, editing and removing crew is left to the
+ * Captain, officers and the vessel's management.
+ */
+const CREW_VIEW_ONLY = new Set(["chief_stewardess", "chef"]);
+
+/** Whether this position may add, edit and remove the vessel's crew. */
+export function canManageCrew(position: string | null | undefined): boolean {
+  return !CREW_VIEW_ONLY.has((position ?? "").trim().toLowerCase());
+}

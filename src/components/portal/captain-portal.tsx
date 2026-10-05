@@ -17,6 +17,7 @@ import {
   Shield, Shirt, ShoppingCart, Users, X, Wallet, Truck, Package,
   MapPin, FileText, Download, ExternalLink, Clock, CheckCircle2,
   Bell, Compass, Wrench, CalendarRange, ShieldCheck, Menu, AlertTriangle, Eye,
+  Pencil, Trash2, UserPlus, RotateCcw,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { portalFetch } from "@/lib/portal/portal-fetch";
@@ -1081,38 +1082,128 @@ function NewRequestSheet({ yachtId, initialCategory, onClose, onCreated }: {
 }
 
 // ── Crew ─────────────────────────────────────────────────────────────────────
+// Read and written through /api/portal/crew — passports live on a table the
+// portal can't read directly, and crew changes go through the server's checks.
+type PortalCrew = Crew & {
+  middle_name: string | null; department: string | null; gender: string | null;
+  date_of_birth: string | null; email: string | null; phone: string | null;
+  passport_verified: boolean;
+};
+
+const CREW_CURRENT = new Set(["active", "on_leave"]);
+const CREW_STATUS_LABEL: Record<string, string> = { active: "active", on_leave: "on leave", off_signed: "signed off" };
+const crewName = (c: { full_name: string | null; first_name: string | null; last_name: string | null }) =>
+  c.full_name || [c.first_name, c.last_name].filter(Boolean).join(" ") || "—";
+
+async function crewRequest(path: string, init: RequestInit = {}) {
+  const res = await portalFetch(path, {
+    ...init,
+    headers: init.body ? { "Content-Type": "application/json" } : undefined,
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.error ?? "Something went wrong — please try again.");
+  return body;
+}
+
 function CrewTab({ yachtId }: { yachtId: string }) {
-  const [rows, setRows] = useState<Crew[]>([]);
+  const [rows, setRows] = useState<PortalCrew[]>([]);
+  const [canManage, setCanManage] = useState(false);
   const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    db.from("crew_members")
-      .select("id, full_name, first_name, last_name, rank, nationality, status, passport_number, passport_expiry_date")
-      .order("last_name")
-      .then(({ data }: any) => { setRows(data ?? []); setLoading(false); });
-  }, [yachtId]);
+  const [error, setError] = useState<string | null>(null);
+  const [showPast, setShowPast] = useState(false);
+  const [editing, setEditing] = useState<PortalCrew | "new" | null>(null);
+  const [removing, setRemoving] = useState<PortalCrew | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const body = await crewRequest("/api/portal/crew");
+      setRows(body.crew ?? []);
+      setCanManage(!!body.canManage);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not load the crew list.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+  useEffect(() => { void load(); }, [load, yachtId]);
+
+  const current = rows.filter((c) => CREW_CURRENT.has(c.status ?? "active"));
+  const past = rows.filter((c) => !CREW_CURRENT.has(c.status ?? "active"));
+  const shown = showPast ? [...current, ...past] : current;
+
+  const signBackOn = async (c: PortalCrew) => {
+    try {
+      await crewRequest(`/api/portal/crew?id=${c.id}`, { method: "PATCH", body: JSON.stringify({ status: "active" }) });
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Could not sign them back on.");
+    }
+  };
 
   return (
     <div className="space-y-4">
-      <h1 className="text-lg font-bold">Crew on {""}your vessel</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-lg font-bold">Crew on your vessel</h1>
+        <div className="flex items-center gap-2">
+          {past.length > 0 && (
+            <button type="button" onClick={() => setShowPast((v) => !v)}
+                    className="rounded-lg border border-border px-3 py-2 text-xs font-medium text-muted-foreground transition hover:text-foreground">
+              {showPast ? "Hide" : "Show"} signed off ({past.length})
+            </button>
+          )}
+          {canManage && (
+            <PrimaryButton onClick={() => setEditing("new")} className="min-h-9 px-4 text-xs">
+              <UserPlus className="h-4 w-4" /> Add crew
+            </PrimaryButton>
+          )}
+        </div>
+      </div>
       {loading ? (
         <div className="flex h-32 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
-      ) : rows.length === 0 ? (
-        <Card className="px-6 py-10 text-center text-sm text-muted-foreground">No crew records yet.</Card>
+      ) : error ? (
+        <Card className="px-6 py-10 text-center text-sm text-red-300">{error}</Card>
+      ) : shown.length === 0 ? (
+        <Card className="px-6 py-10 text-center text-sm text-muted-foreground">
+          {canManage ? "No crew yet — use Add crew to start your list." : "No crew records yet."}
+        </Card>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
-          {rows.map((c) => {
-            const name = c.full_name || [c.first_name, c.last_name].filter(Boolean).join(" ") || "—";
+          {shown.map((c) => {
+            const isPast = !CREW_CURRENT.has(c.status ?? "active");
             const expiring = c.passport_expiry_date && new Date(c.passport_expiry_date).getTime() - Date.now() < 180 * 86400000;
             return (
-              <Card key={c.id} className="p-4">
+              <Card key={c.id} className={cn("p-4", isPast && "opacity-60")}>
                 <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <div className="font-semibold">{name}</div>
+                  <div className="min-w-0">
+                    <div className="truncate font-semibold">{crewName(c)}</div>
                     <div className="mt-0.5 text-xs text-muted-foreground">{[c.rank, c.nationality].filter(Boolean).join(" · ") || "—"}</div>
                   </div>
-                  {c.status && (
-                    <span className="rounded-full border border-border bg-background/40 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">{c.status}</span>
-                  )}
+                  <div className="flex shrink-0 items-center gap-1">
+                    {c.status && (
+                      <span className="rounded-full border border-border bg-background/40 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                        {CREW_STATUS_LABEL[c.status] ?? c.status}
+                      </span>
+                    )}
+                    {canManage && !isPast && (
+                      <>
+                        <button type="button" onClick={() => setEditing(c)} title="Edit" aria-label={`Edit ${crewName(c)}`}
+                                className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-background/60 hover:text-foreground">
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button type="button" onClick={() => setRemoving(c)} title="Remove" aria-label={`Remove ${crewName(c)}`}
+                                className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-red-500/10 hover:text-red-300">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </>
+                    )}
+                    {canManage && isPast && (
+                      <button type="button" onClick={() => void signBackOn(c)} title="Sign back on" aria-label={`Sign ${crewName(c)} back on`}
+                              className="flex h-8 items-center gap-1 rounded-lg px-2 text-[11px] font-medium text-muted-foreground transition hover:bg-background/60 hover:text-foreground">
+                        <RotateCcw className="h-3.5 w-3.5" /> Sign on
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                   <div><div className="text-muted-foreground">Passport</div><div className="mt-0.5 font-mono">{c.passport_number ?? "—"}</div></div>
@@ -1126,6 +1217,139 @@ function CrewTab({ yachtId }: { yachtId: string }) {
           })}
         </div>
       )}
+      {editing && (
+        <CrewFormModal crew={editing === "new" ? null : editing} onClose={() => setEditing(null)}
+                       onSaved={() => { setEditing(null); void load(); }} />
+      )}
+      {removing && (
+        <RemoveCrewModal crew={removing} onClose={() => setRemoving(null)}
+                         onRemoved={() => { setRemoving(null); void load(); }} />
+      )}
+    </div>
+  );
+}
+
+const CREW_FORM_FIELDS = [
+  "first_name", "middle_name", "last_name", "rank", "department", "nationality",
+  "gender", "date_of_birth", "email", "phone", "passport_number", "passport_expiry_date",
+] as const;
+type CrewForm = Record<(typeof CREW_FORM_FIELDS)[number], string>;
+
+function CrewFormModal({ crew, onClose, onSaved }: { crew: PortalCrew | null; onClose: () => void; onSaved: () => void }) {
+  const [form, setForm] = useState<CrewForm>(() =>
+    Object.fromEntries(CREW_FORM_FIELDS.map((k) => [k, ((crew as any)?.[k] as string | null) ?? ""])) as CrewForm);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const passportLocked = !!crew?.passport_verified;
+  const set = (k: keyof CrewForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+    setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true); setError(null);
+    // A JLS-verified passport isn't sent — the server refuses to change it from here.
+    const body: Record<string, string> = { ...form };
+    if (passportLocked) { delete body.passport_number; delete body.passport_expiry_date; }
+    try {
+      await crewRequest(crew ? `/api/portal/crew?id=${crew.id}` : "/api/portal/crew", {
+        method: crew ? "PATCH" : "POST", body: JSON.stringify(body),
+      });
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save.");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center"
+         onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-3xl border border-border bg-card p-5 sm:rounded-3xl sm:p-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-bold">{crew ? `Edit ${crewName(crew)}` : "Add crew member"}</h2>
+          <button onClick={onClose} aria-label="Close" className="flex h-9 w-9 items-center justify-center rounded-xl text-muted-foreground hover:text-foreground">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <form onSubmit={submit} className="mt-4 space-y-4">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div><FieldLabel>First name</FieldLabel><input className={inputCls} required maxLength={120} value={form.first_name} onChange={set("first_name")} /></div>
+            <div><FieldLabel>Middle name</FieldLabel><input className={inputCls} maxLength={120} value={form.middle_name} onChange={set("middle_name")} /></div>
+            <div><FieldLabel>Last name</FieldLabel><input className={inputCls} required maxLength={120} value={form.last_name} onChange={set("last_name")} /></div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><FieldLabel>Rank</FieldLabel><input className={inputCls} maxLength={120} value={form.rank} onChange={set("rank")} placeholder="e.g. Bosun" /></div>
+            <div>
+              <FieldLabel>Department</FieldLabel>
+              <select className={inputCls} value={form.department} onChange={set("department")}>
+                <option value="">—</option>
+                {["Deck", "Engine", "Interior", "Galley", "Other"].map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+            <div><FieldLabel>Nationality</FieldLabel><input className={inputCls} maxLength={120} value={form.nationality} onChange={set("nationality")} /></div>
+            <div>
+              <FieldLabel>Gender</FieldLabel>
+              <select className={inputCls} value={form.gender} onChange={set("gender")}>
+                <option value="">—</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+              </select>
+            </div>
+            <div><FieldLabel>Date of birth</FieldLabel><input className={inputCls} type="date" value={form.date_of_birth} onChange={set("date_of_birth")} /></div>
+            <div><FieldLabel>Phone</FieldLabel><input className={inputCls} type="tel" maxLength={120} value={form.phone} onChange={set("phone")} /></div>
+          </div>
+          <div><FieldLabel>Email</FieldLabel><input className={inputCls} type="email" maxLength={120} value={form.email} onChange={set("email")} /></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><FieldLabel>Passport number</FieldLabel>
+              <input className={cn(inputCls, "font-mono uppercase")} maxLength={30} disabled={passportLocked} value={form.passport_number} onChange={set("passport_number")} /></div>
+            <div><FieldLabel>Passport expiry</FieldLabel>
+              <input className={inputCls} type="date" disabled={passportLocked} value={form.passport_expiry_date} onChange={set("passport_expiry_date")} /></div>
+          </div>
+          {passportLocked && (
+            <p className="-mt-2 text-xs text-muted-foreground">This passport has been verified by JLS. To change it, send us a Visa &amp; Immigration request.</p>
+          )}
+          {error && <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-red-300">{error}</div>}
+          <PrimaryButton type="submit" disabled={busy || !form.first_name.trim() || !form.last_name.trim()} className="w-full">
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} {crew ? "Save changes" : "Add to crew"}
+          </PrimaryButton>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function RemoveCrewModal({ crew, onClose, onRemoved }: { crew: PortalCrew; onClose: () => void; onRemoved: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const remove = async () => {
+    setBusy(true); setError(null);
+    try {
+      await crewRequest(`/api/portal/crew?id=${crew.id}`, { method: "DELETE" });
+      onRemoved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not remove.");
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center"
+         onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="w-full max-w-md rounded-t-3xl border border-border bg-card p-5 sm:rounded-3xl sm:p-6">
+        <h2 className="text-lg font-bold">Remove {crewName(crew)}?</h2>
+        <p className="mt-2 text-sm text-muted-foreground">
+          They'll be taken off your crew list. If JLS holds any records for them (visas, documents or sign-on history),
+          they're signed off rather than deleted, so those records are kept and you can sign them back on later.
+        </p>
+        {error && <div className="mt-3 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-red-300">{error}</div>}
+        <div className="mt-5 flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="min-h-11 rounded-xl border border-border px-5 text-sm font-medium text-muted-foreground hover:text-foreground">Cancel</button>
+          <button type="button" onClick={() => void remove()} disabled={busy}
+                  className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-red-500/90 px-5 text-sm font-semibold text-white transition hover:bg-red-500 disabled:opacity-50">
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Remove
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
