@@ -115,12 +115,12 @@ export function WaContacts({ canEdit }: { canEdit: boolean }) {
     const ids = [...selected];
     setBusy("invite");
     try {
-      const r = await waApi<{ sent: number; skipped: any[]; failed: any[] }>("optin/invite", { contactIds: ids });
+      const r = await waApi<{ sent: number; people: number; skipped: any[]; failed: any[] }>("optin/invite", { contactIds: ids });
       const notes = [
         r.skipped.length ? `${r.skipped.length} skipped (${[...new Set(r.skipped.map((s) => s.reason))].join(", ")})` : null,
         r.failed.length ? `${r.failed.length} failed: ${r.failed[0].reason}` : null,
       ].filter(Boolean).join(" · ");
-      (r.failed.length ? toast.error : toast.success)(`Invitation emailed to ${r.sent}`, { description: notes || undefined });
+      (r.failed.length ? toast.error : toast.success)(`Invitation emailed to ${r.people} ${r.people === 1 ? "person" : "people"}${r.sent > r.people ? ` (covering ${r.sent} contact records)` : ""}`, { description: notes || undefined });
       setSelected(new Set());
       await load();
     } catch (e) {

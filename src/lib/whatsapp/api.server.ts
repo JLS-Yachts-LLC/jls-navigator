@@ -592,45 +592,83 @@ export async function whatsappOptinInviteHandler(request: Request): Promise<Resp
   const { data: contacts } = await db.from("wa_contacts")
     .select("id, name, email, consent_status").in("id", contactIds);
 
-  const results = { sent: 0, skipped: [] as Array<{ name: string; reason: string }>, failed: [] as Array<{ name: string; reason: string }> };
+  const results = {
+    sent: 0, people: 0,
+    skipped: [] as Array<{ name: string; reason: string }>, failed: [] as Array<{ name: string; reason: string }>,
+  };
+  // One email per address: someone who is the contact for two yachts has a
+  // record per yacht but gets one invitation, and their answer covers both.
+  const byEmail = new Map<string, any[]>();
   for (const c of (contacts ?? []) as any[]) {
-    if (!c.email) { results.skipped.push({ name: c.name, reason: "no email address" }); continue; }
+    const email = cleanEmail(c.email);
+    if (!email) { results.skipped.push({ name: c.name, reason: c.email ? "email address isn't valid" : "no email address" }); continue; }
     // A decision already made isn't reopened by a marketing email.
     if (c.consent_status === "opted_out") { results.skipped.push({ name: c.name, reason: "has opted out" }); continue; }
     if (c.consent_status === "opted_in") { results.skipped.push({ name: c.name, reason: "already opted in" }); continue; }
+    byEmail.set(email, [...(byEmail.get(email) ?? []), c]);
+  }
 
+  for (const [email, group] of byEmail) {
+    const c = group[0];
     const raw = [...crypto.getRandomValues(new Uint8Array(32))].map((b) => b.toString(16).padStart(2, "0")).join("");
     const link = `${appBaseUrl()}/whatsapp-optin/${raw}`;
     try {
       const { error: insErr } = await db.from("wa_optin_invites").insert({
         contact_id: c.id,
         token_hash: await sha256Hex(raw),
-        email: c.email,
+        email,
         expires_at: new Date(Date.now() + INVITE_DAYS * 86_400_000).toISOString(),
         sent_by: access.claims.userId,
       });
       if (insErr) throw new Error(insErr.message);
       await sendGraphEmail({
-        to: [c.email],
+        to: [email],
         subject: "WhatsApp updates from JLS Yachts — would you like them?",
         html: inviteEmail(c.name, link),
       });
-      await db.rpc("wa_record_consent", {
-        p_contact_id: c.id, p_action: "invited", p_updates: null, p_marketing: null, p_channel: "system",
-        p_note: `Opt-in invitation emailed to ${c.email} by ${access.claims.email}`,
-      });
-      results.sent++;
+      for (const g of group) {
+        await db.rpc("wa_record_consent", {
+          p_contact_id: g.id, p_action: "invited", p_updates: null, p_marketing: null, p_channel: "system",
+          p_note: `Opt-in invitation emailed to ${email} by ${access.claims.email}`,
+        });
+      }
+      results.sent += group.length;
+      results.people++;
     } catch (e) {
-      results.failed.push({ name: c.name, reason: e instanceof Error ? e.message : String(e) });
+      for (const g of group) results.failed.push({ name: g.name, reason: e instanceof Error ? e.message : String(e) });
     }
   }
   return json({ ok: true, ...results });
 }
 
+/**
+ * The address in a contact's email field, or null. Copes with "Name <a@b.com>"
+ * pasted from Outlook; a field holding two addresses uses the first.
+ */
+function cleanEmail(v: string | null | undefined): string | null {
+  const m = String(v ?? "").match(/[A-Z0-9._%+'-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+  return m ? m[0].toLowerCase() : null;
+}
+
+/**
+ * The other records for the same person as this contact (same email address) —
+ * e.g. their record for a second yacht. Their answer on the opt-in page is
+ * theirs, so it's recorded on each, each with its own history entry.
+ */
+async function samePerson(db: any, contactId: string): Promise<any[]> {
+  const { data: c } = await db.from("wa_contacts").select("id, email").eq("id", contactId).maybeSingle();
+  const email = cleanEmail(c?.email);
+  if (!email) return [];
+  const pattern = `%${email.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+  const { data } = await db.from("wa_contacts").select("id, email, consent_status, yacht:yachts(vessel_name)")
+    .neq("id", contactId).ilike("email", pattern);
+  return ((data ?? []) as any[]).filter((r) => cleanEmail(r.email) === email);
+}
+
 async function loadInvite(db: any, token: string) {
   if (!/^[0-9a-f]{64}$/.test(token)) return { error: "This link isn't valid." as const };
   const { data: inv } = await db.from("wa_optin_invites")
-    .select("id, contact_id, expires_at, used_at, contact:wa_contacts(id, name, phone_e164, consent_status, yacht:yachts(vessel_name))")
+    .select("id, contact_id, email, expires_at, used_at, contact:wa_contacts(id, name, phone_e164, consent_status, yacht:yachts(vessel_name))")
     .eq("token_hash", await sha256Hex(token)).maybeSingle();
   if (!inv) return { error: "This link isn't valid." as const };
   if (inv.used_at) return { error: "This link has already been used. If you'd like to change your choice, please contact JLS Yachts." as const };
@@ -644,9 +682,11 @@ export async function whatsappOptinGetHandler(request: Request): Promise<Respons
   const db = admin();
   const r = await loadInvite(db, token);
   if ("error" in r) return json({ error: r.error }, 410);
+  const others = await samePerson(db, r.inv.contact_id);
+  const vessels = [...new Set([r.inv.contact?.yacht?.vessel_name, ...others.map((o) => o.yacht?.vessel_name)].filter(Boolean))];
   return json({
     name: r.inv.contact?.name ?? null,
-    vessel: r.inv.contact?.yacht?.vessel_name ?? null,
+    vessel: vessels.length ? vessels.join(" and ") : null,
     phone: r.inv.contact?.phone_e164 ?? null,
     wording_version: OPTIN_WORDING_VERSION,
     categories: OPTIN_CATEGORY_TEXT,
@@ -666,6 +706,9 @@ export async function whatsappOptinPostHandler(request: Request): Promise<Respon
 
   const ip = request.headers.get("cf-connecting-ip") ?? request.headers.get("x-forwarded-for") ?? null;
   const ua = (request.headers.get("user-agent") ?? "").slice(0, 300) || null;
+  // The same person's other records (another yacht) get the same answer.
+  const others = await samePerson(db, r.inv.contact_id);
+  const sameNote = (what: string) => `${what} — the same person (${r.inv.email ?? "same email"}) answered the opt-in invitation`;
 
   if (body.decision === "decline") {
     const { error } = await db.rpc("wa_record_consent", {
@@ -674,6 +717,13 @@ export async function whatsappOptinPostHandler(request: Request): Promise<Respon
       p_wording_version: OPTIN_WORDING_VERSION, p_ip: ip, p_user_agent: ua,
     });
     if (error) return json({ error: "Sorry, that didn't save. Please try again." }, 500);
+    for (const o of others) {
+      await db.rpc("wa_record_consent", {
+        p_contact_id: o.id, p_action: "opted_out", p_updates: false, p_marketing: false,
+        p_channel: "email_link", p_note: sameNote("Declined"),
+        p_wording_version: OPTIN_WORDING_VERSION, p_ip: ip, p_user_agent: ua,
+      });
+    }
     await db.from("wa_optin_invites").update({ used_at: new Date().toISOString() }).eq("id", r.inv.id);
     return json({ ok: true, decision: "decline" });
   }
@@ -692,6 +742,15 @@ export async function whatsappOptinPostHandler(request: Request): Promise<Respon
     p_phone: phone, p_ip: ip, p_user_agent: ua,
   });
   if (error) return json({ error: "Sorry, that didn't save. Please try again." }, 500);
+  for (const o of others) {
+    await db.rpc("wa_record_consent", {
+      p_contact_id: o.id, p_action: "opted_in", p_updates: updates, p_marketing: marketing,
+      p_channel: "email_link", p_note: sameNote("Agreed"),
+      p_wording_version: OPTIN_WORDING_VERSION,
+      p_wording: optinStatement({ phone, updates, marketing }),
+      p_phone: phone, p_ip: ip, p_user_agent: ua,
+    });
+  }
   await db.from("wa_optin_invites").update({ used_at: new Date().toISOString() }).eq("id", r.inv.id);
   return json({ ok: true, decision: "accept", phone });
 }
