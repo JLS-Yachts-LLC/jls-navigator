@@ -387,6 +387,19 @@ function NavList({
 }) {
   const badges = useFeatureBadges();
   const { claims } = useAccess();
+  // Sections the user has folded away. Remembered per browser; the section
+  // holding the open screen always shows, so you never lose your place.
+  const [closed, setClosed] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(window.localStorage.getItem(NAV_CLOSED_KEY) ?? "[]")); } catch { return new Set(); }
+  });
+  function toggleGroup(label: string) {
+    setClosed((prev) => {
+      const next = new Set(prev);
+      next.has(label) ? next.delete(label) : next.add(label);
+      try { window.localStorage.setItem(NAV_CLOSED_KEY, JSON.stringify([...next])); } catch { /* private mode */ }
+      return next;
+    });
+  }
   return (
     <nav
       style={{
@@ -396,25 +409,45 @@ function NavList({
         padding: collapsed ? "12px 8px" : "16px 12px",
       }}
     >
-      {visibleGroups(role, claims).map((g) => (
+      {visibleGroups(role, claims).map((g) => {
+        const holdsActive = g.items.some((i) => i.screen === active);
+        // The icon-only rail always shows every icon.
+        const folded = !collapsed && closed.has(g.label) && !holdsActive;
+        return (
         <div key={g.label}>
           {collapsed ? (
             <div style={{ height: 1, margin: "0 6px 6px", background: "var(--pds-border)" }} />
           ) : (
-            <div
+            <button
+              type="button"
+              onClick={() => toggleGroup(g.label)}
+              aria-expanded={!folded}
+              title={holdsActive && closed.has(g.label) ? "Stays open while you're on one of its screens" : folded ? `Show ${g.label}` : `Hide ${g.label}`}
               style={{
+                width: "100%",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
                 fontSize: 10,
                 fontWeight: 600,
                 letterSpacing: "0.1em",
                 textTransform: "uppercase",
                 color: "var(--pds-text-hint)",
                 padding: "0 8px 6px",
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                textAlign: "left",
               }}
             >
-              {g.label}
-            </div>
+              <span style={{ flex: 1 }}>{g.label}</span>
+              {folded && (
+                <span style={{ fontSize: 9, letterSpacing: 0, opacity: 0.8 }}>{g.items.length}</span>
+              )}
+              <TIcon name={folded ? "chevron-right" : "chevron-down"} size={12} color="var(--pds-text-hint)" />
+            </button>
           )}
-          {g.items.map((item) => {
+          {!folded && g.items.map((item) => {
             const on = item.screen === active;
             return (
               <button
@@ -474,12 +507,14 @@ function NavList({
             );
           })}
         </div>
-      ))}
+        );
+      })}
     </nav>
   );
 }
 
 const NAV_PIN_KEY = "polaris.nav.pinned";
+const NAV_CLOSED_KEY = "polaris.nav.closedGroups";
 const RAIL_W = 60;
 
 /** Desktop side nav: pinnable + collapsible to an icon rail. When unpinned the
