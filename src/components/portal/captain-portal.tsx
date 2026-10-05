@@ -9,9 +9,10 @@
  * Laptop / tablet / phone friendly: top tabs on desktop, bottom tab bar on
  * mobile, big touch targets, click-to-call directory.
  */
+import { PolarisMark } from "@/components/brand/PolarisMark";
 import { createContext, useContext, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Anchor, ArrowLeft, ChevronRight, FileCheck2, Fuel, Home, Laptop, LifeBuoy,
+  ArrowLeft, ChevronRight, FileCheck2, Fuel, Home, Laptop, LifeBuoy,
   Loader2, LogOut, Mail, MessageSquare, Phone, Plane, Plus, Send,
   Shield, Shirt, ShoppingCart, Users, X, Wallet, Truck, Package,
   MapPin, FileText, Download, ExternalLink, Clock, CheckCircle2,
@@ -132,9 +133,9 @@ const inputCls =
 function Brand({ compact }: { compact?: boolean }) {
   return (
     <div className="flex items-center gap-2.5">
-      <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-primary/40 bg-primary/15">
-        <Anchor className="h-4.5 w-4.5 text-primary" style={{ width: 18, height: 18 }} />
-      </div>
+      {/* The Polaris star — the same mark as the staff login, the app's top bar
+          and the browser tab. Decorative: the words beside it name the portal. */}
+      <PolarisMark size={36} title="" />
       {!compact && (
         <div className="leading-tight">
           <div className="text-[15px] font-bold tracking-wide text-foreground">JLS YACHTS</div>
