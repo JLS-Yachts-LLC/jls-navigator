@@ -35,6 +35,7 @@ import { QuoteDetail } from "@/components/portal/sections/quote-detail";
 import { GatePassesSection } from "@/components/portal/sections/gatepasses-section";
 import { OrdersSection } from "@/components/portal/sections/orders-section";
 import { CalendarSection } from "@/components/portal/sections/calendar-section";
+import { EsignPanel } from "@/components/portal/sections/esign-section";
 import { CharterSection } from "@/components/portal/sections/charter-section";
 import { IsmSection } from "@/components/portal/sections/ism-section";
 import { canApproveRequisition, hiddenSections, canSeeFinance, canManageVessel } from "@/lib/portal/portal-positions";
@@ -1912,6 +1913,7 @@ function DocumentsTab({ yachtId, canSend = false }: { yachtId: string; canSend?:
         </Card>
       )}
       {sentNote && <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">{sentNote}</div>}
+      <EsignPanel />
       {sending && (
         <SendDocumentModal onClose={() => setSending(false)}
                            onSent={(title) => { setSending(false); setSentNote(`"${title}" sent to JLS — it's in your vessel documents below.`); setReloadKey((k) => k + 1); }} />

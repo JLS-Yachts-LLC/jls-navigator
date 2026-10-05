@@ -996,6 +996,11 @@ export default {
       const { portalUploadHandler } = await import('./routes/api.portal.upload')
       return portalUploadHandler(request)
     }
+    // Client portal — documents JLS has sent this person to e-sign.
+    if (url.pathname === '/api/portal/esign') {
+      const { portalEsignHandler } = await import('./routes/api.portal.esign')
+      return portalEsignHandler(request)
+    }
     // Client portal — the vessel's own logo / badge.
     if (url.pathname === '/api/portal/vessel-logo') {
       const { portalVesselLogoHandler } = await import('./routes/api.portal.vessel-logo')
