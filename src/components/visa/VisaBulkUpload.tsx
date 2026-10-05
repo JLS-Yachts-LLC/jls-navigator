@@ -3,6 +3,7 @@ import { storageRef } from '@/lib/signed-url'
 import { useRef, useState } from 'react'
 import { supabase } from '@/integrations/supabase/client'
 import { fileToBase64 } from '@/lib/file-to-base64'
+import { fileVisaToSharePoint, type FilingResult } from '@/lib/visa/file-to-sharepoint'
 import { COLORS, FONTS } from '@/lib/tokens'
 import { toast } from 'sonner'
 
@@ -203,7 +204,26 @@ export function VisaBulkUpload({ countryCode, onClose, onChanged }: {
    * outcome as the "Attach Visa" button on the applications list. The application's
    * own vessel, country and references are the record: only blanks are filled in.
    */
-  async function attachToApp(row: Row, app: AppHit) {
+  /** File the row's document into the crew member's SharePoint folder — the SAME
+   *  path the dashboard and visa-page attach flows use (SD-0021). The bulk path
+   *  never did this, so bulk-attached visas only ever reached Supabase (SD-0044).
+   *  Never throws: the visa is saved either way; the outcome is recorded on the
+   *  application (sharepoint_filed_at / sharepoint_error) and surfaced per row. */
+  async function fileRowToSharePoint(row: Row, applicationId: string, vesselName: string | null, crewName: string): Promise<FilingResult> {
+    return fileVisaToSharePoint({
+      applicationId,
+      vesselName,
+      crewName,
+      // fileVisaToSharePoint reads only .name and .type off the file.
+      file: { name: row.fileName, type: row.contentType } as unknown as File,
+      base64: row.base64,
+    })
+  }
+
+  const filingSuffix = (r: FilingResult) =>
+    r.ok ? ' · filed to SharePoint' : ' · ⚠ SharePoint filing failed (saved in Polaris — file manually)'
+
+  async function attachToApp(row: Row, app: AppHit): Promise<FilingResult> {
     const ext = row.fileName.split('.').pop() || 'pdf'
     const url = await uploadDoc(row, `visa/${app.id}/visa-document.${ext}`)
     const o = row.ocr ?? {}
@@ -220,6 +240,7 @@ export function VisaBulkUpload({ countryCode, onClose, onChanged }: {
     if (!app.country_code && (countryCode ?? o.country_code)) patch.country_code = countryCode ?? o.country_code
     const { error } = await db.from('visa_applications').update(patch).eq('id', app.id)
     if (error) throw error
+    return fileRowToSharePoint(row, app.id, app.vessel_name, row.match?.name ?? '')
   }
 
   /**
@@ -227,11 +248,11 @@ export function VisaBulkUpload({ countryCode, onClose, onChanged }: {
    * country are inherited from their most recent application so the new row doesn't
    * land on the list showing "—" for both.
    */
-  async function createAppFor(row: Row, crewId: string, seed: AppHit | null) {
+  async function createAppFor(row: Row, crewId: string, seed: AppHit | null, crewName: string): Promise<FilingResult> {
     const ext = row.fileName.split('.').pop() || 'pdf'
     const url = await uploadDoc(row, `visa/bulk/${crewId}-${Date.now()}.${ext}`)
     const o = row.ocr ?? {}
-    const { error } = await db.from('visa_applications').insert({
+    const { data, error } = await db.from('visa_applications').insert({
       crew_member_id: crewId, status: 'approved', visa_type: o.visa_type ?? 'Crew Visa',
       country_code: countryCode ?? seed?.country_code ?? null,
       vessel_name: seed?.vessel_name ?? null, yacht_id: seed?.yacht_id ?? null,
@@ -241,8 +262,9 @@ export function VisaBulkUpload({ countryCode, onClose, onChanged }: {
       passport_number: o.passport_number ?? null, nationality: o.nationality ?? null,
       given_name: o.given_names ?? null, surname: o.surname ?? null,
       visa_document_url: url, approved_at: new Date().toISOString(),
-    })
+    }).select('id').single()
     if (error) throw error
+    return fileRowToSharePoint(row, (data as { id: string }).id, seed?.vessel_name ?? null, crewName)
   }
 
   const setRow = (key: string, patch: Partial<Row>) =>
@@ -255,12 +277,12 @@ export function VisaBulkUpload({ countryCode, onClose, onChanged }: {
     setRow(row.key, { status: 'working', error: undefined })
     try {
       if (!force && row.plan === 'attach' && row.app) {
-        await attachToApp(row, row.app)
+        const filed = await attachToApp(row, row.app)
         const st = STATUS_LABEL[(row.app.status ?? '').toLowerCase()] ?? row.app.status ?? 'existing'
-        setRow(row.key, { status: 'done', resultLabel: `Attached to ${row.match!.name}'s ${st} application — now Approved` })
+        setRow(row.key, { status: 'done', resultLabel: `Attached to ${row.match!.name}'s ${st} application — now Approved${filingSuffix(filed)}` })
       } else {
-        await createAppFor(row, crewId, row.seed ?? null)
-        setRow(row.key, { status: 'done', resultLabel: `New application created for ${row.match!.name}` })
+        const filed = await createAppFor(row, crewId, row.seed ?? null, row.match!.name)
+        setRow(row.key, { status: 'done', resultLabel: `New application created for ${row.match!.name}${filingSuffix(filed)}` })
       }
       onChanged()
     } catch (e) {
@@ -284,8 +306,8 @@ export function VisaBulkUpload({ countryCode, onClose, onChanged }: {
       }).select('id, first_name, last_name').single()
       if (error) throw error
       crewCache.current = null // the new crew member must be findable for later files
-      await createAppFor(row, crew.id, null)
-      setRow(row.key, { status: 'done', resultLabel: `Created ${crew.first_name} ${crew.last_name} + filed visa` })
+      const filed = await createAppFor(row, crew.id, null, `${crew.first_name} ${crew.last_name}`.trim())
+      setRow(row.key, { status: 'done', resultLabel: `Created ${crew.first_name} ${crew.last_name} + filed visa${filingSuffix(filed)}` })
       onChanged()
     } catch (e) {
       setRow(row.key, { status: 'ready', error: e instanceof Error ? e.message : 'Failed' })
