@@ -20,6 +20,7 @@ import {
   NewRequestSheet, PortalChatTab, PreviewContext, RequestsTab, type ChatAccount, type PortalChat,
 } from "@/components/portal/captain-portal";
 import { supabase } from "@/integrations/supabase/client";
+import { AppearanceButton } from "@/components/portal/portal-appearance";
 import {
   AlertTriangle, ClipboardList, Eye, FileCheck2, Home, LifeBuoy, Loader2, LogOut,
   Menu, MessageSquare, ShieldCheck, Ship, Wrench, X,
@@ -228,6 +229,7 @@ export function BoatPortal({ displayName, email, previewAccountId, onSignOut }: 
           </div>
         </nav>
 
+        <AppearanceButton />
         <button onClick={onSignOut}
                 className="m-3 flex items-center justify-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium text-muted-foreground transition hover:text-foreground">
           <LogOut className="h-4 w-4" /> Sign out

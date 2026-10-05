@@ -42,6 +42,9 @@ import { BoatPortal } from "./boat-portal";
 // /portal is a standalone route (no staff shell), so pull the design tokens in
 // directly — the `pds` wrapper class below reads them.
 import "@/components/polaris-ui/tokens.css";
+import "./portal-themes.css";
+import { AppearanceButton, PortalThemeContext } from "./portal-appearance";
+import { cachedPortalTheme, ensureThemeFonts, rememberPortalTheme, resolvePortalTheme, themeClasses, type PortalTheme } from "@/lib/portal/portal-theme";
 
 const db = supabase as any;
 
@@ -194,6 +197,11 @@ export function CaptainPortal() {
   const [wrongHome, setWrongHome] = useState<string | null>(null);
 
   const [resetHandled, setResetHandled] = useState(false);
+  // Bridge on the server render; the browser's last look straight after mount, so
+  // hydration matches and there's no lasting flash of the default.
+  const [theme, setThemeState] = useState<PortalTheme>("bridge");
+  useEffect(() => { const t = cachedPortalTheme(); ensureThemeFonts(t); setThemeState(t); }, []);
+  const setTheme = useCallback((t: PortalTheme) => { setThemeState(t); if (!preview) rememberPortalTheme(t); }, [preview]);
 
   const bootstrap = useCallback(async () => {
     if (LANDED_WITH === "link-expired" && !resetHandled) {
@@ -256,8 +264,25 @@ export function CaptainPortal() {
     setStage("signed-out");
   }, []);
 
+  // The look: the person's own choice, else their vessel's default, else Bridge.
+  useEffect(() => {
+    if (stage !== "ready") return;
+    let alive = true;
+    void (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      const t = await resolvePortalTheme({ userId: session?.user.id ?? null, yachtId: link?.yacht_id ?? null, preview });
+      if (!alive) return;
+      ensureThemeFonts(t);
+      setTheme(t);
+    })();
+    return () => { alive = false; };
+  }, [stage, link?.yacht_id, preview, setTheme]);
+  const look = themeClasses(theme);
+
   return (
-    <div className="pds dark pds-embed min-h-screen bg-background text-foreground" style={{ colorScheme: "dark" }}>
+    <PortalThemeContext.Provider value={{ theme, setTheme, preview }}>
+    <div className={cn("pds pds-embed min-h-screen bg-background text-foreground", look.dark && "dark", look.className)}
+         style={{ colorScheme: look.dark ? "dark" : "light" }}>
       {stage === "loading" && (
         <div className="flex min-h-screen items-center justify-center">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -292,6 +317,7 @@ export function CaptainPortal() {
         </PreviewContext.Provider>
       )}
     </div>
+    </PortalThemeContext.Provider>
   );
 }
 
@@ -789,6 +815,7 @@ function PortalShell({ link, email, onSignOut, preview = false }: { link: Captai
           ))}
         </nav>
 
+        <AppearanceButton />
         <button onClick={onSignOut}
                 className="m-3 flex items-center justify-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium text-muted-foreground transition hover:text-foreground">
           <LogOut className="h-4 w-4" /> Sign out

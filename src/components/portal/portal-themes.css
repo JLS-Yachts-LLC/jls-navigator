@@ -1,0 +1,75 @@
+/*
+ * Client Portal themes. The portal root carries `pds pds-embed` (the Bridge
+ * navy & gold tokens, src/styles.css) plus one of these classes. Each theme only
+ * re-points the same tokens every portal component already uses, so a theme is
+ * a palette and a type pairing — never a different layout.
+ *
+ * Selectors are `.pds-embed.portal-theme-*` (two classes) so they win over the
+ * single-class `.pds-embed` remap regardless of stylesheet order.
+ */
+
+/* ── Midnight: near-black, warm ivory text, brass ───────────────────────────── */
+.pds-embed.portal-theme-midnight {
+  --background:            #0A0D13;
+  --foreground:            #ECE6DA;
+  --card:                  #10151E;
+  --card-foreground:       #ECE6DA;
+  --popover:               #10151E;
+  --popover-foreground:    #ECE6DA;
+  --primary:               #C9A96A;
+  --primary-foreground:    #15110A;
+  --secondary:             rgba(236,230,218,0.06);
+  --secondary-foreground:  #ECE6DA;
+  --muted:                 rgba(236,230,218,0.05);
+  --muted-foreground:      #A39C8B;
+  --accent:                rgba(201,169,106,0.14);
+  --accent-foreground:     #E2C891;
+  --border:                rgba(201,169,106,0.20);
+  --input:                 rgba(201,169,106,0.28);
+  --ring:                  #C9A96A;
+  --pds-font-display: "Cormorant Garamond", Garamond, "Times New Roman", serif;
+  --pds-font-body: "Jost", Futura, "Century Gothic", -apple-system, "Segoe UI", sans-serif;
+  background: #0A0D13;
+  color: var(--foreground);
+}
+
+/* ── Private Office: ivory, ink, brass — the light theme ───────────────────── */
+.pds-embed.portal-theme-office {
+  --background:            #F5F2EC;
+  --foreground:            #15181D;
+  --card:                  #FFFFFF;
+  --card-foreground:       #15181D;
+  --popover:               #FFFFFF;
+  --popover-foreground:    #15181D;
+  --primary:               #15181D;
+  --primary-foreground:    #F5F2EC;
+  --secondary:             rgba(21,24,29,0.05);
+  --secondary-foreground:  #15181D;
+  --muted:                 rgba(21,24,29,0.04);
+  --muted-foreground:      #5B6472;
+  --accent:                rgba(140,111,58,0.12);
+  --accent-foreground:     #8C6F3A;
+  --border:                #DDD8CE;
+  --input:                 #CFC6B4;
+  --ring:                  #8C6F3A;
+  --destructive:           #B42318;
+  --pds-font-display: "Bodoni Moda", Didot, "Bodoni 72", Georgia, serif;
+  --pds-font-body: "Albert Sans", -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  background: #F5F2EC;
+  color: var(--foreground);
+}
+
+/* The status colours in the portal are tuned for dark backgrounds (300/400
+   shades). On ivory they'd be too faint to read, so the light theme maps each
+   family to a deep ink of the same hue. */
+.portal-theme-office :is(.text-red-200, .text-red-300, .text-red-400) { color: #B42318; }
+.portal-theme-office :is(.text-amber-200, .text-amber-300, .text-amber-400, .text-orange-400) { color: #92400E; }
+.portal-theme-office .text-amber-300\/80 { color: rgba(146,64,14,0.8); }
+.portal-theme-office :is(.text-emerald-200, .text-emerald-300, .text-emerald-400, .text-green-400) { color: #166534; }
+.portal-theme-office :is(.text-teal-300, .text-teal-400) { color: #0F766E; }
+.portal-theme-office :is(.text-sky-300, .text-sky-400, .text-blue-300, .text-blue-400) { color: #075985; }
+.portal-theme-office :is(.text-slate-300, .text-violet-400) { color: #475569; }
+/* Card shadows drawn for navy look heavy on ivory. */
+.portal-theme-office [class*="shadow-[0_4px_20px"] { box-shadow: 0 1px 2px rgba(21,24,29,0.06), 0 4px 16px -8px rgba(21,24,29,0.12); }
+/* The display face on big headings, as on the dark themes. */
+.portal-theme-office :is(h1, h2) { letter-spacing: -0.005em; }

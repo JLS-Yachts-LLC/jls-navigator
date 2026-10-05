@@ -17,6 +17,7 @@ import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { PORTAL_POSITIONS, positionLabel } from "@/lib/portal/portal-positions";
 import { PortalAlertRecipients } from "@/components/admin/portal-alert-recipients";
+import { PORTAL_THEMES } from "@/lib/portal/portal-theme";
 import { PORTAL_MODULES, moduleState, type PortalModuleKey, type PortalModuleRow } from "@/lib/portal/portal-modules";
 import { PortalAddresses } from "./portal-addresses";
 import { Button } from "@/components/ui/button";
@@ -112,6 +113,30 @@ function StaffPanel() {
         <UserTable users={users} total={total} roles={roles} departments={departments} onRefresh={load} />
       )}
     </div>
+  );
+}
+
+// ── Portal look per vessel ───────────────────────────────────────────────────
+/** The vessel's default portal look; each person can still pick their own in the portal. */
+function VesselThemeSelect({ yachtId }: { yachtId: string }) {
+  const [theme, setTheme] = useState<string>("bridge");
+  useEffect(() => {
+    void db.from("portal_vessel_settings").select("theme").eq("yacht_id", yachtId).maybeSingle()
+      .then(({ data }: any) => { if (data?.theme) setTheme(data.theme); });
+  }, [yachtId]);
+  const save = async (value: string) => {
+    setTheme(value);
+    const { error } = await db.from("portal_vessel_settings").upsert({ yacht_id: yachtId, theme: value, updated_at: new Date().toISOString() });
+    if (error) toast.error(error.message); else toast.success("Portal look updated for this vessel");
+  };
+  return (
+    <label className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground" title="How the portal looks for this vessel's people, unless they pick their own">
+      Look
+      <select value={theme} onChange={(e) => void save(e.target.value)}
+              className="rounded-lg border border-border bg-background/40 px-2 py-1 text-xs outline-none focus:border-primary/50">
+        {PORTAL_THEMES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+      </select>
+    </label>
   );
 }
 
@@ -405,7 +430,8 @@ function VesselUsersPanel() {
                 {/* How this client asked to receive documents — the permit and
                     visa senders read it, so it belongs next to their logins.
                     Yachts only: managed boats have no permit/visa sends. */}
-                {g.yachtId && <label className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">
+                {g.yachtId && <VesselThemeSelect yachtId={g.yachtId} />}
+                {g.yachtId && <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   Documents
                   <select
                     value={deliveryOf(g.yachtId)}
