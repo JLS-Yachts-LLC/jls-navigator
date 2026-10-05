@@ -18,7 +18,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
-import { windowRemaining, placeholderCount, dynamicUrlButtons } from "@/lib/whatsapp/shared";
+import { windowRemaining, placeholderCount, dynamicUrlButtons, personalise, placeholderContext } from "@/lib/whatsapp/shared";
+import { TokenScope, TokenBar, TokenInput } from "./wa-tokens";
 import { WaTemplatePreview, templateBlocker } from "./wa-templates";
 import { db, waApi, waBlobUrl, ConsentChip, Chip, Empty, type WaContact, type WaTemplate } from "./wa-common";
 
@@ -490,7 +491,10 @@ function TemplateComposer({ contact, onSent }: { contact: WaContact; onSent: () 
     }
   }
 
+  const who = { name: contact.name, vessel: contact.yacht?.vessel_name ?? null };
+
   return (
+    <TokenScope>
     <div className="space-y-2 border-t border-border p-3">
       <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
         <Lock className="mt-0.5 h-3 w-3 shrink-0" />
@@ -503,14 +507,15 @@ function TemplateComposer({ contact, onSent }: { contact: WaContact; onSent: () 
           <option value="">{templates.length ? "Choose an approved template…" : "No approved templates yet"}</option>
           {templates.map((x) => <option key={x.id} value={x.id}>{x.name} ({x.category === "MARKETING" ? "news & offers" : "updates"})</option>)}
         </select>
-        {Array.from({ length: needed }, (_, i) => (
-          <Input key={i} value={values[i] ?? ""} placeholder={`{{${i + 1}}}`} className="h-8 w-40"
-            onChange={(e) => setValues((v) => { const n = [...v]; n[i] = e.target.value; return n; })} />
+        {t && Array.from({ length: needed }, (_, i) => (
+          <TokenInput key={i} value={values[i] ?? ""} placeholder={`{{${i + 1}}}`} className="h-8 w-44"
+            title={placeholderContext(t.body_text, i + 1)}
+            onChange={(v) => setValues((vs) => { const n = [...vs]; n[i] = v; return n; })} />
         ))}
         {t && linkButtons.map((i) => (
-          <Input key={`b${i}`} value={buttonValues[i] ?? ""} className="h-8 w-48"
+          <TokenInput key={`b${i}`} value={buttonValues[i] ?? ""} className="h-8 w-48"
             placeholder={`${t.buttons[i].text} link: ${(t.buttons[i] as any).example || "value"}`}
-            onChange={(e) => setButtonValues((v) => { const n = [...v]; n[i] = e.target.value; return n; })} />
+            onChange={(v) => setButtonValues((vs) => { const n = [...vs]; n[i] = v; return n; })} />
         ))}
         <Button size="sm" onClick={() => void send()} className="gap-1.5"
           disabled={!t || !!blocked || sending || values.slice(0, needed).filter((v) => v?.trim()).length < needed || linkButtons.some((i) => !buttonValues[i]?.trim())}>
@@ -519,12 +524,13 @@ function TemplateComposer({ contact, onSent }: { contact: WaContact; onSent: () 
       </div>
       {t && (
         <div className="max-w-sm">
-          <WaTemplatePreview t={t} values={values.map((v) => v.replace(/\{\{\s*name\s*\}\}/gi, contact.name))} />
+          <WaTemplatePreview t={t} values={values.map((v) => personalise(v, who))} />
         </div>
       )}
       {blocked && <p className="text-xs text-red-500">Can't send this template: {blocked}.</p>}
-      <p className="text-[10px] text-muted-foreground">Tip: use {"{{name}}"} in a value to insert their name.</p>
+      {t && (needed > 0 || linkButtons.length > 0) && <TokenBar />}
     </div>
+    </TokenScope>
   );
 }
 

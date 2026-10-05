@@ -30,7 +30,7 @@ import {
 import {
   OPTIN_WORDING_VERSION, OPTIN_CATEGORY_TEXT, OPTIN_STOP_TEXT, optinStatement, toE164, stopIntent,
   placeholderCount, fillTemplate, SERVICE_WINDOW_MS,
-  normalizeButtons, buttonsError, hasOptOut, dynamicUrlButtons, type WaButton,
+  normalizeButtons, buttonsError, hasOptOut, dynamicUrlButtons, personalise, type WaButton,
 } from "@/lib/whatsapp/shared";
 
 const json = (body: unknown, status = 200) =>
@@ -112,8 +112,6 @@ async function templateExtras(db: any, cfg: WaConfig, t: any, opts: {
   return { header, urlButtons };
 }
 
-/** {{name}} in a value becomes the recipient's name. */
-const withName = (v: string, name: string | null | undefined) => v.replace(/\{\{\s*name\s*\}\}/gi, name || "there");
 
 // ─── Status ───────────────────────────────────────────────────────────────────
 
@@ -350,21 +348,32 @@ export async function whatsappCampaignSendHandler(request: Request): Promise<Res
   const { data: batch, error: bErr } = await db.rpc("wa_claim_batch", { p_campaign: c.id, p_limit: BATCH });
   if (bErr) return json({ error: bErr.message }, 500);
 
+  // Each recipient's yacht, for {{vessel}}.
+  const claimed = (batch ?? []) as Array<{ message_id: string; phone_e164: string; contact_name: string }>;
+  const vessels = new Map<string, string | null>();
+  if (claimed.length) {
+    const { data: rows } = await db.from("wa_messages")
+      .select("id, contact:wa_contacts(yacht:yachts(vessel_name))").in("id", claimed.map((m) => m.message_id));
+    for (const r of (rows ?? []) as any[]) vessels.set(r.id, r.contact?.yacht?.vessel_name ?? null);
+  }
+
   let sent = 0, failed = 0;
-  for (const m of (batch ?? []) as Array<{ message_id: string; phone_e164: string; contact_name: string }>) {
+  for (const m of claimed) {
+    const who = { name: m.contact_name, vessel: vessels.get(m.message_id) };
+    const personal = values.slice(0, needed).map((v) => personalise(v, who));
     try {
       const wamid = await sendTemplate(cfg, {
         toE164: m.phone_e164,
         name: t.name,
         language: t.language,
-        bodyValues: values.slice(0, needed).map((v) => withName(v, m.contact_name)),
+        bodyValues: personal,
         header: extras.header,
-        urlButtons: extras.urlButtons.map((b) => ({ index: b.index, value: withName(b.value, m.contact_name) })),
+        urlButtons: extras.urlButtons.map((b) => ({ index: b.index, value: personalise(b.value, who) })),
       });
       await db.from("wa_messages").update({
         status: "sent", wa_message_id: wamid, sent_at: new Date().toISOString(), phone_e164: m.phone_e164,
         // What the client actually saw, so it reads naturally in their thread.
-        body: fillTemplate(t.body_text, values.slice(0, needed), m.contact_name || "there"),
+        body: fillTemplate(t.body_text, personal),
         template_id: t.id,
       }).eq("id", m.message_id);
       sent++;
@@ -415,7 +424,7 @@ export async function whatsappReplyHandler(request: Request): Promise<Response> 
   };
   const db = admin();
   const { data: contact } = await db.from("wa_contacts")
-    .select("id, name, phone_e164, consent_status").eq("id", body.contactId).maybeSingle();
+    .select("id, name, phone_e164, consent_status, yacht:yachts(vessel_name)").eq("id", body.contactId).maybeSingle();
   if (!contact) return json({ error: "Contact not found" }, 404);
 
   const now = new Date().toISOString();
@@ -467,7 +476,8 @@ export async function whatsappReplyHandler(request: Request): Promise<Response> 
   if (values.length < needed || values.some((v) => !v.trim())) {
     return json({ error: `Fill in all ${needed} value(s) for the template's placeholders.` }, 400);
   }
-  const filled = values.map((v) => withName(v, contact.name));
+  const who = { name: contact.name, vessel: contact.yacht?.vessel_name ?? null };
+  const filled = values.map((v) => personalise(v, who));
   const shown = fillTemplate(t.body_text, filled);
   let extras: Awaited<ReturnType<typeof templateExtras>>;
   try {
@@ -479,7 +489,7 @@ export async function whatsappReplyHandler(request: Request): Promise<Response> 
     const wamid = await sendTemplate(cfg, {
       toE164: contact.phone_e164, name: t.name, language: t.language, bodyValues: filled,
       header: extras.header,
-      urlButtons: extras.urlButtons.map((b) => ({ index: b.index, value: withName(b.value, contact.name) })),
+      urlButtons: extras.urlButtons.map((b) => ({ index: b.index, value: personalise(b.value, who) })),
     });
     return json({ ok: true, message: await record({
       kind: "template", template_id: t.id, body: shown, phone_e164: contact.phone_e164, status: "sent", sent_at: now, wa_message_id: wamid,

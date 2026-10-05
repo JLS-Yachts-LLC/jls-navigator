@@ -14,7 +14,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
-import { placeholderCount, dynamicUrlButtons, HEADER_MEDIA, type HeaderFormat, type WaButton } from "@/lib/whatsapp/shared";
+import {
+  placeholderCount, dynamicUrlButtons, HEADER_MEDIA, personalise, placeholderContext, SAMPLE_RECIPIENT,
+  type HeaderFormat, type WaButton,
+} from "@/lib/whatsapp/shared";
+import { TokenScope, TokenBar, TokenInput } from "./wa-tokens";
 import { db, waApi, uploadWaMedia, MessageStatusChip, Chip, fmtDate, Empty, type WaTemplate, type WaList } from "./wa-common";
 import { WaTemplatePreview, templateBlocker } from "./wa-templates";
 
@@ -282,7 +286,7 @@ function SendDetail({ c, canEdit, onBack, onChanged }: { c: Campaign; canEdit: b
 
       {c.template && (
         <div className="max-w-md">
-          <WaTemplatePreview t={c.template} values={values.map((v) => v.replace(/\{\{\s*name\s*\}\}/gi, "Captain Smith"))} mediaPath={c.header_media_path} />
+          <WaTemplatePreview t={c.template} values={values.map((v) => personalise(v, SAMPLE_RECIPIENT))} mediaPath={c.header_media_path} />
         </div>
       )}
       {c.template && c.template.status !== "approved" && (
@@ -432,6 +436,7 @@ function NewSendDialog({ onClose, onSaved }: { onClose: () => void; onSaved: (id
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
+        <TokenScope>
         <DialogHeader>
           <DialogTitle>New send</DialogTitle>
           <DialogDescription>Saved as a draft — you'll see who it reaches before anything is sent.</DialogDescription>
@@ -452,12 +457,16 @@ function NewSendDialog({ onClose, onSaved }: { onClose: () => void; onSaved: (id
               {templates.map((x) => <option key={x.id} value={x.id}>{x.name} ({x.category === "MARKETING" ? "news & offers" : "updates"})</option>)}
             </select>
           </div>
-          {needed > 0 && (
+          {(needed > 0 || linkButtons.length > 0) && <TokenBar />}
+          {needed > 0 && t && (
             <div className="space-y-1.5">
               <Label>Values</Label>
               {Array.from({ length: needed }, (_, i) => (
-                <Input key={i} value={values[i] ?? ""} placeholder={`{{${i + 1}}} — use {{name}} for each person's name`}
-                  onChange={(e) => setValues((v) => { const n = [...v]; n[i] = e.target.value; return n; })} />
+                <div key={i} className="space-y-0.5">
+                  <p className="truncate text-[11px] text-muted-foreground">{placeholderContext(t.body_text, i + 1)}</p>
+                  <TokenInput value={values[i] ?? ""} placeholder={`Value for {{${i + 1}}} — type, or drop a field in`}
+                    onChange={(v) => setValues((vs) => { const n = [...vs]; n[i] = v; return n; })} />
+                </div>
               ))}
             </div>
           )}
@@ -469,8 +478,8 @@ function NewSendDialog({ onClose, onSaved }: { onClose: () => void; onSaved: (id
                 return (
                   <div key={i} className="flex items-center gap-1 text-xs">
                     <span className="shrink-0 text-muted-foreground">{b.url.replace(/\{\{\s*1\s*\}\}$/, "")}</span>
-                    <Input value={buttonValues[i] ?? ""} className="h-8" placeholder={b.example || "value"}
-                      onChange={(e) => setButtonValues((v) => { const n = [...v]; n[i] = e.target.value; return n; })} />
+                    <TokenInput value={buttonValues[i] ?? ""} className="h-8" placeholder={b.example || "value"}
+                      onChange={(v) => setButtonValues((vs) => { const n = [...vs]; n[i] = v; return n; })} />
                   </div>
                 );
               })}
@@ -492,12 +501,20 @@ function NewSendDialog({ onClose, onSaved }: { onClose: () => void; onSaved: (id
               </div>
             </div>
           )}
-          {t && <WaTemplatePreview t={t} values={values.map((v) => v.replace(/\{\{\s*name\s*\}\}/gi, "Captain Smith"))} mediaPath={media?.path} />}
+          {t && (
+            <div className="space-y-1">
+              <WaTemplatePreview t={t} values={values.map((v) => personalise(v, SAMPLE_RECIPIENT))} mediaPath={media?.path} />
+              <p className="text-[10px] text-muted-foreground">
+                Preview for an example recipient ({SAMPLE_RECIPIENT.name}, {SAMPLE_RECIPIENT.vessel}). Each person sees their own name and yacht.
+              </p>
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button onClick={() => void save()} disabled={saving}>{saving && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}Save draft</Button>
         </DialogFooter>
+        </TokenScope>
       </DialogContent>
     </Dialog>
   );

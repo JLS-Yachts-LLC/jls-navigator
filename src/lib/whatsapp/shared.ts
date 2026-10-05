@@ -196,3 +196,41 @@ export const HEADER_MEDIA: Record<Exclude<HeaderFormat, "TEXT">, { accept: strin
   VIDEO: { accept: "video/mp4,video/3gpp", label: "Video (MP4, up to 16 MB)", maxMb: 16 },
   DOCUMENT: { accept: "application/pdf", label: "PDF document (up to 16 MB)", maxMb: 16 },
 };
+
+// ─── Personalisation ──────────────────────────────────────────────────────────
+
+/** Fields staff can drop into a template's values; filled in per recipient at send. */
+export const PERSONAL_TOKENS = [
+  { token: "{{name}}", label: "Name", sample: "Captain Smith" },
+  { token: "{{first_name}}", label: "First name", sample: "Captain" },
+  { token: "{{vessel}}", label: "Yacht name", sample: "M/Y Serenity" },
+] as const;
+
+const TOKEN_RE = /\{\{\s*(name|first_name|vessel|yacht)\s*\}\}/gi;
+
+/**
+ * Fill personal fields into a value. Missing data falls back to something that
+ * still reads naturally ("there", "your yacht") — Meta rejects empty parameters.
+ */
+export function personalise(value: string, who: { name?: string | null; vessel?: string | null }): string {
+  const name = (who.name ?? "").trim();
+  const vessel = (who.vessel ?? "").trim();
+  return value.replace(TOKEN_RE, (_, k: string) => {
+    switch (k.toLowerCase()) {
+      case "name": return name || "there";
+      case "first_name": return name.split(/\s+/)[0] || "there";
+      default: return vessel || "your yacht";
+    }
+  });
+}
+
+export const SAMPLE_RECIPIENT = { name: "Captain Smith", vessel: "M/Y Serenity" };
+
+/** The words around {{n}} in a template body — shows what each value box fills. */
+export function placeholderContext(body: string, n: number, span = 28): string {
+  const m = new RegExp(`\{\{\s*${n}\s*\}\}`).exec(body);
+  if (!m) return `{{${n}}}`;
+  const before = body.slice(Math.max(0, m.index - span), m.index).replace(/\s+/g, " ");
+  const after = body.slice(m.index + m[0].length, m.index + m[0].length + span).replace(/\s+/g, " ");
+  return `${m.index > span ? "…" : ""}${before}{{${n}}}${after}${m.index + m[0].length + span < body.length ? "…" : ""}`;
+}
