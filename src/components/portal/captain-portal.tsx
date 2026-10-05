@@ -23,6 +23,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { portalFetch } from "@/lib/portal/portal-fetch";
 import { PortalBrandHeader, WrongAddressScreen, checkPortalAddress } from "./portal-address";
 import { moduleState, sectionEnabled, type PortalModuleState, type PortalModuleRow } from "@/lib/portal/portal-modules";
+import { PmsSection } from "@/components/portal/sections/pms-section";
+import { CharterSection } from "@/components/portal/sections/charter-section";
+import { IsmSection } from "@/components/portal/sections/ism-section";
 import { hiddenSections, canSeeFinance, canManageVessel } from "@/lib/portal/portal-positions";
 import { cn } from "@/lib/utils";
 import { BoatPortal } from "./boat-portal";
@@ -683,18 +686,12 @@ function PortalShell({ link, email, onSignOut, preview = false }: { link: Captai
         {tab === "logistics" && <LogisticsTab />}
         {tab === "alerts" && <AlertsTab financeOk={financeOk} onOpen={(t) => { setTab(t); setOpenRequestId(null); }} />}
         {tab === "positions" && yacht && <PositionsTab yacht={yacht} />}
-        {tab === "pms" && (
-          <ComingSoonTab icon={Wrench} title="Planned Maintenance (PMS)"
-            blurb="Your vessel's planned-maintenance schedule, running hours and job history will appear here, kept in step with the technical team." />
-        )}
-        {tab === "charter" && (
-          <ComingSoonTab icon={CalendarRange} title="Charter"
-            blurb="Upcoming and past charter bookings, itineraries and charter paperwork for your vessel." />
-        )}
-        {tab === "ism" && (
-          <ComingSoonTab icon={ShieldCheck} title="ISM & Safety"
-            blurb="ISM documentation, drills, audits and safety certificates — your vessel's safety-management record, in one place." />
-        )}
+        {/* On board (Management module). The tabs only appear when the vessel
+            has the module and this position can see them; editing is off in
+            staff preview (the server refuses it there too). */}
+        {tab === "pms" && <PmsSection yachtId={link.yacht_id} canEdit={!preview} />}
+        {tab === "charter" && <CharterSection yachtId={link.yacht_id} canEdit={!preview} showFees={canSeeFinance(link.position)} />}
+        {tab === "ism" && <IsmSection yachtId={link.yacht_id} canEdit={!preview} />}
         {tab === "directory" && <DirectoryTab />}
         </main>
       </div>
@@ -2268,22 +2265,6 @@ function BalancesTab() {
           )}
         </>
       )}
-    </div>
-  );
-}
-
-// ── Coming-soon scaffold (PMS / Charter / ISM) ────────────────────────────────
-function ComingSoonTab({ icon: Icon, title, blurb }: { icon: any; title: string; blurb: string }) {
-  return (
-    <div className="space-y-4">
-      <h1 className="text-lg font-bold">{title}</h1>
-      <Card className="flex flex-col items-center justify-center px-6 py-16 text-center">
-        <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-border bg-background/40">
-          <Icon className="h-6 w-6 text-muted-foreground" />
-        </div>
-        <p className="max-w-sm text-sm text-muted-foreground">{blurb}</p>
-        <span className="mt-4 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-primary">Coming soon</span>
-      </Card>
     </div>
   );
 }

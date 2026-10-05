@@ -1,10 +1,148 @@
 /**
- * Shared building blocks for the "My Yacht" portal sections (Charter / PMS / ISM).
+ * Shared building blocks for the portal's On board sections (Jobs / Charter / ISM):
+ * cards, headers, badges, and the one add/edit form every record kind uses.
  * Kept in step with the portal's Card/typography so a section drops straight in.
- * These components are BUILT BUT NOT YET WIRED into the portal sidebar.
  */
+import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { Loader2 } from "lucide-react";
+import { CheckCircle2, Loader2, Plus, Trash2, X } from "lucide-react";
+import { portalFetch } from "@/lib/portal/portal-fetch";
+import type { OnboardKind } from "@/lib/portal/onboard";
+
+/** Call /api/portal/onboard; throws the server's message on failure. */
+export async function onboardRequest(kind: OnboardKind, init: RequestInit & { id?: string; action?: string } = {}) {
+  const qs = new URLSearchParams({ kind });
+  if (init.id) qs.set("id", init.id);
+  if (init.action) qs.set("action", init.action);
+  const res = await portalFetch(`/api/portal/onboard?${qs}`, {
+    ...init,
+    headers: init.body ? { "Content-Type": "application/json" } : undefined,
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.error ?? "Something went wrong — please try again.");
+  return body;
+}
+
+export type FormField = {
+  key: string;
+  label: string;
+  type?: "text" | "textarea" | "date" | "number" | "select";
+  options?: { value: string; label: string }[];
+  required?: boolean;
+  placeholder?: string;
+  /** Take the full row instead of half of it. */
+  wide?: boolean;
+  /** Show only when this returns true for the current form values. */
+  when?: (form: Record<string, string>) => boolean;
+};
+
+const inputCls =
+  "w-full rounded-xl border border-border bg-background/50 px-3 py-2.5 text-sm outline-none transition focus:border-primary/60 disabled:opacity-50";
+
+/**
+ * Add or edit one record. `initial` null = add. The form sends every field it
+ * shows (blank = cleared); the server checks each one against its own list.
+ */
+export function RecordFormModal({ title, kind, fields, initial, onClose, onSaved, onDelete, deleteLabel = "Delete" }: {
+  title: string; kind: OnboardKind; fields: FormField[];
+  initial: Record<string, any> | null;
+  onClose: () => void; onSaved: () => void;
+  onDelete?: () => Promise<void>; deleteLabel?: string;
+}) {
+  const [form, setForm] = useState<Record<string, string>>(() =>
+    Object.fromEntries(fields.map((f) => [f.key, initial?.[f.key] == null ? "" : String(initial[f.key])])));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+    setForm((f) => ({ ...f, [k]: e.target.value }));
+  const shown = fields.filter((f) => !f.when || f.when(form));
+  const missing = shown.some((f) => f.required && !form[f.key]?.trim());
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true); setError(null);
+    const body: Record<string, string | null> = {};
+    for (const f of shown) body[f.key] = form[f.key]?.trim() || null;
+    try {
+      await onboardRequest(kind, { method: initial?.id ? "PATCH" : "POST", id: initial?.id, body: JSON.stringify(body) });
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save.");
+      setBusy(false);
+    }
+  };
+
+  const remove = async () => {
+    if (!onDelete || !confirm(`${deleteLabel}? This can't be undone.`)) return;
+    setBusy(true); setError(null);
+    try { await onDelete(); } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not delete.");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center"
+         onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-3xl border border-border bg-card p-5 sm:rounded-3xl sm:p-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-bold">{title}</h2>
+          <button onClick={onClose} aria-label="Close" className="flex h-9 w-9 items-center justify-center rounded-xl text-muted-foreground hover:text-foreground">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <form onSubmit={submit} className="mt-4 space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            {shown.map((f) => (
+              <div key={f.key} className={cn(f.wide || f.type === "textarea" ? "col-span-2" : "col-span-2 sm:col-span-1")}>
+                <label htmlFor={`f-${f.key}`} className="mb-1.5 block text-xs font-medium text-muted-foreground">
+                  {f.label}{f.required && <span className="text-primary"> *</span>}
+                </label>
+                {f.type === "select" ? (
+                  <select id={`f-${f.key}`} className={inputCls} value={form[f.key]} onChange={set(f.key)} required={f.required}>
+                    {!f.required && <option value="">—</option>}
+                    {f.options?.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                ) : f.type === "textarea" ? (
+                  <textarea id={`f-${f.key}`} className={cn(inputCls, "min-h-[84px]")} maxLength={4000}
+                            value={form[f.key]} onChange={set(f.key)} placeholder={f.placeholder} />
+                ) : (
+                  <input id={`f-${f.key}`} className={inputCls} type={f.type ?? "text"} required={f.required}
+                         min={f.type === "number" ? 0 : undefined} step={f.type === "number" ? "any" : undefined}
+                         maxLength={f.type === "text" || !f.type ? 160 : undefined}
+                         value={form[f.key]} onChange={set(f.key)} placeholder={f.placeholder} />
+                )}
+              </div>
+            ))}
+          </div>
+          {error && <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-red-300">{error}</div>}
+          <div className="flex gap-2">
+            {initial?.id && onDelete && (
+              <button type="button" onClick={() => void remove()} disabled={busy}
+                      className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-border px-4 text-sm font-medium text-muted-foreground transition hover:border-red-500/40 hover:text-red-300 disabled:opacity-50">
+                <Trash2 className="h-4 w-4" /> {deleteLabel}
+              </button>
+            )}
+            <button type="submit" disabled={busy || missing}
+                    className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-5 text-sm font-semibold text-primary-foreground transition hover:brightness-110 disabled:opacity-50">
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} {initial?.id ? "Save changes" : "Add"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/** The section's "+ Add" button. */
+export function AddButton({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button type="button" onClick={onClick}
+            className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-primary px-4 text-xs font-semibold text-primary-foreground transition hover:brightness-110">
+      <Plus className="h-4 w-4" /> {children}
+    </button>
+  );
+}
 
 export function SectionCard({ className, children }: { className?: string; children: React.ReactNode }) {
   return (
@@ -14,11 +152,14 @@ export function SectionCard({ className, children }: { className?: string; child
   );
 }
 
-export function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }) {
+export function SectionHeader({ title, subtitle, action }: { title: string; subtitle?: string; action?: React.ReactNode }) {
   return (
-    <div>
-      <h1 className="text-lg font-bold">{title}</h1>
-      {subtitle && <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>}
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h1 className="text-lg font-bold">{title}</h1>
+        {subtitle && <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>}
+      </div>
+      {action}
     </div>
   );
 }

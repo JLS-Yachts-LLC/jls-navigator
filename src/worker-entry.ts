@@ -951,6 +951,11 @@ export default {
       const { portalCrewHandler } = await import('./routes/api.portal.crew')
       return portalCrewHandler(request)
     }
+    // Client portal — On board (Management module): jobs, equipment, charters, ISM.
+    if (url.pathname === '/api/portal/onboard') {
+      const { portalOnboardHandler } = await import('./routes/api.portal.onboard')
+      return portalOnboardHandler(request)
+    }
     // Client portal — the vessel's own logo / badge.
     if (url.pathname === '/api/portal/vessel-logo') {
       const { portalVesselLogoHandler } = await import('./routes/api.portal.vessel-logo')
