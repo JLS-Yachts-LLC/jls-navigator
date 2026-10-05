@@ -33,6 +33,7 @@ import { HandoverSection } from "@/components/portal/sections/handover-section";
 import { MovementsSection } from "@/components/portal/sections/movements-section";
 import { QuoteDetail } from "@/components/portal/sections/quote-detail";
 import { GatePassesSection } from "@/components/portal/sections/gatepasses-section";
+import { OrdersSection } from "@/components/portal/sections/orders-section";
 import { CharterSection } from "@/components/portal/sections/charter-section";
 import { IsmSection } from "@/components/portal/sections/ism-section";
 import { canApproveRequisition, hiddenSections, canSeeFinance, canManageVessel } from "@/lib/portal/portal-positions";
@@ -443,7 +444,7 @@ function MfaVerifyScreen({ onDone, onSignOut }: { onDone: () => void; onSignOut:
 // ═══════════════════════════════════════════════════════════════════════════
 type Tab =
   | "home"
-  | "alerts" | "positions" | "crew" | "documents" | "pms" | "balances" | "invoices" | "charter" | "ism" | "stock" | "checklists" | "hours" | "handover" | "movements" | "gatepasses"
+  | "alerts" | "positions" | "crew" | "documents" | "pms" | "balances" | "invoices" | "charter" | "ism" | "stock" | "checklists" | "hours" | "handover" | "movements" | "gatepasses" | "orders"
   | "requests" | "logistics" | "chat" | "directory"
   | "finances"; // legacy alias used by the Home module launcher → routes to Invoices/Finance
 
@@ -465,7 +466,8 @@ const NAV_GROUPS: NavGroup[] = [
       { key: "gatepasses", label: "Gate passes", icon: IdCard },
       { key: "crew", label: "Crew & immigration", icon: Users },
       { key: "documents", label: "Documents", icon: FileCheck2 },
-      { key: "requests", label: "Requests & orders", icon: LifeBuoy },
+      { key: "orders", label: "Orders", icon: ShoppingCart },
+      { key: "requests", label: "Requests", icon: LifeBuoy },
       { key: "balances", label: "Balances", icon: Wallet },
       { key: "invoices", label: "Invoices", icon: FileText },
       { key: "logistics", label: "Deliveries", icon: Truck },
@@ -697,6 +699,9 @@ function PortalShell({ link, email, onSignOut, preview = false }: { link: Captai
           <MovementsSection yachtId={link.yacht_id} canEdit={!preview}
                             onOpenRequest={(id) => { setTab("requests"); setOpenRequestId(id); }} />
         )}
+        {tab === "orders" && (
+          <OrdersSection canEdit={!preview} onOpenRequest={(id) => { setTab("requests"); setOpenRequestId(id); }} />
+        )}
         {tab === "gatepasses" && (
           <GatePassesSection canEdit={!preview} onOpenRequest={(id) => { setTab("requests"); setOpenRequestId(id); }} />
         )}
@@ -743,7 +748,8 @@ function PortalShell({ link, email, onSignOut, preview = false }: { link: Captai
 type ModuleDef = { key: Tab; label: string; blurb: string; icon: any; accent: string };
 // Core tiles — everything JLS does for the vessel as its agent.
 const CORE_MODULES: ModuleDef[] = [
-  { key: "requests",  label: "Requests & orders",      blurb: "Provisioning, bunkering, uniform, permits & more", icon: LifeBuoy,   accent: "text-primary bg-primary/10 border-primary/25" },
+  { key: "orders",    label: "Order from JLS",         blurb: "Provisioning, fuel, uniform, spares — item by item", icon: ShoppingCart, accent: "text-primary bg-primary/10 border-primary/25" },
+  { key: "requests",  label: "Requests",               blurb: "Permits, IT, visas & anything else",           icon: LifeBuoy,   accent: "text-primary bg-primary/10 border-primary/25" },
   { key: "movements", label: "Arrivals & departures",  blurb: "Pre-arrival form & crew sign-on / sign-off",   icon: Anchor,     accent: "text-primary bg-primary/10 border-primary/25" },
   { key: "gatepasses", label: "Gate passes",          blurb: "Contractors, visitors, vehicles — request & renew", icon: IdCard, accent: "text-primary bg-primary/10 border-primary/25" },
   { key: "crew",      label: "Crew & immigration",     blurb: "Roster, visas & passports",                    icon: Users,      accent: "text-primary bg-primary/10 border-primary/25" },

@@ -986,6 +986,11 @@ export default {
       const { portalGatePassesHandler } = await import('./routes/api.portal.gatepasses')
       return portalGatePassesHandler(request)
     }
+    // Client portal — itemised orders to JLS.
+    if (url.pathname === '/api/portal/orders') {
+      const { portalOrdersHandler } = await import('./routes/api.portal.orders')
+      return portalOrdersHandler(request)
+    }
     // Client portal — the vessel's own logo / badge.
     if (url.pathname === '/api/portal/vessel-logo') {
       const { portalVesselLogoHandler } = await import('./routes/api.portal.vessel-logo')

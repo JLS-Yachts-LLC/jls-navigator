@@ -63,6 +63,7 @@ export const SECTION_FEATURE: Record<string, { module: PortalModuleKey; feature:
   invoices:  { module: "core", feature: "finance" },
   finances:  { module: "core", feature: "finance" },
   requests:  { module: "core", feature: "requests" },
+  orders:    { module: "core", feature: "requests" },
   logistics: { module: "core", feature: "logistics" },
   chat:      { module: "core", feature: "chat" },
   directory: { module: "core", feature: "chat" },
