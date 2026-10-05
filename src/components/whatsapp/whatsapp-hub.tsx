@@ -8,6 +8,7 @@
 import { useEffect, useState } from "react";
 import { Inbox, Users, Radio, FileText, Send, Gauge, CalendarClock } from "lucide-react";
 import { useAccess } from "@/lib/auth/useAccess";
+import { useUserPreference } from "@/lib/user-preferences";
 import { cn } from "@/lib/utils";
 import { db } from "./wa-common";
 import { WaInbox } from "./wa-inbox";
@@ -33,12 +34,10 @@ const TAB_KEY = "polaris.whatsapp.tab";
 
 export function WhatsAppHub() {
   const { canAccessModule, loading } = useAccess();
-  const [tab, setTab] = useState<Tab>(() => {
-    try { return (localStorage.getItem(TAB_KEY) as Tab) || "inbox"; } catch { return "inbox"; }
-  });
+  // The last tab each person used — saved to their account, so it reopens there on any device.
+  const [savedTab, setTab] = useUserPreference<string>("whatsapp.tab", "inbox", { key: TAB_KEY, parse: (raw) => raw });
+  const tab: Tab = TABS.some((t) => t.key === savedTab) ? (savedTab as Tab) : "inbox";
   const [unread, setUnread] = useState(0);
-
-  useEffect(() => { try { localStorage.setItem(TAB_KEY, tab); } catch { /* private mode */ } }, [tab]);
 
   // Unread badge on the Inbox tab, whichever tab is open.
   useEffect(() => {

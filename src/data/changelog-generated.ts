@@ -10,6 +10,54 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Captains can now add, edit and remove crew from the Crew screen of the Client Portal, and crew cards show each person's passport number and expiry"
+      },
+      {
+        "type": "feature",
+        "title": "Client Portal users can now be set as Relief Captain, Chief Officer, Second Officer, Chief Stewardess or Chef — officers see the whole portal, while the Chief Stewardess and Chef see everything except the vessel's invoices, balances, PMS and ISM"
+      },
+      {
+        "type": "feature",
+        "title": "Any sidebar section can be folded, including the one you're on — a folded section holding the open screen is highlighted in gold"
+      },
+      {
+        "type": "fix",
+        "title": "Client-portal logins can no longer read or change Orbit 2 checklists, attendance or small-boat registration documents"
+      },
+      {
+        "type": "feature",
+        "title": "The sidebar remembers each person's layout on their account — folded sections and the pinned or collapsed menu come back the next time they sign in, on any device"
+      },
+      {
+        "type": "feature",
+        "title": "Owners of the small boats JLS manages can now be given a Client Portal login — add them in Manage Users against their boat (several boats share one login with a boat picker), and Preview opens any portal user's view read-only"
+      },
+      {
+        "type": "fix",
+        "title": "A failed user delete no longer strips the user's profile and role"
+      },
+      {
+        "type": "feature",
+        "title": "Sidebar sections can be collapsed — click a heading (Operations, Services, Communications…) to fold it away; Polaris remembers your choice and keeps the section you're working in open"
+      },
+      {
+        "type": "fix",
+        "title": "Client portal preview now shows invoices, balances, documents and deliveries, can no longer cancel a client's request, and owners, representatives and pursers see their own tailored menu"
+      },
+      {
+        "type": "fix",
+        "title": "WhatsApp opt-in invitations go once per email address — someone who is the contact for two yachts gets one email, the page lists all their yachts, and their answer is recorded on each of their records; addresses pasted as \"Name <email>\" now work"
+      },
+      {
+        "type": "feature",
+        "title": "Polaris emails now carry the Polaris star in their header"
+      },
+      {
+        "type": "fix",
+        "title": "Bulk visa upload now files documents to SharePoint (SD-0044)"
+      },
+      {
+        "type": "feature",
         "title": "The client portal's sign-in now shows the Polaris star"
       },
       {
