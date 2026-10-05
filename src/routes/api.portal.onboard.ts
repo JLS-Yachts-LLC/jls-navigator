@@ -11,7 +11,11 @@
  *                                                     → change a stock count (body: { delta })
  *   DELETE /api/portal/onboard?kind=<kind>&id=        → remove one
  *
- * kind = pms_task | pms_equipment | charter | ism_cert | ism_drill | stock_item
+ *   POST   /api/portal/onboard?kind=rest_hours&action=set
+ *                                                     → record one crew member's rest for a day
+ *                                                       (body: { crew_member_id, day, rest_hours | null, notes? })
+ *
+ * kind = pms_task | pms_equipment | charter | ism_cert | ism_drill | stock_item | handover | rest_hours
  *
  * The tables are read-only to portal logins at the database (captain_select
  * only), so writes come through here with the service role, hard-filtered to the
@@ -40,7 +44,7 @@ function admin() {
 type Sb = ReturnType<typeof admin>
 
 type FieldKind =
-  | 'text' | 'longtext' | 'date' | 'int' | 'num' | 'uuid'
+  | 'text' | 'longtext' | 'date' | 'int' | 'num' | 'uuid' | 'bool'
   | { oneOf: readonly string[] }
 type FieldSpec = Record<string, FieldKind>
 
@@ -77,16 +81,23 @@ const FIELDS: Record<OnboardKind, FieldSpec> = {
     category: 'text', location: 'text', unit: 'text', quantity: 'num', min_quantity: 'num', par_quantity: 'num',
     supplier_ref: 'text', notes: 'longtext',
   },
+  handover: {
+    department: { oneOf: ['galley', 'interior', 'bar', 'deck', 'engine', 'safety', 'other'] },
+    title: 'text', body: 'longtext', pinned: 'bool',
+  },
+  // Written only through action=set (one row per crew member per day).
+  rest_hours: {},
 }
 
 /** The one field each kind can't be saved without. */
 const REQUIRED: Record<OnboardKind, string> = {
   pms_task: 'title', pms_equipment: 'name', charter: 'charterer_name', ism_cert: 'title', ism_drill: 'drill_type',
-  stock_item: 'name',
+  stock_item: 'name', handover: 'title', rest_hours: 'rest_hours',
 }
 const REQUIRED_LABEL: Record<OnboardKind, string> = {
   pms_task: 'A job title', pms_equipment: 'An equipment name', charter: "The charterer's name",
   ism_cert: 'A certificate title', ism_drill: 'The drill type', stock_item: 'An item name',
+  handover: 'A title', rest_hours: 'Hours of rest',
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -95,11 +106,12 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 class BadRequest extends Error {}
 
 /** Validate a body down to the kind's FIELDS. Missing keys are left out; '' / null clears. */
-function cleanFields(kind: OnboardKind, body: Record<string, unknown>): Record<string, string | number | null> {
-  const out: Record<string, string | number | null> = {}
+function cleanFields(kind: OnboardKind, body: Record<string, unknown>): Record<string, string | number | boolean | null> {
+  const out: Record<string, string | number | boolean | null> = {}
   for (const [key, spec] of Object.entries(FIELDS[kind])) {
     if (!(key in body)) continue
     const raw = body[key]
+    if (spec === 'bool') { out[key] = raw === true || raw === 'true'; continue }
     if (raw === null || raw === '') { out[key] = null; continue }
     if (spec === 'int' || spec === 'num') {
       const n = typeof raw === 'number' ? raw : Number(String(raw).trim())
@@ -141,6 +153,13 @@ async function audit(request: Request, yacht: PortalYacht, kind: OnboardKind, ve
     user_agent: request.headers.get('user-agent'),
     result: 'success',
   })
+}
+
+/** How the caller is named on what they write: their portal display name, else their email. */
+async function callerName(sb: Sb, yacht: PortalYacht): Promise<string> {
+  const { data } = await sb.from('captain_accounts').select('display_name')
+    .eq('user_id', yacht.userId).eq('yacht_id', yacht.yachtId).eq('active', true).maybeSingle()
+  return ((data as any)?.display_name as string | undefined) || yacht.email || 'Crew'
 }
 
 /** The row, if it belongs to this vessel. */
@@ -246,6 +265,30 @@ export async function portalOnboardHandler(request: Request): Promise<Response> 
     const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
     if (!body || typeof body !== 'object') return json({ error: 'Expected a JSON body' }, 400)
 
+    if (request.method === 'POST' && url.searchParams.get('action') === 'set') {
+      if (kind !== 'rest_hours') return json({ error: 'Unknown action' }, 400)
+      const crewId = typeof body.crew_member_id === 'string' && UUID_RE.test(body.crew_member_id) ? body.crew_member_id : null
+      const day = typeof body.day === 'string' && DATE_RE.test(body.day) ? body.day : null
+      if (!crewId || !day) return json({ error: 'Crew member and day are required' }, 400)
+      if (day > new Date(Date.now() + 86400000).toISOString().slice(0, 10)) return json({ error: "Rest can't be recorded for a future day" }, 400)
+      const { data: crew } = await sb.from('crew_members').select('id').eq('id', crewId).eq('yacht_id', yacht.yachtId).maybeSingle()
+      if (!crew) return json({ error: 'That crew member is not on this vessel' }, 400)
+      if (body.rest_hours == null || body.rest_hours === '') {
+        const { error } = await sb.from('onboard_rest_hours').delete().eq('crew_member_id', crewId).eq('day', day).eq('yacht_id', yacht.yachtId)
+        if (error) throw error
+        return json({ ok: true, rest_hours: null })
+      }
+      const hours = Number(body.rest_hours)
+      if (!Number.isFinite(hours) || hours < 0 || hours > 24) return json({ error: 'Hours of rest must be between 0 and 24' }, 400)
+      const notes = typeof body.notes === 'string' ? body.notes.trim().slice(0, 500) || null : undefined
+      const { error } = await sb.from('onboard_rest_hours').upsert({
+        yacht_id: yacht.yachtId, crew_member_id: crewId, day, rest_hours: Math.round(hours * 4) / 4,
+        recorded_by_name: await callerName(sb, yacht), ...(notes !== undefined ? { notes } : {}),
+      }, { onConflict: 'crew_member_id,day' })
+      if (error) throw error
+      return json({ ok: true, rest_hours: Math.round(hours * 4) / 4 })
+    }
+
     if (request.method === 'POST' && url.searchParams.get('action') === 'adjust') {
       if (kind !== 'stock_item') return json({ error: 'Only stock can be adjusted' }, 400)
       const item = await ownRow(sb, yacht, kind, id)
@@ -267,12 +310,16 @@ export async function portalOnboardHandler(request: Request): Promise<Response> 
       return json({ ok: true, ...update })
     }
 
+    if (kind === 'rest_hours') return json({ error: 'Record rest with action=set' }, 400)
     const fields = cleanFields(kind, body)
-    if ('equipment_id' in fields) await checkEquipment(sb, yacht, fields.equipment_id)
+    if ('equipment_id' in fields) await checkEquipment(sb, yacht, fields.equipment_id as string | null)
 
     if (request.method === 'POST') {
       if (!fields[REQUIRED[kind]]) return json({ error: `${REQUIRED_LABEL[kind]} is required` }, 400)
-      const row = await withDerivedStatus(sb, yacht, kind, { ...fields, yacht_id: yacht.yachtId })
+      const row = await withDerivedStatus(sb, yacht, kind, {
+        ...fields, yacht_id: yacht.yachtId,
+        ...(kind === 'handover' ? { author_name: await callerName(sb, yacht) } : {}),
+      })
       const { data, error } = await sb.from(table).insert(row).select('id').single()
       if (error || !data) throw error ?? new Error('Could not save')
       await audit(request, yacht, kind, 'added', data.id, labelOf(kind, row))

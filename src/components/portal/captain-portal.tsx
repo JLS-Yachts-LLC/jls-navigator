@@ -18,7 +18,7 @@ import {
   MapPin, FileText, Download, ExternalLink, Clock, CheckCircle2,
   Bell, Compass, Wrench, CalendarRange, ShieldCheck, Menu, AlertTriangle, Eye,
   Pencil, Trash2, UserPlus, RotateCcw, ImagePlus,
-  ClipboardCheck,
+  ClipboardCheck, NotebookPen,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { portalFetch } from "@/lib/portal/portal-fetch";
@@ -28,6 +28,8 @@ import { moduleState, sectionEnabled, type PortalModuleState, type PortalModuleR
 import { PmsSection } from "@/components/portal/sections/pms-section";
 import { StockSection } from "@/components/portal/sections/stock-section";
 import { ChecklistsSection } from "@/components/portal/sections/checklists-section";
+import { HoursSection } from "@/components/portal/sections/hours-section";
+import { HandoverSection } from "@/components/portal/sections/handover-section";
 import { CharterSection } from "@/components/portal/sections/charter-section";
 import { IsmSection } from "@/components/portal/sections/ism-section";
 import { canApproveRequisition, hiddenSections, canSeeFinance, canManageVessel } from "@/lib/portal/portal-positions";
@@ -436,7 +438,7 @@ function MfaVerifyScreen({ onDone, onSignOut }: { onDone: () => void; onSignOut:
 // ═══════════════════════════════════════════════════════════════════════════
 type Tab =
   | "home"
-  | "alerts" | "positions" | "crew" | "documents" | "pms" | "balances" | "invoices" | "charter" | "ism" | "stock" | "checklists"
+  | "alerts" | "positions" | "crew" | "documents" | "pms" | "balances" | "invoices" | "charter" | "ism" | "stock" | "checklists" | "hours" | "handover"
   | "requests" | "logistics" | "chat" | "directory"
   | "finances"; // legacy alias used by the Home module launcher → routes to Invoices/Finance
 
@@ -470,6 +472,8 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { key: "stock", label: "Stock & requisitions", icon: Package },
       { key: "checklists", label: "Checklists", icon: ClipboardCheck },
+      { key: "hours", label: "Hours of rest", icon: Clock },
+      { key: "handover", label: "Handover log", icon: NotebookPen },
       { key: "pms", label: "Jobs & maintenance", icon: Wrench },
       { key: "charter", label: "Guests & charter", icon: CalendarRange },
       { key: "ism", label: "ISM & safety", icon: ShieldCheck },
@@ -697,6 +701,8 @@ function PortalShell({ link, email, onSignOut, preview = false }: { link: Captai
                         onOpenRequest={(id) => { setTab("requests"); setOpenRequestId(id); }} />
         )}
         {tab === "checklists" && <ChecklistsSection yachtId={link.yacht_id} canEdit={!preview} />}
+        {tab === "hours" && <HoursSection yachtId={link.yacht_id} canEdit={!preview} />}
+        {tab === "handover" && <HandoverSection yachtId={link.yacht_id} canEdit={!preview} />}
         {tab === "pms" && <PmsSection yachtId={link.yacht_id} canEdit={!preview} />}
         {tab === "charter" && <CharterSection yachtId={link.yacht_id} canEdit={!preview} showFees={canSeeFinance(link.position)} />}
         {tab === "ism" && <IsmSection yachtId={link.yacht_id} canEdit={!preview} />}
@@ -734,6 +740,8 @@ const CORE_MODULES: ModuleDef[] = [
 const MANAGEMENT_MODULES: ModuleDef[] = [
   { key: "stock",   label: "Stock & requisitions", blurb: "What's on board, what's low & orders to JLS", icon: Package,       accent: "text-teal-300 bg-teal-500/10 border-teal-500/25" },
   { key: "checklists", label: "Checklists",       blurb: "Departure, arrival, daily rounds & more",        icon: ClipboardCheck, accent: "text-teal-300 bg-teal-500/10 border-teal-500/25" },
+  { key: "hours",   label: "Hours of rest",        blurb: "Daily rest per crew, MLC minimums flagged",      icon: Clock,         accent: "text-teal-300 bg-teal-500/10 border-teal-500/25" },
+  { key: "handover", label: "Handover log",        blurb: "Notes for the relief & the next watch",          icon: NotebookPen,   accent: "text-teal-300 bg-teal-500/10 border-teal-500/25" },
   { key: "pms",     label: "Jobs & maintenance", blurb: "Planned maintenance, running hours & defects", icon: Wrench,        accent: "text-teal-300 bg-teal-500/10 border-teal-500/25" },
   { key: "charter", label: "Guests & charter",   blurb: "Bookings, itineraries & guest preferences",   icon: CalendarRange, accent: "text-teal-300 bg-teal-500/10 border-teal-500/25" },
   { key: "ism",     label: "ISM & safety",       blurb: "Certificates, drills & the safety record",    icon: ShieldCheck,   accent: "text-teal-300 bg-teal-500/10 border-teal-500/25" },

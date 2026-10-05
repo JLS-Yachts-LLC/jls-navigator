@@ -40,6 +40,8 @@ export const PORTAL_MODULES: Record<PortalModuleKey, {
     features: [
       { key: "stock",   label: "Stock & requisitions", blurb: "What's on board, minimum levels, and requisitions sent to JLS" },
       { key: "checklists", label: "Checklists", blurb: "Departure, arrival, daily rounds, guest turnaround — the crew's own" },
+      { key: "hours",   label: "Hours of rest",       blurb: "Daily rest per crew member, with the MLC minimums flagged" },
+      { key: "handover", label: "Handover log",       blurb: "Notes the crew leave for the relief and the next watch" },
       { key: "pms",     label: "Jobs & maintenance", blurb: "Planned maintenance, running hours and defects" },
       { key: "charter", label: "Guests & charter",   blurb: "Bookings, itineraries and guest preferences" },
       { key: "ism",     label: "ISM & safety",       blurb: "Certificates, drills and the safety-management record" },
@@ -62,6 +64,8 @@ export const SECTION_FEATURE: Record<string, { module: PortalModuleKey; feature:
   directory: { module: "core", feature: "chat" },
   stock:     { module: "management", feature: "stock" },
   checklists: { module: "management", feature: "checklists" },
+  hours:     { module: "management", feature: "hours" },
+  handover:  { module: "management", feature: "handover" },
   pms:       { module: "management", feature: "pms" },
   charter:   { module: "management", feature: "charter" },
   ism:       { module: "management", feature: "ism" },

@@ -12,6 +12,8 @@ export const ONBOARD_KINDS = {
   ism_cert:      { table: "ism_certificates", section: "ism" },
   ism_drill:     { table: "ism_drills",       section: "ism" },
   stock_item:    { table: "onboard_stock_items", section: "stock" },
+  handover:      { table: "onboard_handover_notes", section: "handover" },
+  rest_hours:    { table: "onboard_rest_hours", section: "hours" },
 } as const;
 export type OnboardKind = keyof typeof ONBOARD_KINDS;
 
@@ -123,4 +125,25 @@ export const REQUISITION_STATUS_LABEL: Record<string, string> = {
 /** Which JLS request category a requisition goes to, by department. */
 export function requestCategoryFor(department: string): "provisioning" | "general" {
   return ["galley", "interior", "bar"].includes(department) ? "provisioning" : "general";
+}
+
+/** MLC 2006 / STCW minimum hours of rest. */
+export const REST_MIN_24H = 10;
+export const REST_MIN_7D = 77;
+
+/**
+ * Rest over the 7 days ending on `day` (YYYY-MM-DD), from a crew member's
+ * recorded days. Days with no record count as unknown — the total is null
+ * unless all seven are recorded, so a gap is never mistaken for a breach.
+ */
+export function restOver7Days(byDay: Map<string, number>, day: string): number | null {
+  let total = 0;
+  const d = new Date(`${day}T00:00:00Z`);
+  for (let i = 0; i < 7; i++) {
+    const key = new Date(d.getTime() - i * 86400000).toISOString().slice(0, 10);
+    const v = byDay.get(key);
+    if (v == null) return null;
+    total += v;
+  }
+  return total;
 }
