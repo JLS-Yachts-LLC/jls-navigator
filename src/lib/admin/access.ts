@@ -94,7 +94,7 @@ export async function requireAdminAccess(
   }
 
   if (!role || !allowedRoles.includes(role)) {
-    return denied(403, 'Forbidden — insufficient role')
+    return denied(403, 'Your Polaris role does not allow this. Ask an admin to update your access.')
   }
 
   return {

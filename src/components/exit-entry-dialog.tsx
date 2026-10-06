@@ -58,8 +58,12 @@ export function ExitEntryDialog({
     editing ?? { permit_type: "exit_entry", status: "pending", dma_phase: "Exit" }
   );
 
+  // Once a new permit has been saved, a retry (say after a failed send) must
+  // update that permit, not create another copy (SD-0046).
+  const savedIdRef = useRef<string | null>(null);
   useEffect(() => {
     setForm(editing ?? { permit_type: "exit_entry", status: "pending", dma_phase: "Exit" });
+    savedIdRef.current = null;
   }, [editing]);
 
   const subType = (form.dma_phase ?? "Exit") as SubType;
@@ -106,13 +110,15 @@ export function ExitEntryDialog({
       notes: form.notes || null,
     };
 
-    if (editing) {
+    const existingId = editing?.id ?? savedIdRef.current;
+
+    if (existingId) {
       await updateOrThrow(
-        supabase.from("permits").update(payload).eq("id", editing.id).select("id"),
+        supabase.from("permits").update(payload).eq("id", existingId).select("id"),
         "permit",
       );
       toast.success("Permit updated");
-      return editing.id;
+      return existingId;
     }
     const { data, error } = await supabase
       .from("permits")
@@ -121,7 +127,8 @@ export function ExitEntryDialog({
       .single();
     if (error) throw error;
     toast.success("Permit created");
-    return (data as { id: string }).id;
+    savedIdRef.current = (data as { id: string }).id;
+    return savedIdRef.current;
   }
 
   async function handleSaveOnly() {

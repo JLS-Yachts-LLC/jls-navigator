@@ -47,8 +47,12 @@ export function GatePassDialog({
     editing ?? { permit_type: "gate_pass", status: "pending" }
   );
 
+  // Once a new permit has been saved, a retry (say after a failed send) must
+  // update that permit, not create another copy (SD-0046).
+  const savedIdRef = useRef<string | null>(null);
   useEffect(() => {
     setForm(editing ?? { permit_type: "gate_pass", status: "pending" });
+    savedIdRef.current = null;
   }, [editing]);
 
   function set<K extends keyof Permit>(k: K, v: Permit[K] | string | null) {
@@ -94,13 +98,15 @@ export function GatePassDialog({
       notes: form.notes || null,
     };
 
-    if (editing) {
+    const existingId = editing?.id ?? savedIdRef.current;
+
+    if (existingId) {
       await updateOrThrow(
-        supabase.from("permits").update(payload).eq("id", editing.id).select("id"),
+        supabase.from("permits").update(payload).eq("id", existingId).select("id"),
         "gate pass",
       );
       toast.success("Gate pass updated");
-      return editing.id;
+      return existingId;
     }
     const { data, error } = await supabase
       .from("permits")
@@ -109,7 +115,8 @@ export function GatePassDialog({
       .single();
     if (error) throw error;
     toast.success("Gate pass created");
-    return (data as { id: string }).id;
+    savedIdRef.current = (data as { id: string }).id;
+    return savedIdRef.current;
   }
 
   async function handleSaveOnly() {

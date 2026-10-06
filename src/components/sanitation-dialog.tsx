@@ -45,8 +45,12 @@ export function SanitationDialog({ yachts, editing, userId, onSaved }: Props) {
   const [fileName, setFileName] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Once a new permit has been saved, a retry (say after a failed send) must
+  // update that permit, not create another copy (SD-0046).
+  const savedIdRef = useRef<string | null>(null);
   useEffect(() => {
     setForm(editing ?? { permit_type: "sanitation", status: "pending" });
+    savedIdRef.current = null;
     if (editing?.document_url) {
       const parts = editing.document_url.split("/");
       setFileName(decodeURIComponent(parts[parts.length - 1].split("?")[0]));
@@ -100,14 +104,15 @@ export function SanitationDialog({ yachts, editing, userId, onSaved }: Props) {
   async function doSave(): Promise<string> {
     if (!userId) throw new Error("Not authenticated");
     const payload = buildPayload();
-    if (editing) {
+    const existingId = editing?.id ?? savedIdRef.current;
+    if (existingId) {
       const { error } = await supabase
         .from("permits")
         .update(payload as never)
-        .eq("id", editing.id);
+        .eq("id", existingId);
       if (error) throw error;
       toast.success("Permit updated");
-      return editing.id;
+      return existingId;
     } else {
       const { data, error } = await supabase
         .from("permits")
@@ -116,7 +121,8 @@ export function SanitationDialog({ yachts, editing, userId, onSaved }: Props) {
         .single();
       if (error) throw error;
       toast.success("Permit created");
-      return (data as { id: string }).id;
+      savedIdRef.current = (data as { id: string }).id;
+      return savedIdRef.current;
     }
   }
 
