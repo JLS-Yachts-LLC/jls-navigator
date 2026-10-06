@@ -12,11 +12,12 @@
  *   5. Done              — status becomes "Complete - Team"; the database stamps Work
  *                          Completion with its own clock, not the phone's
  *
- * Nothing is held on the phone. Every tap is written straight to the same
- * orbit2_projects / orbit2_notes / orbit2_files rows the office is looking at,
- * which is what lets the crew minimise the app mid-job, or lose signal, and pick
- * up exactly where they were. The one exception is a half-typed comment, which
- * is kept locally so a suspended tab does not lose it.
+ * With signal, every tap is written straight to the same orbit2_projects /
+ * orbit2_notes / orbit2_files rows the office is looking at. With no signal the
+ * app keeps working (src/lib/orbit-offline): jobs come from what was last loaded
+ * on the phone, and each tap waits in an outbox that is sent, in order and with
+ * the time it was tapped, as soon as signal returns. A half-typed comment is
+ * also kept locally so a suspended tab does not lose it.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { errorMessage } from "@/lib/error-message";
@@ -44,6 +45,8 @@ import { FieldAdmin } from "./orbit2-field-admin";
 import { useOrbit2Identity } from "./orbit2-identity";
 import { stamp } from "./orbit2-fields";
 import { InstallBanner, InstallButton, InstallSheet } from "./orbit2-install";
+import { OfflineBar, useOrbitOffline } from "./orbit2-offline-bar";
+import { ORBIT_SYNCED_EVENT, installOrbitOffline, prefetchFieldJobs } from "@/lib/orbit-offline";
 
 const sb = supabase as any;
 const VIEW_AS_KEY = "orbit2.field.viewAs";
@@ -67,13 +70,17 @@ export function Orbit2FieldApp() {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const identity = useOrbit2Identity();
+  // Arriving here from elsewhere in Polaris (not a full page load) installs it too.
+  useEffect(() => { installOrbitOffline(); }, []);
+  const net = useOrbitOffline();
 
   // The route's beforeLoad only covers in-app navigation: on a full page load it
   // runs during SSR, where the browser-held session is invisible, so a signed-out
   // phone would otherwise sit on an empty header. Same belt-and-braces AppLayout uses.
+  // With no signal the sign-in page can't load, so the screen below explains instead.
   useEffect(() => {
-    if (!authLoading && !user) navigate({ to: "/auth", search: { next: ORBIT_FIELD_PATH } as any });
-  }, [authLoading, user, navigate]);
+    if (!authLoading && !user && !net.offline) navigate({ to: "/auth", search: { next: ORBIT_FIELD_PATH } as any });
+  }, [authLoading, user, navigate, net.offline]);
 
   // Who the job list is for. A field team member is matched to the roster by name.
   // An admin who is not on the roster (the office, or IT) can pick someone to see
@@ -86,6 +93,8 @@ export function Orbit2FieldApp() {
   /** Managed Boats jobs assigned to this person — Maintenance, Repair and Inventory. */
   const [boatJobs, setBoatJobs] = useState<BoatJob[]>([]);
   const [loading, setLoading] = useState(true);
+  /** No signal, and the job list has never been loaded on this phone. */
+  const [notLoaded, setNotLoaded] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [howToInstall, setHowToInstall] = useState(false);
   // Admins get two tabs — My Job (the crew view, also for covering a colleague)
@@ -116,8 +125,11 @@ export function Orbit2FieldApp() {
         .in("status", ["Pending", "Ongoing"])
         .order("schedule_date", { ascending: true, nullsFirst: false }),
     ]);
-    if (projects.error) toast.error(projects.error.message);
-    if (boatTasks.error) toast.error(boatTasks.error.message);
+    // "OFFLINE" = no signal and nothing saved yet: the list says so, no toast.
+    const gap = projects.error?.code === "OFFLINE" || boatTasks.error?.code === "OFFLINE";
+    setNotLoaded(gap);
+    if (projects.error && !gap) toast.error(projects.error.message);
+    if (boatTasks.error && !gap) toast.error(boatTasks.error.message);
     setTasks((projects.data ?? []) as Orbit2Project[]);
 
     const bt = (boatTasks.data ?? []) as Orbit2BoatTask[];
@@ -127,9 +139,24 @@ export function Orbit2FieldApp() {
       : [];
     setBoatJobs(bt.flatMap((t) => { const b = boats.find((x) => x.id === t.boat_id); return b ? [{ task: t, boat: b }] : []; }));
     setLoading(false);
+    // With signal, load every job's details now, so each one also works with none later.
+    if (!projects.error && !boatTasks.error) {
+      void prefetchFieldJobs({
+        projectIds: ((projects.data ?? []) as Orbit2Project[]).map((t) => t.id),
+        boatTaskIds: bt.map((t) => t.id),
+        boatIds,
+      });
+    }
   }, [teamName]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // Signal came back and the outbox went out — show the office's latest too.
+  useEffect(() => {
+    const onSynced = () => { toast.success("Back online — your changes have been sent."); void load(); };
+    window.addEventListener(ORBIT_SYNCED_EVENT, onSynced);
+    return () => window.removeEventListener(ORBIT_SYNCED_EVENT, onSynced);
+  }, [load]);
 
   // The crew minimise the app between jobs. Coming back to it must show what the
   // office has changed in the meantime, not what was on screen when they left.
@@ -143,6 +170,10 @@ export function Orbit2FieldApp() {
   const openBoat = boatJobs.find((j) => j.task.id === openId) ?? null;
 
   async function signOut() {
+    if (net.pending > 0 && !window.confirm(
+      `${net.pending} change${net.pending === 1 ? " hasn't" : "s haven't"} been sent yet. Sign out anyway? ` +
+      "They stay on this phone and are sent the next time you sign in here.",
+    )) return;
     await supabase.auth.signOut();
     navigate({ to: "/auth", search: { next: ORBIT_FIELD_PATH } as any });
   }
@@ -170,10 +201,19 @@ export function Orbit2FieldApp() {
           </div>
         </header>
 
+        <OfflineBar status={net} />
+
         <InstallSheet open={howToInstall} onClose={() => setHowToInstall(false)} />
 
         {/* ── Who am I ── */}
-        {!identity.name ? (
+        {!authLoading && !user && net.offline ? (
+          <Centered>
+            <p className="text-[16px] font-semibold">Sign in needs signal</p>
+            <p className="mt-2 max-w-xs text-[15px] text-muted-foreground">
+              Open Orbit once with signal and sign in. After that it works with no signal.
+            </p>
+          </Centered>
+        ) : !identity.name ? (
           <Centered><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></Centered>
         ) : showTabs && tab === "admin" ? (
           <div className="flex flex-1 flex-col pb-20">
@@ -223,6 +263,7 @@ export function Orbit2FieldApp() {
             viewingAs={!ownName}
             onOpen={setOpenId}
             onRefresh={() => void load()}
+            notLoaded={notLoaded}
             onChangePerson={!ownName ? () => { store.del(VIEW_AS_KEY); setViewAs(null); } : undefined}
             banner={<InstallBanner onHowTo={() => setHowToInstall(true)} />}
           />
@@ -254,7 +295,7 @@ export function Orbit2FieldApp() {
 export type BoatJob = { task: Orbit2BoatTask; boat: Orbit2Boat };
 
 export function TaskList({
-  tasks, boatJobs = [], loading, teamName, viewingAs, onOpen, onRefresh, onChangePerson, banner,
+  tasks, boatJobs = [], loading, teamName, viewingAs, onOpen, onRefresh, onChangePerson, banner, notLoaded = false,
 }: {
   tasks: Orbit2Project[];
   boatJobs?: BoatJob[];
@@ -266,6 +307,8 @@ export function TaskList({
   onChangePerson?: () => void;
   /** Shown above the list — the Add to Home Screen prompt. */
   banner?: React.ReactNode;
+  /** No signal, and this list has never been loaded on this phone. */
+  notLoaded?: boolean;
 }) {
   return (
     <main className="flex-1 space-y-3 px-4 py-4 pb-24">
@@ -291,6 +334,13 @@ export function TaskList({
 
       {loading && tasks.length === 0 && boatJobs.length === 0 ? (
         <Centered><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></Centered>
+      ) : notLoaded && tasks.length === 0 && boatJobs.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border px-6 py-12 text-center">
+          <p className="text-[16px] font-semibold">Your jobs aren't on this phone yet</p>
+          <p className="mt-1 text-[15px] text-muted-foreground">
+            Open Orbit once with signal. Your jobs are then kept on the phone and work with no signal.
+          </p>
+        </div>
       ) : tasks.length === 0 && boatJobs.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border px-6 py-12 text-center">
           <CheckCircle2 className="mx-auto mb-3 h-9 w-9 text-muted-foreground/50" />
