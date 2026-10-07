@@ -206,7 +206,9 @@ export const PERSONAL_TOKENS = [
   { token: "{{vessel}}", label: "Yacht name", sample: "M/Y Serenity" },
 ] as const;
 
-const TOKEN_RE = /\{\{\s*(name|first_name|vessel|yacht)\s*\}\}/gi;
+// Also accepts the chip LABELS typed by hand — {{Yacht name}}, {{First name}},
+// {{Full name}} — which otherwise went out to clients as the literal braces.
+const TOKEN_RE = /\{\{\s*(name|full[ _]?name|first[ _]?name|vessel(?:[ _]?name)?|yacht(?:[ _]?name)?)\s*\}\}/gi;
 
 /**
  * Fill personal fields into a value. Missing data falls back to something that
@@ -216,9 +218,9 @@ export function personalise(value: string, who: { name?: string | null; vessel?:
   const name = (who.name ?? "").trim();
   const vessel = (who.vessel ?? "").trim();
   return value.replace(TOKEN_RE, (_, k: string) => {
-    switch (k.toLowerCase()) {
-      case "name": return name || "there";
-      case "first_name": return name.split(/\s+/)[0] || "there";
+    switch (k.toLowerCase().replace(/[ _]/g, "")) {
+      case "name": case "fullname": return name || "there";
+      case "firstname": return name.split(/\s+/)[0] || "there";
       default: return vessel || "your yacht";
     }
   });

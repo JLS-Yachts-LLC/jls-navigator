@@ -52,8 +52,10 @@ export function TokenBar({ className, hint = true }: { className?: string; hint?
           type="button"
           draggable
           title={`Inserts ${t.token} — becomes each person's ${t.label.toLowerCase()}, e.g. "${t.sample}"`}
-          // Keep focus in the box being typed in, so a click inserts there.
-          onMouseDown={(e) => e.preventDefault()}
+          // No preventDefault on mousedown: it also cancels the browser's drag
+          // (dragstart never fires), which is what broke drag-and-drop. A click
+          // still lands in the right box — the last-used box is remembered, and
+          // insertAt() refocuses it at the caret it kept.
           onClick={() => {
             const target = ctx?.last.current;
             if (target && target.el.isConnected) insertAt(target, t.token);
