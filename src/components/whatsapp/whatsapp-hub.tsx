@@ -6,7 +6,7 @@
  * View access reads everything; edit access sends, invites and changes.
  */
 import { useEffect, useState } from "react";
-import { Inbox, Users, Radio, FileText, Send, Gauge, CalendarClock } from "lucide-react";
+import { Inbox, Users, Radio, FileText, Send, Gauge, CalendarClock, ListChecks } from "lucide-react";
 import { useAccess } from "@/lib/auth/useAccess";
 import { useUserPreference } from "@/lib/user-preferences";
 import { cn } from "@/lib/utils";
@@ -18,6 +18,7 @@ import { WaTemplates } from "./wa-templates";
 import { WaSends } from "./wa-sends";
 import { WaOverview } from "./wa-overview";
 import { WaAutomations } from "./wa-automations";
+import { WaResponses } from "./wa-responses";
 
 const TABS = [
   { key: "inbox", label: "Inbox", icon: Inbox },
@@ -25,6 +26,7 @@ const TABS = [
   { key: "lists", label: "Lists", icon: Radio },
   { key: "templates", label: "Templates", icon: FileText },
   { key: "sends", label: "Sends", icon: Send },
+  { key: "responses", label: "Responses", icon: ListChecks },
   { key: "automations", label: "Automations", icon: CalendarClock },
   { key: "overview", label: "Setup", icon: Gauge },
 ] as const;
@@ -82,6 +84,7 @@ export function WhatsAppHub() {
       {tab === "lists" && <WaLists canEdit={canEdit} />}
       {tab === "templates" && <WaTemplates canEdit={canEdit} />}
       {tab === "sends" && <WaSends canEdit={canEdit} />}
+      {tab === "responses" && <WaResponses canEdit={canEdit} />}
       {tab === "automations" && <WaAutomations canEdit={canEdit} />}
       {tab === "overview" && <WaOverview />}
     </div>
