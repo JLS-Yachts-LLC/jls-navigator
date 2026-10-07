@@ -42,17 +42,19 @@
     //   CLIENT_EMAIL_ENABLED         → with the master on, allows delivery outside
     //                                  jlsyachts.com / newhorizon-it.co.uk
     //                                  (see src/lib/mail-guard.server.ts)
-    //   PERMIT_EXPIRY_ALERTS_ENABLED → the daily 08:00 UTC permit expiry cron
+    //   PERMIT_EXPIRY_ALERTS_ENABLED → emails from the daily 08:00 UTC permit expiry
+    //                                  reminders (60/30/7 days and on the day) to the
+    //                                  vessel's agents + a Port Ops copy. Staff only.
     //
-    // Remaining lever: PERMIT_EXPIRY_ALERTS_ENABLED. Leave it "false" unless the client
-    // explicitly asks for the daily expiry digest to resume.
+    // PERMIT_EXPIRY_ALERTS_ENABLED was turned on 7 Oct 2026 when the Agency team asked
+    // for expiry reminders (SD-0047). The in-app reminders run either way.
     //
     // NOT covered by these switches (they are not Polaris sends): Supabase Auth
     // password-reset / invite mail, and Power Automate flows on the SharePoint
     // lists that email vessels when a list item changes.
     "EMAIL_ENABLED": "true",  // MASTER SWITCH — restored 26 Aug 2026
     "CLIENT_EMAIL_ENABLED": "true",   // restored 1 Sep 2026 — client/vessel addresses allowed again
-    "PERMIT_EXPIRY_ALERTS_ENABLED": "false",  // deliberately OFF: no expiry mail unless a human presses Send
+    "PERMIT_EXPIRY_ALERTS_ENABLED": "true",  // ON since 7 Oct 2026 (SD-0047) — staff reminders only, never clients
 
     // ── Outbound SharePoint push — FULLY ENABLED (two-way sync intact) ────────
     // Empty = nothing suppressed. Briefly set to "permits" on 2026-08-15, when a

@@ -19,7 +19,9 @@ import { toast } from "sonner";
 import { z } from "zod";
 import { YachtDocumentsCard } from "@/components/vessels/YachtDocumentsCard";
 import { YachtActivityLog } from "./YachtActivityLog";
-import { YachtAgentPicker } from "@/components/vessels/YachtAgentPicker";
+import { YachtAgentsPanel, useYachtAgents } from "@/components/vessels/vessel-agents";
+import { PermitExpiryPanel } from "@/components/vessels/permit-expiry";
+import { useAccess } from "@/lib/auth/useAccess";
 import { VesselLogoCard } from "@/components/vessels/VesselLogoCard";
 import { VesselProvenance, SameNameBadge, VesselConfirmDetails } from "@/components/vessels/VesselProvenance";
 import {
@@ -150,6 +152,11 @@ export function YachtDetail({
   const { user } = useAuth();
   const navigate = useNavigate();
   const [y, setY] = useState<Record<string, unknown> | null>(null);
+  // Several agents per vessel, each covering particular permits (SD-0047). The
+  // database keeps agent_user_id as the lead, so this page's copy is refreshed on change.
+  const vesselAgents = useYachtAgents(id);
+  const { canAccessModule } = useAccess();
+  const canEditAgents = canAccessModule("agency", "edit");
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({});
@@ -485,11 +492,20 @@ export function YachtDetail({
       <div className="flex-1 overflow-auto p-6">
         <div className="mx-auto grid max-w-6xl grid-cols-1 gap-6 lg:grid-cols-3">
           <div className="lg:col-span-1 space-y-4">
-            {/* Who is accountable for this vessel's paperwork */}
-            <YachtAgentPicker
+            {/* What expires when, and who looks after it */}
+            <PermitExpiryPanel
               yachtId={String(y.id)}
-              agentUserId={(y as any).agent_user_id ?? null}
-              onChanged={(next) => setY((prev: any) => (prev ? { ...prev, agent_user_id: next } : prev))}
+              cruisingPermitExpiry={typeof (y as any).cruising_permit_expiry === "string" ? (y as any).cruising_permit_expiry : null}
+              agents={vesselAgents.rows}
+            />
+            {/* Who is accountable for this vessel's paperwork */}
+            <YachtAgentsPanel
+              yachtId={String(y.id)}
+              canEdit={canEditAgents}
+              agents={vesselAgents.rows}
+              loaded={vesselAgents.loaded}
+              reload={vesselAgents.reload}
+              onLeadChanged={(next) => setY((prev: any) => (prev ? { ...prev, agent_user_id: next } : prev))}
             />
             <VesselLogoCard
               yachtId={String(y.id)}

@@ -25,6 +25,9 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { YachtAgentPicker } from "./YachtAgentPicker";
+import { useYachtAgents, agentsLine, type AgentRow } from "./vessel-agents";
+import { useFleetPermitExpiry, PermitExpiryChips } from "./permit-expiry";
+import type { CurrentPermit } from "@/lib/permit-expiry";
 import { VesselProvenance, SameNameBadge, VesselConfirmDetails, normVesselName } from "./VesselProvenance";
 
 
@@ -231,6 +234,12 @@ export function YachtsPage({
 
   useEffect(() => { void load(); }, []);
 
+  // A vessel's agents (several, each covering particular permits — SD-0047) and
+  // its permits' days left, for the cards, the Agent column and "My vessels".
+  const vesselAgents = useYachtAgents();
+  const permitExpiry = useFleetPermitExpiry(yachts as any);
+  const isMine = (y: Yacht) => (y as any).agent_user_id === user?.id || !!vesselAgents.byYacht.get(y.id)?.some((a) => a.user_id === user?.id);
+
   // Staff names for the Agent column
   useEffect(() => {
     void (async () => {
@@ -343,13 +352,15 @@ export function YachtsPage({
   const baseRows = useMemo(
     () => yachts
       .filter((y) => (archiveView === "archived" ? !!y.archive : !y.archive))
-      .filter((y) => (mineOnly ? (y as any).agent_user_id === user?.id : true)),
-    [yachts, archiveView, mineOnly, user?.id],
+      .filter((y) => (mineOnly ? isMine(y) : true)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [yachts, archiveView, mineOnly, user?.id, vesselAgents.byYacht],
   );
 
   const myVesselCount = useMemo(
-    () => yachts.filter((y) => !y.archive && (y as any).agent_user_id === user?.id).length,
-    [yachts, user?.id],
+    () => yachts.filter((y) => !y.archive && isMine(y)).length,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [yachts, user?.id, vesselAgents.byYacht],
   );
 
   // ── View preset functions ────────────────────────────────────────────────────
@@ -798,11 +809,12 @@ export function YachtsPage({
             onMovementFilter={toggleMovementFilter}
             staffNames={staffNames}
             dupIds={dupIds}
-            onAgentChanged={(id, next) => setYachts((prev) => prev.map((y) =>
-              y.id === id ? { ...y, agent_user_id: next } : y))}
+            onAgentChanged={(id, next) => { setYachts((prev) => prev.map((y) =>
+              y.id === id ? { ...y, agent_user_id: next } : y)); void vesselAgents.reload(); }}
+            agentsByYacht={vesselAgents.byYacht}
           />
         ) : (
-          <CardsView rows={filtered} staleIds={new Set(filtered.filter(isStale).map((y) => y.id))} small={view === "small"} onArchive={canEditVessels ? setArchiveTarget : undefined} onOpenYacht={onOpenYacht} onMovementFilter={toggleMovementFilter} staffNames={staffNames} dupIds={dupIds} />
+          <CardsView rows={filtered} staleIds={new Set(filtered.filter(isStale).map((y) => y.id))} small={view === "small"} onArchive={canEditVessels ? setArchiveTarget : undefined} onOpenYacht={onOpenYacht} onMovementFilter={toggleMovementFilter} staffNames={staffNames} dupIds={dupIds} agentsByYacht={vesselAgents.byYacht} expiryByYacht={permitExpiry} />
         )}
       </div>
 
@@ -965,7 +977,7 @@ function trackUrl(y: Yacht): string {
 
 function ListView({
   rows, visible, sortKey, sortDir, onSort, quickEditId, setQuickEditId, updateStatus, onArchive, canEdit, onOpenYacht, outstanding = {}, onMovementFilter,
-  staffNames = {}, onAgentChanged, dupIds,
+  staffNames = {}, onAgentChanged, dupIds, agentsByYacht,
 }: {
   /** Vessels whose name another record also uses — shown with where each came from. */
   dupIds?: Set<string>;
@@ -985,6 +997,8 @@ function ListView({
   /** user_id → display name, so the Agent column shows a person, not a UUID. */
   staffNames?: Record<string, string>;
   onAgentChanged?: (yachtId: string, next: string | null) => void;
+  /** Every agent per vessel — shown in the Agent column when there is more than one. */
+  agentsByYacht?: Map<string, AgentRow[]>;
 }) {
   const cols = YACHT_COLUMNS.filter((c) => visible.includes(c.key));
   return (
@@ -1088,7 +1102,9 @@ function ListView({
                         className={cn("flex items-center gap-1 group/agent", canEdit && "cursor-pointer")}
                         onClick={() => canEdit && setQuickEditId(`agent:${y.id}`)}
                       >
-                        {y.agent_user_id ? (
+                        {agentsByYacht?.get(y.id)?.length ? (
+                          <span className="text-foreground/80">{agentsLine(agentsByYacht.get(y.id))}</span>
+                        ) : y.agent_user_id ? (
                           <span className="text-foreground/80">
                             {staffNames[y.agent_user_id as string] ?? "Assigned"}
                           </span>
@@ -1146,7 +1162,7 @@ function ListView({
   );
 }
 
-function CardsView({ rows, staleIds, small, onArchive, onOpenYacht, onMovementFilter, staffNames = {}, dupIds }: { rows: Yacht[]; staleIds: Set<string>; small?: boolean; onArchive?: (y: Yacht) => void; onOpenYacht?: (id: string) => void; onMovementFilter?: (m: Movement) => void; staffNames?: Record<string, string>; dupIds?: Set<string> }) {
+function CardsView({ rows, staleIds, small, onArchive, onOpenYacht, onMovementFilter, staffNames = {}, dupIds, agentsByYacht, expiryByYacht }: { rows: Yacht[]; staleIds: Set<string>; small?: boolean; onArchive?: (y: Yacht) => void; onOpenYacht?: (id: string) => void; onMovementFilter?: (m: Movement) => void; staffNames?: Record<string, string>; dupIds?: Set<string>; agentsByYacht?: Map<string, AgentRow[]>; expiryByYacht?: Map<string, CurrentPermit[]> }) {
   return (
     <div
       className={
@@ -1229,10 +1245,16 @@ function CardsView({ rows, staleIds, small, onArchive, onOpenYacht, onMovementFi
                 <div><div className="text-muted-foreground">ETA</div><div className="font-medium tabular-nums">{fmt(y.eta)}</div></div>
                 <div><div className="text-muted-foreground">ETD</div><div className="font-medium tabular-nums">{fmt(y.etd)}</div></div>
               </div>
-              {/* Responsible agent — an unassigned vessel is nobody's job, so say so */}
-              <div className="flex items-center gap-1.5 pt-1 text-[11px]">
-                <UserCog className="h-3 w-3 text-muted-foreground/70" />
-                {y.agent_user_id ? (
+              {/* Permit expiry — the soonest first, coloured by urgency (SD-0047) */}
+              <PermitExpiryChips items={expiryByYacht?.get(y.id)} />
+              {/* Responsible agents — an unassigned vessel is nobody's job, so say so */}
+              <div className="flex items-start gap-1.5 pt-1 text-[11px]">
+                <UserCog className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground/70" />
+                {agentsByYacht?.get(y.id)?.length ? (
+                  <span className="text-muted-foreground">
+                    {agentsByYacht.get(y.id)!.length > 1 ? "Agents" : "Agent"}: <span className="text-foreground/80">{agentsLine(agentsByYacht.get(y.id))}</span>
+                  </span>
+                ) : y.agent_user_id ? (
                   <span className="text-muted-foreground">
                     Agent: <span className="text-foreground/80">{staffNames[y.agent_user_id as string] ?? "Assigned"}</span>
                   </span>

@@ -1737,13 +1737,15 @@ export default {
       )
     }
 
-    // Permit expiry digest — one internal email to Port Ops, daily at 08:00 UTC.
-    // No-ops until PERMIT_EXPIRY_ALERTS_ENABLED is true (see wrangler.jsonc).
+    // Permit expiry reminders (SD-0047) — 60 / 30 / 7 days and on the day, to the
+    // vessel's responsible agents (in the app and by email) plus a Port Ops copy.
+    // Daily at 08:00 UTC (12:00 UAE). Each reminder is claimed before sending, so a
+    // second run in the hour sends nothing. Emails need PERMIT_EXPIRY_ALERTS_ENABLED.
     if (utcHour === 8) {
       ctx.waitUntil(
         runExpiryAlerts()
-          .then(({ sent, skipped }) => console.log(`[expiry-digest] sent=${sent} skipped=${skipped}`))
-          .catch((e) => console.error('[expiry-digest] error:', e))
+          .then(({ sent, skipped }) => console.log(`[expiry-alerts] emails=${sent} skipped=${skipped}`))
+          .catch((e) => console.error('[expiry-alerts] error:', e))
       )
     }
   },
