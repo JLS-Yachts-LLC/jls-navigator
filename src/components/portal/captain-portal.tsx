@@ -888,8 +888,8 @@ function PortalShell({ link, email, onSignOut, preview = false, vessels = [], on
         </header>
 
         {/* Content */}
-        {/* The task board has five columns — give it the screen's width, not the reading column's. */}
-        <main className={cn("mx-auto w-full flex-1 px-4 pb-16 pt-5 sm:px-8 sm:pb-10", tab === "tasks" ? "max-w-[1600px]" : "max-w-5xl")}>
+        {/* The task board (five columns) and the inventory grid (a spreadsheet) get the screen's width, not the reading column's. */}
+        <main className={cn("mx-auto w-full flex-1 px-4 pb-16 pt-5 sm:px-8 sm:pb-10", tab === "tasks" || tab === "inventory" ? "max-w-[1600px]" : "max-w-5xl")}>
         {tab === "home" && unread > 0 && (
           <button onClick={() => setTab("chat")}
                   className="mb-4 flex w-full items-center gap-3 rounded-2xl border border-primary/40 bg-primary/10 p-4 text-left transition hover:bg-primary/15">

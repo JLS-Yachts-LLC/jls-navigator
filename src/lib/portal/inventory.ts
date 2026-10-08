@@ -103,10 +103,19 @@ export function toIsoDate(raw: string): string | null {
   return Number.isNaN(t) ? null : new Date(t - new Date(t).getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 }
 
+/** Everyday names for the departments. */
+const DEPT_SYNONYMS: Record<string, string> = {
+  kitchen: "galley", chef: "galley", "engine room": "engine", technical: "engine", eng: "engine",
+  housekeeping: "interior", laundry: "interior", exterior: "deck", tender: "deck", watersports: "deck",
+  "water sports": "deck", bridge: "deck", lsa: "safety", "life saving": "safety", "fire fighting": "safety",
+};
+
 /** Map a pick-list cell ("Engineering", "engine", "ENG") to its stored value, else null. */
 function pick(options: Array<[string, string]>, raw: string): string | null {
   const v = raw.trim().toLowerCase();
   if (!v) return null;
+  const syn = DEPT_SYNONYMS[v];
+  if (syn && options.some(([k]) => k === syn)) return syn;
   const hit = options.find(([k, l]) => k.toLowerCase() === v || l.toLowerCase() === v)
     ?? options.find(([k, l]) => l.toLowerCase().startsWith(v) || k.toLowerCase().startsWith(v));
   return hit?.[0] ?? null;
@@ -132,7 +141,9 @@ export function rowToItem(cells: string[], fields: Array<InvField | null>, line:
     if (!raw) return;
     const col = INV_COLUMNS.find((c) => c.key === f)!;
     if (col.type === "number") {
-      const n = Number(raw.replace(/[^\d.\-]/g, ""));
+      // "€1,250" → 1250; "lots" is not a number (not 0).
+      const digits = raw.replace(/[^\d.\-]/g, "");
+      const n = /\d/.test(digits) ? Number(digits) : NaN;
       if (!Number.isFinite(n) || n < 0) errors.push(`${col.label} "${raw}" isn't a number`);
       else if (f === "quantity" && !Number.isInteger(n)) errors.push(`Quantity "${raw}" must be a whole number`);
       else values[f] = n;
@@ -158,7 +169,8 @@ export function sheetToItems(text: string): { rows: ImportRow[]; fields: Array<I
   const grid = parseDelimited(text);
   if (!grid.length) return { rows: [], fields: [], unknown: [] };
   const fields = grid[0].map(columnForHeading);
-  const unknown = grid[0].filter((h, i) => h.trim() && !fields[i]);
+  // "Checked by" is in the export but set by the Checked button, not imported.
+  const unknown = grid[0].filter((h, i) => h.trim() && !fields[i] && norm(h) !== "checked by");
   const rows = grid.slice(1).map((cells, i) => rowToItem(cells, fields, i + 2));
   return { rows, fields, unknown };
 }

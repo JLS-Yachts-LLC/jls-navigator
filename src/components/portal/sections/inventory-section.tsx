@@ -9,11 +9,20 @@
  * tapping each one. Reads `onboard_inventory_items` through RLS; writes go
  * through /api/portal/onboard (kind=inventory_item). Values are only shown to
  * positions that see the vessel's accounts.
+ *
+ * Two views: Grid (the default) is a spreadsheet — edit in place, add rows at
+ * the bottom, paste rows from Excel; List groups items by place, category or
+ * department with their photos. Many items at once come in by CSV import
+ * (inventory-import.tsx), with a template to download; the export uses the
+ * same headings so a register can go out to Excel and back.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
-import { AlertTriangle, Boxes, Check, ChevronDown, ChevronRight, Download, Loader2, Pencil, Search, ShieldAlert } from "lucide-react";
+import { AlertTriangle, Boxes, Check, ChevronDown, ChevronRight, Download, FileUp, LayoutList, Loader2, Pencil, Search, ShieldAlert, Table2, X } from "lucide-react";
+import { INV_COLUMNS, csvCell, downloadText, templateCsv, type ImportRow } from "@/lib/portal/inventory";
+import { InventoryGrid } from "./inventory-grid";
+import { InventoryImportDialog } from "./inventory-import";
 import {
   AddButton, AttachedFiles, RecordFormModal, SectionCard, SectionEmpty, SectionHeader, SectionLoading, StatusBadge,
   daysUntil, fmtDate, onboardRequest, type FormField,
@@ -71,6 +80,8 @@ function itemFields(showValue: boolean): FormField[] {
 }
 
 type GroupBy = "location" | "category" | "department";
+type View = "grid" | "list";
+const VIEW_KEY = "polaris.portal.inventoryView";
 
 export function InventorySection({ yachtId, canEdit, showValue }: { yachtId: string; canEdit: boolean; showValue: boolean }) {
   const [items, setItems] = useState<Item[]>([]);
@@ -83,6 +94,13 @@ export function InventorySection({ yachtId, canEdit, showValue }: { yachtId: str
   const [expanded, setExpanded] = useState<string | null>(null);
   const [editing, setEditing] = useState<Item | "new" | null>(null);
   const [checking, setChecking] = useState<string | null>(null);
+  const [view, setViewState] = useState<View>(() => {
+    try { return (localStorage.getItem(VIEW_KEY) as View) || "grid"; } catch { return "grid"; }
+  });
+  const setView = (v: View) => { setViewState(v); try { localStorage.setItem(VIEW_KEY, v); } catch { /* private mode */ } };
+  const [importing, setImporting] = useState<{ rows: ImportRow[] | null } | null>(null);
+  const [filesFor, setFilesFor] = useState<Item | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const { data } = await db.from("onboard_inventory_items").select("*").eq("yacht_id", yachtId).order("name");
@@ -129,20 +147,24 @@ export function InventorySection({ yachtId, canEdit, showValue }: { yachtId: str
     finally { setChecking(null); }
   };
 
+  // Same headings as the import template, so an export can be edited in Excel and imported back.
   const exportCsv = () => {
-    const cols: Array<[string, (i: Item) => unknown]> = [
-      ["Item", (i) => i.name], ["Category", (i) => i.category], ["Department", (i) => deptLabel(i.department)],
-      ["Location", (i) => i.location], ["Quantity", (i) => i.quantity], ["Condition", (i) => condition(i.condition)[1]],
-      ["Make", (i) => i.make], ["Model", (i) => i.model], ["Serial", (i) => i.serial_number], ["Supplier", (i) => i.supplier],
-      ["Bought", (i) => i.purchase_date],
-      ...(showValue ? [["Value each", (i: Item) => i.purchase_price], ["Currency", (i: Item) => i.currency]] as Array<[string, (i: Item) => unknown]> : []),
-      ["Warranty until", (i) => i.warranty_expiry], ["Last checked", (i) => i.last_checked], ["Checked by", (i) => i.last_checked_by_name], ["Notes", (i) => i.notes],
-    ];
-    const cell = (v: unknown) => { const s = v == null ? "" : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
-    const csv = [cols.map(([h]) => h).join(","), ...filtered.map((i) => cols.map(([, f]) => cell(f(i))).join(","))].join("\n");
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-    const a = Object.assign(document.createElement("a"), { href: url, download: `Inventory ${new Date().toISOString().slice(0, 10)}.csv` });
-    a.click(); setTimeout(() => URL.revokeObjectURL(url), 5000);
+    const cols = INV_COLUMNS.filter((c) => showValue || !c.money);
+    const csv = [
+      [...cols.map((c) => c.label), "Checked by"].join(","),
+      ...filtered.map((i) => [...cols.map((c) => csvCell((i as any)[c.key])), csvCell(i.last_checked_by_name)].join(",")),
+    ].join("\n");
+    downloadText(`Inventory ${new Date().toISOString().slice(0, 10)}.csv`, csv);
+  };
+
+  /** Rows saved in the grid: keep the list in step without a reload. */
+  const onPatched = (id: string, fields: Partial<Item>) =>
+    setItems((all) => all.map((x) => x.id === id ? { ...x, ...fields } : x));
+
+  const remove = async (i: Item) => {
+    if (!confirm(`Remove "${i.name}" from the inventory? This can't be undone.`)) return;
+    try { await onboardRequest("inventory_item", { method: "DELETE", id: i.id }); setItems((all) => all.filter((x) => x.id !== i.id)); }
+    catch (e) { alert(e instanceof Error ? e.message : "Could not remove it."); }
   };
 
   if (loading) return <SectionLoading />;
@@ -167,11 +189,17 @@ export function InventorySection({ yachtId, canEdit, showValue }: { yachtId: str
         title="Inventory"
         subtitle={`${items.length} item${items.length === 1 ? "" : "s"} on the register${showValue && totals.length ? ` · ${totals.map(([c, n]) => money(n, c)).join(" + ")} recorded value` : ""}`}
         action={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {items.length > 0 && (
-              <button type="button" onClick={exportCsv}
+              <button type="button" onClick={exportCsv} title="Download the register (as filtered) to open in Excel"
                       className="inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-border px-3 text-xs font-medium transition hover:border-primary/50">
-                <Download className="h-3.5 w-3.5" /> CSV
+                <Download className="h-3.5 w-3.5" /> Export
+              </button>
+            )}
+            {canEdit && (
+              <button type="button" onClick={() => setImporting({ rows: null })}
+                      className="inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-border px-3 text-xs font-medium transition hover:border-primary/50">
+                <FileUp className="h-3.5 w-3.5" /> Import CSV
               </button>
             )}
             {canEdit && <AddButton onClick={() => setEditing("new")}>Add item</AddButton>}
@@ -179,10 +207,45 @@ export function InventorySection({ yachtId, canEdit, showValue }: { yachtId: str
         }
       />
 
-      {items.length === 0 ? (
-        <SectionEmpty icon={Boxes} message={canEdit
-          ? "Nothing on the register yet. Add what the vessel owns — tableware, linen, electronics, tenders and toys, tools — with where it's kept and its condition."
-          : "No items on the register yet."} />
+      {notice && (
+        <div className="flex items-center justify-between gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
+          <span>{notice}</span>
+          <button type="button" onClick={() => setNotice(null)} aria-label="Dismiss"><X className="h-4 w-4" /></button>
+        </div>
+      )}
+
+      {items.length === 0 && !canEdit ? (
+        <SectionEmpty icon={Boxes} message="No items on the register yet." />
+      ) : items.length === 0 ? (
+        <>
+          {/* Three ways in: type into the grid, import a sheet, or one at a time. */}
+          <SectionCard className="p-5">
+            <div className="flex items-start gap-3">
+              <Boxes className="mt-0.5 h-6 w-6 shrink-0 text-muted-foreground/60" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold">Start the register — whatever's quickest for you</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Type straight into the table below (Enter adds the row), paste rows copied from Excel into it,
+                  or import a whole spreadsheet. Only the item's name is required.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button type="button" onClick={() => downloadText("Inventory import template.csv", templateCsv(showValue))}
+                          className="inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-border px-3 text-xs font-medium transition hover:border-primary/50">
+                    <Download className="h-3.5 w-3.5" /> Download CSV template
+                  </button>
+                  <button type="button" onClick={() => setImporting({ rows: null })}
+                          className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-primary px-3 text-xs font-semibold text-primary-foreground">
+                    <FileUp className="h-3.5 w-3.5" /> Import CSV
+                  </button>
+                </div>
+              </div>
+            </div>
+          </SectionCard>
+          <InventoryGrid items={[]} showValue={showValue} canEdit={canEdit} checking={checking}
+                         onPatched={onPatched} onCreated={() => void load()}
+                         onPasteRows={(rows) => setImporting({ rows })}
+                         onCheck={(i) => void markChecked(i as Item)} onFiles={(i) => setFilesFor(i as Item)} onDelete={(i) => void remove(i as Item)} />
+        </>
       ) : (
         <>
           <div className="grid grid-cols-3 gap-2 sm:max-w-xl">
@@ -203,6 +266,15 @@ export function InventorySection({ yachtId, canEdit, showValue }: { yachtId: str
               {DEPARTMENTS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
             </select>
             <div className="inline-flex rounded-xl border border-border p-1 text-xs">
+              {([["grid", "Grid", Table2], ["list", "List", LayoutList]] as const).map(([v, label, Icon]) => (
+                <button key={v} type="button" onClick={() => setView(v)}
+                        className={cn("inline-flex items-center gap-1 rounded-lg px-2.5 py-1 font-medium transition",
+                          view === v ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")}>
+                  <Icon className="h-3.5 w-3.5" /> {label}
+                </button>
+              ))}
+            </div>
+            {view === "list" && <div className="inline-flex rounded-xl border border-border p-1 text-xs">
               {(["location", "category", "department"] as const).map((g) => (
                 <button key={g} type="button" onClick={() => { setGroupBy(g); setCollapsed(new Set()); }}
                         className={cn("rounded-lg px-2.5 py-1 font-medium capitalize transition",
@@ -210,10 +282,17 @@ export function InventorySection({ yachtId, canEdit, showValue }: { yachtId: str
                   By {g}
                 </button>
               ))}
-            </div>
+            </div>}
           </div>
 
-          {groups.length === 0 ? (
+          {view === "grid" ? (
+            filtered.length === 0 && !canEdit
+              ? <SectionCard className="px-4 py-8 text-center text-sm text-muted-foreground">Nothing matches — try another filter.</SectionCard>
+              : <InventoryGrid items={filtered} showValue={showValue} canEdit={canEdit} checking={checking}
+                               onPatched={onPatched} onCreated={() => void load()}
+                               onPasteRows={(rows) => setImporting({ rows })}
+                               onCheck={(i) => void markChecked(i as Item)} onFiles={(i) => setFilesFor(i as Item)} onDelete={(i) => void remove(i as Item)} />
+          ) : groups.length === 0 ? (
             <SectionCard className="px-4 py-8 text-center text-sm text-muted-foreground">Nothing matches — try another filter.</SectionCard>
           ) : groups.map(([name, rows]) => {
             const shut = collapsed.has(name);
@@ -296,6 +375,37 @@ export function InventorySection({ yachtId, canEdit, showValue }: { yachtId: str
             );
           })}
         </>
+      )}
+
+      {importing && (
+        <InventoryImportDialog initialRows={importing.rows} showValue={showValue}
+                               onClose={() => setImporting(null)}
+                               onDone={({ added, updated }) => {
+                                 setImporting(null);
+                                 setNotice([added && `${added} item${added === 1 ? "" : "s"} added`, updated && `${updated} updated`].filter(Boolean).join(", ") + " — the register is up to date.");
+                                 void load();
+                               }} />
+      )}
+
+      {filesFor && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center"
+             onMouseDown={(e) => { if (e.target === e.currentTarget) setFilesFor(null); }}>
+          <div className="w-full max-w-md rounded-t-3xl border border-border bg-card p-5 sm:rounded-3xl">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <h2 className="truncate text-base font-bold">{filesFor.name}</h2>
+                <p className="text-xs text-muted-foreground">Photos, receipts and warranty documents</p>
+              </div>
+              <button type="button" onClick={() => setFilesFor(null)} aria-label="Close" className="flex h-9 w-9 items-center justify-center rounded-xl text-muted-foreground hover:text-foreground">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="mt-4">
+              <AttachedFiles refTable="onboard_inventory_items" refId={filesFor.id} target="inventory_file" canEdit={canEdit}
+                             accept="image/*,application/pdf" label="Photo / receipt" />
+            </div>
+          </div>
+        </div>
       )}
 
       {editing && (
