@@ -887,6 +887,9 @@ export default {
       const redirect = await routeClientHost(request)
       if (redirect) return redirect
     }
+    if (url.pathname === '/portal.webmanifest') {
+      return (await import('./lib/portal/portal-domains.server')).portalManifestHandler(request)
+    }
     if (url.pathname === '/api/portal/brand') {
       return (await import('./lib/portal/portal-domains.server')).portalBrandHandler(request)
     }

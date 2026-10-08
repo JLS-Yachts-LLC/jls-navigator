@@ -6,8 +6,9 @@
  * own yacht and require an aal2 (MFA-verified) session — the UI never has to
  * filter by yacht, the database does.
  *
- * Laptop / tablet / phone friendly: top tabs on desktop, bottom tab bar on
- * mobile, big touch targets, click-to-call directory.
+ * Laptop / tablet / phone friendly: sidebar on desktop, bottom tab bar + menu
+ * drawer on phones, big touch targets, click-to-call directory. Installs as a
+ * self-updating phone app (./portal-app).
  */
 import { PolarisMark } from "@/components/brand/PolarisMark";
 import { createContext, useContext, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -51,6 +52,7 @@ import { BoatPortal } from "./boat-portal";
 import "@/components/polaris-ui/tokens.css";
 import "./portal-themes.css";
 import { AppearanceButton, PortalThemeContext } from "./portal-appearance";
+import { InstallCard, InstallMenuButton, UpdateReady, usePortalAppUpdates } from "./portal-app";
 import { cachedPortalTheme, ensureThemeFonts, rememberPortalTheme, resolvePortalTheme, themeClasses, type PortalTheme } from "@/lib/portal/portal-theme";
 
 const db = supabase as any;
@@ -307,10 +309,12 @@ export function CaptainPortal() {
     return () => { alive = false; };
   }, [stage, link?.yacht_id, preview, setTheme]);
   const look = themeClasses(theme);
+  // The installed phone app: service worker + reload onto each new build.
+  const appUpdate = usePortalAppUpdates();
 
   return (
     <PortalThemeContext.Provider value={{ theme, setTheme, preview }}>
-    <div className={cn("pds pds-embed min-h-screen bg-background text-foreground", look.dark && "dark", look.className)}
+    <div className={cn("portal-app pds pds-embed min-h-screen bg-background text-foreground", look.dark && "dark", look.className)}
          style={{ colorScheme: look.dark ? "dark" : "light" }}>
       {stage === "loading" && (
         <div className="flex min-h-screen items-center justify-center">
@@ -346,6 +350,7 @@ export function CaptainPortal() {
                        vessels={preview ? [] : vessels} onSwitchVessel={(l) => setLink(l)} />
         </PreviewContext.Provider>
       )}
+      {appUpdate.ready && <UpdateReady onApply={appUpdate.apply} />}
     </div>
     </PortalThemeContext.Provider>
   );
@@ -860,6 +865,7 @@ function PortalShell({ link, email, onSignOut, preview = false, vessels = [], on
           ))}
         </nav>
 
+        {!preview && <InstallMenuButton />}
         <AppearanceButton />
         <button onClick={onSignOut}
                 className="m-3 flex items-center justify-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium text-muted-foreground transition hover:text-foreground">
@@ -889,7 +895,7 @@ function PortalShell({ link, email, onSignOut, preview = false, vessels = [], on
 
         {/* Content */}
         {/* The task board (five columns) and the inventory grid (a spreadsheet) get the screen's width, not the reading column's. */}
-        <main className={cn("mx-auto w-full flex-1 px-4 pb-16 pt-5 sm:px-8 sm:pb-10", tab === "tasks" || tab === "inventory" ? "max-w-[1600px]" : "max-w-5xl")}>
+        <main className={cn("mx-auto w-full flex-1 px-4 pb-28 pt-5 sm:px-8 sm:pb-10", tab === "tasks" || tab === "inventory" ? "max-w-[1600px]" : "max-w-5xl")}>
         {tab === "home" && unread > 0 && (
           <button onClick={() => setTab("chat")}
                   className="mb-4 flex w-full items-center gap-3 rounded-2xl border border-primary/40 bg-primary/10 p-4 text-left transition hover:bg-primary/15">
@@ -903,6 +909,7 @@ function PortalShell({ link, email, onSignOut, preview = false, vessels = [], on
             <ChevronRight className="h-4 w-4 text-muted-foreground" />
           </button>
         )}
+        {tab === "home" && !preview && <InstallCard vessel={yacht?.vessel_name ? titleCase(yacht.vessel_name) : null} />}
         {tab === "home" && yacht && (
           <HomeTab yacht={yacht} onNewRequest={openNewRequest}
                    onSeeRequests={() => setTab("requests")}
@@ -964,6 +971,10 @@ function PortalShell({ link, email, onSignOut, preview = false, vessels = [], on
         </main>
       </div>
 
+      <MobileTabBar tab={tab} allowedKeys={allowedKeys} unread={unread}
+                    onSelect={(t) => { perfMark(`nav:${t}`); setTab(t); setOpenRequestId(null); setNavOpen(false); }}
+                    onMenu={() => setNavOpen(true)} />
+
       {newRequestCat && (
         <NewRequestSheet
           yachtId={link.yacht_id}
@@ -975,6 +986,57 @@ function PortalShell({ link, email, onSignOut, preview = false, vessels = [], on
     </div>
   );
 }
+
+/** "AQUILA" → "Aquila" — vessel names are stored in capitals. */
+const titleCase = (s: string) => s.toLowerCase().replace(/\b\p{L}/gu, (c) => c.toUpperCase());
+
+/**
+ * Phones only: the four places people go most, one thumb-tap away, plus the
+ * menu for everything else. Only sections this person can open are offered.
+ */
+function MobileTabBar({ tab, allowedKeys, unread, onSelect, onMenu }: {
+  tab: Tab; allowedKeys: Set<string>; unread: number; onSelect: (t: Tab) => void; onMenu: () => void;
+}) {
+  const preferred: Tab[] = ["requests", "chat", "documents", "brief", "crew", "invoices", "calendar"];
+  const picks = preferred.filter((k) => allowedKeys.has(k)).slice(0, 3);
+  const items: Array<{ key: Tab; label: string; icon: any }> = [
+    { key: "home", label: "Home", icon: Home },
+    ...picks.map((k) => {
+      const n = ALL_NAV_ITEMS.find((i) => i.key === k);
+      return { key: k, label: SHORT_LABEL[k] ?? n?.label ?? k, icon: n?.icon ?? Compass };
+    }),
+  ];
+  return (
+    <nav aria-label="Main" className="fixed inset-x-0 bottom-0 z-30 border-t border-border/60 bg-background/95 backdrop-blur sm:hidden"
+         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+      <div className="mx-auto flex max-w-md items-stretch justify-around">
+        {items.map((it) => (
+          <button key={it.key} type="button" onClick={() => onSelect(it.key)}
+                  className={cn("relative flex min-h-[56px] flex-1 flex-col items-center justify-center gap-0.5 text-[10.5px] font-medium",
+                    tab === it.key ? "text-primary" : "text-muted-foreground")}>
+            <it.icon className="h-5 w-5" />
+            {it.label}
+            {it.key === "chat" && unread > 0 && (
+              <span className="absolute right-[calc(50%-18px)] top-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
+                {unread > 9 ? "9+" : unread}
+              </span>
+            )}
+          </button>
+        ))}
+        <button type="button" onClick={onMenu}
+                className="flex min-h-[56px] flex-1 flex-col items-center justify-center gap-0.5 text-[10.5px] font-medium text-muted-foreground">
+          <Menu className="h-5 w-5" />
+          More
+        </button>
+      </div>
+    </nav>
+  );
+}
+
+/** Tab-bar labels have room for one short word. */
+const SHORT_LABEL: Partial<Record<Tab, string>> = {
+  documents: "Docs", brief: "Brief", invoices: "Invoices", calendar: "Calendar", crew: "Crew", requests: "Requests", chat: "Chat",
+};
 
 // ── Modules ──────────────────────────────────────────────────────────────────
 // The portal's "front door": the Bridge home shows a grid of module tiles

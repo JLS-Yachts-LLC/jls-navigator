@@ -114,6 +114,47 @@ export async function portalBrandHandler(request: Request): Promise<Response> {
   );
 }
 
+// ─── Public: the installable app's manifest ───────────────────────────────────
+
+/** "AQUILA" → "Aquila", "LADY M" → "Lady M" — vessel names are stored in capitals. */
+const titleCase = (s: string) => s.toLowerCase().replace(/\b\p{L}/gu, (c) => c.toUpperCase());
+
+/**
+ * /portal.webmanifest — what a phone needs to install the Client Portal as an
+ * app. On a vessel's own address the app is named after the vessel, so the
+ * captain's home screen says "Aquila"; on the main address it's "JLS Yachts".
+ * The id and start URL are the same everywhere; each address is its own origin,
+ * so a phone can hold one of each.
+ */
+export async function portalManifestHandler(request: Request): Promise<Response> {
+  const slug = slugFromHost(new URL(request.url).host);
+  const row = slug ? await lookupSlug(slug) : null;
+  const vessel = row?.enabled && row.vesselName ? titleCase(row.vesselName.trim()) : null;
+  const manifest = {
+    id: "/portal",
+    name: vessel ? `${vessel} · JLS Yachts` : "JLS Yachts Client Portal",
+    short_name: vessel ?? "JLS Yachts",
+    description: vessel
+      ? `${vessel}'s Client Portal from JLS Yachts — requests, documents, crew, invoices and chat.`
+      : "The JLS Yachts Client Portal — requests, documents, crew, invoices and chat.",
+    start_url: "/portal?source=app",
+    scope: "/portal",
+    display: "standalone",
+    orientation: "portrait",
+    background_color: "#0D1E44",
+    theme_color: "#0D1E44",
+    categories: ["business", "productivity"],
+    icons: [
+      { src: "/portal-icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/portal-icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: "/portal-icons/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+    ],
+  };
+  return new Response(JSON.stringify(manifest), {
+    headers: { "Content-Type": "application/manifest+json", "Cache-Control": "public, max-age=3600" },
+  });
+}
+
 // ─── Signed-in portal user: are they on their own address? ────────────────────
 
 export async function portalAddressHandler(request: Request): Promise<Response> {
