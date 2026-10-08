@@ -342,6 +342,62 @@ export async function portalOnboardHandler(request: Request): Promise<Response> 
       return json({ ok: true, quantity })
     }
 
+    // Many items at once (CSV import / rows pasted from Excel). Every row is
+    // checked first; if any is wrong nothing is saved. mode=update matches an
+    // existing item by serial number, else by name + location, and fills in the
+    // columns the sheet has (blank cells leave a value alone).
+    if (request.method === 'POST' && url.searchParams.get('action') === 'bulk') {
+      if (kind !== 'inventory_item') return json({ error: 'Only inventory can be imported' }, 400)
+      const rows = Array.isArray(body.rows) ? body.rows as Array<Record<string, unknown>> : null
+      if (!rows?.length) return json({ error: 'Nothing to import' }, 400)
+      if (rows.length > 2000) return json({ error: 'Import up to 2,000 items at a time' }, 400)
+      const update = body.mode === 'update'
+      const clean: Array<Record<string, any>> = []
+      const errors: Array<{ row: number; error: string }> = []
+      rows.forEach((r, i) => {
+        try {
+          const f = cleanFields('inventory_item', r ?? {})
+          if (!f.name) throw new BadRequest('No item name')
+          // Blank cells are left out so an update never clears a value.
+          for (const k of Object.keys(f)) if (f[k] === null) delete f[k]
+          clean.push(f)
+        } catch (e) {
+          errors.push({ row: Number((r as any)?._line) || i + 1, error: e instanceof Error ? e.message : 'Invalid row' })
+        }
+      })
+      if (errors.length) return json({ error: `${errors.length} row${errors.length === 1 ? '' : 's'} need fixing`, errors: errors.slice(0, 50) }, 400)
+
+      const key = (name: unknown, location: unknown) => `${String(name ?? '').trim().toLowerCase()}|${String(location ?? '').trim().toLowerCase()}`
+      const bySerial = new Map<string, string>()
+      const byName = new Map<string, string>()
+      if (update) {
+        const { data: existing } = await sb.from('onboard_inventory_items').select('id, name, location, serial_number').eq('yacht_id', yacht.yachtId).limit(10000)
+        for (const e of (existing ?? []) as any[]) {
+          if (e.serial_number) bySerial.set(String(e.serial_number).trim().toLowerCase(), e.id)
+          byName.set(key(e.name, e.location), e.id)
+        }
+      }
+      const inserts: Array<Record<string, any>> = []
+      const updates: Array<{ id: string; f: Record<string, any> }> = []
+      for (const f of clean) {
+        const match = update
+          ? (f.serial_number && bySerial.get(String(f.serial_number).trim().toLowerCase())) || byName.get(key(f.name, f.location))
+          : undefined
+        if (match) updates.push({ id: match, f })
+        else inserts.push({ department: 'interior', quantity: 1, condition: 'good', ...f, yacht_id: yacht.yachtId })
+      }
+      for (let i = 0; i < inserts.length; i += 500) {
+        const { error } = await sb.from('onboard_inventory_items').insert(inserts.slice(i, i + 500))
+        if (error) throw error
+      }
+      for (const u of updates) {
+        const { error } = await sb.from('onboard_inventory_items').update(u.f).eq('id', u.id).eq('yacht_id', yacht.yachtId)
+        if (error) throw error
+      }
+      await audit(request, yacht, kind, 'imported', yacht.yachtId, `${inserts.length} added, ${updates.length} updated`)
+      return json({ ok: true, added: inserts.length, updated: updates.length })
+    }
+
     if (request.method === 'POST' && url.searchParams.get('action') === 'checked') {
       if (kind !== 'inventory_item') return json({ error: 'Only inventory can be checked' }, 400)
       const item = await ownRow(sb, yacht, kind, id)

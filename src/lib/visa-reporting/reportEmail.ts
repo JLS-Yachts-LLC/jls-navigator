@@ -29,6 +29,7 @@ export interface VisaReportEmailProps {
   signOffs: number | null;
   expiringSoonCrew: VisaReportEmailCrewRow[];
   expiredCrew: VisaReportEmailCrewRow[];
+  /** Staff link to the report settings. Empty for a client copy — they get a "contact your agent" line instead. */
   preferencesUrl: string;
 }
 
@@ -210,7 +211,9 @@ export function buildVisaReportEmail(props: VisaReportEmailProps): {
     <div style="font-size:13px;color:${C.goldLight};letter-spacing:1px;margin-top:2px;">Navigate. Manage. Excel.</div>
     <div style="height:1px;background:${C.gold};opacity:0.4;margin:14px auto;width:80%;"></div>
     <div style="font-size:13px;color:${C.mutedBlue};">JLS Yachts LLC &middot; Superyacht Middle East</div>
-    <div style="font-size:13px;margin-top:6px;"><a href="${esc(props.preferencesUrl)}" style="color:${C.goldLight};">Manage report preferences</a></div>
+    ${props.preferencesUrl
+      ? `<div style="font-size:13px;margin-top:6px;"><a href="${esc(props.preferencesUrl)}" style="color:${C.goldLight};">Manage report preferences</a></div>`
+      : `<div style="font-size:12px;margin-top:6px;color:${C.mutedBlue};">To change who receives this report, please contact your JLS agent.</div>`}
   </td></tr>
 
 </table>
