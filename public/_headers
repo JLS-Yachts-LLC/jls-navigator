@@ -1,0 +1,19 @@
+# Mirrors the headers set in src/lib/security-headers.server.ts for files
+# served directly via the ASSETS binding (Cloudflare Workers Static Assets),
+# which never pass through worker-entry.ts's SSR handler. Added for the
+# 2026-10-07 ConnectSecure scan of polaris.jlsyachts.com.
+#
+# Deliberately NOT enforcing Content-Security-Policy, Cross-Origin-Embedder-
+# Policy, or Cache-Control: no-store here â those are handled (Report-Only /
+# document-only) in security-headers.server.ts, and hashed /assets/* files
+# are meant to stay cacheable.
+
+/assets/*
+  X-Content-Type-Options: nosniff
+  Cross-Origin-Resource-Policy: same-origin
+  Strict-Transport-Security: max-age=31536000
+
+/*
+  X-Content-Type-Options: nosniff
+  Cross-Origin-Resource-Policy: same-origin
+  Strict-Transport-Security: max-age=31536000
