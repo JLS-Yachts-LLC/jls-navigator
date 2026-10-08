@@ -88,7 +88,7 @@ export function BriefSection(props: {
 
 // ─── Statement of account ─────────────────────────────────────────────────────
 
-type Invoice = { id: string; docNumber: string | null; date: string | null; dueDate: string | null; total: number; balance: number; currency: string; status: "paid" | "overdue" | "open" };
+type Invoice = { id: string; docNumber: string | null; date: string | null; dueDate: string | null; total: number; balance: number; currency: string; status: "paid" | "overdue" | "open"; company?: string };
 
 /**
  * What the vessel owes, from QuickBooks: outstanding, overdue and coming due,
@@ -97,7 +97,11 @@ type Invoice = { id: string; docNumber: string | null; date: string | null; dueD
  * see the accounts (the finance API refuses the rest, and then it doesn't show).
  */
 function StatementOfAccount({ onOpen }: { onOpen: (tab: "balances" | "invoices" | "requests" | "calendar") => void }) {
-  const [data, setData] = useState<{ linked: boolean; invoices: Invoice[]; summary: { outstanding: number; currency: string } } | null>(null);
+  const [data, setData] = useState<{
+    linked: boolean; invoices: Invoice[];
+    accounts?: Array<{ company: string; outstanding: number; overdue: number }>;
+    summary: { outstanding: number; overdue?: number; currency: string };
+  } | null>(null);
   const [hidden, setHidden] = useState(false);
   const [open, setOpen] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -129,6 +133,12 @@ function StatementOfAccount({ onOpen }: { onOpen: (tab: "balances" | "invoices" 
   const cur = data.summary.currency;
   const sum = (l: Invoice[]) => l.reduce((s, i) => s + i.balance, 0);
   const overdue = unpaid.filter((i) => i.status === "overdue");
+  // The same figures QuickBooks shows on the customer: open balance and overdue payment.
+  const openBalance = data.summary.outstanding;
+  const overdueTotal = data.summary.overdue ?? sum(overdue);
+  // Billed from more than one company (JLS + Waypoint…) → say which each invoice is from.
+  const companies = data.accounts ?? [];
+  const multi = companies.length > 1 || (companies.length === 1 && companies[0].company !== "JLS Yachts");
   const dueSoon = unpaid.filter((i) => i.status !== "overdue" && i.dueDate && i.dueDate <= in14);
   const daysLate = (d: string) => Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${d}T00:00:00Z`)) / 86400000);
   const aging = [
@@ -145,8 +155,8 @@ function StatementOfAccount({ onOpen }: { onOpen: (tab: "balances" | "invoices" 
         <span className="flex-1">
           <Label>Statement of account</Label>
           <span className="mt-1 block text-sm text-muted-foreground">
-            {unpaid.length
-              ? <>{cur} {money(data.summary.outstanding)} outstanding{overdue.length ? <> · <span className="text-amber-300">{cur} {money(sum(overdue))} overdue</span></> : ""}</>
+            {openBalance > 0 || unpaid.length
+              ? <>{cur} {money(openBalance)} open balance{overdueTotal > 0 ? <> · <span className="text-amber-300">{cur} {money(overdueTotal)} overdue</span></> : ""}</>
               : "Nothing outstanding — all invoices are paid. Thank you."}
           </span>
         </span>
@@ -156,8 +166,11 @@ function StatementOfAccount({ onOpen }: { onOpen: (tab: "balances" | "invoices" 
       {open && (
         <div className="space-y-5 border-t border-border px-4 pb-4 pt-4">
           <div className="grid grid-cols-2 gap-x-6 gap-y-4 lg:grid-cols-4">
-            <Figure label="Outstanding" value={<>{cur} {money(data.summary.outstanding)}</>} note={`${unpaid.length} unpaid invoice${unpaid.length === 1 ? "" : "s"}`} />
-            <Figure label="Overdue" value={<>{cur} {money(sum(overdue))}</>} note={overdue.length ? `${overdue.length} invoice${overdue.length === 1 ? "" : "s"} past due` : "Nothing overdue"}
+            <Figure label="Open balance" value={<>{cur} {money(openBalance)}</>}
+                    note={multi && companies.length > 1
+                      ? companies.map((c) => `${c.company} ${money(c.outstanding)}`).join(" · ")
+                      : `${unpaid.length} unpaid invoice${unpaid.length === 1 ? "" : "s"}${multi ? ` · ${companies[0].company}` : ""}`} />
+            <Figure label="Overdue payment" value={<>{cur} {money(overdueTotal)}</>} note={overdue.length ? `${overdue.length} invoice${overdue.length === 1 ? "" : "s"} past due` : "Nothing overdue"}
                     tone={overdue.length ? "warn" : "good"} />
             <Figure label="Due in 14 days" value={<>{cur} {money(sum(dueSoon))}</>} note={dueSoon.length ? `next due ${day(dueSoon[0].dueDate!)}` : "Nothing coming due"} />
             <Figure label="Not yet due" value={<>{cur} {money(sum(unpaid.filter((i) => i.status !== "overdue" && !dueSoon.includes(i))))}</>} note="after the next 14 days" />
@@ -178,12 +191,13 @@ function StatementOfAccount({ onOpen }: { onOpen: (tab: "balances" | "invoices" 
             <div className="overflow-x-auto rounded-xl border border-border/60">
               <table className="w-full text-sm">
                 <thead className="border-b border-border/60 text-left text-[10px] uppercase tracking-wide text-muted-foreground">
-                  <tr><th className="px-3 py-2">Invoice</th><th className="px-3 py-2">Date</th><th className="px-3 py-2">Due</th><th className="px-3 py-2 text-right">Total</th><th className="px-3 py-2 text-right">Balance</th><th className="px-3 py-2" /></tr>
+                  <tr><th className="px-3 py-2">Invoice</th>{multi && <th className="px-3 py-2">From</th>}<th className="px-3 py-2">Date</th><th className="px-3 py-2">Due</th><th className="px-3 py-2 text-right">Total</th><th className="px-3 py-2 text-right">Balance</th><th className="px-3 py-2" /></tr>
                 </thead>
                 <tbody>
                   {unpaid.slice(0, 12).map((i) => (
                     <tr key={i.id} className="border-b border-border/40 last:border-0">
                       <td className="px-3 py-2 font-medium">{i.docNumber ?? "—"}</td>
+                      {multi && <td className="px-3 py-2 text-xs text-muted-foreground">{i.company ?? "—"}</td>}
                       <td className="px-3 py-2 text-xs text-muted-foreground">{i.date ? day(i.date) : "—"}</td>
                       <td className="px-3 py-2 text-xs">
                         {!i.dueDate ? "—" : i.status === "overdue"

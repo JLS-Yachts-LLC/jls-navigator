@@ -2069,7 +2069,7 @@ const money = (n: number, ccy: string) =>
 
 type FinanceData = {
   vessel: string; linked: boolean;
-  invoices: { id: string; docNumber: string | null; date: string | null; dueDate: string | null; total: number; balance: number; currency: string; status: "paid" | "overdue" | "open" }[];
+  invoices: { id: string; docNumber: string | null; date: string | null; dueDate: string | null; total: number; balance: number; currency: string; status: "paid" | "overdue" | "open"; company?: string }[];
   quotations: { id: string; docNumber: string | null; date: string | null; expiryDate: string | null; total: number; currency: string; status: string }[];
   summary: { outstanding: number; currency: string; invoiceCount: number; quotationCount: number };
 };
@@ -2151,7 +2151,7 @@ function FinancesTab({ onOpenRequest }: { onOpenRequest: (requestId: string) => 
         <>
           {/* Summary */}
           <div className="grid grid-cols-3 gap-3">
-            <Card className="p-4"><div className="text-[11px] uppercase tracking-wide text-muted-foreground">Outstanding</div><div className="mt-1 text-lg font-bold text-primary">{money(data.summary.outstanding, data.summary.currency)}</div></Card>
+            <Card className="p-4"><div className="text-[11px] uppercase tracking-wide text-muted-foreground">Open balance</div><div className="mt-1 text-lg font-bold text-primary">{money(data.summary.outstanding, data.summary.currency)}</div></Card>
             <Card className="p-4"><div className="text-[11px] uppercase tracking-wide text-muted-foreground">Invoices</div><div className="mt-1 text-lg font-bold">{data.summary.invoiceCount}</div></Card>
             <Card className="p-4"><div className="text-[11px] uppercase tracking-wide text-muted-foreground">Quotations</div><div className="mt-1 text-lg font-bold">{data.summary.quotationCount}</div></Card>
           </div>
@@ -2189,7 +2189,7 @@ function FinancesTab({ onOpenRequest }: { onOpenRequest: (requestId: string) => 
                       <span className="font-semibold">Invoice {i.docNumber ?? i.id}</span>
                       <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase", INV_BADGE[i.status])}>{i.status}</span>
                     </div>
-                    <div className="mt-0.5 text-xs text-muted-foreground">Issued {fmtDate(i.date)}{i.status !== "paid" && i.dueDate ? ` · Due ${fmtDate(i.dueDate)}` : ""}</div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">Issued {fmtDate(i.date)}{i.status !== "paid" && i.dueDate ? ` · Due ${fmtDate(i.dueDate)}` : ""}{i.company && i.company !== "JLS Yachts" ? ` · ${i.company}` : ""}</div>
                   </div>
                   <div className="text-right">
                     <div className="font-semibold">{money(i.total, i.currency)}</div>
@@ -2789,7 +2789,7 @@ function BalancesTab() {
                       <span className="font-semibold">Invoice {i.docNumber ?? i.id}</span>
                       <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase", INV_BADGE[i.status])}>{i.status}</span>
                     </div>
-                    <div className="mt-0.5 text-xs text-muted-foreground">Issued {fmtDate(i.date)}{i.dueDate ? ` · Due ${fmtDate(i.dueDate)}` : ""}</div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">Issued {fmtDate(i.date)}{i.dueDate ? ` · Due ${fmtDate(i.dueDate)}` : ""}{i.company && i.company !== "JLS Yachts" ? ` · ${i.company}` : ""}</div>
                   </div>
                   <div className="text-right font-semibold text-amber-400">{money(i.balance, i.currency)}</div>
                 </Card>

@@ -1,7 +1,7 @@
 /**
  * Statement of account — an open-item statement for one vessel's QuickBooks
  * customer: every unpaid invoice with its balance and days overdue, aged into
- * Current / 1–30 / 31–60 / 61–90 / 90+ days, on JLS letterhead. Built with
+ * Current / 1–30 / 31–60 / 61–90 / 90+ days, on the issuing company's letterhead. Built with
  * pdf-lib (no external services), streamed by /api/portal/finance?statement=1.
  */
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib'
@@ -47,6 +47,8 @@ function right(page: PDFPage, text: string, x: number, y: number, size: number, 
 
 export async function buildStatementPdf(opts: {
   vesselName: string; billTo: string | null; invoices: StatementInvoice[]; today?: Date
+  /** The company issuing the statement — JLS letterhead unless another company (e.g. Waypoint Trading LLC). */
+  issuer?: string
 }): Promise<Uint8Array> {
   const today = opts.today ?? new Date()
   const invoices = [...opts.invoices].sort((a, b) => (a.date ?? '').localeCompare(b.date ?? ''))
@@ -56,7 +58,9 @@ export async function buildStatementPdf(opts: {
 
   const pdf = await PDFDocument.create()
   pdf.setTitle(`Statement of account — ${opts.vesselName}`)
-  pdf.setAuthor('JLS Yachts')
+  const issuer = opts.issuer ?? 'JLS Yachts'
+  const jls = issuer === 'JLS Yachts'
+  pdf.setAuthor(issuer)
   const font = await pdf.embedFont(StandardFonts.Helvetica)
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold)
   const logo = await pdf.embedPng(b64(QB_DOC_IMAGES.logo))
@@ -66,8 +70,10 @@ export async function buildStatementPdf(opts: {
   let y = H - M
 
   const header = (p: PDFPage) => {
-    const lw = 150, lh = (logo.height / logo.width) * lw
-    p.drawImage(logo, { x: M, y: H - M - lh, width: lw, height: lh })
+    const lw = 150, lh = jls ? (logo.height / logo.width) * lw : 26
+    // Only JLS has a logo here; another company's statement carries its name.
+    if (jls) p.drawImage(logo, { x: M, y: H - M - lh, width: lw, height: lh })
+    else p.drawText(issuer, { x: M, y: H - M - 18, size: 16, font: bold, color: NAVY })
     right(p, 'STATEMENT OF ACCOUNT', W - M, H - M - 14, 15, bold, NAVY)
     right(p, `As at ${fmtDate(today.toISOString())}`, W - M, H - M - 32, 9.5, font, MUTED)
     return H - M - Math.max(lh, 40) - 22
@@ -147,7 +153,7 @@ export async function buildStatementPdf(opts: {
   // Footer on every page
   for (const p of pdf.getPages()) {
     p.drawLine({ start: { x: M, y: M - 10 }, end: { x: W - M, y: M - 10 }, thickness: 0.5, color: RULE })
-    p.drawText('JLS Yachts · Statement of account', { x: M, y: M - 24, size: 7.5, font, color: MUTED })
+    p.drawText(`${issuer} · Statement of account`, { x: M, y: M - 24, size: 7.5, font, color: MUTED })
     right(p, `Page ${pdf.getPages().indexOf(p) + 1} of ${pdf.getPageCount()}`, W - M, M - 24, 7.5, font, MUTED)
   }
   return pdf.save()

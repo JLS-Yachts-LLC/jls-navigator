@@ -18,7 +18,7 @@ import { createClient } from '@supabase/supabase-js'
 import { resolvePortalYacht, portalModulesFor } from '@/lib/portal/portal-auth.server'
 import { canSeeFinance, hiddenSections } from '@/lib/portal/portal-positions'
 import { sectionEnabled } from '@/lib/portal/portal-modules'
-import { resolveCustomerId } from './api.portal.finance'
+import { billingAccounts, type BillingAccount } from './api.portal.finance'
 
 const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } })
@@ -62,17 +62,17 @@ async function complianceItems(sb: any, yachtId: string): Promise<Expiring[]> {
 }
 
 /** The month's and year-to-date spend from QuickBooks invoices, by category. */
-async function spendFor(yacht: { qboCustomerId: string | null; vesselName: string }, start: Date, end: Date) {
-  const customerId = await resolveCustomerId(yacht)
-  if (!customerId) return { linked: false as const }
+async function spendFor(accounts: BillingAccount[], start: Date, end: Date) {
+  if (!accounts.length) return { linked: false as const }
   const prevStart = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() - 1, 1))
   const yearStart = new Date(Date.UTC(start.getUTCFullYear(), 0, 1))
   const from = prevStart < yearStart ? prevStart : yearStart
   const { qboQuery } = await import('@/lib/qb/qbo.server')
-  const res = await qboQuery(
-    `select * from Invoice where CustomerRef = '${ql(customerId)}' and TxnDate >= '${iso(from)}' and TxnDate < '${iso(end)}' maxresults 1000`,
-  )
-  const invoices: any[] = res?.QueryResponse?.Invoice ?? []
+  // Every company the vessel is billed from (JLS, Waypoint…), added together.
+  const invoices: any[] = (await Promise.all(accounts.map((a) => qboQuery(
+    `select * from Invoice where CustomerRef = '${ql(a.customerId)}' and TxnDate >= '${iso(from)}' and TxnDate < '${iso(end)}' maxresults 1000`,
+    a.realm,
+  ).then((r: any) => r?.QueryResponse?.Invoice ?? [])))).flat()
   const inRange = (i: any, a: Date, b: Date) => i.TxnDate >= iso(a) && i.TxnDate < iso(b)
   const month = invoices.filter((i) => inRange(i, start, end))
   const sum = (list: any[]) => list.reduce((s, i) => s + Number(i.TotalAmt ?? 0), 0)
@@ -100,7 +100,6 @@ async function spendFor(yacht: { qboCustomerId: string | null; vesselName: strin
     previousMonth: sum(invoices.filter((i) => inRange(i, prevStart, start))),
     yearToDate: sum(invoices.filter((i) => inRange(i, yearStart, end))),
     categories,
-    customerId,
   }
 }
 
@@ -225,13 +224,14 @@ export async function portalBriefHandler(request: Request): Promise<Response> {
     let spend: any = null
     let awaiting: Array<{ docNumber: string | null; date: string | null; total: number; currency: string }> = []
     if (financeOk) {
-      const s = await spendFor(yacht, start, end).catch(() => null)
+      const accounts = await billingAccounts(yacht).catch(() => [] as BillingAccount[])
+      const s = await spendFor(accounts, start, end).catch(() => null)
+      const jls = accounts.find((a) => !a.realm)
       if (s && s.linked) {
-        const { customerId, ...rest } = s
-        spend = rest
-        // Quotations still waiting on the vessel (no decision yet).
+        spend = s
+        // Quotations still waiting on the vessel (no decision yet) — JLS estimates only, as in /api/portal/finance.
         const { qboQuery } = await import('@/lib/qb/qbo.server')
-        const est = await qboQuery(`select * from Estimate where CustomerRef = '${ql(customerId)}' and TxnStatus = 'Pending' maxresults 50`).catch(() => null)
+        const est = jls ? await qboQuery(`select * from Estimate where CustomerRef = '${ql(jls.customerId)}' and TxnStatus = 'Pending' maxresults 50`).catch(() => null) : null
         const decided = new Set(((await sb.from('portal_quote_decisions').select('qbo_estimate_id, decision').eq('yacht_id', yacht.yachtId)).data ?? [])
           .filter((d: any) => d.decision !== 'query').map((d: any) => d.qbo_estimate_id))
         awaiting = (est?.QueryResponse?.Estimate ?? [])
