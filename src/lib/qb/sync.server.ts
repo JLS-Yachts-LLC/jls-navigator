@@ -155,9 +155,18 @@ async function syncPayments(sb: any, where: string, yachtByCust: Map<string, str
   return count
 }
 
-async function yachtMap(sb: any): Promise<Map<string, string>> {
-  const { data } = await sb.from('yachts').select('id, qbo_customer_id').not('qbo_customer_id', 'is', null)
-  return new Map((data ?? []).map((y: any) => [String(y.qbo_customer_id), y.id]))
+/** Customer id → vessel, for ONE QuickBooks company. Customer ids are only unique
+ *  within a company: yachts.qbo_customer_id is the JLS customer, and a vessel's
+ *  customers in other companies (Waypoint…) are in yacht_qbo_accounts. Matching
+ *  another company's documents against the JLS ids used to file them on whichever
+ *  vessel happened to share the number. */
+async function yachtMap(sb: any, realm: string): Promise<Map<string, string>> {
+  if (realm === qboRealm()) {
+    const { data } = await sb.from('yachts').select('id, qbo_customer_id').not('qbo_customer_id', 'is', null)
+    return new Map((data ?? []).map((y: any) => [String(y.qbo_customer_id), y.id]))
+  }
+  const { data } = await sb.from('yacht_qbo_accounts').select('yacht_id, customer_id').eq('realm_id', realm)
+  return new Map((data ?? []).map((a: any) => [String(a.customer_id), a.yacht_id]))
 }
 
 /** Fetch PDFs for up to `limit` documents that don't have one yet (bounded per run,
@@ -195,7 +204,7 @@ export async function syncQboDocuments(opts: { full?: boolean; pdfBatch?: number
     : `where TxnDate >= '${ql(FROM_DATE())}'`
 
   try {
-    const yachtByCust = await yachtMap(sb)
+    const yachtByCust = await yachtMap(sb, realm)
     let count = 0
     // Collect what changed (incremental JLS runs only) for the doc-gen backstop.
     const changed: ChangedDoc[] | undefined = incremental && realm === JLS_REALM ? [] : undefined
@@ -266,7 +275,7 @@ export async function backfillChunk(reset = false, realm: string = qboRealm()): 
   let cursor = (!reset && st?.backfill_cursor) ? st.backfill_cursor : { entity: 'Invoice', start: 1 }
   if (cursor.entity === 'done') return { done: true, count: 0, cursor }
 
-  const yachtByCust = await yachtMap(sb)
+  const yachtByCust = await yachtMap(sb, realm)
   let count = 0
   for (let p = 0; p < MAX_PAGES && cursor.entity !== 'done'; p++) {
     const entity = cursor.entity as 'Invoice' | 'Estimate' | 'Payment'
@@ -298,7 +307,7 @@ export async function backfillChunk(reset = false, realm: string = qboRealm()): 
 export async function backfillPaymentsFull(realm: string = qboRealm()): Promise<{ count: number }> {
   if (!qboConfigured()) throw new Error('QBO not configured')
   const sb = admin() as any
-  const yachtByCust = await yachtMap(sb)
+  const yachtByCust = await yachtMap(sb, realm)
   return { count: await syncPayments(sb, `where TxnDate >= '${ql(FROM_DATE())}'`, yachtByCust, realm) }
 }
 
@@ -313,14 +322,14 @@ export async function syncOneEntity(entity: string, qboId: string, realm: string
     const res = await qboQuery(`select * from Estimate where Id = '${ql(qboId)}'`, realm)
     const doc = res?.QueryResponse?.Estimate?.[0]
     if (!doc) return 'estimate-not-found'
-    await sb.from('qbo_invoices').upsert(buildRow('Estimate', doc, await yachtMap(sb), realm, true), { onConflict: 'qbo_id,doc_type,realm_id' })
+    await sb.from('qbo_invoices').upsert(buildRow('Estimate', doc, await yachtMap(sb, realm), realm, true), { onConflict: 'qbo_id,doc_type,realm_id' })
     return 'estimate-synced'
   }
   if (entity === 'payment') {
     const res = await qboQuery(`select * from Payment where Id = '${ql(qboId)}'`, realm)
     const doc = res?.QueryResponse?.Payment?.[0]
     if (!doc) return 'payment-not-found'
-    await sb.from('qbo_payments').upsert(buildPaymentRow(doc, await yachtMap(sb), realm), { onConflict: 'qbo_id,realm_id' })
+    await sb.from('qbo_payments').upsert(buildPaymentRow(doc, await yachtMap(sb, realm), realm), { onConflict: 'qbo_id,realm_id' })
     // A payment changes invoice balances — refresh the invoices it applies to.
     for (const a of (buildPaymentRow(doc, new Map(), realm).applied_to as any[]).slice(0, 5)) {
       try { await syncOneInvoice(a.invoice_qbo_id, realm) } catch { /* best-effort */ }
@@ -338,7 +347,7 @@ export async function syncOneInvoice(qboId: string, realm: string = qboRealm()) 
   const res = await qboQuery(`select * from Invoice where Id = '${ql(qboId)}'`, realm)
   const doc = res?.QueryResponse?.Invoice?.[0]
   if (!doc) return
-  const row = buildRow('Invoice', doc, await yachtMap(sb), realm, true)
+  const row = buildRow('Invoice', doc, await yachtMap(sb, realm), realm, true)
   await sb.from('qbo_invoices').upsert(row, { onConflict: 'qbo_id,doc_type,realm_id' })
   try {
     const bytes = await qboPdf(`/invoice/${doc.Id}/pdf`, realm)

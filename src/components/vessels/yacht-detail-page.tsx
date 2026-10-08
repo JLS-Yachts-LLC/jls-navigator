@@ -2,6 +2,7 @@ import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { createServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
+import { JLS_QBO_REALM, WAYPOINT_QBO_REALM, WAYPOINT_COMPANY } from "@/lib/qb/realms";
 import { updateOrThrow } from "@/lib/db-write";
 import { guardUploadFile, uploadContentType } from "@/lib/upload-guard";
 import { softDeleteEntity } from "@/lib/recycle-bin";
@@ -962,7 +963,8 @@ function YachtFinance({ yachtId, qboCustomerId }: { yachtId: string; qboCustomer
         .select("id, doc_number, txn_date, due_date, total_amt, balance, status, currency")
         .eq("doc_type", docType);
       // Match by direct yacht link, plus by the yacht's QBO customer for older rows.
-      q = qboCustomerId ? q.or(`yacht_id.eq.${yachtId},customer_ref.eq.${qboCustomerId}`) : q.eq("yacht_id", yachtId);
+      // (qbo_customer_id is the JLS customer — another company's documents only by yacht_id.)
+      q = qboCustomerId ? q.or(`yacht_id.eq.${yachtId},and(customer_ref.eq.${qboCustomerId},realm_id.eq.${JLS_QBO_REALM})`) : q.eq("yacht_id", yachtId);
       const { data } = await q.order("txn_date", { ascending: false }).limit(300);
       setRows((data ?? []) as QboInvoiceRow[]);
       setBusy(false);

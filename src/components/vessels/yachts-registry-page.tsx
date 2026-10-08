@@ -29,6 +29,7 @@ import { useYachtAgents, agentsLine, type AgentRow } from "./vessel-agents";
 import { useFleetPermitExpiry, PermitExpiryChips } from "./permit-expiry";
 import type { CurrentPermit } from "@/lib/permit-expiry";
 import { VesselProvenance, SameNameBadge, VesselConfirmDetails, normVesselName } from "./VesselProvenance";
+import { JLS_QBO_REALM } from "@/lib/qb/realms";
 
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -287,10 +288,11 @@ export function YachtsPage({
       const agg: Record<string, number> = {};
       for (let from = 0; ; from += 1000) {
         const { data: inv } = await (supabase as any)
-          .from("qbo_invoices").select("yacht_id, customer_ref, balance")
+          .from("qbo_invoices").select("yacht_id, customer_ref, balance, realm_id")
           .eq("doc_type", "invoice").gt("balance", 0).range(from, from + 999);
         for (const d of (inv ?? [])) {
-          const yid = d.yacht_id ?? (d.customer_ref ? custToYacht.get(String(d.customer_ref)) : undefined);
+          // The customer-id fallback is the JLS customer, so only for JLS documents.
+          const yid = d.yacht_id ?? (d.customer_ref && d.realm_id === JLS_QBO_REALM ? custToYacht.get(String(d.customer_ref)) : undefined);
           if (yid) agg[yid] = (agg[yid] ?? 0) + Number(d.balance ?? 0);
         }
         if (!inv || inv.length < 1000) break;

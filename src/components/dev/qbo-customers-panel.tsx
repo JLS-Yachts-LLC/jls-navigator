@@ -15,7 +15,7 @@ type Yacht = { id: string; vessel_name: string; qbo_customer_id: string | null }
 type Customer = { id: string; displayName: string; trn: string | null };
 
 // ── Fuzzy matching (bigram Dice on normalized names) ─────────────────────────
-function norm(s: string): string {
+export function norm(s: string): string {
   return s.toLowerCase().replace(/\b(m\/?y|s\/?y|m\/?v|yacht|the)\b/g, "").replace(/[^a-z0-9]+/g, " ").trim();
 }
 function bigrams(s: string): string[] {
@@ -23,7 +23,7 @@ function bigrams(s: string): string[] {
   for (let i = 0; i < s.length - 1; i++) r.push(s.slice(i, i + 2));
   return r;
 }
-function similarity(a: string, b: string): number {
+export function similarity(a: string, b: string): number {
   const na = norm(a), nb = norm(b);
   if (!na || !nb) return 0;
   if (na === nb) return 1;

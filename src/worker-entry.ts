@@ -1380,6 +1380,9 @@ export default {
     if (url.pathname === '/api/qb/customers' && request.method === 'GET') {
       return qbCustomersHandler(request)
     }
+    if (url.pathname === '/api/qb/vessel-accounts') {
+      return (await import('./routes/api.qb.vessel-accounts')).qbVesselAccountsHandler(request)
+    }
     if (url.pathname === '/api/qb/sync' && (request.method === 'GET' || request.method === 'POST')) {
       return qbSyncHandler(request)
     }

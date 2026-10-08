@@ -8,6 +8,7 @@
  */
 import { createClient } from '@supabase/supabase-js'
 import { sendEmail } from '@/lib/ses.server'
+import { JLS_QBO_REALM } from '@/lib/qb/realms'
 
 function admin() {
   return createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false } })
@@ -39,11 +40,12 @@ export async function runWeeklyFleetFinance(opts: { force?: boolean } = {}): Pro
   const agg = new Map<string, Agg>()
   for (let from = 0; ; from += 1000) {
     const { data: inv } = await sb.from('qbo_invoices')
-      .select('yacht_id, customer_ref, balance, due_date')
+      .select('yacht_id, customer_ref, balance, due_date, realm_id')
       .eq('doc_type', 'invoice').gt('balance', 0)
       .range(from, from + 999)
     for (const d of (inv ?? []) as any[]) {
-      const yid = d.yacht_id ?? (d.customer_ref ? custToYacht.get(String(d.customer_ref)) : undefined)
+      // The customer-id fallback is the JLS customer, so only for JLS documents.
+      const yid = d.yacht_id ?? (d.customer_ref && d.realm_id === JLS_QBO_REALM ? custToYacht.get(String(d.customer_ref)) : undefined)
       if (!yid || !nameOf.has(yid)) continue
       const a = agg.get(yid) ?? { total: 0, count: 0, oldestDue: null }
       a.total += Number(d.balance ?? 0)
