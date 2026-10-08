@@ -8,7 +8,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Search, Upload, Plus, Mail, ShieldCheck, ShieldOff, History, Pencil, Loader2, CheckCircle2, FileSpreadsheet, Merge } from "lucide-react";
+import { Search, Upload, Plus, Mail, ShieldCheck, ShieldOff, History, Pencil, Loader2, CheckCircle2, FileSpreadsheet, Merge, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,7 +22,7 @@ import { MergeDuplicatesDialog, findDuplicateGroups } from "./wa-merge";
 
 type Filter = "all" | WaContact["consent_status"];
 
-export function WaContacts({ canEdit }: { canEdit: boolean }) {
+export function WaContacts({ canEdit, onMessage }: { canEdit: boolean; onMessage?: (contactId: string) => void }) {
   const [rows, setRows] = useState<WaContact[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
@@ -234,6 +234,11 @@ export function WaContacts({ canEdit }: { canEdit: boolean }) {
                   <td className="px-3 py-2"><ConsentChip c={r} /></td>
                   <td className="px-3 py-2">
                     <div className="flex justify-end gap-1">
+                      {onMessage && r.phone_e164 && (
+                        <Button size="sm" variant="ghost" className="h-7 px-2" title="Open their WhatsApp conversation in the Inbox" onClick={() => onMessage(r.id)}>
+                          <MessageSquare className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
                       <Button size="sm" variant="ghost" className="h-7 px-2" title="Consent history" onClick={() => setHistoryFor(r)}>
                         <History className="h-3.5 w-3.5" />
                       </Button>

@@ -40,6 +40,8 @@ export function WhatsAppHub() {
   const [savedTab, setTab] = useUserPreference<string>("whatsapp.tab", "inbox", { key: TAB_KEY, parse: (raw) => raw });
   const tab: Tab = TABS.some((t) => t.key === savedTab) ? (savedTab as Tab) : "inbox";
   const [unread, setUnread] = useState(0);
+  // A contact's Message button opens their Inbox thread.
+  const [openContact, setOpenContact] = useState<string | null>(null);
 
   // Unread badge on the Inbox tab, whichever tab is open.
   useEffect(() => {
@@ -68,7 +70,7 @@ export function WhatsAppHub() {
 
       <div className="flex flex-wrap gap-1 border-b border-border">
         {TABS.map(({ key, label, icon: Icon }) => (
-          <button key={key} onClick={() => setTab(key)}
+          <button key={key} onClick={() => { setOpenContact(null); setTab(key); }}
             className={cn("-mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm",
               tab === key ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>
             <Icon className="h-4 w-4" /> {label}
@@ -79,8 +81,8 @@ export function WhatsAppHub() {
         ))}
       </div>
 
-      {tab === "inbox" && <WaInbox canEdit={canEdit} />}
-      {tab === "contacts" && <WaContacts canEdit={canEdit} />}
+      {tab === "inbox" && <WaInbox key={openContact ?? "inbox"} canEdit={canEdit} openContactId={openContact} />}
+      {tab === "contacts" && <WaContacts canEdit={canEdit} onMessage={(id) => { setOpenContact(id); setTab("inbox"); }} />}
       {tab === "lists" && <WaLists canEdit={canEdit} />}
       {tab === "templates" && <WaTemplates canEdit={canEdit} />}
       {tab === "sends" && <WaSends canEdit={canEdit} />}

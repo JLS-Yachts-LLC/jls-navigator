@@ -624,7 +624,28 @@ export async function whatsappMediaHandler(request: Request): Promise<Response> 
   if (outboundId) {
     if (!/^[0-9a-f-]{36}$/i.test(outboundId)) return json({ error: "Bad id" }, 400);
     const db = admin();
-    const { data: m } = await db.from("wa_messages").select("media_path, media_mime, media_name").eq("id", outboundId).maybeSingle();
+    const { data: m } = await db.from("wa_messages").select("media_path, media_id, media_mime, media_name").eq("id", outboundId).maybeSingle();
+    // Sent from the phone app: Meta holds the file, fetched like an inbound one.
+    if (!m?.media_path && m?.media_id) {
+      const cfg = waConfig();
+      if (!cfg) return json({ error: "WhatsApp isn't connected." }, 409);
+      try {
+        const f = await downloadMedia(cfg, m.media_id);
+        const mime = String(m.media_mime || f.mime).split(";")[0].trim().toLowerCase();
+        const viewable = /^(image\/(jpeg|png|webp|gif)|audio\/[\w.+-]+|video\/(mp4|3gpp)|application\/pdf)$/.test(mime);
+        return new Response(f.body, {
+          headers: {
+            "Content-Type": viewable ? mime : "application/octet-stream",
+            "Content-Disposition": `${viewable ? "inline" : "attachment"}; filename="${String(m.media_name ?? "whatsapp-file").replace(/[^\w.\- ()]/g, "_")}"`,
+            "Content-Security-Policy": "sandbox; default-src 'none'",
+            "Cache-Control": "private, max-age=3600",
+            "X-Content-Type-Options": "nosniff",
+          },
+        });
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : String(e) }, 502);
+      }
+    }
     if (!m?.media_path) return json({ error: "No file on this message" }, 404);
     const { data: blob, error } = await db.storage.from(MEDIA_BUCKET).download(m.media_path);
     if (error || !blob) return json({ error: "The file is no longer available" }, 404);
@@ -978,6 +999,41 @@ export async function whatsappWebhookHandler(request: Request): Promise<Response
               action, receivedAt,
             }).catch((e) => console.error("[wa-auto-reply] error:", e instanceof Error ? e.message : String(e)));
           }
+        }
+      }
+
+      // Replies typed in the WhatsApp Business app on the office phone. The number
+      // runs in coexistence mode, so those never pass through Polaris; Meta copies
+      // them here so the Inbox shows both sides of the conversation. Requires the
+      // smb_message_echoes webhook field in the Meta app.
+      if (field === "smb_message_echoes") {
+        for (const m of v.message_echoes ?? []) {
+          if (!m?.id || !m?.to) continue;
+          const toPhone = `+${String(m.to).replace(/\D/g, "")}`;
+          const mediaKind = ["image", "document", "audio", "video", "sticker"].find((k) => m[k]?.id);
+          const media = mediaKind ? m[mediaKind] : null;
+          const text: string | null = m.text?.body ?? media?.caption
+            ?? (m.location ? [m.location.name, m.location.address].filter(Boolean).join(" — ") || "Location" : null)
+            ?? (m.type === "template" ? "[template sent from the phone]" : null);
+          let { data: c } = await db.from("wa_contacts").select("id").eq("phone_e164", toPhone)
+            .order("created_at").limit(1).maybeSingle();
+          if (!c) {
+            // Staff started a chat from the phone with someone new — give the thread
+            // a home. Being messaged isn't consent, so none is recorded.
+            ({ data: c } = await db.from("wa_contacts").insert({
+              name: toPhone, phone_e164: toPhone, source: "manual",
+              notes: "Created when JLS messaged them from the WhatsApp app on the phone.",
+            }).select("id").single());
+          }
+          const at = m.timestamp ? new Date(Number(m.timestamp) * 1000).toISOString() : new Date().toISOString();
+          await db.from("wa_messages").upsert({
+            kind: "reply", from_phone: true, contact_id: c?.id ?? null, phone_e164: toPhone,
+            wa_message_id: String(m.id), status: "sent", queued_at: at, sent_at: at, body: text,
+            media_type: mediaKind ? (mediaKind === "sticker" ? "image" : mediaKind) : null,
+            media_id: media?.id ? String(media.id) : null,
+            media_mime: media?.mime_type ? String(media.mime_type) : null,
+            media_name: media?.filename ? String(media.filename).slice(0, 200) : null,
+          }, { onConflict: "wa_message_id", ignoreDuplicates: true });
         }
       }
 

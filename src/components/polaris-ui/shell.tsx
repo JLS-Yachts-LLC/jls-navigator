@@ -38,6 +38,9 @@ export interface NavItem {
   /** Route-backed item: navigates to this app route (rendered inside the same
    *  Polaris chrome by AppLayout) instead of switching an in-shell screen. */
   route?: string;
+  /** Shown only to people actually granted `module` (and global admins) — never
+   *  to someone with no grants yet. For areas that reach clients directly. */
+  grantOnly?: boolean;
 }
 export interface NavGroup {
   label: string;
@@ -122,7 +125,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Communications",
     items: [
       // Client messaging: inbox, contacts + consent, broadcast lists, templates, sends.
-      { label: "WhatsApp", module: "communications", icon: "brand-whatsapp", screen: "whatsapp", roles: ["global_admin"] },
+      { label: "WhatsApp", module: "communications", icon: "brand-whatsapp", screen: "whatsapp", grantOnly: true },
     ],
   },
   {
@@ -205,6 +208,7 @@ function visibleGroups(role: PolarisRole, claims?: PolarisClaims): NavGroup[] {
     items: g.items.filter((i) => {
       if (allow ? !allow.includes(i.screen) : (i.roles && !i.roles.includes(role))) return false;
       if (gate && i.module && !canAccessModule(claims!, i.module)) return false;
+      if (i.grantOnly && !(claims && i.module && canAccessModule(claims, i.module))) return false;
       return true;
     }),
   })).filter((g) => g.items.length > 0);
