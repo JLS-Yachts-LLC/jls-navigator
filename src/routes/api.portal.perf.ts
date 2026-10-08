@@ -28,7 +28,7 @@ export async function portalPerfHandler(request: Request): Promise<Response> {
   const inputs: Array<[string, number, number, number]> = Array.isArray(body?.inputs) ? body.inputs : []
   const blocked = long.reduce((s, t) => s + (Number(t?.[1]) || 0), 0)
   const worstWait = Math.max(0, ...inputs.map((i) => Number(i?.[2]) || 0))
-  await admin().from('client_logs').insert({
+  const { error } = await admin().from('client_logs').insert({
     // Always info: warn/error rows in client_logs are escalated as app errors.
     level: 'info',
     message: `Portal start-up timing — ${auth.yacht.vesselName}: ${blocked}ms main thread blocked, slowest click waited ${worstWait}ms`,
@@ -38,5 +38,10 @@ export async function portalPerfHandler(request: Request): Promise<Response> {
     user_agent: request.headers.get('user-agent')?.slice(0, 500) ?? null,
     breadcrumbs: { marks: body?.marks ?? [], long, inputs, nav: body?.nav ?? null, scripts: body?.scripts ?? null },
   })
+  // Say so when it isn't filed — every report was once lost silently to a level check.
+  if (error) {
+    console.error('[portal-perf] not filed:', error.message)
+    return json({ error: 'Not filed' }, 500)
+  }
   return json({ ok: true })
 }

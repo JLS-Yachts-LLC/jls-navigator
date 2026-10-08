@@ -9,6 +9,10 @@
  */
 import { portalFetch } from "./portal-fetch";
 
+// v2: v1 reports were all rejected by the database (client_logs didn't accept
+// level 'info'), so tabs that "already reported" under v1 report again.
+const SENT_KEY = "polaris.portalPerf.v2";
+
 const marks: Array<[string, number]> = [];
 let started = false;
 
@@ -23,7 +27,7 @@ export function perfMark(name: string) {
 export function startPortalPerfProbe() {
   if (typeof window === "undefined" || started) return;
   started = true;
-  try { if (sessionStorage.getItem("polaris.portalPerf")) return; } catch { return; }
+  try { if (sessionStorage.getItem(SENT_KEY)) return; } catch { return; }
 
   const long: Array<[number, number]> = []; // [start ms, duration ms]
   const inputs: Array<[string, number, number, number]> = []; // [event, start, wait before handler, total]
@@ -43,7 +47,6 @@ export function startPortalPerfProbe() {
   } catch { /* not supported */ }
 
   setTimeout(() => {
-    try { sessionStorage.setItem("polaris.portalPerf", "1"); } catch { /* private mode */ }
     const nav = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
     const scripts = performance.getEntriesByType("resource").filter((r) => r.name.endsWith(".js")) as PerformanceResourceTiming[];
     void portalFetch("/api/portal/perf", {
@@ -55,6 +58,9 @@ export function startPortalPerfProbe() {
         scripts: { count: scripts.length, kb: Math.round(scripts.reduce((s, r) => s + (r.transferSize || 0), 0) / 1024), lastEnd: Math.round(Math.max(0, ...scripts.map((r) => r.responseEnd))) },
         url: window.location.href,
       }),
-    }).catch(() => { /* diagnostics never break the portal */ });
+    })
+      // Marked sent only once it's filed, so a failed send is tried again on the next load.
+      .then((r) => { if (r.ok) { try { sessionStorage.setItem(SENT_KEY, "1"); } catch { /* private mode */ } } })
+      .catch(() => { /* diagnostics never break the portal */ });
   }, 30_000);
 }
