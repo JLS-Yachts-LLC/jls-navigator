@@ -226,7 +226,8 @@ export function TasksSection({ yachtId, canEdit }: { yachtId: string; canEdit: b
                    onDragOver={(e) => { if (!canEdit || !dragId) return; e.preventDefault(); if (!over) setDropAt({ status, beforeId: null }); }}
                    onDragLeave={(e) => { if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) setDropAt((d) => d?.status === status ? null : d); }}
                    onDrop={onDrop(status)}
-                   className={cn("flex w-[78vw] max-w-[300px] shrink-0 snap-start flex-col rounded-2xl border bg-card/40 sm:w-[280px]",
+                   // Phones and tablets scroll the columns sideways; wider screens share the width so all five show.
+                   className={cn("flex w-[78vw] max-w-[300px] shrink-0 snap-start flex-col rounded-2xl border bg-card/40 sm:w-[280px] lg:w-auto lg:min-w-[210px] lg:max-w-none lg:flex-1 lg:shrink",
                      over && dragId ? "border-primary/50 bg-primary/5" : "border-border")}>
                 <div className="px-3 pb-2 pt-3">
                   <div className="flex items-center gap-2">
