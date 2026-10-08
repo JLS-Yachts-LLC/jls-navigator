@@ -72,6 +72,16 @@ export function canApproveRequisition(position: string | null | undefined): bool
 }
 
 /**
+ * Positions that run the vessel's money on board: open and close cash accounts
+ * and APAs, set the budget, and correct or remove anyone's entries. Everyone
+ * else who sees Expenses records what they spend and edits their own entries.
+ */
+export function canManageMoney(position: string | null | undefined): boolean {
+  const p = (position ?? "").trim().toLowerCase();
+  return canApproveRequisition(p) || p === "owner" || p === "representative";
+}
+
+/**
  * Positions that can approve or decline a JLS quotation: the requisition
  * approvers plus the Owner and Representative, who sign off spend. Anyone who
  * can see the vessel's accounts can still ask a question about a quotation.

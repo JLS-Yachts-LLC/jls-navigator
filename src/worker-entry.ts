@@ -961,6 +961,11 @@ export default {
       const { portalOnboardHandler } = await import('./routes/api.portal.onboard')
       return portalOnboardHandler(request)
     }
+    // Client portal — On board expenses: petty cash, crew cards, charter APA, budgets, receipt scan.
+    if (url.pathname === '/api/portal/expenses') {
+      const { portalExpensesHandler } = await import('./routes/api.portal.expenses')
+      return portalExpensesHandler(request)
+    }
     // Client portal — On board task board: add, edit, move, comment.
     if (url.pathname === '/api/portal/tasks') {
       const { portalTasksHandler } = await import('./routes/api.portal.tasks')

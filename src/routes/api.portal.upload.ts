@@ -10,6 +10,7 @@
  *          | client_document  title, doc_type — a document the client sends JLS
  *          | task_file        id = onboard_tasks id                            (Tasks & backlog)
  *          | inventory_file   id = onboard_inventory_items id — photo, receipt, warranty (Inventory)
+ *          | expense_receipt  id = onboard_expenses id — the receipt for an expense (Expenses & APA)
  *
  * Every upload is checked here, not just in the browser: at most 15 MB; only
  * PDF, common image types and Office documents; and the file's first bytes must
@@ -61,6 +62,7 @@ const TARGETS = {
   client_document: { section: 'documents', table: 'yacht_documents', imagesOnly: false },
   task_file: { section: 'tasks', table: 'onboard_tasks', imagesOnly: false },
   inventory_file: { section: 'inventory', table: 'onboard_inventory_items', imagesOnly: false },
+  expense_receipt: { section: 'expenses', table: 'onboard_expenses', imagesOnly: false },
 } as const
 type Target = keyof typeof TARGETS
 
