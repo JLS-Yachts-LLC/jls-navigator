@@ -39,6 +39,17 @@ export async function vesselReportsHandler(request: Request): Promise<Response> 
   const url = new URL(request.url)
   try {
     if (request.method === 'GET') {
+      // WhatsApp: the report template's state, and a vessel's contacts to pick from.
+      if (url.searchParams.get('waTemplate')) {
+        const { reportTemplateState } = await import('@/lib/vessel-reports/whatsapp.server')
+        return json({ ok: true, ...(await reportTemplateState()) })
+      }
+      const waFor = url.searchParams.get('waContacts')
+      if (waFor) {
+        if (!/^[0-9a-f-]{36}$/i.test(waFor)) return json({ ok: false, error: 'Bad vessel' }, 400)
+        const { vesselWhatsAppContacts } = await import('@/lib/vessel-reports/whatsapp.server')
+        return json({ ok: true, contacts: await vesselWhatsAppContacts(waFor) })
+      }
       const key = url.searchParams.get('preview') as ReportKey | null
       const yachtId = url.searchParams.get('yachtId') ?? ''
       if (!key || !VESSEL_REPORTS.some((r) => r.key === key) || !/^[0-9a-f-]{36}$/i.test(yachtId)) {
@@ -58,6 +69,14 @@ export async function vesselReportsHandler(request: Request): Promise<Response> 
 
     if (request.method !== 'POST') return json({ ok: false, error: 'Method not allowed' }, 405)
     const body: any = await request.json().catch(() => null)
+    // Create the WhatsApp report template and submit it to Meta.
+    if (body?.action === 'wa-template') {
+      const canEdit = await requireAccess(request, { module: 'crew_immigration', level: 'edit' })
+      if (!canEdit.ok) return json({ ok: false, error: 'Setting up the template needs edit access to Crew & Immigration.' }, 403)
+      const { setupReportTemplate } = await import('@/lib/vessel-reports/whatsapp.server')
+      const res = await setupReportTemplate(uid)
+      return json(res, res.ok ? 200 : 422)
+    }
     const id = String(body?.subscriptionId ?? '')
     if (!/^[0-9a-f-]{36}$/i.test(id) || !['send', 'test'].includes(body?.action)) return json({ ok: false, error: 'Bad request' }, 400)
     if (body.action === 'send') {

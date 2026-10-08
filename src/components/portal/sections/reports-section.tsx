@@ -11,7 +11,7 @@ import { SectionCard, SectionEmpty, SectionHeader, SectionLoading, StatusBadge, 
 
 type Report = {
   id: string; key: string; label: string; description: string; enabled: boolean;
-  recipients: string[]; cc: string[]; when: string; lastSentAt: string | null;
+  recipients: string[]; cc: string[]; when: string; lastSentAt: string | null; whatsappContacts?: number;
   changedBy: { kind: "staff" | "client"; name: string | null; at: string | null } | null;
 };
 
@@ -128,6 +128,7 @@ function ReportCard({ report, canManage, onSaved }: { report: Report; canManage:
           ) : recipients.length === 0 && <span className="text-sm text-muted-foreground">Nobody yet</span>}
         </div>
         {report.cc.length > 0 && <div className="mt-1 text-xs text-muted-foreground">JLS also copies: {report.cc.join(", ")}</div>}
+        {!!report.whatsappContacts && <div className="mt-1 text-xs text-muted-foreground">JLS also sends it by WhatsApp to {report.whatsappContacts} of your vessel's contacts.</div>}
       </div>
 
       {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">{error}</div>}

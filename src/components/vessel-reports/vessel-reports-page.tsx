@@ -44,7 +44,10 @@ type Sub = {
   recipients: string[]; cc: string[]; schedule: ReportSchedule;
   last_sent_at: string | null; last_status: string | null; last_error: string | null;
   client_can_manage: boolean; changed_by_kind: "staff" | "client" | null; changed_by_name: string | null; changed_at: string | null;
+  send_email: boolean; send_whatsapp: boolean; wa_contact_ids: string[];
 };
+type WaState = { status: string | null; reason: string | null; ready: boolean; sendingOn: boolean; connected: boolean };
+type WaContact = { id: string; name: string; phone: string | null; canReceive: boolean };
 type Run = {
   id: string; yacht_id: string; report_key: string; trigger: string; status: string;
   recipients: string[]; summary: string | null; error: string | null; created_at: string;
@@ -54,7 +57,7 @@ type Event = {
   action: string; detail: any; created_at: string;
 };
 
-const SUB_COLS = "id, yacht_id, report_key, enabled, recipients, cc, schedule, last_sent_at, last_status, last_error, client_can_manage, changed_by_kind, changed_by_name, changed_at";
+const SUB_COLS = "id, yacht_id, report_key, enabled, recipients, cc, schedule, last_sent_at, last_status, last_error, client_can_manage, changed_by_kind, changed_by_name, changed_at, send_email, send_whatsapp, wa_contact_ids";
 
 const when = (iso: string | null) =>
   iso ? new Date(iso).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Dubai" }) : "—";
@@ -62,6 +65,7 @@ const when = (iso: string | null) =>
 const ACTION_LABEL: Record<string, string> = {
   opted_in: "opted the vessel in", removed: "removed it", switched_on: "switched it on", switched_off: "switched it off",
   recipients_changed: "changed who it goes to", schedule_changed: "changed the day/time",
+  channels_changed: "changed email / WhatsApp", whatsapp_contacts_changed: "changed the WhatsApp contacts",
   offered_to_client: "let the client manage it", withdrawn_from_client: "stopped the client managing it",
 };
 
@@ -90,6 +94,8 @@ export function VesselReportsPage() {
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState<string | null>(null);
+  const [wa, setWa] = useState<WaState | null>(null);
+  const loadWa = () => api("/api/vessel-reports?waTemplate=1").then((r) => r.json()).then((j) => j.ok && setWa(j)).catch(() => {});
 
   async function load() {
     const [y, s, r, e] = await Promise.all([
@@ -101,7 +107,7 @@ export function VesselReportsPage() {
     setYachts(y.data ?? []); setSubs(s.data ?? []); setRuns(r.data ?? []); setEvents(e.data ?? []);
     setLoading(false);
   }
-  useEffect(() => { if (canView) void load(); }, [canView]);
+  useEffect(() => { if (canView) { void load(); void loadWa(); } }, [canView]);
 
   const nameOf = useMemo(() => new Map(yachts.map((y) => [y.id, y.vessel_name])), [yachts]);
   const live = subs.filter((s) => s.enabled).length;
@@ -131,6 +137,8 @@ export function VesselReportsPage() {
         <span className="rounded-full border border-border px-2.5 py-1">{clientManaged} managed by the client</span>
       </div>
 
+      {wa && <WhatsAppTemplateCard wa={wa} canEdit={canEdit} onChanged={loadWa} usedBy={subs.filter((s) => s.send_whatsapp).length} />}
+
       <div className="flex flex-wrap gap-1 border-b border-border">
         {TABS.map(({ key, label, icon: Icon }) => (
           <button key={key} type="button" onClick={() => setTab(key)}
@@ -157,7 +165,7 @@ export function VesselReportsPage() {
       <Dialog open={!!open} onOpenChange={(o) => !o && setOpen(null)}>
         <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto p-0">
           {open && (
-            <VesselCard yachtId={open} vessel={nameOf.get(open) ?? "Vessel"} subs={subs.filter((s) => s.yacht_id === open)} onChanged={load} canEdit={canEdit} />
+            <VesselCard yachtId={open} vessel={nameOf.get(open) ?? "Vessel"} subs={subs.filter((s) => s.yacht_id === open)} onChanged={load} canEdit={canEdit} wa={wa} />
           )}
         </DialogContent>
       </Dialog>
@@ -278,7 +286,7 @@ function VesselMatrix({ yachts, subs, onOpen, onChanged, canEdit }: {
                             <span className={cn("rounded-full px-2 py-0.5 text-[10.5px] font-semibold", c.cls)}>{c.label}</span>
                             {s && (
                               <div className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">
-                                <div>{s.recipients.length ? `${s.recipients.length} recipient${s.recipients.length === 1 ? "" : "s"}` : "No recipients"} · {describeReportSchedule(s.schedule)}</div>
+                                <div>{[s.send_email && s.recipients.length ? `${s.recipients.length} by email` : null, s.send_whatsapp && s.wa_contact_ids.length ? `${s.wa_contact_ids.length} by WhatsApp` : null].filter(Boolean).join(" · ") || "No recipients"} · {describeReportSchedule(s.schedule)}</div>
                                 {s.client_can_manage && <div className="inline-flex items-center gap-1 text-sky-400"><UserCheck className="h-3 w-3" /> Client manages</div>}
                               </div>
                             )}
@@ -362,7 +370,7 @@ function ReportTypes({ subs }: { subs: Sub[] }) {
 
 // ── One vessel ──────────────────────────────────────────────────────────────
 
-function VesselCard({ yachtId, vessel, subs, onChanged, canEdit }: { yachtId: string; vessel: string; subs: Sub[]; onChanged: () => void; canEdit: boolean }) {
+function VesselCard({ yachtId, vessel, subs, onChanged, canEdit, wa }: { yachtId: string; vessel: string; subs: Sub[]; onChanged: () => void; canEdit: boolean; wa: WaState | null }) {
   return (
     <section className="rounded-xl border border-border bg-card">
       <div className="flex items-center gap-2 border-b border-border px-4 py-3">
@@ -372,7 +380,7 @@ function VesselCard({ yachtId, vessel, subs, onChanged, canEdit }: { yachtId: st
       </div>
       <div className="divide-y divide-border">
         {VESSEL_REPORTS.map((r) => (
-          <ReportRow key={r.key} yachtId={yachtId} vessel={vessel} report={r} sub={subs.find((s) => s.report_key === r.key) ?? null} onChanged={onChanged} canEdit={canEdit} />
+          <ReportRow key={r.key} yachtId={yachtId} vessel={vessel} report={r} sub={subs.find((s) => s.report_key === r.key) ?? null} onChanged={onChanged} canEdit={canEdit} wa={wa} />
         ))}
       </div>
     </section>
@@ -409,10 +417,13 @@ function EmailList({ value, onChange, placeholder, readOnly = false }: { value: 
   );
 }
 
-function ReportRow({ yachtId, vessel, report, sub, onChanged, canEdit }: {
-  yachtId: string; vessel: string; report: (typeof VESSEL_REPORTS)[number]; sub: Sub | null; onChanged: () => void; canEdit: boolean;
+function ReportRow({ yachtId, vessel, report, sub, onChanged, canEdit, wa }: {
+  yachtId: string; vessel: string; report: (typeof VESSEL_REPORTS)[number]; sub: Sub | null; onChanged: () => void; canEdit: boolean; wa: WaState | null;
 }) {
   const [recipients, setRecipients] = useState<string[]>(sub?.recipients ?? []);
+  const [sendEmail, setSendEmail] = useState<boolean>(sub?.send_email ?? true);
+  const [sendWa, setSendWa] = useState<boolean>(sub?.send_whatsapp ?? false);
+  const [waIds, setWaIds] = useState<string[]>(sub?.wa_contact_ids ?? []);
   const [cc, setCc] = useState<string[]>(sub?.cc ?? []);
   const [schedule, setSchedule] = useState<ReportSchedule>(sub?.schedule ?? report.defaultSchedule);
   const [busy, setBusy] = useState<string | null>(null);
@@ -421,9 +432,15 @@ function ReportRow({ yachtId, vessel, report, sub, onChanged, canEdit }: {
 
   useEffect(() => {
     setRecipients(sub?.recipients ?? []); setCc(sub?.cc ?? []); setSchedule(sub?.schedule ?? report.defaultSchedule);
-  }, [sub?.id, sub?.recipients?.join(","), sub?.cc?.join(","), JSON.stringify(sub?.schedule)]);
+    setSendEmail(sub?.send_email ?? true); setSendWa(sub?.send_whatsapp ?? false); setWaIds(sub?.wa_contact_ids ?? []);
+  }, [sub?.id, sub?.recipients?.join(","), sub?.cc?.join(","), JSON.stringify(sub?.schedule), sub?.send_email, sub?.send_whatsapp, sub?.wa_contact_ids?.join(",")]);
 
-  const dirty = !!sub && (recipients.join(",") !== sub.recipients.join(",") || cc.join(",") !== sub.cc.join(",") || JSON.stringify(schedule) !== JSON.stringify(sub.schedule));
+  const dirty = !!sub && (recipients.join(",") !== sub.recipients.join(",") || cc.join(",") !== sub.cc.join(",") || JSON.stringify(schedule) !== JSON.stringify(sub.schedule)
+    || sendEmail !== sub.send_email || sendWa !== sub.send_whatsapp || waIds.join(",") !== (sub.wa_contact_ids ?? []).join(","));
+  // Someone to send it to, on a channel that's on.
+  const reachable = (sendEmail && recipients.length > 0) || (sendWa && waIds.length > 0);
+  const savedReachable = !!sub && ((sub.send_email && sub.recipients.length > 0) || (sub.send_whatsapp && (sub.wa_contact_ids ?? []).length > 0));
+  const edits = { recipients, cc, schedule, send_email: sendEmail, send_whatsapp: sendWa, wa_contact_ids: waIds };
 
   async function optIn() {
     setBusy("optin");
@@ -440,9 +457,9 @@ function ReportRow({ yachtId, vessel, report, sub, onChanged, canEdit }: {
     onChanged(); return true;
   }
   async function toggle(on: boolean) {
-    if (on && !recipients.length) { toast.error("Add at least one recipient first."); return; }
+    if (on && !reachable) { toast.error("Add someone to send it to — an email address, or a WhatsApp contact with WhatsApp ticked."); return; }
     // Saving the switch saves the edits with it, so what goes out is what's on screen.
-    if (await save({ enabled: on, recipients, cc, schedule })) {
+    if (await save({ enabled: on, ...edits })) {
       toast.success(on ? `${report.label} for ${vessel} is on — next: ${describeReportSchedule(schedule)}` : `${report.label} for ${vessel} switched off`);
     }
   }
@@ -531,7 +548,9 @@ function ReportRow({ yachtId, vessel, report, sub, onChanged, canEdit }: {
 
       <div className="grid gap-3 lg:grid-cols-[1fr_1fr_auto]">
         <div className="space-y-1">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Send to</div>
+          <label className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <input type="checkbox" checked={sendEmail} disabled={!canEdit} onChange={(e) => setSendEmail(e.target.checked)} /> By email — send to
+          </label>
           <EmailList value={recipients} onChange={setRecipients} placeholder="captain@vessel.com, then Enter" readOnly={!canEdit} />
         </div>
         <div className="space-y-1">
@@ -551,9 +570,25 @@ function ReportRow({ yachtId, vessel, report, sub, onChanged, canEdit }: {
         </div>
       </div>
 
+      <div className="space-y-1.5">
+        <label className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          <input type="checkbox" checked={sendWa} disabled={!canEdit} onChange={(e) => setSendWa(e.target.checked)} /> By WhatsApp — the PDF to the vessel's contacts
+        </label>
+        {sendWa && (
+          <>
+            {wa && (!wa.ready || !wa.sendingOn) && (
+              <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-1.5 text-xs text-amber-300">
+                {!wa.ready ? "The WhatsApp report template isn't approved yet — until it is, only the email goes." : "WhatsApp sending is switched off for Polaris — until it's on, only the email goes."}
+              </div>
+            )}
+            <WaContactsPicker yachtId={yachtId} value={waIds} onChange={setWaIds} readOnly={!canEdit} />
+          </>
+        )}
+      </div>
+
       <div className="flex flex-wrap items-center gap-2">
         {canEdit && dirty && (
-          <Button size="sm" disabled={busy === "save"} onClick={() => void save({ recipients, cc, schedule, ...(recipients.length ? {} : { enabled: false }) }).then((ok) => ok && toast.success("Saved"))}>
+          <Button size="sm" disabled={busy === "save"} onClick={() => void save({ ...edits, ...(reachable ? {} : { enabled: false }) }).then((ok) => ok && toast.success("Saved"))}>
             {busy === "save" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null} Save changes
           </Button>
         )}
@@ -566,8 +601,8 @@ function ReportRow({ yachtId, vessel, report, sub, onChanged, canEdit }: {
         <Button size="sm" variant="outline" className="gap-1.5" disabled={!!busy} onClick={() => void send("test")} title="Send it to your own email, nobody else">
           {busy === "test" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FlaskConical className="h-3.5 w-3.5" />} Send test to me
         </Button>
-        {canEdit && <Button size="sm" variant="outline" className="gap-1.5" disabled={!!busy || dirty || !sub.recipients.length} onClick={() => setConfirmSend(true)}
-                title={dirty ? "Save your changes first" : !sub.recipients.length ? "Add a recipient first" : "Send it to the recipients now"}>
+        {canEdit && <Button size="sm" variant="outline" className="gap-1.5" disabled={!!busy || dirty || !savedReachable} onClick={() => setConfirmSend(true)}
+                title={dirty ? "Save your changes first" : !savedReachable ? "Add a recipient first" : "Send it to the recipients now"}>
           {busy === "send" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />} Send now
         </Button>}
         <span className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
@@ -597,7 +632,8 @@ function ReportRow({ yachtId, vessel, report, sub, onChanged, canEdit }: {
             <DialogDescription>It goes to the vessel's recipients straight away, with the PDF attached.</DialogDescription>
           </DialogHeader>
           <div className="text-sm">
-            <div><span className="text-muted-foreground">To:</span> {sub.recipients.join(", ")}</div>
+            {sub.send_email && sub.recipients.length > 0 && <div><span className="text-muted-foreground">Email:</span> {sub.recipients.join(", ")}</div>}
+            {sub.send_whatsapp && (sub.wa_contact_ids ?? []).length > 0 && <div><span className="text-muted-foreground">WhatsApp:</span> {sub.wa_contact_ids.length} contact{sub.wa_contact_ids.length === 1 ? "" : "s"} (those who've agreed to updates)</div>}
             {sub.cc.length > 0 && <div><span className="text-muted-foreground">CC:</span> {sub.cc.join(", ")}</div>}
           </div>
           <DialogFooter>
@@ -606,6 +642,65 @@ function ReportRow({ yachtId, vessel, report, sub, onChanged, canEdit }: {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+function WaContactsPicker({ yachtId, value, onChange, readOnly }: { yachtId: string; value: string[]; onChange: (v: string[]) => void; readOnly: boolean }) {
+  const [contacts, setContacts] = useState<WaContact[] | null>(null);
+  useEffect(() => {
+    void api(`/api/vessel-reports?waContacts=${yachtId}`).then((r) => r.json()).then((j) => setContacts(j.ok ? j.contacts : [])).catch(() => setContacts([]));
+  }, [yachtId]);
+  if (!contacts) return <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />;
+  if (!contacts.length) return <p className="text-xs text-muted-foreground">This vessel has no WhatsApp contacts yet — add them under Communications → WhatsApp → Contacts.</p>;
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {contacts.map((c) => {
+        const on = value.includes(c.id);
+        return (
+          <label key={c.id} title={c.canReceive ? c.phone ?? "" : "Hasn't agreed to receive updates by WhatsApp"}
+                 className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs",
+                   on ? "border-emerald-500/40 bg-emerald-500/10" : "border-border", !c.canReceive && "opacity-60")}>
+            <input type="checkbox" checked={on} disabled={readOnly || (!c.canReceive && !on)}
+                   onChange={(e) => onChange(e.target.checked ? [...value, c.id] : value.filter((x) => x !== c.id))} />
+            {c.name}
+            {!c.canReceive && <span className="text-[10px] text-amber-400">no consent</span>}
+          </label>
+        );
+      })}
+    </div>
+  );
+}
+
+function WhatsAppTemplateCard({ wa, canEdit, onChanged, usedBy }: { wa: WaState; canEdit: boolean; onChanged: () => void; usedBy: number }) {
+  const [busy, setBusy] = useState(false);
+  async function setup() {
+    setBusy(true);
+    try {
+      const r = await api("/api/vessel-reports", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "wa-template" }) });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error);
+      toast.success(j.status === "approved" ? "Template approved — reports can go by WhatsApp." : "Template sent to Meta for review — usually minutes, sometimes a few hours.");
+      onChanged();
+    } catch (e: any) { toast.error(e?.message ?? "Couldn't set up the template."); }
+    finally { setBusy(false); }
+  }
+  const state = !wa.connected ? { text: "WhatsApp isn't connected", tone: "text-muted-foreground" }
+    : wa.ready ? { text: "Report template approved", tone: "text-emerald-400" }
+    : wa.status === "pending" ? { text: "Report template with Meta for review", tone: "text-amber-400" }
+    : wa.status === "rejected" ? { text: `Report template rejected${wa.reason ? ` — ${wa.reason}` : ""}`, tone: "text-red-400" }
+    : { text: "Report template not set up yet", tone: "text-muted-foreground" };
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 text-sm">
+      <span className="font-medium">Reports by WhatsApp</span>
+      <span className={cn("text-xs", state.tone)}>{state.text}</span>
+      {wa.connected && !wa.sendingOn && <span className="text-xs text-amber-400">· WhatsApp sending is switched off</span>}
+      <span className="text-xs text-muted-foreground">· {usedBy} report{usedBy === 1 ? "" : "s"} set to WhatsApp</span>
+      {canEdit && wa.connected && (!wa.status || wa.status === "draft" || wa.status === "rejected") && (
+        <Button size="sm" variant="outline" className="ml-auto h-7 text-xs" disabled={busy} onClick={() => void setup()}>
+          {busy && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />} {wa.status === "rejected" ? "Resubmit the template" : "Set up the WhatsApp template"}
+        </Button>
+      )}
     </div>
   );
 }

@@ -24,7 +24,7 @@ function admin() {
   return createClient(url, key, { auth: { persistSession: false } })
 }
 
-const COLS = 'id, report_key, enabled, recipients, cc, schedule, last_sent_at, changed_by_kind, changed_by_name, changed_at'
+const COLS = 'id, report_key, enabled, recipients, cc, schedule, last_sent_at, changed_by_kind, changed_by_name, changed_at, send_email, send_whatsapp, wa_contact_ids'
 
 function shape(s: any) {
   const def = VESSEL_REPORTS.find((r) => r.key === s.report_key)
@@ -38,6 +38,7 @@ function shape(s: any) {
     cc: s.cc ?? [],
     when: describeReportSchedule((s.schedule ?? def?.defaultSchedule) as ReportSchedule),
     lastSentAt: s.last_sent_at ?? null,
+    whatsappContacts: s.send_whatsapp ? (s.wa_contact_ids ?? []).length : 0,
     changedBy: s.changed_by_kind ? { kind: s.changed_by_kind, name: s.changed_by_name, at: s.changed_at } : null,
   }
 }
@@ -87,7 +88,9 @@ export async function portalReportsHandler(request: Request): Promise<Response> 
   }
   const recipients = (patch.recipients as string[] | undefined) ?? sub.recipients ?? []
   const enabled = (patch.enabled as boolean | undefined) ?? sub.enabled
-  if (enabled && !recipients.length) {
+  // JLS may also send it by WhatsApp; it can stay on while either has someone.
+  const byWhatsApp = !!sub.send_whatsapp && (sub.wa_contact_ids ?? []).length > 0
+  if (enabled && !recipients.length && !byWhatsApp) {
     // Nobody left to send it to: it can't stay on.
     if (patch.enabled === true) return json({ error: 'Add at least one email address first.' }, 400)
     patch.enabled = false
