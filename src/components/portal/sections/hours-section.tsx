@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { AlertTriangle, ChevronLeft, ChevronRight, Clock, Loader2 } from "lucide-react";
 import { REST_MIN_24H, REST_MIN_7D, parseRest, restOver7Days, restSplitIssue } from "@/lib/portal/onboard";
 import { SectionCard, SectionEmpty, SectionHeader, SectionLoading, onboardRequest } from "./section-ui";
+import { awayLabel, awayOn } from "@/lib/portal/crew-rota";
 
 const db = supabase as any;
 
@@ -33,6 +34,7 @@ export function HoursSection({ yachtId, canEdit }: { yachtId: string; canEdit: b
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [away, setAway] = useState<Array<{ crew_member_id: string; kind: string; start_date: string; end_date: string }>>([]);
 
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
   const today = iso(new Date());
@@ -42,10 +44,13 @@ export function HoursSection({ yachtId, canEdit }: { yachtId: string; canEdit: b
     // Six days before the week too, so each day's 7-day total can be worked out.
     const from = iso(addDays(weekStart, -6));
     const to = iso(addDays(weekStart, 6));
-    const [c, r]: any[] = await Promise.all([
+    const [c, r, a]: any[] = await Promise.all([
       db.from("crew_members").select("id, full_name, first_name, last_name, rank, status").eq("yacht_id", yachtId).order("last_name"),
       db.from("onboard_rest_hours").select("crew_member_id, day, rest_hours, rest_split").eq("yacht_id", yachtId).gte("day", from).lte("day", to),
+      // Time away from the crew rota, so a day off the vessel reads "Leave", not a gap.
+      db.from("onboard_crew_rotation").select("crew_member_id, kind, start_date, end_date").eq("yacht_id", yachtId).lte("start_date", to).gte("end_date", from),
     ]);
+    setAway(a?.data ?? []);
     setCrew((c.data ?? []).filter((x: any) => !x.status || ["active", "on_leave"].includes(x.status)));
     setRows((r.data ?? []).map((x: any) => ({ ...x, rest_hours: Number(x.rest_hours) })));
     setLoading(false);
@@ -174,9 +179,15 @@ export function HoursSection({ yachtId, canEdit }: { yachtId: string; canEdit: b
                       const short = (v != null && v < REST_MIN_24H) || !!splitIssue;
                       const future = d > today;
                       const key = `${c.id}:${d}`;
+                      const off = v == null ? awayOn(away, c.id, d) : null;
                       return (
                         <td key={d} className="px-1 py-1.5 text-center">
-                          {canEdit && !future ? (
+                          {off ? (
+                            <span title="Away from the vessel (Crew rota)"
+                                  className="inline-flex h-10 w-16 items-center justify-center rounded-lg border border-dashed border-border text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                              {awayLabel(off.kind)}
+                            </span>
+                          ) : canEdit && !future ? (
                             <input
                               key={`${key}:${split ?? v ?? ""}`}
                               aria-label={`Hours of rest for ${nameOf(c)} on ${d}`}

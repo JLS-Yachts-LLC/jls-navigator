@@ -43,6 +43,7 @@ export const PORTAL_MODULES: Record<PortalModuleKey, {
     blurb: "The crew's own tools for running the vessel. JLS sees nothing here unless the crew send it across.",
     features: [
       { key: "tasks",   label: "Tasks & backlog",      blurb: "The crew's task board — backlog, to do, in progress, waiting and done" },
+      { key: "rota", label: "Crew rota & certificates", blurb: "Who's on board and who's away, leave planning, and every crew certificate with its expiry" },
       { key: "expenses", label: "Expenses & APA",      blurb: "Petty cash, crew cards and charter APA — receipts scanned, budgets against actual" },
       { key: "inventory", label: "Inventory",          blurb: "Everything the vessel owns — where it is, its condition, serials, value and warranty" },
       { key: "stock",   label: "Stock & requisitions", blurb: "What's on board, minimum levels, and requisitions sent to JLS" },
@@ -77,6 +78,7 @@ export const SECTION_FEATURE: Record<string, { module: PortalModuleKey; feature:
   tasks:     { module: "management", feature: "tasks" },
   inventory: { module: "management", feature: "inventory" },
   expenses:  { module: "management", feature: "expenses" },
+  rota:      { module: "management", feature: "rota" },
   stock:     { module: "management", feature: "stock" },
   checklists: { module: "management", feature: "checklists" },
   hours:     { module: "management", feature: "hours" },

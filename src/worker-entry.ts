@@ -961,6 +961,11 @@ export default {
       const { portalOnboardHandler } = await import('./routes/api.portal.onboard')
       return portalOnboardHandler(request)
     }
+    // Client portal — On board crew rota (time away, crew changes to JLS) and crew certificates.
+    if (url.pathname === '/api/portal/rota') {
+      const { portalRotaHandler } = await import('./routes/api.portal.rota')
+      return portalRotaHandler(request)
+    }
     // Client portal — On board expenses: petty cash, crew cards, charter APA, budgets, receipt scan.
     if (url.pathname === '/api/portal/expenses') {
       const { portalExpensesHandler } = await import('./routes/api.portal.expenses')

@@ -11,6 +11,7 @@
  *          | task_file        id = onboard_tasks id                            (Tasks & backlog)
  *          | inventory_file   id = onboard_inventory_items id — photo, receipt, warranty (Inventory)
  *          | expense_receipt  id = onboard_expenses id — the receipt for an expense (Expenses & APA)
+ *          | crew_cert        id = training_certifications id — a scan of a crew certificate (Crew rota)
  *
  * Every upload is checked here, not just in the browser: at most 15 MB; only
  * PDF, common image types and Office documents; and the file's first bytes must
@@ -63,6 +64,7 @@ const TARGETS = {
   task_file: { section: 'tasks', table: 'onboard_tasks', imagesOnly: false },
   inventory_file: { section: 'inventory', table: 'onboard_inventory_items', imagesOnly: false },
   expense_receipt: { section: 'expenses', table: 'onboard_expenses', imagesOnly: false },
+  crew_cert: { section: 'rota', table: 'training_certifications', imagesOnly: false },
 } as const
 type Target = keyof typeof TARGETS
 
@@ -113,8 +115,13 @@ export async function portalUploadHandler(request: Request): Promise<Response> {
     // The record must be this vessel's.
     if (target !== 'client_document') {
       if (!UUID_RE.test(id)) return json({ error: 'Not found' }, 404)
-      const { data: rec } = await sb.from(spec.table).select('id, yacht_id').eq('id', id).maybeSingle()
-      if (!rec || (rec as any).yacht_id !== yacht.yachtId) return json({ error: 'Not found' }, 404)
+      // Crew certificates have no yacht_id of their own: they belong to the vessel through the crew member.
+      const owner = target === 'crew_cert'
+        ? await sb.from('training_certifications').select('id, crew_members!inner(yacht_id)').eq('id', id).maybeSingle()
+            .then(({ data }) => ((data as any)?.crew_members?.yacht_id as string | undefined) ?? null)
+        : await sb.from(spec.table).select('id, yacht_id').eq('id', id).maybeSingle()
+            .then(({ data }) => ((data as any)?.yacht_id as string | undefined) ?? null)
+      if (owner !== yacht.yachtId) return json({ error: 'Not found' }, 404)
     }
 
     const path = `portal/${yacht.yachtId}/${target}/${crypto.randomUUID()}-${safeName(file.name)}`
