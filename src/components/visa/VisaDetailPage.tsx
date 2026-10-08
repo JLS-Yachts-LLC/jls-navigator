@@ -195,7 +195,7 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
     setLoading(true);
     const { data, error } = await (supabase as any)
       .from("visa_applications")
-      .select("*, yachts(vessel_name, visa_report_email), crew_members(email, rank, department)")
+      .select("*, yachts(vessel_name), crew_members(email, rank, department)")
       .eq("id", id)
       .maybeSingle();
     if (error || !data) { toast.error("Application not found"); goList(); return; }
@@ -757,8 +757,18 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
 // ── Send-to-Vessel dialog — emails the issued visa + UAE Arrival Instructions ──
 function SendToVesselDialog({ visa, onClose, onSent }: { visa: Visa; onClose: () => void; onSent: () => void }) {
   const crewName = [visa.given_name, visa.surname].filter(Boolean).join(" ") || "Crew member";
-  const suggestions = [visa.yachts?.visa_report_email, visa.crew_members?.email].filter(Boolean) as string[];
+  const suggestions = [visa.crew_members?.email].filter(Boolean) as string[];
   const [to, setTo] = useState(suggestions.join(", "));
+  // The vessel's own address: whoever its Visa status report goes to (Automated Reports).
+  useEffect(() => {
+    if (!(visa as any).yacht_id) return;
+    void (supabase as any).from("vessel_report_subscriptions").select("recipients")
+      .eq("yacht_id", (visa as any).yacht_id).eq("report_key", "visa_status").maybeSingle()
+      .then(({ data }: any) => {
+        const vessel: string[] = data?.recipients ?? [];
+        if (vessel.length) setTo((cur) => [...new Set([...vessel, ...cur.split(/[,;\s]+/).filter(Boolean)])].join(", "));
+      });
+  }, [(visa as any).yacht_id]);
   const [cc, setCc] = useState("");
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);

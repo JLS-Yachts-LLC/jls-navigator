@@ -8,8 +8,6 @@ import { useEffect, useState } from "react";
 import { COLORS, FONTS } from "@/lib/tokens";
 
 interface Prefs {
-  visa_report_email: string | null;
-  send_visa_reports: boolean | null;
   vessel_whatsapp: string | null;
   send_visa_via_whatsapp: boolean | null;
   allow_crew_email_delivery: boolean | null;

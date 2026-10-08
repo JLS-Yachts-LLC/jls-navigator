@@ -28,7 +28,7 @@ function admin() {
 }
 
 const PREF_COLUMNS =
-  "id, vessel_name, visa_report_email, send_visa_reports, vessel_whatsapp, send_visa_via_whatsapp, allow_crew_email_delivery, allow_crew_whatsapp_delivery";
+  "id, vessel_name, vessel_whatsapp, send_visa_via_whatsapp, allow_crew_email_delivery, allow_crew_whatsapp_delivery";
 
 const E164 = /^\+[1-9]\d{1,14}$/;
 
@@ -78,8 +78,7 @@ export async function visaVesselPrefsHandler(
     }
 
     const update = {
-      // (send_visa_reports / visa_report_email are retired — a vessel's visa
-      // report recipients are set in Reports → Automated Reports.)
+      // (A vessel's visa report recipients are set in Reports → Automated Reports.)
       vessel_whatsapp: whatsapp,
       send_visa_via_whatsapp: !!body.send_visa_via_whatsapp && !!whatsapp,
       allow_crew_email_delivery: !!body.allow_crew_email_delivery,

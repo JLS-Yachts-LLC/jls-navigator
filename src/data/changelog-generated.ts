@@ -9,6 +9,26 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-10-08",
     "entries": [
       {
+        "type": "fix",
+        "title": "Signed-in users can no longer call the unguarded finance-dashboard and boat-retire functions directly, and trigger functions are no longer callable over the API"
+      },
+      {
+        "type": "feature",
+        "title": "Document & permit expiries added to Automated Reports — every vessel and crew paper that has expired or falls due in the next 90 days, grouped by urgency"
+      },
+      {
+        "type": "fix",
+        "title": "Visa expiry dates left blank in the trackers no longer import as 1900 dates that make a visa look expired"
+      },
+      {
+        "type": "feature",
+        "title": "Client portal inventory on a phone shows cards with a quick-add bar, and repair tasks link straight to their inventory item (and back)"
+      },
+      {
+        "type": "feature",
+        "title": "Crew on board added to Automated Reports — who is on board and on leave, with rank, sign-on date, passport and UAE visa, flagging anything expired or due soon"
+      },
+      {
         "type": "feature",
         "title": "Client portal connects the task board and inventory — tasks and warranties on Today's brief, in Alerts and the Compliance calendar, and inventory items can raise a repair task or a requisition"
       },

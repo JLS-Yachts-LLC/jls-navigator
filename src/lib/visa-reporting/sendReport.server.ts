@@ -156,7 +156,7 @@ export async function sendVesselVisaReport(
       report_id: reportId,
       trigger,
       channel: "vessel_email",
-      sent_to: yacht.visa_report_email,
+      sent_to: [...to, ...cc].join(", "),
       error: emailError,
     },
   });
