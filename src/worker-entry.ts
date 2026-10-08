@@ -1611,6 +1611,17 @@ export default {
       // on the Integrations page remains for a manual push when needed.
     }
 
+    // ── Daily (checked hourly): compare crew dates of birth with SharePoint
+    //    (SD-0048). Read-only — writes findings to crew_dob_sp_check for review. ──
+    if (isHourly) {
+      ctx.waitUntil(
+        import('./lib/sharepoint-sync.server')
+          .then((m) => m.runCrewDobCheckIfDue())
+          .then((r) => { if (r.ran) console.log(`[crew-dob-check] ${JSON.stringify(r.result)}`) })
+          .catch((e) => console.error('[crew-dob-check] error:', e))
+      )
+    }
+
     // ── Hourly: one chunk of the two-way visa ⇄ tracker sync (rotating cursor,
     // snapshot-guarded newest-wins). Cycles through all vessels over ~8 hours. ──
     if (isHourly) {

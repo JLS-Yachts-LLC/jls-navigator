@@ -25,6 +25,12 @@ import { cn } from "@/lib/utils";
 import { nameSimilarity, groupSimilar } from "@/lib/crew-name-match";
 import { scanDuplicateCrewFolders, mergeCrewFolders, type DupGroup } from "@/lib/crew-duplicates.server";
 
+/** Passport numbers compared without spaces or case — " 766812112" and "766812112" are the same passport. */
+const passportKey = (p: string | null | undefined) => (p ?? "").replace(/\s+/g, "").toUpperCase();
+/** Whole days between two dates of birth, or null when either is missing. */
+const dobGap = (a: string | null | undefined, b: string | null | undefined) =>
+  a && b ? Math.round(Math.abs(Date.parse(a) - Date.parse(b)) / 86_400_000) : null;
+
 type Crew = { id: string; first_name: string | null; middle_name: string | null; last_name: string | null; full_name: string | null; rank: string | null; yacht_id: string | null; status: string | null; passport_number: string | null; date_of_birth: string | null; created_at: string | null };
 
 /** What merging one record into another would move — shown before it happens. */
@@ -63,10 +69,15 @@ export function CrewDuplicatesPage() {
     setLoading(false);
   }
 
+  type RecordGroup = { yacht: string; members: Crew[]; cross: boolean; reason: string };
   const yachtName = (id: string | null) => yachts.find((y) => y.id === id)?.vessel_name ?? "Unassigned";
 
   /** Duplicate crew records, grouped WITHIN each vessel — the same name on two
-   *  different yachts is usually two different people (or a genuine transfer). */
+   *  different yachts is usually two different people (or a genuine transfer) —
+   *  plus the cross-vessel cases that are almost always one person (SD-0048):
+   *  the same passport number, or a similar name where one profile has no vessel
+   *  (SharePoint imports arrive unassigned) and the dates of birth agree or are
+   *  one day apart (the old SharePoint date error, SD-0017). */
   const recordGroups = useMemo(() => {
     const byYacht = new Map<string, Crew[]>();
     for (const c of crew) {
@@ -74,10 +85,37 @@ export function CrewDuplicatesPage() {
       const k = c.yacht_id ?? "unassigned";
       (byYacht.get(k) ?? byYacht.set(k, []).get(k)!).push(c);
     }
-    const out: { yacht: string; members: Crew[] }[] = [];
+    const out: RecordGroup[] = [];
     for (const [yid, members] of byYacht) {
       for (const g of groupSimilar(members, crewName)) {
-        out.push({ yacht: yid === "unassigned" ? "Unassigned" : yachtName(yid), members: g });
+        out.push({ yacht: yid === "unassigned" ? "Unassigned" : yachtName(yid), members: g, cross: false, reason: "Similar names on the same vessel" });
+      }
+    }
+
+    // Across vessels. Only pairs touching the chosen vessel when one is picked.
+    const inScope = (c: Crew) => vessel === "all" || c.yacht_id === vessel;
+    const pairSeen = new Set<string>();
+    for (let i = 0; i < crew.length; i++) {
+      for (let j = i + 1; j < crew.length; j++) {
+        const a = crew[i], b = crew[j];
+        if (a.yacht_id === b.yacht_id) continue;              // same vessel: handled above
+        if (!inScope(a) && !inScope(b)) continue;
+        const pa = passportKey(a.passport_number), pb = passportKey(b.passport_number);
+        const samePassport = !!pa && pa === pb;
+        let reason = "";
+        if (samePassport) reason = "Same passport number";
+        else if (!a.yacht_id || !b.yacht_id) {
+          if (pa && pb) continue;                             // two different passports: two people
+          const gap = dobGap(a.date_of_birth, b.date_of_birth);
+          if (gap !== null && gap > 1) continue;
+          if (nameSimilarity(crewName(a), crewName(b)) < 0.82) continue;
+          reason = "Similar names — one profile has no vessel";
+        } else continue;
+        const key = [a.id, b.id].sort().join("|");
+        if (pairSeen.has(key)) continue;
+        pairSeen.add(key);
+        const label = [a, b].map((c) => (c.yacht_id ? yachtName(c.yacht_id) : "Unassigned")).join(" ↔ ");
+        out.push({ yacht: label, members: [a, b], cross: true, reason });
       }
     }
     return out;
@@ -326,7 +364,7 @@ export function CrewDuplicatesPage() {
           recordGroups.length === 0 ? (
             <Empty icon={<CheckCircle2 className="h-9 w-9 text-emerald-500/60" />}
               title="No duplicate crew records"
-              body="No two crew members on the same vessel have similar enough names to look like duplicates." />
+              body="No two crew members look like duplicates — on the same vessel, across vessels by passport, or between a vessel and the unassigned list." />
           ) : (
             <div className="space-y-3">
               {recordGroups.map((g, i) => (
@@ -335,14 +373,15 @@ export function CrewDuplicatesPage() {
                     <AlertTriangle className="h-4 w-4 text-amber-400" />
                     <span className="text-sm font-semibold">{g.yacht}</span>
                     <span className="text-[11px] text-muted-foreground">
-                      {g.members.length} similar records ·{" "}
-                      {Math.round(nameSimilarity(crewName(g.members[0]), crewName(g.members[1])) * 100)}% match
+                      {g.reason} ·{" "}
+                      {Math.round(nameSimilarity(crewName(g.members[0]), crewName(g.members[1])) * 100)}% name match
                     </span>
                   </div>
                   <div className="divide-y divide-border/40">
                     {g.members.map((m) => (
                       <div key={m.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-[12.5px]">
                         <span className="font-medium">{crewName(m)}</span>
+                        {g.cross && <span className="text-muted-foreground">{m.yacht_id ? yachtName(m.yacht_id) : "No vessel"}</span>}
                         {m.date_of_birth && <span className="text-muted-foreground">{m.date_of_birth}</span>}
                         {m.rank && <span className="text-muted-foreground">{m.rank}</span>}
                         {m.passport_number && <span className="font-mono text-[11px] text-muted-foreground/70">{m.passport_number}</span>}
@@ -368,6 +407,12 @@ export function CrewDuplicatesPage() {
                       </div>
                     ))}
                   </div>
+                  {g.members.length === 2 && dobGap(g.members[0].date_of_birth, g.members[1].date_of_birth) === 1 && (
+                    <p className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-[12px] text-amber-200">
+                      The dates of birth are one day apart. That is usually the old SharePoint date error, not two people.
+                      Keep the profile whose date matches the passport — a merge keeps the date of the profile you keep.
+                    </p>
+                  )}
                   <p className="mt-2 text-[11px] text-muted-foreground/70">
                     “Keep this one” moves the other record's visas, passports, documents and history onto it, then removes the empty duplicate.
                     {" "}Check the passport numbers first — if they genuinely differ these are probably two different people, and merging them cannot be undone.

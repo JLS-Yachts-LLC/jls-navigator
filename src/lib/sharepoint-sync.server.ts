@@ -266,6 +266,90 @@ export async function dryRunPermitsSync(): Promise<Array<{ list: string; result:
 }
 
 /**
+ * SD-0048 — compare every synced crew member's date of birth with SharePoint,
+ * read with the fixed date reader (spDateOnly). Writes the disagreements to
+ * crew_dob_sp_check and a line to crew_dob_sp_check_runs; changes nothing in
+ * Polaris or SharePoint. Run daily by the scheduled job; corrections are applied
+ * separately, after review.
+ *
+ * Why it exists: until 15 Sept every synced date landed a day early (SD-0017).
+ * The clean-up then corrected crew to their passport record, so crew with no
+ * passport on file kept the early date.
+ */
+export async function checkCrewDobsAgainstSharePoint(): Promise<{ spItems: number; compared: number; differences: number }> {
+  const sb = supabaseAdmin as any
+  try {
+    const cfg = await getSpConfig()
+    const syncs = (await getSpSyncs()).filter(s => s.syncTarget === 'crew_members' && s.enabled)
+    const spDob = new Map<string, { dob: string; raw: string }>()
+    let spItems = 0
+    for (const sync of syncs) {
+      const dobField = Object.entries(sync.fieldMapping).find(([, db]) => db === 'date_of_birth')?.[0]
+      if (!dobField) continue
+      const token = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret)
+      const siteId = await resolveSpSite(token, cfg.tenantUrl, sync.sitePath ?? cfg.siteUrl)
+      let nextUrl: string | null =
+        `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${sync.listName}/items?$expand=fields&$top=200`
+      while (nextUrl) {
+        const res = await fetch(nextUrl, { headers: { Authorization: `Bearer ${token}` } })
+        const page = await res.json() as Record<string, any>
+        if (!page.value) throw new Error(`SharePoint list "${sync.listName}": ${JSON.stringify(page.error ?? page).slice(0, 200)}`)
+        for (const item of page.value as any[]) {
+          spItems++
+          const raw = item.fields?.[dobField]
+          const dob = spDateOnly(raw)
+          if (dob) spDob.set(String(item.id), { dob, raw: String(raw) })
+        }
+        nextUrl = page['@odata.nextLink'] ?? null
+      }
+    }
+
+    const { data: crew } = await fetchAllRows(() => sb.from('crew_members')
+      .select('id, full_name, date_of_birth, sharepoint_item_id').not('sharepoint_item_id', 'is', null).order('id'))
+    const { data: passports } = await fetchAllRows(() => sb.from('crew_passports')
+      .select('crew_id, date_of_birth').not('date_of_birth', 'is', null).order('crew_id'))
+    const passportDob = new Map<string, string>(((passports ?? []) as any[]).map((p) => [String(p.crew_id), String(p.date_of_birth)]))
+
+    let compared = 0
+    const rows: Record<string, unknown>[] = []
+    for (const c of (crew ?? []) as any[]) {
+      const sp = spDob.get(String(c.sharepoint_item_id))
+      if (!sp || !c.date_of_birth) continue
+      compared++
+      if (sp.dob === c.date_of_birth) continue
+      rows.push({
+        crew_id: c.id, full_name: c.full_name, sp_item_id: String(c.sharepoint_item_id),
+        polaris_dob: c.date_of_birth, sharepoint_dob: sp.dob, sharepoint_raw: sp.raw,
+        day_gap: Math.round((Date.parse(sp.dob) - Date.parse(c.date_of_birth)) / 86_400_000),
+        passport_dob: passportDob.get(String(c.id)) ?? null,
+        checked_at: new Date().toISOString(),
+      })
+    }
+
+    // Replace the previous findings with today's.
+    await sb.from('crew_dob_sp_check').delete().not('crew_id', 'is', null)
+    for (let i = 0; i < rows.length; i += 200) {
+      const { error } = await sb.from('crew_dob_sp_check').insert(rows.slice(i, i + 200))
+      if (error) throw new Error(`crew_dob_sp_check: ${error.message}`)
+    }
+    await sb.from('crew_dob_sp_check_runs').insert({ sp_items: spItems, compared, differences: rows.length })
+    return { spItems, compared, differences: rows.length }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    await sb.from('crew_dob_sp_check_runs').insert({ error: msg.slice(0, 500) })
+    throw e
+  }
+}
+
+/** Run the check if it hasn't run in the last day. Called from the hourly job. */
+export async function runCrewDobCheckIfDue(): Promise<{ ran: boolean; result?: { spItems: number; compared: number; differences: number } }> {
+  const { data } = await (supabaseAdmin as any).from('crew_dob_sp_check_runs')
+    .select('run_at').order('run_at', { ascending: false }).limit(1).maybeSingle()
+  if (data?.run_at && Date.now() - Date.parse(data.run_at) < 23 * 3_600_000) return { ran: false }
+  return { ran: true, result: await checkCrewDobsAgainstSharePoint() }
+}
+
+/**
  * Sync only the list the SharePoint webhook subscription is registered for.
  *
  * The subscription is created against a single list (getSpConfig().listName — see
