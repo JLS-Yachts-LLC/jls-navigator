@@ -937,7 +937,7 @@ function PortalShell({ link, email, onSignOut, preview = false, vessels = [], on
                             onOpenRequest={(id) => { setTab("requests"); setOpenRequestId(id); }} />
         )}
         {tab === "calendar" && (
-          <CalendarSection yachtId={link.yacht_id} includeIsm={allowedKeys.has("ism")} includeGatePasses={allowedKeys.has("gatepasses")}
+          <CalendarSection yachtId={link.yacht_id} includeIsm={allowedKeys.has("ism")} includeGatePasses={allowedKeys.has("gatepasses")} includeWarranties={allowedKeys.has("inventory")}
                            onRenew={(cat) => setNewRequestCat(cat)} />
         )}
         {tab === "orders" && (
@@ -951,7 +951,7 @@ function PortalShell({ link, email, onSignOut, preview = false, vessels = [], on
         {(tab === "invoices" || tab === "finances") && <FinancesTab onOpenRequest={(id) => { setTab("requests"); setOpenRequestId(id); }} />}
         {tab === "balances" && <BalancesTab />}
         {tab === "logistics" && <LogisticsTab yachtId={link.yacht_id} canBook={!preview} onOpenRequest={(id) => { setTab("requests"); setOpenRequestId(id); }} />}
-        {tab === "alerts" && <AlertsTab yachtId={link.yacht_id} financeOk={financeOk} stockOk={allowedKeys.has("stock")} gatePassOk={allowedKeys.has("gatepasses")} onOpen={(t) => { setTab(t); setOpenRequestId(null); }} />}
+        {tab === "alerts" && <AlertsTab yachtId={link.yacht_id} financeOk={financeOk} stockOk={allowedKeys.has("stock")} gatePassOk={allowedKeys.has("gatepasses")} tasksOk={allowedKeys.has("tasks")} inventoryOk={allowedKeys.has("inventory")} onOpen={(t) => { setTab(t); setOpenRequestId(null); }} />}
         {tab === "positions" && yacht && <PositionsTab yacht={yacht} />}
         {/* On board (Management module). The tabs only appear when the vessel
             has the module and this position can see them; editing is off in
@@ -961,7 +961,11 @@ function PortalShell({ link, email, onSignOut, preview = false, vessels = [], on
                         onOpenRequest={(id) => { setTab("requests"); setOpenRequestId(id); }} />
         )}
         {tab === "tasks" && <TasksSection yachtId={link.yacht_id} canEdit={!preview} />}
-        {tab === "inventory" && <InventorySection yachtId={link.yacht_id} canEdit={!preview} showValue={canSeeFinance(link.position)} />}
+        {tab === "inventory" && (
+          <InventorySection yachtId={link.yacht_id} canEdit={!preview} showValue={canSeeFinance(link.position)}
+                            canTask={allowedKeys.has("tasks")} canRequisition={allowedKeys.has("stock")}
+                            onOpen={(t) => { setTab(t); setOpenRequestId(null); }} />
+        )}
         {tab === "checklists" && <ChecklistsSection yachtId={link.yacht_id} canEdit={!preview} />}
         {tab === "hours" && <HoursSection yachtId={link.yacht_id} canEdit={!preview} />}
         {tab === "handover" && <HandoverSection yachtId={link.yacht_id} canEdit={!preview} />}
@@ -2620,14 +2624,16 @@ const expiringWithin = (d: string | null | undefined, days: number) => {
   return n <= days && n >= -3650; // upcoming or recently lapsed, not ancient records
 };
 
-function AlertsTab({ yachtId, onOpen, financeOk, stockOk, gatePassOk }: { yachtId: string; onOpen: (t: Tab) => void; financeOk: boolean; stockOk: boolean; gatePassOk: boolean }) {
+function AlertsTab({ yachtId, onOpen, financeOk, stockOk, gatePassOk, tasksOk = false, inventoryOk = false }: {
+  yachtId: string; onOpen: (t: Tab) => void; financeOk: boolean; stockOk: boolean; gatePassOk: boolean; tasksOk?: boolean; inventoryOk?: boolean;
+}) {
   const [alerts, setAlerts] = useState<PortalAlert[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     void (async () => {
       setLoading(true);
-      const [reqR, crewR, visaR, permitR, finR, logR, stockR, passR] = await Promise.allSettled([
+      const [reqR, crewR, visaR, permitR, finR, logR, stockR, passR, taskR, invR] = await Promise.allSettled([
         db.from("captain_requests").select("id, reference, title, status").eq("yacht_id", yachtId),
         db.from("crew_members").select("id, full_name, first_name, last_name, passport_expiry_date").eq("yacht_id", yachtId),
         db.from("visa_applications").select("id, given_name, surname, visa_expiry").eq("yacht_id", yachtId),
@@ -2636,6 +2642,8 @@ function AlertsTab({ yachtId, onOpen, financeOk, stockOk, gatePassOk }: { yachtI
         authedFetch("/api/portal/logistics").then((r) => r.json()).catch(() => null),
         stockOk ? db.from("onboard_stock_items").select("quantity, min_quantity, par_quantity").eq("yacht_id", yachtId) : Promise.resolve({ data: [] }),
         gatePassOk ? authedFetch("/api/portal/gatepasses").then((r) => r.json()).catch(() => null) : Promise.resolve(null),
+        tasksOk ? db.from("onboard_tasks").select("id, due_date, status").eq("yacht_id", yachtId).neq("status", "done").not("due_date", "is", null) : Promise.resolve({ data: [] }),
+        inventoryOk ? db.from("onboard_inventory_items").select("id, name, condition, warranty_expiry").eq("yacht_id", yachtId) : Promise.resolve({ data: [] }),
       ]);
       const out: PortalAlert[] = [];
 
@@ -2682,6 +2690,28 @@ function AlertsTab({ yachtId, onOpen, financeOk, stockOk, gatePassOk }: { yachtI
       if (stockR.status === "fulfilled") {
         const low = ((stockR.value as any).data ?? []).filter(isLowStock).length;
         if (low) out.push({ id: "stock-low", severity: "medium", icon: Package, title: `${low} stock item${low > 1 ? "s" : ""} at or below minimum`, detail: "Raise a requisition to top up", go: "stock" });
+      }
+
+      // The crew's task board: overdue, and due today (On board)
+      if (taskR.status === "fulfilled") {
+        const todayIso = new Date().toISOString().slice(0, 10);
+        const open = ((taskR.value as any).data ?? []).filter((t: any) => t.status !== "backlog");
+        const late = open.filter((t: any) => t.due_date < todayIso).length;
+        const dueToday = open.filter((t: any) => t.due_date === todayIso).length;
+        if (late) out.push({ id: "tasks-late", severity: "high", icon: SquareKanban, title: `${late} task${late > 1 ? "s" : ""} overdue`, detail: "On the crew's task board", go: "tasks" });
+        if (dueToday) out.push({ id: "tasks-today", severity: "medium", icon: SquareKanban, title: `${dueToday} task${dueToday > 1 ? "s" : ""} due today`, go: "tasks" });
+      }
+
+      // Inventory: damaged or missing items, and warranties ending within 30 days (On board)
+      if (invR.status === "fulfilled") {
+        const items = (invR.value as any).data ?? [];
+        const bad = items.filter((i: any) => i.condition === "damaged" || i.condition === "missing");
+        if (bad.length) out.push({ id: "inv-bad", severity: "medium", icon: Boxes, title: `${bad.length} inventory item${bad.length > 1 ? "s" : ""} damaged or missing`, detail: bad.slice(0, 3).map((i: any) => i.name).join(", "), go: "inventory" });
+        for (const i of items) {
+          if (!i.warranty_expiry) continue;
+          const n = daysTo(i.warranty_expiry);
+          if (n >= 0 && n <= 30) out.push({ id: `inv-w-${i.id}`, severity: "medium", icon: Boxes, title: `${i.name} — warranty ends in ${n}d`, detail: fmtDate(i.warranty_expiry), go: "inventory" });
+        }
       }
 
       // Issued gate passes running out within 3 days

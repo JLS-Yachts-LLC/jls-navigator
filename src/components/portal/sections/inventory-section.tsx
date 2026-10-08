@@ -19,7 +19,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
-import { AlertTriangle, Boxes, Check, ChevronDown, ChevronRight, Download, FileUp, LayoutList, Loader2, Pencil, Search, ShieldAlert, Table2, X } from "lucide-react";
+import { portalFetch } from "@/lib/portal/portal-fetch";
+import { AlertTriangle, Boxes, Check, ChevronDown, ChevronRight, Download, FileUp, LayoutList, Loader2, Pencil, Search, ShieldAlert, ShoppingCart, SquareKanban, Table2, X } from "lucide-react";
 import { INV_COLUMNS, csvCell, downloadText, templateCsv, type ImportRow } from "@/lib/portal/inventory";
 import { InventoryGrid } from "./inventory-grid";
 import { InventoryImportDialog } from "./inventory-import";
@@ -83,7 +84,15 @@ type GroupBy = "location" | "category" | "department";
 type View = "grid" | "list";
 const VIEW_KEY = "polaris.portal.inventoryView";
 
-export function InventorySection({ yachtId, canEdit, showValue }: { yachtId: string; canEdit: boolean; showValue: boolean }) {
+/** What happened, with an optional next step (open the task board, create a task…). */
+type Notice = { text: string; tone?: "good" | "warn"; action?: { label: string; run: () => void } };
+
+export function InventorySection({ yachtId, canEdit, showValue, canTask = false, canRequisition = false, onOpen }: {
+  yachtId: string; canEdit: boolean; showValue: boolean;
+  /** This person sees Tasks / Stock & requisitions, so the shortcuts into them can show. */
+  canTask?: boolean; canRequisition?: boolean;
+  onOpen?: (tab: "tasks" | "stock") => void;
+}) {
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -100,12 +109,72 @@ export function InventorySection({ yachtId, canEdit, showValue }: { yachtId: str
   const setView = (v: View) => { setViewState(v); try { localStorage.setItem(VIEW_KEY, v); } catch { /* private mode */ } };
   const [importing, setImporting] = useState<{ rows: ImportRow[] | null } | null>(null);
   const [filesFor, setFilesFor] = useState<Item | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const [linkedTasks, setLinkedTasks] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
-    const { data } = await db.from("onboard_inventory_items").select("*").eq("yacht_id", yachtId).order("name");
-    setItems(data ?? []); setLoading(false);
-  }, [yachtId]);
+    const [{ data }, tasks] = await Promise.all([
+      db.from("onboard_inventory_items").select("*").eq("yacht_id", yachtId).order("name"),
+      canTask
+        ? db.from("onboard_tasks").select("reference, inventory_item_id").eq("yacht_id", yachtId).neq("status", "done").not("inventory_item_id", "is", null)
+        : Promise.resolve({ data: [] }),
+    ]);
+    setItems(data ?? []);
+    setLinkedTasks(Object.fromEntries(((tasks as any).data ?? []).map((t: any) => [t.inventory_item_id, t.reference])));
+    setLoading(false);
+  }, [yachtId, canTask]);
+
+  const describe = (i: Item) => [i.name, [i.make, i.model].filter(Boolean).join(" ")].filter(Boolean).join(" — ");
+
+  /** A task on the crew's board to repair or replace this item, linked back to it. */
+  const createTask = async (i: Item) => {
+    try {
+      const res = await portalFetch("/api/portal/tasks", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: `${i.condition === "missing" ? "Find or replace" : "Repair or replace"}: ${i.name}`.slice(0, 200),
+          status: "todo",
+          priority: i.condition === "missing" || i.condition === "damaged" ? "high" : "normal",
+          department: i.department,
+          labels: ["Inventory"],
+          inventory_item_id: i.id,
+          description: [
+            describe(i),
+            i.serial_number && `Serial: ${i.serial_number}`,
+            i.location && `Kept: ${i.location}`,
+            `Condition: ${condition(i.condition)[1]}`,
+            i.warranty_expiry && `Warranty until ${fmtDate(i.warranty_expiry)}`,
+          ].filter(Boolean).join("\n"),
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error ?? "Could not create the task.");
+      setLinkedTasks((m) => ({ ...m, [i.id]: body.reference }));
+      setNotice({ text: `${body.reference} added to To do on the task board.`, action: onOpen ? { label: "Open task board", run: () => onOpen("tasks") } : undefined });
+    } catch (e) { setNotice({ text: e instanceof Error ? e.message : "Could not create the task.", tone: "warn" }); }
+  };
+
+  /** A draft requisition to replace this item, for the approver to send to JLS. */
+  const raiseRequisition = async (i: Item) => {
+    try {
+      const res = await portalFetch("/api/portal/requisitions", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: `Replace: ${i.name}`.slice(0, 160),
+          department: i.department,
+          notes: [`Raised from the inventory — ${condition(i.condition)[1].toLowerCase()}`, i.location && `kept: ${i.location}`].filter(Boolean).join(", "),
+          items: [{
+            description: describe(i).slice(0, 300),
+            quantity: 1,
+            notes: [i.serial_number && `S/N ${i.serial_number}`, i.supplier && `Supplier: ${i.supplier}`].filter(Boolean).join(" · ") || null,
+          }],
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error ?? "Could not raise the requisition.");
+      setNotice({ text: `${body.reference} raised as a draft — check the quantity, then submit it for approval.`, action: onOpen ? { label: "Open requisitions", run: () => onOpen("stock") } : undefined });
+    } catch (e) { setNotice({ text: e instanceof Error ? e.message : "Could not raise the requisition.", tone: "warn" }); }
+  };
   useEffect(() => { void load(); }, [load]);
 
   const unchecked = (i: Item) => !i.last_checked || (daysUntil(i.last_checked) ?? 0) < -CHECK_EVERY_DAYS;
@@ -208,8 +277,13 @@ export function InventorySection({ yachtId, canEdit, showValue }: { yachtId: str
       />
 
       {notice && (
-        <div className="flex items-center justify-between gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
-          <span>{notice}</span>
+        <div className={cn("flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2 text-sm",
+          notice.tone === "warn" ? "border-amber-500/30 bg-amber-500/10 text-amber-200" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-200")}>
+          <span className="min-w-0 flex-1">{notice.text}</span>
+          {notice.action && (
+            <button type="button" onClick={() => { const a = notice.action!; setNotice(null); a.run(); }}
+                    className="rounded-lg border border-current/30 px-2.5 py-1 text-xs font-semibold hover:bg-white/5">{notice.action.label}</button>
+          )}
           <button type="button" onClick={() => setNotice(null)} aria-label="Dismiss"><X className="h-4 w-4" /></button>
         </div>
       )}
@@ -244,7 +318,11 @@ export function InventorySection({ yachtId, canEdit, showValue }: { yachtId: str
           <InventoryGrid items={[]} showValue={showValue} canEdit={canEdit} checking={checking}
                          onPatched={onPatched} onCreated={() => void load()}
                          onPasteRows={(rows) => setImporting({ rows })}
-                         onCheck={(i) => void markChecked(i as Item)} onFiles={(i) => setFilesFor(i as Item)} onDelete={(i) => void remove(i as Item)} />
+                         onCheck={(i) => void markChecked(i as Item)} onFiles={(i) => setFilesFor(i as Item)} onDelete={(i) => void remove(i as Item)}
+                               linkedTasks={linkedTasks}
+                               onTask={canTask ? (i) => void createTask(i as Item) : undefined}
+                               onRequisition={canRequisition ? (i) => void raiseRequisition(i as Item) : undefined}
+                               onBadCondition={canTask ? (i) => setNotice({ text: `${i.name} marked ${i.condition} — create a task to repair or replace it?`, action: { label: "Create task", run: () => void createTask(i as Item) } }) : undefined} />
         </>
       ) : (
         <>
@@ -291,7 +369,11 @@ export function InventorySection({ yachtId, canEdit, showValue }: { yachtId: str
               : <InventoryGrid items={filtered} showValue={showValue} canEdit={canEdit} checking={checking}
                                onPatched={onPatched} onCreated={() => void load()}
                                onPasteRows={(rows) => setImporting({ rows })}
-                               onCheck={(i) => void markChecked(i as Item)} onFiles={(i) => setFilesFor(i as Item)} onDelete={(i) => void remove(i as Item)} />
+                               onCheck={(i) => void markChecked(i as Item)} onFiles={(i) => setFilesFor(i as Item)} onDelete={(i) => void remove(i as Item)}
+                               linkedTasks={linkedTasks}
+                               onTask={canTask ? (i) => void createTask(i as Item) : undefined}
+                               onRequisition={canRequisition ? (i) => void raiseRequisition(i as Item) : undefined}
+                               onBadCondition={canTask ? (i) => setNotice({ text: `${i.name} marked ${i.condition} — create a task to repair or replace it?`, action: { label: "Create task", run: () => void createTask(i as Item) } }) : undefined} />
           ) : groups.length === 0 ? (
             <SectionCard className="px-4 py-8 text-center text-sm text-muted-foreground">Nothing matches — try another filter.</SectionCard>
           ) : groups.map(([name, rows]) => {
@@ -358,10 +440,24 @@ export function InventorySection({ yachtId, canEdit, showValue }: { yachtId: str
                                 <AttachedFiles refTable="onboard_inventory_items" refId={i.id} target="inventory_file" canEdit={canEdit}
                                                accept="image/*,application/pdf" label="Photo / receipt" />
                                 {canEdit && (
-                                  <button type="button" onClick={() => setEditing(i)}
-                                          className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1 text-xs font-medium hover:border-primary/50">
-                                    <Pencil className="h-3 w-3" /> Edit
-                                  </button>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {canTask && (linkedTasks[i.id]
+                                      ? <button type="button" onClick={() => onOpen?.("tasks")} className="rounded-lg bg-primary/15 px-2.5 py-1 font-mono text-xs text-primary">{linkedTasks[i.id]} ›</button>
+                                      : <button type="button" onClick={() => void createTask(i)}
+                                                className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1 text-xs font-medium hover:border-primary/50">
+                                          <SquareKanban className="h-3 w-3" /> Create task
+                                        </button>)}
+                                    {canRequisition && (
+                                      <button type="button" onClick={() => void raiseRequisition(i)}
+                                              className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1 text-xs font-medium hover:border-primary/50">
+                                        <ShoppingCart className="h-3 w-3" /> Requisition
+                                      </button>
+                                    )}
+                                    <button type="button" onClick={() => setEditing(i)}
+                                            className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1 text-xs font-medium hover:border-primary/50">
+                                      <Pencil className="h-3 w-3" /> Edit
+                                    </button>
+                                  </div>
                                 )}
                               </div>
                             </div>
@@ -382,7 +478,7 @@ export function InventorySection({ yachtId, canEdit, showValue }: { yachtId: str
                                onClose={() => setImporting(null)}
                                onDone={({ added, updated }) => {
                                  setImporting(null);
-                                 setNotice([added && `${added} item${added === 1 ? "" : "s"} added`, updated && `${updated} updated`].filter(Boolean).join(", ") + " — the register is up to date.");
+                                 setNotice({ text: [added && `${added} item${added === 1 ? "" : "s"} added`, updated && `${updated} updated`].filter(Boolean).join(", ") + " — the register is up to date." });
                                  void load();
                                }} />
       )}

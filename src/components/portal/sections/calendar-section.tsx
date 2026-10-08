@@ -1,7 +1,8 @@
 /**
  * Compliance calendar (Agency with JLS) — every date JLS tracks for the vessel
  * in one timeline: the cruising permit, other permits, crew visas and
- * passports, gate passes, and (with On board) ISM certificates. Overdue first,
+ * passports, gate passes, and (with On board) ISM certificates and inventory
+ * warranties. Overdue first,
  * then month by month for the year ahead. Reads through RLS, each query scoped
  * to the vessel explicitly so staff preview shows the right one.
  */
@@ -9,15 +10,15 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { portalFetch } from "@/lib/portal/portal-fetch";
 import { cn } from "@/lib/utils";
-import { CalendarDays, IdCard, LifeBuoy, Plane, Shield, ShieldCheck, Users } from "lucide-react";
+import { Boxes, CalendarDays, IdCard, LifeBuoy, Plane, Shield, ShieldCheck, Users } from "lucide-react";
 import { SectionCard, SectionEmpty, SectionHeader, SectionLoading } from "./section-ui";
 
 const db = supabase as any;
 
-type Entry = { key: string; date: string; title: string; detail: string | null; kind: "permit" | "visa" | "passport" | "gatepass" | "ism" | "cruising" };
+type Entry = { key: string; date: string; title: string; detail: string | null; kind: "permit" | "visa" | "passport" | "gatepass" | "ism" | "cruising" | "warranty" };
 
-const ICON = { permit: Shield, visa: Plane, passport: Users, gatepass: IdCard, ism: ShieldCheck, cruising: Shield } as const;
-const KIND_LABEL = { permit: "Permit", visa: "Visa", passport: "Passport", gatepass: "Gate pass", ism: "Certificate", cruising: "Cruising permit" } as const;
+const ICON = { permit: Shield, visa: Plane, passport: Users, gatepass: IdCard, ism: ShieldCheck, cruising: Shield, warranty: Boxes } as const;
+const KIND_LABEL = { permit: "Permit", visa: "Visa", passport: "Passport", gatepass: "Gate pass", ism: "Certificate", cruising: "Cruising permit", warranty: "Warranty ends" } as const;
 
 const today = () => new Date().toISOString().slice(0, 10);
 const daysTo = (d: string) => Math.round((Date.parse(`${d}T00:00:00Z`) - Date.parse(`${today()}T00:00:00Z`)) / 86400000);
@@ -26,8 +27,8 @@ const monthKey = (d: string) => d.slice(0, 7);
 const monthLabel = (k: string) => new Date(`${k}-01T00:00:00Z`).toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
 const nice = (s: string | null) => (s ?? "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
-export function CalendarSection({ yachtId, includeIsm, includeGatePasses, onRenew }: {
-  yachtId: string; includeIsm: boolean; includeGatePasses: boolean; onRenew: (category: string) => void;
+export function CalendarSection({ yachtId, includeIsm, includeGatePasses, includeWarranties = false, onRenew }: {
+  yachtId: string; includeIsm: boolean; includeGatePasses: boolean; includeWarranties?: boolean; onRenew: (category: string) => void;
 }) {
   const [entries, setEntries] = useState<Entry[] | null>(null);
   const [horizon, setHorizon] = useState<90 | 365>(365);
@@ -37,7 +38,7 @@ export function CalendarSection({ yachtId, includeIsm, includeGatePasses, onRene
     void (async () => {
       const until = new Date(Date.now() + 366 * 86400000).toISOString().slice(0, 10);
       const since = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
-      const [y, permits, visas, crew, ism, passes]: any[] = await Promise.all([
+      const [y, permits, visas, crew, ism, passes, warranties]: any[] = await Promise.all([
         db.from("yachts").select("cruising_permit_expiry").eq("id", yachtId).maybeSingle(),
         db.from("permits").select("id, permit_type, permit_number, expiry_date, status").eq("yacht_id", yachtId)
           .gte("expiry_date", since).lte("expiry_date", until).neq("status", "cancelled"),
@@ -49,6 +50,9 @@ export function CalendarSection({ yachtId, includeIsm, includeGatePasses, onRene
           ? db.from("ism_certificates").select("id, title, expiry_date").eq("yacht_id", yachtId).gte("expiry_date", since).lte("expiry_date", until)
           : Promise.resolve({ data: [] }),
         includeGatePasses ? portalFetch("/api/portal/gatepasses").then((r) => r.json()).catch(() => null) : Promise.resolve(null),
+        includeWarranties
+          ? db.from("onboard_inventory_items").select("id, name, location, warranty_expiry").eq("yacht_id", yachtId).gte("warranty_expiry", since).lte("warranty_expiry", until)
+          : Promise.resolve({ data: [] }),
       ]);
       const out: Entry[] = [];
       const cp = y?.data?.cruising_permit_expiry;
@@ -67,11 +71,12 @@ export function CalendarSection({ yachtId, includeIsm, includeGatePasses, onRene
         if (g.captain_requests?.status !== "completed" || g.valid_to < since || g.valid_to > until) continue;
         out.push({ key: `g-${g.id}`, date: g.valid_to, title: `Gate pass${g.company ? ` · ${g.company}` : ""}`, detail: (g.people ?? []).map((p: any) => p.name).join(", ") || g.vehicle_plate || null, kind: "gatepass" });
       }
+      for (const w of warranties.data ?? []) out.push({ key: `w-${w.id}`, date: w.warranty_expiry, title: w.name, detail: w.location ?? null, kind: "warranty" });
       out.sort((a, b) => a.date.localeCompare(b.date));
       if (alive) setEntries(out);
     })();
     return () => { alive = false; };
-  }, [yachtId, includeIsm, includeGatePasses]);
+  }, [yachtId, includeIsm, includeGatePasses, includeWarranties]);
 
   const groups = useMemo(() => {
     if (!entries) return null;
@@ -100,7 +105,8 @@ export function CalendarSection({ yachtId, includeIsm, includeGatePasses, onRene
         <div className={cn("hidden text-xs sm:block", n < 0 ? "text-red-300" : n <= 30 ? "text-amber-300" : "text-muted-foreground")}>
           {n < 0 ? `${Math.abs(n)} days ago` : n === 0 ? "today" : `in ${n} days`}
         </div>
-        {(n <= 60 && e.kind !== "gatepass") && (
+        {/* A warranty isn't something JLS renews; it's on the calendar so it isn't missed. */}
+        {(n <= 60 && e.kind !== "gatepass" && e.kind !== "warranty") && (
           <button type="button" onClick={() => onRenew(renewCat)}
                   className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-border px-2.5 text-[11px] font-medium text-muted-foreground transition hover:text-foreground">
             <LifeBuoy className="h-3.5 w-3.5" /> Renew

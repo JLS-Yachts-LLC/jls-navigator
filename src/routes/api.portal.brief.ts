@@ -281,6 +281,37 @@ export async function portalBriefHandler(request: Request): Promise<Response> {
       })
     }
 
+    // ── The crew's task board: what's overdue, due today and due this week ──
+    let tasks: null | {
+      inHand: number; inProgress: number; waiting: number;
+      due: Array<{ id: string; reference: string; title: string; due: string; status: string; priority: string; assignee: string | null }>;
+    } = null
+    if (sees('tasks')) {
+      const { data } = await sb.from('onboard_tasks')
+        .select('id, reference, title, status, priority, due_date, assignee_name')
+        .eq('yacht_id', yacht.yachtId).neq('status', 'done')
+      const open: any[] = data ?? []
+      const weekEnd = iso(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 7)))
+      tasks = {
+        inHand: open.filter((t) => t.status === 'todo' || t.status === 'in_progress').length,
+        inProgress: open.filter((t) => t.status === 'in_progress').length,
+        waiting: open.filter((t) => t.status === 'waiting').length,
+        due: open.filter((t) => t.due_date && t.due_date <= weekEnd && t.status !== 'backlog')
+          .sort((a, b) => String(a.due_date).localeCompare(String(b.due_date)))
+          .slice(0, 12)
+          .map((t) => ({ id: t.id, reference: t.reference, title: t.title, due: t.due_date, status: t.status, priority: t.priority, assignee: t.assignee_name ?? null })),
+      }
+    }
+
+    // ── Inventory: warranties ending in the next 60 days ──
+    let warranties: Array<{ id: string; name: string; date: string; location: string | null }> | null = null
+    if (sees('inventory')) {
+      const until = iso(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 60)))
+      const { data } = await sb.from('onboard_inventory_items').select('id, name, warranty_expiry, location')
+        .eq('yacht_id', yacht.yachtId).gte('warranty_expiry', today).lte('warranty_expiry', until).order('warranty_expiry').limit(10)
+      warranties = (data ?? []).map((i: any) => ({ id: i.id, name: i.name, date: i.warranty_expiry, location: i.location ?? null }))
+    }
+
     // Months to pick from: the last 12, newest first, flagging those with a published note.
     const publishedMonths = new Set((published.data ?? []).map((r: any) => String(r.month).slice(0, 7)))
     const months = Array.from({ length: 12 }, (_, i) => {
@@ -301,6 +332,8 @@ export async function portalBriefHandler(request: Request): Promise<Response> {
       ahead,
       crew,
       visaForecast,
+      tasks,
+      warranties,
     })
   } catch (e: any) {
     return json({ error: e?.message ?? 'Could not prepare the brief' }, 500)

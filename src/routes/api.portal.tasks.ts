@@ -109,6 +109,17 @@ async function cleanTask(sb: Sb, yacht: PortalYacht, body: Record<string, unknow
       return { id, text: t, done: i?.done === true }
     })
   }
+  // Raised from an inventory item: it must be this vessel's.
+  if ('inventory_item_id' in body) {
+    const id = body.inventory_item_id
+    if (id == null || id === '') out.inventory_item_id = null
+    else {
+      if (typeof id !== 'string' || !UUID_RE.test(id)) throw new BadRequest('That inventory item is not valid')
+      const { data } = await sb.from('onboard_inventory_items').select('id').eq('id', id).eq('yacht_id', yacht.yachtId).maybeSingle()
+      if (!data) throw new BadRequest('That inventory item is not on this vessel')
+      out.inventory_item_id = id
+    }
+  }
   if ('sort_order' in body) {
     const n = Number(body.sort_order)
     if (!Number.isFinite(n) || Math.abs(n) > 1e12) throw new BadRequest('Bad position')

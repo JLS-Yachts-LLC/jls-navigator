@@ -7,7 +7,7 @@
  */
 import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
-import { ArrowDown, ArrowUp, Check, Loader2, Paperclip, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, Loader2, MoreHorizontal, Paperclip, Plus, ShoppingCart, SquareKanban, Trash2 } from "lucide-react";
 import { onboardRequest } from "./section-ui";
 import {
   INV_COLUMNS, columnForHeading, parseDelimited, rowToItem,
@@ -30,7 +30,8 @@ const display = (col: InvColumn, v: unknown) => {
   return String(v);
 };
 
-export function InventoryGrid({ items, showValue, canEdit, onPatched, onCreated, onPasteRows, onCheck, onFiles, onDelete, checking }: {
+export function InventoryGrid({ items, showValue, canEdit, onPatched, onCreated, onPasteRows, onCheck, onFiles, onDelete, checking,
+  linkedTasks = {}, onTask, onRequisition, onBadCondition }: {
   items: GridItem[]; showValue: boolean; canEdit: boolean;
   onPatched: (id: string, fields: Partial<Record<InvField, any>>) => void;
   onCreated: () => void;
@@ -39,7 +40,14 @@ export function InventoryGrid({ items, showValue, canEdit, onPatched, onCreated,
   onFiles: (item: GridItem) => void;
   onDelete: (item: GridItem) => void;
   checking: string | null;
+  /** Open task per item (from "Create a task"), shown as a chip. */
+  linkedTasks?: Record<string, string>;
+  onTask?: (item: GridItem) => void;
+  onRequisition?: (item: GridItem) => void;
+  /** An item has just been marked damaged or missing. */
+  onBadCondition?: (item: GridItem) => void;
 }) {
+  const [menu, setMenu] = useState<string | null>(null);
   const cols = useMemo(() => INV_COLUMNS.filter((c) => showValue || !c.money), [showValue]);
   const [sort, setSort] = useState<{ key: InvField; dir: 1 | -1 } | null>(null);
   const [cells, setCells] = useState<Record<string, CellState>>({});
@@ -80,6 +88,7 @@ export function InventoryGrid({ items, showValue, canEdit, onPatched, onCreated,
     try {
       await onboardRequest("inventory_item", { method: "PATCH", id: item.id, body: JSON.stringify({ [col.key]: value }) });
       onPatched(item.id, { [col.key]: value });
+      if (col.key === "condition" && (value === "damaged" || value === "missing")) onBadCondition?.({ ...item, condition: value });
       setCells((s) => ({ ...s, [k]: { state: "saved" } }));
       setTimeout(() => setCells((s) => { const n = { ...s }; if (n[k]?.state === "saved") delete n[k]; return n; }), 1200);
     } catch (e) {
@@ -177,7 +186,7 @@ export function InventoryGrid({ items, showValue, canEdit, onPatched, onCreated,
           <thead className="sticky top-0 z-30">
             <tr>
               {cols.map(header)}
-              <th className="border-b border-border/60 bg-card px-2 text-left text-[10px] font-semibold uppercase tracking-wide text-muted-foreground" style={{ minWidth: 120 }}>
+              <th className="border-b border-border/60 bg-card px-2 text-left text-[10px] font-semibold uppercase tracking-wide text-muted-foreground" style={{ minWidth: 160 }}>
                 {canEdit ? "" : "Checked by"}
               </th>
             </tr>
@@ -220,10 +229,38 @@ export function InventoryGrid({ items, showValue, canEdit, onPatched, onCreated,
                               className="flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground transition hover:text-foreground">
                         <Paperclip className="h-3.5 w-3.5" />
                       </button>
-                      <button type="button" onClick={() => onDelete(item)} title="Remove from inventory"
-                              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground opacity-0 transition hover:text-red-300 group-hover:opacity-100">
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      <div className="relative">
+                        <button type="button" onClick={() => setMenu((m) => m === item.id ? null : item.id)} title="More" aria-haspopup="menu" aria-expanded={menu === item.id}
+                                className="flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground transition hover:text-foreground">
+                          <MoreHorizontal className="h-3.5 w-3.5" />
+                        </button>
+                        {menu === item.id && (
+                          <>
+                            <div className="fixed inset-0 z-40" onClick={() => setMenu(null)} />
+                            <div role="menu" className={cn("absolute right-0 z-50 w-52 overflow-hidden rounded-xl border border-border bg-card py-1 text-sm shadow-xl", r >= rows.length - 3 && rows.length > 3 ? "bottom-8" : "top-8")}>
+                              {onTask && (
+                                <button type="button" role="menuitem" onClick={() => { setMenu(null); onTask(item); }}
+                                        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-background/60">
+                                  <SquareKanban className="h-3.5 w-3.5" /> Create a task
+                                </button>
+                              )}
+                              {onRequisition && (
+                                <button type="button" role="menuitem" onClick={() => { setMenu(null); onRequisition(item); }}
+                                        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-background/60">
+                                  <ShoppingCart className="h-3.5 w-3.5" /> Raise a requisition
+                                </button>
+                              )}
+                              <button type="button" role="menuitem" onClick={() => { setMenu(null); onDelete(item); }}
+                                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-red-300 hover:bg-red-500/10">
+                                <Trash2 className="h-3.5 w-3.5" /> Remove from inventory
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                      {linkedTasks[item.id] && (
+                        <span title="Open task for this item" className="whitespace-nowrap rounded-md bg-primary/15 px-1.5 py-0.5 font-mono text-[10px] text-primary">{linkedTasks[item.id]}</span>
+                      )}
                     </div>
                   ) : (
                     <span className="text-[11px] text-muted-foreground">{item.last_checked_by_name ?? ""}</span>

@@ -17,6 +17,9 @@ import { SectionCard, SectionEmpty, SectionLoading } from "./section-ui";
 
 const db = supabase as any;
 
+/** Portal sections the brief links through to. */
+type BriefTab = "balances" | "invoices" | "requests" | "calendar" | "tasks" | "inventory";
+
 type Brief = {
   vessel: string; month: string; monthToDate: boolean;
   months: Array<{ key: string; current: boolean; hasNote: boolean }>;
@@ -36,6 +39,12 @@ type Brief = {
   /** Only when the vessel shows Crew and the position can see it. */
   crew?: { signedOn: number; onLeave: number } | null;
   visaForecast?: Array<{ month: string; items: Array<{ name: string; date: string; type: string | null }> }> | null;
+  /** On board — only when the vessel has these and the position sees them. */
+  tasks?: null | {
+    inHand: number; inProgress: number; waiting: number;
+    due: Array<{ id: string; reference: string; title: string; due: string; status: string; priority: string; assignee: string | null }>;
+  };
+  warranties?: Array<{ id: string; name: string; date: string; location: string | null }> | null;
 };
 
 const monthName = (k: string, withYear = true) =>
@@ -67,7 +76,7 @@ const dubaiDay = (offsetDays = 0) =>
  * and the week ahead. "This month" is the owner's monthly summary, unchanged.
  */
 export function BriefSection(props: {
-  yachtId: string; preview: boolean; onOpen: (tab: "balances" | "invoices" | "requests" | "calendar") => void;
+  yachtId: string; preview: boolean; onOpen: (tab: BriefTab) => void;
 }) {
   const [view, setView] = useState<"today" | "month">("today");
   return (
@@ -96,7 +105,7 @@ type Invoice = { id: string; docNumber: string | null; date: string | null; dueD
  * brief is shown; it can be folded away for the visit. Only for positions that
  * see the accounts (the finance API refuses the rest, and then it doesn't show).
  */
-function StatementOfAccount({ onOpen }: { onOpen: (tab: "balances" | "invoices" | "requests" | "calendar") => void }) {
+function StatementOfAccount({ onOpen }: { onOpen: (tab: BriefTab) => void }) {
   const [data, setData] = useState<{
     linked: boolean; invoices: Invoice[];
     accounts?: Array<{ company: string; outstanding: number; overdue: number }>;
@@ -233,7 +242,7 @@ function StatementOfAccount({ onOpen }: { onOpen: (tab: "balances" | "invoices" 
 }
 
 function TodayBrief({ onOpen, onSeeMonth }: {
-  yachtId: string; preview: boolean; onOpen: (tab: "balances" | "invoices" | "requests" | "calendar") => void; onSeeMonth: () => void;
+  yachtId: string; preview: boolean; onOpen: (tab: BriefTab) => void; onSeeMonth: () => void;
 }) {
   const [brief, setBrief] = useState<Brief | null>(null);
   const [extra, setExtra] = useState<Brief["timeline"]>([]);
@@ -270,7 +279,11 @@ function TodayBrief({ onOpen, onSeeMonth }: {
   const expiredNow = b.compliance.expired;
   const dueThisWeek = b.ahead.expiring.filter((e) => e.date >= today && e.date <= weekEnd);
   const chartersSoon = b.ahead.charters.filter((c) => c.start <= weekEnd);
-  const attention = expiredNow.length + dueThisWeek.length + b.ahead.awaitingDecision.length;
+  // The crew's own tasks: late or due today counts as needing attention.
+  const tasksLate = (b.tasks?.due ?? []).filter((t) => t.due <= today);
+  const tasksWeek = (b.tasks?.due ?? []).filter((t) => t.due > today && t.due <= weekEnd);
+  const warrantiesWeek = (b.warranties ?? []).filter((w) => w.date <= weekEnd);
+  const attention = expiredNow.length + dueThisWeek.length + b.ahead.awaitingDecision.length + tasksLate.length;
   const spend = b.spend && b.spend.linked ? b.spend : null;
   const compliancePct = b.compliance.total ? Math.round((b.compliance.inDate / b.compliance.total) * 100) : null;
   const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Dubai", hour: "2-digit", hourCycle: "h23" }).format(new Date()));
@@ -348,6 +361,21 @@ function TodayBrief({ onOpen, onSeeMonth }: {
                 <button type="button" onClick={() => onOpen("invoices")} className="mt-3 text-xs font-medium text-primary hover:underline">Review quotations ›</button>
               </SectionCard>
             )}
+            {tasksLate.length > 0 && (
+              <SectionCard className="border-amber-500/40 p-4">
+                <Label>Tasks on board</Label>
+                {tasksLate.slice(0, 5).map((t) => (
+                  <div key={t.id} className="mt-2 flex items-baseline justify-between gap-2 text-sm">
+                    <span className="min-w-0 truncate">{t.title}{t.assignee ? <span className="text-muted-foreground"> · {t.assignee}</span> : null}</span>
+                    <span className={cn("shrink-0 text-xs tabular-nums", t.due < today ? "text-red-300" : "text-amber-300")}>
+                      {t.due < today ? `overdue ${day(t.due)}` : "due today"}
+                    </span>
+                  </div>
+                ))}
+                {tasksLate.length > 5 && <div className="mt-1 text-xs text-muted-foreground">+ {tasksLate.length - 5} more</div>}
+                <button type="button" onClick={() => onOpen("tasks")} className="mt-3 text-xs font-medium text-primary hover:underline">Task board ›</button>
+              </SectionCard>
+            )}
           </div>
         </section>
       )}
@@ -382,7 +410,8 @@ function TodayBrief({ onOpen, onSeeMonth }: {
         {/* The week ahead */}
         <section>
           <div className="border-b border-border pb-2"><h2 className="text-xl">The next 7 days</h2></div>
-          {upcomingEvents.length === 0 && chartersSoon.filter((c) => c.start > today).length === 0 && dueThisWeek.filter((e) => e.date > today).length === 0 ? (
+          {upcomingEvents.length === 0 && chartersSoon.filter((c) => c.start > today).length === 0 && dueThisWeek.filter((e) => e.date > today).length === 0
+            && tasksWeek.length === 0 && warrantiesWeek.filter((w) => w.date > today).length === 0 ? (
             <p className="mt-4 text-sm text-muted-foreground">A clear week — nothing planned or due.</p>
           ) : (
             <ol className="mt-2">
@@ -390,6 +419,8 @@ function TodayBrief({ onOpen, onSeeMonth }: {
                 ...upcomingEvents.map((t) => ({ date: t.date, title: t.title, detail: t.detail })),
                 ...chartersSoon.filter((c) => c.start > today).map((c) => ({ date: c.start, title: `Charter · ${c.title}`, detail: [c.from, c.guests ? `${c.guests} guests` : null].filter(Boolean).join(" · ") || null })),
                 ...dueThisWeek.filter((e) => e.date > today).map((e) => ({ date: e.date, title: `${e.title} expires`, detail: "JLS is tracking the renewal" })),
+                ...tasksWeek.map((t) => ({ date: t.due, title: `Task due · ${t.title}`, detail: [t.reference, t.assignee].filter(Boolean).join(" · ") || null })),
+                ...warrantiesWeek.filter((w) => w.date > today).map((w) => ({ date: w.date, title: `Warranty ends · ${w.name}`, detail: w.location })),
               ].sort((x, y) => x.date.localeCompare(y.date)).map((t, i) => (
                 <li key={i} className="grid grid-cols-[72px_minmax(0,1fr)] gap-3 border-b border-border/50 py-2.5 last:border-0">
                   <span className="pt-0.5 text-xs tabular-nums text-muted-foreground">{new Date(`${t.date}T00:00:00Z`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", timeZone: "UTC" })}</span>
@@ -439,6 +470,47 @@ function TodayBrief({ onOpen, onSeeMonth }: {
         </section>
       )}
 
+      {/* On board — the crew's task board and the inventory's warranties */}
+      {(b.tasks || (b.warranties && b.warranties.length > 0)) && (
+        <section>
+          <div className="border-b border-border pb-2"><h2 className="text-xl">On board</h2></div>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            {b.tasks && (
+              <SectionCard className="p-4">
+                <Label className="text-muted-foreground">Task board</Label>
+                <div className="mt-2 grid grid-cols-3 gap-3">
+                  {([["In hand", b.tasks.inHand], ["In progress", b.tasks.inProgress], ["Waiting", b.tasks.waiting]] as const).map(([l, n]) => (
+                    <div key={l}>
+                      <div className={cn("text-[28px] leading-none tabular-nums", l === "Waiting" && n > 0 && "text-amber-300")} style={display}>{n}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">{l}</div>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-3 text-xs text-muted-foreground">
+                  {tasksLate.length ? `${tasksLate.length} overdue or due today` : "Nothing overdue"}{tasksWeek.length ? ` · ${tasksWeek.length} more due this week` : ""}
+                </p>
+                <button type="button" onClick={() => onOpen("tasks")} className="mt-2 text-xs font-medium text-primary hover:underline">Task board ›</button>
+              </SectionCard>
+            )}
+            {b.warranties && b.warranties.length > 0 && (
+              <SectionCard className="p-4">
+                <Label className="text-muted-foreground">Warranties ending · next 60 days</Label>
+                <ul className="mt-2 space-y-1.5">
+                  {b.warranties.slice(0, 5).map((w) => (
+                    <li key={w.id} className="flex items-baseline justify-between gap-2 text-sm">
+                      <span className="min-w-0 truncate">{w.name}{w.location ? <span className="text-muted-foreground"> · {w.location}</span> : null}</span>
+                      <span className="shrink-0 text-xs tabular-nums text-amber-300">{day(w.date)}</span>
+                    </li>
+                  ))}
+                  {b.warranties.length > 5 && <li className="text-xs text-muted-foreground">+ {b.warranties.length - 5} more</li>}
+                </ul>
+                <button type="button" onClick={() => onOpen("inventory")} className="mt-3 text-xs font-medium text-primary hover:underline">Inventory ›</button>
+              </SectionCard>
+            )}
+          </div>
+        </section>
+      )}
+
       {/* In hand with JLS */}
       {b.ahead.openRequests.length > 0 && (
         <section>
@@ -467,7 +539,7 @@ function TodayBrief({ onOpen, onSeeMonth }: {
 }
 
 function MonthBrief({ yachtId, preview, onOpen }: {
-  yachtId: string; preview: boolean; onOpen: (tab: "balances" | "invoices" | "requests" | "calendar") => void;
+  yachtId: string; preview: boolean; onOpen: (tab: BriefTab) => void;
 }) {
   const [month, setMonth] = useState<string | null>(null);
   const [brief, setBrief] = useState<Brief | null>(null);
