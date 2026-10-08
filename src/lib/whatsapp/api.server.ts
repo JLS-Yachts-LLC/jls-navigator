@@ -32,6 +32,7 @@ import {
   placeholderCount, fillTemplate, SERVICE_WINDOW_MS,
   normalizeButtons, buttonsError, hasOptOut, dynamicUrlButtons, personalise, recipientOf, type Recipient, type WaButton,
 } from "@/lib/whatsapp/shared";
+import { maybeAutoReply } from "@/lib/whatsapp/auto-replies.server";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -858,16 +859,24 @@ export async function whatsappWebhookHandler(request: Request): Promise<Response
             }).select("id").single();
             contactId = created?.id ?? null;
           }
-          await db.from("wa_inbound").upsert({
+          const receivedAt = m.timestamp ? new Date(Number(m.timestamp) * 1000).toISOString() : new Date().toISOString();
+          const { data: fresh } = await db.from("wa_inbound").upsert({
             wa_message_id: String(m.id), from_phone: fromPhone, contact_id: contactId,
             type: m.type ?? null, body: text, button_payload: payloadText, action,
             profile_name: profileName,
             media_id: media?.id ? String(media.id) : null,
             media_mime: media?.mime_type ? String(media.mime_type) : null,
             context_wamid: m.context?.id ? String(m.context.id) : null,
-            received_at: m.timestamp ? new Date(Number(m.timestamp) * 1000).toISOString() : new Date().toISOString(),
+            received_at: receivedAt,
             raw: m,
-          }, { onConflict: "wa_message_id", ignoreDuplicates: true });
+          }, { onConflict: "wa_message_id", ignoreDuplicates: true }).select("id");
+          // Auto-replies only for a message seen for the first time (Meta retries webhooks).
+          if ((fresh ?? []).length) {
+            await maybeAutoReply(db, {
+              contactId, fromPhone, type: m.type ?? null, text, contextWamid: m.context?.id ? String(m.context.id) : null,
+              action, receivedAt,
+            }).catch((e) => console.error("[wa-auto-reply] error:", e instanceof Error ? e.message : String(e)));
+          }
         }
       }
 

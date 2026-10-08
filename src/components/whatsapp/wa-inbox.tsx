@@ -50,6 +50,7 @@ interface ThreadItem {
   contextWamid?: string | null;
   // out
   kind?: "campaign" | "reply" | "template";
+  auto?: boolean;
   status?: string;
   error?: string | null;
   sentBy?: string | null;
@@ -217,7 +218,7 @@ function Thread({ contactId, conv, canEdit, staff, me, onBack, onChanged }: {
       db().from("wa_contacts").select("*, yacht:yachts(vessel_name)").eq("id", contactId).maybeSingle(),
       db().from("wa_inbound").select("id, wa_message_id, type, body, action, media_id, media_mime, context_wamid, received_at")
         .eq("contact_id", contactId).order("received_at", { ascending: false }).limit(300),
-      db().from("wa_messages").select("id, kind, body, status, error_message, sent_by, wa_message_id, queued_at, sent_at, campaign:wa_campaigns(name)")
+      db().from("wa_messages").select("id, kind, auto_reply, body, status, error_message, sent_by, wa_message_id, queued_at, sent_at, campaign:wa_campaigns(name)")
         .eq("contact_id", contactId).neq("status", "skipped").order("queued_at", { ascending: false }).limit(300),
     ]);
     setContact(c as WaContact);
@@ -227,7 +228,7 @@ function Thread({ contactId, conv, canEdit, staff, me, onBack, onChanged }: {
         hasMedia: !!m.media_id, mediaMime: m.media_mime, action: m.action, contextWamid: m.context_wamid, wamid: m.wa_message_id,
       })),
       ...((outs ?? []) as any[]).map((m): ThreadItem => ({
-        key: `o${m.id}`, dir: "out", at: m.sent_at ?? m.queued_at, body: m.body, kind: m.kind, status: m.status,
+        key: `o${m.id}`, dir: "out", at: m.sent_at ?? m.queued_at, body: m.body, kind: m.kind, auto: !!m.auto_reply, status: m.status,
         error: m.error_message, sentBy: m.sent_by, campaignName: m.campaign?.name ?? null, wamid: m.wa_message_id,
       })),
     ].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
@@ -345,6 +346,7 @@ function Thread({ contactId, conv, canEdit, staff, me, onBack, onChanged }: {
                     <p className="mb-1 text-[10px] font-medium uppercase tracking-wide opacity-75">Broadcast{m.campaignName ? ` · ${m.campaignName}` : ""}</p>
                   )}
                   {m.kind === "template" && <p className="mb-1 text-[10px] font-medium uppercase tracking-wide opacity-75">Template</p>}
+                  {m.auto && <p className="mb-1 text-[10px] font-medium uppercase tracking-wide opacity-75">Auto-reply</p>}
                   {m.dir === "in" && (m.type === "button" || m.type === "interactive") && (
                     <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-emerald-600">Tapped a button</p>
                   )}

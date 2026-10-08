@@ -23,6 +23,7 @@ import {
   type AutomationKind, type VariableSource,
 } from "@/lib/whatsapp/shared";
 import { db, waApi, Chip, fmtDate, Empty, type WaTemplate } from "./wa-common";
+import { WaAutoReplies } from "./wa-auto-replies";
 
 interface Automation {
   id: string;
@@ -63,18 +64,22 @@ export function WaAutomations({ canEdit }: { canEdit: boolean }) {
 
   return (
     <div className="space-y-4">
+      <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Auto-replies</h3>
+      <WaAutoReplies canEdit={canEdit} />
+
+      <h3 className="pt-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Expiry reminders</h3>
       <div className={cn("rounded-xl border p-4 text-sm",
         switches?.master ? "border-emerald-500/40 bg-emerald-500/5" : "border-amber-500/40 bg-amber-500/5")}>
         <div className="flex items-start gap-2">
           <Power className={cn("mt-0.5 h-4 w-4 shrink-0", switches?.master ? "text-emerald-500" : "text-amber-500")} />
           <div>
             <p className="font-medium">
-              Automatic sending is {switches?.master ? "allowed" : "switched off"} for the whole platform
+              Expiry reminders are {switches?.master ? "allowed" : "switched off"} for the whole platform
             </p>
             <p className="mt-0.5 text-xs text-muted-foreground">
               {switches?.master
                 ? "Reminders still only go out for reminders switched on below, to yachts switched on for them."
-                : <>Nothing below sends automatically while <code>WHATSAPP_AUTOMATIONS_ENABLED</code> is off. You can set everything up, preview it and send yourself a test first.</>}
+                : <>No expiry reminder sends while <code>WHATSAPP_AUTOMATIONS_ENABLED</code> is off (auto-replies above have their own switches). You can set everything up, preview it and send yourself a test first.</>}
               {switches && !switches.sending && " WhatsApp sending (WHATSAPP_SENDING_ENABLED) is also off."}
               {" "}Reminders run once a day at 10:00 Dubai time.
             </p>
