@@ -457,6 +457,22 @@ function matchesSearch(app: VisaApplication, query: string): boolean {
   return words.every(w => hay.includes(w) || nameVariants(w).some(v => hayWords.has(v)))
 }
 
+/** Placeholder "visa numbers" the trackers use — never the same visa just because they match. */
+const PLACEHOLDER_VISA_NO = /^(resident|residence|n\/?a|tbc|tba|none|pending|-+|\.+|0+)$/i
+
+/** Rows sharing this key are the same visa listed again (same person, country and number). */
+function repeatKey(app: VisaApplication): string | null {
+  const no = (app.visa_number ?? '').trim()
+  if (!no || PLACEHOLDER_VISA_NO.test(no)) return null
+  return `${app.country_code ?? ''}|${no.toLowerCase()}|${searchKey(getCrewName(app)).replace(/\s+/g, ' ')}`
+}
+
+/** The most recent thing that happened on a row — decides which repeat is "the" visa. */
+function latestActivity(app: VisaApplication): string {
+  return [app.sign_on_date, app.arrival_date, app.approved_at, app.submitted_at, app.created_at]
+    .filter(Boolean).map(d => String(d).slice(0, 19)).sort().pop() ?? ''
+}
+
 function getCrewName(app: VisaApplication): string {
   if (app.given_name || app.surname) return `${app.given_name ?? ''} ${app.surname ?? ''}`.trim()
   if (app.crew_members?.full_name) return app.crew_members.full_name
@@ -810,12 +826,37 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
     return [...s].sort((a, b) => b.localeCompare(a))
   }, [applications])
 
+  // One visa, one row. The trackers list a visa again each time the crew member
+  // moves vessel or signs on/off on it (the 2 Jul 2026 import brought ~200 of
+  // these in). They're real history, so they're kept — but the list shows the
+  // latest row per visa, with the rest behind a "+N earlier" chip, unless
+  // "Show earlier rows" is on.
+  const [showRepeats, setShowRepeats] = useState(false)
+  const { visaRows, earlierRows } = useMemo(() => {
+    const groups = new Map<string, VisaApplication[]>()
+    const out: VisaApplication[] = []
+    for (const a of applications) {
+      const k = repeatKey(a)
+      if (!k) { out.push(a); continue }
+      const g = groups.get(k)
+      if (g) g.push(a); else groups.set(k, [a])
+    }
+    const earlier = new Map<string, VisaApplication[]>()
+    for (const g of groups.values()) {
+      g.sort((x, y) => latestActivity(y).localeCompare(latestActivity(x)))
+      out.push(g[0])
+      if (g.length > 1) earlier.set(g[0].id, g.slice(1))
+    }
+    return { visaRows: out, earlierRows: earlier }
+  }, [applications])
+  const listRows = showRepeats ? applications : visaRows
+
   // "Current" = not lapsed: excludes expired/cancelled/rejected/signed-off records
   // and anything whose visa expiry is already past.
   const scoped = useMemo(() => {
-    if (scope === 'all') return applications
+    if (scope === 'all') return listRows
     const today = new Date().toISOString().slice(0, 10)
-    return applications.filter(a => {
+    return listRows.filter(a => {
       if (['expired', 'cancelled', 'rejected', 'signed off', 'sign off'].includes(a.status)) return false
       // An in-flight application is current work by definition — never hide it on
       // an expiry date. Records often carry a stale visa_expiry from the crew
@@ -825,7 +866,7 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
       if (a.visa_expiry && String(a.visa_expiry).slice(0, 10) < today) return false
       return true
     })
-  }, [applications, scope])
+  }, [listRows, scope])
 
   // ── Filtering ────────────────────────────────────────────────────────────────
 
@@ -862,7 +903,7 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
   // switching to another left invisible rows ticked — and Cancel still hit them.
   useEffect(() => {
     setSelected(new Set())
-  }, [vessel, activeStatus, validity, year, dateFrom, dateTo, search, scope])
+  }, [vessel, activeStatus, validity, year, dateFrom, dateTo, search, scope, showRepeats])
 
   /**
    * Records that match the search but are hidden by the other filters. Searching a
@@ -907,7 +948,7 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
   const hasFilters = !!activeStatus || vessel !== 'all' || year !== 'all' || !!dateFrom || !!dateTo || !!search.trim() || validity !== 'active'
 
   function clearFilters() {
-    setActiveStatus(null); chooseVessel('all'); setYear('all'); setDateFrom(''); setDateTo(''); setSearch(''); setValidity('active')
+    setActiveStatus(null); chooseVessel('all'); setYear('all'); setDateFrom(''); setDateTo(''); setSearch(''); setValidity('active'); setShowRepeats(false)
   }
 
   // ── Vessel selection is shared with the sidebar switcher ─────────────────────
@@ -1172,6 +1213,14 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, color: COLORS.muted, fontSize: 12 }}>
           To <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ ...ctl }} />
         </label>
+        {earlierRows.size > 0 && (
+          <label title="A visa can appear more than once — once per vessel or sign-on in the trackers. Off: just its latest row."
+                 style={{ display: 'flex', alignItems: 'center', gap: 6, color: COLORS.muted, fontSize: 12, cursor: 'pointer' }}>
+            <input type="checkbox" checked={showRepeats} onChange={e => setShowRepeats(e.target.checked)}
+                   style={{ accentColor: COLORS.signal, cursor: 'pointer' }} />
+            Show earlier rows
+          </label>
+        )}
         {hasFilters && (
           <button onClick={clearFilters} style={btn(false)}>Clear ×</button>
         )}
@@ -1369,6 +1418,17 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
                 {/* Crew */}
                 <span style={{ fontFamily: FONTS.display, fontSize: 13, fontWeight: 600, color: COLORS.frost, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: 8 }}>
                   {getCrewName(app)}
+                  {!showRepeats && earlierRows.has(app.id) && (() => {
+                    const prior = earlierRows.get(app.id)!
+                    return (
+                      <button type="button"
+                        onClick={e => { e.stopPropagation(); setShowRepeats(true); setSearch(getCrewName(app)) }}
+                        title={`Same visa, listed earlier: ${prior.map(p => `${p.vessel_name ?? p.yachts?.vessel_name ?? '—'} (${p.status})`).join(', ')}. Click to see every row.`}
+                        style={{ marginLeft: 6, padding: '1px 6px', borderRadius: 10, border: `1px solid ${COLORS.deep}`, background: 'transparent', color: COLORS.muted, fontFamily: FONTS.display, fontSize: 10, fontWeight: 600, cursor: 'pointer' }}>
+                        +{prior.length} earlier
+                      </button>
+                    )
+                  })()}
                 </span>
 
                 {/* Vessel */}
@@ -1420,6 +1480,14 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
                       </span>
                     )
                   })()}
+                  {/* An issued visa with no expiry counts as active — say so, so the
+                      date gets filled in rather than the visa quietly looking valid. */}
+                  {app.status === 'approved' && !app.visa_expiry && !PLACEHOLDER_VISA_NO.test((app.visa_number ?? '').trim()) && (
+                    <span title="This visa has no expiry date on file, so Polaris can't tell when it runs out. Open it and add the date from the visa."
+                          style={{ fontFamily: FONTS.display, fontSize: 10, fontWeight: 700, color: COLORS.leoAmber, whiteSpace: 'nowrap', cursor: 'help' }}>
+                      ⚠ No expiry date
+                    </span>
+                  )}
                 </div>
 
                 {/* Passport */}
