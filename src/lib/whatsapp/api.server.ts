@@ -25,7 +25,7 @@ import { sendGraphEmail } from "@/lib/graph-mail.server";
 import {
   waConfig, sendingEnabled, configPresence, phoneInfo, accountInfo, subscribeApp, createTemplate, listTemplates,
   sendTemplate, sendText, markRead, downloadMedia, verifySignature, verifyToken, MetaError,
-  editTemplate, uploadForReview, uploadMedia, type WaConfig,
+  editTemplate, uploadForReview, uploadMedia, sendMedia, type WaConfig,
 } from "@/lib/whatsapp/cloud-api.server";
 import {
   OPTIN_WORDING_VERSION, OPTIN_CATEGORY_TEXT, OPTIN_STOP_TEXT, optinStatement, toE164, stopIntent,
@@ -513,6 +513,86 @@ export async function whatsappReplyHandler(request: Request): Promise<Response> 
   }
 }
 
+/**
+ * What WhatsApp accepts per kind of file (Cloud API limits, documents capped
+ * lower to keep uploads quick). Anything else is refused before it goes to Meta.
+ */
+const OUTBOUND_MEDIA: Array<{ type: "image" | "document" | "video" | "audio"; mimes: RegExp; maxMb: number }> = [
+  { type: "image", mimes: /^image\/(jpeg|png)$/, maxMb: 5 },
+  { type: "video", mimes: /^video\/(mp4|3gpp)$/, maxMb: 16 },
+  { type: "audio", mimes: /^audio\/(aac|mp4|mpeg|amr|ogg)$/, maxMb: 16 },
+  {
+    type: "document",
+    mimes: /^(application\/(pdf|msword|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|spreadsheetml\.sheet|presentationml\.presentation)|vnd\.ms-excel|vnd\.ms-powerpoint)|text\/plain)$/,
+    maxMb: 25,
+  },
+];
+const MAX_CAPTION = 1024;
+
+/**
+ * Send a file from the Inbox — a photo, PDF/Office document, video or audio,
+ * with an optional caption. multipart/form-data: contactId, file, caption?,
+ * replyTo?. Free-form, so only inside the 24-hour window, like a text reply.
+ * A copy is kept in the private whatsapp-media bucket for the thread to show.
+ */
+export async function whatsappReplyMediaHandler(request: Request): Promise<Response> {
+  const access = await requireAccess(request, { module: "communications", level: "edit" });
+  if (!access.ok) return access.response;
+  const cfg = waConfig();
+  if (!cfg) return json({ error: "WhatsApp isn't connected yet — see the Overview tab." }, 409);
+  if (!sendingEnabled()) {
+    return json({ error: "Sending is switched off. Set WHATSAPP_SENDING_ENABLED = true on the Worker to send for real." }, 409);
+  }
+
+  const form = await request.formData().catch(() => null);
+  const file = form?.get("file");
+  const contactId = String(form?.get("contactId") ?? "");
+  const caption = String(form?.get("caption") ?? "").trim();
+  const replyTo = String(form?.get("replyTo") ?? "").trim() || null;
+  if (!(file instanceof File) || !file.size) return json({ error: "Choose a file to send." }, 400);
+  if (caption.length > MAX_CAPTION) return json({ error: `A caption can be up to ${MAX_CAPTION} characters.` }, 400);
+  const mime = (file.type || "").split(";")[0].trim().toLowerCase();
+  const kind = OUTBOUND_MEDIA.find((k) => k.mimes.test(mime));
+  if (!kind) return json({ error: "WhatsApp can't send that kind of file. Use a JPG/PNG photo, a PDF or Office document, an MP4 video, or an audio file." }, 400);
+  if (file.size > kind.maxMb * 1024 * 1024) return json({ error: `WhatsApp limits a ${kind.type} to ${kind.maxMb} MB.` }, 400);
+
+  const db = admin();
+  const { data: contact } = await db.from("wa_contacts").select("id").eq("id", contactId).maybeSingle();
+  if (!contact) return json({ error: "Contact not found" }, 404);
+  const { data: last } = await db.from("wa_inbound").select("from_phone, received_at")
+    .eq("contact_id", contact.id).order("received_at", { ascending: false }).limit(1).maybeSingle();
+  if (!last || Date.now() - Date.parse(last.received_at) > SERVICE_WINDOW_MS) {
+    return json({
+      error: "The 24-hour reply window has closed. WhatsApp only allows an approved template until they message again.",
+      window_closed: true,
+    }, 409);
+  }
+  const to = String(last.from_phone);
+  const name = (file.name || `file.${mime.split("/")[1] ?? "bin"}`).replace(/[^\w.\- ()]/g, "_").slice(0, 120);
+  const bytes = await file.arrayBuffer();
+  const path = `outbound/${contact.id}/${crypto.randomUUID()}-${name}`;
+  const now = new Date().toISOString();
+  const row = {
+    contact_id: contact.id, sent_by: access.claims.userId, queued_at: now, kind: "reply", body: caption || null,
+    phone_e164: to, media_type: kind.type, media_path: path, media_mime: mime, media_name: name,
+  };
+
+  const stored = await db.storage.from(MEDIA_BUCKET).upload(path, bytes, { contentType: mime, upsert: false });
+  if (stored.error) return json({ error: `Couldn't keep a copy of the file: ${stored.error.message}` }, 500);
+  try {
+    const mediaId = await uploadMedia(cfg, { body: bytes, mime, name });
+    const wamid = await sendMedia(cfg, { toE164: to, type: kind.type, mediaId, caption: caption || null, filename: name, replyTo });
+    const { data, error } = await db.from("wa_messages").insert({ ...row, status: "sent", sent_at: now, wa_message_id: wamid }).select("*").single();
+    if (error) throw new Error(error.message);
+    return json({ ok: true, message: data });
+  } catch (e) {
+    const msg = (e instanceof Error ? e.message : String(e)).slice(0, 500);
+    await db.from("wa_messages").insert({ ...row, status: "failed", failed_at: now, error_message: msg,
+      error_code: e instanceof MetaError && e.code != null ? String(e.code) : null }).then(() => {}, () => {});
+    return json({ error: msg }, e instanceof MetaError ? 422 : 500);
+  }
+}
+
 /** Opening a thread clears its unread count and shows the client blue ticks. */
 export async function whatsappConversationReadHandler(request: Request): Promise<Response> {
   const access = await requireAccess(request, { module: "communications", level: "view" });
@@ -539,6 +619,27 @@ export async function whatsappConversationReadHandler(request: Request): Promise
 export async function whatsappMediaHandler(request: Request): Promise<Response> {
   const access = await requireAccess(request, { module: "communications", level: "view" });
   if (!access.ok) return access.response;
+  // A file we sent: our own copy, from the private bucket.
+  const outboundId = new URL(request.url).searchParams.get("outbound");
+  if (outboundId) {
+    if (!/^[0-9a-f-]{36}$/i.test(outboundId)) return json({ error: "Bad id" }, 400);
+    const db = admin();
+    const { data: m } = await db.from("wa_messages").select("media_path, media_mime, media_name").eq("id", outboundId).maybeSingle();
+    if (!m?.media_path) return json({ error: "No file on this message" }, 404);
+    const { data: blob, error } = await db.storage.from(MEDIA_BUCKET).download(m.media_path);
+    if (error || !blob) return json({ error: "The file is no longer available" }, 404);
+    const mime = String(m.media_mime ?? "").toLowerCase();
+    const viewable = /^(image\/(jpeg|png)|audio\/[\w.+-]+|video\/(mp4|3gpp)|application\/pdf)$/.test(mime);
+    return new Response(await (blob as Blob).arrayBuffer(), {
+      headers: {
+        "Content-Type": viewable ? mime : "application/octet-stream",
+        "Content-Disposition": `${viewable ? "inline" : "attachment"}; filename="${String(m.media_name ?? "file").replace(/[^\w.\- ()]/g, "_")}"`,
+        "Content-Security-Policy": "sandbox; default-src 'none'",
+        "Cache-Control": "private, max-age=3600",
+        "X-Content-Type-Options": "nosniff",
+      },
+    });
+  }
   const cfg = waConfig();
   if (!cfg) return json({ error: "WhatsApp isn't connected." }, 409);
   const id = new URL(request.url).searchParams.get("inbound") ?? "";

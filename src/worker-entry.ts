@@ -1237,6 +1237,7 @@ export default {
         case 'POST /api/whatsapp/automations/starter':
           return (await import('./lib/whatsapp/automations.server')).whatsappAutomationStarterHandler(request)
         case 'POST /api/whatsapp/reply':return wa.whatsappReplyHandler(request)
+        case 'POST /api/whatsapp/reply-media': return wa.whatsappReplyMediaHandler(request)
         case 'POST /api/whatsapp/conversations/read': return wa.whatsappConversationReadHandler(request)
         case 'GET /api/whatsapp/media': return wa.whatsappMediaHandler(request)
         case 'POST /api/whatsapp/optin/invite': return wa.whatsappOptinInviteHandler(request)

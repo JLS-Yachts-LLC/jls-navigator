@@ -5,12 +5,16 @@
  * (wa_messages: broadcasts, replies and one-off templates). Inside WhatsApp's
  * 24-hour window staff reply in free text; outside it the composer switches to
  * an approved template, which also needs the client's consent.
+ *
+ * In the window the reply box can also send a file (photo, PDF/Office document,
+ * video, audio — /api/whatsapp/reply-media) and drop in a saved quick reply
+ * (the ⚡ button, or type "/" — see wa-quick-replies).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   Search, Send, Loader2, Check, CheckCheck, AlertCircle, Clock, Paperclip, Reply, X, Lock, MessageSquarePlus,
-  CircleCheck, RotateCcw, UserRound,
+  CircleCheck, RotateCcw, UserRound, Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +26,23 @@ import { windowRemaining, placeholderCount, dynamicUrlButtons, personalise, plac
 import { TokenScope, TokenBar, TokenInput } from "./wa-tokens";
 import { WaTemplatePreview, templateBlocker } from "./wa-templates";
 import { db, waApi, waBlobUrl, ConsentChip, Chip, Empty, type WaContact, type WaTemplate } from "./wa-common";
+import { QuickReplyMenu, QuickRepliesManager, noteQuickReplyUsed, type QuickReply } from "./wa-quick-replies";
+
+/** What the paperclip accepts — the same kinds the server sends (see OUTBOUND_MEDIA). */
+const ATTACH_ACCEPT = "image/jpeg,image/png,video/mp4,video/3gpp,audio/aac,audio/mp4,audio/mpeg,audio/amr,audio/ogg,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain";
+
+async function sendMediaReply(form: FormData): Promise<void> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const res = await fetch("/api/whatsapp/reply-media", {
+    method: "POST",
+    headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+    body: form,
+  });
+  const out = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(out?.error ?? `Not sent (${res.status})`);
+}
+
+const fileSize = (n: number) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 
 interface Conversation {
   id: string;
@@ -56,6 +77,8 @@ interface ThreadItem {
   sentBy?: string | null;
   campaignName?: string | null;
   wamid?: string | null;
+  outboundId?: string;
+  outMedia?: { type: string; mime: string | null; name: string | null } | null;
 }
 
 type Filter = "open" | "mine" | "unassigned" | "closed";
@@ -208,6 +231,11 @@ function Thread({ contactId, conv, canEdit, staff, me, onBack, onChanged }: {
   const [replyTo, setReplyTo] = useState<ThreadItem | null>(null);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [qrOpen, setQrOpen] = useState(false);
+  const [qrQuery, setQrQuery] = useState("");
+  const [manageQr, setManageQr] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [, tick] = useState(0);
   const endRef = useRef<HTMLDivElement>(null);
   const lastCount = useRef(0);
@@ -218,7 +246,7 @@ function Thread({ contactId, conv, canEdit, staff, me, onBack, onChanged }: {
       db().from("wa_contacts").select("*, yacht:yachts(vessel_name)").eq("id", contactId).maybeSingle(),
       db().from("wa_inbound").select("id, wa_message_id, type, body, action, media_id, media_mime, context_wamid, received_at")
         .eq("contact_id", contactId).order("received_at", { ascending: false }).limit(300),
-      db().from("wa_messages").select("id, kind, auto_reply, body, status, error_message, sent_by, wa_message_id, queued_at, sent_at, campaign:wa_campaigns(name)")
+      db().from("wa_messages").select("id, kind, auto_reply, body, status, error_message, sent_by, wa_message_id, queued_at, sent_at, media_type, media_mime, media_name, media_path, campaign:wa_campaigns(name)")
         .eq("contact_id", contactId).neq("status", "skipped").order("queued_at", { ascending: false }).limit(300),
     ]);
     setContact(c as WaContact);
@@ -230,6 +258,7 @@ function Thread({ contactId, conv, canEdit, staff, me, onBack, onChanged }: {
       ...((outs ?? []) as any[]).map((m): ThreadItem => ({
         key: `o${m.id}`, dir: "out", at: m.sent_at ?? m.queued_at, body: m.body, kind: m.kind, auto: !!m.auto_reply, status: m.status,
         error: m.error_message, sentBy: m.sent_by, campaignName: m.campaign?.name ?? null, wamid: m.wa_message_id,
+        outboundId: m.id, outMedia: m.media_path ? { type: m.media_type, mime: m.media_mime, name: m.media_name } : null,
       })),
     ].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
     setItems(merged);
@@ -261,10 +290,21 @@ function Thread({ contactId, conv, canEdit, staff, me, onBack, onChanged }: {
 
   async function send() {
     const body = text.trim();
-    if (!body) return;
+    if (!body && !file) return;
     setSending(true);
     try {
-      await waApi("reply", { contactId, text: body, replyTo: replyTo?.wamid ?? null });
+      if (file) {
+        // The text goes as the file's caption.
+        const form = new FormData();
+        form.append("contactId", contactId);
+        form.append("file", file);
+        if (body) form.append("caption", body);
+        if (replyTo?.wamid) form.append("replyTo", replyTo.wamid);
+        await sendMediaReply(form);
+        setFile(null);
+      } else {
+        await waApi("reply", { contactId, text: body, replyTo: replyTo?.wamid ?? null });
+      }
       setText("");
       setReplyTo(null);
       await load();
@@ -275,6 +315,20 @@ function Thread({ contactId, conv, canEdit, staff, me, onBack, onChanged }: {
     } finally {
       setSending(false);
     }
+  }
+
+  function pickQuickReply(r: QuickReply) {
+    // Personal fields filled for this contact; still editable before sending.
+    const filled = contact ? personalise(r.body, recipientOf(contact)) : r.body;
+    setText(filled.slice(0, 4096));
+    setQrOpen(false);
+    noteQuickReplyUsed(r);
+  }
+  function onType(v: string) {
+    setText(v.slice(0, 4096));
+    // "/" at the start opens the quick replies, filtered by what follows.
+    const m = /^\/(\S*)$/.exec(v);
+    if (m) { setQrQuery(m[1]); setQrOpen(true); } else if (qrOpen && !v.startsWith("/")) setQrOpen(false);
   }
 
   async function setConv(patch: Partial<Pick<Conversation, "status" | "assigned_to">>) {
@@ -356,9 +410,12 @@ function Thread({ contactId, conv, canEdit, staff, me, onBack, onChanged }: {
                       {(quoted.body ?? `[${quoted.type ?? "message"}]`).slice(0, 140)}
                     </div>
                   )}
-                  {m.hasMedia && m.inboundId && <MediaLink inboundId={m.inboundId} type={m.type} mime={m.mediaMime} />}
+                  {m.hasMedia && m.inboundId && <MediaLink src={`media?inbound=${m.inboundId}`} type={m.type} mime={m.mediaMime} />}
+                  {m.dir === "out" && m.outMedia && m.outboundId && (
+                    <MediaLink src={`media?outbound=${m.outboundId}`} type={m.outMedia.type} mime={m.outMedia.mime} name={m.outMedia.name} />
+                  )}
                   {m.body ? <p className="whitespace-pre-wrap break-words">{m.body}</p>
-                    : !m.hasMedia && <p className="italic opacity-70">[{m.type ?? "message"}]</p>}
+                    : !m.hasMedia && !m.outMedia && <p className="italic opacity-70">[{m.type ?? "message"}]</p>}
                   {m.action && (
                     <p className="mt-1 text-[11px] font-medium text-red-500">
                       {m.action === "marketing_opt_out" ? "Opted out of news & offers" : "Opted out of WhatsApp messages"} — recorded automatically
@@ -390,7 +447,7 @@ function Thread({ contactId, conv, canEdit, staff, me, onBack, onChanged }: {
           <div className="border-t border-border p-3">
             <div className="mb-1.5 flex items-center justify-between text-[11px] text-muted-foreground">
               <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" /> Reply window open for {fmtLeft(remaining)}</span>
-              <span>{text.length}/4096</span>
+              <span>{text.length}/{file ? 1024 : 4096}</span>
             </div>
             {replyTo && (
               <div className="mb-2 flex items-start gap-2 rounded-md border-l-2 border-emerald-500 bg-muted px-2 py-1 text-xs">
@@ -398,12 +455,34 @@ function Thread({ contactId, conv, canEdit, staff, me, onBack, onChanged }: {
                 <button onClick={() => setReplyTo(null)}><X className="h-3.5 w-3.5" /></button>
               </div>
             )}
-            <div className="flex items-end gap-2">
-              <Textarea value={text} onChange={(e) => setText(e.target.value.slice(0, 4096))} rows={2}
-                placeholder="Type a reply — Enter to send, Shift+Enter for a new line"
-                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }}
+            {file && (
+              <div className="mb-2 flex items-center gap-2 rounded-md border border-border bg-muted/50 px-2 py-1 text-xs">
+                <Paperclip className="h-3.5 w-3.5" />
+                <span className="min-w-0 flex-1 truncate">{file.name}</span>
+                <span className="text-muted-foreground">{fileSize(file.size)} · your text goes as its caption</span>
+                <button onClick={() => setFile(null)} aria-label="Remove the file"><X className="h-3.5 w-3.5" /></button>
+              </div>
+            )}
+            <div className="relative flex items-end gap-2">
+              <QuickReplyMenu open={qrOpen} query={qrQuery} onClose={() => setQrOpen(false)} onPick={pickQuickReply}
+                              onManage={() => { setQrOpen(false); setManageQr(true); }} />
+              <input ref={fileRef} type="file" accept={ATTACH_ACCEPT} className="hidden"
+                     onChange={(e) => { const f = e.target.files?.[0] ?? null; e.target.value = ""; if (f) setFile(f); }} />
+              <div className="flex flex-col gap-1">
+                <Button type="button" variant="outline" size="icon" className="h-[21px] w-9" title="Quick replies (or type /)"
+                        onClick={() => { setQrQuery(""); setQrOpen((o) => !o); }}>
+                  <Zap className="h-3.5 w-3.5" />
+                </Button>
+                <Button type="button" variant="outline" size="icon" className="h-[21px] w-9" title="Attach a photo, PDF, video or audio file"
+                        onClick={() => fileRef.current?.click()}>
+                  <Paperclip className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              <Textarea value={text} onChange={(e) => onType(e.target.value)} rows={2}
+                placeholder={file ? "Add a caption (optional) — Enter to send" : "Type a reply, or / for quick replies — Enter to send, Shift+Enter for a new line"}
+                onKeyDown={(e) => { if (qrOpen) return; if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }}
                 className="min-h-[44px] resize-none" />
-              <Button onClick={() => void send()} disabled={sending || !text.trim()} className="h-11 gap-1.5">
+              <Button onClick={() => void send()} disabled={sending || (!text.trim() && !file) || (!!file && text.length > 1024)} className="h-11 gap-1.5">
                 {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Send
               </Button>
             </div>
@@ -412,6 +491,7 @@ function Thread({ contactId, conv, canEdit, staff, me, onBack, onChanged }: {
           <TemplateComposer contact={contact} onSent={async () => { await load(); onChanged(); }} />
         )
       )}
+      <QuickRepliesManager open={manageQr} onClose={() => setManageQr(false)} />
     </div>
   );
 }
@@ -424,7 +504,7 @@ function Ticks({ s }: { s?: string }) {
   return <Clock className="h-3 w-3" aria-label="Sending" />;
 }
 
-function MediaLink({ inboundId, type, mime }: { inboundId: string; type?: string | null; mime?: string | null }) {
+function MediaLink({ src, type, mime, name }: { src: string; type?: string | null; mime?: string | null; name?: string | null }) {
   const [url, setUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const isImage = type === "image" || type === "sticker";
@@ -433,7 +513,7 @@ function MediaLink({ inboundId, type, mime }: { inboundId: string; type?: string
   async function open() {
     setBusy(true);
     try {
-      const u = url ?? await waBlobUrl(`media?inbound=${inboundId}`);
+      const u = url ?? await waBlobUrl(src);
       setUrl(u);
       if (!isImage) window.open(u, "_blank", "noopener");
     } catch (e) {
@@ -443,12 +523,13 @@ function MediaLink({ inboundId, type, mime }: { inboundId: string; type?: string
     }
   }
 
-  if (isImage && url) return <img src={url} alt="Photo from client" className="mb-1 max-h-72 rounded-lg" />;
+  if (isImage && url) return <img src={url} alt={name ?? "Photo"} className="mb-1 max-h-72 rounded-lg" />;
   return (
     <button onClick={() => void open()} className="mb-1 inline-flex items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-xs text-foreground hover:bg-muted/70">
       {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Paperclip className="h-3.5 w-3.5" />}
       {isImage ? "Show photo" : type === "audio" ? "Play voice note" : type === "video" ? "Play video" : "Open file"}
-      {mime && !isImage && <span className="text-muted-foreground">({mime.split("/")[1]?.split(";")[0]})</span>}
+      {name && !isImage ? <span className="max-w-[180px] truncate text-muted-foreground">{name}</span>
+        : mime && !isImage && <span className="text-muted-foreground">({mime.split("/")[1]?.split(";")[0]})</span>}
     </button>
   );
 }

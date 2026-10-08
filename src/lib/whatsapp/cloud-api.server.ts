@@ -284,6 +284,34 @@ export async function sendText(cfg: WaConfig, opts: { toE164: string; text: stri
   return String(id);
 }
 
+/**
+ * Send a photo, document, video or voice/audio file (already uploaded with
+ * uploadMedia). Free-form like sendText, so only inside the 24-hour window.
+ * Audio can't carry a caption; a document shows its file name.
+ */
+export async function sendMedia(cfg: WaConfig, opts: {
+  toE164: string; type: "image" | "document" | "video" | "audio"; mediaId: string;
+  caption?: string | null; filename?: string | null; replyTo?: string | null;
+}): Promise<string> {
+  const media: Record<string, unknown> = { id: opts.mediaId };
+  if (opts.caption && opts.type !== "audio") media.caption = opts.caption;
+  if (opts.type === "document" && opts.filename) media.filename = opts.filename;
+  const out = await graph(cfg, `${cfg.phoneNumberId}/messages`, {
+    method: "POST",
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: opts.toE164.replace(/^\+/, ""),
+      type: opts.type,
+      [opts.type]: media,
+      ...(opts.replyTo ? { context: { message_id: opts.replyTo } } : {}),
+    }),
+  });
+  const id = out?.messages?.[0]?.id;
+  if (!id) throw new MetaError("Meta accepted the request but returned no message id");
+  return String(id);
+}
+
 /** Blue ticks: tell the client their message has been read. */
 export async function markRead(cfg: WaConfig, wamid: string): Promise<void> {
   await graph(cfg, `${cfg.phoneNumberId}/messages`, {
