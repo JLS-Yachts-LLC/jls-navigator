@@ -4,7 +4,7 @@
  * the same key in vessel_report_subscriptions' CHECK, and a builder in
  * lib/vessel-reports/build.server.ts.
  */
-export type ReportKey = "visa_status" | "sign_on_off" | "statement_of_account" | "crew_on_board";
+export type ReportKey = "visa_status" | "sign_on_off" | "statement_of_account" | "crew_on_board" | "document_expiries";
 /** A weekday, every day, or "monthly" = the 1st of each month. */
 export type ReportDay = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun" | "daily" | "monthly";
 export type ReportSchedule = { day: ReportDay; time: string; tz?: string };
@@ -38,6 +38,12 @@ export const VESSEL_REPORTS: Array<{
     label: "Crew on board",
     description: "Everyone on board (and on leave) — rank, nationality, when they signed on, passport expiry and UAE visa — flagging anything expired or due soon, with the PDF attached.",
     defaultSchedule: { day: "mon", time: "08:00", tz: "Asia/Dubai" },
+  },
+  {
+    key: "document_expiries",
+    label: "Document & permit expiries",
+    description: "Every permit, vessel document, certificate and crew document (passports, seaman's books, certificates, visas) that has expired or falls due in the next 90 days, grouped by urgency, with the PDF attached.",
+    defaultSchedule: { day: "mon", time: "08:30", tz: "Asia/Dubai" },
   },
 ];
 
