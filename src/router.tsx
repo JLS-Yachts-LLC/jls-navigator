@@ -1,5 +1,5 @@
 import { createRouter, useRouter } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { routeTree } from "./routeTree.gen";
 import { supabase } from "@/integrations/supabase/client";
 import { getCapturedLog } from "@/lib/action-log";
@@ -17,31 +17,51 @@ import { getCapturedLog } from "@/lib/action-log";
 const isChunkError = (msg: string | undefined) =>
   /dynamically imported module|importing a module script failed|failed to fetch dynamically|ChunkLoadError|error loading dynamically imported|reading ['"]component['"]/i.test(msg ?? "");
 
-function reloadOnceForStaleChunk() {
+// A new version takes a minute or so to reach every Cloudflare edge, so a single
+// reload can land on a server still serving the old one and fail again. Retry a
+// few times, spaced out, before giving up and showing the Reload screen.
+const RELOAD_KEY = "polaris.staleChunkReloads";
+const RELOAD_DELAYS_MS = [0, 4000, 10000];
+const RELOAD_WINDOW_MS = 3 * 60_000;
+
+/** Reload onto the new build. Returns false once the retries are used up. */
+function reloadForStaleChunk(): boolean {
   try {
-    const KEY = "polaris.staleChunkReloadAt";
-    const last = Number(sessionStorage.getItem(KEY) || 0);
-    if (Date.now() - last > 15000) {
-      sessionStorage.setItem(KEY, String(Date.now()));
-      window.location.reload();
-    }
-  } catch { window.location.reload(); }
+    const raw = JSON.parse(sessionStorage.getItem(RELOAD_KEY) || "null") as { first: number; count: number } | null;
+    const state = raw && Date.now() - raw.first < RELOAD_WINDOW_MS ? raw : { first: Date.now(), count: 0 };
+    if (state.count >= RELOAD_DELAYS_MS.length) return false;
+    sessionStorage.setItem(RELOAD_KEY, JSON.stringify({ first: state.first, count: state.count + 1 }));
+    setTimeout(() => window.location.reload(), RELOAD_DELAYS_MS[state.count]);
+    return true;
+  } catch {
+    window.location.reload();
+    return true;
+  }
+}
+
+/** Whether automatic reloads are still being tried (for the error screen). */
+function staleReloadsLeft(): boolean {
+  try {
+    const raw = JSON.parse(sessionStorage.getItem(RELOAD_KEY) || "null") as { first: number; count: number } | null;
+    return !raw || Date.now() - raw.first >= RELOAD_WINDOW_MS || raw.count < RELOAD_DELAYS_MS.length;
+  } catch { return true; }
 }
 
 if (typeof window !== "undefined") {
   window.addEventListener("vite:preloadError", (e) => {
-    e.preventDefault();
-    reloadOnceForStaleChunk();
+    if (reloadForStaleChunk()) e.preventDefault();
   });
 }
 
 function DefaultErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   const router = useRouter();
   const chunkError = isChunkError(error?.message);
+  // Decided once per error: still retrying automatically, or out of retries.
+  const [updating] = useState(() => chunkError && staleReloadsLeft());
 
   // If a stale-chunk error reaches the boundary (didn't fire vite:preloadError),
   // reload automatically to recover onto the new build.
-  useEffect(() => { if (chunkError) reloadOnceForStaleChunk(); }, [chunkError]);
+  useEffect(() => { if (chunkError) reloadForStaleChunk(); }, [chunkError]);
 
   // Capture render/route crashes (React error boundary) into the Error & Warning
   // Log — window.onerror doesn't catch these, so they were previously invisible.
@@ -59,6 +79,18 @@ function DefaultErrorComponent({ error, reset }: { error: Error; reset: () => vo
       });
     } catch { /* never throw from the error UI */ }
   }, [error]);
+
+  if (updating) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+        <div className="text-center">
+          <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+          <p className="text-sm font-medium text-foreground">Updating Polaris to the latest version…</p>
+          <p className="mt-1 text-xs text-muted-foreground">This takes a few seconds.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
