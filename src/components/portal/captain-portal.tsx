@@ -2219,7 +2219,7 @@ const money = (n: number, ccy: string) =>
 type FinanceData = {
   vessel: string; linked: boolean;
   invoices: { id: string; docNumber: string | null; date: string | null; dueDate: string | null; total: number; balance: number; currency: string; status: "paid" | "overdue" | "open"; company?: string }[];
-  quotations: { id: string; docNumber: string | null; date: string | null; expiryDate: string | null; total: number; currency: string; status: string }[];
+  quotations: { id: string; docNumber: string | null; date: string | null; expiryDate: string | null; total: number; currency: string; status: string; company?: string }[];
   summary: { outstanding: number; currency: string; invoiceCount: number; quotationCount: number };
 };
 
@@ -2370,6 +2370,7 @@ function FinancesTab({ onOpenRequest }: { onOpenRequest: (requestId: string) => 
                       </div>
                       <div className="mt-0.5 text-xs text-muted-foreground">
                         Dated {fmtDate(q.date)}{q.expiryDate ? ` · Valid to ${fmtDate(q.expiryDate)}` : ""}
+                        {q.company && q.company !== "JLS Yachts" ? ` · ${q.company}` : ""}
                         {d?.decided_by_name && ` · ${d.decided_by_name}, ${fmtDate(d.created_at)}`}
                       </div>
                     </div>

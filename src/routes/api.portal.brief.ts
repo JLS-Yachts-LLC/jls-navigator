@@ -18,7 +18,7 @@ import { createClient } from '@supabase/supabase-js'
 import { resolvePortalYacht, portalModulesFor } from '@/lib/portal/portal-auth.server'
 import { canSeeFinance, hiddenSections } from '@/lib/portal/portal-positions'
 import { sectionEnabled } from '@/lib/portal/portal-modules'
-import { billingAccounts, type BillingAccount } from './api.portal.finance'
+import { billingAccounts, docId, type BillingAccount } from './api.portal.finance'
 
 const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } })
@@ -226,17 +226,20 @@ export async function portalBriefHandler(request: Request): Promise<Response> {
     if (financeOk) {
       const accounts = await billingAccounts(yacht).catch(() => [] as BillingAccount[])
       const s = await spendFor(accounts, start, end).catch(() => null)
-      const jls = accounts.find((a) => !a.realm)
       if (s && s.linked) {
         spend = s
-        // Quotations still waiting on the vessel (no decision yet) — JLS estimates only, as in /api/portal/finance.
+        // Quotations still waiting on the vessel (no decision yet), from every
+        // company it's billed by. Decisions are keyed by the finance list's ids.
         const { qboQuery } = await import('@/lib/qb/qbo.server')
-        const est = jls ? await qboQuery(`select * from Estimate where CustomerRef = '${ql(jls.customerId)}' and TxnStatus = 'Pending' maxresults 50`).catch(() => null) : null
         const decided = new Set(((await sb.from('portal_quote_decisions').select('qbo_estimate_id, decision').eq('yacht_id', yacht.yachtId)).data ?? [])
           .filter((d: any) => d.decision !== 'query').map((d: any) => d.qbo_estimate_id))
-        awaiting = (est?.QueryResponse?.Estimate ?? [])
-          .filter((e: any) => !decided.has(e.Id) && (!e.ExpirationDate || e.ExpirationDate >= today))
-          .map((e: any) => ({ docNumber: e.DocNumber ?? null, date: e.TxnDate ?? null, total: Number(e.TotalAmt ?? 0), currency: e.CurrencyRef?.value ?? 'AED' }))
+        const perAccount = await Promise.all(accounts.map(async (a) => {
+          const est = await qboQuery(`select * from Estimate where CustomerRef = '${ql(a.customerId)}' and TxnStatus = 'Pending' maxresults 50`, a.realm).catch(() => null)
+          return (est?.QueryResponse?.Estimate ?? [])
+            .filter((e: any) => !decided.has(docId(a, e.Id)) && (!e.ExpirationDate || e.ExpirationDate >= today))
+            .map((e: any) => ({ docNumber: e.DocNumber ?? null, date: e.TxnDate ?? null, total: Number(e.TotalAmt ?? 0), currency: e.CurrencyRef?.value ?? 'AED' }))
+        }))
+        awaiting = perAccount.flat()
       } else if (s) {
         spend = { linked: false }
       }

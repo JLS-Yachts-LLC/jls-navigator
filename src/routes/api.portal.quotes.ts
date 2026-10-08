@@ -1,6 +1,7 @@
 /**
- * Client-portal quotations — review a JLS quotation (a QuickBooks Estimate) and
- * approve it, decline it, or ask a question.
+ * Client-portal quotations — review a quotation (a QuickBooks Estimate) from any
+ * company the vessel is billed by (JLS, Waypoint…) and approve it, decline it,
+ * or ask a question. Ids are the finance list's: bare for JLS, `realm:id` otherwise.
  *
  *   GET  /api/portal/quotes            → this vessel's decisions, newest first (to badge the list)
  *   GET  /api/portal/quotes?id=        → one quotation: lines, totals, terms, and its decisions
@@ -19,7 +20,7 @@ import { createClient } from '@supabase/supabase-js'
 import { resolvePortalYacht, portalModulesFor, type PortalYacht } from '@/lib/portal/portal-auth.server'
 import { canApproveQuote, canSeeFinance } from '@/lib/portal/portal-positions'
 import { sectionEnabled } from '@/lib/portal/portal-modules'
-import { resolveCustomerId } from '@/routes/api.portal.finance'
+import { accountOf, billingAccounts, docId, JLS_COMPANY, type BillingAccount } from '@/routes/api.portal.finance'
 import { logAuditEvent } from '@/lib/admin/audit'
 
 const json = (b: unknown, s = 200) =>
@@ -32,27 +33,27 @@ function admin() {
 }
 type Sb = ReturnType<typeof admin>
 
-const ID_RE = /^\d{1,20}$/
+const ID_RE = /^(\d{1,20}:)?\d{1,20}$/
 const DECISIONS = new Set(['approved', 'declined', 'query'])
 
-/** The Estimate, only if it belongs to this vessel's QuickBooks customer. */
-async function ownEstimate(yacht: PortalYacht, id: string): Promise<any | null> {
+/** The Estimate, only if it belongs to one of this vessel's QuickBooks customers. */
+async function ownEstimate(yacht: PortalYacht, id: string): Promise<{ est: any; acct: BillingAccount; qboId: string } | null> {
   if (!ID_RE.test(id)) return null
-  const customerId = await resolveCustomerId(yacht)
-  if (!customerId) return null
+  const hit = accountOf(await billingAccounts(yacht), id)
+  if (!hit) return null
   const { qboRequest } = await import('@/lib/qb/qbo.server')
-  const res = await qboRequest('GET', `/estimate/${id}?include=enhancedAllCustomFields&minorversion=73`).catch(() => null)
+  const res = await qboRequest('GET', `/estimate/${hit.id}?include=enhancedAllCustomFields&minorversion=73`, undefined, hit.acct.realm).catch(() => null)
   const est = res?.Estimate
-  if (!est || String(est.CustomerRef?.value) !== String(customerId)) return null
-  return est
+  if (!est || String(est.CustomerRef?.value) !== String(hit.acct.customerId)) return null
+  return { est, acct: hit.acct, qboId: hit.id }
 }
 
-async function quoteData(est: any) {
+async function quoteData(est: any, acct: BillingAccount) {
   const { transformEstimate } = await import('@/lib/qb/estimate-docgen.server')
   const { qboRequest } = await import('@/lib/qb/qbo.server')
   let trnNo = ''
   if (est.CustomerRef?.value) {
-    const cust = await qboRequest('GET', `/customer/${est.CustomerRef.value}?minorversion=73`).catch(() => null)
+    const cust = await qboRequest('GET', `/customer/${est.CustomerRef.value}?minorversion=73`, undefined, acct.realm).catch(() => null)
     trnNo = String(cust?.Customer?.PrimaryTaxIdentifier ?? '')
   }
   return transformEstimate(est, { trnNo })
@@ -82,10 +83,18 @@ export async function portalQuotesHandler(request: Request): Promise<Response> {
     if (request.method === 'GET') {
       const pdfId = url.searchParams.get('pdf')
       if (pdfId) {
-        const est = await ownEstimate(yacht, pdfId)
-        if (!est) return json({ error: 'Not found' }, 404)
-        const { buildQuotationPdf } = await import('@/lib/qb/estimate-docgen.server')
-        const bytes = await buildQuotationPdf(await quoteData(est))
+        const own = await ownEstimate(yacht, pdfId)
+        if (!own) return json({ error: 'Not found' }, 404)
+        const { est, acct } = own
+        let bytes: Uint8Array
+        if (acct.realm) {
+          // Another company's quotation: QuickBooks' own PDF, on that company's template.
+          const { qboPdf } = await import('@/lib/qb/qbo.server')
+          bytes = new Uint8Array(await qboPdf(`/estimate/${encodeURIComponent(own.qboId)}/pdf?minorversion=73`, acct.realm))
+        } else {
+          const { buildQuotationPdf } = await import('@/lib/qb/estimate-docgen.server')
+          bytes = await buildQuotationPdf(await quoteData(est, acct))
+        }
         return new Response(bytes as unknown as BodyInit, {
           headers: {
             'Content-Type': 'application/pdf',
@@ -105,12 +114,14 @@ export async function portalQuotesHandler(request: Request): Promise<Response> {
         return json({ decisions: data ?? [], canApprove: canApproveQuote(yacht.position) && !yacht.preview })
       }
 
-      const est = await ownEstimate(yacht, id)
-      if (!est) return json({ error: 'Not found' }, 404)
-      const q = await quoteData(est)
+      const own = await ownEstimate(yacht, id)
+      if (!own) return json({ error: 'Not found' }, 404)
+      const { est, acct } = own
+      const q = await quoteData(est, acct)
       const { data: decisions } = await decisionsQ.eq('qbo_estimate_id', id)
       return json({
-        id: est.Id,
+        id: docId(acct, est.Id),
+        company: acct.company,
         docNumber: est.DocNumber ?? null,
         date: est.TxnDate ?? null,
         expiryDate: est.ExpirationDate ?? null,
@@ -143,8 +154,11 @@ export async function portalQuotesHandler(request: Request): Promise<Response> {
     }
     if (decision === 'query' && !note) return json({ error: 'Write your question' }, 400)
 
-    const est = await ownEstimate(yacht, id)
-    if (!est) return json({ error: 'Quotation not found' }, 404)
+    const own = await ownEstimate(yacht, id)
+    if (!own) return json({ error: 'Quotation not found' }, 404)
+    const { est, acct } = own
+    // Named in the request for the team when it isn't a JLS quotation.
+    const company = acct.company === JLS_COMPANY ? '' : `${acct.company} `
     const qboStatus = String(est.TxnStatus ?? 'Pending').toLowerCase()
     if (decision !== 'query' && qboStatus !== 'pending') {
       return json({ error: `This quotation is already ${qboStatus} — message JLS if anything needs to change.` }, 400)
@@ -158,13 +172,13 @@ export async function portalQuotesHandler(request: Request): Promise<Response> {
     const doc = String(est.DocNumber || est.Id)
     const total = Number(est.TotalAmt ?? 0)
     const ccy = est.CurrencyRef?.value ?? 'AED'
-    const title = decision === 'approved' ? `Quotation ${doc} approved — please proceed`
-      : decision === 'declined' ? `Quotation ${doc} declined`
-      : `Question on quotation ${doc}`
+    const title = decision === 'approved' ? `${company}Quotation ${doc} approved — please proceed`
+      : decision === 'declined' ? `${company}Quotation ${doc} declined`
+      : `Question on ${company}quotation ${doc}`
     const details = [
-      `${name} ${decision === 'approved' ? 'approved' : decision === 'declined' ? 'declined' : 'has a question about'} quotation ${doc} (${money(total, ccy)}) in the Client Portal.`,
+      `${name} ${decision === 'approved' ? 'approved' : decision === 'declined' ? 'declined' : 'has a question about'} ${company}quotation ${doc} (${money(total, ccy)}) in the Client Portal.`,
       note ? `\n${decision === 'query' ? 'Question' : 'Note'}: ${note}` : '',
-      decision === 'approved' ? '\nAccept it in QuickBooks to convert it to a Sales Order and send the pro-forma.' : '',
+      decision === 'approved' ? `\nAccept it in QuickBooks${company ? ` (${acct.company})` : ''} to convert it to a Sales Order and send the pro-forma.` : '',
     ].join('')
 
     const { data: cr, error: crErr } = await sb.from('captain_requests').insert({

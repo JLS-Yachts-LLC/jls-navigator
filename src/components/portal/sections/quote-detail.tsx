@@ -22,6 +22,8 @@ type Decision = {
 };
 type Quote = {
   id: string; docNumber: string | null; date: string | null; expiryDate: string | null; qboStatus: string;
+  /** The company it's from (JLS Yachts, Waypoint Trading LLC…). */
+  company?: string;
   currency: string; displayCurrency: string; yachtPO: string | null; requestedBy: string | null; memo: string | null;
   items: QuoteItem[];
   totals: { amount: number; vat: number; total: number; converted: number | null; convertedCurrency: string | null };
@@ -91,7 +93,9 @@ export function QuoteDetail({ id, onClose, onDecided, onOpenRequest }: {
       <div className="max-h-[94vh] w-full max-w-3xl overflow-y-auto rounded-t-3xl border border-border bg-card p-5 sm:rounded-3xl sm:p-7">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">Quotation</div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">
+              Quotation{q?.company && q.company !== "JLS Yachts" ? ` · ${q.company}` : ""}
+            </div>
             <h2 className="mt-1 text-xl font-bold">{q ? `No. ${q.docNumber ?? q.id}` : "…"}</h2>
             {q && (
               <div className="mt-1 text-sm text-muted-foreground">

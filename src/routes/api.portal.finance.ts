@@ -9,7 +9,8 @@
  * (yachts.qbo_customer_id, falling back to a DisplayName lookup on the vessel
  * name) plus any accounts in yacht_qbo_accounts (e.g. Waypoint Trading LLC).
  * Invoices from a non-JLS company carry the id `${realm}:${id}`; JLS ids stay
- * bare so existing links and quote decisions keep working. Nothing is ever written.
+ * bare so existing links and quote decisions keep working; quotations use the
+ * same ids (api.portal.quotes). Nothing is ever written.
  */
 import { createClient } from '@supabase/supabase-js'
 import { resolvePortalYacht, portalModulesFor } from '@/lib/portal/portal-auth.server'
@@ -62,7 +63,7 @@ export async function billingAccounts(yacht: { yachtId: string; qboCustomerId: s
 export const docId = (acct: BillingAccount, id: string) => (acct.realm ? `${acct.realm}:${id}` : id)
 
 /** Split a portal id back into its account (must be one of the vessel's) and QuickBooks id. */
-function accountOf(accounts: BillingAccount[], id: string): { acct: BillingAccount; id: string } | null {
+export function accountOf(accounts: BillingAccount[], id: string): { acct: BillingAccount; id: string } | null {
   const at = id.indexOf(':')
   const realm = at > 0 ? id.slice(0, at) : undefined
   const raw = at > 0 ? id.slice(at + 1) : id
@@ -168,9 +169,7 @@ export async function portalFinanceHandler(request: Request): Promise<Response> 
     const perAccount = await Promise.all(accounts.map(async (acct) => {
       const [invRes, estRes, custRes] = await Promise.all([
         qboQuery(`select * from Invoice where CustomerRef = '${ql(acct.customerId)}' orderby TxnDate desc maxresults 200`, acct.realm).catch(() => null),
-        // Quotations are approved/declined against JLS estimates only (api.portal.quotes).
-        acct.realm ? Promise.resolve(null)
-          : qboQuery(`select * from Estimate where CustomerRef = '${ql(acct.customerId)}' orderby TxnDate desc maxresults 200`).catch(() => null),
+        qboQuery(`select * from Estimate where CustomerRef = '${ql(acct.customerId)}' orderby TxnDate desc maxresults 200`, acct.realm).catch(() => null),
         qboQuery(`select Id, Balance from Customer where Id = '${ql(acct.customerId)}'`, acct.realm).catch(() => null),
       ])
       const invoices = (invRes?.QueryResponse?.Invoice ?? []).map((i: any) => ({
@@ -185,7 +184,7 @@ export async function portalFinanceHandler(request: Request): Promise<Response> 
         company: acct.company,
       }))
       const quotations = (estRes?.QueryResponse?.Estimate ?? []).map((e: any) => ({
-        id: e.Id,
+        id: docId(acct, e.Id),
         docNumber: e.DocNumber ?? null,
         date: e.TxnDate ?? null,
         expiryDate: e.ExpirationDate ?? null,
