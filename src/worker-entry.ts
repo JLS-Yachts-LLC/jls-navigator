@@ -66,7 +66,18 @@ import { trackRun } from './lib/automations.server'
 import { runVisaExpiryFlagJob } from './lib/visa/visaExpiryFlags.server'
 import { runTwoWaySyncTick } from './lib/visa/excel-sync.server'
 
-const handleRequest = createStartHandler(defaultStreamHandler)
+const baseHandleRequest = createStartHandler(defaultStreamHandler)
+
+// Low-risk security-scan remediation (ConnectSecure 2026-10-08): attach the
+// report-only CSP, anti-clickjacking, COOP/COEP/CORP, Permissions-Policy,
+// HSTS and no-store Cache-Control headers to every document response that
+// goes through the TanStack Start render handler. Cron/webhook JSON handlers
+// (handleSharePointWebhook etc.) build their own Response objects and are
+// untouched by this wrapper.
+const handleRequest = (async (...args: Parameters<typeof baseHandleRequest>) => {
+  const response = await baseHandleRequest(...args)
+  return withSecurityHeaders(response)
+}) as typeof baseHandleRequest
 
 async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: Promise<unknown>) => void }): Promise<Response> {
   const url = new URL(request.url)
@@ -122,7 +133,7 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
         await sendGraphEmail({
           from,
           to: [testEmail],
-          subject: `Polaris email test — from ${from}`,
+          subject: `Polaris email test â from ${from}`,
           html: `<p>This is a test message from the Polaris platform, sent as <strong>${from}</strong>.</p><p>If you can read this, Microsoft Graph sending is working for this mailbox.</p>`,
           text: `Test message from Polaris, sent as ${from}. Graph sending works for this mailbox.`,
         })
@@ -179,7 +190,7 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
   // Manual ShipSync EDAS board sync: `?run=shipsync-edas-board` pulls the
   // Monday.com EDAS 2026 board into shipsync_packages (local_import =
   // 'EDAS') now, same as the "Sync from Monday" button on the EDAS tab
-  // (no-op error if not configured). Same manual-only pattern as Export —
+  // (no-op error if not configured). Same manual-only pattern as Export â
   // not on the hourly cron.
   if (url.searchParams.get('run') === 'shipsync-edas-board') {
     try {
@@ -192,7 +203,7 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
   }
 
   // Manual ShipSync proximity check: `?run=shipsync-proximity-check` runs the
-  // "arriving in ~5 minutes" pass now, same as the 5-min cron tick — useful
+  // "arriving in ~5 minutes" pass now, same as the 5-min cron tick â useful
   // for confirming the Google Maps key actually works server-side (it's
   // documented as referrer-restricted for browser use, which a
   // server-to-server call carries no Referer header for).
@@ -211,7 +222,7 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
   }
 
   // Manual Yacht Shipments sync: `?run=yacht-shipments-sync` pulls both Monday
-  // boards (Import + Export) into yacht_shipments now — same as the hourly cron
+  // boards (Import + Export) into yacht_shipments now â same as the hourly cron
   // and the board's "Sync from Monday" button.
   if (url.searchParams.get('run') === 'yacht-shipments-sync') {
     try {
@@ -261,7 +272,7 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
 
   // Read-only diagnostic: `?run=monday-board-probe&board=<id>` returns the
   // schema (title, columns w/ settings, groups, sample items) of any Monday
-  // board by id — used to scope a new board integration off real data before
+  // board by id â used to scope a new board integration off real data before
   // building it. Writes nothing.
   if (url.searchParams.get('run') === 'monday-board-probe') {
     try {
@@ -290,7 +301,7 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
   }
 
   // Manual Training Institute sync: `?run=training-sync-all` pulls all 4
-  // boards (Instructors/Students/Courses/Classes) in one call — same manual
+  // boards (Instructors/Students/Courses/Classes) in one call â same manual
   // trigger the in-UI "Sync from Monday" buttons use, for ops/cron use
   // outside the browser.
   if (url.searchParams.get('run') === 'training-sync-all') {
@@ -330,7 +341,7 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
 
   // Read-only diagnostic: `?run=monday-debug-import-assets` checks whether
   // Monday's API actually returns real file/image asset data (not just text)
-  // for items on the Import board — scoping step before building a real
+  // for items on the Import board â scoping step before building a real
   // image backfill. Writes nothing.
   if (url.searchParams.get('run') === 'monday-debug-import-assets') {
     try {
@@ -399,7 +410,7 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
     }
   }
 
-  // Read-only diagnostic (redeploy nudge): `?run=local-bulk-audit` — sanity-checks the
+  // Read-only diagnostic (redeploy nudge): `?run=local-bulk-audit` â sanity-checks the
   // local-bulk-complete run: counts shipsync_packages by (local_import,
   // status) so we can tell whether Import/Export/EDAS rows were touched by
   // mistake, and `&ids=<comma-separated uuids>` reports the CURRENT status
@@ -434,7 +445,7 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
 
   // Read-only diagnostic: `?run=package-debug&barcode=<tracking number>`
   // returns EVERY shipsync_packages row with this exact barcode, regardless
-  // of monday_item_id — so a duplicate not created by the Monday sync isn't
+  // of monday_item_id â so a duplicate not created by the Monday sync isn't
   // missed. Writes nothing.
   if (url.searchParams.get('run') === 'package-debug') {
     try {
@@ -504,7 +515,7 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
   // that has both a Monday-linked row and a non-Monday row (SharePoint import
   // or hand-entered), and checks whether the non-Monday sibling shows any sign
   // of real manual work (status changed from the default, warehouse zone,
-  // driver, or a photo) — vs. sitting untouched since creation. Needed before
+  // driver, or a photo) â vs. sitting untouched since creation. Needed before
   // deciding whether it's safe to prefer the Monday row and drop the other.
   // Writes nothing.
   if (url.searchParams.get('run') === 'monday-vs-nonmonday-scan') {
@@ -641,7 +652,7 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
   // yachts table for a boat (case-insensitive substring) and every permit row
   // linked to any match, across all permit types. Writes nothing. There's no
   // audit log wired for permit/yacht deletes in this codebase, so this can
-  // only report current state — not history of what happened to a record.
+  // only report current state â not history of what happened to a record.
   if (url.searchParams.get('run') === 'vessel-debug') {
     try {
       const name = url.searchParams.get('name') ?? ''
@@ -662,7 +673,7 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
         .or(`holder_name.ilike.%${name}%,notes.ilike.%${name}%`)
 
       // Any permit found by text mention may reference a yacht_id that no
-      // longer resolves to a row — check those ids directly, not just by name.
+      // longer resolves to a row â check those ids directly, not just by name.
       const referencedYachtIds = Array.from(new Set((permitsByText ?? []).map((p: any) => p.yacht_id).filter(Boolean)))
       let referencedYachts: any[] = []
       if (referencedYachtIds.length > 0) {
@@ -726,7 +737,7 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
   // Manual image backfill: `?images=N` synchronously downloads up to N pending
   // vessel images from SharePoint (default 10, max 15) and returns the count.
   // Unlike the cron's waitUntil download, this runs inside the request so it
-  // reliably completes — loop it to backfill the whole fleet a batch at a time.
+  // reliably completes â loop it to backfill the whole fleet a batch at a time.
   if (url.searchParams.get('images')) {
     const n = Math.min(Math.max(parseInt(url.searchParams.get('images') || '10', 10) || 10, 1), 15)
     const offset = Math.max(parseInt(url.searchParams.get('offset') || '0', 10) || 0, 0)
@@ -748,7 +759,7 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
   // document Word templates from the production@jlsyachts.com OneDrive into the
   // private qb_templates table (service-role only), so the native doc-gen layout
   // can be matched to the real templates. Locked to the exact file IDs from the
-  // n8n workflows, and no file content is ever returned to the caller — the
+  // n8n workflows, and no file content is ever returned to the caller â the
   // response carries only the file name and size.
   {
     const tplId = url.searchParams.get('fetch-template')
@@ -830,7 +841,7 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
 
   // SharePoint sends GET with validationToken when registering a subscription.
   // Must echo the raw token back as text/plain within 5 seconds.
-  // NOTE: url.searchParams.get() already URL-decodes the value — do NOT
+  // NOTE: url.searchParams.get() already URL-decodes the value â do NOT
   // wrap in decodeURIComponent() again or tokens containing % will throw URIError.
   if (request.method === 'GET') {
     const token = url.searchParams.get('validationToken')
@@ -844,12 +855,12 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
   }
 
   // POST: SharePoint change notification.
-  // Return 202 immediately — SP will retry if we don't respond within 5s.
+  // Return 202 immediately â SP will retry if we don't respond within 5s.
   // Use waitUntil so the Worker stays alive while the sync runs.
   //
   // Syncs ONLY the list the subscription is registered for (syncWebhookList).
   // It previously called syncFromSharePoint(), which loops every enabled list in
-  // one invocation — the same thing the cron deliberately avoids because it
+  // one invocation â the same thing the cron deliberately avoids because it
   // exceeds Cloudflare's subrequest limit, so the instant sync died silently.
   if (request.method === 'POST') {
     ctx.waitUntil(
@@ -901,12 +912,12 @@ export default {
       return (await import('./lib/portal/portal-domains.server')).adminPortalDomainsHandler(request)
     }
 
-    // Captain-portal login admin (kept at the top of the dispatch — see #debug note)
+    // Captain-portal login admin (kept at the top of the dispatch â see #debug note)
     if (url.pathname === '/api/admin/portal-users') {
       return adminPortalUsersHandler(request)
     }
 
-    // Client portal — vessel-scoped Finances (QuickBooks) & Logistics (ShipSync)
+    // Client portal â vessel-scoped Finances (QuickBooks) & Logistics (ShipSync)
     if (url.pathname === '/api/portal/finance') {
       const { portalFinanceHandler } = await import('./routes/api.portal.finance')
       return portalFinanceHandler(request)
@@ -928,19 +939,19 @@ export default {
       return qbInvoicePdfHandler(request)
     }
 
-    // Forms: public tokenised fill (no login — the token is the authorisation)
+    // Forms: public tokenised fill (no login â the token is the authorisation)
     if (url.pathname === '/api/forms/public') {
       const { formsPublicHandler } = await import('./routes/api.forms.public')
       return formsPublicHandler(request)
     }
 
-    // Your own name and picture — scoped to the caller by their token.
+    // Your own name and picture â scoped to the caller by their token.
     if (url.pathname === '/api/me/profile') {
       const { myProfileHandler } = await import('./routes/api.me.profile')
       return myProfileHandler(request)
     }
 
-    // Client portal — the vessel's documents, and the file behind one.
+    // Client portal â the vessel's documents, and the file behind one.
     if (url.pathname === '/api/portal/documents') {
       const { portalDocumentsHandler } = await import('./routes/api.portal.documents')
       return portalDocumentsHandler(request)
@@ -949,77 +960,77 @@ export default {
       const { portalDocumentOpenHandler } = await import('./routes/api.portal.documents')
       return portalDocumentOpenHandler(request)
     }
-    // Client portal — the vessel's crew list: view, add, edit, remove.
+    // Client portal â the vessel's crew list: view, add, edit, remove.
     if (url.pathname === '/api/portal/crew') {
       const { portalCrewHandler } = await import('./routes/api.portal.crew')
       return portalCrewHandler(request)
     }
-    // Client portal — On board (Management module): jobs, equipment, charters, ISM.
+    // Client portal â On board (Management module): jobs, equipment, charters, ISM.
     if (url.pathname === '/api/portal/onboard') {
       const { portalOnboardHandler } = await import('./routes/api.portal.onboard')
       return portalOnboardHandler(request)
     }
-    // Client portal — On board task board: add, edit, move, comment.
+    // Client portal â On board task board: add, edit, move, comment.
     if (url.pathname === '/api/portal/tasks') {
       const { portalTasksHandler } = await import('./routes/api.portal.tasks')
       return portalTasksHandler(request)
     }
-    // Client portal — On board requisitions: raise, approve, send to JLS, receive.
+    // Client portal â On board requisitions: raise, approve, send to JLS, receive.
     if (url.pathname === '/api/portal/requisitions') {
       const { portalRequisitionsHandler } = await import('./routes/api.portal.requisitions')
       return portalRequisitionsHandler(request)
     }
-    // Client portal — On board checklists and the runs through them.
+    // Client portal â On board checklists and the runs through them.
     if (url.pathname === '/api/portal/checklists') {
       const { portalChecklistsHandler } = await import('./routes/api.portal.checklists')
       return portalChecklistsHandler(request)
     }
-    // Client portal — Pre-Arrival / Cruising Permit form.
+    // Client portal â Pre-Arrival / Cruising Permit form.
     if (url.pathname === '/api/portal/prearrival') {
       const { portalPrearrivalHandler } = await import('./routes/api.portal.prearrival')
       return portalPrearrivalHandler(request)
     }
-    // Client portal — Seaport Immigration sign-on / sign-off requests.
+    // Client portal â Seaport Immigration sign-on / sign-off requests.
     if (url.pathname === '/api/portal/seaport') {
       const { portalSeaportHandler } = await import('./routes/api.portal.seaport')
       return portalSeaportHandler(request)
     }
-    // Client portal — review and approve / decline / query JLS quotations.
+    // Client portal â review and approve / decline / query JLS quotations.
     if (url.pathname === '/api/portal/quotes') {
       const { portalQuotesHandler } = await import('./routes/api.portal.quotes')
       return portalQuotesHandler(request)
     }
-    // Client portal — gate pass requests and renewals.
+    // Client portal â gate pass requests and renewals.
     if (url.pathname === '/api/portal/gatepasses') {
       const { portalGatePassesHandler } = await import('./routes/api.portal.gatepasses')
       return portalGatePassesHandler(request)
     }
-    // Client portal — the Owner's brief (one month at a glance).
+    // Client portal â the Owner's brief (one month at a glance).
     if (url.pathname === '/api/portal/brief') {
       const { portalBriefHandler } = await import('./routes/api.portal.brief')
       return portalBriefHandler(request)
     }
-    // Client portal — itemised orders to JLS.
+    // Client portal â itemised orders to JLS.
     if (url.pathname === '/api/portal/orders') {
       const { portalOrdersHandler } = await import('./routes/api.portal.orders')
       return portalOrdersHandler(request)
     }
-    // Client portal — uploads: checklist / job photos, drill files, certificates, client documents.
+    // Client portal â uploads: checklist / job photos, drill files, certificates, client documents.
     if (url.pathname === '/api/portal/upload') {
       const { portalUploadHandler } = await import('./routes/api.portal.upload')
       return portalUploadHandler(request)
     }
-    // Client portal — documents JLS has sent this person to e-sign.
+    // Client portal â documents JLS has sent this person to e-sign.
     if (url.pathname === '/api/portal/esign') {
       const { portalEsignHandler } = await import('./routes/api.portal.esign')
       return portalEsignHandler(request)
     }
-    // Client portal — the vessel's own logo / badge.
+    // Client portal â the vessel's own logo / badge.
     if (url.pathname === '/api/portal/vessel-logo') {
       const { portalVesselLogoHandler } = await import('./routes/api.portal.vessel-logo')
       return portalVesselLogoHandler(request)
     }
-    // Client portal — one managed boat in detail, and opening its documents.
+    // Client portal â one managed boat in detail, and opening its documents.
     if (url.pathname === '/api/portal/boats/detail') {
       const { portalBoatDetailHandler } = await import('./routes/api.portal.boat-detail')
       return portalBoatDetailHandler(request)
@@ -1028,7 +1039,7 @@ export default {
       const { portalBoatOpenHandler } = await import('./routes/api.portal.boat-detail')
       return portalBoatOpenHandler(request)
     }
-    // Client portal — a small-boat owner's boats (Orbit 2 Managed Boats).
+    // Client portal â a small-boat owner's boats (Orbit 2 Managed Boats).
     if (url.pathname === '/api/portal/boats') {
       const { portalBoatsHandler } = await import('./routes/api.portal.boats')
       return portalBoatsHandler(request)
@@ -1040,7 +1051,7 @@ export default {
       return permitsDryRunHandler(request)
     }
 
-    // Secure document links — public, authorised by the token alone.
+    // Secure document links â public, authorised by the token alone.
     if (url.pathname === '/api/documents/meta') {
       const { documentShareMetaHandler } = await import('./routes/api.documents')
       return documentShareMetaHandler(request)
@@ -1060,13 +1071,13 @@ export default {
       return formsSeedHandler(request)
     }
 
-    // Permit expiry digest — dry run, sends nothing (admin only)
+    // Permit expiry digest â dry run, sends nothing (admin only)
     if (url.pathname === '/api/permits/expiry-digest') {
       const { permitExpiryDigestHandler } = await import('./routes/api.permits.expiry-digest')
       return permitExpiryDigestHandler(request)
     }
 
-    // Lightspeed → QuickBooks item-description sync (admin only, form-triggered)
+    // Lightspeed â QuickBooks item-description sync (admin only, form-triggered)
     if (url.pathname === '/api/permits/email') {
       const { permitsEmailHandler } = await import('./routes/api.permits.email')
       return permitsEmailHandler(request)
@@ -1094,19 +1105,19 @@ export default {
       return mailExportHandler(request)
     }
 
-    // QB Excel importer — upload a workbook to create Estimates/Invoices
+    // QB Excel importer â upload a workbook to create Estimates/Invoices
     if (url.pathname === '/api/qb/excel-import') {
       const { qbExcelImportHandler } = await import('./routes/api.qb.excel-import')
       return qbExcelImportHandler(request)
     }
 
-    // Lightspeed → Waypoint suppliers manual sync (authenticated)
+    // Lightspeed â Waypoint suppliers manual sync (authenticated)
     if (url.pathname === '/api/lightspeed/suppliers-sync') {
       const { lightspeedSuppliersSyncHandler } = await import('./routes/api.lightspeed.suppliers-sync')
       return lightspeedSuppliersSyncHandler(request)
     }
 
-    // Lightspeed (Vend) → QuickBooks retail sync webhooks
+    // Lightspeed (Vend) â QuickBooks retail sync webhooks
     if (url.pathname.startsWith('/api/lightspeed/')) {
       const { lightspeedWebhookHandler } = await import('./routes/api.lightspeed.webhook')
       return lightspeedWebhookHandler(request)
@@ -1200,7 +1211,7 @@ export default {
       return itTicketsNotifyHandler(request)
     }
 
-    // Yacht IT Network — both reach New Horizon with the shared secret, so the
+    // Yacht IT Network â both reach New Horizon with the shared secret, so the
     // browser goes through here rather than calling them directly.
     if (url.pathname === '/api/yacht-network/sync' && request.method === 'POST') {
       const { yachtNetworkSyncHandler } = await import('./lib/yacht-network/api.server')
@@ -1211,7 +1222,7 @@ export default {
       return yachtNetworkDattoHandler(request)
     }
 
-    // Communications → WhatsApp. The webhook and the opt-in endpoints are public
+    // Communications â WhatsApp. The webhook and the opt-in endpoints are public
     // by necessity (Meta, and a client following an email link); the webhook is
     // signature-checked and the opt-in is gated on its unguessable token.
     if (url.pathname.startsWith('/api/whatsapp/')) {
@@ -1336,8 +1347,8 @@ export default {
       return orbit2NotifyHandler(request)
     }
 
-    // ── Admin Panel API (TanStack API routes aren't dispatched by the CF handler,
-    //    so each is wired here). Order: more-specific paths first. ──
+    // ââ Admin Panel API (TanStack API routes aren't dispatched by the CF handler,
+    //    so each is wired here). Order: more-specific paths first. ââ
     if (url.pathname === '/api/admin/audit/export' && request.method === 'GET') {
       return adminAuditExportHandler(request)
     }
@@ -1399,15 +1410,15 @@ export default {
       return movementReportsHandler(request)
     }
 
-    // TanStack's handler takes (request, opts?) — `env`/`ctx` were being passed
+    // TanStack's handler takes (request, opts?) â `env`/`ctx` were being passed
     // into a slot that expects `{ context }` and a third parameter that does not
     // exist, so both were ignored. Server code reads the environment from
     // globalThis.__CF_ENV, set at the top of this fetch handler.
     return handleRequest(request)
   },
 
-  // Cron triggers: "0 * * * *" (hourly) → SharePoint inbound sync of all lists;
-  // "*/15 * * * *" (every 15 min) → live vehicle/vessel tracking + daily alert checks.
+  // Cron triggers: "0 * * * *" (hourly) â SharePoint inbound sync of all lists;
+  // "*/15 * * * *" (every 15 min) â live vehicle/vessel tracking + daily alert checks.
   async scheduled(_event: unknown, _env: Record<string, unknown>, ctx: { waitUntil: (p: Promise<unknown>) => void }): Promise<void> {
     ;(globalThis as Record<string, unknown>).__CF_ENV = _env
     const utcHour = new Date().getUTCHours();
@@ -1417,10 +1428,10 @@ export default {
     const isAis = cron === '5,20,35,50 * * * *';
     const isFiveMin = cron === '*/5 * * * *';
 
-    // ── Every 5 min: incremental QBO document sync (invoices / pro-formas /
-    //    estimates) for every connected company — JLS + Waypoint retail. ──
+    // ââ Every 5 min: incremental QBO document sync (invoices / pro-formas /
+    //    estimates) for every connected company â JLS + Waypoint retail. ââ
     if (isFiveMin) {
-      // Sync first, THEN the reconciler — strictly sequential so the two can
+      // Sync first, THEN the reconciler â strictly sequential so the two can
       // never process the same document at the same time (a parallel run could
       // race the duplicate-sweeps against each other), and so the reconciler
       // sees the doc-gen state the sync's own backstop just wrote.
@@ -1440,11 +1451,11 @@ export default {
         retryPendingQbWebhookEvents()
           .catch((e) => console.error('[qb-webhook-sweeper] error:', e))
       );
-      // ── Every 5 min: pull SharePoint changes IN ──
+      // ââ Every 5 min: pull SharePoint changes IN ââ
       // Priority lists (Yachts) every tick so vessel location/berth/ETD is never
       // more than 5 minutes behind SharePoint, plus the stalest few others so the
       // whole set cycles in ~15-20 min instead of the old 3 hours. Bounded per
-      // ── Every 5 min: pull email replies INTO their tickets ──
+      // ââ Every 5 min: pull email replies INTO their tickets ââ
       //    Our notifications tell people "reply to this email to add to your
       //    ticket"; this is what delivers on that. No-ops until the mail
       //    credentials are set (and the app has Mail.Read).
@@ -1455,9 +1466,9 @@ export default {
           .catch((e) => console.error('[ticket-mail] error:', e instanceof Error ? e.message : String(e)))
       );
 
-      // ── Every 5 min: email staff about new Client Portal activity ──
+      // ââ Every 5 min: email staff about new Client Portal activity ââ
       //    The bell already rang when the client acted (database trigger); this
-      //    sends the email half. Paused from Automations → "Client Portal — staff
+      //    sends the email half. Paused from Automations â "Client Portal â staff
       //    alerts by email". See lib/portal/alerts.server.
       ctx.waitUntil(
         import('./lib/portal/alerts.server')
@@ -1465,7 +1476,7 @@ export default {
           .then((r) => { if (r.sent || r.failed) console.log('[portal-alerts]', JSON.stringify(r)) })
           .catch((e) => console.error('[portal-alerts] error:', e instanceof Error ? e.message : String(e)))
       );
-      // …and tell boat owners when JLS completes a job on their boat.
+      // â¦and tell boat owners when JLS completes a job on their boat.
       ctx.waitUntil(
         import('./lib/portal/alerts.server')
           .then((m) => m.sendOwnerNotices())
@@ -1473,9 +1484,9 @@ export default {
           .catch((e) => console.error('[portal-owner-notices] error:', e instanceof Error ? e.message : String(e)))
       );
 
-      // ── Every 5 min: two-way sync of the Yacht IT Network with New Horizon ──
+      // ââ Every 5 min: two-way sync of the Yacht IT Network with New Horizon ââ
       //    Keeps each vessel's register and map the same on both desks. Every
-      //    few hours the run is a full pass rather than incremental — see
+      //    few hours the run is a full pass rather than incremental â see
       //    lib/yacht-network/sync.server. Outcome lands on yacht_it_sync_state.
       ctx.waitUntil(
         import('./lib/yacht-network/sync.server')
@@ -1484,8 +1495,8 @@ export default {
           .catch((e) => console.error('[yacht-it-sync] error:', e instanceof Error ? e.message : String(e)))
       );
 
-      // ── Every 5 min: close the Service Desk tickets New Horizon has closed ──
-      //    (same partner link) — their last reply is filed as an internal note.
+      // ââ Every 5 min: close the Service Desk tickets New Horizon has closed ââ
+      //    (same partner link) â their last reply is filed as an internal note.
       ctx.waitUntil(
         import('./lib/yacht-network/sync.server')
           .then((m) => m.syncNewHorizonTicketStatus())
@@ -1493,7 +1504,7 @@ export default {
           .catch((e) => console.error('[nh-ticket-sync] error:', e instanceof Error ? e.message : String(e)))
       );
 
-      // invocation — see syncPrioritisedLists().
+      // invocation â see syncPrioritisedLists().
       ctx.waitUntil(
         syncPrioritisedLists()
           .then((ran) => { if (ran.length) console.log('[sp-fast] ' + ran.map(r => `${r.name}: synced=${r.synced} errors=${r.errors}`).join(' | ')) })
@@ -1522,8 +1533,8 @@ export default {
       return;
     }
 
-    // ── AIS tick: collect live vessel positions in its own invocation (own
-    //    subrequest budget) and write them to the yachts table. ──
+    // ââ AIS tick: collect live vessel positions in its own invocation (own
+    //    subrequest budget) and write them to the yachts table. ââ
     if (isAis) {
       ctx.waitUntil(
         syncAisPositions()
@@ -1533,7 +1544,7 @@ export default {
       return;
     }
 
-    // ── Hourly: push in-app edits OUT to SharePoint ──
+    // ââ Hourly: push in-app edits OUT to SharePoint ââ
     if (isHourly) {
       ctx.waitUntil(
         pushChangedRecords()
@@ -1541,9 +1552,9 @@ export default {
           .catch((e) => console.error('[sp-pushback] error:', e))
       )
 
-      // ── Hourly: copy Polaris-captured package photos into the SharePoint
+      // ââ Hourly: copy Polaris-captured package photos into the SharePoint
       //    image library, so it keeps a second copy of every photo. Backup
-      //    only — Supabase holds the original and a failure just retries. ──
+      //    only â Supabase holds the original and a failure just retries. ââ
       ctx.waitUntil(
         import('./lib/shipsync/photo-backup.server')
           .then(({ backupShipSyncPhotos }) => backupShipSyncPhotos())
@@ -1551,9 +1562,9 @@ export default {
           .catch((e) => console.error('[shipsync-photo-backup] error:', e))
       )
 
-      // ── Hourly: MyShipTracking live positions (no-op until API key set).
+      // ââ Hourly: MyShipTracking live positions (no-op until API key set).
       //    Simple response (1 credit/vessel); upgraded to extended (3 credits)
-      //    every 6 hours so destination/ETA stay fresh without burning credits. ──
+      //    every 6 hours so destination/ETA stay fresh without burning credits. ââ
       const mstExtended = utcHour % 6 === 0
       ctx.waitUntil(
         syncMyShipTracking({ extended: mstExtended })
@@ -1561,8 +1572,8 @@ export default {
           .catch((e) => console.error('[myshiptracking-cron] error:', e))
       )
 
-      // ── Hourly: mirror the Monday.com ShipSync Import/Transit board into the
-      //    app (read-only). No-ops silently until the token + import_board_id are set. ──
+      // ââ Hourly: mirror the Monday.com ShipSync Import/Transit board into the
+      //    app (read-only). No-ops silently until the token + import_board_id are set. ââ
       ctx.waitUntil(
         import('./lib/shipsync/monday-import-board.server')
           .then(({ importMondayImportBoard }) => importMondayImportBoard())
@@ -1570,10 +1581,10 @@ export default {
           .catch((e) => console.error('[shipsync-import-board-cron] error:', e instanceof Error ? e.message : String(e)))
       )
 
-      // ── Hourly: mirror the Monday.com Yacht Shipments Import + Export boards
+      // ââ Hourly: mirror the Monday.com Yacht Shipments Import + Export boards
       //    into yacht_shipments (read-only). Until Sept 2026 this only ran from
       //    the board's "Sync from Monday" button, so the dashboard drifted weeks
-      //    behind Monday. Skips itself if a manual sync is mid-flight. ──
+      //    behind Monday. Skips itself if a manual sync is mid-flight. ââ
       ctx.waitUntil(
         import('./lib/yacht-shipments/monday.server')
           .then(({ importYachtShipments }) => importYachtShipments())
@@ -1581,9 +1592,9 @@ export default {
           .catch((e) => console.error('[yacht-shipments-cron] error:', e instanceof Error ? e.message : String(e)))
       )
 
-      // ── Hourly: QuickBooks pipeline health monitor — broken/expiring company
+      // ââ Hourly: QuickBooks pipeline health monitor â broken/expiring company
       //    connections, sync errors, exhausted webhook retries, webhook silence.
-      //    Problems land in the run log and email an alert (max one per 6h). ──
+      //    Problems land in the run log and email an alert (max one per 6h). ââ
       ctx.waitUntil(
         import('./lib/qb/health.server')
           .then((m) => m.qbHealthCheck())
@@ -1591,8 +1602,8 @@ export default {
           .catch((e) => console.error('[qb-health] error:', e))
       )
 
-      // ── Daily (03:00 UTC): pull the Lightspeed supplier list into Waypoint.
-      //    No-ops until the Lightspeed API token is set. ──
+      // ââ Daily (03:00 UTC): pull the Lightspeed supplier list into Waypoint.
+      //    No-ops until the Lightspeed API token is set. ââ
       if (utcHour === 3) {
         ctx.waitUntil(
           import('./lib/lightspeed/suppliers.server')
@@ -1605,11 +1616,11 @@ export default {
 
     if (!isQuarterly) return;
 
-    // ── Daily full refresh (02:00 UTC tick): clear all delta tokens so every
+    // ââ Daily full refresh (02:00 UTC tick): clear all delta tokens so every
     //    enabled list does a complete re-pull today. The rotating syncStalestList()
     //    ticks below then carry it out one list at a time (subrequest-safe), and
     //    downloadPendingImages() refreshes any missing vessel images. This guards
-    //    against delta sync never backfilling mapping/data changes. ──
+    //    against delta sync never backfilling mapping/data changes. ââ
     if (utcHour === 2 && new Date().getUTCMinutes() < 15) {
       ctx.waitUntil(
         resetDeltaTokens()
@@ -1628,8 +1639,8 @@ export default {
       // on the Integrations page remains for a manual push when needed.
     }
 
-    // ── Daily (checked hourly): compare crew dates of birth with SharePoint
-    //    (SD-0048). Read-only — writes findings to crew_dob_sp_check for review. ──
+    // ââ Daily (checked hourly): compare crew dates of birth with SharePoint
+    //    (SD-0048). Read-only â writes findings to crew_dob_sp_check for review. ââ
     if (isHourly) {
       ctx.waitUntil(
         import('./lib/sharepoint-sync.server')
@@ -1639,8 +1650,8 @@ export default {
       )
     }
 
-    // ── Hourly: one chunk of the two-way visa ⇄ tracker sync (rotating cursor,
-    // snapshot-guarded newest-wins). Cycles through all vessels over ~8 hours. ──
+    // ââ Hourly: one chunk of the two-way visa â tracker sync (rotating cursor,
+    // snapshot-guarded newest-wins). Cycles through all vessels over ~8 hours. ââ
     if (isHourly) {
       ctx.waitUntil(
         runTwoWaySyncTick()
@@ -1649,9 +1660,9 @@ export default {
       )
     }
 
-    // ── Every 15 min: Mini Backup platform — start due AMIs, poll them, and
+    // ââ Every 15 min: Mini Backup platform â start due AMIs, poll them, and
     //    advance the offsite block copy to Impossible Cloud (bounded per tick).
-    //    No-ops until the AWS credentials are saved in the Backups tab. ──
+    //    No-ops until the AWS credentials are saved in the Backups tab. ââ
     ctx.waitUntil(
       import('./lib/backup/runner.server')
         .then((m) => m.runBackupTick())
@@ -1659,7 +1670,7 @@ export default {
         .catch((e) => console.error('[backup-cron] error:', e))
     )
 
-    // ── Every 15 min: vessel-image backfill ──
+    // ââ Every 15 min: vessel-image backfill ââ
     // The list pull itself moved to the 5-minute tick (syncPrioritisedLists) so
     // vessel movements land promptly; this tick keeps the image backfill, and
     // still nudges the stalest list as a safety net if the fast tick is ever
@@ -1670,13 +1681,13 @@ export default {
         // Image backfill walks the WHOLE pending set via a persisted cursor. The
         // old (UTCminutes % 4) * 10 window only ever produced offsets 0/10/20/30,
         // so with a backlog over 40 rows every vessel past the first 40 was never
-        // reached — newly uploaded photos for those vessels never downloaded.
+        // reached â newly uploaded photos for those vessels never downloaded.
         .then((r) => { if (r) console.log(`[sp-cron] ${r.name}: synced=${r.synced} errors=${r.errors}`); return downloadPendingImagesRotating(10) })
-        .then((img) => { if (img.processed) console.log(`[sp-cron] images downloaded=${img.downloaded}/${img.processed} offset=${img.offset}→${img.nextOffset} pending=${img.pending}`) })
+        .then((img) => { if (img.processed) console.log(`[sp-cron] images downloaded=${img.downloaded}/${img.processed} offset=${img.offset}â${img.nextOffset} pending=${img.pending}`) })
         .catch((e) => console.error('[sp-cron] error:', e))
     )
 
-    // (myGPS vehicle positions now sync on the 5-min tick above — the
+    // (myGPS vehicle positions now sync on the 5-min tick above â the
     // ShipSync proximity alert needs fresher data than 15 min gave it.)
 
     // Sync live VesselFinder AIS positions onto yachts (no-op until userkey set)
@@ -1686,10 +1697,10 @@ export default {
         .catch((e) => console.error('[vesselfinder-cron] error:', e))
     )
 
-    // (MyShipTracking positions moved to the hourly block above — see isHourly.)
+    // (MyShipTracking positions moved to the hourly block above â see isHourly.)
 
-    // Weekly immigration digest — day, time and recipients all come from the
-    // automation's config (Developer → Automations); the values below are only
+    // Weekly immigration digest â day, time and recipients all come from the
+    // automation's config (Developer â Automations); the values below are only
     // the fallback for a registry row that has never been configured. It used to
     // be hardcoded here as "Monday, 03:00 UTC", which meant changing when it went
     // out, or who got it, required a deploy.
@@ -1706,7 +1717,7 @@ export default {
         .catch((e) => console.error('[weekly-immigration] error:', e))
     )
 
-    // Weekly Fleet Finance email — outstanding QBO balances per yacht. Toggle,
+    // Weekly Fleet Finance email â outstanding QBO balances per yacht. Toggle,
     // recipients AND send time all live on the Automations page; the values here
     // are the fallback for a row that has never been configured.
     ctx.waitUntil(
@@ -1722,7 +1733,7 @@ export default {
         .catch((e) => console.error('[fleet-finance] error:', e))
     )
 
-    // Weekly visa report — Friday 08:00 GST (04:00 UTC). Generates + emails a
+    // Weekly visa report â Friday 08:00 GST (04:00 UTC). Generates + emails a
     // visa-status report to every yacht opted in (send_visa_reports = true).
     if (utcHour === 4 && new Date().getUTCDay() === 5 && new Date().getUTCMinutes() < 15) {
       ctx.waitUntil(
@@ -1753,7 +1764,7 @@ export default {
       )
     }
 
-    // WhatsApp expiry reminders to opted-in vessel contacts — daily at 06:00 UTC
+    // WhatsApp expiry reminders to opted-in vessel contacts â daily at 06:00 UTC
     // (10:00 Dubai). Off unless WHATSAPP_AUTOMATIONS_ENABLED is true AND the
     // reminder AND the yacht are switched on; one message per document per stage.
     if (isHourly && utcHour === 6) {
@@ -1765,7 +1776,7 @@ export default {
       )
     }
 
-    // Permit expiry reminders (SD-0047) — 60 / 30 / 7 days and on the day, to the
+    // Permit expiry reminders (SD-0047) â 60 / 30 / 7 days and on the day, to the
     // vessel's responsible agents (in the app and by email) plus a Port Ops copy.
     // Daily at 08:00 UTC (12:00 UAE). Each reminder is claimed before sending, so a
     // second run in the hour sends nothing. Emails need PERMIT_EXPIRY_ALERTS_ENABLED.
