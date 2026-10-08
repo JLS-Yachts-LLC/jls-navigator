@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { getSyncHubStatus, runSyncNow, type SyncHubStatus } from "@/lib/sync-hub.server";
 import { QboCustomersPanel } from "@/components/dev/qbo-customers-panel";
+import { WaypointAccountsPanel } from "@/components/finance/waypoint-accounts";
 
 function rel(ts: string | null): string {
   if (!ts) return "never";
@@ -249,6 +250,9 @@ export function SyncHubPage() {
 
             {/* QuickBooks vessel <-> customer links (drives the QBO sync above) */}
             <QboCustomersPanel />
+
+            {/* Waypoint Trading LLC (a second QuickBooks company) <-> vessel links */}
+            <WaypointAccountsPanel />
           </>
         )}
       </div>
