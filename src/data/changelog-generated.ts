@@ -9,6 +9,34 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-10-08",
     "entries": [
       {
+        "type": "feature",
+        "title": "Client portal connects the task board and inventory — tasks and warranties on Today's brief, in Alerts and the Compliance calendar, and inventory items can raise a repair task or a requisition"
+      },
+      {
+        "type": "feature",
+        "title": "Statement of account added to Automated Reports — open balance, overdue payment and unpaid invoices from JLS and Waypoint, with the statement PDF, sent on the 1st of each month or any weekday"
+      },
+      {
+        "type": "feature",
+        "title": "Automated Reports becomes a full area for every client — all vessels at a glance, bulk opt-in, change history — and clients can switch their reports on or off and choose recipients in the Client Portal"
+      },
+      {
+        "type": "feature",
+        "title": "The Client Portal installs on phones as a self-updating app, named after the vessel, with a bottom tab bar"
+      },
+      {
+        "type": "improvement",
+        "title": "A vessel's visa report recipients are now set in Automated Reports; the old weekly visa report setting is retired"
+      },
+      {
+        "type": "feature",
+        "title": "Client portal inventory works like a spreadsheet — edit in place, add rows by typing or pasting from Excel, and import a CSV from a downloadable template"
+      },
+      {
+        "type": "feature",
+        "title": "Automated Reports — opt a vessel in to scheduled Visa status and Sign On / Sign Off reports, with its own recipients and send time"
+      },
+      {
         "type": "fix",
         "title": "Client portal task board shows all five columns on a wide screen instead of cutting off Waiting and Done"
       },

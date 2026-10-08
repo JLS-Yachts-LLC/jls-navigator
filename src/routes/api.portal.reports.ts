@@ -12,7 +12,7 @@
  */
 import { createClient } from '@supabase/supabase-js'
 import { resolvePortalYacht } from '@/lib/portal/portal-auth.server'
-import { canManageVessel, canSeeFinance } from '@/lib/portal/portal-positions'
+import { canManageVessel, canSeeFinance, hiddenSections } from '@/lib/portal/portal-positions'
 import { VESSEL_REPORTS, describeReportSchedule, isEmail, type ReportSchedule } from '@/lib/vessel-reports/catalogue'
 
 const json = (b: unknown, s = 200) =>
@@ -49,8 +49,10 @@ export async function portalReportsHandler(request: Request): Promise<Response> 
   if (!yacht.mfaVerified) return json({ error: 'Two-factor verification required' }, 403)
   const sb = admin() as any
   const canManage = canManageVessel(yacht.position) && !yacht.preview
-  // The statement is the vessel's accounts — only for positions that see them.
-  const visible = (key: string) => key !== 'statement_of_account' || canSeeFinance(yacht.position)
+  // A report shows only to positions that may see what's in it: the statement
+  // is the vessel's accounts; the others are crew, passports and visas.
+  const crewHidden = hiddenSections(yacht.position).has('crew')
+  const visible = (key: string) => (key === 'statement_of_account' ? canSeeFinance(yacht.position) : !crewHidden)
 
   if (request.method === 'GET') {
     const { data, error } = await sb.from('vessel_report_subscriptions').select(COLS)

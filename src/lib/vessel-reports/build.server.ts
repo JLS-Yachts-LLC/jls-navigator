@@ -49,6 +49,10 @@ export async function buildVesselReport(key: ReportKey, yachtId: string, opts: {
     const { buildStatement } = await import("./statement.server");
     return buildStatement(yachtId, vessel, yacht.qbo_customer_id ?? null);
   }
+  if (key === "crew_on_board") {
+    const { buildCrewOnBoard } = await import("./crew.server");
+    return buildCrewOnBoard(yachtId, vessel);
+  }
   return buildSignOnOff(yachtId, vessel);
 }
 

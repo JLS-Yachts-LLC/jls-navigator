@@ -4,7 +4,7 @@
  * the same key in vessel_report_subscriptions' CHECK, and a builder in
  * lib/vessel-reports/build.server.ts.
  */
-export type ReportKey = "visa_status" | "sign_on_off" | "statement_of_account";
+export type ReportKey = "visa_status" | "sign_on_off" | "statement_of_account" | "crew_on_board";
 /** A weekday, every day, or "monthly" = the 1st of each month. */
 export type ReportDay = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun" | "daily" | "monthly";
 export type ReportSchedule = { day: ReportDay; time: string; tz?: string };
@@ -32,6 +32,12 @@ export const VESSEL_REPORTS: Array<{
     label: "Statement of account",
     description: "What the vessel owes — open balance, overdue and every unpaid invoice — from each company that bills it (JLS, and Waypoint where linked), with the statement PDF attached.",
     defaultSchedule: { day: "monthly", time: "09:00", tz: "Asia/Dubai" },
+  },
+  {
+    key: "crew_on_board",
+    label: "Crew on board",
+    description: "Everyone on board (and on leave) — rank, nationality, when they signed on, passport expiry and UAE visa — flagging anything expired or due soon, with the PDF attached.",
+    defaultSchedule: { day: "mon", time: "08:00", tz: "Asia/Dubai" },
   },
 ];
 
