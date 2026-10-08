@@ -20,7 +20,7 @@ import {
   Bell, Compass, Wrench, CalendarRange, ShieldCheck, Menu, AlertTriangle, Eye,
   Pencil, Trash2, UserPlus, RotateCcw, ImagePlus,
   ClipboardCheck, NotebookPen, Anchor, IdCard, CalendarDays, Upload, BookOpen,
-  SquareKanban, Boxes,
+  SquareKanban, Boxes, Receipt,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { portalFetch, setPortalYacht } from "@/lib/portal/portal-fetch";
@@ -43,8 +43,10 @@ import { EsignPanel } from "@/components/portal/sections/esign-section";
 import { CharterSection } from "@/components/portal/sections/charter-section";
 import { TasksSection } from "@/components/portal/sections/tasks-section";
 import { InventorySection } from "@/components/portal/sections/inventory-section";
+import { ExpensesSection } from "@/components/portal/sections/expenses-section";
+import { accountTotals } from "@/lib/portal/expenses";
 import { IsmSection } from "@/components/portal/sections/ism-section";
-import { canApproveRequisition, hiddenSections, canSeeFinance, canManageVessel } from "@/lib/portal/portal-positions";
+import { canManageMoney, canApproveRequisition, hiddenSections, canSeeFinance, canManageVessel } from "@/lib/portal/portal-positions";
 import { cn } from "@/lib/utils";
 import { BoatPortal } from "./boat-portal";
 // /portal is a standalone route (no staff shell), so pull the design tokens in
@@ -656,7 +658,7 @@ function MfaVerifyScreen({ onDone, onSignOut }: { onDone: () => void; onSignOut:
 // ═══════════════════════════════════════════════════════════════════════════
 type Tab =
   | "home" | "brief"
-  | "alerts" | "positions" | "crew" | "documents" | "pms" | "balances" | "invoices" | "charter" | "ism" | "tasks" | "inventory" | "stock" | "checklists" | "hours" | "handover" | "movements" | "gatepasses" | "orders" | "calendar"
+  | "alerts" | "positions" | "crew" | "documents" | "pms" | "balances" | "invoices" | "charter" | "ism" | "tasks" | "inventory" | "expenses" | "stock" | "checklists" | "hours" | "handover" | "movements" | "gatepasses" | "orders" | "calendar"
   | "requests" | "logistics" | "chat" | "directory" | "reports"
   | "finances"; // legacy alias used by the Home module launcher → routes to Invoices/Finance
 
@@ -696,6 +698,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { key: "tasks", label: "Tasks & backlog", icon: SquareKanban },
       { key: "inventory", label: "Inventory", icon: Boxes },
+      { key: "expenses", label: "Expenses & APA", icon: Receipt },
       { key: "stock", label: "Stock & requisitions", icon: Package },
       { key: "checklists", label: "Checklists", icon: ClipboardCheck },
       { key: "hours", label: "Hours of rest", icon: Clock },
@@ -946,7 +949,7 @@ function PortalShell({ link, email, onSignOut, preview = false, vessels = [], on
         {(tab === "invoices" || tab === "finances") && <FinancesTab onOpenRequest={(id) => { setTab("requests"); setOpenRequestId(id); }} />}
         {tab === "balances" && <BalancesTab />}
         {tab === "logistics" && <LogisticsTab yachtId={link.yacht_id} canBook={!preview} onOpenRequest={(id) => { setTab("requests"); setOpenRequestId(id); }} />}
-        {tab === "alerts" && <AlertsTab yachtId={link.yacht_id} financeOk={financeOk} stockOk={allowedKeys.has("stock")} gatePassOk={allowedKeys.has("gatepasses")} tasksOk={allowedKeys.has("tasks")} inventoryOk={allowedKeys.has("inventory")} onOpen={(t) => { setTab(t); setOpenRequestId(null); }} />}
+        {tab === "alerts" && <AlertsTab yachtId={link.yacht_id} financeOk={financeOk} stockOk={allowedKeys.has("stock")} gatePassOk={allowedKeys.has("gatepasses")} tasksOk={allowedKeys.has("tasks")} inventoryOk={allowedKeys.has("inventory")} expensesOk={allowedKeys.has("expenses")} onOpen={(t) => { setTab(t); setOpenRequestId(null); }} />}
         {tab === "positions" && yacht && <PositionsTab yacht={yacht} />}
         {/* On board (Management module). The tabs only appear when the vessel
             has the module and this position can see them; editing is off in
@@ -958,6 +961,9 @@ function PortalShell({ link, email, onSignOut, preview = false, vessels = [], on
         {tab === "tasks" && (
           <TasksSection yachtId={link.yacht_id} canEdit={!preview}
                         onOpenInventory={allowedKeys.has("inventory") ? () => { setTab("inventory"); setOpenRequestId(null); } : undefined} />
+        )}
+        {tab === "expenses" && (
+          <ExpensesSection yachtId={link.yacht_id} canEdit={!preview} canManage={canManageMoney(link.position)} showJlsSpend={financeOk} />
         )}
         {tab === "inventory" && (
           <InventorySection yachtId={link.yacht_id} canEdit={!preview} showValue={canSeeFinance(link.position)}
@@ -1065,6 +1071,7 @@ const CORE_MODULES: ModuleDef[] = [
 const MANAGEMENT_MODULES: ModuleDef[] = [
   { key: "tasks",   label: "Tasks & backlog",    blurb: "The crew's board — backlog, to do, in progress & done", icon: SquareKanban, accent: "text-teal-300 bg-teal-500/10 border-teal-500/25" },
   { key: "inventory", label: "Inventory",        blurb: "What the vessel owns, where it is & its condition",   icon: Boxes,        accent: "text-teal-300 bg-teal-500/10 border-teal-500/25" },
+  { key: "expenses", label: "Expenses & APA",     blurb: "Petty cash, crew cards & charter APA — scan receipts", icon: Receipt,      accent: "text-teal-300 bg-teal-500/10 border-teal-500/25" },
   { key: "stock",   label: "Stock & requisitions", blurb: "What's on board, what's low & orders to JLS", icon: Package,       accent: "text-teal-300 bg-teal-500/10 border-teal-500/25" },
   { key: "checklists", label: "Checklists",       blurb: "Departure, arrival, daily rounds & more",        icon: ClipboardCheck, accent: "text-teal-300 bg-teal-500/10 border-teal-500/25" },
   { key: "hours",   label: "Hours of rest",        blurb: "Daily rest per crew, MLC minimums flagged",      icon: Clock,         accent: "text-teal-300 bg-teal-500/10 border-teal-500/25" },
@@ -2622,8 +2629,8 @@ const expiringWithin = (d: string | null | undefined, days: number) => {
   return n <= days && n >= -3650; // upcoming or recently lapsed, not ancient records
 };
 
-function AlertsTab({ yachtId, onOpen, financeOk, stockOk, gatePassOk, tasksOk = false, inventoryOk = false }: {
-  yachtId: string; onOpen: (t: Tab) => void; financeOk: boolean; stockOk: boolean; gatePassOk: boolean; tasksOk?: boolean; inventoryOk?: boolean;
+function AlertsTab({ yachtId, onOpen, financeOk, stockOk, gatePassOk, tasksOk = false, inventoryOk = false, expensesOk = false }: {
+  yachtId: string; onOpen: (t: Tab) => void; financeOk: boolean; stockOk: boolean; gatePassOk: boolean; tasksOk?: boolean; inventoryOk?: boolean; expensesOk?: boolean;
 }) {
   const [alerts, setAlerts] = useState<PortalAlert[]>([]);
   const [loading, setLoading] = useState(true);
@@ -2631,7 +2638,7 @@ function AlertsTab({ yachtId, onOpen, financeOk, stockOk, gatePassOk, tasksOk = 
   useEffect(() => {
     void (async () => {
       setLoading(true);
-      const [reqR, crewR, visaR, permitR, finR, logR, stockR, passR, taskR, invR] = await Promise.allSettled([
+      const [reqR, crewR, visaR, permitR, finR, logR, stockR, passR, taskR, invR, cashR, ledgerR] = await Promise.allSettled([
         db.from("captain_requests").select("id, reference, title, status").eq("yacht_id", yachtId),
         db.from("crew_members").select("id, full_name, first_name, last_name, passport_expiry_date").eq("yacht_id", yachtId),
         db.from("visa_applications").select("id, given_name, surname, visa_expiry").eq("yacht_id", yachtId),
@@ -2642,6 +2649,8 @@ function AlertsTab({ yachtId, onOpen, financeOk, stockOk, gatePassOk, tasksOk = 
         gatePassOk ? authedFetch("/api/portal/gatepasses").then((r) => r.json()).catch(() => null) : Promise.resolve(null),
         tasksOk ? db.from("onboard_tasks").select("id, due_date, status").eq("yacht_id", yachtId).neq("status", "done").not("due_date", "is", null) : Promise.resolve({ data: [] }),
         inventoryOk ? db.from("onboard_inventory_items").select("id, name, condition, warranty_expiry").eq("yacht_id", yachtId) : Promise.resolve({ data: [] }),
+        expensesOk ? db.from("onboard_cash_accounts").select("id, name, kind, currency, opening_balance, low_balance").eq("yacht_id", yachtId).eq("archived", false) : Promise.resolve({ data: [] }),
+        expensesOk ? db.from("onboard_expenses").select("account_id, kind, amount").eq("yacht_id", yachtId).limit(10000) : Promise.resolve({ data: [] }),
       ]);
       const out: PortalAlert[] = [];
 
@@ -2709,6 +2718,25 @@ function AlertsTab({ yachtId, onOpen, financeOk, stockOk, gatePassOk, tasksOk = 
           if (!i.warranty_expiry) continue;
           const n = daysTo(i.warranty_expiry);
           if (n >= 0 && n <= 30) out.push({ id: `inv-w-${i.id}`, severity: "medium", icon: Boxes, title: `${i.name} — warranty ends in ${n}d`, detail: fmtDate(i.warranty_expiry), go: "inventory" });
+        }
+      }
+
+      // Petty cash / cards below their warning level, and APAs nearly used up (On board)
+      if (cashR.status === "fulfilled" && ledgerR.status === "fulfilled") {
+        const ledger = ((ledgerR.value as any).data ?? []) as any[];
+        for (const a of ((cashR.value as any).data ?? []) as any[]) {
+          const t = accountTotals(a, ledger);
+          if (a.kind === "apa") {
+            const received = t.opening + t.moneyIn;
+            if (received > 0 && t.balance < received * 0.1) {
+              out.push({ id: `apa-${a.id}`, severity: t.balance < 0 ? "high" : "medium", icon: Receipt,
+                title: t.balance < 0 ? `${a.name} is over the APA` : `${a.name} — under 10% of the APA left`,
+                detail: `${a.currency} ${t.balance.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} remaining`, go: "expenses" });
+            }
+          } else if (a.low_balance != null && t.balance <= Number(a.low_balance)) {
+            out.push({ id: `cash-${a.id}`, severity: "medium", icon: Receipt, title: `${a.name} is running low`,
+              detail: `${a.currency} ${t.balance.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} left — time for a top-up`, go: "expenses" });
+          }
         }
       }
 

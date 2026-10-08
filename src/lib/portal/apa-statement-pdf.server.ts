@@ -22,8 +22,9 @@ function right(page: PDFPage, text: string, x: number, y: number, size: number, 
   page.drawText(text, { x: x - font.widthOfTextAtSize(text, size), y, size, font, color })
 }
 
-/** pdf-lib's standard fonts are WinAnsi only — keep text printable. */
-const safe = (s: string | null | undefined) => (s ?? '').replace(/[^\x20-\x7E -ÿ€]/g, '?')
+/** pdf-lib's standard fonts are WinAnsi only — keep text printable (WinAnsi has the dashes, quotes and bullet). */
+const safe = (s: string | null | undefined) =>
+  (s ?? '').replace(/[^\x20-\x7E -ÿ€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ]/g, '?')
 
 export type ApaEntry = {
   kind: 'expense' | 'funds_in' | 'return'; amount: number; entry_date: string;
@@ -132,7 +133,7 @@ export async function buildApaStatementPdf(opts: {
     y -= 13
   }
   y -= 4
-  right(page, balance >= 0 ? 'Balance to return' : 'Balance owed', X.cat + 140, y, 10, bold)
+  page.drawText(balance >= 0 ? 'Balance to return' : 'Balance owed by the charterer', { x: X.cat, y, size: 10, font: bold, color: INK })
   right(page, `${ccy} ${money(Math.abs(balance))}`, X.amt, y, 11, bold)
   y -= 34
   if (y > M + 20) {
