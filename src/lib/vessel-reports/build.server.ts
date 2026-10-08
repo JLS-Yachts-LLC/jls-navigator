@@ -41,10 +41,15 @@ const nice = (iso: string | null | undefined) =>
 
 export async function buildVesselReport(key: ReportKey, yachtId: string, opts: { staffCopy?: boolean } = {}): Promise<BuiltReport> {
   const sb = supabaseAdmin as any;
-  const { data: yacht } = await sb.from("yachts").select("id, vessel_name").eq("id", yachtId).maybeSingle();
+  const { data: yacht } = await sb.from("yachts").select("id, vessel_name, qbo_customer_id").eq("id", yachtId).maybeSingle();
   if (!yacht) throw new Error("Vessel not found");
   const vessel = String(yacht.vessel_name ?? "Vessel");
-  return key === "visa_status" ? buildVisaStatus(yachtId, vessel, opts) : buildSignOnOff(yachtId, vessel);
+  if (key === "visa_status") return buildVisaStatus(yachtId, vessel, opts);
+  if (key === "statement_of_account") {
+    const { buildStatement } = await import("./statement.server");
+    return buildStatement(yachtId, vessel, yacht.qbo_customer_id ?? null);
+  }
+  return buildSignOnOff(yachtId, vessel);
 }
 
 // ── Visa status ─────────────────────────────────────────────────────────────

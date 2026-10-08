@@ -22,6 +22,27 @@ type Sub = {
   recipients: string[]; cc: string[]; schedule: unknown;
 };
 
+/**
+ * A report's schedule. On top of the weekday / every-day schedules the other
+ * automations use, a report can go "monthly" — the 1st of each month.
+ */
+type Schedule = { day: string; time: string; tz: string };
+function scheduleOf(raw: unknown): Schedule {
+  const r = (raw ?? {}) as { day?: string; time?: string; tz?: string };
+  if (r.day === "monthly") {
+    const time = /^([01]\d|2[0-3]):[0-5]\d$/.test(String(r.time)) ? String(r.time) : "09:00";
+    return { day: "monthly", time, tz: r.tz || DEFAULT_TZ };
+  }
+  const s = parseSchedule(raw, { day: "mon", time: "08:00", tz: DEFAULT_TZ });
+  return { day: s.day, time: s.time, tz: s.tz ?? DEFAULT_TZ };
+}
+function dueNow(s: Schedule, now: Date): boolean {
+  if (s.day !== "monthly") return isDueNow({ day: s.day as any, time: s.time, tz: s.tz }, now);
+  const dayOfMonth = Number(new Intl.DateTimeFormat("en-GB", { timeZone: s.tz, day: "numeric" }).format(now));
+  // The 1st in the vessel's clock; the time window is the same as weekly reports'.
+  return dayOfMonth === 1 && isDueNow({ day: "daily", time: s.time, tz: s.tz }, now);
+}
+
 const clean = (list: unknown) => [...new Set((Array.isArray(list) ? list : []).map((e) => String(e).trim().toLowerCase()).filter(isEmail))];
 
 async function deliver(sub: Sub, to: string[], cc: string[], opts: { staffCopy?: boolean } = {}) {
@@ -57,8 +78,8 @@ export async function runDueVesselReports(now = new Date()): Promise<{ due: numb
   const out = { due: 0, sent: 0, failed: 0 };
 
   for (const sub of (data ?? []) as Sub[]) {
-    const sched = parseSchedule(sub.schedule, { day: "mon", time: "08:00", tz: DEFAULT_TZ });
-    if (!isDueNow(sched, now)) continue;
+    const sched = scheduleOf(sub.schedule);
+    if (!dueNow(sched, now)) continue;
     const to = clean(sub.recipients);
     if (!to.length) continue;
     out.due++;
