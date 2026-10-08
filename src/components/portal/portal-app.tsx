@@ -17,7 +17,7 @@
  *   shows. When the app is next sent to the background, it updates there.
  */
 import { useCallback, useEffect, useState } from "react";
-import { Download, MoreVertical, RefreshCw, Share, SquarePlus, X } from "lucide-react";
+import { BellOff, BellRing, Download, MoreVertical, RefreshCw, Share, SquarePlus, WifiOff, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 declare const __BUILD_ID__: string;
@@ -298,4 +298,173 @@ export function UpdateReady({ onApply }: { onApply: () => void }) {
       <RefreshCw className="h-4 w-4 text-primary" /> New version ready — Update
     </button>
   );
+}
+
+// ─── Notifications ────────────────────────────────────────────────────────────
+
+const toKey = (b64url: string) => {
+  const b64 = b64url.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((b64url.length + 3) % 4);
+  return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+};
+
+type PortalApi = (path: string, init?: RequestInit) => Promise<Response>;
+type PushState = { ready: boolean; available: boolean; supported: boolean; needsInstall: boolean; on: boolean; denied: boolean };
+
+/**
+ * This device's phone notifications. Web Push needs a service worker and, on
+ * iPhone, the app installed on the home screen (Safari tabs can't receive them).
+ * `available` is false until the server has its VAPID keys.
+ */
+export function usePush(api: PortalApi) {
+  const [s, set] = useState<PushState>({ ready: false, available: false, supported: false, needsInstall: false, on: false, denied: false });
+  const [busy, setBusy] = useState(false);
+  const [key, setKey] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    const supported = typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+    const needsInstall = isIOS() && !isStandalone();
+    let sub: PushSubscription | null = null;
+    if (supported) { try { sub = await (await navigator.serviceWorker.ready).pushManager.getSubscription(); } catch { /* none */ } }
+    try {
+      const res = await api(`/api/portal/push${sub ? `?endpoint=${encodeURIComponent(sub.endpoint)}` : ""}`);
+      const j = res.ok ? await res.json() : null;
+      setKey(j?.publicKey ?? null);
+      set({ ready: true, available: !!j?.available, supported, needsInstall, on: !!sub && !!j?.subscribed,
+            denied: supported && Notification.permission === "denied" });
+    } catch {
+      set({ ready: true, available: false, supported, needsInstall, on: false, denied: false });
+    }
+  }, [api]);
+
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  const enable = useCallback(async () => {
+    if (!key) return;
+    setBusy(true);
+    try {
+      if ((await Notification.requestPermission()) !== "granted") { await refresh(); return; }
+      const reg = await navigator.serviceWorker.ready;
+      const sub = (await reg.pushManager.getSubscription())
+        ?? await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: toKey(key) });
+      const res = await api("/api/portal/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(sub.toJSON()) });
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? "Couldn't switch notifications on.");
+      await refresh();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Couldn't switch notifications on.");
+    } finally { setBusy(false); }
+  }, [api, key, refresh]);
+
+  const disable = useCallback(async () => {
+    setBusy(true);
+    try {
+      const sub = await (await navigator.serviceWorker.ready).pushManager.getSubscription();
+      if (sub) {
+        await api("/api/portal/push", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ endpoint: sub.endpoint }) }).catch(() => {});
+        await sub.unsubscribe().catch(() => {});
+      }
+      await refresh();
+    } finally { setBusy(false); }
+  }, [api, refresh]);
+
+  return { ...s, busy, enable, disable };
+}
+
+/** Menu entry: switch this device's notifications on or off. Hidden until the server can send them. */
+export function NotificationsMenuButton({ api }: { api: PortalApi }) {
+  const push = usePush(api);
+  const [howTo, setHowTo] = useState(false);
+  if (!push.ready || !push.available) return null;
+  const base = "mx-3 mb-1 flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition";
+  if (push.needsInstall) {
+    return (
+      <>
+        <button type="button" onClick={() => setHowTo(true)} className={cn(base, "text-muted-foreground hover:text-foreground")}
+                title="On iPhone, notifications work once the portal is on your home screen">
+          <BellRing className="h-4 w-4" /> Notifications: add to home screen first
+        </button>
+        <InstallSheet open={howTo} onClose={() => setHowTo(false)} />
+      </>
+    );
+  }
+  if (!push.supported) return null;
+  if (push.denied) {
+    return (
+      <p className="mx-3 mb-1 px-3 py-2 text-center text-[11px] leading-snug text-muted-foreground">
+        Notifications are blocked for this site. Allow them in your phone's settings to get alerts.
+      </p>
+    );
+  }
+  return push.on ? (
+    <button type="button" disabled={push.busy} onClick={() => void push.disable()}
+            className={cn(base, "text-primary hover:text-foreground disabled:opacity-50")} title="Tap to stop notifications on this device">
+      <BellRing className="h-4 w-4" /> Notifications on
+    </button>
+  ) : (
+    <button type="button" disabled={push.busy} onClick={() => void push.enable()}
+            className={cn(base, "text-muted-foreground hover:text-foreground disabled:opacity-50")}
+            title="Get a notification when JLS replies, updates a request or finishes a job">
+      <BellOff className="h-4 w-4" /> Turn on notifications
+    </button>
+  );
+}
+
+// ─── Offline ──────────────────────────────────────────────────────────────────
+
+/** Online or not, kept current. */
+export function useOnline(): boolean {
+  const [online, setOnline] = useState(true);
+  useEffect(() => {
+    const on = () => setOnline(true), off = () => setOnline(false);
+    setOnline(navigator.onLine !== false);
+    window.addEventListener("online", on);
+    window.addEventListener("offline", off);
+    return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
+  }, []);
+  return online;
+}
+
+export function OfflineBanner({ online, savedAt }: { online: boolean; savedAt?: string | null }) {
+  if (online) return null;
+  return (
+    <div role="status" className="mb-4 flex items-start gap-2.5 rounded-2xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm">
+      <WifiOff className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+      <span>
+        <span className="font-semibold">
+          No signal: showing what was last loaded on this phone
+          {savedAt ? ` (${new Date(savedAt).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })})` : ""}.
+        </span>
+        <span className="block text-xs text-muted-foreground">Sending requests, messages and changes needs a connection.</span>
+      </span>
+    </div>
+  );
+}
+
+const SNAPSHOT_KEY = "portal.offline.v1";
+const CACHE_OWNER_KEY = "portal.cacheOwner";
+
+/** Who's signed in and on which vessel — enough to open the saved portal with no signal. No tokens. */
+export type OfflineSnapshot<L, B, V> = { userId: string; email: string; link: L | null; boatOwner: B | null; vessels: V[]; savedAt: string };
+
+export function saveOfflineSnapshot<L, B, V>(s: Omit<OfflineSnapshot<L, B, V>, "savedAt">) {
+  try { localStorage.setItem(SNAPSHOT_KEY, JSON.stringify({ ...s, savedAt: new Date().toISOString() })); } catch { /* private mode */ }
+}
+export function loadOfflineSnapshot<L, B, V>(): OfflineSnapshot<L, B, V> | null {
+  try { return JSON.parse(localStorage.getItem(SNAPSHOT_KEY) || "null"); } catch { return null; }
+}
+
+/** Forget everything saved on this device for offline use. */
+export async function clearPortalData() {
+  try { localStorage.removeItem(SNAPSHOT_KEY); localStorage.removeItem(CACHE_OWNER_KEY); } catch { /* private mode */ }
+  try {
+    navigator.serviceWorker?.controller?.postMessage({ type: "clear-data" });
+    for (const k of await caches.keys()) if (k.startsWith("portal-data-")) await caches.delete(k);
+  } catch { /* no caches */ }
+}
+
+/** A different person signed in on this device: their predecessor's saved data goes. */
+export async function claimPortalData(userId: string) {
+  let owner: string | null = null;
+  try { owner = localStorage.getItem(CACHE_OWNER_KEY); } catch { /* private mode */ }
+  if (owner && owner !== userId) await clearPortalData();
+  try { localStorage.setItem(CACHE_OWNER_KEY, userId); } catch { /* private mode */ }
 }

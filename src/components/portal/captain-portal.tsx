@@ -56,7 +56,10 @@ import { BoatPortal } from "./boat-portal";
 import "@/components/polaris-ui/tokens.css";
 import "./portal-themes.css";
 import { AppearanceButton, PortalThemeContext } from "./portal-appearance";
-import { InstallCard, InstallMenuButton, UpdateReady, usePortalAppUpdates } from "./portal-app";
+import {
+  InstallCard, InstallMenuButton, UpdateReady, usePortalAppUpdates, NotificationsMenuButton, OfflineBanner, useOnline,
+  saveOfflineSnapshot, loadOfflineSnapshot, clearPortalData, claimPortalData,
+} from "./portal-app";
 import { cachedPortalTheme, ensureThemeFonts, rememberPortalTheme, resolvePortalTheme, themeClasses, type PortalTheme } from "@/lib/portal/portal-theme";
 
 const db = supabase as any;
@@ -220,6 +223,8 @@ export function CaptainPortal() {
   const [wrongHome, setWrongHome] = useState<string | null>(null);
 
   const [resetHandled, setResetHandled] = useState(false);
+  /** Opened from saved data with no signal (when it was saved). */
+  const [offlineSince, setOfflineSince] = useState<string | null>(null);
   // Bridge on the server render; the browser's last look straight after mount, so
   // hydration matches and there's no lasting flash of the default.
   const [theme, setThemeState] = useState<PortalTheme>("bridge");
@@ -235,6 +240,19 @@ export function CaptainPortal() {
     if (LANDED_WITH === "recovery" && session && !resetHandled) {
       setUserEmail(session.user.email ?? "");
       setStage("reset-password"); return;
+    }
+    // No signal: open what this phone saved last time, read-only. The sign-in
+    // may have lapsed meanwhile (it needs a connection to renew), so don't ask
+    // the server anything — the service worker answers from saved data.
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      const snap = loadOfflineSnapshot<CaptainLink, BoatOwnerLink, VesselChoice>();
+      if (snap && (snap.link || snap.boatOwner) && (!session || session.user.id === snap.userId)) {
+        setUserEmail(snap.email);
+        setVessels(snap.vessels ?? []);
+        if (snap.link) setLink(snap.link); else setBoatOwner(snap.boatOwner);
+        setOfflineSince(snap.savedAt);
+        setStage("ready"); return;
+      }
     }
     if (!session) { setStage("signed-out"); return; }
     setUserEmail(session.user.email ?? "");
@@ -288,7 +306,28 @@ export function CaptainPortal() {
 
   useEffect(() => { void bootstrap(); }, [bootstrap]);
 
+  // Signed in properly and online: remember who and which vessel, so the app can
+  // open with no signal next time; a different person's saved data is cleared.
+  useEffect(() => {
+    if (stage !== "ready" || preview || offlineSince || navigator.onLine === false) return;
+    void (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      await claimPortalData(session.user.id);
+      saveOfflineSnapshot({ userId: session.user.id, email: userEmail, link, boatOwner, vessels });
+    })();
+  }, [stage, preview, offlineSince, userEmail, link, boatOwner, vessels]);
+
+  // Opened offline and the signal is back: start again properly (renews the sign-in).
+  useEffect(() => {
+    if (!offlineSince) return;
+    const back = () => window.location.reload();
+    window.addEventListener("online", back);
+    return () => window.removeEventListener("online", back);
+  }, [offlineSince]);
+
   const signOut = useCallback(async () => {
+    await clearPortalData(); // nothing of theirs stays on the phone
     await supabase.auth.signOut();
     setLink(null);
     setBoatOwner(null);
@@ -347,7 +386,7 @@ export function CaptainPortal() {
       {stage === "ready" && link && (
         <PreviewContext.Provider value={preview}>
           <PortalShell key={link.id} link={link} email={userEmail} onSignOut={signOut} preview={preview}
-                       vessels={preview ? [] : vessels} onSwitchVessel={(l) => setLink(l)} />
+                       vessels={preview ? [] : vessels} onSwitchVessel={(l) => setLink(l)} offlineSince={offlineSince} />
         </PreviewContext.Provider>
       )}
       {appUpdate.ready && <UpdateReady onApply={appUpdate.apply} />}
@@ -731,11 +770,25 @@ type ChatMessage = {
   id: string; sender_name: string | null; sender_role: "staff" | "portal"; body: string; created_at: string;
 };
 
-function PortalShell({ link, email, onSignOut, preview = false, vessels = [], onSwitchVessel }: {
+function PortalShell({ link, email, onSignOut, preview = false, vessels = [], onSwitchVessel, offlineSince = null }: {
   link: CaptainLink; email: string; onSignOut: () => void; preview?: boolean;
   vessels?: VesselChoice[]; onSwitchVessel?: (l: CaptainLink) => void;
+  offlineSince?: string | null;
 }) {
-  const [tab, setTab] = useState<Tab>("home");
+  // A notification opens /portal?tab=chat (etc.); an unknown or hidden tab falls back to Home.
+  const [tab, setTab] = useState<Tab>(() => {
+    if (typeof window === "undefined") return "home";
+    const t = new URLSearchParams(window.location.search).get("tab");
+    return t && ALL_NAV_ITEMS.some((i) => i.key === t) ? (t as Tab) : "home";
+  });
+  useEffect(() => {
+    const u = new URL(window.location.href);
+    if (u.searchParams.has("tab") || u.searchParams.has("source")) {
+      u.searchParams.delete("tab"); u.searchParams.delete("source");
+      window.history.replaceState(null, "", u.pathname + u.search);
+    }
+  }, []);
+  const online = useOnline();
   const [yacht, setYacht] = useState<Yacht | null>(null);
   const [newRequestCat, setNewRequestCat] = useState<string | null>(null);
   const [openRequestId, setOpenRequestId] = useState<string | null>(null);
@@ -869,6 +922,7 @@ function PortalShell({ link, email, onSignOut, preview = false, vessels = [], on
         </nav>
 
         {!preview && <InstallMenuButton />}
+        {!preview && <NotificationsMenuButton api={portalFetch} />}
         <AppearanceButton />
         <button onClick={onSignOut}
                 className="m-3 flex items-center justify-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium text-muted-foreground transition hover:text-foreground">
@@ -899,6 +953,7 @@ function PortalShell({ link, email, onSignOut, preview = false, vessels = [], on
         {/* Content */}
         {/* The task board (five columns) and the inventory grid (a spreadsheet) get the screen's width, not the reading column's. */}
         <main className={cn("mx-auto w-full flex-1 px-4 pb-28 pt-5 sm:px-8 sm:pb-10", tab === "tasks" || tab === "inventory" ? "max-w-[1600px]" : "max-w-5xl")}>
+        <OfflineBanner online={online && !offlineSince} savedAt={offlineSince} />
         {tab === "home" && unread > 0 && (
           <button onClick={() => setTab("chat")}
                   className="mb-4 flex w-full items-center gap-3 rounded-2xl border border-primary/40 bg-primary/10 p-4 text-left transition hover:bg-primary/15">

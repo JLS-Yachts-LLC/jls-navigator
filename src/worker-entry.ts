@@ -887,6 +887,12 @@ export default {
       const redirect = await routeClientHost(request)
       if (redirect) return redirect
     }
+    if (url.pathname === '/api/portal/push') {
+      return (await import('./lib/portal/push.server')).portalPushHandler(request)
+    }
+    if (url.pathname === '/api/portal/push/flush') {
+      return (await import('./lib/portal/push.server')).portalPushFlushHandler(request)
+    }
     if (url.pathname === '/portal.webmanifest') {
       return (await import('./lib/portal/portal-domains.server')).portalManifestHandler(request)
     }
@@ -1483,6 +1489,14 @@ export default {
           .then((m) => m.sendPortalAlerts())
           .then((r) => { if (r.sent || r.failed) console.log('[portal-alerts]', JSON.stringify(r)) })
           .catch((e) => console.error('[portal-alerts] error:', e instanceof Error ? e.message : String(e)))
+      );
+      // …phone notifications to clients who switched them on (JLS replied,
+      //    moved a request on, finished a job). See lib/portal/push.server.
+      ctx.waitUntil(
+        import('./lib/portal/push.server')
+          .then((m) => m.sendPortalPushes())
+          .then((r) => { if (r.sent || r.failed) console.log('[portal-push]', JSON.stringify(r)) })
+          .catch((e) => console.error('[portal-push] error:', e instanceof Error ? e.message : String(e)))
       );
       // …and tell boat owners when JLS completes a job on their boat.
       ctx.waitUntil(

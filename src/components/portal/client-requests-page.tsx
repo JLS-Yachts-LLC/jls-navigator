@@ -5,6 +5,7 @@
  * (click-to-call numbers shown to captains).
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { nudgePortalPush } from "@/lib/portal/push-nudge";
 import { Loader2, Phone, Plus, RefreshCw, Save, Send, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
@@ -104,6 +105,7 @@ function RequestsPanel() {
 
   const setStatus = async (id: string, status: string) => {
     await db.from("captain_requests").update({ status }).eq("id", id);
+    nudgePortalPush(); // tell the client's phone now
     void load();
   };
 
@@ -214,6 +216,7 @@ function Thread({ requestId, staffName }: { requestId: string; staffName: string
       request_id: requestId, sender_user_id: user?.id,
       sender_name: staffName, sender_role: "staff", body,
     });
+    nudgePortalPush();
     setSending(false); setDraft(""); void load();
   };
 

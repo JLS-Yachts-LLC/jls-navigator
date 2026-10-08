@@ -4,6 +4,7 @@
  * don't both reply to the same client. First staff reply auto-claims.
  */
 import { useCallback, useEffect, useState } from "react";
+import { nudgePortalPush } from "@/lib/portal/push-nudge";
 import { Loader2, Plus, Send } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -181,6 +182,7 @@ function StaffChatThread({ chat, onChanged }: { chat: StaffChat; onChanged: () =
         chat_id: chat.id, sender_user_id: user?.id, sender_name: myName,
         sender_role: "staff", body,
       });
+      nudgePortalPush(); // the client's phone hears about it now
       setDraft("");
       await load();
       onChanged();
