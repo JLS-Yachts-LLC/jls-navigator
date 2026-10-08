@@ -251,6 +251,36 @@ export async function portalBriefHandler(request: Request): Promise<Response> {
       openRequests: (openReqs.data ?? []).map((r: any) => ({ reference: r.reference, title: r.title, status: r.status, createdAt: r.created_at })),
     }
 
+    // ── Crew on board, and the visas expiring this month and the next two ──
+    let crew: { signedOn: number; onLeave: number } | null = null
+    let visaForecast: Array<{ month: string; items: Array<{ name: string; date: string; type: string | null }> }> | null = null
+    if (sees('crew')) {
+      const first = iso(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)))
+      const after = iso(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 3, 1)))
+      const [crewR, visaR]: any[] = await Promise.all([
+        sb.from('crew_members').select('status').eq('yacht_id', yacht.yachtId),
+        sb.from('visa_applications').select('id, given_name, surname, visa_type, visa_expiry, passport_number, crew_member_id, status')
+          .eq('yacht_id', yacht.yachtId).gte('visa_expiry', first).neq('status', 'cancelled'),
+      ])
+      const statuses = (crewR.data ?? []).map((c: any) => String(c.status ?? '').toLowerCase())
+      crew = { signedOn: statuses.filter((s: string) => s === 'active').length, onLeave: statuses.filter((s: string) => s === 'on_leave').length }
+
+      const all: any[] = visaR.data ?? []
+      // A newer visa for the same person (passport or crew record) means it's been renewed.
+      const renewed = (v: any) => all.some((n) => n.id !== v.id && n.visa_expiry > v.visa_expiry
+        && ((v.passport_number && n.passport_number === v.passport_number) || (v.crew_member_id && n.crew_member_id === v.crew_member_id)))
+      const due = all.filter((v) => v.status === 'approved' && v.visa_expiry >= today && v.visa_expiry < after && !renewed(v))
+      visaForecast = [0, 1, 2].map((k) => {
+        const key = iso(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + k, 1))).slice(0, 7)
+        return {
+          month: key,
+          items: due.filter((v) => String(v.visa_expiry).slice(0, 7) === key)
+            .sort((a, b) => String(a.visa_expiry).localeCompare(String(b.visa_expiry)))
+            .map((v) => ({ name: [v.given_name, v.surname].filter(Boolean).join(' ') || 'Crew member', date: v.visa_expiry, type: v.visa_type ?? null })),
+        }
+      })
+    }
+
     // Months to pick from: the last 12, newest first, flagging those with a published note.
     const publishedMonths = new Set((published.data ?? []).map((r: any) => String(r.month).slice(0, 7)))
     const months = Array.from({ length: 12 }, (_, i) => {
@@ -269,6 +299,8 @@ export async function portalBriefHandler(request: Request): Promise<Response> {
       compliance,
       timeline: timeline.slice(-60),
       ahead,
+      crew,
+      visaForecast,
     })
   } catch (e: any) {
     return json({ error: e?.message ?? 'Could not prepare the brief' }, 500)

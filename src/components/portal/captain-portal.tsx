@@ -672,7 +672,8 @@ const NAV_GROUPS: NavGroup[] = [
       { key: "documents", label: "Documents", icon: FileCheck2 },
       { key: "orders", label: "Orders", icon: ShoppingCart },
       { key: "requests", label: "Requests", icon: LifeBuoy },
-      { key: "balances", label: "Balances", icon: Wallet },
+      // Balances hidden for now (8 Oct 2026) — the Statement of account on Today's brief and Invoices cover it.
+      // { key: "balances", label: "Balances", icon: Wallet },
       { key: "invoices", label: "Invoices", icon: FileText },
       { key: "logistics", label: "Deliveries", icon: Truck },
       { key: "chat", label: "Chat", icon: MessageSquare },
@@ -975,7 +976,7 @@ const CORE_MODULES: ModuleDef[] = [
   { key: "movements", label: "Arrivals & departures",  blurb: "Pre-arrival form & crew sign-on / sign-off",   icon: Anchor,     accent: "text-primary bg-primary/10 border-primary/25" },
   { key: "gatepasses", label: "Gate passes",          blurb: "Contractors, visitors, vehicles — request & renew", icon: IdCard, accent: "text-primary bg-primary/10 border-primary/25" },
   { key: "crew",      label: "Crew & immigration",     blurb: "Roster, visas & passports",                    icon: Users,      accent: "text-primary bg-primary/10 border-primary/25" },
-  { key: "finances",  label: "Invoices & balances",    blurb: "Invoices, quotations & statement",             icon: Wallet,     accent: "text-primary bg-primary/10 border-primary/25" },
+  { key: "finances",  label: "Invoices & statement",   blurb: "Invoices, quotations & statement",             icon: Wallet,     accent: "text-primary bg-primary/10 border-primary/25" },
   { key: "logistics", label: "Deliveries",             blurb: "Live driver position, deliveries & PODs",      icon: Truck,      accent: "text-primary bg-primary/10 border-primary/25" },
   { key: "documents", label: "Documents",              blurb: "Vessel papers, permits & visas",               icon: FileCheck2, accent: "text-primary bg-primary/10 border-primary/25" },
   { key: "chat",      label: "Chat & directory",       blurb: "Your agent, live chat & key contacts",         icon: MessageSquare, accent: "text-primary bg-primary/10 border-primary/25" },
@@ -2562,7 +2563,7 @@ function AlertsTab({ yachtId, onOpen, financeOk, stockOk, gatePassOk }: { yachtI
       if (finR.status === "fulfilled" && finR.value?.invoices) {
         const overdue = finR.value.invoices.filter((i: any) => i.status === "overdue");
         if (overdue.length) out.push({ id: "fin-overdue", severity: "high", icon: Wallet, title: `${overdue.length} overdue invoice${overdue.length > 1 ? "s" : ""}`, detail: `${money(overdue.reduce((s: number, i: any) => s + i.balance, 0), finR.value.summary?.currency ?? "AED")} past due`, go: "invoices" });
-        else if (finR.value.summary?.outstanding > 0) out.push({ id: "fin-out", severity: "medium", icon: Wallet, title: "Outstanding balance", detail: money(finR.value.summary.outstanding, finR.value.summary.currency), go: "balances" });
+        else if (finR.value.summary?.outstanding > 0) out.push({ id: "fin-out", severity: "medium", icon: Wallet, title: "Outstanding balance", detail: money(finR.value.summary.outstanding, finR.value.summary.currency), go: "invoices" });
       }
 
       // Expiring crew passports

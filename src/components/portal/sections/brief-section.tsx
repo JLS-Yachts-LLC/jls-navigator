@@ -33,6 +33,9 @@ type Brief = {
     awaitingDecision: Array<{ docNumber: string | null; date: string | null; total: number; currency: string }>;
     openRequests: Array<{ reference: string | null; title: string; status: string; createdAt: string }>;
   };
+  /** Only when the vessel shows Crew and the position can see it. */
+  crew?: { signedOn: number; onLeave: number } | null;
+  visaForecast?: Array<{ month: string; items: Array<{ name: string; date: string; type: string | null }> }> | null;
 };
 
 const monthName = (k: string, withYear = true) =>
@@ -77,8 +80,141 @@ export function BriefSection(props: {
           </button>
         ))}
       </div>
+      <StatementOfAccount onOpen={props.onOpen} />
       {view === "today" ? <TodayBrief {...props} onSeeMonth={() => setView("month")} /> : <MonthBrief {...props} />}
     </div>
+  );
+}
+
+// ─── Statement of account ─────────────────────────────────────────────────────
+
+type Invoice = { id: string; docNumber: string | null; date: string | null; dueDate: string | null; total: number; balance: number; currency: string; status: "paid" | "overdue" | "open" };
+
+/**
+ * What the vessel owes, from QuickBooks: outstanding, overdue and coming due,
+ * how old the overdue balance is, and every unpaid invoice. Open each time the
+ * brief is shown; it can be folded away for the visit. Only for positions that
+ * see the accounts (the finance API refuses the rest, and then it doesn't show).
+ */
+function StatementOfAccount({ onOpen }: { onOpen: (tab: "balances" | "invoices" | "requests" | "calendar") => void }) {
+  const [data, setData] = useState<{ linked: boolean; invoices: Invoice[]; summary: { outstanding: number; currency: string } } | null>(null);
+  const [hidden, setHidden] = useState(false);
+  const [open, setOpen] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  useEffect(() => {
+    void portalFetch("/api/portal/finance")
+      .then(async (r) => { if (!r.ok) { setHidden(true); return; } setData(await r.json()); })
+      .catch(() => setHidden(true));
+  }, []);
+
+  const pdf = async (url: string, key: string) => {
+    setBusy(key);
+    try {
+      const res = await portalFetch(url);
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? "That couldn't be opened.");
+      const blob = URL.createObjectURL(await res.blob());
+      window.open(blob, "_blank", "noreferrer");
+      setTimeout(() => URL.revokeObjectURL(blob), 60000);
+    } catch (e) { alert(e instanceof Error ? e.message : "That couldn't be opened."); }
+    finally { setBusy(null); }
+  };
+
+  if (hidden || (data && !data.linked)) return null;
+  if (!data) return <SectionCard className="h-24 animate-pulse p-4">{null}</SectionCard>;
+
+  const today = dubaiDay();
+  const in14 = dubaiDay(14);
+  const unpaid = data.invoices.filter((i) => i.balance > 0).sort((a, b) => (a.dueDate ?? "9").localeCompare(b.dueDate ?? "9"));
+  const cur = data.summary.currency;
+  const sum = (l: Invoice[]) => l.reduce((s, i) => s + i.balance, 0);
+  const overdue = unpaid.filter((i) => i.status === "overdue");
+  const dueSoon = unpaid.filter((i) => i.status !== "overdue" && i.dueDate && i.dueDate <= in14);
+  const daysLate = (d: string) => Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${d}T00:00:00Z`)) / 86400000);
+  const aging = [
+    { label: "1–30 days", amount: sum(overdue.filter((i) => daysLate(i.dueDate!) <= 30)) },
+    { label: "31–60 days", amount: sum(overdue.filter((i) => daysLate(i.dueDate!) > 30 && daysLate(i.dueDate!) <= 60)) },
+    { label: "61–90 days", amount: sum(overdue.filter((i) => daysLate(i.dueDate!) > 60 && daysLate(i.dueDate!) <= 90)) },
+    { label: "Over 90 days", amount: sum(overdue.filter((i) => daysLate(i.dueDate!) > 90)) },
+  ];
+
+  return (
+    <SectionCard className={cn("p-0", overdue.length && "border-amber-500/40")}>
+      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open}
+              className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 text-left">
+        <span className="flex-1">
+          <Label>Statement of account</Label>
+          <span className="mt-1 block text-sm text-muted-foreground">
+            {unpaid.length
+              ? <>{cur} {money(data.summary.outstanding)} outstanding{overdue.length ? <> · <span className="text-amber-300">{cur} {money(sum(overdue))} overdue</span></> : ""}</>
+              : "Nothing outstanding — all invoices are paid. Thank you."}
+          </span>
+        </span>
+        <span className="text-xs text-muted-foreground">{open ? "Hide ▴" : "Show ▾"}</span>
+      </button>
+
+      {open && (
+        <div className="space-y-5 border-t border-border px-4 pb-4 pt-4">
+          <div className="grid grid-cols-2 gap-x-6 gap-y-4 lg:grid-cols-4">
+            <Figure label="Outstanding" value={<>{cur} {money(data.summary.outstanding)}</>} note={`${unpaid.length} unpaid invoice${unpaid.length === 1 ? "" : "s"}`} />
+            <Figure label="Overdue" value={<>{cur} {money(sum(overdue))}</>} note={overdue.length ? `${overdue.length} invoice${overdue.length === 1 ? "" : "s"} past due` : "Nothing overdue"}
+                    tone={overdue.length ? "warn" : "good"} />
+            <Figure label="Due in 14 days" value={<>{cur} {money(sum(dueSoon))}</>} note={dueSoon.length ? `next due ${day(dueSoon[0].dueDate!)}` : "Nothing coming due"} />
+            <Figure label="Not yet due" value={<>{cur} {money(sum(unpaid.filter((i) => i.status !== "overdue" && !dueSoon.includes(i))))}</>} note="after the next 14 days" />
+          </div>
+
+          {overdue.length > 0 && (
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {aging.map((a) => (
+                <div key={a.label} className="rounded-lg border border-border/60 px-3 py-2">
+                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Overdue {a.label}</div>
+                  <div className={cn("text-sm tabular-nums", a.amount ? "text-amber-300" : "text-muted-foreground")}>{cur} {money(a.amount)}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {unpaid.length > 0 && (
+            <div className="overflow-x-auto rounded-xl border border-border/60">
+              <table className="w-full text-sm">
+                <thead className="border-b border-border/60 text-left text-[10px] uppercase tracking-wide text-muted-foreground">
+                  <tr><th className="px-3 py-2">Invoice</th><th className="px-3 py-2">Date</th><th className="px-3 py-2">Due</th><th className="px-3 py-2 text-right">Total</th><th className="px-3 py-2 text-right">Balance</th><th className="px-3 py-2" /></tr>
+                </thead>
+                <tbody>
+                  {unpaid.slice(0, 12).map((i) => (
+                    <tr key={i.id} className="border-b border-border/40 last:border-0">
+                      <td className="px-3 py-2 font-medium">{i.docNumber ?? "—"}</td>
+                      <td className="px-3 py-2 text-xs text-muted-foreground">{i.date ? day(i.date) : "—"}</td>
+                      <td className="px-3 py-2 text-xs">
+                        {!i.dueDate ? "—" : i.status === "overdue"
+                          ? <span className="text-amber-300">{daysLate(i.dueDate)} day{daysLate(i.dueDate) === 1 ? "" : "s"} overdue</span>
+                          : <span className="text-muted-foreground">{day(i.dueDate)}</span>}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{money(i.total)}</td>
+                      <td className="px-3 py-2 text-right font-medium tabular-nums">{money(i.balance)}</td>
+                      <td className="px-3 py-2 text-right">
+                        <button type="button" disabled={busy === i.id} onClick={() => void pdf(`/api/portal/finance?invoicePdf=${encodeURIComponent(i.id)}`, i.id)}
+                                className="text-xs font-medium text-primary hover:underline disabled:opacity-50">{busy === i.id ? "Opening…" : "PDF"}</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <button type="button" onClick={() => onOpen("invoices")} className="text-xs font-medium text-primary hover:underline">
+              {unpaid.length > 12 ? `All ${unpaid.length} unpaid invoices ›` : "All invoices & quotations ›"}
+            </button>
+            <button type="button" disabled={busy === "statement"} onClick={() => void pdf("/api/portal/finance?statement=1", "statement")}
+                    className="inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-border px-3 text-xs font-medium transition hover:border-primary/50 disabled:opacity-50">
+              {busy === "statement" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Download statement (PDF)
+            </button>
+          </div>
+        </div>
+      )}
+    </SectionCard>
   );
 }
 
@@ -149,7 +285,11 @@ function TodayBrief({ onOpen, onSeeMonth }: {
                 tone={expiredNow.length ? "warn" : b.compliance.total ? "good" : undefined} />
         <Figure label="Due this week" value={dueThisWeek.length} note={dueThisWeek.length ? `next: ${dueThisWeek[0].title}` : "No renewals in the next 7 days"}
                 tone={dueThisWeek.length ? "warn" : "good"} />
-        <Figure label="In hand with JLS" value={b.ahead.openRequests.length} note={`open request${b.ahead.openRequests.length === 1 ? "" : "s"}`} />
+        {b.crew ? (
+          <Figure label="Crew signed on" value={b.crew.signedOn} note={b.crew.onLeave ? `+ ${b.crew.onLeave} on leave` : "on the crew list"} />
+        ) : (
+          <Figure label="In hand with JLS" value={b.ahead.openRequests.length} note={`open request${b.ahead.openRequests.length === 1 ? "" : "s"}`} />
+        )}
         {spend ? (
           <Figure label={`Spend · ${monthName(b.month, false)} so far`} value={<>{spend.currency} {money(spend.month)}</>}
                   note={`${spend.invoiceCount} invoice${spend.invoiceCount === 1 ? "" : "s"}`} />
@@ -249,6 +389,41 @@ function TodayBrief({ onOpen, onSeeMonth }: {
           )}
         </section>
       </div>
+
+      {/* Visa forecast — this month and the next two */}
+      {b.visaForecast && (
+        <section>
+          <div className="flex items-baseline justify-between border-b border-border pb-2">
+            <h2 className="text-xl">Visa forecast</h2>
+            <span className="text-[11px] text-muted-foreground">crew visas expiring · renewals already done are left out</span>
+          </div>
+          <div className="mt-4 grid gap-4 sm:grid-cols-3">
+            {b.visaForecast.map((m, k) => (
+              <SectionCard key={m.month} className={cn("p-4", k === 0 && m.items.length > 0 && "border-amber-500/40")}>
+                <div className="flex items-baseline justify-between">
+                  <Label className="text-muted-foreground">Month {k + 1} · {monthName(m.month, false)}</Label>
+                </div>
+                <div className={cn("mt-1.5 text-[28px] leading-none tabular-nums", m.items.length && k === 0 ? "text-amber-300" : "")} style={display}>
+                  {m.items.length}
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground">visa{m.items.length === 1 ? "" : "s"} expiring{k === 0 ? " for the rest of the month" : ""}</div>
+                {m.items.length > 0 && (
+                  <ul className="mt-3 space-y-1.5">
+                    {m.items.slice(0, 8).map((v, i) => (
+                      <li key={i} className="flex items-baseline justify-between gap-2 text-sm">
+                        <span className="min-w-0 truncate">{v.name}</span>
+                        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{day(v.date)}</span>
+                      </li>
+                    ))}
+                    {m.items.length > 8 && <li className="text-xs text-muted-foreground">+ {m.items.length - 8} more</li>}
+                  </ul>
+                )}
+              </SectionCard>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">JLS tracks every renewal — <button type="button" onClick={() => onOpen("calendar")} className="font-medium text-primary hover:underline">compliance calendar ›</button></p>
+        </section>
+      )}
 
       {/* In hand with JLS */}
       {b.ahead.openRequests.length > 0 && (
