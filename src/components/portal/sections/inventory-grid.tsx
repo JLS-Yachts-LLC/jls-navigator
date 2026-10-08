@@ -31,7 +31,7 @@ const display = (col: InvColumn, v: unknown) => {
 };
 
 export function InventoryGrid({ items, showValue, canEdit, onPatched, onCreated, onPasteRows, onCheck, onFiles, onDelete, checking,
-  linkedTasks = {}, onTask, onRequisition, onBadCondition }: {
+  linkedTasks = {}, onOpenTask, onTask, onRequisition, onBadCondition }: {
   items: GridItem[]; showValue: boolean; canEdit: boolean;
   onPatched: (id: string, fields: Partial<Record<InvField, any>>) => void;
   onCreated: () => void;
@@ -42,6 +42,8 @@ export function InventoryGrid({ items, showValue, canEdit, onPatched, onCreated,
   checking: string | null;
   /** Open task per item (from "Create a task"), shown as a chip. */
   linkedTasks?: Record<string, string>;
+  /** Open the task linked to this item. */
+  onOpenTask?: (itemId: string) => void;
   onTask?: (item: GridItem) => void;
   onRequisition?: (item: GridItem) => void;
   /** An item has just been marked damaged or missing. */
@@ -259,7 +261,8 @@ export function InventoryGrid({ items, showValue, canEdit, onPatched, onCreated,
                         )}
                       </div>
                       {linkedTasks[item.id] && (
-                        <span title="Open task for this item" className="whitespace-nowrap rounded-md bg-primary/15 px-1.5 py-0.5 font-mono text-[10px] text-primary">{linkedTasks[item.id]}</span>
+                        <button type="button" onClick={() => onOpenTask?.(item.id)} title="Open the task for this item"
+                                className="whitespace-nowrap rounded-md bg-primary/15 px-1.5 py-0.5 font-mono text-[10px] text-primary hover:bg-primary/25">{linkedTasks[item.id]}</button>
                       )}
                     </div>
                   ) : (

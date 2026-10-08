@@ -960,7 +960,10 @@ function PortalShell({ link, email, onSignOut, preview = false, vessels = [], on
           <StockSection yachtId={link.yacht_id} canEdit={!preview} canApprove={canApproveRequisition(link.position)}
                         onOpenRequest={(id) => { setTab("requests"); setOpenRequestId(id); }} />
         )}
-        {tab === "tasks" && <TasksSection yachtId={link.yacht_id} canEdit={!preview} />}
+        {tab === "tasks" && (
+          <TasksSection yachtId={link.yacht_id} canEdit={!preview}
+                        onOpenInventory={allowedKeys.has("inventory") ? () => { setTab("inventory"); setOpenRequestId(null); } : undefined} />
+        )}
         {tab === "inventory" && (
           <InventorySection yachtId={link.yacht_id} canEdit={!preview} showValue={canSeeFinance(link.position)}
                             canTask={allowedKeys.has("tasks")} canRequisition={allowedKeys.has("stock")}

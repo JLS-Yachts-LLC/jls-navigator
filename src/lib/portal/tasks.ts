@@ -46,6 +46,8 @@ export type OnboardTask = {
   assignee_name: string | null;
   due_date: string | null;
   waiting_on: string | null;
+  /** Raised from this inventory item ("Repair or replace…"). */
+  inventory_item_id?: string | null;
   labels: string[];
   checklist: TaskChecklistItem[];
   sort_order: number;

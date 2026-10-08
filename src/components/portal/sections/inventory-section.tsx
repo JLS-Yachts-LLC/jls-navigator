@@ -20,6 +20,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { portalFetch } from "@/lib/portal/portal-fetch";
+import { focusNext, takeFocus } from "@/lib/portal/portal-focus";
 import { AlertTriangle, Boxes, Check, ChevronDown, ChevronRight, Download, FileUp, LayoutList, Loader2, Pencil, Search, ShieldAlert, ShoppingCart, SquareKanban, Table2, X } from "lucide-react";
 import { INV_COLUMNS, csvCell, downloadText, templateCsv, type ImportRow } from "@/lib/portal/inventory";
 import { InventoryGrid } from "./inventory-grid";
@@ -111,16 +112,22 @@ export function InventorySection({ yachtId, canEdit, showValue, canTask = false,
   const [filesFor, setFilesFor] = useState<Item | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [linkedTasks, setLinkedTasks] = useState<Record<string, string>>({});
+  const [linkedTaskIds, setLinkedTaskIds] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     const [{ data }, tasks] = await Promise.all([
       db.from("onboard_inventory_items").select("*").eq("yacht_id", yachtId).order("name"),
       canTask
-        ? db.from("onboard_tasks").select("reference, inventory_item_id").eq("yacht_id", yachtId).neq("status", "done").not("inventory_item_id", "is", null)
+        ? db.from("onboard_tasks").select("id, reference, inventory_item_id").eq("yacht_id", yachtId).neq("status", "done").not("inventory_item_id", "is", null)
         : Promise.resolve({ data: [] }),
     ]);
     setItems(data ?? []);
     setLinkedTasks(Object.fromEntries(((tasks as any).data ?? []).map((t: any) => [t.inventory_item_id, t.reference])));
+    setLinkedTaskIds(Object.fromEntries(((tasks as any).data ?? []).map((t: any) => [t.inventory_item_id, t.id])));
+    // Opened from a task ("Open item"): show just that item, opened up.
+    const focus = takeFocus("inventory");
+    const hit = focus ? ((data ?? []) as Item[]).find((x) => x.id === focus) : null;
+    if (hit) { setViewState("list"); setSearch(hit.name); setExpanded(hit.id); }
     setLoading(false);
   }, [yachtId, canTask]);
 
@@ -150,9 +157,13 @@ export function InventorySection({ yachtId, canEdit, showValue, canTask = false,
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body?.error ?? "Could not create the task.");
       setLinkedTasks((m) => ({ ...m, [i.id]: body.reference }));
-      setNotice({ text: `${body.reference} added to To do on the task board.`, action: onOpen ? { label: "Open task board", run: () => onOpen("tasks") } : undefined });
+      setLinkedTaskIds((m) => ({ ...m, [i.id]: body.id }));
+      setNotice({ text: `${body.reference} added to To do on the task board.`, action: onOpen ? { label: "Open the task", run: () => openTask(body.id) } : undefined });
     } catch (e) { setNotice({ text: e instanceof Error ? e.message : "Could not create the task.", tone: "warn" }); }
   };
+
+  /** Switch to the task board with this card open. */
+  const openTask = (taskId: string) => { focusNext("task", taskId); onOpen?.("tasks"); };
 
   /** A draft requisition to replace this item, for the approver to send to JLS. */
   const raiseRequisition = async (i: Item) => {
@@ -319,7 +330,7 @@ export function InventorySection({ yachtId, canEdit, showValue, canTask = false,
                          onPatched={onPatched} onCreated={() => void load()}
                          onPasteRows={(rows) => setImporting({ rows })}
                          onCheck={(i) => void markChecked(i as Item)} onFiles={(i) => setFilesFor(i as Item)} onDelete={(i) => void remove(i as Item)}
-                               linkedTasks={linkedTasks}
+                               linkedTasks={linkedTasks} onOpenTask={(id) => linkedTaskIds[id] && openTask(linkedTaskIds[id])}
                                onTask={canTask ? (i) => void createTask(i as Item) : undefined}
                                onRequisition={canRequisition ? (i) => void raiseRequisition(i as Item) : undefined}
                                onBadCondition={canTask ? (i) => setNotice({ text: `${i.name} marked ${i.condition} — create a task to repair or replace it?`, action: { label: "Create task", run: () => void createTask(i as Item) } }) : undefined} />
@@ -370,7 +381,7 @@ export function InventorySection({ yachtId, canEdit, showValue, canTask = false,
                                onPatched={onPatched} onCreated={() => void load()}
                                onPasteRows={(rows) => setImporting({ rows })}
                                onCheck={(i) => void markChecked(i as Item)} onFiles={(i) => setFilesFor(i as Item)} onDelete={(i) => void remove(i as Item)}
-                               linkedTasks={linkedTasks}
+                               linkedTasks={linkedTasks} onOpenTask={(id) => linkedTaskIds[id] && openTask(linkedTaskIds[id])}
                                onTask={canTask ? (i) => void createTask(i as Item) : undefined}
                                onRequisition={canRequisition ? (i) => void raiseRequisition(i as Item) : undefined}
                                onBadCondition={canTask ? (i) => setNotice({ text: `${i.name} marked ${i.condition} — create a task to repair or replace it?`, action: { label: "Create task", run: () => void createTask(i as Item) } }) : undefined} />
@@ -442,7 +453,7 @@ export function InventorySection({ yachtId, canEdit, showValue, canTask = false,
                                 {canEdit && (
                                   <div className="flex flex-wrap gap-1.5">
                                     {canTask && (linkedTasks[i.id]
-                                      ? <button type="button" onClick={() => onOpen?.("tasks")} className="rounded-lg bg-primary/15 px-2.5 py-1 font-mono text-xs text-primary">{linkedTasks[i.id]} ›</button>
+                                      ? <button type="button" onClick={() => openTask(linkedTaskIds[i.id])} className="rounded-lg bg-primary/15 px-2.5 py-1 font-mono text-xs text-primary">{linkedTasks[i.id]} ›</button>
                                       : <button type="button" onClick={() => void createTask(i)}
                                                 className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1 text-xs font-medium hover:border-primary/50">
                                           <SquareKanban className="h-3 w-3" /> Create task

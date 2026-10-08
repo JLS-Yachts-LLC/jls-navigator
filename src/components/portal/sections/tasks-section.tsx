@@ -15,10 +15,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { portalFetch } from "@/lib/portal/portal-fetch";
 import { cn } from "@/lib/utils";
 import {
-  AlertTriangle, CalendarClock, CheckSquare, Columns3, Hourglass, ListTodo, Loader2, MessageSquare,
+  AlertTriangle, Boxes, CalendarClock, CheckSquare, Columns3, Hourglass, ListTodo, Loader2, MessageSquare,
   Plus, Search, Send, Trash2, X,
 } from "lucide-react";
 import { AddButton, AttachedFiles, SectionCard, SectionHeader, SectionLoading, fmtDate } from "./section-ui";
+import { focusNext, takeFocus } from "@/lib/portal/portal-focus";
 import {
   PRIORITY_RANK, TASK_PRIORITIES, TASK_PRIORITY_LABEL, TASK_STATUSES, TASK_STATUS_HINT, TASK_STATUS_LABEL,
   isOverdue, sortBetween, type OnboardTask, type TaskChecklistItem, type TaskPriority, type TaskStatus,
@@ -66,7 +67,11 @@ const initials = (name: string | null) =>
 const today = () => new Date().toISOString().slice(0, 10);
 const DONE_RECENT_DAYS = 14;
 
-export function TasksSection({ yachtId, canEdit }: { yachtId: string; canEdit: boolean }) {
+export function TasksSection({ yachtId, canEdit, onOpenInventory }: {
+  yachtId: string; canEdit: boolean;
+  /** Set when this person can see the Inventory, so a card raised from an item can link back to it. */
+  onOpenInventory?: () => void;
+}) {
   const [tasks, setTasks] = useState<OnboardTask[]>([]);
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
   const [crew, setCrew] = useState<Crew[]>([]);
@@ -88,6 +93,10 @@ export function TasksSection({ yachtId, canEdit }: { yachtId: string; canEdit: b
       db.from("onboard_task_comments").select("task_id").eq("yacht_id", yachtId).eq("kind", "comment").limit(5000),
     ]);
     setTasks((t.data ?? []) as OnboardTask[]);
+    // Opened from elsewhere (an inventory item's task chip): open that card.
+    const focus = takeFocus("task");
+    const hit = focus ? ((t.data ?? []) as OnboardTask[]).find((x) => x.id === focus) : null;
+    if (hit) setOpen(hit);
     setCrew(((c.data ?? []) as any[])
       .filter((m) => !m.status || ["active", "on_leave"].includes(m.status))
       .map((m) => ({ id: m.id, name: m.full_name || [m.first_name, m.last_name].filter(Boolean).join(" ") || "Crew" })));
@@ -279,7 +288,7 @@ export function TasksSection({ yachtId, canEdit }: { yachtId: string; canEdit: b
         <TaskDialog
           task={"id" in openTask ? openTask : null}
           defaultStatus={"new" in openTask ? openTask.new : "todo"}
-          crew={crew} canEdit={canEdit}
+          crew={crew} canEdit={canEdit} onOpenInventory={onOpenInventory}
           onClose={() => setOpen(null)}
           onChanged={() => void load()}
           onCreated={async (id) => { await load(); setOpen({ id } as OnboardTask); }}
@@ -368,6 +377,7 @@ function TaskCard({ t, comments, onOpen, draggable, dragging, onDragStart, onDra
           </span>
         )}
         {comments > 0 && <span className="inline-flex items-center gap-1"><MessageSquare className="h-3 w-3" /> {comments}</span>}
+        {t.inventory_item_id && <span title="Raised from the inventory" className="inline-flex items-center"><Boxes className="h-3 w-3" /></span>}
         {t.assignee_name && (
           <span title={t.assignee_name}
                 className="ml-auto flex h-6 w-6 items-center justify-center rounded-full bg-primary/15 text-[10px] font-semibold text-primary">
@@ -472,8 +482,8 @@ function BacklogView({ tasks, canEdit, comments, onOpen, onMove, onPriority, onQ
 const inputCls = "w-full rounded-xl border border-border bg-background/50 px-3 py-2 text-sm outline-none transition focus:border-primary/60 disabled:opacity-60";
 
 /** Open / add one card. A new card is created on Save, then stays open for comments and files. */
-function TaskDialog({ task, defaultStatus, crew, canEdit, onClose, onChanged, onCreated }: {
-  task: OnboardTask | null; defaultStatus: TaskStatus; crew: Crew[]; canEdit: boolean;
+function TaskDialog({ task, defaultStatus, crew, canEdit, onClose, onChanged, onCreated, onOpenInventory }: {
+  task: OnboardTask | null; defaultStatus: TaskStatus; crew: Crew[]; canEdit: boolean; onOpenInventory?: () => void;
   onClose: () => void; onChanged: () => void; onCreated: (id: string) => Promise<void>;
 }) {
   const fromTask = (t: OnboardTask | null) => ({
@@ -507,6 +517,14 @@ function TaskDialog({ task, defaultStatus, crew, canEdit, onClose, onChanged, on
     setComments(data ?? []);
   }, [task?.id]);
   useEffect(() => { void loadComments(); }, [loadComments]);
+
+  // The inventory item this card was raised from, if any.
+  const [item, setItem] = useState<{ id: string; name: string; location: string | null; condition: string; serial_number: string | null } | null>(null);
+  useEffect(() => {
+    if (!task?.inventory_item_id) { setItem(null); return; }
+    void db.from("onboard_inventory_items").select("id, name, location, condition, serial_number")
+      .eq("id", task.inventory_item_id).maybeSingle().then(({ data }: any) => setItem(data ?? null));
+  }, [task?.inventory_item_id]);
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -676,6 +694,25 @@ function TaskDialog({ task, defaultStatus, crew, canEdit, onClose, onChanged, on
             </div>
           )}
         </div>
+
+        {item && (
+          <div className="mt-5 flex flex-wrap items-center gap-3 rounded-xl border border-border bg-background/40 px-3 py-2.5">
+            <Boxes className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <div className="min-w-0 flex-1 text-sm">
+              <div className="text-[11px] text-muted-foreground">From the inventory</div>
+              <div className="truncate font-medium">{item.name}</div>
+              <div className="truncate text-xs text-muted-foreground">
+                {[item.location, item.serial_number && `S/N ${item.serial_number}`, `now ${item.condition}`].filter(Boolean).join(" · ")}
+              </div>
+            </div>
+            {onOpenInventory && (
+              <button type="button" onClick={() => { focusNext("inventory", item.id); onClose(); onOpenInventory(); }}
+                      className="rounded-lg border border-border px-2.5 py-1 text-xs font-medium transition hover:border-primary/50">
+                Open item ›
+              </button>
+            )}
+          </div>
+        )}
 
         {task && (
           <div className="mt-5">
