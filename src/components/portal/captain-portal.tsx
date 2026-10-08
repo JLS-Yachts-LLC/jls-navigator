@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { portalFetch, setPortalYacht } from "@/lib/portal/portal-fetch";
+import { perfMark, startPortalPerfProbe } from "@/lib/portal/portal-perf";
 import { PortalBrandHeader, WrongAddressScreen, checkPortalAddress } from "./portal-address";
 import { isLowStock } from "@/lib/portal/onboard";
 import { moduleState, sectionEnabled, type PortalModuleState, type PortalModuleRow } from "@/lib/portal/portal-modules";
@@ -194,8 +195,12 @@ const LANDED_WITH = typeof window === "undefined" ? null : (() => {
   return null;
 })();
 
+// Temporary: time the first load (long tasks, click delay) — see lib/portal/portal-perf.
+startPortalPerfProbe();
+
 export function CaptainPortal() {
   const [stage, setStage] = useState<Stage>("loading");
+  useEffect(() => { perfMark(`stage:${stage}`); }, [stage]);
   const [link, setLinkState] = useState<CaptainLink | null>(null);
   const [vessels, setVessels] = useState<VesselChoice[]>([]);
   /** Put a yacht on screen: remembered in this browser and named on every portal API call. */
@@ -731,7 +736,7 @@ function PortalShell({ link, email, onSignOut, preview = false, vessels = [], on
     db.from("yacht_portal_modules")
       .select("module, enabled, features")
       .eq("yacht_id", link.yacht_id)
-      .then(({ data }: any) => setModuleRows(data ?? []));
+      .then(({ data }: any) => { perfMark("modules"); setModuleRows(data ?? []); });
   }, [link.yacht_id]);
   const modules = useMemo(() => moduleState(moduleRows), [moduleRows]);
 
@@ -739,7 +744,7 @@ function PortalShell({ link, email, onSignOut, preview = false, vessels = [], on
     db.from("yachts")
       .select("id, vessel_name, vessel_type, flag, status, berth, location, vessel_image, ais_destination, ais_position_at, ais_speed, port_of_registry, length_overall_m, radio_call_sign, mmsi, imo_no, logo_url")
       .eq("id", link.yacht_id).maybeSingle()
-      .then(({ data }: any) => setYacht(data ?? null));
+      .then(({ data }: any) => { perfMark("yacht"); setYacht(data ?? null); });
   }, [link.yacht_id]);
 
   // Chat thread + unread badge — refreshed every 20s so a staff-initiated chat
@@ -831,7 +836,7 @@ function PortalShell({ link, email, onSignOut, preview = false, vessels = [], on
               )}
               <div className="space-y-0.5">
                 {g.items.map((t) => (
-                  <button key={t.key} onClick={() => { setTab(t.key); setOpenRequestId(null); setNavOpen(false); }}
+                  <button key={t.key} onClick={() => { perfMark(`nav:${t.key}`); setTab(t.key); setOpenRequestId(null); setNavOpen(false); }}
                           className={cn(
                             "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition",
                             tab === t.key ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-background/60 hover:text-foreground",
