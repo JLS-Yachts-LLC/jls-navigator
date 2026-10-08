@@ -1,5 +1,4 @@
 import { createStartHandler, defaultStreamHandler } from '@tanstack/react-start/server'
-import { withSecurityHeaders } from './lib/security-headers.server'
 import { downloadPendingImages, downloadPendingImagesRotating, pushChangedRecords, discoverSharePoint, syncById, getSpSyncs, syncStalestList, syncPrioritisedLists, syncWebhookList, setupSignonList, resetDeltaTokens } from './lib/sharepoint-sync.server'
 import { syncAisPositions } from './lib/aisstream.server'
 import { runExpiryAlerts } from './lib/permit-expiry-cron.server'
@@ -67,7 +66,18 @@ import { trackRun } from './lib/automations.server'
 import { runVisaExpiryFlagJob } from './lib/visa/visaExpiryFlags.server'
 import { runTwoWaySyncTick } from './lib/visa/excel-sync.server'
 
-const handleRequest = createStartHandler(defaultStreamHandler)
+const baseHandleRequest = createStartHandler(defaultStreamHandler)
+
+// Low-risk security-scan remediation (ConnectSecure 2026-10-08): attach the
+// report-only CSP, anti-clickjacking, COOP/COEP/CORP, Permissions-Policy,
+// HSTS and no-store Cache-Control headers to every document response that
+// goes through the TanStack Start render handler. Cron/webhook JSON handlers
+// (handleSharePointWebhook etc.) build their own Response objects and are
+// untouched by this wrapper.
+const handleRequest = (async (...args: Parameters<typeof baseHandleRequest>) => {
+  const response = await baseHandleRequest(...args)
+  return withSecurityHeaders(response)
+}) as typeof baseHandleRequest
 
 async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: Promise<unknown>) => void }): Promise<Response> {
   const url = new URL(request.url)
