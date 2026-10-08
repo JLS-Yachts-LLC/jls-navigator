@@ -5,9 +5,247 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.69.0",
+    "date": "2026-10-08",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Client portal task board shows all five columns on a wide screen instead of cutting off Waiting and Done"
+      },
+      {
+        "type": "feature",
+        "title": "Link vessels to their Waypoint Trading LLC account, with name-matched suggestions to approve on the Sync hub and a link box on each vessel's Finance tab"
+      },
+      {
+        "type": "fix",
+        "title": "Waypoint invoices no longer appear on unrelated vessels; each company's invoices match only that company's customer"
+      },
+      {
+        "type": "feature",
+        "title": "Client portal On board adds a Trello-style task board with backlog, and an inventory register"
+      },
+      {
+        "type": "fix",
+        "title": "Service Desk tickets close automatically when New Horizon-IT closes them, with their reply added as an internal note"
+      },
+      {
+        "type": "fix",
+        "title": "Merging duplicate crew profiles no longer fails when a visa uses the duplicate's passport"
+      },
+      {
+        "type": "fix",
+        "title": "Visa search finds crew by nickname — \"Mike Fetton\" now finds Michael Fetton"
+      },
+      {
+        "type": "feature",
+        "title": "Client portal shows a vessel's invoices from every company it's billed by, with open balance and overdue payment on Today's brief"
+      },
+      {
+        "type": "fix",
+        "title": "After Polaris is updated, an open tab now quietly reloads itself onto the new version — retrying a few times while the update reaches every server — instead of stopping on \"A new version is available\""
+      },
+      {
+        "type": "feature",
+        "title": "Today's brief in the Client Portal shows a Statement of account (outstanding, overdue with ageing, due soon and each unpaid invoice — open on every visit, foldable), crew signed on, and a 3-month visa forecast listing whose visa expires in each month; Balances is hidden from the portal menu for now"
+      },
+      {
+        "type": "fix",
+        "title": "The Release button on a vessel's Documents stands out in purple with a share icon, so it's easy to tell apart from Import and Open"
+      },
+      {
+        "type": "feature",
+        "title": "The Client Portal's Owner's brief is now Today's brief — it opens on today: what needs attention, what happened since yesterday, the next 7 days and what JLS has in hand, with the owner's monthly summary one tap away under \"This month\""
+      },
+      {
+        "type": "fix",
+        "title": "The Client Portal's left-hand menu scrolls when it's taller than the screen, so every section (Directory and below) can be reached"
+      },
+      {
+        "type": "feature",
+        "title": "WhatsApp auto-replies from Polaris — an instant answer to each invite button (e.g. \"Thanks, see you there!\") and an away message outside office hours, both off until switched on, never sent to opt-outs, labelled in the Inbox and leaving the conversation unread for staff"
+      },
+      {
+        "type": "fix",
+        "title": "Sync with Meta no longer marks an edited WhatsApp template as approved before its changes have been submitted — it says which templates still need sending to Meta instead"
+      },
+      {
+        "type": "feature",
+        "title": "WhatsApp invite responses count guests — an answer like \"Bringing a +1\" counts as 2 people in the \"coming\" total and the download, and staff can set how many people each answer stands for"
+      },
+      {
+        "type": "fix",
+        "title": "Middle names now go with a contact's first name — \"Bjorn Stefan Bluml\" is Bjorn Stefan / Bluml — while surname prefixes like Al or Van stay with the last name"
+      },
+      {
+        "type": "fix",
+        "title": "Duplicate Crew finds the same person across vessels, and crew names and passport numbers are stored without stray spaces (SD-0048)"
+      },
+      {
+        "type": "fix",
+        "title": "Contact names written with a rank, like \"Chief Officer Emily\", now give the right first name, and initials like \"JP\" keep their capitals"
+      },
+      {
+        "type": "feature",
+        "title": "WhatsApp contacts have a first and last name — existing names were split automatically (titles like \"Captain\" and company names set aside), new contacts from imports, CSVs and WhatsApp are split the same way, First name in messages now uses the real first name, and there's a new Last name field"
+      }
+    ]
+  },
+  {
+    "version": "2.68.0",
+    "date": "2026-10-07",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Agents per permit, permit expiry countdown and 60/30/7-day reminders (SD-0047)"
+      },
+      {
+        "type": "fix",
+        "title": "The Name, First name and Yacht name chips can be dragged into WhatsApp template values again, and a field typed by hand like {{Yacht name}} is now filled in for each recipient instead of being sent as written"
+      },
+      {
+        "type": "feature",
+        "title": "WhatsApp Responses tab — for any invite with reply buttons it lists everyone it went to, across sends and one-off messages, grouped by answer: who's coming, who can't make it, who wrote back and who hasn't answered yet, with a download and a way for staff to mark answers given by phone or in a message"
+      }
+    ]
+  },
+  {
+    "version": "2.67.0",
+    "date": "2026-10-06",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "The Orbit 2 mobile app works with no signal"
+      },
+      {
+        "type": "fix",
+        "title": "Retrying a failed send no longer creates duplicate permits (SD-0046)"
+      }
+    ]
+  },
+  {
     "version": "2.66.0",
     "date": "2026-10-05",
     "entries": [
+      {
+        "type": "feature",
+        "title": "Boat owners' portal sections can be switched off per boat in Settings → Client Portal — compliance, documents, jobs, safety kit, requests and chat — instead of showing the yacht modules that don't apply to boats"
+      },
+      {
+        "type": "feature",
+        "title": "Owner's brief in the client portal — each month at a glance for the owner: spend and where it went, compliance, what happened and the next 30 days, with a note from the agent that JLS writes and publishes from the portal preview"
+      },
+      {
+        "type": "feature",
+        "title": "Maintenance jobs can list the spares they use — marking a job done takes them off the vessel's stock, and jobs flag when there aren't enough spares on board"
+      },
+      {
+        "type": "feature",
+        "title": "E-signing in the Client Portal — documents JLS sends a client to sign now wait for them at the top of Documents with a Review & sign button, and their signed copies stay there to download"
+      },
+      {
+        "type": "feature",
+        "title": "Hours of rest now take split rest — type 6+4 for a day's two rest periods — and flag any day split into more than two periods or without a rest period of at least six hours, as well as the daily and weekly MLC minimums"
+      },
+      {
+        "type": "feature",
+        "title": "Clients can book a collection from Deliveries in the Client Portal — what, how many pieces, from where, to where and when — and JLS's logistics team picks it up as a request"
+      },
+      {
+        "type": "feature",
+        "title": "One Client Portal login can now cover several yachts — someone added to more than one vessel with the same email gets a vessel switcher in the portal sidebar, sees each yacht's own data and position, and returns to the yacht they used last"
+      },
+      {
+        "type": "feature",
+        "title": "Photos and files in the Client Portal — crews add photos to checklist items and maintenance jobs, attach drill records and certificate files, and clients can send JLS a document (passport, certificate, insurance, contract) straight from Documents; every file is checked, stored privately and opened through a short-lived, logged link"
+      },
+      {
+        "type": "feature",
+        "title": "Clients can download a statement of account from Balances in the Client Portal — every unpaid invoice with its balance and days overdue, aged into current, 1–30, 31–60, 61–90 and over 90 days, on JLS letterhead"
+      },
+      {
+        "type": "feature",
+        "title": "A Compliance calendar in the Client Portal — the cruising permit, other permits, crew visas and passports, issued gate passes and ISM certificates on one month-by-month timeline, expired items first, with a Renew button on anything due within 60 days"
+      },
+      {
+        "type": "feature",
+        "title": "Client Portal themes — clients choose Bridge (navy and gold), Midnight (black and brass) or Private Office (ivory and ink) under Appearance, saved to their account; staff set each vessel's default look in Manage Users → Client Portal"
+      },
+      {
+        "type": "feature",
+        "title": "Client Portal sign-in now has \"Forgot your password?\" — clients get an emailed link, confirm their authenticator code and choose a new password themselves; staff can also reset a client's authenticator from Manage Users when they lose or change their phone"
+      },
+      {
+        "type": "feature",
+        "title": "Every Client Portal vessel can now order from JLS item by item — provisioning, fuel, uniform, spares or chandlery, with quantities, a needed-by date and where to deliver — see each order's progress, and repeat a past order in a tap"
+      },
+      {
+        "type": "feature",
+        "title": "Boat owners are emailed when JLS completes a job on their boat — marking a boat job Complete in Orbit 2 now sends the owner a short note with a link to their Client Portal (while client email is switched on)"
+      },
+      {
+        "type": "feature",
+        "title": "Small-boat owners can now raise requests and chat live with JLS from the Client Portal, just like yacht captains — their requests and chats land in Client Requests and Live Chat under the boat's name, and the team is alerted the same way"
+      },
+      {
+        "type": "feature",
+        "title": "Small-boat owners now see their boat in full in the Client Portal — inspections with last-done and next-due dates and the report, the boat's licence, insurance, berth and service documents, the jobs JLS has booked or completed, and safety kit with expiry dates, with anything due or expiring flagged on the home screen"
+      },
+      {
+        "type": "feature",
+        "title": "Gate passes in the Client Portal — captains request quay access for contractors, visitors, a vehicle, crew or a delivery (names, ID numbers, dates, berth, purpose), see each pass go from requested to issued, and renew one in a tap with the same people and fresh dates; passes running out within three days show in Alerts"
+      },
+      {
+        "type": "feature",
+        "title": "The team now hears about Client Portal activity as it happens — when a client raises a request, approves or questions a quotation, sends a requisition, pre-arrival form or crew change, replies on a request or chats, the people on the new Client alerts list (Manage Users → Client Portal) and the vessel's agent get an in-app alert straight away and an email within a few minutes, with bursts of messages folded into one"
+      },
+      {
+        "type": "feature",
+        "title": "Clients can now open any JLS quotation in the Client Portal — every line, VAT and total, plus the branded PDF — and approve it, decline it or ask a question; each response reaches the team as a Client Request, and quotations awaiting approval are flagged at the top of Invoices"
+      },
+      {
+        "type": "feature",
+        "title": "Choose which vessel documents the client sees — \"Release\" on a document in the vessel's Documents tab shares it read-only in the Client Portal (a SharePoint-only file is imported first), and \"In portal\" withdraws it again"
+      },
+      {
+        "type": "feature",
+        "title": "Arrivals & departures in the Client Portal — captains send JLS their pre-arrival / cruising permit form (vessel particulars filled in from the profile, last trip's details carried over) and their crew sign-on / sign-off requests with flights and pickups, which go straight into the seaport team's queue; the staff Pre-Arrival Form on the vessel page now works too"
+      },
+      {
+        "type": "feature",
+        "title": "Hours of rest and a Handover log in the Client Portal's On board module — a weekly grid of each crew member's daily rest that flags anyone under the MLC minimums (10 hours a day, 77 over seven days), and a log of pinned and dated notes the crew leave for the relief and the next watch"
+      },
+      {
+        "type": "feature",
+        "title": "Checklists in the Client Portal's On board module — crews build their own departure, arrival, daily-rounds and guest-turnaround checklists (or start from six ready-made ones), see what's due today, tick items off together on their phones with notes, and every completed checklist is kept as a dated record"
+      },
+      {
+        "type": "feature",
+        "title": "Stock & requisitions in the Client Portal's On board module — crews keep a stock list with minimum and par levels, raise a requisition from everything that's running low in one tap, the Captain approves it and it goes straight to JLS as a Client Request, and marking it received tops the stock back up"
+      },
+      {
+        "type": "fix",
+        "title": "The Client Portal's Management module is now simply switched on or off per vessel — the 60-day trial and its badges are gone"
+      },
+      {
+        "type": "fix",
+        "title": "A lapsed approved visa no longer blocks a new application (SD-0045)"
+      },
+      {
+        "type": "feature",
+        "title": "The Client Portal's \"On board\" module is now live — crews can keep their own planned-maintenance jobs and equipment (with due dates or running hours, and a Done button that rolls each job forward), charter bookings with guest preferences, and ISM certificates and drills; it appears for vessels that have the Management module switched on"
+      },
+      {
+        "type": "feature",
+        "title": "The Client Portal is now organised into two modules — \"Agency with JLS\" (Core, included for every vessel) and \"On board\" (Management, switched on per vessel with a 60-day trial); staff set them under Manage Users → Client Portal, can hide individual features per vessel, and the portal menu and Home tiles follow"
+      },
+      {
+        "type": "feature",
+        "title": "Clients can have their own Client Portal address, like aquila.polaris.jlsyachts.com — set and switch it on per vessel under Manage Users → Client Portal → Portal addresses; their sign-in page shows the vessel's logo and name, login details point to their address, and anyone signing in at another client's address is sent to their own"
+      },
+      {
+        "type": "feature",
+        "title": "Vessels can now have their own logo — upload it on the vessel page, or the Captain and officers can add or change it from the Client Portal Home screen; it shows on the portal Home and in the sidebar"
+      },
       {
         "type": "feature",
         "title": "Captains can now add, edit and remove crew from the Crew screen of the Client Portal, and crew cards show each person's passport number and expiry"
