@@ -107,6 +107,9 @@ export function InventorySection({ yachtId, canEdit, showValue, canTask = false,
   const [view, setViewState] = useState<View>(() => {
     try { return (localStorage.getItem(VIEW_KEY) as View) || "grid"; } catch { return "grid"; }
   });
+  // A spreadsheet doesn't fit a phone: there the List (cards) is the view, with a quick-add bar.
+  const narrow = useNarrow();
+  const shownView: View = narrow ? "list" : view;
   const setView = (v: View) => { setViewState(v); try { localStorage.setItem(VIEW_KEY, v); } catch { /* private mode */ } };
   const [importing, setImporting] = useState<{ rows: ImportRow[] | null } | null>(null);
   const [filesFor, setFilesFor] = useState<Item | null>(null);
@@ -326,14 +329,14 @@ export function InventorySection({ yachtId, canEdit, showValue, canTask = false,
               </div>
             </div>
           </SectionCard>
-          <InventoryGrid items={[]} showValue={showValue} canEdit={canEdit} checking={checking}
+          {narrow ? <QuickAddBar locations={[]} onAdded={() => void load()} /> : <InventoryGrid items={[]} showValue={showValue} canEdit={canEdit} checking={checking}
                          onPatched={onPatched} onCreated={() => void load()}
                          onPasteRows={(rows) => setImporting({ rows })}
                          onCheck={(i) => void markChecked(i as Item)} onFiles={(i) => setFilesFor(i as Item)} onDelete={(i) => void remove(i as Item)}
                                linkedTasks={linkedTasks} onOpenTask={(id) => linkedTaskIds[id] && openTask(linkedTaskIds[id])}
                                onTask={canTask ? (i) => void createTask(i as Item) : undefined}
                                onRequisition={canRequisition ? (i) => void raiseRequisition(i as Item) : undefined}
-                               onBadCondition={canTask ? (i) => setNotice({ text: `${i.name} marked ${i.condition} — create a task to repair or replace it?`, action: { label: "Create task", run: () => void createTask(i as Item) } }) : undefined} />
+                               onBadCondition={canTask ? (i) => setNotice({ text: `${i.name} marked ${i.condition} — create a task to repair or replace it?`, action: { label: "Create task", run: () => void createTask(i as Item) } }) : undefined} />}
         </>
       ) : (
         <>
@@ -354,7 +357,7 @@ export function InventorySection({ yachtId, canEdit, showValue, canTask = false,
               <option value="all">All departments</option>
               {DEPARTMENTS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
             </select>
-            <div className="inline-flex rounded-xl border border-border p-1 text-xs">
+            {!narrow && <div className="inline-flex rounded-xl border border-border p-1 text-xs">
               {([["grid", "Grid", Table2], ["list", "List", LayoutList]] as const).map(([v, label, Icon]) => (
                 <button key={v} type="button" onClick={() => setView(v)}
                         className={cn("inline-flex items-center gap-1 rounded-lg px-2.5 py-1 font-medium transition",
@@ -362,8 +365,8 @@ export function InventorySection({ yachtId, canEdit, showValue, canTask = false,
                   <Icon className="h-3.5 w-3.5" /> {label}
                 </button>
               ))}
-            </div>
-            {view === "list" && <div className="inline-flex rounded-xl border border-border p-1 text-xs">
+            </div>}
+            {shownView === "list" && <div className="inline-flex rounded-xl border border-border p-1 text-xs">
               {(["location", "category", "department"] as const).map((g) => (
                 <button key={g} type="button" onClick={() => { setGroupBy(g); setCollapsed(new Set()); }}
                         className={cn("rounded-lg px-2.5 py-1 font-medium capitalize transition",
@@ -374,7 +377,12 @@ export function InventorySection({ yachtId, canEdit, showValue, canTask = false,
             </div>}
           </div>
 
-          {view === "grid" ? (
+          {canEdit && shownView === "list" && (
+            <QuickAddBar locations={[...new Set(items.map((i) => i.location).filter(Boolean) as string[])].sort()}
+                         department={dept !== "all" ? dept : undefined} onAdded={() => void load()} />
+          )}
+
+          {shownView === "grid" ? (
             filtered.length === 0 && !canEdit
               ? <SectionCard className="px-4 py-8 text-center text-sm text-muted-foreground">Nothing matches — try another filter.</SectionCard>
               : <InventoryGrid items={filtered} showValue={showValue} canEdit={canEdit} checking={checking}
@@ -530,5 +538,73 @@ export function InventorySection({ yachtId, canEdit, showValue, canTask = false,
         />
       )}
     </div>
+  );
+}
+
+/** Phone-width screens (Tailwind's sm breakpoint), tracked live. */
+function useNarrow() {
+  const query = "(max-width: 639px)";
+  const [narrow, setNarrow] = useState(() => typeof window !== "undefined" && window.matchMedia(query).matches);
+  useEffect(() => {
+    const m = window.matchMedia(query);
+    const on = () => setNarrow(m.matches);
+    on();
+    m.addEventListener("change", on);
+    return () => m.removeEventListener("change", on);
+  }, []);
+  return narrow;
+}
+
+/**
+ * Add an item in one line: name, how many, where it's kept. The rest can be
+ * filled in later (tap the item). Remembers the last location, so a walk
+ * round one cabin is name, Enter, name, Enter…
+ */
+function QuickAddBar({ locations, department, onAdded }: { locations: string[]; department?: string; onAdded: () => void }) {
+  const [name, setName] = useState("");
+  const [qty, setQty] = useState("1");
+  const [location, setLocation] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [added, setAdded] = useState<string | null>(null);
+
+  const add = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const n = name.trim();
+    if (!n) return;
+    const q = Number(qty || "1");
+    if (!Number.isInteger(q) || q < 0) { setError("Quantity must be a whole number"); return; }
+    setBusy(true); setError(null);
+    try {
+      await onboardRequest("inventory_item", { method: "POST", body: JSON.stringify({
+        name: n, quantity: q, location: location.trim() || null, department: department ?? "interior", condition: "good",
+      }) });
+      setAdded(n); setName(""); setQty("1");
+      onAdded();
+      setTimeout(() => setAdded((a) => (a === n ? null : a)), 2500);
+    } catch (err) { setError(err instanceof Error ? err.message : "Could not add it."); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <form onSubmit={add} className="rounded-2xl border border-primary/30 bg-primary/[0.04] p-3">
+      <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Quick add</div>
+      <div className="grid grid-cols-[minmax(0,1fr)_64px] gap-2 sm:grid-cols-[minmax(0,2fr)_72px_minmax(0,1fr)_auto]">
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Item, e.g. Riedel wine glass" maxLength={160}
+               className="col-span-1 rounded-xl border border-border bg-background/60 px-3 py-2.5 text-sm outline-none focus:border-primary/60" />
+        <input value={qty} onChange={(e) => setQty(e.target.value)} inputMode="numeric" aria-label="Quantity"
+               className="rounded-xl border border-border bg-background/60 px-3 py-2.5 text-center text-sm outline-none focus:border-primary/60" />
+        <input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Where it's kept" list="inv-locations" maxLength={160}
+               className="col-span-2 rounded-xl border border-border bg-background/60 px-3 py-2.5 text-sm outline-none focus:border-primary/60 sm:col-span-1" />
+        <datalist id="inv-locations">{locations.map((l) => <option key={l} value={l} />)}</datalist>
+        <button type="submit" disabled={busy || !name.trim()}
+                className="col-span-2 inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50 sm:col-span-1">
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Add
+        </button>
+      </div>
+      {(error || added) && (
+        <p className={cn("mt-2 text-xs", error ? "text-red-300" : "text-emerald-300")}>{error ?? `Added "${added}" — tap it below to fill in the rest.`}</p>
+      )}
+    </form>
   );
 }
