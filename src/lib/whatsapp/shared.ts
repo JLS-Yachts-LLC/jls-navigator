@@ -137,7 +137,7 @@ export function windowRemaining(lastInboundAt: string | null | undefined, now = 
 // ─── Template buttons ─────────────────────────────────────────────────────────
 
 export type WaButton =
-  | { type: "QUICK_REPLY"; text: string }
+  | { type: "QUICK_REPLY"; text: string; /** RSVP headcount this answer stands for ("Bringing a +1" → 2). Local only — not sent to Meta. */ people?: number }
   | { type: "URL"; text: string; url: string; example?: string }
   | { type: "PHONE_NUMBER"; text: string; phone_number: string };
 
@@ -315,4 +315,18 @@ export function dueThreshold(daysLeft: number, thresholds: number[]): number | n
   if (daysLeft < 0) return null;
   const at = [...thresholds].sort((a, b) => a - b).find((t) => daysLeft <= t);
   return at ?? null;
+}
+
+/**
+ * How many people an RSVP answer stands for. Set on the button, or read from
+ * its label: "Bringing a +1" → 2, "Coming +2" → 3, "plus one" → 2; otherwise 1.
+ */
+export function answerHeadcount(text: string, buttons?: WaButton[] | null): number {
+  const b = (buttons ?? []).find((x) => x.type === "QUICK_REPLY" && x.text === text) as Extract<WaButton, { type: "QUICK_REPLY" }> | undefined;
+  if (b && typeof b.people === "number" && b.people >= 0) return b.people;
+  const plus = text.match(/\+\s*(\d{1,2})\b/);
+  if (plus) return 1 + Number(plus[1]);
+  if (/\bplus\s+(one|1)\b/i.test(text)) return 2;
+  if (/\bplus\s+two\b/i.test(text)) return 3;
+  return 1;
 }

@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { db, Chip, Empty, fmtDate, type WaTemplate } from "./wa-common";
+import { answerHeadcount, type WaButton } from "@/lib/whatsapp/shared";
 
 const OPT_OUT_RE = /stop|unsubscribe|opt.?out/i;
 const NEGATIVE_RE = /can'?t|cannot|\bnot\b|\bno\b|decline|unable|sorry|regret|won'?t/i;
@@ -222,6 +223,18 @@ function InviteResponses({ template, canEdit }: { template: WaTemplate; canEdit:
     }
   };
 
+  // How many people each answer stands for ("Bringing a +1" = 2). Read from the
+  // button label unless staff set it; saved on the template, which needs no review.
+  const [buttons, setButtons] = useState<WaButton[]>(template.buttons ?? []);
+  useEffect(() => { setButtons(template.buttons ?? []); }, [template]);
+  const headcount = (answer: string) => answerHeadcount(answer, buttons);
+  const setHeadcount = async (answer: string, n: number) => {
+    const next = buttons.map((b) => (b.type === "QUICK_REPLY" && b.text === answer ? { ...b, people: n } : b));
+    setButtons(next);
+    const { error } = await db().from("wa_templates").update({ buttons: next }).eq("id", template.id);
+    if (error) { toast.error(error.message); setButtons(template.buttons ?? []); }
+  };
+
   if (people === null) return <div className="grid place-items-center py-16"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
 
   // Every answer on the template, then any that are no longer on it (edited since), then the rest.
@@ -241,13 +254,19 @@ function InviteResponses({ template, canEdit }: { template: WaTemplate; canEdit:
   const reached = people.filter((p) => p.delivered).length;
   const coming = answers.find((a) => toneFor(a) === "green");
   const notComing = answers.find((a) => toneFor(a) === "amber");
+  // Everyone who said yes in any form ("I'll be there", "Bringing a +1"), counted in people.
+  const yesAnswers = [...answers, ...extra].filter((a) => toneFor(a) === "green");
+  const yesReplies = yesAnswers.reduce((n, a) => n + count(a), 0);
+  const yesPeople = yesAnswers.reduce((n, a) => n + count(a) * headcount(a), 0);
 
   const label = (k: string) => (k === TEXT ? "Wrote back" : k === NONE ? "No answer yet" : k === UNDELIVERED ? "Didn't reach them" : k);
   const download = () => {
-    const rows = [["Name", "Vessel", "Email", "WhatsApp", "Answer", "What they wrote", "Answered", "How", "Note", "Sent via"]];
+    const rows = [["Name", "Vessel", "Email", "WhatsApp", "Answer", "People", "What they wrote", "Answered", "How", "Note", "Sent via"]];
     for (const p of shown) {
       rows.push([
-        p.name, p.vessel ?? "", p.email ?? "", p.phone ?? "", label(p.answerKey), p.text ?? "",
+        p.name, p.vessel ?? "", p.email ?? "", p.phone ?? "", label(p.answerKey),
+        toneFor(p.answerKey) === "green" && ![TEXT, NONE, UNDELIVERED].includes(p.answerKey) ? String(headcount(p.answerKey)) : "",
+        p.text ?? "",
         p.at ? new Date(p.at).toLocaleString() : "",
         p.source === "staff" ? `Set by ${p.setBy ?? "staff"}` : p.source === "button" ? "Tapped a button" : p.source ? "Wrote back" : "",
         p.note ?? "", p.via.join("; "),
@@ -266,7 +285,14 @@ function InviteResponses({ template, canEdit }: { template: WaTemplate; canEdit:
       {/* Headline */}
       <div className="rounded-xl border border-border p-4">
         <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
-          {coming && <div><span className="text-3xl font-semibold tabular-nums text-emerald-500">{count(coming)}</span> <span className="text-sm text-muted-foreground">coming</span></div>}
+          {coming && (
+            <div>
+              <span className="text-3xl font-semibold tabular-nums text-emerald-500">{yesPeople}</span>{" "}
+              <span className="text-sm text-muted-foreground">
+                {yesPeople === 1 ? "person" : "people"} coming{yesPeople !== yesReplies ? ` (${yesReplies} ${yesReplies === 1 ? "reply" : "replies"}, guests included)` : ""}
+              </span>
+            </div>
+          )}
           {notComing && <div><span className="text-3xl font-semibold tabular-nums text-amber-500">{count(notComing)}</span> <span className="text-sm text-muted-foreground">can't make it</span></div>}
           <div><span className="text-3xl font-semibold tabular-nums">{count(NONE) + count(TEXT)}</span> <span className="text-sm text-muted-foreground">still to confirm</span></div>
           <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
@@ -286,9 +312,28 @@ function InviteResponses({ template, canEdit }: { template: WaTemplate; canEdit:
                   className={cn("rounded-xl border p-3 text-left transition", filter === c.key ? "border-primary bg-primary/10" : "border-border hover:bg-muted/40")}>
             <span className="block text-xl font-semibold tabular-nums">{count(c.key)}</span>
             <Chip t={c.tone}>{c.label}</Chip>
+            {c.tone === "green" && headcount(c.key) !== 1 && (
+              <span className="mt-1 block text-[11px] text-muted-foreground">= {count(c.key) * headcount(c.key)} people (×{headcount(c.key)})</span>
+            )}
           </button>
         ))}
       </div>
+
+      {/* How many people each "yes" stands for */}
+      {canEdit && yesAnswers.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
+          <span>Each answer counts as:</span>
+          {yesAnswers.map((a) => (
+            <label key={a} className="flex items-center gap-1.5">
+              <span className="text-foreground">{a}</span>
+              <select value={headcount(a)} onChange={(e) => void setHeadcount(a, Number(e.target.value))}
+                      className="h-7 rounded-md border border-border bg-background px-1.5 text-xs">
+                {Array.from({ length: 11 }, (_, n) => <option key={n} value={n}>{n} {n === 1 ? "person" : "people"}</option>)}
+              </select>
+            </label>
+          ))}
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-2">
         <p className="flex-1 text-xs text-muted-foreground">
