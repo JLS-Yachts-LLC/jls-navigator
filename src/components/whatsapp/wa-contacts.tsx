@@ -215,7 +215,10 @@ export function WaContacts({ canEdit }: { canEdit: boolean }) {
                   {canEdit && (
                     <td className="px-3 py-2"><Checkbox checked={selected.has(r.id)} onCheckedChange={() => toggle(r.id)} /></td>
                   )}
-                  <td className="px-3 py-2 font-medium">{r.name}</td>
+                  <td className="px-3 py-2 font-medium">
+                    {r.name}
+                    {!r.first_name && <span className="ml-1.5 text-[10px] font-normal text-amber-600" title="Messages using First name will say &quot;there&quot; — edit to add one">no first name</span>}
+                  </td>
                   <td className="px-3 py-2 text-muted-foreground">{r.yacht?.vessel_name ?? "—"}</td>
                   <td className="px-3 py-2">
                     {r.phone_e164 ? (
@@ -276,7 +279,15 @@ export function WaContacts({ canEdit }: { canEdit: boolean }) {
 // ─── Add / edit ───────────────────────────────────────────────────────────────
 
 function ContactDialog({ contact, onClose, onSaved }: { contact: WaContact | null; onClose: () => void; onSaved: () => void }) {
-  const [name, setName] = useState(contact?.name ?? "");
+  const [firstName, setFirstName] = useState(contact?.first_name ?? "");
+  const [lastName, setLastName] = useState(contact?.last_name ?? "");
+  // A contact with no person's name (a vessel, an office) keeps a plain name instead.
+  const [name, setName] = useState(contact && !contact.first_name && !contact.last_name ? contact.name : "");
+  const hasPerson = !!(firstName.trim() || lastName.trim());
+  // Only rename when the names were actually edited — saving an email change
+  // shouldn't rewrite how the contact's name shows.
+  const namesEdited = !contact || firstName.trim() !== (contact.first_name ?? "") || lastName.trim() !== (contact.last_name ?? "")
+    || (!hasPerson && name.trim() !== contact.name);
   const [email, setEmail] = useState(contact?.email ?? "");
   const [phone, setPhone] = useState(contact?.phone_e164 ?? "");
   const [notes, setNotes] = useState(contact?.notes ?? "");
@@ -291,7 +302,7 @@ function ContactDialog({ contact, onClose, onSaved }: { contact: WaContact | nul
   }, [contact?.yacht_id]);
 
   async function save() {
-    if (!name.trim()) { toast.error("Give the contact a name"); return; }
+    if (!hasPerson && !name.trim()) { toast.error("Give the contact a first name, or a name for the vessel or office"); return; }
     setSaving(true);
     try {
       const { data: codes } = await db().from("country_dial_codes").select("dial_code");
@@ -300,7 +311,14 @@ function ContactDialog({ contact, onClose, onSaved }: { contact: WaContact | nul
         phone_e164 = toE164(phone, ((codes ?? []) as any[]).map((r) => r.dial_code));
         if (!phone_e164) throw new Error("Enter the number with its country code, e.g. +971 50 123 4567");
       }
-      const row: any = { name: name.trim(), email: email.trim() || null, notes: notes.trim() || null, yacht_id: yachtId || null };
+      const row: any = {
+        // With a first/last name the full name is built from them (in the database too).
+        first_name: firstName.trim() || null,
+        last_name: lastName.trim() || null,
+        name: hasPerson ? [firstName.trim(), lastName.trim()].filter(Boolean).join(" ") : name.trim(),
+        email: email.trim() || null, notes: notes.trim() || null, yacht_id: yachtId || null,
+      };
+      if (!namesEdited) { delete row.first_name; delete row.last_name; delete row.name; }
       if (!locked) row.phone_e164 = phone_e164;
       const { error } = contact
         ? await db().from("wa_contacts").update(row).eq("id", contact.id)
@@ -321,7 +339,20 @@ function ContactDialog({ contact, onClose, onSaved }: { contact: WaContact | nul
       <DialogContent className="max-h-[90vh] max-w-md overflow-y-auto">
         <DialogHeader><DialogTitle>{contact ? "Edit contact" : "Add contact"}</DialogTitle></DialogHeader>
         <div className="space-y-3">
-          <div className="space-y-1.5"><Label>Name</Label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1.5"><Label>First name</Label><Input value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="John" /></div>
+            <div className="space-y-1.5"><Label>Last name</Label><Input value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Smith" /></div>
+          </div>
+          {!hasPerson && (
+            <div className="space-y-1.5">
+              <Label>Or a name for a vessel or office</Label>
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="AL NOUF 2 (vessel contact)" />
+              <p className="text-[11px] text-muted-foreground">For contacts without a person's name. Messages using "First name" will say "there".</p>
+            </div>
+          )}
+          {contact && hasPerson && namesEdited && contact.name !== [firstName.trim(), lastName.trim()].filter(Boolean).join(" ") && (
+            <p className="text-[11px] text-muted-foreground">Will show as <strong>{[firstName.trim(), lastName.trim()].filter(Boolean).join(" ")}</strong> (was “{contact.name}”).</p>
+          )}
           <div className="space-y-1.5"><Label>Email</Label><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></div>
           <div className="space-y-1.5">
             <Label>WhatsApp number</Label>

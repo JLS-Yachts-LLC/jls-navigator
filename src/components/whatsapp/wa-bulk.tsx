@@ -129,11 +129,11 @@ export function BulkConsentDialog({ contacts, mode, onClose, onDone }: {
 
 // ─── CSV import ───────────────────────────────────────────────────────────────
 
-const COLUMNS = ["name", "email", "whatsapp", "yacht", "notes", "updates", "marketing", "consent_note"] as const;
+const COLUMNS = ["first_name", "last_name", "email", "whatsapp", "yacht", "notes", "updates", "marketing", "consent_note"] as const;
 
 const TEMPLATE_ROWS = [
-  ["Captain John Smith", "captain@serenity-yacht.com", "+971 50 123 4567", "Serenity", "Prefers WhatsApp before 6pm", "yes", "no", "Agreed by phone with Hilary, 5 Oct 2026"],
-  ["Jane Doe", "jane.doe@example.com", "+44 7700 900123", "", "", "", "", ""],
+  ["John", "Smith", "captain@serenity-yacht.com", "+971 50 123 4567", "Serenity", "Prefers WhatsApp before 6pm", "yes", "no", "Agreed by phone with Hilary, 5 Oct 2026"],
+  ["Jane", "Doe", "jane.doe@example.com", "+44 7700 900123", "", "", "", "", ""],
 ];
 
 function csvEscape(v: string) {
@@ -182,6 +182,9 @@ type RowStatus = "new" | "update" | "skip" | "error";
 interface ParsedRow {
   line: number;
   name: string;
+  /** From first_name / last_name columns; null when the file only has a full name (the database splits it). */
+  firstName: string | null;
+  lastName: string | null;
   email: string | null;
   phone: string | null;
   phoneRaw: string;
@@ -240,6 +243,7 @@ export function CsvImportDialog({ onClose, onDone }: { onClose: () => void; onDo
     const col = (names: string[]) => header.findIndex((h) => names.includes(h));
     const idx = {
       name: col(["name", "full_name", "contact_name"]), email: col(["email", "email_address"]),
+      firstName: col(["first_name", "firstname", "first", "given_name"]), lastName: col(["last_name", "lastname", "last", "surname", "family_name"]),
       whatsapp: col(["whatsapp", "whatsapp_number", "phone", "mobile", "number"]), yacht: col(["yacht", "vessel", "vessel_name", "yacht_name"]),
       notes: col(["notes", "note"]), updates: col(["updates", "consent_updates"]), marketing: col(["marketing", "news_offers", "consent_marketing"]),
       consentNote: col(["consent_note", "how_agreed"]),
@@ -256,7 +260,10 @@ export function CsvImportDialog({ onClose, onDone }: { onClose: () => void; onDo
     return raw.slice(1).map((cells, i): ParsedRow => {
       const get = (k: keyof typeof idx) => (idx[k] >= 0 ? (cells[idx[k]] ?? "").trim() : "");
       const issues: string[] = [];
-      const name = get("name");
+      const firstName = get("firstName") || null;
+      const lastName = get("lastName") || null;
+      // First/last columns win; a single "name" column is split by the database.
+      const name = [firstName, lastName].filter(Boolean).join(" ") || get("name");
       const email = get("email").toLowerCase() || null;
       const phoneRaw = get("whatsapp");
       const phone = phoneRaw ? toE164(phoneRaw, ref.dial) : null;
@@ -272,13 +279,13 @@ export function CsvImportDialog({ onClose, onDone }: { onClose: () => void; onDo
       const existing = (phone && byPhone.get(phone)) || (email && byEmail.get(email)) || null;
       const key = phone ?? email ?? `${name}|${i}`;
       let status: RowStatus = existing ? (onExisting === "update" ? "update" : "skip") : "new";
-      if (!name) { status = "error"; issues.unshift("no name"); }
+      if (!name) { status = "error"; issues.unshift("no first name or name"); }
       else if (!phone && !email) { status = "error"; issues.unshift("needs a WhatsApp number or an email"); }
       const dup = seen.has(key);
       if (status !== "error" && dup) { status = "skip"; issues.unshift("repeated earlier in the file"); }
       seen.add(key);
       return {
-        line: i + 2, name, email: email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null, phone, phoneRaw, yachtRaw, yachtId, yachtName,
+        line: i + 2, name, firstName, lastName, email: email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null, phone, phoneRaw, yachtRaw, yachtId, yachtName,
         notes: get("notes") || null, updates: yes(get("updates")), marketing: yes(get("marketing")), consentNote: get("consentNote"),
         existing, dup, status, issues,
       };
@@ -326,7 +333,7 @@ export function CsvImportDialog({ onClose, onDone }: { onClose: () => void; onDo
     for (let i = 0; i < toCreate.length; i += 200) {
       const chunk = toCreate.slice(i, i + 200);
       const { data, error } = await db().from("wa_contacts").insert(chunk.map((r) => ({
-        name: r.name, email: r.email, phone_e164: r.phone, yacht_id: r.yachtId, source: "manual",
+        name: r.name, first_name: r.firstName, last_name: r.lastName, email: r.email, phone_e164: r.phone, yacht_id: r.yachtId, source: "manual",
         notes: [r.notes, `Imported from ${fileName ?? "CSV"}`].filter(Boolean).join(" · "),
       }))).select("id, phone_e164, email, name");
       if (error) { chunk.forEach((r) => failed.push(`Line ${r.line} (${r.name}): ${error.message}`)); }
@@ -343,7 +350,7 @@ export function CsvImportDialog({ onClose, onDone }: { onClose: () => void; onDo
     // Existing contacts: fill in what the file has; a client-confirmed number is never overwritten.
     await eachLimited(toUpdate, 5, async (r) => {
       const ex = r.existing!;
-      const patch: Record<string, unknown> = { name: r.name };
+      const patch: Record<string, unknown> = r.firstName || r.lastName ? { first_name: r.firstName, last_name: r.lastName } : { name: r.name };
       if (r.email) patch.email = r.email;
       if (r.yachtId) patch.yacht_id = r.yachtId;
       if (r.notes) patch.notes = r.notes;
@@ -401,7 +408,7 @@ export function CsvImportDialog({ onClose, onDone }: { onClose: () => void; onDo
               <div className="min-w-0 flex-1">
                 <p className="font-medium">1. Download the template, fill it in</p>
                 <p className="text-xs text-muted-foreground">
-                  Columns: <code>name</code> (required), <code>email</code>, <code>whatsapp</code> (with country code), <code>yacht</code> (as named in Polaris),
+                  Columns: <code>first_name</code> (required) and <code>last_name</code> — or a single <code>name</code> column, which is split for you — <code>email</code>, <code>whatsapp</code> (with country code), <code>yacht</code> (as named in Polaris),
                   {" "}<code>notes</code>, and optionally <code>updates</code> / <code>marketing</code> (yes/no) with <code>consent_note</code> saying how they agreed.
                 </p>
               </div>

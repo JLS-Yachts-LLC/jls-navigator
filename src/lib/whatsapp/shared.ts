@@ -201,32 +201,50 @@ export const HEADER_MEDIA: Record<Exclude<HeaderFormat, "TEXT">, { accept: strin
 
 /** Fields staff can drop into a template's values; filled in per recipient at send. */
 export const PERSONAL_TOKENS = [
-  { token: "{{name}}", label: "Name", sample: "Captain Smith" },
-  { token: "{{first_name}}", label: "First name", sample: "Captain" },
+  { token: "{{name}}", label: "Name", sample: "John Smith" },
+  { token: "{{first_name}}", label: "First name", sample: "John" },
+  { token: "{{last_name}}", label: "Last name", sample: "Smith" },
   { token: "{{vessel}}", label: "Yacht name", sample: "M/Y Serenity" },
 ] as const;
 
 // Also accepts the chip LABELS typed by hand — {{Yacht name}}, {{First name}},
-// {{Full name}} — which otherwise went out to clients as the literal braces.
-const TOKEN_RE = /\{\{\s*(name|full[ _]?name|first[ _]?name|vessel(?:[ _]?name)?|yacht(?:[ _]?name)?)\s*\}\}/gi;
+// {{Full name}}, {{Last name}} — which otherwise went out to clients as the literal braces.
+const TOKEN_RE = /\{\{\s*(name|full[ _]?name|first[ _]?name|last[ _]?name|surname|vessel(?:[ _]?name)?|yacht(?:[ _]?name)?)\s*\}\}/gi;
+
+export interface Recipient {
+  name?: string | null;
+  /** The contact's own first / last name fields; derived from `name` when missing. */
+  firstName?: string | null;
+  lastName?: string | null;
+  vessel?: string | null;
+}
 
 /**
  * Fill personal fields into a value. Missing data falls back to something that
  * still reads naturally ("there", "your yacht") — Meta rejects empty parameters.
  */
-export function personalise(value: string, who: { name?: string | null; vessel?: string | null }): string {
-  const name = (who.name ?? "").trim();
+export function personalise(value: string, who: Recipient): string {
+  const first = (who.firstName ?? "").trim();
+  const last = (who.lastName ?? "").trim();
+  const name = (who.name ?? "").trim() || [first, last].filter(Boolean).join(" ");
   const vessel = (who.vessel ?? "").trim();
   return value.replace(TOKEN_RE, (_, k: string) => {
     switch (k.toLowerCase().replace(/[ _]/g, "")) {
       case "name": case "fullname": return name || "there";
-      case "firstname": return name.split(/\s+/)[0] || "there";
+      case "firstname": return first || name.split(/\s+/)[0] || "there";
+      // No last name on file: an empty-looking gap reads worse than the full name.
+      case "lastname": case "surname": return last || name || "there";
       default: return vessel || "your yacht";
     }
   });
 }
 
-export const SAMPLE_RECIPIENT = { name: "Captain Smith", vessel: "M/Y Serenity" };
+/** A contact row → the fields personalise() needs. */
+export const recipientOf = (c: { name?: string | null; first_name?: string | null; last_name?: string | null; yacht?: { vessel_name?: string | null } | null }, vessel?: string | null): Recipient => ({
+  name: c.name, firstName: c.first_name, lastName: c.last_name, vessel: vessel ?? c.yacht?.vessel_name ?? null,
+});
+
+export const SAMPLE_RECIPIENT: Recipient = { name: "John Smith", firstName: "John", lastName: "Smith", vessel: "M/Y Serenity" };
 
 /** The words around {{n}} in a template body — shows what each value box fills. */
 export function placeholderContext(body: string, n: number, span = 28): string {
@@ -244,8 +262,9 @@ export type AutomationKind = "crew_visa" | "crew_passport" | "vessel_permit";
 export interface AutomationField { key: string; label: string; sample: string }
 
 const COMMON_FIELDS: AutomationField[] = [
-  { key: "contact_name", label: "Recipient name", sample: "Captain Smith" },
-  { key: "contact_first_name", label: "Recipient first name", sample: "Captain" },
+  { key: "contact_name", label: "Recipient name", sample: "John Smith" },
+  { key: "contact_first_name", label: "Recipient first name", sample: "John" },
+  { key: "contact_last_name", label: "Recipient last name", sample: "Smith" },
   { key: "vessel_name", label: "Yacht name", sample: "M/Y Serenity" },
   { key: "expiry_date", label: "Expiry date", sample: "19 Oct 2026" },
   { key: "days_left", label: "Days left", sample: "14" },

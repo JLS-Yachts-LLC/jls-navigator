@@ -28,6 +28,8 @@ export async function waMediaUrl(path: string): Promise<string | null> {
 export interface WaContact {
   id: string;
   name: string;
+  first_name: string | null;
+  last_name: string | null;
   email: string | null;
   phone_e164: string | null;
   phone_confirmed: boolean;

@@ -22,7 +22,7 @@ import { waConfig, sendingEnabled, automationsEnabled, sendTemplate, MetaError }
 import { templateExtras } from "@/lib/whatsapp/api.server";
 import {
   AUTOMATION_FIELDS, STARTER_TEMPLATES, dueThreshold, permitLabel, placeholderCount, fillTemplate, personalise,
-  type AutomationKind, type VariableSource,
+  type AutomationKind, type VariableSource, type Recipient,
 } from "@/lib/whatsapp/shared";
 
 const json = (body: unknown, status = 200) =>
@@ -166,7 +166,7 @@ async function collectDue(db: any, a: any, today: string): Promise<DueItem[]> {
 export interface PlannedItem extends DueItem {
   vessel: string;
   vesselOn: boolean;
-  recipients: Array<{ contactId: string; name: string; phone: string; alreadySent: boolean }>;
+  recipients: Array<{ contactId: string; name: string; firstName?: string | null; lastName?: string | null; phone: string; alreadySent: boolean }>;
 }
 
 /** Everything due today for one reminder, with who would get it and why not. */
@@ -177,7 +177,7 @@ export async function planAutomation(db: any, a: any, today = dubaiToday()): Pro
   const [{ data: yachts }, { data: optins }, { data: contacts }] = await Promise.all([
     db.from("yachts").select("id, vessel_name").in("id", yachtIds),
     db.from("wa_automation_vessels").select("yacht_id, enabled").eq("automation_id", a.id).in("yacht_id", yachtIds),
-    db.from("wa_contacts").select("id, name, phone_e164, yacht_id")
+    db.from("wa_contacts").select("id, name, first_name, last_name, phone_e164, yacht_id")
       .in("yacht_id", yachtIds).eq("consent_status", "opted_in").eq("consent_updates", true).not("phone_e164", "is", null),
   ]);
   const logged: any[] = [];
@@ -197,17 +197,20 @@ export async function planAutomation(db: any, a: any, today = dubaiToday()): Pro
     // One message per number: two records for the same person (not yet merged)
     // share a phone. Already-reminded records win, so the rest count as sent too.
     recipients: [...((contacts ?? []) as any[]).filter((c) => c.yacht_id === d.yachtId)
-      .map((c) => ({ contactId: c.id, name: c.name, phone: c.phone_e164, alreadySent: sent.has(`${d.sourceId}|${d.threshold}|${c.id}`) }))
+      .map((c) => ({ contactId: c.id, name: c.name, firstName: c.first_name, lastName: c.last_name, phone: c.phone_e164, alreadySent: sent.has(`${d.sourceId}|${d.threshold}|${c.id}`) }))
       .sort((x, y) => Number(y.alreadySent) - Number(x.alreadySent))
-      .reduce((m, r) => (m.has(r.phone) ? m : m.set(r.phone, r)), new Map<string, { contactId: string; name: string; phone: string; alreadySent: boolean }>())
+      .reduce((m, r) => (m.has(r.phone) ? m : m.set(r.phone, r)), new Map<string, PlannedItem["recipients"][number]>())
       .values()],
   })).sort((x, y) => x.daysLeft - y.daysLeft);
 }
 
 /** The template values for one recipient: mapped fields, or fixed text (which may use {{name}} etc.). */
-function valuesFor(map: VariableSource[], needed: number, fields: Record<string, string>, who: { name: string; vessel: string }) {
+function valuesFor(map: VariableSource[], needed: number, fields: Record<string, string>, who: Recipient & { name: string; vessel: string }) {
   const all: Record<string, string> = {
-    ...fields, contact_name: who.name || "there", contact_first_name: (who.name || "").split(/\s+/)[0] || "there",
+    ...fields,
+    contact_name: personalise("{{name}}", who),
+    contact_first_name: personalise("{{first_name}}", who),
+    contact_last_name: personalise("{{last_name}}", who),
   };
   return Array.from({ length: needed }, (_, i) => {
     const src = map[i];
@@ -234,7 +237,7 @@ function configProblem(a: any, t: any): string | null {
 
 async function sendOne(db: any, cfg: any, a: any, t: any, extras: any, item: PlannedItem, r: PlannedItem["recipients"][number], log: boolean) {
   const needed = placeholderCount(t.body_text);
-  const who = { name: r.name, vessel: item.vessel };
+  const who = { name: r.name, firstName: r.firstName, lastName: r.lastName, vessel: item.vessel };
   const values = valuesFor(a.variable_map ?? [], needed, item.fields, who);
   if (log) {
     // Claim first: a duplicate claim fails on the unique key, so nobody is messaged twice.
@@ -332,7 +335,7 @@ export async function whatsappAutomationPreviewHandler(request: Request): Promis
         ...it,
         // One example of the exact wording, for the first recipient (or a placeholder name).
         example: a.template ? fillTemplate(a.template.body_text,
-          valuesFor(a.variable_map ?? [], needed, it.fields, { name: it.recipients[0]?.name ?? "Captain", vessel: it.vessel })) : null,
+          valuesFor(a.variable_map ?? [], needed, it.fields, { name: it.recipients[0]?.name ?? "Captain", firstName: it.recipients[0]?.firstName, lastName: it.recipients[0]?.lastName, vessel: it.vessel })) : null,
       })),
       total: items.length,
     });
@@ -358,7 +361,7 @@ export async function whatsappAutomationTestHandler(request: Request): Promise<R
   if (!a) return json({ error: "Reminder not found" }, 404);
   const problem = configProblem(a, a.template);
   if (problem) return json({ error: `Can't send yet: ${problem}.` }, 409);
-  const { data: c } = await db.from("wa_contacts").select("id, name, phone_e164, yacht:yachts(vessel_name)").eq("id", contactId).maybeSingle();
+  const { data: c } = await db.from("wa_contacts").select("id, name, first_name, last_name, phone_e164, yacht:yachts(vessel_name)").eq("id", contactId).maybeSingle();
   if (!c?.phone_e164) return json({ error: "That contact has no WhatsApp number." }, 400);
 
   const due = (await planAutomation(db, a))[0];
@@ -371,7 +374,7 @@ export async function whatsappAutomationTestHandler(request: Request): Promise<R
   try {
     const extras = await templateExtras(db, cfg, a.template, { buttonValues: (a.options?.button_values ?? []).map(String) });
     const res = await sendOne(db, cfg, a, a.template, extras, item,
-      { contactId: c.id, name: c.name, phone: c.phone_e164, alreadySent: false }, false);
+      { contactId: c.id, name: c.name, firstName: c.first_name, lastName: c.last_name, phone: c.phone_e164, alreadySent: false }, false);
     if (res !== "sent") return json({ error: typeof res === "object" ? res.failed : "Not sent" }, 422);
     return json({ ok: true, used: due ? `the ${due.label} reminder due today` : "example values" });
   } catch (e) {

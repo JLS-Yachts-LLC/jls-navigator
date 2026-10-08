@@ -18,7 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
-import { windowRemaining, placeholderCount, dynamicUrlButtons, personalise, placeholderContext } from "@/lib/whatsapp/shared";
+import { windowRemaining, placeholderCount, dynamicUrlButtons, personalise, placeholderContext, recipientOf } from "@/lib/whatsapp/shared";
 import { TokenScope, TokenBar, TokenInput } from "./wa-tokens";
 import { WaTemplatePreview, templateBlocker } from "./wa-templates";
 import { db, waApi, waBlobUrl, ConsentChip, Chip, Empty, type WaContact, type WaTemplate } from "./wa-common";
@@ -491,7 +491,7 @@ function TemplateComposer({ contact, onSent }: { contact: WaContact; onSent: () 
     }
   }
 
-  const who = { name: contact.name, vessel: contact.yacht?.vessel_name ?? null };
+  const who = recipientOf(contact);
 
   return (
     <TokenScope>

@@ -30,7 +30,7 @@ import {
 import {
   OPTIN_WORDING_VERSION, OPTIN_CATEGORY_TEXT, OPTIN_STOP_TEXT, optinStatement, toE164, stopIntent,
   placeholderCount, fillTemplate, SERVICE_WINDOW_MS,
-  normalizeButtons, buttonsError, hasOptOut, dynamicUrlButtons, personalise, type WaButton,
+  normalizeButtons, buttonsError, hasOptOut, dynamicUrlButtons, personalise, recipientOf, type Recipient, type WaButton,
 } from "@/lib/whatsapp/shared";
 
 const json = (body: unknown, status = 200) =>
@@ -350,16 +350,17 @@ export async function whatsappCampaignSendHandler(request: Request): Promise<Res
 
   // Each recipient's yacht, for {{vessel}}.
   const claimed = (batch ?? []) as Array<{ message_id: string; phone_e164: string; contact_name: string }>;
-  const vessels = new Map<string, string | null>();
+  // Each recipient's first/last name and yacht, for the personal fields.
+  const people = new Map<string, Recipient>();
   if (claimed.length) {
     const { data: rows } = await db.from("wa_messages")
-      .select("id, contact:wa_contacts(yacht:yachts(vessel_name))").in("id", claimed.map((m) => m.message_id));
-    for (const r of (rows ?? []) as any[]) vessels.set(r.id, r.contact?.yacht?.vessel_name ?? null);
+      .select("id, contact:wa_contacts(name, first_name, last_name, yacht:yachts(vessel_name))").in("id", claimed.map((m) => m.message_id));
+    for (const r of (rows ?? []) as any[]) if (r.contact) people.set(r.id, recipientOf(r.contact));
   }
 
   let sent = 0, failed = 0;
   for (const m of claimed) {
-    const who = { name: m.contact_name, vessel: vessels.get(m.message_id) };
+    const who: Recipient = people.get(m.message_id) ?? { name: m.contact_name };
     const personal = values.slice(0, needed).map((v) => personalise(v, who));
     try {
       const wamid = await sendTemplate(cfg, {
@@ -424,7 +425,7 @@ export async function whatsappReplyHandler(request: Request): Promise<Response> 
   };
   const db = admin();
   const { data: contact } = await db.from("wa_contacts")
-    .select("id, name, phone_e164, consent_status, yacht:yachts(vessel_name)").eq("id", body.contactId).maybeSingle();
+    .select("id, name, first_name, last_name, phone_e164, consent_status, yacht:yachts(vessel_name)").eq("id", body.contactId).maybeSingle();
   if (!contact) return json({ error: "Contact not found" }, 404);
 
   const now = new Date().toISOString();
@@ -476,7 +477,7 @@ export async function whatsappReplyHandler(request: Request): Promise<Response> 
   if (values.length < needed || values.some((v) => !v.trim())) {
     return json({ error: `Fill in all ${needed} value(s) for the template's placeholders.` }, 400);
   }
-  const who = { name: contact.name, vessel: contact.yacht?.vessel_name ?? null };
+  const who = recipientOf(contact);
   const filled = values.map((v) => personalise(v, who));
   const shown = fillTemplate(t.body_text, filled);
   let extras: Awaited<ReturnType<typeof templateExtras>>;
