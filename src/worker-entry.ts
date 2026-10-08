@@ -893,9 +893,6 @@ export default {
     if (url.pathname === '/api/portal/brand') {
       return (await import('./lib/portal/portal-domains.server')).portalBrandHandler(request)
     }
-    if (url.pathname === '/api/portal/perf') {
-      return (await import('./routes/api.portal.perf')).portalPerfHandler(request)
-    }
     if (url.pathname === '/api/portal/address') {
       return (await import('./lib/portal/portal-domains.server')).portalAddressHandler(request)
     }
