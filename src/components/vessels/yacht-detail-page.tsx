@@ -2,7 +2,8 @@ import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { createServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
-import { JLS_QBO_REALM, WAYPOINT_QBO_REALM, WAYPOINT_COMPANY } from "@/lib/qb/realms";
+import { JLS_QBO_REALM, WAYPOINT_QBO_REALM } from "@/lib/qb/realms";
+import { VesselWaypointLink } from "@/components/finance/waypoint-accounts";
 import { updateOrThrow } from "@/lib/db-write";
 import { guardUploadFile, uploadContentType } from "@/lib/upload-guard";
 import { softDeleteEntity } from "@/lib/recycle-bin";
@@ -482,7 +483,7 @@ export function YachtDetail({
           </div>
         </div>
       ) : tab === "finance" ? (
-        <YachtFinance yachtId={String(y.id)} qboCustomerId={(y as any).qbo_customer_id ?? null} />
+        <YachtFinance yachtId={String(y.id)} vesselName={String(y.vessel_name ?? "")} qboCustomerId={(y as any).qbo_customer_id ?? null} />
       ) : tab === "crew" ? (
         <YachtCrewTab yachtId={String(y.id)} />
       ) : tab === "permits" ? (
@@ -936,7 +937,7 @@ function EditField({ k, form, set, errors }: { k: string; form: Record<string, s
 // ── Finance tab — this yacht's QuickBooks invoices (paid / pending / outstanding) ──
 type QboInvoiceRow = {
   id: string; doc_number: string | null; txn_date: string | null; due_date: string | null;
-  total_amt: number | null; balance: number | null; status: string | null; currency: string | null;
+  total_amt: number | null; balance: number | null; status: string | null; currency: string | null; realm_id: string | null;
 };
 
 const INVOICE_STATUS_CLS: Record<string, string> = {
@@ -947,12 +948,13 @@ const INVOICE_STATUS_CLS: Record<string, string> = {
   Accepted: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
 };
 
-function YachtFinance({ yachtId, qboCustomerId }: { yachtId: string; qboCustomerId: string | null }) {
+function YachtFinance({ yachtId, vesselName, qboCustomerId }: { yachtId: string; vesselName: string; qboCustomerId: string | null }) {
   const { session } = useAuth();
   const [docType, setDocType] = useState<"invoice" | "estimate">("invoice");
   const [rows, setRows] = useState<QboInvoiceRow[]>([]);
   const [busy, setBusy] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     setBusy(true);
@@ -960,7 +962,7 @@ function YachtFinance({ yachtId, qboCustomerId }: { yachtId: string; qboCustomer
     void (async () => {
       let q = (supabase as any)
         .from("qbo_invoices")
-        .select("id, doc_number, txn_date, due_date, total_amt, balance, status, currency")
+        .select("id, doc_number, txn_date, due_date, total_amt, balance, status, currency, realm_id")
         .eq("doc_type", docType);
       // Match by direct yacht link, plus by the yacht's QBO customer for older rows.
       // (qbo_customer_id is the JLS customer — another company's documents only by yacht_id.)
@@ -969,7 +971,7 @@ function YachtFinance({ yachtId, qboCustomerId }: { yachtId: string; qboCustomer
       setRows((data ?? []) as QboInvoiceRow[]);
       setBusy(false);
     })();
-  }, [yachtId, qboCustomerId, docType]);
+  }, [yachtId, qboCustomerId, docType, reloadKey]);
 
   const money = (n: number | null | undefined) =>
     n == null ? "—" : `AED ${Number(n).toLocaleString("en-AE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -999,6 +1001,9 @@ function YachtFinance({ yachtId, qboCustomerId }: { yachtId: string; qboCustomer
   return (
     <div className="flex-1 overflow-auto p-6">
       <div className="mx-auto max-w-6xl space-y-4">
+        {/* Waypoint bills some vessels too (chandlery, provisioning) — from its own QuickBooks. */}
+        <VesselWaypointLink yachtId={yachtId} vesselName={vesselName} onChanged={() => setReloadKey((k) => k + 1)} />
+
         {/* Invoices ⇄ Quotes toggle */}
         <div className="flex items-center gap-1.5">
           {([["invoice", "Invoices"], ["estimate", "Quotes (estimates)"]] as const).map(([key, label]) => (
@@ -1073,7 +1078,10 @@ function YachtFinance({ yachtId, qboCustomerId }: { yachtId: string; qboCustomer
               <tbody>
                 {filtered.map((r) => (
                   <tr key={r.id} className="group border-b border-border/40 hover:bg-accent/20">
-                    <td className="px-4 py-2.5 font-medium text-foreground">{r.doc_number ?? "—"}</td>
+                    <td className="px-4 py-2.5 font-medium text-foreground">
+                      {r.doc_number ?? "—"}
+                      {r.realm_id === WAYPOINT_QBO_REALM && <span className="ml-1.5 rounded border border-border px-1 py-px text-[9.5px] font-semibold uppercase tracking-wide text-muted-foreground">Waypoint</span>}
+                    </td>
                     <td className="px-4 py-2.5 tabular-nums text-muted-foreground">{dt(r.txn_date)}</td>
                     <td className="px-4 py-2.5 tabular-nums text-muted-foreground">{dt(r.due_date)}</td>
                     <td className="px-4 py-2.5 tabular-nums text-foreground/80">{money(r.total_amt)}</td>
