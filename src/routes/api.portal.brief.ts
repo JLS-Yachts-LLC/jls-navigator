@@ -112,7 +112,7 @@ export async function portalBriefHandler(request: Request): Promise<Response> {
   if (!yacht.mfaVerified) return json({ error: 'Two-factor verification required' }, 403)
   const modules = await portalModulesFor(yacht.yachtId)
   const hidden = hiddenSections(yacht.position)
-  if (hidden.has('brief') || !sectionEnabled('brief', modules)) return json({ error: "The owner's brief isn't available to you." }, 403)
+  if (hidden.has('brief') || !sectionEnabled('brief', modules)) return json({ error: "Today's brief isn't available to you." }, 403)
   const sees = (section: string) => !hidden.has(section) && sectionEnabled(section, modules)
 
   // Which month — default the last one (a brief is about a month that's over).

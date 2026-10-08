@@ -1,5 +1,7 @@
 /**
- * Owner's brief (Agency with JLS) — one month of the vessel, written for the
+ * Today's brief (Agency with JLS). Opens on Today — what's happening on board,
+ * what needs the vessel and the week ahead — with "This month", the owner's
+ * monthly summary: one month of the vessel, written for the
  * owner: the agent's note, what was spent and where, compliance, what
  * happened, and the next 30 days. Everything but the note is live from the
  * vessel's records (/api/portal/brief). The note is written by JLS: in staff
@@ -53,7 +55,229 @@ function Figure({ label, value, note, tone }: { label: string; value: React.Reac
   );
 }
 
-export function BriefSection({ yachtId, preview, onOpen }: {
+/** Today's date in Dubai, as YYYY-MM-DD. */
+const dubaiDay = (offsetDays = 0) =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Dubai" }).format(new Date(Date.now() + offsetDays * 86400000));
+
+/**
+ * The brief opens on Today — what's happening on board, what needs the vessel,
+ * and the week ahead. "This month" is the owner's monthly summary, unchanged.
+ */
+export function BriefSection(props: {
+  yachtId: string; preview: boolean; onOpen: (tab: "balances" | "invoices" | "requests" | "calendar") => void;
+}) {
+  const [view, setView] = useState<"today" | "month">("today");
+  return (
+    <div className="space-y-6">
+      <div className="inline-flex rounded-xl border border-border bg-background/40 p-1 text-sm">
+        {(["today", "month"] as const).map((v) => (
+          <button key={v} type="button" onClick={() => setView(v)}
+                  className={cn("rounded-lg px-4 py-1.5 font-medium transition", view === v ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground")}>
+            {v === "today" ? "Today" : "This month"}
+          </button>
+        ))}
+      </div>
+      {view === "today" ? <TodayBrief {...props} onSeeMonth={() => setView("month")} /> : <MonthBrief {...props} />}
+    </div>
+  );
+}
+
+function TodayBrief({ onOpen, onSeeMonth }: {
+  yachtId: string; preview: boolean; onOpen: (tab: "balances" | "invoices" | "requests" | "calendar") => void; onSeeMonth: () => void;
+}) {
+  const [brief, setBrief] = useState<Brief | null>(null);
+  const [extra, setExtra] = useState<Brief["timeline"]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const today = dubaiDay();
+  const yesterday = dubaiDay(-1);
+  const weekEnd = dubaiDay(7);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await portalFetch(`/api/portal/brief?month=${today.slice(0, 7)}`);
+        const j = await res.json();
+        if (!res.ok) throw new Error(j.error ?? "Today's brief could not be prepared.");
+        setBrief(j);
+        // On the 1st, "since yesterday" reaches back into last month.
+        if (yesterday.slice(0, 7) !== today.slice(0, 7)) {
+          const prev = await portalFetch(`/api/portal/brief?month=${yesterday.slice(0, 7)}`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+          if (prev?.timeline) setExtra(prev.timeline);
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Today's brief could not be prepared.");
+      }
+    })();
+  }, [today, yesterday]);
+
+  if (error && !brief) return <SectionEmpty icon={BookOpen} message={error} />;
+  if (!brief) return <SectionLoading />;
+
+  const b = brief;
+  const timeline = [...extra, ...b.timeline];
+  const recent = timeline.filter((t) => t.date === today || t.date === yesterday).sort((x, y) => y.date.localeCompare(x.date));
+  const upcomingEvents = timeline.filter((t) => t.date > today && t.date <= weekEnd);
+  const expiredNow = b.compliance.expired;
+  const dueThisWeek = b.ahead.expiring.filter((e) => e.date >= today && e.date <= weekEnd);
+  const chartersSoon = b.ahead.charters.filter((c) => c.start <= weekEnd);
+  const attention = expiredNow.length + dueThisWeek.length + b.ahead.awaitingDecision.length;
+  const spend = b.spend && b.spend.linked ? b.spend : null;
+  const compliancePct = b.compliance.total ? Math.round((b.compliance.inDate / b.compliance.total) * 100) : null;
+  const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Dubai", hour: "2-digit", hourCycle: "h23" }).format(new Date()));
+  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const longDay = new Date(`${today}T00:00:00Z`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
+  const when = (d: string) => (d === today ? "Today" : d === yesterday ? "Yesterday" : day(d));
+
+  return (
+    <div className="space-y-8">
+      {/* Masthead */}
+      <div className="border-b border-border pb-4">
+        <Label>Today's brief</Label>
+        <h1 className="mt-2 text-3xl leading-tight sm:text-[40px]">{greeting}.</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{b.vessel} · {longDay}</p>
+        <p className={cn("mt-3 text-[15px]", attention ? "text-amber-300" : "text-emerald-300")}>
+          {attention
+            ? `${attention} thing${attention === 1 ? "" : "s"} need${attention === 1 ? "s" : ""} attention — see below.`
+            : "Nothing needs you today — everything is in date and nothing is waiting on you."}
+        </p>
+      </div>
+
+      {/* Figures */}
+      <section className="grid grid-cols-2 gap-x-6 gap-y-5 lg:grid-cols-4">
+        <Figure label="Compliance" value={compliancePct == null ? "—" : `${compliancePct}%`}
+                note={expiredNow.length ? `${expiredNow.length} expired — JLS is on it` : b.compliance.total ? "All in date" : "Nothing tracked yet"}
+                tone={expiredNow.length ? "warn" : b.compliance.total ? "good" : undefined} />
+        <Figure label="Due this week" value={dueThisWeek.length} note={dueThisWeek.length ? `next: ${dueThisWeek[0].title}` : "No renewals in the next 7 days"}
+                tone={dueThisWeek.length ? "warn" : "good"} />
+        <Figure label="In hand with JLS" value={b.ahead.openRequests.length} note={`open request${b.ahead.openRequests.length === 1 ? "" : "s"}`} />
+        {spend ? (
+          <Figure label={`Spend · ${monthName(b.month, false)} so far`} value={<>{spend.currency} {money(spend.month)}</>}
+                  note={`${spend.invoiceCount} invoice${spend.invoiceCount === 1 ? "" : "s"}`} />
+        ) : (
+          <Figure label="Cruising permit" value={b.compliance.cruisingPermit ? day(b.compliance.cruisingPermit) : "—"}
+                  note={b.compliance.cruisingPermit ? `valid to ${new Date(`${b.compliance.cruisingPermit}T00:00:00Z`).getUTCFullYear()}` : "Not on file"} />
+        )}
+      </section>
+
+      {/* Needs attention */}
+      {attention > 0 && (
+        <section>
+          <div className="border-b border-border pb-2"><h2 className="text-xl">Needs attention</h2></div>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {(expiredNow.length > 0 || dueThisWeek.length > 0) && (
+              <SectionCard className="border-amber-500/40 p-4">
+                <Label>Papers</Label>
+                {expiredNow.slice(0, 5).map((e, i) => (
+                  <div key={`x${i}`} className="mt-2 flex items-baseline justify-between gap-2 text-sm">
+                    <span className="min-w-0 truncate">{e.title}</span>
+                    <span className="shrink-0 text-xs tabular-nums text-red-300">expired {day(e.date)}</span>
+                  </div>
+                ))}
+                {dueThisWeek.slice(0, 5).map((e, i) => (
+                  <div key={`d${i}`} className="mt-2 flex items-baseline justify-between gap-2 text-sm">
+                    <span className="min-w-0 truncate">{e.title}</span>
+                    <span className="shrink-0 text-xs tabular-nums text-amber-300">{when(e.date)}</span>
+                  </div>
+                ))}
+                <button type="button" onClick={() => onOpen("calendar")} className="mt-3 text-xs font-medium text-primary hover:underline">Compliance calendar ›</button>
+              </SectionCard>
+            )}
+            {b.ahead.awaitingDecision.length > 0 && (
+              <SectionCard className="border-primary/40 p-4">
+                <Label>Awaiting your decision</Label>
+                {b.ahead.awaitingDecision.slice(0, 4).map((q, i) => (
+                  <div key={i} className="mt-2 flex items-baseline justify-between gap-2 text-sm">
+                    <span>Quotation {q.docNumber ?? ""}</span>
+                    <span className="tabular-nums">{q.currency} {money(q.total)}</span>
+                  </div>
+                ))}
+                <button type="button" onClick={() => onOpen("invoices")} className="mt-3 text-xs font-medium text-primary hover:underline">Review quotations ›</button>
+              </SectionCard>
+            )}
+          </div>
+        </section>
+      )}
+
+      <div className="grid gap-8 lg:grid-cols-2">
+        {/* Today & yesterday */}
+        <section>
+          <div className="border-b border-border pb-2"><h2 className="text-xl">Today & since yesterday</h2></div>
+          {recent.length === 0 && !chartersSoon.some((c) => c.start === today) ? (
+            <p className="mt-4 text-sm text-muted-foreground">Nothing new on the record since yesterday.</p>
+          ) : (
+            <ol className="mt-2">
+              {chartersSoon.filter((c) => c.start === today).map((c, i) => (
+                <li key={`c${i}`} className="grid grid-cols-[72px_minmax(0,1fr)] gap-3 border-b border-border/50 py-2.5">
+                  <span className="pt-0.5 text-xs text-muted-foreground">Today</span>
+                  <span className="text-sm font-medium">Charter begins · {c.title}</span>
+                </li>
+              ))}
+              {recent.map((t, i) => (
+                <li key={i} className="grid grid-cols-[72px_minmax(0,1fr)] gap-3 border-b border-border/50 py-2.5 last:border-0">
+                  <span className="pt-0.5 text-xs text-muted-foreground">{when(t.date)}</span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium">{t.title}</span>
+                    {t.detail && <span className="block text-xs text-muted-foreground">{t.detail}</span>}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
+
+        {/* The week ahead */}
+        <section>
+          <div className="border-b border-border pb-2"><h2 className="text-xl">The next 7 days</h2></div>
+          {upcomingEvents.length === 0 && chartersSoon.filter((c) => c.start > today).length === 0 && dueThisWeek.filter((e) => e.date > today).length === 0 ? (
+            <p className="mt-4 text-sm text-muted-foreground">A clear week — nothing planned or due.</p>
+          ) : (
+            <ol className="mt-2">
+              {[
+                ...upcomingEvents.map((t) => ({ date: t.date, title: t.title, detail: t.detail })),
+                ...chartersSoon.filter((c) => c.start > today).map((c) => ({ date: c.start, title: `Charter · ${c.title}`, detail: [c.from, c.guests ? `${c.guests} guests` : null].filter(Boolean).join(" · ") || null })),
+                ...dueThisWeek.filter((e) => e.date > today).map((e) => ({ date: e.date, title: `${e.title} expires`, detail: "JLS is tracking the renewal" })),
+              ].sort((x, y) => x.date.localeCompare(y.date)).map((t, i) => (
+                <li key={i} className="grid grid-cols-[72px_minmax(0,1fr)] gap-3 border-b border-border/50 py-2.5 last:border-0">
+                  <span className="pt-0.5 text-xs tabular-nums text-muted-foreground">{new Date(`${t.date}T00:00:00Z`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", timeZone: "UTC" })}</span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium">{t.title}</span>
+                    {t.detail && <span className="block text-xs text-muted-foreground">{t.detail}</span>}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
+      </div>
+
+      {/* In hand with JLS */}
+      {b.ahead.openRequests.length > 0 && (
+        <section>
+          <div className="border-b border-border pb-2"><h2 className="text-xl">In hand with JLS</h2></div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            {b.ahead.openRequests.slice(0, 6).map((r, i) => (
+              <div key={i} className="rounded-xl border border-border/60 px-3 py-2 text-sm">
+                <div className="truncate font-medium">{r.title}</div>
+                <div className="text-xs text-muted-foreground">{r.reference ? `${r.reference} · ` : ""}{r.status.replace(/_/g, " ")}</div>
+              </div>
+            ))}
+          </div>
+          <button type="button" onClick={() => onOpen("requests")} className="mt-3 text-xs font-medium text-primary hover:underline">
+            {b.ahead.openRequests.length > 6 ? `All ${b.ahead.openRequests.length} requests ›` : "Requests ›"}
+          </button>
+        </section>
+      )}
+
+      <div className="flex justify-end">
+        <button type="button" onClick={onSeeMonth} className="text-sm font-medium text-primary hover:underline">
+          See the month at a glance — spend, compliance and the agent's note ›
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function MonthBrief({ yachtId, preview, onOpen }: {
   yachtId: string; preview: boolean; onOpen: (tab: "balances" | "invoices" | "requests" | "calendar") => void;
 }) {
   const [month, setMonth] = useState<string | null>(null);
@@ -105,7 +329,7 @@ export function BriefSection({ yachtId, preview, onOpen }: {
       {/* Masthead */}
       <div className="flex flex-wrap items-end justify-between gap-3 border-b border-border pb-4">
         <div>
-          <Label>Owner's brief</Label>
+          <Label>This month · owner's summary</Label>
           <div className="mt-1 text-sm text-muted-foreground">{b.vessel} · {monthName(b.month)}{b.monthToDate ? " · month to date" : ""}</div>
         </div>
         <div className="flex items-center gap-2">

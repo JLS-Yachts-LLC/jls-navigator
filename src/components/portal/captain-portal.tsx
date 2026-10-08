@@ -658,7 +658,7 @@ type NavGroup = { title?: string; module?: "core" | "management"; items: NavItem
 // everything JLS does for the vessel as its agent; ON BOARD (management) is the
 // crew's own tools, shown only when the vessel has that module switched on.
 const NAV_GROUPS: NavGroup[] = [
-  { items: [{ key: "home", label: "Home", icon: Home }, { key: "brief", label: "Owner's brief", icon: BookOpen }] },
+  { items: [{ key: "home", label: "Home", icon: Home }, { key: "brief", label: "Today's brief", icon: BookOpen }] },
   {
     title: "Agency with JLS",
     module: "core",
@@ -969,7 +969,7 @@ function PortalShell({ link, email, onSignOut, preview = false, vessels = [], on
 type ModuleDef = { key: Tab; label: string; blurb: string; icon: any; accent: string };
 // Core tiles — everything JLS does for the vessel as its agent.
 const CORE_MODULES: ModuleDef[] = [
-  { key: "brief",     label: "Owner's brief",          blurb: "The month at a glance — spend, compliance & what's next", icon: BookOpen, accent: "text-primary bg-primary/10 border-primary/25" },
+  { key: "brief",     label: "Today's brief",          blurb: "What's on today, what needs you & the week ahead", icon: BookOpen, accent: "text-primary bg-primary/10 border-primary/25" },
   { key: "orders",    label: "Order from JLS",         blurb: "Provisioning, fuel, uniform, spares — item by item", icon: ShoppingCart, accent: "text-primary bg-primary/10 border-primary/25" },
   { key: "requests",  label: "Requests",               blurb: "Permits, IT, visas & anything else",           icon: LifeBuoy,   accent: "text-primary bg-primary/10 border-primary/25" },
   { key: "movements", label: "Arrivals & departures",  blurb: "Pre-arrival form & crew sign-on / sign-off",   icon: Anchor,     accent: "text-primary bg-primary/10 border-primary/25" },
