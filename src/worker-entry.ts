@@ -60,7 +60,6 @@ import { visaVesselPrefsHandler } from './routes/api.visa.vessel-prefs'
 import { orbit2NotifyHandler } from './routes/api.orbit2.notify'
 import { nativeLanguageResolveDefaultHandler } from './routes/api.native-language.resolve-default'
 import { nativeLanguageSaveHandler } from './routes/api.native-language.save'
-import { runWeeklyVisaReports } from './lib/visa-reporting/runWeeklyVisaReports.server'
 import { runWeeklyFleetFinance } from './lib/fleet-finance-report.server'
 import { trackRun } from './lib/automations.server'
 import { runVisaExpiryFlagJob } from './lib/visa/visaExpiryFlags.server'
@@ -1737,16 +1736,8 @@ export default {
         .catch((e) => console.error('[fleet-finance] error:', e))
     )
 
-    // Weekly visa report — Friday 08:00 GST (04:00 UTC). Generates + emails a
-    // visa-status report to every yacht opted in (send_visa_reports = true).
-    if (utcHour === 4 && new Date().getUTCDay() === 5 && new Date().getUTCMinutes() < 15) {
-      ctx.waitUntil(
-        trackRun({ key: 'weekly-visa-report', name: 'Weekly visa report', source: 'worker-cron', trigger_type: 'schedule', category: 'Visa' },
-          () => runWeeklyVisaReports())
-          .then((r) => console.log(`[weekly-visa] vessels=${r.vessels} generated=${r.generated} sent=${r.sent}`))
-          .catch((e) => console.error('[weekly-visa] error:', e))
-      )
-    }
+    // (The Friday "weekly visa report" — yachts.send_visa_reports — is retired:
+    // a vessel's visa report is now one of its Automated Reports, above.)
 
     // Run UAE visa expiry-flag engine once daily at 03:00 UTC (07:00 UAE time).
     // Fires 30-calendar-day, 10-working-day and 5-working-day flags + notifications.

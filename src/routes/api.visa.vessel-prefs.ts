@@ -31,7 +31,6 @@ const PREF_COLUMNS =
   "id, vessel_name, visa_report_email, send_visa_reports, vessel_whatsapp, send_visa_via_whatsapp, allow_crew_email_delivery, allow_crew_whatsapp_delivery";
 
 const E164 = /^\+[1-9]\d{1,14}$/;
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function visaVesselPrefsHandler(
   request: Request,
@@ -68,21 +67,9 @@ export async function visaVesselPrefsHandler(
     const yachtId = body.yacht_id as string | undefined;
     if (!yachtId) return json({ error: "yacht_id is required" }, 400);
 
-    const sendReports = !!body.send_visa_reports;
-    const email =
-      (body.visa_report_email as string | undefined)?.trim() || null;
     const whatsapp =
       (body.vessel_whatsapp as string | undefined)?.trim() || null;
 
-    if (sendReports && (!email || !EMAIL.test(email))) {
-      return json(
-        {
-          error:
-            "A valid visa_report_email is required when reports are enabled",
-        },
-        400,
-      );
-    }
     if (whatsapp && !E164.test(whatsapp)) {
       return json(
         { error: "vessel_whatsapp must be E.164 format (e.g. +97150…)" },
@@ -91,8 +78,8 @@ export async function visaVesselPrefsHandler(
     }
 
     const update = {
-      send_visa_reports: sendReports,
-      visa_report_email: email,
+      // (send_visa_reports / visa_report_email are retired — a vessel's visa
+      // report recipients are set in Reports → Automated Reports.)
       vessel_whatsapp: whatsapp,
       send_visa_via_whatsapp: !!body.send_visa_via_whatsapp && !!whatsapp,
       allow_crew_email_delivery: !!body.allow_crew_email_delivery,

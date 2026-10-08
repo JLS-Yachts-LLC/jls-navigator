@@ -587,7 +587,7 @@ export function PolarisVisaReports({
               title={
                 canSend
                   ? undefined
-                  : "Enable report emails for this vessel first"
+                  : "Add this vessel's visa report recipients in Reports → Automated Reports first"
               }
             />
           </>

@@ -728,9 +728,8 @@ function AllRunsLog({ items, globalSearch }: { items: Automation[]; globalSearch
 const EMAIL_AUTOMATIONS: Record<string, { day: string; time: string; blurb: string }> = {
   "weekly-immigration-report": { day: "mon", time: "07:00", blurb: "Sign-ons and sign-offs planned for the week." },
   "weekly-fleet-finance":      { day: "mon", time: "08:00", blurb: "Outstanding QuickBooks balances per yacht." },
-  // Deliberately NOT weekly-visa-report: it emails each yacht that has opted in
-  // (yachts.send_visa_reports), not a list typed here, so a "To" box would
-  // describe something this screen does not control.
+  // (weekly-visa-report is retired: per-vessel reports — recipients, day and
+  // time for each vessel — are on Reports → Automated Reports.)
 };
 
 const DAY_OPTIONS = [

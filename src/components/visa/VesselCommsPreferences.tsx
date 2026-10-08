@@ -133,27 +133,12 @@ export function VesselCommsPreferences({
       </p>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-        {/* Email reports */}
-        <div>
-          <label style={label}>
-            <input
-              type="checkbox"
-              checked={!!prefs.send_visa_reports}
-              onChange={(e) => set("send_visa_reports", e.target.checked)}
-            />
-            Send weekly visa reports by email
-          </label>
-          {prefs.send_visa_reports && (
-            <div style={{ marginTop: 10, marginLeft: 26 }}>
-              <input
-                type="email"
-                placeholder="reports@vessel.com"
-                value={prefs.visa_report_email ?? ""}
-                onChange={(e) => set("visa_report_email", e.target.value)}
-                style={input}
-              />
-            </div>
-          )}
+        {/* Email reports — moved to Automated Reports (per vessel, own recipients and schedule) */}
+        <div style={{ fontSize: 14, color: COLORS.muted }}>
+          Who receives this vessel's visa report, and when, is now set in{" "}
+          <a href="/polaris-redesign?screen=vessel-report-automations" style={{ color: COLORS.frost, textDecoration: "underline" }}>
+            Reports → Automated Reports
+          </a>.
         </div>
 
         {/* Vessel WhatsApp */}

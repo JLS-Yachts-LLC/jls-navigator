@@ -6,6 +6,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { withVisaReportRecipients } from "@/lib/vessel-reports/visa-recipients";
 import {
   getVisaStatus,
   type VisaStatus,
@@ -50,9 +51,10 @@ export function useYachts(): { yachts: YachtOption[]; loading: boolean } {
     void (async () => {
       const { data } = await (supabase as any)
         .from("yachts")
-        .select("id, vessel_name, send_visa_reports, visa_report_email")
+        .select("id, vessel_name")
         .order("vessel_name", { ascending: true });
-      setYachts((data ?? []) as YachtOption[]);
+      // Visa report recipients now come from Automated Reports.
+      setYachts((await withVisaReportRecipients(data ?? [])) as YachtOption[]);
       setLoading(false);
     })();
   }, []);

@@ -31,7 +31,7 @@ export async function sendVesselVisaReport(
   const { data: report } = await sb
     .from("visa_report_log")
     .select(
-      "*, yachts(vessel_name, visa_report_email, send_visa_reports, vessel_whatsapp, send_visa_via_whatsapp)",
+      "*, yachts(vessel_name, vessel_whatsapp, send_visa_via_whatsapp)",
     )
     .eq("id", reportId)
     .single();
@@ -39,7 +39,14 @@ export async function sendVesselVisaReport(
   if (!report) return { ok: false, reportId, error: "Report not found" };
 
   const yacht = report.yachts;
-  if (!yacht?.send_visa_reports || !yacht?.visa_report_email) {
+  // Who it goes to is the vessel's Visa status report in Reports → Automated
+  // Reports (vessel_report_subscriptions) — the old yachts.send_visa_reports /
+  // visa_report_email setting is retired.
+  const { data: sub } = await sb.from("vessel_report_subscriptions")
+    .select("recipients, cc").eq("yacht_id", report.yacht_id).eq("report_key", "visa_status").maybeSingle();
+  const to: string[] = sub?.recipients ?? [];
+  const cc: string[] = sub?.cc ?? [];
+  if (!to.length) {
     await sb
       .from("visa_report_log")
       .update({ status: "skipped" })
@@ -48,7 +55,7 @@ export async function sendVesselVisaReport(
       ok: false,
       reportId,
       emailStatus: "skipped",
-      error: "Vessel not opted in to visa report emails",
+      error: "No visa report recipients for this vessel — add them in Reports → Automated Reports",
     };
   }
 
@@ -94,7 +101,7 @@ export async function sendVesselVisaReport(
 
   let emailError: string | null = null;
   try {
-    await sendEmail({ to: [yacht.visa_report_email], subject, html, text });
+    await sendEmail({ to, cc, subject, html, text });
   } catch (e) {
     emailError = e instanceof Error ? e.message : "SES send failed";
   }
@@ -102,7 +109,7 @@ export async function sendVesselVisaReport(
   await sb.from("visa_email_send_log").insert({
     report_log_id: reportId,
     yacht_id: report.yacht_id,
-    sent_to: yacht.visa_report_email,
+    sent_to: [...to, ...cc].join(", "),
     channel: "vessel_email",
     status: emailError ? "failed" : "sent",
     error_message: emailError,

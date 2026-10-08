@@ -24,6 +24,7 @@ import {
   type VisaStatus,
 } from "@/lib/visa-reporting/statusHelpers";
 import { VesselCommsPreferences } from "@/components/visa/VesselCommsPreferences";
+import { withVisaReportRecipients } from "@/lib/vessel-reports/visa-recipients";
 
 interface Yacht {
   id: string;
@@ -77,9 +78,10 @@ export function VesselReportScreen() {
       // `as any`: generated Database types don't yet include the new comms columns.
       const { data } = await (supabase as any)
         .from("yachts")
-        .select("id, vessel_name, visa_report_email, send_visa_reports")
+        .select("id, vessel_name")
         .order("vessel_name", { ascending: true });
-      const list = (data ?? []) as Yacht[];
+      // Visa report recipients now come from Automated Reports.
+      const list = (await withVisaReportRecipients(data ?? [])) as Yacht[];
       setYachts(list);
       const stored =
         typeof window !== "undefined"
@@ -433,9 +435,9 @@ export function VesselReportScreen() {
               // refresh the yacht's send-eligibility in the selector cache
               const { data } = await (supabase as any)
                 .from("yachts")
-                .select("id, vessel_name, visa_report_email, send_visa_reports")
+                .select("id, vessel_name")
                 .order("vessel_name", { ascending: true });
-              setYachts((data ?? []) as Yacht[]);
+              setYachts((await withVisaReportRecipients(data ?? [])) as Yacht[]);
               setToast("Preferences saved.");
             }}
           />
@@ -594,7 +596,7 @@ export function VesselReportScreen() {
               title={
                 canSend
                   ? "Send this report to the vessel"
-                  : "Enable report emails for this vessel in Report settings first"
+                  : "Add this vessel's visa report recipients in Reports → Automated Reports first"
               }
               style={btn(!canSend || sending ? "disabled" : "primary")}
             >
