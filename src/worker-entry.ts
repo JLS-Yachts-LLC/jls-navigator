@@ -1380,6 +1380,9 @@ export default {
     if (url.pathname === '/api/qb/customers' && request.method === 'GET') {
       return qbCustomersHandler(request)
     }
+    if (url.pathname === '/api/vessel-reports') {
+      return (await import('./routes/api.vessel-reports')).vesselReportsHandler(request)
+    }
     if (url.pathname === '/api/qb/vessel-accounts') {
       return (await import('./routes/api.qb.vessel-accounts')).qbVesselAccountsHandler(request)
     }
@@ -1690,6 +1693,15 @@ export default {
     )
 
     // (MyShipTracking positions moved to the hourly block above — see isHourly.)
+
+    // Automated vessel reports (Reports → Automated Reports): each vessel's
+    // opted-in reports, on that vessel's own day/time, to its own recipients.
+    ctx.waitUntil(
+      import('./lib/vessel-reports/run.server')
+        .then((m) => m.runDueVesselReports())
+        .then((r) => { if (r.due) console.log(`[vessel-reports] due=${r.due} sent=${r.sent} failed=${r.failed}`) })
+        .catch((e) => console.error('[vessel-reports] error:', e instanceof Error ? e.message : String(e)))
+    )
 
     // Weekly immigration digest — day, time and recipients all come from the
     // automation's config (Developer → Automations); the values below are only

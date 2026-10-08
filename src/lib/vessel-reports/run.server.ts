@@ -13,7 +13,7 @@
  */
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { sendGraphEmailWithAttachments } from "@/lib/graph-mail.server";
-import { isDueNow, localNow, parseSchedule, DEFAULT_TZ } from "@/lib/automation-schedule.server";
+import { isDueNow, parseSchedule, DEFAULT_TZ } from "@/lib/automation-schedule.server";
 import { buildVesselReport } from "./build.server";
 import { isEmail, type ReportKey } from "./catalogue";
 
@@ -65,7 +65,6 @@ export async function runDueVesselReports(now = new Date()): Promise<{ due: numb
 
     // The slot names this firing (local date + time), so it's claimed once.
     const local = new Intl.DateTimeFormat("en-CA", { timeZone: sched.tz ?? DEFAULT_TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
-    void localNow;
     const slot = `${local} ${sched.time}`;
     const { data: claimed, error: claimErr } = await sb.from("vessel_report_runs").insert({
       subscription_id: sub.id, yacht_id: sub.yacht_id, report_key: sub.report_key,

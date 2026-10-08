@@ -136,6 +136,8 @@ export const NAV_GROUPS: NavGroup[] = [
         roles: ["global_admin", "crew_immigration", "captain"],
       },
       { label: "Sign On/Off", module: "crew_movements", icon: "clipboard-list", screen: "soso-reports" },
+      // Reports emailed to a vessel on a schedule — opted in per vessel, own recipients.
+      { label: "Automated Reports", icon: "calendar-time", screen: "vessel-report-automations", roles: ["global_admin"] },
       { label: "Crew Documents", module: "crew_immigration", icon: "files", screen: "documents" },
       // Every secure link sent to a client, who opened it, and a way to revoke one.
       { label: "Document Links", icon: "link", screen: "route-document-links", route: "/document-links" },
