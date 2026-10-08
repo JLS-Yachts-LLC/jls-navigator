@@ -25,7 +25,7 @@ import { Input } from "@/components/ui/input";
 import {
   FileText, FolderPlus, Folder, FolderOpen, ChevronRight, ExternalLink, Cloud, CloudOff,
   Loader2, Trash2, UploadCloud, DownloadCloud, ShieldQuestion, GripVertical, RefreshCw,
-  Upload, ArrowLeftRight, Copy, Eye, EyeOff,
+  Upload, ArrowLeftRight, Copy, Eye, Share2,
 } from "lucide-react";
 import { updateOrThrow } from "@/lib/db-write";
 import { toast } from "sonner";
@@ -597,12 +597,12 @@ function DocRowView({
           {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Eye className="h-3 w-3" />} In portal
         </Button>
       ) : (
-        <Button size="sm" variant="outline" className="h-6 shrink-0 gap-1 px-1.5 text-[10.5px]"
+        <Button size="sm" variant="outline" className="h-6 shrink-0 gap-1 border-violet-500/50 bg-violet-500/10 px-1.5 text-[10.5px] text-violet-600 hover:bg-violet-500/20 hover:text-violet-700 dark:text-violet-300 dark:hover:text-violet-200"
           onClick={() => onRelease(true)} disabled={busy}
           title={inPolaris
             ? "Release to the vessel's Client Portal — the client can open it, read-only"
             : "Import this file into Polaris and release it to the vessel's Client Portal (read-only)"}>
-          {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <EyeOff className="h-3 w-3" />} Release
+          {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Share2 className="h-3 w-3" />} Release
         </Button>
       )}
 
