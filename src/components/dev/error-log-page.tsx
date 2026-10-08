@@ -43,6 +43,8 @@ function useClientLogs(showResolved: boolean) {
       let q = (supabase as any)
         .from("client_logs")
         .select("*")
+        // Errors and warnings only — 'info' rows are diagnostics (e.g. the portal's start-up timing).
+        .in("level", ["error", "warn"])
         .order("created_at", { ascending: false })
         .limit(500);
       if (!showResolved) q = q.eq("resolved", false);
