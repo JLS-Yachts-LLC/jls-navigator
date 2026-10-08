@@ -11,11 +11,13 @@
  *                                                     → change a stock count (body: { delta })
  *   DELETE /api/portal/onboard?kind=<kind>&id=        → remove one
  *
+ *   POST   /api/portal/onboard?kind=inventory_item&id=&action=checked
+ *                                                     → record that an item was seen and checked today (body: { condition? })
  *   POST   /api/portal/onboard?kind=rest_hours&action=set
  *                                                     → record one crew member's rest for a day
  *                                                       (body: { crew_member_id, day, rest_hours | null, notes? })
  *
- * kind = pms_task | pms_equipment | charter | ism_cert | ism_drill | stock_item | handover | rest_hours
+ * kind = pms_task | pms_equipment | charter | ism_cert | ism_drill | stock_item | handover | rest_hours | inventory_item
  *
  * The tables are read-only to portal logins at the database (captain_select
  * only), so writes come through here with the service role, hard-filtered to the
@@ -87,17 +89,26 @@ const FIELDS: Record<OnboardKind, FieldSpec> = {
   },
   // Written only through action=set (one row per crew member per day).
   rest_hours: {},
+  inventory_item: {
+    name: 'text', category: 'text',
+    department: { oneOf: ['galley', 'interior', 'bar', 'deck', 'engine', 'safety', 'other'] },
+    location: 'text', quantity: 'int',
+    condition: { oneOf: ['new', 'good', 'fair', 'poor', 'damaged', 'missing'] },
+    make: 'text', model: 'text', serial_number: 'text', supplier: 'text',
+    purchase_date: 'date', purchase_price: 'num', currency: { oneOf: ['EUR', 'USD', 'AED', 'GBP'] },
+    warranty_expiry: 'date', last_checked: 'date', notes: 'longtext',
+  },
 }
 
 /** The one field each kind can't be saved without. */
 const REQUIRED: Record<OnboardKind, string> = {
   pms_task: 'title', pms_equipment: 'name', charter: 'charterer_name', ism_cert: 'title', ism_drill: 'drill_type',
-  stock_item: 'name', handover: 'title', rest_hours: 'rest_hours',
+  stock_item: 'name', handover: 'title', rest_hours: 'rest_hours', inventory_item: 'name',
 }
 const REQUIRED_LABEL: Record<OnboardKind, string> = {
   pms_task: 'A job title', pms_equipment: 'An equipment name', charter: "The charterer's name",
   ism_cert: 'A certificate title', ism_drill: 'The drill type', stock_item: 'An item name',
-  handover: 'A title', rest_hours: 'Hours of rest',
+  handover: 'A title', rest_hours: 'Hours of rest', inventory_item: 'An item name',
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -329,6 +340,23 @@ export async function portalOnboardHandler(request: Request): Promise<Response> 
       const { error } = await sb.from('onboard_stock_items').update({ quantity }).eq('id', item.id).eq('yacht_id', yacht.yachtId)
       if (error) throw error
       return json({ ok: true, quantity })
+    }
+
+    if (request.method === 'POST' && url.searchParams.get('action') === 'checked') {
+      if (kind !== 'inventory_item') return json({ error: 'Only inventory can be checked' }, 400)
+      const item = await ownRow(sb, yacht, kind, id)
+      if (!item) return json({ error: 'Item not found' }, 404)
+      const update: Record<string, any> = {
+        last_checked: new Date().toISOString().slice(0, 10),
+        last_checked_by_name: await callerName(sb, yacht),
+      }
+      if (body.condition != null && body.condition !== '') {
+        const c = cleanFields('inventory_item', { condition: body.condition })
+        update.condition = c.condition
+      }
+      const { error } = await sb.from('onboard_inventory_items').update(update).eq('id', item.id).eq('yacht_id', yacht.yachtId)
+      if (error) throw error
+      return json({ ok: true, ...update })
     }
 
     if (request.method === 'POST' && url.searchParams.get('action') === 'done') {

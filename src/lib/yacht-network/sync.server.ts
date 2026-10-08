@@ -179,3 +179,91 @@ export async function fetchPartnerDattoDevices(): Promise<{ devices: unknown[] }
     return { error: e instanceof Error ? e.message : String(e) }
   }
 }
+
+export interface TicketStatusSyncResult {
+  checked: number
+  closed: string[]
+  errors: string[]
+}
+
+/**
+ * Close the Service Desk tickets New Horizon has closed.
+ *
+ * Every ticket here is mirrored onto New Horizon's desk by email (nh-mirror),
+ * and they work it there — but their reply email carries no status, and a close
+ * without a reply sends nothing, so the ticket used to sit open here forever.
+ * Each run asks New Horizon (over the Yacht IT partner link, scoped to JLS by
+ * the secret) about the mirrored tickets still open on our side; any they have
+ * solved or closed is resolved / closed here too, with their last reply filed
+ * as an internal note. One way only: closing here never closes theirs.
+ */
+export async function syncNewHorizonTicketStatus(): Promise<TicketStatusSyncResult | null> {
+  const sb = admin() as any
+  const r = await remote(sb)
+  if (!r) return null
+  const result: TicketStatusSyncResult = { checked: 0, closed: [], errors: [] }
+
+  const { data: open, error } = await sb
+    .from('it_tickets')
+    .select('id, ticket_no, resolution')
+    .in('status', ['open'])
+    .not('nh_mirrored_at', 'is', null)
+    .limit(200)
+  if (error) { result.errors.push(error.message); return result }
+  const byRef = new Map<string, any>((open ?? []).filter((t: any) => t.ticket_no).map((t: any) => [String(t.ticket_no).toUpperCase(), t]))
+  result.checked = byRef.size
+  if (!byRef.size) return result
+
+  let remoteTickets: any[] = []
+  try {
+    const out = await call(r, '/api/public/yacht-it/tickets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refs: [...byRef.keys()] }),
+    })
+    remoteTickets = Array.isArray(out?.tickets) ? out.tickets : []
+  } catch (e) {
+    result.errors.push(e instanceof Error ? e.message : String(e))
+    return result
+  }
+
+  for (const nh of remoteTickets) {
+    const ours = byRef.get(String(nh?.ref ?? '').toUpperCase())
+    if (!ours || (nh.status !== 'solved' && nh.status !== 'closed')) continue
+    try {
+      const when = nh.closedAt ?? new Date().toISOString()
+      const reply = typeof nh.reply?.body === 'string' ? nh.reply.body.trim() : ''
+      const who = nh.closedBy ? ` by ${nh.closedBy}` : ''
+      const note = reply
+        ? `Closed on the New Horizon-IT desk (ticket #${nh.number})${who}. Their response:\n\n${reply}`
+        : `Closed on the New Horizon-IT desk (ticket #${nh.number})${who}. No reply was sent with it.`
+
+      // Claim it first: only a still-open ticket is closed, so two overlapping
+      // runs can't both file the note.
+      const patch: Record<string, unknown> = {
+        status: nh.status === 'closed' ? 'closed' : 'resolved',
+        resolved_at: when,
+        updated_at: new Date().toISOString(),
+      }
+      if (nh.status === 'closed') patch.closed_at = when
+      if (!ours.resolution && reply) patch.resolution = reply
+      const { data: claimed, error: upErr } = await sb.from('it_tickets').update(patch)
+        .eq('id', ours.id).eq('status', 'open').select('id')
+      if (upErr) throw new Error(upErr.message)
+      if (!claimed?.length) continue
+
+      const { error: msgErr } = await sb.from('it_ticket_messages').insert({
+        ticket_id: ours.id,
+        body: note,
+        internal: true,
+        author_name: 'New Horizon-IT (desk sync)',
+      })
+      if (msgErr) throw new Error(msgErr.message)
+      result.closed.push(ours.ticket_no)
+    } catch (e) {
+      result.errors.push(`${ours.ticket_no}: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+  if (result.closed.length) console.log(`[nh-ticket-sync] closed ${result.closed.join(', ')}`)
+  return result
+}

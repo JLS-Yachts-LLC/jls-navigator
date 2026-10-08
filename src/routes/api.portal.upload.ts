@@ -8,6 +8,8 @@
  *          | job_photo        id = pms_tasks id                                (Jobs & maintenance)
  *          | ism_cert         id = ism_certificates id — sets the certificate's file
  *          | client_document  title, doc_type — a document the client sends JLS
+ *          | task_file        id = onboard_tasks id                            (Tasks & backlog)
+ *          | inventory_file   id = onboard_inventory_items id — photo, receipt, warranty (Inventory)
  *
  * Every upload is checked here, not just in the browser: at most 15 MB; only
  * PDF, common image types and Office documents; and the file's first bytes must
@@ -57,6 +59,8 @@ const TARGETS = {
   job_photo: { section: 'pms', table: 'pms_tasks', imagesOnly: true },
   ism_cert: { section: 'ism', table: 'ism_certificates', imagesOnly: false },
   client_document: { section: 'documents', table: 'yacht_documents', imagesOnly: false },
+  task_file: { section: 'tasks', table: 'onboard_tasks', imagesOnly: false },
+  inventory_file: { section: 'inventory', table: 'onboard_inventory_items', imagesOnly: false },
 } as const
 type Target = keyof typeof TARGETS
 

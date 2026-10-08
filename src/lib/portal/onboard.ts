@@ -14,6 +14,7 @@ export const ONBOARD_KINDS = {
   stock_item:    { table: "onboard_stock_items", section: "stock" },
   handover:      { table: "onboard_handover_notes", section: "handover" },
   rest_hours:    { table: "onboard_rest_hours", section: "hours" },
+  inventory_item: { table: "onboard_inventory_items", section: "inventory" },
 } as const;
 export type OnboardKind = keyof typeof ONBOARD_KINDS;
 

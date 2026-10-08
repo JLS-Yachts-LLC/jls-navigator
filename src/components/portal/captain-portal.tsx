@@ -19,6 +19,7 @@ import {
   Bell, Compass, Wrench, CalendarRange, ShieldCheck, Menu, AlertTriangle, Eye,
   Pencil, Trash2, UserPlus, RotateCcw, ImagePlus,
   ClipboardCheck, NotebookPen, Anchor, IdCard, CalendarDays, Upload, BookOpen,
+  SquareKanban, Boxes,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { portalFetch, setPortalYacht } from "@/lib/portal/portal-fetch";
@@ -39,6 +40,8 @@ import { CalendarSection } from "@/components/portal/sections/calendar-section";
 import { BriefSection } from "@/components/portal/sections/brief-section";
 import { EsignPanel } from "@/components/portal/sections/esign-section";
 import { CharterSection } from "@/components/portal/sections/charter-section";
+import { TasksSection } from "@/components/portal/sections/tasks-section";
+import { InventorySection } from "@/components/portal/sections/inventory-section";
 import { IsmSection } from "@/components/portal/sections/ism-section";
 import { canApproveRequisition, hiddenSections, canSeeFinance, canManageVessel } from "@/lib/portal/portal-positions";
 import { cn } from "@/lib/utils";
@@ -652,7 +655,7 @@ function MfaVerifyScreen({ onDone, onSignOut }: { onDone: () => void; onSignOut:
 // ═══════════════════════════════════════════════════════════════════════════
 type Tab =
   | "home" | "brief"
-  | "alerts" | "positions" | "crew" | "documents" | "pms" | "balances" | "invoices" | "charter" | "ism" | "stock" | "checklists" | "hours" | "handover" | "movements" | "gatepasses" | "orders" | "calendar"
+  | "alerts" | "positions" | "crew" | "documents" | "pms" | "balances" | "invoices" | "charter" | "ism" | "tasks" | "inventory" | "stock" | "checklists" | "hours" | "handover" | "movements" | "gatepasses" | "orders" | "calendar"
   | "requests" | "logistics" | "chat" | "directory"
   | "finances"; // legacy alias used by the Home module launcher → routes to Invoices/Finance
 
@@ -689,6 +692,8 @@ const NAV_GROUPS: NavGroup[] = [
     title: "On board",
     module: "management",
     items: [
+      { key: "tasks", label: "Tasks & backlog", icon: SquareKanban },
+      { key: "inventory", label: "Inventory", icon: Boxes },
       { key: "stock", label: "Stock & requisitions", icon: Package },
       { key: "checklists", label: "Checklists", icon: ClipboardCheck },
       { key: "hours", label: "Hours of rest", icon: Clock },
@@ -945,6 +950,8 @@ function PortalShell({ link, email, onSignOut, preview = false, vessels = [], on
           <StockSection yachtId={link.yacht_id} canEdit={!preview} canApprove={canApproveRequisition(link.position)}
                         onOpenRequest={(id) => { setTab("requests"); setOpenRequestId(id); }} />
         )}
+        {tab === "tasks" && <TasksSection yachtId={link.yacht_id} canEdit={!preview} />}
+        {tab === "inventory" && <InventorySection yachtId={link.yacht_id} canEdit={!preview} showValue={canSeeFinance(link.position)} />}
         {tab === "checklists" && <ChecklistsSection yachtId={link.yacht_id} canEdit={!preview} />}
         {tab === "hours" && <HoursSection yachtId={link.yacht_id} canEdit={!preview} />}
         {tab === "handover" && <HandoverSection yachtId={link.yacht_id} canEdit={!preview} />}
@@ -988,6 +995,8 @@ const CORE_MODULES: ModuleDef[] = [
 ];
 // Management tiles — the crew's own tools; shown only when the vessel has the module.
 const MANAGEMENT_MODULES: ModuleDef[] = [
+  { key: "tasks",   label: "Tasks & backlog",    blurb: "The crew's board — backlog, to do, in progress & done", icon: SquareKanban, accent: "text-teal-300 bg-teal-500/10 border-teal-500/25" },
+  { key: "inventory", label: "Inventory",        blurb: "What the vessel owns, where it is & its condition",   icon: Boxes,        accent: "text-teal-300 bg-teal-500/10 border-teal-500/25" },
   { key: "stock",   label: "Stock & requisitions", blurb: "What's on board, what's low & orders to JLS", icon: Package,       accent: "text-teal-300 bg-teal-500/10 border-teal-500/25" },
   { key: "checklists", label: "Checklists",       blurb: "Departure, arrival, daily rounds & more",        icon: ClipboardCheck, accent: "text-teal-300 bg-teal-500/10 border-teal-500/25" },
   { key: "hours",   label: "Hours of rest",        blurb: "Daily rest per crew, MLC minimums flagged",      icon: Clock,         accent: "text-teal-300 bg-teal-500/10 border-teal-500/25" },

@@ -959,6 +959,11 @@ export default {
       const { portalOnboardHandler } = await import('./routes/api.portal.onboard')
       return portalOnboardHandler(request)
     }
+    // Client portal — On board task board: add, edit, move, comment.
+    if (url.pathname === '/api/portal/tasks') {
+      const { portalTasksHandler } = await import('./routes/api.portal.tasks')
+      return portalTasksHandler(request)
+    }
     // Client portal — On board requisitions: raise, approve, send to JLS, receive.
     if (url.pathname === '/api/portal/requisitions') {
       const { portalRequisitionsHandler } = await import('./routes/api.portal.requisitions')
@@ -1477,6 +1482,15 @@ export default {
           .then((m) => m.runYachtItSync())
           .then((r) => { if (r && !r.ok) console.error('[yacht-it-sync] failed:', r.error) })
           .catch((e) => console.error('[yacht-it-sync] error:', e instanceof Error ? e.message : String(e)))
+      );
+
+      // ── Every 5 min: close the Service Desk tickets New Horizon has closed ──
+      //    (same partner link) — their last reply is filed as an internal note.
+      ctx.waitUntil(
+        import('./lib/yacht-network/sync.server')
+          .then((m) => m.syncNewHorizonTicketStatus())
+          .then((r) => { if (r?.errors.length) console.error('[nh-ticket-sync]', r.errors.join(' | ')) })
+          .catch((e) => console.error('[nh-ticket-sync] error:', e instanceof Error ? e.message : String(e)))
       );
 
       // invocation — see syncPrioritisedLists().

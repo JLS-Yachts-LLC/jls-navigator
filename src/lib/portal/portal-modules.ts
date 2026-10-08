@@ -42,6 +42,8 @@ export const PORTAL_MODULES: Record<PortalModuleKey, {
     short: "Management",
     blurb: "The crew's own tools for running the vessel. JLS sees nothing here unless the crew send it across.",
     features: [
+      { key: "tasks",   label: "Tasks & backlog",      blurb: "The crew's task board — backlog, to do, in progress, waiting and done" },
+      { key: "inventory", label: "Inventory",          blurb: "Everything the vessel owns — where it is, its condition, serials, value and warranty" },
       { key: "stock",   label: "Stock & requisitions", blurb: "What's on board, minimum levels, and requisitions sent to JLS" },
       { key: "checklists", label: "Checklists", blurb: "Departure, arrival, daily rounds, guest turnaround — the crew's own" },
       { key: "hours",   label: "Hours of rest",       blurb: "Daily rest per crew member, with the MLC minimums flagged" },
@@ -71,6 +73,8 @@ export const SECTION_FEATURE: Record<string, { module: PortalModuleKey; feature:
   logistics: { module: "core", feature: "logistics" },
   chat:      { module: "core", feature: "chat" },
   directory: { module: "core", feature: "chat" },
+  tasks:     { module: "management", feature: "tasks" },
+  inventory: { module: "management", feature: "inventory" },
   stock:     { module: "management", feature: "stock" },
   checklists: { module: "management", feature: "checklists" },
   hours:     { module: "management", feature: "hours" },

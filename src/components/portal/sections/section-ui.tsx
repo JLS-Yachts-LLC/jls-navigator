@@ -135,7 +135,7 @@ export function RecordFormModal({ title, kind, fields, initial, onClose, onSaved
   );
 }
 
-export type UploadTarget = "checklist_photo" | "drill_file" | "job_photo" | "ism_cert" | "client_document";
+export type UploadTarget = "checklist_photo" | "drill_file" | "job_photo" | "ism_cert" | "client_document" | "task_file" | "inventory_file";
 
 /** Upload one file through /api/portal/upload; throws the server's message on failure. */
 export async function uploadPortalFile(fields: { target: UploadTarget; file: File; id?: string; item?: string; title?: string; doc_type?: string }) {

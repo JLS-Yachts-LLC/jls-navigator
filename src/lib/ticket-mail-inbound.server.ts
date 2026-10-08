@@ -490,9 +490,12 @@ export async function pollTicketMailbox(): Promise<InboundResult | null> {
       if (insErr) throw new Error(insErr.message)
 
       // A reply on a resolved ticket means it isn't finished — reopen it, the way
-      // any service desk does, so it comes back into the queue.
+      // any service desk does, so it comes back into the queue. Not New Horizon's
+      // own reply, though: their closing email often lands after the desk sync
+      // (syncNewHorizonTicketStatus) has already closed the ticket here.
       const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
-      if (ticket.status === 'resolved' || ticket.status === 'closed') {
+      const fromNewHorizon = from.toLowerCase() === NH_SUPPORT_MAILBOX.toLowerCase()
+      if ((ticket.status === 'resolved' || ticket.status === 'closed') && !fromNewHorizon) {
         patch.status = 'open'
         patch.resolved_at = null
         patch.closed_at = null
