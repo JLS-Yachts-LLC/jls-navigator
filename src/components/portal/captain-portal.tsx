@@ -819,7 +819,7 @@ function PortalShell({ link, email, onSignOut, preview = false, vessels = [], on
           <div className="truncate text-[11px] text-muted-foreground">{link.display_name ?? email}</div>
         </div>
 
-        <nav className="flex-1 space-y-4 overflow-y-auto px-3 pb-4">
+        <nav className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-3 pb-4">
           {navGroups.map((g, gi) => (
             <div key={gi}>
               {g.title && (
