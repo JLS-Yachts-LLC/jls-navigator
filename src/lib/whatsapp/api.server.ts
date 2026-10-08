@@ -274,13 +274,22 @@ export async function whatsappTemplateSyncHandler(request: Request): Promise<Res
     const db = admin();
     let updated = 0, imported = 0;
     const skipped: Array<{ name: string; reason: string }> = [];
+    const unsent: string[] = [];
     for (const r of remote) {
       const status = META_STATUS[String(r.status).toUpperCase()] ?? "pending";
       const rejection = r.rejected_reason && r.rejected_reason !== "NONE" ? r.rejected_reason : null;
-      const { data } = await db.from("wa_templates").update({
-        meta_template_id: r.id, status, rejection_reason: rejection, status_updated_at: new Date().toISOString(),
-      }).eq("name", r.name).eq("language", r.language).select("id");
-      if ((data ?? []).length) { updated += data.length; continue; }
+      const { data: local } = await db.from("wa_templates").select("id, status")
+        .eq("name", r.name).eq("language", r.language).maybeSingle();
+      if (local) {
+        // A draft holds edits Meta hasn't seen: its verdict is about the OLD
+        // version, so copying it across would mark unsent changes approved.
+        if (local.status === "draft") { unsent.push(r.name); continue; }
+        await db.from("wa_templates").update({
+          meta_template_id: r.id, status, rejection_reason: rejection, status_updated_at: new Date().toISOString(),
+        }).eq("id", local.id);
+        updated++;
+        continue;
+      }
 
       // Made in WhatsApp Manager rather than here: bring it in if Polaris can send it.
       const parsed = parseRemoteTemplate(r);
@@ -291,7 +300,7 @@ export async function whatsappTemplateSyncHandler(request: Request): Promise<Res
       });
       if (error) skipped.push({ name: r.name, reason: error.message }); else imported++;
     }
-    return json({ ok: true, onMeta: remote.length, updated, imported, skipped });
+    return json({ ok: true, onMeta: remote.length, updated, imported, skipped, unsent });
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : String(e) }, 502);
   }
@@ -897,7 +906,8 @@ export async function whatsappWebhookHandler(request: Request): Promise<Response
             status,
             rejection_reason: status === "rejected" ? (v.reason && v.reason !== "NONE" ? String(v.reason) : "Rejected") : null,
             status_updated_at: new Date().toISOString(),
-          }).eq("meta_template_id", String(v.message_template_id));
+          // Not onto a draft — its edits haven't been submitted, so the verdict isn't about them.
+          }).eq("meta_template_id", String(v.message_template_id)).neq("status", "draft");
         }
       }
     }

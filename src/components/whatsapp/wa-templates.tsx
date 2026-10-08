@@ -63,11 +63,13 @@ export function WaTemplates({ canEdit }: { canEdit: boolean }) {
   async function sync() {
     setBusy("sync");
     try {
-      const r = await waApi<{ onMeta: number; updated: number; imported: number; skipped: Array<{ name: string; reason: string }> }>("templates/sync", {});
-      const parts = [`${r.imported} imported`, `${r.updated} updated`, ...r.skipped.map((s) => `${s.name}: ${s.reason}`)];
-      (r.skipped.length ? toast.warning : toast.success)(
+      const r = await waApi<{ onMeta: number; updated: number; imported: number; skipped: Array<{ name: string; reason: string }>; unsent?: string[] }>("templates/sync", {});
+      const unsent = r.unsent ?? [];
+      const parts = [`${r.imported} imported`, `${r.updated} updated`, ...r.skipped.map((s) => `${s.name}: ${s.reason}`),
+        ...unsent.map((n) => `${n}: has changes not yet sent to Meta — click Submit to Meta on it`)];
+      (r.skipped.length || unsent.length ? toast.warning : toast.success)(
         `Found ${r.onMeta} template${r.onMeta === 1 ? "" : "s"} on this WhatsApp account`,
-        { description: parts.join(" · "), duration: r.skipped.length ? 15000 : 5000 });
+        { description: parts.join(" · "), duration: r.skipped.length || unsent.length ? 15000 : 5000 });
       await load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Sync failed");
