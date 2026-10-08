@@ -24,7 +24,9 @@ function admin() {
 }
 
 export async function vesselReportsHandler(request: Request): Promise<Response> {
-  const access = await requireAccess(request)
+  // Crew & Immigration: view to preview and send a test to yourself; edit to
+  // send to a vessel (checked below). Portal logins never hold the module.
+  const access = await requireAccess(request, { module: 'crew_immigration', level: 'view' })
   if (!access.ok) return access.response
   const db = admin() as any
   const uid = access.claims.userId
@@ -58,6 +60,10 @@ export async function vesselReportsHandler(request: Request): Promise<Response> 
     const body: any = await request.json().catch(() => null)
     const id = String(body?.subscriptionId ?? '')
     if (!/^[0-9a-f-]{36}$/i.test(id) || !['send', 'test'].includes(body?.action)) return json({ ok: false, error: 'Bad request' }, 400)
+    if (body.action === 'send') {
+      const canEdit = await requireAccess(request, { module: 'crew_immigration', level: 'edit' })
+      if (!canEdit.ok) return json({ ok: false, error: 'Sending to a vessel needs edit access to Crew & Immigration.' }, 403)
+    }
     const { sendVesselReportNow } = await import('@/lib/vessel-reports/run.server')
     const res = await sendVesselReportNow(id, uid, { test: body.action === 'test', testTo: profile.email ?? undefined })
     return json(res, res.ok ? 200 : 422)
