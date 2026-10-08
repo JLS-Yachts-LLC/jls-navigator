@@ -39,6 +39,7 @@ import { GatePassesSection } from "@/components/portal/sections/gatepasses-secti
 import { OrdersSection } from "@/components/portal/sections/orders-section";
 import { CalendarSection } from "@/components/portal/sections/calendar-section";
 import { BriefSection } from "@/components/portal/sections/brief-section";
+import { ReportsSection } from "@/components/portal/sections/reports-section";
 import { EsignPanel } from "@/components/portal/sections/esign-section";
 import { CharterSection } from "@/components/portal/sections/charter-section";
 import { TasksSection } from "@/components/portal/sections/tasks-section";
@@ -661,7 +662,7 @@ function MfaVerifyScreen({ onDone, onSignOut }: { onDone: () => void; onSignOut:
 type Tab =
   | "home" | "brief"
   | "alerts" | "positions" | "crew" | "documents" | "pms" | "balances" | "invoices" | "charter" | "ism" | "tasks" | "inventory" | "stock" | "checklists" | "hours" | "handover" | "movements" | "gatepasses" | "orders" | "calendar"
-  | "requests" | "logistics" | "chat" | "directory"
+  | "requests" | "logistics" | "chat" | "directory" | "reports"
   | "finances"; // legacy alias used by the Home module launcher → routes to Invoices/Finance
 
 type NavItem = { key: Tab; label: string; icon: any };
@@ -691,6 +692,7 @@ const NAV_GROUPS: NavGroup[] = [
       { key: "logistics", label: "Deliveries", icon: Truck },
       { key: "chat", label: "Chat", icon: MessageSquare },
       { key: "directory", label: "Directory", icon: Phone },
+      { key: "reports", label: "Email reports", icon: Mail },
     ],
   },
   {
@@ -967,6 +969,7 @@ function PortalShell({ link, email, onSignOut, preview = false, vessels = [], on
         {tab === "charter" && <CharterSection yachtId={link.yacht_id} canEdit={!preview} showFees={canSeeFinance(link.position)} />}
         {tab === "ism" && <IsmSection yachtId={link.yacht_id} canEdit={!preview} />}
         {tab === "directory" && <DirectoryTab />}
+        {tab === "reports" && <ReportsSection />}
         {tab === "brief" && <BriefSection yachtId={link.yacht_id} preview={preview} onOpen={(t) => { setTab(t); setOpenRequestId(null); }} />}
         </main>
       </div>

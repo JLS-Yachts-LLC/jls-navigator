@@ -909,6 +909,9 @@ export default {
     }
 
     // Client portal — vessel-scoped Finances (QuickBooks) & Logistics (ShipSync)
+    if (url.pathname === '/api/portal/reports') {
+      return (await import('./routes/api.portal.reports')).portalReportsHandler(request)
+    }
     if (url.pathname === '/api/portal/finance') {
       const { portalFinanceHandler } = await import('./routes/api.portal.finance')
       return portalFinanceHandler(request)

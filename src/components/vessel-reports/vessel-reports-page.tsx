@@ -1,19 +1,29 @@
 /**
- * Reports → Automated Reports.
+ * Reports → Automated Reports — every client's scheduled email reports in one place.
  *
- * Opt a vessel in to an automated report, say who it goes to and when, and
- * switch it on. Everything is per vessel: nothing goes to a vessel that hasn't
- * been opted in here, and each report has its own recipients — there is no
- * fleet-wide list. Settings live in vessel_report_subscriptions (RLS, staff);
- * the worker sends them (lib/vessel-reports/run.server).
+ *   All vessels   — every vessel against every report: set up, on/off, who it
+ *                   goes to, whether the client manages it. Bulk opt-in.
+ *   Activity      — every change (staff or client) and every send.
+ *   Report types  — what each report contains, its default schedule.
+ *
+ * Everything is per vessel: nothing goes to a vessel that hasn't been opted in,
+ * and each report has its own recipients. A report can be offered to the
+ * client (client_can_manage), who can then switch it on/off and change its
+ * recipients from the Client Portal (Email reports) — changes are marked as
+ * theirs here. Settings live in vessel_report_subscriptions (RLS, staff); the
+ * worker sends them (lib/vessel-reports/run.server).
  */
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { CalendarClock, Eye, FileDown, Loader2, Plus, Send, Ship, Trash2, X, FlaskConical, History } from "lucide-react";
+import {
+  CalendarClock, Eye, FileDown, Loader2, Plus, Send, Ship, Trash2, X, FlaskConical, History,
+  LayoutGrid, ListChecks, BookOpen, UserCheck, Search,
+} from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import {
@@ -28,14 +38,27 @@ type Sub = {
   id: string; yacht_id: string; report_key: ReportKey; enabled: boolean;
   recipients: string[]; cc: string[]; schedule: ReportSchedule;
   last_sent_at: string | null; last_status: string | null; last_error: string | null;
+  client_can_manage: boolean; changed_by_kind: "staff" | "client" | null; changed_by_name: string | null; changed_at: string | null;
 };
 type Run = {
   id: string; yacht_id: string; report_key: string; trigger: string; status: string;
   recipients: string[]; summary: string | null; error: string | null; created_at: string;
 };
+type Event = {
+  id: string; yacht_id: string; report_key: string; actor_kind: string; actor_name: string | null;
+  action: string; detail: any; created_at: string;
+};
+
+const SUB_COLS = "id, yacht_id, report_key, enabled, recipients, cc, schedule, last_sent_at, last_status, last_error, client_can_manage, changed_by_kind, changed_by_name, changed_at";
 
 const when = (iso: string | null) =>
   iso ? new Date(iso).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Dubai" }) : "—";
+
+const ACTION_LABEL: Record<string, string> = {
+  opted_in: "opted the vessel in", removed: "removed it", switched_on: "switched it on", switched_off: "switched it off",
+  recipients_changed: "changed who it goes to", schedule_changed: "changed the day/time",
+  offered_to_client: "let the client manage it", withdrawn_from_client: "stopped the client managing it",
+};
 
 async function api(path: string, init: RequestInit = {}) {
   const { data: { session } } = await supabase.auth.getSession();
@@ -44,101 +67,286 @@ async function api(path: string, init: RequestInit = {}) {
   return fetch(path, { ...init, headers });
 }
 
+type TabKey = "vessels" | "activity" | "types";
+const TABS: Array<{ key: TabKey; label: string; icon: any }> = [
+  { key: "vessels", label: "All vessels", icon: LayoutGrid },
+  { key: "activity", label: "Activity", icon: History },
+  { key: "types", label: "Report types", icon: BookOpen },
+];
+
 export function VesselReportsPage() {
+  const [tab, setTab] = useState<TabKey>("vessels");
   const [yachts, setYachts] = useState<Yacht[]>([]);
   const [subs, setSubs] = useState<Sub[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
-  const [extraVessels, setExtraVessels] = useState<string[]>([]);
+  const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
-  const [adding, setAdding] = useState(false);
+  const [open, setOpen] = useState<string | null>(null);
 
   async function load() {
-    const [y, s, r] = await Promise.all([
+    const [y, s, r, e] = await Promise.all([
       db.from("yachts").select("id, vessel_name").eq("archive", false).order("vessel_name"),
-      db.from("vessel_report_subscriptions").select("id, yacht_id, report_key, enabled, recipients, cc, schedule, last_sent_at, last_status, last_error"),
-      db.from("vessel_report_runs").select("id, yacht_id, report_key, trigger, status, recipients, summary, error, created_at").order("created_at", { ascending: false }).limit(40),
+      db.from("vessel_report_subscriptions").select(SUB_COLS),
+      db.from("vessel_report_runs").select("id, yacht_id, report_key, trigger, status, recipients, summary, error, created_at").order("created_at", { ascending: false }).limit(100),
+      db.from("vessel_report_events").select("id, yacht_id, report_key, actor_kind, actor_name, action, detail, created_at").order("created_at", { ascending: false }).limit(150),
     ]);
-    setYachts(y.data ?? []); setSubs(s.data ?? []); setRuns(r.data ?? []);
+    setYachts(y.data ?? []); setSubs(s.data ?? []); setRuns(r.data ?? []); setEvents(e.data ?? []);
     setLoading(false);
   }
   useEffect(() => { void load(); }, []);
 
   const nameOf = useMemo(() => new Map(yachts.map((y) => [y.id, y.vessel_name])), [yachts]);
-  const vesselIds = useMemo(() => {
-    const ids = [...new Set([...subs.map((s) => s.yacht_id), ...extraVessels])];
-    return ids.sort((a, b) => (nameOf.get(a) ?? "").localeCompare(nameOf.get(b) ?? ""));
-  }, [subs, extraVessels, nameOf]);
   const live = subs.filter((s) => s.enabled).length;
+  const vesselsSetUp = new Set(subs.map((s) => s.yacht_id)).size;
+  const clientManaged = subs.filter((s) => s.client_can_manage).length;
 
   return (
     <div className="space-y-5 p-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">Automated Reports</h1>
-          <p className="max-w-3xl text-sm text-muted-foreground">
-            Reports sent to a vessel on a schedule. Each vessel is opted in one report at a time, with its own recipients —
-            nothing goes to a vessel that isn't set up and switched on here.
-          </p>
-        </div>
-        <Button onClick={() => setAdding(true)} className="gap-1.5"><Plus className="h-4 w-4" /> Opt in a vessel</Button>
+      <div>
+        <h1 className="text-2xl font-semibold">Automated Reports</h1>
+        <p className="max-w-3xl text-sm text-muted-foreground">
+          Reports emailed to each client on a schedule. Every vessel is opted in one report at a time, with its own
+          recipients — nothing goes to a vessel that isn't set up and switched on here. Let the client manage a report and
+          they can switch it on or off and change who receives it from their Client Portal.
+        </p>
       </div>
 
       <div className="flex flex-wrap gap-2 text-xs">
-        <span className="rounded-full border border-border px-2.5 py-1">{vesselIds.length} vessel{vesselIds.length === 1 ? "" : "s"} set up</span>
+        <span className="rounded-full border border-border px-2.5 py-1">{vesselsSetUp} vessel{vesselsSetUp === 1 ? "" : "s"} set up</span>
         <span className={cn("rounded-full border px-2.5 py-1", live ? "border-emerald-500/40 text-emerald-400" : "border-border text-muted-foreground")}>{live} report{live === 1 ? "" : "s"} switched on</span>
+        <span className="rounded-full border border-border px-2.5 py-1">{clientManaged} managed by the client</span>
+      </div>
+
+      <div className="flex flex-wrap gap-1 border-b border-border">
+        {TABS.map(({ key, label, icon: Icon }) => (
+          <button key={key} type="button" onClick={() => setTab(key)}
+                  className={cn("-mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm",
+                    tab === key ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>
+            <Icon className="h-4 w-4" /> {label}
+          </button>
+        ))}
       </div>
 
       {loading ? (
         <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-muted-foreground" /></div>
-      ) : vesselIds.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border p-10 text-center">
-          <Ship className="mx-auto mb-2 h-8 w-8 text-muted-foreground/50" />
-          <p className="text-sm text-muted-foreground">No vessel is opted in to any automated report yet.</p>
-          <Button variant="outline" size="sm" className="mt-3 gap-1.5" onClick={() => setAdding(true)}><Plus className="h-4 w-4" /> Opt in a vessel</Button>
+      ) : tab === "vessels" ? (
+        <VesselMatrix yachts={yachts} subs={subs} onOpen={setOpen} onChanged={load} />
+      ) : tab === "activity" ? (
+        <div className="space-y-5">
+          <ChangeLog events={events} nameOf={nameOf} />
+          <RecentRuns runs={runs} nameOf={nameOf} />
         </div>
       ) : (
-        <div className="space-y-4">
-          {vesselIds.map((yid) => (
-            <VesselCard key={yid} yachtId={yid} vessel={nameOf.get(yid) ?? "Vessel"}
-                        subs={subs.filter((s) => s.yacht_id === yid)} onChanged={load} />
-          ))}
-        </div>
+        <ReportTypes subs={subs} />
       )}
 
-      <RecentRuns runs={runs} nameOf={nameOf} />
-
-      <AddVesselDialog open={adding} onClose={() => setAdding(false)} yachts={yachts} taken={new Set(vesselIds)}
-                       onPick={(id) => { setExtraVessels((v) => [...v, id]); setAdding(false); }} />
+      <Dialog open={!!open} onOpenChange={(o) => !o && setOpen(null)}>
+        <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto p-0">
+          {open && (
+            <VesselCard yachtId={open} vessel={nameOf.get(open) ?? "Vessel"} subs={subs.filter((s) => s.yacht_id === open)} onChanged={load} />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-function AddVesselDialog({ open, onClose, yachts, taken, onPick }: {
-  open: boolean; onClose: () => void; yachts: Yacht[]; taken: Set<string>; onPick: (id: string) => void;
+// ── All vessels ─────────────────────────────────────────────────────────────
+
+function cellOf(sub: Sub | undefined) {
+  if (!sub) return { label: "Not set up", cls: "text-muted-foreground/70" };
+  if (sub.enabled) return { label: "On", cls: "bg-emerald-500/15 text-emerald-400" };
+  if (sub.changed_by_kind === "client") return { label: "Off by client", cls: "bg-amber-500/15 text-amber-400" };
+  return { label: "Off", cls: "bg-muted text-muted-foreground" };
+}
+
+function VesselMatrix({ yachts, subs, onOpen, onChanged }: {
+  yachts: Yacht[]; subs: Sub[]; onOpen: (id: string) => void; onChanged: () => void;
 }) {
   const [q, setQ] = useState("");
-  const list = yachts.filter((y) => !taken.has(y.id) && y.vessel_name?.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 30);
+  const [scope, setScope] = useState<"setup" | "all">("setup");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const byVessel = useMemo(() => {
+    const m = new Map<string, Map<string, Sub>>();
+    for (const s of subs) { if (!m.has(s.yacht_id)) m.set(s.yacht_id, new Map()); m.get(s.yacht_id)!.set(s.report_key, s); }
+    return m;
+  }, [subs]);
+  const rows = yachts.filter((y) => (scope === "all" || byVessel.has(y.id)) && (y.vessel_name ?? "").toLowerCase().includes(q.trim().toLowerCase()));
+  const toggleSel = (id: string) => setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+
+  async function bulkOptIn(key: ReportKey) {
+    const def = VESSEL_REPORTS.find((r) => r.key === key)!;
+    const ids = [...selected].filter((id) => !byVessel.get(id)?.has(key));
+    if (!ids.length) { toast.message(`Those vessels already have ${def.label}.`); return; }
+    setBusy(true);
+    const { error } = await db.from("vessel_report_subscriptions").insert(ids.map((id) => ({ yacht_id: id, report_key: key, schedule: def.defaultSchedule })));
+    setBusy(false);
+    if (error) toast.error(error.message);
+    else { toast.success(`${def.label} set up for ${ids.length} vessel${ids.length === 1 ? "" : "s"} — switched off until you add recipients and turn it on.`); setSelected(new Set()); onChanged(); }
+  }
+  async function bulkClient(on: boolean) {
+    const ids = subs.filter((s) => selected.has(s.yacht_id) && s.client_can_manage !== on).map((s) => s.id);
+    if (!ids.length) { toast.message("Nothing to change for those vessels — set a report up first."); return; }
+    setBusy(true);
+    const { error } = await db.from("vessel_report_subscriptions").update({ client_can_manage: on }).in("id", ids);
+    setBusy(false);
+    if (error) toast.error(error.message);
+    else { toast.success(on ? "The clients can now manage those reports in their portal." : "Those reports are back to JLS-only."); setSelected(new Set()); onChanged(); }
+  }
+
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!o) { onClose(); setQ(""); } }}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Opt in a vessel</DialogTitle>
-          <DialogDescription>Choose the vessel, then pick its reports and who they go to. Nothing is sent until you switch a report on.</DialogDescription>
-        </DialogHeader>
-        <Input autoFocus placeholder="Search vessels…" value={q} onChange={(e) => setQ(e.target.value)} />
-        <div className="max-h-72 overflow-auto rounded-md border border-border">
-          {list.map((y) => (
-            <button key={y.id} type="button" onClick={() => { onPick(y.id); setQ(""); }}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent/40">
-              <Ship className="h-3.5 w-3.5 text-muted-foreground" /> {y.vessel_name}
-            </button>
-          ))}
-          {list.length === 0 && <div className="px-3 py-2 text-sm text-muted-foreground">No vessels match.</div>}
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search vessels…" className="h-9 w-64 pl-8" />
         </div>
-      </DialogContent>
-    </Dialog>
+        <div className="inline-flex rounded-md border border-border p-0.5 text-xs">
+          {([["setup", "Set up"], ["all", "All vessels"]] as const).map(([k, l]) => (
+            <button key={k} type="button" onClick={() => setScope(k)}
+                    className={cn("rounded px-2.5 py-1", scope === k ? "bg-primary/15 text-foreground" : "text-muted-foreground hover:text-foreground")}>{l}</button>
+          ))}
+        </div>
+        {selected.size > 0 && (
+          <div className="ml-auto flex flex-wrap items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-2 py-1 text-xs">
+            <span className="px-1 font-medium">{selected.size} selected</span>
+            {VESSEL_REPORTS.map((r) => (
+              <Button key={r.key} size="sm" variant="outline" className="h-7 gap-1 text-xs" disabled={busy} onClick={() => void bulkOptIn(r.key)}>
+                <Plus className="h-3 w-3" /> Opt in to {r.label}
+              </Button>
+            ))}
+            <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" disabled={busy} onClick={() => void bulkClient(true)}>
+              <UserCheck className="h-3 w-3" /> Let client manage
+            </Button>
+            <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setSelected(new Set())}>Clear</Button>
+          </div>
+        )}
+      </div>
+
+      {rows.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border p-10 text-center">
+          <Ship className="mx-auto mb-2 h-8 w-8 text-muted-foreground/50" />
+          <p className="text-sm text-muted-foreground">
+            {scope === "setup" ? "No vessel is set up for an automated report yet." : "No vessels match."}
+          </p>
+          {scope === "setup" && <Button variant="outline" size="sm" className="mt-3 gap-1.5" onClick={() => setScope("all")}><Plus className="h-4 w-4" /> Choose vessels to opt in</Button>}
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-xl border border-border bg-card">
+          <table className="w-full text-sm">
+            <thead className="border-b border-border text-left text-[10.5px] uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th className="w-8 px-3 py-2">
+                  <Checkbox checked={rows.length > 0 && rows.every((y) => selected.has(y.id))}
+                            onCheckedChange={(v) => setSelected(v ? new Set(rows.map((y) => y.id)) : new Set())} aria-label="Select all" />
+                </th>
+                <th className="px-3 py-2">Vessel</th>
+                {VESSEL_REPORTS.map((r) => <th key={r.key} className="px-3 py-2">{r.label}</th>)}
+                <th className="px-3 py-2" />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((y) => {
+                const mine = byVessel.get(y.id);
+                return (
+                  <tr key={y.id} className="border-b border-border/40 align-top last:border-0 hover:bg-accent/10">
+                    <td className="px-3 py-2.5"><Checkbox checked={selected.has(y.id)} onCheckedChange={() => toggleSel(y.id)} aria-label={`Select ${y.vessel_name}`} /></td>
+                    <td className="px-3 py-2.5 font-medium">
+                      <button type="button" onClick={() => onOpen(y.id)} className="text-left hover:text-primary hover:underline">{y.vessel_name}</button>
+                    </td>
+                    {VESSEL_REPORTS.map((r) => {
+                      const s = mine?.get(r.key);
+                      const c = cellOf(s);
+                      return (
+                        <td key={r.key} className="px-3 py-2.5">
+                          <button type="button" onClick={() => onOpen(y.id)} className="text-left">
+                            <span className={cn("rounded-full px-2 py-0.5 text-[10.5px] font-semibold", c.cls)}>{c.label}</span>
+                            {s && (
+                              <div className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">
+                                <div>{s.recipients.length ? `${s.recipients.length} recipient${s.recipients.length === 1 ? "" : "s"}` : "No recipients"} · {describeReportSchedule(s.schedule)}</div>
+                                {s.client_can_manage && <div className="inline-flex items-center gap-1 text-sky-400"><UserCheck className="h-3 w-3" /> Client manages</div>}
+                              </div>
+                            )}
+                          </button>
+                        </td>
+                      );
+                    })}
+                    <td className="px-3 py-2.5 text-right">
+                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => onOpen(y.id)}>{mine ? "Configure" : "Set up"}</Button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
   );
 }
+
+// ── Activity ────────────────────────────────────────────────────────────────
+
+function ChangeLog({ events, nameOf }: { events: Event[]; nameOf: Map<string, string> }) {
+  return (
+    <section className="rounded-xl border border-border bg-card">
+      <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+        <ListChecks className="h-4 w-4 text-muted-foreground" />
+        <h2 className="text-sm font-semibold">Changes</h2>
+        <span className="text-xs text-muted-foreground">who set up, switched or re-addressed what — staff and clients</span>
+      </div>
+      {events.length === 0 ? <p className="px-4 py-6 text-sm text-muted-foreground">No changes yet.</p> : (
+        <ul className="divide-y divide-border/50">
+          {events.map((e) => (
+            <li key={e.id} className="flex flex-wrap items-baseline gap-x-2 px-4 py-2 text-sm">
+              <span className="w-28 shrink-0 text-xs text-muted-foreground">{when(e.created_at)}</span>
+              <span className={cn("rounded px-1.5 py-px text-[10px] font-semibold uppercase", e.actor_kind === "client" ? "bg-sky-500/15 text-sky-400" : "bg-muted text-muted-foreground")}>
+                {e.actor_kind === "client" ? "Client" : "JLS"}
+              </span>
+              <span><b>{e.actor_name ?? "Someone"}</b> {ACTION_LABEL[e.action] ?? e.action}</span>
+              <span className="text-muted-foreground">— {reportLabel(e.report_key)}, {nameOf.get(e.yacht_id) ?? "vessel"}</span>
+              {e.action === "recipients_changed" && Array.isArray(e.detail?.recipients) && (
+                <span className="text-xs text-muted-foreground">→ {e.detail.recipients.join(", ") || "nobody"}</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+// ── Report types ────────────────────────────────────────────────────────────
+
+function ReportTypes({ subs }: { subs: Sub[] }) {
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      {VESSEL_REPORTS.map((r) => {
+        const mine = subs.filter((s) => s.report_key === r.key);
+        return (
+          <section key={r.key} className="space-y-2 rounded-xl border border-border bg-card p-4">
+            <h2 className="font-semibold">{r.label}</h2>
+            <p className="text-sm text-muted-foreground">{r.description}</p>
+            <div className="text-xs text-muted-foreground">Default: {describeReportSchedule(r.defaultSchedule)} · email with the PDF attached</div>
+            <div className="flex flex-wrap gap-2 pt-1 text-xs">
+              <span className="rounded-full border border-border px-2 py-0.5">{mine.length} vessel{mine.length === 1 ? "" : "s"} set up</span>
+              <span className="rounded-full border border-border px-2 py-0.5">{mine.filter((s) => s.enabled).length} on</span>
+              <span className="rounded-full border border-border px-2 py-0.5">{mine.filter((s) => s.client_can_manage).length} client-managed</span>
+            </div>
+          </section>
+        );
+      })}
+      <section className="space-y-2 rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground md:col-span-2">
+        <b className="text-foreground">What the client sees.</b> A report you let the client manage appears under <i>Email reports</i> in their
+        Client Portal. The Captain, officers and the vessel's management can switch it on or off and change who it goes to; the day and
+        time stay yours. Their changes show as <span className="text-sky-400">Client</span> on the Activity tab.
+      </section>
+    </div>
+  );
+}
+
+// ── One vessel ──────────────────────────────────────────────────────────────
 
 function VesselCard({ yachtId, vessel, subs, onChanged }: { yachtId: string; vessel: string; subs: Sub[]; onChanged: () => void }) {
   return (
@@ -287,11 +495,23 @@ function ReportRow({ yachtId, vessel, report, sub, onChanged }: {
           </div>
           <div className="text-xs text-muted-foreground">{report.description}</div>
         </div>
-        <label className="flex items-center gap-2 text-xs">
-          <Switch checked={sub.enabled} disabled={busy === "save"} onCheckedChange={(v) => void toggle(v)} />
-          {sub.enabled ? "Sending" : "Switched off"}
-        </label>
+        <div className="flex flex-col items-end gap-1.5">
+          <label className="flex items-center gap-2 text-xs">
+            <Switch checked={sub.enabled} disabled={busy === "save"} onCheckedChange={(v) => void toggle(v)} />
+            {sub.enabled ? "Sending" : "Switched off"}
+          </label>
+          <label className="flex items-center gap-2 text-xs text-muted-foreground" title="Shows this report under Email reports in the Client Portal, where the vessel's Captain, officers and management can switch it on/off and change its recipients">
+            <Switch checked={sub.client_can_manage} disabled={busy === "save"}
+                    onCheckedChange={(v) => void save({ client_can_manage: v }).then((ok) => ok && toast.success(v ? "The client can now manage this in their portal." : "Back to JLS-only."))} />
+            <UserCheck className="h-3.5 w-3.5" /> Client can manage in their portal
+          </label>
+        </div>
       </div>
+      {sub.changed_by_kind === "client" && sub.changed_at && (
+        <div className="rounded-md border border-sky-500/30 bg-sky-500/5 px-3 py-1.5 text-xs text-sky-300">
+          Last changed by the client ({sub.changed_by_name ?? "portal user"}) on {when(sub.changed_at)} — they {sub.enabled ? "have it switched on" : "switched it off"}.
+        </div>
+      )}
 
       <div className="grid gap-3 lg:grid-cols-[1fr_1fr_auto]">
         <div className="space-y-1">
