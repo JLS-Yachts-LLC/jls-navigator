@@ -1,6 +1,7 @@
 import { guardUploadFile, uploadContentType } from '@/lib/upload-guard'
 import { fileVisaToSharePoint, reportVisaFiling } from '@/lib/visa/file-to-sharepoint'
 import { storageRef } from '@/lib/signed-url'
+import { nameVariants } from '@/lib/name-aliases'
 import { useState, useEffect, useMemo, useRef, type CSSProperties } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
@@ -450,7 +451,10 @@ function matchesSearch(app: VisaApplication, query: string): boolean {
     app.vessel_name, app.yachts?.vessel_name, getCountryInfo(app.country_code).name,
     app.crew_members?.full_name,
   ].filter(Boolean).join(' '))
-  return words.every(w => hay.includes(w))
+  // Nicknames count too — "Mike Fetton" finds Michael Fetton. A nickname only
+  // matches a whole word, so "Ed" doesn't turn up every "Ahmed".
+  const hayWords = new Set(hay.split(/[^\p{L}\p{N}]+/u).filter(Boolean))
+  return words.every(w => hay.includes(w) || nameVariants(w).some(v => hayWords.has(v)))
 }
 
 function getCrewName(app: VisaApplication): string {
