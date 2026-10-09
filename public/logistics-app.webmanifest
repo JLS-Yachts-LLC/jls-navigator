@@ -4,7 +4,7 @@
   "short_name": "Logistics",
   "description": "Polaris Logistics — parcels, deliveries and the warehouse.",
   "start_url": "/logistics-app",
-  "scope": "/",
+  "scope": "/logistics-app",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#07435E",
