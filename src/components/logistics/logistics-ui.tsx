@@ -34,7 +34,7 @@ export function Screen({
     <div className="flex h-dvh flex-col bg-background">
       <header className="flex items-center gap-2 border-b border-border/70 bg-card/95 px-3 py-2.5 backdrop-blur">
         {onBack && (
-          <button type="button" onClick={onBack} aria-label="Back" className="rounded-lg p-2 hover:bg-accent">
+          <button type="button" onClick={onBack} aria-label="Back" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg hover:bg-accent">
             <ChevronLeft className="h-6 w-6" />
           </button>
         )}
@@ -88,8 +88,8 @@ export function SuggestInput({
           {matches.map((m) => (
             <li key={m}>
               <button type="button" className="block w-full px-3 py-2.5 text-left text-base hover:bg-accent"
-                onMouseDown={(e) => { e.preventDefault(); onChange(m); setOpen(false); }}
-                onTouchEnd={(e) => { e.preventDefault(); onChange(m); setOpen(false); }}>
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => { onChange(m); setOpen(false); }}>
                 {m}
               </button>
             </li>
@@ -125,8 +125,8 @@ export function PhotoField({
           <>
             <img src={preview} alt="" className="max-h-64 w-full object-contain" />
             <button type="button" onClick={() => onChange(null)} aria-label="Remove photo"
-              className="absolute right-2 top-2 rounded-full bg-background/90 p-1.5 shadow">
-              <X className="h-4 w-4" />
+              className="absolute right-2 top-2 flex h-10 w-10 items-center justify-center rounded-full bg-background/90 shadow">
+              <X className="h-5 w-5" />
             </button>
           </>
         ) : (
@@ -167,10 +167,18 @@ export function FooterButtons({
 }
 
 /** A bottom sheet over the current screen — pickers, confirmations and short forms. */
-export function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+export function Sheet({ title, onClose, children, sticky }: { title: string; onClose: () => void; children: React.ReactNode; sticky?: boolean }) {
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape" && !sticky) onClose(); };
+    document.addEventListener("keydown", esc);
+    return () => document.removeEventListener("keydown", esc);
+  }, [onClose, sticky]);
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 sm:items-center" onClick={onClose}>
-      <div className="max-h-[85vh] w-full max-w-md space-y-3 overflow-y-auto rounded-t-2xl border border-border bg-card p-5 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+    // `sticky` sheets hold typing (a shelf's limits, an item's edit): tapping the dim area must not throw that away.
+    <div className="fixed inset-0 z-50 flex items-end justify-center overscroll-contain bg-black/60 sm:items-center" onClick={sticky ? undefined : onClose}>
+      <div role="dialog" aria-modal="true" aria-label={title}
+        className="max-h-[85dvh] w-full max-w-md space-y-3 overflow-y-auto overscroll-contain rounded-t-2xl border border-border bg-card p-5 sm:rounded-2xl"
+        style={{ paddingBottom: "max(20px, env(safe-area-inset-bottom))" }} onClick={(e) => e.stopPropagation()}>
         <div className="font-display text-[19px] font-bold">{title}</div>
         {children}
       </div>

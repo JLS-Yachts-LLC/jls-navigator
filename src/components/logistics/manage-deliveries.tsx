@@ -10,7 +10,7 @@
  *                    for the parcels, the proof-of-delivery photo, the delivery
  *                    note PDF and a Resend box.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { FileText, Loader2, Search } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -86,7 +86,7 @@ function ActiveDetail({ row, onBack }: { row: CheckoutNote; onBack: () => void }
   const [pick, setPick] = useState("");
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => { void loadNoteFull(note.id).then(setParcels); void listActiveDrivers().then(setDrivers); }, [note.id]);
+  useEffect(() => { let on = true; void loadNoteFull(note.id).then((p) => { if (on) setParcels(p); }).catch((e) => { if (on) { toast.error(errorMessage(e, "Could not load this delivery")); setParcels([]); } }); void listActiveDrivers().then((d) => { if (on) setDrivers(d); }).catch(() => {}); return () => { on = false; }; }, [note.id]);
 
   async function act(fn: () => Promise<void>, ok: string) {
     setBusy(true);
@@ -97,9 +97,9 @@ function ActiveDetail({ row, onBack }: { row: CheckoutNote; onBack: () => void }
   return (
     <Screen title={`DN ${note.number ?? ""}`} subtitle={note.boat_name ?? "Multiple boats"} onBack={onBack}
       footer={<div className="grid grid-cols-3 gap-2">
-        <button type="button" onClick={() => { setPick(note.status); setSheet("status"); }} className="h-12 rounded-lg border border-border text-[13px] font-semibold">Change Status</button>
-        <button type="button" onClick={() => { setPick(note.driver_id ?? ""); setSheet("driver"); }} className="h-12 rounded-lg border border-border text-[13px] font-semibold">Change Driver</button>
-        <button type="button" onClick={() => setSheet("cancel")} className="h-12 rounded-lg bg-[#E05252] text-[13px] font-semibold text-white">Cancel Delivery</button>
+        <button type="button" onClick={() => { setPick(note.status); setSheet("status"); }} className="h-12 rounded-lg border border-border text-[14px] font-semibold">Change Status</button>
+        <button type="button" onClick={() => { setPick(note.driver_id ?? ""); setSheet("driver"); }} className="h-12 rounded-lg border border-border text-[14px] font-semibold">Change Driver</button>
+        <button type="button" onClick={() => setSheet("cancel")} className="h-12 rounded-lg bg-[#E05252] text-[14px] font-semibold text-white">Cancel Delivery</button>
       </div>}>
       <div className={cn("rounded-xl border p-3 text-[15px]", t.cls)}>
         <div className="font-semibold">{t.label}</div>
@@ -112,7 +112,7 @@ function ActiveDetail({ row, onBack }: { row: CheckoutNote; onBack: () => void }
           <select className={inputCls} value={pick} onChange={(e) => setPick(e.target.value)}>
             <option value="open">Draft (open)</option><option value="dispatched">Out for delivery (dispatched)</option><option value="delivered">Delivered</option>
           </select>
-          <p className="text-[13px] text-muted-foreground">Marking it Delivered also marks every parcel on it Delivered, with no proof attached.</p>
+          <p className="text-[14px] text-muted-foreground">Marking it Delivered also marks every parcel on it Delivered, with no proof attached.</p>
           <button type="button" disabled={busy || pick === note.status} onClick={() => void act(() => adminSetStatus(note.id, pick as "open" | "dispatched" | "delivered"), "Status updated")}
             className="h-12 w-full rounded-lg bg-primary text-[16px] font-semibold text-primary-foreground disabled:opacity-50">Update</button>
         </Sheet>
@@ -148,9 +148,10 @@ function DeliveredList({ onOpen }: { onOpen: (r: DeliveredRow) => void }) {
   const [boats, setBoats] = useState<string[]>([]);
   const [rows, setRows] = useState<DeliveredRow[] | null>(null);
 
-  useEffect(() => { void loadDeliveredBoats().then(setBoats); }, []);
+  useEffect(() => { void loadDeliveredBoats().then(setBoats).catch(() => { /* the filter just has no boat list */ }); }, []);
   // Searching as you type, but not on every keystroke.
-  const search = useCallback(async () => { setRows(null); setRows(await searchDelivered({ q, boat, date }).catch((e) => { toast.error(errorMessage(e, "Search failed")); return []; })); }, [q, boat, date]);
+  const latestSearch = useRef(0);
+  const search = useCallback(async () => { const mine = ++latestSearch.current; setRows(null); const found = await searchDelivered({ q, boat, date }).catch((e) => { toast.error(errorMessage(e, "Search failed")); return []; }); if (mine === latestSearch.current) setRows(found); }, [q, boat, date]);
   useEffect(() => { const t = setTimeout(() => void search(), 300); return () => clearTimeout(t); }, [search]);
 
   return (
@@ -169,7 +170,7 @@ function DeliveredList({ onOpen }: { onOpen: (r: DeliveredRow) => void }) {
             <li key={r.note.id}>
               <button type="button" onClick={() => onOpen(r)} className="w-full rounded-xl border border-border bg-card p-3 text-left transition hover:border-primary">
                 <div className="flex justify-between gap-2 text-[16px] font-semibold"><span className="truncate">{r.note.boat_name ?? "Multiple boats"}</span><span className="shrink-0 text-primary">DN {r.note.number ?? "—"}</span></div>
-                <div className="mt-1 grid grid-cols-3 gap-2 text-[13px] text-muted-foreground">
+                <div className="mt-1 grid grid-cols-3 gap-2 text-[14px] text-muted-foreground">
                   <span>{fmt(r.note.delivered_at)}</span><span className="truncate">{r.driverName ?? "—"}</span><span className="truncate">{r.receiverRole ?? r.receiver ?? "—"}</span>
                 </div>
               </button>
@@ -186,7 +187,7 @@ function DeliveredDetail({ row, onBack }: { row: DeliveredRow; onBack: () => voi
   const [parcels, setParcels] = useState<ShipSyncPackage[] | null>(null);
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
-  useEffect(() => { void loadNoteFull(note.id).then((p) => { setParcels(p); setEmail(p.find((x) => x.receiver_email)?.receiver_email ?? ""); }); }, [note.id]);
+  useEffect(() => { let on = true; void loadNoteFull(note.id).then((p) => { if (!on) return; setParcels(p); setEmail(p.find((x) => x.receiver_email)?.receiver_email ?? ""); }).catch((e) => { if (on) { toast.error(errorMessage(e, "Could not load this delivery")); setParcels([]); } }); return () => { on = false; }; }, [note.id]);
 
   const proof = parcels?.find((p) => p.delivery_photo_url)?.delivery_photo_url ?? null;
 
@@ -213,7 +214,7 @@ function DeliveredDetail({ row, onBack }: { row: DeliveredRow; onBack: () => voi
         {busy === "pdf" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-5 w-5" />} Generate Delivery Note
       </button>
       <Lbl label="Resend Delivery Note">
-        <input className={inputCls} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Enter Email Address" />
+        <input className={inputCls} type="email" inputMode="email" autoCapitalize="none" autoComplete="email" autoCorrect="off" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Enter Email Address" />
       </Lbl>
       <button type="button" onClick={() => void send()} disabled={!!busy} className="h-12 w-full rounded-lg bg-[#3FA76A] text-[16px] font-semibold text-white disabled:opacity-50">
         {busy === "send" ? "Sending…" : "Send Proof of Delivery"}
@@ -224,8 +225,8 @@ function DeliveredDetail({ row, onBack }: { row: DeliveredRow; onBack: () => voi
 
 function ItemTable({ parcels }: { parcels: ShipSyncPackage[] }) {
   return (
-    <div className="overflow-hidden rounded-lg border border-border">
-      <table className="w-full text-[13px]">
+    <div className="overflow-x-auto rounded-lg border border-border">
+      <table className="w-full text-[14px]">
         <thead className="bg-muted/30 text-left text-muted-foreground"><tr><th className="px-2 py-2">#</th><th className="px-2 py-2">AWB/Ref No.</th><th className="px-2 py-2">Package Owner</th><th className="px-2 py-2">Qty</th><th className="px-2 py-2">Courier</th></tr></thead>
         <tbody className="divide-y divide-border/50">
           {parcels.length === 0 && <tr><td colSpan={5} className="px-2 py-5 text-center text-muted-foreground">No parcels on this note.</td></tr>}

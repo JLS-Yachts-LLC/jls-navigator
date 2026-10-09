@@ -64,3 +64,8 @@ begin
 end;
 $$;
 revoke execute on function public.complete_warehouse_checkout(uuid) from anon;
+
+-- The Supabase linter flagged next_warehouse_checkout_number() as callable by people who are not signed in
+-- (REVOKE ... FROM anon alone leaves the PUBLIC grant). Only signed-in staff need to draw a check-out number.
+revoke execute on function public.next_warehouse_checkout_number() from public, anon;
+revoke execute on function public.complete_warehouse_checkout(uuid) from public, anon;

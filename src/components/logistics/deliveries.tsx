@@ -48,9 +48,9 @@ export function Deliveries({ onBack, identity }: { onBack: () => void; identity:
   const [openId, setOpenId] = useState<string | null>(null);
 
   // Someone who isn't a driver (an administrator) chooses whose deliveries to see.
-  useEffect(() => { if (!driver) void listActiveDrivers().then(setDrivers); }, [driver]);
+  useEffect(() => { if (!driver) void listActiveDrivers().then(setDrivers).catch(() => {}); }, [driver]);
 
-  const reload = useCallback(async () => { if (driver) setRuns(await loadDriverRuns(driver.id)); }, [driver]);
+  const reload = useCallback(async () => { if (!driver) return; try { setRuns(await loadDriverRuns(driver.id)); } catch (e) { toast.error(errorMessage(e, "Could not load your deliveries — check your connection")); setRuns((prev) => prev ?? { notes: [], packages: [], destinations: [], vehicles: [] }); } }, [driver]);
   useEffect(() => { setRuns(null); void reload(); }, [reload]);
 
   if (!driver) {
@@ -80,7 +80,7 @@ export function Deliveries({ onBack, identity }: { onBack: () => void; identity:
 
   return (
     <Screen title="My Deliveries" subtitle={driver.name} onBack={onBack}
-      right={!identity.driver ? <button type="button" onClick={() => setDriver(null)} className="rounded-lg px-2 py-1 text-[13px] text-muted-foreground underline">Change</button> : undefined}>
+      right={!identity.driver ? <button type="button" onClick={() => setDriver(null)} className="rounded-lg px-2 py-1 text-[14px] text-muted-foreground underline">Change</button> : undefined}>
       {mine.length === 0 ? <p className="py-10 text-center text-[15px] text-muted-foreground">Nothing assigned to you right now.</p>
         : mine.map(({ note, parcels }) => (
           <button key={note.id} type="button" onClick={() => setOpenId(note.id)}
@@ -148,7 +148,7 @@ function Manifest({ note, parcels, driver, reload, onBack }: {
     try { await fn(); } catch (e) { toast.error(errorMessage(e, "Something went wrong")); } finally { setBusy(null); }
   }
 
-  const scan = (p: ShipSyncPackage) => run("scan", async () => { await scanOntoVan(p); await reload(); });
+  const scan = (p: ShipSyncPackage) => run("scan", async () => { await scanOntoVan(p); await reload().catch(() => {}); });
 
   function onDetected(code: string) {
     setScanning(false);
@@ -166,8 +166,8 @@ function Manifest({ note, parcels, driver, reload, onBack }: {
     if (photo) await saveDraftFile(`later-photo:${draftId}`, photo).catch(() => {});
     const drawn = (await sig.current?.toBlob()) ?? null;
     if (drawn) await saveDraftFile(`later-sig:${draftId}`, drawn).catch(() => {});
-    if (online()) await markAwaiting(note.id, true).catch(() => {});
-    toast.success("Saved — finish it from My Deliveries.");
+    const flagged = !online() ? false : await markAwaiting(note.id, true).then(() => true, () => false);
+    toast.success(flagged ? "Saved — finish it from My Deliveries." : "Saved on this phone — finish it from My Deliveries. (The office hasn't been told it's waiting.)");
     onBack();
   });
 
@@ -194,12 +194,12 @@ function Manifest({ note, parcels, driver, reload, onBack }: {
 
   return (
     <Screen title="My Delivery" subtitle={`${boat} · DN ${note.number ?? ""}`} onBack={onBack}
-      right={<button type="button" onClick={() => setChanging(true)} className="flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-[13px] font-medium"><UserRoundCog className="h-4 w-4" /> Change Driver</button>}
+      right={<button type="button" onClick={() => setChanging(true)} className="flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-[14px] font-medium"><UserRoundCog className="h-4 w-4" /> Change Driver</button>}
       footer={allGreen ? (
         <div className="grid grid-cols-3 gap-2">
-          <button type="button" onClick={() => setConfirmCancel(true)} disabled={!!busy} className="h-12 rounded-lg bg-[#E05252] text-[13px] font-semibold text-white disabled:opacity-50">Cancel Delivery</button>
-          <button type="button" onClick={() => void later()} disabled={!!busy} className="h-12 rounded-lg bg-[#D9B52B] text-[13px] font-semibold text-white disabled:opacity-50">Complete Later</button>
-          <button type="button" onClick={complete} disabled={!!busy} className="flex h-12 items-center justify-center rounded-lg bg-[#3FA76A] text-[13px] font-semibold text-white disabled:opacity-50">
+          <button type="button" onClick={() => setConfirmCancel(true)} disabled={!!busy} className="h-12 rounded-lg bg-[#E05252] text-[14px] font-semibold text-white disabled:opacity-50">Cancel Delivery</button>
+          <button type="button" onClick={() => void later()} disabled={!!busy} className="h-12 rounded-lg bg-[#D9B52B] text-[14px] font-semibold text-white disabled:opacity-50">Complete Later</button>
+          <button type="button" onClick={complete} disabled={!!busy} className="flex h-12 items-center justify-center rounded-lg bg-[#3FA76A] text-[14px] font-semibold text-white disabled:opacity-50">
             {busy === "complete" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Complete Delivery"}
           </button>
         </div>
@@ -233,7 +233,7 @@ function Manifest({ note, parcels, driver, reload, onBack }: {
           <PhotoField file={photo} onChange={setPhoto} label="Upload or Capture an Image" />
           <Lbl label="Name of Person who received the package"><input className={inputCls} value={h.name} onChange={(e) => setH({ ...h, name: e.target.value })} /></Lbl>
           <Lbl label="Position"><input className={inputCls} value={h.position} onChange={(e) => setH({ ...h, position: e.target.value })} /></Lbl>
-          <Lbl label="Email Address"><input className={inputCls} type="email" value={h.email} onChange={(e) => setH({ ...h, email: e.target.value })} /></Lbl>
+          <Lbl label="Email Address"><input className={inputCls} type="email" inputMode="email" autoCapitalize="none" autoComplete="email" autoCorrect="off" value={h.email} onChange={(e) => setH({ ...h, email: e.target.value })} /></Lbl>
           <div><span className="mb-1 block text-[14px] font-medium text-muted-foreground">Signature</span><SignaturePad ref={sig} /></div>
         </section>
       )}

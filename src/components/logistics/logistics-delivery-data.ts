@@ -176,6 +176,18 @@ export type DeliveredRow = {
   note: ShipSyncDeliveryNote; driverName: string | null; receiver: string | null; receiverRole: string | null;
 };
 
+/**
+ * The start and end of a day (YYYY-MM-DD) in UAE time, as timestamps with their offset.
+ * The filter used local midnight, then took the next day through toISOString() (UTC) — which in
+ * any time zone ahead of UTC gives the SAME day again, an empty range, so the Delivered date filter
+ * always found nothing. UAE has no daylight saving, so the offset is fixed.
+ */
+export function uaeDayBounds(date: string): { from: string; to: string } {
+  const [y, m, d] = date.split("-").map(Number);
+  const next = new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+  return { from: `${date}T00:00:00+04:00`, to: `${next}T00:00:00+04:00` };
+}
+
 export type DeliveredFilter = { q: string; boat: string; date: string };
 
 /** The Delivered tab: finished notes, filtered by search text, boat and delivery date. */
@@ -183,8 +195,8 @@ export async function searchDelivered(f: DeliveredFilter): Promise<DeliveredRow[
   let query = sb.from("shipsync_delivery_notes").select("*").eq("status", "delivered").order("delivered_at", { ascending: false }).limit(150);
   if (f.boat) query = query.ilike("boat_name", f.boat.replace(/[\\%_]/g, (c) => `\\${c}`));
   if (f.date) {
-    const next = new Date(`${f.date}T00:00:00`); next.setDate(next.getDate() + 1);
-    query = query.gte("delivered_at", `${f.date}T00:00:00`).lt("delivered_at", next.toISOString().slice(0, 10) + "T00:00:00");
+    const { from, to } = uaeDayBounds(f.date);
+    query = query.gte("delivered_at", from).lt("delivered_at", to);
   }
   const q = f.q.trim().replace(/[\\%_,()]/g, " ").trim();
   if (q) {

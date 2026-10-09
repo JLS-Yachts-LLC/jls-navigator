@@ -157,17 +157,25 @@ export function CheckinParcel({ onBack }: { onBack: () => void }) {
   }
 
   /** Saving leaves the form blank and ready for the next parcel. */
+  /** Cancel / Back ends this check-in: ask if something is typed, and clear the kept draft so the NEXT check-in doesn't open on this one's AWB and photo. */
+  const dirty = JSON.stringify(f) !== JSON.stringify(BLANK) || !!photo;
+  const leave = () => {
+    if (dirty && !window.confirm("Leave this check-in? What you've entered will be discarded.")) return;
+    reset();
+    onBack();
+  };
+
   function reset() { setF(BLANK); setPhoto(null); try { sessionStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ } }
 
   return (
-    <Screen title="Check-in · Parcels" onBack={onBack}
-      footer={<FooterButtons onCancel={onBack} onSave={() => void submit()} saving={saving} />}>
+    <Screen title="Check-in · Parcels" onBack={leave}
+      footer={<FooterButtons onCancel={leave} onSave={() => void submit()} saving={saving} />}>
       <PendingBanner queue={queue} />
 
       <Lbl label="AirWayBill">
         <div className="flex gap-2">
           <input className={inputCls} value={f.awb} placeholder="Scan or type the AWB or Reference Number"
-            autoCapitalize="characters" onChange={(e) => set({ awb: e.target.value })} />
+            autoCapitalize="characters" autoCorrect="off" spellCheck={false} onChange={(e) => set({ awb: e.target.value })} />
           <button type="button" onClick={() => setScanning(true)}
             className="flex h-12 shrink-0 items-center gap-1.5 rounded-lg bg-primary px-4 text-[15px] font-semibold text-primary-foreground">
             <ScanLine className="h-5 w-5" /> SCAN
@@ -223,7 +231,7 @@ export function CheckinParcel({ onBack }: { onBack: () => void }) {
         </Lbl>
       )}
       {customs && (
-        <Lbl label="BOE Number"><input className={inputCls} value={f.boe} onChange={(e) => set({ boe: e.target.value })} /></Lbl>
+        <Lbl label="BOE Number"><input className={inputCls} autoCapitalize="characters" autoCorrect="off" spellCheck={false} value={f.boe} onChange={(e) => set({ boe: e.target.value })} /></Lbl>
       )}
 
       <p className="rounded-lg bg-muted/30 px-3 py-2 text-[14px] text-muted-foreground">

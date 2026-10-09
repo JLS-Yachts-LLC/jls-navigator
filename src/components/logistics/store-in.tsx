@@ -72,6 +72,10 @@ export function StoreIn({ onBack }: { onBack: () => void }) {
   const shelf = loc.zone && loc.bay && loc.shelf ? shelves.find((s) => s.zone === loc.zone && s.bay === loc.bay && s.shelf === loc.shelf) : undefined;
   const fit = stock ? shelfFitProblem(shelf, { l: Number(dims.length) || 0, w: Number(dims.width) || 0, h: Number(dims.height) || 0, kg: Number(dims.weight) || 0 }, stock.c, stock.i) : null;
 
+  /** Something has been entered that Cancel / Back would throw away. */
+  const dirty = !!(owner || description || quotation || dims.length || dims.width || dims.height || dims.weight || photo || docs.length || packing.length || loc.zone);
+  const leave = () => { if (!dirty || window.confirm("Leave without saving? What you've entered will be discarded.")) onBack(); };
+
   function reset() {
     setOwner(""); setDeptDetail(""); setDescription(""); setQuotation(""); setDims(NO_DIMS); setDateStored(today());
     setDueDate(""); setCharges(""); setLoc(NO_LOC); setPhoto(null); setDocs([]); setPacking([]);
@@ -101,8 +105,8 @@ export function StoreIn({ onBack }: { onBack: () => void }) {
   const setLine = (i: number, p: Partial<PackingLine>) => setPacking((cur) => cur.map((l, j) => (j === i ? { ...l, ...p } : l)));
 
   return (
-    <Screen title="Warehouse - Store In" subtitle="Reference issued on save" onBack={onBack}
-      footer={<FooterButtons onCancel={onBack} onSave={() => void save()} saving={saving} />}>
+    <Screen title="Warehouse - Store In" subtitle="Reference issued on save" onBack={leave}
+      footer={<FooterButtons onCancel={leave} onSave={() => void save()} saving={saving} />}>
       <Lbl label="Entry Type">
         <div className="grid grid-cols-2 gap-2">
           {(["client", "internal"] as const).map((t) => (
@@ -137,7 +141,7 @@ export function StoreIn({ onBack }: { onBack: () => void }) {
       )}
 
       <Lbl label="Item Description"><textarea className={`${inputCls} h-20 py-2`} value={description} onChange={(e) => setDescription(e.target.value)} /></Lbl>
-      {entry === "client" && <Lbl label="Quotation Number (optional)"><input className={inputCls} value={quotation} onChange={(e) => setQuotation(e.target.value)} /></Lbl>}
+      {entry === "client" && <Lbl label="Quotation Number (optional)"><input className={inputCls} autoCapitalize="characters" autoCorrect="off" spellCheck={false} value={quotation} onChange={(e) => setQuotation(e.target.value)} /></Lbl>}
 
       <DimsFields value={dims} onChange={setDims} />
 

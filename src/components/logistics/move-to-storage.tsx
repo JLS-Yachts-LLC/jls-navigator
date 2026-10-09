@@ -40,6 +40,9 @@ export function MoveToStorage({ mode, onDone }: { mode: "box" | "individual"; on
   }, []);
 
   const one = mode === "individual";
+  /** Leaving with parcels on the list throws them away — so ask first. */
+  const leave = () => { if (parcels.length === 0 || window.confirm("Leave without storing? What you've added so far will be discarded.")) onDone(); };
+  const clearAll = () => { if (parcels.length === 0 || window.confirm("Remove every parcel from the list?")) setParcels([]); };
   const shelf = loc.zone && loc.bay && loc.shelf ? shelves.find((s) => s.zone === loc.zone && s.bay === loc.bay && s.shelf === loc.shelf) : undefined;
   const fit = stock ? shelfFitProblem(shelf, { l: Number(dims.length) || 0, w: Number(dims.width) || 0, h: Number(dims.height) || 0, kg: Number(dims.weight) || 0 }, stock.c, stock.i) : null;
 
@@ -55,7 +58,8 @@ export function MoveToStorage({ mode, onDone }: { mode: "box" | "individual"; on
   async function onScan(code: string) {
     setScanning(false);
     if (parcels.some((p) => p.barcode?.toLowerCase() === code.trim().toLowerCase())) { toast.info(`${code} is already on the list.`); return; }
-    const r = await findReleasableByAwb(code);
+    let r: Awaited<ReturnType<typeof findReleasableByAwb>>;
+    try { r = await findReleasableByAwb(code); } catch (e) { toast.error(errorMessage(e, "Could not look that up — check your connection")); return; }
     if (r.parcel) add([r.parcel]); else toast.error(r.reason ?? "Not found");
   }
 
@@ -77,11 +81,11 @@ export function MoveToStorage({ mode, onDone }: { mode: "box" | "individual"; on
   }
 
   return (
-    <Screen title={one ? "Move Parcel to Storage" : "Move Parcel to Storage as 1 Box"} subtitle="Reference issued on Move" onBack={onDone}
+    <Screen title={one ? "Move Parcel to Storage" : "Move Parcel to Storage as 1 Box"} subtitle="Reference issued on Move" onBack={leave}
       footer={
         <div className="grid grid-cols-3 gap-2">
-          <button type="button" onClick={onDone} disabled={busy} className="h-12 rounded-lg bg-[#E05252] text-[15px] font-semibold text-white disabled:opacity-50">Cancel</button>
-          <button type="button" onClick={() => setParcels([])} disabled={busy} className="h-12 rounded-lg bg-[#E0922B] text-[15px] font-semibold text-white disabled:opacity-50">Clear</button>
+          <button type="button" onClick={leave} disabled={busy} className="h-12 rounded-lg bg-[#E05252] text-[15px] font-semibold text-white disabled:opacity-50">Cancel</button>
+          <button type="button" onClick={clearAll} disabled={busy} className="h-12 rounded-lg bg-[#E0922B] text-[15px] font-semibold text-white disabled:opacity-50">Clear</button>
           <button type="button" onClick={() => void move()} disabled={busy} className="h-12 rounded-lg bg-[#3FA76A] text-[15px] font-semibold text-white disabled:opacity-50">{busy ? "Moving…" : "Move"}</button>
         </div>
       }>
@@ -92,7 +96,7 @@ export function MoveToStorage({ mode, onDone }: { mode: "box" | "individual"; on
       <ParcelTable parcels={parcels} withBoat onRemove={(id) => setParcels((c) => c.filter((p) => p.id !== id))} />
 
       <DimsFields value={dims} onChange={setDims} showCharge />
-      <Lbl label="Quotation"><input className={inputCls} value={quotation} onChange={(e) => setQuotation(e.target.value)} placeholder="JLS quotation reference" /></Lbl>
+      <Lbl label="Quotation"><input className={inputCls} autoCapitalize="characters" autoCorrect="off" spellCheck={false} value={quotation} onChange={(e) => setQuotation(e.target.value)} placeholder="JLS quotation reference" /></Lbl>
       <LocationPicker shelves={shelves} value={loc} onChange={setLoc} />
       {fit && <p className="rounded-lg border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-[14px] text-amber-500">{fit} You can still save it.</p>}
       <PhotoField file={photo} onChange={setPhoto} label={one ? "Capture or Upload Image" : "Capture or Upload Image of the whole box"} />

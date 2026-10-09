@@ -159,7 +159,7 @@ function TileButton({ tile, onOpen }: { tile: Tile; onOpen: () => void }) {
   const body = (
     <>
       <span className="flex-1 text-left text-[17px] font-semibold">{tile.label}</span>
-      {!tile.ready && <span className="rounded-full bg-muted px-2 py-0.5 text-[12px] font-medium text-muted-foreground">Soon</span>}
+      {!tile.ready && <span className="rounded-full bg-muted px-2 py-0.5 text-[14px] font-medium text-muted-foreground">Soon</span>}
       <Icon className="h-6 w-6 shrink-0 text-primary" />
     </>
   );

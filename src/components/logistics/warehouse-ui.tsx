@@ -39,7 +39,7 @@ export function LocationPicker({
           {shelfOpts.map((s) => <option key={s.id} value={s.shelf}>{s.shelf}</option>)}
         </select>
       </Lbl>
-      {value.zone && bays.length === 0 && <p className="col-span-3 text-[13px] text-muted-foreground">No shelves registered in this zone yet — add them under Manage Warehouse → Zone Management.</p>}
+      {value.zone && bays.length === 0 && <p className="col-span-3 text-[14px] text-muted-foreground">No shelves registered in this zone yet — add them under Manage Warehouse → Zone Management.</p>}
     </div>
   );
 }

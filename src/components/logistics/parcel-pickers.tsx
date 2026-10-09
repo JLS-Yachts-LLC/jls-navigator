@@ -4,14 +4,16 @@
  */
 import { useEffect, useState } from "react";
 import { Loader2, Trash2 } from "lucide-react";
+import { toast } from "sonner";
+import { errorMessage } from "@/lib/error-message";
 import { loadBoatsWithParcels, loadReleasableForBoat, type ParcelLite } from "./logistics-data";
 import { inputCls, Sheet } from "./logistics-ui";
 
 export function ParcelTable({ parcels, withBoat, onRemove }: { parcels: ParcelLite[]; withBoat?: boolean; onRemove?: (id: string) => void }) {
   const total = parcels.reduce((n, p) => n + (p.num_packages ?? 1), 0);
   return (
-    <div className="overflow-hidden rounded-lg border border-border">
-      <table className="w-full text-[13px]">
+    <div className="overflow-x-auto rounded-lg border border-border">
+      <table className="w-full text-[14px]">
         <thead className="bg-muted/30 text-left text-muted-foreground">
           <tr>{withBoat && <th className="px-2 py-2">Client/Boat</th>}<th className="px-2 py-2">AWB</th><th className="px-2 py-2">Consignee</th><th className="px-2 py-2">Courier</th><th className="px-2 py-2">Qty</th>{onRemove && <th />}</tr>
         </thead>
@@ -41,8 +43,8 @@ export function SearchToAdd({ onClose, onAdd, taken }: { onClose: () => void; on
   const [items, setItems] = useState<ParcelLite[] | null>(null);
   const [ticked, setTicked] = useState<Set<string>>(new Set());
 
-  useEffect(() => { void loadBoatsWithParcels().then(setBoats); }, []);
-  useEffect(() => { if (boat) { setItems(null); setTicked(new Set()); void loadReleasableForBoat(boat).then((r) => setItems(r.filter((p) => !taken.has(p.id)))); } }, [boat]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { void loadBoatsWithParcels().then(setBoats).catch((e) => { toast.error(errorMessage(e, "Could not load the boats")); setBoats([]); }); }, []);
+  useEffect(() => { if (!boat) return; setItems(null); setTicked(new Set()); let on = true; void loadReleasableForBoat(boat).then((r) => { if (on) setItems(r.filter((p) => !taken.has(p.id))); }).catch((e) => { if (on) { toast.error(errorMessage(e, "Could not load that boat's parcels")); setItems([]); } }); return () => { on = false; }; }, [boat]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggle = (id: string) => setTicked((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; }); // eslint-disable-line @typescript-eslint/no-unused-expressions
   const allOn = !!items?.length && items.every((p) => ticked.has(p.id));
@@ -66,7 +68,7 @@ export function SearchToAdd({ onClose, onAdd, taken }: { onClose: () => void; on
                 <label className="flex items-center gap-3 px-3 py-3 text-[15px]">
                   <input type="checkbox" className="h-5 w-5" checked={ticked.has(p.id)} onChange={() => toggle(p.id)} />
                   <span className="min-w-0 flex-1"><span className="block truncate font-mono text-[14px]">{p.barcode ?? "—"}</span>
-                    <span className="block truncate text-[13px] text-muted-foreground">{[p.package_owner, p.courier].filter(Boolean).join(" · ") || "—"} · Qty {p.num_packages ?? 1}</span></span>
+                    <span className="block truncate text-[14px] text-muted-foreground">{[p.package_owner, p.courier].filter(Boolean).join(" · ") || "—"} · Qty {p.num_packages ?? 1}</span></span>
                 </label>
               </li>
             ))}

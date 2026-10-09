@@ -28,6 +28,7 @@ import {
   type OutRow, type OutLine, type OutMode, type WhCheckout,
 } from "./logistics-warehouse-out-data";
 import { Screen, Lbl, inputCls, PhotoField, Sheet } from "./logistics-ui";
+import { localToday } from "./logistics-warehouse-data";
 import { ClientCollection, FootBtn } from "./checkout-parcels";
 import { shipsyncApi } from "./logistics-api";
 
@@ -71,7 +72,7 @@ function List({ onBack, onNew, onOpen }: { onBack: () => void; onNew: () => void
       {setup && (
         <div className="rounded-xl border border-amber-500/50 bg-amber-500/10 p-4 text-[15px]">
           <div className="font-semibold">Warehouse - Out isn't switched on yet</div>
-          <p className="mt-1 text-muted-foreground">Its database tables haven't been created. Run <span className="font-mono text-[13px]">20261003100000_warehouse_checkouts.sql</span> once in Supabase and this screen will start working.</p>
+          <p className="mt-1 text-muted-foreground">Its database tables haven't been created. Run <span className="font-mono text-[14px]">20261003100000_warehouse_checkouts.sql</span> once in Supabase and this screen will start working.</p>
         </div>
       )}
       {rows === null ? <div className="flex justify-center py-10"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
@@ -103,8 +104,8 @@ function OutTables({ lines, onRemove, onQty }: { lines: OutLine[]; onRemove?: (k
   return (
     <div className="space-y-3">
       {(packages.length > 0 || contents.length === 0) && (
-        <div className="overflow-hidden rounded-lg border border-border">
-          <table className="w-full text-[13px]">
+        <div className="overflow-x-auto rounded-lg border border-border">
+          <table className="w-full text-[14px]">
             <thead className="bg-muted/30 text-left text-muted-foreground"><tr><th className="px-2 py-2">Client/Boat</th><th className="px-2 py-2">Ref No.</th><th className="px-2 py-2">Description</th>{onRemove && <th />}</tr></thead>
             <tbody className="divide-y divide-border/50">
               {packages.length === 0 && <tr><td colSpan={4} className="px-2 py-6 text-center text-muted-foreground">Scan or search to add packages.</td></tr>}
@@ -117,8 +118,8 @@ function OutTables({ lines, onRemove, onQty }: { lines: OutLine[]; onRemove?: (k
       {contents.length > 0 && (
         <div>
           <div className="mb-1 text-[14px] font-medium text-muted-foreground">Items from the box</div>
-          <div className="overflow-hidden rounded-lg border border-border">
-            <table className="w-full text-[13px]">
+          <div className="overflow-x-auto rounded-lg border border-border">
+            <table className="w-full text-[14px]">
               <thead className="bg-muted/30 text-left text-muted-foreground"><tr><th className="px-2 py-2">Ref. No. / Item ID</th><th className="px-2 py-2">Description</th><th className="px-2 py-2">Stored</th><th className="px-2 py-2">Qty Out</th>{onRemove && <th />}</tr></thead>
               <tbody className="divide-y divide-border/50">
                 {contents.map((l) => (
@@ -160,8 +161,10 @@ function SearchToAdd({ exceptId, taken, here, onAdd, onClose }: { exceptId: stri
   useEffect(() => {
     if (!boat) return;
     setStock(null); setTicked(new Set()); setQty({});
+    let on = true;
     void loadStock(boat, exceptId)
       .then((s) => {
+        if (!on) return;
         // This check-out's own lines count too: a box can't be added whole if items from it are already here, and vice versa.
         const wholeHere = new Set(here.filter((l) => l.kind === "package").map((l) => l.ref_no));
         const insideHere = new Set(here.filter((l) => l.kind === "content").map((l) => l.ref_no));
@@ -170,7 +173,8 @@ function SearchToAdd({ exceptId, taken, here, onAdd, onClose }: { exceptId: stri
           contents: s.contents.filter((l) => !taken.has(l.key) && !wholeHere.has(l.ref_no)),
         });
       })
-      .catch((e) => { fail(e, "Could not load that client's storage"); setStock({ packages: [], contents: [] }); });
+      .catch((e) => { if (!on) return; fail(e, "Could not load that client's storage"); setStock({ packages: [], contents: [] }); });
+    return () => { on = false; };
   }, [boat]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const list = stock ? (tab === "all" ? stock.packages : stock.contents) : [];
@@ -211,7 +215,7 @@ function SearchToAdd({ exceptId, taken, here, onAdd, onClose }: { exceptId: stri
                     <input type="checkbox" aria-label={`Select ${l.ref_no}`} className="h-5 w-5 shrink-0" checked={ticked.has(l.key)} onChange={() => toggle(l.key)} />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate font-mono text-[14px]">{l.kind === "content" ? l.itemId : l.ref_no}</span>
-                      <span className="block truncate text-[13px] text-muted-foreground">{l.description || "—"}{l.kind === "content" ? ` · Stored ${l.stored}` : ""}</span>
+                      <span className="block truncate text-[14px] text-muted-foreground">{l.description || "—"}{l.kind === "content" ? ` · Stored ${l.stored}` : ""}</span>
                     </span>
                     {l.kind === "content" && ticked.has(l.key) && (
                       <input type="number" inputMode="decimal" min={0} max={l.stored} aria-label="Qty Out" value={qty[l.key] ?? l.stored}
@@ -251,6 +255,15 @@ function Builder({ row, onDone }: { row: OutRow | null; onDone: () => void }) {
   const [photo, setPhoto] = useState<File | null>(null);
   const sig = useRef<SignaturePadHandle>(null);
 
+  /** Each mode asks for different things; what was typed for one must not be quietly submitted under another. */
+  function changeMode(m: OutMode) {
+    if (m === mode) return;
+    setMode(m); setH({ name: "", position: "", email: "" }); setCarrier(""); setPhoto(null); sig.current?.clear();
+  }
+  /** Leaving with lines on the list throws them away (nothing is written until Save / Assign / Release) — so ask first. */
+  const leave = () => { if (lines.length === 0 || window.confirm("Leave this check-out? What you've added so far will be discarded.")) onDone(); };
+  const clearAll = () => { if (lines.length === 0 || window.confirm("Remove everything from the list?")) setLines([]); };
+
   useEffect(() => {
     if (!row) return;
     void loadCheckoutLines(row.co.id).then(setLines).catch((e) => fail(e, "Could not load this check-out")).finally(() => setLoaded(true));
@@ -259,7 +272,7 @@ function Builder({ row, onDone }: { row: OutRow | null; onDone: () => void }) {
   const boats = useMemo(() => Array.from(new Set(lines.map((l) => l.boat).filter(Boolean))), [lines]);
   const single = boats.length === 1 ? boats[0] : "";
 
-  useEffect(() => { if (date) void loadDriversFor(date).then((d) => { setDrivers(d); if (!d.some((x) => x.id === driverId)) setDriverId(""); }); },
+  useEffect(() => { if (!date) return; let on = true; void loadDriversFor(date).then((d) => { if (!on) return; setDrivers(d); if (!d.some((x) => x.id === driverId)) setDriverId(""); }).catch(() => { /* the list stays as it was */ }); return () => { on = false; }; },
     [date]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (single && !destination) void loadDestination(single).then((a) => { if (a) setDestination(a); }); },
     [single]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -345,8 +358,8 @@ function Builder({ row, onDone }: { row: OutRow | null; onDone: () => void }) {
 
   const footer = (
     <div className="grid grid-cols-4 gap-2">
-      <FootBtn color="bg-[#E05252]" onClick={onDone} disabled={!!busy}>Cancel</FootBtn>
-      <FootBtn color="bg-[#E0922B]" onClick={() => setLines([])} disabled={!!busy}>Clear</FootBtn>
+      <FootBtn color="bg-[#E05252]" onClick={leave} disabled={!!busy}>Cancel</FootBtn>
+      <FootBtn color="bg-[#E0922B]" onClick={clearAll} disabled={!!busy}>Clear</FootBtn>
       <FootBtn color="bg-[#D9B52B]" onClick={save} disabled={!!busy} loading={busy === "save"}>Save</FootBtn>
       {mode === "jls"
         ? <FootBtn color="bg-[#3FA76A]" onClick={assign} disabled={!!busy} loading={busy === "assign"}>Assign</FootBtn>
@@ -355,7 +368,7 @@ function Builder({ row, onDone }: { row: OutRow | null; onDone: () => void }) {
   );
 
   return (
-    <Screen title="Warehouse - Out" subtitle={co?.number ? `DN ${co.number}` : "New delivery note"} onBack={onDone} footer={footer}>
+    <Screen title="Warehouse - Out" subtitle={co?.number ? `DN ${co.number}` : "New delivery note"} onBack={leave} footer={footer}>
       <div className="grid grid-cols-2 gap-3">
         <button type="button" onClick={() => setScanning(true)} className="flex h-12 items-center justify-center gap-2 rounded-lg bg-primary text-[15px] font-semibold text-primary-foreground"><ScanLine className="h-5 w-5" /> SCAN</button>
         <button type="button" onClick={() => setSearching(true)} className="flex h-12 items-center justify-center gap-2 rounded-lg border border-border text-[15px] font-semibold"><Search className="h-5 w-5" /> SEARCH TO ADD</button>
@@ -365,7 +378,7 @@ function Builder({ row, onDone }: { row: OutRow | null; onDone: () => void }) {
         onQty={(key, q) => setLines((c) => c.map((l) => (l.key === key && l.kind === "content" ? { ...l, qtyOut: q } : l)))} />
 
       <Lbl label="Select Mode of Check-out">
-        <select className={inputCls} value={mode} onChange={(e) => setMode(e.target.value as OutMode)}>
+        <select className={inputCls} value={mode} onChange={(e) => changeMode(e.target.value as OutMode)}>
           <option value="jls">JLS Transport</option>
           <option value="third">Third Party - Transport</option>
           <option value="client">Client Collection</option>
@@ -374,7 +387,7 @@ function Builder({ row, onDone }: { row: OutRow | null; onDone: () => void }) {
 
       {mode === "jls" && (
         <>
-          <Lbl label="Select Date"><input type="date" className={inputCls} value={date} onChange={(e) => setDate(e.target.value)} /></Lbl>
+          <Lbl label="Select Date"><input type="date" min={localToday()} className={inputCls} value={date} onChange={(e) => setDate(e.target.value)} /></Lbl>
           <Lbl label="Select Driver">
             <select className={inputCls} value={driverId} onChange={(e) => setDriverId(e.target.value)} disabled={!date}>
               <option value="">{date ? (drivers.length ? "Select driver…" : "No driver available that day") : "Pick a date first"}</option>

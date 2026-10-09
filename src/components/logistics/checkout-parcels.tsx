@@ -28,6 +28,7 @@ import {
 } from "./logistics-data";
 import { generateNotePdf, shipsyncApi } from "./logistics-api";
 import { Screen, Lbl, inputCls, PhotoField, Sheet } from "./logistics-ui";
+import { localToday } from "./logistics-warehouse-data";
 import { MoveToStorage } from "./move-to-storage";
 import { ParcelTable, SearchToAdd } from "./parcel-pickers";
 
@@ -87,7 +88,7 @@ function List({ onBack, onNew, onStorage, onOpen }: { onBack: () => void; onNew:
 function Detail({ row, onBack }: { row: CheckoutNote; onBack: () => void }) {
   const [parcels, setParcels] = useState<ParcelLite[] | null>(null);
   const [pdfBusy, setPdfBusy] = useState(false);
-  useEffect(() => { void loadNoteParcels(row.note.id).then(setParcels); }, [row.note.id]);
+  useEffect(() => { void loadNoteParcels(row.note.id).then(setParcels).catch((e) => { toast.error(errorMessage(e, "Could not load this delivery note")); setParcels([]); }); }, [row.note.id]);
 
   async function openPdf() {
     setPdfBusy(true);
@@ -131,12 +132,21 @@ function Builder({ note: initial, onDone }: { note: ShipSyncDeliveryNote | null;
   const [photo, setPhoto] = useState<File | null>(null);
   const sig = useRef<SignaturePadHandle>(null);
 
-  useEffect(() => { if (initial) void loadNoteParcels(initial.id).then((p) => { setParcels(p); setLoaded(true); }); }, [initial]);
+  /** Each mode asks for different things; what was typed for one must not be quietly submitted under another. */
+  function changeMode(m: Mode) {
+    if (m === mode) return;
+    setMode(m); setH({ name: "", position: "", email: "" }); setPhoto(null); sig.current?.clear();
+  }
+  /** Leaving with parcels on the list throws them away (nothing is written until Save / Assign / Release) — so ask first. */
+  const leave = () => { if (parcels.length === 0 || window.confirm("Leave this check-out? What you've added so far will be discarded.")) onDone(); };
+  const clearAll = () => { if (parcels.length === 0 || window.confirm("Remove every parcel from the list?")) setParcels([]); };
+
+  useEffect(() => { if (initial) void loadNoteParcels(initial.id).then((p) => { setParcels(p); setLoaded(true); }).catch((e) => { toast.error(errorMessage(e, "Could not open this delivery note")); onDone(); }); }, [initial]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const boatNames = useMemo(() => Array.from(new Set(parcels.map((p) => p.boat_name).filter(Boolean) as string[])), [parcels]);
   const single = boatNames.length === 1 ? boatNames[0] : "";
 
-  useEffect(() => { if (date) void loadDriversFor(date).then((d) => { setDrivers(d); if (!d.some((x) => x.id === driverId)) setDriverId(""); }); },
+  useEffect(() => { if (!date) return; let on = true; void loadDriversFor(date).then((d) => { if (!on) return; setDrivers(d); if (!d.some((x) => x.id === driverId)) setDriverId(""); }).catch(() => { /* the list stays as it was */ }); return () => { on = false; }; },
     [date]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (single && !destination) void loadDestination(single).then((a) => { if (a) setDestination(a); }); },
     [single]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -151,7 +161,8 @@ function Builder({ note: initial, onDone }: { note: ShipSyncDeliveryNote | null;
   async function onScan(code: string) {
     setScanning(false);
     if (parcels.some((p) => p.barcode?.toLowerCase() === code.trim().toLowerCase())) { toast.info(`${code} is already on the list.`); return; }
-    const r = await findReleasableByAwb(code);
+    let r: Awaited<ReturnType<typeof findReleasableByAwb>>;
+    try { r = await findReleasableByAwb(code); } catch (e) { toast.error(errorMessage(e, "Could not look that up — check your connection")); return; }
     if (r.parcel) { add([r.parcel]); toast.success(`${code} added`); } else toast.error(r.reason ?? "Not found");
   }
 
@@ -215,8 +226,8 @@ function Builder({ note: initial, onDone }: { note: ShipSyncDeliveryNote | null;
 
   const footer = (
     <div className="grid grid-cols-4 gap-2">
-      <FootBtn color="bg-[#E05252]" onClick={onDone} disabled={!!busy}>Cancel</FootBtn>
-      <FootBtn color="bg-[#E0922B]" onClick={() => setParcels([])} disabled={!!busy}>Clear</FootBtn>
+      <FootBtn color="bg-[#E05252]" onClick={leave} disabled={!!busy}>Cancel</FootBtn>
+      <FootBtn color="bg-[#E0922B]" onClick={clearAll} disabled={!!busy}>Clear</FootBtn>
       <FootBtn color="bg-[#D9B52B]" onClick={save} disabled={!!busy} loading={busy === "save"}>Save</FootBtn>
       {mode === "jls"
         ? <FootBtn color="bg-[#3FA76A]" onClick={assign} disabled={!!busy} loading={busy === "assign"}>Assign</FootBtn>
@@ -225,7 +236,7 @@ function Builder({ note: initial, onDone }: { note: ShipSyncDeliveryNote | null;
   );
 
   return (
-    <Screen title="Check-Out - Parcels" subtitle={note?.number ? `DN ${note.number}` : "New delivery note"} onBack={onDone} footer={footer}>
+    <Screen title="Check-Out - Parcels" subtitle={note?.number ? `DN ${note.number}` : "New delivery note"} onBack={leave} footer={footer}>
       <div className="grid grid-cols-2 gap-3">
         <button type="button" onClick={() => setScanning(true)} className="flex h-12 items-center justify-center gap-2 rounded-lg bg-primary text-[15px] font-semibold text-primary-foreground">
           <ScanLine className="h-5 w-5" /> SCAN
@@ -238,7 +249,7 @@ function Builder({ note: initial, onDone }: { note: ShipSyncDeliveryNote | null;
       <ParcelTable parcels={parcels} withBoat onRemove={(id) => setParcels((c) => c.filter((p) => p.id !== id))} />
 
       <Lbl label="Select Mode of Check-out">
-        <select className={inputCls} value={mode} onChange={(e) => setMode(e.target.value as Mode)}>
+        <select className={inputCls} value={mode} onChange={(e) => changeMode(e.target.value as Mode)}>
           <option value="jls">JLS Vehicle</option>
           <option value="third">Third-Party Transportation</option>
           <option value="client">Client Collection</option>
@@ -247,7 +258,7 @@ function Builder({ note: initial, onDone }: { note: ShipSyncDeliveryNote | null;
 
       {mode === "jls" && (
         <>
-          <Lbl label="Select Date"><input type="date" className={inputCls} value={date} onChange={(e) => setDate(e.target.value)} /></Lbl>
+          <Lbl label="Select Date"><input type="date" min={localToday()} className={inputCls} value={date} onChange={(e) => setDate(e.target.value)} /></Lbl>
           <Lbl label="Select Driver">
             <select className={inputCls} value={driverId} onChange={(e) => setDriverId(e.target.value)} disabled={!date}>
               <option value="">{date ? (drivers.length ? "Select driver…" : "No driver available that day") : "Pick a date first"}</option>
@@ -297,7 +308,7 @@ export function ClientCollection({
   const [boat, setBoat] = useState(boats[0] ?? "");
   const [crew, setCrew] = useState<CrewMember[]>([]);
   useEffect(() => { if (!boats.includes(boat)) setBoat(boats[0] ?? ""); }, [boats]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (boat) void loadCrewForBoat(boat).then(setCrew); else setCrew([]); }, [boat]);
+  useEffect(() => { if (!boat) { setCrew([]); return; } let on = true; void loadCrewForBoat(boat).then((c) => { if (on) setCrew(c); }).catch(() => { if (on) setCrew([]); }); return () => { on = false; }; }, [boat]);
 
   const THIRD = "3rd Party";
   const ranks = useMemo(() => Array.from(new Set(crew.map((c) => c.rank))).sort(), [crew]);
@@ -319,7 +330,7 @@ export function ClientCollection({
       {third ? (
         <>
           <Lbl label="Name"><input className={inputCls} value={h.name} onChange={(e) => setH({ ...h, name: e.target.value })} /></Lbl>
-          <Lbl label="Email Address"><input className={inputCls} type="email" value={h.email} onChange={(e) => setH({ ...h, email: e.target.value })} /></Lbl>
+          <Lbl label="Email Address"><input className={inputCls} type="email" inputMode="email" autoCapitalize="none" autoComplete="email" autoCorrect="off" value={h.email} onChange={(e) => setH({ ...h, email: e.target.value })} /></Lbl>
         </>
       ) : (
         <>
@@ -330,7 +341,7 @@ export function ClientCollection({
               {names.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
             </select>
           </Lbl>
-          <Lbl label="Email Address"><input className={inputCls} type="email" value={h.email} readOnly placeholder="Filled in from the crew list" /></Lbl>
+          <Lbl label="Email Address"><input className={inputCls} type="email" inputMode="email" autoCapitalize="none" autoComplete="email" autoCorrect="off" value={h.email} readOnly placeholder="Filled in from the crew list" /></Lbl>
         </>
       )}
       <PhotoField file={photo} onChange={setPhoto} label="Upload or Capture an Image" />

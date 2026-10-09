@@ -116,7 +116,7 @@ function FindItem() {
   const load = useCallback(async () => { setItems(await loadStoredItems()); }, []);
   useEffect(() => { void load().catch((e) => toast.error(errorMessage(e, "Could not load items"))); }, [load]);
   // A tracking number of a parcel moved into storage leads to the record it's in.
-  useEffect(() => { setExtra(null); const t = q.trim(); if (t.length < 4) return; const id = setTimeout(() => { void refForAwb(t).then(setExtra); }, 350); return () => clearTimeout(id); }, [q]);
+  useEffect(() => { setExtra(null); const t = q.trim(); if (t.length < 4) return; let on = true; const id = setTimeout(() => { void refForAwb(t).then((r) => { if (on) setExtra(r); }).catch(() => {}); }, 350); return () => { on = false; clearTimeout(id); }; }, [q]);
 
   if (items === null) return <Spinner />;
   const hits = findItems(items, q).concat(extra ? items.filter((i) => i.ref_no === extra) : []).filter((v, i, a) => a.findIndex((x) => x.id === v.id) === i);
@@ -136,9 +136,9 @@ function FindItem() {
         {hits.map((i) => (
           <li key={i.id}>
             <button type="button" onClick={() => setPicked(i)} className="w-full rounded-lg border border-border bg-card px-3 py-3 text-left">
-              <div className="flex justify-between gap-2"><span className="font-mono text-[14px] font-semibold text-primary">{i.ref_no}</span><span className="text-[13px] text-muted-foreground">{i.status}</span></div>
+              <div className="flex justify-between gap-2"><span className="font-mono text-[14px] font-semibold text-primary">{i.ref_no}</span><span className="text-[14px] text-muted-foreground">{i.status}</span></div>
               <div className="truncate text-[15px] font-medium">{i.owner}</div>
-              <div className="truncate text-[13px] text-muted-foreground">{i.description}</div>
+              <div className="truncate text-[14px] text-muted-foreground">{i.description}</div>
             </button>
           </li>
         ))}
@@ -182,13 +182,13 @@ function ItemSheet({ item, onClose, onChanged }: { item: StoredItem; onClose: ()
   const Row = ({ label, value, k }: { label: string; value: string; k: EditKey }) => (
     <div className="flex items-start gap-2 py-1.5 text-[15px]">
       <div className="min-w-0 flex-1"><span className="text-muted-foreground">{label}: </span><span className="font-medium">{value}</span></div>
-      <button type="button" aria-label={`Edit ${label}`} onClick={() => start(k)} className="rounded p-1.5 text-muted-foreground hover:bg-accent"><Pencil className="h-4 w-4" /></button>
+      <button type="button" aria-label={`Edit ${label}`} onClick={() => start(k)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent"><Pencil className="h-4 w-4" /></button>
     </div>
   );
   const dims = [item.length_cm, item.width_cm, item.height_cm].every((x) => x == null) ? "—" : `${item.length_cm ?? "?"} × ${item.width_cm ?? "?"} × ${item.height_cm ?? "?"} cm`;
 
   return (
-    <Sheet title={item.ref_no} onClose={onClose}>
+    <Sheet sticky title={item.ref_no} onClose={onClose}>
       {item.image_url && <SignedImage stored={item.image_url} alt={item.description} className="max-h-48 w-full rounded-lg object-contain" />}
       <div className="divide-y divide-border/50">
         <div className="py-1.5 text-[15px]"><span className="text-muted-foreground">{item.kind === "client" ? "Client" : "Department"}: </span><span className="font-medium">{item.owner}</span></div>
@@ -225,7 +225,7 @@ function ItemSheet({ item, onClose, onChanged }: { item: StoredItem; onClose: ()
       <button type="button" onClick={() => labelsFor(item.ref_no)} className="flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-border font-semibold">
         <Printer className="h-4 w-4" /> Print label{item.inside.length ? "s" : ""}
       </button>
-      <p className="text-[12px] text-muted-foreground">Check-out status is set by Warehouse - Out. To move this item, use Relocate Storage.</p>
+      <p className="text-[14px] text-muted-foreground">Check-out status is set by Warehouse - Out. To move this item, use Relocate Storage.</p>
     </Sheet>
   );
 }
@@ -248,7 +248,7 @@ function ZoneManagement({ onBack }: { onBack: () => void }) {
       <LocationPicker shelves={wh.shelves!} value={loc} onChange={setLoc} />
       <div className="grid grid-cols-3 gap-2">
         {(["Zone", "Bay", "Shelf"] as const).map((l) => (
-          <button key={l} type="button" onClick={() => setAdding(true)} className="flex h-10 items-center justify-center gap-1 rounded-lg border border-border text-[13px] font-semibold"><Plus className="h-4 w-4" /> Add {l}</button>
+          <button key={l} type="button" onClick={() => setAdding(true)} className="flex h-10 items-center justify-center gap-1 rounded-lg border border-border text-[14px] font-semibold"><Plus className="h-4 w-4" /> Add {l}</button>
         ))}
       </div>
 
@@ -259,7 +259,7 @@ function ZoneManagement({ onBack }: { onBack: () => void }) {
           <Metric title="Height" max={`${shelf.max_height_cm} cm`} used={`${usedDims.h} cm`} avail={`${shelf.max_height_cm - usedDims.h} cm`} />
           <Metric title="Volume" max={`${shelf.max_cbm.toFixed(2)} cbm`} used={`${use.usedCbm.toFixed(2)} cbm`} avail={`${(shelf.max_cbm - use.usedCbm).toFixed(2)} cbm`} />
           <Metric title="Weight" max={shelf.max_weight_kg == null ? "No limit" : `${shelf.max_weight_kg} kg`} used={`${use.usedWeightKg} kg`} avail={shelf.max_weight_kg == null ? "No limit" : `${shelf.max_weight_kg - use.usedWeightKg} kg`} />
-          <p className="text-[12px] text-muted-foreground">Used length/width/height is the largest item on the shelf in each direction; volume and weight are totals.</p>
+          <p className="text-[14px] text-muted-foreground">Used length/width/height is the largest item on the shelf in each direction; volume and weight are totals.</p>
           <button type="button" onClick={() => setUpdating(true)} className="h-12 w-full rounded-lg bg-primary text-[16px] font-semibold text-primary-foreground">Update</button>
         </div>
       ) : <p className="text-[14px] text-muted-foreground">Select a zone, bay and shelf to see its space.</p>}
@@ -273,11 +273,11 @@ function ZoneManagement({ onBack }: { onBack: () => void }) {
 function Metric({ title, max, used, avail }: { title: string; max: string; used: string; avail: string }) {
   return (
     <div>
-      <div className="mb-1 text-[13px] font-semibold uppercase tracking-wide text-muted-foreground">{title}</div>
+      <div className="mb-1 text-[14px] font-semibold uppercase tracking-wide text-muted-foreground">{title}</div>
       <div className="grid grid-cols-3 gap-2 text-center text-[14px]">
-        <div className="rounded-md bg-muted/30 p-2"><div className="text-[12px] text-muted-foreground">Max</div><div className="font-semibold">{max}</div></div>
-        <div className="rounded-md bg-muted/30 p-2"><div className="text-[12px] text-muted-foreground">Used</div><div className="font-semibold">{used}</div></div>
-        <div className="rounded-md bg-emerald-500/10 p-2"><div className="text-[12px] text-muted-foreground">Available</div><div className="font-semibold text-emerald-500">{avail}</div></div>
+        <div className="rounded-md bg-muted/30 p-2"><div className="text-[14px] text-muted-foreground">Max</div><div className="font-semibold">{max}</div></div>
+        <div className="rounded-md bg-muted/30 p-2"><div className="text-[14px] text-muted-foreground">Used</div><div className="font-semibold">{used}</div></div>
+        <div className="rounded-md bg-emerald-500/10 p-2"><div className="text-[14px] text-muted-foreground">Available</div><div className="font-semibold text-emerald-500">{avail}</div></div>
       </div>
     </div>
   );
@@ -294,7 +294,7 @@ function UpdateShelf({ shelf, onClose, onSaved }: { shelf: WarehouseShelf; onClo
     catch (e) { toast.error(errorMessage(e, "Could not save")); setBusy(false); }
   }
   return (
-    <Sheet title={`Update ${locationCode(shelf)}`} onClose={onClose}>
+    <Sheet sticky title={`Update ${locationCode(shelf)}`} onClose={onClose}>
       <div className="grid grid-cols-2 gap-3">
         {([["l", "Max length (cm)"], ["w", "Max width (cm)"], ["h", "Max height (cm)"], ["kg", "Max weight (kg)"]] as const).map(([k, label]) => (
           <Lbl key={k} label={label}><input className={inputCls} type="number" inputMode="decimal" value={v[k]} placeholder={k === "kg" ? "No limit" : ""} onChange={(e) => setV({ ...v, [k]: e.target.value })} /></Lbl>
@@ -328,8 +328,8 @@ function AddShelf({ shelves, initial, onClose, onSaved }: { shelves: WarehouseSh
     } catch (e) { toast.error(errorMessage(e, "Could not add the shelf")); setBusy(false); }
   }
   return (
-    <Sheet title="Add Zone / Bay / Shelf" onClose={onClose}>
-      <p className="text-[13px] text-muted-foreground">A new zone or bay is created with its first shelf. Pick an existing zone, or type a new code.</p>
+    <Sheet sticky title="Add Zone / Bay / Shelf" onClose={onClose}>
+      <p className="text-[14px] text-muted-foreground">A new zone or bay is created with its first shelf. Pick an existing zone, or type a new code.</p>
       <div className="grid grid-cols-3 gap-2">
         <Lbl label="Zone"><input className={inputCls} list="lg-zones" value={zone} onChange={(e) => setZone(e.target.value)} /><datalist id="lg-zones">{zones.map((z) => <option key={z} value={z}>{zoneLabel(z)}</option>)}</datalist></Lbl>
         <Lbl label="Bay"><input className={inputCls} list="lg-bays" value={bay} onChange={(e) => setBay(e.target.value)} /><datalist id="lg-bays">{(zone ? bayList(shelves, zone.toUpperCase()) : []).map((b2) => <option key={b2} value={b2} />)}</datalist></Lbl>
@@ -356,7 +356,7 @@ function Relocate({ onBack }: { onBack: () => void }) {
   const [scanning, setScanning] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => { void loadStoredItems().then(setItems); }, []);
+  useEffect(() => { void loadStoredItems().then(setItems).catch((e) => { toast.error(errorMessage(e, "Could not load the warehouse")); setItems([]); }); }, []);
 
   function find(text: string) {
     const t = text.trim().toLowerCase();
@@ -377,7 +377,8 @@ function Relocate({ onBack }: { onBack: () => void }) {
     try {
       await patchStored(item, { zone: loc.zone, bay: loc.bay, shelf: loc.shelf });
       toast.success(`${item.ref_no} moved to ${loc.zone}-${loc.bay}-${loc.shelf}`);
-      setItems(await loadStoredItems()); setItem(null); setRef(""); setLoc({ zone: "", bay: "", shelf: "" }); await wh.reload();
+      setItem(null); setRef(""); setLoc({ zone: "", bay: "", shelf: "" });
+      try { setItems(await loadStoredItems()); await wh.reload(); } catch { /* moved — only the refresh failed */ }
     } catch (e) { toast.error(errorMessage(e, "Could not move it")); } finally { setBusy(false); }
   }
 
@@ -388,7 +389,7 @@ function Relocate({ onBack }: { onBack: () => void }) {
         <>
           <Lbl label="Enter Reference Number">
             <div className="flex gap-2">
-              <input className={inputCls} value={ref} onChange={(e) => setRef(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") find(ref); }} placeholder="e.g. JLSWH26-00005" autoCapitalize="characters" />
+              <input className={inputCls} value={ref} onChange={(e) => { setRef(e.target.value); setItem(null); }} onKeyDown={(e) => { if (e.key === "Enter") find(ref); }} placeholder="e.g. JLSWH26-00005" autoCapitalize="characters" />
               <button type="button" onClick={() => find(ref)} className="h-12 shrink-0 rounded-lg bg-primary px-4 font-semibold text-primary-foreground">Find</button>
               <button type="button" aria-label="Scan" onClick={() => setScanning(true)} className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-border"><ScanLine className="h-5 w-5" /></button>
             </div>

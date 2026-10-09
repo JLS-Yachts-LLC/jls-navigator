@@ -55,6 +55,7 @@
     "@tanstack/router-plugin": "^1.167.10",
     "@types/leaflet": "^1.9.21",
     "@xyflow/react": "^12.12.0",
+    "barcode-detector": "^3.2.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",

@@ -77,8 +77,8 @@ export function PendingBanner({ queue }: { queue: ReturnType<typeof useCheckinQu
                 <div className="min-w-0 flex-1 text-[14px]">
                   <div className="truncate font-mono font-semibold">{i.payload.awb}</div>
                   <div className="truncate text-muted-foreground">{i.payload.fields.boat_name ?? "—"} · saved {new Date(i.savedAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</div>
-                  {i.conflict && <div className="mt-1 text-[13px] text-amber-600">{i.conflict.summary} Check this one in on that record, or discard it?</div>}
-                  {i.error && <div className="mt-1 text-[13px] text-destructive">{i.error}</div>}
+                  {i.conflict && <div className="mt-1 text-[14px] text-amber-600">{i.conflict.summary} Check this one in on that record, or discard it?</div>}
+                  {i.error && <div className="mt-1 text-[14px] text-destructive">{i.error}</div>}
                   {i.conflict && (
                     <button type="button" onClick={() => void settle(i.id, "merge")} className="mt-2 h-10 rounded-lg bg-primary px-3 text-[14px] font-semibold text-primary-foreground">Check in on that record</button>
                   )}

@@ -203,6 +203,12 @@ export class FakeBackend {
           case "eq": return String(v) === val;
           case "neq": return String(v) !== val;
           case "gt": return Number(v) > Number(val);
+          case "gte": case "lt": case "lte": {
+            // timestamps compare by instant, so an offset like +04:00 means what it says
+            const a = typeof v === "string" && !/^[0-9.]+$/.test(v) ? Date.parse(v) : Number(v);
+            const b = !/^[0-9.]+$/.test(val) ? Date.parse(val) : Number(val);
+            return op === "gte" ? a >= b : op === "lt" ? a < b : a <= b;
+          }
           case "is": return val === "null" ? v == null : String(v) === val;
           case "in": return val.slice(1, -1).split(",").map((s) => s.replace(/^"|"$/g, "")).includes(String(v));
           case "ilike": {
