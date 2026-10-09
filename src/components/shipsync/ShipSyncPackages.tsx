@@ -76,6 +76,8 @@ const STAGES = {
   },
 } as const;
 type Stage = keyof typeof STAGES;
+/** Group headings in the table that read differently from the status's usual name. TBI = to be invoiced. */
+const GROUP_LABEL: Partial<Record<PackageStatus, string>> = { delivered: "Delivered TBI" };
 const STAGE_KEYS = Object.keys(STAGES) as Stage[];
 
 export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload: () => Promise<void> }) {
@@ -433,7 +435,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
                       <button onClick={() => toggleGroup(g.status)}
                         className={cn("sticky left-0 flex w-fit min-w-[220px] items-center gap-2 border-l-4 bg-muted/20 px-4 py-2 text-left", statusBorder(g.status))}>
                         {isCollapsed ? <ChevronRight className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
-                        <span className="font-display text-sm font-semibold uppercase tracking-wide">{STATUS_META[g.status].label}</span>
+                        <span className="font-display text-sm font-semibold uppercase tracking-wide">{GROUP_LABEL[g.status] ?? STATUS_META[g.status].label}</span>
                         <span className="text-xs text-muted-foreground">{g.rows.length} package{g.rows.length === 1 ? "" : "s"}</span>
                       </button>
                     </td>
