@@ -78,6 +78,16 @@ export function LogisticsApp() {
   // Orbit field crew use the Orbit 2 mobile app only — send them there.
   const fieldOnly = useOrbitFieldOnlyRedirect();
   const [open, setOpen] = useState<Module | null>(null);
+
+  // The phone's own Back button (Android) and the swipe-back gesture (iPhone) used to leave the whole app and lose
+  // what was open. Opening a module now adds a history step, so Back returns to this home screen instead.
+  useEffect(() => {
+    const onPop = () => setOpen(null);
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+  const openModule = (m: Module) => { try { window.history.pushState({ logisticsModule: m }, ""); } catch { /* no history here: Back just leaves, as before */ } setOpen(m); };
+  const closeModule = () => { if ((window.history.state as { logisticsModule?: string } | null)?.logisticsModule) window.history.back(); else setOpen(null); };
   // Check-ins saved without signal upload from here, whichever screen is open.
   const queue = useCheckinQueue(true);
 
@@ -122,13 +132,13 @@ export function LogisticsApp() {
     );
   }
 
-  if (open === "checkin") return <CheckinParcel onBack={() => setOpen(null)} />;
-  if (open === "checkout") return <CheckoutParcels onBack={() => setOpen(null)} />;
-  if (open === "store-in") return <StoreIn onBack={() => setOpen(null)} />;
-  if (open === "warehouse-out") return <WarehouseOut onBack={() => setOpen(null)} />;
-  if (open === "manage-warehouse") return <ManageWarehouse onBack={() => setOpen(null)} />;
-  if (open === "deliveries") return <Deliveries identity={id} onBack={() => setOpen(null)} />;
-  if (open === "manage-deliveries") return <ManageDeliveries onBack={() => setOpen(null)} />;
+  if (open === "checkin") return <CheckinParcel onBack={closeModule} />;
+  if (open === "checkout") return <CheckoutParcels onBack={closeModule} />;
+  if (open === "store-in") return <StoreIn onBack={closeModule} />;
+  if (open === "warehouse-out") return <WarehouseOut onBack={closeModule} />;
+  if (open === "manage-warehouse") return <ManageWarehouse onBack={closeModule} />;
+  if (open === "deliveries") return <Deliveries identity={id} onBack={closeModule} />;
+  if (open === "manage-deliveries") return <ManageDeliveries onBack={closeModule} />;
 
   // A driver's phone shows Deliveries and nothing else.
   const groups = id.driverOnly
@@ -147,7 +157,7 @@ export function LogisticsApp() {
       {groups.map((g) => (
         <section key={g.title} className="space-y-2">
           <h2 className="text-center text-[14px] font-medium uppercase tracking-wide text-muted-foreground">{g.title}</h2>
-          {g.tiles.map((t) => <TileButton key={t.key} tile={t} onOpen={() => setOpen(t.key)} />)}
+          {g.tiles.map((t) => <TileButton key={t.key} tile={t} onOpen={() => openModule(t.key)} />)}
         </section>
       ))}
     </Screen>
