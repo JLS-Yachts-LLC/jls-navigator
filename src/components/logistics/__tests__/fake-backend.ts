@@ -34,6 +34,8 @@ export class FakeBackend {
   requests: string[] = [];
   faults: FaultRule[] = [];
   rpcs = new Map<string, (args: any) => unknown>();
+  /** bearer token -> the user it belongs to (answers GET /auth/v1/user) */
+  users = new Map<string, { id: string; email: string }>();
   private server!: http.Server;
   url = "";
   private seq = 0;
@@ -53,7 +55,7 @@ export class FakeBackend {
     await new Promise<void>((r) => this.server.close(() => r()));
   }
   reset(): void {
-    this.tables.clear(); this.files.clear(); this.uploads = []; this.requests = []; this.faults = [];
+    this.tables.clear(); this.users.clear(); this.files.clear(); this.uploads = []; this.requests = []; this.faults = [];
   }
 
   private async handle(req: http.IncomingMessage, res: http.ServerResponse) {
@@ -84,6 +86,14 @@ export class FakeBackend {
     if (req.method === "OPTIONS") return send(204, undefined);
 
     try {
+      // ── auth ──
+      if (u.pathname === "/auth/v1/user" && req.method === "GET") {
+        const tok = String(req.headers.authorization ?? "").replace(/^Bearer /, "");
+        const usr = this.users.get(tok);
+        if (!usr) return send(401, { message: "invalid JWT", code: 401 });
+        return send(200, { id: usr.id, email: usr.email, aud: "authenticated", role: "authenticated", app_metadata: {}, user_metadata: {}, created_at: "2026-01-01T00:00:00Z" });
+      }
+
       // ── storage: signing and download ──
       const signMany = u.pathname.match(/^\/storage\/v1\/object\/sign\/([^/]+)$/);
       if (signMany && req.method === "POST") {

@@ -9,6 +9,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { LogisticsApp } from "@/components/logistics/logistics-app";
+import { hasStoredSession } from "@/lib/stored-session";
 
 export const LOGISTICS_APP_PATH = "/logistics-app";
 
@@ -16,7 +17,12 @@ export const Route = createFileRoute("/logistics-app")({
   beforeLoad: async () => {
     if (typeof window === "undefined") return;
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session) throw redirect({ to: "/auth", search: { next: LOGISTICS_APP_PATH } as any });
+    if (!session) {
+      // No signal: the sign-in can't be renewed, but the person is still signed in on this phone. Let them in —
+      // check-ins and handovers are kept on the phone and sent once the connection is back.
+      if (!navigator.onLine && hasStoredSession()) return;
+      throw redirect({ to: "/auth", search: { next: LOGISTICS_APP_PATH } as any });
+    }
   },
   component: LogisticsApp,
   head: () => ({

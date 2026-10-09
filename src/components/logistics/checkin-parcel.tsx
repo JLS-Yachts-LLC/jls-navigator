@@ -26,7 +26,8 @@ import { loadYachtNames, loadDestinations } from "@/lib/shipsync/data";
 import { STATUS_META, type ShipSyncPackage } from "@/lib/shipsync/model";
 import { Screen, Lbl, inputCls, SuggestInput, PhotoField, FooterButtons } from "./logistics-ui";
 import { createCheckin, updateCheckin, findByAwb, isNetworkError, routeCheckin, newId, type CheckinPayload } from "./checkin-commit";
-import { queueCheckin } from "./logistics-offline";
+import { queueCheckin, sessionDraftId } from "./logistics-offline";
+import { usePersistedFile } from "./persisted-file";
 import { PendingBanner, useCheckinQueue } from "./checkin-pending";
 
 type ShipType = "Local" | "Import" | "Transit";
@@ -58,7 +59,7 @@ function saveDraft(f: Form) {
 
 export function CheckinParcel({ onBack }: { onBack: () => void }) {
   const [f, setF] = useState<Form>(loadDraft);
-  const [photo, setPhoto] = useState<File | null>(null);
+  const [photo, setPhoto] = usePersistedFile(`checkin-photo:${sessionDraftId()}`);
   const [boats, setBoats] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [scanning, setScanning] = useState(false);

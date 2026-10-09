@@ -23,6 +23,7 @@ import { itTicketsNotifyHandler } from './routes/api.it-tickets.notify'
 import { internalServicesRenewalCheckHandler } from './routes/api.internal-services.renewal-check'
 import { fxRateHandler } from './routes/api.fx-rate'
 import { shipsyncPwaHandler } from './lib/shipsync/pwa-assets'
+import { logisticsPwaHandler } from './lib/logistics-pwa'
 import { shipsyncApiHandler } from './routes/api.shipsync'
 import { anchorFormsHandler } from './routes/api.anchor-forms'
 import { qbInvoiceHandler } from './routes/api.qb.invoice'
@@ -1270,6 +1271,11 @@ export default {
     // ShipSync driver PWA assets (service worker, manifest, icon).
     {
       const pwa = shipsyncPwaHandler(request)
+      if (pwa) return pwa
+    }
+    // Logistics mobile app service worker (lets the app open with no signal).
+    {
+      const pwa = logisticsPwaHandler(request)
       if (pwa) return pwa
     }
 

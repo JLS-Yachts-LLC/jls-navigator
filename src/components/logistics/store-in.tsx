@@ -22,7 +22,8 @@ import { Screen, Lbl, inputCls, SuggestInput, PhotoField, FooterButtons } from "
 import { LocationPicker, DimsFields, FilesField, type Dims } from "./warehouse-ui";
 import { labelsFor } from "./warehouse-labels";
 import {
-  loadShelves, storeClient, storeInternal, storageCharge, calcCbm, localToday,
+  loadShelves, loadClientItems, loadInternalItems, shelfFitProblem, storeClient, storeInternal, storageCharge, calcCbm, localToday,
+  type WarehouseClientItem, type WarehouseInternalItem,
   type WarehouseShelf, type Location, type PackingLine,
 } from "./logistics-warehouse-data";
 
@@ -42,6 +43,7 @@ export function StoreIn({ onBack }: { onBack: () => void }) {
   const [shelves, setShelves] = useState<WarehouseShelf[]>([]);
   const [clients, setClients] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  const [stock, setStock] = useState<{ c: WarehouseClientItem[]; i: WarehouseInternalItem[] } | null>(null);
 
   const [owner, setOwner] = useState("");        // client name, or department
   const [deptDetail, setDeptDetail] = useState("");
@@ -58,6 +60,7 @@ export function StoreIn({ onBack }: { onBack: () => void }) {
 
   useEffect(() => {
     void loadShelves().then(setShelves).catch(() => {});
+    void Promise.all([loadClientItems(), loadInternalItems()]).then(([c, i]) => setStock({ c, i })).catch(() => {});
     void (async () => {
       const [yachts, { data }] = await Promise.all([loadYachtNames().catch(() => []), sb.from("warehouse_client_items").select("client_name").limit(2000)]);
       setClients(Array.from(new Set<string>([...yachts, ...(data ?? []).map((r: any) => r.client_name as string)].filter(Boolean))).sort());
@@ -66,6 +69,8 @@ export function StoreIn({ onBack }: { onBack: () => void }) {
 
   const cbm = calcCbm(Number(dims.length) || 0, Number(dims.width) || 0, Number(dims.height) || 0);
   const freeform = (FREEFORM_DEPARTMENTS as readonly string[]).includes(owner);
+  const shelf = loc.zone && loc.bay && loc.shelf ? shelves.find((s) => s.zone === loc.zone && s.bay === loc.bay && s.shelf === loc.shelf) : undefined;
+  const fit = stock ? shelfFitProblem(shelf, { l: Number(dims.length) || 0, w: Number(dims.width) || 0, h: Number(dims.height) || 0, kg: Number(dims.weight) || 0 }, stock.c, stock.i) : null;
 
   function reset() {
     setOwner(""); setDeptDetail(""); setDescription(""); setQuotation(""); setDims(NO_DIMS); setDateStored(today());
@@ -144,6 +149,7 @@ export function StoreIn({ onBack }: { onBack: () => void }) {
       </div>
 
       <LocationPicker shelves={shelves} value={loc} onChange={setLoc} />
+      {fit && <p className="rounded-lg border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-[14px] text-amber-500">{fit} You can still save it.</p>}
 
       {entry === "client" && (
         <Lbl label="Charges (AED)">

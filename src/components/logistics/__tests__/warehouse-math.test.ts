@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  storageCharge, calcCbm, zoneLabel, bayList, shelfList, shelfUsedDims, recommendShelves,
+  storageCharge, calcCbm, zoneLabel, bayList, shelfList, shelfUsedDims, recommendShelves, shelfFitProblem,
   type WarehouseShelf, type WarehouseClientItem, type WarehouseInternalItem,
 } from "../logistics-warehouse-data";
 
@@ -82,4 +82,39 @@ test("a Completed item frees its space", () => {
 test("a shelf with no weight limit never refuses on weight", () => {
   const shelves = [shelf("A", "1", "1", { max_weight_kg: null as unknown as number })];
   assert.equal(recommendShelves(shelves, [], [], { l: 10, w: 10, h: 10, kg: 99999 }).length, 1);
+});
+
+// ── the warning shown when choosing a shelf ──────────────────────────────────
+
+test("shelf warning: nothing to say without a shelf, or before anything has been measured", () => {
+  assert.equal(shelfFitProblem(undefined, { l: 100, w: 100, h: 100, kg: 10 }, [], []), null);
+  assert.equal(shelfFitProblem(shelf("A", "1", "1"), { l: 0, w: 0, h: 0, kg: 0 }, [], []), null);
+});
+
+test("shelf warning: too big in any direction", () => {
+  const s = shelf("A", "1", "1");                                            // 200 × 100 × 100
+  assert.match(shelfFitProblem(s, { l: 201, w: 50, h: 50, kg: 1 }, [], [])!, /bigger/);
+  assert.match(shelfFitProblem(s, { l: 50, w: 101, h: 50, kg: 1 }, [], [])!, /bigger/);
+  assert.match(shelfFitProblem(s, { l: 50, w: 50, h: 101, kg: 1 }, [], [])!, /bigger/);
+  assert.equal(shelfFitProblem(s, { l: 200, w: 100, h: 100, kg: 1 }, [], []), null, "exactly the shelf size (and exactly its volume) fits");
+});
+
+test("shelf warning: not enough volume left, saying how much IS left; an exact fit is fine", () => {
+  const s = shelf("A", "1", "1", { max_cbm: 2 });
+  const items = [client({ cbm: 1.5 })];
+  assert.equal(shelfFitProblem(s, { l: 100, w: 100, h: 100, kg: 1 }, items, []), "Only 0.50 m³ is free on that shelf.");
+  assert.equal(shelfFitProblem(s, { l: 100, w: 50, h: 100, kg: 1 }, items, []), null, "0.5 CBM into the 0.5 left fits exactly");
+});
+
+test("shelf warning: too heavy for what's left, but never when the shelf has no weight limit", () => {
+  const s = shelf("A", "1", "1", { max_weight_kg: 100 });
+  assert.match(shelfFitProblem(s, { l: 10, w: 10, h: 10, kg: 60 }, [client({ weight_kg: 50 })], [])!, /weight/);
+  assert.equal(shelfFitProblem(s, { l: 10, w: 10, h: 10, kg: 50 }, [client({ weight_kg: 50 })], []), null);
+  assert.equal(shelfFitProblem(shelf("A", "1", "1", { max_weight_kg: null as unknown as number }), { l: 10, w: 10, h: 10, kg: 9999 }, [], []), null);
+});
+
+test("shelf warning: a completed item no longer takes up room", () => {
+  const s = shelf("A", "1", "1", { max_cbm: 1.5 });
+  assert.ok(shelfFitProblem(s, { l: 100, w: 100, h: 100, kg: 1 }, [client({ cbm: 1 })], []));
+  assert.equal(shelfFitProblem(s, { l: 100, w: 100, h: 100, kg: 1 }, [client({ cbm: 1, status: "Completed" })], []), null);
 });

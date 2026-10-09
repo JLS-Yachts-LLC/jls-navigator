@@ -16,7 +16,7 @@ import { toast } from "sonner";
 import { errorMessage } from "@/lib/error-message";
 import { BarcodeScannerDialog } from "@/components/shipsync/BarcodeScanner";
 import { findReleasableByAwb, type ParcelLite } from "./logistics-data";
-import { loadShelves, moveParcelsToStorage, calcCbm, type WarehouseShelf, type Location } from "./logistics-warehouse-data";
+import { loadShelves, loadClientItems, loadInternalItems, shelfFitProblem, moveParcelsToStorage, calcCbm, type WarehouseShelf, type WarehouseClientItem, type WarehouseInternalItem, type Location } from "./logistics-warehouse-data";
 import { ParcelTable, SearchToAdd } from "./parcel-pickers";
 import { Screen, Lbl, inputCls, PhotoField } from "./logistics-ui";
 import { LocationPicker, DimsFields, type Dims } from "./warehouse-ui";
@@ -32,10 +32,16 @@ export function MoveToStorage({ mode, onDone }: { mode: "box" | "individual"; on
   const [scanning, setScanning] = useState(false);
   const [searching, setSearching] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [stock, setStock] = useState<{ c: WarehouseClientItem[]; i: WarehouseInternalItem[] } | null>(null);
 
-  useEffect(() => { void loadShelves().then(setShelves).catch(() => {}); }, []);
+  useEffect(() => {
+    void loadShelves().then(setShelves).catch(() => {});
+    void Promise.all([loadClientItems(), loadInternalItems()]).then(([c, i]) => setStock({ c, i })).catch(() => {});
+  }, []);
 
   const one = mode === "individual";
+  const shelf = loc.zone && loc.bay && loc.shelf ? shelves.find((s) => s.zone === loc.zone && s.bay === loc.bay && s.shelf === loc.shelf) : undefined;
+  const fit = stock ? shelfFitProblem(shelf, { l: Number(dims.length) || 0, w: Number(dims.width) || 0, h: Number(dims.height) || 0, kg: Number(dims.weight) || 0 }, stock.c, stock.i) : null;
 
   function add(incoming: ParcelLite[]) {
     setParcels((cur) => {
@@ -88,6 +94,7 @@ export function MoveToStorage({ mode, onDone }: { mode: "box" | "individual"; on
       <DimsFields value={dims} onChange={setDims} showCharge />
       <Lbl label="Quotation"><input className={inputCls} value={quotation} onChange={(e) => setQuotation(e.target.value)} placeholder="JLS quotation reference" /></Lbl>
       <LocationPicker shelves={shelves} value={loc} onChange={setLoc} />
+      {fit && <p className="rounded-lg border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-[14px] text-amber-500">{fit} You can still save it.</p>}
       <PhotoField file={photo} onChange={setPhoto} label={one ? "Capture or Upload Image" : "Capture or Upload Image of the whole box"} />
 
       <BarcodeScannerDialog open={scanning} onClose={() => setScanning(false)} title="Scan parcel label" onDetected={(v) => void onScan(v)} />

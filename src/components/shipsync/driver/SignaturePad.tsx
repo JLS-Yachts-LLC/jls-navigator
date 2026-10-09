@@ -4,6 +4,8 @@ export interface SignaturePadHandle {
   toBlob: () => Promise<Blob | null>;
   clear: () => void;
   isEmpty: () => boolean;
+  /** Draw a previously saved signature back onto the pad. */
+  loadFrom: (blob: Blob) => Promise<void>;
 }
 
 /** Lightweight pointer-drawn signature pad (no dependency). */
@@ -44,6 +46,15 @@ export const SignaturePad = forwardRef<SignaturePadHandle, { className?: string 
       dirty.current = false; force((n) => n + 1);
     },
     isEmpty: () => !dirty.current,
+    loadFrom: async (blob) => {
+      const c = ctx(); const cv = canvasRef.current;
+      if (!c || !cv || typeof createImageBitmap !== "function") return;
+      const bmp = await createImageBitmap(blob);
+      c.clearRect(0, 0, cv.width, cv.height);
+      c.drawImage(bmp, 0, 0, cv.width, cv.height);
+      bmp.close?.();
+      dirty.current = true; force((n) => n + 1);
+    },
   }));
 
   return (

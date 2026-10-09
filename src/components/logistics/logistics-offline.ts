@@ -13,6 +13,7 @@ import { commitQueued, createCheckin, updateCheckin, findByAwb, isNetworkError, 
 
 const DB_NAME = "logistics-offline";
 const STORE = "checkins";
+const DRAFTS = "drafts";
 export const QUEUE_EVENT = "logistics-checkins-changed";
 
 export type QueuedCheckin = {
@@ -25,8 +26,11 @@ export type QueuedCheckin = {
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains(STORE)) req.result.createObjectStore(STORE, { keyPath: "id" }); };
+    const req = indexedDB.open(DB_NAME, 2);
+    req.onupgradeneeded = () => {
+      if (!req.result.objectStoreNames.contains(STORE)) req.result.createObjectStore(STORE, { keyPath: "id" });
+      if (!req.result.objectStoreNames.contains(DRAFTS)) req.result.createObjectStore(DRAFTS, { keyPath: "key" });
+    };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
@@ -38,12 +42,12 @@ function openDb(): Promise<IDBDatabase> {
  * the write, and the caller must hear about it rather than clear the form and tell
  * the person their check-in is safe on the phone.
  */
-async function tx<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest): Promise<T> {
+async function tx<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest, store: string = STORE): Promise<T> {
   const db = await openDb();
   return new Promise<T>((resolve, reject) => {
     let result: T;
-    const t = db.transaction(STORE, mode);
-    const req = fn(t.objectStore(STORE));
+    const t = db.transaction(store, mode);
+    const req = fn(t.objectStore(store));
     req.onsuccess = () => { result = req.result as T; };
     t.oncomplete = () => { db.close(); resolve(result); };
     t.onerror = () => { db.close(); reject(t.error ?? req.error); };
@@ -121,4 +125,50 @@ export async function resolveConflict(id: string, action: "merge" | "discard"): 
   if (existing) await updateCheckin(existing, it.payload, it.photo);
   else await createCheckin(it.payload, it.photo);
   await discardCheckin(id);
+}
+
+// ── Drafts: a photo or signature kept on the phone while a form is open ──────
+//
+// Opening the camera can make Android and iOS reload the page when memory is tight, which wiped
+// the form and the photo. A photo (or signature) taken is kept here as it is taken, and put back
+// when the form opens again. Cleared when the form is saved or abandoned.
+
+type DraftRecord = { key: string; blob: Blob; name: string; type: string; savedAt: number };
+
+/** Keep `file` under `key`. */
+export async function saveDraftFile(key: string, file: Blob & { name?: string }, now: number = Date.now()): Promise<void> {
+  const rec: DraftRecord = { key, blob: file, name: file.name ?? "", type: file.type, savedAt: now };
+  await tx<void>("readwrite", (s) => s.put(rec), DRAFTS);
+}
+
+/** The file kept under `key`, as a File — or null. */
+export async function loadDraftFile(key: string): Promise<File | null> {
+  const rec = await tx<DraftRecord | undefined>("readonly", (s) => s.get(key), DRAFTS);
+  if (!rec) return null;
+  return rec.blob instanceof File ? rec.blob : new File([rec.blob], rec.name || "draft", { type: rec.type || rec.blob.type });
+}
+
+export async function deleteDraftFile(key: string): Promise<void> {
+  await tx<void>("readwrite", (s) => s.delete(key), DRAFTS);
+}
+
+/** Drop drafts nobody came back for: a form's own draft after a day, a "Complete Later" one after two weeks. */
+export async function purgeDrafts(now: number = Date.now()): Promise<number> {
+  const all = await tx<DraftRecord[]>("readonly", (s) => s.getAll(), DRAFTS);
+  const DAY = 24 * 60 * 60 * 1000;
+  let n = 0;
+  for (const r of all) {
+    const limit = r.key.startsWith("later-") ? 14 * DAY : DAY;
+    if (now - r.savedAt > limit) { await deleteDraftFile(r.key); n++; }
+  }
+  return n;
+}
+
+/** One id per browser tab/session, so a half-finished form's draft is only ever put back into the same session's form. */
+export function sessionDraftId(): string {
+  try {
+    let id = sessionStorage.getItem("logistics-session");
+    if (!id) { id = Math.random().toString(36).slice(2, 10); sessionStorage.setItem("logistics-session", id); }
+    return id;
+  } catch { return "nosession"; }
 }

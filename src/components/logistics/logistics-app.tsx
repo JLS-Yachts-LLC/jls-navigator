@@ -24,6 +24,7 @@ import { WarehouseOut } from "./warehouse-out";
 import { PendingBanner, useCheckinQueue } from "./checkin-pending";
 import { flushQueue } from "@/lib/shipsync/offline";
 import { closeFinishedNotes } from "./logistics-delivery-data";
+import { purgeDrafts } from "./logistics-offline";
 import { ManageWarehouse } from "./manage-warehouse";
 import { useOrbitFieldOnlyRedirect } from "@/lib/orbit-field-only";
 
@@ -59,6 +60,14 @@ export function LogisticsApp() {
   const [open, setOpen] = useState<Module | null>(null);
   // Check-ins saved without signal upload from here, whichever screen is open.
   const queue = useCheckinQueue(true);
+
+  // Drafts (photos kept while a form is open) nobody came back for are dropped.
+  useEffect(() => { void purgeDrafts().catch(() => {}); }, []);
+
+  // Keep a copy of the app on the phone so it opens with no signal (see src/lib/logistics-pwa.ts).
+  useEffect(() => {
+    if ("serviceWorker" in navigator) navigator.serviceWorker.register("/logistics-sw.js", { scope: "/logistics-app" }).catch(() => { /* not available here — the app just needs a connection to open */ });
+  }, []);
 
   // Scans and handovers (photos and signatures included) made with no signal wait in the
   // driver queue on this phone. They used to be sent only if the OLD driver app was opened,

@@ -22,7 +22,7 @@ import { LocationPicker } from "./warehouse-ui";
 import { labelsFor } from "./warehouse-labels";
 import {
   loadShelves, loadClientItems, loadInternalItems, loadStoredItems, findItems, refForAwb, patchStored, shelfCrud,
-  recommendShelves, shelfUsage, shelfUsedDims, bayList, shelfList, allZones, zoneLabel, calcCbm, locationCode,
+  recommendShelves, shelfFitProblem, shelfUsage, shelfUsedDims, bayList, shelfList, allZones, zoneLabel, calcCbm, locationCode,
   type StoredItem, type WarehouseShelf, type WarehouseClientItem, type WarehouseInternalItem, type Location,
 } from "./logistics-warehouse-data";
 
@@ -368,12 +368,7 @@ function Relocate({ onBack }: { onBack: () => void }) {
   const target = loc.zone && loc.bay && loc.shelf ? wh.shelves?.find((s) => s.zone === loc.zone && s.bay === loc.bay && s.shelf === loc.shelf) ?? null : null;
   const warning = (() => {
     if (!item || !target || !wh.ready) return null;
-    const u = shelfUsage(target.zone, target.bay, target.shelf, wh.clients!, wh.internals!);
-    const cbm = calcCbm(item.length_cm ?? 0, item.width_cm ?? 0, item.height_cm ?? 0);
-    if ((item.length_cm ?? 0) > target.max_length_cm || (item.width_cm ?? 0) > target.max_width_cm || (item.height_cm ?? 0) > target.max_height_cm) return "This item is bigger than the shelf allows.";
-    if (cbm > target.max_cbm - u.usedCbm) return `Only ${(target.max_cbm - u.usedCbm).toFixed(2)} m³ is free on that shelf.`;
-    if (target.max_weight_kg != null && (item.weight_kg ?? 0) > target.max_weight_kg - u.usedWeightKg) return "That shelf can't take the weight.";
-    return null;
+    return shelfFitProblem(target, { l: item.length_cm ?? 0, w: item.width_cm ?? 0, h: item.height_cm ?? 0, kg: item.weight_kg ?? 0 }, wh.clients!, wh.internals!);
   })();
 
   async function save() {

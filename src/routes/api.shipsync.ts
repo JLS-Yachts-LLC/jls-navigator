@@ -1,8 +1,13 @@
 /**
- * ShipSync server API — POST /api/shipsync/note-pdf, /email-pod and /email-warehouse-receipt.
- * Authenticated (bearer). Generates delivery-note PDFs and sends POD emails.
+ * ShipSync server API — POST /api/shipsync/note-pdf, /email-pod, /email-warehouse-receipt,
+ * /sp-push and /sp-import. Generates delivery-note PDFs, sends proof-of-delivery and
+ * receipt emails, and runs the SharePoint sync.
+ *
+ * Each route decides who may call it (see access.server.ts): ShipSync staff, and — for the
+ * PDF and proof-of-delivery routes only — a driver acting on their OWN delivery note. A signed-in
+ * account with no ShipSync access (or a client-portal captain) is refused.
  */
-import { supabaseAdmin } from '@/integrations/supabase/client.server'
+import { authorizeShipSync } from '@/lib/shipsync/access.server'
 import { generateNotePdf, emailProofOfDelivery, emailWarehouseReceipt } from '@/lib/shipsync/automations.server'
 import { pushShipSyncToSharePoint, importShipSyncFromSharePoint } from '@/lib/shipsync/sharepoint.server'
 
@@ -10,13 +15,16 @@ const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: 
 
 export async function shipsyncApiHandler(request: Request): Promise<Response> {
   const url = new URL(request.url)
-  const auth = request.headers.get('authorization') ?? ''
-  if (!auth.startsWith('Bearer ')) return json({ ok: false, error: 'Unauthorized' }, 401)
-  const { data: { user }, error } = await (supabaseAdmin as any).auth.getUser(auth.slice(7))
-  if (error || !user) return json({ ok: false, error: 'Unauthorized' }, 401)
-
   let body: any = {}
   try { body = await request.json() } catch { /* allow empty */ }
+
+  const access = await authorizeShipSync(request,
+    url.pathname === '/api/shipsync/note-pdf' || url.pathname === '/api/shipsync/email-pod'
+      ? { driverOk: true, noteId: typeof body.noteId === 'string' ? body.noteId : undefined }
+      : url.pathname === '/api/shipsync/sp-push' || url.pathname === '/api/shipsync/sp-import'
+        ? { level: 'edit' }
+        : {})
+  if (!access.ok) return access.response
 
   try {
     if (url.pathname === '/api/shipsync/note-pdf') {

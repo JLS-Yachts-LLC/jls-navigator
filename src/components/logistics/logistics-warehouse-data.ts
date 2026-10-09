@@ -57,6 +57,26 @@ export function shelfUsedDims(zone: string, bay: string, shelf: string, clients:
   return { l, w, h };
 }
 
+/**
+ * Why something of these dimensions shouldn't go on this shelf — too big for it, not enough volume
+ * left, or too heavy for what's left — or null if it fits (or nothing has been measured yet).
+ * A warning, not a block: the shelf's limits are guidelines the warehouse can choose to override.
+ */
+export function shelfFitProblem(
+  shelf: WarehouseShelf | null | undefined, need: { l: number; w: number; h: number; kg: number },
+  clients: WarehouseClientItem[], internals: WarehouseInternalItem[],
+): string | null {
+  if (!shelf) return null;
+  const cbm = calcCbm(need.l, need.w, need.h);
+  if (!(cbm > 0) && !(need.kg > 0)) return null;
+  if (need.l > shelf.max_length_cm || need.w > shelf.max_width_cm || need.h > shelf.max_height_cm) return "This is bigger than that shelf allows.";
+  const u = shelfUsage(shelf.zone, shelf.bay, shelf.shelf, clients, internals);
+  const freeCbm = shelf.max_cbm - u.usedCbm;
+  if (cbm > freeCbm + 1e-9) return `Only ${Math.max(0, freeCbm).toFixed(2)} m³ is free on that shelf.`;
+  if (shelf.max_weight_kg != null && need.kg > shelf.max_weight_kg - u.usedWeightKg) return "That shelf can't take the weight.";
+  return null;
+}
+
 /** Shelves a parcel of these dimensions can go on, tightest fit first — the Shelf Finder. */
 export function recommendShelves(
   shelves: WarehouseShelf[], clients: WarehouseClientItem[], internals: WarehouseInternalItem[],

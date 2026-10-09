@@ -56,11 +56,24 @@ export async function lookupDriver(userId: string, email: string | null): Promis
   return { driver: (byEmail.data?.[0] as ShipSyncDriver | undefined) ?? null, failed: false };
 }
 
+const CACHE_KEY = "logistics.identity";
+const readCached = (): LogisticsIdentity | null => {
+  try { const v = JSON.parse(localStorage.getItem(CACHE_KEY) ?? "null") as LogisticsIdentity | null; return v ? { ...v, loading: false, lookupFailed: false } : null; } catch { return null; }
+};
+
 export function useLogisticsIdentity(): LogisticsIdentity {
   const { user } = useAuth();
   const [state, setState] = useState<LogisticsIdentity>({
     loading: true, greeting: "", name: "", driver: null, driverOnly: false, lookupFailed: false,
   });
+
+  // With no signal the sign-in can't be renewed, so there may be no user to look up. If somebody was
+  // signed in here before, carry on as them (what they could see last time) rather than a spinner forever.
+  useEffect(() => {
+    if (user?.id) return;
+    const t = window.setTimeout(() => { const c = readCached(); if (c && !navigator.onLine) setState(c); }, 1500);
+    return () => window.clearTimeout(t);
+  }, [user?.id]);
 
   useEffect(() => {
     let on = true;
@@ -73,11 +86,16 @@ export function useLogisticsIdentity(): LogisticsIdentity {
         lookupDriver(user.id, user.email ?? null).catch(() => ({ driver: null, failed: true })).then(async (r) => (r.failed ? lookupDriver(user.id, user.email ?? null).catch(() => r) : r)),
       ]);
       if (!on) return;
+      // Opened with no signal: the lookups couldn't run. Carry on as this person was last time (if known).
+      if (driver.failed && typeof navigator !== "undefined" && !navigator.onLine) {
+        const c = readCached();
+        if (c) { setState(c); return; }
+      }
       const name = (profile?.display_name as string | undefined)?.trim() || fallback;
       const role = (profile?.roles?.name as string | undefined) ?? "";
       const emails = [user.email, driver.driver?.email].map((e) => (e ?? "").trim().toLowerCase());
       const platformAdmin = ["global_admin", "platform_owner"].includes(role) || emails.some((e) => LOGISTICS_ADMIN_EMAILS.includes(e));
-      setState({
+      const next: LogisticsIdentity = {
         loading: false,
         name,
         greeting: name.split(/\s+/)[0].toUpperCase(),
@@ -85,7 +103,9 @@ export function useLogisticsIdentity(): LogisticsIdentity {
         // If we couldn't tell whether this is a driver, show the safe screen rather than guess.
         driverOnly: (Boolean(driver.driver) || driver.failed) && !platformAdmin,
         lookupFailed: driver.failed && !platformAdmin,
-      });
+      };
+      setState(next);
+      if (!driver.failed) { try { localStorage.setItem(CACHE_KEY, JSON.stringify(next)); } catch { /* ignore */ } }
     })();
 
     return () => { on = false; };

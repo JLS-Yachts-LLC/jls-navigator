@@ -30,6 +30,8 @@ import {
 } from "./logistics-delivery-data";
 import type { LogisticsIdentity } from "./logistics-identity";
 import { Screen, Lbl, inputCls, PhotoField, Sheet } from "./logistics-ui";
+import { usePersistedFile } from "./persisted-file";
+import { sessionDraftId, loadDraftFile, saveDraftFile, deleteDraftFile } from "./logistics-offline";
 
 type Runs = Awaited<ReturnType<typeof loadDriverRuns>>;
 // A draft belongs to one boat's handover on a note — a run can carry several boats, each with its own receiver.
@@ -111,9 +113,10 @@ function Manifest({ note, parcels, driver, reload, onBack }: {
     if (shownBoat.current === boat) return;
     shownBoat.current = boat;
     setH(readDraft(note.id, boat));
-    setPhoto(null);
     sig.current?.clear();
   }, [boat]); // eslint-disable-line react-hooks/exhaustive-deps
+
+
 
   const items = parcels.filter((p) => (p.boat_name ?? "—") === boat);
   const allGreen = items.length > 0 && items.every(isScanned);
@@ -124,8 +127,21 @@ function Manifest({ note, parcels, driver, reload, onBack }: {
   const [changing, setChanging] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [h, setH] = useState(() => readDraft(note.id, boats[0] ?? "—"));
-  const [photo, setPhoto] = useState<File | null>(null);
+  const draftId = `${note.id}:${boat}`;
+  const [photo, setPhoto] = usePersistedFile(`handover-photo:${sessionDraftId()}:${draftId}`);
   const sig = useRef<SignaturePadHandle>(null);
+
+  // Coming back to a handover saved with Complete Later: put its photo and signature back.
+  useEffect(() => {
+    let on = true;
+    void (async () => {
+      const [p, s] = await Promise.all([loadDraftFile(`later-photo:${draftId}`).catch(() => null), loadDraftFile(`later-sig:${draftId}`).catch(() => null)]);
+      if (!on) return;
+      if (p) setPhoto(p);
+      if (s) await sig.current?.loadFrom(s).catch(() => {});
+    })();
+    return () => { on = false; };
+  }, [draftId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function run(name: string, fn: () => Promise<void>) {
     setBusy(name);
@@ -146,6 +162,10 @@ function Manifest({ note, parcels, driver, reload, onBack }: {
 
   const later = () => run("later", async () => {
     try { localStorage.setItem(draftKey(note.id, boat), JSON.stringify(h)); } catch { /* storage blocked — the server flag below still records it */ }
+    // The photo and signature are kept too — they used to be lost, and the receiver had to sign again.
+    if (photo) await saveDraftFile(`later-photo:${draftId}`, photo).catch(() => {});
+    const drawn = (await sig.current?.toBlob()) ?? null;
+    if (drawn) await saveDraftFile(`later-sig:${draftId}`, drawn).catch(() => {});
     if (online()) await markAwaiting(note.id, true).catch(() => {});
     toast.success("Saved — finish it from My Deliveries.");
     onBack();
@@ -159,6 +179,8 @@ function Manifest({ note, parcels, driver, reload, onBack }: {
       const signature = (await sig.current?.toBlob()) ?? null;
       const r = await completeDelivery(note, items, { ...h, photo, signature }, driver, boat);
       try { localStorage.removeItem(draftKey(note.id, boat)); } catch { /* ignore */ }
+      for (const k of [`later-photo:${draftId}`, `later-sig:${draftId}`]) await deleteDraftFile(k).catch(() => {});
+      setPhoto(null);
       if (r.queued) toast.success("Saved on this phone — it will send when you're back online");
       else if (r.problem) toast.warning(r.problem, { duration: 12000 });
       else toast.success(`${boat} delivered${r.emailed.length ? ` — proof emailed to ${r.emailed.join(" and ")}` : ""}`);
