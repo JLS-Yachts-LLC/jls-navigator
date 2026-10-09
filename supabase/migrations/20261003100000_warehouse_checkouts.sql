@@ -63,6 +63,9 @@ create table if not exists public.warehouse_checkout_items (
 create index if not exists idx_warehouse_checkouts_status on public.warehouse_checkouts (status);
 create index if not exists idx_warehouse_checkout_items_checkout on public.warehouse_checkout_items (checkout_id);
 create index if not exists idx_warehouse_checkout_items_ref on public.warehouse_checkout_items (ref_no);
+create index if not exists idx_warehouse_checkouts_driver on public.warehouse_checkouts (driver_id);
+create index if not exists idx_warehouse_checkout_items_client_item on public.warehouse_checkout_items (client_item_id);
+create index if not exists idx_warehouse_checkout_items_content on public.warehouse_checkout_items (content_id);
 
 drop trigger if exists set_warehouse_checkouts_updated_at on public.warehouse_checkouts;
 create trigger set_warehouse_checkouts_updated_at before update on public.warehouse_checkouts
