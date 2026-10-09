@@ -124,6 +124,13 @@ export async function permitsEmailHandler(request: Request): Promise<Response> {
       email_sent_to: to,
     }).eq('id', permitId)
 
+    // The sender's own confirmation, if they want one (My notifications).
+    const { notifySentToClient } = await import('@/lib/staff-notifications.server')
+    await notifySentToClient({
+      userId: session.user.id, document: label, reference, vessel: vesselName || null,
+      to: [to], cc, secureLinkExpiresAt: share?.expiresAt ?? null,
+    })
+
     return json({
       ok: true, sent: true, to, subject, label, delivery,
       secureLink: !!share,

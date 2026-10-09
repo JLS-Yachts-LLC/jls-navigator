@@ -21,7 +21,8 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
-import { Loader2, LogOut, UserRound, Camera, Trash2 } from "lucide-react";
+import { Loader2, LogOut, UserRound, Camera, Trash2, Bell } from "lucide-react";
+import { NotificationsDialog } from "./notifications-dialog";
 import { toast } from "sonner";
 
 const AVATAR_PREFIX = "staff-avatars";
@@ -232,6 +233,7 @@ export function ProfileMenu({ renderTrigger }: {
   const profile = useMyProfile();
   const [open, setOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [notifyOpen, setNotifyOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   // Close on an outside click or Escape — the menu is a plain popover rather
@@ -291,6 +293,13 @@ export function ProfileMenu({ renderTrigger }: {
           </button>
           <button
             role="menuitem"
+            onClick={() => { setOpen(false); setNotifyOpen(true); }}
+            className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm transition hover:bg-accent"
+          >
+            <Bell className="h-4 w-4 text-muted-foreground" /> My notifications
+          </button>
+          <button
+            role="menuitem"
             onClick={() => { setOpen(false); void signOut(); }}
             className="flex w-full items-center gap-2 border-t border-border/70 px-3 py-2.5 text-left text-sm text-destructive transition hover:bg-destructive/10"
           >
@@ -300,6 +309,7 @@ export function ProfileMenu({ renderTrigger }: {
       )}
 
       <EditProfileDialog open={editOpen} onClose={() => setEditOpen(false)} profile={profile} />
+      <NotificationsDialog open={notifyOpen} onClose={() => setNotifyOpen(false)} email={profile.email} />
     </div>
   );
 }

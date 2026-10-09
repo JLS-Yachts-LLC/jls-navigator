@@ -1,10 +1,11 @@
 import { ProfileAvatar, EditProfileDialog, useMyProfile, initialsOf } from "@/components/profile/profile-menu";
+import { NotificationsDialog } from "@/components/profile/notifications-dialog";
 import { useState, useEffect, useRef } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import {
-  Search, LogOut, Settings, UserCircle2, UserRound, Ship, Loader2, ChevronDown, X, Sun, Moon, Users, Eye, Check, ShieldCheck, Sparkles,
+  Search, LogOut, Settings, UserCircle2, UserRound, Ship, Loader2, ChevronDown, X, Sun, Moon, Users, Eye, Check, ShieldCheck, Sparkles, Bell,
 } from "lucide-react";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
@@ -242,6 +243,7 @@ export function TopBar() {
   const { user, signOut } = useAuth();
   const myProfile = useMyProfile();
   const [editProfileOpen, setEditProfileOpen] = useState(false);
+  const [notifyOpen, setNotifyOpen] = useState(false);
   const { theme, toggle } = useTheme();
   const navigate = useNavigate();
   const canSeeOnline = useCanImpersonate();
@@ -411,6 +413,9 @@ export function TopBar() {
             <DropdownMenuItem onClick={() => setEditProfileOpen(true)}>
               <UserRound className="mr-2 h-4 w-4" /> Edit profile
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setNotifyOpen(true)}>
+              <Bell className="mr-2 h-4 w-4" /> My notifications
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => navigate({ to: "/settings" })}>
               <Settings className="mr-2 h-4 w-4" /> Settings
             </DropdownMenuItem>
@@ -426,6 +431,7 @@ export function TopBar() {
           onClose={() => setEditProfileOpen(false)}
           profile={myProfile}
         />
+        <NotificationsDialog open={notifyOpen} onClose={() => setNotifyOpen(false)} email={user?.email ?? null} />
       </div>
     </header>
   );

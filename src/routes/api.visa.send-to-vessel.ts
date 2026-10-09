@@ -99,5 +99,12 @@ export async function visaSendToVesselHandler(request: Request): Promise<Respons
     updated_at: new Date().toISOString(),
   } as any).eq('id', visa.id)
 
+  // The sender's own confirmation, if they want one (My notifications).
+  const { notifySentToClient } = await import('@/lib/staff-notifications.server')
+  await notifySentToClient({
+    userId: user.id, document: `UAE Crew Visa — ${crewName}`, reference: visa.visa_number ? String(visa.visa_number) : null,
+    vessel: vessel || null, to, cc: body.cc ?? [], secureLinkExpiresAt: share.expiresAt,
+  })
+
   return json({ ok: true, sent: to.length, arrivalAttached: !!arrival, secureLink: true, linkExpiresAt: share.expiresAt })
 }

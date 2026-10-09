@@ -211,14 +211,22 @@ async function recordAccess(shareId: string, action: "viewed" | "downloaded", re
     await sb.from("document_share_access").insert([{
       share_id: shareId, action, ip_address: ip, user_agent: ua,
     }]);
-    const { data: current } = await sb
-      .from("document_shares").select("access_count, first_accessed_at").eq("id", shareId).maybeSingle();
     const now = new Date().toISOString();
+    // The first open is claimed on its own (only a still-unopened share updates),
+    // so two simultaneous opens can't both count as first — and only the first
+    // tells the sender (My notifications → When the client opens it).
+    const { data: first } = await sb.from("document_shares")
+      .update({ first_accessed_at: now }).eq("id", shareId).is("first_accessed_at", null).select("id");
+    const { data: current } = await sb
+      .from("document_shares").select("access_count").eq("id", shareId).maybeSingle();
     await sb.from("document_shares").update({
       access_count: (current?.access_count ?? 0) + 1,
-      first_accessed_at: current?.first_accessed_at ?? now,
       last_accessed_at: now,
     }).eq("id", shareId);
+    if (first?.length) {
+      const { notifyShareOpened } = await import("@/lib/staff-notifications.server");
+      await notifyShareOpened(shareId);
+    }
   } catch (e) {
     console.error("[document-share] could not record access:", e);
   }
