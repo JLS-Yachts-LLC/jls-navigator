@@ -1,5 +1,4 @@
 import { createStartHandler, defaultStreamHandler } from '@tanstack/react-start/server'
-import { withSecurityHeaders } from './lib/security-headers.server'
 import { downloadPendingImages, downloadPendingImagesRotating, pushChangedRecords, discoverSharePoint, syncById, getSpSyncs, syncStalestList, syncPrioritisedLists, syncWebhookList, setupSignonList, resetDeltaTokens } from './lib/sharepoint-sync.server'
 import { syncAisPositions } from './lib/aisstream.server'
 import { runExpiryAlerts } from './lib/permit-expiry-cron.server'
@@ -67,7 +66,15 @@ import { trackRun } from './lib/automations.server'
 import { runVisaExpiryFlagJob } from './lib/visa/visaExpiryFlags.server'
 import { runTwoWaySyncTick } from './lib/visa/excel-sync.server'
 
-const handleRequest = createStartHandler(defaultStreamHandler)
+const startHandler = createStartHandler(defaultStreamHandler)
+
+// Security headers (ConnectSecure scan 2026-10-09) on every SSR document
+// response ('/' and all app routes). Static assets under /assets/* and
+// other public/ files are covered separately by public/_headers.
+const handleRequest = async (request: Request): Promise<Response> => {
+  const response = await startHandler(request)
+  return withSecurityHeaders(response, new URL(request.url).pathname)
+}
 
 async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: Promise<unknown>) => void }): Promise<Response> {
   const url = new URL(request.url)
