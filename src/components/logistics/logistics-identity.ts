@@ -24,7 +24,7 @@ import { useAuth } from "@/lib/auth";
 import type { ShipSyncDriver } from "@/lib/shipsync/model";
 
 /** Drivers who also run the logistics office — never limited to the Deliveries tile. Lower-case. */
-const LOGISTICS_ADMIN_EMAILS = ["j.lopez@jlsyachts.com"];
+const LOGISTICS_ADMIN_EMAILS = ["j.lopez@jlsyachts.com", "j.gonzaga@jlsyachts.com"];
 
 export type LogisticsIdentity = {
   loading: boolean;
