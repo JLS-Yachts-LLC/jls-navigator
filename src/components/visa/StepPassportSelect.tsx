@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { COLORS, FONTS } from '@/lib/tokens'
 import { supabase } from '@/integrations/supabase/client'
 import { DateInputDMY } from '@/components/ui/date-input-dmy'
+import { LatinHint } from '@/components/visa/LatinHint'
 import { SignedAnchor } from '@/components/ui/signed-file'
 import { DraggableDocRow } from '@/components/visa/DraggableDocRow'
 import { downloadImmigrationPackage, immigrationPackName, type ExportableDoc } from '@/lib/visa/documentExport'
@@ -1234,6 +1235,7 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 10 }}>
                   <FieldCard label="First Name">
                     <input style={editInputStyle} value={firstName} onChange={e => setFirstName(e.target.value)} placeholder="e.g. Matthew" required />
+                    <LatinHint value={firstName} onFix={setFirstName} />
                   </FieldCard>
                   <FieldCard label="Middle Name"
                     note={!middleName ? (recommendedMiddle ? 'Recommended from passport' : 'Not on passport — optional') : undefined}
@@ -1242,6 +1244,7 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
                       style={{ ...editInputStyle, ...(!middleName && recommendedMiddle ? { borderColor: COLORS.signal } : {}) }}
                       value={middleName} onChange={e => { setMiddleName(e.target.value); setRecommendedMiddle(null) }}
                       placeholder={recommendedMiddle ? recommendedMiddle : 'If shown on passport'} />
+                    <LatinHint value={middleName} onFix={setMiddleName} />
                     {!middleName && recommendedMiddle && (
                       <button type="button" onClick={() => { setMiddleName(recommendedMiddle); setRecommendedMiddle(null) }}
                         style={{ marginTop: 6, fontFamily: FONTS.display, fontSize: 11, fontWeight: 600, color: COLORS.signal,
@@ -1252,6 +1255,7 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
                   </FieldCard>
                   <FieldCard label="Last Name">
                     <input style={editInputStyle} value={lastName} onChange={e => setLastName(e.target.value)} placeholder="e.g. Peeters" required />
+                    <LatinHint value={lastName} onFix={setLastName} />
                   </FieldCard>
                 </div>
 
@@ -1288,6 +1292,7 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10 }}>
                   <FieldCard label="Place of Birth">
                     <input style={editInputStyle} value={placeOfBirth} onChange={e => setPlaceOfBirth(e.target.value)} placeholder="e.g. London" />
+                    <LatinHint value={placeOfBirth} onFix={setPlaceOfBirth} />
                   </FieldCard>
                   <FieldCard label="Gender">
                     <select value={gender} onChange={e => setGender(e.target.value)} style={{ ...editInputStyle, cursor: 'pointer' }}>
@@ -1299,6 +1304,7 @@ function AddPassportForm({ crewId, onSaved, onCancel, showCancel, existingPasspo
                   </FieldCard>
                   <FieldCard label="Place of Issue / Authority">
                     <input style={editInputStyle} value={placeOfIssue} onChange={e => setPlaceOfIssue(e.target.value)} placeholder="e.g. HMPO · Authority" />
+                    <LatinHint value={placeOfIssue} onFix={setPlaceOfIssue} />
                   </FieldCard>
                 </div>
               </div>

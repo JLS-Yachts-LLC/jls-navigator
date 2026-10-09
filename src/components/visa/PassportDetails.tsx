@@ -9,6 +9,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react'
+import { LatinHint } from '@/components/visa/LatinHint'
 import { COLORS, FONTS } from '@/lib/tokens'
 import { VesselField, fetchVesselContext } from '@/components/vessel-field'
 import type { VesselOption, VesselMode } from '@/components/vessel-field'
@@ -628,9 +629,12 @@ export default function PassportDetails({
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 18 }}>
                     <FieldCard label="Place of Birth">
                       {isEditing ? (
-                        <input value={extracted.placeOfBirth}
-                          onChange={e => setExtracted(p => p ? { ...p, placeOfBirth: e.target.value } : p)}
-                          style={editInputStyle} />
+                        <>
+                          <input value={extracted.placeOfBirth}
+                            onChange={e => setExtracted(p => p ? { ...p, placeOfBirth: e.target.value } : p)}
+                            style={editInputStyle} />
+                          <LatinHint value={extracted.placeOfBirth} onFix={(v) => setExtracted(p => p ? { ...p, placeOfBirth: v } : p)} />
+                        </>
                       ) : extracted.placeOfBirth}
                     </FieldCard>
 

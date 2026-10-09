@@ -4,6 +4,8 @@
  * structured fields to pre-populate the Add Passport form, plus a quality
  * checklist assessment. ANTHROPIC_API_KEY is a Worker secret (shared with Leo).
  */
+import { toLatin } from '@/lib/latin-text'
+
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages'
 const MODEL = 'claude-sonnet-4-6'
 
@@ -34,7 +36,9 @@ Return ONLY a single JSON object (no prose, no code fences) with EXACTLY these k
 }
 Read place_of_birth and gender from the printed visual zone; cross-check gender against the MRZ sex character.
 NAMES: surname and given_names MUST be written in Latin (English) letters — never Cyrillic, Greek, Arabic, Chinese or any other script, and never a mix of scripts. Many passports (Russian, Ukrainian, Belarusian, Kazakh, Greek, Arabic-script, Chinese, …) print the name twice: once in the national script and once in Latin letters below it. Use the LATIN line — it matches the MRZ. If no Latin line is printed, use the MRZ name. Keep Latin accents only if they're printed (e.g. "Müller").
-DATES: the document may print dates in ANY format or language — e.g. "21 NOV/NOV 1991", "21 NOV 1991", "21/11/1991", "11/21/1991", "1991-11-21", "21.11.1991", or bilingual month names (Dutch/French/Spanish/etc.). Interpret the month from its name or number in any language and ALWAYS output YYYY-MM-DD. Prefer the MRZ dates (format YYMMDD) to disambiguate day-vs-month when the printed date is ambiguous. Use null only if you genuinely cannot read the date.`
+DATES: the document may print dates in ANY format or language — e.g. "21 NOV/NOV 1991", "21 NOV 1991", "21/11/1991", "11/21/1991", "1991-11-21", "21.11.1991", or bilingual month names (Dutch/French/Spanish/etc.). Interpret the month from its name or number in any language and ALWAYS output YYYY-MM-DD. Prefer the MRZ dates (format YYMMDD) to disambiguate day-vs-month when the printed date is ambiguous. Use null only if you genuinely cannot read the date.
+
+LANGUAGE (SD-0050): every text value MUST be in English, written in Latin letters A-Z only. Where the document prints a field in two scripts (e.g. Russian and English, Bulgarian and English), use the English/Latin version. Where a field is printed ONLY in another script (Cyrillic, Greek, Arabic and so on), transliterate it into Latin letters the way passports do (ICAO 9303) and give common place words in English, e.g. "СВЕРДЛОВСКАЯ ОБЛ. / USSR" -> "Sverdlovsk Oblast / USSR", "Г. МОСКВА" -> "Moscow", "ФМС 77810" -> "FMS 77810". Names always come from the Latin line / MRZ, never the national-script line.`
 
 const VISA_PROMPT = `You are an entry-visa data-extraction engine. The image is a visa (sticker, label, or e-visa printout).
 Return ONLY a single JSON object (no prose, no code fences) with EXACTLY these keys:
@@ -63,7 +67,9 @@ DATE SEMANTICS — read carefully, they differ by document type:
   actual entry date, so "expiry_date" is NOT printed on these permits → output expiry_date: null.
 - Sticker visas (Schengen/US/UK style) with a FROM…UNTIL validity window: "UNTIL" IS the visa expiry
   → put it in "expiry_date"; use "first_entry_expiry" only if a separate enter-before date is shown.
-- Residence permits / long-stay visas with a single printed expiry → "expiry_date".`
+- Residence permits / long-stay visas with a single printed expiry → "expiry_date".
+
+LANGUAGE (SD-0050): every text value MUST be in English, written in Latin letters A-Z only. Where the document prints a field in two scripts (e.g. Russian and English, Bulgarian and English), use the English/Latin version. Where a field is printed ONLY in another script (Cyrillic, Greek, Arabic and so on), transliterate it into Latin letters the way passports do (ICAO 9303) and give common place words in English, e.g. "СВЕРДЛОВСКАЯ ОБЛ. / USSR" -> "Sverdlovsk Oblast / USSR", "Г. МОСКВА" -> "Moscow", "ФМС 77810" -> "FMS 77810". Names always come from the Latin line / MRZ, never the national-script line.`
 
 export async function visaPassportOcrHandler(request: Request): Promise<Response> {
   const json = (body: unknown, status = 200) =>
@@ -143,6 +149,12 @@ export async function visaPassportOcrHandler(request: Request): Promise<Response
   if (!parsed) return json({ ok: false, error: 'Could not parse passport data from the image.', raw: text.slice(0, 300) }, 422)
 
   latinNames(parsed)
+  // Safety net (SD-0050): whatever the model returned, no Cyrillic reaches the forms —
+  // a two-script value keeps its English half, the rest is transliterated.
+  for (const [k, v] of Object.entries(parsed)) {
+    if (typeof v === 'string') parsed[k] = toLatin(v)
+  }
+
   return json({ ok: true, data: parsed })
 }
 
