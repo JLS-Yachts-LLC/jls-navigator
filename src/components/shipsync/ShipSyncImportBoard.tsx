@@ -162,21 +162,30 @@ function exportCell(c: CellSpec, p: ShipSyncPackage): { label: string; value: st
 function extraOf(p: ShipSyncPackage): Record<string, any> { return (p.extra as any) ?? {}; }
 
 /**
- * The board is split in two so the shipments still in play aren't buried under
- * the finished ones (Completed alone is hundreds). A shipment is finished when
- * its Monday group is Delivered Shipment (Delivered - TBI, to be invoiced) or
- * Completed; one with no Monday group falls back to what the app recorded.
+ * The board is split into three lists so the shipments still in play aren't
+ * buried under the finished ones (Completed alone is hundreds):
+ *   Active          Import, Transit and anything not yet delivered
+ *   Delivered TBI   Monday's "Delivered Shipment" group — delivered, to be invoiced
+ *   Completed       Monday's "Completed" group — invoiced and closed
+ * A shipment with no Monday group falls back to what the app recorded about it.
  */
-const FINISHED_PACKAGE_STATUSES = ["delivered", "collected", "delivered_tbi", "completed"];
-function groupIsFinished(title: string): boolean {
+type Tab = "active" | "delivered" | "completed";
+function tabForGroup(title: string): Tab {
   const t = title.trim().toLowerCase();
-  return t === "completed" || t === "complete" || t.startsWith("delivered");
+  if (t === "completed" || t === "complete") return "completed";
+  return t.startsWith("delivered") ? "delivered" : "active";
 }
-function isFinished(p: ShipSyncPackage): boolean {
+function tabOf(p: ShipSyncPackage): Tab {
   const title = extraOf(p).monday_group_title;
-  return title ? groupIsFinished(title) : FINISHED_PACKAGE_STATUSES.includes(p.status);
+  if (title) return tabForGroup(title);
+  if (p.status === "completed") return "completed";
+  return ["delivered", "collected", "delivered_tbi"].includes(p.status) ? "delivered" : "active";
 }
-type Tab = "active" | "finished";
+const TABS: { key: Tab; label: string; hint: string }[] = [
+  { key: "active", label: "Active", hint: "Import, Transit and anything not yet delivered." },
+  { key: "delivered", label: "Delivered TBI", hint: "Delivered - TBI: delivered and waiting to be invoiced." },
+  { key: "completed", label: "Completed", hint: "Invoiced and closed." },
+];
 function mondayText(p: ShipSyncPackage, title: string): string { return mondayRow(p)[title] ?? ""; }
 
 /** Payment Copy used to be a single URL string under the fake Monday key
@@ -491,14 +500,18 @@ export function ShipSyncImportBoard() {
   const searching = search.trim() !== "";
   // Searching looks across both lists; clear the box to go back to browsing one.
   const filtered = useMemo(() => {
-    if (!search.trim()) return rows.filter((p) => isFinished(p) === (tab === "finished"));
+    if (!search.trim()) return rows.filter((p) => tabOf(p) === tab);
     const s = search.toLowerCase();
     return rows.filter((p) =>
       [p.barcode, p.boat_name, p.supplier, p.courier, p.boe_no, p.receiver_full_name,
        ...Object.values(mondayRow(p))].join(" ").toLowerCase().includes(s),
     );
   }, [rows, search, tab]);
-  const finishedCount = useMemo(() => rows.filter(isFinished).length, [rows]);
+  const tabCounts = useMemo(() => {
+    const c: Record<Tab, number> = { active: 0, delivered: 0, completed: 0 };
+    for (const p of rows) c[tabOf(p)]++;
+    return c;
+  }, [rows]);
 
   const mondayColumns = useMemo(() => extraMondayColumns(rows, COVERED), [rows]);
 
@@ -538,7 +551,7 @@ export function ShipSyncImportBoard() {
     // Browsing one list: leave out the other list's groups (and a group with
     // nothing in this list). Searching keeps every group, as before.
     return [...map.values()]
-      .filter((g) => searching || g.rows.length > 0 || (g.title !== "Not on Monday" && groupIsFinished(g.title) === (tab === "finished")))
+      .filter((g) => searching || g.rows.length > 0 || (g.title !== "Not on Monday" && tabForGroup(g.title) === tab))
       .sort((a, b) => a.position - b.position);
   }, [filtered, allGroups, searching, tab]);
 
@@ -577,18 +590,18 @@ export function ShipSyncImportBoard() {
 
   return (
     <div className="flex h-full min-w-0 flex-col px-6 py-5">
-      {/* Still in play vs finished — the finished list (Delivered - TBI and Completed) is by far the longer one. */}
+      {/* Still in play, delivered (to be invoiced), and completed — the last two are the long lists. */}
       <div className="mb-3 flex w-fit shrink-0 items-center gap-1 rounded-lg border border-border bg-card p-1">
-        {([["active", "Active", rows.length - finishedCount, "Import, Transit and anything not yet delivered."], ["finished", "Delivered TBI & Completed", finishedCount, "Delivered - TBI (to be invoiced) and Completed shipments."]] as const).map(([key, label, count, hint]) => (
+        {TABS.map(({ key, label, hint }) => (
           <button key={key} type="button" onClick={() => setTab(key)} title={hint} aria-current={tab === key}
             className={cn("flex items-center gap-2 rounded-md px-3 py-1.5 text-[12.5px] font-medium transition",
               tab === key ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent/40 hover:text-foreground")}>
             {label}
-            <span className={cn("rounded-full px-1.5 py-px text-[10.5px] tabular-nums", tab === key ? "bg-primary-foreground/20" : "bg-muted text-muted-foreground")}>{count}</span>
+            <span className={cn("rounded-full px-1.5 py-px text-[10.5px] tabular-nums", tab === key ? "bg-primary-foreground/20" : "bg-muted text-muted-foreground")}>{tabCounts[key]}</span>
           </button>
         ))}
       </div>
-      {searching && <p className="mb-3 shrink-0 text-[11.5px] text-muted-foreground">Searching both lists — clear the box to go back to browsing.</p>}
+      {searching && <p className="mb-3 shrink-0 text-[11.5px] text-muted-foreground">Searching every list — clear the box to go back to browsing.</p>}
 
       <div className="mb-3 flex shrink-0 flex-wrap items-center gap-2.5">
         <div className="relative">
