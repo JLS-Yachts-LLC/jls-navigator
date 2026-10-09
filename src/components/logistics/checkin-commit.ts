@@ -41,13 +41,20 @@ export type CheckinPayload = {
   awb: string;
   /** Retained for check-ins saved by an earlier version; the board is `fields.local_import`. */
   customs?: boolean;
+  /** The Shipment Type the person chose on the form (Local / Import / Transit) — which can differ from the board it was saved to (a paid Local parcel goes to the Import board but is still a Local shipment). */
+  shipType?: Board;
   fields: Partial<ShipSyncPackage>;
   /** Payment has no column of its own; it rides in `extra` beside the rest of the intake detail. */
   payment: { required: boolean; amount: number | null; method: string | null };
 };
 
-/** The Import board's "Shipment Type" column (the parcel's trade_type) uses Monday's own labels. A parcel checked in without one showed a blank there. */
-const SHIPMENT_TYPE: Record<string, string> = { Import: "Import Shipment", Transit: "Transit Shipment" };
+/**
+ * The Import board's "Shipment Type" column (the parcel's trade_type). It shows what the person CHOSE on the form:
+ * Import and Transit use Monday's own labels, and Local reads "Local" — even when the parcel was routed to the
+ * Import board because it was paid for.
+ */
+const SHIPMENT_TYPE: Record<string, string> = { Import: "Import Shipment", Transit: "Transit Shipment", Local: "Local" };
+const shipmentTypeOf = (p: CheckinPayload) => SHIPMENT_TYPE[p.shipType ?? (p.fields.local_import as string)] ?? null;
 
 const onImportBoard = (p: CheckinPayload) => p.fields.local_import === "Import" || p.fields.local_import === "Transit";
 
@@ -100,8 +107,8 @@ export async function createCheckin(p: CheckinPayload, photo: Blob | null): Prom
     extra.monday = { STATUS: "Warehouse", ...paidColumns(p) };
   }
 
-  // Import-board rows get a Shipment Type; Local parcels have none (the Local board shows its own type).
-  const trade_type = onImportBoard(p) ? SHIPMENT_TYPE[p.fields.local_import as string] ?? null : null;
+  // Import-board rows get a Shipment Type (what was chosen on the form); parcels on the Local board have none (that board shows its own type).
+  const trade_type = onImportBoard(p) ? shipmentTypeOf(p) : null;
   await createPackage({ id: p.id, ...p.fields, ...(trade_type ? { trade_type } : {}), status, item_photo_url, extra } as any);
   return status;
 }
@@ -133,9 +140,9 @@ export async function updateCheckin(existing: ShipSyncPackage, p: CheckinPayload
   if (blank(have.local_import)) patch.local_import = f.local_import;
   if (blank(have.num_packages) || Number(have.num_packages) < 1 || Number(f.num_packages) > 1) patch.num_packages = f.num_packages;
   if (existing.status === "in_office") patch.status = "in_storage" as PackageStatus;
-  // A blank Shipment Type is filled in (never replaced): from the record's own board, or the board this check-in chose.
-  const board = (have.local_import as string | null | undefined) || (p.fields.local_import as string | undefined);
-  if (blank(have.trade_type) && blank((prior.monday ?? {})["Shipment Type"]) && SHIPMENT_TYPE[board ?? ""]) patch.trade_type = SHIPMENT_TYPE[board as string];
+  // A blank Shipment Type is filled in (never replaced) when the record is on the Import board.
+  const onImportBoardNow = have.local_import === "Import" || have.local_import === "Transit" || (blank(have.local_import) && onImportBoard(p));
+  if (onImportBoardNow && blank(have.trade_type) && blank((prior.monday ?? {})["Shipment Type"]) && shipmentTypeOf(p)) patch.trade_type = shipmentTypeOf(p);
 
   const onImport = existing.local_import === "Import" || existing.local_import === "Transit" || (blank(have.local_import) && onImportBoard(p));
   const monday = { ...(prior.monday ?? {}) } as Record<string, string>;

@@ -301,16 +301,18 @@ test("isNetworkError also recognises Safari's lost-connection and timeout messag
 
 // ── Shipment Type on the Import board ────────────────────────────────────────
 
-test("Import and Transit check-ins get a Shipment Type (the Import board's column was blank); Local gets none", async () => {
-  const i = payload({ board: "Import" }); await commit.createCheckin(i, null);
-  const t = payload({ board: "Transit" }); await commit.createCheckin(t, null);
-  const l = payload({ board: "Local" }); await commit.createCheckin(l, null);
-  const paidLocal = payload({ board: "Import", paid: true }); await commit.createCheckin(paidLocal, null);   // a paid Local parcel is routed to Import
-  const row = (id: string) => be.rows("shipsync_packages").find((r) => r.id === id)!;
-  assert.equal(row(i.id).trade_type, "Import Shipment");
-  assert.equal(row(t.id).trade_type, "Transit Shipment");
-  assert.equal(row(l.id).trade_type, undefined);
-  assert.equal(row(paidLocal.id).trade_type, "Import Shipment");
+test("Shipment Type shows what was CHOSEN: Import / Transit use Monday's labels, and a paid LOCAL parcel on the Import board still says Local", async () => {
+  const make = async (shipType: "Local" | "Import" | "Transit", board: "Local" | "Import" | "Transit", paid = false) => {
+    const p = payload({ board, paid }); p.shipType = shipType;
+    await commit.createCheckin(p, null);
+    return be.rows("shipsync_packages").find((r) => r.id === p.id)!;
+  };
+  assert.equal((await make("Import", "Import")).trade_type, "Import Shipment");
+  assert.equal((await make("Transit", "Transit")).trade_type, "Transit Shipment");
+  assert.equal((await make("Local", "Import", true)).trade_type, "Local", "Local + payment is saved to the Import board but is still a Local shipment");
+  assert.equal((await make("Import", "Import", true)).trade_type, "Import Shipment");
+  assert.equal((await make("Local", "Local")).trade_type, undefined, "on the Local board there is no Shipment Type to fill");
+  assert.equal((await make("Import", "Local")).trade_type, undefined, "an Import with no 101 BOE goes to Local and keeps no type there");
 });
 
 test("checking in on an existing parcel fills a blank Shipment Type but never replaces one that is there", async () => {
@@ -319,7 +321,7 @@ test("checking in on an existing parcel fills a blank Shipment Type but never re
     { id: "e2", barcode: "AWB-E2", status: "in_office", local_import: "Import", trade_type: "DDP Shipment", extra: {} },
     { id: "e3", barcode: "AWB-E3", status: "in_office", local_import: "Import", extra: { monday: { "Shipment Type": "Transit Shipment" } } },
   );
-  for (const awb of ["AWB-E1", "AWB-E2", "AWB-E3"]) await commit.updateCheckin((await commit.findByAwb(awb))!, payload({ awb, board: "Import" }), null);
+  for (const awb of ["AWB-E1", "AWB-E2", "AWB-E3"]) { const p = payload({ awb, board: "Import" }); p.shipType = "Import"; await commit.updateCheckin((await commit.findByAwb(awb))!, p, null); }
   const row = (id: string) => be.rows("shipsync_packages").find((r) => r.id === id)!;
   assert.equal(row("e1").trade_type, "Import Shipment");
   assert.equal(row("e2").trade_type, "DDP Shipment");

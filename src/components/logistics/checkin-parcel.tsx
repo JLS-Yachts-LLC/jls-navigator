@@ -84,7 +84,7 @@ export function CheckinParcel({ onBack }: { onBack: () => void }) {
   /** Everything this form saves, as plain data — `id` is fixed now so a retry (or a later upload) can't create the parcel twice. */
   function payload(id: string): CheckinPayload {
     return {
-      id, awb: f.awb.trim(), customs: board !== "Local",
+      id, awb: f.awb.trim(), customs: board !== "Local", shipType: f.shipType,
       fields: {
         barcode: f.awb.trim(),
         boat_name: f.boat.trim().toUpperCase() || null,
