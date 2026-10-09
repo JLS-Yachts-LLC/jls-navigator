@@ -4,7 +4,11 @@
  *        [&visa=active|expired|all]  visa validity — defaults to active
  *        [&year=2026|all]            calendar year — defaults to the current year
  *        [&exclude=id,id | &include=id,id]
- * POST /api/visa/export/email  { yacht_id, to_email }
+ * POST /api/visa/export/email  { yacht_id }   — emailed to the signed-in user only
+ *
+ * Both need a signed-in user with Crew & Immigration access: the files carry
+ * passport numbers, and before 9 Oct 2026 anyone with a vessel id could download
+ * them or have them emailed to any address.
  *
  * These files go to vessels and authorities, so they carry this year's active
  * visas by default: lapsed records and previous years' history stay out unless
@@ -16,6 +20,7 @@ import { emailBrandLockup } from "@/lib/email/brand-mark";
 import { PDFDocument, StandardFonts, rgb, PDFFont } from 'pdf-lib'
 import { createClient } from '@supabase/supabase-js'
 import { sendEmail } from '@/lib/ses.server'
+import { requireAccess } from '@/lib/auth/requireAccess.server'
 
 function getAdmin() {
   const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? ''
@@ -309,10 +314,13 @@ function buildEmailHtml(rows: VisaRow[], vesselName: string): string {
 // ─── Handler ─────────────────────────────────────────────────────────────────
 export async function visaExportHandler(request: Request): Promise<Response> {
   const url = new URL(request.url)
+  const access = await requireAccess(request, { module: 'crew_immigration', level: 'view' })
+  if (!access.ok) return access.response
 
-  // POST /api/visa/export/email  { yacht_id, to_email }
+  // POST /api/visa/export/email  { yacht_id } — only ever to the caller's own address
   if (request.method === 'POST') {
-    const { yacht_id, to_email } = await request.json() as { yacht_id: string; to_email: string }
+    const { yacht_id } = await request.json() as { yacht_id: string }
+    const to_email = access.claims.email
     if (!yacht_id || !to_email) return new Response('Missing params', { status: 400 })
     try {
       // Same defaults as the download: this year's active visas.

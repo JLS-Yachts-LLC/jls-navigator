@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { toast } from 'sonner'
 import { useAuth } from '@/lib/auth'
 import { cn } from '@/lib/utils'
+import { downloadVisaExport, emailVisaExport } from '@/lib/visa/export-client'
 
 // A visa row as loaded by VisaDashboard (subset we need here).
 type Row = {
@@ -91,8 +92,7 @@ export function VisaReportView({ applications, vessels, onClose }: {
     if (!user?.email) { toast.error('No email on your account'); return }
     setEmailing(true)
     try {
-      const res = await fetch('/api/visa/export/email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ yacht_id: yachtId, to_email: user.email }) })
-      const j = await res.json()
+      const j = await emailVisaExport(yachtId)
       if (j.ok) toast.success(`Emailed to ${user.email}`); else toast.error(`Email failed: ${j.error}`)
     } catch (e: any) { toast.error(e.message) } finally { setEmailing(false) }
   }
@@ -172,7 +172,7 @@ export function VisaReportView({ applications, vessels, onClose }: {
                       <td className="px-4 py-2">
                         {g.id !== 'unknown' && (
                           <div className="flex items-center gap-1.5">
-                            <a href={`/api/visa/export?yacht_id=${g.id}&format=pdf`} target="_blank" rel="noreferrer" className="rounded bg-muted/40 px-2 py-1 text-[10.5px] font-medium hover:bg-muted/70">PDF</a>
+                            <button onClick={() => downloadVisaExport(`/api/visa/export?yacht_id=${g.id}&format=pdf`).catch((e) => toast.error(e.message))} className="rounded bg-muted/40 px-2 py-1 text-[10.5px] font-medium hover:bg-muted/70">PDF</button>
                             <button onClick={() => emailVessel(g.id)} disabled={emailing} className="rounded bg-primary/10 px-2 py-1 text-[10.5px] font-medium text-primary hover:bg-primary/20">{emailing ? '…' : 'Email'}</button>
                           </div>
                         )}

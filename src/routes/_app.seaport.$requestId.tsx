@@ -3,6 +3,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { attachSupabaseAuth } from "@/integrations/supabase/auth-attacher";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { sendEmail } from "@/lib/ses.server";
 import { useAuth } from "@/lib/auth";
 import { PolarisShell } from "@/components/platform/PolarisShell";
@@ -13,9 +15,15 @@ import { Loader2, Plane, CheckCircle2, XCircle, FileText } from "lucide-react";
 import { toast } from "sonner";
 
 // ─── Completion report (#126): build a summary + email it, mark report_sent ────
+// Staff only: the caller's token rides along (attachSupabaseAuth) and is checked
+// (requireSupabaseAuth); a portal login is refused.
 const doSendSeaportReport = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((d: { requestId: string }) => d)
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
+    const { data: portal } = await (supabaseAdmin as any)
+      .from("captain_accounts").select("id").eq("user_id", context.userId).eq("active", true).limit(1).maybeSingle();
+    if (portal) throw new Error("Forbidden");
     const { requestId } = data;
     const { data: req } = await (supabaseAdmin as any)
       .from("seaport_requests")

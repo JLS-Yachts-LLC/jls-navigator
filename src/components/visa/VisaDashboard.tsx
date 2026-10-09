@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import { supabase } from '@/integrations/supabase/client'
 import { useAuth } from '@/lib/auth'
 import { fetchAllRows } from '@/lib/fetch-all'
+import { downloadVisaExport, emailVisaExport } from '@/lib/visa/export-client'
 import { COLORS, FONTS } from '@/lib/tokens'
 import { COUNTRY_CONFIGS } from '@/lib/visa/countryConfig'
 import {
@@ -273,9 +274,7 @@ function ExportReviewDialog({ format, yachtId, exportUrl, validity, exportYear, 
         fetch('/api/visa/excel-push', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) }).catch(() => {})
       }
       if (dirty.size) { toast.success(`${dirty.size} record(s) updated`); onSaved() }
-      const url = exportUrl + selectionParam()
-      if (format === 'pdf') window.open(url, '_blank')
-      else window.location.href = url
+      await downloadVisaExport(exportUrl + selectionParam())
       onClose()
     } catch (e: any) {
       toast.error(e?.message ?? 'Could not save edits')
@@ -977,13 +976,7 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
     try {
       // Same filters as the download — the emailed report used to ignore them
       // and always send this year's active list.
-      const res = await fetch(
-        `/api/visa/export/email?visa=${validity}&year=${exportYear}` + exportFilterParams(exportOpts),
-        {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ yacht_id: vessel, to_email: user.email }),
-        })
-      const json = await res.json()
+      const json = await emailVisaExport(vessel, `?visa=${validity}&year=${exportYear}` + exportFilterParams(exportOpts))
       if (json.ok) toast.success(`Report emailed to ${user.email}`)
       else toast.error(`Email failed: ${json.error}`)
     } catch (e: any) {
