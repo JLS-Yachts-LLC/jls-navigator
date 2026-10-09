@@ -17,8 +17,10 @@ Return ONLY a single JSON object (no prose, no code fences) with EXACTLY these k
   "expiry_date": string|null,          // YYYY-MM-DD
   "issuing_country": string|null,      // full country name, e.g. "United Kingdom"
   "place_of_issue": string|null,       // the "Authority" / "Issuing Authority" / "Place of issue" field as printed in the visual zone, e.g. "IPS", "HMPO", "Ministry of Foreign Affairs", "DUBLIN". Null if not shown.
-  "surname": string|null,
-  "given_names": string|null,          // ALL forenames as printed, space-separated — INCLUDING middle name(s), e.g. "Matthew Niels". Cross-check against the MRZ (given names follow the "<<" after the surname, separated by single "<"). Never drop a second/middle name.
+  "surname": string|null,             // in LATIN letters — see NAMES below
+  "given_names": string|null,          // in LATIN letters — ALL forenames as printed, space-separated — INCLUDING middle name(s), e.g. "Matthew Niels". Cross-check against the MRZ (given names follow the "<<" after the surname, separated by single "<"). Never drop a second/middle name.
+  "mrz_surname": string|null,          // the surname exactly as in the MRZ (A–Z only, "<" as spaces), or null if no MRZ
+  "mrz_given_names": string|null,      // the given names exactly as in the MRZ (A–Z only, "<" as spaces), or null
   "date_of_birth": string|null,        // YYYY-MM-DD
   "place_of_birth": string|null,       // town/city (and country if shown), from the visual zone, e.g. "London" or "Dublin"
   "gender": string|null,               // EXACTLY "Male", "Female", or "Other". Read the Sex field (visual zone) or MRZ sex char (M/F/<). M=Male, F=Female, <=Other.
@@ -31,6 +33,7 @@ Return ONLY a single JSON object (no prose, no code fences) with EXACTLY these k
   }
 }
 Read place_of_birth and gender from the printed visual zone; cross-check gender against the MRZ sex character.
+NAMES: surname and given_names MUST be written in Latin (English) letters — never Cyrillic, Greek, Arabic, Chinese or any other script, and never a mix of scripts. Many passports (Russian, Ukrainian, Belarusian, Kazakh, Greek, Arabic-script, Chinese, …) print the name twice: once in the national script and once in Latin letters below it. Use the LATIN line — it matches the MRZ. If no Latin line is printed, use the MRZ name. Keep Latin accents only if they're printed (e.g. "Müller").
 DATES: the document may print dates in ANY format or language — e.g. "21 NOV/NOV 1991", "21 NOV 1991", "21/11/1991", "11/21/1991", "1991-11-21", "21.11.1991", or bilingual month names (Dutch/French/Spanish/etc.). Interpret the month from its name or number in any language and ALWAYS output YYYY-MM-DD. Prefer the MRZ dates (format YYMMDD) to disambiguate day-vs-month when the printed date is ambiguous. Use null only if you genuinely cannot read the date.`
 
 const VISA_PROMPT = `You are an entry-visa data-extraction engine. The image is a visa (sticker, label, or e-visa printout).
@@ -43,7 +46,7 @@ Return ONLY a single JSON object (no prose, no code fences) with EXACTLY these k
   "expiry_date": string|null,           // YYYY-MM-DD — visa expiry / "valid until"
   "first_entry_expiry": string|null,    // YYYY-MM-DD — the "must enter before" / "enter before" activation deadline, if shown
   "place_of_issue": string|null,
-  "holder_name": string|null,           // the full name of the visa holder as printed
+  "holder_name": string|null,           // the full name of the visa holder, in LATIN letters
   "surname": string|null,               // holder surname / family name
   "given_names": string|null,           // holder given/first names
   "passport_number": string|null,       // the holder's passport number, if shown
@@ -51,6 +54,7 @@ Return ONLY a single JSON object (no prose, no code fences) with EXACTLY these k
   "date_of_birth": string|null          // YYYY-MM-DD
 }
 Use null for anything you cannot read confidently. Dates (any format/language) MUST be output as YYYY-MM-DD.
+Names (holder_name, surname, given_names) MUST be in Latin (English) letters — where the visa prints a name in Arabic or another script as well, use the English/Latin version; never mix scripts.
 
 DATE SEMANTICS — read carefully, they differ by document type:
 - UAE eVisa / ENTRY PERMIT (GDRFA/ICP layout, "إذن دخول", "ENTRY PERMIT NO", e.g. Yachts Crew 180 days):
@@ -89,7 +93,7 @@ export async function visaPassportOcrHandler(request: Request): Promise<Response
 
   const payload = JSON.stringify({
     model: MODEL,
-    max_tokens: 700,
+    max_tokens: 900,
     messages: [{ role: 'user', content: [fileBlock, { type: 'text', text: docType === 'visa' ? VISA_PROMPT : PROMPT }] }],
   })
 
@@ -138,5 +142,55 @@ export async function visaPassportOcrHandler(request: Request): Promise<Response
   try { parsed = JSON.parse(cleaned.slice(start, end + 1)) } catch { /* ignore */ }
   if (!parsed) return json({ ok: false, error: 'Could not parse passport data from the image.', raw: text.slice(0, 300) }, 422)
 
+  latinNames(parsed)
   return json({ ok: true, data: parsed })
+}
+
+// ── Names in Latin letters ──────────────────────────────────────────────────
+
+/**
+ * ICAO 9303 transliteration for Cyrillic — the scheme passports use in the MRZ
+ * (Г→G, Ж→ZH, Х→KH, Ц→TS, Щ→SHCH, Ю→IU, Я→IA…).
+ */
+const CYRILLIC: Record<string, string> = {
+  А: 'A', Б: 'B', В: 'V', Г: 'G', Ґ: 'G', Д: 'D', Е: 'E', Ё: 'E', Є: 'IE', Ж: 'ZH', З: 'Z', И: 'I', І: 'I', Ї: 'I',
+  Й: 'I', К: 'K', Л: 'L', М: 'M', Н: 'N', О: 'O', П: 'P', Р: 'R', С: 'S', Т: 'T', У: 'U', Ў: 'U', Ф: 'F',
+  Х: 'KH', Ц: 'TS', Ч: 'CH', Ш: 'SH', Щ: 'SHCH', Ъ: 'IE', Ы: 'Y', Ь: '', Э: 'E', Ю: 'IU', Я: 'IA',
+}
+const NON_LATIN = /[^\p{Script=Latin}\p{M}\s'.,\-]/u
+
+function transliterate(v: string): string {
+  const chars = [...v]
+  return chars.map((ch, i) => {
+    const up = ch.toUpperCase()
+    const t = CYRILLIC[up]
+    if (t === undefined) return ch
+    if (ch !== up) return t.toLowerCase()
+    // A capital before lower-case letters is a capitalised word: Ж in "Жуков" → "Zh".
+    const next = chars[i + 1]
+    return next && next !== next.toUpperCase() ? t.charAt(0) + t.slice(1).toLowerCase() : t
+  }).join('')
+}
+
+/** "IVANOV<<IVAN" style MRZ name → "IVANOV" / "IVAN PETROVICH". */
+const mrzName = (v: unknown) => typeof v === 'string' ? v.replace(/</g, ' ').replace(/[^A-Za-z ]/g, '').replace(/\s+/g, ' ').trim() : ''
+
+/**
+ * Make sure the names that pre-fill the form are in Latin letters. The reader
+ * is told to use the Latin line of a bilingual passport, but if a name still
+ * carries another script (it once produced "ГALALЕТDINOVA" — Cyrillic Г and Е
+ * among Latin letters), use the MRZ name; failing that, transliterate.
+ */
+function latinNames(d: any) {
+  const fix = (key: string, mrz: string) => {
+    const v = d[key]
+    if (typeof v !== 'string' || !NON_LATIN.test(v)) return
+    const out = mrz || transliterate(v)
+    d[key] = NON_LATIN.test(out) ? out.replace(new RegExp(NON_LATIN.source, 'gu'), '').replace(/\s+/g, ' ').trim() || null : out
+  }
+  fix('surname', mrzName(d.mrz_surname))
+  fix('given_names', mrzName(d.mrz_given_names))
+  fix('holder_name', '')
+  delete d.mrz_surname
+  delete d.mrz_given_names
 }
