@@ -28,8 +28,9 @@ export function HScroll({ children, className }: { children: ReactNode; classNam
   }, [measure, children]);
 
   return (
-    <div className={cn("flex min-h-0 flex-col", className)}>
-      <div ref={box} onScroll={measure} className="min-h-0 flex-1 overflow-auto">{children}</div>
+    // min-w-0 matters: as a grid/flex child this box would otherwise grow to the table's full width instead of scrolling it.
+    <div className={cn("flex min-h-0 min-w-0 max-w-full flex-col", className)}>
+      <div ref={box} onScroll={measure} className="min-h-0 min-w-0 flex-1 overflow-auto">{children}</div>
       {m.max > 1 && (
         <div className="flex shrink-0 items-center gap-3 border-t border-border bg-card px-3 py-2">
           <span className="text-[12px] font-medium text-muted-foreground">◀</span>

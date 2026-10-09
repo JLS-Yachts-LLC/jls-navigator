@@ -115,7 +115,7 @@ export function InventoryList({ data, reload }: { data: WarehouseData; reload: (
       {category === "contents" ? (
         <PackageContentTable rows={filteredPackageContents} reload={reload} />
       ) : (
-        <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[1fr_360px]">
+        <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
           <HScroll className="rounded-xl border border-border bg-card">
             {category === "client"
               ? <ClientTable rows={filteredClientItems} selectedRef={selectedRef} onSelect={setSelectedRef}
