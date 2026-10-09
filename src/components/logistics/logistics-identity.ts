@@ -13,12 +13,19 @@
  * collide (the Orbit field app has exactly that weakness). Everyone who is not
  * driver-only is treated as a logistics administrator until a real permission
  * flag is agreed.
+ *
+ * Until then, someone who is both an office administrator and a driver is named
+ * in LOGISTICS_ADMIN_EMAILS and sees every module (and still counts as a driver
+ * for the Deliveries screen). Matched on email, never a first name.
  */
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { resolveDriver } from "@/lib/shipsync/driver-data";
 import type { ShipSyncDriver } from "@/lib/shipsync/model";
+
+/** Drivers who also run the logistics office — never limited to the Deliveries tile. Lower-case. */
+const LOGISTICS_ADMIN_EMAILS = ["j.lopez@jlsyachts.com"];
 
 export type LogisticsIdentity = {
   loading: boolean;
@@ -50,7 +57,8 @@ export function useLogisticsIdentity(): LogisticsIdentity {
       if (!on) return;
       const name = (profile?.display_name as string | undefined)?.trim() || fallback;
       const role = (profile?.roles?.name as string | undefined) ?? "";
-      const platformAdmin = ["global_admin", "platform_owner"].includes(role);
+      const emails = [user.email, driver?.email].map((e) => (e ?? "").trim().toLowerCase());
+      const platformAdmin = ["global_admin", "platform_owner"].includes(role) || emails.some((e) => LOGISTICS_ADMIN_EMAILS.includes(e));
       setState({
         loading: false,
         name,
