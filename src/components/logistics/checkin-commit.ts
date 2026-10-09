@@ -5,12 +5,12 @@
  *
  * Saving writes the same shipsync_packages row the office boards read. A parcel
  * checked in is Warehouse, whichever board it lands on. The Import board also gets
- * a Monday-style Item ID, its IMPORT / TRANSIT group, a Monday status of
+ * its IMPORT / TRANSIT group (its Item ID comes from the database), a Monday status of
  * "Warehouse" and — when it was paid for — the Paid Amount and Payment Method.
  */
 import { supabase } from "@/integrations/supabase/client";
 import { createPackage, patchPackage, uploadShipSyncImage } from "@/lib/shipsync/data";
-import { nextItemId, type PackageStatus, type ShipSyncPackage } from "@/lib/shipsync/model";
+import type { PackageStatus, ShipSyncPackage } from "@/lib/shipsync/model";
 import { isNetworkError } from "@/lib/network-error";
 
 const sb = supabase as any;
@@ -85,16 +85,16 @@ export async function createCheckin(p: CheckinPayload, photo: Blob | null): Prom
   const status: PackageStatus = "in_storage";
 
   if (onImportBoard(p)) {
-    // Same shape the Import board gives a shipment raised in the app: a Monday-style
-    // Item ID, its IMPORT / TRANSIT group (position copied from the board), and the
-    // Monday status "Warehouse".
-    const itemId = await nextItemId();
+    // Same shape the Import board gives a shipment raised in the app: its IMPORT / TRANSIT group
+    // (position copied from the board) and the Monday status "Warehouse". The Item ID is NOT
+    // assigned here — a database trigger gives every Import/Transit row one on insert, so a save
+    // that fails (or is retried) can't use up a number.
     const group = p.fields.local_import === "Transit" ? "TRANSIT" : "IMPORT";
     const { data: sample } = await sb.from("shipsync_packages").select("extra")
       .in("local_import", ["Import", "Transit"]).eq("extra->>monday_group_title", group).limit(1);
     const g = sample?.[0]?.extra;
     if (g) { extra.monday_group_title = group; extra.monday_group_position = g.monday_group_position; }
-    extra.monday = { "Item ID": itemId, STATUS: "Warehouse", ...paidColumns(p) };
+    extra.monday = { STATUS: "Warehouse", ...paidColumns(p) };
   }
 
   await createPackage({ id: p.id, ...p.fields, status, item_photo_url, extra } as any);

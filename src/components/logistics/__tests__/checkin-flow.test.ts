@@ -70,7 +70,7 @@ test("a check-in with no photo saves with a null photo and uploads nothing", asy
   assert.equal(be.rows("shipsync_packages")[0].item_photo_url, null);
 });
 
-test("paid Import: Item ID, IMPORT group (position copied), Monday status Warehouse, Paid Amount and Payment Method", async () => {
+test("paid Import: IMPORT group (position copied), Monday status Warehouse, Paid Amount and Payment Method; no app-made Item ID", async () => {
   be.rows("shipsync_packages").push({ id: "old", local_import: "Import", extra: { monday_group_title: "IMPORT", monday_group_position: 2 } });
   const p = payload({ board: "Import", paid: true });
   await commit.createCheckin(p, photo());
@@ -79,7 +79,8 @@ test("paid Import: Item ID, IMPORT group (position copied), Monday status Wareho
   assert.equal(row.status, "in_storage");
   assert.equal(row.extra.monday_group_title, "IMPORT");
   assert.equal(row.extra.monday_group_position, 2);
-  assert.deepEqual(row.extra.monday, { "Item ID": "ITEM-0001", STATUS: "Warehouse", "Paid Amount": "250", "PAYMENT METHOD": "Cash" });
+  // no Item ID from the app: the database trigger adds it on insert (checked against the real table)
+  assert.deepEqual(row.extra.monday, { STATUS: "Warehouse", "Paid Amount": "250", "PAYMENT METHOD": "Cash" });
   assert.deepEqual(row.extra.payment, { required: true, amount: 250, method: "Cash" });
 });
 
@@ -91,7 +92,8 @@ test("unpaid Import has no payment columns; Transit goes to the TRANSIT group", 
   await commit.createCheckin(t, null);
   const ra = be.rows("shipsync_packages").find((r) => r.id === a.id)!;
   const rt = be.rows("shipsync_packages").find((r) => r.id === t.id)!;
-  assert.deepEqual(ra.extra.monday, { "Item ID": "ITEM-0001", STATUS: "Warehouse" });
+  assert.deepEqual(ra.extra.monday, { STATUS: "Warehouse" });
+  assert.ok(!be.requests.some((r) => r.includes("next_shipsync_item_id")), "the app does not use up an Item ID number itself");
   assert.equal(rt.extra.monday_group_title, "TRANSIT");
   assert.equal(rt.extra.monday_group_position, 5);
 });
