@@ -316,10 +316,17 @@ export async function refForAwb(awb: string): Promise<string | null> {
   return data?.[0]?.extra?.[WAREHOUSE_REF_KEY] ?? null;
 }
 
+/** Add or replace the photo of a stored item. The new photo is uploaded first, so a failed upload leaves the old one in place. */
+export async function setStoredPhoto(item: StoredItem, file: File): Promise<string> {
+  const url = await uploadPhoto(file, `${item.kind === "client" ? "client" : "internal"}/${item.ref_no}`);
+  await patchStored(item, { image_url: url });
+  return url;
+}
+
 /** Edit one field on a stored item; dimensions keep the CBM in step. */
 export async function patchStored(item: StoredItem, patch: Partial<{
   description: string; weight_kg: number | null; length_cm: number | null; width_cm: number | null; height_cm: number | null;
-  status: string; due: string | null; zone: string | null; bay: string | null; shelf: string | null;
+  status: string; due: string | null; zone: string | null; bay: string | null; shelf: string | null; image_url: string | null;
 }>): Promise<void> {
   const { due, ...rest } = patch;
   const out: Record<string, unknown> = { ...rest };

@@ -10,18 +10,19 @@
  *   Relocate Storage Enter a reference number, check it's the right item, pick
  *                    the new Zone → Bay → Shelf, Save.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, Pencil, Plus, Printer, ScanLine, Search } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Camera, ImagePlus, Loader2, Pencil, Plus, Printer, ScanLine, Search } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { errorMessage } from "@/lib/error-message";
 import { BarcodeScannerDialog } from "@/components/shipsync/BarcodeScanner";
 import { SignedImage } from "@/components/ui/signed-file";
+import { useSignedUrl } from "@/lib/signed-url";
 import { Screen, Lbl, inputCls, Sheet } from "./logistics-ui";
 import { LocationPicker } from "./warehouse-ui";
 import { labelsFor } from "./warehouse-labels";
 import {
-  loadShelves, loadClientItems, loadInternalItems, loadStoredItems, findItems, refForAwb, patchStored, shelfCrud,
+  loadShelves, loadClientItems, loadInternalItems, loadStoredItems, findItems, refForAwb, patchStored, setStoredPhoto, shelfCrud,
   recommendShelves, shelfFitProblem, shelfUsage, shelfUsedDims, bayList, shelfList, allZones, zoneLabel, calcCbm, locationCode,
   type StoredItem, type WarehouseShelf, type WarehouseClientItem, type WarehouseInternalItem, type Location,
 } from "./logistics-warehouse-data";
@@ -151,6 +152,46 @@ function FindItem() {
 
 type EditKey = "description" | "weight" | "dims" | "due" | "status";
 
+/** The item's photo, with Camera / Gallery to add one or replace it. */
+function ItemPhoto({ item, onChanged }: { item: StoredItem; onChanged: () => Promise<void> }) {
+  const cam = useRef<HTMLInputElement>(null);
+  const gal = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [broken, setBroken] = useState(false);
+  const url = useSignedUrl(item.image_url);
+  useEffect(() => { setBroken(false); }, [item.image_url]);
+
+  async function pick(f: File | undefined) {
+    if (!f) return;
+    setBusy(true);
+    try { await setStoredPhoto(item, f); await onChanged(); toast.success(item.image_url ? "Photo replaced" : "Photo added"); }
+    catch (e) { toast.error(errorMessage(e, "Could not save the photo")); } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="relative flex min-h-[112px] items-center justify-center overflow-hidden rounded-lg border border-dashed border-border bg-muted/20">
+        {item.image_url && url && !broken
+          ? <img src={url} alt={item.description} onError={() => setBroken(true)} className="max-h-48 w-full object-contain" />
+          : <span className="px-4 text-center text-[14px] text-muted-foreground">
+              {!item.image_url ? "No photo yet" : broken ? "The photo couldn't be loaded — add a new one below." : "Loading photo…"}
+            </span>}
+        {busy && <div className="absolute inset-0 flex items-center justify-center bg-background/70"><Loader2 className="h-6 w-6 animate-spin" /></div>}
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <button type="button" disabled={busy} onClick={() => cam.current?.click()} className="flex h-11 items-center justify-center gap-2 rounded-lg bg-primary text-[15px] font-semibold text-primary-foreground disabled:opacity-50">
+          <Camera className="h-4 w-4" /> {item.image_url ? "Retake" : "Camera"}
+        </button>
+        <button type="button" disabled={busy} onClick={() => gal.current?.click()} className="flex h-11 items-center justify-center gap-2 rounded-lg border border-border text-[15px] font-semibold disabled:opacity-50">
+          <ImagePlus className="h-4 w-4" /> {item.image_url ? "Change" : "Gallery"}
+        </button>
+      </div>
+      <input ref={cam} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { void pick(e.target.files?.[0]); e.target.value = ""; }} />
+      <input ref={gal} type="file" accept="image/*" className="hidden" onChange={(e) => { void pick(e.target.files?.[0]); e.target.value = ""; }} />
+    </div>
+  );
+}
+
 function ItemSheet({ item, onClose, onChanged }: { item: StoredItem; onClose: () => void; onChanged: () => Promise<void> }) {
   const [edit, setEdit] = useState<EditKey | null>(null);
   const [v, setV] = useState({ text: "", l: "", w: "", h: "" });
@@ -189,7 +230,7 @@ function ItemSheet({ item, onClose, onChanged }: { item: StoredItem; onClose: ()
 
   return (
     <Sheet sticky title={item.ref_no} onClose={onClose}>
-      {item.image_url && <SignedImage stored={item.image_url} alt={item.description} className="max-h-48 w-full rounded-lg object-contain" />}
+      <ItemPhoto item={item} onChanged={onChanged} />
       <div className="divide-y divide-border/50">
         <div className="py-1.5 text-[15px]"><span className="text-muted-foreground">{item.kind === "client" ? "Client" : "Department"}: </span><span className="font-medium">{item.owner}</span></div>
         <Row label="Description" value={item.description} k="description" />
