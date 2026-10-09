@@ -3,6 +3,7 @@
  * Mirrors the same loadAll/makeCrud pattern used across ShipSync/Training.
  */
 import { storageRef } from '@/lib/signed-url'
+import { withType } from '@/lib/shipsync/image-shrink'
 import { supabase } from '@/integrations/supabase/client'
 
 const db = () => supabase as any
@@ -165,7 +166,7 @@ export async function nextPackageItemId(refNo: string): Promise<string> {
  *  same bucket several other ShipSync attachment features already use. */
 export async function uploadWarehouseFile(file: File | Blob, path: string): Promise<string> {
   const fullPath = `warehouse/${path}`
-  const { error } = await supabase.storage.from('shipsync').upload(fullPath, file, { upsert: true })
+  const { error } = await supabase.storage.from('shipsync').upload(fullPath, withType(file, fullPath), { upsert: true })
   if (error) throw error
   return storageRef('shipsync', fullPath)
 }

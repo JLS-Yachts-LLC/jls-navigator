@@ -187,7 +187,8 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
 
   // Parcels waiting to be routed: in the office/storage with no delivery note yet.
   const unrouted = useMemo(
-    () => data.packages.filter((p) => !p.delivery_note_id && (p.status === "in_office" || p.status === "in_storage")),
+    // A parcel moved into the warehouse (extra.warehouse_ref) is stock now, and leaves through Warehouse - Out.
+    () => data.packages.filter((p) => !p.delivery_note_id && !(p.extra as { warehouse_ref?: string } | null)?.warehouse_ref && (p.status === "in_office" || p.status === "in_storage")),
     [data.packages],
   );
 

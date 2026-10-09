@@ -56,6 +56,33 @@ export async function shrinkImage(blob: Blob, kind: ImageKind = 'photo'): Promis
   }
 }
 
+/** What a stored image's file extension should be, from what it actually is. */
+const EXT_BY_TYPE: Record<string, string> = {
+  'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png', 'image/webp': 'webp',
+  'image/gif': 'gif', 'image/heic': 'heic', 'image/heif': 'heif',
+}
+const TYPE_BY_EXT: Record<string, string> = {
+  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif', heic: 'image/heic', heif: 'image/heif',
+}
+
+/** The path with its extension corrected to the blob's real type (a HEIC we couldn't re-encode must not be stored as ".jpg"). */
+export function pathWithExt(path: string, blob: Blob): string {
+  const ext = EXT_BY_TYPE[blob.type]
+  return ext ? path.replace(/\.[A-Za-z0-9]+$/, '') + '.' + ext : path
+}
+
+/**
+ * The blob, with a content type. A gallery photo can arrive with no type at all, and
+ * storage saves an untyped upload as a generic file — which a browser will not show as
+ * an image. (The upload call's own contentType option is ignored for blobs; the type has
+ * to be on the blob.) The type comes from the file name when the blob has none.
+ */
+export function withType(blob: Blob, path: string): Blob {
+  if (blob.type) return blob
+  const guess = TYPE_BY_EXT[path.split('.').pop()?.toLowerCase() ?? '']
+  return guess ? new Blob([blob], { type: guess }) : blob
+}
+
 /** The extension the shrunk blob should be stored under. */
 export const extFor = (blob: Blob, kind: ImageKind = 'photo') =>
   kind === 'signature' || blob.type === 'image/png' ? 'png' : 'jpg'

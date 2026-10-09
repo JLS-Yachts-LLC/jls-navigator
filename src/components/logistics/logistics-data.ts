@@ -10,7 +10,7 @@
  * alone, because 'assigned' only means something alongside a driver.
  */
 import { supabase } from "@/integrations/supabase/client";
-import { createDeliveryNote, assignPackagesToNote, patchPackage, uploadShipSyncImage } from "@/lib/shipsync/data";
+import { createDeliveryNote, assignPackagesToNote, patchPackage, uploadShipSyncImage, unassignPackage } from "@/lib/shipsync/data";
 import type { ShipSyncDeliveryNote, ShipSyncDriver, ShipSyncPackage } from "@/lib/shipsync/model";
 import { driverWorks, weekdayOf } from "@/lib/shipsync/model";
 import { listActiveDrivers } from "@/lib/shipsync/driver-data";
@@ -91,31 +91,43 @@ function boatLabel(parcels: ParcelLite[]): string {
  */
 export async function syncNoteParcels(noteId: string | null, parcels: ParcelLite[]): Promise<ShipSyncDeliveryNote> {
   let note: ShipSyncDeliveryNote;
+  const created = !noteId;
   if (noteId) {
-    const { data } = await sb.from("shipsync_delivery_notes").select("*").eq("id", noteId).single();
+    const { data, error } = await sb.from("shipsync_delivery_notes").select("*").eq("id", noteId).single();
+    if (error) throw error;
     note = data as ShipSyncDeliveryNote;
   } else {
     note = await createDeliveryNote(boatLabel(parcels), null, null);
   }
 
-  const { data: current } = await sb.from("shipsync_packages").select("id").eq("delivery_note_id", note.id);
-  const have = new Set<string>((current ?? []).map((r: any) => r.id));
-  const want = new Set(parcels.map((p) => p.id));
-  const add = [...want].filter((id) => !have.has(id));
-  const drop = [...have].filter((id) => !want.has(id));
+  try {
+    const { data: current, error: ce } = await sb.from("shipsync_packages").select("id").eq("delivery_note_id", note.id);
+    if (ce) throw ce;
+    const have = new Set<string>((current ?? []).map((r: any) => r.id));
+    const want = new Set(parcels.map((p) => p.id));
+    const add = [...want].filter((id) => !have.has(id));
+    const drop = [...have].filter((id) => !want.has(id));
 
-  if (add.length) {
-    const { error } = await sb.from("shipsync_packages").update({ delivery_note_id: note.id }).in("id", add).is("delivery_note_id", null);
-    if (error) throw error;
-    const { data: got } = await sb.from("shipsync_packages").select("id").in("id", add).eq("delivery_note_id", note.id);
-    if ((got ?? []).length !== add.length) throw new Error("Some parcels were just put on another delivery note — refresh and try again.");
+    if (add.length) {
+      const { error } = await sb.from("shipsync_packages").update({ delivery_note_id: note.id }).in("id", add).is("delivery_note_id", null);
+      if (error) throw error;
+      const { data: got } = await sb.from("shipsync_packages").select("id").in("id", add).eq("delivery_note_id", note.id);
+      if ((got ?? []).length !== add.length) throw new Error("Some parcels were just put on another delivery note — refresh and try again.");
+    }
+    // A parcel taken off goes back to the pool properly (status and scan marks reset too), not just detached.
+    for (const id of drop) await unassignPackage(id);
+    const { error: be } = await sb.from("shipsync_delivery_notes").update({ boat_name: boatLabel(parcels) || null }).eq("id", note.id);
+    if (be) throw be;
+    return note;
+  } catch (e) {
+    // A note made just now that never got its parcels must not be left behind (empty, with a burned number) —
+    // and whatever it had already claimed goes back, or those parcels stay locked to a note nobody can see.
+    if (created) {
+      await sb.from("shipsync_packages").update({ delivery_note_id: null }).eq("delivery_note_id", note.id);
+      await sb.from("shipsync_delivery_notes").delete().eq("id", note.id);
+    }
+    throw e;
   }
-  if (drop.length) {
-    const { error } = await sb.from("shipsync_packages").update({ delivery_note_id: null, driver_id: null }).in("id", drop);
-    if (error) throw error;
-  }
-  await sb.from("shipsync_delivery_notes").update({ boat_name: boatLabel(parcels) || null }).eq("id", note.id);
-  return note;
 }
 
 /** JLS Vehicle · Assign: hand the note to a driver for a date. */
@@ -143,7 +155,7 @@ export type Handover = {
 export async function releaseParcels(note: ShipSyncDeliveryNote, parcels: ParcelLite[], h: Handover): Promise<void> {
   const stamp = Date.now();
   const photoUrl = h.photo ? await uploadShipSyncImage(h.photo, `delivery-notes/${note.number ?? note.id}/handover_${stamp}.jpg`) : null;
-  const sigUrl = h.signature ? await uploadShipSyncImage(h.signature, `delivery-notes/${note.number ?? note.id}/signature_${stamp}.png`) : null;
+  const sigUrl = h.signature ? await uploadShipSyncImage(h.signature, `delivery-notes/${note.number ?? note.id}/signature_${stamp}.png`, 'signature') : null;
   const when = new Date().toISOString();
   for (const p of parcels) {
     await patchPackage(p.id, {

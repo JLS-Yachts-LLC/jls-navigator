@@ -5,7 +5,7 @@
 import { storageRef } from '@/lib/signed-url'
 import { supabase } from '@/integrations/supabase/client'
 import { isOnline, queueAdd, blobPut, kvSet, kvGet } from './offline'
-import { shrinkImage, extFor, type ImageKind } from './image-shrink'
+import { shrinkImage, extFor, withType, type ImageKind } from './image-shrink'
 import type { ShipSyncDriver, ShipSyncDeliveryNote, ShipSyncPackage, ShipSyncDestination, ShipSyncVehicle, PackageStatus } from './model'
 
 const db = () => supabase as any
@@ -39,10 +39,17 @@ export async function listActiveDrivers(): Promise<ShipSyncDriver[]> {
 /** Load a driver's open runs (delivery notes + their packages + berths), caching for offline. */
 export async function loadDriverRuns(driverId: string): Promise<DriverRuns> {
   if (isOnline()) {
-    const [{ data: notes }, { data: packages }] = await Promise.all([
+    const [{ data: notes, error: notesErr }, { data: packages, error: pkgErr }] = await Promise.all([
       db().from('shipsync_delivery_notes').select('*').eq('driver_id', driverId).in('status', ['open', 'dispatched']).order('created_at'),
       db().from('shipsync_packages').select('*').eq('driver_id', driverId).in('status', ['assigned', 'out_for_delivery']).order('boat_name'),
     ])
+    // A failed read (a flaky connection that still reports "online") is NOT "no runs": showing — and caching — an
+    // empty list would wipe what the driver can still work from offline. Fall back to the last good copy.
+    if (notesErr || pkgErr) {
+      const cached = await kvGet<DriverRuns>(`runs:${driverId}`).catch(() => undefined)
+      if (cached) return cached
+      throw notesErr ?? pkgErr
+    }
     // Berths for the boats on this run (a multi-boat note has no single destination_address).
     const boatNames = Array.from(new Set(((packages ?? []) as ShipSyncPackage[]).map((p) => p.boat_name).filter(Boolean) as string[]))
     let destinations: ShipSyncDestination[] = []
@@ -87,20 +94,49 @@ export async function scanOntoVan(pkg: ShipSyncPackage): Promise<void> {
   })
 }
 
+/** Stage an (already shrunk) image on the phone and queue its upload + link. */
+async function queueUpload(pkgId: string, field: string, body: Blob, path: string): Promise<void> {
+  const blobKey = `${pkgId}:${field}:${Date.now()}`
+  await blobPut(blobKey, body)
+  await queueAdd({ kind: 'uploadAndPatch', blobKey, path, table: 'shipsync_packages', id: pkgId, field })
+}
+
 /** Upload an image field online, or stage it + queue when offline. */
 async function uploadField(pkgId: string, field: string, blob: Blob, label: string, kind: ImageKind = 'photo'): Promise<void> {
   // Shrink before anything else, so an offline queue holds the small version too.
   const body = await shrinkImage(blob, kind)
   const path = `packages/${pkgId}/${label}_${Date.now()}.${extFor(body, kind)}`
   if (isOnline()) {
-    const up = await supabase.storage.from('shipsync').upload(path, body, { upsert: true })
+    const up = await supabase.storage.from('shipsync').upload(path, withType(body, path), { upsert: true })
     if (up.error) throw up.error
     const url = storageRef('shipsync', path)
     await patch('shipsync_packages', pkgId, { [field]: url })
   } else {
-    const blobKey = `${pkgId}:${field}:${Date.now()}`
-    await blobPut(blobKey, body)
-    await queueAdd({ kind: 'uploadAndPatch', blobKey, path, table: 'shipsync_packages', id: pkgId, field })
+    await queueUpload(pkgId, field, body, path)
+  }
+}
+
+/**
+ * Park a handover on the phone to be sent later — for when the connection dropped
+ * part-way through (the phone still thought it was online, so deliverBoat threw).
+ * Writes exactly what deliverBoat would, replayed by flushQueue; safe to replay over
+ * anything that did get through.
+ */
+export async function queueDelivery(packages: ShipSyncPackage[], proof: DeliveryProof): Promise<void> {
+  const deliveredAt = new Date().toISOString()
+  for (const p of packages) {
+    await queueAdd({ kind: 'patch', table: 'shipsync_packages', id: p.id, patch: {
+      status: proof.status, delivered_at: deliveredAt,
+      receiver_full_name: proof.receiverName ?? null, receiver_designation: proof.receiverDesignation ?? null, receiver_email: proof.receiverEmail ?? null,
+    } })
+    if (proof.photo) {
+      const body = await shrinkImage(proof.photo, 'photo')
+      await queueUpload(p.id, 'delivery_photo_url', body, `packages/${p.id}/delivery_${Date.now()}.${extFor(body, 'photo')}`)
+    }
+    if (proof.signature) {
+      const body = await shrinkImage(proof.signature, 'signature')
+      await queueUpload(p.id, 'signature_url', body, `packages/${p.id}/signature_${Date.now()}.${extFor(body, 'signature')}`)
+    }
   }
 }
 
@@ -129,7 +165,7 @@ export async function deliverPackage(pkg: ShipSyncPackage, proof: DeliveryProof)
 /** Upload a blob once and return its public URL (online only). */
 async function uploadShared(path: string, blob: Blob, kind: ImageKind = 'photo'): Promise<string> {
   const body = await shrinkImage(blob, kind)
-  const up = await supabase.storage.from('shipsync').upload(path, body, { upsert: true })
+  const up = await supabase.storage.from('shipsync').upload(path, withType(body, path), { upsert: true })
   if (up.error) throw up.error
   return storageRef('shipsync', path)
 }

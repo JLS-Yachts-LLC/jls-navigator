@@ -25,7 +25,7 @@ import { BarcodeScannerDialog } from "@/components/shipsync/BarcodeScanner";
 import { loadYachtNames, loadDestinations } from "@/lib/shipsync/data";
 import { STATUS_META, type ShipSyncPackage } from "@/lib/shipsync/model";
 import { Screen, Lbl, inputCls, SuggestInput, PhotoField, FooterButtons } from "./logistics-ui";
-import { createCheckin, updateCheckin, findByAwb, isNetworkError, routeCheckin, type CheckinPayload } from "./checkin-commit";
+import { createCheckin, updateCheckin, findByAwb, isNetworkError, routeCheckin, newId, type CheckinPayload } from "./checkin-commit";
 import { queueCheckin } from "./logistics-offline";
 import { PendingBanner, useCheckinQueue } from "./checkin-pending";
 
@@ -43,14 +43,28 @@ const BLANK: Form = {
   payment: "NO", amount: "", method: "", remarks: "", boe: "",
 };
 
+/**
+ * Opening the phone's camera can make Android and iOS reload the page when memory is
+ * tight, which used to wipe the form (and the photo with it). The typed fields are kept
+ * for the session so only the photo needs taking again.
+ */
+const DRAFT_KEY = "logistics-checkin-draft";
+function loadDraft(): Form {
+  try { return { ...BLANK, ...(JSON.parse(sessionStorage.getItem(DRAFT_KEY) ?? "null") as Partial<Form> | null) }; } catch { return BLANK; }
+}
+function saveDraft(f: Form) {
+  try { sessionStorage.setItem(DRAFT_KEY, JSON.stringify(f)); } catch { /* storage blocked — nothing lost but the safety net */ }
+}
+
 export function CheckinParcel({ onBack }: { onBack: () => void }) {
-  const [f, setF] = useState<Form>(BLANK);
+  const [f, setF] = useState<Form>(loadDraft);
   const [photo, setPhoto] = useState<File | null>(null);
   const [boats, setBoats] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [dupe, setDupe] = useState<ShipSyncPackage | null>(null);
   const queue = useCheckinQueue(false);
+  useEffect(() => { saveDraft(f); }, [f]);
   const set = (p: Partial<Form>) => setF((x) => ({ ...x, ...p }));
 
   useEffect(() => {
@@ -105,18 +119,22 @@ export function CheckinParcel({ onBack }: { onBack: () => void }) {
       if (!(Number(f.amount) > 0)) { toast.error("Enter the amount paid."); return; }
       if (!f.method) { toast.error("Choose how it was paid."); return; }
     }
-    const p = payload(crypto.randomUUID());
     setSaving(true);
     try {
-      if (!navigator.onLine) { await saveOffline(p); return; }
-      const existing = await findByAwb(p.awb);
-      if (existing) { setDupe(existing); return; }
-      const status = await createCheckin(p, photo);
-      toast.success(`${p.awb} checked in — ${STATUS_META[status].label}`);
-      reset();
+      const p = payload(newId());
+      try {
+        if (!navigator.onLine) { await saveOffline(p); return; }
+        const existing = await findByAwb(p.awb);
+        if (existing) { setDupe(existing); return; }
+        const status = await createCheckin(p, photo);
+        toast.success(`${p.awb} checked in — ${STATUS_META[status].label}`);
+        reset();
+      } catch (e) {
+        if (isNetworkError(e)) await saveOffline(p);
+        else toast.error(errorMessage(e, "Could not save the parcel"));
+      }
     } catch (e) {
-      if (isNetworkError(e)) await saveOffline(p);
-      else toast.error(errorMessage(e, "Could not save the parcel"));
+      toast.error(errorMessage(e, "Could not save the parcel"));
     } finally {
       setSaving(false);
     }
@@ -138,7 +156,7 @@ export function CheckinParcel({ onBack }: { onBack: () => void }) {
   }
 
   /** Saving leaves the form blank and ready for the next parcel. */
-  function reset() { setF(BLANK); setPhoto(null); }
+  function reset() { setF(BLANK); setPhoto(null); try { sessionStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ } }
 
   return (
     <Screen title="Check-in · Parcels" onBack={onBack}

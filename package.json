@@ -10,6 +10,7 @@
     "build:dev": "node scripts/generate-changelog.mjs && node --max-old-space-size=6144 node_modules/vite/bin/vite.js build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
+    "test": "node scripts/run-tests.mjs",
     "format": "prettier --write .",
     "deploy": "node scripts/deploy-guard.mjs && node scripts/generate-changelog.mjs && vite build && wrangler deploy"
   },
@@ -99,6 +100,7 @@
     "eslint-plugin-prettier": "^5.2.6",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
+    "fake-indexeddb": "^6.2.5",
     "globals": "^15.15.0",
     "prettier": "^3.7.3",
     "sharp": "^0.35.4",

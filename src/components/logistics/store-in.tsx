@@ -22,13 +22,13 @@ import { Screen, Lbl, inputCls, SuggestInput, PhotoField, FooterButtons } from "
 import { LocationPicker, DimsFields, FilesField, type Dims } from "./warehouse-ui";
 import { labelsFor } from "./warehouse-labels";
 import {
-  loadShelves, storeClient, storeInternal, storageCharge, calcCbm,
+  loadShelves, storeClient, storeInternal, storageCharge, calcCbm, localToday,
   type WarehouseShelf, type Location, type PackingLine,
 } from "./logistics-warehouse-data";
 
 const sb = supabase as any;
 const UNITS = ["pcs", "box", "set", "pack", "roll", "kg", "m", "ltr"];
-const today = () => new Date().toISOString().slice(0, 10);
+const today = localToday;
 const blankLine = (): PackingLine => ({ itemName: "", quantity: "1", unit: "pcs", remarks: "", photo: null });
 const NO_LOC: Location = { zone: "", bay: "", shelf: "" };
 const NO_DIMS: Dims = { length: "", width: "", height: "", weight: "" };

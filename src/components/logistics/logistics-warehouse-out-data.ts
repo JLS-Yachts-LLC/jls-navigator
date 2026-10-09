@@ -72,17 +72,30 @@ export async function loadCheckoutLines(checkoutId: string): Promise<OutLine[]> 
     });
 }
 
-/** Everything already promised to another open check-out — it can't go out twice. */
-async function reservedElsewhere(exceptId: string | null): Promise<{ lines: Set<string>; packageRefs: Set<string> }> {
-  const { data: open } = await sb.from("warehouse_checkouts").select("id").in("status", OPEN);
+/**
+ * Everything already promised to another open check-out — it can't go out twice.
+ * A box and the lines inside it are the same stock: a whole package taken means its lines
+ * are taken, and a line taken means the whole package can no longer go out as one.
+ */
+async function reservedElsewhere(exceptId: string | null): Promise<{ lines: Set<string>; packageRefs: Set<string>; boxesWithLines: Set<string> }> {
+  const { data: open, error } = await sb.from("warehouse_checkouts").select("id").in("status", OPEN);
+  if (error) throw error;
   const ids = (open ?? []).map((c: any) => c.id).filter((id: string) => id !== exceptId);
-  const lines = new Set<string>(); const packageRefs = new Set<string>();
-  if (ids.length === 0) return { lines, packageRefs };
-  const { data: items } = await sb.from("warehouse_checkout_items").select("kind, client_item_id, content_id, ref_no").in("checkout_id", ids);
+  const lines = new Set<string>(); const packageRefs = new Set<string>(); const boxesWithLines = new Set<string>();
+  if (ids.length === 0) return { lines, packageRefs, boxesWithLines };
+  const { data: items, error: ie } = await sb.from("warehouse_checkout_items").select("kind, client_item_id, content_id, ref_no").in("checkout_id", ids);
+  if (ie) throw ie;
   for (const i of items ?? []) {
-    if (i.kind === "package") { lines.add(`p:${i.client_item_id}`); packageRefs.add(i.ref_no); } else lines.add(`c:${i.content_id}`);
+    if (i.kind === "package") { lines.add(`p:${i.client_item_id}`); packageRefs.add(i.ref_no); } else { lines.add(`c:${i.content_id}`); boxesWithLines.add(i.ref_no); }
   }
-  return { lines, packageRefs };
+  return { lines, packageRefs, boxesWithLines };
+}
+
+/** Why `lines` can't all be on ONE check-out: a whole package together with lines from inside it. */
+export function sameBoxClash(lines: OutLine[]): string | null {
+  const whole = new Set(lines.filter((l) => l.kind === "package").map((l) => l.ref_no));
+  const inside = lines.find((l) => l.kind === "content" && whole.has(l.ref_no));
+  return inside ? `${inside.ref_no} is on this check-out as a whole package AND as individual items — keep one or the other.` : null;
 }
 
 /** Clients that have something in storage to send out. */
@@ -104,7 +117,7 @@ export async function loadStock(boat: string, exceptCheckoutId: string | null): 
     .ilike("client_name", esc(boat)).eq("status", "Stored").order("ref_no");
   if (error) throw error;
   const taken = await reservedElsewhere(exceptCheckoutId);
-  const packages = (pk ?? []).filter((p: any) => !taken.lines.has(`p:${p.id}`)).map(pkgLine);
+  const packages = (pk ?? []).filter((p: any) => !taken.lines.has(`p:${p.id}`) && !taken.boxesWithLines.has(p.ref_no)).map(pkgLine);
   const refs = (pk ?? []).map((p: any) => p.ref_no).filter((r: string) => !taken.packageRefs.has(r));
   let contents: OutLine[] = [];
   if (refs.length) {
@@ -124,6 +137,7 @@ export async function findByScan(code: string, exceptCheckoutId: string | null):
     const p = pk[0];
     if (p.status !== "Stored") return { reason: `${p.ref_no} has already left the warehouse.` };
     if (taken.lines.has(`p:${p.id}`)) return { reason: `${p.ref_no} is already on another check-out.` };
+    if (taken.boxesWithLines.has(p.ref_no)) return { reason: `Items from ${p.ref_no} are already on another check-out, so it can't go out whole.` };
     return { line: pkgLine(p) };
   }
   const { data: ct } = await sb.from("warehouse_package_contents").select("id, item_id, ref_no, item_name, quantity, status, client_or_dept").ilike("item_id", c).limit(1);
@@ -153,8 +167,12 @@ function boatLabel(lines: OutLine[]): string | null {
  */
 export async function saveCheckout(id: string | null, d: CheckoutDraft, status: "draft" | "assigned"): Promise<WhCheckout> {
   const taken = await reservedElsewhere(id);
-  const clash = d.lines.find((l) => taken.lines.has(l.key) || (l.kind === "content" && taken.packageRefs.has(l.ref_no)));
+  const clash = d.lines.find((l) => taken.lines.has(l.key)
+    || (l.kind === "content" && taken.packageRefs.has(l.ref_no))
+    || (l.kind === "package" && taken.boxesWithLines.has(l.ref_no)));
   if (clash) throw new Error(`${clash.kind === "content" ? clash.itemId : clash.ref_no} was just put on another check-out — remove it and try again.`);
+  const same = sameBoxClash(d.lines);
+  if (same) throw new Error(same);
   for (const l of d.lines) if (l.kind === "content" && !(l.qtyOut > 0 && l.qtyOut <= l.stored)) throw new Error(`Qty Out for ${l.itemId} must be between 1 and ${l.stored}.`);
 
   const fields = {
@@ -171,8 +189,9 @@ export async function saveCheckout(id: string | null, d: CheckoutDraft, status: 
   if (id) {
     const { data: old } = await sb.from("warehouse_checkout_items").select("id").eq("checkout_id", id);
     oldItemIds = (old ?? []).map((r: any) => r.id);
-    const { data, error } = await sb.from("warehouse_checkouts").update(fields).eq("id", id).in("status", OPEN).select("*").single();
+    const { data, error } = await sb.from("warehouse_checkouts").update(fields).eq("id", id).in("status", OPEN).select("*").maybeSingle();
     if (error) throw error;
+    if (!data) throw new Error("This check-out has already been released or cancelled — go back and refresh the list.");
     co = data as WhCheckout;
   } else {
     const { data: number, error: nErr } = await sb.rpc("next_warehouse_checkout_number");
@@ -182,23 +201,34 @@ export async function saveCheckout(id: string | null, d: CheckoutDraft, status: 
     co = data as WhCheckout;
   }
 
+  let newItemIds: string[] = [];
   if (d.lines.length) {
-    const { error } = await sb.from("warehouse_checkout_items").insert(d.lines.map((l) => l.kind === "package"
+    const { data: made, error } = await sb.from("warehouse_checkout_items").insert(d.lines.map((l) => l.kind === "package"
       ? { checkout_id: co.id, kind: "package", client_item_id: l.clientItemId, ref_no: l.ref_no, description: l.description, client_name: l.boat }
-      : { checkout_id: co.id, kind: "content", content_id: l.contentId, ref_no: l.ref_no, item_id: l.itemId, description: l.description, client_name: l.boat, qty_out: l.qtyOut }));
-    if (error) throw error;
+      : { checkout_id: co.id, kind: "content", content_id: l.contentId, ref_no: l.ref_no, item_id: l.itemId, description: l.description, client_name: l.boat, qty_out: l.qtyOut })).select("id");
+    if (error) {
+      // A brand-new check-out that never got its lines must not be left behind as an empty draft (a retry would just make a second one).
+      if (!id) await sb.from("warehouse_checkouts").delete().eq("id", co.id);
+      throw error;
+    }
+    newItemIds = (made ?? []).map((r: any) => r.id);
   }
   if (oldItemIds.length) {
     const { error } = await sb.from("warehouse_checkout_items").delete().in("id", oldItemIds);
-    if (error) throw error;
+    if (error) {
+      // Leaving old and new lines together would count everything twice at release — back the new ones out.
+      if (newItemIds.length) await sb.from("warehouse_checkout_items").delete().in("id", newItemIds);
+      throw error;
+    }
   }
   return co;
 }
 
 /** Give up a saved check-out: it leaves the list and frees what it was holding. */
 export async function cancelCheckout(id: string): Promise<void> {
-  const { error } = await sb.from("warehouse_checkouts").update({ status: "cancelled" }).eq("id", id).in("status", OPEN);
+  const { data, error } = await sb.from("warehouse_checkouts").update({ status: "cancelled" }).eq("id", id).in("status", OPEN).select("id");
   if (error) throw error;
+  if (!data?.length) throw new Error("This check-out has already been released or cancelled.");
 }
 
 export type Handover = { name: string; position: string; email: string; photo: File | null; signature: Blob | null };

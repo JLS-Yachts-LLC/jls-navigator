@@ -32,12 +32,22 @@ function openDb(): Promise<IDBDatabase> {
   });
 }
 
+/**
+ * Runs one request and resolves only when the transaction has COMMITTED — not just
+ * when the request was accepted. A quota or commit failure after that point aborts
+ * the write, and the caller must hear about it rather than clear the form and tell
+ * the person their check-in is safe on the phone.
+ */
 async function tx<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest): Promise<T> {
   const db = await openDb();
   return new Promise<T>((resolve, reject) => {
-    const req = fn(db.transaction(STORE, mode).objectStore(STORE));
-    req.onsuccess = () => resolve(req.result as T);
-    req.onerror = () => reject(req.error);
+    let result: T;
+    const t = db.transaction(STORE, mode);
+    const req = fn(t.objectStore(STORE));
+    req.onsuccess = () => { result = req.result as T; };
+    t.oncomplete = () => { db.close(); resolve(result); };
+    t.onerror = () => { db.close(); reject(t.error ?? req.error); };
+    t.onabort = () => { db.close(); reject(t.error ?? new Error("The phone could not save this check-in (storage may be full).")); };
   });
 }
 

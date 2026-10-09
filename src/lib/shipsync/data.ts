@@ -4,7 +4,7 @@
  */
 import { storageRef, parseStorageRefOrPath } from '@/lib/signed-url'
 import { supabase } from '@/integrations/supabase/client'
-import { shrinkImage } from './image-shrink'
+import { shrinkImage, type ImageKind, pathWithExt, withType } from './image-shrink'
 import {
   nextDeliveryNumber, DONE_STATUSES,
   type ShipSyncPackage, type ShipSyncDriver, type ShipSyncDeliveryNote, type ShipSyncDestination,
@@ -226,7 +226,7 @@ export async function unassignPackage(id: string): Promise<void> {
     return
   }
   const status: PackageStatus = pkg?.warehouse_zone ? 'in_storage' : 'in_office'
-  await patchPackage(id, { delivery_note_id: null, driver_id: null, status, scan_out_time: null, delivered_at: null })
+  await patchPackage(id, { delivery_note_id: null, driver_id: null, status, scan_out_time: null, driver_scanned: false, driver_scan_out_time: null, delivered_at: null })
 }
 
 /** Delete a dispatched run: send its still-active parcels back to the routing
@@ -250,13 +250,21 @@ export async function deleteRun(noteId: string): Promise<void> {
 }
 
 // ── Images ───────────────────────────────────────────────────────────────────
-export async function uploadShipSyncImage(file: File | Blob, path: string): Promise<string> {
+export async function uploadShipSyncImage(file: File | Blob, path: string, kind: ImageKind = 'photo'): Promise<string> {
   // Camera output is resized on the way up — see image-shrink for why. Anything
   // that isn't an image (a PDF on a package's documents) passes through as-is.
-  const body = file.type?.startsWith('image/') ? await shrinkImage(file) : file
-  const { error } = await supabase.storage.from('shipsync').upload(path, body, { upsert: true })
+  // A signature is line art on a transparent canvas: it must stay a PNG (kind 'signature'),
+  // or it is re-encoded as a JPEG and the transparent background turns black.
+  // Some phones hand over a gallery photo with no type at all, so fall back on the file name.
+  const isImage = !!file.type?.startsWith('image/')
+    || (typeof File !== 'undefined' && file instanceof File && /\.(jpe?g|png|heic|heif|webp|gif)$/i.test(file.name))
+  const body = isImage ? await shrinkImage(file, kind) : file
+  // Name and type tell the truth about the bytes — a HEIC that couldn't be re-encoded is stored as .heic,
+  // and a photo with no type is given one (an untyped upload is saved as a generic file a browser won't display).
+  const finalPath = isImage ? pathWithExt(path, body) : path
+  const { error } = await supabase.storage.from('shipsync').upload(finalPath, withType(body, finalPath), { upsert: true })
   if (error) throw error
-  return storageRef('shipsync', path)
+  return storageRef('shipsync', finalPath)
 }
 
 // ── Documents ────────────────────────────────────────────────────────────────

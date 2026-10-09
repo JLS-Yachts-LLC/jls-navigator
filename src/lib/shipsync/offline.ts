@@ -11,6 +11,8 @@
  */
 import { storageRef } from '@/lib/signed-url'
 import { supabase } from '@/integrations/supabase/client'
+import { isNetworkError } from '@/lib/network-error'
+import { withType } from './image-shrink'
 
 const DB_NAME = 'shipsync-driver'
 const DB_VERSION = 1
@@ -29,12 +31,17 @@ function openDb(): Promise<IDBDatabase> {
   })
 }
 
+/** Resolves once the transaction has COMMITTED (not merely when the request was accepted), so
+ *  "queued" really means it is safe on the phone; a failed commit rejects instead of vanishing. */
 function tx<T>(store: string, mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest): Promise<T> {
   return openDb().then((db) => new Promise<T>((resolve, reject) => {
+    let result: T
     const t = db.transaction(store, mode)
     const req = fn(t.objectStore(store))
-    req.onsuccess = () => resolve(req.result as T)
-    req.onerror = () => reject(req.error)
+    req.onsuccess = () => { result = req.result as T }
+    t.oncomplete = () => { db.close(); resolve(result) }
+    t.onerror = () => { db.close(); reject(t.error ?? req.error) }
+    t.onabort = () => { db.close(); reject(t.error ?? new Error('The phone could not save this (storage may be full).')) }
   }))
 }
 
@@ -52,9 +59,24 @@ export type Mutation =
   | { kind: 'patch'; table: 'shipsync_packages' | 'shipsync_delivery_notes'; id: string; patch: Record<string, unknown> }
   | { kind: 'uploadAndPatch'; blobKey: string; path: string; table: 'shipsync_packages'; id: string; field: string }
 
-export const queueAdd = (m: Mutation) => tx<number>('queue', 'readwrite', (s) => s.add(m as any))
-export const queueAll = () => tx<(Mutation & { id: number })[]>('queue', 'readonly', (s) => s.getAll())
-export const queueDel = (id: number) => tx<void>('queue', 'readwrite', (s) => s.delete(id))
+/**
+ * The queue's own key is `id` (auto-increment), so a queued mutation's TARGET row id is
+ * stored as `rowId`. It used to be stored as `id` too, which made it the key: a second
+ * change queued for the same parcel — its photo, after its status — failed with a key
+ * clash, and the handover could not be saved offline at all.
+ */
+export type QueuedMutation = Mutation & { qid: IDBValidKey }
+
+export const queueAdd = (m: Mutation) => {
+  const { id: rowId, ...rest } = m
+  return tx<number>('queue', 'readwrite', (s) => s.add({ ...rest, rowId } as any))
+}
+export async function queueAll(): Promise<QueuedMutation[]> {
+  const rows = await tx<any[]>('queue', 'readonly', (s) => s.getAll())
+  // Records written by the old version have no rowId: their `id` IS the row id (and was the key).
+  return rows.map((r) => (r.rowId !== undefined ? { ...r, id: r.rowId, qid: r.id } : { ...r, qid: r.id })) as QueuedMutation[]
+}
+export const queueDel = (qid: IDBValidKey) => tx<void>('queue', 'readwrite', (s) => s.delete(qid))
 export async function queueCount(): Promise<number> {
   try { return (await queueAll()).length } catch { return 0 }
 }
@@ -68,7 +90,7 @@ async function applyMutation(m: Mutation): Promise<void> {
   } else {
     const blob = await blobGet(m.blobKey)
     if (!blob) return // blob gone — skip
-    const up = await supabase.storage.from('shipsync').upload(m.path, blob, { upsert: true })
+    const up = await supabase.storage.from('shipsync').upload(m.path, withType(blob, m.path), { upsert: true })
     if (up.error) throw up.error
     const url = storageRef('shipsync', m.path)
     const { error } = await db2().from(m.table).update({ [m.field]: url }).eq('id', m.id)
@@ -77,14 +99,16 @@ async function applyMutation(m: Mutation): Promise<void> {
   }
 }
 
-/** Flush queued mutations in order. Stops at the first failure (preserves order)
- *  so a transient error just means we retry next time. Returns how many synced. */
+/** Flush queued mutations in order. No signal stops the run (preserving order) so it
+ *  retries next time; any OTHER failure leaves that one item queued and carries on — a
+ *  single rejected photo or row must not hold up every later proof of delivery behind it.
+ *  Returns how many synced. */
 export async function flushQueue(): Promise<number> {
   let synced = 0
   const items = await queueAll().catch(() => [])
   for (const m of items) {
-    try { await applyMutation(m); await queueDel(m.id); synced++ }
-    catch { break }
+    try { await applyMutation(m); await queueDel(m.qid); synced++ }
+    catch (e) { if (isNetworkError(e)) break }
   }
   return synced
 }

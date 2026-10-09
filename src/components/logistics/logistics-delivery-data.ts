@@ -9,15 +9,16 @@
  */
 import { supabase } from "@/integrations/supabase/client";
 import { errorMessage } from "@/lib/error-message";
-import { setNoteDriver, unassignPackage } from "@/lib/shipsync/data";
-import { deliverBoat, scanOntoVan, type DeliveryProof } from "@/lib/shipsync/driver-data";
+import { assignPackagesToNote, unassignPackage } from "@/lib/shipsync/data";
+import { deliverBoat, queueDelivery, scanOntoVan, type DeliveryProof } from "@/lib/shipsync/driver-data";
+import { isNetworkError } from "@/lib/network-error";
 import type { ShipSyncDeliveryNote, ShipSyncDriver, ShipSyncPackage } from "@/lib/shipsync/model";
 import { generateNotePdf, shipsyncApi } from "./logistics-api";
 
 const sb = supabase as any;
 
 export { loadDriverRuns, listActiveDrivers } from "@/lib/shipsync/driver-data";
-export { scanOntoVan, setNoteDriver };
+export { scanOntoVan };
 
 /** Packages still to hand over — assigned to the run, not yet delivered. */
 export const PENDING = ["assigned", "out_for_delivery"] as const;
@@ -27,7 +28,18 @@ export const isScanned = (p: ShipSyncPackage) => p.driver_scanned || p.status ==
 
 /** "Removed from List": the parcel was loaded by mistake, so it goes back to the office's pool. */
 export async function removeFromRun(p: ShipSyncPackage): Promise<void> {
+  const noteId = p.delivery_note_id;
   await unassignPackage(p.id);
+  if (!noteId) return;
+  // If that was the last thing left to deliver, the note is finished (or empty): don't leave it dispatched forever.
+  const { data, error } = await sb.from("shipsync_packages").select("status").eq("delivery_note_id", noteId);
+  if (error) return;
+  const rows = data ?? [];
+  if (rows.some((r: any) => (PENDING as readonly string[]).includes(r.status))) return;
+  const patch = rows.length === 0
+    ? { status: "cancelled", driver_id: null, awaiting_completion_at: null }
+    : { status: "delivered", delivered_at: new Date().toISOString(), awaiting_completion_at: null };
+  await sb.from("shipsync_delivery_notes").update(patch).eq("id", noteId).eq("status", "dispatched");
 }
 
 /** Complete Later: remember on the server that this note is half-finished, so the office can see it. Best effort — never blocks the driver. */
@@ -45,39 +57,117 @@ export async function cancelDelivery(noteId: string): Promise<void> {
 
 export type Handover = { name: string; position: string; email: string; photo: Blob | null; signature: Blob | null };
 
+export type CompleteResult = {
+  /** The note had nothing left to deliver and was closed. */
+  closed: boolean;
+  emailed: string[];
+  /** No signal (or it dropped part-way): saved on the phone and sent later. */
+  queued?: boolean;
+  /** The parcels ARE delivered, but a follow-up step failed — shown to the driver as a warning, never as a reason to do the handover again. */
+  problem?: string;
+};
+
 /**
- * Complete Delivery (the finalised proof of delivery). Stamps the parcels with
- * the receiver, photo and signature, closes the note once nothing is left on it,
- * and emails the proof to the client and the driver.
+ * Complete Delivery (the finalised proof of delivery) for ONE boat on the run.
+ * Stamps that boat's parcels with the receiver, photo and signature; closes the note
+ * once nothing is left on it; and emails that boat's proof to its client and the driver.
+ *
+ * Once the parcels are stamped this never throws: whatever fails afterwards (closing
+ * the note, the email) comes back as `problem`, so the driver isn't left on a screen
+ * where pressing the button again would re-stamp every parcel.
  */
 export async function completeDelivery(
-  note: ShipSyncDeliveryNote, parcels: ShipSyncPackage[], h: Handover, driver: ShipSyncDriver | null,
-): Promise<{ closed: boolean; emailed: string[] }> {
+  note: ShipSyncDeliveryNote, parcels: ShipSyncPackage[], h: Handover, driver: ShipSyncDriver | null, boat?: string,
+): Promise<CompleteResult> {
   const proof: DeliveryProof = {
     status: "delivered", receiverName: h.name.trim(), receiverDesignation: h.position.trim(),
     receiverEmail: h.email.trim() || undefined, photo: h.photo, signature: h.signature,
   };
-  await deliverBoat(parcels, proof);
-
-  if (typeof navigator !== "undefined" && !navigator.onLine) return { closed: false, emailed: [] };
-
-  const { count } = await sb.from("shipsync_packages").select("id", { count: "exact", head: true })
-    .eq("delivery_note_id", note.id).in("status", [...PENDING]);
-  const closed = (count ?? 0) === 0;
-  if (closed) {
-    await sb.from("shipsync_delivery_notes").update({ status: "delivered", delivered_at: new Date().toISOString(), awaiting_completion_at: null }).eq("id", note.id);
+  try {
+    await deliverBoat(parcels, proof);
+  } catch (e) {
+    if (!isNetworkError(e)) throw e;
+    await queueDelivery(parcels, proof);               // the connection dropped part-way: keep the handover, send it later
+    return { closed: false, emailed: [], queued: true };
   }
 
-  // The proof goes to the client and to the driver. Rebuilt first so the PDF carries this signature.
+  if (typeof navigator !== "undefined" && !navigator.onLine) return { closed: false, emailed: [], queued: true };
+
+  let closed = false;
+  try {
+    const { count, error } = await sb.from("shipsync_packages").select("id", { count: "exact", head: true })
+      .eq("delivery_note_id", note.id).in("status", [...PENDING]);
+    if (error || count == null) throw error ?? new Error("no count returned");   // can't tell whether anything is left — so do NOT close the note
+    closed = count === 0;
+    // This boat is done, so the note is no longer "awaiting completion" (even if other boats are still to go).
+    const { error: ue } = await sb.from("shipsync_delivery_notes").update({
+      awaiting_completion_at: null, ...(closed ? { status: "delivered", delivered_at: new Date().toISOString() } : {}),
+    }).eq("id", note.id);
+    if (ue) { closed = false; throw ue; }
+  } catch (e) {
+    return { closed: false, emailed: [], problem: `Delivered, but the note could not be closed (${errorMessage(e, "unknown error")}). The office can finish it.` };
+  }
+
+  // The proof goes to the client and to the driver. The PDF is rebuilt first so it carries this signature.
   const to = [h.email.trim(), driver?.email?.trim()].filter((a): a is string => !!a);
-  if (!closed || to.length === 0) return { closed, emailed: [] };
+  if (to.length === 0) return { closed, emailed: [] };
   try {
     await generateNotePdf(note.id, "delivery");
-    await shipsyncApi("/api/shipsync/email-pod", { noteId: note.id, kind: "delivery", to: to.join(",") });
+    await shipsyncApi("/api/shipsync/email-pod", { noteId: note.id, kind: "delivery", to: to.join(","), ...(boat && boat !== "—" ? { boat } : {}) });
     return { closed, emailed: to };
   } catch (e) {
-    throw new Error(`Delivered, but the proof-of-delivery email failed: ${errorMessage(e, "unknown error")}`);
+    return { closed, emailed: [], problem: `Delivered, but the proof-of-delivery email failed (${errorMessage(e, "unknown error")}). It can be resent from Manage Deliveries.` };
   }
+}
+
+/**
+ * Close the driver's runs that have nothing left to deliver. A handover made with no
+ * signal is queued on the phone and replayed later, which stamps the parcels but cannot
+ * close the note — so after a sync this finishes the job. (No proof email goes from here;
+ * the office can resend it from the Delivered tab.) Returns how many notes were closed.
+ */
+export async function closeFinishedNotes(driverId: string): Promise<number> {
+  const { data: notes, error } = await sb.from("shipsync_delivery_notes").select("id").eq("driver_id", driverId).eq("status", "dispatched");
+  if (error) throw error;
+  let closed = 0;
+  for (const n of notes ?? []) {
+    const { data: pk, error: pe } = await sb.from("shipsync_packages").select("status").eq("delivery_note_id", n.id);
+    if (pe) continue;
+    const rows = pk ?? [];
+    const pending = rows.some((p: any) => (PENDING as readonly string[]).includes(p.status));
+    if (rows.length === 0 || pending) continue;
+    const { error: ue } = await sb.from("shipsync_delivery_notes").update({ status: "delivered", delivered_at: new Date().toISOString(), awaiting_completion_at: null }).eq("id", n.id);
+    if (!ue) closed++;
+  }
+  return closed;
+}
+
+/**
+ * Give a note to a (new) driver. A draft becomes a real run — its parcels are
+ * assigned and the note dispatched — otherwise it would show a driver while nothing
+ * ever reached that driver's phone. A run already under way hands over only the parcels
+ * still to deliver. Parcels first, note last, errors checked: a failure part-way is
+ * retryable and never leaves the note and its parcels on different drivers.
+ */
+export async function setNoteDriver(noteId: string, driverId: string | null): Promise<void> {
+  const { data: note, error: ne } = await sb.from("shipsync_delivery_notes").select("*").eq("id", noteId).single();
+  if (ne) throw ne;
+  const { data: pk, error: pe } = await sb.from("shipsync_packages").select("id, status").eq("delivery_note_id", noteId);
+  if (pe) throw pe;
+  const open = (pk ?? []).filter((p: any) => !["delivered", "collected", "refused", "delivered_tbi", "completed"].includes(p.status));
+
+  if (driverId && note.status === "open") {
+    await assignPackagesToNote(open.map((p: any) => p.id), note as ShipSyncDeliveryNote, driverId);
+    const { error } = await sb.from("shipsync_delivery_notes").update({ status: "dispatched", driver_id: driverId }).eq("id", noteId);
+    if (error) throw error;
+    return;
+  }
+  if (open.length) {
+    const { error } = await sb.from("shipsync_packages").update({ driver_id: driverId }).in("id", open.map((p: any) => p.id));
+    if (error) throw error;
+  }
+  const { error } = await sb.from("shipsync_delivery_notes").update({ driver_id: driverId }).eq("id", noteId);
+  if (error) throw error;
 }
 
 // ── Manage Deliveries ────────────────────────────────────────────────────────
@@ -138,7 +228,12 @@ export async function adminSetStatus(noteId: string, status: "open" | "dispatche
   const now = new Date().toISOString();
   const { error } = await sb.from("shipsync_delivery_notes").update({ status, ...(status === "delivered" ? { delivered_at: now } : {}), awaiting_completion_at: null }).eq("id", noteId);
   if (error) throw error;
-  if (status === "delivered") await sb.from("shipsync_packages").update({ status: "delivered", delivered_at: now }).eq("delivery_note_id", noteId);
+  if (status === "delivered") {
+    // Parcels already collected, refused or finished keep their own outcome.
+    const { error: pe } = await sb.from("shipsync_packages").update({ status: "delivered", delivered_at: now })
+      .eq("delivery_note_id", noteId).in("status", [...PENDING, "in_office", "in_storage"]);
+    if (pe) throw pe;
+  }
 }
 
 /** Resend the proof of delivery for a finished note to one address. */

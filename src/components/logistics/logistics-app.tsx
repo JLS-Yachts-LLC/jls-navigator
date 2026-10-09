@@ -8,7 +8,7 @@
  * It reads and writes the same shipsync_* tables the office ShipSync boards use,
  * so nothing here is a second copy of the data.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   PackagePlus, PackageMinus, Warehouse, PackageOpen, LayoutGrid, Truck, ClipboardList, Loader2,
 } from "lucide-react";
@@ -22,6 +22,8 @@ import { ManageDeliveries } from "./manage-deliveries";
 import { StoreIn } from "./store-in";
 import { WarehouseOut } from "./warehouse-out";
 import { PendingBanner, useCheckinQueue } from "./checkin-pending";
+import { flushQueue } from "@/lib/shipsync/offline";
+import { closeFinishedNotes } from "./logistics-delivery-data";
 import { ManageWarehouse } from "./manage-warehouse";
 import { useOrbitFieldOnlyRedirect } from "@/lib/orbit-field-only";
 
@@ -58,6 +60,22 @@ export function LogisticsApp() {
   // Check-ins saved without signal upload from here, whichever screen is open.
   const queue = useCheckinQueue(true);
 
+  // Scans and handovers (photos and signatures included) made with no signal wait in the
+  // driver queue on this phone. They used to be sent only if the OLD driver app was opened,
+  // so a handover made offline here could sit there for good. Send them whenever there is signal,
+  // then close any run that has nothing left on it.
+  const driverId = id.driver?.id ?? null;
+  useEffect(() => {
+    const go = () => {
+      if (!navigator.onLine) return;
+      void flushQueue().then((n) => (n > 0 && driverId ? closeFinishedNotes(driverId) : 0)).catch(() => { /* retried on the next tick */ });
+    };
+    go();
+    window.addEventListener("online", go);
+    const t = window.setInterval(go, 60_000);
+    return () => { window.removeEventListener("online", go); window.clearInterval(t); };
+  }, [driverId]);
+
   if (id.loading || fieldOnly) {
     return <div className="flex h-dvh items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
   }
@@ -77,6 +95,12 @@ export function LogisticsApp() {
 
   return (
     <Screen title="JLS YACHTS - LOGISTICS" subtitle={`HI ${id.greeting}`}>
+      {id.lookupFailed && (
+        <div className="flex items-center gap-3 rounded-xl border border-amber-500/50 bg-amber-500/10 p-3 text-[14px]">
+          <span className="flex-1">Couldn't confirm your access — showing Deliveries only.</span>
+          <button type="button" onClick={() => window.location.reload()} className="shrink-0 rounded-lg border border-border px-3 py-2 font-semibold">Try again</button>
+        </div>
+      )}
       <PendingBanner queue={queue} />
       {groups.map((g) => (
         <section key={g.title} className="space-y-2">

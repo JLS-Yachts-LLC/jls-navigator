@@ -31,3 +31,4 @@ assets/N8N/
 
 # Bulk photo drops — imported via scripts/import-fleet-photos.mjs, not tracked
 *.zip
+.test-build/

@@ -3,13 +3,37 @@
  * proof-of-delivery email. Mirrors the PowerApp flows, server-side.
  */
 import { emailBrandLockup } from "@/lib/email/brand-mark";
-import { storageRef } from '@/lib/signed-url'
+import { storageRef, parseStorageRef, EMAIL_LINK_TTL } from '@/lib/signed-url'
 import { supabaseAdmin } from '@/integrations/supabase/client.server'
 import { sendEmail } from '@/lib/ses.server'
 import { buildDeliveryNotePdf } from '@/lib/shipsync/pdf.server'
 import type { ShipSyncDeliveryNote, ShipSyncPackage } from '@/lib/shipsync/model'
 
 const db = () => supabaseAdmin as any
+
+/**
+ * Read a stored file on the server. Stored values are "<bucket>/<path>" references
+ * (the bucket is private) — fetching one as if it were a URL always fails — or, on older
+ * rows, a full storage URL. Returns null if it can't be read.
+ */
+export async function downloadStored(stored: string): Promise<Uint8Array | null> {
+  const ref = parseStorageRef(stored)
+  if (!ref) {
+    try { const r = await fetch(stored); return r.ok ? new Uint8Array(await r.arrayBuffer()) : null } catch { return null }
+  }
+  const { data, error } = await supabaseAdmin.storage.from(ref.bucket).download(ref.path)
+  if (error || !data) return null
+  return new Uint8Array(await data.arrayBuffer())
+}
+
+/** A link that opens a stored file from an email (valid for EMAIL_LINK_TTL). A bare "<bucket>/<path>" is not a link. */
+export async function linkForEmail(stored: string): Promise<string> {
+  const ref = parseStorageRef(stored)
+  if (!ref) return stored
+  const { data, error } = await supabaseAdmin.storage.from(ref.bucket).createSignedUrl(ref.path, EMAIL_LINK_TTL)
+  if (error || !data?.signedUrl) throw new Error('Could not make a link to the delivery note')
+  return data.signedUrl
+}
 const LOGISTICS = (process.env as any).SHIPSYNC_LOGISTICS_EMAIL ?? 'logistics@jlsyachts.com'
 
 async function loadNote(noteId: string): Promise<{ note: ShipSyncDeliveryNote; packages: ShipSyncPackage[] }> {
@@ -57,11 +81,9 @@ export async function generateNotePdf(noteId: string, kind: 'predelivery' | 'del
     for (const [boat, pkgs] of byBoat) {
       const signed = pkgs.find((p) => p.signature_url)
       if (!signed) continue
-      let imageBytes: Uint8Array | null = null
-      try {
-        const res = await fetch(signed.signature_url as string)
-        if (res.ok) imageBytes = new Uint8Array(await res.arrayBuffer())
-      } catch { /* leave blank if unreachable */ }
+      // The signature is stored as a private "<bucket>/<path>" reference, so it has to be read
+      // from storage — fetching it as a URL failed silently and left the signature box blank.
+      const imageBytes = await downloadStored(signed.signature_url as string)
       sigByBoat.set(boat, { imageBytes, receiver: signed.receiver_full_name ?? null, date: signed.delivered_at ?? null })
     }
   }
@@ -77,8 +99,11 @@ export async function generateNotePdf(noteId: string, kind: 'predelivery' | 'del
 }
 
 /** Email proof of delivery — links to the delivery-note PDF + a short summary. */
-export async function emailProofOfDelivery(noteId: string, toOverride?: string, kind: 'predelivery' | 'delivery' = 'delivery'): Promise<{ to: string }> {
-  const { note, packages } = await loadNote(noteId)
+export async function emailProofOfDelivery(noteId: string, toOverride?: string, kind: 'predelivery' | 'delivery' = 'delivery', onlyBoat?: string): Promise<{ to: string }> {
+  const loaded = await loadNote(noteId)
+  const note = loaded.note
+  // A note can carry several boats' parcels; one client's proof lists only their own.
+  const packages = onlyBoat ? loaded.packages.filter((p) => (p.boat_name ?? '').trim().toLowerCase() === onlyBoat.trim().toLowerCase()) : loaded.packages
   const pre = kind === 'predelivery'
   let pdfUrl = pre ? note.predelivery_pdf_url : note.delivery_pdf_url
   if (!pdfUrl) pdfUrl = await generateNotePdf(noteId, kind)
@@ -89,22 +114,24 @@ export async function emailProofOfDelivery(noteId: string, toOverride?: string, 
   if (!to) throw new Error('No recipient email — set a receiver email on a package or pass one explicitly.')
 
   const ref = `DN-${note.number ?? noteId}`
-  const boat = esc(note.boat_name ?? '')
+  const boat = esc(onlyBoat ?? note.boat_name ?? '')
+  // The PDF is stored as a private reference, which is not a link — make one that opens from an inbox.
+  const pdfLink = await linkForEmail(pdfUrl)
   const rows = packages.map((p) => `<tr><td style="padding:4px 10px 4px 0;font-family:monospace">${esc(p.barcode ?? '—')}</td><td style="padding:4px 0;color:#555">${esc(p.package_owner ?? '')}</td></tr>`).join('')
   const heading = pre ? `Delivery scheduled — ${boat}` : `Delivery complete — ${boat}`
   const intro = pre
     ? `The packages below for delivery note <strong>${ref}</strong> are scheduled for delivery to <strong>${boat}</strong>.`
     : `The packages below for delivery note <strong>${ref}</strong> have been delivered.`
   const btn = pre ? 'View pre-delivery note (PDF)' : 'View delivery note (PDF)'
-  const subject = pre ? `Delivery scheduled — ${note.boat_name ?? ''} (${ref})` : `Proof of delivery — ${note.boat_name ?? ''} (${ref})`
+  const subject = pre ? `Delivery scheduled — ${onlyBoat ?? note.boat_name ?? ''} (${ref})` : `Proof of delivery — ${onlyBoat ?? note.boat_name ?? ''} (${ref})`
   const html = shell(
     `<h1 style="margin:0 0 10px;font-size:18px;color:#0d1520">${heading}</h1>
      <p style="margin:8px 0;font-size:14px;color:#333">${intro}</p>
      <table style="margin:12px 0;font-size:13px;color:#333">${rows}</table>
-     <p style="margin:14px 0"><a href="${pdfUrl}" style="display:inline-block;background:#0d6efd;color:#fff;text-decoration:none;padding:9px 16px;border-radius:7px;font-size:13px">${btn}</a></p>
+     <p style="margin:14px 0"><a href="${pdfLink}" style="display:inline-block;background:#0d6efd;color:#fff;text-decoration:none;padding:9px 16px;border-radius:7px;font-size:13px">${btn}</a></p>
      <p style="margin:8px 0;font-size:12px;color:#7a828a">JLS Yachts Logistics</p>`,
   )
-  const txt = pre ? `Delivery scheduled for ${note.boat_name ?? ''} (${ref}). Pre-delivery note: ${pdfUrl}` : `Delivery complete for ${note.boat_name ?? ''} (${ref}). Delivery note: ${pdfUrl}`
+  const txt = pre ? `Delivery scheduled for ${onlyBoat ?? note.boat_name ?? ''} (${ref}). Pre-delivery note: ${pdfLink}` : `Delivery complete for ${onlyBoat ?? note.boat_name ?? ''} (${ref}). Delivery note: ${pdfLink}`
   // `to` may be several addresses (client and driver) separated by , or ;
   const recipients = to.split(/[,;]/).map((a) => a.trim()).filter(Boolean)
   await sendEmail({ to: recipients, cc: [LOGISTICS], subject, html, text: txt })

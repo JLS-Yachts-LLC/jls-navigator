@@ -23,7 +23,7 @@ import type { SignaturePadHandle } from "@/components/shipsync/driver/SignatureP
 import type { ShipSyncDriver } from "@/lib/shipsync/model";
 import { loadDriversFor, loadDestination } from "./logistics-data";
 import {
-  isNotSetUp, loadCheckouts, loadCheckoutLines, loadStockBoats, loadStock, findByScan, saveCheckout,
+  isNotSetUp, loadCheckouts, loadCheckoutLines, loadStockBoats, loadStock, findByScan, saveCheckout, sameBoxClash,
   releaseCheckout, cancelCheckout, openDeliveryNote,
   type OutRow, type OutLine, type OutMode, type WhCheckout,
 } from "./logistics-warehouse-out-data";
@@ -148,7 +148,7 @@ function OutTables({ lines, onRemove, onQty }: { lines: OutLine[]; onRemove?: (k
 // ── Search to add ────────────────────────────────────────────────────────────
 
 /** Pick a client, then tick whole packages ("All Items") or lines from inside a box ("Items from the box", with a Qty Out). */
-function SearchToAdd({ exceptId, taken, onAdd, onClose }: { exceptId: string | null; taken: Set<string>; onAdd: (l: OutLine[]) => void; onClose: () => void }) {
+function SearchToAdd({ exceptId, taken, here, onAdd, onClose }: { exceptId: string | null; taken: Set<string>; here: OutLine[]; onAdd: (l: OutLine[]) => void; onClose: () => void }) {
   const [boats, setBoats] = useState<string[] | null>(null);
   const [boat, setBoat] = useState("");
   const [stock, setStock] = useState<{ packages: OutLine[]; contents: OutLine[] } | null>(null);
@@ -161,7 +161,15 @@ function SearchToAdd({ exceptId, taken, onAdd, onClose }: { exceptId: string | n
     if (!boat) return;
     setStock(null); setTicked(new Set()); setQty({});
     void loadStock(boat, exceptId)
-      .then((s) => setStock({ packages: s.packages.filter((l) => !taken.has(l.key)), contents: s.contents.filter((l) => !taken.has(l.key)) }))
+      .then((s) => {
+        // This check-out's own lines count too: a box can't be added whole if items from it are already here, and vice versa.
+        const wholeHere = new Set(here.filter((l) => l.kind === "package").map((l) => l.ref_no));
+        const insideHere = new Set(here.filter((l) => l.kind === "content").map((l) => l.ref_no));
+        setStock({
+          packages: s.packages.filter((l) => !taken.has(l.key) && !insideHere.has(l.ref_no)),
+          contents: s.contents.filter((l) => !taken.has(l.key) && !wholeHere.has(l.ref_no)),
+        });
+      })
       .catch((e) => { fail(e, "Could not load that client's storage"); setStock({ packages: [], contents: [] }); });
   }, [boat]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -265,6 +273,8 @@ function Builder({ row, onDone }: { row: OutRow | null; onDone: () => void }) {
       const r = await findByScan(code, co?.id ?? null);
       if (!r.line) { toast.error(r.reason ?? "Not found"); return; }
       if (taken.has(r.line.key)) { toast.info(`${code} is already on the list.`); return; }
+      const clash = sameBoxClash([...lines, r.line]);
+      if (clash) { toast.error(clash); return; }
       add([r.line]); toast.success(`${code} added`);
     } catch (e) { fail(e, "Could not look that up"); }
   }
@@ -390,7 +400,7 @@ function Builder({ row, onDone }: { row: OutRow | null; onDone: () => void }) {
       {co && <button type="button" onClick={discard} disabled={!!busy} className="w-full py-2 text-center text-[14px] font-medium text-destructive disabled:opacity-50">Cancel this check-out ({co.number})</button>}
 
       <BarcodeScannerDialog open={scanning} onClose={() => setScanning(false)} title="Scan package label" onDetected={(v) => void onScan(v)} />
-      {searching && <SearchToAdd exceptId={co?.id ?? null} taken={taken} onClose={() => setSearching(false)} onAdd={(l) => { add(l); setSearching(false); toast.success(`${l.length} added`); }} />}
+      {searching && <SearchToAdd exceptId={co?.id ?? null} taken={taken} here={lines} onClose={() => setSearching(false)} onAdd={(l) => { add(l); setSearching(false); toast.success(`${l.length} added`); }} />}
     </Screen>
   );
 }

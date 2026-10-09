@@ -32,7 +32,10 @@ import type { LogisticsIdentity } from "./logistics-identity";
 import { Screen, Lbl, inputCls, PhotoField, Sheet } from "./logistics-ui";
 
 type Runs = Awaited<ReturnType<typeof loadDriverRuns>>;
-const draftKey = (noteId: string) => `logistics.delivery.draft.${noteId}`;
+// A draft belongs to one boat's handover on a note — a run can carry several boats, each with its own receiver.
+const draftKey = (noteId: string, boat: string) => `logistics.delivery.draft.${noteId}.${boat}`;
+const blankHandover = { name: "", position: "", email: "" };
+const readDraft = (noteId: string, boat: string) => { try { return { ...blankHandover, ...(JSON.parse(localStorage.getItem(draftKey(noteId, boat)) ?? "null") as object | null) }; } catch { return blankHandover; } };
 const online = () => typeof navigator === "undefined" || navigator.onLine;
 const needOnline = (what: string) => { if (online()) return true; toast.error(`${what} needs a connection.`); return false; };
 
@@ -101,6 +104,16 @@ function Manifest({ note, parcels, driver, reload, onBack }: {
   const boats = useMemo(() => Array.from(new Set(parcels.map((p) => p.boat_name ?? "—"))), [parcels]);
   const [boat, setBoat] = useState(boats[0] ?? "—");
   useEffect(() => { if (!boats.includes(boat)) setBoat(boats[0] ?? "—"); }, [boats]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Switching boat starts that boat's handover afresh: its own saved draft, and NO photo or signature carried over
+  // from the last boat (they would otherwise be submitted as this boat's proof of delivery).
+  const shownBoat = useRef(boat);
+  useEffect(() => {
+    if (shownBoat.current === boat) return;
+    shownBoat.current = boat;
+    setH(readDraft(note.id, boat));
+    setPhoto(null);
+    sig.current?.clear();
+  }, [boat]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const items = parcels.filter((p) => (p.boat_name ?? "—") === boat);
   const allGreen = items.length > 0 && items.every(isScanned);
@@ -110,7 +123,7 @@ function Manifest({ note, parcels, driver, reload, onBack }: {
   const [detail, setDetail] = useState<ShipSyncPackage | null>(null);
   const [changing, setChanging] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
-  const [h, setH] = useState(() => { try { return JSON.parse(localStorage.getItem(draftKey(note.id)) ?? "") as { name: string; position: string; email: string }; } catch { return { name: "", position: "", email: "" }; } });
+  const [h, setH] = useState(() => readDraft(note.id, boats[0] ?? "—"));
   const [photo, setPhoto] = useState<File | null>(null);
   const sig = useRef<SignaturePadHandle>(null);
 
@@ -132,7 +145,7 @@ function Manifest({ note, parcels, driver, reload, onBack }: {
   const markAll = () => run("all", async () => { for (const p of items.filter((x) => !isScanned(x))) await scanOntoVan(p); await reload(); });
 
   const later = () => run("later", async () => {
-    try { localStorage.setItem(draftKey(note.id), JSON.stringify(h)); } catch { /* storage blocked — the server flag below still records it */ }
+    try { localStorage.setItem(draftKey(note.id, boat), JSON.stringify(h)); } catch { /* storage blocked — the server flag below still records it */ }
     if (online()) await markAwaiting(note.id, true).catch(() => {});
     toast.success("Saved — finish it from My Deliveries.");
     onBack();
@@ -144,9 +157,11 @@ function Manifest({ note, parcels, driver, reload, onBack }: {
     if (sig.current?.isEmpty()) { toast.error("The receiver needs to sign."); return; }
     void run("complete", async () => {
       const signature = (await sig.current?.toBlob()) ?? null;
-      const r = await completeDelivery(note, items, { ...h, photo, signature }, driver);
-      try { localStorage.removeItem(draftKey(note.id)); } catch { /* ignore */ }
-      toast.success(online() ? `${boat} delivered${r.emailed.length ? ` — proof emailed to ${r.emailed.join(" and ")}` : ""}` : "Saved — will sync when you're back online");
+      const r = await completeDelivery(note, items, { ...h, photo, signature }, driver, boat);
+      try { localStorage.removeItem(draftKey(note.id, boat)); } catch { /* ignore */ }
+      if (r.queued) toast.success("Saved on this phone — it will send when you're back online");
+      else if (r.problem) toast.warning(r.problem, { duration: 12000 });
+      else toast.success(`${boat} delivered${r.emailed.length ? ` — proof emailed to ${r.emailed.join(" and ")}` : ""}`);
       onBack();
     });
   };

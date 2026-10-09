@@ -11,6 +11,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { createPackage, patchPackage, uploadShipSyncImage } from "@/lib/shipsync/data";
 import { nextItemId, type PackageStatus, type ShipSyncPackage } from "@/lib/shipsync/model";
+import { isNetworkError } from "@/lib/network-error";
 
 const sb = supabase as any;
 
@@ -56,11 +57,17 @@ function paidColumns(p: CheckinPayload): Record<string, string> {
   };
 }
 
-/** True for "the request never got there" — the cases worth saving on the phone instead of failing. */
-export function isNetworkError(e: unknown): boolean {
-  if (typeof navigator !== "undefined" && navigator.onLine === false) return true;
-  const msg = String((e as { message?: string } | null)?.message ?? e ?? "");
-  return /failed to fetch|network ?error|load failed|fetch failed|network request failed/i.test(msg);
+export { isNetworkError };
+
+/** A fresh id for a check-in. crypto.randomUUID is missing on older iPhones (before iOS 15.4), where calling it would silently kill Save. */
+export function newId(): string {
+  const c = (globalThis as { crypto?: Crypto }).crypto;
+  if (c?.randomUUID) return c.randomUUID();
+  const b = new Uint8Array(16);
+  if (c?.getRandomValues) c.getRandomValues(b); else for (let i = 0; i < 16; i++) b[i] = Math.floor(Math.random() * 256);
+  b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80;
+  const h = Array.from(b, (x) => x.toString(16).padStart(2, "0"));
+  return `${h.slice(0, 4).join("")}-${h.slice(4, 6).join("")}-${h.slice(6, 8).join("")}-${h.slice(8, 10).join("")}-${h.slice(10).join("")}`;
 }
 
 /** Case-insensitive exact AWB match (pattern characters escaped so "_" or "%" aren't wildcards). Throws on a failed lookup. */
@@ -94,23 +101,43 @@ export async function createCheckin(p: CheckinPayload, photo: Blob | null): Prom
   return status;
 }
 
+const blank = (v: unknown) => v == null || v === "";
+/** Monday statuses that mean "not here yet" — safe to replace with Warehouse once the parcel has arrived. */
+const PRE_ARRIVAL = ["", "incoming", "intransit", "new request", "collected from origin", "arrived in uae"];
+
 /**
  * The AWB already exists (often a Monday item raised before the parcel arrived) —
- * check it in on that record rather than duplicate it. A parcel still sitting in the
- * office is now in the warehouse; one that has already moved on keeps its status.
+ * check it in on that record rather than duplicate it. This ADDS to the record; it
+ * never wipes what is already there:
+ *   • consignee, courier, remarks, boat: filled only where the record has none
+ *   • BOE: set when one was typed
+ *   • board, quantity, date received: kept as they are (the check-in's own values
+ *     only fill a gap) — a check-in must not move a parcel between boards
+ *   • a parcel still "In office" is now in the warehouse; one that has moved on keeps its status
  */
 export async function updateCheckin(existing: ShipSyncPackage, p: CheckinPayload, photo: Blob | null): Promise<void> {
   const item_photo_url = photo ? await uploadShipSyncImage(photo, `packages/${existing.id}/item_${Date.now()}.jpg`) : existing.item_photo_url;
   const prior = (existing.extra ?? {}) as Record<string, any>;
-  const paid = paidColumns(p);
-  await patchPackage(existing.id, {
-    ...p.fields, item_photo_url,
-    ...(existing.status === "in_office" ? { status: "in_storage" as PackageStatus } : {}),
-    extra: {
-      ...prior, payment: p.payment, checked_in_via: "logistics-app",
-      ...(onImportBoard(p) && Object.keys(paid).length ? { monday: { ...(prior.monday ?? {}), ...paid } } : {}),
-    },
-  } as any);
+  const f = p.fields as Record<string, any>;
+  const have = existing as unknown as Record<string, any>;
+
+  const patch: Record<string, any> = { item_photo_url };
+  for (const k of ["boat_name", "package_owner", "courier", "description"]) if (!blank(f[k]) && blank(have[k])) patch[k] = f[k];
+  if (!blank(f.boe_no)) patch.boe_no = f.boe_no;
+  if (blank(have.received_at)) patch.received_at = f.received_at;
+  if (blank(have.local_import)) patch.local_import = f.local_import;
+  if (blank(have.num_packages) || Number(have.num_packages) < 1 || Number(f.num_packages) > 1) patch.num_packages = f.num_packages;
+  if (existing.status === "in_office") patch.status = "in_storage" as PackageStatus;
+
+  const onImport = existing.local_import === "Import" || existing.local_import === "Transit" || (blank(have.local_import) && onImportBoard(p));
+  const monday = { ...(prior.monday ?? {}) } as Record<string, string>;
+  if (onImport) {
+    Object.assign(monday, paidColumns(p));
+    if (PRE_ARRIVAL.includes(String(monday.STATUS ?? "").trim().toLowerCase())) monday.STATUS = "Warehouse";
+  }
+  patch.extra = { ...prior, payment: p.payment, checked_in_via: "logistics-app", ...(onImport ? { monday } : {}) };
+
+  await patchPackage(existing.id, patch as any);
 }
 
 /**

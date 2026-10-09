@@ -9,7 +9,106 @@ const SIGNED_TTL = 60 * 60; // seconds the signed URL is valid for
 const REFRESH_MS = 50 * 60 * 1000; // refresh from cache a little before expiry
 
 type Parsed = { bucket: string; path: string };
-const cache = new Map<string, { url: string; at: number }>();
+
+type SignResult = { signedUrl: string | null };
+/** Signs `paths` in one bucket, returning one result per path IN ORDER. Throws on a failed request. */
+export type SignFn = (bucket: string, paths: string[], ttlSeconds: number) => Promise<SignResult[]>;
+
+const signWithSupabase: SignFn = async (bucket, paths, ttl) => {
+  const { data, error } = await supabase.storage.from(bucket).createSignedUrls(paths, ttl);
+  if (error || !data) throw error ?? new Error("Could not sign file links");
+  return data.map((d) => ({ signedUrl: d.signedUrl ?? null }));
+};
+
+/**
+ * Hands out signed links for stored files, without flooding the server.
+ *
+ * A board with a thousand rows used to ask for a thousand links at once, one
+ * request each — enough to make the gateway time some of them out, and a link
+ * that timed out left that photo broken on screen (it looked "not uploaded" even
+ * though it was stored). Now:
+ *   • identical requests share one lookup (a link is never asked for twice at once),
+ *   • requests made in the same instant are signed together, up to 100 per call,
+ *   • a failed call is retried, and a failure is never remembered — the next time
+ *     the photo is shown it is asked for again.
+ */
+export function createUrlSigner(
+  sign: SignFn,
+  opts: { delayMs?: number; chunk?: number; retries?: number; retryDelayMs?: number; ttlSeconds?: number; refreshMs?: number; now?: () => number } = {},
+) {
+  const { delayMs = 30, chunk = 100, retries = 2, retryDelayMs = 400, ttlSeconds = SIGNED_TTL, refreshMs = REFRESH_MS, now = Date.now } = opts;
+  const cache = new Map<string, { url: string; at: number }>();
+  const inflight = new Map<string, Promise<string | null>>();
+  // bucket -> path -> the callers waiting on it
+  const queue = new Map<string, Map<string, ((url: string | null) => void)[]>>();
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let flushing = false;
+
+  const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+  async function signChunk(bucket: string, paths: string[]): Promise<(string | null)[]> {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const out = await sign(bucket, paths, ttlSeconds);
+        return paths.map((_, i) => out[i]?.signedUrl ?? null);
+      } catch {
+        if (attempt < retries) await sleep(retryDelayMs * (attempt + 1));
+      }
+    }
+    return paths.map(() => null);
+  }
+
+  async function flush() {
+    if (flushing) return;
+    flushing = true;
+    try {
+      while (queue.size > 0) {
+        const batch = [...queue.entries()];
+        queue.clear();
+        for (const [bucket, byPath] of batch) {
+          const paths = [...byPath.keys()];
+          for (let i = 0; i < paths.length; i += chunk) {
+            const part = paths.slice(i, i + chunk);
+            const urls = await signChunk(bucket, part);
+            part.forEach((p, j) => { for (const done of byPath.get(p) ?? []) done(urls[j]); });
+          }
+        }
+      }
+    } finally {
+      flushing = false;
+    }
+  }
+
+  function schedule() {
+    if (timer || flushing) return;
+    timer = setTimeout(() => { timer = null; void flush().then(() => { if (queue.size > 0) schedule(); }); }, delayMs);
+  }
+
+  /** A signed link for bucket/path, or null if it could not be made (never throws). */
+  function resolve(bucket: string, path: string): Promise<string | null> {
+    const key = `${bucket}/${path}`;
+    const hit = cache.get(key);
+    if (hit && now() - hit.at < refreshMs) return Promise.resolve(hit.url);
+    const pending = inflight.get(key);
+    if (pending) return pending;
+    const p = new Promise<string | null>((resolveUrl) => {
+      let byPath = queue.get(bucket);
+      if (!byPath) queue.set(bucket, (byPath = new Map()));
+      byPath.set(path, [...(byPath.get(path) ?? []), resolveUrl]);
+      schedule();
+    }).then((url) => {
+      inflight.delete(key);
+      if (url) cache.set(key, { url, at: now() });
+      return url;
+    });
+    inflight.set(key, p);
+    return p;
+  }
+
+  return { resolve, clear: () => { cache.clear(); inflight.clear(); } };
+}
+
+const signer = createUrlSigner(signWithSupabase);
 
 // Accepts a full Supabase storage URL (public or signed) or a bare "<bucket>/<path>"
 // (or a bare path when a default bucket is supplied).
@@ -54,13 +153,7 @@ export async function resolveSignedUrl(stored: string, defaultBucket?: string): 
   if (PUBLIC_BUCKETS.has(ref.bucket)) {
     return supabase.storage.from(ref.bucket).getPublicUrl(ref.path).data.publicUrl;
   }
-  const key = `${ref.bucket}/${ref.path}`;
-  const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < REFRESH_MS) return hit.url;
-  const { data, error } = await supabase.storage.from(ref.bucket).createSignedUrl(ref.path, SIGNED_TTL);
-  if (error || !data?.signedUrl) return stored; // fall back to stored value on failure
-  cache.set(key, { url: data.signedUrl, at: Date.now() });
-  return data.signedUrl;
+  return (await signer.resolve(ref.bucket, ref.path)) ?? stored; // fall back to the stored value if it can't be signed
 }
 
 // Hook: returns a freshly-signed URL for a single stored value ("" while resolving).

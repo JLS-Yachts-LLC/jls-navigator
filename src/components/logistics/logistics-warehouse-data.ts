@@ -29,7 +29,13 @@ export type { WarehouseShelf, WarehouseClientItem, WarehouseInternalItem, Wareho
 const STANDARD_CBM = 3;
 const BASE_CHARGE = 850;
 const EXCESS_RATE = 285;
-export const storageCharge = (cbm: number) => (cbm > 0 ? BASE_CHARGE + Math.max(0, cbm - STANDARD_CBM) * EXCESS_RATE : 0);
+export const storageCharge = (cbm: number) => (cbm > 0 ? Math.round((BASE_CHARGE + Math.max(0, cbm - STANDARD_CBM) * EXCESS_RATE) * 100) / 100 : 0);
+
+/** Today as YYYY-MM-DD in the phone's own time zone (toISOString is UTC: in the UAE it gives yesterday between midnight and 4am). */
+export function localToday(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 // ── Zones ────────────────────────────────────────────────────────────────────
 /** How the spec labels the three special-purpose zones; the A–E zones are just their letter. */
@@ -81,16 +87,36 @@ export type Location = { zone: string; bay: string; shelf: string };
 /** One packing-list row. (The spec also lists a Date Stored per row; package contents have no such column, so the parent record's date stands for the whole box.) */
 export type PackingLine = { itemName: string; quantity: string; unit: string; remarks: string; photo: File | null };
 
-async function addPackingList(refNo: string, owner: string, lines: PackingLine[]) {
+/** Upload every packing-list photo BEFORE anything is created, so a failed upload leaves no half-made record behind. */
+type PreparedLine = { l: PackingLine; image_url: string | null };
+async function preparePackingList(refHint: string, lines: PackingLine[]): Promise<PreparedLine[]> {
+  const out: PreparedLine[] = [];
   for (const l of lines) {
     if (!l.itemName.trim()) continue;
-    const image_url = l.photo ? await uploadPhoto(l.photo, `client/${refNo}/content`) : null;
-    await packageContentCrud.create({
+    out.push({ l, image_url: l.photo ? await uploadPhoto(l.photo, `client/${refHint}/content`) : null });
+  }
+  return out;
+}
+
+/** Add the packing list under `refNo`, recording each row's id in `made` AS it is created — so if a later line fails, the caller can still remove the earlier ones. */
+async function addPackingList(refNo: string, owner: string, lines: PreparedLine[], made: string[]): Promise<void> {
+  for (const { l, image_url } of lines) {
+    const row = await packageContentCrud.create({
       item_id: await nextPackageItemId(refNo), ref_no: refNo, client_or_dept: owner,
-      item_name: l.itemName.trim(), quantity: Number(l.quantity) || 1, unit: l.unit || "pcs", status: "Stored",
+      item_name: l.itemName.trim(), quantity: positive(l.quantity, 1), unit: l.unit || "pcs", status: "Stored",
       due_date: null, remarks: l.remarks.trim() || null, image_url,
     });
+    made.push(row.id);
   }
+}
+
+/** A quantity the person typed: a positive number, or `fallback` when blank/zero/negative. */
+const positive = (v: string | number, fallback: number) => { const n = Number(v); return n > 0 ? n : fallback; };
+
+/** Undo a half-finished save: remove what was made so a retry doesn't leave a duplicate behind. */
+async function undoCreated(crud: { remove: (id: string) => Promise<void> }, itemId: string | null, contentIds: string[]) {
+  for (const id of contentIds) await packageContentCrud.remove(id).catch(() => {});
+  if (itemId) await crud.remove(itemId).catch(() => {});
 }
 
 export type ClientStore = {
@@ -102,17 +128,24 @@ export type ClientStore = {
 export async function storeClient(f: ClientStore): Promise<string> {
   const ref = await nextClientRef();
   const dir = `client/${ref}`;
-  const l = Number(f.length) || 0, w = Number(f.width) || 0, h = Number(f.height) || 0;
+  const l = positive(f.length, 0), w = positive(f.width, 0), h = positive(f.height, 0);
   const cbm = calcCbm(l, w, h);
   const image_url = f.photo ? await uploadPhoto(f.photo, dir) : null;
   const documents = f.docs.length ? await uploadDocs(f.docs, dir) : [];
-  await clientItemCrud.create({
+  const lines = await preparePackingList(ref, f.packing);
+  const created = await clientItemCrud.create({
     ref_no: ref, client_name: f.client.trim(), description: f.description.trim(), quotation_no: f.quotation.trim() || null,
-    length_cm: l || null, width_cm: w || null, height_cm: h || null, weight_kg: Number(f.weight) || null, cbm: cbm || null,
+    length_cm: l || null, width_cm: w || null, height_cm: h || null, weight_kg: positive(f.weight, 0) || null, cbm: cbm || null,
     charges: f.charges ? Number(f.charges) : null, date_stored: f.dateStored || null, due_date: f.dueDate || null,
     zone: f.loc.zone || null, bay: f.loc.bay || null, shelf: f.loc.shelf || null, status: "Stored", documents, image_url,
   });
-  await addPackingList(ref, f.client.trim(), f.packing);
+  const madeContents: string[] = [];
+  try {
+    await addPackingList(ref, f.client.trim(), lines, madeContents);
+  } catch (e) {
+    await undoCreated(clientItemCrud, created.id, madeContents);   // otherwise Save again would store the same goods twice
+    throw e;
+  }
   return ref;
 }
 
@@ -124,17 +157,24 @@ export type InternalStore = {
 export async function storeInternal(f: InternalStore): Promise<string> {
   const ref = await nextInternalRef();
   const dir = `internal/${ref}`;
-  const l = Number(f.length) || 0, w = Number(f.width) || 0, h = Number(f.height) || 0;
+  const l = positive(f.length, 0), w = positive(f.width, 0), h = positive(f.height, 0);
   const cbm = calcCbm(l, w, h);
   const image_url = f.photo ? await uploadPhoto(f.photo, dir) : null;
   const documents = f.docs.length ? await uploadDocs(f.docs, dir) : [];
-  await internalItemCrud.create({
+  const lines = await preparePackingList(ref, f.packing);
+  const created = await internalItemCrud.create({
     ref_no: ref, kind: f.kind, department: f.department.trim(), description: f.description.trim(),
     length_cm: l || null, width_cm: w || null, height_cm: h || null, weight_kg: Number(f.weight) || null, cbm: cbm || null,
     date_stored: f.dateStored || null, destruction_date: f.kind === "documents" ? f.destructionDate || null : null,
     zone: f.loc.zone || null, bay: f.loc.bay || null, shelf: f.loc.shelf || null, status: "Stored", documents, image_url,
   });
-  await addPackingList(ref, f.department.trim(), f.packing);
+  const madeContents: string[] = [];
+  try {
+    await addPackingList(ref, f.department.trim(), lines, madeContents);
+  } catch (e) {
+    await undoCreated(internalItemCrud, created.id, madeContents);
+    throw e;
+  }
   return ref;
 }
 
@@ -157,36 +197,59 @@ export async function moveParcelsToStorage(parcels: ParcelLite[], f: ParcelStora
   const boats = Array.from(new Set(parcels.map((p) => (p.boat_name ?? "").trim()).filter(Boolean)));
   if (boats.length > 1) throw new Error("A storage record belongs to one client — move one boat's parcels at a time.");
   const client = boats[0] ?? "Unassigned";
+  const ids = parcels.map((p) => p.id);
+
+  // Make sure every parcel is still free BEFORE anything is created: one that went onto a
+  // delivery note (or into storage) since it was picked must not also be stored.
+  const { data: rows, error: re } = await sb.from("shipsync_packages").select("id, status, warehouse_zone, delivery_note_id, extra").in("id", ids);
+  if (re) throw re;
+  if ((rows ?? []).length !== ids.length) throw new Error("Some of these parcels can no longer be found — refresh and try again.");
+  const busy = (rows ?? []).filter((r: any) => r.delivery_note_id || r.extra?.[WAREHOUSE_REF_KEY]);
+  if (busy.length) throw new Error(`${busy.length} of these parcels were just put on a delivery note or into the warehouse — remove them and try again.`);
+
   const ref = await nextClientRef();
-  const l = Number(f.length) || 0, w = Number(f.width) || 0, h = Number(f.height) || 0;
+  const l = positive(f.length, 0), w = positive(f.width, 0), h = positive(f.height, 0);
   const cbm = calcCbm(l, w, h);
   const description = f.mode === "box"
     ? `Box of ${parcels.length} parcel${parcels.length === 1 ? "" : "s"}: ${parcels.map((p) => p.barcode).filter(Boolean).join(", ")}`.slice(0, 480)
     : `${parcels[0].barcode ?? "Parcel"}${parcels[0].package_owner ? ` — ${parcels[0].package_owner}` : ""}`;
   const image_url = f.photo ? await uploadPhoto(f.photo, `client/${ref}`) : null;
 
-  await clientItemCrud.create({
+  const created = await clientItemCrud.create({
     ref_no: ref, client_name: client, description, quotation_no: f.quotation.trim() || null,
-    length_cm: l || null, width_cm: w || null, height_cm: h || null, weight_kg: Number(f.weight) || null, cbm: cbm || null,
-    charges: cbm ? storageCharge(cbm) : null, date_stored: new Date().toISOString().slice(0, 10),
+    length_cm: l || null, width_cm: w || null, height_cm: h || null, weight_kg: positive(f.weight, 0) || null, cbm: cbm || null,
+    charges: cbm ? storageCharge(cbm) : null, date_stored: localToday(),
     zone: f.loc.zone || null, bay: f.loc.bay || null, shelf: f.loc.shelf || null, status: "Stored", documents: [], image_url,
   });
 
-  if (f.mode === "box") {
-    for (const p of parcels) {
-      await packageContentCrud.create({
-        item_id: await nextPackageItemId(ref), ref_no: ref, client_or_dept: client,
-        item_name: [p.barcode, p.package_owner].filter(Boolean).join(" — ") || "Parcel", quantity: p.num_packages ?? 1, unit: "pcs", status: "Stored",
-        due_date: null, remarks: p.courier ? `Courier: ${p.courier}` : null, image_url: null,
-      });
+  const madeContents: string[] = [];
+  const flagged: { id: string; status: string; warehouse_zone: string | null; extra: any }[] = [];
+  try {
+    if (f.mode === "box") {
+      for (const p of parcels) {
+        const row = await packageContentCrud.create({
+          item_id: await nextPackageItemId(ref), ref_no: ref, client_or_dept: client,
+          item_name: [p.barcode, p.package_owner].filter(Boolean).join(" — ") || "Parcel", quantity: p.num_packages ?? 1, unit: "pcs", status: "Stored",
+          due_date: null, remarks: p.courier ? `Courier: ${p.courier}` : null, image_url: null,
+        });
+        madeContents.push(row.id);
+      }
     }
-  }
-
-  const { data: rows } = await sb.from("shipsync_packages").select("id, extra").in("id", parcels.map((p) => p.id));
-  for (const r of rows ?? []) {
-    await sb.from("shipsync_packages").update({
-      status: "in_storage", warehouse_zone: f.loc.zone || null, extra: { ...(r.extra ?? {}), [WAREHOUSE_REF_KEY]: ref },
-    }).eq("id", r.id);
+    // Flag the parcels as warehoused so they leave the Check-Out pool. Each update is guarded (still on no
+    // delivery note) and checked — a parcel that could not be flagged would stay releasable AND be in storage.
+    for (const r of rows ?? []) {
+      const { data: done, error } = await sb.from("shipsync_packages").update({
+        status: "in_storage", warehouse_zone: f.loc.zone || null, extra: { ...(r.extra ?? {}), [WAREHOUSE_REF_KEY]: ref },
+      }).eq("id", r.id).is("delivery_note_id", null).select("id");
+      if (error) throw error;
+      if (!done?.length) throw new Error("A parcel was put on a delivery note while it was being stored — nothing has been stored; try again.");
+      flagged.push({ id: r.id, status: r.status, warehouse_zone: r.warehouse_zone ?? null, extra: r.extra ?? {} });
+    }
+  } catch (e) {
+    // Back it all out: the parcels as they were, and the new record, so a retry doesn't store the goods twice.
+    for (const o of flagged) await sb.from("shipsync_packages").update({ status: o.status, warehouse_zone: o.warehouse_zone, extra: o.extra }).eq("id", o.id);
+    await undoCreated(clientItemCrud, created.id, madeContents);
+    throw e;
   }
   return ref;
 }
@@ -242,7 +305,8 @@ export async function patchStored(item: StoredItem, patch: Partial<{
   const out: Record<string, unknown> = { ...rest };
   if ("due" in patch) out[item.kind === "client" ? "due_date" : "destruction_date"] = due;
   if ("length_cm" in patch || "width_cm" in patch || "height_cm" in patch) {
-    const l = patch.length_cm ?? item.length_cm ?? 0, w = patch.width_cm ?? item.width_cm ?? 0, h = patch.height_cm ?? item.height_cm ?? 0;
+    const pick = (k: "length_cm" | "width_cm" | "height_cm") => (k in patch ? patch[k] : item[k]) ?? 0;
+    const l = pick("length_cm"), w = pick("width_cm"), h = pick("height_cm");
     out.cbm = calcCbm(l, w, h) || null;
   }
   const crud = item.kind === "client" ? clientItemCrud : internalItemCrud;
