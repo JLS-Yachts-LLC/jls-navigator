@@ -298,3 +298,30 @@ test("isNetworkError also recognises Safari's lost-connection and timeout messag
     assert.equal(commit.isNetworkError(new Error(m)), true, m);
   }
 });
+
+// ── Shipment Type on the Import board ────────────────────────────────────────
+
+test("Import and Transit check-ins get a Shipment Type (the Import board's column was blank); Local gets none", async () => {
+  const i = payload({ board: "Import" }); await commit.createCheckin(i, null);
+  const t = payload({ board: "Transit" }); await commit.createCheckin(t, null);
+  const l = payload({ board: "Local" }); await commit.createCheckin(l, null);
+  const paidLocal = payload({ board: "Import", paid: true }); await commit.createCheckin(paidLocal, null);   // a paid Local parcel is routed to Import
+  const row = (id: string) => be.rows("shipsync_packages").find((r) => r.id === id)!;
+  assert.equal(row(i.id).trade_type, "Import Shipment");
+  assert.equal(row(t.id).trade_type, "Transit Shipment");
+  assert.equal(row(l.id).trade_type, undefined);
+  assert.equal(row(paidLocal.id).trade_type, "Import Shipment");
+});
+
+test("checking in on an existing parcel fills a blank Shipment Type but never replaces one that is there", async () => {
+  be.rows("shipsync_packages").push(
+    { id: "e1", barcode: "AWB-E1", status: "in_office", local_import: "Import", extra: {} },
+    { id: "e2", barcode: "AWB-E2", status: "in_office", local_import: "Import", trade_type: "DDP Shipment", extra: {} },
+    { id: "e3", barcode: "AWB-E3", status: "in_office", local_import: "Import", extra: { monday: { "Shipment Type": "Transit Shipment" } } },
+  );
+  for (const awb of ["AWB-E1", "AWB-E2", "AWB-E3"]) await commit.updateCheckin((await commit.findByAwb(awb))!, payload({ awb, board: "Import" }), null);
+  const row = (id: string) => be.rows("shipsync_packages").find((r) => r.id === id)!;
+  assert.equal(row("e1").trade_type, "Import Shipment");
+  assert.equal(row("e2").trade_type, "DDP Shipment");
+  assert.equal(row("e3").trade_type, undefined, "Monday already has a type for it");
+});
