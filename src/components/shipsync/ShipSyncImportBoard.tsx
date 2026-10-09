@@ -164,9 +164,9 @@ function extraOf(p: ShipSyncPackage): Record<string, any> { return (p.extra as a
 /**
  * The board is split into three lists so the shipments still in play aren't
  * buried under the finished ones (Completed alone is hundreds):
- *   Active          Import, Transit and anything not yet delivered
- *   Delivered TBI   Monday's "Delivered Shipment" group — delivered, to be invoiced
- *   Completed       Monday's "Completed" group — invoiced and closed
+ *   Pending          Import, Transit and anything not yet delivered
+ *   Delivered - TBI  Monday's "Delivered Shipment" group — delivered, to be invoiced
+ *   Complete         Monday's "Completed" group — invoiced and closed
  * A shipment with no Monday group falls back to what the app recorded about it.
  */
 type Tab = "active" | "delivered" | "completed";
@@ -182,9 +182,9 @@ function tabOf(p: ShipSyncPackage): Tab {
   return ["delivered", "collected", "delivered_tbi"].includes(p.status) ? "delivered" : "active";
 }
 const TABS: { key: Tab; label: string; hint: string }[] = [
-  { key: "active", label: "Active", hint: "Import, Transit and anything not yet delivered." },
-  { key: "delivered", label: "Delivered TBI", hint: "Delivered - TBI: delivered and waiting to be invoiced." },
-  { key: "completed", label: "Completed", hint: "Invoiced and closed." },
+  { key: "active", label: "Pending", hint: "Import, Transit and anything not yet delivered." },
+  { key: "delivered", label: "Delivered - TBI", hint: "Delivered - TBI: delivered and waiting to be invoiced." },
+  { key: "completed", label: "Complete", hint: "Invoiced and closed." },
 ];
 function mondayText(p: ShipSyncPackage, title: string): string { return mondayRow(p)[title] ?? ""; }
 
@@ -590,7 +590,7 @@ export function ShipSyncImportBoard() {
 
   return (
     <div className="flex h-full min-w-0 flex-col px-6 py-5">
-      {/* Still in play, delivered (to be invoiced), and completed — the last two are the long lists. */}
+      {/* Pending, Delivered - TBI and Complete — the last two are the long lists. */}
       <div className="mb-3 flex w-fit shrink-0 items-center gap-1 rounded-lg border border-border bg-card p-1">
         {TABS.map(({ key, label, hint }) => (
           <button key={key} type="button" onClick={() => setTab(key)} title={hint} aria-current={tab === key}

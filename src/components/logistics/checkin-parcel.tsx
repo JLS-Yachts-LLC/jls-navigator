@@ -25,7 +25,7 @@ import { BarcodeScannerDialog } from "@/components/shipsync/BarcodeScanner";
 import { loadYachtNames, loadDestinations } from "@/lib/shipsync/data";
 import { STATUS_META, type ShipSyncPackage } from "@/lib/shipsync/model";
 import { Screen, Lbl, inputCls, SuggestInput, PhotoField, FooterButtons } from "./logistics-ui";
-import { createCheckin, updateCheckin, findByAwb, isNetworkError, type CheckinPayload } from "./checkin-commit";
+import { createCheckin, updateCheckin, findByAwb, isNetworkError, routeCheckin, type CheckinPayload } from "./checkin-commit";
 import { queueCheckin } from "./logistics-offline";
 import { PendingBanner, useCheckinQueue } from "./checkin-pending";
 
@@ -61,20 +61,22 @@ export function CheckinParcel({ onBack }: { onBack: () => void }) {
   }, []);
 
   const customs = f.shipType !== "Local";
+  // Where this parcel will be saved — decided by the type, whether it was paid for, and the BOE.
+  const board = routeCheckin(f.shipType, f.payment === "YES", f.boe);
   const showMoney = f.payment === "YES";
   const showRemarks = showMoney || customs;
 
   /** Everything this form saves, as plain data — `id` is fixed now so a retry (or a later upload) can't create the parcel twice. */
   function payload(id: string): CheckinPayload {
     return {
-      id, awb: f.awb.trim(), customs,
+      id, awb: f.awb.trim(), customs: board !== "Local",
       fields: {
         barcode: f.awb.trim(),
         boat_name: f.boat.trim().toUpperCase() || null,
         package_owner: f.consignee.trim() || null,
         courier: f.courier.trim() || null,
         num_packages: Math.max(1, Number(f.qty) || 1),
-        local_import: f.shipType,
+        local_import: board,
         boe_no: customs ? f.boe.trim() || null : null,
         description: showRemarks ? f.remarks.trim() || null : null,
         received_at: new Date().toISOString(),
@@ -99,6 +101,10 @@ export function CheckinParcel({ onBack }: { onBack: () => void }) {
   async function submit() {
     if (!f.awb.trim()) { toast.error("Scan or type the AWB / reference number."); return; }
     if (!f.boat.trim()) { toast.error("Enter the client / boat name."); return; }
+    if (f.payment === "YES") {
+      if (!(Number(f.amount) > 0)) { toast.error("Enter the amount paid."); return; }
+      if (!f.method) { toast.error("Choose how it was paid."); return; }
+    }
     const p = payload(crypto.randomUUID());
     setSaving(true);
     try {
@@ -200,6 +206,10 @@ export function CheckinParcel({ onBack }: { onBack: () => void }) {
       {customs && (
         <Lbl label="BOE Number"><input className={inputCls} value={f.boe} onChange={(e) => set({ boe: e.target.value })} /></Lbl>
       )}
+
+      <p className="rounded-lg bg-muted/30 px-3 py-2 text-[14px] text-muted-foreground">
+        Saves to the <span className="font-semibold text-foreground">{board === "Local" ? "Local" : board === "Transit" ? "Import / Transit" : "Import"}</span> board as <span className="font-semibold text-foreground">Warehouse</span>.
+      </p>
 
       <PhotoField file={photo} onChange={setPhoto} />
 
