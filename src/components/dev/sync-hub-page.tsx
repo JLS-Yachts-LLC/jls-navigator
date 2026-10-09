@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { getSyncHubStatus, runSyncNow, type SyncHubStatus } from "@/lib/sync-hub.server";
 import { QboCustomersPanel } from "@/components/dev/qbo-customers-panel";
 import { WaypointAccountsPanel } from "@/components/finance/waypoint-accounts";
+import { PermitsDryRunPanel } from "@/components/dev/permits-dry-run-panel";
 
 function rel(ts: string | null): string {
   if (!ts) return "never";
@@ -189,6 +190,9 @@ export function SyncHubPage() {
                        action={<RunButton onRun={() => run("visa-2way")} label="Run chunk" />} />
             </section>
 
+            {/* Permits — dry run before the seven permit lists go back on */}
+            <PermitsDryRunPanel lists={status.spLists.filter((s) => s.syncTarget === "permits")} />
+
             {/* SharePoint */}
             <section className="overflow-hidden rounded-xl border border-border bg-card">
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 bg-card/60 px-4 py-2.5">
@@ -202,7 +206,13 @@ export function SyncHubPage() {
                          description={`${s.listName ?? "—"} → ${s.syncTarget ?? "—"}${s.enabled ? "" : " · DISABLED"}`}
                          schedule={s.enabled ? "rotating" : "off"} lastRun={s.lastSyncedAt}
                          extra={s.lastSynced != null ? `last result: ${s.lastSynced} synced / ${s.lastErrors ?? 0} errors` : null}
-                         action={s.id ? <RunButton onRun={() => run("sp-list", s.id!)} /> : undefined} />
+                         action={s.id ? <RunButton onRun={async () => {
+                           // Run now ignores the off switch. For the permit lists, which
+                           // are off until the dry run below has been checked, ask first.
+                           if (s.syncTarget === "permits" && !s.enabled && !window.confirm(
+                             `"${s.name}" is switched off. Run now writes to the permits in Polaris straight away.\n\nUse the Permits dry run first. Run the live sync anyway?`)) return "Cancelled";
+                           return run("sp-list", s.id!);
+                         }} /> : undefined} />
               ))}
               <SyncRow icon={Upload} name="Push-back (app → SharePoint)"
                        description="In-app edits pushed out to the SharePoint lists."

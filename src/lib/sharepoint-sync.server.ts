@@ -244,10 +244,10 @@ export async function syncById(id: string): Promise<{ synced: number; errors: nu
  *
  * Ignores `enabled`, so it can be run while the lists are switched off.
  */
-export async function dryRunPermitsSync(): Promise<Array<{ list: string; result: { synced: number; errors: number; samples?: string[] } }>> {
+export async function dryRunPermitsSync(): Promise<Array<{ list: string; result: { synced: number; errors: number; samples?: string[]; dryRun?: PermitDryRunDetail } }>> {
   const cfg = await getSpConfig()
   const syncs = (await getSpSyncs()).filter(s => s.syncTarget === 'permits')
-  const out: Array<{ list: string; result: { synced: number; errors: number; samples?: string[] } }> = []
+  const out: Array<{ list: string; result: { synced: number; errors: number; samples?: string[]; dryRun?: PermitDryRunDetail } }> = []
   for (const sync of syncs) {
     const merged: SpConfig = {
       ...cfg,
@@ -1548,10 +1548,107 @@ async function _syncYachts(
   return persisted
 }
 
+/** What a permits dry run found for one list — read by Sync Centre → Permits. */
+export interface PermitDryRunDetail {
+  permitType: string
+  spItems: number
+  /** Permits of this list's type in Polaris today. */
+  polarisRows: number
+  updates: number
+  /** Updates that would actually change a value (the rest only re-stamp the sync time). */
+  changedRows: number
+  inserts: number
+  /** Field → how many rows would change it. */
+  fieldChanges: Record<string, number>
+  /** Changes that move a permit to another vessel or person — the old failure mode. */
+  riskyChanges: number
+  samples: Array<{ id: string; holder: string; field: string; from: string; to: string; risky: boolean }>
+  insertSamples: Array<{ holder: string; vessel: string | null; permitNumber: string | null; expiry: string | null }>
+  insertsWithoutVessel: number
+}
+
+const DRY_RUN_IGNORED = new Set(['id', 'sharepoint_synced_at', 'sharepoint_item_id', 'sharepoint_list_name'])
+const DRY_RUN_RISKY = new Set(['yacht_id', 'holder_name', 'permit_type'])
+
+/** Compare as text; dates/timestamps on their day, so formatting alone isn't a change. */
+function _dryRunValue(v: unknown): string {
+  if (v === null || v === undefined) return ''
+  const s = typeof v === 'object' ? JSON.stringify(v) : String(v).trim()
+  return /^\d{4}-\d{2}-\d{2}([T ]|$)/.test(s) ? s.slice(0, 10) : s
+}
+
+async function _permitDryRunDetail(
+  permitType: string,
+  spItems: number,
+  existingPermits: Record<string, any>[],
+  updateById: Map<string, Record<string, any>>,
+  insertByKey: Map<string, Record<string, any>>,
+): Promise<PermitDryRunDetail> {
+  // Read the full current rows the updates would overwrite.
+  const ids = [...updateById.keys()]
+  const current = new Map<string, Record<string, any>>()
+  for (let i = 0; i < ids.length; i += 150) {
+    const { data } = await (supabaseAdmin as any).from('permits').select('*').in('id', ids.slice(i, i + 150))
+    for (const r of (data ?? []) as Record<string, any>[]) current.set(String(r.id), r)
+  }
+
+  const { data: yachts } = await fetchAllRows(() => supabaseAdmin.from('yachts').select('id, vessel_name').order('id'))
+  const vesselName = new Map(((yachts ?? []) as any[]).map((y) => [String(y.id), String(y.vessel_name ?? '')]))
+  const show = (field: string, v: unknown) =>
+    field === 'yacht_id' && v ? (vesselName.get(String(v)) ?? String(v)) : (_dryRunValue(v) || '—')
+
+  const fieldChanges: Record<string, number> = {}
+  const samples: PermitDryRunDetail['samples'] = []
+  let changedRows = 0
+  let riskyChanges = 0
+  for (const [id, next] of updateById) {
+    const now = current.get(id)
+    if (!now) continue
+    let changed = false
+    for (const [field, value] of Object.entries(next)) {
+      if (DRY_RUN_IGNORED.has(field) || !(field in now)) continue
+      if (_dryRunValue(value) === _dryRunValue(now[field])) continue
+      changed = true
+      fieldChanges[field] = (fieldChanges[field] ?? 0) + 1
+      // Filling an empty field is not a risk; replacing one vessel/person with another is.
+      const risky = DRY_RUN_RISKY.has(field) && _dryRunValue(now[field]) !== ''
+      if (risky) riskyChanges++
+      if (samples.length < 40 && (risky || samples.filter((s) => !s.risky).length < 20)) {
+        samples.push({
+          id, holder: String(now.holder_name ?? next.holder_name ?? now.permit_number ?? '—'),
+          field, from: show(field, now[field]), to: show(field, value), risky,
+        })
+      }
+    }
+    if (changed) changedRows++
+  }
+  samples.sort((a, b) => Number(b.risky) - Number(a.risky))
+
+  const inserts = [...insertByKey.values()]
+  return {
+    permitType,
+    spItems,
+    polarisRows: existingPermits.filter((p) => p.permit_type === permitType).length,
+    updates: updateById.size,
+    changedRows,
+    inserts: inserts.length,
+    fieldChanges,
+    riskyChanges,
+    samples,
+    insertSamples: inserts.slice(0, 10).map((r) => ({
+      holder: String(r.holder_name ?? '—'),
+      vessel: r.yacht_id ? (vesselName.get(String(r.yacht_id)) ?? null) : null,
+      permitNumber: r.permit_number ? String(r.permit_number) : null,
+      expiry: r.expiry_date ? _dryRunValue(r.expiry_date) : null,
+    })),
+    insertsWithoutVessel: inserts.filter((r) => !r.yacht_id).length,
+  }
+}
+
 async function _syncPermits(
   cfg: SpConfig,
   opts: { dryRun?: boolean } = {},
-): Promise<{ synced: number; errors: number; samples?: string[] }> {
+): Promise<{ synced: number; errors: number; samples?: string[]; dryRun?: PermitDryRunDetail }> {
   const permitType = _permitTypeFromListName(cfg.listName)
 
   // Every match path is scoped to this list's permit type, so without a type
@@ -1694,6 +1791,7 @@ async function _syncPermits(
         `DRY RUN "${cfg.listName}": ${allItems.length} SharePoint items → ${updateById.size} update(s), ${insertByKey.size} insert(s)`,
         ...samples,
       ],
+      dryRun: await _permitDryRunDetail(permitType, allItems.length, existingPermits ?? [], updateById, insertByKey),
     }
   }
 

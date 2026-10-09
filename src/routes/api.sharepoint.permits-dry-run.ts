@@ -23,15 +23,16 @@ export async function permitsDryRunHandler(request: Request): Promise<Response> 
     const lists = await dryRunPermitsSync()
     const totals = lists.reduce(
       (a, l) => {
-        const line = l.result.samples?.[0] ?? ''
-        const m = line.match(/(\d+) update\(s\), (\d+) insert\(s\)/)
+        const d = l.result.dryRun
         return {
-          updates: a.updates + (m ? Number(m[1]) : 0),
-          inserts: a.inserts + (m ? Number(m[2]) : 0),
+          updates: a.updates + (d?.updates ?? 0),
+          changedRows: a.changedRows + (d?.changedRows ?? 0),
+          riskyChanges: a.riskyChanges + (d?.riskyChanges ?? 0),
+          inserts: a.inserts + (d?.inserts ?? 0),
           errors: a.errors + l.result.errors,
         }
       },
-      { updates: 0, inserts: 0, errors: 0 },
+      { updates: 0, changedRows: 0, riskyChanges: 0, inserts: 0, errors: 0 },
     )
     return json({ ok: true, dryRun: true, totals, lists })
   } catch (e: any) {
