@@ -134,6 +134,18 @@ export class FakeBackend {
       const table = t[1];
       const wantsObject = String(req.headers.accept ?? "").includes("vnd.pgrst.object");
 
+      if (req.method === "POST" && String(req.headers.prefer ?? "").includes("resolution=merge-duplicates")) {
+        // upsert, as PostgREST does it: the columns written are the UNION of every row's keys (the `columns` parameter);
+        // a row that doesn't have one of them gets NULL there (or its column default) - overwriting what was stored.
+        const list: Row[] = JSON.parse(raw.toString() || "[]");
+        const cols = (u.searchParams.get("columns") ?? "").replace(/"/g, "").split(",").filter(Boolean);
+        for (const r of list) {
+          const at = this.rows(table).find((x) => x.id === r.id);
+          if (at) for (const c of cols) at[c] = c in r ? r[c] : null;
+          else this.rows(table).push({ ...Object.fromEntries(cols.map((c) => [c, null])), ...r });
+        }
+        return send(201, list);
+      }
       if (req.method === "POST") {
         const body = JSON.parse(raw.toString() || "[]");
         const list: Row[] = Array.isArray(body) ? body : [body];

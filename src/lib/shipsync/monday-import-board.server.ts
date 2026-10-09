@@ -229,6 +229,37 @@ const sameValue = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON
  * unconditionally on every run, silently discarding any office edit made in
  * between syncs even when Monday's own data hadn't changed at all.
  */
+/** Monday statuses that mean "not here yet" — once a parcel has been checked in at the warehouse they must not put it back. */
+const PRE_ARRIVAL_STATUSES = ['', 'incoming', 'intransit', 'new request', 'collected from origin', 'arrived in uae']
+
+/**
+ * A parcel checked in from the phone (extra.checked_in_via = 'logistics-app') carries things Monday does not know:
+ * its Warehouse status, the Paid Amount and Payment Method taken at the counter, its board (Transit stays Transit) and
+ * its Shipment Type. Check-ins are not pushed to Monday, so on the next pull Monday's row would replace them all.
+ * This keeps them, on top of what Monday sends. Anything else still comes from Monday.
+ */
+export function keepPhoneFields(
+  merged: Record<string, unknown>,
+  existingExtra: Record<string, any> | undefined,
+  existingTradeType: string | null | undefined,
+): Record<string, unknown> {
+  if (existingExtra?.checked_in_via !== 'logistics-app') return merged
+  const out = { ...merged }
+  delete out.local_import                                   // Monday says 'Import' for everything — never move a Transit parcel
+  if (existingTradeType) delete out.trade_type              // the Shipment Type chosen on the form stands
+  const extra = { ...((out.extra as Record<string, any>) ?? {}) }
+  const mine = (existingExtra.monday ?? {}) as Record<string, string>
+  const theirs = { ...((extra.monday as Record<string, string>) ?? {}) }
+  if (String(mine.STATUS ?? '') === 'Warehouse' && PRE_ARRIVAL_STATUSES.includes(String(theirs.STATUS ?? '').trim().toLowerCase())) theirs.STATUS = 'Warehouse'
+  for (const k of ['Paid Amount', 'PAYMENT METHOD']) if (!theirs[k] && mine[k]) theirs[k] = mine[k]
+  if (!theirs['Item ID'] && mine['Item ID']) theirs['Item ID'] = mine['Item ID']
+  extra.monday = theirs
+  // The IMPORT / TRANSIT group the phone put it in stands until a person moves it (Monday's group still lands in monday_synced_group_title).
+  if (existingExtra.monday_group_title) { delete extra.monday_group_id; delete extra.monday_group_title; delete extra.monday_group_position }
+  out.extra = extra
+  return out
+}
+
 function mergeOntoExisting(
   record: Record<string, unknown>,
   existingExtra: Record<string, any> | undefined,
@@ -279,11 +310,11 @@ async function importInner(): Promise<MondayImportBoardResult> {
   const columnOrder = columns.map((c) => c.title)
   const groupOrder = groups.map((g) => g.title)
 
-  const existingRows: { id: string; extra: any; barcode: string | null }[] = []
+  const existingRows: { id: string; extra: any; barcode: string | null; trade_type?: string | null }[] = []
   for (let offset = 0; ; offset += 1000) {
     const { data: page } = await db()
       .from('shipsync_packages')
-      .select('id, extra, barcode')
+      .select('id, extra, barcode, trade_type')
       // Transit belongs here too: a shipment scanned in as Transit is part of the
       // same Import/Transit section, and is a candidate for AWB matching below.
       .in('local_import', ['Import', 'Transit'])
@@ -298,12 +329,14 @@ async function importInner(): Promise<MondayImportBoardResult> {
   // 83 AWBs into Polaris twice — once from the scan, once from Monday.
   const idByBarcode = new Map<string, string>()
   const extraById = new Map<string, Record<string, any>>()
+  const tradeTypeById = new Map<string, string | null>()
   for (const r of existingRows) {
     const mid = r.extra?.monday_item_id
     if (mid) idByMonday.set(String(mid), r.id)
     const bc = String(r.barcode ?? '').toLowerCase().trim()
     if (bc) idByBarcode.set(bc, r.id)
     extraById.set(String(r.id), (r.extra ?? {}) as Record<string, any>)
+    tradeTypeById.set(String(r.id), r.trade_type ?? null)
   }
 
   const now = new Date().toISOString()
@@ -340,7 +373,7 @@ async function importInner(): Promise<MondayImportBoardResult> {
     if (existingId) {
       const existingExtra = extraById.get(existingId)
       const oldMondayRow = (existingExtra?.monday ?? {}) as Record<string, string>
-      toUpdate.push({ id: existingId, itemName: item.name, record: mergeOntoExisting(record, existingExtra, oldMondayRow, row, item.name) })
+      toUpdate.push({ id: existingId, itemName: item.name, record: keepPhoneFields(mergeOntoExisting(record, existingExtra, oldMondayRow, row, item.name), existingExtra, tradeTypeById.get(existingId)) })
       // Claim the AWB so two Monday items sharing one never fight over the row.
       if (awb) idByBarcode.delete(awb)
     } else {
@@ -383,7 +416,11 @@ async function importInner(): Promise<MondayImportBoardResult> {
   const currentItemIds = new Set(items.map((i) => i.id))
   let pruned = 0
   for (const [mid, rowId] of idByMonday) {
+    // An empty board answer is a failed or partial fetch far more often than a board with nothing on it: deleting every
+    // Monday-linked row on that would be a disaster. And a parcel checked in from the phone is never deleted by a pull.
+    if (items.length === 0) break
     if (currentItemIds.has(mid)) continue
+    if (extraById.get(rowId)?.checked_in_via === 'logistics-app') continue
     const { error } = await db().from('shipsync_packages').delete().eq('id', rowId)
     if (!error) pruned++
   }

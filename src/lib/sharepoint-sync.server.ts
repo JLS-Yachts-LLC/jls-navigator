@@ -1316,6 +1316,37 @@ function coerceNumeric(v: any): number | null {
   return m ? Number(m[0]) : null
 }
 
+/**
+ * A parcel checked in from the phone (extra.checked_in_via = 'logistics-app') is a NEW parcel. A SharePoint
+ * record with the same AWB that was created BEFORE that check-in cannot be this parcel's record — it is an older
+ * shipment that reused the number (or a test) — and must not overwrite its status, boat or board, or "complete" it
+ * from the delivered archive. (A record created after the check-in is the Power App entering the same parcel
+ * and is merged as before; so is any parcel already linked to its SharePoint item.)
+ */
+export function spRecordPredatesPhoneRow(item: { createdDateTime?: string }, row: { extra?: any; created_at?: string }): boolean {
+  if (row.extra?.checked_in_via !== 'logistics-app') return false
+  const made = Date.parse(item.createdDateTime ?? '')
+  const arrived = Date.parse(row.created_at ?? '')
+  if (Number.isNaN(made) || Number.isNaN(arrived)) return false
+  return made < arrived - 60_000
+}
+
+/**
+ * Split rows into groups that carry exactly the same set of columns. PostgREST writes a batch with the UNION of
+ * every row's keys, so a row missing a key that a neighbour has is written with NULL there (or its column default)
+ * — wiping data the SharePoint item simply didn't mention. Rows in one group all carry the same keys, so nothing
+ * is blanked.
+ */
+export function groupByColumnSet<T extends Record<string, any>>(rows: T[]): T[][] {
+  const groups = new Map<string, T[]>()
+  for (const r of rows) {
+    const key = Object.keys(r).sort().join('\u0000')
+    const g = groups.get(key)
+    if (g) g.push(r); else groups.set(key, [r])
+  }
+  return [...groups.values()]
+}
+
 // Bulk-write collected records in chunks. Per-row writes (one Supabase call each)
 // blow Cloudflare's per-invocation subrequest limit on any large list — this
 // reduces hundreds of subrequests to a handful. updateById: rows with a known id
@@ -1324,6 +1355,7 @@ async function bulkPersist(
   table: string,
   updateById: Map<string, Record<string, any>>,
   insertByKey: Map<string, Record<string, any>>,
+  opts: { uniformColumns?: boolean } = {},
 ): Promise<{ synced: number; errors: number; samples: string[] }> {
   const samples: string[] = []
   let synced = 0, errors = 0
@@ -1347,9 +1379,13 @@ async function bulkPersist(
     const { error } = await (supabaseAdmin as any).from(table).insert(c)
     if (error) { errors += c.length; addSample(`insert: ${error.message}`) } else synced += c.length
   }
-  for (const c of chunks([...updateById.values()], 100)) {
-    const { error } = await (supabaseAdmin as any).from(table).upsert(c, { onConflict: 'id' })
-    if (error) { errors += c.length; addSample(`update: ${error.message}`) } else synced += c.length
+  // With uniformColumns each batch holds rows that share the same columns, so a row is never blanked by a neighbour's key.
+  const updateGroups = opts.uniformColumns ? groupByColumnSet([...updateById.values()]) : [[...updateById.values()]]
+  for (const group of updateGroups) {
+    for (const c of chunks(group, 100)) {
+      const { error } = await (supabaseAdmin as any).from(table).upsert(c, { onConflict: 'id' })
+      if (error) { errors += c.length; addSample(`update: ${error.message}`) } else synced += c.length
+    }
   }
   return { synced, errors, samples }
 }
@@ -1969,7 +2005,7 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
 
   const { data: existing } = await fetchAllRows(() => (supabaseAdmin as any)
     .from('shipsync_packages')
-    .select('id, barcode, extra, status, item_photo_url, delivery_photo_url, office_photo_url, signature_url, documents')
+    .select('id, barcode, extra, status, item_photo_url, delivery_photo_url, office_photo_url, signature_url, documents, created_at')
     .order('id'))
   const byBarcode = new Map<string, string>()
   const bySpId = new Map<string, string>()
@@ -1995,6 +2031,7 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
   let imageProbe: { field: string; value: string } | null = null
   /** Archive rows for packages Polaris doesn't hold — counted, not imported. */
   let archiveSkipped = 0
+  let phoneProtected = 0
   /** One folder listing per vessel per run, not one per package. */
   const vesselFolders = new Map<string, Array<Record<string, any>> | null>()
   /** Why a package could not be located in the image library. */
@@ -2016,6 +2053,9 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
 
     // The archive completes what we hold; it does not bring its history with it.
     if (archive && !existingId) { archiveSkipped++; continue }
+
+    // A parcel checked in from the phone is not taken over by an OLDER record with the same AWB (see spRecordPredatesPhoneRow).
+    if (current && !bySpId.has(String(item.id)) && spRecordPredatesPhoneRow(item, current)) { phoneProtected++; continue }
 
     // The link to this package's folder in the image library, wherever on the row
     // it happens to live — it is the same folder for all three of its photos.
@@ -2096,29 +2136,32 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
       record[dbField] = val
     }
 
-    // NOT NULL columns must be set on EVERY row: PostgREST bulk-inserts the batch
-    // as a single statement using the UNION of keys, so a row missing a mapped
-    // value gets an explicit NULL (bypassing the column default) and would fail.
-    if (record.num_packages == null) record.num_packages = 1
-    if (record.status == null) record.status = 'in_office'
-
     if (existingId) {
       // Preserve any other keys already in extra (note links, photos, the other
       // list's item id).
       record.extra = { ...(extraById.get(existingId) ?? {}), [idKey]: item.id }
       updateById.set(existingId, { ...record, id: existingId })
     } else {
+      // NOT NULL columns must be set on every NEW row: PostgREST bulk-inserts the batch as a single statement using the
+      // UNION of keys, so a row missing a mapped value gets an explicit NULL (bypassing the column default) and would fail.
+      // These defaults are for new rows ONLY — on an existing row they reset its status to In office and its quantity
+      // to 1 whenever the SharePoint item simply had no Status / quantity filled in.
+      if (record.num_packages == null) record.num_packages = 1
+      if (record.status == null) record.status = 'in_office'
       record.extra = { [idKey]: item.id, imported_at: new Date().toISOString() }
       insertByKey.set(String(item.id), { ...record })
     }
   }
 
-  const res = await bulkPersist('shipsync_packages', updateById, insertByKey)
+  const res = await bulkPersist('shipsync_packages', updateById, insertByKey, { uniformColumns: true })
   // Surface what the sync could not read, rather than leaving it to be noticed as
   // "the status isn't updating": these lines show in the Integrations panel.
   const notes = [
     ...(unmappedStatus.size
       ? [`Unmapped Status choice(s): ${[...unmappedStatus].slice(0, 6).join(', ')} — status left unchanged on those rows`]
+      : []),
+    ...(phoneProtected
+      ? [`${phoneProtected} older SharePoint record(s) left alone — a parcel with the same AWB was checked in from the phone after they were created`]
       : []),
     ...(archiveSkipped
       ? [`${archiveSkipped} archived delivery/deliveries are for packages not held in Polaris — left in SharePoint (history import is a separate step)`]
