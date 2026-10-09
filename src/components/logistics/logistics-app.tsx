@@ -13,6 +13,8 @@ import {
   PackagePlus, PackageMinus, Warehouse, PackageOpen, LayoutGrid, Truck, ClipboardList, Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/auth";
+import { hasStoredSession } from "@/lib/stored-session";
 import { useLogisticsIdentity } from "./logistics-identity";
 import { Screen } from "./logistics-ui";
 import { CheckinParcel } from "./checkin-parcel";
@@ -55,6 +57,24 @@ const GROUPS: { title: string; tiles: Tile[] }[] = [
 
 export function LogisticsApp() {
   const id = useLogisticsIdentity();
+  const { user, loading: authLoading } = useAuth();
+  const [stalled, setStalled] = useState(false);
+
+  // The route's own sign-in check only runs for in-app navigation. Opening this page directly — from the QR code, a
+  // bookmark or the home-screen icon on a phone that isn't signed in — skipped it, and the page sat on its loading
+  // spinner forever. So the page checks for itself, and sends a signed-out phone to sign in (and back here afterwards).
+  useEffect(() => {
+    if (authLoading || user) return;
+    if (!navigator.onLine && hasStoredSession()) return;   // no signal, but still signed in on this phone: carry on
+    window.location.replace(`/auth?next=${encodeURIComponent("/logistics-app")}`);
+  }, [authLoading, user]);
+
+  // A loading screen is never allowed to be the end of the road.
+  useEffect(() => {
+    if (!id.loading) { setStalled(false); return; }
+    const t = window.setTimeout(() => setStalled(true), 15_000);
+    return () => window.clearTimeout(t);
+  }, [id.loading]);
   // Orbit field crew use the Orbit 2 mobile app only — send them there.
   const fieldOnly = useOrbitFieldOnlyRedirect();
   const [open, setOpen] = useState<Module | null>(null);
@@ -86,7 +106,20 @@ export function LogisticsApp() {
   }, [driverId]);
 
   if (id.loading || fieldOnly) {
-    return <div className="flex h-dvh items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+    return (
+      <div className="flex h-dvh flex-col items-center justify-center gap-4 px-6 text-center">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        {stalled && !fieldOnly && (
+          <>
+            <p className="text-[15px] text-muted-foreground">This is taking longer than it should. Check your connection, then try again.</p>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => window.location.reload()} className="h-11 rounded-lg bg-primary px-5 text-[15px] font-semibold text-primary-foreground">Try again</button>
+              <button type="button" onClick={() => window.location.replace(`/auth?next=${encodeURIComponent("/logistics-app")}`)} className="h-11 rounded-lg border border-border px-5 text-[15px] font-semibold">Sign in again</button>
+            </div>
+          </>
+        )}
+      </div>
+    );
   }
 
   if (open === "checkin") return <CheckinParcel onBack={() => setOpen(null)} />;
