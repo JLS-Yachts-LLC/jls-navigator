@@ -136,6 +136,7 @@ import { Route as AppCrewCabLocationsRouteImport } from './routes/_app.crew-cab.
 import { Route as AppCrewCabJourneysRouteImport } from './routes/_app.crew-cab.journeys'
 import { Route as AppCrewCabDriversRouteImport } from './routes/_app.crew-cab.drivers'
 import { Route as AppAdminUsersRouteImport } from './routes/_app.admin.users'
+import { Route as AppAdminShrinkPhotosRouteImport } from './routes/_app.admin.shrink-photos'
 import { Route as AppAdminPermissionsRouteImport } from './routes/_app.admin.permissions'
 import { Route as AppAdminOrganisationsRouteImport } from './routes/_app.admin.organisations'
 import { Route as AppAdminAuditRouteImport } from './routes/_app.admin.audit'
@@ -807,6 +808,11 @@ const AppAdminUsersRoute = AppAdminUsersRouteImport.update({
   path: '/users',
   getParentRoute: () => AppAdminRoute,
 } as any)
+const AppAdminShrinkPhotosRoute = AppAdminShrinkPhotosRouteImport.update({
+  id: '/shrink-photos',
+  path: '/shrink-photos',
+  getParentRoute: () => AppAdminRoute,
+} as any)
 const AppAdminPermissionsRoute = AppAdminPermissionsRouteImport.update({
   id: '/permissions',
   path: '/permissions',
@@ -1014,6 +1020,7 @@ export interface FileRoutesByFullPath {
   '/admin/audit': typeof AppAdminAuditRoute
   '/admin/organisations': typeof AppAdminOrganisationsRoute
   '/admin/permissions': typeof AppAdminPermissionsRoute
+  '/admin/shrink-photos': typeof AppAdminShrinkPhotosRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/crew-cab/drivers': typeof AppCrewCabDriversRoute
   '/crew-cab/journeys': typeof AppCrewCabJourneysRoute
@@ -1155,6 +1162,7 @@ export interface FileRoutesByTo {
   '/admin/audit': typeof AppAdminAuditRoute
   '/admin/organisations': typeof AppAdminOrganisationsRoute
   '/admin/permissions': typeof AppAdminPermissionsRoute
+  '/admin/shrink-photos': typeof AppAdminShrinkPhotosRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/crew-cab/drivers': typeof AppCrewCabDriversRoute
   '/crew-cab/journeys': typeof AppCrewCabJourneysRoute
@@ -1305,6 +1313,7 @@ export interface FileRoutesById {
   '/_app/admin/audit': typeof AppAdminAuditRoute
   '/_app/admin/organisations': typeof AppAdminOrganisationsRoute
   '/_app/admin/permissions': typeof AppAdminPermissionsRoute
+  '/_app/admin/shrink-photos': typeof AppAdminShrinkPhotosRoute
   '/_app/admin/users': typeof AppAdminUsersRoute
   '/_app/crew-cab/drivers': typeof AppCrewCabDriversRoute
   '/_app/crew-cab/journeys': typeof AppCrewCabJourneysRoute
@@ -1459,6 +1468,7 @@ export interface FileRouteTypes {
     | '/admin/audit'
     | '/admin/organisations'
     | '/admin/permissions'
+    | '/admin/shrink-photos'
     | '/admin/users'
     | '/crew-cab/drivers'
     | '/crew-cab/journeys'
@@ -1600,6 +1610,7 @@ export interface FileRouteTypes {
     | '/admin/audit'
     | '/admin/organisations'
     | '/admin/permissions'
+    | '/admin/shrink-photos'
     | '/admin/users'
     | '/crew-cab/drivers'
     | '/crew-cab/journeys'
@@ -1749,6 +1760,7 @@ export interface FileRouteTypes {
     | '/_app/admin/audit'
     | '/_app/admin/organisations'
     | '/_app/admin/permissions'
+    | '/_app/admin/shrink-photos'
     | '/_app/admin/users'
     | '/_app/crew-cab/drivers'
     | '/_app/crew-cab/journeys'
@@ -2744,6 +2756,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAdminUsersRouteImport
       parentRoute: typeof AppAdminRoute
     }
+    '/_app/admin/shrink-photos': {
+      id: '/_app/admin/shrink-photos'
+      path: '/shrink-photos'
+      fullPath: '/admin/shrink-photos'
+      preLoaderRoute: typeof AppAdminShrinkPhotosRouteImport
+      parentRoute: typeof AppAdminRoute
+    }
     '/_app/admin/permissions': {
       id: '/_app/admin/permissions'
       path: '/permissions'
@@ -2919,6 +2938,7 @@ interface AppAdminRouteChildren {
   AppAdminAuditRoute: typeof AppAdminAuditRoute
   AppAdminOrganisationsRoute: typeof AppAdminOrganisationsRoute
   AppAdminPermissionsRoute: typeof AppAdminPermissionsRoute
+  AppAdminShrinkPhotosRoute: typeof AppAdminShrinkPhotosRoute
   AppAdminUsersRoute: typeof AppAdminUsersRoute
   AppAdminIndexRoute: typeof AppAdminIndexRoute
 }
@@ -2927,6 +2947,7 @@ const AppAdminRouteChildren: AppAdminRouteChildren = {
   AppAdminAuditRoute: AppAdminAuditRoute,
   AppAdminOrganisationsRoute: AppAdminOrganisationsRoute,
   AppAdminPermissionsRoute: AppAdminPermissionsRoute,
+  AppAdminShrinkPhotosRoute: AppAdminShrinkPhotosRoute,
   AppAdminUsersRoute: AppAdminUsersRoute,
   AppAdminIndexRoute: AppAdminIndexRoute,
 }

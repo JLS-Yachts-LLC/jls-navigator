@@ -111,12 +111,31 @@ export class FakeBackend {
         return;
       }
 
+      // ── storage: copy ──
+      if (u.pathname === "/storage/v1/object/copy" && req.method === "POST") {
+        const b = JSON.parse(raw.toString());
+        const from = `${b.bucketId}/${b.sourceKey}`, to = `${b.destinationBucket ?? b.bucketId}/${b.destinationKey}`;
+        const f = this.files.get(from);
+        if (!f) return send(404, { message: "Object not found", error: "not_found", statusCode: "404" });
+        if (this.files.has(to)) return send(409, { message: "The resource already exists", error: "Duplicate", statusCode: "409" });
+        this.files.set(to, f);
+        return send(200, { Key: to });
+      }
+
       // ── storage ──
       const up = u.pathname.match(/^\/storage\/v1\/object\/([^/]+)\/(.+)$/);
       if (up && (req.method === "POST" || req.method === "PUT")) {
         // supabase-js sends a blob as multipart; the stored type is the file part's own Content-Type
         const part = raw.toString("latin1").match(/name=""[^\r\n]*\r\nContent-Type: ([^\r\n]+)/i);
         this.uploads.push({ path: `${up[1]}/${decodeURIComponent(up[2])}`, bytes: raw.length, type: String(req.headers["content-type"] ?? ""), partType: part?.[1] ?? "" });
+        // keep the file's bytes so a later download returns them (the multipart body's single file part)
+        const bd = String(req.headers["content-type"] ?? "").match(/boundary=(.+)$/)?.[1];
+        if (bd) {
+          const filePart = raw.indexOf('name=""');
+          const head = filePart < 0 ? -1 : raw.indexOf("\r\n\r\n", filePart);
+          const tail = raw.lastIndexOf(`\r\n--${bd}`);
+          if (head >= 0 && tail > head) this.files.set(`${up[1]}/${decodeURIComponent(up[2])}`, raw.subarray(head + 4, tail));
+        }
         return send(200, { Key: `${up[1]}/${up[2]}`, Id: "x" });
       }
 

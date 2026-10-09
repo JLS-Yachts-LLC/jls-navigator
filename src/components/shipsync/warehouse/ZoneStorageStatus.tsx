@@ -8,6 +8,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { HScroll } from "./HScroll";
 import { Compass, Calculator, Plus, Trash2, CheckCircle2, Pencil } from "lucide-react";
 import {
   allZones, calcCbm, locationCode, shelfUsage,
@@ -269,7 +270,7 @@ function ZoneDetails({ zone, data, reload }: { zone: Zone; data: WarehouseData; 
         {shelves.length === 0 ? (
           <div className="px-4 py-10 text-center text-sm text-muted-foreground">No shelves recorded for this zone yet.</div>
         ) : (
-          <div className="overflow-x-auto">
+          <HScroll>
             <table className="w-full text-[12.5px]">
               <thead>
                 <tr className="border-b border-border/60 bg-muted/20 text-left text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -302,7 +303,7 @@ function ZoneDetails({ zone, data, reload }: { zone: Zone; data: WarehouseData; 
                 })}
               </tbody>
             </table>
-          </div>
+          </HScroll>
         )}
       </div>
 

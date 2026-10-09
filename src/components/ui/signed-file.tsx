@@ -43,5 +43,6 @@ export function SignedImage({
 }) {
   const url = useSignedUrl(stored, bucket);
   if (!url) return null;
-  return <img src={url} alt={alt} className={className} />;
+  // lazy: a long list only downloads the photos that are scrolled into view, not every one at once.
+  return <img src={url} alt={alt} className={className} loading="lazy" decoding="async" />;
 }

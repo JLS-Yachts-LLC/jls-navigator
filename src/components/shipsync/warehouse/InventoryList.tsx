@@ -2,6 +2,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { SignedImage, SignedAnchor } from "@/components/ui/signed-file";
+import { HScroll } from "./HScroll";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -115,13 +116,13 @@ export function InventoryList({ data, reload }: { data: WarehouseData; reload: (
         <PackageContentTable rows={filteredPackageContents} reload={reload} />
       ) : (
         <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[1fr_360px]">
-          <div className="min-h-0 overflow-auto rounded-xl border border-border bg-card">
+          <HScroll className="rounded-xl border border-border bg-card">
             {category === "client"
               ? <ClientTable rows={filteredClientItems} selectedRef={selectedRef} onSelect={setSelectedRef}
                   onEdit={setEditingClient} onDelete={(r) => setDeleteTarget({ kind: "client", id: r.id, label: r.ref_no })} reload={reload} />
               : <InternalTable rows={filteredInternalItems} selectedRef={selectedRef} onSelect={setSelectedRef}
                   onEdit={setEditingInternal} onDelete={(r) => setDeleteTarget({ kind: "internal", id: r.id, label: r.ref_no })} reload={reload} />}
-          </div>
+          </HScroll>
 
           <div className="rounded-xl border border-border bg-card p-4">
             <div className="mb-3 font-display text-sm font-semibold">Packing List</div>
@@ -226,7 +227,12 @@ function RowActions({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => 
 
 function ImageThumb({ url }: { url: string | null }) {
   if (!url) return <span className="text-muted-foreground">—</span>;
-  return <SignedImage stored={url} className="h-8 w-8 rounded object-cover border border-border" />;
+  // Opens the full photo in a new tab (a click here must not also select the row behind it).
+  return (
+    <SignedAnchor stored={url} title="Open photo" onClick={(e) => e.stopPropagation()}>
+      <SignedImage stored={url} alt="Item photo" className="h-8 w-8 rounded object-cover border border-border hover:ring-2 hover:ring-primary/40" />
+    </SignedAnchor>
+  );
 }
 
 function FilesCell({ docs }: { docs: WarehouseDoc[] | null | undefined }) {
@@ -373,7 +379,7 @@ function PackageContentTable({ rows, reload }: { rows: WarehousePackageContent[]
   }
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-card">
+    <HScroll className="flex-1 rounded-xl border border-border bg-card">
       {rows.length === 0 ? <div className="px-4 py-10 text-center text-sm text-muted-foreground">No package contents found. If the list is empty, add a packing list from a client or internal storage item.</div> : (
         <table className="w-full text-[12.5px]">
           <thead className="sticky top-0 z-10 bg-card shadow-[inset_0_-1px_0_0_var(--border)]">
@@ -427,6 +433,6 @@ function PackageContentTable({ rows, reload }: { rows: WarehousePackageContent[]
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </HScroll>
   );
 }
