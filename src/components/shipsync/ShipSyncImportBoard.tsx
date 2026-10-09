@@ -39,7 +39,7 @@ import { SignedAnchor, SignedImage } from "@/components/ui/signed-file";
 import { AwbScanDialog, type AwbScan } from "@/components/shipsync/AwbScanDialog";
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { Loader2, Search, ChevronDown, ChevronRight, RefreshCw, FileText, ArrowDownToLine, Plus, Trash2, X, ScanLine, Camera } from "lucide-react";
+import { Loader2, Search, ChevronDown, ChevronRight, FileText, ArrowDownToLine, Plus, Trash2, X, ScanLine, Camera } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -54,7 +54,7 @@ import { cn } from "@/lib/utils";
 import { fmtDate, mondayRow, extraMondayColumns, DocumentDropzoneDialog, TableChartToggle, ShipSyncChartsPanel, downloadCsv } from "@/components/shipsync/shared";
 import { loadImportPackages, patchPackage, createPackage, deletePackage, addPackageDocuments, removePackageDocument, uploadShipSyncFile } from "@/lib/shipsync/data";
 import { nextItemId, type ShipSyncPackage } from "@/lib/shipsync/model";
-import { syncMondayImportBoard, pushShipmentStatus } from "@/lib/shipsync/monday-import-board.server";
+import { pushShipmentStatus } from "@/lib/shipsync/monday-import-board.server";
 
 /** Deterministic colour per Monday group title — same idea as a Monday group's
  *  own colour bar, just derived instead of picked, since we don't fetch colours. */
@@ -160,6 +160,23 @@ function exportCell(c: CellSpec, p: ShipSyncPackage): { label: string; value: st
 }
 
 function extraOf(p: ShipSyncPackage): Record<string, any> { return (p.extra as any) ?? {}; }
+
+/**
+ * The board is split in two so the shipments still in play aren't buried under
+ * the finished ones (Completed alone is hundreds). A shipment is finished when
+ * its Monday group is Delivered Shipment (Delivered - TBI, to be invoiced) or
+ * Completed; one with no Monday group falls back to what the app recorded.
+ */
+const FINISHED_PACKAGE_STATUSES = ["delivered", "collected", "delivered_tbi", "completed"];
+function groupIsFinished(title: string): boolean {
+  const t = title.trim().toLowerCase();
+  return t === "completed" || t === "complete" || t.startsWith("delivered");
+}
+function isFinished(p: ShipSyncPackage): boolean {
+  const title = extraOf(p).monday_group_title;
+  return title ? groupIsFinished(title) : FINISHED_PACKAGE_STATUSES.includes(p.status);
+}
+type Tab = "active" | "finished";
 function mondayText(p: ShipSyncPackage, title: string): string { return mondayRow(p)[title] ?? ""; }
 
 /** Payment Copy used to be a single URL string under the fake Monday key
@@ -270,7 +287,6 @@ interface Group extends GroupInfo { rows: ShipSyncPackage[] }
 export function ShipSyncImportBoard() {
   const [rows, setRows] = useState<ShipSyncPackage[]>([]);
   const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
   const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [savingCell, setSavingCell] = useState<string | null>(null);
@@ -286,6 +302,7 @@ export function ShipSyncImportBoard() {
   const [docTarget, setDocTarget] = useState<ShipSyncPackage | null>(null);
   const [paymentCopyTarget, setPaymentCopyTarget] = useState<ShipSyncPackage | null>(null);
   const [view, setView] = useState<"table" | "chart">("table");
+  const [tab, setTab] = useState<Tab>("active");
 
   function toggleSelect(id: string) {
     setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -296,20 +313,6 @@ export function ShipSyncImportBoard() {
     setRows(data);
   }
   useEffect(() => { setLoading(true); void reload().finally(() => setLoading(false)); }, []);
-
-  async function sync() {
-    setSyncing(true);
-    try {
-      const r = await (syncMondayImportBoard as any)();
-      if (!r.ok && r.synced === 0) throw new Error(r.detail);
-      toast.success(r.detail);
-      await reload();
-    } catch (e: any) {
-      toast.error(e?.message ?? "Monday sync failed");
-    } finally {
-      setSyncing(false);
-    }
-  }
 
   async function commit(p: ShipSyncPackage, cellId: string, patch: Partial<ShipSyncPackage>) {
     setSavingCell(cellId);
@@ -485,14 +488,17 @@ export function ShipSyncImportBoard() {
     }
   }
 
+  const searching = search.trim() !== "";
+  // Searching looks across both lists; clear the box to go back to browsing one.
   const filtered = useMemo(() => {
-    if (!search.trim()) return rows;
+    if (!search.trim()) return rows.filter((p) => isFinished(p) === (tab === "finished"));
     const s = search.toLowerCase();
     return rows.filter((p) =>
       [p.barcode, p.boat_name, p.supplier, p.courier, p.boe_no, p.receiver_full_name,
        ...Object.values(mondayRow(p))].join(" ").toLowerCase().includes(s),
     );
-  }, [rows, search]);
+  }, [rows, search, tab]);
+  const finishedCount = useMemo(() => rows.filter(isFinished).length, [rows]);
 
   const mondayColumns = useMemo(() => extraMondayColumns(rows, COVERED), [rows]);
 
@@ -529,8 +535,12 @@ export function ShipSyncImportBoard() {
       if (!map.has(title)) map.set(title, { title, position: 999, rows: [] });
       map.get(title)!.rows.push(p);
     }
-    return [...map.values()].sort((a, b) => a.position - b.position);
-  }, [filtered, allGroups]);
+    // Browsing one list: leave out the other list's groups (and a group with
+    // nothing in this list). Searching keeps every group, as before.
+    return [...map.values()]
+      .filter((g) => searching || g.rows.length > 0 || (g.title !== "Not on Monday" && groupIsFinished(g.title) === (tab === "finished")))
+      .sort((a, b) => a.position - b.position);
+  }, [filtered, allGroups, searching, tab]);
 
   function toggle(title: string) { setCollapsed((p) => ({ ...p, [title]: !p[title] })); }
 
@@ -567,6 +577,19 @@ export function ShipSyncImportBoard() {
 
   return (
     <div className="flex h-full min-w-0 flex-col px-6 py-5">
+      {/* Still in play vs finished — the finished list (Delivered - TBI and Completed) is by far the longer one. */}
+      <div className="mb-3 flex w-fit shrink-0 items-center gap-1 rounded-lg border border-border bg-card p-1">
+        {([["active", "Active", rows.length - finishedCount, "Import, Transit and anything not yet delivered."], ["finished", "Delivered TBI & Completed", finishedCount, "Delivered - TBI (to be invoiced) and Completed shipments."]] as const).map(([key, label, count, hint]) => (
+          <button key={key} type="button" onClick={() => setTab(key)} title={hint} aria-current={tab === key}
+            className={cn("flex items-center gap-2 rounded-md px-3 py-1.5 text-[12.5px] font-medium transition",
+              tab === key ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent/40 hover:text-foreground")}>
+            {label}
+            <span className={cn("rounded-full px-1.5 py-px text-[10.5px] tabular-nums", tab === key ? "bg-primary-foreground/20" : "bg-muted text-muted-foreground")}>{count}</span>
+          </button>
+        ))}
+      </div>
+      {searching && <p className="mb-3 shrink-0 text-[11.5px] text-muted-foreground">Searching both lists — clear the box to go back to browsing.</p>}
+
       <div className="mb-3 flex shrink-0 flex-wrap items-center gap-2.5">
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/50" />
@@ -591,9 +614,6 @@ export function ShipSyncImportBoard() {
           title="Download the shipments shown as a CSV — opens straight in Excel">
           <ArrowDownToLine className="h-4 w-4" /> Export
         </Button>
-        <Button size="sm" variant="outline" onClick={() => void sync()} disabled={syncing} className="h-9 gap-1.5">
-          {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Sync from Monday
-        </Button>
       </div>
 
       {view === "chart" ? (
@@ -606,7 +626,7 @@ export function ShipSyncImportBoard() {
             <ArrowDownToLine className="h-5 w-5 text-muted-foreground" />
           </div>
           <div className="text-sm font-semibold">No import shipments yet</div>
-          <p className="max-w-md text-[13px] text-muted-foreground">Click "Sync from Monday" to pull in the Import/Transit board.</p>
+          <p className="max-w-md text-[13px] text-muted-foreground">The board fills from Monday by itself every hour, or add one with New Package.</p>
         </div>
       ) : (
         // The one and only scroll box for the whole board — bounded, its own

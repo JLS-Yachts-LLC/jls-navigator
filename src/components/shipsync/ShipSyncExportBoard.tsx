@@ -31,7 +31,7 @@
 import { SignedAnchor, SignedImage } from "@/components/ui/signed-file";
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { Loader2, Search, ChevronDown, ChevronRight, RefreshCw, FileText, ArrowUpFromLine, Plus, Trash2, X, Camera } from "lucide-react";
+import { Loader2, Search, ChevronDown, ChevronRight, FileText, ArrowUpFromLine, Plus, Trash2, X, Camera } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -46,7 +46,6 @@ import { cn } from "@/lib/utils";
 import { fmtDate, mondayRow, extraMondayColumns, DocumentDropzoneDialog, TableChartToggle, ShipSyncChartsPanel } from "@/components/shipsync/shared";
 import { loadExportPackages, patchPackage, createPackage, deletePackage, addPackageDocuments, removePackageDocument, uploadShipSyncFile } from "@/lib/shipsync/data";
 import type { ShipSyncPackage } from "@/lib/shipsync/model";
-import { syncMondayExportBoard } from "@/lib/shipsync/monday-export-board.server";
 
 /** Deterministic colour per Monday group title — same idea as a Monday group's
  *  own colour bar, just derived instead of picked, since we don't fetch colours. */
@@ -162,7 +161,6 @@ interface Group extends GroupInfo { rows: ShipSyncPackage[] }
 export function ShipSyncExportBoard() {
   const [rows, setRows] = useState<ShipSyncPackage[]>([]);
   const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
   const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [savingCell, setSavingCell] = useState<string | null>(null);
@@ -185,20 +183,6 @@ export function ShipSyncExportBoard() {
     setRows(data);
   }
   useEffect(() => { setLoading(true); void reload().finally(() => setLoading(false)); }, []);
-
-  async function sync() {
-    setSyncing(true);
-    try {
-      const r = await (syncMondayExportBoard as any)();
-      if (!r.ok && r.synced === 0) throw new Error(r.detail);
-      toast.success(r.detail);
-      await reload();
-    } catch (e: any) {
-      toast.error(e?.message ?? "Monday sync failed");
-    } finally {
-      setSyncing(false);
-    }
-  }
 
   async function commit(p: ShipSyncPackage, cellId: string, patch: Partial<ShipSyncPackage>) {
     setSavingCell(cellId);
@@ -350,9 +334,6 @@ export function ShipSyncExportBoard() {
             <Trash2 className="h-3.5 w-3.5" /> Delete {selected.size} selected
           </Button>
         )}
-        <Button size="sm" variant="outline" onClick={() => void sync()} disabled={syncing} className="h-9 gap-1.5">
-          {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Sync from Monday
-        </Button>
       </div>
 
       {view === "chart" ? (
@@ -365,7 +346,7 @@ export function ShipSyncExportBoard() {
             <ArrowUpFromLine className="h-5 w-5 text-muted-foreground" />
           </div>
           <div className="text-sm font-semibold">No export shipments yet</div>
-          <p className="max-w-md text-[13px] text-muted-foreground">Click "Sync from Monday" to pull in the Export board.</p>
+          <p className="max-w-md text-[13px] text-muted-foreground">The board fills from Monday by itself every hour, or add one with New Shipment.</p>
         </div>
       ) : (
         // Same one-scroll-box structure as the Import board — see that
