@@ -140,6 +140,53 @@ function VesselThemeSelect({ yachtId }: { yachtId: string }) {
   );
 }
 
+// ── Automatic messages per vessel / boat ─────────────────────────────────────
+/**
+ * Whether Polaris may message this client on its own — phone notifications,
+ * "job complete" and "delivery 5 minutes away" emails, WhatsApp reminders and
+ * auto-replies. Off until staff switch it on; the Worker checks it at send time
+ * (lib/client-auto-messages.server.ts). Sends a staff member makes are unaffected.
+ */
+function AutoMessagesSwitch({ yachtId, boatId }: { yachtId: string | null; boatId: string | null }) {
+  const { session } = useAuth();
+  const [row, setRow] = useState<{ id: string; enabled: boolean } | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!yachtId && !boatId) return;
+    const q = db.from("client_auto_messages").select("id, enabled");
+    void (yachtId ? q.eq("yacht_id", yachtId) : q.eq("boat_id", boatId)).maybeSingle()
+      .then(({ data }: any) => setRow(data ?? null));
+  }, [yachtId, boatId]);
+  if (!yachtId && !boatId) return null;
+  const on = !!row?.enabled;
+
+  const toggle = async () => {
+    if (!on && !window.confirm(
+      "Switch on automatic messages for this client?\n\nPolaris will then send them phone notifications, job-complete and delivery-arriving emails, and WhatsApp reminders and auto-replies (where those are set up) without anyone pressing Send.")) return;
+    setBusy(true);
+    const patch = { enabled: !on, updated_by: (session as any)?.user?.id ?? null };
+    const { data, error } = row
+      ? await db.from("client_auto_messages").update(patch).eq("id", row.id).select("id, enabled").single()
+      : await db.from("client_auto_messages").insert({ yacht_id: yachtId, boat_id: boatId, ...patch }).select("id, enabled").single();
+    setBusy(false);
+    if (error) { toast.error(error.message); return; }
+    setRow(data);
+    toast.success(data.enabled ? "Automatic messages switched on for this client" : "Automatic messages switched off — nothing goes out on its own");
+  };
+
+  return (
+    <div className={cn("flex items-center gap-1.5 text-xs", !yachtId && "ml-auto")}
+         title="Off: nothing is sent to this client unless a staff member presses Send. On: phone notifications, job-complete and delivery-arriving emails, WhatsApp reminders and auto-replies go out on their own.">
+      <button type="button" role="switch" aria-checked={on} aria-label="Automatic messages" disabled={busy}
+              onClick={() => void toggle()}
+              className={cn("relative h-5 w-9 rounded-full transition disabled:opacity-50", on ? "bg-teal-500" : "bg-border")}>
+        <span className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-white transition", on ? "left-[18px]" : "left-0.5")} />
+      </button>
+      <span className={on ? "text-teal-300" : "text-muted-foreground"}>Automatic messages {on ? "on" : "off"}</span>
+    </div>
+  );
+}
+
 // ── Portal modules per vessel ────────────────────────────────────────────────
 /**
  * The two portal modules for one vessel. Core (Agency with JLS) is always on —
@@ -482,6 +529,7 @@ function VesselUsersPanel() {
                     <option value="portal">in the portal only</option>
                   </select>
                 </label>}
+                <AutoMessagesSwitch yachtId={g.isBoat ? null : g.yachtId} boatId={g.isBoat ? g.key.slice(2) : null} />
               </div>
               {g.isBoat ? (
                 <BoatModules

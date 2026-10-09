@@ -26,6 +26,7 @@ import { emailBrandLockup } from "@/lib/email/brand-mark";
 import { supabaseAdmin } from '@/integrations/supabase/client.server'
 import { sendEmail } from '@/lib/ses.server'
 import type { ShipSyncPackage } from '@/lib/shipsync/model'
+import { allowed, autoMessageTargets } from '@/lib/client-auto-messages.server'
 
 const db = () => supabaseAdmin as any
 const LOGISTICS = (process.env as any).SHIPSYNC_LOGISTICS_EMAIL ?? 'logistics@jlsyachts.com'
@@ -122,7 +123,7 @@ export async function checkDeliveryProximity(): Promise<ProximityCheckResult> {
 
   const { data: notes } = await db()
     .from('shipsync_delivery_notes')
-    .select('id, number, boat_name, vehicle_id, destination_lat, destination_lng')
+    .select('id, number, boat_name, yacht_id, vehicle_id, destination_lat, destination_lng')
     .eq('status', 'dispatched')
     .is('proximity_notified_at', null)
     .not('vehicle_id', 'is', null)
@@ -132,8 +133,21 @@ export async function checkDeliveryProximity(): Promise<ProximityCheckResult> {
   let checked = 0, notified = 0, skipped = 0
   const staleCutoff = Date.now() - GPS_STALE_AFTER_MINUTES * 60_000
 
+  // Only vessels staff have switched on for automatic messages get this email.
+  // Most notes carry just the boat's name, so match it to a vessel by name.
+  // Checked before the Routes call, and the note isn't marked, so switching a
+  // vessel on mid-delivery still lets its alert fire.
+  const targets = await autoMessageTargets()
+  const names: string[] = [...new Set<string>((notes ?? []).filter((n: any) => !n.yacht_id && n.boat_name).map((n: any) => String(n.boat_name).trim()))]
+  const { data: named } = names.length
+    ? await db().from('yachts').select('id, vessel_name').in('vessel_name', [...new Set([...names, ...names.map((n) => n.toUpperCase())])])
+    : { data: [] as any[] }
+  const yachtByName = new Map(((named ?? []) as any[]).map((y) => [String(y.vessel_name).trim().toUpperCase(), y.id]))
+
   for (const note of notes ?? []) {
     checked++
+    const yachtId = note.yacht_id ?? yachtByName.get(String(note.boat_name ?? '').trim().toUpperCase()) ?? null
+    if (!allowed(targets, { yachtId })) { skipped++; continue }
     const { data: van } = await db()
       .from('crew_vehicles')
       .select('last_lat, last_lon, last_location_at')

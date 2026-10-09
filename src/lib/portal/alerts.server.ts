@@ -16,6 +16,7 @@ import { sendGraphEmail } from '@/lib/graph-mail.server'
 import { logAutomationRun } from '@/lib/automations.server'
 import { clientEmailEnabled, outboundEmailEnabled } from '@/lib/mail-guard.server'
 import { appBaseUrl } from '@/lib/app-url.server'
+import { HELD, allowed, autoMessageTargets } from '@/lib/client-auto-messages.server'
 
 function admin() {
   const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? ''
@@ -175,7 +176,16 @@ export async function sendOwnerNotices(): Promise<{ sent: number; failed: number
   const mine = new Set((claimed ?? []).map((c: any) => c.id))
   const rows = pending.filter((p: any) => mine.has(p.id))
 
-  const boatIds = [...new Set(rows.map((r: any) => r.boat_id as string))] as string[]
+  // Only boats staff have switched on get these; the rest stay claimed, marked held.
+  const targets = await autoMessageTargets()
+  const held = rows.filter((r: any) => !allowed(targets, { boatId: r.boat_id }))
+  if (held.length) {
+    await sb.from('portal_owner_notices').update({ send_error: HELD }).in('id', held.map((r: any) => r.id))
+  }
+  const toSend = rows.filter((r: any) => allowed(targets, { boatId: r.boat_id }))
+  if (!toSend.length) return { sent: 0, failed: 0, skipped: held.length ? `${held.length} held` : undefined }
+
+  const boatIds = [...new Set(toSend.map((r: any) => r.boat_id as string))] as string[]
   const [{ data: owners }, { data: boats }] = await Promise.all([
     sb.from('captain_accounts').select('boat_id, email').in('boat_id', boatIds).eq('active', true)
       .not('email', 'is', null).not('user_id', 'is', null),
@@ -185,7 +195,7 @@ export async function sendOwnerNotices(): Promise<{ sent: number; failed: number
 
   let sent = 0
   let failed = 0
-  for (const n of rows) {
+  for (const n of toSend) {
     const to = [...new Set((owners ?? []).filter((o: any) => o.boat_id === n.boat_id).map((o: any) => String(o.email)))] as string[]
     if (!to.length) {
       await sb.from('portal_owner_notices').update({ send_error: 'No owner with a login and email' }).eq('id', n.id)

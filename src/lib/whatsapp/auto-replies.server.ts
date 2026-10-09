@@ -10,11 +10,13 @@
  *
  * Never for STOP / "Stop promotions" or any other opt-out, never for a message
  * replayed by Meta, and only when the rule is switched on (all are off by
- * default) and WhatsApp sending is on. Free text — allowed because the client's
+ * default), WhatsApp sending is on, and the contact's vessel is switched on for
+ * automatic messages (client_auto_messages). Free text — allowed because the client's
  * own message has just opened the 24-hour window.
  */
 import { waConfig, sendingEnabled, sendText } from "@/lib/whatsapp/cloud-api.server";
 import { personalise, recipientOf } from "@/lib/whatsapp/shared";
+import { allowed, autoMessageTargets } from "@/lib/client-auto-messages.server";
 
 export interface AwayOptions {
   /** ISO weekdays the office is open: 1 = Monday … 7 = Sunday. */
@@ -59,6 +61,9 @@ export async function maybeAutoReply(db: any, inb: Inbound): Promise<void> {
   if (Date.now() - Date.parse(inb.receivedAt) > 10 * 60_000) return;
   const cfg = waConfig();
   if (!cfg || !sendingEnabled()) return;
+  // Only contacts on a vessel staff have switched on for automatic messages.
+  const { data: owner } = await db.from("wa_contacts").select("yacht_id").eq("id", inb.contactId).maybeSingle();
+  if (!allowed(await autoMessageTargets(), { yachtId: owner?.yacht_id })) return;
 
   const isButton = inb.type === "button" || inb.type === "interactive";
   let reply: string | null = null;

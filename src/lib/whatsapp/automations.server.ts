@@ -6,6 +6,7 @@
  *   2. WHATSAPP_SENDING_ENABLED = "true" (the general WhatsApp send switch)
  *   3. the reminder's own toggle (wa_automations.enabled)
  *   4. the yacht's opt-in for that reminder (wa_automation_vessels.enabled)
+ *   5. the yacht's automatic-messages switch (client_auto_messages, Manage Users → Client Portal)
  * …and then only to that yacht's contacts who opted in to updates, using an
  * approved Utility template.
  *
@@ -24,6 +25,7 @@ import {
   AUTOMATION_FIELDS, STARTER_TEMPLATES, dueThreshold, permitLabel, placeholderCount, fillTemplate, personalise,
   type AutomationKind, type VariableSource, type Recipient,
 } from "@/lib/whatsapp/shared";
+import { allowed, autoMessageTargets } from "@/lib/client-auto-messages.server";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -187,7 +189,10 @@ export async function planAutomation(db: any, a: any, today = dubaiToday()): Pro
     logged.push(...(data ?? []));
   }
   const vesselName = new Map(((yachts ?? []) as any[]).map((y) => [y.id, y.vessel_name ?? "your yacht"]));
-  const on = new Set(((optins ?? []) as any[]).filter((o) => o.enabled).map((o) => o.yacht_id));
+  // A vessel counts as on only when its reminder opt-in AND its automatic-messages
+  // switch are both on, so the preview shows exactly what the run would send.
+  const targets = await autoMessageTargets();
+  const on = new Set(((optins ?? []) as any[]).filter((o) => o.enabled && allowed(targets, { yachtId: o.yacht_id })).map((o) => o.yacht_id));
   const sent = new Set(logged.map((l) => `${l.source_id}|${l.threshold}|${l.contact_id}`));
   return due.map((d) => ({
     ...d,

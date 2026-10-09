@@ -17,6 +17,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { requireAccess } from "@/lib/auth/requireAccess.server";
 import { sendWebPush, vapidConfigured, vapidPublicKey } from "./web-push.server";
+import { HELD, allowed, autoMessageTargets } from "@/lib/client-auto-messages.server";
 
 function admin() {
   const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "";
@@ -118,8 +119,22 @@ export async function sendPortalPushes(): Promise<{ sent: number; devices: numbe
     .select("id, yacht_id, boat_id, captain_account_id, kind, title, body, tab");
   if (!rows?.length) return { sent: 0, devices: 0, failed: 0 };
 
+  // Only clients staff have switched on get these. A row addressed to one person
+  // carries no vessel, so look up which vessel or boat that person belongs to.
+  const targets = await autoMessageTargets();
+  const personIds = [...new Set((rows as any[]).map((r) => r.captain_account_id).filter(Boolean))];
+  const { data: persons } = personIds.length
+    ? await sb.from("captain_accounts").select("id, yacht_id, boat_id").in("id", personIds)
+    : { data: [] as any[] };
+  const vesselOf = new Map(((persons ?? []) as any[]).map((p) => [p.id, p]));
+
   let sent = 0, devices = 0, failed = 0;
   for (const n of rows as any[]) {
+    const person = n.captain_account_id ? vesselOf.get(n.captain_account_id) : null;
+    if (!allowed(targets, { yachtId: n.yacht_id ?? person?.yacht_id, boatId: n.boat_id ?? person?.boat_id })) {
+      await sb.from("portal_push_outbox").update({ sent_count: 0, error: HELD }).eq("id", n.id);
+      continue;
+    }
     let q = sb.from("captain_accounts").select("user_id").eq("active", true).not("user_id", "is", null);
     if (n.captain_account_id) q = q.eq("id", n.captain_account_id);
     else if (n.yacht_id) q = q.eq("yacht_id", n.yacht_id);
