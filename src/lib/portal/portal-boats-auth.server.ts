@@ -56,18 +56,20 @@ export async function resolvePortalBoats(
 
     const { data: acct } = await sb
       .from('captain_accounts')
-      .select('id, user_id, boat_id, email')
+      .select('id, user_id, boat_id, yacht_id, email')
       .eq('id', previewId)
       .eq('active', true)
       .maybeSingle()
     if (!acct) return { ok: false, response: json({ error: 'No boat linked to this account' }, 404) }
 
-    // An owner with a login sees every boat linked to it — including when the
-    // previewed row is their yacht link (the yacht portal's Orbit 2 section); a
-    // row with no login yet is previewed as just its own boat.
+    // An owner with a login sees every boat linked to it, plus — when the
+    // previewed row is a vessel's — the Orbit 2 boats created from that vessel
+    // (the yacht portal's Orbit 2 section). A row with no login yet is previewed
+    // as just its own boat or vessel.
+    const vessel = (acct.yacht_id as string | null) ?? null
     const boatIds = acct.user_id
-      ? await ownedBoatIds(sb, acct.user_id as string)
-      : acct.boat_id ? [acct.boat_id as string] : []
+      ? await ownedBoatIds(sb, acct.user_id as string, vessel)
+      : acct.boat_id ? [acct.boat_id as string] : vessel ? await vesselBoatIds(sb, vessel) : []
     if (!boatIds.length) return { ok: false, response: json({ error: 'No boat linked to this account' }, 404) }
     return {
       ok: true,
@@ -78,7 +80,16 @@ export async function resolvePortalBoats(
   const { data: { user }, error } = await sb.auth.getUser(token)
   if (error || !user) return { ok: false, response: json({ error: 'Not authenticated' }, 401) }
 
-  const boatIds = await ownedBoatIds(sb, user.id)
+  // The vessel open in the yacht portal (X-Portal-Yacht), honoured only when this
+  // login really is on that vessel — its Orbit 2 boats come with it.
+  let vessel: string | null = null
+  const wanted = request.headers.get('X-Portal-Yacht')?.trim() ?? ''
+  if (UUID_RE.test(wanted)) {
+    const { data: onVessel } = await sb.from('captain_accounts').select('id')
+      .eq('user_id', user.id).eq('yacht_id', wanted).eq('active', true).limit(1).maybeSingle()
+    if (onVessel) vessel = wanted
+  }
+  const boatIds = await ownedBoatIds(sb, user.id, vessel)
   if (!boatIds.length) return { ok: false, response: json({ error: 'No boat linked to this account' }, 403) }
 
   // The portal's RLS requires an MFA-verified session (portal_aal2()); this
@@ -90,7 +101,15 @@ export async function resolvePortalBoats(
   return { ok: true, owner: { userId: user.id, email: user.email ?? '', boatIds, preview: false } }
 }
 
-async function ownedBoatIds(sb: ReturnType<typeof admin>, userId: string): Promise<string[]> {
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * The boats a login may see: those linked to it directly (a boat owner's
+ * account), and — for the vessel open in the yacht portal — the Orbit 2 boats
+ * created from that vessel (orbit2_boats.inherited_yacht_id), so a client's
+ * whole team sees its boat with no per-person link (client request, 12 Oct 2026).
+ */
+async function ownedBoatIds(sb: ReturnType<typeof admin>, userId: string, vesselId: string | null = null): Promise<string[]> {
   const { data } = await sb
     .from('captain_accounts')
     .select('boat_id')
@@ -98,7 +117,16 @@ async function ownedBoatIds(sb: ReturnType<typeof admin>, userId: string): Promi
     .eq('active', true)
     .not('boat_id', 'is', null)
     .order('created_at', { ascending: true })
-  return (data ?? []).map((r: any) => r.boat_id as string)
+  const direct = (data ?? []).map((r: any) => r.boat_id as string)
+  const viaVessel = vesselId ? await vesselBoatIds(sb, vesselId) : []
+  return [...new Set([...direct, ...viaVessel])]
+}
+
+/** Active Orbit 2 boats created from this vessel's record. */
+async function vesselBoatIds(sb: ReturnType<typeof admin>, vesselId: string): Promise<string[]> {
+  const { data } = await sb.from('orbit2_boats').select('id')
+    .eq('inherited_yacht_id', vesselId).eq('active', true).order('name')
+  return (data ?? []).map((r: any) => r.id as string)
 }
 
 /** The payload of a token Supabase has already verified (getUser above). */
