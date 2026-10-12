@@ -30,6 +30,7 @@ import { Field, inputCls, Typeahead, TeamPicker, FileSlot, NoteLog, type Uploade
 import { InspectionsRequired, InspectionChecklist, INSPECTION_REGIMES, ryaChecklistLabel, type InspectionRegime } from "./orbit2-boat-checklist";
 import { useOrbit2Identity } from "./orbit2-identity";
 import { BoatAdditionalChecklists, useChecklistForms } from "./orbit2-checklist-library";
+import { BoatExpensesBoard } from "./orbit2-boat-expenses";
 
 const sb = supabase as any;
 
@@ -53,7 +54,7 @@ export function Orbit2BoatDetail({
 }) {
   const { user } = useAuth();
   const identity = useOrbit2Identity();
-  const [section, setSection] = useState<"jobs" | "inventory">("jobs");
+  const [section, setSection] = useState<"jobs" | "inventory" | "expenses">("jobs");
   /** "Assign Team" pressed on one of the inspection checklists — raise a job for it. */
   const [checklistJob, setChecklistJob] = useState<InspectionRegime | null>(null);
   /** …or on one of the boat's additional (library) checklists. */
@@ -213,20 +214,22 @@ export function Orbit2BoatDetail({
 
       </div>
 
-      {/* ── Jobs / Inventory ── */}
+      {/* ── Jobs / Inventory / Expenses ── */}
       <div className="min-w-0 self-start rounded-xl border border-border bg-card">
-        <div className="flex items-center gap-1 border-b border-border/60 px-4 py-2.5">
-          {(["jobs", "inventory"] as const).map((s) => (
+        <div className="flex flex-wrap items-center gap-1 border-b border-border/60 px-4 py-2.5">
+          {(["jobs", "inventory", "expenses"] as const).map((s) => (
             <button key={s} onClick={() => setSection(s)}
               className={cn("rounded-md px-3 py-1.5 text-[15px] font-semibold transition",
                 section === s ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-accent")}>
-              {s === "jobs" ? "Jobs" : "Inventory List"}
+              {s === "jobs" ? "Jobs" : s === "inventory" ? "Inventory List" : "Expenses"}
             </button>
           ))}
         </div>
         {section === "jobs"
           ? <JobsBoard boat={boat} tasks={tasks} reload={reload} />
-          : <InventoryBoard boat={boat} inventory={inventory} reload={reload} />}
+          : section === "inventory"
+            ? <InventoryBoard boat={boat} inventory={inventory} reload={reload} />
+            : <BoatExpensesBoard boat={boat} tasks={tasks} />}
       </div>
       </div>
     </div>
