@@ -5,6 +5,7 @@
  *   POST /api/qb/excel-import?kind=estimate|invoice      (staff, bearer token)
  *   POST /api/qb/excel-import?token=<link token>          (public upload link)
  *   GET  /api/qb/excel-import?token=<link token>          → { ok, kind } probe
+ *   GET  /api/qb/excel-import?links=1                     (Finance staff) → current share links
  *
  * Accepts a multipart .xlsx upload and creates one QuickBooks Estimate
  * (Q26-#####) or Invoice (JLS26-#####) per worksheet. Returns per-sheet results.
@@ -21,6 +22,7 @@
 import { supabaseAdmin } from '@/integrations/supabase/client.server'
 import { qboConfigured } from '@/lib/qb/qbo.server'
 import { importFromXlsx } from '@/lib/qb/excel-import.server'
+import { requireAccess } from '@/lib/auth/requireAccess.server'
 
 const db = () => supabaseAdmin as any
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json' } })
@@ -43,6 +45,20 @@ async function kindForToken(token: string): Promise<Kind | null> {
 export async function qbExcelImportHandler(request: Request): Promise<Response> {
   const url = new URL(request.url)
   const linkToken = url.searchParams.get('token') ?? ''
+
+  // GET ?links=1: Finance staff fetching the CURRENT shareable links, so the
+  // team copies them from Polaris instead of passing round an old URL (the
+  // tokens were only ever stored in the config row, with nowhere to read them).
+  if (request.method === 'GET' && url.searchParams.get('links') === '1') {
+    const access = await requireAccess(request, { module: 'finance', level: 'view' })
+    if (!access.ok) return access.response
+    const { data: row } = await db()
+      .from('integration_settings').select('enabled, config')
+      .eq('integration_name', 'qb_excel_links').maybeSingle()
+    const cfg = row?.config ?? {}
+    const link = (t: unknown) => (typeof t === 'string' && t.length >= 16 ? `${url.origin}/qb-upload/${t}` : null)
+    return json({ ok: true, enabled: row?.enabled !== false && !!row, estimate: link(cfg.estimate_token), invoice: link(cfg.invoice_token) })
+  }
 
   // GET: the public upload page probing whether its link is (still) valid.
   if (request.method === 'GET') {
