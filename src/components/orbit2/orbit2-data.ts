@@ -193,6 +193,8 @@ export type Orbit2BoatTask = {
   remarks: string | null;
   /** For a "Checklist" job: which library checklist it carries. */
   checklist_form_id: string | null;
+  /** Last change — the Maintenance Schedule history's date for a job that was never scheduled. */
+  updated_at?: string;
 };
 
 export type Orbit2ScheduleEntry = {

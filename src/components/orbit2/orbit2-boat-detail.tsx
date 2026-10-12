@@ -54,7 +54,7 @@ export function Orbit2BoatDetail({
 }) {
   const { user } = useAuth();
   const identity = useOrbit2Identity();
-  const [section, setSection] = useState<"jobs" | "inventory" | "expenses">("jobs");
+  const [section, setSection] = useState<"jobs" | "inventory" | "expenses" | "maintenance">("jobs");
   /** "Assign Team" pressed on one of the inspection checklists — raise a job for it. */
   const [checklistJob, setChecklistJob] = useState<InspectionRegime | null>(null);
   /** …or on one of the boat's additional (library) checklists. */
@@ -217,19 +217,18 @@ export function Orbit2BoatDetail({
       {/* ── Jobs / Inventory / Expenses ── */}
       <div className="min-w-0 self-start rounded-xl border border-border bg-card">
         <div className="flex flex-wrap items-center gap-1 border-b border-border/60 px-4 py-2.5">
-          {(["jobs", "inventory", "expenses"] as const).map((s) => (
+          {(["jobs", "inventory", "expenses", "maintenance"] as const).map((s) => (
             <button key={s} onClick={() => setSection(s)}
               className={cn("rounded-md px-3 py-1.5 text-[15px] font-semibold transition",
                 section === s ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-accent")}>
-              {s === "jobs" ? "Jobs" : s === "inventory" ? "Inventory List" : "Expenses"}
+              {{ jobs: "Jobs", inventory: "Inventory List", expenses: "Expenses", maintenance: "Maintenance Schedule" }[s]}
             </button>
           ))}
         </div>
-        {section === "jobs"
-          ? <JobsBoard boat={boat} tasks={tasks} reload={reload} />
-          : section === "inventory"
-            ? <InventoryBoard boat={boat} inventory={inventory} reload={reload} />
-            : <BoatExpensesBoard boat={boat} tasks={tasks} />}
+        {section === "jobs" ? <JobsBoard boat={boat} tasks={tasks} reload={reload} />
+          : section === "inventory" ? <InventoryBoard boat={boat} inventory={inventory} reload={reload} />
+          : section === "expenses" ? <BoatExpensesBoard boat={boat} tasks={tasks} />
+          : <MaintenanceScheduleBoard boat={boat} tasks={tasks} reload={reload} />}
       </div>
       </div>
     </div>
@@ -382,6 +381,109 @@ function SingleFileField({
           <button onClick={onRemove} className="rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"><X className="h-3.5 w-3.5" /></button>
         </div>
       ) : <p className="text-[14px] text-muted-foreground/70">None attached</p>}
+    </div>
+  );
+}
+
+// ── Maintenance Schedule ─────────────────────────────────────────────────────
+
+/** A job's date for the history: the day it was scheduled, else the day it was last updated. */
+const jobDate = (t: Orbit2BoatTask) => t.schedule_date ?? t.updated_at?.slice(0, 10) ?? null;
+
+/**
+ * Maintenance Schedule (client request, 12 Oct 2026), in two sections:
+ *   History           every finished (Complete) job, newest first — the boat's
+ *                     past maintenance as the owner sees it. Nothing to file:
+ *                     a job lands here the moment it's marked Complete.
+ *   Service Calendar  to follow.
+ * A row opens the job itself, with its service report, certificate and photos.
+ */
+function MaintenanceScheduleBoard({ boat, tasks, reload }: { boat: Orbit2Boat; tasks: Orbit2BoatTask[]; reload: () => Promise<void> | void }) {
+  const [view, setView] = useState<"history" | "calendar">("history");
+  const [query, setQuery] = useState("");
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  const history = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return tasks
+      .filter((t) => t.status === "Complete")
+      .filter((t) => !q || [t.job_no, t.title, t.technician, kindToBoatJobCategory(t.kind), ...(t.assigned_team ?? [])]
+        .some((v) => (v ?? "").toLowerCase().includes(q)))
+      .sort((a, b) => (jobDate(b) ?? "").localeCompare(jobDate(a) ?? "") || (b.job_no ?? "").localeCompare(a.job_no ?? ""));
+  }, [tasks, query]);
+
+  const technicianOptions = useMemo(() => suggestionsFor(tasks.map((t) => t.technician)), [tasks]);
+  const open = openId ? tasks.find((t) => t.id === openId) ?? null : null;
+  const columns = ["Job No.", "Category", "Description", "Date", "Assigned Crew", "Technician", "Status"];
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
+        <div className="flex gap-1">
+          {(["history", "calendar"] as const).map((v) => (
+            <button key={v} onClick={() => setView(v)}
+              className={cn("rounded-md px-3 py-1.5 text-[15px] font-medium transition",
+                view === v ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-accent")}>
+              {v === "history" ? "History" : "Service Calendar"}
+            </button>
+          ))}
+        </div>
+        {view === "history" && (
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search" aria-label="Search history"
+              className="h-9 w-44 rounded-md border border-border bg-background pl-8 pr-2 text-[14px] outline-none focus:border-primary" />
+          </div>
+        )}
+      </div>
+
+      {view === "history" ? (
+        <div className="overflow-x-auto">
+          <table className="w-full text-[14px]">
+            <thead>
+              <tr className="border-y border-border/60 bg-muted/10">
+                {columns.map((c) => (
+                  <th key={c} className="whitespace-nowrap px-3 py-2 text-left font-semibold text-muted-foreground">{c}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/40">
+              {history.length === 0 && (
+                <tr>
+                  <td colSpan={columns.length} className="px-4 py-8 text-center text-[15px] text-muted-foreground">
+                    {query.trim() ? "Nothing matches that search." : "No finished jobs yet — a job appears here as soon as it is marked Complete."}
+                  </td>
+                </tr>
+              )}
+              {history.map((t) => {
+                const d = jobDate(t);
+                return (
+                  <tr key={t.id} onClick={() => setOpenId(t.id)} className="cursor-pointer hover:bg-muted/20">
+                    <td className="whitespace-nowrap px-3 py-2 font-semibold text-primary">{t.job_no ?? "—"}</td>
+                    <td className="whitespace-nowrap px-3 py-2">{kindToBoatJobCategory(t.kind)}</td>
+                    <td className="max-w-[16rem] px-3 py-2"><span className="line-clamp-2">{t.title}</span></td>
+                    <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
+                      {d ? new Date(`${d}T00:00:00`).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—"}
+                    </td>
+                    <td className="px-3 py-2 text-muted-foreground">{(t.assigned_team ?? []).join(", ") || "—"}</td>
+                    <td className="px-3 py-2 text-muted-foreground">{t.technician ?? "—"}</td>
+                    <td className="whitespace-nowrap px-3 py-2">
+                      <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[13px] font-medium text-emerald-600">{t.status}</span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="border-t border-border/60 px-4 py-8 text-center text-[15px] text-muted-foreground">The Service Calendar is coming soon.</p>
+      )}
+
+      {open && (
+        <JobEditor boat={boat} existing={open} technicianOptions={technicianOptions}
+          onClose={() => setOpenId(null)} onCreated={() => undefined} reload={reload} />
+      )}
     </div>
   );
 }
