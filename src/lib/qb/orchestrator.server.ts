@@ -94,6 +94,16 @@ export async function orchestrate(raw: string): Promise<OrchestrationItem[]> {
     // "Object Not Found" is caught below.)
     if (/\.(delete|merge)\b/.test(ev.rawType)) {
       item.docgen = 'skipped (deleted)'
+      // A deleted invoice / estimate is soft-deleted in the Finance mirror, so it
+      // stops counting (a failure here is retried by the 5-min sweeper).
+      if (/\.delete\b/.test(ev.rawType) && (ev.entity === 'invoice' || ev.entity === 'estimate')) {
+        try {
+          const { markEntityDeleted } = await import('./sync.server')
+          item.ingest = await markEntityDeleted(ev.entity, ev.entityId, realm)
+        } catch (e: any) {
+          item.error = `delete: ${e?.message ?? String(e)}`
+        }
+      }
       results.push(item)
       continue
     }
@@ -111,8 +121,13 @@ export async function orchestrate(raw: string): Promise<OrchestrationItem[]> {
       continue
     }
 
+    // A voided invoice needs no branded PDF — only the ingest below, which records
+    // it as Voided in the Finance mirror.
+    const isVoid = /\.void\b/.test(ev.rawType)
+    if (isVoid) item.docgen = 'skipped (voided)'
+
     try {
-      if (ev.entity === 'invoice' && qboConfigured()) {
+      if (ev.entity === 'invoice' && qboConfigured() && !isVoid) {
         const fetched = await qboRequest('GET', `/invoice/${ev.entityId}?include=enhancedAllCustomFields&minorversion=73`, undefined, realm)
         const invoice = fetched?.Invoice
         if (invoice) {

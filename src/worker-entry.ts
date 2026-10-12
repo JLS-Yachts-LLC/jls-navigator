@@ -31,7 +31,7 @@ import { qbConnectHandler, qbCallbackHandler } from './routes/api.qb.connect'
 import { crewPlacementHandler } from './routes/api.crew-placement'
 import { qbCustomersHandler } from './routes/api.qb.customers'
 import { qbSyncHandler, qbDocPdfHandler } from './routes/api.qb.sync'
-import { syncAllRealms } from './lib/qb/sync.server'
+import { syncAllRealms, reconcileAllRealms } from './lib/qb/sync.server'
 import { feedbackNotifyHandler } from './routes/api.feedback.notify'
 import { vesselHandler } from './routes/api.vessels'
 import { phoneHandler } from './routes/api.phone'
@@ -1499,6 +1499,11 @@ export default {
           .then((m) => m.docgenReconcile())
           .then((r) => console.log(`[qb-docgen-reconcile] ${r.length ? r.join('; ') : 'nothing to do'}`))
           .catch((e) => console.error('[qb-docgen-reconcile] error:', e))
+          // Once a day (01:00 UTC tick): full ID reconcile of the QBO mirror —
+          // soft-deletes documents deleted in QuickBooks, fetches missing ones.
+          .then(() => (utcHour === 1 && new Date().getUTCMinutes() < 5 ? reconcileAllRealms() : null))
+          .then((r) => { if (r) console.log(`[qbo-reconcile] ${JSON.stringify(r)}`) })
+          .catch((e) => console.error('[qbo-reconcile] error:', e))
       );
       // Reliability sweeper: re-process any QuickBooks webhook event that hasn't
       // fully succeeded (per-document failure, deploy mid-request, transient QBO

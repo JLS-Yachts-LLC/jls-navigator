@@ -963,7 +963,7 @@ function YachtFinance({ yachtId, vesselName, qboCustomerId }: { yachtId: string;
       let q = (supabase as any)
         .from("qbo_invoices")
         .select("id, doc_number, txn_date, due_date, total_amt, balance, status, currency, realm_id")
-        .eq("doc_type", docType);
+        .eq("doc_type", docType).is("deleted_at", null);
       // Match by direct yacht link, plus by the yacht's QBO customer for older rows.
       // (qbo_customer_id is the JLS customer — another company's documents only by yacht_id.)
       q = qboCustomerId ? q.or(`yacht_id.eq.${yachtId},and(customer_ref.eq.${qboCustomerId},realm_id.eq.${JLS_QBO_REALM})`) : q.eq("yacht_id", yachtId);

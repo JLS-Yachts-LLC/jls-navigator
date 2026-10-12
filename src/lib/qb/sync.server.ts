@@ -8,7 +8,7 @@
  * the esign-documents bucket under qbo/. Runs on a 5-min cron + on Polaris invoice create.
  */
 import { createClient } from '@supabase/supabase-js'
-import { qboQuery, qboPdf, qboConfigured, qboRealm } from './qbo.server'
+import { qboQuery, qboRequest, qboPdf, qboConfigured, qboRealm } from './qbo.server'
 import { classifyInvoiceType } from './orchestrator.server'
 
 const FROM_DATE = () => process.env.QBO_SYNC_FROM ?? '2026-01-01'
@@ -27,7 +27,14 @@ function admin() {
 
 const ql = (s: string) => s.replace(/'/g, "''")
 
+/** QBO keeps a voided invoice as a zero-value document whose private note reads
+ *  "Voided" — it would otherwise count as Paid. */
+function isVoided(doc: any): boolean {
+  return Number(doc.TotalAmt ?? 0) === 0 && /^\s*voided\b/i.test(String(doc.PrivateNote ?? ''))
+}
+
 function invoiceStatus(inv: any): string {
+  if (isVoided(inv)) return 'Voided'
   const bal = Number(inv.Balance ?? 0)
   const total = Number(inv.TotalAmt ?? 0)
   if (bal <= 0.005) return 'Paid'
@@ -70,7 +77,60 @@ function buildRow(entity: 'Invoice' | 'Estimate', doc: any, yachtByCust: Map<str
     line_items: mapLines(doc),
     raw: includeRaw ? doc : null, // full raw only for single-doc sync (too heavy in bulk)
     synced_at: new Date().toISOString(),
+    // The document is live in QBO, so it is not deleted (clears a stale soft-delete).
+    deleted_at: null,
+    deleted_reason: null,
   }
+}
+
+// ── Deletions ────────────────────────────────────────────────────────────────
+// QBO deletes are soft-deleted in the mirror (deleted_at), never removed: the
+// rows are the audit trail of what disappeared, and every reader filters them.
+
+type DocEntity = 'Invoice' | 'Estimate'
+/** The mirror doc_types a QBO entity can be stored under (an Invoice is either). */
+const ENTITY_DOC_TYPES: Record<DocEntity, string[]> = { Invoice: ['invoice', 'proforma'], Estimate: ['estimate'] }
+
+/** Soft-delete mirror rows for QBO documents that no longer exist. Returns how
+ *  many rows were newly marked. */
+async function markQboDeleted(sb: any, realm: string, entity: DocEntity, ids: string[], reason: string): Promise<number> {
+  let n = 0
+  const now = new Date().toISOString()
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data, error } = await sb.from('qbo_invoices')
+      .update({ deleted_at: now, deleted_reason: reason })
+      .eq('realm_id', realm).in('doc_type', ENTITY_DOC_TYPES[entity]).in('qbo_id', ids.slice(i, i + 200))
+      .is('deleted_at', null).select('id')
+    if (error) throw new Error(`qbo_invoices soft-delete failed: ${error.message}`)
+    n += data?.length ?? 0
+  }
+  return n
+}
+
+/** Webhook entry point: a QBO Delete event for an invoice / estimate. */
+export async function markEntityDeleted(entity: string, qboId: string, realm: string = qboRealm()): Promise<string> {
+  const e: DocEntity | null = entity === 'invoice' ? 'Invoice' : entity === 'estimate' ? 'Estimate' : null
+  if (!e) return `${entity}-delete-ignored`
+  const n = await markQboDeleted(admin() as any, realm, e, [qboId], 'qbo-webhook')
+  return n ? `${entity}-deleted` : `${entity}-delete-noop`
+}
+
+/** Change Data Capture pass: QBO's /cdc returns documents deleted since a point in
+ *  time (status "Deleted") — the only way to see a delete through the API, since a
+ *  query never returns it. Covers deletes whose webhook was lost. CDC looks back at
+ *  most 30 days; anything older is left to the daily reconcile. */
+async function cdcDeletions(sb: any, realm: string, since: string): Promise<number> {
+  const floor = Date.now() - 29 * 86400_000
+  const changedSince = new Date(Math.max(new Date(since).getTime(), floor)).toISOString()
+  const res = await qboRequest('GET', `/cdc?entities=Invoice,Estimate&changedSince=${encodeURIComponent(changedSince)}&minorversion=73`, undefined, realm)
+  let n = 0
+  for (const qr of res?.CDCResponse?.[0]?.QueryResponse ?? []) {
+    for (const entity of ['Invoice', 'Estimate'] as const) {
+      const deleted = (qr?.[entity] ?? []).filter((d: any) => d?.status === 'Deleted' && d?.Id != null).map((d: any) => String(d.Id))
+      if (deleted.length) n += await markQboDeleted(sb, realm, entity, deleted, 'qbo-cdc')
+    }
+  }
+  return n
 }
 
 /** Page through an entity (200/page) and batch-upsert in chunks of 100 — keeps both the
@@ -172,7 +232,7 @@ async function yachtMap(sb: any, realm: string): Promise<Map<string, string>> {
 /** Fetch PDFs for up to `limit` documents that don't have one yet (bounded per run,
  *  so historical PDFs trickle in across cron ticks without blowing subrequest limits). */
 async function backfillPdfs(sb: any, realm: string, limit = 15): Promise<number> {
-  const { data: missing } = await sb.from('qbo_invoices').select('id, qbo_id, doc_type').eq('realm_id', realm).is('pdf_path', null).order('txn_date', { ascending: false }).limit(limit)
+  const { data: missing } = await sb.from('qbo_invoices').select('id, qbo_id, doc_type').eq('realm_id', realm).is('pdf_path', null).is('deleted_at', null).order('txn_date', { ascending: false }).limit(limit)
   let done = 0
   for (const d of (missing ?? [])) {
     try {
@@ -195,7 +255,8 @@ export async function syncQboDocuments(opts: { full?: boolean; pdfBatch?: number
   const realm = opts.realm ?? qboRealm()
   const sid = stateId(realm)
 
-  const { data: state } = await sb.from('qbo_sync_state').select('last_run_at').eq('id', sid).maybeSingle()
+  const { data: state } = await sb.from('qbo_sync_state').select('last_run_at, last_cdc_at').eq('id', sid).maybeSingle()
+  const runStartedAt = new Date().toISOString()
   const incremental = !opts.full && !!state?.last_run_at
   // Small overlap so nothing slips between runs.
   const updatedSince = incremental ? new Date(new Date(state.last_run_at).getTime() - 10 * 60_000).toISOString() : null
@@ -212,6 +273,16 @@ export async function syncQboDocuments(opts: { full?: boolean; pdfBatch?: number
     count += await syncEntity(sb, 'Invoice', where, yachtByCust, realm, changed)
     count += await syncEntity(sb, 'Estimate', where, yachtByCust, realm, changed)
     count += await syncPayments(sb, where, yachtByCust, realm)
+    // Deletions: a query never returns a deleted document, so ask CDC for them.
+    // Cursor = last successful CDC pass (minus the overlap), so a failed pass is
+    // retried next tick instead of losing its window.
+    let deleted = 0
+    let cdcOk = false
+    if (incremental) {
+      const cdcFrom = state?.last_cdc_at ? new Date(new Date(state.last_cdc_at).getTime() - 10 * 60_000).toISOString() : updatedSince!
+      try { deleted = await cdcDeletions(sb, realm, cdcFrom); cdcOk = true }
+      catch (e: any) { console.error(`[qbo-sync] CDC deletions (${realm}) failed:`, e?.message ?? e) }
+    }
     // Doc-gen backstop: branded PDFs no longer depend on webhook delivery.
     let docgen: string[] = []
     if (changed?.length) {
@@ -231,8 +302,9 @@ export async function syncQboDocuments(opts: { full?: boolean; pdfBatch?: number
     await sb.from('qbo_sync_state').upsert({
       id: sid, realm_id: realm, last_run_at: new Date().toISOString(), last_count: count, last_error: null,
       ...(incremental ? {} : { last_full_at: new Date().toISOString() }),
+      ...(cdcOk ? { last_cdc_at: runStartedAt } : {}),
     }, { onConflict: 'id' })
-    return { ok: true, realm, count, pdfs, docgen: docgen.length || undefined, mode: incremental ? 'incremental' : 'full' }
+    return { ok: true, realm, count, deleted: deleted || undefined, pdfs, docgen: docgen.length || undefined, mode: incremental ? 'incremental' : 'full' }
   } catch (e: any) {
     await sb.from('qbo_sync_state').upsert({ id: sid, realm_id: realm, last_run_at: new Date().toISOString(), last_error: String(e?.message ?? e) }, { onConflict: 'id' })
     throw e
@@ -321,7 +393,7 @@ export async function syncOneEntity(entity: string, qboId: string, realm: string
   if (entity === 'estimate') {
     const res = await qboQuery(`select * from Estimate where Id = '${ql(qboId)}'`, realm)
     const doc = res?.QueryResponse?.Estimate?.[0]
-    if (!doc) return 'estimate-not-found'
+    if (!doc) { await markQboDeleted(sb, realm, 'Estimate', [qboId], 'qbo-not-found'); return 'estimate-not-found' }
     await sb.from('qbo_invoices').upsert(buildRow('Estimate', doc, await yachtMap(sb, realm), realm, true), { onConflict: 'qbo_id,doc_type,realm_id' })
     return 'estimate-synced'
   }
@@ -346,7 +418,7 @@ export async function syncOneInvoice(qboId: string, realm: string = qboRealm()) 
   const sb = admin() as any
   const res = await qboQuery(`select * from Invoice where Id = '${ql(qboId)}'`, realm)
   const doc = res?.QueryResponse?.Invoice?.[0]
-  if (!doc) return
+  if (!doc) { await markQboDeleted(sb, realm, 'Invoice', [qboId], 'qbo-not-found'); return }
   const row = buildRow('Invoice', doc, await yachtMap(sb, realm), realm, true)
   await sb.from('qbo_invoices').upsert(row, { onConflict: 'qbo_id,doc_type,realm_id' })
   try {
@@ -356,4 +428,164 @@ export async function syncOneInvoice(qboId: string, realm: string = qboRealm()) 
     await sb.from('qbo_invoices').update({ pdf_path: path, pdf_synced_at: new Date().toISOString() })
       .eq('qbo_id', String(doc.Id)).eq('doc_type', row.doc_type).eq('realm_id', realm)
   } catch { /* PDF best-effort */ }
+}
+
+// ── Reconcile ────────────────────────────────────────────────────────────────
+// Webhooks and CDC catch deletes as they happen; this pass catches everything
+// they missed (deletes before the webhook existed, past CDC's 30-day window, or
+// lost events) by comparing the full ID lists of QBO and the mirror.
+
+const DOC_ENTITIES: DocEntity[] = ['Invoice', 'Estimate']
+
+export type ReconcileReport = {
+  realm: string
+  apply: boolean
+  ranAt: string
+  live: Record<DocEntity, number>        // documents in QBO
+  mirror: number                         // mirror rows not soft-deleted
+  stale: number                          // mirror rows whose document no longer exists in QBO
+  staleIds: Record<DocEntity, string[]>
+  missing: number                        // live documents inside the sync window absent from the mirror
+  revived: number                        // soft-deleted rows whose document exists in QBO again
+  outOfScope: number                     // live documents older than the sync window, not mirrored (left alone)
+  deleted: number                        // rows soft-deleted by this run
+  added: number                          // rows fetched + upserted by this run
+  remaining: number                      // fetches left over for the next run (per-run cap)
+  blocked?: string                       // why deletions were NOT applied
+}
+
+/** Every live document id (→ TxnDate) of one entity, plus QBO's own count so a
+ *  listing that shifted mid-scan can be detected. */
+async function liveDocIds(entity: DocEntity, realm: string): Promise<{ ids: Map<string, string | null>; expected: number }> {
+  const countRes = await qboQuery(`select count(*) from ${entity}`, realm)
+  const expected = Number(countRes?.QueryResponse?.totalCount ?? -1)
+  const ids = new Map<string, string | null>()
+  const PAGE = 1000
+  for (let start = 1; start <= 500000; start += PAGE) {
+    const res = await qboQuery(`select Id, TxnDate from ${entity} startposition ${start} maxresults ${PAGE}`, realm)
+    const rows = res?.QueryResponse?.[entity] ?? []
+    for (const d of rows) ids.set(String(d.Id), d.TxnDate ?? null)
+    if (rows.length < PAGE) break
+  }
+  return { ids, expected }
+}
+
+/** Compare QBO's document IDs with the mirror for one company and fix the drift:
+ *  soft-delete rows whose document is gone, and fetch documents (inside the sync
+ *  window) the mirror is missing or had wrongly marked deleted. Dry run unless
+ *  `apply`. Deletions are refused when the QBO listing looks incomplete, or when
+ *  they exceed max(25, 10% of the mirror) unless `force` — a bad QBO response
+ *  must never empty the mirror. */
+export async function reconcileQboDocuments(opts: { realm?: string; apply?: boolean; force?: boolean; fetchCap?: number } = {}): Promise<ReconcileReport> {
+  if (!qboConfigured()) throw new Error('QBO not configured')
+  const sb = admin() as any
+  const realm = opts.realm ?? qboRealm()
+  const apply = !!opts.apply
+  const from = FROM_DATE()
+
+  const live = { Invoice: await liveDocIds('Invoice', realm), Estimate: await liveDocIds('Estimate', realm) }
+
+  const rows: { qbo_id: string; doc_type: string; deleted_at: string | null }[] = []
+  for (let off = 0; ; off += 1000) {
+    const { data, error } = await sb.from('qbo_invoices').select('qbo_id, doc_type, deleted_at')
+      .eq('realm_id', realm).order('id').range(off, off + 999)
+    if (error) throw new Error(`qbo_invoices read failed: ${error.message}`)
+    rows.push(...(data ?? []))
+    if ((data ?? []).length < 1000) break
+  }
+
+  const stale = { Invoice: new Set<string>(), Estimate: new Set<string>() }
+  const mirrored = { Invoice: new Set<string>(), Estimate: new Set<string>() }
+  const toFetch = { Invoice: new Set<string>(), Estimate: new Set<string>() }
+  let mirror = 0
+  for (const r of rows) {
+    const e: DocEntity = r.doc_type === 'estimate' ? 'Estimate' : 'Invoice'
+    const isLive = live[e].ids.has(r.qbo_id)
+    if (!r.deleted_at) {
+      mirror++
+      mirrored[e].add(r.qbo_id)
+      if (!isLive) stale[e].add(r.qbo_id)
+    } else if (isLive) {
+      toFetch[e].add(r.qbo_id)
+    }
+  }
+  let revived = 0
+  for (const e of DOC_ENTITIES) for (const id of toFetch[e]) if (!mirrored[e].has(id)) revived++; else toFetch[e].delete(id)
+  let missing = 0, outOfScope = 0
+  for (const e of DOC_ENTITIES) {
+    for (const [id, txn] of live[e].ids) {
+      if (mirrored[e].has(id) || toFetch[e].has(id)) continue
+      if (txn && txn < from) { outOfScope++; continue }
+      missing++
+      toFetch[e].add(id)
+    }
+  }
+
+  const staleCount = stale.Invoice.size + stale.Estimate.size
+  let blocked: string | undefined
+  for (const e of DOC_ENTITIES) {
+    if (live[e].expected < 0 || live[e].ids.size !== live[e].expected) {
+      blocked = `QBO ${e} list incomplete (${live[e].ids.size} listed, ${live[e].expected} counted) — documents changed during the scan; retry`
+    }
+  }
+  const limit = Math.max(25, Math.round(mirror * 0.1))
+  if (!blocked && staleCount > limit && !opts.force) {
+    blocked = `${staleCount} documents to remove is over the safety limit of ${limit} — review the dry run, then re-run with force`
+  }
+
+  let deleted = 0, added = 0
+  let remaining = toFetch.Invoice.size + toFetch.Estimate.size
+  if (apply) {
+    if (!blocked) for (const e of DOC_ENTITIES) deleted += await markQboDeleted(sb, realm, e, [...stale[e]], 'qbo-reconcile')
+    const yachtByCust = await yachtMap(sb, realm)
+    let budget = opts.fetchCap ?? 500
+    for (const e of DOC_ENTITIES) {
+      const take = [...toFetch[e]].slice(0, Math.max(0, budget))
+      budget -= take.length
+      for (let i = 0; i < take.length; i += 50) {
+        const inList = take.slice(i, i + 50).map((id) => `'${ql(id)}'`).join(',')
+        const res = await qboQuery(`select * from ${e} where Id in (${inList}) maxresults 50`, realm)
+        const docs = res?.QueryResponse?.[e] ?? []
+        if (!docs.length) continue
+        const { error } = await sb.from('qbo_invoices').upsert(docs.map((d: any) => buildRow(e, d, yachtByCust, realm)), { onConflict: 'qbo_id,doc_type,realm_id' })
+        if (error) throw new Error(`qbo_invoices upsert failed: ${error.message}`)
+        added += docs.length
+      }
+      remaining -= take.length
+    }
+  }
+
+  const report: ReconcileReport = {
+    realm, apply, ranAt: new Date().toISOString(),
+    live: { Invoice: live.Invoice.ids.size, Estimate: live.Estimate.ids.size },
+    mirror, stale: staleCount,
+    staleIds: { Invoice: [...stale.Invoice], Estimate: [...stale.Estimate] },
+    missing, revived, outOfScope, deleted, added, remaining, blocked,
+  }
+  await sb.from('qbo_sync_state').upsert({
+    id: stateId(realm), realm_id: realm, last_reconcile_at: report.ranAt,
+    last_reconcile: { ...report, staleIds: { Invoice: report.staleIds.Invoice.slice(0, 1000), Estimate: report.staleIds.Estimate.slice(0, 1000) } },
+  }, { onConflict: 'id' })
+  return report
+}
+
+/** Daily cron: reconcile and fix every connected company (guards stay on). */
+export async function reconcileAllRealms(): Promise<Record<string, unknown>> {
+  const { logAutomationRun } = await import('@/lib/automations.server')
+  const results: Record<string, unknown> = {}
+  for (const realm of SYNC_REALMS) {
+    try {
+      const r = await reconcileQboDocuments({ realm, apply: true })
+      const { staleIds: _ids, ...summary } = r
+      results[realm] = summary
+    } catch (e: any) {
+      results[realm] = { ok: false, error: String(e?.message ?? e) }
+    }
+  }
+  const failed = Object.values(results).some((r: any) => r?.ok === false || r?.blocked)
+  await logAutomationRun({
+    key: 'qb-reconcile', name: 'QB Reconcile (daily ID check)', source: 'worker', trigger_type: 'schedule', category: 'Finance',
+    status: failed ? 'error' : 'success', detail: JSON.stringify(results).slice(0, 1900),
+  })
+  return results
 }

@@ -41,7 +41,7 @@ export async function runWeeklyFleetFinance(opts: { force?: boolean } = {}): Pro
   for (let from = 0; ; from += 1000) {
     const { data: inv } = await sb.from('qbo_invoices')
       .select('yacht_id, customer_ref, balance, due_date, realm_id')
-      .eq('doc_type', 'invoice').gt('balance', 0)
+      .eq('doc_type', 'invoice').gt('balance', 0).is('deleted_at', null)
       .range(from, from + 999)
     for (const d of (inv ?? []) as any[]) {
       // The customer-id fallback is the JLS customer, so only for JLS documents.

@@ -2,11 +2,13 @@
  * QBO document sync API (authenticated, bearer).
  *   GET  /api/qb/sync      -> sync state { last_run_at, last_full_at, last_count, last_error }
  *   POST /api/qb/sync {full?:bool} -> run a sync (full = whole year from QBO_SYNC_FROM)
+ *   POST /api/qb/sync {reconcile:true, apply?:bool, force?:bool} -> compare QBO vs mirror IDs
+ *        (dry run unless apply; force lifts the deletion safety limit)
  *   GET  /api/qb/doc-pdf?id=<uuid> -> signed URL for a synced document's PDF
  *
  */
 import { supabaseAdmin } from '@/integrations/supabase/client.server'
-import { syncQboDocuments, backfillChunk, backfillPaymentsFull } from '@/lib/qb/sync.server'
+import { syncQboDocuments, backfillChunk, backfillPaymentsFull, reconcileQboDocuments } from '@/lib/qb/sync.server'
 import { qboPdf, qboConfigured, qboRealm } from '@/lib/qb/qbo.server'
 
 const db = () => supabaseAdmin as any
@@ -38,6 +40,10 @@ export async function qbSyncHandler(request: Request): Promise<Response> {
     try { body = await request.json() } catch { /* empty */ }
     const realm = resolveRealm(body.realm)
     try {
+      if (body.reconcile) {
+        const r = await reconcileQboDocuments({ realm, apply: !!body.apply, force: !!body.force })
+        return json({ ok: true, ...r })
+      }
       if (body.paymentsBackfill) {
         const r = await backfillPaymentsFull(realm)
         return json({ ok: true, realm, ...r })

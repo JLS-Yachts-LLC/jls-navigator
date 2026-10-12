@@ -289,7 +289,7 @@ export function YachtsPage({
       for (let from = 0; ; from += 1000) {
         const { data: inv } = await (supabase as any)
           .from("qbo_invoices").select("yacht_id, customer_ref, balance, realm_id")
-          .eq("doc_type", "invoice").gt("balance", 0).range(from, from + 999);
+          .eq("doc_type", "invoice").gt("balance", 0).is("deleted_at", null).range(from, from + 999);
         for (const d of (inv ?? [])) {
           // The customer-id fallback is the JLS customer, so only for JLS documents.
           const yid = d.yacht_id ?? (d.customer_ref && d.realm_id === JLS_QBO_REALM ? custToYacht.get(String(d.customer_ref)) : undefined);

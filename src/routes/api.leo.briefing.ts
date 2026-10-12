@@ -124,6 +124,7 @@ export async function assembleLeoContext(userId: string, userEmail: string) {
       ? (sb as any).from('qbo_invoices')
           .select('doc_number, customer_name, total_amt, balance, currency, due_date, status')
           .gt('balance', 0)
+          .is('deleted_at', null)
           .lt('due_date', today)
           .order('due_date', { ascending: true })
           .limit(10)

@@ -57,7 +57,7 @@ async function docgenReconcileInner(cap: number): Promise<string[]> {
   const since = new Date(Date.now() - 48 * 3600_000).toISOString()
   const { data: docs } = await sb.from('qbo_invoices')
     .select('qbo_id, doc_type, doc_number, synced_at')
-    .eq('realm_id', JLS_REALM).in('doc_type', ['invoice', 'proforma', 'estimate'])
+    .eq('realm_id', JLS_REALM).in('doc_type', ['invoice', 'proforma', 'estimate']).is('deleted_at', null)
     .gte('synced_at', since).order('synced_at', { ascending: false }).limit(300)
   if (!docs?.length) return []
 

@@ -1425,7 +1425,7 @@ function VisaTracker() {
       const refs = Array.from(new Set(((data ?? []) as TrackerVisa[]).map(i => i.invoice_ref).filter(Boolean))) as string[];
       if (refs.length) {
         const { data: inv } = await (supabase as any).from("qbo_invoices")
-          .select("doc_number, status, balance").in("doc_number", refs);
+          .select("doc_number, status, balance").in("doc_number", refs).is("deleted_at", null);
         const map: Record<string, { status: string; balance: number }> = {};
         for (const r of (inv ?? [])) map[r.doc_number] = { status: r.status, balance: Number(r.balance ?? 0) };
         setQboPay(map);
@@ -1881,7 +1881,7 @@ function QboDocsTab({ docType, realm }: { docType: "invoices" | "proforma" | "qu
     (async () => {
       const { data: ys } = await (supabase as any).from("yachts").select("id, vessel_name").eq("archive", false).order("vessel_name");
       setYachtOpts(ys ?? []);
-      const { data: st } = await (supabase as any).from("qbo_invoices").select("status").eq("doc_type", DOC_TYPE[docType]).eq("realm_id", realm).limit(2000);
+      const { data: st } = await (supabase as any).from("qbo_invoices").select("status").eq("doc_type", DOC_TYPE[docType]).eq("realm_id", realm).is("deleted_at", null).limit(2000);
       setStatuses(Array.from(new Set((st ?? []).map((r: any) => r.status).filter(Boolean))).sort() as string[]);
     })();
   }, [docType, realm]);
@@ -1891,7 +1891,8 @@ function QboDocsTab({ docType, realm }: { docType: "invoices" | "proforma" | "qu
   useEffect(() => { void load(); }, [docType, realm, year, yacht, status, q, sortCol, sortDir, page]);
 
   function applyFilters(qy: any) {
-    qy = qy.eq("doc_type", DOC_TYPE[docType]).eq("realm_id", realm);
+    // Documents deleted in QuickBooks stay in the mirror (soft-deleted) but never show.
+    qy = qy.eq("doc_type", DOC_TYPE[docType]).eq("realm_id", realm).is("deleted_at", null);
     if (year !== "all") qy = qy.gte("txn_date", `${year}-01-01`).lte("txn_date", `${year}-12-31`);
     if (yacht !== "all") qy = qy.eq("yacht_id", yacht);
     if (status !== "all") qy = qy.eq("status", status);
