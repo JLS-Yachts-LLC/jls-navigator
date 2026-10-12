@@ -72,15 +72,37 @@ export const PreviewContext = createContext(false);
 const usePreview = () => useContext(PreviewContext);
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-type CaptainLink = { id: string; yacht_id: string; display_name: string | null; position: string | null };
+export type CaptainLink = { id: string; yacht_id: string; display_name: string | null; position: string | null };
 /** The portal account a chat belongs to — a yacht's or a managed boat's. */
 export type ChatAccount = { id: string; yacht_id: string | null; boat_id?: string | null };
 /** A small-boat owner's link (captain_accounts.boat_id) — served by BoatPortal, not PortalShell. */
-type BoatOwnerLink = { id: string; display_name: string | null };
-type AccountRow = { id: string; yacht_id: string | null; boat_id: string | null; display_name: string | null; position: string | null; yachts?: { vessel_name: string } | null };
-/** A yacht this login can switch to (logins linked to several yachts). */
-type VesselChoice = { link: CaptainLink; name: string };
+type BoatOwnerLink = { id: string; display_name: string | null; boat_id?: string | null };
+type AccountRow = {
+  id: string; yacht_id: string | null; boat_id: string | null; display_name: string | null; position: string | null;
+  yachts?: { vessel_name: string } | null; orbit2_boats?: { name: string } | null;
+};
+/**
+ * A vessel this login can switch to: one of its yachts (`link`), or one of its
+ * managed boats (`boat`, which opens the small-boat portal). Exactly one is set.
+ */
+type VesselChoice = { name: string; link?: CaptainLink; boat?: BoatOwnerLink };
 const YACHT_KEY = "polaris.portal.yacht";
+/** The managed boat last opened, when that was a boat rather than a yacht. */
+const BOAT_KEY = "polaris.portal.boat";
+/** A login's portal rows as switcher choices — its yachts first, then its managed boats. */
+const vesselChoices = (rows: AccountRow[]): VesselChoice[] => [
+  ...rows.filter((l) => l.yacht_id).map((l) => ({
+    link: { id: l.id, yacht_id: l.yacht_id!, display_name: l.display_name, position: l.position },
+    name: l.yachts?.vessel_name ?? "Vessel",
+  })),
+  ...rows.filter((l) => l.boat_id).map((l) => ({
+    boat: { id: l.id, display_name: l.display_name, boat_id: l.boat_id },
+    name: l.orbit2_boats?.name ?? "Boat",
+  })),
+];
+/** In an admin preview, switching vessel previews that person's row for it. */
+const previewRow = (accountId: string) =>
+  window.location.assign(`/portal?previewCaptain=${encodeURIComponent(accountId)}`);
 type Yacht = {
   id: string; vessel_name: string; vessel_type: string | null; flag: string | null;
   status: string | null; berth: string | null; location: string | null;
@@ -217,9 +239,19 @@ export function CaptainPortal() {
   const setLink = useCallback((l: CaptainLink | null) => {
     setLinkState(l);
     setPortalYacht(l?.yacht_id ?? null);
-    if (l) { try { window.localStorage.setItem(YACHT_KEY, l.yacht_id); } catch { /* private mode */ } }
+    if (l) {
+      try { window.localStorage.setItem(YACHT_KEY, l.yacht_id); window.localStorage.removeItem(BOAT_KEY); } catch { /* private mode */ }
+    }
   }, []);
   const [boatOwner, setBoatOwner] = useState<BoatOwnerLink | null>(null);
+  /** Open a managed boat's portal from the vessel switcher (a login with yachts and boats). */
+  const switchToBoat = useCallback((b: BoatOwnerLink) => {
+    setLink(null);
+    setBoatOwner(b);
+    if (b.boat_id) { try { window.localStorage.setItem(BOAT_KEY, b.boat_id); } catch { /* private mode */ } }
+  }, [setLink]);
+  /** Back from a managed boat to one of the login's yachts. */
+  const switchToYacht = useCallback((l: CaptainLink) => { setBoatOwner(null); setLink(l); }, [setLink]);
   const [userEmail, setUserEmail] = useState<string>("");
   const [preview, setPreview] = useState(false);
   const [wrongHome, setWrongHome] = useState<string | null>(null);
@@ -268,31 +300,42 @@ export function CaptainPortal() {
       : null;
     if (previewId) {
       const { data: cap } = await db.from("captain_accounts")
-        .select("id, yacht_id, boat_id, display_name, position")
-        .eq("id", previewId).eq("active", true).maybeSingle() as { data: AccountRow | null };
+        .select("id, user_id, yacht_id, boat_id, display_name, position")
+        .eq("id", previewId).eq("active", true).maybeSingle() as { data: (AccountRow & { user_id: string | null }) | null };
+      // The rest of that person's vessels, so the preview's switcher matches theirs.
+      if (cap?.user_id) {
+        const { data: siblings } = await db.from("captain_accounts")
+          .select("id, yacht_id, boat_id, display_name, position, yachts(vessel_name), orbit2_boats(name)")
+          .eq("user_id", cap.user_id).eq("active", true)
+          .order("created_at", { ascending: true }) as { data: AccountRow[] | null };
+        setVessels(vesselChoices(siblings ?? []));
+      }
       if (cap?.yacht_id) { setLink({ ...cap, yacht_id: cap.yacht_id }); setPreview(true); setStage("ready"); return; }
       if (cap?.boat_id) { setBoatOwner(cap); setPreview(true); setStage("ready"); return; }
       setStage("not-captain"); return;
     }
 
-    // A login is linked to a yacht, or to one or more managed boats (one row
-    // per boat). A yacht link wins if a login somehow has both.
+    // A login is linked to yachts and/or managed boats (one row per vessel). It
+    // opens on the vessel used last — a yacht by default — and the switcher
+    // offers the rest, boats included.
     const { data: links } = await db.from("captain_accounts")
-      .select("id, yacht_id, boat_id, display_name, position, yachts(vessel_name)")
+      .select("id, yacht_id, boat_id, display_name, position, yachts(vessel_name), orbit2_boats(name)")
       .eq("user_id", session.user.id).eq("active", true)
       .order("created_at", { ascending: true }) as { data: AccountRow[] | null };
-    // Several yachts on one login: offer a switcher, and open the one used last.
     const yachtLinks = (links ?? []).filter((l) => l.yacht_id);
-    setVessels(yachtLinks.map((l) => ({
-      link: { id: l.id, yacht_id: l.yacht_id!, display_name: l.display_name, position: l.position },
-      name: l.yachts?.vessel_name ?? "Vessel",
-    })));
+    const boatLinks = (links ?? []).filter((l) => l.boat_id);
+    setVessels(vesselChoices(links ?? []));
     let lastYacht: string | null = null;
-    try { lastYacht = window.localStorage.getItem(YACHT_KEY); } catch { /* private mode */ }
+    let lastBoat: string | null = null;
+    try {
+      lastYacht = window.localStorage.getItem(YACHT_KEY);
+      lastBoat = window.localStorage.getItem(BOAT_KEY);
+    } catch { /* private mode */ }
+    const lastBoatLink = lastBoat ? boatLinks.find((l) => l.boat_id === lastBoat) : undefined;
     const yachtLink = yachtLinks.find((l) => l.yacht_id === lastYacht) ?? yachtLinks[0];
-    const boatLink = links?.find((l) => l.boat_id);
-    if (yachtLink) setLink({ ...yachtLink, yacht_id: yachtLink.yacht_id! });
-    else if (boatLink) setBoatOwner(boatLink);
+    const boatLink = lastBoatLink ?? boatLinks[0];
+    if (yachtLink && !lastBoatLink) setLink({ ...yachtLink, yacht_id: yachtLink.yacht_id! });
+    else if (boatLink) setBoatOwner({ id: boatLink.id, display_name: boatLink.display_name, boat_id: boatLink.boat_id });
     else { setStage("not-captain"); return; }
 
     // Signed in at another client's own address (e.g. aquila.polaris…): send
@@ -382,13 +425,20 @@ export function CaptainPortal() {
       {stage === "mfa-enroll" && <MfaEnrollScreen onDone={bootstrap} onSignOut={signOut} />}
       {stage === "mfa-verify" && <MfaVerifyScreen onDone={bootstrap} onSignOut={signOut} />}
       {stage === "ready" && !link && boatOwner && (
-        <BoatPortal displayName={boatOwner.display_name} email={userEmail}
-                    previewAccountId={preview ? boatOwner.id : null} onSignOut={signOut} />
+        <BoatPortal key={boatOwner.id} displayName={boatOwner.display_name} email={userEmail}
+                    previewAccountId={preview ? boatOwner.id : null} onSignOut={signOut}
+                    initialBoatId={boatOwner.boat_id ?? null}
+                    yachts={vessels.flatMap((v) => (v.link ? [{ link: v.link, name: v.name }] : []))}
+                    onSwitchYacht={(l) => (preview ? previewRow(l.id) : switchToYacht(l))}
+                    onBoatChange={(id) => { if (!preview) { try { window.localStorage.setItem(BOAT_KEY, id); } catch { /* private mode */ } } }} />
       )}
       {stage === "ready" && link && (
         <PreviewContext.Provider value={preview}>
           <PortalShell key={link.id} link={link} email={userEmail} onSignOut={signOut} preview={preview}
-                       vessels={preview ? [] : vessels} onSwitchVessel={(l) => setLink(l)} offlineSince={offlineSince} />
+                       vessels={vessels}
+                       onSwitchVessel={(l) => (preview ? previewRow(l.id) : setLink(l))}
+                       onSwitchBoat={(b) => (preview ? previewRow(b.id) : switchToBoat(b))}
+                       offlineSince={offlineSince} />
         </PreviewContext.Provider>
       )}
       {appUpdate.ready && <UpdateReady onApply={appUpdate.apply} />}
@@ -779,9 +829,9 @@ type ChatMessage = {
   id: string; sender_name: string | null; sender_role: "staff" | "portal"; body: string; created_at: string;
 };
 
-function PortalShell({ link, email, onSignOut, preview = false, vessels = [], onSwitchVessel, offlineSince = null }: {
+function PortalShell({ link, email, onSignOut, preview = false, vessels = [], onSwitchVessel, onSwitchBoat, offlineSince = null }: {
   link: CaptainLink; email: string; onSignOut: () => void; preview?: boolean;
-  vessels?: VesselChoice[]; onSwitchVessel?: (l: CaptainLink) => void;
+  vessels?: VesselChoice[]; onSwitchVessel?: (l: CaptainLink) => void; onSwitchBoat?: (b: BoatOwnerLink) => void;
   offlineSince?: string | null;
 }) {
   // A notification opens /portal?tab=chat (etc.); an unknown or hidden tab falls back to Home.
@@ -912,10 +962,25 @@ function PortalShell({ link, email, onSignOut, preview = false, vessels = [], on
           )}
           <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/70">{vessels.length > 1 ? "Your vessels" : "Your vessel"}</div>
           {vessels.length > 1 && onSwitchVessel ? (
-            <select aria-label="Switch vessel" value={link.yacht_id}
-                    onChange={(e) => { const v = vessels.find((x) => x.link.yacht_id === e.target.value); if (v) onSwitchVessel(v.link); }}
+            <select aria-label="Switch vessel" value={`y:${link.yacht_id}`}
+                    onChange={(e) => {
+                      const v = vessels.find((x) => (x.link ? `y:${x.link.yacht_id}` : `b:${x.boat?.id}`) === e.target.value);
+                      if (v?.link) onSwitchVessel(v.link);
+                      else if (v?.boat) onSwitchBoat?.(v.boat);
+                    }}
                     className="mt-1 w-full rounded-lg border border-border bg-background/60 px-2 py-1.5 text-sm font-bold outline-none focus:border-primary/50">
-              {vessels.map((v) => <option key={v.link.id} value={v.link.yacht_id}>{v.name}</option>)}
+              {vessels.some((v) => v.boat) ? (
+                <>
+                  <optgroup label="Yachts">
+                    {vessels.filter((v) => v.link).map((v) => <option key={v.link!.id} value={`y:${v.link!.yacht_id}`}>{v.name}</option>)}
+                  </optgroup>
+                  <optgroup label="Managed boats">
+                    {vessels.filter((v) => v.boat).map((v) => <option key={v.boat!.id} value={`b:${v.boat!.id}`}>{v.name}</option>)}
+                  </optgroup>
+                </>
+              ) : (
+                vessels.map((v) => <option key={v.link!.id} value={`y:${v.link!.yacht_id}`}>{v.name}</option>)
+              )}
             </select>
           ) : (
             <div className="mt-0.5 truncate text-sm font-bold">{yacht?.vessel_name ?? "…"}</div>

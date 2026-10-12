@@ -17,12 +17,12 @@ import {
   BoatAlertsCard, BoatCompliance, BoatDocuments, BoatJobs, BoatSafetyKit, boatAlerts, type BoatDetail,
 } from "@/components/portal/boat-sections";
 import {
-  NewRequestSheet, PortalChatTab, PreviewContext, RequestsTab, type ChatAccount, type PortalChat,
+  NewRequestSheet, PortalChatTab, PreviewContext, RequestsTab, type CaptainLink, type ChatAccount, type PortalChat,
 } from "@/components/portal/captain-portal";
 import { supabase } from "@/integrations/supabase/client";
 import { AppearanceButton } from "@/components/portal/portal-appearance";
 import {
-  AlertTriangle, ClipboardList, Eye, FileCheck2, Home, LayoutDashboard, LifeBuoy, Loader2, LogOut,
+  AlertTriangle, Anchor, ClipboardList, Eye, FileCheck2, Home, LayoutDashboard, LifeBuoy, Loader2, LogOut,
   Menu, MessageSquare, ShieldCheck, Ship, Wrench, X,
 } from "lucide-react";
 import { OwnerBoatView } from "@/components/portal/boat-owner-view";
@@ -61,16 +61,25 @@ const NAV: Array<{ key: BoatTab; label: string; icon: any }> = [
   { key: "chat", label: "Chat with JLS", icon: MessageSquare },
 ];
 
-export function BoatPortal({ displayName, email, previewAccountId, onSignOut }: {
+export function BoatPortal({
+  displayName, email, previewAccountId, onSignOut, initialBoatId = null, yachts = [], onSwitchYacht, onBoatChange,
+}: {
   displayName: string | null;
   email: string;
   /** Set when a staff admin is previewing this owner's portal read-only. */
   previewAccountId: string | null;
   onSignOut: () => void;
+  /** The boat to open on (picked in the yacht portal's vessel switcher). */
+  initialBoatId?: string | null;
+  /** The login's yachts too, when it has both — the picker offers them to switch back. */
+  yachts?: Array<{ link: CaptainLink; name: string }>;
+  onSwitchYacht?: (link: CaptainLink) => void;
+  /** A different boat was picked — remembered so the portal reopens on it. */
+  onBoatChange?: (boatId: string) => void;
 }) {
   const [boats, setBoats] = useState<PortalBoat[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [boatId, setBoatId] = useState<string | null>(null);
+  const [boatId, setBoatId] = useState<string | null>(initialBoatId);
   const [navOpen, setNavOpen] = useState(false);
   const [tab, setTab] = useState<BoatTab>("dashboard");
   const [detail, setDetail] = useState<BoatDetail | null>(null);
@@ -204,6 +213,22 @@ export function BoatPortal({ displayName, email, previewAccountId, onSignOut }: 
 
         {/* Boat picker — one card per boat on this login. */}
         <div className="mx-3 mb-3 rounded-xl border border-border/60 bg-background/40 p-2">
+          {yachts.length > 0 && onSwitchYacht && (
+            <>
+              <div className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/70">
+                {yachts.length > 1 ? "Your yachts" : "Your yacht"}
+              </div>
+              <div className="mb-2 space-y-0.5">
+                {yachts.map((y) => (
+                  <button key={y.link.id} onClick={() => onSwitchYacht(y.link)}
+                          className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm font-semibold text-foreground transition hover:bg-background/60">
+                    <Anchor className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">{y.name}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
           <div className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/70">
             {(boats?.length ?? 0) > 1 ? "Your boats" : "Your boat"}
           </div>
@@ -214,7 +239,7 @@ export function BoatPortal({ displayName, email, previewAccountId, onSignOut }: 
           ) : (
             <div className="space-y-0.5">
               {boats.map((b) => (
-                <button key={b.id} onClick={() => { setBoatId(b.id); setNavOpen(false); }}
+                <button key={b.id} onClick={() => { setBoatId(b.id); onBoatChange?.(b.id); setNavOpen(false); }}
                         className={cn(
                           "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm font-semibold transition",
                           b.id === boatId ? "bg-primary/15 text-primary" : "text-foreground hover:bg-background/60",
