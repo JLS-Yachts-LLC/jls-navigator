@@ -265,7 +265,7 @@ export function BoatPortal({ displayName, email, previewAccountId, onSignOut }: 
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-5xl flex-1 px-4 pb-16 pt-5 sm:px-8 sm:pb-10">
+        <main className={cn("mx-auto w-full flex-1 px-4 pb-16 pt-5 sm:px-8 sm:pb-10", tab === "dashboard" ? "max-w-[1600px]" : "max-w-5xl")}>
           {boats === null ? (
             <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
           ) : error ? (

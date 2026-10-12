@@ -984,7 +984,7 @@ function PortalShell({ link, email, onSignOut, preview = false, vessels = [], on
 
         {/* Content */}
         {/* The task board (five columns) and the inventory grid (a spreadsheet) get the screen's width, not the reading column's. */}
-        <main className={cn("mx-auto w-full flex-1 px-4 pb-28 pt-5 sm:px-8 sm:pb-10", tab === "tasks" || tab === "inventory" ? "max-w-[1600px]" : "max-w-5xl")}>
+        <main className={cn("mx-auto w-full flex-1 px-4 pb-28 pt-5 sm:px-8 sm:pb-10", tab === "tasks" || tab === "inventory" || tab === "orbit2" ? "max-w-[1600px]" : "max-w-5xl")}>
         <OfflineBanner online={online && !offlineSince} savedAt={offlineSince} />
         {tab === "home" && unread > 0 && (
           <button onClick={() => setTab("chat")}
