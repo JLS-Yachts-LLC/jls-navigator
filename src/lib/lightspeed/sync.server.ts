@@ -37,11 +37,20 @@ export type LsConfig = {
   realm: string
 }
 
+// Lightspeed can fire hundreds of webhooks a minute (a bulk product edit did on
+// 2026-10-12 and took the database down), so the settings and per-flow toggles
+// are remembered for a minute per worker instead of read on every hit.
+const CACHE_MS = 60_000
+let cfgCache: { at: number; cfg: LsConfig } | null = null
+const toggleCache = new Map<string, { at: number; enabled: boolean }>()
+
 export async function lsConfig(): Promise<LsConfig> {
+  if (cfgCache && Date.now() - cfgCache.at < CACHE_MS) return cfgCache.cfg
   const sb = admin() as any
-  const { data } = await sb.from('integration_settings').select('enabled, config').eq('integration_name', 'lightspeed').maybeSingle()
+  const { data, error } = await sb.from('integration_settings').select('enabled, config').eq('integration_name', 'lightspeed').maybeSingle()
+  if (error && cfgCache) return cfgCache.cfg // database busy: keep using the last good settings
   const c = data?.config ?? {}
-  return {
+  const cfg: LsConfig = {
     enabled: !!data?.enabled,
     apiToken: String(c.api_token ?? ''),
     domainPrefix: String(c.domain_prefix ?? 'superyachtme'),
@@ -49,17 +58,30 @@ export async function lsConfig(): Promise<LsConfig> {
     webhookKey: String(c.webhook_key ?? ''),
     realm: String(c.qbo_realm ?? LS_RETAIL_REALM_DEFAULT),
   }
+  if (!error) cfgCache = { at: Date.now(), cfg }
+  return cfg
 }
 
-/** Lazily-seeded per-flow toggle (default OFF). */
-async function flowEnabled(key: string, name: string, description: string): Promise<boolean> {
+/**
+ * Lazily-seeded per-flow toggle (default OFF). Returns null when the database
+ * can't be read and nothing is cached — the caller then asks Lightspeed to retry
+ * later rather than dropping the event or seeding a duplicate row.
+ */
+async function flowEnabled(key: string, name: string, description: string): Promise<boolean | null> {
+  const hit = toggleCache.get(key)
+  if (hit && Date.now() - hit.at < CACHE_MS) return hit.enabled
   const sb = admin() as any
-  const { data } = await sb.from('automations').select('enabled').eq('key', key).maybeSingle()
+  const { data, error } = await sb.from('automations').select('enabled').eq('key', key).maybeSingle()
+  if (error) return hit ? hit.enabled : null
   if (!data) {
-    await sb.from('automations').insert({ key, name, description, category: 'Lightspeed', department: 'Lightspeed', source: 'worker', trigger_type: 'webhook', enabled: false })
-    return false
+    await sb.from('automations').upsert(
+      { key, name, description, category: 'Lightspeed', department: 'Lightspeed', source: 'worker', trigger_type: 'webhook', enabled: false },
+      { onConflict: 'key', ignoreDuplicates: true },
+    )
   }
-  return !!data.enabled
+  const enabled = !!data?.enabled
+  toggleCache.set(key, { at: Date.now(), enabled })
+  return enabled
 }
 
 const esc = (s: string) => String(s ?? '').replace(/'/g, "\\'")
@@ -415,9 +437,10 @@ export async function handleLightspeedWebhook(kind: LsKind, body: URLSearchParam
   }
 
   const flow = FLOWS[flowKind]
-  await logAutomationRun({ key: flow.key, name: flow.name, source: 'worker', trigger_type: 'webhook', category: 'Lightspeed', status: 'hit' })
-
+  // A switched-off flow answers straight away with nothing written — no per-hit
+  // run log, so a Lightspeed burst can't pile onto the database (2026-10-12).
   const enabled = await flowEnabled(flow.key, flow.name, flow.description)
+  if (enabled === null) return { status: 503, result: 'database busy — retry later' }
   if (!enabled) return { status: 200, result: 'disabled (toggle in Automations)' }
 
   try {
