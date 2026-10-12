@@ -56,6 +56,13 @@
     "CLIENT_EMAIL_ENABLED": "true",   // restored 1 Sep 2026 — client/vessel addresses allowed again
     "PERMIT_EXPIRY_ALERTS_ENABLED": "true",  // ON since 7 Oct 2026 (SD-0047) — staff reminders only, never clients
 
+    // ── Lightspeed webhook emergency brake ─────────────────────────────────────
+    // Comma list of webhook kinds (customer, product, sale, credit, invoice, or "all")
+    // answered 200 straight away without syncing or touching the database.
+    // "product" since 12 Oct 2026: a Lightspeed bulk product change sent ~2,500
+    // product webhooks a minute and took the database down. Empty = nothing paused.
+    "LIGHTSPEED_WEBHOOKS_PAUSED": "product",
+
     // ── Outbound SharePoint push — FULLY ENABLED (two-way sync intact) ────────
     // Empty = nothing suppressed. Briefly set to "permits" on 2026-08-15, when a
     // Power Automate flow on that list emailed client vessels each time Polaris

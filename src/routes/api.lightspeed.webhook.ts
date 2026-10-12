@@ -18,6 +18,14 @@ export async function lightspeedWebhookHandler(request: Request): Promise<Respon
   const kind = url.pathname.split('/').pop() ?? ''
   if (!KINDS.has(kind)) return new Response('Unknown webhook', { status: 404 })
 
+  // Emergency brake (wrangler.jsonc LIGHTSPEED_WEBHOOKS_PAUSED, e.g. "product"):
+  // answer 200 before touching the database so Lightspeed stops retrying. Paused
+  // events are not synced — re-save the items in Lightspeed once it's lifted.
+  const paused = (process.env.LIGHTSPEED_WEBHOOKS_PAUSED ?? '').split(',').map((s) => s.trim().toLowerCase())
+  if (paused.includes(kind) || paused.includes('all')) {
+    return new Response(JSON.stringify({ ok: true, result: 'paused' }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }
+
   const cfg = await lsConfig()
   if (cfg.webhookKey && url.searchParams.get('key') !== cfg.webhookKey) {
     return new Response('Forbidden', { status: 403 })
