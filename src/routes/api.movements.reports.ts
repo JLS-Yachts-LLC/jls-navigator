@@ -17,6 +17,7 @@ import { createClient } from '@supabase/supabase-js'
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 import { requireAccess } from '@/lib/auth/requireAccess.server'
 import { sendEmail } from '@/lib/ses.server'
+import { fetchAllRows } from '@/lib/fetch-all'
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -198,22 +199,56 @@ export async function movementReportsHandler(request: Request): Promise<Response
 
 /**
  * Weekly immigration digest — runs Monday 07:00 GST (cron). Emails the ops/visa
- * team a summary of this week's planned sign-ons and sign-offs, with links to the
- * full reports (SES Simple content can't attach files, so we link them).
+ * team LAST week's actual sign-ons and sign-offs plus whatever is already booked
+ * for this week, with the reports attached as PDFs.
+ *
+ * It used to cover only "this week" — but the team logs each movement on the day
+ * it happens, so at 07:00 on a Monday nothing for the week had been entered yet
+ * and every digest said "0 sign-ons · 0 sign-offs", while the previous week's
+ * real movements were never reported at all. Its "Full reports" links also went
+ * straight to the API, which needs a Polaris session token a mail client never
+ * sends, so they only ever answered "Unauthorized". The reports now travel as
+ * attachments and the link goes to the Sign On/Off page instead.
  */
+const b64 = (bytes: Uint8Array) => {
+  let s = ''
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  return btoa(s)
+}
+const esc = (v: unknown) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string)
+
 export async function runWeeklyImmigrationReports(
   configured?: string[],
 ): Promise<{ signOn: number; signOff: number; sent: number }> {
   const sb = admin()
   const monday = mondayOf(null)
   const sunday = addDaysStr(monday, 6)
+  const lastMonday = addDaysStr(monday, -7)
+  const lastSunday = addDaysStr(monday, -1)
 
-  const { data } = await sb.from('crew_signon_events').select(SELECT)
-    .gte('event_date', monday).lte('event_date', sunday)
-    .order('event_date', { ascending: true })
-  const rows = (data ?? []) as any[]
-  const on = rows.filter((a) => a.event_type !== 'sign_off')
-  const off = rows.filter((a) => a.event_type === 'sign_off')
+  // A failed read must fail the run (visible on the Automations page) rather than
+  // mail out a confident "0 sign-ons · 0 sign-offs".
+  const [weeksRes, allRes] = await Promise.all([
+    sb.from('crew_signon_events').select(SELECT)
+      .gte('event_date', lastMonday).lte('event_date', sunday)
+      .order('event_date', { ascending: true }),
+    fetchAllRows(() => sb.from('crew_signon_events').select(SELECT)
+      .order('event_date', { ascending: false }).order('created_at', { ascending: false }).order('id')),
+  ])
+  if (weeksRes.error) throw new Error(`crew_signon_events read failed: ${weeksRes.error.message}`)
+  if (allRes.error) throw new Error(`crew_signon_events read failed: ${allRes.error.message}`)
+  const rows = (weeksRes.data ?? []) as any[]
+  const isOff = (a: any) => a.event_type === 'sign_off'
+  const past = rows.filter((a) => a.event_date <= lastSunday)
+  const next = rows.filter((a) => a.event_date >= monday)
+  const pastOn = past.filter((a) => !isOff(a)), pastOff = past.filter(isOff)
+  const nextOn = next.filter((a) => !isOff(a)), nextOff = next.filter(isOff)
+
+  // Crew currently onboard = each crew member's latest movement is a sign-on.
+  const latest = new Map<string, any>()
+  for (const a of (allRes.data ?? []) as any[]) if (!latest.has(a.crew_member_id)) latest.set(a.crew_member_id, a)
+  const onboard = [...latest.values()].filter((a) => !isOff(a))
+    .sort((a, b) => vs(a).localeCompare(vs(b)) || nm(a).localeCompare(nm(b)))
 
   // Recipients come from the automation's config (Developer → Automations).
   //
@@ -240,32 +275,62 @@ export async function runWeeklyImmigrationReports(
         .map((p: any) => p.email as string),
     )]
   }
-  if (recipients.length === 0) return { signOn: on.length, signOff: off.length, sent: 0 }
+  if (recipients.length === 0) return { signOn: pastOn.length, signOff: pastOff.length, sent: 0 }
 
+  // ── attachments ────────────────────────────────────────────────────────────
+  const movementRow = (a: any) => [d(a.event_date), isOff(a) ? 'Sign Off' : 'Sign On', nm(a), vs(a), flt(a), route(a), a.port ?? '—', pick(a), a.status ?? '—']
+  const movementHead = ['Date', 'Type', 'Crew', 'Vessel', 'Flight', 'Route', 'Port', 'Pickup', 'Status']
+  const movementW = [2, 1.6, 3, 2.6, 2, 2.2, 2, 1.8, 1.6]
+  const [pastPdf, onboardPdf] = await Promise.all([
+    buildReportPdf(`Crew Movements — w/c ${d(lastMonday)}`, movementHead, past.map(movementRow), movementW),
+    buildReportPdf('Crew Currently Onboard', ['Crew', 'Rank', 'Vessel', 'Signed on', 'Nationality'],
+      onboard.map((a) => [nm(a), a.crew_members?.rank ?? '—', vs(a), d(a.event_date), a.crew_members?.nationality ?? '—']), [3, 2, 3, 2, 2]),
+  ])
+  const attachments = [
+    { filename: `Crew movements - w-c ${lastMonday}.pdf`, contentBase64: b64(pastPdf), contentType: 'application/pdf' },
+    { filename: `Crew onboard - ${monday}.pdf`, contentBase64: b64(onboardPdf), contentType: 'application/pdf' },
+  ]
+  if (next.length) {
+    const nextPdf = await buildReportPdf(`Crew Movements booked — w/c ${d(monday)}`, movementHead, next.map(movementRow), movementW)
+    attachments.push({ filename: `Crew movements booked - w-c ${monday}.pdf`, contentBase64: b64(nextPdf), contentType: 'application/pdf' })
+  }
+
+  // ── body ───────────────────────────────────────────────────────────────────
   const base = process.env.VITE_APP_URL ?? 'https://polaris.jlsyachts.com'
-  const list = (arr: any[]) => arr.length
-    ? `<ul style="margin:4px 0 0;padding-left:18px">${arr.map((a) => `<li>${nm(a)} — ${vs(a)} (${d(a.event_date)})</li>`).join('')}</ul>`
-    : '<p style="margin:4px 0 0;color:#6b7280">None scheduled.</p>'
+  const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
+  const list = (arr: any[], none: string) => arr.length
+    ? `<ul style="margin:4px 0 0;padding-left:18px">${arr.map((a) => `<li>${esc(nm(a))} — ${esc(vs(a))} (${d(a.event_date)})</li>`).join('')}</ul>`
+    : `<p style="margin:4px 0 0;color:#6b7280">${none}</p>`
+  const textList = (arr: any[]) => arr.map((a) => `- ${nm(a)} (${vs(a)}, ${d(a.event_date)})`).join('\n') || '  none'
 
   const html = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#1f2937">
     <h2 style="margin:0 0 4px">Weekly Immigration — w/c ${d(monday)}</h2>
-    <p style="margin:0 0 14px;color:#4b5563">${on.length} sign-on${on.length === 1 ? '' : 's'} · ${off.length} sign-off${off.length === 1 ? '' : 's'} scheduled this week.</p>
-    <h3 style="margin:0 0 2px;font-size:14px">Sign-ons</h3>${list(on)}
-    <h3 style="margin:14px 0 2px;font-size:14px">Sign-offs</h3>${list(off)}
-    <p style="margin:18px 0 0;font-size:12px">Full reports:
-      <a href="${base}/api/reports/weekly-sign-on?format=pdf">Sign-on PDF</a> ·
-      <a href="${base}/api/reports/weekly-sign-off?format=pdf">Sign-off PDF</a> ·
-      <a href="${base}/api/reports/crew-onboard?format=pdf">Crew onboard</a>
-    </p>
-  </div>`
-  const text = `Weekly Immigration — w/c ${d(monday)}\n${on.length} sign-ons, ${off.length} sign-offs scheduled.\n`
-    + `Sign-ons:\n${on.map((a) => `- ${nm(a)} (${vs(a)}, ${d(a.event_date)})`).join('\n') || '  none'}\n`
-    + `Sign-offs:\n${off.map((a) => `- ${nm(a)} (${vs(a)}, ${d(a.event_date)})`).join('\n') || '  none'}`
+    <p style="margin:0 0 16px;color:#4b5563">${plural(onboard.length, 'crew member')} currently onboard.</p>
 
-  try {
-    await sendEmail({ to: recipients, subject: `Weekly Immigration — w/c ${d(monday)} (${on.length} on / ${off.length} off)`, html, text })
-  } catch {
-    return { signOn: on.length, signOff: off.length, sent: 0 }
-  }
-  return { signOn: on.length, signOff: off.length, sent: recipients.length }
+    <h3 style="margin:0 0 2px;font-size:15px">Last week (w/c ${d(lastMonday)}) — ${plural(pastOn.length, 'sign-on')} · ${plural(pastOff.length, 'sign-off')}</h3>
+    <h4 style="margin:8px 0 2px;font-size:13px">Sign-ons</h4>${list(pastOn, 'None.')}
+    <h4 style="margin:10px 0 2px;font-size:13px">Sign-offs</h4>${list(pastOff, 'None.')}
+
+    <h3 style="margin:20px 0 2px;font-size:15px">This week — booked so far: ${plural(nextOn.length, 'sign-on')} · ${plural(nextOff.length, 'sign-off')}</h3>
+    <h4 style="margin:8px 0 2px;font-size:13px">Sign-ons</h4>${list(nextOn, 'None booked yet.')}
+    <h4 style="margin:10px 0 2px;font-size:13px">Sign-offs</h4>${list(nextOff, 'None booked yet.')}
+
+    <p style="margin:20px 0 0;font-size:12px;color:#4b5563">The full reports are attached as PDFs.
+      Live view: <a href="${base}/crew-immigration/sign-on-off">Sign On / Off in Polaris</a></p>
+  </div>`
+  const text = `Weekly Immigration — w/c ${d(monday)}\n${plural(onboard.length, 'crew member')} currently onboard.\n\n`
+    + `LAST WEEK (w/c ${d(lastMonday)}) — ${plural(pastOn.length, 'sign-on')}, ${plural(pastOff.length, 'sign-off')}\n`
+    + `Sign-ons:\n${textList(pastOn)}\nSign-offs:\n${textList(pastOff)}\n\n`
+    + `THIS WEEK — booked so far: ${plural(nextOn.length, 'sign-on')}, ${plural(nextOff.length, 'sign-off')}\n`
+    + `Sign-ons:\n${textList(nextOn)}\nSign-offs:\n${textList(nextOff)}\n\n`
+    + `Full reports attached. Live view: ${base}/crew-immigration/sign-on-off`
+
+  // A send failure now throws too, so the run is recorded as failed instead of
+  // "succeeded, sent 0".
+  await sendEmail({
+    to: recipients,
+    subject: `Weekly Immigration — w/c ${d(monday)} (last week: ${pastOn.length} on / ${pastOff.length} off)`,
+    html, text, attachments,
+  })
+  return { signOn: pastOn.length, signOff: pastOff.length, sent: recipients.length }
 }
