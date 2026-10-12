@@ -72,8 +72,13 @@ const EMBED_SCREENS: Record<string, React.ComponentType> = {
 export const Route = createFileRoute("/_app/polaris-redesign")({
   component: PolarisRedesignApp,
   // ?screen=<key> deep-opens a specific screen (used by the shared route chrome).
-  validateSearch: (search: Record<string, unknown>): { screen?: string } =>
-    typeof search.screen === "string" ? { screen: search.screen } : {},
+  // `boat` / `view` deep-open an Orbit 2 managed boat (e.g. a service-due alert:
+  // ?screen=orbit2&boat=<id>&view=services).
+  validateSearch: (search: Record<string, unknown>): { screen?: string; boat?: string; view?: string } => ({
+    ...(typeof search.screen === "string" ? { screen: search.screen } : {}),
+    ...(typeof search.boat === "string" ? { boat: search.boat } : {}),
+    ...(typeof search.view === "string" ? { view: search.view } : {}),
+  }),
   head: () => ({ meta: [{ title: "Polaris" }] }),
 });
 

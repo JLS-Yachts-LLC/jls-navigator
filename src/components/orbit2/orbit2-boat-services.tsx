@@ -289,6 +289,7 @@ function ServiceEditor({ boat, existing, existingFiles, suggestions, onClose, re
           </div>
           <p className="text-[14px] text-muted-foreground">
             Fill in the dates, the running hours, or both — whichever comes first is flagged: red when overdue, amber within {DUE_SOON_DAYS} days or {DUE_SOON_HOURS} hours.
+            The Orbit 2 admins get an alert {DUE_SOON_DAYS} and 7 days before, on the day, and within {DUE_SOON_HOURS} running hours.
           </p>
           <Field label="Notes">
             <textarea className={cn(inputCls, "min-h-[60px] resize-y")} value={form.notes} onChange={(e) => set("notes", e.target.value)} />

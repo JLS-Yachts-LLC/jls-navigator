@@ -11,7 +11,8 @@
  * in Bunkering shows on the dashboard the moment it is saved without either
  * screen knowing the other exists.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouterState } from "@tanstack/react-router";
 import { LayoutDashboard, FolderKanban, Ship } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useOrbit2, suggestionsFor } from "./orbit2-data";
@@ -37,6 +38,12 @@ const SUBS: { key: Sub; label: string }[] = [
 
 export function Orbit2Hub() {
   const [tab, setTab] = useState<Tab>("dashboard");
+  // A link to one managed boat (?boat=<id>, optionally &view=services — the
+  // service-due alerts use it) opens Managed Boats on that boat.
+  const link = useRouterState({ select: (s) => s.location.search as { boat?: unknown; view?: unknown } });
+  const linkBoat = typeof link?.boat === "string" ? link.boat : null;
+  const linkView = typeof link?.view === "string" ? link.view : null;
+  useEffect(() => { if (linkBoat) setTab("boats"); }, [linkBoat]);
   const [sub, setSub] = useState<Sub>("list");
   const [prefill, setPrefill] = useState<Orbit2Prefill | null>(null);
 
@@ -96,6 +103,7 @@ export function Orbit2Hub() {
           <Orbit2Boats
             boats={boats} boatTasks={boatTasks} boatDocuments={boatDocuments} boatInventory={boatInventory}
             loading={loading} reload={reload}
+            focusBoatId={linkBoat} focusServices={linkView === "services"}
           />
         ) : sub === "noc" ? (
           <Orbit2Noc

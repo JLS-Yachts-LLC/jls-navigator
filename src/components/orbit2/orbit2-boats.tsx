@@ -51,7 +51,7 @@ type OpenCounts = { maintenance: number; defect: number; booked: number };
 const noOpen = (): OpenCounts => ({ maintenance: 0, defect: 0, booked: 0 });
 
 export function Orbit2Boats({
-  boats, boatTasks, boatDocuments, boatInventory, loading, reload,
+  boats, boatTasks, boatDocuments, boatInventory, loading, reload, focusBoatId = null, focusServices = false,
 }: {
   boats: Orbit2Boat[];
   boatTasks: Orbit2BoatTask[];
@@ -59,8 +59,13 @@ export function Orbit2Boats({
   boatInventory: Orbit2BoatInventoryItem[];
   loading: boolean;
   reload: () => Promise<void> | void;
+  /** Open this boat (a link such as a service-due alert)… */
+  focusBoatId?: string | null;
+  /** …on its Maintenance Schedule → Service Calendar. */
+  focusServices?: boolean;
 }) {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(focusBoatId);
+  useEffect(() => { if (focusBoatId) setSelectedId(focusBoatId); }, [focusBoatId]);
   const [filter, setFilter] = useState<Filter>("all");
   const { isAdmin } = useOrbit2Identity();
   const [adding, setAdding] = useState(false);
@@ -168,7 +173,9 @@ export function Orbit2Boats({
 
       {selected ? (
         <Orbit2BoatDetail
+          key={`${selected.id}:${focusServices && selected.id === focusBoatId}`}
           boat={selected}
+          initialSection={focusServices && selected.id === focusBoatId ? "services" : undefined}
           tasks={boatTasks.filter((t) => t.boat_id === selected.id)}
           documents={boatDocuments.filter((d) => d.boat_id === selected.id)}
           inventory={boatInventory.filter((i) => i.boat_id === selected.id)}

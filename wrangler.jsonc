@@ -55,6 +55,9 @@
     "EMAIL_ENABLED": "true",  // MASTER SWITCH — restored 26 Aug 2026
     "CLIENT_EMAIL_ENABLED": "true",   // restored 1 Sep 2026 — client/vessel addresses allowed again
     "PERMIT_EXPIRY_ALERTS_ENABLED": "true",  // ON since 7 Oct 2026 (SD-0047) — staff reminders only, never clients
+    // Managed Boats service-due emails to the Orbit 2 admins (daily 08:00 UTC,
+    // src/lib/orbit2-service-alerts.server.ts). Staff only — never owners. The bell alerts run either way.
+    "ORBIT2_SERVICE_ALERTS_ENABLED": "true",  // ON since 12 Oct 2026 (client request)
 
     // ── Lightspeed webhook emergency brake ─────────────────────────────────────
     // Comma list of webhook kinds (customer, product, sale, credit, invoice, or "all")

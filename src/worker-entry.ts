@@ -1815,6 +1815,15 @@ export default {
           .then(({ sent, skipped }) => console.log(`[expiry-alerts] emails=${sent} skipped=${skipped}`))
           .catch((e) => console.error('[expiry-alerts] error:', e))
       )
+      // Managed Boats service-due alerts — 30 / 7 days and on the day, and within
+      // 25 engine hours, to the Orbit 2 admins (bell + one email). Claimed before
+      // sending, so the hour's other runs send nothing. Emails need ORBIT2_SERVICE_ALERTS_ENABLED.
+      ctx.waitUntil(
+        import('./lib/orbit2-service-alerts.server')
+          .then((m) => m.runServiceDueAlerts())
+          .then((r) => console.log(`[orbit2-service-alerts] ${JSON.stringify(r)}`))
+          .catch((e) => console.error('[orbit2-service-alerts] error:', e))
+      )
     }
   },
 }

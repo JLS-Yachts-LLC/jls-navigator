@@ -44,7 +44,7 @@ const SUPPLEMENTARY_DOC_CATEGORIES: Orbit2BoatDocCategory[] = [
 ];
 
 export function Orbit2BoatDetail({
-  boat, tasks, documents, inventory, onBack, reload,
+  boat, tasks, documents, inventory, onBack, reload, initialSection,
 }: {
   boat: Orbit2Boat;
   tasks: Orbit2BoatTask[];
@@ -52,10 +52,12 @@ export function Orbit2BoatDetail({
   inventory: Orbit2BoatInventoryItem[];
   onBack: () => void;
   reload: () => Promise<void> | void;
+  /** "services" opens on Maintenance Schedule → Service Calendar (a service-due alert's link). */
+  initialSection?: "services";
 }) {
   const { user } = useAuth();
   const identity = useOrbit2Identity();
-  const [section, setSection] = useState<"jobs" | "inventory" | "expenses" | "maintenance">("jobs");
+  const [section, setSection] = useState<"jobs" | "inventory" | "expenses" | "maintenance">(initialSection === "services" ? "maintenance" : "jobs");
   /** "Assign Team" pressed on one of the inspection checklists — raise a job for it. */
   const [checklistJob, setChecklistJob] = useState<InspectionRegime | null>(null);
   /** …or on one of the boat's additional (library) checklists. */
@@ -229,7 +231,7 @@ export function Orbit2BoatDetail({
         {section === "jobs" ? <JobsBoard boat={boat} tasks={tasks} reload={reload} />
           : section === "inventory" ? <InventoryBoard boat={boat} inventory={inventory} reload={reload} />
           : section === "expenses" ? <BoatExpensesBoard boat={boat} tasks={tasks} />
-          : <MaintenanceScheduleBoard boat={boat} tasks={tasks} inventory={inventory} reload={reload} />}
+          : <MaintenanceScheduleBoard boat={boat} tasks={tasks} inventory={inventory} reload={reload} startOnCalendar={initialSection === "services"} />}
       </div>
       </div>
     </div>
@@ -400,10 +402,11 @@ const jobDate = (t: Orbit2BoatTask) => t.schedule_date ?? t.updated_at?.slice(0,
  *                     hours (orbit2-boat-services.tsx).
  * A History row opens the job itself, with its service report, certificate and photos.
  */
-function MaintenanceScheduleBoard({ boat, tasks, inventory, reload }: {
+function MaintenanceScheduleBoard({ boat, tasks, inventory, reload, startOnCalendar = false }: {
   boat: Orbit2Boat; tasks: Orbit2BoatTask[]; inventory: Orbit2BoatInventoryItem[]; reload: () => Promise<void> | void;
+  startOnCalendar?: boolean;
 }) {
-  const [view, setView] = useState<"history" | "calendar">("history");
+  const [view, setView] = useState<"history" | "calendar">(startOnCalendar ? "calendar" : "history");
   const [query, setQuery] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
   const [addingService, setAddingService] = useState(false);
