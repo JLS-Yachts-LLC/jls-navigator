@@ -9,6 +9,18 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-10-12",
     "entries": [
       {
+        "type": "feature",
+        "title": "Client Portal Fleet — a login with more than one vessel gets a Fleet button in place of \"Your vessel\", opening a page of tiles (photo, name, Yacht or Managed boat, berth or boat type) for every yacht and boat on the login; a tile opens that vessel's portal, the one on screen is marked \"Open now\", and admin Preview shows the same Fleet"
+      },
+      {
+        "type": "fix",
+        "title": "The Monday Weekly Immigration email now reports last week's sign-ons and sign-offs, this week's bookings and crew onboard, with the reports attached as PDFs, instead of always showing 0 and linking to reports that answered \"Unauthorized\""
+      },
+      {
+        "type": "fix",
+        "title": "Client Portal logins linked to both a yacht and a managed boat can switch between them — the \"Your vessels\" switcher lists Managed boats alongside Yachts (e.g. Aquila and Southern Explorer), the boat portal offers the yachts back, the portal reopens on the vessel used last, and admin Preview shows the same switcher"
+      },
+      {
         "type": "fix",
         "title": "The Client Portal's Orbit 2 dashboard uses the full page width, so every column (Technician, Status…) shows without scrolling sideways"
       },
