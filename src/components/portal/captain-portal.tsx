@@ -755,11 +755,11 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ];
 /**
- * Orbit 2 — the managed boats this login also owns (client request, 12 Oct
- * 2026). Not a vessel module: it appears, between Agency with JLS and On board,
- * only when the login has boats linked (captain_accounts.boat_id).
+ * Orbit 2 — the vessel's managed boats (client request, 12 Oct 2026). Not a
+ * vessel module: it appears at the top of On board only when the vessel (or the
+ * login) has Orbit 2 boats; see navGroups in PortalShell.
  */
-const ORBIT2_GROUP: NavGroup = { title: "Orbit 2", module: "core", items: [{ key: "orbit2", label: "Managed boats", icon: BoatIcon }] };
+const ORBIT2_GROUP: NavGroup = { title: "Orbit 2", module: "management", items: [{ key: "orbit2", label: "Orbit 2", icon: BoatIcon }] };
 const ALL_NAV_ITEMS: NavItem[] = [...NAV_GROUPS, ORBIT2_GROUP].flatMap((g) => g.items);
 
 // What this person sees: the vessel's modules (lib/portal/portal-modules) narrowed
@@ -851,11 +851,16 @@ function PortalShell({ link, email, onSignOut, preview = false, vessels = [], on
     return () => { alive = false; };
   }, [link.id]);
 
-  // Sections this person may see: the vessel's modules, narrowed by position,
-  // with Orbit 2 after Agency with JLS when the login owns boats.
+  // Sections this person may see: the vessel's modules, narrowed by position.
+  // Orbit 2 (when the vessel has managed boats) heads the On board list; a
+  // vessel without On board gets it as its own heading after Agency with JLS.
   const navGroups = useMemo(() => {
     const groups = navGroupsFor(link.position, modules);
     if (!ownedBoats.length) return groups;
+    const onBoard = groups.findIndex((g) => g.module === "management");
+    if (onBoard >= 0) {
+      return groups.map((g, i) => (i === onBoard ? { ...g, items: [...ORBIT2_GROUP.items, ...g.items] } : g));
+    }
     const at = groups.findIndex((g) => g.module === "core");
     return [...groups.slice(0, at + 1), ORBIT2_GROUP, ...groups.slice(at + 1)];
   }, [link.position, modules, ownedBoats.length]);
