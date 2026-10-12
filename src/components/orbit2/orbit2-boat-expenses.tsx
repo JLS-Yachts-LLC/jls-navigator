@@ -26,6 +26,8 @@ const sb = supabase as any;
 export const BOAT_EXPENSE_CATEGORIES = ["Engine Room", "Interior", "Exterior", "Bridge"] as const;
 export type BoatExpenseCategory = (typeof BOAT_EXPENSE_CATEGORIES)[number];
 const CURRENCIES = ["AED", "USD", "EUR", "GBP"] as const;
+/** The client's column order (12 Oct 2026 design); the last is the edit / delete buttons. */
+const EXPENSE_COLUMNS = ["Category", "Part Type", "Date", "Cost", "Details", "Document", "Job Ref", ""];
 
 export type Orbit2BoatExpense = {
   id: string;
@@ -153,24 +155,28 @@ export function BoatExpensesBoard({ boat, tasks }: { boat: Orbit2Boat; tasks: Or
         })}
       </div>
 
-      {loading ? (
-        <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
-      ) : shown.length === 0 ? (
-        <p className="px-4 py-8 text-center text-[15px] text-muted-foreground">
-          {expenses.length ? "No expenses match." : "No expenses logged yet."}
-        </p>
-      ) : (
-        <div className="overflow-x-auto">
+      {/* The column headings always show, as in the client's design — even
+          before the first expense is logged. */}
+      <div className="overflow-x-auto">
           <table className="w-full text-[14px]">
             <thead>
               <tr className="border-y border-border/60 bg-muted/10">
-                {["Category", "Part Type", "Date", "Cost", "Details", "Document", "Job Ref", ""].map((c) => (
+                {EXPENSE_COLUMNS.map((c) => (
                   <th key={c} className={cn("whitespace-nowrap px-3 py-2 text-left font-semibold text-muted-foreground", c === "Cost" && "text-right")}>{c}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-border/40">
-              {shown.map((e) => {
+              {(loading || shown.length === 0) && (
+                <tr>
+                  <td colSpan={EXPENSE_COLUMNS.length} className="px-4 py-8 text-center text-[15px] text-muted-foreground">
+                    {loading
+                      ? <Loader2 className="mx-auto h-5 w-5 animate-spin" />
+                      : expenses.length ? "No expenses match." : "No expenses logged yet — press Add to log the first one."}
+                  </td>
+                </tr>
+              )}
+              {!loading && shown.map((e) => {
                 const docs = filesFor(e.id);
                 return (
                   <tr key={e.id} className="hover:bg-muted/10">
@@ -209,8 +215,7 @@ export function BoatExpensesBoard({ boat, tasks }: { boat: Orbit2Boat; tasks: Or
               })}
             </tbody>
           </table>
-        </div>
-      )}
+      </div>
 
       {editor && (
         <ExpenseEditor boat={boat} tasks={tasks} existing={editor === "new" ? null : editor}
