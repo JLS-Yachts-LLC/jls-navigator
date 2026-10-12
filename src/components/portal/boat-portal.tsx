@@ -17,12 +17,13 @@ import {
   BoatAlertsCard, BoatCompliance, BoatDocuments, BoatJobs, BoatSafetyKit, boatAlerts, type BoatDetail,
 } from "@/components/portal/boat-sections";
 import {
-  NewRequestSheet, PortalChatTab, PreviewContext, RequestsTab, type CaptainLink, type ChatAccount, type PortalChat,
+  NewRequestSheet, PortalChatTab, PreviewContext, RequestsTab, type ChatAccount, type PortalChat,
 } from "@/components/portal/captain-portal";
+import { FleetButton } from "@/components/portal/fleet-view";
 import { supabase } from "@/integrations/supabase/client";
 import { AppearanceButton } from "@/components/portal/portal-appearance";
 import {
-  AlertTriangle, Anchor, ClipboardList, Eye, FileCheck2, Home, LayoutDashboard, LifeBuoy, Loader2, LogOut,
+  AlertTriangle, ClipboardList, Eye, FileCheck2, Home, LayoutDashboard, LifeBuoy, Loader2, LogOut,
   Menu, MessageSquare, ShieldCheck, Ship, Wrench, X,
 } from "lucide-react";
 import { OwnerBoatView } from "@/components/portal/boat-owner-view";
@@ -62,7 +63,7 @@ const NAV: Array<{ key: BoatTab; label: string; icon: any }> = [
 ];
 
 export function BoatPortal({
-  displayName, email, previewAccountId, onSignOut, initialBoatId = null, yachts = [], onSwitchYacht, onBoatChange,
+  displayName, email, previewAccountId, onSignOut, initialBoatId = null, fleetCount = 0, onOpenFleet, onBoatChange,
 }: {
   displayName: string | null;
   email: string;
@@ -71,9 +72,9 @@ export function BoatPortal({
   onSignOut: () => void;
   /** The boat to open on (picked in the yacht portal's vessel switcher). */
   initialBoatId?: string | null;
-  /** The login's yachts too, when it has both — the picker offers them to switch back. */
-  yachts?: Array<{ link: CaptainLink; name: string }>;
-  onSwitchYacht?: (link: CaptainLink) => void;
+  /** How many vessels (yachts and boats) the login has; over one, the sidebar shows the Fleet button. */
+  fleetCount?: number;
+  onOpenFleet?: () => void;
   /** A different boat was picked — remembered so the portal reopens on it. */
   onBoatChange?: (boatId: string) => void;
 }) {
@@ -213,22 +214,11 @@ export function BoatPortal({
 
         {/* Boat picker — one card per boat on this login. */}
         <div className="mx-3 mb-3 rounded-xl border border-border/60 bg-background/40 p-2">
-          {yachts.length > 0 && onSwitchYacht && (
-            <>
-              <div className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/70">
-                {yachts.length > 1 ? "Your yachts" : "Your yacht"}
-              </div>
-              <div className="mb-2 space-y-0.5">
-                {yachts.map((y) => (
-                  <button key={y.link.id} onClick={() => onSwitchYacht(y.link)}
-                          className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm font-semibold text-foreground transition hover:bg-background/60">
-                    <Anchor className="h-3.5 w-3.5 shrink-0" />
-                    <span className="truncate">{y.name}</span>
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
+          {fleetCount > 1 && onOpenFleet ? (
+            <div className="px-1">
+              <FleetButton count={fleetCount} current={boat?.name ?? "…"} onOpen={() => { setNavOpen(false); onOpenFleet(); }} />
+            </div>
+          ) : (<>
           <div className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/70">
             {(boats?.length ?? 0) > 1 ? "Your boats" : "Your boat"}
           </div>
@@ -250,6 +240,7 @@ export function BoatPortal({
               ))}
             </div>
           )}
+          </>)}
           <div className="truncate px-1 pt-1.5 text-[11px] text-muted-foreground">{displayName ?? email}</div>
         </div>
 

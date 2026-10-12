@@ -51,6 +51,7 @@ import { IsmSection } from "@/components/portal/sections/ism-section";
 import { canManageCrew, canManageMoney, canApproveRequisition, hiddenSections, canSeeFinance, canManageVessel } from "@/lib/portal/portal-positions";
 import { cn } from "@/lib/utils";
 import { BoatPortal, type PortalBoat } from "./boat-portal";
+import { FleetButton, FleetView, type FleetVessel } from "./fleet-view";
 import { OwnerBoatView } from "./boat-owner-view";
 import { Ship as BoatIcon } from "lucide-react";
 // /portal is a standalone route (no staff shell), so pull the design tokens in
@@ -252,6 +253,11 @@ export function CaptainPortal() {
   }, [setLink]);
   /** Back from a managed boat to one of the login's yachts. */
   const switchToYacht = useCallback((l: CaptainLink) => { setBoatOwner(null); setLink(l); }, [setLink]);
+  /** The Fleet page (logins with more than one vessel) — tiles of every vessel on the login. */
+  const [fleetOpen, setFleetOpen] = useState(false);
+  const fleet = useMemo<FleetVessel[]>(() => vessels.map((v) => (v.link
+    ? { key: `y:${v.link.yacht_id}`, name: v.name, kind: "yacht" as const, yachtId: v.link.yacht_id }
+    : { key: `b:${v.boat!.id}`, name: v.name, kind: "boat" as const, boatId: v.boat!.boat_id ?? undefined })), [vessels]);
   const [userEmail, setUserEmail] = useState<string>("");
   const [preview, setPreview] = useState(false);
   const [wrongHome, setWrongHome] = useState<string | null>(null);
@@ -393,6 +399,7 @@ export function CaptainPortal() {
     return () => { alive = false; };
   }, [stage, link?.yacht_id, preview, setTheme]);
   const look = themeClasses(theme);
+  const currentFleetKey = link ? `y:${link.yacht_id}` : boatOwner ? `b:${boatOwner.id}` : null;
   // The installed phone app: service worker + reload onto each new build.
   const appUpdate = usePortalAppUpdates();
 
@@ -424,20 +431,29 @@ export function CaptainPortal() {
       {stage === "wrong-address" && wrongHome && <WrongAddressScreen home={wrongHome} onSignOut={signOut} />}
       {stage === "mfa-enroll" && <MfaEnrollScreen onDone={bootstrap} onSignOut={signOut} />}
       {stage === "mfa-verify" && <MfaVerifyScreen onDone={bootstrap} onSignOut={signOut} />}
-      {stage === "ready" && !link && boatOwner && (
+      {stage === "ready" && fleetOpen && fleet.length > 1 && (
+        <FleetView vessels={fleet} currentKey={currentFleetKey} preview={preview} onSignOut={signOut}
+                   displayName={(link ?? boatOwner)?.display_name ?? userEmail}
+                   onBack={() => setFleetOpen(false)}
+                   onOpen={(f) => {
+                     setFleetOpen(false);
+                     if (f.key === currentFleetKey) return;
+                     const v = vessels.find((x) => (x.link ? `y:${x.link.yacht_id}` : `b:${x.boat?.id}`) === f.key);
+                     if (v?.link) { if (preview) previewRow(v.link.id); else switchToYacht(v.link); }
+                     else if (v?.boat) { if (preview) previewRow(v.boat.id); else switchToBoat(v.boat); }
+                   }} />
+      )}
+      {stage === "ready" && !fleetOpen && !link && boatOwner && (
         <BoatPortal key={boatOwner.id} displayName={boatOwner.display_name} email={userEmail}
                     previewAccountId={preview ? boatOwner.id : null} onSignOut={signOut}
                     initialBoatId={boatOwner.boat_id ?? null}
-                    yachts={vessels.flatMap((v) => (v.link ? [{ link: v.link, name: v.name }] : []))}
-                    onSwitchYacht={(l) => (preview ? previewRow(l.id) : switchToYacht(l))}
+                    fleetCount={fleet.length} onOpenFleet={() => setFleetOpen(true)}
                     onBoatChange={(id) => { if (!preview) { try { window.localStorage.setItem(BOAT_KEY, id); } catch { /* private mode */ } } }} />
       )}
-      {stage === "ready" && link && (
+      {stage === "ready" && !fleetOpen && link && (
         <PreviewContext.Provider value={preview}>
           <PortalShell key={link.id} link={link} email={userEmail} onSignOut={signOut} preview={preview}
-                       vessels={vessels}
-                       onSwitchVessel={(l) => (preview ? previewRow(l.id) : setLink(l))}
-                       onSwitchBoat={(b) => (preview ? previewRow(b.id) : switchToBoat(b))}
+                       fleetCount={fleet.length} onOpenFleet={() => setFleetOpen(true)}
                        offlineSince={offlineSince} />
         </PreviewContext.Provider>
       )}
@@ -829,9 +845,10 @@ type ChatMessage = {
   id: string; sender_name: string | null; sender_role: "staff" | "portal"; body: string; created_at: string;
 };
 
-function PortalShell({ link, email, onSignOut, preview = false, vessels = [], onSwitchVessel, onSwitchBoat, offlineSince = null }: {
+function PortalShell({ link, email, onSignOut, preview = false, fleetCount = 0, onOpenFleet, offlineSince = null }: {
   link: CaptainLink; email: string; onSignOut: () => void; preview?: boolean;
-  vessels?: VesselChoice[]; onSwitchVessel?: (l: CaptainLink) => void; onSwitchBoat?: (b: BoatOwnerLink) => void;
+  /** How many vessels this login has; over one, the sidebar shows the Fleet button. */
+  fleetCount?: number; onOpenFleet?: () => void;
   offlineSince?: string | null;
 }) {
   // A notification opens /portal?tab=chat (etc.); an unknown or hidden tab falls back to Home.
@@ -960,30 +977,13 @@ function PortalShell({ link, email, onSignOut, preview = false, vessels = [], on
               <img src={yacht.logo_url} alt={`${yacht.vessel_name} logo`} className="max-h-full max-w-full object-contain" />
             </div>
           )}
-          <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/70">{vessels.length > 1 ? "Your vessels" : "Your vessel"}</div>
-          {vessels.length > 1 && onSwitchVessel ? (
-            <select aria-label="Switch vessel" value={`y:${link.yacht_id}`}
-                    onChange={(e) => {
-                      const v = vessels.find((x) => (x.link ? `y:${x.link.yacht_id}` : `b:${x.boat?.id}`) === e.target.value);
-                      if (v?.link) onSwitchVessel(v.link);
-                      else if (v?.boat) onSwitchBoat?.(v.boat);
-                    }}
-                    className="mt-1 w-full rounded-lg border border-border bg-background/60 px-2 py-1.5 text-sm font-bold outline-none focus:border-primary/50">
-              {vessels.some((v) => v.boat) ? (
-                <>
-                  <optgroup label="Yachts">
-                    {vessels.filter((v) => v.link).map((v) => <option key={v.link!.id} value={`y:${v.link!.yacht_id}`}>{v.name}</option>)}
-                  </optgroup>
-                  <optgroup label="Managed boats">
-                    {vessels.filter((v) => v.boat).map((v) => <option key={v.boat!.id} value={`b:${v.boat!.id}`}>{v.name}</option>)}
-                  </optgroup>
-                </>
-              ) : (
-                vessels.map((v) => <option key={v.link!.id} value={`y:${v.link!.yacht_id}`}>{v.name}</option>)
-              )}
-            </select>
+          {fleetCount > 1 && onOpenFleet ? (
+            <FleetButton count={fleetCount} current={yacht?.vessel_name ?? "…"} onOpen={() => { setNavOpen(false); onOpenFleet(); }} />
           ) : (
-            <div className="mt-0.5 truncate text-sm font-bold">{yacht?.vessel_name ?? "…"}</div>
+            <>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/70">Your vessel</div>
+              <div className="mt-0.5 truncate text-sm font-bold">{yacht?.vessel_name ?? "…"}</div>
+            </>
           )}
           <div className="truncate text-[11px] text-muted-foreground">{link.display_name ?? email}</div>
         </div>
