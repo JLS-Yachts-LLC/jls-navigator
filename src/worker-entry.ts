@@ -65,32 +65,16 @@ import { runWeeklyFleetFinance } from './lib/fleet-finance-report.server'
 import { trackRun } from './lib/automations.server'
 import { runVisaExpiryFlagJob } from './lib/visa/visaExpiryFlags.server'
 import { runTwoWaySyncTick } from './lib/visa/excel-sync.server'
+import { requireMaintenanceAccess } from './lib/admin/maintenance-access'
 
 const handleRequest = createStartHandler(defaultStreamHandler)
 
-// Constant-time string compare, so the shared secret can't be guessed byte by byte.
-function secretMatches(provided: string, expected: string): boolean {
-  if (provided.length !== expected.length) return false
-  let diff = 0
-  for (let i = 0; i < expected.length; i++) diff |= provided.charCodeAt(i) ^ expected.charCodeAt(i)
-  return diff === 0
-}
-
 // The maintenance operations on the SharePoint webhook (`?run=…`, `?images=`,
 // `?discover=`, `?test-email=`, `?setup=`, `?fetch-template=`, `?ais=`) resync,
-// delete rows, send email and dump records — they are for us, not the public.
-// They need a global admin's session token (`Authorization: Bearer <jwt>`) or,
-// for scripted callers, the `x-cron-secret` header matching CRON_SECRET. With
-// no CRON_SECRET set, only the admin token works (fails closed). The scheduled
-// handler calls the sync functions directly and never comes through here.
-async function requireMaintenanceAccess(request: Request): Promise<Response | null> {
-  const cronSecret = process.env.CRON_SECRET
-  const provided = request.headers.get('x-cron-secret')
-  if (cronSecret && provided && secretMatches(provided, cronSecret)) return null
-  const { requireAdminAccess } = await import('./lib/admin/access')
-  const session = await requireAdminAccess(request, ['global_admin'])
-  return session.ok ? null : session.response
-}
+// delete rows, send email and dump records — they are guarded by
+// requireMaintenanceAccess (global admin token or CRON_SECRET; fails closed
+// when CRON_SECRET is unset). The scheduled handler calls the sync functions
+// directly and never comes through here.
 
 async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: Promise<unknown>) => void }): Promise<Response> {
   const url = new URL(request.url)
