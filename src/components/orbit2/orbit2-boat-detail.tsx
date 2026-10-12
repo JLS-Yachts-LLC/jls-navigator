@@ -31,6 +31,7 @@ import { InspectionsRequired, InspectionChecklist, INSPECTION_REGIMES, ryaCheckl
 import { useOrbit2Identity } from "./orbit2-identity";
 import { BoatAdditionalChecklists, useChecklistForms } from "./orbit2-checklist-library";
 import { BoatExpensesBoard } from "./orbit2-boat-expenses";
+import { ServiceCalendar } from "./orbit2-boat-services";
 
 const sb = supabase as any;
 
@@ -228,7 +229,7 @@ export function Orbit2BoatDetail({
         {section === "jobs" ? <JobsBoard boat={boat} tasks={tasks} reload={reload} />
           : section === "inventory" ? <InventoryBoard boat={boat} inventory={inventory} reload={reload} />
           : section === "expenses" ? <BoatExpensesBoard boat={boat} tasks={tasks} />
-          : <MaintenanceScheduleBoard boat={boat} tasks={tasks} reload={reload} />}
+          : <MaintenanceScheduleBoard boat={boat} tasks={tasks} inventory={inventory} reload={reload} />}
       </div>
       </div>
     </div>
@@ -395,13 +396,17 @@ const jobDate = (t: Orbit2BoatTask) => t.schedule_date ?? t.updated_at?.slice(0,
  *   History           every finished (Complete) job, newest first — the boat's
  *                     past maintenance as the owner sees it. Nothing to file:
  *                     a job lands here the moment it's marked Complete.
- *   Service Calendar  to follow.
- * A row opens the job itself, with its service report, certificate and photos.
+ *   Service Calendar  engine and safety-equipment services by date and running
+ *                     hours (orbit2-boat-services.tsx).
+ * A History row opens the job itself, with its service report, certificate and photos.
  */
-function MaintenanceScheduleBoard({ boat, tasks, reload }: { boat: Orbit2Boat; tasks: Orbit2BoatTask[]; reload: () => Promise<void> | void }) {
+function MaintenanceScheduleBoard({ boat, tasks, inventory, reload }: {
+  boat: Orbit2Boat; tasks: Orbit2BoatTask[]; inventory: Orbit2BoatInventoryItem[]; reload: () => Promise<void> | void;
+}) {
   const [view, setView] = useState<"history" | "calendar">("history");
   const [query, setQuery] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
+  const [addingService, setAddingService] = useState(false);
 
   const history = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -428,13 +433,20 @@ function MaintenanceScheduleBoard({ boat, tasks, reload }: { boat: Orbit2Boat; t
             </button>
           ))}
         </div>
-        {view === "history" && (
+        <div className="flex items-center gap-2">
+          {view === "calendar" && (
+            <button onClick={() => setAddingService(true)}
+              className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-[15px] font-medium text-primary-foreground hover:opacity-90">
+              <Plus className="h-4 w-4" /> Add
+            </button>
+          )}
           <div className="relative">
             <Search className="pointer-events-none absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search" aria-label="Search history"
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search"
+              aria-label={view === "history" ? "Search history" : "Search services"}
               className="h-9 w-44 rounded-md border border-border bg-background pl-8 pr-2 text-[14px] outline-none focus:border-primary" />
           </div>
-        )}
+        </div>
       </div>
 
       {view === "history" ? (
@@ -477,7 +489,7 @@ function MaintenanceScheduleBoard({ boat, tasks, reload }: { boat: Orbit2Boat; t
           </table>
         </div>
       ) : (
-        <p className="border-t border-border/60 px-4 py-8 text-center text-[15px] text-muted-foreground">The Service Calendar is coming soon.</p>
+        <ServiceCalendar boat={boat} inventory={inventory} query={query} adding={addingService} setAdding={setAddingService} />
       )}
 
       {open && (
