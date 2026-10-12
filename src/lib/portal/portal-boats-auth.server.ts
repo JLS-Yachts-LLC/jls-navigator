@@ -60,12 +60,15 @@ export async function resolvePortalBoats(
       .eq('id', previewId)
       .eq('active', true)
       .maybeSingle()
-    if (!acct?.boat_id) return { ok: false, response: json({ error: 'No boat linked to this account' }, 404) }
+    if (!acct) return { ok: false, response: json({ error: 'No boat linked to this account' }, 404) }
 
-    // An owner with a login sees every boat linked to it; a row with no login
-    // yet is previewed as just its own boat.
-    let boatIds = [acct.boat_id as string]
-    if (acct.user_id) boatIds = await ownedBoatIds(sb, acct.user_id as string)
+    // An owner with a login sees every boat linked to it — including when the
+    // previewed row is their yacht link (the yacht portal's Orbit 2 section); a
+    // row with no login yet is previewed as just its own boat.
+    const boatIds = acct.user_id
+      ? await ownedBoatIds(sb, acct.user_id as string)
+      : acct.boat_id ? [acct.boat_id as string] : []
+    if (!boatIds.length) return { ok: false, response: json({ error: 'No boat linked to this account' }, 404) }
     return {
       ok: true,
       owner: { userId: (acct.user_id as string | null) ?? '', email: (acct.email as string | null) ?? '', boatIds, preview: true },

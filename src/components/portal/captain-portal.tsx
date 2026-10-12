@@ -50,7 +50,9 @@ import { accountTotals } from "@/lib/portal/expenses";
 import { IsmSection } from "@/components/portal/sections/ism-section";
 import { canManageCrew, canManageMoney, canApproveRequisition, hiddenSections, canSeeFinance, canManageVessel } from "@/lib/portal/portal-positions";
 import { cn } from "@/lib/utils";
-import { BoatPortal } from "./boat-portal";
+import { BoatPortal, type PortalBoat } from "./boat-portal";
+import { OwnerBoatView } from "./boat-owner-view";
+import { Ship as BoatIcon } from "lucide-react";
 // /portal is a standalone route (no staff shell), so pull the design tokens in
 // directly — the `pds` wrapper class below reads them.
 import "@/components/polaris-ui/tokens.css";
@@ -701,6 +703,7 @@ type Tab =
   | "home" | "brief"
   | "alerts" | "positions" | "crew" | "documents" | "pms" | "balances" | "invoices" | "charter" | "ism" | "tasks" | "inventory" | "expenses" | "rota" | "stock" | "checklists" | "hours" | "handover" | "movements" | "gatepasses" | "orders" | "calendar"
   | "requests" | "logistics" | "chat" | "directory" | "reports"
+  | "orbit2" // the login's own managed boats (Orbit 2) — only when it has some
   | "finances"; // legacy alias used by the Home module launcher → routes to Invoices/Finance
 
 type NavItem = { key: Tab; label: string; icon: any };
@@ -751,7 +754,13 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
 ];
-const ALL_NAV_ITEMS: NavItem[] = NAV_GROUPS.flatMap((g) => g.items);
+/**
+ * Orbit 2 — the managed boats this login also owns (client request, 12 Oct
+ * 2026). Not a vessel module: it appears, between Agency with JLS and On board,
+ * only when the login has boats linked (captain_accounts.boat_id).
+ */
+const ORBIT2_GROUP: NavGroup = { title: "Orbit 2", module: "core", items: [{ key: "orbit2", label: "Managed boats", icon: BoatIcon }] };
+const ALL_NAV_ITEMS: NavItem[] = [...NAV_GROUPS, ORBIT2_GROUP].flatMap((g) => g.items);
 
 // What this person sees: the vessel's modules (lib/portal/portal-modules) narrowed
 // by their position (lib/portal/portal-positions).
@@ -830,8 +839,26 @@ function PortalShell({ link, email, onSignOut, preview = false, vessels = [], on
   const unread = chat?.portal_unread ?? 0;
   const openNewRequest = (cat: string) => { setNewRequestCat(cat); };
 
-  // Sections this person may see: the vessel's modules, narrowed by position.
-  const navGroups = useMemo(() => navGroupsFor(link.position, modules), [link.position, modules]);
+  // Managed boats on this login (Orbit 2). Most logins have none — the request
+  // then just comes back 403 and the section stays hidden.
+  const [ownedBoats, setOwnedBoats] = useState<PortalBoat[]>([]);
+  useEffect(() => {
+    let alive = true;
+    void portalFetch("/api/portal/boats")
+      .then(async (res) => (res.ok ? ((await res.json()).boats ?? []) : []))
+      .catch(() => [])
+      .then((list: PortalBoat[]) => { if (alive) setOwnedBoats(list); });
+    return () => { alive = false; };
+  }, [link.id]);
+
+  // Sections this person may see: the vessel's modules, narrowed by position,
+  // with Orbit 2 after Agency with JLS when the login owns boats.
+  const navGroups = useMemo(() => {
+    const groups = navGroupsFor(link.position, modules);
+    if (!ownedBoats.length) return groups;
+    const at = groups.findIndex((g) => g.module === "core");
+    return [...groups.slice(0, at + 1), ORBIT2_GROUP, ...groups.slice(at + 1)];
+  }, [link.position, modules, ownedBoats.length]);
   const allowedKeys = useMemo(() => new Set(navGroups.flatMap((g) => g.items.map((i) => i.key))), [navGroups]);
   const financeOk = canSeeFinance(link.position) && sectionEnabled("finances", modules);
   // If the current tab isn't visible for this person, fall back to Home.
@@ -1037,6 +1064,9 @@ function PortalShell({ link, email, onSignOut, preview = false, vessels = [], on
         {tab === "ism" && <IsmSection yachtId={link.yacht_id} canEdit={!preview} />}
         {tab === "directory" && <DirectoryTab />}
         {tab === "reports" && <ReportsSection />}
+        {tab === "orbit2" && ownedBoats.length > 0 && (
+          <OwnerBoatView boats={ownedBoats} displayName={link.display_name ?? email} position={link.position} />
+        )}
         {tab === "brief" && <BriefSection yachtId={link.yacht_id} preview={preview} onOpen={(t) => { setTab(t); setOpenRequestId(null); }} />}
         </main>
       </div>

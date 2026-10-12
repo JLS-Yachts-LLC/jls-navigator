@@ -5,8 +5,12 @@
  *       → { compliance[], documents[], jobs[], safetyKit[] }
  *   GET /api/portal/boats/open?boat=<id>&type=document&id=<doc id>
  *   GET /api/portal/boats/open?boat=<id>&type=inspection&regime=dma|fma|rya
+ *   GET /api/portal/boats/open?boat=<id>&type=expense_file|service_file&id=<file id>
  *       → 302 to a 5-minute signed URL, after an ownership check, every attempt
  *         recorded in portal_document_access (as the yacht portal does)
+ *   POST /api/portal/boats/request-job  (multipart: boat, category, description,
+ *       remarks, requestedBy, position, image?) → a Pending job on the boat's
+ *       Jobs board, and a bell alert to the Orbit 2 admins
  *
  * Orbit 2 tables are closed to portal logins; this route reads them with the
  * service role, only for boats on the caller's login (resolvePortalBoats), and
@@ -42,6 +46,9 @@ type Regime = keyof typeof REGIMES
 const RYA_LABEL: Record<string, string> = { pwc: 'Personal watercraft', cruising: 'Cruising', powerboat: 'Powerboat' }
 
 const DOC_LABEL: Record<string, string> = {
+  vessel_invoice: 'Vessel invoice / bill of sale',
+  builders_certificate: "Builder's certificate",
+  customs_clearance: 'Customs clearance certificate',
   marine_vessel_license: 'Marine vessel licence',
   marine_insurance: 'Insurance',
   berth_agreement: 'Berth agreement',
@@ -85,18 +92,35 @@ export async function portalBoatDetailHandler(request: Request): Promise<Respons
   if (!ownsBoat(owner, boatId)) return json({ error: 'Boat not found' }, 404)
 
   const sb = admin()
-  const [boatR, docsR, jobsR, kitR] = await Promise.all([
+  const [boatR, docsR, jobsR, invR, expR, svcR] = await Promise.all([
     sb.from('orbit2_boats')
       .select('id, inspections_required, rya_checklist, dma_last_inspection, dma_report_ref, fma_last_inspection, fma_report_ref, rya_last_inspection, rya_report_ref')
       .eq('id', boatId).eq('active', true).maybeSingle(),
     sb.from('orbit2_boat_documents').select('id, category, file_name, created_at').eq('boat_id', boatId).order('created_at', { ascending: false }),
-    sb.from('orbit2_boat_tasks').select('id, kind, title, status, due_date, schedule_date, schedule_time, job_no, created_at, updated_at')
-      .eq('boat_id', boatId).order('created_at', { ascending: false }).limit(100),
+    // The owner view (12 Oct 2026 design) shows the assigned crew and technician
+    // on each job; remarks and team comments stay office-only.
+    sb.from('orbit2_boat_tasks').select('id, kind, title, status, due_date, schedule_date, schedule_time, job_no, assigned_team, technician, requested_by_name, created_at, updated_at')
+      .eq('boat_id', boatId).order('created_at', { ascending: false }).limit(300),
     sb.from('orbit2_boat_inventory').select('id, item, qty, unit, condition, expiry_date, on_board')
-      .eq('boat_id', boatId).not('expiry_date', 'is', null).order('expiry_date'),
+      .eq('boat_id', boatId).order('item'),
+    sb.from('orbit2_boat_expenses').select('id, category, part_type, expense_date, cost, currency, details, boat_task_id')
+      .eq('boat_id', boatId).order('expense_date', { ascending: false }),
+    sb.from('orbit2_boat_services').select('id, service, last_service_date, next_service_date, current_run_hours, next_service_run_hours')
+      .eq('boat_id', boatId),
   ])
   if (!boatR.data) return json({ error: 'Boat not found' }, 404)
-  for (const r of [docsR, jobsR, kitR]) if (r.error) return json({ error: 'Could not load your boat' }, 500)
+  for (const r of [docsR, jobsR, invR, expR, svcR]) if (r.error) return json({ error: 'Could not load your boat' }, 500)
+
+  // Receipts on the expenses and reports on the services — names only; each
+  // opens through /api/portal/boats/open.
+  const expIds = (expR.data ?? []).map((e: any) => e.id as string)
+  const svcIds = (svcR.data ?? []).map((s: any) => s.id as string)
+  const [expFilesR, svcFilesR] = await Promise.all([
+    expIds.length ? sb.from('orbit2_boat_expense_files').select('id, expense_id, file_name').in('expense_id', expIds).order('created_at') : Promise.resolve({ data: [] as any[] }),
+    svcIds.length ? sb.from('orbit2_boat_service_files').select('id, service_id, file_name').in('service_id', svcIds).order('created_at') : Promise.resolve({ data: [] as any[] }),
+  ])
+  const jobNo = new Map((jobsR.data ?? []).map((j: any) => [j.id as string, (j.job_no as string | null) ?? null]))
+  const kitR = { data: (invR.data ?? []).filter((i: any) => i.expiry_date).sort((a: any, b: any) => String(a.expiry_date).localeCompare(String(b.expiry_date))) }
 
   // Sections staff have switched off for this boat aren't served at all.
   const { data: modRows } = await sb.from('yacht_portal_modules').select('module, enabled, features').eq('boat_id', boatId)
@@ -127,6 +151,23 @@ export async function portalBoatDetailHandler(request: Request): Promise<Respons
       id: j.id, jobNo: j.job_no ?? null, kind: j.kind, kindLabel: JOB_LABEL[j.kind] ?? 'Job', title: j.title,
       status: j.status, dueDate: j.due_date ?? null, scheduledDate: j.schedule_date ?? null,
       scheduledTime: j.schedule_time ? String(j.schedule_time).slice(0, 5) : null, updatedAt: j.updated_at,
+      assignedCrew: Array.isArray(j.assigned_team) ? j.assigned_team : [], technician: j.technician ?? null,
+      requestedByOwner: !!j.requested_by_name,
+    })),
+    inventory: off.has('inventory') ? [] : (invR.data ?? []).map((i: any) => ({
+      id: i.id, item: i.item, qty: i.qty, unit: i.unit ?? null, condition: i.condition ?? null,
+      expiryDate: i.expiry_date ?? null, onBoard: i.on_board !== false,
+    })),
+    expenses: off.has('expenses') ? [] : (expR.data ?? []).map((e: any) => ({
+      id: e.id, category: e.category, partType: e.part_type ?? null, date: e.expense_date, cost: Number(e.cost),
+      currency: e.currency, details: e.details ?? null, jobRef: e.boat_task_id ? jobNo.get(e.boat_task_id) ?? null : null,
+      files: (expFilesR.data ?? []).filter((f: any) => f.expense_id === e.id).map((f: any) => ({ id: f.id, fileName: f.file_name })),
+    })),
+    services: off.has('maintenance') ? [] : (svcR.data ?? []).map((s: any) => ({
+      id: s.id, service: s.service, lastServiceDate: s.last_service_date ?? null, nextServiceDate: s.next_service_date ?? null,
+      currentRunHours: s.current_run_hours != null ? Number(s.current_run_hours) : null,
+      nextServiceRunHours: s.next_service_run_hours != null ? Number(s.next_service_run_hours) : null,
+      files: (svcFilesR.data ?? []).filter((f: any) => f.service_id === s.id).map((f: any) => ({ id: f.id, fileName: f.file_name })),
     })),
     safetyKit: off.has('safety') ? [] : (kitR.data ?? []).map((i: any) => ({
       id: i.id, item: i.item, qty: i.qty, unit: i.unit ?? null, condition: i.condition ?? null,
@@ -157,19 +198,34 @@ export async function portalBoatOpenHandler(request: Request): Promise<Response>
   const type = url.searchParams.get('type')
   const sb = admin()
   if (!ownsBoat(owner, boatId)) return json({ error: 'Document not found' }, 404)
-  {
-    const { data: modRows } = await sb.from('yacht_portal_modules').select('module, enabled, features').eq('boat_id', boatId)
-    const off = boatHiddenSections((modRows ?? []) as PortalModuleRow[])
-    if ((type === 'document' && off.has('documents')) || (type === 'inspection' && off.has('compliance') && off.has('documents'))) {
-      return json({ error: 'Document not found' }, 404)
-    }
+  const { data: modRows } = await sb.from('yacht_portal_modules').select('module, enabled, features').eq('boat_id', boatId)
+  const off = boatHiddenSections((modRows ?? []) as PortalModuleRow[])
+  if ((type === 'document' && off.has('documents')) || (type === 'inspection' && off.has('compliance') && off.has('documents'))) {
+    return json({ error: 'Document not found' }, 404)
   }
 
   let stored = ''
   let sourceTable = ''
   let sourceId: string | null = null
 
-  if (type === 'document') {
+  if (type === 'expense_file' || type === 'service_file') {
+    // A receipt on an expense, or a report on a Service Calendar line — checked
+    // back to this boat through its parent row.
+    const id = url.searchParams.get('id') ?? ''
+    const expense = type === 'expense_file'
+    sourceTable = expense ? 'orbit2_boat_expense_files' : 'orbit2_boat_service_files'
+    if ((expense && off.has('expenses')) || (!expense && off.has('maintenance'))) return json({ error: 'Document not found' }, 404)
+    if (!UUID_RE.test(id)) { await record(sb, request, owner, boatId, 'not_found', { sourceTable }); return json({ error: 'Document not found' }, 404) }
+    sourceId = id
+    const parent = expense ? 'orbit2_boat_expenses' : 'orbit2_boat_services'
+    const { data } = await sb.from(sourceTable)
+      .select(`id, storage_ref, parent:${parent}(boat_id)`).eq('id', id).maybeSingle()
+    if (!data || (data as any).parent?.boat_id !== boatId) {
+      await record(sb, request, owner, boatId, data ? 'denied' : 'not_found', { sourceTable, sourceId })
+      return json({ error: 'Document not found' }, 404)
+    }
+    stored = String((data as any).storage_ref ?? '')
+  } else if (type === 'document') {
     const id = url.searchParams.get('id') ?? ''
     sourceTable = 'orbit2_boat_documents'
     if (!UUID_RE.test(id)) { await record(sb, request, owner, boatId, 'not_found', { sourceTable }); return json({ error: 'Document not found' }, 404) }
@@ -203,4 +259,91 @@ export async function portalBoatOpenHandler(request: Request): Promise<Response>
   }
   await record(sb, request, owner, boatId, 'allowed', { sourceTable, sourceId, storageRef: `${ref.bucket}/${ref.path}` })
   return new Response(null, { status: 302, headers: { Location: signed.data.signedUrl, 'Cache-Control': 'no-store' } })
+}
+
+// ── Request Job ─────────────────────────────────────────────────────────────
+
+/** The job categories an owner can pick — the office's own, minus its internal checklist runs. */
+export const OWNER_JOB_CATEGORIES: Record<string, string> = {
+  Maintenance: 'maintenance', Repair: 'defect', Inventory: 'inventory', Booked: 'booked',
+}
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024
+const clip = (v: FormDataEntryValue | null, n: number) => (typeof v === 'string' ? v.trim().slice(0, n) : '')
+
+/**
+ * The owner's "Request Job" button. The request lands as a Pending job on the
+ * boat's Jobs board — no crew yet, so it reaches no phone until the office
+ * schedules it — with who asked, any photo attached, and a bell alert to the
+ * Orbit 2 admins linking straight to the boat.
+ */
+export async function portalBoatRequestJobHandler(request: Request): Promise<Response> {
+  if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+  const auth = await resolvePortalBoats(request)
+  if (!auth.ok) return auth.response
+  const { owner } = auth
+  if (owner.preview) return json({ error: 'Read-only preview — nothing can be sent' }, 403)
+
+  let form: FormData
+  try { form = await request.formData() } catch { return json({ error: 'Bad request' }, 400) }
+  const boatId = clip(form.get('boat'), 64)
+  if (!ownsBoat(owner, boatId)) return json({ error: 'Boat not found' }, 404)
+  const category = clip(form.get('category'), 40)
+  const kind = OWNER_JOB_CATEGORIES[category]
+  if (!kind) return json({ error: 'Choose a category' }, 400)
+  const description = clip(form.get('description'), 2000)
+  if (!description) return json({ error: 'Describe what you need done' }, 400)
+  const remarks = clip(form.get('remarks'), 4000)
+  const requestedBy = clip(form.get('requestedBy'), 120)
+  if (!requestedBy) return json({ error: 'Say who is asking' }, 400)
+  const position = clip(form.get('position'), 120)
+  const image = form.get('image')
+  const file = image && typeof image !== 'string' && image.size > 0 ? image : null
+  if (file && (!/^image\//.test(file.type) || file.size > MAX_IMAGE_BYTES)) {
+    return json({ error: 'Attach a photo (JPG or PNG) under 10 MB' }, 400)
+  }
+
+  const sb = admin()
+  const { data: boat } = await sb.from('orbit2_boats').select('id, name').eq('id', boatId).eq('active', true).maybeSingle()
+  if (!boat) return json({ error: 'Boat not found' }, 404)
+
+  const { data: job, error } = await sb.from('orbit2_boat_tasks').insert({
+    boat_id: boatId, kind, title: description, remarks: remarks || null, status: 'Pending', assigned_team: [],
+    requested_by_name: requestedBy, requested_by_position: position || null,
+    requested_by_user: owner.userId || null, requested_at: new Date().toISOString(),
+  }).select('id, job_no').single()
+  if (error || !job) {
+    console.error('[portal-request-job] insert failed:', error?.message)
+    return json({ error: 'Your request could not be sent — please try again' }, 500)
+  }
+
+  if (file) {
+    const path = `orbit2/portal-requests/${crypto.randomUUID()}-${(file.name || 'photo').replace(/[^\w.-]+/g, '_').slice(0, 80)}`
+    const up = await sb.storage.from(DOC_BUCKET).upload(path, file, { contentType: file.type, upsert: false })
+    if (up.error) console.error('[portal-request-job] photo upload failed:', up.error.message)
+    else {
+      const { error: fErr } = await sb.from('orbit2_files').insert({
+        boat_task_id: job.id, slot: 'image', file_name: file.name || 'photo', storage_ref: `${DOC_BUCKET}/${path}`,
+        uploaded_by: owner.userId || null,
+      })
+      if (fErr) console.error('[portal-request-job] photo record failed:', fErr.message)
+    }
+  }
+
+  // Tell the team. A failure here doesn't lose the request — it's on the board.
+  const { data: team } = await sb.rpc('orbit2_admin_recipients')
+  const notes = ((team ?? []) as { user_id: string }[]).map((p) => ({
+    user_id: p.user_id,
+    type: 'orbit2_owner_job_request',
+    urgency: 'warning',
+    title: `Job request — ${(boat as any).name}`,
+    body: `${requestedBy}${position ? ` (${position})` : ''} asked for ${category.toLowerCase()}: ${description.slice(0, 160)}. It's on the Jobs board as ${job.job_no ?? 'a new job'} — assign a crew to schedule it.`,
+    action_url: `/polaris-redesign?screen=orbit2&boat=${boatId}`,
+    metadata: { boat_id: boatId, boat_task_id: job.id },
+  }))
+  if (notes.length) {
+    const { error: nErr } = await sb.from('notifications').insert(notes)
+    if (nErr) console.error('[portal-request-job] notifications:', nErr.message)
+  }
+
+  return json({ ok: true, jobNo: job.job_no ?? null })
 }

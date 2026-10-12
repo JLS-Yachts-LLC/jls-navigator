@@ -195,6 +195,10 @@ export type Orbit2BoatTask = {
   checklist_form_id: string | null;
   /** Last change — the Maintenance Schedule history's date for a job that was never scheduled. */
   updated_at?: string;
+  /** Set when the owner raised it from the Client Portal's Request Job button. */
+  requested_by_name?: string | null;
+  requested_by_position?: string | null;
+  requested_at?: string | null;
 };
 
 export type Orbit2ScheduleEntry = {

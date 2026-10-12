@@ -135,6 +135,9 @@ export const BOAT_FEATURES: PortalFeature[] = [
   { key: "documents",  label: "Documents",     blurb: "The boat's papers and inspection reports" },
   { key: "jobs",       label: "Jobs",          blurb: "Work JLS has scheduled or done on the boat" },
   { key: "safety",     label: "Safety kit",    blurb: "Flares, extinguishers, life jackets — expiry dates" },
+  { key: "inventory",  label: "Inventory list", blurb: "Everything logged on board — quantity, condition, expiry" },
+  { key: "expenses",   label: "Expenses",      blurb: "What JLS has spent on the boat, with receipts and job refs" },
+  { key: "maintenance", label: "Maintenance schedule", blurb: "Finished-job history and the service calendar" },
   { key: "requests",   label: "Requests",      blurb: "Ask JLS for anything, and follow it through" },
   { key: "chat",       label: "Chat with JLS", blurb: "Live chat with the team" },
 ];

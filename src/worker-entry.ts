@@ -1043,6 +1043,10 @@ export default {
       const { portalBoatDetailHandler } = await import('./routes/api.portal.boat-detail')
       return portalBoatDetailHandler(request)
     }
+    if (url.pathname === '/api/portal/boats/request-job') {
+      const { portalBoatRequestJobHandler } = await import('./routes/api.portal.boat-detail')
+      return portalBoatRequestJobHandler(request)
+    }
     if (url.pathname === '/api/portal/boats/open') {
       const { portalBoatOpenHandler } = await import('./routes/api.portal.boat-detail')
       return portalBoatOpenHandler(request)

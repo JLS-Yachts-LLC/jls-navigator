@@ -553,7 +553,13 @@ function JobsBoard({ boat, tasks, reload }: { boat: Orbit2Boat; tasks: Orbit2Boa
                 <tr key={t.id} onClick={() => setEditingId(t.id)} className="cursor-pointer hover:bg-muted/20">
                   <td className="whitespace-nowrap px-3 py-2 font-semibold text-primary">{t.job_no ?? "—"}</td>
                   <td className="whitespace-nowrap px-3 py-2">{kindToBoatJobCategory(t.kind)}</td>
-                  <td className="max-w-[16rem] px-3 py-2"><span className="line-clamp-2">{t.title}</span></td>
+                  <td className="max-w-[16rem] px-3 py-2">
+                    {t.requested_by_name && (
+                      <span title={`Requested from the Client Portal by ${t.requested_by_name}${t.requested_by_position ? ` (${t.requested_by_position})` : ""}`}
+                        className="mb-0.5 inline-block rounded bg-violet-500/15 px-1.5 py-0.5 text-[13px] font-medium text-violet-500">Owner request</span>
+                    )}
+                    <span className="line-clamp-2">{t.title}</span>
+                  </td>
                   <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
                     {t.schedule_date ? new Date(`${t.schedule_date}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }) : "—"}
                   </td>
@@ -740,6 +746,14 @@ function JobEditor({
         </div>
 
         <div className="min-h-0 flex-1 space-y-3 overflow-auto p-5">
+          {existing?.requested_by_name && (
+            <p className="rounded-md border border-violet-500/30 bg-violet-500/10 px-3 py-2 text-[14px]">
+              Requested by the owner — <span className="font-semibold">{existing.requested_by_name}</span>
+              {existing.requested_by_position ? ` (${existing.requested_by_position})` : ""}
+              {existing.requested_at ? ` on ${new Date(existing.requested_at).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}` : ""}.
+              {(existing.assigned_team ?? []).length === 0 && " Assign the crew and a date to schedule it."}
+            </p>
+          )}
           <Field label="Category">
             <select className={inputCls} value={form.category} onChange={(e) => set("category", e.target.value as JobForm["category"])}>
               {BOAT_JOB_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}

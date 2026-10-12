@@ -22,15 +22,16 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { AppearanceButton } from "@/components/portal/portal-appearance";
 import {
-  AlertTriangle, ClipboardList, Eye, FileCheck2, Home, LifeBuoy, Loader2, LogOut,
+  AlertTriangle, ClipboardList, Eye, FileCheck2, Home, LayoutDashboard, LifeBuoy, Loader2, LogOut,
   Menu, MessageSquare, ShieldCheck, Ship, Wrench, X,
 } from "lucide-react";
+import { OwnerBoatView } from "@/components/portal/boat-owner-view";
 import { PolarisMark } from "@/components/brand/PolarisMark";
 import { portalFetch } from "@/lib/portal/portal-fetch";
 import { cn } from "@/lib/utils";
 import { boatHiddenSections } from "@/lib/portal/portal-modules";
 
-type PortalBoat = {
+export type PortalBoat = {
   id: string;
   name: string;
   boatType: string | null;
@@ -47,8 +48,10 @@ type PortalBoat = {
   };
 };
 
-type BoatTab = "home" | "compliance" | "documents" | "jobs" | "safety" | "requests" | "chat";
+type BoatTab = "dashboard" | "home" | "compliance" | "documents" | "jobs" | "safety" | "requests" | "chat";
 const NAV: Array<{ key: BoatTab; label: string; icon: any }> = [
+  // The Orbit 2 owner dashboard (client design, 12 Oct 2026) — opens first.
+  { key: "dashboard", label: "Boat dashboard", icon: LayoutDashboard },
   { key: "home", label: "My Boat", icon: Home },
   { key: "compliance", label: "Compliance", icon: ShieldCheck },
   { key: "documents", label: "Documents", icon: FileCheck2 },
@@ -69,7 +72,7 @@ export function BoatPortal({ displayName, email, previewAccountId, onSignOut }: 
   const [error, setError] = useState<string | null>(null);
   const [boatId, setBoatId] = useState<string | null>(null);
   const [navOpen, setNavOpen] = useState(false);
-  const [tab, setTab] = useState<BoatTab>("home");
+  const [tab, setTab] = useState<BoatTab>("dashboard");
   const [detail, setDetail] = useState<BoatDetail | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [account, setAccount] = useState<ChatAccount | null>(null);
@@ -104,8 +107,8 @@ export function BoatPortal({ displayName, email, previewAccountId, onSignOut }: 
       .then(({ data }: any) => { if (alive) setHidden(boatHiddenSections(data ?? [])); });
     return () => { alive = false; };
   }, [boatId]);
-  const nav = NAV.filter((n) => n.key === "home" || !hidden.has(n.key));
-  useEffect(() => { if (tab !== "home" && hidden.has(tab)) setTab("home"); }, [hidden, tab]);
+  const nav = NAV.filter((n) => n.key === "home" || n.key === "dashboard" || !hidden.has(n.key));
+  useEffect(() => { if (tab !== "home" && tab !== "dashboard" && hidden.has(tab)) setTab("home"); }, [hidden, tab]);
 
   // The selected boat's compliance, documents, jobs and safety kit.
   useEffect(() => {
@@ -282,6 +285,8 @@ export function BoatPortal({ displayName, email, previewAccountId, onSignOut }: 
             account
               ? <PortalChatTab link={account} displayName={displayName ?? email} chat={chat} onChatChanged={() => void loadChat()} />
               : <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+          ) : tab === "dashboard" ? (
+            <OwnerBoatView key={boat.id} boats={[boat]} displayName={displayName ?? email} />
           ) : tab === "home" ? (
             <BoatHome boat={boat} detail={detail} onOpen={(t) => { if (!hidden.has(t)) setTab(t as BoatTab); }} />
           ) : detailError ? (
