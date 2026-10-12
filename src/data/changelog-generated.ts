@@ -5,9 +5,219 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.71.0",
+    "date": "2026-10-12",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "The Client Portal's Orbit 2 dashboard uses the full page width, so every column (Technician, Status…) shows without scrolling sideways"
+      },
+      {
+        "type": "fix",
+        "title": "Orbit 2 sits at the top of the Client Portal's On board list (its own heading only when a vessel has no On board section)"
+      },
+      {
+        "type": "fix",
+        "title": "The Client Portal's Orbit 2 section follows the client — everyone on a vessel's portal sees the Orbit 2 boats created from that vessel's record (e.g. Aquila's), with no per-person boat link needed"
+      },
+      {
+        "type": "feature",
+        "title": "Boat owners get a view-only Orbit 2 dashboard in the Client Portal — the boat's details and papers (down to the DMA checklist), its Jobs, Inventory List, Expenses with receipts, and Maintenance Schedule (history and service calendar), a Download Report, and a Request Job form that puts the request straight on the boat's Jobs board and alerts the Orbit 2 admins; it sits under its own Orbit 2 heading for logins that also have a yacht"
+      },
+      {
+        "type": "feature",
+        "title": "Managed Boats service-due alerts — the Orbit 2 admins get a bell alert and a daily email 30 and 7 days before a Service Calendar date or inventory expiry (liferaft, flares…), on the day it falls due, and when an engine is within 25 running hours of its service; each alert opens that boat's Service Calendar"
+      },
+      {
+        "type": "feature",
+        "title": "Managed Boats Maintenance Schedule has a Service Calendar — track engine and safety-equipment services by date and running hours (date of service, next service date, current and next-service run hours, documents), with Inventory List expiry dates such as the liferaft and flares included automatically; overdue shows red, due soon amber"
+      },
+      {
+        "type": "feature",
+        "title": "Managed Boats has a Maintenance Schedule tab — its History section lists every finished job on the boat automatically, newest first (job no., category, description, date, crew, technician), and opens each job with its reports and photos; the Service Calendar section is next"
+      },
+      {
+        "type": "fix",
+        "title": "The Managed Boats Expenses tab always shows its column headings — Category, Part Type, Date, Cost, Details, Document, Job Ref — even before the first expense is logged"
+      },
+      {
+        "type": "feature",
+        "title": "Managed Boats has an Expenses tab — log every cost on a boat by area (Engine Room, Interior, Exterior, Bridge), part, date and cost, attach receipts, link it to a Job Ref, see totals per area, and download the list for the owner"
+      },
+      {
+        "type": "fix",
+        "title": "Emergency brake — Lightspeed product webhooks are answered straight away without touching the database while the product-update flood is cleared (LIGHTSPEED_WEBHOOKS_PAUSED in wrangler.jsonc)"
+      },
+      {
+        "type": "fix",
+        "title": "Finance → Excel Import now shows the current no-login quotation and invoice upload links with a Copy button, so the team stops using old links that say \"not valid or has been replaced\""
+      },
+      {
+        "type": "fix",
+        "title": "A burst of Lightspeed webhooks can no longer take the database down — switched-off syncs answer instantly with nothing written, settings and toggles are remembered for a minute instead of read on every hit, and a busy database no longer seeds duplicate automation rows"
+      }
+    ]
+  },
+  {
+    "version": "2.70.1",
+    "date": "2026-10-10",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Staff pickers (Service Desk assignee, WhatsApp inbox) show each person's full, capitalised name instead of their email username, and stay in step when someone is renamed in Manage Users"
+      }
+    ]
+  },
+  {
+    "version": "2.70.0",
+    "date": "2026-10-09",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Sync Centre has a Permits dry run — see exactly what the seven SharePoint permit lists would change (fields updated, permits added, any moving to another vessel or person) before switching them back on; Run now on a switched-off permit list now asks first"
+      },
+      {
+        "type": "fix",
+        "title": "The sideways slider now shows (table no longer stretches its column to full width)"
+      },
+      {
+        "type": "feature",
+        "title": "Shelf Finder item sheet can add or replace the item's photo"
+      },
+      {
+        "type": "fix",
+        "title": "The background syncs no longer overwrite parcels checked in from the phone"
+      },
+      {
+        "type": "fix",
+        "title": "The phone's Back button returns to the Logistics home screen instead of leaving the app"
+      },
+      {
+        "type": "fix",
+        "title": "Scanning works on iPhone; signature draws where you touch; phone-screen fixes from a review"
+      },
+      {
+        "type": "fix",
+        "title": "Shipment Type on the Import board shows what was chosen on the form"
+      },
+      {
+        "type": "fix",
+        "title": "Parcels checked in from the phone now get a Shipment Type on the Import board"
+      },
+      {
+        "type": "fix",
+        "title": "The installed Logistics app only claims /logistics-app, not every Polaris link"
+      },
+      {
+        "type": "fix",
+        "title": "Opening the app directly (QR code, bookmark) on a signed-out phone no longer hangs on the loading spinner"
+      },
+      {
+        "type": "fix",
+        "title": "Check-in leaves the Item ID to the database trigger"
+      },
+      {
+        "type": "feature",
+        "title": "Jovian Gonzaga sees every module (a driver who also runs the office)"
+      },
+      {
+        "type": "feature",
+        "title": "Opens with no signal, photos survive a reload, ShipSync API access checks, shelf-fit warning"
+      },
+      {
+        "type": "feature",
+        "title": "Nothing is sent to a client automatically until staff switch on Automatic messages for that vessel or boat in Manage Users → Client Portal (phone notifications, job-complete and delivery-arriving emails, WhatsApp reminders and auto-replies)"
+      },
+      {
+        "type": "fix",
+        "title": "Crew visa reports can only be downloaded or emailed by signed-in staff, and only to their own address; the seaport completion report can only be sent by staff"
+      },
+      {
+        "type": "fix",
+        "title": "Photo uploads, offline queue, handover and warehouse integrity — with a test suite"
+      },
+      {
+        "type": "feature",
+        "title": "Check-in routing rules, Warehouse status, Paid Amount / Payment Method on Import"
+      },
+      {
+        "type": "feature",
+        "title": "Import board has separate Delivered TBI and Completed tabs"
+      },
+      {
+        "type": "feature",
+        "title": "Import board split into Active and Delivered TBI & Completed; Sync from Monday buttons removed"
+      },
+      {
+        "type": "feature",
+        "title": "Local Packages \"Delivered\" group heading reads \"Delivered TBI\""
+      },
+      {
+        "type": "feature",
+        "title": "Let a driver who also runs the office see every module"
+      },
+      {
+        "type": "fix",
+        "title": "Passport scans save names and places in English letters — a Russian passport's place of birth or a Bulgarian place of issue no longer comes through in Cyrillic, and the passport form flags any non-English text with a one-tap fix (SD-0050)"
+      },
+      {
+        "type": "feature",
+        "title": "My notifications — staff can get an email confirming a permit or crew visa they sent to a client, and another when the client first opens it"
+      },
+      {
+        "type": "fix",
+        "title": "Passport scans fill in the English (Latin) name on Russian and other bilingual passports instead of the Cyrillic one"
+      }
+    ]
+  },
+  {
     "version": "2.69.0",
     "date": "2026-10-08",
     "entries": [
+      {
+        "type": "feature",
+        "title": "Clients can review, approve or decline quotations from every company their vessel is billed by, including Waypoint, each labelled with the company"
+      },
+      {
+        "type": "feature",
+        "title": "The Client Portal app sends phone notifications when JLS replies, updates a request or finishes a job, and opens with no signal showing what was last loaded"
+      },
+      {
+        "type": "feature",
+        "title": "WhatsApp Inbox shows replies sent from the WhatsApp app on the office phone, contacts get a Message button that opens their conversation, and the WhatsApp menu shows for any staff given Communications access"
+      },
+      {
+        "type": "feature",
+        "title": "The visa list shows each visa once, with earlier vessel and sign-on rows a click away, and flags approved visas that have no expiry date"
+      },
+      {
+        "type": "feature",
+        "title": "Client portal On board adds a crew rota and crew certificates — leave planning on a 12-week timeline, crew changes sent to JLS in one tap, and STCW/ENG1/CoC expiries in Alerts and the Compliance calendar"
+      },
+      {
+        "type": "feature",
+        "title": "WhatsApp Inbox gets saved quick replies (⚡ button or type /) and can send photos, PDFs, documents, video and audio with a caption"
+      },
+      {
+        "type": "feature",
+        "title": "Client portal On board adds Expenses & APA — petty cash, crew cards and charter APA accounts, receipts scanned into the ledger, budgets against actual, and an APA statement for the charterer"
+      },
+      {
+        "type": "feature",
+        "title": "Automated Reports can go by WhatsApp — the report PDF to the vessel's WhatsApp contacts who've agreed to updates, alongside or instead of email"
+      },
+      {
+        "type": "fix",
+        "title": "Client portal start-up timing reports are saved instead of silently rejected, and a failed report is retried"
+      },
+      {
+        "type": "fix",
+        "title": "Automated Reports follow Crew & Immigration access — view to see, preview and test; edit to change settings or send to a vessel"
+      },
+      {
+        "type": "feature",
+        "title": "The crew immigration team can now open Automated Reports from the Reports menu"
+      },
       {
         "type": "fix",
         "title": "Signed-in users can no longer call the unguarded finance-dashboard and boat-retire functions directly, and trigger functions are no longer callable over the API"
