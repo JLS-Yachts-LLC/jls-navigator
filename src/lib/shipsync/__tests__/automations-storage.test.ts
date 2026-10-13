@@ -47,3 +47,57 @@ test("the PDF link for an email is a real signed https URL, not a bare path", as
 test("a value that is already an ordinary web link is passed through unchanged", async () => {
   assert.equal(await m.linkForEmail("https://example.com/a.pdf"), "https://example.com/a.pdf");
 });
+
+// ── What goes on the proof-of-delivery email ─────────────────────────────────
+
+test("the delivery note PDF is attached (not linked) and the photos of the goods come with it, delivery photos first", async () => {
+  be.files.set("shipsync/delivery-notes/0006/delivery-1.pdf", Buffer.alloc(5_000, 1));
+  be.files.set("shipsync/packages/a/delivery_1.jpg", Buffer.alloc(40_000, 2));
+  be.files.set("shipsync/packages/a/item_1.jpg", Buffer.alloc(30_000, 3));
+  const r = await m.buildProofAttachments(
+    [{ barcode: "AWB1", delivery_photo_url: "shipsync/packages/a/delivery_1.jpg", item_photo_url: "shipsync/packages/a/item_1.jpg" }],
+    { stored: "shipsync/delivery-notes/0006/delivery-1.pdf", filename: "BOAT-DeliveryNote-6.pdf" },
+  );
+  assert.equal(r.pdfAttached, true);
+  assert.equal(r.photos, 2);
+  assert.deepEqual(r.attachments.map((a) => a.filename), ["BOAT-DeliveryNote-6.pdf", "AWB1-delivery.jpg", "AWB1-item.jpg"]);
+  assert.equal(r.attachments[0].contentType, "application/pdf");
+  assert.equal(r.attachments[1].contentType, "image/jpeg");
+  assert.equal(Buffer.from(r.attachments[0].contentBase64, "base64").length, 5_000, "the real bytes, base64-encoded");
+});
+
+test("the same photo on several parcels is attached once, and no more than four photos go out", async () => {
+  be.files.set("shipsync/delivery-notes/0007/d.pdf", Buffer.alloc(100, 99));
+  const pk = [];
+  for (let i = 0; i < 7; i++) { be.files.set(`shipsync/packages/p${i}/d.jpg`, Buffer.alloc(100, i)); pk.push({ barcode: `B${i}`, delivery_photo_url: `shipsync/packages/p${i}/d.jpg`, item_photo_url: null }); }
+  pk.push({ barcode: "DUP", delivery_photo_url: "shipsync/packages/p0/d.jpg", item_photo_url: null });
+  const r = await m.buildProofAttachments(pk, { stored: "shipsync/delivery-notes/0007/d.pdf", filename: "n.pdf" });
+  assert.equal(r.photos, 4);
+  assert.equal(r.attachments.length, 5);
+  assert.equal(new Set(r.attachments.map((a) => a.contentBase64)).size, 5, "no photo twice");
+});
+
+test("a photo that can't be read or is too big for the mail service is left out, never fatal", async () => {
+  be.files.set("shipsync/delivery-notes/0008/d.pdf", Buffer.alloc(100, 1));
+  be.files.set("shipsync/packages/big/d.jpg", Buffer.alloc(3_500_000, 1));
+  be.files.set("shipsync/packages/ok/d.jpg", Buffer.alloc(100, 2));
+  const r = await m.buildProofAttachments(
+    [
+      { barcode: "BIG", delivery_photo_url: "shipsync/packages/big/d.jpg", item_photo_url: null },
+      { barcode: "GONE", delivery_photo_url: "shipsync/packages/gone/d.jpg", item_photo_url: null },
+      { barcode: "OK", delivery_photo_url: "shipsync/packages/ok/d.jpg", item_photo_url: null },
+    ],
+    { stored: "shipsync/delivery-notes/0008/d.pdf", filename: "n.pdf" },
+  );
+  assert.equal(r.photos, 1);
+  assert.equal(r.skipped.length, 2);
+  assert.ok(r.skipped.some((s) => /BIG-delivery photo \(too large/.test(s)));
+  assert.ok(r.skipped.some((s) => /GONE-delivery photo \(could not be read/.test(s)));
+});
+
+test("if the PDF itself can't be attached it is reported, so the email falls back to a link", async () => {
+  const r = await m.buildProofAttachments([], { stored: "shipsync/delivery-notes/none/d.pdf", filename: "n.pdf" });
+  assert.equal(r.pdfAttached, false);
+  assert.equal(r.attachments.length, 0);
+  assert.match(r.skipped[0], /delivery note PDF/);
+});
