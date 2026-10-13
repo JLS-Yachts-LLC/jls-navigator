@@ -18,7 +18,7 @@ import { errorMessage } from "@/lib/error-message";
 import { BarcodeScannerDialog } from "@/components/shipsync/BarcodeScanner";
 import { SignedImage } from "@/components/ui/signed-file";
 import { useSignedUrl } from "@/lib/signed-url";
-import { Screen, Lbl, inputCls, Sheet } from "./logistics-ui";
+import { Screen, Lbl, inputCls, Sheet, DateField } from "./logistics-ui";
 import { LocationPicker } from "./warehouse-ui";
 import { labelsFor } from "./warehouse-labels";
 import {
@@ -246,7 +246,7 @@ function ItemSheet({ item, onClose, onChanged }: { item: StoredItem; onClose: ()
         <div className="space-y-3 rounded-lg border border-primary/40 bg-primary/5 p-3">
           {edit === "description" && <textarea className={`${inputCls} h-24 py-2`} value={v.text} onChange={(e) => setV({ ...v, text: e.target.value })} />}
           {edit === "weight" && <input className={inputCls} type="number" inputMode="decimal" value={v.text} onChange={(e) => setV({ ...v, text: e.target.value })} placeholder="kg" />}
-          {edit === "due" && <input className={inputCls} type="date" value={v.text} onChange={(e) => setV({ ...v, text: e.target.value })} />}
+          {edit === "due" && <DateField label="Due date" value={v.text} onChange={(d) => setV({ ...v, text: d })} />}
           {edit === "status" && (
             <select className={inputCls} value={v.text} onChange={(e) => setV({ ...v, text: e.target.value })}>
               {(STATUS_EDITABLE.includes(item.status) ? STATUS_EDITABLE : [item.status, ...STATUS_EDITABLE]).map((s) => <option key={s}>{s}</option>)}

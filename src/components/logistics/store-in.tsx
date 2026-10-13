@@ -18,7 +18,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { errorMessage } from "@/lib/error-message";
 import { loadYachtNames } from "@/lib/shipsync/data";
 import { INTERNAL_DEPARTMENTS, FREEFORM_DEPARTMENTS } from "@/components/shipsync/warehouse/warehouse-constants";
-import { Screen, Lbl, inputCls, SuggestInput, PhotoField, FooterButtons } from "./logistics-ui";
+import { Screen, Lbl, inputCls, SuggestInput, PhotoField, FooterButtons, DateField } from "./logistics-ui";
 import { LocationPicker, DimsFields, FilesField, type Dims } from "./warehouse-ui";
 import { labelsFor } from "./warehouse-labels";
 import {
@@ -146,9 +146,9 @@ export function StoreIn({ onBack }: { onBack: () => void }) {
       <DimsFields value={dims} onChange={setDims} />
 
       <div className="grid grid-cols-2 gap-3">
-        <Lbl label="Date Stored"><input type="date" className={inputCls} value={dateStored} onChange={(e) => setDateStored(e.target.value)} /></Lbl>
+        <Lbl label="Date Stored"><DateField label="Date stored" value={dateStored} onChange={setDateStored} /></Lbl>
         {(entry === "client" || kind === "documents") && (
-          <Lbl label={entry === "client" ? "Due Date" : "Destruction Date"}><input type="date" className={inputCls} value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></Lbl>
+          <Lbl label={entry === "client" ? "Due Date" : "Destruction Date"}><DateField label={entry === "client" ? "Due date" : "Destruction date"} value={dueDate} onChange={setDueDate} /></Lbl>
         )}
       </div>
 
