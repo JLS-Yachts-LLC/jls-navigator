@@ -39,7 +39,6 @@ const LOGISTICS = (process.env as any).SHIPSYNC_LOGISTICS_EMAIL ?? 'logistics@jl
 
 /** Each file goes to Graph in its own request, which takes about 3 MB; bigger photos are left out rather than failing the email. */
 const MAX_ATTACH_BYTES = 2_800_000
-const MAX_EMAIL_PHOTOS = 4
 const IMAGE_TYPE_BY_EXT: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif' }
 
 function toBase64(bytes: Uint8Array): string {
@@ -49,8 +48,10 @@ function toBase64(bytes: Uint8Array): string {
 }
 
 /**
- * What goes ON the proof-of-delivery email: the delivery note PDF itself (not a link to it) and the photos of the
- * goods — the photos taken at delivery first, then the ones taken when the parcels arrived, up to a few.
+ * What goes ON the proof-of-delivery email: the delivery note PDF itself (not a link to it) and TWO photos for the
+ * whole shipment — one taken when it was received and one taken at delivery — however many parcels it has. A
+ * shipment of 100 parcels still sends two photos, not a hundred. If the first photo of a kind can't be used, the next
+ * parcel's is tried.
  * A file that can't be read, or is too big for the mail service, is left out and reported, never fatal:
  * the email still goes, with a link to the PDF instead if that is what couldn't be attached.
  */
@@ -68,26 +69,23 @@ export async function buildProofAttachments(
     pdfAttached = true
   } else skipped.push(pdfBytes ? 'delivery note PDF (too large to attach)' : 'delivery note PDF (could not be read)')
 
-  const wanted: Array<{ stored: string; label: string }> = []
-  const seen = new Set<string>()
-  for (const field of ['delivery_photo_url', 'item_photo_url'] as const) {
+  let photos = 0
+  // Delivered first, then received. For each kind, the first parcel's photo that can be used.
+  for (const [field, kind] of [['delivery_photo_url', 'delivered'], ['item_photo_url', 'received']] as const) {
+    const seen = new Set<string>()
     for (const p of packages) {
       const stored = p[field]
       if (!stored || seen.has(stored)) continue
       seen.add(stored)
-      wanted.push({ stored, label: `${p.barcode ?? 'parcel'}-${field === 'delivery_photo_url' ? 'delivery' : 'item'}` })
+      const label = `${p.barcode ?? 'parcel'}-${kind}`
+      const bytes = await downloadStored(stored).catch(() => null)
+      if (!bytes) { skipped.push(`${label} photo (could not be read)`); continue }
+      if (bytes.length > MAX_ATTACH_BYTES) { skipped.push(`${label} photo (too large to attach)`); continue }
+      const ext = (stored.split('?')[0].split('.').pop() ?? 'jpg').toLowerCase()
+      attachments.push({ filename: `${label}.${IMAGE_TYPE_BY_EXT[ext] ? ext : 'jpg'}`, contentBase64: toBase64(bytes), contentType: IMAGE_TYPE_BY_EXT[ext] ?? 'image/jpeg' })
+      photos++
+      break
     }
-  }
-  let photos = 0
-  for (const w of wanted) {
-    if (photos >= MAX_EMAIL_PHOTOS) break
-    const bytes = await downloadStored(w.stored).catch(() => null)
-    if (!bytes) { skipped.push(`${w.label} photo (could not be read)`); continue }
-    if (bytes.length > MAX_ATTACH_BYTES) { skipped.push(`${w.label} photo (too large to attach)`); continue }
-    const ext = (w.stored.split('?')[0].split('.').pop() ?? 'jpg').toLowerCase()
-    const type = IMAGE_TYPE_BY_EXT[ext] ?? 'image/jpeg'
-    attachments.push({ filename: `${w.label}.${IMAGE_TYPE_BY_EXT[ext] ? ext : 'jpg'}`, contentBase64: toBase64(bytes), contentType: type })
-    photos++
   }
   return { attachments, pdfAttached, photos, skipped }
 }
@@ -110,21 +108,6 @@ export async function generateNotePdf(noteId: string, kind: 'predelivery' | 'del
     driverName = driver?.name ?? null
   }
 
-  // Van (plate) for the note header.
-  let vanLabel: string | null = null
-  if (note.vehicle_id) {
-    const { data: veh } = await db().from('crew_vehicles').select('registration, make, model').eq('id', note.vehicle_id).maybeSingle()
-    if (veh) vanLabel = (veh.registration?.trim() || [veh.make, veh.model].filter(Boolean).join(' ').trim()) || null
-  }
-
-  // Saved berth per boat (a multi-boat note has no single destination_address).
-  const boatNames = Array.from(new Set(packages.map((p) => p.boat_name).filter(Boolean) as string[]))
-  const destByBoat = new Map<string, string | null>()
-  if (boatNames.length) {
-    const { data: dests } = await db().from('shipsync_destinations').select('boat_name, address').in('boat_name', boatNames)
-    for (const d of dests ?? []) destByBoat.set(d.boat_name, d.address ?? null)
-  }
-
   // For a delivery note, embed the captured customer signature per boat.
   const sigByBoat = new Map<string, { imageBytes: Uint8Array | null; receiver: string | null; date: string | null }>()
   if (kind === 'delivery') {
@@ -144,7 +127,7 @@ export async function generateNotePdf(noteId: string, kind: 'predelivery' | 'del
     }
   }
 
-  const bytes = await buildDeliveryNotePdf(note, packages, kind, { driverName, vanLabel, destByBoat, sigByBoat })
+  const bytes = await buildDeliveryNotePdf(note, packages, kind, { driverName, sigByBoat })
   const path = `delivery-notes/${note.number ?? noteId}/${kind}-${Date.now()}.pdf`
   const up = await supabaseAdmin.storage.from('shipsync').upload(path, bytes, { upsert: true, contentType: 'application/pdf' })
   if (up.error) throw up.error
@@ -187,7 +170,7 @@ export async function emailProofOfDelivery(noteId: string, toOverride?: string, 
      <p style="margin:8px 0;font-size:14px;color:#333">${intro}</p>
      <table style="margin:12px 0;font-size:13px;color:#333">${rows}</table>
      ${built.pdfAttached
-        ? `<p style="margin:14px 0;font-size:13px;color:#333">The ${pre ? 'pre-delivery note' : 'delivery note'} is attached as a PDF${built.photos ? `, with ${built.photos === 1 ? 'a photo' : `${built.photos} photos`} of the goods` : ''}.</p>`
+        ? `<p style="margin:14px 0;font-size:13px;color:#333">The ${pre ? 'pre-delivery note' : 'delivery note'} is attached as a PDF${built.photos ? `, with ${built.photos === 1 ? 'a photo' : 'photos'} of the goods as received and as delivered` : ''}.</p>`
         : `<p style="margin:14px 0"><a href="${pdfLink}" style="display:inline-block;background:#0d6efd;color:#fff;text-decoration:none;padding:9px 16px;border-radius:7px;font-size:13px">${btn}</a></p>${built.photos ? `<p style="margin:8px 0;font-size:13px;color:#333">${built.photos === 1 ? 'A photo' : `${built.photos} photos`} of the goods ${built.photos === 1 ? 'is' : 'are'} attached.</p>` : ''}`}
      <p style="margin:8px 0;font-size:12px;color:#7a828a">JLS Yachts Logistics</p>`,
   )

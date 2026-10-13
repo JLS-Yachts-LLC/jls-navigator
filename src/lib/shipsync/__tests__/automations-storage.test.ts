@@ -50,7 +50,7 @@ test("a value that is already an ordinary web link is passed through unchanged",
 
 // ── What goes on the proof-of-delivery email ─────────────────────────────────
 
-test("the delivery note PDF is attached (not linked) and the photos of the goods come with it, delivery photos first", async () => {
+test("the delivery note PDF is attached (not linked) with one delivered photo and one received photo", async () => {
   be.files.set("shipsync/delivery-notes/0006/delivery-1.pdf", Buffer.alloc(5_000, 1));
   be.files.set("shipsync/packages/a/delivery_1.jpg", Buffer.alloc(40_000, 2));
   be.files.set("shipsync/packages/a/item_1.jpg", Buffer.alloc(30_000, 3));
@@ -60,21 +60,39 @@ test("the delivery note PDF is attached (not linked) and the photos of the goods
   );
   assert.equal(r.pdfAttached, true);
   assert.equal(r.photos, 2);
-  assert.deepEqual(r.attachments.map((a) => a.filename), ["BOAT-DeliveryNote-6.pdf", "AWB1-delivery.jpg", "AWB1-item.jpg"]);
+  assert.deepEqual(r.attachments.map((a) => a.filename), ["BOAT-DeliveryNote-6.pdf", "AWB1-delivered.jpg", "AWB1-received.jpg"]);
   assert.equal(r.attachments[0].contentType, "application/pdf");
   assert.equal(r.attachments[1].contentType, "image/jpeg");
   assert.equal(Buffer.from(r.attachments[0].contentBase64, "base64").length, 5_000, "the real bytes, base64-encoded");
 });
 
-test("the same photo on several parcels is attached once, and no more than four photos go out", async () => {
+test("a shipment of 100 parcels still sends just ONE delivered and ONE received photo", async () => {
   be.files.set("shipsync/delivery-notes/0007/d.pdf", Buffer.alloc(100, 99));
   const pk = [];
-  for (let i = 0; i < 7; i++) { be.files.set(`shipsync/packages/p${i}/d.jpg`, Buffer.alloc(100, i)); pk.push({ barcode: `B${i}`, delivery_photo_url: `shipsync/packages/p${i}/d.jpg`, item_photo_url: null }); }
-  pk.push({ barcode: "DUP", delivery_photo_url: "shipsync/packages/p0/d.jpg", item_photo_url: null });
+  for (let i = 0; i < 100; i++) {
+    be.files.set(`shipsync/packages/p${i}/d.jpg`, Buffer.alloc(100, i % 200));
+    be.files.set(`shipsync/packages/p${i}/i.jpg`, Buffer.alloc(120, i % 200));
+    pk.push({ barcode: `B${i}`, delivery_photo_url: `shipsync/packages/p${i}/d.jpg`, item_photo_url: `shipsync/packages/p${i}/i.jpg` });
+  }
   const r = await m.buildProofAttachments(pk, { stored: "shipsync/delivery-notes/0007/d.pdf", filename: "n.pdf" });
-  assert.equal(r.photos, 4);
-  assert.equal(r.attachments.length, 5);
-  assert.equal(new Set(r.attachments.map((a) => a.contentBase64)).size, 5, "no photo twice");
+  assert.equal(r.photos, 2);
+  assert.equal(r.attachments.length, 3, "the PDF and two photos");
+  assert.deepEqual(r.attachments.slice(1).map((a) => a.filename), ["B0-delivered.jpg", "B0-received.jpg"]);
+});
+
+test("if a parcel's photo can't be used, the next parcel's is tried for that kind", async () => {
+  be.files.set("shipsync/delivery-notes/0009/d.pdf", Buffer.alloc(100, 1));
+  be.files.set("shipsync/packages/second/d.jpg", Buffer.alloc(100, 2));
+  const r = await m.buildProofAttachments(
+    [
+      { barcode: "FIRST", delivery_photo_url: "shipsync/packages/gone/d.jpg", item_photo_url: null },
+      { barcode: "SECOND", delivery_photo_url: "shipsync/packages/second/d.jpg", item_photo_url: null },
+    ],
+    { stored: "shipsync/delivery-notes/0009/d.pdf", filename: "n.pdf" },
+  );
+  assert.equal(r.photos, 1);
+  assert.equal(r.attachments[1].filename, "SECOND-delivered.jpg");
+  assert.ok(r.skipped.some((x) => /FIRST-delivered photo \(could not be read/.test(x)));
 });
 
 test("a photo that can't be read or is too big for the mail service is left out, never fatal", async () => {
@@ -91,8 +109,8 @@ test("a photo that can't be read or is too big for the mail service is left out,
   );
   assert.equal(r.photos, 1);
   assert.equal(r.skipped.length, 2);
-  assert.ok(r.skipped.some((s) => /BIG-delivery photo \(too large/.test(s)));
-  assert.ok(r.skipped.some((s) => /GONE-delivery photo \(could not be read/.test(s)));
+  assert.ok(r.skipped.some((s) => /BIG-delivered photo \(too large/.test(s)));
+  assert.ok(r.skipped.some((s) => /GONE-delivered photo \(could not be read/.test(s)));
 });
 
 test("if the PDF itself can't be attached it is reported, so the email falls back to a link", async () => {
