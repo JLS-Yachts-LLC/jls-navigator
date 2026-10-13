@@ -21,8 +21,26 @@ function buildId(): string {
   }
 }
 
+// The Anthropic SDK's `internal/node` pulls in Node's stream/util/fs for its file-tool helpers, which we never use (only the
+// plain messages API). Bundled for the Worker it becomes a module that throws "stream is not defined" the moment it loads, and
+// the bundler can place it in a file that every Client Portal API route imports — which took the portal's data routes down.
+// Use the SDK's own browser stand-in (the package.json `browser` field says to) so nothing Node-only is evaluated.
+function anthropicNodeShimOff() {
+  return {
+    name: "anthropic-sdk-no-node-shim",
+    enforce: "pre" as const,
+    async resolveId(this: any, source: string, importer: string | undefined, options: any) {
+      if (!/internal\/node(\.mjs)?$/.test(source) || !importer || !/@anthropic-ai[\\/]sdk/.test(importer)) return null;
+      const resolved = await this.resolve(source, importer, { ...options, skipSelf: true });
+      if (!resolved || !/@anthropic-ai[\\/]sdk[\\/]internal[\\/]node\.mjs$/.test(resolved.id)) return null;
+      return resolved.id.replace(/node\.mjs$/, "node.browser.mjs");
+    },
+  };
+}
+
 export default defineConfig({
   vite: {
     define: { __BUILD_ID__: JSON.stringify(buildId()) },
+    plugins: [anthropicNodeShimOff()],
   },
 });
