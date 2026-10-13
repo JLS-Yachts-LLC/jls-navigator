@@ -147,3 +147,18 @@ test("the stage folder is found despite spelling differences, and files are neve
   assert.equal(sp.pickStageFolder([], "Delivery Image"), null);
   assert.equal(sp.pickStageFolder([{ name: "Other", folder: {} }], "Signature Image"), null);
 });
+
+test("a loose picture's Power App column is read from its file name, and a note folder is described by what it holds", () => {
+  assert.equal(sp.pictureTag("Reserved_ImageAttachment_[13]_[PictureofItem][32]_[0a59][1]_[1].jpeg-SUNRAYS-1629.jpg"), "PictureofItem");
+  assert.equal(sp.pictureTag("IMG_0001.jpg"), null);
+  const text = sp.describeNoteFolder([
+    { name: "Reserved_ImageAttachment_[13]_[PictureofItem][32]_[a][1]_[1].jpeg-X-1.jpg", file: {} },
+    { name: "Reserved_ImageAttachment_[13]_[PictureofItem][32]_[b][1]_[1].jpeg-X-1.jpg", file: {} },
+    { name: "Reserved_ImageAttachment_[25]_[PictureonDeliverytoClient][37]_[c][1]_[7].jpeg-X-1.jpg", file: {} },
+    { name: "Notes", folder: {} },
+  ]);
+  assert.match(text, /3 file\(s\)/);
+  assert.match(text, /PictureofItem x2/);
+  assert.match(text, /PictureonDeliverytoClient x1/);
+  assert.match(text, /folders: Notes/);
+});

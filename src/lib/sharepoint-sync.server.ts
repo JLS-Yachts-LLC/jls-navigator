@@ -2068,9 +2068,38 @@ async function fetchStageImageByPath(
     if (inside == null) return { url: null, reason: `could not open ${notePath}/${folder.name}` }
     return storeNewestImage(inside, spItemId, tag, String(folder.name))
   }
-  // No such stage folder. Say what the note folder does hold so the real layout is visible in the log.
-  const held = note.children.map((c) => `${c.folder ? '[folder] ' : ''}${c.name}`).slice(0, 8).join(', ')
-  return { url: null, reason: `no "${stage}" folder in ${notePath}; it holds: ${held || '(nothing)'}` }
+  // No such stage folder. The Power App also drops the pictures loose into the note folder, naming each file after
+  // its column ("Reserved_ImageAttachment_[13]_[PictureofItem][32]_..."). A delivery photo or a signature is one per
+  // delivery note, so the newest file carrying that column's name is the one. (Received-in-office photos are NOT taken
+  // this way: a note usually has one per parcel, and there is no telling which is whose.)
+  const byName = PKG_STAGE_FILE_TAG[stage]
+  if (byName) {
+    const tagged = note.children.filter((c) => c.file && IMAGE_EXT.test(String(c.name ?? '')) && byName.test(String(c.name)))
+    if (tagged.length) return storeNewestImage(tagged, spItemId, tag, stage)
+  }
+  // Say what the note folder does hold so the real layout is visible in the log.
+  return { url: null, reason: `no "${stage}" folder in ${notePath}; ${describeNoteFolder(note.children)}` }
+}
+
+/** The Power App column a loose picture was saved from, read out of its file name. */
+export function pictureTag(fileName: string): string | null {
+  return fileName.match(/_\[\d+\]_\[([^\]]+)\]/)?.[1] ?? null
+}
+
+/** Which column names the loose pictures in a note folder carry, e.g. "8 file(s): PictureofItem x8". */
+export function describeNoteFolder(children: Array<Record<string, any>>): string {
+  const files = children.filter((c) => c.file)
+  const tags = new Map<string, number>()
+  for (const f of files) { const t = pictureTag(String(f.name ?? '')) ?? 'other'; tags.set(t, (tags.get(t) ?? 0) + 1) }
+  const kinds = [...tags].map(([t, n]) => `${t} x${n}`).join(', ')
+  const folders = children.filter((c) => c.folder).map((c) => c.name).slice(0, 5).join(', ')
+  return `it holds ${files.length} file(s)${kinds ? `: ${kinds}` : ''}${folders ? `; folders: ${folders}` : ''}`
+}
+
+/** Per-delivery-note pictures that can be recognised by the column name in their file name. */
+const PKG_STAGE_FILE_TAG: Record<string, RegExp> = {
+  'Delivery Image': /delivery/i,
+  'Signature Image': /signature/i,
 }
 
 /**
