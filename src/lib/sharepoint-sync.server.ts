@@ -1939,13 +1939,14 @@ async function listLibraryPath(
   siteId: string,
   graphToken: string,
   path: string,
+  onStatus?: (status: number) => void,
 ): Promise<Array<Record<string, any>> | null> {
   const encoded = path.split('/').filter(Boolean).map(encodeURIComponent).join('/')
   const res = await fetch(
     `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root:/${encoded}:/children?${CHILD_SELECT}`,
     { headers: { Authorization: `Bearer ${graphToken}` } },
   )
-  if (!res.ok) return null
+  if (!res.ok) { onStatus?.(res.status); return null }
   const body = await res.json().catch(() => null) as Record<string, any> | null
   return (body?.value ?? null) as Array<Record<string, any>> | null
 }
@@ -1991,8 +1992,10 @@ async function fetchStageImageByPath(
   spItemId: string,
   tag: string,
 ): Promise<{ url: string | null; reason?: string }> {
-  const children = await listLibraryPath(siteId, graphToken, `${notePath}/${stage}`)
-  if (children == null) return { url: null, reason: `no "${stage}" folder` }
+  let status = 0
+  const children = await listLibraryPath(siteId, graphToken, `${notePath}/${stage}`, (st) => { status = st })
+  // 404 = the folder really isn't there; 401/403 = SharePoint is refusing this app — they need opposite fixes.
+  if (children == null) return { url: null, reason: `no "${stage}" folder under ${notePath} (SharePoint answered HTTP ${status})` }
   return storeNewestImage(children, spItemId, tag, stage)
 }
 
