@@ -37,6 +37,78 @@ export const PRICE_UNITS = [...UNITS.map((u) => u.priceUnit), 'lump sum']
 export const unitLabel = (code: string | null | undefined) => UNITS.find((u) => u.code === code)?.label ?? code ?? ''
 export const priceUnitFor = (code: string | null | undefined) => UNITS.find((u) => u.code === code)?.priceUnit ?? ''
 
+/**
+ * UAE rules for bunkers, as given by the Port Operations & Agency team, shown to staff and (in the Client Portal) to clients.
+ * They are guidance: the form works out how they apply to an enquiry, and the Agency team confirms with the client.
+ */
+export const VAT_STAY_DAYS = 21
+export const QUICK_DEPARTURE_HOURS = 48
+export const CLEANER_FUELS_URL = 'https://u.ae/en/information-and-services/environment-and-energy/the-green-economy-initiative/efforts-to-achieve-green-economy-/cleaner-fuels'
+export const GUIDANCE: Array<{ title: string; points: string[]; link?: { label: string; url: string } }> = [
+  {
+    title: 'VAT on bunkers in the UAE',
+    points: [
+      "UAE law allows bunkers to be zero-rated when they are supplied to an internationally sailing vessel, as shown on the Master's declaration.",
+      'VAT is a consumption-based tax: VAT is charged at 5% on fuel consumed in the UAE.',
+      `If the vessel will be consuming the fuel in the UAE and its stay is longer than ${VAT_STAY_DAYS} days, it is subject to 5% VAT.`,
+      `If the vessel sails out of the UAE after the bunkers are supplied (within ${VAT_STAY_DAYS} days), it is zero-rated.`,
+    ],
+  },
+  {
+    title: 'Fuel quality — 10 ppm sulphur diesel',
+    points: [
+      'Since 19 July 2022 a new Cabinet decree and updated guidelines from the Emirates Authority for Standardization and Metrology (ESMA) require diesel containing 500 parts per million (ppm) of sulphur to be replaced with diesel containing only 10 ppm — similar to Euro 5 standards.',
+    ],
+    link: { label: 'Read more on u.ae', url: CLEANER_FUELS_URL },
+  },
+  {
+    title: '500 / 1000 ppm fuel',
+    points: [`500 / 1000 ppm fuel can only be supplied if the vessel departs within ${QUICK_DEPARTURE_HOURS} hours.`],
+  },
+]
+
+export type SailsOut = 'yes' | 'no' | 'unsure'
+export const SAILS_OUT_OPTIONS: Array<{ value: SailsOut; label: string }> = [
+  { value: 'yes', label: 'Yes — it sails out of the UAE after bunkering' },
+  { value: 'no', label: 'No — it stays / consumes the fuel in the UAE' },
+  { value: 'unsure', label: 'Not sure yet' },
+]
+
+/** Whole days from one YYYY-MM-DD date to another (b − a), or null if either is missing or unreadable. */
+export function daysBetween(a: string | null | undefined, b: string | null | undefined): number | null {
+  const da = Date.parse(`${a ?? ''}T00:00:00Z`), db = Date.parse(`${b ?? ''}T00:00:00Z`)
+  if (Number.isNaN(da) || Number.isNaN(db)) return null
+  return Math.round((db - da) / 86_400_000)
+}
+
+export interface VatNote { rate: 0 | 5 | null; text: string }
+/**
+ * How UAE VAT applies to the bunkers, from the facts the form holds: does the vessel sail out of the UAE after bunkering, and when.
+ * Zero-rated if it sails out within 21 days (on the Master's declaration); 5% if the fuel is consumed in the UAE or the stay is longer
+ * than 21 days; otherwise "to be confirmed" — never a guess.
+ */
+export function vatTreatment(i: { sailsOut: string | null | undefined; bunkerDate: string | null | undefined; departureDate: string | null | undefined }): VatNote {
+  const days = daysBetween(i.bunkerDate, i.departureDate)
+  if (days !== null && days < 0) return { rate: null, text: 'VAT to be confirmed — the planned departure is before the bunkering date; please check the dates.' }
+  if (days !== null && days > VAT_STAY_DAYS) return { rate: 5, text: `5% VAT — the vessel stays more than ${VAT_STAY_DAYS} days after bunkering, so the fuel is consumed in the UAE.` }
+  if (i.sailsOut === 'no') return { rate: 5, text: '5% VAT — the fuel will be consumed in the UAE.' }
+  if (i.sailsOut === 'yes' && days !== null) return { rate: 0, text: `Zero-rated (0%) — the vessel sails out of the UAE within ${VAT_STAY_DAYS} days. This relies on the Master's declaration that the vessel sails internationally.` }
+  if (i.sailsOut === 'yes') return { rate: null, text: `Zero-rated if the vessel sails out of the UAE within ${VAT_STAY_DAYS} days of the bunkers being supplied — give the planned departure date to confirm.` }
+  return { rate: null, text: 'VAT to be confirmed — say whether the vessel sails out of the UAE after bunkering, and when.' }
+}
+
+export interface FuelRuleNote { level: 'ok' | 'warn'; text: string }
+/** Fuels JLS lists at 1000 ppm sulphur (MGO / DMA): the 500 / 1000 ppm rule applies to them. */
+export const HIGH_SULPHUR_FUELS = ['MGO / DMA']
+/** The 48-hour rule for 500 / 1000 ppm fuel; null when the fuel isn't one it applies to. */
+export function fuelRule(i: { fuelType: string | null | undefined; bunkerDate: string | null | undefined; departureDate: string | null | undefined }): FuelRuleNote | null {
+  if (!i.fuelType || !HIGH_SULPHUR_FUELS.includes(i.fuelType)) return null
+  const days = daysBetween(i.bunkerDate, i.departureDate)
+  if (days === null) return { level: 'warn', text: `${i.fuelType} is 1000 ppm fuel, which can only be supplied if the vessel departs within ${QUICK_DEPARTURE_HOURS} hours. Give the planned departure date — otherwise ULSMGO / LSMGO (10 ppm) is needed.` }
+  if (days <= QUICK_DEPARTURE_HOURS / 24) return { level: 'ok', text: `${i.fuelType} (1000 ppm) can be supplied: the vessel departs within ${QUICK_DEPARTURE_HOURS} hours.` }
+  return { level: 'warn', text: `${i.fuelType} is 1000 ppm fuel and the vessel departs more than ${QUICK_DEPARTURE_HOURS} hours after bunkering, so it cannot be supplied. ULSMGO / LSMGO (10 ppm) is needed.` }
+}
+
 export interface EnquiryForm {
   /** The Polaris yacht this enquiry is for ("" when not linked) — a linked enquiry is shown to the vessel in the Client Portal. */
   yachtId: string
@@ -45,10 +117,12 @@ export interface EnquiryForm {
   port: string; berth: string; preferredDate: string; preferredTime: string
   fuelType: string; fuelOther: string; quantity: string; unit: string; specNotes: string
   deliveryMethod: string; fuelRemaining: string; tankCapacity: string; specialRequirements: string
+  /** Does the vessel sail out of the UAE after bunkering? ('yes' | 'no' | 'unsure' | '') and its planned departure date. */
+  sailsOut: string; departureDate: string
   notes: string
 }
 export const emptyEnquiry = (): EnquiryForm => ({
-  yachtId: '', yachtName: '', flag: '', loa: '', imo: '', captain: '', chiefEngineer: '', contactNumber: '', contactEmail: '',
+  sailsOut: '', departureDate: '', yachtId: '', yachtName: '', flag: '', loa: '', imo: '', captain: '', chiefEngineer: '', contactNumber: '', contactEmail: '',
   port: '', berth: '', preferredDate: '', preferredTime: '', fuelType: '', fuelOther: '', quantity: '', unit: 'MT', specNotes: '',
   deliveryMethod: '', fuelRemaining: '', tankCapacity: '', specialRequirements: '', notes: '',
 })
@@ -89,6 +163,7 @@ export function enquiryPayload(f: EnquiryForm) {
     port: t(f.port), berth: t(f.berth), preferred_date: t(f.preferredDate), preferred_time: t(f.preferredTime),
     fuel_type: t(f.fuelType), fuel_other: f.fuelType === 'Other' ? t(f.fuelOther) : '', quantity: n(f.quantity), quantity_unit: f.unit, spec_notes: t(f.specNotes),
     delivery_method: t(f.deliveryMethod), fuel_remaining: t(f.fuelRemaining), tank_capacity: t(f.tankCapacity), special_requirements: t(f.specialRequirements),
+    sails_out_of_uae: t(f.sailsOut), departure_date: t(f.departureDate),
     notes: t(f.notes),
   }
 }

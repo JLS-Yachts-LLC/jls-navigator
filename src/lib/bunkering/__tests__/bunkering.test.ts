@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { FakeBackend } from "../../../components/logistics/__tests__/fake-backend";
 import {
   emptyEnquiry, enquiryProblems, enquiryPayload, emptyQuote, quoteProblems, quotePayload, quoteTotal, quantityDifference,
-  allowedMoves, canSendToSuppliers, approvalProblems, priceUnitFor, matchYacht, type EnquiryForm, type QuoteForm,
+  allowedMoves, canSendToSuppliers, approvalProblems, priceUnitFor, matchYacht, vatTreatment, fuelRule, daysBetween, GUIDANCE, type EnquiryForm, type QuoteForm,
 } from "../model";
 
 const be = new FakeBackend();
@@ -238,4 +238,61 @@ test("a new-enquiry email notes when the vessel has not yet confirmed", () => {
   const m = mail.buildBunkeringEmail("created", sample({ declared_by_name: null, declared_by_role: null }) as any, undefined, "Sam", "https://x");
   assert.match(m.html, /Not yet confirmed/);
   assert.match(m.subject, /^New bunkering enquiry/);
+});
+
+// -- UAE guidance: VAT and the 500 / 1000 ppm rule ------------------------------------------------------------
+
+test("dates are compared in whole days, and nothing is guessed when one is missing", () => {
+  assert.equal(daysBetween("2026-10-30", "2026-11-19"), 20);
+  assert.equal(daysBetween("2026-10-30", "2026-10-30"), 0);
+  assert.equal(daysBetween("2026-10-30", "2026-10-28"), -2);
+  assert.equal(daysBetween("2026-10-30", ""), null);
+  assert.equal(daysBetween(null, "2026-10-30"), null);
+});
+
+test("VAT: zero-rated if the vessel sails out within 21 days; 5% if the fuel is consumed in the UAE or the stay is longer than 21 days", () => {
+  const v = (sailsOut: string, departureDate: string) => vatTreatment({ sailsOut, bunkerDate: "2026-10-30", departureDate });
+  assert.equal(v("yes", "2026-11-05").rate, 0, "sails out in 6 days");
+  assert.equal(v("yes", "2026-11-20").rate, 0, "exactly 21 days is still within 21 days");
+  assert.equal(v("yes", "2026-11-21").rate, 5, "22 days: longer than 21 days");
+  assert.equal(v("no", "").rate, 5, "stays and consumes the fuel in the UAE");
+  assert.equal(v("no", "2026-11-02").rate, 5, "not sailing out, whatever the dates say");
+  assert.equal(v("unsure", "").rate, null);
+  assert.equal(v("", "").rate, null);
+  assert.equal(v("yes", "").rate, null, "'yes' with no departure date can't be confirmed");
+  assert.match(v("yes", "").text, /planned departure date/);
+  assert.match(v("yes", "2026-11-05").text, /Master's declaration/, "zero-rating rests on the Master's declaration");
+  assert.equal(v("yes", "2026-10-20").rate, null, "a departure before the bunkering date is flagged, not treated as zero-rated");
+  assert.match(v("yes", "2026-10-20").text, /check the dates/);
+});
+
+test("1000 ppm fuel (MGO / DMA) can only be supplied if the vessel departs within 48 hours", () => {
+  const r = (fuelType: string, departureDate: string) => fuelRule({ fuelType, bunkerDate: "2026-10-30", departureDate });
+  assert.equal(r("MGO / DMA", "2026-10-31")?.level, "ok", "next day");
+  assert.equal(r("MGO / DMA", "2026-11-01")?.level, "ok", "two days = 48 hours");
+  assert.equal(r("MGO / DMA", "2026-11-02")?.level, "warn", "three days");
+  assert.match(r("MGO / DMA", "2026-11-02")!.text, /ULSMGO \/ LSMGO \(10 ppm\)/);
+  assert.equal(r("MGO / DMA", "")?.level, "warn", "no departure date: ask for it");
+  assert.equal(r("ULSMGO", "2026-12-01"), null, "10 ppm fuel has no such restriction");
+  assert.equal(r("VLSFO", ""), null);
+  assert.equal(r("", ""), null);
+});
+
+test("the client guidance carries all three rules the Agency team gave, including the u.ae source", () => {
+  const all = JSON.stringify(GUIDANCE);
+  assert.match(all, /zero-rated/);
+  assert.match(all, /5%/);
+  assert.match(all, /21 days/);
+  assert.match(all, /19 July 2022/);
+  assert.match(all, /500 parts per million/);
+  assert.match(all, /10 ppm/);
+  assert.match(all, /within 48 hours/);
+  assert.ok(GUIDANCE.some((g) => g.link?.url.startsWith("https://u.ae/")));
+});
+
+test("the departure facts travel with what is saved", () => {
+  const p = enquiryPayload(good({ sailsOut: "yes", departureDate: "2026-11-05" }));
+  assert.equal(p.sails_out_of_uae, "yes");
+  assert.equal(p.departure_date, "2026-11-05");
+  assert.equal(enquiryPayload(good()).sails_out_of_uae, "");
 });

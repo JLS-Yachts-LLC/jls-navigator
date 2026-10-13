@@ -21,6 +21,7 @@ export interface BunkerEnquiry {
   port: string | null; berth: string | null; preferred_date: string | null; preferred_time: string | null
   fuel_type: string | null; fuel_other: string | null; quantity: number | null; quantity_unit: string | null; spec_notes: string | null
   delivery_method: string | null; fuel_remaining: string | null; tank_capacity: string | null; special_requirements: string | null
+  sails_out_of_uae: string | null; departure_date: string | null
   declared_by_role: string | null; declared_by_name: string | null; declared_at: string | null; declaration_method: string | null; declaration_signature_url: string | null
   date_enquiry_sent: string | null
   approved_quote_id: string | null; approved_by_role: string | null; approved_by_name: string | null; approved_at: string | null; approval_method: string | null; approval_note: string | null
@@ -206,6 +207,6 @@ export function toEnquiryForm(e: BunkerEnquiry): EnquiryForm {
     contactNumber: s(e.contact_number), contactEmail: s(e.contact_email), port: s(e.port), berth: s(e.berth), preferredDate: s(e.preferred_date),
     preferredTime: s(e.preferred_time), fuelType: s(e.fuel_type), fuelOther: s(e.fuel_other), quantity: s(e.quantity), unit: e.quantity_unit ?? 'MT',
     specNotes: s(e.spec_notes), deliveryMethod: s(e.delivery_method), fuelRemaining: s(e.fuel_remaining), tankCapacity: s(e.tank_capacity),
-    specialRequirements: s(e.special_requirements), notes: s(e.notes),
+    specialRequirements: s(e.special_requirements), sailsOut: s(e.sails_out_of_uae), departureDate: s(e.departure_date), notes: s(e.notes),
   }
 }

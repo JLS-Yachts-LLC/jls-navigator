@@ -5,13 +5,32 @@
 import { useEffect, useState } from "react";
 import { Fuel, Loader2 } from "lucide-react";
 import { portalFetch } from "@/lib/portal/portal-fetch";
-import { STATUS_ORDER, STATUS_LABEL, type EnquiryStatus } from "@/lib/bunkering/model";
+import { STATUS_ORDER, STATUS_LABEL, GUIDANCE, type EnquiryStatus } from "@/lib/bunkering/model";
 import type { VesselEnquiry } from "@/lib/portal/bunkering";
 import { cn } from "@/lib/utils";
 
 const day = (d: string | null) => (d ? new Date(`${d}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—");
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString("en-GB", { timeZone: "Asia/Dubai", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—");
 const money = (n: number | null, c: string) => (n == null ? "—" : `${c} ${n.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+
+/** What clients should know about bunkering in the UAE — VAT, the 10 ppm fuel standard and the 48-hour rule — as given by JLS's Port Operations & Agency team. */
+function GoodToKnow() {
+  return (
+    <details className="rounded-xl border border-border bg-card" open>
+      <summary className="cursor-pointer px-4 py-3 text-sm font-semibold">Good to know before you bunker in the UAE</summary>
+      <div className="space-y-4 border-t border-border px-4 py-4 text-sm">
+        {GUIDANCE.map((g) => (
+          <section key={g.title} className="space-y-1.5">
+            <h4 className="font-semibold">{g.title}</h4>
+            <ul className="list-disc space-y-1 pl-5 text-muted-foreground">{g.points.map((p, i) => <li key={i}>{p}</li>)}</ul>
+            {g.link && <a className="text-primary hover:underline" href={g.link.url} target="_blank" rel="noreferrer">{g.link.label}</a>}
+          </section>
+        ))}
+        <p className="text-xs text-muted-foreground">Your JLS agent will confirm how this applies to your vessel.</p>
+      </div>
+    </details>
+  );
+}
 
 export function BunkeringSection() {
   const [rows, setRows] = useState<VesselEnquiry[] | null>(null);
@@ -33,14 +52,18 @@ export function BunkeringSection() {
   if (error) return <p className="rounded-xl border border-border px-4 py-6 text-sm text-muted-foreground">{error}</p>;
   if (rows === null) return <div className="flex h-32 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
   if (rows.length === 0) return (
-    <div className="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
-      <Fuel className="mx-auto mb-2 h-6 w-6 opacity-50" />
-      No bunkering enquiries yet. When you ask JLS for a bunkering quotation, you'll follow it here — from the request to the quotation, your approval and the delivery.
+    <div className="space-y-3">
+      <GoodToKnow />
+      <div className="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
+        <Fuel className="mx-auto mb-2 h-6 w-6 opacity-50" />
+        No bunkering enquiries yet. When you ask JLS for a bunkering quotation, you'll follow it here — from the request to the quotation, your approval and the delivery.
+      </div>
     </div>
   );
 
   return (
     <div className="space-y-3">
+      <GoodToKnow />
       {rows.map((r) => {
         const at = STATUS_ORDER.indexOf(r.status as EnquiryStatus);
         const isOpen = open === r.id;
@@ -72,6 +95,11 @@ export function BunkeringSection() {
                   {r.specNotes && <div className="sm:col-span-2"><dt className="text-muted-foreground">Specification / sulphur limit</dt><dd>{r.specNotes}</dd></div>}
                   {r.specialRequirements && <div className="sm:col-span-2"><dt className="text-muted-foreground">Special requirements</dt><dd>{r.specialRequirements}</dd></div>}
                 </dl>
+
+                <div className="space-y-2">
+                  <div className={cn("rounded-lg border px-3 py-2", r.vat.rate === null ? "border-border text-muted-foreground" : "border-primary/40 bg-primary/5")}><strong>VAT:</strong> {r.vat.text}</div>
+                  {r.fuelRule && <div className={cn("rounded-lg border px-3 py-2", r.fuelRule.level === "warn" ? "border-amber-500/50 bg-amber-500/10 text-amber-500" : "border-emerald-500/40 text-emerald-500")}><strong>Fuel:</strong> {r.fuelRule.text}</div>}
+                </div>
 
                 <div className={cn("rounded-lg border px-3 py-2", r.confirmation ? "border-emerald-500/40" : "border-border")}>
                   {r.confirmation

@@ -7,7 +7,7 @@ import { hiddenSections } from "../portal-positions";
 
 const enquiry = (over: Partial<RawEnquiry> = {}): RawEnquiry => ({
   id: "e1", number: "BNK0001", status: "awaiting_vessel", yacht_name: "MY MANGO", port: "Mina Rashid", berth: "Coastal Berth 2",
-  preferred_date: "2026-10-30", preferred_time: "06:00:00", fuel_type: "MGO / DMA", fuel_other: null, quantity: 25, quantity_unit: "MT",
+  preferred_date: "2026-10-30", preferred_time: "06:00:00", sails_out_of_uae: "yes", departure_date: "2026-11-05", fuel_type: "ULSMGO", fuel_other: null, quantity: 25, quantity_unit: "MT",
   spec_notes: "0.1% S", delivery_method: "Bunker barge", special_requirements: null,
   declared_by_role: "Captain", declared_by_name: "John Smit", declared_at: "2026-10-13T08:00:00Z", declaration_method: "Email confirmation",
   approved_quote_id: null, approved_by_role: null, approved_by_name: null, approved_at: null, approval_method: null,
@@ -93,4 +93,13 @@ test("Bunkering is a portal section vessels have on by default, hidden from inte
   assert.equal(hiddenSections("chief_officer").has("bunkering"), false);
   assert.equal(hiddenSections("chef").has("bunkering"), true);
   assert.equal(hiddenSections("chief_stewardess").has("bunkering"), true);
+});
+
+test("each vessel is told how VAT and the 48-hour rule apply to ITS enquiry", () => {
+  const sails = shapeForVessel(enquiry(), [], [], [], { canSeeFinance: false });
+  assert.equal(sails.vat.rate, 0);
+  assert.equal(sails.fuelRule, null, "10 ppm fuel: no 48-hour rule");
+  const stays = shapeForVessel(enquiry({ sails_out_of_uae: "no", departure_date: null, fuel_type: "MGO / DMA" }), [], [], [], { canSeeFinance: false });
+  assert.equal(stays.vat.rate, 5);
+  assert.equal(stays.fuelRule?.level, "warn", "1000 ppm fuel with no departure within 48 hours");
 });

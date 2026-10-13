@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { SignaturePad, type SignaturePadHandle } from "@/components/shipsync/driver/SignaturePad";
 import {
-  FUEL_TYPES, PORTS, DELIVERY_METHODS, UNITS, ROLES, CONFIRM_METHODS, matchYacht, type EnquiryForm,
+  FUEL_TYPES, PORTS, DELIVERY_METHODS, UNITS, ROLES, CONFIRM_METHODS, SAILS_OUT_OPTIONS, matchYacht, vatTreatment, fuelRule, type EnquiryForm,
 } from "@/lib/bunkering/model";
 
 const selectCls = "h-10 w-full rounded-md border border-input bg-background px-3 text-sm";
@@ -91,8 +91,29 @@ export function EnquiryFormView({ value, onChange, yachts = [] }: { value: Enqui
           <Field label="Available tank capacity for delivery">{text("tankCapacity")}</Field>
         </div>
         <Field label="Special requirements / restrictions"><Textarea rows={2} value={value.specialRequirements} onChange={(e) => set("specialRequirements", e.target.value)} /></Field>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Will the vessel sail out of the UAE after bunkering?">
+            <select className={selectCls} value={value.sailsOut} onChange={(e) => set("sailsOut", e.target.value)}>
+              <option value="">Choose…</option>{SAILS_OUT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </Field>
+          <Field label="Planned departure date">{text("departureDate", { type: "date" })}</Field>
+        </div>
+        <GuidanceNotes form={value} />
         <Field label="Internal notes (JLS only)"><Textarea rows={2} value={value.notes} onChange={(e) => set("notes", e.target.value)} /></Field>
       </Section>
+    </div>
+  );
+}
+
+/** How the UAE rules apply to this enquiry, worked out from what has been entered (VAT, and the 48-hour rule for 1000 ppm fuel). */
+export function GuidanceNotes({ form }: { form: Pick<EnquiryForm, "sailsOut" | "preferredDate" | "departureDate" | "fuelType"> }) {
+  const vat = vatTreatment({ sailsOut: form.sailsOut, bunkerDate: form.preferredDate, departureDate: form.departureDate });
+  const rule = fuelRule({ fuelType: form.fuelType, bunkerDate: form.preferredDate, departureDate: form.departureDate });
+  return (
+    <div className="space-y-2">
+      <div className={cn("rounded-lg border px-3 py-2 text-sm", vat.rate === null ? "border-border text-muted-foreground" : "border-primary/40 bg-primary/5")}><strong>VAT:</strong> {vat.text}</div>
+      {rule && <div className={cn("rounded-lg border px-3 py-2 text-sm", rule.level === "warn" ? "border-amber-500/50 bg-amber-500/10 text-amber-500" : "border-emerald-500/40 text-emerald-500")}><strong>Fuel:</strong> {rule.text}</div>}
     </div>
   );
 }

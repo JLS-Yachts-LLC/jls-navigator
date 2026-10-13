@@ -23,7 +23,7 @@ function admin() {
   return createClient(url, key, { auth: { persistSession: false } })
 }
 
-const ENQUIRY_COLUMNS = 'id, number, status, yacht_name, port, berth, preferred_date, preferred_time, fuel_type, fuel_other, quantity, quantity_unit, spec_notes, delivery_method, special_requirements, declared_by_role, declared_by_name, declared_at, declaration_method, approved_quote_id, approved_by_role, approved_by_name, approved_at, approval_method, delivered_date, delivered_quantity, delivered_unit, bdn_number, created_at'
+const ENQUIRY_COLUMNS = 'id, number, status, yacht_name, port, berth, preferred_date, preferred_time, sails_out_of_uae, departure_date, fuel_type, fuel_other, quantity, quantity_unit, spec_notes, delivery_method, special_requirements, declared_by_role, declared_by_name, declared_at, declaration_method, approved_quote_id, approved_by_role, approved_by_name, approved_at, approval_method, delivered_date, delivered_quantity, delivered_unit, bdn_number, created_at'
 
 export async function portalBunkeringHandler(request: Request): Promise<Response> {
   if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405)

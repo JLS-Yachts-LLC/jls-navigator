@@ -3,11 +3,11 @@
  * `shapeForVessel`, so what is NOT shown is decided in one place and tested: internal notes, the log's comments, quotations
  * the team has not shared, who logged it, and the money fields for positions that don't see the vessel's finance.
  */
-import { STATUS_LABEL, unitLabel, type EnquiryStatus } from '@/lib/bunkering/model'
+import { STATUS_LABEL, unitLabel, vatTreatment, fuelRule, type EnquiryStatus, type VatNote, type FuelRuleNote } from '@/lib/bunkering/model'
 
 export interface RawEnquiry {
   id: string; number: string; status: EnquiryStatus; yacht_name: string; port: string | null; berth: string | null
-  preferred_date: string | null; preferred_time: string | null; fuel_type: string | null; fuel_other: string | null
+  preferred_date: string | null; preferred_time: string | null; sails_out_of_uae: string | null; departure_date: string | null; fuel_type: string | null; fuel_other: string | null
   quantity: number | null; quantity_unit: string | null; spec_notes: string | null; delivery_method: string | null; special_requirements: string | null
   declared_by_role: string | null; declared_by_name: string | null; declared_at: string | null; declaration_method: string | null
   approved_quote_id: string | null; approved_by_role: string | null; approved_by_name: string | null; approved_at: string | null; approval_method: string | null
@@ -25,6 +25,9 @@ export interface VesselEnquiry {
   id: string; number: string; status: EnquiryStatus; statusLabel: string; yachtName: string
   port: string | null; berth: string | null; preferredDate: string | null; preferredTime: string | null
   fuel: string | null; quantity: number | null; unit: string; specNotes: string | null; deliveryMethod: string | null; specialRequirements: string | null
+  sailsOut: string | null; departureDate: string | null
+  /** How UAE VAT applies to this enquiry, and whether the 48-hour rule for 1000 ppm fuel is met — worked out from the facts above. */
+  vat: VatNote; fuelRule: FuelRuleNote | null
   confirmation: { by: string; role: string; at: string | null; method: string | null } | null
   quotations: Array<{
     supplier: string; quoteRef: string | null; fuel: string | null; quantity: number | null; unit: string
@@ -51,6 +54,9 @@ export function shapeForVessel(
     port: e.port, berth: e.berth, preferredDate: e.preferred_date, preferredTime: e.preferred_time,
     fuel: e.fuel_type === 'Other' ? e.fuel_other : e.fuel_type, quantity: e.quantity, unit: unitLabel(e.quantity_unit),
     specNotes: e.spec_notes, deliveryMethod: e.delivery_method, specialRequirements: e.special_requirements,
+    sailsOut: e.sails_out_of_uae, departureDate: e.departure_date,
+    vat: vatTreatment({ sailsOut: e.sails_out_of_uae, bunkerDate: e.preferred_date, departureDate: e.departure_date }),
+    fuelRule: fuelRule({ fuelType: e.fuel_type, bunkerDate: e.preferred_date, departureDate: e.departure_date }),
     confirmation: e.declared_by_name && e.declared_by_role ? { by: e.declared_by_name, role: e.declared_by_role, at: e.declared_at, method: e.declaration_method } : null,
     quotations: quotes
       .filter((q) => q.shared_with_vessel && VISIBLE_QUOTE_STATUS.has(q.status))

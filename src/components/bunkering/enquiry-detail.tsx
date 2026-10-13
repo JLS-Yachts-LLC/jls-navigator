@@ -23,7 +23,7 @@ import {
 } from "@/lib/bunkering/data";
 import type { PendingFile } from "@/lib/warehouse/requests";
 import { FilePicker } from "@/components/shipsync/warehouse/request-form";
-import { EnquiryFormView, DeclarationBox, type DeclarationHandle, type YachtOption } from "./enquiry-form";
+import { EnquiryFormView, DeclarationBox, GuidanceNotes, type DeclarationHandle, type YachtOption } from "./enquiry-form";
 
 export const STATUS_STYLE: Record<EnquiryStatus, string> = {
   new: "border-sky-500/40 bg-sky-500/10 text-sky-400",
@@ -120,6 +120,8 @@ export function EnquiryDetailView({ id, isAgency, myId, onChanged, yachts = [] }
         <Row k="Delivery method" v={e.delivery_method} />
         <Row k="Fuel remaining / tank capacity" v={[e.fuel_remaining, e.tank_capacity].filter(Boolean).join(" / ")} />
         <Row k="Special requirements" v={e.special_requirements} />
+        <Row k="Sails out of the UAE after bunkering" v={e.sails_out_of_uae === "yes" ? "Yes" : e.sails_out_of_uae === "no" ? "No — consumes the fuel in the UAE" : e.sails_out_of_uae === "unsure" ? "Not sure yet" : ""} />
+        <Row k="Planned departure" v={day(e.departure_date)} />
         {e.notes && <Row k="Internal notes" v={<span className="whitespace-pre-wrap">{e.notes}</span>} />}
         <Row k="Logged by" v={`${e.created_by_name ?? "—"} · ${when(e.created_at)}`} />
         <Row k="Enquiry sent to suppliers" v={day(e.date_enquiry_sent)} />
@@ -138,6 +140,8 @@ export function EnquiryDetailView({ id, isAgency, myId, onChanged, yachts = [] }
           </div>
         </div>
       )}
+
+      <GuidanceNotes form={{ sailsOut: e.sails_out_of_uae ?? "", preferredDate: e.preferred_date ?? "", departureDate: e.departure_date ?? "", fuelType: e.fuel_type ?? "" }} />
 
       {/* the vessel's confirmation of requirements */}
       <div className={cn("space-y-2 rounded-lg border p-3", confirmed ? "border-emerald-500/40" : "border-orange-500/50")}>
