@@ -2175,7 +2175,7 @@ async function storeNewestImage(
  * per-invocation subrequest ceiling while still clearing a 650-photo backlog in
  * a handful of runs.
  */
-const PKG_IMAGE_BUDGET = 40
+const PKG_IMAGE_BUDGET = 80
 /**
  * A photo that could not be found (no folder, no permission, nothing in it) is remembered on the row
  * (extra.photo_miss.<column>) and left alone for a day. Without this every miss kept using up the run's

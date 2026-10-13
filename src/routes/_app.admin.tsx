@@ -28,6 +28,8 @@ const ADMIN_NAV = [
   { to: '/admin/organisations', label: 'Organisations' },
   { to: '/admin/permissions',   label: 'Permissions' },
   { to: '/admin/audit',         label: 'Audit Log' },
+  { to: '/admin/shipsync-compare', label: 'Power App vs Polaris' },
+  { to: '/admin/shrink-photos',   label: 'Shrink Old Photos' },
 ]
 
 function AdminLayout() {

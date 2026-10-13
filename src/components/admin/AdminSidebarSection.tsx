@@ -3,7 +3,7 @@ import { useAuth } from '@/lib/auth'
 import { DEVELOPER_EMAILS } from '@/lib/leo-access'
 import { useState } from 'react'
 import {
-  ShieldCheck, Users, Building2, Lock, ScrollText, ChevronRight,
+  ShieldCheck, Users, Building2, Lock, ScrollText, ChevronRight, GitCompare, ImageDown,
 } from 'lucide-react'
 
 const ADMIN_NAV = [
@@ -12,6 +12,8 @@ const ADMIN_NAV = [
   { href: '/admin/organisations', label: 'Organisations', icon: Building2   },
   { href: '/admin/permissions',   label: 'Permissions',   icon: Lock        },
   { href: '/admin/audit',         label: 'Audit Log',     icon: ScrollText  },
+  { href: '/admin/shipsync-compare', label: 'Power App vs Polaris', icon: GitCompare },
+  { href: '/admin/shrink-photos',    label: 'Shrink Old Photos',    icon: ImageDown  },
 ]
 
 export function AdminSidebarSection() {
