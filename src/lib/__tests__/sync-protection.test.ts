@@ -120,3 +120,15 @@ test("parcels NOT checked in from the phone are merged exactly as before", () =>
   const out = monday.keepPhoneFields(rec, { monday: { STATUS: "Warehouse" } }, "Local");
   assert.equal(out, rec, "untouched");
 });
+
+// ── Photo look-ups that found nothing ────────────────────────────────────────
+
+test("a photo that was looked for and not found is left alone for a day, then tried again", () => {
+  const now = Date.parse("2026-10-13T12:00:00Z");
+  const extra = { photo_miss: { delivery_photo_url: "2026-10-13T06:00:00Z" } };
+  assert.equal(sp.photoRecentlyMissed(extra, "delivery_photo_url", now), true, "6 hours ago: skip");
+  assert.equal(sp.photoRecentlyMissed(extra, "signature_url", now), false, "a different photo is its own question");
+  assert.equal(sp.photoRecentlyMissed({ photo_miss: { delivery_photo_url: "2026-10-12T06:00:00Z" } }, "delivery_photo_url", now), false, "30 hours ago: try again");
+  assert.equal(sp.photoRecentlyMissed(undefined, "delivery_photo_url", now), false);
+  assert.equal(sp.photoRecentlyMissed({ photo_miss: { delivery_photo_url: "garbage" } }, "delivery_photo_url", now), false);
+});

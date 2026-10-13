@@ -2060,6 +2060,17 @@ async function storeNewestImage(
  * a handful of runs.
  */
 const PKG_IMAGE_BUDGET = 40
+/**
+ * A photo that could not be found (no folder, no permission, nothing in it) is remembered on the row
+ * (extra.photo_miss.<column>) and left alone for a day. Without this every miss kept using up the run's
+ * photo budget at the front of the queue, every run, so a few hundred parcels with no photo stopped the ones
+ * behind them from ever being reached.
+ */
+const PHOTO_RETRY_AFTER_MS = 24 * 3_600_000
+export function photoRecentlyMissed(extra: Record<string, any> | undefined, field: string, now = Date.now()): boolean {
+  const at = Date.parse(String(extra?.photo_miss?.[field] ?? ''))
+  return !Number.isNaN(at) && now - at < PHOTO_RETRY_AFTER_MS
+}
 /** A stored photo value we don't need to fetch again. */
 const isStoredUrl = (v: unknown) => typeof v === 'string' && /^https?:\/\//.test(v) && !v.startsWith('{')
 /**
@@ -2124,6 +2135,8 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
   /** Status choice text the list uses that we have no mapping for. */
   const unmappedStatus = new Set<string>()
   let imageBudget = PKG_IMAGE_BUDGET
+  /** Photos looked for this run and not found, per row — written to extra.photo_miss. */
+  const photoMisses = new Map<string, Record<string, string>>()
   const imageNotes: string[] = []
   /** One unreadable image value, reported so the column can be mapped properly. */
   let imageProbe: { field: string; value: string } | null = null
@@ -2178,6 +2191,7 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
       if (PKG_IMAGE_FIELDS.has(dbField)) {
         if (raw == null || raw === '') continue
         if (isStoredUrl(current?.[dbField])) continue // already downloaded
+        if (existingId && photoRecentlyMissed(extraById.get(existingId), dbField)) continue // looked for it recently, nothing there
         if (imageBudget <= 0) continue                // next run picks it up
         imageBudget--
 
@@ -2216,6 +2230,7 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
         }
         if (got.url) record[dbField] = got.url
         else {
+          if (existingId) photoMisses.set(existingId, { ...(photoMisses.get(existingId) ?? {}), [dbField]: new Date().toISOString() })
           if (got.reason && imageNotes.length < 3) imageNotes.push(`${dbField}: ${got.reason}`)
           // Keep one unreadable value so the column's real shape can be examined
           // rather than guessed at from a failure message.
@@ -2237,7 +2252,9 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
     if (existingId) {
       // Preserve any other keys already in extra (note links, photos, the other
       // list's item id).
-      record.extra = { ...(extraById.get(existingId) ?? {}), [idKey]: item.id }
+      const missed = photoMisses.get(existingId)
+      const prior = extraById.get(existingId) ?? {}
+      record.extra = { ...prior, [idKey]: item.id, ...(missed ? { photo_miss: { ...(prior.photo_miss ?? {}), ...missed } } : {}) }
       updateById.set(existingId, { ...record, id: existingId })
     } else {
       // NOT NULL columns must be set on every NEW row: PostgREST bulk-inserts the batch as a single statement using the
