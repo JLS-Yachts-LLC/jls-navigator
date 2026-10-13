@@ -676,7 +676,7 @@ async function fetchSpImageToSupabase(
   clientId?: string,
   clientSecret?: string,
   /** Lets a Power App attachment photo be found — see fetchListAttachment. */
-  attach?: { siteAbsoluteUrl: string; listName: string; itemId: string; listId?: string },
+  attach?: { siteAbsoluteUrl: string; listName: string; itemId: string; listId?: string; siteId?: string },
 ): Promise<{ url: string | null; reason?: string; shape?: string[] }> {
   // SP image/thumbnail columns return an object (or sometimes a JSON string)
   let img: Record<string, any> | null = null
@@ -792,7 +792,7 @@ function describeFolderUrl(url: string): string {
  * through SharePoint's own API and then downloaded with a SharePoint token.
  */
 async function fetchListAttachment(
-  ctx: { siteAbsoluteUrl: string; listName: string; itemId: string; listId?: string },
+  ctx: { siteAbsoluteUrl: string; listName: string; itemId: string; listId?: string; siteId?: string },
   fileName: string,
   spItemId: string,
   tag: string,
@@ -840,6 +840,11 @@ async function fetchListAttachment(
   // ── 2. The list's own image folder (an Image column filled in SharePoint) ───
   // Files added through the list UI land in SiteAssets/Lists/<list id>/, which
   // Graph can serve — so this needs no extra permission.
+  if (ctx.listId && ctx.siteId) {
+    const viaDrive = await fetchSiteAssetsFile(ctx.siteId, graphToken, ctx.listId, fileName, spItemId, `${tag}-siteassets`)
+    if (viaDrive.url) return viaDrive
+    tried.push(`SiteAssets library (${viaDrive.reason ?? 'failed'})`)
+  }
   if (ctx.listId) {
     const assetUrl = `${site}/SiteAssets/Lists/${ctx.listId}/${encodeURIComponent(fileName)}`
     const got = await fetchFileUrlToSupabase(assetUrl, graphToken, spItemId, `${tag}-siteassets`, tenantId, clientId, clientSecret)
@@ -848,6 +853,44 @@ async function fetchListAttachment(
   }
 
   return { url: null, reason: `Could not fetch "${fileName}": ${tried.join('; ')}` }
+}
+
+/** The site's Site Assets library, found once per site per run. */
+const siteAssetsDriveCache = new Map<string, string | null>()
+async function siteAssetsDriveId(siteId: string, graphToken: string): Promise<string | null> {
+  if (siteAssetsDriveCache.has(siteId)) return siteAssetsDriveCache.get(siteId) ?? null
+  let id: string | null = null
+  try {
+    const res = await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/drives?$select=id,name,webUrl`, { headers: { Authorization: `Bearer ${graphToken}` } })
+    if (res.ok) {
+      const body = await res.json().catch(() => null) as { value?: Array<{ id: string; name?: string; webUrl?: string }> } | null
+      const hit = body?.value?.find((d) => looseKey(String(d.name ?? '')) === 'siteassets' || /\/siteassets\/?$/i.test(String(d.webUrl ?? '')))
+      id = hit?.id ?? null
+    }
+  } catch { /* leave null - reported by the caller */ }
+  siteAssetsDriveCache.set(siteId, id)
+  return id
+}
+
+/**
+ * A picture a Power App saved into an Image column lives in the Site Assets library under Lists/<list id>/.
+ * Graph reads that library by path with the same Sites permission as the Documents library - unlike the
+ * sharing-link route, which SharePoint refuses (403) for this app.
+ */
+async function fetchSiteAssetsFile(
+  siteId: string, graphToken: string, listId: string, fileName: string, spItemId: string, tag: string,
+): Promise<{ url: string | null; reason?: string }> {
+  const drive = await siteAssetsDriveId(siteId, graphToken)
+  if (!drive) return { url: null, reason: 'no Site Assets library found for the site' }
+  const path = ['Lists', listId, fileName].map(encodeURIComponent).join('/')
+  const res = await fetch(
+    `https://graph.microsoft.com/v1.0/drives/${drive}/root:/${path}?$select=name,file,lastModifiedDateTime,@microsoft.graph.downloadUrl`,
+    { headers: { Authorization: `Bearer ${graphToken}` } },
+  )
+  if (!res.ok) return { url: null, reason: `HTTP ${res.status} for Lists/${listId}/${fileName}` }
+  const item = await res.json().catch(() => null) as Record<string, any> | null
+  if (!item) return { url: null, reason: 'unreadable answer' }
+  return storeNewestImage([item], spItemId, tag, 'Site Assets')
 }
 
 /**
@@ -1984,6 +2027,24 @@ async function findPackageImageFolder(
 }
 
 /** Take the newest image out of a stage folder and store it. */
+/**
+ * Which child folder of a delivery note's folder is the given stage ("Delivery Image", "Signature Image",
+ * "Received in Office")? Exact name first, then spelling variants ("Delivery Images", "DeliveryImage"), then
+ * the stage's first word ("delivery", "signature", "received") at the start of the name.
+ */
+export function pickStageFolder(children: Array<Record<string, any>>, stage: string): Record<string, any> | null {
+  const folders = children.filter((c) => c.folder)
+  const want = looseKey(stage)
+  const word = looseKey(stage.split(' ')[0])
+  return folders.find((c) => looseKey(String(c.name)) === want)
+    ?? folders.find((c) => looseKey(String(c.name)).startsWith(want))
+    ?? folders.find((c) => looseKey(String(c.name)).startsWith(word))
+    ?? null
+}
+
+/** A note folder's children, listed once per run. */
+const noteFolderCache = new Map<string, { children: Array<Record<string, any>> | null; status: number }>()
+
 async function fetchStageImageByPath(
   siteId: string,
   graphToken: string,
@@ -1992,11 +2053,24 @@ async function fetchStageImageByPath(
   spItemId: string,
   tag: string,
 ): Promise<{ url: string | null; reason?: string }> {
-  let status = 0
-  const children = await listLibraryPath(siteId, graphToken, `${notePath}/${stage}`, (st) => { status = st })
-  // 404 = the folder really isn't there; 401/403 = SharePoint is refusing this app — they need opposite fixes.
-  if (children == null) return { url: null, reason: `no "${stage}" folder under ${notePath} (SharePoint answered HTTP ${status})` }
-  return storeNewestImage(children, spItemId, tag, stage)
+  if (!noteFolderCache.has(notePath)) {
+    let status = 0
+    const children = await listLibraryPath(siteId, graphToken, notePath, (st) => { status = st })
+    noteFolderCache.set(notePath, { children, status })
+  }
+  const note = noteFolderCache.get(notePath)!
+  // 404 = the folder really isn't there; 401/403 = SharePoint is refusing this app - they need opposite fixes.
+  if (note.children == null) return { url: null, reason: `could not open ${notePath} (SharePoint answered HTTP ${note.status})` }
+
+  const folder = pickStageFolder(note.children, stage)
+  if (folder) {
+    const inside = await listLibraryPath(siteId, graphToken, `${notePath}/${folder.name}`)
+    if (inside == null) return { url: null, reason: `could not open ${notePath}/${folder.name}` }
+    return storeNewestImage(inside, spItemId, tag, String(folder.name))
+  }
+  // No such stage folder. Say what the note folder does hold so the real layout is visible in the log.
+  const held = note.children.map((c) => `${c.folder ? '[folder] ' : ''}${c.name}`).slice(0, 8).join(', ')
+  return { url: null, reason: `no "${stage}" folder in ${notePath}; it holds: ${held || '(nothing)'}` }
 }
 
 /**
@@ -2227,7 +2301,7 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
           const viaColumn = await fetchSpImageToSupabase(
             raw, token, cfg.tenantUrl, `pkg-${item.id}-${dbField}`,
             cfg.tenantId, cfg.clientId, cfg.clientSecret,
-            { siteAbsoluteUrl: siteAbsolute, listName: cfg.listName, itemId: String(item.id), listId },
+            { siteAbsoluteUrl: siteAbsolute, listName: cfg.listName, itemId: String(item.id), listId, siteId },
           )
           got = viaColumn.url ? viaColumn : { url: null, reason: [got?.reason, viaColumn.reason].filter(Boolean).join('; ') }
         }

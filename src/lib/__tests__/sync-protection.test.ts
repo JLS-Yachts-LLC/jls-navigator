@@ -132,3 +132,18 @@ test("a photo that was looked for and not found is left alone for a day, then tr
   assert.equal(sp.photoRecentlyMissed(undefined, "delivery_photo_url", now), false);
   assert.equal(sp.photoRecentlyMissed({ photo_miss: { delivery_photo_url: "garbage" } }, "delivery_photo_url", now), false);
 });
+
+// -- Finding a delivery note's stage folder ----------------------------------
+
+test("the stage folder is found despite spelling differences, and files are never mistaken for folders", () => {
+  const kids = [
+    { name: "Received in Office", folder: {} }, { name: "Delivery Images", folder: {} }, { name: "signature", folder: {} },
+    { name: "Delivery Image.jpg", file: {} },
+  ];
+  assert.equal(sp.pickStageFolder(kids, "Received in Office")?.name, "Received in Office");
+  assert.equal(sp.pickStageFolder(kids, "Delivery Image")?.name, "Delivery Images", "plural");
+  assert.equal(sp.pickStageFolder(kids, "Signature Image")?.name, "signature", "first word");
+  assert.equal(sp.pickStageFolder([{ name: "Delivery Image.jpg", file: {} }], "Delivery Image"), null, "a file is not a folder");
+  assert.equal(sp.pickStageFolder([], "Delivery Image"), null);
+  assert.equal(sp.pickStageFolder([{ name: "Other", folder: {} }], "Signature Image"), null);
+});
