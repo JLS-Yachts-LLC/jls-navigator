@@ -27,6 +27,7 @@ import { Route as DTokenRouteImport } from './routes/d.$token'
 import { Route as AppYachtShipmentsRouteImport } from './routes/_app.yacht-shipments'
 import { Route as AppYachtItRouteImport } from './routes/_app.yacht-it'
 import { Route as AppWaypointRouteImport } from './routes/_app.waypoint'
+import { Route as AppWarehouseRequestsRouteImport } from './routes/_app.warehouse-requests'
 import { Route as AppTrainingRouteImport } from './routes/_app.training'
 import { Route as AppSmallBoatRegistrationRouteImport } from './routes/_app.small-boat-registration'
 import { Route as AppShipsyncRouteImport } from './routes/_app.shipsync'
@@ -252,6 +253,11 @@ const AppYachtItRoute = AppYachtItRouteImport.update({
 const AppWaypointRoute = AppWaypointRouteImport.update({
   id: '/waypoint',
   path: '/waypoint',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppWarehouseRequestsRoute = AppWarehouseRequestsRouteImport.update({
+  id: '/warehouse-requests',
+  path: '/warehouse-requests',
   getParentRoute: () => AppRoute,
 } as any)
 const AppTrainingRoute = AppTrainingRouteImport.update({
@@ -1011,6 +1017,7 @@ export interface FileRoutesByFullPath {
   '/shipsync': typeof AppShipsyncRoute
   '/small-boat-registration': typeof AppSmallBoatRegistrationRoute
   '/training': typeof AppTrainingRouteWithChildren
+  '/warehouse-requests': typeof AppWarehouseRequestsRoute
   '/waypoint': typeof AppWaypointRouteWithChildren
   '/yacht-it': typeof AppYachtItRoute
   '/yacht-shipments': typeof AppYachtShipmentsRouteWithChildren
@@ -1156,6 +1163,7 @@ export interface FileRoutesByTo {
   '/ship-spares': typeof AppShipSparesRoute
   '/shipsync': typeof AppShipsyncRoute
   '/small-boat-registration': typeof AppSmallBoatRegistrationRoute
+  '/warehouse-requests': typeof AppWarehouseRequestsRoute
   '/yacht-it': typeof AppYachtItRoute
   '/d/$token': typeof DTokenRoute
   '/legal/eula': typeof LegalEulaRoute
@@ -1306,6 +1314,7 @@ export interface FileRoutesById {
   '/_app/shipsync': typeof AppShipsyncRoute
   '/_app/small-boat-registration': typeof AppSmallBoatRegistrationRoute
   '/_app/training': typeof AppTrainingRouteWithChildren
+  '/_app/warehouse-requests': typeof AppWarehouseRequestsRoute
   '/_app/waypoint': typeof AppWaypointRouteWithChildren
   '/_app/yacht-it': typeof AppYachtItRoute
   '/_app/yacht-shipments': typeof AppYachtShipmentsRouteWithChildren
@@ -1462,6 +1471,7 @@ export interface FileRouteTypes {
     | '/shipsync'
     | '/small-boat-registration'
     | '/training'
+    | '/warehouse-requests'
     | '/waypoint'
     | '/yacht-it'
     | '/yacht-shipments'
@@ -1607,6 +1617,7 @@ export interface FileRouteTypes {
     | '/ship-spares'
     | '/shipsync'
     | '/small-boat-registration'
+    | '/warehouse-requests'
     | '/yacht-it'
     | '/d/$token'
     | '/legal/eula'
@@ -1756,6 +1767,7 @@ export interface FileRouteTypes {
     | '/_app/shipsync'
     | '/_app/small-boat-registration'
     | '/_app/training'
+    | '/_app/warehouse-requests'
     | '/_app/waypoint'
     | '/_app/yacht-it'
     | '/_app/yacht-shipments'
@@ -2003,6 +2015,13 @@ declare module '@tanstack/react-router' {
       path: '/waypoint'
       fullPath: '/waypoint'
       preLoaderRoute: typeof AppWaypointRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/warehouse-requests': {
+      id: '/_app/warehouse-requests'
+      path: '/warehouse-requests'
+      fullPath: '/warehouse-requests'
+      preLoaderRoute: typeof AppWarehouseRequestsRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/training': {
@@ -3327,6 +3346,7 @@ interface AppRouteChildren {
   AppShipsyncRoute: typeof AppShipsyncRoute
   AppSmallBoatRegistrationRoute: typeof AppSmallBoatRegistrationRoute
   AppTrainingRoute: typeof AppTrainingRouteWithChildren
+  AppWarehouseRequestsRoute: typeof AppWarehouseRequestsRoute
   AppWaypointRoute: typeof AppWaypointRouteWithChildren
   AppYachtItRoute: typeof AppYachtItRoute
   AppYachtShipmentsRoute: typeof AppYachtShipmentsRouteWithChildren
@@ -3401,6 +3421,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppShipsyncRoute: AppShipsyncRoute,
   AppSmallBoatRegistrationRoute: AppSmallBoatRegistrationRoute,
   AppTrainingRoute: AppTrainingRouteWithChildren,
+  AppWarehouseRequestsRoute: AppWarehouseRequestsRoute,
   AppWaypointRoute: AppWaypointRouteWithChildren,
   AppYachtItRoute: AppYachtItRoute,
   AppYachtShipmentsRoute: AppYachtShipmentsRouteWithChildren,

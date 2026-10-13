@@ -1304,6 +1304,11 @@ export default {
       if (pwa) return pwa
     }
 
+    if (url.pathname === '/api/warehouse-requests/notify') {
+      const { warehouseRequestsHandler } = await import('./routes/api.warehouse-requests')
+      return warehouseRequestsHandler(request)
+    }
+
     if (url.pathname.startsWith('/api/shipsync/') && request.method === 'POST') {
       return shipsyncApiHandler(request)
     }

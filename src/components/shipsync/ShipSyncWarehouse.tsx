@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
-import { Search, LayoutDashboard, ClipboardList, Compass, PackagePlus, Loader2 } from "lucide-react";
+import { Search, LayoutDashboard, ClipboardList, Compass, PackagePlus, Inbox, Loader2 } from "lucide-react";
 import { WarehouseSearch } from "@/components/shipsync/warehouse/WarehouseSearch";
 import { ShelfDashboard } from "@/components/shipsync/warehouse/ShelfDashboard";
 import { InventoryList } from "@/components/shipsync/warehouse/InventoryList";
 import { ZoneStorageStatus } from "@/components/shipsync/warehouse/ZoneStorageStatus";
 import { NewStorage } from "@/components/shipsync/warehouse/NewStorage";
+import { WarehouseRequests } from "@/components/shipsync/warehouse/WarehouseRequests";
 import {
   loadShelves, loadClientItems, loadInternalItems, loadPackageContents,
   type WarehouseShelf, type WarehouseClientItem, type WarehouseInternalItem, type WarehousePackageContent,
@@ -19,13 +20,14 @@ export interface WarehouseData {
   packageContents: WarehousePackageContent[];
 }
 
-type SubTab = "dashboard" | "search" | "inventory" | "zones" | "new";
+type SubTab = "dashboard" | "search" | "inventory" | "zones" | "new" | "requests";
 const SUB_TABS: { key: SubTab; label: string; icon: typeof Search }[] = [
   { key: "dashboard", label: "Shelf Dashboard", icon: LayoutDashboard },
   { key: "search", label: "Search", icon: Search },
   { key: "inventory", label: "Inventory List", icon: ClipboardList },
   { key: "zones", label: "Zone & Storage Status", icon: Compass },
   { key: "new", label: "New Storage", icon: PackagePlus },
+  { key: "requests", label: "Requests", icon: Inbox },
 ];
 
 /**
@@ -66,7 +68,7 @@ export function ShipSyncWarehouse(_props: { data: ShipSyncData; reload: () => Pr
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto">
-        {!data ? (
+        {tab === "requests" ? <WarehouseRequests /> : !data ? (
           <div className="flex h-48 items-center justify-center gap-2 text-sm text-muted-foreground">
             {error ? error : <><Loader2 className="h-4 w-4 animate-spin" /> Loading warehouse data…</>}
           </div>
