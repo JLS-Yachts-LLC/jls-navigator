@@ -1211,6 +1211,11 @@ export default {
       return visaSendToVesselHandler(request)
     }
 
+    if (url.pathname === '/api/admin/shipsync-compare' && request.method === 'GET') {
+      const { shipsyncCompareHandler } = await import('./routes/api.admin.shipsync-compare')
+      return shipsyncCompareHandler(request)
+    }
+
     if (url.pathname === '/api/admin/seed-templates-folder' && request.method === 'POST') {
       return seedTemplatesFolderHandler(request)
     }

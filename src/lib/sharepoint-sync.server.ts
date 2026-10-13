@@ -3079,3 +3079,173 @@ export async function downloadYachtImage(yachtId: string): Promise<{ url: string
   }
   return { url: url ?? null, reason: url ? undefined : reason }
 }
+
+// ─── ShipSync: the Power App (SharePoint) against Polaris ─────────────────────
+
+export interface ShipSyncCompareList {
+  list: string
+  /** Items in the SharePoint list. */
+  spItems: number
+  /** Of those, how many are in Polaris (matched by the list's own item id, or by barcode). */
+  inPolaris: number
+  /** In SharePoint but nowhere in Polaris. */
+  notInPolaris: number
+  notInPolarisSample: Array<{ barcode: string; vessel: string; note: string; status: string }>
+  /** Per field: SharePoint has a value and Polaris is blank, or both have one and they disagree. */
+  fieldDifferences: Record<string, { missingInPolaris: number; different: number; samples: Array<{ barcode: string; sharepoint: string; polaris: string }> }>
+  /** Per picture column: how many SharePoint items have one, how many of those Polaris holds. */
+  pictures: Record<string, { inSharePoint: number; inPolaris: number; inSharePointNotInPolaris: number }>
+  withAttachments: number
+}
+
+export interface ShipSyncCompareResult {
+  at: string
+  polarisParcels: number
+  lists: ShipSyncCompareList[]
+  /** Parcels Polaris holds that appear in neither SharePoint list. */
+  polarisOnly: { total: number; byStatus: Record<string, number>; bySource: Record<string, number>; sample: Array<{ barcode: string; vessel: string; status: string; source: string }> }
+}
+
+const COMPARE_FIELDS = ['status', 'boat_name', 'courier', 'delivery_note_no', 'receiver_full_name', 'num_packages', 'delivered_at', 'received_at'] as const
+
+export function normForCompare(dbField: string, v: unknown): string {
+  if (v == null) return ''
+  const text = String(v).trim()
+  if (!text) return ''
+  if (dbField === 'status') return SP_STATUS_BY_KEY.get(statusKey(text)) ?? text.toLowerCase()
+  if (dbField === 'delivered_at' || dbField === 'received_at') {
+    const t = Date.parse(text)
+    return Number.isNaN(t) ? text.toLowerCase() : new Date(t).toISOString().slice(0, 10)
+  }
+  if (dbField === 'num_packages') { const n = Number(text); return Number.isNaN(n) ? text : String(n) }
+  return text.toLowerCase().replace(/\s+/g, ' ')
+}
+
+/** Which of the three photo columns a SharePoint column is, from its name — the Power App and its archive spell them differently. */
+export function pictureKind(spField: string): 'item' | 'delivery' | 'signature' | null {
+  const k = spField.toLowerCase().replace(/_x0020_/g, '').replace(/[^a-z]/g, '')
+  if (k.startsWith('signature')) return 'signature'
+  if (k.startsWith('pictureondelivery') || k.startsWith('pictureondeliver')) return 'delivery'
+  if (k.startsWith('pictureofitem') || k.startsWith('pictureof')) return 'item'
+  return null
+}
+
+const PICTURE_COLUMN: Record<'item' | 'delivery' | 'signature', string> = {
+  item: 'item_photo_url', delivery: 'delivery_photo_url', signature: 'signature_url',
+}
+
+async function fetchAllListItems(siteId: string, token: string, listName: string): Promise<Array<Record<string, any>>> {
+  const out: Array<Record<string, any>> = []
+  let next: string | null = `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${encodeURIComponent(listName)}/items?$expand=fields&$top=200`
+  while (next) {
+    const res = await fetch(next, { headers: { Authorization: `Bearer ${token}` } })
+    const page = await res.json().catch(() => null) as Record<string, any> | null
+    if (!page?.value) break
+    out.push(...(page.value as Array<Record<string, any>>))
+    next = page['@odata.nextLink'] ?? null
+  }
+  return out
+}
+
+/**
+ * Reads the Power App's two lists (Packages, Delivered Packages) straight from SharePoint and sets them against what
+ * Polaris holds: what is missing, which fields disagree, which pictures SharePoint has that Polaris does not.
+ * Read-only: nothing is written anywhere.
+ */
+export async function compareShipSyncWithSharePoint(): Promise<ShipSyncCompareResult> {
+  const cfg = await getSpConfig()
+  const token = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret)
+  const syncs = (await getSpSyncs()).filter((s) => s.syncTarget === 'shipsync_packages')
+
+  const { data: rowsRaw } = await fetchAllRows(() => (supabaseAdmin as any)
+    .from('shipsync_packages')
+    .select('id, barcode, boat_name, courier, delivery_note_no, receiver_full_name, num_packages, status, delivered_at, received_at, item_photo_url, delivery_photo_url, signature_url, extra')
+    .order('id'))
+  const rows = (rowsRaw ?? []) as Array<Record<string, any>>
+  const byBarcode = new Map<string, Record<string, any>>()
+  for (const r of rows) if (r.barcode) byBarcode.set(String(r.barcode).toLowerCase().trim(), r)
+
+  const seenBarcodes = new Set<string>()
+  const lists: ShipSyncCompareList[] = []
+
+  for (const sync of syncs) {
+    const siteId = await resolveSpSite(token, cfg.tenantUrl, sync.sitePath || cfg.siteUrl)
+    const items = await fetchAllListItems(siteId, token, sync.listName)
+    const idKey = spIdKeyFor(sync.listName)
+    const bySpId = new Map<string, Record<string, any>>()
+    for (const r of rows) { const sp = r.extra?.[idKey]; if (sp) bySpId.set(String(sp), r) }
+
+    const barcodeField = Object.entries(sync.fieldMapping).find(([, db]) => db === 'barcode')?.[0]
+    const mappedByDb = new Map<string, string[]>()
+    for (const [spField, db] of Object.entries(sync.fieldMapping)) if (db) mappedByDb.set(db, [...(mappedByDb.get(db) ?? []), spField])
+
+    const res: ShipSyncCompareList = {
+      list: sync.listName, spItems: 0, inPolaris: 0, notInPolaris: 0, notInPolarisSample: [], fieldDifferences: {}, pictures: {}, withAttachments: 0,
+    }
+    for (const f of COMPARE_FIELDS) res.fieldDifferences[f] = { missingInPolaris: 0, different: 0, samples: [] }
+    for (const kind of ['item', 'delivery', 'signature'] as const) res.pictures[kind] = { inSharePoint: 0, inPolaris: 0, inSharePointNotInPolaris: 0 }
+
+    // Which SharePoint columns are pictures, whether or not they are mapped to a photo field.
+    const pictureCols = new Map<'item' | 'delivery' | 'signature', string[]>()
+    const sampleFields = items[0]?.fields ?? {}
+    for (const key of new Set([...Object.keys(sync.fieldMapping), ...Object.keys(sampleFields)])) {
+      const k = pictureKind(key)
+      if (k) pictureCols.set(k, [...(pictureCols.get(k) ?? []), key])
+    }
+
+    for (const it of items) {
+      if (it['@removed']) continue
+      res.spItems++
+      const f = it.fields ?? {}
+      const barcode = String(barcodeField ? f[barcodeField] ?? '' : '').trim()
+      if (barcode) seenBarcodes.add(barcode.toLowerCase())
+      const row = bySpId.get(String(it.id)) ?? (barcode ? byBarcode.get(barcode.toLowerCase()) : undefined)
+      if (f.Attachments === true) res.withAttachments++
+
+      for (const [kind, cols] of pictureCols) {
+        const has = cols.some((c) => f[c] != null && f[c] !== '')
+        if (!has) continue
+        res.pictures[kind].inSharePoint++
+        if (row?.[PICTURE_COLUMN[kind]]) res.pictures[kind].inPolaris++
+        else res.pictures[kind].inSharePointNotInPolaris++
+      }
+
+      if (!row) {
+        res.notInPolaris++
+        if (res.notInPolarisSample.length < 15) {
+          const first = (db: string) => String((mappedByDb.get(db) ?? []).map((c) => f[c]).find((v) => v != null && v !== '') ?? '')
+          res.notInPolarisSample.push({ barcode, vessel: first('boat_name'), note: first('delivery_note_no'), status: first('status') })
+        }
+        continue
+      }
+      res.inPolaris++
+
+      for (const db of COMPARE_FIELDS) {
+        const candidates = (mappedByDb.get(db) ?? []).map((c) => normForCompare(db, f[c])).filter(Boolean)
+        if (!candidates.length) continue
+        const mine = normForCompare(db, row[db])
+        const d = res.fieldDifferences[db]
+        if (!mine) d.missingInPolaris++
+        else if (!candidates.includes(mine)) d.different++
+        else continue
+        if (d.samples.length < 6) d.samples.push({ barcode: barcode || String(row.barcode ?? ''), sharepoint: candidates[0], polaris: mine })
+      }
+    }
+    lists.push(res)
+  }
+
+  // Parcels only Polaris has
+  const polarisOnly: ShipSyncCompareResult['polarisOnly'] = { total: 0, byStatus: {}, bySource: {}, sample: [] }
+  for (const r of rows) {
+    const bc = String(r.barcode ?? '').toLowerCase().trim()
+    if (bc && seenBarcodes.has(bc)) continue
+    if (r.extra?.sp_item_id || r.extra?.sp_delivered_item_id) continue
+    polarisOnly.total++
+    polarisOnly.byStatus[r.status] = (polarisOnly.byStatus[r.status] ?? 0) + 1
+    const source = r.extra?.checked_in_via === 'logistics-app' ? 'phone check-in' : r.extra?.monday_item_id ? 'Monday' : 'other'
+    polarisOnly.bySource[source] = (polarisOnly.bySource[source] ?? 0) + 1
+    if (polarisOnly.sample.length < 10) polarisOnly.sample.push({ barcode: String(r.barcode ?? ''), vessel: String(r.boat_name ?? ''), status: String(r.status), source })
+  }
+
+  return { at: new Date().toISOString(), polarisParcels: rows.length, lists, polarisOnly }
+}

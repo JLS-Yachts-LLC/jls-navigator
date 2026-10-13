@@ -162,3 +162,24 @@ test("a loose picture's Power App column is read from its file name, and a note 
   assert.match(text, /PictureonDeliverytoClient x1/);
   assert.match(text, /folders: Notes/);
 });
+
+// ── Power App vs Polaris comparison ──────────────────────────────────────────
+
+test("the real SharePoint picture columns are recognised, whichever list spells them", () => {
+  assert.equal(sp.pictureKind("PictureofItem"), "item");
+  assert.equal(sp.pictureKind("Picture_x0020_of_x0020_Item_x002"), "item");
+  assert.equal(sp.pictureKind("PictureonDeliverytoClient"), "delivery");
+  assert.equal(sp.pictureKind("Picture_x0020_on_x0020_Delivery_"), "delivery");
+  assert.equal(sp.pictureKind("SignatureReceiverOnDelivery"), "signature");
+  assert.equal(sp.pictureKind("Signature_x0020_Receiver_x0020_O"), "signature");
+  assert.equal(sp.pictureKind("Deliverynoteimage"), null);
+  assert.equal(sp.pictureKind("Barcode"), null);
+});
+
+test("values are normalised before they are compared, so spelling and date format don't count as differences", () => {
+  assert.equal(sp.normForCompare("boat_name", "  OCEAN  Victory "), "ocean victory");
+  assert.equal(sp.normForCompare("delivered_at", "2026-07-31T18:55:35Z"), "2026-07-31");
+  assert.equal(sp.normForCompare("num_packages", "3.0"), "3");
+  assert.equal(sp.normForCompare("status", ""), "");
+  assert.equal(sp.normForCompare("status", null), "");
+});
