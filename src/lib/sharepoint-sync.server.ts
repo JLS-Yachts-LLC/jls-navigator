@@ -890,7 +890,7 @@ async function fetchSiteAssetsFile(
   if (!res.ok) return { url: null, reason: `HTTP ${res.status} for Lists/${listId}/${fileName}` }
   const item = await res.json().catch(() => null) as Record<string, any> | null
   if (!item) return { url: null, reason: 'unreadable answer' }
-  return storeNewestImage([item], spItemId, tag, 'Site Assets')
+  return storeNewestImage([item], spItemId, tag, 'Site Assets', { siteId, token: graphToken })
 }
 
 /**
@@ -1969,7 +1969,7 @@ async function listFolderChildren(folderUrl: string, graphToken: string): Promis
   return (body?.value ?? null) as Array<Record<string, any>> | null
 }
 
-const CHILD_SELECT = '$select=name,file,folder,lastModifiedDateTime,@microsoft.graph.downloadUrl&$top=200'
+const CHILD_SELECT = '$select=id,name,file,folder,lastModifiedDateTime,@microsoft.graph.downloadUrl&$top=200'
 
 /**
  * List a folder in the site's Documents library by its path.
@@ -2066,7 +2066,7 @@ async function fetchStageImageByPath(
   if (folder) {
     const inside = await listLibraryPath(siteId, graphToken, `${notePath}/${folder.name}`)
     if (inside == null) return { url: null, reason: `could not open ${notePath}/${folder.name}` }
-    return storeNewestImage(inside, spItemId, tag, String(folder.name))
+    return storeNewestImage(inside, spItemId, tag, String(folder.name), { siteId, token: graphToken })
   }
   // No such stage folder. The Power App also drops the pictures loose into the note folder, naming each file after
   // its column ("Reserved_ImageAttachment_[13]_[PictureofItem][32]_..."). A delivery photo or a signature is one per
@@ -2075,7 +2075,7 @@ async function fetchStageImageByPath(
   const byName = PKG_STAGE_FILE_TAG[stage]
   if (byName) {
     const tagged = note.children.filter((c) => c.file && IMAGE_EXT.test(String(c.name ?? '')) && byName.test(String(c.name)))
-    if (tagged.length) return storeNewestImage(tagged, spItemId, tag, stage)
+    if (tagged.length) return storeNewestImage(tagged, spItemId, tag, stage, { siteId, token: graphToken })
   }
   // Say what the note folder does hold so the real layout is visible in the log.
   return { url: null, reason: `no "${stage}" folder in ${notePath}; ${describeNoteFolder(note.children)}` }
@@ -2141,16 +2141,26 @@ async function storeNewestImage(
   spItemId: string,
   tag: string,
   label: string,
+  /** When the listing carries no pre-signed link for a file, it is fetched through Graph by its id instead. */
+  graph?: { siteId: string; token: string },
 ): Promise<{ url: string | null; reason?: string }> {
   const images = children
     .filter((c) => c.file && IMAGE_EXT.test(String(c.name ?? '')))
     .sort((a, b) => String(b.lastModifiedDateTime ?? '').localeCompare(String(a.lastModifiedDateTime ?? '')))
   if (!images.length) return { url: null, reason: `"${label}" folder holds no image` }
 
-  const dl = images[0]['@microsoft.graph.downloadUrl'] as string | undefined
-  if (!dl) return { url: null, reason: `no download link for ${images[0].name}` }
-  const res = await fetch(dl)
-  if (!res.ok) return { url: null, reason: `HTTP ${res.status} downloading ${images[0].name}` }
+  // Prefer a file Graph gave a link for; only if none has one, go through the item itself.
+  const linked = images.find((c) => c['@microsoft.graph.downloadUrl'])
+  const dl = (linked ?? images[0])['@microsoft.graph.downloadUrl'] as string | undefined
+  let res: Response
+  if (dl) {
+    res = await fetch(dl)
+  } else if (graph && images[0].id) {
+    res = await fetch(`https://graph.microsoft.com/v1.0/sites/${graph.siteId}/drive/items/${images[0].id}/content`, { headers: { Authorization: `Bearer ${graph.token}` } })
+  } else {
+    return { url: null, reason: `no download link for ${images[0].name}` }
+  }
+  if (!res.ok) return { url: null, reason: `HTTP ${res.status} downloading ${(linked ?? images[0]).name}` }
   const ab = await res.arrayBuffer()
   const ct = res.headers.get('content-type') ?? 'image/jpeg'
   const ext = String(images[0].name).match(IMAGE_EXT)?.[0] ?? '.jpg'
