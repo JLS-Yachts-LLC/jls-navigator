@@ -23,7 +23,7 @@ export const DELIVERY_METHODS = ['Bunker barge', 'Road tanker', 'Ex-wharf', 'No 
 export const ROLES = ['Captain', 'Chief Engineer'] as const
 export const CONFIRM_METHODS = ['Signed on screen', 'Signed form attached', 'Email confirmation', 'WhatsApp confirmation'] as const
 export const CURRENCIES = ['USD', 'AED', 'EUR', 'GBP'] as const
-export const DOC_TYPES = ['Quotation', 'Vessel confirmation', 'Signed form', 'Bunker delivery note', 'Other'] as const
+export const DOC_TYPES = ['Quotation', 'Vessel confirmation', 'Signed form', 'Master declaration', 'Bunker delivery note', 'Other'] as const
 
 /** Quantity units, and the matching price basis. */
 export const UNITS: Array<{ code: string; label: string; priceUnit: string }> = [

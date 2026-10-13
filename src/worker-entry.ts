@@ -936,6 +936,26 @@ export default {
       const { portalFinanceHandler } = await import('./routes/api.portal.finance')
       return portalFinanceHandler(request)
     }
+    if (url.pathname === '/api/bunkering/bdn') {
+      const { bunkeringBdnHandler } = await import('./routes/api.bunkering')
+      return bunkeringBdnHandler(request)
+    }
+    if (url.pathname === '/api/bunkering/master-declaration') {
+      const { bunkeringDeclarationHandler } = await import('./routes/api.bunkering')
+      return bunkeringDeclarationHandler(request)
+    }
+    if (url.pathname === '/api/portal/bunkering/action') {
+      const { portalBunkeringActionHandler } = await import('./routes/api.portal.bunkering')
+      return portalBunkeringActionHandler(request)
+    }
+    if (url.pathname === '/api/portal/bunkering/declaration-upload') {
+      const { portalBunkeringDeclarationUploadHandler } = await import('./routes/api.portal.bunkering')
+      return portalBunkeringDeclarationUploadHandler(request)
+    }
+    if (url.pathname === '/api/portal/bunkering/master-declaration') {
+      const { portalBunkeringDeclarationHandler } = await import('./routes/api.portal.bunkering')
+      return portalBunkeringDeclarationHandler(request)
+    }
     if (url.pathname === '/api/bunkering/notify') {
       const { bunkeringNotifyHandler } = await import('./routes/api.bunkering')
       return bunkeringNotifyHandler(request)

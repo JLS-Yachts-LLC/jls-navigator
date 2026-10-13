@@ -10,19 +10,22 @@
  * Stewardess, Chef) keep the day-to-day sections but not the vessel's accounts.
  */
 export const PORTAL_POSITIONS = [
-  "captain", "relief_captain", "chief_officer", "second_officer",
+  "captain", "relief_captain", "chief_officer", "second_officer", "chief_engineer",
   "chief_stewardess", "chef", "purser", "owner", "representative", "other",
 ] as const;
 
 const POSITION_LABELS: Record<string, string> = {
   relief_captain: "Relief Captain",
   chief_officer: "Chief Officer",
+  chief_engineer: "Chief Engineer",
   second_officer: "Second Officer",
   chief_stewardess: "Chief Stewardess",
 };
 export const positionLabel = (p: string) => POSITION_LABELS[p] ?? p.charAt(0).toUpperCase() + p.slice(1);
 
 const HIDDEN_BY_POSITION: Record<string, string[]> = {
+  // The Chief Engineer runs the technical side — not the vessel's accounts (bunkering prices are shown to them anyway, to approve).
+  chief_engineer: ["balances", "invoices"],
   owner: ["pms", "ism", "stock", "checklists", "hours", "handover", "gatepasses"],
   representative: ["pms", "ism", "stock", "checklists", "hours", "handover", "gatepasses"],
   purser: ["pms", "ism", "positions", "charter"],

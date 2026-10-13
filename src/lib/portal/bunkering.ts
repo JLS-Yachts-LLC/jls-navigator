@@ -28,9 +28,11 @@ export interface VesselEnquiry {
   sailsOut: string | null; departureDate: string | null
   /** How UAE VAT applies to this enquiry, and whether the 48-hour rule for 1000 ppm fuel is met — worked out from the facts above. */
   vat: VatNote; fuelRule: FuelRuleNote | null
+  /** Has JLS received the Master's signed VAT declaration for this enquiry? */
+  declarationReceived: boolean
   confirmation: { by: string; role: string; at: string | null; method: string | null } | null
   quotations: Array<{
-    supplier: string; quoteRef: string | null; fuel: string | null; quantity: number | null; unit: string
+    id: string; supplier: string; quoteRef: string | null; fuel: string | null; quantity: number | null; unit: string
     unitPrice: number | null; priceUnit: string | null; currency: string; total: number | null
     validUntil: string | null; terms: string | null; status: string; approved: boolean
   }>
@@ -47,7 +49,7 @@ const VISIBLE_QUOTE_STATUS = new Set(['received', 'approved', 'rejected', 'expir
 const VESSEL_DOC_TYPES = new Set(['Bunker delivery note'])
 
 export function shapeForVessel(
-  e: RawEnquiry, quotes: RawQuote[], events: RawEvent[], files: Array<RawFile & { url: string }>, opts: { canSeeFinance: boolean },
+  e: RawEnquiry, quotes: RawQuote[], events: RawEvent[], files: Array<RawFile & { url: string }>, opts: { canSeeFinance: boolean; declarationReceived?: boolean },
 ): VesselEnquiry {
   return {
     id: e.id, number: e.number, status: e.status, statusLabel: STATUS_LABEL[e.status] ?? e.status, yachtName: e.yacht_name,
@@ -57,11 +59,12 @@ export function shapeForVessel(
     sailsOut: e.sails_out_of_uae, departureDate: e.departure_date,
     vat: vatTreatment({ sailsOut: e.sails_out_of_uae, bunkerDate: e.preferred_date, departureDate: e.departure_date }),
     fuelRule: fuelRule({ fuelType: e.fuel_type, bunkerDate: e.preferred_date, departureDate: e.departure_date }),
+    declarationReceived: !!opts.declarationReceived,
     confirmation: e.declared_by_name && e.declared_by_role ? { by: e.declared_by_name, role: e.declared_by_role, at: e.declared_at, method: e.declaration_method } : null,
     quotations: quotes
       .filter((q) => q.shared_with_vessel && VISIBLE_QUOTE_STATUS.has(q.status))
       .map((q) => ({
-        supplier: q.supplier, quoteRef: q.quote_ref, fuel: q.fuel_type, quantity: q.quantity, unit: unitLabel(q.quantity_unit),
+        id: q.id, supplier: q.supplier, quoteRef: q.quote_ref, fuel: q.fuel_type, quantity: q.quantity, unit: unitLabel(q.quantity_unit),
         unitPrice: opts.canSeeFinance ? q.unit_price : null, priceUnit: q.price_unit, currency: q.currency, total: opts.canSeeFinance ? q.total : null,
         validUntil: q.valid_until, terms: q.delivery_terms, status: q.status, approved: q.id === e.approved_quote_id,
       })),

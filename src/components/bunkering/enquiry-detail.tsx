@@ -22,6 +22,9 @@ import {
   addEnquiryFiles, updateEnquiry, toEnquiryForm, type EnquiryDetail, type BunkerQuote,
 } from "@/lib/bunkering/data";
 import type { PendingFile } from "@/lib/warehouse/requests";
+import { supabase } from "@/integrations/supabase/client";
+import { openPdf } from "@/lib/bunkering/open-pdf";
+import { declarationReceived } from "@/lib/bunkering/master-declaration";
 import { FilePicker } from "@/components/shipsync/warehouse/request-form";
 import { EnquiryFormView, DeclarationBox, GuidanceNotes, type DeclarationHandle, type YachtOption } from "./enquiry-form";
 
@@ -143,6 +146,22 @@ export function EnquiryDetailView({ id, isAgency, myId, onChanged, yachts = [] }
 
       <GuidanceNotes form={{ sailsOut: e.sails_out_of_uae ?? "", preferredDate: e.preferred_date ?? "", departureDate: e.departure_date ?? "", fuelType: e.fuel_type ?? "" }} />
 
+      {/* the Master's declaration for VAT zero-rating */}
+      <div className={cn("space-y-2 rounded-lg border p-3", declarationReceived(d.files) ? "border-emerald-500/40" : "border-border")}>
+        <h4 className="text-sm font-semibold">Master's declaration (VAT)</h4>
+        <p className="text-sm">
+          {declarationReceived(d.files)
+            ? "The signed declaration has been received and is filed under Documents and photos."
+            : "Needed for zero-rating: the Master completes, signs and stamps it, and it goes back to the supplier with the bunker delivery receipt. Attach the signed copy under Documents and photos (type: Master declaration) once received."}
+        </p>
+        <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(async () => {
+          await openPdf(async () => {
+            const { data: { session } } = await supabase.auth.getSession();
+            return fetch(`/api/bunkering/master-declaration?enquiryId=${encodeURIComponent(id)}`, { headers: { Authorization: `Bearer ${session?.access_token ?? ""}` } });
+          });
+        }, "Declaration opened")}><FileText className="mr-1.5 h-4 w-4" /> Open the pre-filled declaration</Button>
+      </div>
+
       {/* the vessel's confirmation of requirements */}
       <div className={cn("space-y-2 rounded-lg border p-3", confirmed ? "border-emerald-500/40" : "border-orange-500/50")}>
         <h4 className="text-sm font-semibold">Vessel's confirmation of the requirements</h4>
@@ -246,6 +265,18 @@ export function EnquiryDetailView({ id, isAgency, myId, onChanged, yachts = [] }
           )}
         </div>
       ) : null}
+
+      {(e.status === "approved" || e.status === "delivered") && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border p-3">
+          <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(async () => {
+            await openPdf(async () => {
+              const { data: { session } } = await supabase.auth.getSession();
+              return fetch(`/api/bunkering/bdn?enquiryId=${encodeURIComponent(id)}`, { headers: { Authorization: `Bearer ${session?.access_token ?? ""}` } });
+            });
+          }, "Bunker delivery note opened")}><FileText className="mr-1.5 h-4 w-4" /> Open the pre-filled Bunker Delivery Note</Button>
+          <span className="text-sm text-muted-foreground">Vessel, port, fuel, quantity and supplier are filled in; the supplier and vessel complete the rest at the delivery.</span>
+        </div>
+      )}
 
       {moves.length > 0 && (
         <div className="space-y-2 rounded-lg border border-border p-3">

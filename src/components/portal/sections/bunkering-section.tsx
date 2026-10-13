@@ -2,12 +2,13 @@
  * Bunkering — the vessel's own bunkering enquiries, read-only: what was requested, the Captain's / Chief Engineer's confirmation,
  * the quotations JLS has shared, the approval and the delivery. (What the vessel may see is decided on the server.)
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Fuel, Loader2 } from "lucide-react";
 import { portalFetch } from "@/lib/portal/portal-fetch";
 import { STATUS_ORDER, STATUS_LABEL, GUIDANCE, type EnquiryStatus } from "@/lib/bunkering/model";
 import type { VesselEnquiry } from "@/lib/portal/bunkering";
 import { cn } from "@/lib/utils";
+import { openPdf } from "@/lib/bunkering/open-pdf";
 
 const day = (d: string | null) => (d ? new Date(`${d}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—");
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString("en-GB", { timeZone: "Asia/Dubai", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—");
@@ -26,6 +27,11 @@ function GoodToKnow() {
             {g.link && <a className="text-primary hover:underline" href={g.link.url} target="_blank" rel="noreferrer">{g.link.label}</a>}
           </section>
         ))}
+        <div className="flex flex-wrap items-center gap-3">
+          <button type="button" onClick={() => void openPdf(() => portalFetch("/api/portal/bunkering/master-declaration")).catch((e) => window.alert(e instanceof Error ? e.message : "Could not open the declaration"))}
+            className="rounded-lg border border-border px-3 py-1.5 text-sm font-medium hover:border-primary">Download the Master's declaration (blank)</button>
+          <span className="text-xs text-muted-foreground">For zero-rating: the Master completes, signs and stamps it, and it is returned to the supplier with the bunker delivery receipt.</span>
+        </div>
         <p className="text-xs text-muted-foreground">Your JLS agent will confirm how this applies to your vessel.</p>
       </div>
     </details>
@@ -36,18 +42,38 @@ export function BunkeringSection() {
   const [rows, setRows] = useState<VesselEnquiry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
+  const [canAct, setCanAct] = useState(false);
+  const [roles, setRoles] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const [ticked, setTicked] = useState<Record<string, boolean>>({});
 
-  useEffect(() => {
-    let on = true;
-    void portalFetch("/api/portal/bunkering").then(async (res) => {
-      const j = await res.json().catch(() => ({}));
-      if (!on) return;
-      if (!res.ok) throw new Error(j.error ?? "Could not load bunkering");
-      setRows(j.enquiries ?? []);
-      if ((j.enquiries ?? []).length === 1) setOpen(j.enquiries[0].id);
-    }).catch((e) => { if (on) setError(e instanceof Error ? e.message : "Could not load bunkering"); });
-    return () => { on = false; };
+  const load = useCallback(async (first = false) => {
+    const res = await portalFetch("/api/portal/bunkering");
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(j.error ?? "Could not load bunkering");
+    setRows(j.enquiries ?? []);
+    setCanAct(!!j.canAct);
+    setRoles(j.roles ?? []);
+    if (first && (j.enquiries ?? []).length === 1) setOpen(j.enquiries[0].id);
   }, []);
+
+  useEffect(() => { void load(true).catch((e) => setError(e instanceof Error ? e.message : "Could not load bunkering")); }, [load]);
+
+  /** An action on the vessel's own enquiry. The server checks who you are and what you may do; this only shows the result. */
+  async function act(send: () => Promise<Response>, done: string) {
+    setBusy(true); setNote(null);
+    try {
+      const res = await send();
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error ?? "That did not work — please try again.");
+      await load();
+      setNote(done);
+    } catch (e) { setNote(e instanceof Error ? e.message : "That did not work — please try again."); }
+    finally { setBusy(false); }
+  }
+  const post = (body: unknown) => portalFetch("/api/portal/bunkering/action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const upload = (enquiryId: string, file: File) => { const f = new FormData(); f.set("enquiryId", enquiryId); f.set("file", file); return portalFetch("/api/portal/bunkering/declaration-upload", { method: "POST", body: f }); };
 
   if (error) return <p className="rounded-xl border border-border px-4 py-6 text-sm text-muted-foreground">{error}</p>;
   if (rows === null) return <div className="flex h-32 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
@@ -64,6 +90,7 @@ export function BunkeringSection() {
   return (
     <div className="space-y-3">
       <GoodToKnow />
+      {note && <p className="rounded-lg border border-primary/40 bg-primary/5 px-3 py-2 text-sm" role="status">{note}</p>}
       {rows.map((r) => {
         const at = STATUS_ORDER.indexOf(r.status as EnquiryStatus);
         const isOpen = open === r.id;
@@ -97,14 +124,42 @@ export function BunkeringSection() {
                 </dl>
 
                 <div className="space-y-2">
-                  <div className={cn("rounded-lg border px-3 py-2", r.vat.rate === null ? "border-border text-muted-foreground" : "border-primary/40 bg-primary/5")}><strong>VAT:</strong> {r.vat.text}</div>
+                  <div className={cn("rounded-lg border px-3 py-2", r.vat.rate === null ? "border-border text-muted-foreground" : "border-primary/40 bg-primary/5")}>
+                    <strong>VAT:</strong> {r.vat.text}
+                    {r.vat.rate !== 5 && (
+                      <div className="mt-1.5 flex flex-wrap items-center gap-3">
+                        {r.declarationReceived
+                          ? <span className="text-emerald-500">The Master's signed declaration has been received.</span>
+                          : <>
+                              <span className="text-muted-foreground">The Master's declaration is still needed for zero-rating.</span>
+                              {canAct && (
+                                <label className="cursor-pointer rounded-lg bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground">
+                                  {busy ? "Uploading…" : "Upload the signed declaration"}
+                                  <input type="file" accept="application/pdf,image/*" className="hidden" disabled={busy}
+                                    onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void act(() => upload(r.id, f), "Thank you — the signed declaration has been received."); }} />
+                                </label>
+                              )}
+                              <button type="button" onClick={() => void openPdf(() => portalFetch(`/api/portal/bunkering/master-declaration?id=${encodeURIComponent(r.id)}`)).catch((e) => window.alert(e instanceof Error ? e.message : "Could not open the declaration"))}
+                                className="rounded-lg border border-border px-2.5 py-1 text-xs font-medium hover:border-primary">Download it, pre-filled for this vessel</button>
+                            </>}
+                      </div>
+                    )}
+                  </div>
                   {r.fuelRule && <div className={cn("rounded-lg border px-3 py-2", r.fuelRule.level === "warn" ? "border-amber-500/50 bg-amber-500/10 text-amber-500" : "border-emerald-500/40 text-emerald-500")}><strong>Fuel:</strong> {r.fuelRule.text}</div>}
                 </div>
 
-                <div className={cn("rounded-lg border px-3 py-2", r.confirmation ? "border-emerald-500/40" : "border-border")}>
+                <div className={cn("space-y-2 rounded-lg border px-3 py-2", r.confirmation ? "border-emerald-500/40" : "border-border")}>
                   {r.confirmation
                     ? <>Requirements confirmed by <strong>{r.confirmation.by}</strong> ({r.confirmation.role}) on {when(r.confirmation.at)}{r.confirmation.method ? ` — ${r.confirmation.method}` : ""}.</>
                     : "JLS is waiting for the Captain or Chief Engineer to confirm the fuel type, specification and quantity."}
+                  {!r.confirmation && canAct && !["approved", "delivered", "cancelled"].includes(r.status) && (
+                    <div className="space-y-2 border-t border-border pt-2">
+                      <label className="flex items-start gap-2"><input type="checkbox" className="mt-1" checked={!!ticked[r.id]} onChange={(e) => setTicked({ ...ticked, [r.id]: e.target.checked })} />
+                        <span>I confirm that the information above is accurate and that the requested <strong>fuel type, specification and quantity</strong> have been checked against the vessel's requirements.</span></label>
+                      <button type="button" disabled={busy || !ticked[r.id]} onClick={() => void act(() => post({ action: "confirm", enquiryId: r.id, role: roles[0] }), "Thank you — your confirmation has been recorded.")}
+                        className="rounded-lg bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground disabled:opacity-50">Confirm as {roles[0]}</button>
+                    </div>
+                  )}
                 </div>
 
                 {r.quotations.length > 0 && (
@@ -123,7 +178,13 @@ export function BunkeringSection() {
                               <td className="px-3 py-2 whitespace-nowrap">{q.unitPrice == null ? "—" : `${q.currency} ${q.unitPrice} ${q.priceUnit ?? ""}`}</td>
                               <td className="px-3 py-2 whitespace-nowrap font-medium">{money(q.total, q.currency)}</td>
                               <td className="px-3 py-2 whitespace-nowrap">{day(q.validUntil)}</td>
-                              <td className="px-3 py-2 text-xs">{q.approved ? <span className="text-emerald-500">Approved</span> : q.status === "rejected" ? <span className="text-muted-foreground">Not chosen</span> : q.status === "expired" ? <span className="text-muted-foreground">Expired</span> : ""}</td>
+                              <td className="px-3 py-2 text-xs">
+                                {q.approved ? <span className="text-emerald-500">Approved</span> : q.status === "rejected" ? <span className="text-muted-foreground">Not chosen</span> : q.status === "expired" ? <span className="text-muted-foreground">Expired</span>
+                                  : canAct && r.status === "awaiting_vessel" && q.status === "received" ? (
+                                    <button type="button" disabled={busy} className="rounded-lg bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground disabled:opacity-50"
+                                      onClick={() => { if (window.confirm(`Approve the quotation from ${q.supplier} — ${q.quantity ?? ""} ${q.unit} ${q.fuel ?? ""}${q.total != null ? ` — ${money(q.total, q.currency)}` : ""}?\n\nThis is recorded as approved by you (${roles[0]}) and cannot be undone here.`)) void act(() => post({ action: "approve", enquiryId: r.id, quoteId: q.id, role: roles[0] }), "Thank you — your approval has been recorded and JLS has been told."); }}>Approve</button>
+                                  ) : ""}
+                              </td>
                             </tr>
                           ))}
                         </tbody>
