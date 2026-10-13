@@ -183,3 +183,27 @@ test("values are normalised before they are compared, so spelling and date forma
   assert.equal(sp.normForCompare("status", ""), "");
   assert.equal(sp.normForCompare("status", null), "");
 });
+
+// -- Two Power App records for one AWB -----------------------------------------
+
+test("the real delivery wins over a placeholder record for the same AWB, whichever comes last in the list", () => {
+  const placeholder = { delivery_note_no: "0000", received_at: "2026-01-16", status: "delivered", boat_name: "AURORA X", extra: { sp_delivered_item_id: 7974 } };
+  const real = { delivery_note_no: "1640", delivered_at: "2026-01-09", receiver_full_name: "Adrian Heron", received_at: "2026-01-09", boat_name: "AURORA X", courier: "Amazon", status: "delivered", extra: { sp_delivered_item_id: 6584 } };
+  for (const [a, b] of [[placeholder, real], [real, placeholder]]) {
+    const m = sp.mergeSpRecords(a, b);
+    assert.equal(m.delivery_note_no, "1640");
+    assert.equal(m.receiver_full_name, "Adrian Heron");
+    assert.equal(m.delivered_at, "2026-01-09");
+    assert.equal(m.extra.sp_delivered_item_id, 6584, "the parcel stays linked to the record that won");
+  }
+});
+
+test("the loser still fills in what the winner doesn't know, and an equal pair keeps the later record as before", () => {
+  const a = { delivery_note_no: "1700", courier: "DHL", boat_name: "X", extra: { n: 1 } };
+  const b = { delivery_note_no: "1701", receiver_full_name: "Pat", boat_name: "X", extra: { n: 2 } };
+  const m = sp.mergeSpRecords(a, b);
+  assert.equal(m.delivery_note_no, "1701", "tie: the later one");
+  assert.equal(m.courier, "DHL", "the earlier one's courier is not lost");
+  assert.equal(m.receiver_full_name, "Pat");
+  assert.equal(m.extra.n, 2);
+});

@@ -2169,6 +2169,32 @@ async function storeNewestImage(
   if (error) return { url: null, reason: `Supabase upload failed: ${error.message}` }
   return { url: versionedPublicUrl(path) }
 }
+/** A value that says nothing: empty, or the Power App's "0000" delivery-note placeholder. */
+const noInfo = (v: unknown) => v == null || v === '' || v === '0000'
+
+/** How much real delivery detail a mapped SharePoint record carries. */
+function spCompleteness(r: Record<string, any>): number {
+  return ['delivered_at', 'delivery_note_no', 'receiver_full_name', 'received_at', 'boat_name', 'courier']
+    .filter((k) => !noInfo(r[k])).length + (r.status === 'delivered' ? 1 : 0)
+}
+
+/**
+ * The Power App can hold SEVERAL records for one AWB (a placeholder with delivery note "0000", then the real delivery).
+ * They all land on the same Polaris row in one run, and the later one used to replace the earlier whole - so whichever
+ * came last in the list decided what the parcel showed, even when it was the empty one. The record with more real
+ * detail now wins (the later one on a tie, as before), and it keeps whatever the other one knew that it doesn't.
+ */
+export function mergeSpRecords(earlier: Record<string, any>, later: Record<string, any>): Record<string, any> {
+  const [winner, loser] = spCompleteness(earlier) > spCompleteness(later) ? [earlier, later] : [later, earlier]
+  const out: Record<string, any> = { ...loser, ...winner }
+  for (const k of Object.keys(loser)) {
+    if (k === 'extra' || k === 'id') continue
+    if (noInfo(winner[k]) && !noInfo(loser[k])) out[k] = loser[k]
+  }
+  out.extra = winner.extra ?? loser.extra
+  return out
+}
+
 /**
  * Photos fetched per sync run — the rest are picked up on the next run. Each one
  * costs two or three outbound requests, so this stays well inside the Worker's
@@ -2296,7 +2322,9 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
       if (dbField === 'status') {
         const text = String(raw ?? '').trim()
         const ours = text ? SP_STATUS_BY_KEY.get(statusKey(text)) : undefined
-        if (ours) { record.status = ours; continue }
+        // "Completed" only exists here (the Power App has no such state), set by staff once a delivery is invoiced — the
+        // Power App still says Delivered/Collected for it, and used to pull it back to Delivered on every pass.
+        if (ours) { record.status = current?.status === 'completed' && (ours === 'delivered' || ours === 'collected') ? 'completed' : ours; continue }
         // An unrecognised choice must not silently demote the package to In Office —
         // keep what we have and report the wording so the mapping can be extended.
         if (text) unmappedStatus.add(text)
@@ -2371,7 +2399,9 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
       const missed = photoMisses.get(existingId)
       const prior = extraById.get(existingId) ?? {}
       record.extra = { ...prior, [idKey]: item.id, ...(missed ? { photo_miss: { ...(prior.photo_miss ?? {}), ...missed } } : {}) }
-      updateById.set(existingId, { ...record, id: existingId })
+      const next = { ...record, id: existingId }
+      const already = updateById.get(existingId)
+      updateById.set(existingId, already ? mergeSpRecords(already, next) : next)
     } else {
       // NOT NULL columns must be set on every NEW row: PostgREST bulk-inserts the batch as a single statement using the
       // UNION of keys, so a row missing a mapped value gets an explicit NULL (bypassing the column default) and would fail.
