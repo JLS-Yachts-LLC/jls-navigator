@@ -35,6 +35,7 @@ import { HandoverSection } from "@/components/portal/sections/handover-section";
 import { MovementsSection } from "@/components/portal/sections/movements-section";
 import { QuoteDetail } from "@/components/portal/sections/quote-detail";
 import { GatePassesSection } from "@/components/portal/sections/gatepasses-section";
+import { BunkeringSection } from "@/components/portal/sections/bunkering-section";
 import { OrdersSection } from "@/components/portal/sections/orders-section";
 import { CalendarSection } from "@/components/portal/sections/calendar-section";
 import { BriefSection } from "@/components/portal/sections/brief-section";
@@ -768,7 +769,7 @@ function MfaVerifyScreen({ onDone, onSignOut }: { onDone: () => void; onSignOut:
 type Tab =
   | "home" | "brief"
   | "alerts" | "positions" | "crew" | "documents" | "pms" | "balances" | "invoices" | "charter" | "ism" | "tasks" | "inventory" | "expenses" | "rota" | "stock" | "checklists" | "hours" | "handover" | "movements" | "gatepasses" | "orders" | "calendar"
-  | "requests" | "logistics" | "chat" | "directory" | "reports"
+  | "requests" | "logistics" | "bunkering" | "chat" | "directory" | "reports"
   | "orbit2" // the login's own managed boats (Orbit 2) — only when it has some
   | "finances"; // legacy alias used by the Home module launcher → routes to Invoices/Finance
 
@@ -797,6 +798,7 @@ const NAV_GROUPS: NavGroup[] = [
       // { key: "balances", label: "Balances", icon: Wallet },
       { key: "invoices", label: "Invoices", icon: FileText },
       { key: "logistics", label: "Deliveries", icon: Truck },
+      { key: "bunkering", label: "Bunkering", icon: Fuel },
       { key: "chat", label: "Chat", icon: MessageSquare },
       { key: "directory", label: "Directory", icon: Phone },
       { key: "reports", label: "Email reports", icon: Mail },
@@ -1104,6 +1106,7 @@ function PortalShell({ link, email, onSignOut, preview = false, fleetCount = 0, 
         {(tab === "invoices" || tab === "finances") && <FinancesTab onOpenRequest={(id) => { setTab("requests"); setOpenRequestId(id); }} />}
         {tab === "balances" && <BalancesTab />}
         {tab === "logistics" && <LogisticsTab yachtId={link.yacht_id} canBook={!preview} onOpenRequest={(id) => { setTab("requests"); setOpenRequestId(id); }} />}
+        {tab === "bunkering" && <BunkeringSection />}
         {tab === "alerts" && <AlertsTab yachtId={link.yacht_id} financeOk={financeOk} stockOk={allowedKeys.has("stock")} gatePassOk={allowedKeys.has("gatepasses")} tasksOk={allowedKeys.has("tasks")} inventoryOk={allowedKeys.has("inventory")} expensesOk={allowedKeys.has("expenses")} rotaOk={allowedKeys.has("rota")} onOpen={(t) => { setTab(t); setOpenRequestId(null); }} />}
         {tab === "positions" && yacht && <PositionsTab yacht={yacht} />}
         {/* On board (Management module). The tabs only appear when the vessel
@@ -1223,6 +1226,7 @@ const CORE_MODULES: ModuleDef[] = [
   { key: "crew",      label: "Crew & immigration",     blurb: "Roster, visas & passports",                    icon: Users,      accent: "text-primary bg-primary/10 border-primary/25" },
   { key: "finances",  label: "Invoices & statement",   blurb: "Invoices, quotations & statement",             icon: Wallet,     accent: "text-primary bg-primary/10 border-primary/25" },
   { key: "logistics", label: "Deliveries",             blurb: "Live driver position, deliveries & PODs",      icon: Truck,      accent: "text-primary bg-primary/10 border-primary/25" },
+  { key: "bunkering", label: "Bunkering",              blurb: "Your enquiries, quotations, approval & delivery", icon: Fuel,      accent: "text-primary bg-primary/10 border-primary/25" },
   { key: "documents", label: "Documents",              blurb: "Vessel papers, permits & visas",               icon: FileCheck2, accent: "text-primary bg-primary/10 border-primary/25" },
   { key: "chat",      label: "Chat & directory",       blurb: "Your agent, live chat & key contacts",         icon: MessageSquare, accent: "text-primary bg-primary/10 border-primary/25" },
 ];

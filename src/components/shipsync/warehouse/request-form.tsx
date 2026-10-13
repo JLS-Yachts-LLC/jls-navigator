@@ -24,7 +24,13 @@ function Field({ label, children, className }: { label: string; children: React.
 }
 
 /** Documents and photos chosen on the form, waiting to be uploaded with the request. */
-export function FilePicker({ files, onChange }: { files: PendingFile[]; onChange: (f: PendingFile[]) => void }) {
+export function FilePicker({ files, onChange, docTypes, hint }: {
+  files: PendingFile[]; onChange: (f: PendingFile[]) => void;
+  /** The document types to choose from (default: the warehouse ones). */
+  docTypes?: readonly string[];
+  hint?: string;
+}) {
+  const types = (docTypes ?? DOC_TYPES.filter((t) => t !== "Photo")).filter((t) => t !== "Photo");
   const docs = useRef<HTMLInputElement>(null);
   const photos = useRef<HTMLInputElement>(null);
 
@@ -33,7 +39,7 @@ export function FilePicker({ files, onChange }: { files: PendingFile[]; onChange
     const ok: PendingFile[] = [];
     for (const file of Array.from(list)) {
       if (!guardUploadFile(file, { accepts: kind === "photo" ? "a photo" : "a document, spreadsheet or photo" })) continue;
-      ok.push({ file, kind, docType: kind === "photo" ? "Photo" : "Other" });
+      ok.push({ file, kind, docType: kind === "photo" ? "Photo" : types.includes("Other") ? "Other" : types[0] });
     }
     if (ok.length) onChange([...files, ...ok]);
   }
@@ -47,7 +53,7 @@ export function FilePicker({ files, onChange }: { files: PendingFile[]; onChange
         <input ref={photos} type="file" multiple accept="image/*" className="hidden" onChange={(e) => { add(e.target.files, "photo"); e.target.value = ""; }} />
       </div>
       {files.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Delivery order, packing list, invoice, shipping documents or photos — add what you have; more can be added later.</p>
+        <p className="text-sm text-muted-foreground">{hint ?? "Delivery order, packing list, invoice, shipping documents or photos — add what you have; more can be added later."}</p>
       ) : (
         <ul className="space-y-1.5">
           {files.map((f, i) => (
@@ -56,7 +62,7 @@ export function FilePicker({ files, onChange }: { files: PendingFile[]; onChange
               {f.kind === "document" ? (
                 <select className="h-8 rounded border border-input bg-background px-1.5 text-sm" value={f.docType}
                   onChange={(e) => onChange(files.map((x, j) => (j === i ? { ...x, docType: e.target.value } : x)))} aria-label="Document type">
-                  {DOC_TYPES.filter((t) => t !== "Photo").map((t) => <option key={t}>{t}</option>)}
+                  {types.map((t) => <option key={t}>{t}</option>)}
                 </select>
               ) : <span className="text-muted-foreground">Photo</span>}
               <button type="button" aria-label={`Remove ${f.file.name}`} onClick={() => onChange(files.filter((_, j) => j !== i))} className="rounded p-1 text-muted-foreground hover:bg-accent"><X className="h-4 w-4" /></button>

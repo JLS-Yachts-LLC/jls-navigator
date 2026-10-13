@@ -936,6 +936,14 @@ export default {
       const { portalFinanceHandler } = await import('./routes/api.portal.finance')
       return portalFinanceHandler(request)
     }
+    if (url.pathname === '/api/bunkering/notify') {
+      const { bunkeringNotifyHandler } = await import('./routes/api.bunkering')
+      return bunkeringNotifyHandler(request)
+    }
+    if (url.pathname === '/api/portal/bunkering') {
+      const { portalBunkeringHandler } = await import('./routes/api.portal.bunkering')
+      return portalBunkeringHandler(request)
+    }
     if (url.pathname === '/api/portal/logistics') {
       const { portalLogisticsHandler } = await import('./routes/api.portal.logistics')
       return portalLogisticsHandler(request)

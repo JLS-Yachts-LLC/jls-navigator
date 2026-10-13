@@ -71,6 +71,7 @@ import { Route as AppCrewCabRouteImport } from './routes/_app.crew-cab'
 import { Route as AppContactsRouteImport } from './routes/_app.contacts'
 import { Route as AppCompassRouteImport } from './routes/_app.compass'
 import { Route as AppChangelogRouteImport } from './routes/_app.changelog'
+import { Route as AppBunkeringRouteImport } from './routes/_app.bunkering'
 import { Route as AppAutomationsRouteImport } from './routes/_app.automations'
 import { Route as AppAiAssistantRouteImport } from './routes/_app.ai-assistant'
 import { Route as AppAgencyRouteImport } from './routes/_app.agency'
@@ -474,6 +475,11 @@ const AppCompassRoute = AppCompassRouteImport.update({
 const AppChangelogRoute = AppChangelogRouteImport.update({
   id: '/changelog',
   path: '/changelog',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppBunkeringRoute = AppBunkeringRouteImport.update({
+  id: '/bunkering',
+  path: '/bunkering',
   getParentRoute: () => AppRoute,
 } as any)
 const AppAutomationsRoute = AppAutomationsRouteImport.update({
@@ -974,6 +980,7 @@ export interface FileRoutesByFullPath {
   '/agency': typeof AppAgencyRoute
   '/ai-assistant': typeof AppAiAssistantRoute
   '/automations': typeof AppAutomationsRoute
+  '/bunkering': typeof AppBunkeringRoute
   '/changelog': typeof AppChangelogRoute
   '/compass': typeof AppCompassRoute
   '/contacts': typeof AppContactsRoute
@@ -1128,6 +1135,7 @@ export interface FileRoutesByTo {
   '/agency': typeof AppAgencyRoute
   '/ai-assistant': typeof AppAiAssistantRoute
   '/automations': typeof AppAutomationsRoute
+  '/bunkering': typeof AppBunkeringRoute
   '/changelog': typeof AppChangelogRoute
   '/compass': typeof AppCompassRoute
   '/contacts': typeof AppContactsRoute
@@ -1271,6 +1279,7 @@ export interface FileRoutesById {
   '/_app/agency': typeof AppAgencyRoute
   '/_app/ai-assistant': typeof AppAiAssistantRoute
   '/_app/automations': typeof AppAutomationsRoute
+  '/_app/bunkering': typeof AppBunkeringRoute
   '/_app/changelog': typeof AppChangelogRoute
   '/_app/compass': typeof AppCompassRoute
   '/_app/contacts': typeof AppContactsRoute
@@ -1428,6 +1437,7 @@ export interface FileRouteTypes {
     | '/agency'
     | '/ai-assistant'
     | '/automations'
+    | '/bunkering'
     | '/changelog'
     | '/compass'
     | '/contacts'
@@ -1582,6 +1592,7 @@ export interface FileRouteTypes {
     | '/agency'
     | '/ai-assistant'
     | '/automations'
+    | '/bunkering'
     | '/changelog'
     | '/compass'
     | '/contacts'
@@ -1724,6 +1735,7 @@ export interface FileRouteTypes {
     | '/_app/agency'
     | '/_app/ai-assistant'
     | '/_app/automations'
+    | '/_app/bunkering'
     | '/_app/changelog'
     | '/_app/compass'
     | '/_app/contacts'
@@ -2323,6 +2335,13 @@ declare module '@tanstack/react-router' {
       path: '/changelog'
       fullPath: '/changelog'
       preLoaderRoute: typeof AppChangelogRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/bunkering': {
+      id: '/_app/bunkering'
+      path: '/bunkering'
+      fullPath: '/bunkering'
+      preLoaderRoute: typeof AppBunkeringRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/automations': {
@@ -3303,6 +3322,7 @@ interface AppRouteChildren {
   AppAgencyRoute: typeof AppAgencyRoute
   AppAiAssistantRoute: typeof AppAiAssistantRoute
   AppAutomationsRoute: typeof AppAutomationsRoute
+  AppBunkeringRoute: typeof AppBunkeringRoute
   AppChangelogRoute: typeof AppChangelogRoute
   AppCompassRoute: typeof AppCompassRoute
   AppContactsRoute: typeof AppContactsRoute
@@ -3378,6 +3398,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppAgencyRoute: AppAgencyRoute,
   AppAiAssistantRoute: AppAiAssistantRoute,
   AppAutomationsRoute: AppAutomationsRoute,
+  AppBunkeringRoute: AppBunkeringRoute,
   AppChangelogRoute: AppChangelogRoute,
   AppCompassRoute: AppCompassRoute,
   AppContactsRoute: AppContactsRoute,

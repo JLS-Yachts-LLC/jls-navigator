@@ -109,6 +109,9 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: "Crew Placement", module: "crew_placement", icon: "user-star", screen: "crew-placement", roles: ["global_admin", "crew_immigration"] },
       { label: "Finance", module: "finance", icon: "report-money", screen: "finance", roles: ["global_admin"] },
       { label: "Port Calls", module: "agency", icon: "anchor", screen: "port-calls" },
+      // Open to all staff (every department raises these); the Warehouse / Agency team manage them inside the page.
+      { label: "Warehouse Requests", icon: "package-import", screen: "route-warehouse-requests", route: "/warehouse-requests" },
+      { label: "Bunkering", icon: "gas-station", screen: "route-bunkering", route: "/bunkering" },
       { label: "Berth Billing", module: "finance", icon: "receipt-2", screen: "berth-billing", roles: ["global_admin"] },
       { label: "Orbit", module: "orbit", icon: "orbit", screen: "orbit" },
       { label: "Orbit 2", module: "orbit", icon: "chart-donut", screen: "orbit2" },

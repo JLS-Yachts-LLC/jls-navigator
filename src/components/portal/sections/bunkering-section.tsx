@@ -1,0 +1,121 @@
+/**
+ * Bunkering — the vessel's own bunkering enquiries, read-only: what was requested, the Captain's / Chief Engineer's confirmation,
+ * the quotations JLS has shared, the approval and the delivery. (What the vessel may see is decided on the server.)
+ */
+import { useEffect, useState } from "react";
+import { Fuel, Loader2 } from "lucide-react";
+import { portalFetch } from "@/lib/portal/portal-fetch";
+import { STATUS_ORDER, STATUS_LABEL, type EnquiryStatus } from "@/lib/bunkering/model";
+import type { VesselEnquiry } from "@/lib/portal/bunkering";
+import { cn } from "@/lib/utils";
+
+const day = (d: string | null) => (d ? new Date(`${d}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—");
+const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString("en-GB", { timeZone: "Asia/Dubai", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—");
+const money = (n: number | null, c: string) => (n == null ? "—" : `${c} ${n.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+
+export function BunkeringSection() {
+  const [rows, setRows] = useState<VesselEnquiry[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
+
+  useEffect(() => {
+    let on = true;
+    void portalFetch("/api/portal/bunkering").then(async (res) => {
+      const j = await res.json().catch(() => ({}));
+      if (!on) return;
+      if (!res.ok) throw new Error(j.error ?? "Could not load bunkering");
+      setRows(j.enquiries ?? []);
+      if ((j.enquiries ?? []).length === 1) setOpen(j.enquiries[0].id);
+    }).catch((e) => { if (on) setError(e instanceof Error ? e.message : "Could not load bunkering"); });
+    return () => { on = false; };
+  }, []);
+
+  if (error) return <p className="rounded-xl border border-border px-4 py-6 text-sm text-muted-foreground">{error}</p>;
+  if (rows === null) return <div className="flex h-32 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
+  if (rows.length === 0) return (
+    <div className="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
+      <Fuel className="mx-auto mb-2 h-6 w-6 opacity-50" />
+      No bunkering enquiries yet. When you ask JLS for a bunkering quotation, you'll follow it here — from the request to the quotation, your approval and the delivery.
+    </div>
+  );
+
+  return (
+    <div className="space-y-3">
+      {rows.map((r) => {
+        const at = STATUS_ORDER.indexOf(r.status as EnquiryStatus);
+        const isOpen = open === r.id;
+        return (
+          <div key={r.id} className="rounded-xl border border-border bg-card">
+            <button type="button" onClick={() => setOpen(isOpen ? null : r.id)} className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 text-left">
+              <Fuel className="h-5 w-5 text-muted-foreground" />
+              <span className="font-mono text-sm font-semibold text-primary">{r.number}</span>
+              <span className={cn("rounded-full border px-2 py-0.5 text-xs font-semibold", r.status === "approved" ? "border-emerald-500/40 text-emerald-400" : r.status === "cancelled" ? "border-border text-muted-foreground" : "border-primary/40 text-primary")}>{r.statusLabel}</span>
+              <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">{[r.fuel, r.quantity ? `${r.quantity} ${r.unit}` : null, r.port].filter(Boolean).join(" · ")}</span>
+              <span className="text-sm text-muted-foreground">{day(r.preferredDate)}</span>
+            </button>
+
+            {isOpen && (
+              <div className="space-y-4 border-t border-border px-4 py-4 text-sm">
+                {r.status !== "cancelled" && (
+                  <ol className="flex flex-wrap gap-1.5 text-xs">
+                    {STATUS_ORDER.map((s, i) => (
+                      <li key={s} className={cn("rounded-full border px-2 py-0.5", i < at ? "border-emerald-500/40 text-emerald-400" : i === at ? "border-primary bg-primary/10 font-semibold" : "border-border text-muted-foreground")}>{STATUS_LABEL[s]}</li>
+                    ))}
+                  </ol>
+                )}
+
+                <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
+                  <div><dt className="text-muted-foreground">Port / berth</dt><dd>{[r.port, r.berth].filter(Boolean).join(" — ") || "—"}</dd></div>
+                  <div><dt className="text-muted-foreground">Preferred date and time</dt><dd>{day(r.preferredDate)}{r.preferredTime ? ` at ${r.preferredTime.slice(0, 5)}` : ""}</dd></div>
+                  <div><dt className="text-muted-foreground">Fuel and quantity</dt><dd>{r.fuel ?? "—"} · {r.quantity ?? "—"} {r.unit}</dd></div>
+                  <div><dt className="text-muted-foreground">Delivery method</dt><dd>{r.deliveryMethod ?? "—"}</dd></div>
+                  {r.specNotes && <div className="sm:col-span-2"><dt className="text-muted-foreground">Specification / sulphur limit</dt><dd>{r.specNotes}</dd></div>}
+                  {r.specialRequirements && <div className="sm:col-span-2"><dt className="text-muted-foreground">Special requirements</dt><dd>{r.specialRequirements}</dd></div>}
+                </dl>
+
+                <div className={cn("rounded-lg border px-3 py-2", r.confirmation ? "border-emerald-500/40" : "border-border")}>
+                  {r.confirmation
+                    ? <>Requirements confirmed by <strong>{r.confirmation.by}</strong> ({r.confirmation.role}) on {when(r.confirmation.at)}{r.confirmation.method ? ` — ${r.confirmation.method}` : ""}.</>
+                    : "JLS is waiting for the Captain or Chief Engineer to confirm the fuel type, specification and quantity."}
+                </div>
+
+                {r.quotations.length > 0 && (
+                  <div className="space-y-1.5">
+                    <h4 className="font-semibold">Quotations</h4>
+                    <div className="overflow-x-auto rounded-lg border border-border">
+                      <table className="w-full">
+                        <thead><tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
+                          <th className="px-3 py-2">Supplier</th><th className="px-3 py-2">Quantity</th><th className="px-3 py-2">Price</th><th className="px-3 py-2">Total</th><th className="px-3 py-2">Valid until</th><th className="px-3 py-2" />
+                        </tr></thead>
+                        <tbody className="divide-y divide-border/60">
+                          {r.quotations.map((q, i) => (
+                            <tr key={i} className={cn(q.approved && "bg-emerald-500/5")}>
+                              <td className="px-3 py-2"><div className="font-medium">{q.supplier}</div>{q.quoteRef && <div className="text-xs text-muted-foreground">Ref {q.quoteRef}</div>}</td>
+                              <td className="px-3 py-2">{q.quantity ?? "—"} {q.unit} {q.fuel ?? ""}</td>
+                              <td className="px-3 py-2 whitespace-nowrap">{q.unitPrice == null ? "—" : `${q.currency} ${q.unitPrice} ${q.priceUnit ?? ""}`}</td>
+                              <td className="px-3 py-2 whitespace-nowrap font-medium">{money(q.total, q.currency)}</td>
+                              <td className="px-3 py-2 whitespace-nowrap">{day(q.validUntil)}</td>
+                              <td className="px-3 py-2 text-xs">{q.approved ? <span className="text-emerald-500">Approved</span> : q.status === "rejected" ? <span className="text-muted-foreground">Not chosen</span> : q.status === "expired" ? <span className="text-muted-foreground">Expired</span> : ""}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {r.approval && <p className="rounded-lg border border-emerald-500/40 px-3 py-2">Approved by <strong>{r.approval.by}</strong> ({r.approval.role}) on {when(r.approval.at)}{r.approval.method ? ` — ${r.approval.method}` : ""}.</p>}
+                {r.delivery && <p className="rounded-lg border border-border px-3 py-2"><strong>Delivered</strong> {day(r.delivery.date)}: {r.delivery.quantity} {r.delivery.unit}{r.delivery.bdn ? ` · BDN ${r.delivery.bdn}` : ""}.</p>}
+                {r.documents.length > 0 && <ul className="space-y-1">{r.documents.map((d, i) => <li key={i}><a className="text-primary hover:underline" href={d.url} target="_blank" rel="noreferrer">{d.name}</a></li>)}</ul>}
+
+                {r.timeline.length > 0 && (
+                  <ul className="space-y-0.5 text-xs text-muted-foreground">{r.timeline.map((t, i) => <li key={i}>{when(t.at)} — {t.label}</li>)}</ul>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
