@@ -1,6 +1,10 @@
 /**
  * WhatsApp "lines" — the numbers Polaris speaks for.
  *
+ * A number can also be linked in WhatsApp Manager (Meta's own route, no Embedded
+ * Signup) under a WhatsApp Business Account the Worker's System User token can
+ * reach — token_source 'env' on a non-default line: same token, its own number.
+ *
  * The office number is the default line: its credentials are the Worker secrets
  * (waConfig()), and every message row defaults to it, so code that predates
  * lines keeps working. Other numbers — the Training number, onboarded by
@@ -81,8 +85,14 @@ export function lineForWaba(lines: WaLine[], wabaId: string | null | undefined):
 /** Credentials for sending as this line. Null when it can't send (no token / disconnected). */
 export async function configForLine(db: any, line: WaLine | null): Promise<WaConfig | null> {
   if (!line) return null;
-  if (line.token_source === "env") return waConfig();
+  if (line.is_default) return waConfig();
   if (line.status === "disconnected" || !line.phone_number_id || !line.waba_id) return null;
+  // A number linked in WhatsApp Manager (Meta's own route) under an account the
+  // Worker's System User token can reach: same token, this line's number.
+  if (line.token_source === "env") {
+    const base = waConfig();
+    return base ? { ...base, phoneNumberId: line.phone_number_id, wabaId: line.waba_id } : null;
+  }
   const { data } = await db.from("wa_line_tokens").select("access_token").eq("line_id", line.id).maybeSingle();
   if (!data?.access_token) return null;
   const base = waConfig();

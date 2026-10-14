@@ -114,10 +114,34 @@ function LineCard({ line, members, people, canManage, isGlobalAdmin, onChanged }
       </div>
 
       {line.status === "pending" && (
-        <p className="mt-2 text-xs text-amber-500">
-          Not connected yet — people can be added now; use “Connect a WhatsApp Business app number” above with this number
-          and it takes this entry over, keeping its name and people.
-        </p>
+        <div className="mt-2 space-y-1.5 text-xs">
+          <p className="text-amber-500">
+            Not connected yet — people can be added now; connecting this number takes this entry over, keeping its name and people.
+          </p>
+          <p className="text-muted-foreground">
+            Linked it in WhatsApp Manager (Phone numbers → Connect WhatsApp account)? Add it here straight away — the contacts
+            and chat-history imports must be requested within 24 hours of linking.
+          </p>
+          {isGlobalAdmin && (
+            <Button size="sm" variant="outline" className="h-7 gap-1.5 text-xs" disabled={!!busy}
+              onClick={async () => {
+                setBusy("adopt");
+                try {
+                  const r = await waApi<{ contacts?: { ok: boolean; error?: string }; history?: { ok: boolean; error?: string } }>("lines/adopt", { lineId: line.id });
+                  toast.success(`${line.label} connected`, {
+                    description: `Contacts import ${r.contacts?.ok ? "requested" : `not requested — ${r.contacts?.error}`}; history import ${r.history?.ok ? "requested" : `not requested — ${r.history?.error}`}`,
+                    duration: 12000,
+                  });
+                  await onChanged();
+                } catch (e) {
+                  toast.error(e instanceof Error ? e.message : "Couldn't find the number", { duration: 15000 });
+                } finally { setBusy(null); }
+              }}>
+              {busy === "adopt" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+              Add from WhatsApp Manager
+            </Button>
+          )}
+        </div>
       )}
 
       {line.status === "disconnected" && (

@@ -11,6 +11,10 @@
  *   POST /api/whatsapp/onboard/complete  ← the code from FB.login: exchange → find the number →
  *                                          subscribe our app → save the line → request the syncs
  *   POST /api/whatsapp/onboard/sync      retry the contacts or history sync (once each, 24 h)
+ *   POST /api/whatsapp/lines/adopt       a number already linked in WhatsApp Manager (Meta's own
+ *                                        route, no Embedded Signup): find it under the WhatsApp
+ *                                        accounts the Worker's System User can reach, take over the
+ *                                        pending entry with that number, then request the syncs
  *
  * Coexistence numbers are already registered: /register is never called.
  * The Business Integration token never reaches the browser; it is stored in
@@ -249,10 +253,102 @@ export async function onboardSyncHandler(request: Request): Promise<Response> {
   const db = admin();
   const { data: line } = await db.from("wa_lines").select("*").eq("id", body.lineId).maybeSingle();
   if (!line || line.is_default) return json({ error: "Number not found" }, 404);
-  const { data: tok } = await db.from("wa_line_tokens").select("access_token").eq("line_id", line.id).maybeSingle();
-  if (!tok?.access_token) return json({ error: "This number has no token — connect it again." }, 409);
-  const out = await runSync(db, line as WaLine, tok.access_token, body.kind);
+  let token: string | null = null;
+  if (line.token_source === "env") token = env("WHATSAPP_ACCESS_TOKEN") || null;
+  else {
+    const { data: tok } = await db.from("wa_line_tokens").select("access_token").eq("line_id", line.id).maybeSingle();
+    token = tok?.access_token ?? null;
+  }
+  if (!token) return json({ error: "This number has no working connection — connect it again." }, 409);
+  const out = await runSync(db, line as WaLine, token, body.kind);
   return json(out, out.ok ? 200 : 502);
+}
+
+/**
+ * Take over a pending number once it has been linked in WhatsApp Manager.
+ *
+ * Looks in every WhatsApp Business Account the Worker's System User token can
+ * reach (the office account first) for a number with the pending entry's
+ * digits. Found → the entry becomes that number (same token as the office,
+ * token_source 'env'), Polaris is subscribed to its account's webhooks, and the
+ * contacts + history imports are requested at once — Meta allows them only once,
+ * within 24 hours of linking. Not found → the numbers it could see, so the admin
+ * knows what's missing (usually the System User needs access to a new account).
+ */
+export async function lineAdoptHandler(request: Request): Promise<Response> {
+  const access = await requireAccess(request, { adminOnly: true });
+  if (!access.ok) return access.response;
+  const body = (await request.json().catch(() => ({}))) as { lineId?: string };
+  const token = env("WHATSAPP_ACCESS_TOKEN");
+  if (!token) return json({ error: "WHATSAPP_ACCESS_TOKEN isn't set on the Worker." }, 409);
+  const db = admin();
+  const { data: pending } = await db.from("wa_lines").select("*").eq("id", body.lineId ?? "").maybeSingle();
+  if (!pending || pending.is_default) return json({ error: "Number not found" }, 404);
+  const digits = (x: unknown) => String(x ?? "").replace(/\D/g, "");
+  const want = digits(pending.display_phone);
+  if (want.length < 7) return json({ error: "This entry has no phone number to look for." }, 400);
+
+  // Which accounts can the token reach? The office account, plus any it was granted.
+  const wabas = new Set<string>([env("WHATSAPP_WABA_ID")].filter(Boolean));
+  try { for (const id of await grantedWabaIds(token)) wabas.add(id); } catch (e) {
+    console.warn("[wa-adopt] couldn't list the token's accounts", metaFailure(e));
+  }
+  const lines = await loadLines(db);
+  const seen: Array<{ waba: string; id: string; number: string; name?: string }> = [];
+  let found: { waba: string; id: string; number: string; name?: string } | null = null;
+  for (const waba of wabas) {
+    let numbers: Awaited<ReturnType<typeof wabaPhoneNumbers>> = [];
+    try { numbers = await wabaPhoneNumbers(token, waba); } catch (e) {
+      console.warn("[wa-adopt] couldn't list numbers for", waba, metaFailure(e));
+      continue;
+    }
+    for (const n of numbers) {
+      const row = { waba, id: n.id, number: n.display_phone_number, name: n.verified_name };
+      seen.push(row);
+      if (!found && digits(n.display_phone_number) === want) found = row;
+    }
+  }
+  if (!found) {
+    return json({
+      error: `${pending.display_phone} isn't under the WhatsApp accounts Polaris can reach yet. Link it in WhatsApp Manager first; if Meta put it in a new WhatsApp account, give the System User access to that account (Business settings → System users → Assign assets), then try again.`,
+      seen: seen.map((n) => `${n.number}${n.name ? ` (${n.name})` : ""}`),
+    }, 404);
+  }
+  const clash = lines.find((l) => l.phone_number_id === found!.id && l.id !== pending.id);
+  if (clash) return json({ error: `That number is already in Polaris as "${clash.label}".` }, 409);
+
+  let details: Record<string, any> = {};
+  try { details = await phoneDetails(token, found.id); } catch (e) { console.warn("[wa-adopt] details", metaFailure(e)); }
+  try { await subscribeWaba(token, found.waba); } catch (e) {
+    const f = metaFailure(e);
+    return json({ error: `Couldn't subscribe Polaris to that WhatsApp account: ${f.message}`, code: f.code, fbtrace_id: f.fbtrace_id }, 502);
+  }
+
+  const { data: line, error } = await db.from("wa_lines").update({
+    phone_number_id: found.id, waba_id: found.waba, token_source: "env", status: "connected",
+    display_phone: details.display_phone_number ?? found.number ?? pending.display_phone,
+    verified_name: details.verified_name ?? found.name ?? null,
+    coexistence: details.is_on_biz_app !== false,
+    onboarded_at: new Date().toISOString(), onboarded_by: access.claims.userId,
+    disconnected_at: null, disconnect_reason: null,
+    contacts_sync_requested_at: null, contacts_sync_error: null,
+    history_sync_requested_at: null, history_sync_error: null, history_progress: null, history_declined: false,
+  }).eq("id", pending.id).select("*").single();
+  if (error || !line) return json({ error: error?.message ?? "Couldn't save the number" }, 500);
+
+  const contacts = await runSync(db, line as WaLine, token, "contacts");
+  const history = await runSync(db, line as WaLine, token, "history");
+  await logAuditEvent({
+    event_type: "ADMIN", module: "communications",
+    actor_id: access.claims.userId, actor_email: access.claims.email, actor_role: (access.claims.roleName ?? "admin") as any,
+    target_type: "whatsapp_line", target_label: `${line.label} ${line.display_phone ?? ""}`.trim(),
+    detail: `WhatsApp number added from WhatsApp Manager — WABA ${found.waba}, phone ${found.id}; contacts sync ${contacts.ok ? "requested" : "failed"}, history sync ${history.ok ? "requested" : "failed"}`,
+    ip_address: request.headers.get("x-forwarded-for"), result: "success",
+  } as any);
+  return json({
+    ok: true, line: { id: line.id, label: line.label, display_phone: line.display_phone },
+    platform_type: details.platform_type ?? null, is_on_biz_app: details.is_on_biz_app ?? null, contacts, history,
+  });
 }
 
 // ─── Who can use each number ──────────────────────────────────────────────────

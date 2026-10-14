@@ -1329,6 +1329,8 @@ export default {
           return (await import('./lib/whatsapp/onboarding.server')).onboardSyncHandler(request)
         case 'POST /api/whatsapp/lines/members':
           return (await import('./lib/whatsapp/onboarding.server')).lineMembersHandler(request)
+        case 'POST /api/whatsapp/lines/adopt':
+          return (await import('./lib/whatsapp/onboarding.server')).lineAdoptHandler(request)
         case 'POST /api/whatsapp/lines/update':
           return (await import('./lib/whatsapp/onboarding.server')).lineUpdateHandler(request)
         case 'POST /api/whatsapp/reply':return wa.whatsappReplyHandler(request)
