@@ -194,8 +194,14 @@ export async function onboardCompleteHandler(request: Request): Promise<Response
   // 4. Send this account's webhooks to Polaris.
   try { await subscribeWaba(token, wabaId); } catch (e) { return fail("Subscribing Polaris to the account", e); }
 
-  // 5. Save the line and its token.
-  const label = (body.label ?? "").trim() || verifiedName || display || "WhatsApp number";
+  // 5. Save the line and its token. A number set up ahead as "pending" (so its
+  // people could be chosen before connecting) is taken over — same number,
+  // matched on its digits — and keeps its name and members.
+  const digits = (x: unknown) => String(x ?? "").replace(/\D/g, "");
+  const pending = lines.find((l) => !l.is_default && !l.phone_number_id && l.status === "pending"
+    && digits(l.display_phone).length > 6 && digits(l.display_phone) === digits(display));
+  if (pending) await db.from("wa_lines").update({ phone_number_id: phoneNumberId }).eq("id", pending.id);
+  const label = pending?.label || (body.label ?? "").trim() || verifiedName || display || "WhatsApp number";
   const { data: line, error: lineErr } = await db.from("wa_lines").upsert({
     phone_number_id: phoneNumberId, waba_id: wabaId, label, display_phone: display || null, verified_name: verifiedName,
     is_default: false, token_source: "stored", coexistence: details.is_on_biz_app !== false, status: "connected",

@@ -113,6 +113,13 @@ function LineCard({ line, members, people, canManage, isGlobalAdmin, onChanged }
         {line.coexistence && <Chip t="grey" title="Also in use in the WhatsApp Business app on the phone">Business app + Polaris</Chip>}
       </div>
 
+      {line.status === "pending" && (
+        <p className="mt-2 text-xs text-amber-500">
+          Not connected yet — people can be added now; use “Connect a WhatsApp Business app number” above with this number
+          and it takes this entry over, keeping its name and people.
+        </p>
+      )}
+
       {line.status === "disconnected" && (
         <p className="mt-2 flex items-start gap-1.5 text-xs text-red-500">
           <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
