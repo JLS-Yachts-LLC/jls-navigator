@@ -10,11 +10,16 @@
  * The hub owns the data. All three screens read the same load, so a record added
  * in Bunkering shows on the dashboard the moment it is saved without either
  * screen knowing the other exists.
+ *
+ * Bunkering-only staff (module `orbit2_bunkering` without `orbit` — the Port
+ * Agency team) get Project → Bunkering and nothing else: no Dashboard, Project
+ * List, EHS NOC Record or Managed Boats, and no tab bars to reach them.
  */
 import { useEffect, useState } from "react";
 import { useRouterState } from "@tanstack/react-router";
-import { LayoutDashboard, FolderKanban, Ship } from "lucide-react";
+import { LayoutDashboard, FolderKanban, Loader2, Ship } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAccess } from "@/lib/auth/useAccess";
 import { useOrbit2, suggestionsFor } from "./orbit2-data";
 import { Orbit2Dashboard } from "./orbit2-dashboard";
 import { Orbit2Projects, type Orbit2Prefill } from "./orbit2-projects";
@@ -37,13 +42,17 @@ const SUBS: { key: Sub; label: string }[] = [
 ];
 
 export function Orbit2Hub() {
+  const access = useAccess();
+  // Full Orbit access always wins; the bunkering grant only matters without it.
+  const bunkeringOnly = !access.canAccessModule("orbit") && access.canAccessModule("orbit2_bunkering");
+
   const [tab, setTab] = useState<Tab>("dashboard");
   // A link to one managed boat (?boat=<id>, optionally &view=services — the
   // service-due alerts use it) opens Managed Boats on that boat.
   const link = useRouterState({ select: (s) => s.location.search as { boat?: unknown; view?: unknown } });
   const linkBoat = typeof link?.boat === "string" ? link.boat : null;
   const linkView = typeof link?.view === "string" ? link.view : null;
-  useEffect(() => { if (linkBoat) setTab("boats"); }, [linkBoat]);
+  useEffect(() => { if (linkBoat && !bunkeringOnly) setTab("boats"); }, [linkBoat, bunkeringOnly]);
   const [sub, setSub] = useState<Sub>("list");
   const [prefill, setPrefill] = useState<Orbit2Prefill | null>(null);
 
@@ -62,6 +71,27 @@ export function Orbit2Hub() {
     setPrefill({ schedule_date: date, schedule_time: time, nonce: Date.now() });
     setSub("list");
     setTab("project");
+  }
+
+  // Wait for the person's access before drawing any tabs, so a bunkering-only
+  // user never glimpses the full hub while it loads.
+  if (access.loading) {
+    return <div className="flex h-full items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+  }
+
+  if (bunkeringOnly) {
+    return (
+      <div className="flex h-full flex-col">
+        <header className="border-b border-border/70 bg-card/30 px-6 py-3.5">
+          <div className="text-[14px] font-medium uppercase tracking-[0.08em] text-muted-foreground/70">Orbit 2</div>
+          <h1 className="mt-0.5 font-display text-[28px] font-bold leading-tight tracking-tight">Bunkering</h1>
+        </header>
+        <div className="min-h-0 flex-1 overflow-auto">
+          <Orbit2Projects recordType="bunkering" projects={projects} loading={loading} reload={reload}
+                          boatNames={boatNames} prefill={null} />
+        </div>
+      </div>
+    );
   }
 
   return (
