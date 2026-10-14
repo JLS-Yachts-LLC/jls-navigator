@@ -27,7 +27,7 @@ import {
   releaseCheckout, cancelCheckout, openDeliveryNote,
   type OutRow, type OutLine, type OutMode, type WhCheckout,
 } from "./logistics-warehouse-out-data";
-import { Screen, Lbl, inputCls, PhotoField, Sheet } from "./logistics-ui";
+import { Screen, Lbl, inputCls, PhotoField, Sheet, DateField } from "./logistics-ui";
 import { localToday } from "./logistics-warehouse-data";
 import { ClientCollection, FootBtn } from "./checkout-parcels";
 import { shipsyncApi } from "./logistics-api";
@@ -387,7 +387,7 @@ function Builder({ row, onDone }: { row: OutRow | null; onDone: () => void }) {
 
       {mode === "jls" && (
         <>
-          <Lbl label="Select Date"><input type="date" min={localToday()} className={inputCls} value={date} onChange={(e) => setDate(e.target.value)} /></Lbl>
+          <Lbl label="Select Date"><DateField label="Date" min={localToday()} value={date} onChange={setDate} /></Lbl>
           <Lbl label="Select Driver">
             <select className={inputCls} value={driverId} onChange={(e) => setDriverId(e.target.value)} disabled={!date}>
               <option value="">{date ? (drivers.length ? "Select driver…" : "No driver available that day") : "Pick a date first"}</option>

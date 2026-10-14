@@ -1,7 +1,7 @@
 /**
  * ShipSync delivery-note PDF generation (server-side, pdf-lib).
  * Produces a clean A4 note: JLS header, DN number, vessel, driver, date, a table
- * of packages (line / AWB / owner / qty) and a signature block.
+ * of packages (line / AWB / courier / owner / qty) and a signature block.
  */
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 import type { ShipSyncDeliveryNote, ShipSyncPackage } from './model'
@@ -21,10 +21,6 @@ export interface BoatSignature {
 export interface DeliveryNotePdfOptions {
   /** Driver assigned to the run (note.driver_id resolved to a name). */
   driverName?: string | null
-  /** Van assigned to the run (note.vehicle_id resolved to a plate/label). */
-  vanLabel?: string | null
-  /** boat_name → saved berth address, for the Destination line per boat. */
-  destByBoat?: Map<string, string | null>
   /** boat_name → captured customer signature (delivery notes only). */
   sigByBoat?: Map<string, BoatSignature>
 }
@@ -90,9 +86,7 @@ export async function buildDeliveryNotePdf(
     const meta: [string, string][] = [
       ['Vessel', boat === UNASSIGNED ? (note.boat_name ?? UNASSIGNED) : boat],
       ['Driver', opts.driverName || UNASSIGNED],
-      ['Van', opts.vanLabel || UNASSIGNED],
       ['Delivery date', deliveryDate],
-      ['Destination', opts.destByBoat?.get(boat) || note.destination_address || UNASSIGNED],
       ['Packages', String(boatPackages.length)],
     ]
     for (const [k, v] of meta) {
@@ -105,11 +99,12 @@ export async function buildDeliveryNotePdf(
     y -= 20
 
     // Table header
-    const cols = [M, M + 36, M + 220, W - M - 50]
+    const cols = [M, M + 30, M + 190, M + 300, W - M - 40]
     text('#', cols[0], y, 8, bold, GREY)
     text('AWB / REFERENCE', cols[1], y, 8, bold, GREY)
-    text('OWNER', cols[2], y, 8, bold, GREY)
-    text('QTY', cols[3], y, 8, bold, GREY)
+    text('COURIER', cols[2], y, 8, bold, GREY)
+    text('OWNER', cols[3], y, 8, bold, GREY)
+    text('QTY', cols[4], y, 8, bold, GREY)
     y -= 6
     page.drawLine({ start: { x: M, y }, end: { x: W - M, y }, thickness: 0.5, color: LINE })
     y -= 16
@@ -117,9 +112,10 @@ export async function buildDeliveryNotePdf(
     boatPackages.forEach((p, i) => {
       if (y < M + 120) { page = doc.addPage([W, H]); y = H - M }
       text(String(i + 1), cols[0], y, 10)
-      text((p.barcode ?? UNASSIGNED).slice(0, 30), cols[1], y, 10)
-      text((p.package_owner ?? UNASSIGNED).slice(0, 26), cols[2], y, 10)
-      text(String(p.num_packages ?? 1), cols[3], y, 10)
+      text((p.barcode ?? UNASSIGNED).slice(0, 26), cols[1], y, 10)
+      text((p.courier ?? UNASSIGNED).slice(0, 16), cols[2], y, 10)
+      text((p.package_owner ?? UNASSIGNED).slice(0, 24), cols[3], y, 10)
+      text(String(p.num_packages ?? 1), cols[4], y, 10)
       y -= 18
     })
 

@@ -23,7 +23,7 @@ import {
   type DeliveredRow,
 } from "./logistics-delivery-data";
 import { generateNotePdf } from "./logistics-api";
-import { Screen, Lbl, inputCls, Sheet } from "./logistics-ui";
+import { Screen, Lbl, inputCls, Sheet, DateField } from "./logistics-ui";
 
 type Tab = "active" | "delivered";
 const fmt = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—");
@@ -162,7 +162,7 @@ function DeliveredList({ onOpen }: { onOpen: (r: DeliveredRow) => void }) {
       </div>
       <div className="grid grid-cols-2 gap-3">
         <select className={inputCls} value={boat} onChange={(e) => setBoat(e.target.value)}><option value="">All clients</option>{boats.map((b) => <option key={b} value={b}>{b}</option>)}</select>
-        <input type="date" className={inputCls} value={date} onChange={(e) => setDate(e.target.value)} aria-label="Date delivered" />
+        <DateField label="Date delivered" value={date} onChange={setDate} />
       </div>
       {rows === null ? <Loader2 className="mx-auto mt-6 h-6 w-6 animate-spin" /> : rows.length === 0 ? <p className="py-8 text-center text-[15px] text-muted-foreground">No delivered notes match.</p> : (
         <ul className="space-y-2">

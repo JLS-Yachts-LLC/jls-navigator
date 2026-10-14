@@ -13,6 +13,7 @@ import { guardUploadFile, uploadContentType } from "@/lib/upload-guard";
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import { DEVELOPER_EMAILS } from "@/lib/leo-access";
 import { storageRef, useSignedUrl } from "@/lib/signed-url";
 import { compressImageToMaxKB } from "@/lib/image-compress";
 import { Button } from "@/components/ui/button";
@@ -21,7 +22,7 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
-import { Loader2, LogOut, UserRound, Camera, Trash2, Bell } from "lucide-react";
+import { Loader2, LogOut, UserRound, Camera, Trash2, Bell, ShieldCheck } from "lucide-react";
 import { NotificationsDialog } from "./notifications-dialog";
 import { toast } from "sonner";
 
@@ -229,8 +230,12 @@ export function EditProfileDialog({ open, onClose, profile }: {
 export function ProfileMenu({ renderTrigger }: {
   renderTrigger: (args: { avatarUrl: string | null; initials: string; name: string }) => React.ReactNode;
 }) {
-  const { signOut } = useAuth();
+  const { signOut, user } = useAuth();
   const profile = useMyProfile();
+  // Same rule the Admin Panel itself applies: a global/org admin, or a developer account.
+  const email = user?.email?.toLowerCase() ?? "";
+  const role: string = (user as any)?.app_metadata?.role ?? (DEVELOPER_EMAILS.includes(email) ? "global_admin" : "");
+  const isAdmin = ["global_admin", "org_admin"].includes(role);
   const [open, setOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [notifyOpen, setNotifyOpen] = useState(false);
@@ -298,6 +303,14 @@ export function ProfileMenu({ renderTrigger }: {
           >
             <Bell className="h-4 w-4 text-muted-foreground" /> My notifications
           </button>
+          {isAdmin && (
+            <a
+              role="menuitem" href="/admin/users"
+              className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm transition hover:bg-accent"
+            >
+              <ShieldCheck className="h-4 w-4 text-muted-foreground" /> Admin Panel
+            </a>
+          )}
           <button
             role="menuitem"
             onClick={() => { setOpen(false); void signOut(); }}

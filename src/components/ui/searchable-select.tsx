@@ -46,6 +46,13 @@ export function SearchableSelect({
           <div className="relative border-b border-border p-1.5">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/50" />
             <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Type to search…"
+              onKeyDown={(e) => {
+                // Enter picks the first match (and must not submit a surrounding form); Esc closes.
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  if (filtered[0]) { onValueChange(filtered[0].value); setOpen(false); setQ(""); }
+                } else if (e.key === "Escape") { e.stopPropagation(); setOpen(false); }
+              }}
               className="h-8 w-full rounded bg-transparent pl-7 pr-2 text-sm outline-none" />
           </div>
           <div className="max-h-60 overflow-auto py-1">

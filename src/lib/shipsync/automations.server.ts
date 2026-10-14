@@ -5,7 +5,8 @@
 import { emailBrandLockup } from "@/lib/email/brand-mark";
 import { storageRef, parseStorageRef, EMAIL_LINK_TTL } from '@/lib/signed-url'
 import { supabaseAdmin } from '@/integrations/supabase/client.server'
-import { sendEmail } from '@/lib/ses.server'
+import { sendEmail, type EmailAttachment } from '@/lib/ses.server'
+import { sendGraphEmailWithAttachments } from '@/lib/graph-mail.server'
 import { buildDeliveryNotePdf } from '@/lib/shipsync/pdf.server'
 import type { ShipSyncDeliveryNote, ShipSyncPackage } from '@/lib/shipsync/model'
 
@@ -36,6 +37,59 @@ export async function linkForEmail(stored: string): Promise<string> {
 }
 const LOGISTICS = (process.env as any).SHIPSYNC_LOGISTICS_EMAIL ?? 'logistics@jlsyachts.com'
 
+/** Each file goes to Graph in its own request, which takes about 3 MB; bigger photos are left out rather than failing the email. */
+const MAX_ATTACH_BYTES = 2_800_000
+const IMAGE_TYPE_BY_EXT: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif' }
+
+function toBase64(bytes: Uint8Array): string {
+  let bin = ''
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  return btoa(bin)
+}
+
+/**
+ * What goes ON the proof-of-delivery email: the delivery note PDF itself (not a link to it) and TWO photos for the
+ * whole shipment — one taken when it was received and one taken at delivery — however many parcels it has. A
+ * shipment of 100 parcels still sends two photos, not a hundred. If the first photo of a kind can't be used, the next
+ * parcel's is tried.
+ * A file that can't be read, or is too big for the mail service, is left out and reported, never fatal:
+ * the email still goes, with a link to the PDF instead if that is what couldn't be attached.
+ */
+export async function buildProofAttachments(
+  packages: Array<Pick<ShipSyncPackage, 'barcode' | 'delivery_photo_url' | 'item_photo_url'>>,
+  pdf: { stored: string; filename: string },
+): Promise<{ attachments: EmailAttachment[]; pdfAttached: boolean; photos: number; skipped: string[] }> {
+  const attachments: EmailAttachment[] = []
+  const skipped: string[] = []
+
+  let pdfAttached = false
+  const pdfBytes = await downloadStored(pdf.stored).catch(() => null)
+  if (pdfBytes && pdfBytes.length <= MAX_ATTACH_BYTES) {
+    attachments.push({ filename: pdf.filename, contentBase64: toBase64(pdfBytes), contentType: 'application/pdf' })
+    pdfAttached = true
+  } else skipped.push(pdfBytes ? 'delivery note PDF (too large to attach)' : 'delivery note PDF (could not be read)')
+
+  let photos = 0
+  // Delivered first, then received. For each kind, the first parcel's photo that can be used.
+  for (const [field, kind] of [['delivery_photo_url', 'delivered'], ['item_photo_url', 'received']] as const) {
+    const seen = new Set<string>()
+    for (const p of packages) {
+      const stored = p[field]
+      if (!stored || seen.has(stored)) continue
+      seen.add(stored)
+      const label = `${p.barcode ?? 'parcel'}-${kind}`
+      const bytes = await downloadStored(stored).catch(() => null)
+      if (!bytes) { skipped.push(`${label} photo (could not be read)`); continue }
+      if (bytes.length > MAX_ATTACH_BYTES) { skipped.push(`${label} photo (too large to attach)`); continue }
+      const ext = (stored.split('?')[0].split('.').pop() ?? 'jpg').toLowerCase()
+      attachments.push({ filename: `${label}.${IMAGE_TYPE_BY_EXT[ext] ? ext : 'jpg'}`, contentBase64: toBase64(bytes), contentType: IMAGE_TYPE_BY_EXT[ext] ?? 'image/jpeg' })
+      photos++
+      break
+    }
+  }
+  return { attachments, pdfAttached, photos, skipped }
+}
+
 async function loadNote(noteId: string): Promise<{ note: ShipSyncDeliveryNote; packages: ShipSyncPackage[] }> {
   const { data: note } = await db().from('shipsync_delivery_notes').select('*').eq('id', noteId).maybeSingle()
   if (!note) throw new Error('Delivery note not found')
@@ -52,21 +106,6 @@ export async function generateNotePdf(noteId: string, kind: 'predelivery' | 'del
   if (note.driver_id) {
     const { data: driver } = await db().from('shipsync_drivers').select('name').eq('id', note.driver_id).maybeSingle()
     driverName = driver?.name ?? null
-  }
-
-  // Van (plate) for the note header.
-  let vanLabel: string | null = null
-  if (note.vehicle_id) {
-    const { data: veh } = await db().from('crew_vehicles').select('registration, make, model').eq('id', note.vehicle_id).maybeSingle()
-    if (veh) vanLabel = (veh.registration?.trim() || [veh.make, veh.model].filter(Boolean).join(' ').trim()) || null
-  }
-
-  // Saved berth per boat (a multi-boat note has no single destination_address).
-  const boatNames = Array.from(new Set(packages.map((p) => p.boat_name).filter(Boolean) as string[]))
-  const destByBoat = new Map<string, string | null>()
-  if (boatNames.length) {
-    const { data: dests } = await db().from('shipsync_destinations').select('boat_name, address').in('boat_name', boatNames)
-    for (const d of dests ?? []) destByBoat.set(d.boat_name, d.address ?? null)
   }
 
   // For a delivery note, embed the captured customer signature per boat.
@@ -88,7 +127,7 @@ export async function generateNotePdf(noteId: string, kind: 'predelivery' | 'del
     }
   }
 
-  const bytes = await buildDeliveryNotePdf(note, packages, kind, { driverName, vanLabel, destByBoat, sigByBoat })
+  const bytes = await buildDeliveryNotePdf(note, packages, kind, { driverName, sigByBoat })
   const path = `delivery-notes/${note.number ?? noteId}/${kind}-${Date.now()}.pdf`
   const up = await supabaseAdmin.storage.from('shipsync').upload(path, bytes, { upsert: true, contentType: 'application/pdf' })
   if (up.error) throw up.error
@@ -115,8 +154,10 @@ export async function emailProofOfDelivery(noteId: string, toOverride?: string, 
 
   const ref = `DN-${note.number ?? noteId}`
   const boat = esc(onlyBoat ?? note.boat_name ?? '')
-  // The PDF is stored as a private reference, which is not a link — make one that opens from an inbox.
-  const pdfLink = await linkForEmail(pdfUrl)
+  // The PDF and the photos of the goods are attached. Only if the PDF can't be attached is a link used instead
+  // (the stored value is a private reference, which is not a link — so one is made that opens from an inbox).
+  const built = await buildProofAttachments(packages, { stored: pdfUrl, filename: `${(onlyBoat ?? note.boat_name ?? 'Delivery').replace(/[^\w.-]+/g, '_')}-${pre ? 'PreDeliveryNote' : 'DeliveryNote'}-${note.number ?? noteId}.pdf` })
+  const pdfLink = built.pdfAttached ? '' : await linkForEmail(pdfUrl)
   const rows = packages.map((p) => `<tr><td style="padding:4px 10px 4px 0;font-family:monospace">${esc(p.barcode ?? '—')}</td><td style="padding:4px 0;color:#555">${esc(p.package_owner ?? '')}</td></tr>`).join('')
   const heading = pre ? `Delivery scheduled — ${boat}` : `Delivery complete — ${boat}`
   const intro = pre
@@ -128,13 +169,21 @@ export async function emailProofOfDelivery(noteId: string, toOverride?: string, 
     `<h1 style="margin:0 0 10px;font-size:18px;color:#0d1520">${heading}</h1>
      <p style="margin:8px 0;font-size:14px;color:#333">${intro}</p>
      <table style="margin:12px 0;font-size:13px;color:#333">${rows}</table>
-     <p style="margin:14px 0"><a href="${pdfLink}" style="display:inline-block;background:#0d6efd;color:#fff;text-decoration:none;padding:9px 16px;border-radius:7px;font-size:13px">${btn}</a></p>
+     ${built.pdfAttached
+        ? `<p style="margin:14px 0;font-size:13px;color:#333">The ${pre ? 'pre-delivery note' : 'delivery note'} is attached as a PDF${built.photos ? `, with ${built.photos === 1 ? 'a photo' : 'photos'} of the goods as received and as delivered` : ''}.</p>`
+        : `<p style="margin:14px 0"><a href="${pdfLink}" style="display:inline-block;background:#0d6efd;color:#fff;text-decoration:none;padding:9px 16px;border-radius:7px;font-size:13px">${btn}</a></p>${built.photos ? `<p style="margin:8px 0;font-size:13px;color:#333">${built.photos === 1 ? 'A photo' : `${built.photos} photos`} of the goods ${built.photos === 1 ? 'is' : 'are'} attached.</p>` : ''}`}
      <p style="margin:8px 0;font-size:12px;color:#7a828a">JLS Yachts Logistics</p>`,
   )
-  const txt = pre ? `Delivery scheduled for ${onlyBoat ?? note.boat_name ?? ''} (${ref}). Pre-delivery note: ${pdfLink}` : `Delivery complete for ${onlyBoat ?? note.boat_name ?? ''} (${ref}). Delivery note: ${pdfLink}`
+  const where = built.pdfAttached ? 'attached' : pdfLink
+  const txt = pre ? `Delivery scheduled for ${onlyBoat ?? note.boat_name ?? ''} (${ref}). Pre-delivery note: ${where}` : `Delivery complete for ${onlyBoat ?? note.boat_name ?? ''} (${ref}). Delivery note: ${where}`
   // `to` may be several addresses (client and driver) separated by , or ;
   const recipients = to.split(/[,;]/).map((a) => a.trim()).filter(Boolean)
-  await sendEmail({ to: recipients, cc: [LOGISTICS], subject, html, text: txt })
+  if (built.attachments.length) {
+    // Each file in its own request, so a few photos can't push the message over the mail service's single-request limit.
+    await sendGraphEmailWithAttachments({ to: recipients, cc: [LOGISTICS], subject, html, attachments: built.attachments })
+  } else {
+    await sendEmail({ to: recipients, cc: [LOGISTICS], subject, html, text: txt })
+  }
   return { to }
 }
 

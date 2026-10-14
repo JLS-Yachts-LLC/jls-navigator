@@ -78,3 +78,11 @@ test("a backup left by an earlier interrupted run is kept, and the job carries o
   assert.equal(r.kind, "shrunk");
   assert.equal(be.files.get(`shipsync/originals/${P}`)!.length, 2_000_000);
 });
+
+test("a download served from a stale cache right after the overwrite does not make a good shrink look like a failure (the bug in the first version)", async () => {
+  be.files.set(`shipsync/${P}`, big());
+  be.staleReads.set(`shipsync/${P}`, big());   // any download of this path keeps returning the OLD photo
+  const r = await mod.shrinkOne(P, async () => small());
+  assert.equal(r.kind, "shrunk");
+  assert.equal(be.files.get(`shipsync/${P}`)!.length, 150_000, "the small photo is what is stored, and it stays");
+});

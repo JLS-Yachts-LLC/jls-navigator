@@ -676,7 +676,7 @@ async function fetchSpImageToSupabase(
   clientId?: string,
   clientSecret?: string,
   /** Lets a Power App attachment photo be found — see fetchListAttachment. */
-  attach?: { siteAbsoluteUrl: string; listName: string; itemId: string; listId?: string },
+  attach?: { siteAbsoluteUrl: string; listName: string; itemId: string; listId?: string; siteId?: string },
 ): Promise<{ url: string | null; reason?: string; shape?: string[] }> {
   // SP image/thumbnail columns return an object (or sometimes a JSON string)
   let img: Record<string, any> | null = null
@@ -792,7 +792,7 @@ function describeFolderUrl(url: string): string {
  * through SharePoint's own API and then downloaded with a SharePoint token.
  */
 async function fetchListAttachment(
-  ctx: { siteAbsoluteUrl: string; listName: string; itemId: string; listId?: string },
+  ctx: { siteAbsoluteUrl: string; listName: string; itemId: string; listId?: string; siteId?: string },
   fileName: string,
   spItemId: string,
   tag: string,
@@ -840,6 +840,11 @@ async function fetchListAttachment(
   // ── 2. The list's own image folder (an Image column filled in SharePoint) ───
   // Files added through the list UI land in SiteAssets/Lists/<list id>/, which
   // Graph can serve — so this needs no extra permission.
+  if (ctx.listId && ctx.siteId) {
+    const viaDrive = await fetchSiteAssetsFile(ctx.siteId, graphToken, ctx.listId, fileName, spItemId, `${tag}-siteassets`)
+    if (viaDrive.url) return viaDrive
+    tried.push(`SiteAssets library (${viaDrive.reason ?? 'failed'})`)
+  }
   if (ctx.listId) {
     const assetUrl = `${site}/SiteAssets/Lists/${ctx.listId}/${encodeURIComponent(fileName)}`
     const got = await fetchFileUrlToSupabase(assetUrl, graphToken, spItemId, `${tag}-siteassets`, tenantId, clientId, clientSecret)
@@ -848,6 +853,44 @@ async function fetchListAttachment(
   }
 
   return { url: null, reason: `Could not fetch "${fileName}": ${tried.join('; ')}` }
+}
+
+/** The site's Site Assets library, found once per site per run. */
+const siteAssetsDriveCache = new Map<string, string | null>()
+async function siteAssetsDriveId(siteId: string, graphToken: string): Promise<string | null> {
+  if (siteAssetsDriveCache.has(siteId)) return siteAssetsDriveCache.get(siteId) ?? null
+  let id: string | null = null
+  try {
+    const res = await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/drives?$select=id,name,webUrl`, { headers: { Authorization: `Bearer ${graphToken}` } })
+    if (res.ok) {
+      const body = await res.json().catch(() => null) as { value?: Array<{ id: string; name?: string; webUrl?: string }> } | null
+      const hit = body?.value?.find((d) => looseKey(String(d.name ?? '')) === 'siteassets' || /\/siteassets\/?$/i.test(String(d.webUrl ?? '')))
+      id = hit?.id ?? null
+    }
+  } catch { /* leave null - reported by the caller */ }
+  siteAssetsDriveCache.set(siteId, id)
+  return id
+}
+
+/**
+ * A picture a Power App saved into an Image column lives in the Site Assets library under Lists/<list id>/.
+ * Graph reads that library by path with the same Sites permission as the Documents library - unlike the
+ * sharing-link route, which SharePoint refuses (403) for this app.
+ */
+async function fetchSiteAssetsFile(
+  siteId: string, graphToken: string, listId: string, fileName: string, spItemId: string, tag: string,
+): Promise<{ url: string | null; reason?: string }> {
+  const drive = await siteAssetsDriveId(siteId, graphToken)
+  if (!drive) return { url: null, reason: 'no Site Assets library found for the site' }
+  const path = ['Lists', listId, fileName].map(encodeURIComponent).join('/')
+  const res = await fetch(
+    `https://graph.microsoft.com/v1.0/drives/${drive}/root:/${path}?$select=name,file,lastModifiedDateTime,@microsoft.graph.downloadUrl`,
+    { headers: { Authorization: `Bearer ${graphToken}` } },
+  )
+  if (!res.ok) return { url: null, reason: `HTTP ${res.status} for Lists/${listId}/${fileName}` }
+  const item = await res.json().catch(() => null) as Record<string, any> | null
+  if (!item) return { url: null, reason: 'unreadable answer' }
+  return storeNewestImage([item], spItemId, tag, 'Site Assets', { siteId, token: graphToken })
 }
 
 /**
@@ -1926,7 +1969,7 @@ async function listFolderChildren(folderUrl: string, graphToken: string): Promis
   return (body?.value ?? null) as Array<Record<string, any>> | null
 }
 
-const CHILD_SELECT = '$select=name,file,folder,lastModifiedDateTime,@microsoft.graph.downloadUrl&$top=200'
+const CHILD_SELECT = '$select=id,name,file,folder,lastModifiedDateTime,@microsoft.graph.downloadUrl&$top=200'
 
 /**
  * List a folder in the site's Documents library by its path.
@@ -1939,13 +1982,14 @@ async function listLibraryPath(
   siteId: string,
   graphToken: string,
   path: string,
+  onStatus?: (status: number) => void,
 ): Promise<Array<Record<string, any>> | null> {
   const encoded = path.split('/').filter(Boolean).map(encodeURIComponent).join('/')
   const res = await fetch(
     `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root:/${encoded}:/children?${CHILD_SELECT}`,
     { headers: { Authorization: `Bearer ${graphToken}` } },
   )
-  if (!res.ok) return null
+  if (!res.ok) { onStatus?.(res.status); return null }
   const body = await res.json().catch(() => null) as Record<string, any> | null
   return (body?.value ?? null) as Array<Record<string, any>> | null
 }
@@ -1983,6 +2027,24 @@ async function findPackageImageFolder(
 }
 
 /** Take the newest image out of a stage folder and store it. */
+/**
+ * Which child folder of a delivery note's folder is the given stage ("Delivery Image", "Signature Image",
+ * "Received in Office")? Exact name first, then spelling variants ("Delivery Images", "DeliveryImage"), then
+ * the stage's first word ("delivery", "signature", "received") at the start of the name.
+ */
+export function pickStageFolder(children: Array<Record<string, any>>, stage: string): Record<string, any> | null {
+  const folders = children.filter((c) => c.folder)
+  const want = looseKey(stage)
+  const word = looseKey(stage.split(' ')[0])
+  return folders.find((c) => looseKey(String(c.name)) === want)
+    ?? folders.find((c) => looseKey(String(c.name)).startsWith(want))
+    ?? folders.find((c) => looseKey(String(c.name)).startsWith(word))
+    ?? null
+}
+
+/** A note folder's children, listed once per run. */
+const noteFolderCache = new Map<string, { children: Array<Record<string, any>> | null; status: number }>()
+
 async function fetchStageImageByPath(
   siteId: string,
   graphToken: string,
@@ -1991,9 +2053,53 @@ async function fetchStageImageByPath(
   spItemId: string,
   tag: string,
 ): Promise<{ url: string | null; reason?: string }> {
-  const children = await listLibraryPath(siteId, graphToken, `${notePath}/${stage}`)
-  if (children == null) return { url: null, reason: `no "${stage}" folder` }
-  return storeNewestImage(children, spItemId, tag, stage)
+  if (!noteFolderCache.has(notePath)) {
+    let status = 0
+    const children = await listLibraryPath(siteId, graphToken, notePath, (st) => { status = st })
+    noteFolderCache.set(notePath, { children, status })
+  }
+  const note = noteFolderCache.get(notePath)!
+  // 404 = the folder really isn't there; 401/403 = SharePoint is refusing this app - they need opposite fixes.
+  if (note.children == null) return { url: null, reason: `could not open ${notePath} (SharePoint answered HTTP ${note.status})` }
+
+  const folder = pickStageFolder(note.children, stage)
+  if (folder) {
+    const inside = await listLibraryPath(siteId, graphToken, `${notePath}/${folder.name}`)
+    if (inside == null) return { url: null, reason: `could not open ${notePath}/${folder.name}` }
+    return storeNewestImage(inside, spItemId, tag, String(folder.name), { siteId, token: graphToken })
+  }
+  // No such stage folder. The Power App also drops the pictures loose into the note folder, naming each file after
+  // its column ("Reserved_ImageAttachment_[13]_[PictureofItem][32]_..."). A delivery photo or a signature is one per
+  // delivery note, so the newest file carrying that column's name is the one. (Received-in-office photos are NOT taken
+  // this way: a note usually has one per parcel, and there is no telling which is whose.)
+  const byName = PKG_STAGE_FILE_TAG[stage]
+  if (byName) {
+    const tagged = note.children.filter((c) => c.file && IMAGE_EXT.test(String(c.name ?? '')) && byName.test(String(c.name)))
+    if (tagged.length) return storeNewestImage(tagged, spItemId, tag, stage, { siteId, token: graphToken })
+  }
+  // Say what the note folder does hold so the real layout is visible in the log.
+  return { url: null, reason: `no "${stage}" folder in ${notePath}; ${describeNoteFolder(note.children)}` }
+}
+
+/** The Power App column a loose picture was saved from, read out of its file name. */
+export function pictureTag(fileName: string): string | null {
+  return fileName.match(/_\[\d+\]_\[([^\]]+)\]/)?.[1] ?? null
+}
+
+/** Which column names the loose pictures in a note folder carry, e.g. "8 file(s): PictureofItem x8". */
+export function describeNoteFolder(children: Array<Record<string, any>>): string {
+  const files = children.filter((c) => c.file)
+  const tags = new Map<string, number>()
+  for (const f of files) { const t = pictureTag(String(f.name ?? '')) ?? 'other'; tags.set(t, (tags.get(t) ?? 0) + 1) }
+  const kinds = [...tags].map(([t, n]) => `${t} x${n}`).join(', ')
+  const folders = children.filter((c) => c.folder).map((c) => c.name).slice(0, 5).join(', ')
+  return `it holds ${files.length} file(s)${kinds ? `: ${kinds}` : ''}${folders ? `; folders: ${folders}` : ''}`
+}
+
+/** Per-delivery-note pictures that can be recognised by the column name in their file name. */
+const PKG_STAGE_FILE_TAG: Record<string, RegExp> = {
+  'Delivery Image': /delivery/i,
+  'Signature Image': /signature/i,
 }
 
 /**
@@ -2035,16 +2141,26 @@ async function storeNewestImage(
   spItemId: string,
   tag: string,
   label: string,
+  /** When the listing carries no pre-signed link for a file, it is fetched through Graph by its id instead. */
+  graph?: { siteId: string; token: string },
 ): Promise<{ url: string | null; reason?: string }> {
   const images = children
     .filter((c) => c.file && IMAGE_EXT.test(String(c.name ?? '')))
     .sort((a, b) => String(b.lastModifiedDateTime ?? '').localeCompare(String(a.lastModifiedDateTime ?? '')))
   if (!images.length) return { url: null, reason: `"${label}" folder holds no image` }
 
-  const dl = images[0]['@microsoft.graph.downloadUrl'] as string | undefined
-  if (!dl) return { url: null, reason: `no download link for ${images[0].name}` }
-  const res = await fetch(dl)
-  if (!res.ok) return { url: null, reason: `HTTP ${res.status} downloading ${images[0].name}` }
+  // Prefer a file Graph gave a link for; only if none has one, go through the item itself.
+  const linked = images.find((c) => c['@microsoft.graph.downloadUrl'])
+  const dl = (linked ?? images[0])['@microsoft.graph.downloadUrl'] as string | undefined
+  let res: Response
+  if (dl) {
+    res = await fetch(dl)
+  } else if (graph && images[0].id) {
+    res = await fetch(`https://graph.microsoft.com/v1.0/sites/${graph.siteId}/drive/items/${images[0].id}/content`, { headers: { Authorization: `Bearer ${graph.token}` } })
+  } else {
+    return { url: null, reason: `no download link for ${images[0].name}` }
+  }
+  if (!res.ok) return { url: null, reason: `HTTP ${res.status} downloading ${(linked ?? images[0]).name}` }
   const ab = await res.arrayBuffer()
   const ct = res.headers.get('content-type') ?? 'image/jpeg'
   const ext = String(images[0].name).match(IMAGE_EXT)?.[0] ?? '.jpg'
@@ -2053,13 +2169,50 @@ async function storeNewestImage(
   if (error) return { url: null, reason: `Supabase upload failed: ${error.message}` }
   return { url: versionedPublicUrl(path) }
 }
+/** A value that says nothing: empty, or the Power App's "0000" delivery-note placeholder. */
+const noInfo = (v: unknown) => v == null || v === '' || v === '0000'
+
+/** How much real delivery detail a mapped SharePoint record carries. */
+function spCompleteness(r: Record<string, any>): number {
+  return ['delivered_at', 'delivery_note_no', 'receiver_full_name', 'received_at', 'boat_name', 'courier']
+    .filter((k) => !noInfo(r[k])).length + (r.status === 'delivered' ? 1 : 0)
+}
+
+/**
+ * The Power App can hold SEVERAL records for one AWB (a placeholder with delivery note "0000", then the real delivery).
+ * They all land on the same Polaris row in one run, and the later one used to replace the earlier whole - so whichever
+ * came last in the list decided what the parcel showed, even when it was the empty one. The record with more real
+ * detail now wins (the later one on a tie, as before), and it keeps whatever the other one knew that it doesn't.
+ */
+export function mergeSpRecords(earlier: Record<string, any>, later: Record<string, any>): Record<string, any> {
+  const [winner, loser] = spCompleteness(earlier) > spCompleteness(later) ? [earlier, later] : [later, earlier]
+  const out: Record<string, any> = { ...loser, ...winner }
+  for (const k of Object.keys(loser)) {
+    if (k === 'extra' || k === 'id') continue
+    if (noInfo(winner[k]) && !noInfo(loser[k])) out[k] = loser[k]
+  }
+  out.extra = winner.extra ?? loser.extra
+  return out
+}
+
 /**
  * Photos fetched per sync run — the rest are picked up on the next run. Each one
  * costs two or three outbound requests, so this stays well inside the Worker's
  * per-invocation subrequest ceiling while still clearing a 650-photo backlog in
  * a handful of runs.
  */
-const PKG_IMAGE_BUDGET = 40
+const PKG_IMAGE_BUDGET = 80
+/**
+ * A photo that could not be found (no folder, no permission, nothing in it) is remembered on the row
+ * (extra.photo_miss.<column>) and left alone for a day. Without this every miss kept using up the run's
+ * photo budget at the front of the queue, every run, so a few hundred parcels with no photo stopped the ones
+ * behind them from ever being reached.
+ */
+const PHOTO_RETRY_AFTER_MS = 24 * 3_600_000
+export function photoRecentlyMissed(extra: Record<string, any> | undefined, field: string, now = Date.now()): boolean {
+  const at = Date.parse(String(extra?.photo_miss?.[field] ?? ''))
+  return !Number.isNaN(at) && now - at < PHOTO_RETRY_AFTER_MS
+}
 /** A stored photo value we don't need to fetch again. */
 const isStoredUrl = (v: unknown) => typeof v === 'string' && /^https?:\/\//.test(v) && !v.startsWith('{')
 /**
@@ -2124,6 +2277,8 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
   /** Status choice text the list uses that we have no mapping for. */
   const unmappedStatus = new Set<string>()
   let imageBudget = PKG_IMAGE_BUDGET
+  /** Photos looked for this run and not found, per row — written to extra.photo_miss. */
+  const photoMisses = new Map<string, Record<string, string>>()
   const imageNotes: string[] = []
   /** One unreadable image value, reported so the column can be mapped properly. */
   let imageProbe: { field: string; value: string } | null = null
@@ -2167,7 +2322,9 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
       if (dbField === 'status') {
         const text = String(raw ?? '').trim()
         const ours = text ? SP_STATUS_BY_KEY.get(statusKey(text)) : undefined
-        if (ours) { record.status = ours; continue }
+        // "Completed" only exists here (the Power App has no such state), set by staff once a delivery is invoiced — the
+        // Power App still says Delivered/Collected for it, and used to pull it back to Delivered on every pass.
+        if (ours) { record.status = current?.status === 'completed' && (ours === 'delivered' || ours === 'collected') ? 'completed' : ours; continue }
         // An unrecognised choice must not silently demote the package to In Office —
         // keep what we have and report the wording so the mapping can be extended.
         if (text) unmappedStatus.add(text)
@@ -2178,6 +2335,7 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
       if (PKG_IMAGE_FIELDS.has(dbField)) {
         if (raw == null || raw === '') continue
         if (isStoredUrl(current?.[dbField])) continue // already downloaded
+        if (existingId && photoRecentlyMissed(extraById.get(existingId), dbField)) continue // looked for it recently, nothing there
         if (imageBudget <= 0) continue                // next run picks it up
         imageBudget--
 
@@ -2210,12 +2368,13 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
           const viaColumn = await fetchSpImageToSupabase(
             raw, token, cfg.tenantUrl, `pkg-${item.id}-${dbField}`,
             cfg.tenantId, cfg.clientId, cfg.clientSecret,
-            { siteAbsoluteUrl: siteAbsolute, listName: cfg.listName, itemId: String(item.id), listId },
+            { siteAbsoluteUrl: siteAbsolute, listName: cfg.listName, itemId: String(item.id), listId, siteId },
           )
           got = viaColumn.url ? viaColumn : { url: null, reason: [got?.reason, viaColumn.reason].filter(Boolean).join('; ') }
         }
         if (got.url) record[dbField] = got.url
         else {
+          if (existingId) photoMisses.set(existingId, { ...(photoMisses.get(existingId) ?? {}), [dbField]: new Date().toISOString() })
           if (got.reason && imageNotes.length < 3) imageNotes.push(`${dbField}: ${got.reason}`)
           // Keep one unreadable value so the column's real shape can be examined
           // rather than guessed at from a failure message.
@@ -2237,8 +2396,12 @@ async function _syncShipSyncPackages(cfg: SpConfig): Promise<{ synced: number; e
     if (existingId) {
       // Preserve any other keys already in extra (note links, photos, the other
       // list's item id).
-      record.extra = { ...(extraById.get(existingId) ?? {}), [idKey]: item.id }
-      updateById.set(existingId, { ...record, id: existingId })
+      const missed = photoMisses.get(existingId)
+      const prior = extraById.get(existingId) ?? {}
+      record.extra = { ...prior, [idKey]: item.id, ...(missed ? { photo_miss: { ...(prior.photo_miss ?? {}), ...missed } } : {}) }
+      const next = { ...record, id: existingId }
+      const already = updateById.get(existingId)
+      updateById.set(existingId, already ? mergeSpRecords(already, next) : next)
     } else {
       // NOT NULL columns must be set on every NEW row: PostgREST bulk-inserts the batch as a single statement using the
       // UNION of keys, so a row missing a mapped value gets an explicit NULL (bypassing the column default) and would fail.
@@ -2955,4 +3118,174 @@ export async function downloadYachtImage(yachtId: string): Promise<{ url: string
     await supabaseAdmin.from('yachts').update({ vessel_image: url } as never).eq('id', yachtId)
   }
   return { url: url ?? null, reason: url ? undefined : reason }
+}
+
+// ─── ShipSync: the Power App (SharePoint) against Polaris ─────────────────────
+
+export interface ShipSyncCompareList {
+  list: string
+  /** Items in the SharePoint list. */
+  spItems: number
+  /** Of those, how many are in Polaris (matched by the list's own item id, or by barcode). */
+  inPolaris: number
+  /** In SharePoint but nowhere in Polaris. */
+  notInPolaris: number
+  notInPolarisSample: Array<{ barcode: string; vessel: string; note: string; status: string }>
+  /** Per field: SharePoint has a value and Polaris is blank, or both have one and they disagree. */
+  fieldDifferences: Record<string, { missingInPolaris: number; different: number; samples: Array<{ barcode: string; sharepoint: string; polaris: string }> }>
+  /** Per picture column: how many SharePoint items have one, how many of those Polaris holds. */
+  pictures: Record<string, { inSharePoint: number; inPolaris: number; inSharePointNotInPolaris: number }>
+  withAttachments: number
+}
+
+export interface ShipSyncCompareResult {
+  at: string
+  polarisParcels: number
+  lists: ShipSyncCompareList[]
+  /** Parcels Polaris holds that appear in neither SharePoint list. */
+  polarisOnly: { total: number; byStatus: Record<string, number>; bySource: Record<string, number>; sample: Array<{ barcode: string; vessel: string; status: string; source: string }> }
+}
+
+const COMPARE_FIELDS = ['status', 'boat_name', 'courier', 'delivery_note_no', 'receiver_full_name', 'num_packages', 'delivered_at', 'received_at'] as const
+
+export function normForCompare(dbField: string, v: unknown): string {
+  if (v == null) return ''
+  const text = String(v).trim()
+  if (!text) return ''
+  if (dbField === 'status') return SP_STATUS_BY_KEY.get(statusKey(text)) ?? text.toLowerCase()
+  if (dbField === 'delivered_at' || dbField === 'received_at') {
+    const t = Date.parse(text)
+    return Number.isNaN(t) ? text.toLowerCase() : new Date(t).toISOString().slice(0, 10)
+  }
+  if (dbField === 'num_packages') { const n = Number(text); return Number.isNaN(n) ? text : String(n) }
+  return text.toLowerCase().replace(/\s+/g, ' ')
+}
+
+/** Which of the three photo columns a SharePoint column is, from its name — the Power App and its archive spell them differently. */
+export function pictureKind(spField: string): 'item' | 'delivery' | 'signature' | null {
+  const k = spField.toLowerCase().replace(/_x0020_/g, '').replace(/[^a-z]/g, '')
+  if (k.startsWith('signature')) return 'signature'
+  if (k.startsWith('pictureondelivery') || k.startsWith('pictureondeliver')) return 'delivery'
+  if (k.startsWith('pictureofitem') || k.startsWith('pictureof')) return 'item'
+  return null
+}
+
+const PICTURE_COLUMN: Record<'item' | 'delivery' | 'signature', string> = {
+  item: 'item_photo_url', delivery: 'delivery_photo_url', signature: 'signature_url',
+}
+
+async function fetchAllListItems(siteId: string, token: string, listName: string): Promise<Array<Record<string, any>>> {
+  const out: Array<Record<string, any>> = []
+  let next: string | null = `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${encodeURIComponent(listName)}/items?$expand=fields&$top=200`
+  while (next) {
+    const res = await fetch(next, { headers: { Authorization: `Bearer ${token}` } })
+    const page = await res.json().catch(() => null) as Record<string, any> | null
+    if (!page?.value) break
+    out.push(...(page.value as Array<Record<string, any>>))
+    next = page['@odata.nextLink'] ?? null
+  }
+  return out
+}
+
+/**
+ * Reads the Power App's two lists (Packages, Delivered Packages) straight from SharePoint and sets them against what
+ * Polaris holds: what is missing, which fields disagree, which pictures SharePoint has that Polaris does not.
+ * Read-only: nothing is written anywhere.
+ */
+export async function compareShipSyncWithSharePoint(): Promise<ShipSyncCompareResult> {
+  const cfg = await getSpConfig()
+  const token = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret)
+  const syncs = (await getSpSyncs()).filter((s) => s.syncTarget === 'shipsync_packages')
+
+  const { data: rowsRaw } = await fetchAllRows(() => (supabaseAdmin as any)
+    .from('shipsync_packages')
+    .select('id, barcode, boat_name, courier, delivery_note_no, receiver_full_name, num_packages, status, delivered_at, received_at, item_photo_url, delivery_photo_url, signature_url, extra')
+    .order('id'))
+  const rows = (rowsRaw ?? []) as Array<Record<string, any>>
+  const byBarcode = new Map<string, Record<string, any>>()
+  for (const r of rows) if (r.barcode) byBarcode.set(String(r.barcode).toLowerCase().trim(), r)
+
+  const seenBarcodes = new Set<string>()
+  const lists: ShipSyncCompareList[] = []
+
+  for (const sync of syncs) {
+    const siteId = await resolveSpSite(token, cfg.tenantUrl, sync.sitePath || cfg.siteUrl)
+    const items = await fetchAllListItems(siteId, token, sync.listName)
+    const idKey = spIdKeyFor(sync.listName)
+    const bySpId = new Map<string, Record<string, any>>()
+    for (const r of rows) { const sp = r.extra?.[idKey]; if (sp) bySpId.set(String(sp), r) }
+
+    const barcodeField = Object.entries(sync.fieldMapping).find(([, db]) => db === 'barcode')?.[0]
+    const mappedByDb = new Map<string, string[]>()
+    for (const [spField, db] of Object.entries(sync.fieldMapping)) if (db) mappedByDb.set(db, [...(mappedByDb.get(db) ?? []), spField])
+
+    const res: ShipSyncCompareList = {
+      list: sync.listName, spItems: 0, inPolaris: 0, notInPolaris: 0, notInPolarisSample: [], fieldDifferences: {}, pictures: {}, withAttachments: 0,
+    }
+    for (const f of COMPARE_FIELDS) res.fieldDifferences[f] = { missingInPolaris: 0, different: 0, samples: [] }
+    for (const kind of ['item', 'delivery', 'signature'] as const) res.pictures[kind] = { inSharePoint: 0, inPolaris: 0, inSharePointNotInPolaris: 0 }
+
+    // Which SharePoint columns are pictures, whether or not they are mapped to a photo field.
+    const pictureCols = new Map<'item' | 'delivery' | 'signature', string[]>()
+    const sampleFields = items[0]?.fields ?? {}
+    for (const key of new Set([...Object.keys(sync.fieldMapping), ...Object.keys(sampleFields)])) {
+      const k = pictureKind(key)
+      if (k) pictureCols.set(k, [...(pictureCols.get(k) ?? []), key])
+    }
+
+    for (const it of items) {
+      if (it['@removed']) continue
+      res.spItems++
+      const f = it.fields ?? {}
+      const barcode = String(barcodeField ? f[barcodeField] ?? '' : '').trim()
+      if (barcode) seenBarcodes.add(barcode.toLowerCase())
+      const row = bySpId.get(String(it.id)) ?? (barcode ? byBarcode.get(barcode.toLowerCase()) : undefined)
+      if (f.Attachments === true) res.withAttachments++
+
+      for (const [kind, cols] of pictureCols) {
+        const has = cols.some((c) => f[c] != null && f[c] !== '')
+        if (!has) continue
+        res.pictures[kind].inSharePoint++
+        if (row?.[PICTURE_COLUMN[kind]]) res.pictures[kind].inPolaris++
+        else res.pictures[kind].inSharePointNotInPolaris++
+      }
+
+      if (!row) {
+        res.notInPolaris++
+        if (res.notInPolarisSample.length < 15) {
+          const first = (db: string) => String((mappedByDb.get(db) ?? []).map((c) => f[c]).find((v) => v != null && v !== '') ?? '')
+          res.notInPolarisSample.push({ barcode, vessel: first('boat_name'), note: first('delivery_note_no'), status: first('status') })
+        }
+        continue
+      }
+      res.inPolaris++
+
+      for (const db of COMPARE_FIELDS) {
+        const candidates = (mappedByDb.get(db) ?? []).map((c) => normForCompare(db, f[c])).filter(Boolean)
+        if (!candidates.length) continue
+        const mine = normForCompare(db, row[db])
+        const d = res.fieldDifferences[db]
+        if (!mine) d.missingInPolaris++
+        else if (!candidates.includes(mine)) d.different++
+        else continue
+        if (d.samples.length < 6) d.samples.push({ barcode: barcode || String(row.barcode ?? ''), sharepoint: candidates[0], polaris: mine })
+      }
+    }
+    lists.push(res)
+  }
+
+  // Parcels only Polaris has
+  const polarisOnly: ShipSyncCompareResult['polarisOnly'] = { total: 0, byStatus: {}, bySource: {}, sample: [] }
+  for (const r of rows) {
+    const bc = String(r.barcode ?? '').toLowerCase().trim()
+    if (bc && seenBarcodes.has(bc)) continue
+    if (r.extra?.sp_item_id || r.extra?.sp_delivered_item_id) continue
+    polarisOnly.total++
+    polarisOnly.byStatus[r.status] = (polarisOnly.byStatus[r.status] ?? 0) + 1
+    const source = r.extra?.checked_in_via === 'logistics-app' ? 'phone check-in' : r.extra?.monday_item_id ? 'Monday' : 'other'
+    polarisOnly.bySource[source] = (polarisOnly.bySource[source] ?? 0) + 1
+    if (polarisOnly.sample.length < 10) polarisOnly.sample.push({ barcode: String(r.barcode ?? ''), vessel: String(r.boat_name ?? ''), status: String(r.status), source })
+  }
+
+  return { at: new Date().toISOString(), polarisParcels: rows.length, lists, polarisOnly }
 }

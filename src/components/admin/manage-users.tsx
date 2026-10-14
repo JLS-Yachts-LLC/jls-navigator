@@ -24,6 +24,7 @@ import { BOAT_FEATURES, PORTAL_MODULES, boatHiddenSections, moduleState, type Po
 import { PortalAddresses } from "./portal-addresses";
 import { GuestUsersPanel } from "./guest-users";
 import { Button } from "@/components/ui/button";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { toast } from "sonner";
 import { UserTable } from "@/components/admin/users/UserTable";
 import type { UserRole, RoleOption } from "@/lib/admin/types";
@@ -708,24 +709,24 @@ function AddVesselUserDialog({ yachts, boats, onClose, onCreated, api }: {
         </div>
         <div>
           <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Vessel</label>
-          <select className={inputCls} required value={vessel}
-                  onChange={(e) => {
-                    setVessel(e.target.value);
-                    // A managed boat's portal user is its owner, almost always.
-                    if (e.target.value.startsWith("b:") && position === "captain") setPosition("owner");
-                  }}>
-            <option value="">Select a yacht or managed boat…</option>
-            <optgroup label="Yachts">
-              {yachts.map((y) => <option key={y.id} value={`y:${y.id}`}>{y.vessel_name}</option>)}
-            </optgroup>
-            {boats.length > 0 && (
-              <optgroup label="Managed boats (Orbit 2)">
-                {boats.map((b) => (
-                  <option key={b.id} value={`b:${b.id}`}>{b.name}{b.client_name ? ` — ${b.client_name}` : ""}</option>
-                ))}
-              </optgroup>
-            )}
-          </select>
+          <SearchableSelect
+            value={vessel}
+            onValueChange={(v) => {
+              setVessel(v);
+              // A managed boat's portal user is its owner, almost always.
+              if (v.startsWith("b:") && position === "captain") setPosition("owner");
+            }}
+            placeholder="Select a yacht or managed boat…"
+            emptyText="No yacht or boat matches"
+            triggerClassName="h-auto rounded-lg border-border bg-background/50 py-2 focus:border-primary/50"
+            options={[
+              ...yachts.map((y) => ({ value: `y:${y.id}`, label: y.vessel_name, sub: "Yacht" })),
+              ...boats.map((b) => ({
+                value: `b:${b.id}`, label: b.name,
+                sub: `Managed boat${b.client_name ? ` — ${b.client_name}` : ""}`,
+              })),
+            ]}
+          />
           {vessel.startsWith("b:") && (
             <p className="mt-1.5 text-[11px] text-muted-foreground">
               Owns more than one boat? Add them once per boat with the same email — they get one login and a boat picker.

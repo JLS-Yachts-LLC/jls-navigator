@@ -4,7 +4,7 @@
   "short_name": "Orbit",
   "description": "Orbit field app — your assigned jobs, Attend and Done.",
   "start_url": "/orbit-app",
-  "scope": "/",
+  "scope": "/orbit-app",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#07435E",

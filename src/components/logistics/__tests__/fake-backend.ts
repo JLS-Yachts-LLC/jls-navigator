@@ -31,6 +31,8 @@ export class FakeBackend {
   uploads: { path: string; bytes: number; type: string; partType: string }[] = [];
   /** files the "bucket" can serve back (key: bucket/path) */
   files = new Map<string, Buffer>();
+  /** downloads that still return OLD bytes for a key, as a cache can straight after an overwrite (key: bucket/path) */
+  staleReads = new Map<string, Buffer>();
   requests: string[] = [];
   faults: FaultRule[] = [];
   rpcs = new Map<string, (args: any) => unknown>();
@@ -55,7 +57,7 @@ export class FakeBackend {
     await new Promise<void>((r) => this.server.close(() => r()));
   }
   reset(): void {
-    this.tables.clear(); this.users.clear(); this.files.clear(); this.uploads = []; this.requests = []; this.faults = [];
+    this.tables.clear(); this.users.clear(); this.files.clear(); this.staleReads.clear(); this.uploads = []; this.requests = []; this.faults = [];
   }
 
   private async handle(req: http.IncomingMessage, res: http.ServerResponse) {
@@ -104,11 +106,26 @@ export class FakeBackend {
       if (signOne && req.method === "POST") return send(200, { signedURL: `/object/sign/${signOne[1]}/${signOne[2]}?token=T` });
       const dl = u.pathname.match(/^\/storage\/v1\/object\/(?:authenticated\/)?([^/]+)\/(.+)$/);
       if (dl && req.method === "GET") {
-        const f = this.files.get(`${dl[1]}/${decodeURIComponent(dl[2])}`);
+        const f = this.staleReads.get(`${dl[1]}/${decodeURIComponent(dl[2])}`) ?? this.files.get(`${dl[1]}/${decodeURIComponent(dl[2])}`);
         if (!f) return send(404, { message: "Object not found", error: "not_found", statusCode: "404" });
         res.writeHead(200, { "content-type": "application/octet-stream" });
         res.end(f);
         return;
+      }
+
+      // ── storage: list (the records, with sizes) ──
+      const ls = u.pathname.match(/^\/storage\/v1\/object\/list\/([^/]+)$/);
+      if (ls && req.method === "POST") {
+        const b = JSON.parse(raw.toString() || "{}");
+        const prefix = `${ls[1]}/${b.prefix ? String(b.prefix).replace(/\/?$/, "/") : ""}`;
+        const out: Array<Record<string, unknown>> = [];
+        for (const [key, bytes] of this.files) {
+          if (!key.startsWith(prefix)) continue;
+          const rest = key.slice(prefix.length);
+          if (rest.includes("/") || (b.search && !rest.includes(String(b.search)))) continue;
+          out.push({ name: rest, id: key, metadata: { size: bytes.length } });
+        }
+        return send(200, out);
       }
 
       // ── storage: copy ──

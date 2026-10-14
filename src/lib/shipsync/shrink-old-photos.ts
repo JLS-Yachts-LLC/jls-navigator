@@ -58,14 +58,30 @@ export async function shrinkOne(path: string, shrink: (b: Blob) => Promise<Blob>
   const up = await store.upload(path, small, { upsert: true, contentType: "image/jpeg" });
   if (up.error) return { kind: "failed", path, error: up.error.message };
 
-  // 3. read it back
-  const back = await store.download(path);
-  if (back.error || !back.data || back.data.size !== small.size) {
-    // put the original back rather than leave a doubtful file in place
-    await store.upload(path, blob, { upsert: true, contentType: "image/jpeg" });
-    return { kind: "failed", path, error: "the stored copy did not match - the original was put back" };
+  // 3. check what is stored. The size comes from the storage RECORD (a listing), not from downloading the file again:
+  // a download straight after an overwrite can be served from a cache that still holds the old photo, which made the
+  // first version of this check "fail" every time and put every original back.
+  const stored = await storedSize(path);
+  if (stored === small.size) return { kind: "shrunk", path, before: blob.size, after: small.size };
+  if (stored === blob.size) {
+    // the overwrite did not take; the original is still there, so there is nothing to undo
+    return { kind: "failed", path, error: "the new photo was not saved (the original is untouched)" };
   }
-  return { kind: "shrunk", path, before: blob.size, after: small.size };
+  // neither size: something unexpected is stored, so put the original back rather than leave a doubtful file in place
+  await store.upload(path, blob, { upsert: true, contentType: "image/jpeg" });
+  return { kind: "failed", path, error: "the stored photo did not match - the original was put back" };
+}
+
+/** The size, in bytes, that storage's own records give for a file; null if it can't be found. */
+async function storedSize(path: string): Promise<number | null> {
+  const slash = path.lastIndexOf("/");
+  const dir = slash < 0 ? "" : path.slice(0, slash);
+  const name = slash < 0 ? path : path.slice(slash + 1);
+  const { data, error } = await supabase.storage.from(BUCKET).list(dir, { limit: 20, search: name });
+  if (error) return null;
+  const hit = (data ?? []).find((f) => f.name === name);
+  const size = (hit?.metadata as { size?: number } | undefined)?.size;
+  return typeof size === "number" ? size : null;
 }
 
 /** Runs through the photos a few at a time, reporting each; `isStopped` lets the page's Stop button end it cleanly. */

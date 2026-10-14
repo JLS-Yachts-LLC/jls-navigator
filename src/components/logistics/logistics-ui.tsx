@@ -7,8 +7,9 @@
  * smaller field is focused, which on a warehouse floor means losing the form.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, Camera, ImagePlus, X } from "lucide-react";
+import { ChevronLeft, Camera, ImagePlus, X, CalendarDays } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { maskDate, parseDate, formatDate } from "./date-input";
 
 export const inputCls =
   "h-12 w-full rounded-lg border border-border bg-background px-3 text-base outline-none " +
@@ -96,6 +97,63 @@ export function SuggestInput({
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+/**
+ * A date you can simply TYPE (digits; the slashes appear by themselves) or pick from the calendar button.
+ * The phone's own date control only highlights on some phones and takes no typing there, so it is not the way in.
+ * `value` and `onChange` use YYYY-MM-DD, "" while the date is incomplete or not a real date.
+ */
+export function DateField({ value, onChange, min, label = "Date" }: {
+  value: string; onChange: (iso: string) => void; min?: string; label?: string;
+}) {
+  const [text, setText] = useState(formatDate(value));
+  const picker = useRef<HTMLInputElement>(null);
+
+  // Follow changes made from outside (a reset, a default), without overwriting a date half-typed.
+  useEffect(() => {
+    if (value && parseDate(text) !== value) setText(formatDate(value));
+    else if (!value && parseDate(text)) setText("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+
+  const iso = parseDate(text);
+  const tooEarly = !!(iso && min && iso < min);
+  const bad = (text.length === 10 && !iso) || tooEarly;
+
+  function typed(raw: string) {
+    const t = maskDate(raw);
+    setText(t);
+    const next = parseDate(t);
+    onChange(next && !(min && next < min) ? next : "");
+  }
+  function openCalendar() {
+    const el = picker.current;
+    if (!el) return;
+    try { el.showPicker(); } catch { el.focus(); el.click(); }
+  }
+
+  return (
+    <div>
+      <div className="relative">
+        <input
+          type="text" inputMode="numeric" autoComplete="off" placeholder="DD/MM/YYYY" maxLength={10}
+          aria-label={label} value={text} onChange={(e) => typed(e.target.value)}
+          className={cn("h-12 w-full rounded-lg border bg-background pl-3 pr-12 text-base outline-none transition focus:ring-1",
+            bad ? "border-destructive focus:border-destructive focus:ring-destructive/40" : "border-border focus:border-primary focus:ring-primary/40")}
+        />
+        <button type="button" onClick={openCalendar} aria-label={`Pick ${label} from the calendar`}
+          className="absolute right-1 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:bg-accent">
+          <CalendarDays className="h-5 w-5" />
+        </button>
+        {/* the phone's own calendar, kept out of sight and opened by the button */}
+        <input ref={picker} type="date" tabIndex={-1} aria-hidden min={min} value={value}
+          onChange={(e) => { setText(formatDate(e.target.value)); onChange(e.target.value); }}
+          className="pointer-events-none absolute bottom-0 right-0 h-0 w-0 opacity-0" />
+      </div>
+      {bad && <p className="mt-1 text-[14px] text-destructive">{tooEarly ? `Choose ${formatDate(min!)} or later.` : "That isn't a real date."}</p>}
     </div>
   );
 }
