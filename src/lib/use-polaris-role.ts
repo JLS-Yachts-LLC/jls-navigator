@@ -14,6 +14,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useViewAsRole } from "@/lib/view-as";
+import { useAccess } from "@/lib/auth/useAccess";
 import type { PolarisRole } from "@/components/polaris-ui/shell";
 
 const RESTRICTED_ROLES: PolarisRole[] = ["logistics_team"];
@@ -21,6 +22,7 @@ const RESTRICTED_ROLES: PolarisRole[] = ["logistics_team"];
 export function usePolarisRole(): PolarisRole {
   const { user } = useAuth();
   const viewAs = useViewAsRole();
+  const { previewing, claims } = useAccess();
   const [ownRole, setOwnRole] = useState<PolarisRole>("global_admin");
 
   useEffect(() => {
@@ -42,5 +44,10 @@ export function usePolarisRole(): PolarisRole {
 
   // Admin previewing a restricted role sees that role's scoped nav.
   if (viewAs && (RESTRICTED_ROLES as string[]).includes(viewAs)) return viewAs as PolarisRole;
+  // Admin previewing a staff member (View as → a person) gets their role's nav.
+  if (previewing) {
+    const r = claims.roleName;
+    return r && (RESTRICTED_ROLES as string[]).includes(r) ? (r as PolarisRole) : "global_admin";
+  }
   return ownRole;
 }

@@ -1,10 +1,30 @@
 import { Eye, X } from "lucide-react";
-import { useViewAsRole, useViewAsLabel, setViewAsRole, ROLE_LABEL } from "@/lib/view-as";
+import { useViewAsRole, useViewAsLabel, setViewAsRole, setViewAsUser, ROLE_LABEL } from "@/lib/view-as";
+import { useAccess } from "@/lib/auth/useAccess";
 
-/** Persistent banner shown while an admin is previewing a client/crew view. */
+/** Persistent banner shown while an admin is previewing another person or a client/crew view. */
 export function ViewAsBanner() {
   const viewAs = useViewAsRole();
   const label = useViewAsLabel();
+  const { previewing } = useAccess();
+
+  if (previewing) {
+    return (
+      <div className="flex items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-5 py-1.5 text-sm text-amber-500">
+        <Eye className="h-3.5 w-3.5 shrink-0" />
+        <span className="font-medium">
+          Viewing as <strong>{previewing.label}</strong> — you see their menu and screens; your own access is unchanged.
+        </span>
+        <button
+          onClick={() => setViewAsUser(null)}
+          className="ml-auto inline-flex items-center gap-1 rounded-md bg-amber-500/20 px-2 py-0.5 font-semibold hover:bg-amber-500/30 transition"
+        >
+          <X className="h-3 w-3" /> Exit view
+        </button>
+      </div>
+    );
+  }
+
   if (!viewAs) return null;
   const roleName = ROLE_LABEL[viewAs] ?? viewAs.replace(/_/g, " ");
   return (

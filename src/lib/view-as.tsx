@@ -46,6 +46,7 @@ export function getViewAsLabel(): string | null {
  */
 export function setViewAsRole(role: string | null, label?: string | null) {
   try {
+    localStorage.removeItem("polaris.viewAsUser"); // one kind of preview at a time
     if (role) {
       localStorage.setItem(STORAGE_KEY, role);
       if (label) localStorage.setItem(LABEL_KEY, label); else localStorage.removeItem(LABEL_KEY);
@@ -81,6 +82,45 @@ export function useViewAsLabel(): string | null {
     return () => window.removeEventListener(EVENT_KEY, handler);
   }, []);
   return label;
+}
+
+// ── View as a specific staff member ──────────────────────────────────────────
+// Unlike the role preview above, this swaps in that person's real permissions
+// (department + per-person module access, from /api/admin/view-as), so the
+// sidebar and module screens show exactly what they see. Still a preview: the
+// admin's own session runs every request.
+
+const USER_KEY = "polaris.viewAsUser";
+
+export type ViewAsUser = { id: string; label: string };
+
+export function getViewAsUser(): ViewAsUser | null {
+  try {
+    const raw = localStorage.getItem(USER_KEY);
+    const v = raw ? JSON.parse(raw) : null;
+    return v && typeof v.id === "string" ? { id: v.id, label: String(v.label ?? v.id) } : null;
+  } catch { return null; }
+}
+
+/** Preview as this staff member (null stops). Clears any role preview. */
+export function setViewAsUser(u: ViewAsUser | null) {
+  try {
+    if (u) localStorage.setItem(USER_KEY, JSON.stringify(u)); else localStorage.removeItem(USER_KEY);
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(LABEL_KEY);
+  } catch { /* ignore */ }
+  window.dispatchEvent(new CustomEvent(EVENT_KEY, { detail: null }));
+}
+
+/** Reactive hook — the staff member being previewed, or null. */
+export function useViewAsUser(): ViewAsUser | null {
+  const [u, setU] = useState<ViewAsUser | null>(() => (typeof window !== "undefined" ? getViewAsUser() : null));
+  useEffect(() => {
+    const handler = () => setU(getViewAsUser());
+    window.addEventListener(EVENT_KEY, handler);
+    return () => window.removeEventListener(EVENT_KEY, handler);
+  }, []);
+  return u;
 }
 
 /** Allowed route prefixes for a previewed role; null = show everything.

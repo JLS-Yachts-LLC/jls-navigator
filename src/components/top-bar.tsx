@@ -9,7 +9,8 @@ import {
 } from "lucide-react";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
-import { useViewAsRole, useViewAsLabel, setViewAsRole, useCanImpersonate, VIEW_AS_OPTIONS, ROLE_LABEL } from "@/lib/view-as";
+import { useViewAsRole, useViewAsLabel, setViewAsRole, setViewAsUser, useCanImpersonate, VIEW_AS_OPTIONS, ROLE_LABEL } from "@/lib/view-as";
+import { useAccess } from "@/lib/auth/useAccess";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
   DropdownMenuSeparator, DropdownMenuTrigger,
@@ -123,7 +124,9 @@ export function OnlineUsers() {
 
 // Admin-only "View as" control — preview the app as a role, or as a specific user.
 export function ViewAsSwitcher() {
-  const canImpersonate = useCanImpersonate();
+  const { realIsGlobalAdmin, previewing } = useAccess();
+  // Global admins (Polaris role) as well as the legacy app_metadata / developer list.
+  const canImpersonate = useCanImpersonate() || realIsGlobalAdmin;
   const { session } = useAuth();
   const viewAs = useViewAsRole();
   const viewLabel = useViewAsLabel();
@@ -157,10 +160,15 @@ export function ViewAsSwitcher() {
   }, [q, session]);
 
   if (!canImpersonate) return null;
-  const active = !!viewAs;
+  const active = !!viewAs || !!previewing;
 
   function selectRole(role: string | null, label?: string | null) {
     setViewAsRole(role, label);
+    setOpen(false); setQ(""); setResults([]);
+  }
+  /** Preview as this staff member — their real permissions (department + module access). */
+  function selectPerson(id: string, label: string) {
+    setViewAsUser({ id, label });
     setOpen(false); setQ(""); setResults([]);
   }
 
@@ -176,7 +184,7 @@ export function ViewAsSwitcher() {
       >
         <Eye className="h-[17px] w-[17px]" />
         <span className="hidden max-w-[160px] truncate text-xs font-semibold md:inline">
-          {active ? (viewLabel ?? ROLE_LABEL[viewAs] ?? "Preview") : "View as"}
+          {previewing ? previewing.label : active ? (viewLabel ?? ROLE_LABEL[viewAs!] ?? "Preview") : "View as"}
         </span>
         <ChevronDown className="h-3.5 w-3.5 opacity-60" />
       </button>
@@ -209,7 +217,7 @@ export function ViewAsSwitcher() {
                 const captainId = u.captainAccountId as string | undefined;
                 const onPick = captainId
                   ? () => { window.location.assign(`/portal?previewCaptain=${captainId}`); }
-                  : () => selectRole(u.role, label);
+                  : () => selectPerson(u.user_id ?? u.id, u.display_name ? `${u.display_name}` : String(label));
                 return (
                   <button key={u.id} onClick={onPick} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-accent">
                     <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-[9px] font-bold text-muted-foreground">
@@ -221,7 +229,7 @@ export function ViewAsSwitcher() {
                     </span>
                     {captainId
                       ? <span className="shrink-0 rounded-full bg-primary/15 px-1.5 py-0.5 text-[9px] font-semibold text-primary">Client Portal</span>
-                      : (viewLabel === label && <Check className="h-3.5 w-3.5 text-primary" />)}
+                      : (previewing?.id === (u.user_id ?? u.id) && <Check className="h-3.5 w-3.5 text-primary" />)}
                   </button>
                 );
               })}

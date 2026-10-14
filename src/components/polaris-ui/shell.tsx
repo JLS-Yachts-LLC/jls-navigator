@@ -16,6 +16,7 @@ import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { GlobalSearch } from "./global-search";
 import { useTheme } from "@/lib/theme";
 import { useAccess } from "@/lib/auth/useAccess";
+import { ViewAsBanner } from "@/components/view-as-banner";
 import { canAccessModule, type PolarisClaims } from "@/lib/auth/claims";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -672,6 +673,7 @@ export function PolarisShell({
         onVesselClick={onVesselClick}
         activeLabel={labelForScreen(active) ?? undefined}
       />
+      <div className="dark"><ViewAsBanner /></div>
 
       <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
         {!isMobile && <DesktopNav role={role} active={active} onNavigate={onNavigate} />}
