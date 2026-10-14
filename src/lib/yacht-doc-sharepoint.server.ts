@@ -14,6 +14,7 @@ import { storageRef } from '@/lib/signed-url'
 import { createServerFn } from '@tanstack/react-start'
 import { getSpConfig, getGraphToken, resolveSpSite } from '@/lib/sharepoint-sync.server'
 import { sanitizeSegment, ensureFoldersAndGetUrl, uploadBytesIntoFolders } from '@/lib/visa-sharepoint.server'
+import { sniffFileType, withExtension } from '@/lib/file-sniff'
 
 const DEFAULT_SITE_URL = '/sites/PortOperationsandAgency'
 
@@ -238,8 +239,20 @@ export const pullYachtDocFromSharePoint = createServerFn({ method: 'POST' })
       const bytes = new Uint8Array(await res.arrayBuffer())
 
       const { supabaseAdmin } = await import('@/integrations/supabase/client.server')
-      const safeName = data.fileName.replace(/[^\w.\- ]+/g, '_')
-      const contentType = contentTypeFor(safeName)
+      let fileName = data.fileName
+      let safeName = fileName.replace(/[^\w.\- ]+/g, '_')
+      let contentType = contentTypeFor(safeName)
+      if (!contentType) {
+        // The name says nothing useful (an email attachment saved as
+        // "….octet-stream", say) — read the type from the file itself, and give
+        // it the extension it should have had.
+        const sniffed = sniffFileType(bytes)
+        if (sniffed) {
+          contentType = sniffed.type
+          fileName = withExtension(fileName, sniffed.ext)
+          safeName = withExtension(safeName, sniffed.ext)
+        }
+      }
       if (!contentType) {
         const ext = safeName.split('.').pop() ?? ''
         return { ok: false, error: `“${data.fileName}” is a .${ext} file, which Polaris does not store. Convert it to a PDF in SharePoint and pull it in again.` }
@@ -251,7 +264,7 @@ export const pullYachtDocFromSharePoint = createServerFn({ method: 'POST' })
       const fileUrl = storageRef('permit-documents', path)
 
       const { data: row, error } = await (supabaseAdmin as any).from('yacht_documents').insert([{
-        yacht_id: data.yachtId, title: data.fileName, file_name: data.fileName,
+        yacht_id: data.yachtId, title: fileName, file_name: fileName,
         file_url: fileUrl, doc_type: 'sharepoint',
       }]).select('id').single()
       if (error) return { ok: false, error: error.message }
