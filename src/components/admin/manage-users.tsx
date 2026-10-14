@@ -5,14 +5,16 @@
  *   · Vessel Users — client-portal logins, each linked to one yacht OR one Orbit 2
  *     managed boat (small-boat owners): create the record first, attach an
  *     email/login when ready (temp password shown once), reset passwords,
- *     deactivate, preview. Everyone signs in at /portal with mandatory MFA. A boat
- *     owner with several boats has one row per boat, all on the same login.
+ *     deactivate, preview. Everyone signs in at /portal with mandatory MFA. A person
+ *     on several vessels (a representative's fleet) has one row per vessel, all on
+ *     the same login — picked together in Add portal user or later via a row's
+ *     Vessels button, and tagged "Fleet · N".
  *   · Guests — outside people who see only the documents staff share with them
  *     (see guest-users.tsx).
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Anchor, Check, ChevronDown, Copy, Eye, KeyRound, Link2, Loader2, Plus, ShieldCheck, Ship, Trash2, UserRound, Users, X,
+  Anchor, Check, ChevronDown, Copy, Eye, KeyRound, Link2, Loader2, Plus, Search, ShieldCheck, Ship, Trash2, UserRound, Users, X,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
@@ -24,7 +26,6 @@ import { BOAT_FEATURES, PORTAL_MODULES, boatHiddenSections, moduleState, type Po
 import { PortalAddresses } from "./portal-addresses";
 import { GuestUsersPanel } from "./guest-users";
 import { Button } from "@/components/ui/button";
-import { SearchableSelect } from "@/components/ui/searchable-select";
 import { toast } from "sonner";
 import { UserTable } from "@/components/admin/users/UserTable";
 import type { UserRole, RoleOption } from "@/lib/admin/types";
@@ -44,6 +45,17 @@ type BoatOpt = { id: string; name: string; client_name: string | null };
 
 /** The yacht or managed boat a portal row is linked to. */
 const vesselNameOf = (r: CaptainRow) => r.yachts?.vessel_name ?? r.orbit2_boats?.name ?? "";
+
+/** A yacht ("y:<id>") or managed boat ("b:<id>") a portal user can be put on. */
+type VesselOption = { key: string; label: string; sub: string };
+const vesselKeyOf = (r: CaptainRow) => (r.yacht_id ? `y:${r.yacht_id}` : `b:${r.boat_id}`);
+
+/**
+ * One person across vessels. A portal user has a row per vessel, all on the same
+ * login (user_id) — or, before the login exists, the same email.
+ */
+const personKey = (r: CaptainRow) =>
+  r.user_id ? `u:${r.user_id}` : r.email ? `e:${r.email.trim().toLowerCase()}` : `r:${r.id}`;
 
 /** Open a portal user's portal read-only, as they would see it. */
 const openPreview = (r: CaptainRow) =>
@@ -485,6 +497,19 @@ function VesselUsersPanel() {
     return [...m.values()].sort((a, b) => a.vessel.localeCompare(b.vessel));
   }, [rows]);
 
+  // The same person across vessels — one login (or, before it exists, one email)
+  // with a row per vessel. Drives the "Fleet · N" tag and the Vessels dialog.
+  const byPerson = useMemo(() => {
+    const m = new Map<string, CaptainRow[]>();
+    for (const r of rows) m.set(personKey(r), [...(m.get(personKey(r)) ?? []), r]);
+    return m;
+  }, [rows]);
+  const vesselOptions = useMemo<VesselOption[]>(() => [
+    ...yachts.map((y) => ({ key: `y:${y.id}`, label: y.vessel_name, sub: "Yacht" })),
+    ...boats.map((b) => ({ key: `b:${b.id}`, label: b.name, sub: `Managed boat${b.client_name ? ` — ${b.client_name}` : ""}` })),
+  ], [yachts, boats]);
+  const [vesselsFor, setVesselsFor] = useState<CaptainRow | null>(null);
+
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
@@ -569,6 +594,17 @@ function VesselUsersPanel() {
                         <span className="inline-flex items-center gap-2">
                           <UserRound className="h-3.5 w-3.5 text-muted-foreground" />
                           {r.display_name ?? "—"}
+                          {(() => {
+                            const mine = (byPerson.get(personKey(r)) ?? []).filter((x) => x.active);
+                            if (mine.length < 2) return null;
+                            return (
+                              <button type="button" onClick={() => setVesselsFor(r)}
+                                      title={`On ${mine.map(vesselNameOf).sort().join(", ")}`}
+                                      className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary hover:bg-primary/20">
+                                Fleet · {mine.length}
+                              </button>
+                            );
+                          })()}
                         </span>
                       </td>
                       <td>
@@ -613,6 +649,12 @@ function VesselUsersPanel() {
                                   <Eye className="h-3 w-3" /> Preview
                                 </Button>
                               )}
+                              {(r.user_id || r.email) && (
+                                <Button size="sm" variant="ghost" className="h-7 gap-1 px-2 text-xs" title="Choose every yacht and boat this person sees"
+                                        onClick={() => setVesselsFor(r)}>
+                                  <Ship className="h-3 w-3" /> Vessels
+                                </Button>
+                              )}
                               {!r.user_id && (
                                 <Button size="sm" variant="ghost" className="h-7 gap-1 px-2 text-xs text-primary" onClick={() => void createLogin(r)}>
                                   <Link2 className="h-3 w-3" /> Create login
@@ -650,52 +692,220 @@ function VesselUsersPanel() {
         </div>
       )}
 
-      {addOpen && <AddVesselUserDialog yachts={yachts} boats={boats} onClose={() => setAddOpen(false)}
+      {addOpen && <AddVesselUserDialog options={vesselOptions} onClose={() => setAddOpen(false)}
                                        onCreated={(revealData) => { setAddOpen(false); if (revealData) setReveal(revealData); void load(); }}
                                        api={api} />}
+      {vesselsFor && <PersonVesselsDialog person={vesselsFor} rows={byPerson.get(personKey(vesselsFor)) ?? [vesselsFor]}
+                                          options={vesselOptions} api={api}
+                                          onClose={() => setVesselsFor(null)}
+                                          onSaved={(revealData) => { setVesselsFor(null); if (revealData) setReveal(revealData); void load(); }} />}
       {reveal && <TempPasswordDialog data={reveal} onClose={() => setReveal(null)} />}
     </div>
   );
 }
 
-function AddVesselUserDialog({ yachts, boats, onClose, onCreated, api }: {
-  yachts: YachtOpt[]; boats: BoatOpt[]; onClose: () => void;
-  onCreated: (reveal: { email: string; password: string; portalUrl?: string } | null) => void;
-  api: (payload: Record<string, unknown>) => Promise<any>;
+type PortalApi = (payload: Record<string, unknown>) => Promise<any>;
+
+/**
+ * Put a person on one more vessel: a captain_accounts row, linked to their login
+ * when `link` is set. Linking goes through create-login, which re-uses an
+ * existing portal login and leaves its password alone (it only issues one for a
+ * brand-new login). If linking fails — a staff email, say — the new row is
+ * removed again, so nothing is left half-made.
+ */
+async function addPersonToVessel(
+  api: PortalApi, vesselKey: string,
+  p: { name: string; email: string | null; position: string }, link: boolean,
+): Promise<{ tempPassword?: string; portalUrl?: string; linkedExisting?: boolean } | null> {
+  const [kind, vesselId] = [vesselKey.slice(0, 1), vesselKey.slice(2)];
+  const { data: inserted, error } = await db.from("captain_accounts")
+    .insert({
+      yacht_id: kind === "y" ? vesselId : null,
+      boat_id: kind === "b" ? vesselId : null,
+      display_name: p.name, email: p.email, position: p.position, active: true,
+    })
+    .select("id").single();
+  if (error) throw new Error(error.message);
+  if (!link || !p.email) return null;
+  try {
+    return await api({ action: "create-login", accountId: inserted.id, email: p.email });
+  } catch (err) {
+    await db.from("captain_accounts").delete().eq("id", inserted.id);
+    throw err;
+  }
+}
+
+/** Searchable tick-list of yachts and managed boats — the ones already picked listed first. */
+function VesselChecklist({ options, selected, onToggle }: {
+  options: VesselOption[]; selected: Set<string>; onToggle: (key: string) => void;
 }) {
-  // "y:<yacht id>" or "b:<orbit2 boat id>" — a portal user is linked to one or the other.
-  const [vessel, setVessel] = useState("");
+  const [q, setQ] = useState("");
+  // Order by what was ticked on opening, so rows don't jump about while ticking.
+  const [pinned] = useState(() => new Set(selected));
+  const term = q.trim().toLowerCase();
+  const list = useMemo(() => {
+    if (term) return options.filter((o) => `${o.label} ${o.sub}`.toLowerCase().includes(term));
+    return [...options].sort((a, b) => Number(pinned.has(b.key)) - Number(pinned.has(a.key)));
+  }, [options, term, pinned]);
+
+  return (
+    <div className="rounded-lg border border-border bg-background/50">
+      <div className="relative border-b border-border p-1.5">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/50" />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Type to search yachts and boats…"
+               onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }}
+               className="h-8 w-full rounded bg-transparent pl-7 pr-2 text-sm outline-none" />
+      </div>
+      <div className="max-h-56 overflow-auto py-1">
+        {list.length === 0 ? (
+          <div className="px-3 py-2 text-sm text-muted-foreground">No yacht or boat matches</div>
+        ) : list.map((o) => (
+          <label key={o.key} className="flex cursor-pointer items-center gap-2.5 px-3 py-1.5 text-sm hover:bg-accent">
+            <input type="checkbox" checked={selected.has(o.key)} onChange={() => onToggle(o.key)} />
+            {o.key.startsWith("y:") ? <Anchor className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : <Ship className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+            <span className={cn("min-w-0 flex-1 truncate", selected.has(o.key) && "font-semibold text-primary")}>
+              {o.label}<span className="ml-1.5 text-xs font-normal text-muted-foreground">{o.sub}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Everything one person can see in the portal: tick a vessel to add it to their
+ * login (no new password — it just appears in their Fleet), untick to take it away.
+ */
+function PersonVesselsDialog({ person, rows, options, api, onClose, onSaved }: {
+  person: CaptainRow; rows: CaptainRow[]; options: VesselOption[]; api: PortalApi;
+  onClose: () => void;
+  /** `reveal` is set only when the server had to issue a new password (all their other rows were disabled). */
+  onSaved: (reveal: { email: string; password: string; portalUrl?: string } | null) => void;
+}) {
+  const initial = useMemo(() => new Set(rows.map(vesselKeyOf)), [rows]);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(initial));
+  const [busy, setBusy] = useState(false);
+  const toggle = (k: string) => setSelected((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+
+  const toAdd = [...selected].filter((k) => !initial.has(k));
+  const toRemove = rows.filter((r) => !selected.has(vesselKeyOf(r)));
+  const name = person.display_name ?? person.email ?? "this person";
+  const label = (k: string) => options.find((o) => o.key === k)?.label ?? "vessel";
+
+  const save = async () => {
+    if (toRemove.length && !confirm(
+      `Take ${name} off ${toRemove.map(vesselNameOf).join(", ")}? They lose access to ${toRemove.length === 1 ? "it" : "them"} straight away.`,
+    )) return;
+    setBusy(true);
+    const done: string[] = [];
+    let reveal: { email: string; password: string; portalUrl?: string } | null = null;
+    try {
+      // Add before removing, so a login is never left with no active vessel in
+      // between — create-login would then treat it as new and reset its password.
+      for (const k of toAdd) {
+        const data = await addPersonToVessel(api, k,
+          { name: person.display_name ?? name, email: person.email, position: person.position ?? "representative" },
+          !!person.user_id);
+        if (data?.tempPassword && person.email) reveal = { email: person.email, password: data.tempPassword, portalUrl: data.portalUrl };
+        done.push(label(k));
+      }
+      for (const r of toRemove) {
+        const { error } = await db.from("captain_accounts").delete().eq("id", r.id);
+        if (error) throw new Error(error.message);
+      }
+      const parts = [
+        done.length ? `added ${done.join(", ")}` : null,
+        toRemove.length ? `removed ${toRemove.map(vesselNameOf).join(", ")}` : null,
+      ].filter(Boolean);
+      toast.success(`${name}: ${parts.join("; ")}`);
+      onSaved(reveal);
+    } catch (err: any) {
+      toast.error(done.length ? `Added ${done.join(", ")}, then stopped — ${err.message}` : err.message);
+      onSaved(reveal);
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="w-full max-w-md space-y-4 rounded-2xl border border-border bg-card p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h3 className="font-semibold">{name} — vessels</h3>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">{person.email ?? "No login email yet"}</p>
+          </div>
+          <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Tick every yacht and boat {name} should see. {person.user_id
+            ? "New ones appear in their portal Fleet straight away — same login, same password."
+            : "They share one login once it's created."}
+        </p>
+        <VesselChecklist options={options} selected={selected} onToggle={toggle} />
+        <div className="text-xs text-muted-foreground">
+          {selected.size} selected
+          {toAdd.length > 0 && <span className="text-emerald-300"> · +{toAdd.length} to add</span>}
+          {toRemove.length > 0 && <span className="text-red-300"> · −{toRemove.length} to remove</span>}
+        </div>
+        <div className="flex gap-2">
+          <Button onClick={() => void save()} disabled={busy || (!toAdd.length && !toRemove.length)} className="flex-1 gap-1.5">
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Save vessels
+          </Button>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AddVesselUserDialog({ options, onClose, onCreated, api }: {
+  options: VesselOption[]; onClose: () => void;
+  onCreated: (reveal: { email: string; password: string; portalUrl?: string } | null) => void;
+  api: PortalApi;
+}) {
+  // "y:<yacht id>" / "b:<orbit2 boat id>" — one portal row per vessel, all on the same login.
+  const [vessels, setVessels] = useState<Set<string>>(new Set());
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [position, setPosition] = useState("captain");
   const [createNow, setCreateNow] = useState(true);
   const [busy, setBusy] = useState(false);
 
+  const toggle = (k: string) => {
+    const n = new Set(vessels); if (n.has(k)) n.delete(k); else n.add(k);
+    setVessels(n);
+    // A managed boat's portal user is its owner, almost always.
+    if (n.size && [...n].every((x) => x.startsWith("b:")) && position === "captain") setPosition("owner");
+  };
+  // Several vessels share one login, so they need the email that ties them together.
+  const needsEmail = vessels.size > 1 && !email.trim();
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!vessel || !name.trim()) return;
-    const [kind, vesselId] = [vessel.slice(0, 1), vessel.slice(2)];
+    if (!vessels.size || !name.trim() || needsEmail) return;
+    const person = { name: name.trim(), email: email.trim() || null, position };
+    const link = createNow && !!person.email;
     setBusy(true);
+    let reveal: { email: string; password: string; portalUrl?: string } | null = null;
+    let linkedExisting = false;
+    let added = 0;
     try {
-      const { data: inserted, error } = await db.from("captain_accounts")
-        .insert({
-          yacht_id: kind === "y" ? vesselId : null,
-          boat_id: kind === "b" ? vesselId : null,
-          display_name: name.trim(), email: email.trim() || null, position, active: true,
-        })
-        .select("id").single();
-      if (error) throw new Error(error.message);
-      if (createNow && email.trim()) {
-        const data = await api({ action: "create-login", accountId: inserted.id, email: email.trim() });
-        toast.success(data.linkedExisting
-          ? `Added to ${email.trim()}'s existing login — their password is unchanged`
-          : "Vessel user created with login");
-        onCreated(data.tempPassword ? { email: email.trim(), password: data.tempPassword, portalUrl: data.portalUrl } : null);
-      } else {
-        toast.success("Vessel user added — attach a login when ready");
-        onCreated(null);
+      // The first vessel creates (or finds) the login; the rest link to it.
+      for (const k of vessels) {
+        const data = await addPersonToVessel(api, k, person, link);
+        if (data?.tempPassword) reveal = { email: person.email!, password: data.tempPassword, portalUrl: data.portalUrl };
+        if (data?.linkedExisting && added === 0) linkedExisting = true;
+        added++;
       }
-    } catch (err: any) { toast.error(err.message); } finally { setBusy(false); }
+      const where = added === 1 ? "" : ` on ${added} vessels`;
+      toast.success(!link ? `Portal user added${where} — attach a login when ready`
+        : linkedExisting ? `Added${where} to ${person.email}'s existing login — their password is unchanged`
+        : `Portal user created with login${where}`);
+      onCreated(reveal);
+    } catch (err: any) {
+      if (added) { toast.error(`Added to ${added} of ${vessels.size} vessels, then stopped — ${err.message}`); onCreated(reveal); }
+      else toast.error(err.message);
+    } finally { setBusy(false); }
   };
 
   const inputCls = "w-full rounded-lg border border-border bg-background/50 px-3 py-2 text-sm outline-none focus:border-primary/50";
@@ -708,30 +918,14 @@ function AddVesselUserDialog({ yachts, boats, onClose, onCreated, api }: {
           <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
         </div>
         <div>
-          <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Vessel</label>
-          <SearchableSelect
-            value={vessel}
-            onValueChange={(v) => {
-              setVessel(v);
-              // A managed boat's portal user is its owner, almost always.
-              if (v.startsWith("b:") && position === "captain") setPosition("owner");
-            }}
-            placeholder="Select a yacht or managed boat…"
-            emptyText="No yacht or boat matches"
-            triggerClassName="h-auto rounded-lg border-border bg-background/50 py-2 focus:border-primary/50"
-            options={[
-              ...yachts.map((y) => ({ value: `y:${y.id}`, label: y.vessel_name, sub: "Yacht" })),
-              ...boats.map((b) => ({
-                value: `b:${b.id}`, label: b.name,
-                sub: `Managed boat${b.client_name ? ` — ${b.client_name}` : ""}`,
-              })),
-            ]}
-          />
-          {vessel.startsWith("b:") && (
-            <p className="mt-1.5 text-[11px] text-muted-foreground">
-              Owns more than one boat? Add them once per boat with the same email — they get one login and a boat picker.
-            </p>
-          )}
+          <label className="mb-1 flex items-baseline justify-between text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <span>Vessels</span>
+            {vessels.size > 0 && <span className="normal-case tracking-normal text-primary">{vessels.size} selected</span>}
+          </label>
+          <VesselChecklist options={options} selected={vessels} onToggle={toggle} />
+          <p className="mt-1.5 text-[11px] text-muted-foreground">
+            Tick every yacht and boat they should see — one login, and a Fleet page when there's more than one.
+          </p>
         </div>
         <div className="grid grid-cols-[1fr_140px] gap-3">
           <div>
@@ -755,7 +949,10 @@ function AddVesselUserDialog({ yachts, boats, onClose, onCreated, api }: {
             Create the login now and show a temporary password
           </label>
         )}
-        <Button type="submit" disabled={busy || !vessel || !name.trim()} className="w-full gap-1.5">
+        {needsEmail && (
+          <p className="text-xs text-amber-300">Add their login email — several vessels share one login.</p>
+        )}
+        <Button type="submit" disabled={busy || !vessels.size || !name.trim() || needsEmail} className="w-full gap-1.5">
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Add portal user
         </Button>
       </form>
