@@ -9,6 +9,14 @@ export const GENERATED_RELEASES: Release[] = [
     "date": "2026-10-12",
     "entries": [
       {
+        "type": "fix",
+        "title": "Invoices and estimates deleted in QuickBooks no longer stay in Finance — deletions are picked up from the webhook, a 5-minute check and a nightly comparison with QuickBooks, voided invoices show as Voided, and the nightly check also fetches any invoice the Finance list is missing"
+      },
+      {
+        "type": "fix",
+        "title": "The SharePoint webhook's maintenance actions (resyncs, duplicate cleanup, photo backfills, finance and test emails, record lookups) now need a global admin login, so nobody on the internet can trigger them any more"
+      },
+      {
         "type": "feature",
         "title": "Client Portal Fleet — a login with more than one vessel gets a Fleet button in place of \"Your vessel\", opening a page of tiles (photo, name, Yacht or Managed boat, berth or boat type) for every yacht and boat on the login; a tile opens that vessel's portal, the one on screen is marked \"Open now\", and admin Preview shows the same Fleet"
       },
