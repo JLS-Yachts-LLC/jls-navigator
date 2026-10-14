@@ -1,7 +1,13 @@
 /**
  * Guest sharing — the rules, with no I/O, so the server and the staff UI agree.
  *
- * A share puts ONE item (a Training folder or a Training document) in front of
+ * Two document libraries can be shared:
+ *   · Training documents — nested folders (training_folder / training_document).
+ *   · Vessel documents (the Documents card on a yacht) — a whole vessel
+ *     (yacht_all), one of its flat folders (yacht_folder) or one document
+ *     (yacht_document).
+ *
+ * A share puts ONE item in front of
  * one guest or one guest group, as Read or Read & write. A folder share covers
  * everything inside it, including things added later. A guest's access to an
  * item is the strongest live share on the item itself or on any folder above it.
@@ -9,7 +15,13 @@
  * "Live" = not revoked and not past its expiry date.
  */
 
-export type ShareResourceType = "training_folder" | "training_document";
+export type ShareResourceType =
+  | "training_folder" | "training_document"
+  | "yacht_all" | "yacht_folder" | "yacht_document";
+
+/** The shareable things that hold other things (open into a list). */
+export const CONTAINER_TYPES: ShareResourceType[] = ["training_folder", "yacht_all", "yacht_folder"];
+export const isContainer = (t: string) => (CONTAINER_TYPES as string[]).includes(t);
 export type SharePermission = "read" | "read_write";
 
 export type GuestShare = {
@@ -112,5 +124,30 @@ export function accessTo(
       if (s.resource_type === "training_folder" && s.resource_id === fid) consider(s, { type: "training_folder", id: fid });
     }
   }
+  return best;
+}
+
+/**
+ * Access to a vessel-document item. Nearest share wins on a tie, strongest
+ * overall: the document itself, then the folder it is filed in, then the vessel.
+ *   · a document: { yachtId, folderId (its placement, or null), docId }
+ *   · a folder:   { yachtId, folderId }
+ *   · the vessel: { yachtId, folderId: null }
+ */
+export function vesselAccess(
+  item: { yachtId: string; folderId: string | null; docId?: string | null },
+  shares: GuestShare[],
+): Access | null {
+  let best: Access | null = null;
+  const consider = (type: ShareResourceType, id: string | null | undefined) => {
+    if (!id) return;
+    for (const s of shares) {
+      if (s.resource_type !== type || s.resource_id !== id) continue;
+      if (!best || rank(s.permission) > rank(best.permission)) best = { permission: s.permission, share: s, root: { type, id } };
+    }
+  };
+  consider("yacht_document", item.docId);
+  consider("yacht_folder", item.folderId);
+  consider("yacht_all", item.yachtId);
   return best;
 }

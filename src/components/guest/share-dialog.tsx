@@ -1,10 +1,9 @@
 /**
- * Share a Training file or folder with guests — and see / change / revoke who
- * already has it.
+ * Share a file or folder with guests — and see / change / revoke who already
+ * has it. Used by Training documents and by the Documents card on a vessel.
  *
- * Opened from the row's ⋯ menu or by right-clicking the row. Lists the live
- * shares on this item, plus the ones it inherits from folders above it (those
- * are managed on that folder). Adding people creates or updates one share per
+ * Lists the live shares on this item, plus the ones it inherits from what holds
+ * it (a parent folder, or the whole vessel) — those are managed up there. Adding people creates or updates one share per
  * guest or group, then optionally emails them.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -18,13 +17,19 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
-  PERMISSION_HELP, PERMISSION_LABEL, folderChain, shareState,
-  type GuestShare, type SharePermission, type ShareResourceType, type TreeFolder,
+  PERMISSION_HELP, PERMISSION_LABEL, isContainer, shareState,
+  type GuestShare, type SharePermission, type ShareResourceType,
 } from "@/lib/guest/shares";
 
 const db = supabase as any;
 
-export type ShareTarget = { type: ShareResourceType; id: string; name: string; folderId: string | null };
+export type ShareTarget = {
+  type: ShareResourceType; id: string; name: string;
+  /** What holds this item, nearest first — their shares reach it too. */
+  parents: { type: ShareResourceType; id: string; name: string }[];
+  /** An extra line under the title, e.g. about SharePoint-only files. */
+  note?: string;
+};
 export type GuestRow = { id: string; email: string; display_name: string | null; company: string | null; active: boolean };
 export type GroupRow = { id: string; name: string; description: string | null };
 
@@ -75,9 +80,8 @@ export function ExpiryInput({ value, disabled, onCommit }: {
   );
 }
 
-export function ShareDialog({ target, folders, onClose, onChanged }: {
+export function ShareDialog({ target, onClose, onChanged }: {
   target: ShareTarget | null;
-  folders: TreeFolder[];
   onClose: () => void;
   /** Called after anything changes, so the page can refresh its "shared" markers. */
   onChanged?: () => void;
@@ -99,25 +103,20 @@ export function ShareDialog({ target, folders, onClose, onChanged }: {
   const [notify, setNotify] = useState(true);
   const [message, setMessage] = useState("");
 
-  const byId = useMemo(() => new Map(folders.map((f) => [f.id, f])), [folders]);
-  // Folders above this item — their shares reach it too.
-  const ancestors = useMemo(() => {
-    if (!target) return [] as string[];
-    const chain = folderChain(target.folderId, byId);
-    return target.type === "training_folder" ? chain.slice(1) : chain;
-  }, [target, byId]);
+  const parents = target?.parents ?? [];
 
   const load = useCallback(async () => {
     if (!target) return;
     setLoading(true);
+    const above = target.parents;
     const [g, gr, m, own, inh] = await Promise.all([
       db.from("guest_accounts").select("id, email, display_name, company, active").order("display_name"),
       db.from("guest_groups").select("id, name, description").order("name"),
       db.from("guest_group_members").select("group_id"),
       db.from("guest_shares").select("*").eq("resource_type", target.type).eq("resource_id", target.id)
         .is("revoked_at", null).order("created_at"),
-      ancestors.length
-        ? db.from("guest_shares").select("*").eq("resource_type", "training_folder").in("resource_id", ancestors).is("revoked_at", null)
+      above.length
+        ? db.from("guest_shares").select("*").in("resource_id", above.map((p) => p.id)).is("revoked_at", null)
         : Promise.resolve({ data: [] }),
     ]);
     setGuests((g.data ?? []) as GuestRow[]);
@@ -125,9 +124,11 @@ export function ShareDialog({ target, folders, onClose, onChanged }: {
     const counts: Record<string, number> = {};
     for (const r of m.data ?? []) counts[r.group_id] = (counts[r.group_id] ?? 0) + 1;
     setMemberCount(counts);
-    setShares([...(own.data ?? []), ...(inh.data ?? [])] as GuestShare[]);
+    const inherited = ((inh.data ?? []) as GuestShare[])
+      .filter((s) => above.some((p) => p.type === s.resource_type && p.id === s.resource_id));
+    setShares([...(own.data ?? []), ...inherited] as GuestShare[]);
     setLoading(false);
-  }, [target, ancestors]);
+  }, [target]);
 
   useEffect(() => {
     if (!target) return;
@@ -208,7 +209,8 @@ export function ShareDialog({ target, folders, onClose, onChanged }: {
           <DialogTitle className="flex items-center gap-2"><Share2 className="h-4 w-4" /> Share “{target?.name}”</DialogTitle>
           <DialogDescription>
             Guests see only what is shared with them.{" "}
-            {target?.type === "training_folder" ? "Sharing a folder shares everything inside it, including anything added later." : ""}
+            {target && isContainer(target.type) ? "Sharing a folder shares everything inside it, including anything added later." : ""}
+            {target?.note ? <span className="mt-1 block">{target.note}</span> : null}
           </DialogDescription>
         </DialogHeader>
 
@@ -318,7 +320,7 @@ export function ShareDialog({ target, folders, onClose, onChanged }: {
                       <span className="min-w-0 flex-1">
                         <span className="block truncate">{nameOf(s)}</span>
                         <span className="block text-xs text-muted-foreground">
-                          Through the folder “{byId.get(s.resource_id)?.name ?? "folder"}” — change it there
+                          Through “{parents.find((p) => p.id === s.resource_id)?.name ?? "the folder above"}” — change it there
                         </span>
                       </span>
                       <span className="text-xs text-muted-foreground">{PERMISSION_LABEL[s.permission]}</span>

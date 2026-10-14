@@ -80,13 +80,15 @@ export type SpYachtItem = {
   lastModified: string | null
 }
 
-/** READ-ONLY listing of the vessel's SharePoint folder (top level + one level down). */
-export const listYachtSharePointFolder = createServerFn({ method: 'POST' })
-  .inputValidator((d: { vesselName: string }) => d)
-  .handler(async ({ data }): Promise<{ exists: boolean; webUrl: string | null; items: SpYachtItem[]; error?: string }> => {
+/**
+ * READ-ONLY listing of the vessel's SharePoint folder (top level + one level down),
+ * "Crew Documents" excluded. A plain function so server code (the guest API) can
+ * call it directly; the card calls it through listYachtSharePointFolder below.
+ */
+export async function listVesselSharePointItems(vesselName: string): Promise<{ exists: boolean; webUrl: string | null; items: SpYachtItem[]; error?: string }> {
     try {
       const { token, siteId } = await spContext()
-      const folder = await resolveVesselFolder(siteId, token, data.vesselName)
+      const folder = await resolveVesselFolder(siteId, token, vesselName)
       if (!folder) return { exists: false, webUrl: null, items: [] }
       const base = `Yacht/${folder}`
       const root = await getItemByPath(siteId, token, base)
@@ -113,7 +115,27 @@ export const listYachtSharePointFolder = createServerFn({ method: 'POST' })
       // SharePoint being unreachable must never break the Documents card.
       return { exists: false, webUrl: null, items: [], error: e?.message ?? String(e) }
     }
-  })
+}
+
+export const listYachtSharePointFolder = createServerFn({ method: 'POST' })
+  .inputValidator((d: { vesselName: string }) => d)
+  .handler(({ data }) => listVesselSharePointItems(data.vesselName))
+
+/**
+ * A short-lived, pre-authenticated download link for one SharePoint file (Graph's
+ * @microsoft.graph.downloadUrl — needs no token, expires within the hour). Callers
+ * MUST have checked the item belongs to a folder the requester may see.
+ */
+export async function sharePointDownloadUrl(itemId: string): Promise<string | null> {
+  const { token, siteId } = await spContext()
+  const res = await fetch(
+    `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/items/${encodeURIComponent(itemId)}?%24select=id,name,%40microsoft.graph.downloadUrl`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  )
+  if (!res.ok) return null
+  const body = (await res.json()) as Record<string, any>
+  return (body['@microsoft.graph.downloadUrl'] as string | undefined) ?? null
+}
 
 /** Create a subfolder in the vessel's folder so a Polaris folder has a twin. */
 export const createYachtSharePointFolder = createServerFn({ method: 'POST' })

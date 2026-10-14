@@ -13,6 +13,11 @@
  * rows). A SharePoint-only file is imported first, since the portal serves files
  * from Polaris storage.
  *
+ * "Share" (header, folder, or row — also on right-click) shares the whole vessel,
+ * one folder, or one document with guest logins (see components/guest). A
+ * SharePoint-only file is imported first when shared on its own; a vessel or
+ * folder share shows guests its SharePoint-only files live, read-only.
+ *
  * Crew paperwork is deliberately absent — it lives under the vessel's
  * "Crew Documents" subfolder and belongs to the crew profile, not here.
  */
@@ -25,8 +30,13 @@ import { Input } from "@/components/ui/input";
 import {
   FileText, FolderPlus, Folder, FolderOpen, ChevronRight, ExternalLink, Cloud, CloudOff,
   Loader2, Trash2, UploadCloud, DownloadCloud, ShieldQuestion, GripVertical, RefreshCw,
-  Upload, ArrowLeftRight, Copy, Eye, Share2,
+  Upload, ArrowLeftRight, Copy, Eye, Share2, UserPlus,
 } from "lucide-react";
+import {
+  ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import { ShareDialog, type ShareTarget } from "@/components/guest/share-dialog";
+import { isLive } from "@/lib/guest/shares";
 import { updateOrThrow } from "@/lib/db-write";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -94,6 +104,10 @@ export function YachtDocumentsCard({ yachtId, vesselName }: { yachtId: string; v
   const [reviewing, setReviewing] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const newFolderRef = useRef<HTMLInputElement>(null);
+  /** Share with guests — the item whose share dialog is open. */
+  const [sharing, setSharing] = useState<ShareTarget | null>(null);
+  /** Vessel, folder and document ids with a live guest share, for the markers. */
+  const [sharedIds, setSharedIds] = useState<Set<string>>(new Set());
 
   // ── Load ────────────────────────────────────────────────────────────────────
   const loadPolaris = useCallback(async () => {
@@ -123,7 +137,14 @@ export function YachtDocumentsCard({ yachtId, vesselName }: { yachtId: string; v
     }
   }, [vesselName]);
 
+  const loadShared = useCallback(async () => {
+    const { data } = await (supabase as any).from("guest_shares").select("resource_id, revoked_at, expires_at")
+      .in("resource_type", ["yacht_all", "yacht_folder", "yacht_document"]).is("revoked_at", null);
+    setSharedIds(new Set(((data ?? []) as any[]).filter((r) => isLive(r)).map((r) => r.resource_id)));
+  }, []);
+
   useEffect(() => { void loadPolaris(); }, [loadPolaris]);
+  useEffect(() => { void loadShared(); }, [loadShared]);
   useEffect(() => { void loadSharePoint(); }, [loadSharePoint]);
 
   // ── Merge both sides into one list ──────────────────────────────────────────
@@ -294,6 +315,51 @@ export function YachtDocumentsCard({ yachtId, vesselName }: { yachtId: string; v
     }
   }
 
+  // ── Share with guests ───────────────────────────────────────────────────────
+  const vesselLabel = `${vesselName || "This vessel"} — all documents`;
+  const vesselParent = { type: "yacht_all" as const, id: yachtId, name: vesselLabel };
+  const SP_NOTE = "Files that are only in SharePoint are shown to guests read-only, straight from SharePoint. Crew Documents are never included.";
+
+  function shareVessel() {
+    setSharing({ type: "yacht_all", id: yachtId, name: vesselLabel, parents: [], note: SP_NOTE });
+  }
+  function shareFolder(f: FolderRow) {
+    setSharing({ type: "yacht_folder", id: f.id, name: f.name, parents: [vesselParent], note: SP_NOTE });
+  }
+  /**
+   * Share one document. A SharePoint-only file is imported into Polaris first
+   * (guests open single files from Polaris storage), keeping its folder.
+   */
+  async function shareItem(it: Item) {
+    let docId = it.docId;
+    if (!docId) {
+      if (!it.sp) return;
+      setBusyKey(b => ({ ...b, [it.docKey]: true }));
+      try {
+        const res = await (pullYachtDocFromSharePoint as any)({ data: { yachtId, itemId: it.sp.id, fileName: it.spName } });
+        if (!res?.ok || !res.id) { toast.error(res?.error ?? "Import failed"); return; }
+        docId = res.id as string;
+        const folderId = placement[it.docKey] ?? null;
+        if (folderId) {
+          await (supabase as any).from("yacht_document_placements").upsert(
+            { yacht_id: yachtId, doc_key: `doc:${docId}`, folder_id: folderId, updated_at: new Date().toISOString() },
+            { onConflict: "yacht_id,doc_key" },
+          );
+        }
+        toast.success(`“${it.label}” imported into Polaris so it can be shared`);
+        await Promise.all([loadPolaris(), loadSharePoint()]);
+      } finally {
+        setBusyKey(b => ({ ...b, [it.docKey]: false }));
+      }
+    }
+    const folderId = placement[it.docKey] ?? null;
+    const folder = folderId ? folders.find(f => f.id === folderId) : null;
+    setSharing({
+      type: "yacht_document", id: docId!, name: it.label,
+      parents: [...(folder ? [{ type: "yacht_folder" as const, id: folder.id, name: folder.name }] : []), vesselParent],
+    });
+  }
+
   /** Everything outstanding, in both directions, in one pass. */
   async function syncBothWays() {
     const toPush = polarisOnly;
@@ -383,14 +449,26 @@ export function YachtDocumentsCard({ yachtId, vesselName }: { yachtId: string; v
     },
   });
 
+  // Right-click a row for the same Share action as its button.
   const row = (it: Item) => (
-    <DocRowView
-      key={it.docKey} it={it} busy={!!busyKey[it.docKey]}
-      onDragStart={setDragKey} onDragEnd={() => setDragKey(null)}
-      onSend={() => void sendToSharePoint(it)}
-      onImport={() => void importFromSharePoint(it)}
-      onRelease={(release) => void setReleased(it, release)}
-    />
+    <ContextMenu key={it.docKey}>
+      <ContextMenuTrigger asChild>
+        <div>
+          <DocRowView
+            it={it} busy={!!busyKey[it.docKey]}
+            shared={!!it.docId && sharedIds.has(it.docId)}
+            onDragStart={setDragKey} onDragEnd={() => setDragKey(null)}
+            onSend={() => void sendToSharePoint(it)}
+            onImport={() => void importFromSharePoint(it)}
+            onRelease={(release) => void setReleased(it, release)}
+            onShare={() => void shareItem(it)}
+          />
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onClick={() => void shareItem(it)}><UserPlus className="mr-2 h-4 w-4" /> Share with guests…</ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 
   return (
@@ -420,6 +498,12 @@ export function YachtDocumentsCard({ yachtId, vesselName }: { yachtId: string; v
           <Button size="sm" variant="outline" className="h-7 gap-1.5 px-2 text-[11px]"
             onClick={() => { void loadPolaris(); void loadSharePoint(); }} disabled={sp.loading}>
             <RefreshCw className={cn("h-3.5 w-3.5", sp.loading && "animate-spin")} /> Refresh
+          </Button>
+          <Button size="sm" variant="outline"
+            className={cn("h-7 gap-1.5 px-2 text-[11px]", sharedIds.has(yachtId) && "border-primary/50 text-primary")}
+            onClick={shareVessel}
+            title={sharedIds.has(yachtId) ? "All of this vessel's documents are shared with guests — manage" : "Share all of this vessel's documents with guests"}>
+            <UserPlus className="h-3.5 w-3.5" /> {sharedIds.has(yachtId) ? "Shared with guests" : "Share"}
           </Button>
           <Button size="sm" variant="outline" className="h-7 gap-1.5 px-2 text-[11px]"
             onClick={() => { setCreating(true); setTimeout(() => newFolderRef.current?.focus(), 0); }}>
@@ -495,17 +579,28 @@ export function YachtDocumentsCard({ yachtId, vesselName }: { yachtId: string; v
           const isOpen = openFolders[f.id];
           return (
             <div key={f.id} className={cn("rounded-lg border transition", dropTarget === f.id ? "border-primary bg-primary/10" : "border-border/60 bg-muted/20")} {...dropProps(f.id)}>
+              <ContextMenu>
+              <ContextMenuTrigger asChild>
               <div className="flex items-center gap-2 px-2.5 py-2">
                 <button type="button" onClick={() => setOpenFolders(o => ({ ...o, [f.id]: !isOpen }))} className="flex flex-1 items-center gap-2 text-left">
                   <ChevronRight className={cn("h-3.5 w-3.5 text-muted-foreground transition", isOpen && "rotate-90")} />
                   {isOpen ? <FolderOpen className="h-4 w-4 text-primary/80" /> : <Folder className="h-4 w-4 text-primary/80" />}
                   <span className="text-[13px] font-medium">{f.name}</span>
                   <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9.5px] font-semibold text-muted-foreground">{inside.length}</span>
+                  {sharedIds.has(f.id) && <SharedBadge />}
                 </button>
+                <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground" title="Share this folder with guests" onClick={() => shareFolder(f)}>
+                  <UserPlus className="h-3.5 w-3.5" />
+                </Button>
                 <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-muted-foreground hover:text-red-400" title="Delete folder" onClick={() => void deleteFolder(f)}>
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
               </div>
+              </ContextMenuTrigger>
+              <ContextMenuContent>
+                <ContextMenuItem onClick={() => shareFolder(f)}><UserPlus className="mr-2 h-4 w-4" /> Share folder with guests…</ContextMenuItem>
+              </ContextMenuContent>
+              </ContextMenu>
               {isOpen && (
                 <div className="border-t border-border/50 px-2.5">
                   {inside.length === 0
@@ -535,16 +630,27 @@ export function YachtDocumentsCard({ yachtId, vesselName }: { yachtId: string; v
           <Loader2 className="h-3 w-3 animate-spin" /> Checking SharePoint…
         </p>
       )}
+      <ShareDialog target={sharing} onClose={() => setSharing(null)} onChanged={() => void loadShared()} />
     </section>
   );
 }
 
+/** "Shared with guests" marker. */
+function SharedBadge() {
+  return (
+    <span title="Shared with guests" className="inline-flex shrink-0 items-center gap-1 rounded bg-primary/15 px-1.5 py-0.5 text-[9.5px] font-semibold text-primary">
+      <UserPlus className="h-3 w-3" /> Guests
+    </span>
+  );
+}
+
 function DocRowView({
-  it, busy, onDragStart, onDragEnd, onSend, onImport, onRelease,
+  it, busy, shared, onDragStart, onDragEnd, onSend, onImport, onRelease, onShare,
 }: {
-  it: Item; busy: boolean;
+  it: Item; busy: boolean; shared: boolean;
   onDragStart: (k: string) => void; onDragEnd: () => void;
   onSend: () => void; onImport: () => void; onRelease: (release: boolean) => void;
+  onShare: () => void;
 }) {
   const inPolaris = !!it.stored;
   const inSharePoint = !!it.sp;
@@ -562,6 +668,8 @@ function DocRowView({
         <div className="truncate text-sm font-medium">{it.label}</div>
         <div className="mt-0.5 text-[11px] text-muted-foreground">{it.meta}</div>
       </div>
+
+      {shared && <SharedBadge />}
 
       {both ? (
         <span title="In Polaris and SharePoint" className="inline-flex shrink-0 items-center gap-1 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[9.5px] font-semibold text-emerald-400">
@@ -605,6 +713,11 @@ function DocRowView({
           {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Share2 className="h-3 w-3" />} Release
         </Button>
       )}
+
+      <Button size="sm" variant="ghost" className="h-6 w-6 shrink-0 p-0 text-muted-foreground hover:text-foreground" onClick={onShare} disabled={busy}
+        title={inPolaris ? "Share with guests" : "Import into Polaris and share with guests"}>
+        <UserPlus className="h-3.5 w-3.5" />
+      </Button>
 
       {it.stored ? (
         <SignedAnchor stored={it.stored}

@@ -1,8 +1,9 @@
 /**
  * Manage Users → Guests.
  *
- * Guests are outside people with a login that shows them ONLY the Training files
- * and folders a member of staff shares with them (Read, or Read & write). Four
+ * Guests are outside people with a login that shows them ONLY the files and
+ * folders a member of staff shares with them (Read, or Read & write) — Training
+ * documents, and Vessel documents (a whole vessel, a folder or one file). Four
  * mini tabs:
  *   · Guests        — invite (email with a set-your-password link), edit,
  *                     re-send the invite, deactivate / reactivate.
@@ -18,7 +19,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Activity, Ban, Check, Copy, File as FileIcon, Folder, Loader2, Mail, Pencil, Plus, RefreshCw, Search,
-  Share2, Trash2, UserRound, Users, X,
+  Share2, Ship, Trash2, UserRound, Users, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -45,6 +46,8 @@ type ActivityRow = {
   resource_name: string | null; detail: string | null; created_at: string;
 };
 type Sub = "guests" | "groups" | "shares" | "activity";
+/** Names for shared things that aren't Training folders, keyed by id. */
+type Named = { name: string; folderId?: string | null; yachtId?: string | null };
 
 const fmtDate = (d: string | null | undefined) =>
   d ? new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "";
@@ -69,7 +72,7 @@ export function GuestUsersPanel() {
   const [members, setMembers] = useState<Member[]>([]);
   const [shares, setShares] = useState<GuestShare[]>([]);
   const [folders, setFolders] = useState<TreeFolder[]>([]);
-  const [docNames, setDocNames] = useState<Map<string, { name: string; folderId: string | null }>>(new Map());
+  const [docNames, setDocNames] = useState<Map<string, Named>>(new Map());
   const [activity, setActivity] = useState<ActivityRow[]>([]);
   /** Shared items pre-filtered to one guest or group (from the Guests / Groups tabs). */
   const [shareFilter, setShareFilter] = useState<string>("all");
@@ -85,11 +88,25 @@ export function GuestUsersPanel() {
       db.from("guest_activity").select("*").order("created_at", { ascending: false }).limit(500),
     ]);
     const shareRows = (sh.data ?? []) as GuestShare[];
-    const docIds = [...new Set(shareRows.filter((s) => s.resource_type === "training_document").map((s) => s.resource_id))];
-    const names = new Map<string, { name: string; folderId: string | null }>();
-    for (let i = 0; i < docIds.length; i += 200) {
-      const { data } = await db.from("training_documents").select("id, title, file_name, folder_id").in("id", docIds.slice(i, i + 200));
+    const idsOf = (t: string) => [...new Set(shareRows.filter((s) => s.resource_type === t).map((s) => s.resource_id))];
+    const names = new Map<string, Named>();
+    const chunks = (ids: string[]) => Array.from({ length: Math.ceil(ids.length / 200) }, (_, i) => ids.slice(i * 200, i * 200 + 200));
+    for (const c of chunks(idsOf("training_document"))) {
+      const { data } = await db.from("training_documents").select("id, title, file_name, folder_id").in("id", c);
       for (const d of data ?? []) names.set(d.id, { name: d.title ?? d.file_name ?? "Document", folderId: d.folder_id });
+    }
+    for (const c of chunks(idsOf("yacht_document"))) {
+      const { data } = await db.from("yacht_documents").select("id, title, file_name, yacht_id").in("id", c);
+      for (const d of data ?? []) names.set(d.id, { name: d.title ?? d.file_name ?? "Document", yachtId: d.yacht_id });
+    }
+    for (const c of chunks(idsOf("yacht_folder"))) {
+      const { data } = await db.from("yacht_document_folders").select("id, name, yacht_id").in("id", c);
+      for (const f of data ?? []) names.set(f.id, { name: f.name, yachtId: f.yacht_id });
+    }
+    const yachtIds = [...new Set([...idsOf("yacht_all"), ...[...names.values()].map((n) => n.yachtId).filter(Boolean) as string[]])];
+    for (const c of chunks(yachtIds)) {
+      const { data } = await db.from("yachts").select("id, vessel_name").in("id", c);
+      for (const y of data ?? []) names.set(y.id, { name: y.vessel_name ?? "Vessel" });
     }
     setGuests(g.data ?? []);
     setGroups(gr.data ?? []);
@@ -114,8 +131,9 @@ export function GuestUsersPanel() {
   return (
     <div>
       <p className="mb-3 text-xs text-muted-foreground">
-        Outside people with a guest login. They see nothing but the Training files and folders shared with them —
-        share from Training → Documents (right-click, or the ⋯ menu → Share with guests). They sign in at
+        Outside people with a guest login. They see nothing but the files and folders shared with them — share from
+        Training → Documents (right-click, or ⋯ → Share with guests) or from a vessel's Documents card (Share, or
+        right-click a file or folder). They sign in at
         <span className="font-mono text-foreground/80"> /guest</span>.
       </p>
       <div className="mb-4 flex flex-wrap items-center gap-1.5">
@@ -532,7 +550,7 @@ function GroupDialog({ group, guests, memberIds, api, onClose, onSaved }: {
 // ── Shared items ─────────────────────────────────────────────────────────────
 function SharesTab({ guests, groups, members, shares, folders, docNames, activity, api, reload, filter, setFilter }: {
   guests: Guest[]; groups: GroupRow[]; members: Member[]; shares: GuestShare[]; folders: TreeFolder[];
-  docNames: Map<string, { name: string; folderId: string | null }>; activity: ActivityRow[];
+  docNames: Map<string, Named>; activity: ActivityRow[];
   api: (path: string, body: unknown) => Promise<any>; reload: () => Promise<void>;
   filter: string; setFilter: (f: string) => void;
 }) {
@@ -548,9 +566,22 @@ function SharesTab({ guests, groups, members, shares, folders, docNames, activit
   /** "Training › RYA Inspection 2026 › Cruising SMS" — where the item lives. */
   const pathOf = (folderId: string | null) =>
     ["Training documents", ...folderChain(folderId, byId).reverse().map((id) => byId.get(id)?.name ?? "…")].join(" › ");
-  const itemOf = (s: GuestShare) => s.resource_type === "training_folder"
-    ? { name: byId.get(s.resource_id)?.name ?? "(folder removed)", where: pathOf(byId.get(s.resource_id)?.parent_id ?? null), folder: true }
-    : { name: docNames.get(s.resource_id)?.name ?? "(file removed)", where: pathOf(docNames.get(s.resource_id)?.folderId ?? null), folder: false };
+  const vesselPath = (yachtId: string | null | undefined) => `Vessel documents › ${(yachtId && docNames.get(yachtId)?.name) || "vessel"}`;
+  const itemOf = (s: GuestShare): { name: string; where: string; icon: "folder" | "file" | "vessel" } => {
+    const n = docNames.get(s.resource_id);
+    switch (s.resource_type) {
+      case "training_folder":
+        return { name: byId.get(s.resource_id)?.name ?? "(folder removed)", where: pathOf(byId.get(s.resource_id)?.parent_id ?? null), icon: "folder" };
+      case "training_document":
+        return { name: n?.name ?? "(file removed)", where: pathOf(n?.folderId ?? null), icon: "file" };
+      case "yacht_all":
+        return { name: n ? `${n.name} — all documents` : "(vessel removed)", where: "Vessel documents", icon: "vessel" };
+      case "yacht_folder":
+        return { name: n?.name ?? "(folder removed)", where: vesselPath(n?.yachtId), icon: "folder" };
+      default:
+        return { name: n?.name ?? "(file removed)", where: vesselPath(n?.yachtId), icon: "file" };
+    }
+  };
   const whoOf = (s: GuestShare) => s.guest_id
     ? { label: guestById.get(s.guest_id) ? guestLabel(guestById.get(s.guest_id)!) : "Guest", group: false }
     : { label: groupById.get(s.group_id ?? "")?.name ?? "Group", group: true };
@@ -627,7 +658,7 @@ function SharesTab({ guests, groups, members, shares, folders, docNames, activit
 
       {rows.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border/60 p-8 text-center text-sm text-muted-foreground">
-          {shares.length ? "Nothing matches these filters." : "Nothing has been shared with guests yet. Right-click a file or folder in Training → Documents and choose Share with guests."}
+          {shares.length ? "Nothing matches these filters." : "Nothing has been shared with guests yet. Right-click a file or folder in Training → Documents, or use Share on a vessel's Documents card."}
         </div>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-border/60">
@@ -656,7 +687,9 @@ function SharesTab({ guests, groups, members, shares, folders, docNames, activit
                     </td>
                     <td className="max-w-[320px] px-3 py-2.5">
                       <div className="flex items-center gap-2 font-medium">
-                        {it.folder ? <Folder className="h-4 w-4 shrink-0 text-amber-300" /> : <FileIcon className="h-4 w-4 shrink-0 text-muted-foreground" />}
+                        {it.icon === "vessel" ? <Ship className="h-4 w-4 shrink-0 text-sky-300" />
+                          : it.icon === "folder" ? <Folder className="h-4 w-4 shrink-0 text-amber-300" />
+                          : <FileIcon className="h-4 w-4 shrink-0 text-muted-foreground" />}
                         <span className="truncate">{it.name}</span>
                       </div>
                       <div className="truncate text-xs text-muted-foreground" title={it.where}>{it.where}</div>
@@ -719,7 +752,8 @@ function ActivityTab({ activity, guests }: { activity: ActivityRow[]; guests: Gu
                 <td className="px-3 py-2">{ACTION_LABEL[a.action] ?? a.action}</td>
                 <td className="px-3 py-2">
                   <span className="inline-flex items-center gap-1.5">
-                    {a.resource_type === "training_folder" ? <Folder className="h-3.5 w-3.5 text-amber-300" /> : <FileIcon className="h-3.5 w-3.5 text-muted-foreground" />}
+                    {a.resource_type === "training_folder" || a.resource_type === "yacht_folder" || a.resource_type === "yacht_all"
+                      ? <Folder className="h-3.5 w-3.5 text-amber-300" /> : <FileIcon className="h-3.5 w-3.5 text-muted-foreground" />}
                     {a.resource_name ?? "—"}
                   </span>
                   {a.detail && <div className="text-xs text-muted-foreground">{a.detail}</div>}

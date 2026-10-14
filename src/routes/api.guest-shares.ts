@@ -1,5 +1,6 @@
 /**
- * Share Training files and folders with guests — any staff member.
+ * Share Training files and folders, and Vessel documents (a whole vessel, one of
+ * its folders, or one document), with guests — any staff member.
  *
  *   POST /api/guest-shares
  *     { action: "share", resourceType, resourceId, targets: [{ guestId } | { groupId }],
@@ -14,12 +15,24 @@
 import { logAuditEvent } from "@/lib/admin/audit";
 import { json, requireStaff } from "@/lib/guest/guest-auth.server";
 import { sendShareNotice } from "@/lib/guest/guest-email.server";
-import { PERMISSION_LABEL, type SharePermission, type ShareResourceType } from "@/lib/guest/shares";
+import { PERMISSION_LABEL, isContainer, type SharePermission, type ShareResourceType } from "@/lib/guest/shares";
 
-const TYPES: ShareResourceType[] = ["training_folder", "training_document"];
+const TYPES: ShareResourceType[] = ["training_folder", "training_document", "yacht_all", "yacht_folder", "yacht_document"];
 const PERMS: SharePermission[] = ["read", "read_write"];
 
 async function resourceName(sb: any, type: ShareResourceType, id: string): Promise<string | null> {
+  if (type === "yacht_all") {
+    const { data } = await sb.from("yachts").select("vessel_name").eq("id", id).maybeSingle();
+    return data ? `${data.vessel_name ?? "Vessel"} — all vessel documents` : null;
+  }
+  if (type === "yacht_folder") {
+    const { data } = await sb.from("yacht_document_folders").select("name, yachts(vessel_name)").eq("id", id).maybeSingle();
+    return data ? `${data.name} (${data.yachts?.vessel_name ?? "vessel"})` : null;
+  }
+  if (type === "yacht_document") {
+    const { data } = await sb.from("yacht_documents").select("title, file_name").eq("id", id).maybeSingle();
+    return data ? (data.title ?? data.file_name ?? "Document") : null;
+  }
   if (type === "training_folder") {
     const { data } = await sb.from("training_document_folders").select("name").eq("id", id).maybeSingle();
     return data?.name ?? null;
@@ -105,7 +118,7 @@ export async function guestSharesHandler(request: Request): Promise<Response> {
         for (const g of (guests ?? []).filter((x: any) => x.active)) {
           const r = await sendShareNotice({
             to: g.email, guestName: g.display_name, sharedBy: staff.name,
-            items: [{ name, kind: type === "training_folder" ? "folder" : "document" }],
+            items: [{ name, kind: isContainer(type) ? "folder" : "document" }],
             permissionLabel: PERMISSION_LABEL[permission],
             message: body.message, expiresAt: expiry.value,
           });

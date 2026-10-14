@@ -1,8 +1,8 @@
 /**
  * The guest page (/guest) — for outside people JLS has given a guest login.
  *
- * A guest sees only the Training files and folders a member of staff has shared
- * with them (or with a guest group they're in). Everything comes from /api/guest,
+ * A guest sees only the files and folders a member of staff has shared with them
+ * (or with a guest group they're in) — Training documents and Vessel documents. Everything comes from /api/guest,
  * which checks each request against the guest's live shares; the guest's own
  * login can read nothing from the database directly.
  *
@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft, CheckCircle2, ChevronRight, Download, File as FileIcon, Folder, FolderPlus, Loader2,
-  LogOut, Mail, MoreHorizontal, Pencil, RefreshCw, Shield, Trash2, Upload,
+  LogOut, Mail, MoreHorizontal, Pencil, RefreshCw, Shield, Ship, Trash2, Upload,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -29,17 +29,20 @@ import "@/components/polaris-ui/tokens.css";
 
 type Stage = "loading" | "signed-out" | "reset-password" | "link-expired" | "not-guest" | "ready";
 
+/** A shared thing, named by type + id (see /api/guest for the types). */
+type Ref = { type: string; id: string };
 type HomeItem = {
-  type: "folder" | "document"; id: string; name: string; permission: SharePermission;
+  kind: "folder" | "document"; ref: Ref; name: string; sub: string | null; permission: SharePermission;
   sharedBy: string | null; sharedAt: string; expiresAt: string | null;
 };
 type FolderView = {
-  folder: { id: string; name: string };
+  container: Ref & { name: string };
   permission: SharePermission;
-  isShareRoot: boolean;
-  crumbs: { id: string; name: string }[];
-  folders: { id: string; name: string; guestAdded: boolean }[];
-  documents: { id: string; name: string; createdAt: string; guestAdded: boolean }[];
+  crumbs: (Ref & { name: string })[];
+  caps: { upload: boolean; mkdir: boolean };
+  folders: (Ref & { name: string; guestAdded: boolean })[];
+  documents: (Ref & { name: string; createdAt: string | null; guestAdded: boolean; sub: string | null })[];
+  notice?: string;
 };
 
 // Read once, before the Supabase client consumes the URL hash.
@@ -299,7 +302,7 @@ function SetPasswordScreen({ email, onDone, onSignOut }: { email: string; onDone
 function PermissionBadge({ p }: { p: SharePermission }) {
   return (
     <span className={cn(
-      "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
+      "inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
       p === "read_write" ? "border-primary/40 bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground",
     )}>
       {PERMISSION_LABEL[p]}
@@ -307,37 +310,41 @@ function PermissionBadge({ p }: { p: SharePermission }) {
   );
 }
 
+const refKey = (r: Ref) => `${r.type}:${r.id}`;
+
 function SharedBrowser({ email, onSignOut }: { email: string; onSignOut: () => void }) {
   const [home, setHome] = useState<{ me: { displayName: string | null }; items: HomeItem[] } | null>(null);
   const [view, setView] = useState<FolderView | null>(null);
-  const [folderId, setFolderId] = useState<string | null>(null);
+  /** The container on screen — null = "Shared with you". */
+  const [at, setAt] = useState<Ref | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const replaceRef = useRef<HTMLInputElement>(null);
-  const replaceTarget = useRef<string | null>(null);
+  const replaceTarget = useRef<Ref | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      if (folderId) setView(await guestFetch(`/api/guest?op=folder&id=${encodeURIComponent(folderId)}`));
+      if (at) setView(await guestFetch(`/api/guest?op=folder&type=${encodeURIComponent(at.type)}&id=${encodeURIComponent(at.id)}`));
       else { setHome(await guestFetch("/api/guest?op=home")); setView(null); }
     } catch (e: any) {
-      if (e?.status === 401 || e?.status === 403 && !folderId) { onSignOut(); return; }
+      if (e?.status === 401 || (e?.status === 403 && !at)) { onSignOut(); return; }
       setError(e instanceof Error ? e.message : "Could not load");
     } finally { setLoading(false); }
-  }, [folderId, onSignOut]);
+  }, [at, onSignOut]);
   useEffect(() => { void load(); }, [load]);
 
+  const canUpload = !!view?.caps.upload;
   const canWrite = view?.permission === "read_write";
 
   /** Opened in a tab made synchronously, so the browser doesn't block it as a pop-up. */
-  async function openDoc(id: string, download = false) {
+  async function openDoc(ref: Ref, download = false) {
     const tab = download ? null : window.open("", "_blank");
     try {
-      const { url } = await guestFetch(`/api/guest?op=open&id=${encodeURIComponent(id)}${download ? "&download=1" : ""}`);
+      const { url } = await guestFetch(`/api/guest?op=open&type=${encodeURIComponent(ref.type)}&id=${encodeURIComponent(ref.id)}${download ? "&download=1" : ""}`);
       if (tab) tab.location.href = url; else window.location.assign(url);
     } catch (e) {
       tab?.close();
@@ -355,7 +362,8 @@ function SharedBrowser({ email, onSignOut }: { email: string; onSignOut: () => v
       for (let i = 0; i < files.length; i += 20) {
         const form = new FormData();
         form.set("op", "upload");
-        form.set("folderId", view.folder.id);
+        form.set("type", view.container.type);
+        form.set("id", view.container.id);
         for (const f of files.slice(i, i + 20)) form.append("file", f);
         const r = await guestFetch("/api/guest", { method: "POST", body: form });
         added += r.added ?? 0;
@@ -379,16 +387,16 @@ function SharedBrowser({ email, onSignOut }: { email: string; onSignOut: () => v
   const newFolder = () => {
     const name = window.prompt("New folder name");
     if (!name?.trim() || !view) return;
-    void act("Creating folder…", () => postJson({ op: "mkdir", parentId: view.folder.id, name }), `Folder “${name.trim()}” created`);
+    void act("Creating folder…", () => postJson({ op: "mkdir", parentId: view.container.id, name }), `Folder “${name.trim()}” created`);
   };
-  const renameItem = (type: "folder" | "document", id: string, current: string) => {
+  const renameItem = (ref: Ref, current: string) => {
     const name = window.prompt("Rename to", current);
     if (!name?.trim() || name.trim() === current) return;
-    void act("Renaming…", () => postJson({ op: "rename", type, id, name }), "Renamed");
+    void act("Renaming…", () => postJson({ op: "rename", ...ref, name }), "Renamed");
   };
-  const removeItem = (type: "folder" | "document", id: string, name: string) => {
+  const removeItem = (ref: Ref, name: string) => {
     if (!window.confirm(`Remove “${name}”? This can't be undone.`)) return;
-    void act("Removing…", () => postJson({ op: "remove", type, id }), "Removed");
+    void act("Removing…", () => postJson({ op: "remove", ...ref }), "Removed");
   };
 
   const displayName = home?.me.displayName;
@@ -409,14 +417,14 @@ function SharedBrowser({ email, onSignOut }: { email: string; onSignOut: () => v
       {/* Where we are */}
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
         <nav className="flex min-w-0 flex-wrap items-center gap-1.5 text-sm">
-          <button onClick={() => setFolderId(null)}
-            className={cn("hover:underline", folderId ? "text-primary" : "font-semibold text-foreground")}>
+          <button onClick={() => setAt(null)}
+            className={cn("hover:underline", at ? "text-primary" : "font-semibold text-foreground")}>
             Shared with you
           </button>
           {view?.crumbs.map((c, i) => (
-            <span key={c.id} className="flex items-center gap-1.5">
+            <span key={refKey(c)} className="flex items-center gap-1.5">
               <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
-              <button onClick={() => setFolderId(c.id)}
+              <button onClick={() => setAt({ type: c.type, id: c.id })}
                 className={cn("max-w-[220px] truncate hover:underline", i === view.crumbs.length - 1 ? "font-semibold text-foreground" : "text-primary")}>
                 {c.name}
               </button>
@@ -424,34 +432,35 @@ function SharedBrowser({ email, onSignOut }: { email: string; onSignOut: () => v
           ))}
           {view && <span className="ml-2"><PermissionBadge p={view.permission} /></span>}
         </nav>
-        {view && canWrite && (
+        {view && (canUpload || view.caps.mkdir) && (
           <div className="flex items-center gap-2">
             <input ref={fileRef} type="file" multiple className="hidden"
               onChange={(e) => { const f = Array.from(e.target.files ?? []); e.target.value = ""; void uploadFiles(f); }} />
-            <GhostButton onClick={() => fileRef.current?.click()} disabled={!!busy}><Upload className="h-4 w-4" /> Upload files</GhostButton>
-            <GhostButton onClick={newFolder} disabled={!!busy}><FolderPlus className="h-4 w-4" /> New folder</GhostButton>
+            {canUpload && <GhostButton onClick={() => fileRef.current?.click()} disabled={!!busy}><Upload className="h-4 w-4" /> Upload files</GhostButton>}
+            {view.caps.mkdir && <GhostButton onClick={newFolder} disabled={!!busy}><FolderPlus className="h-4 w-4" /> New folder</GhostButton>}
           </div>
         )}
       </div>
       <input ref={replaceRef} type="file" className="hidden" onChange={(e) => {
         const f = e.target.files?.[0]; e.target.value = "";
-        const id = replaceTarget.current;
-        if (!f || !id) return;
+        const ref = replaceTarget.current;
+        if (!f || !ref) return;
         const form = new FormData();
-        form.set("op", "replace"); form.set("docId", id); form.set("file", f);
+        form.set("op", "replace"); form.set("type", ref.type); form.set("docId", ref.id); form.set("file", f);
         void act("Replacing…", () => guestFetch("/api/guest", { method: "POST", body: form }), "File replaced");
       }} />
 
       {busy && (
         <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" /> {busy}</div>
       )}
+      {view?.notice && <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">{view.notice}</div>}
 
       <div
         className="relative mt-4 flex-1 rounded-2xl border border-border bg-card/60 p-2 sm:p-3"
-        onDragOver={(e) => { if (canWrite) { e.preventDefault(); setDragOver(true); } }}
+        onDragOver={(e) => { if (canUpload) { e.preventDefault(); setDragOver(true); } }}
         onDragLeave={() => setDragOver(false)}
         onDrop={(e) => {
-          if (!canWrite) return;
+          if (!canUpload) return;
           e.preventDefault(); setDragOver(false);
           void uploadFiles(Array.from(e.dataTransfer.files ?? []));
         }}
@@ -462,7 +471,7 @@ function SharedBrowser({ email, onSignOut }: { email: string; onSignOut: () => v
           <div className="py-12 text-center">
             <p className="text-sm text-muted-foreground">{error}</p>
             <div className="mt-4 flex justify-center gap-2">
-              {folderId && <GhostButton onClick={() => setFolderId(null)}><ArrowLeft className="h-4 w-4" /> Back</GhostButton>}
+              {at && <GhostButton onClick={() => setAt(null)}><ArrowLeft className="h-4 w-4" /> Back</GhostButton>}
               <GhostButton onClick={() => void load()}><RefreshCw className="h-4 w-4" /> Try again</GhostButton>
             </div>
           </div>
@@ -476,16 +485,18 @@ function SharedBrowser({ email, onSignOut }: { email: string; onSignOut: () => v
           ) : (
             <ul>
               {home!.items.map((it) => (
-                <li key={`${it.type}:${it.id}`}>
-                  <button onClick={() => (it.type === "folder" ? setFolderId(it.id) : void openDoc(it.id))}
+                <li key={refKey(it.ref)}>
+                  <button onClick={() => (it.kind === "folder" ? setAt(it.ref) : void openDoc(it.ref))}
                     className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition hover:bg-background/40">
-                    {it.type === "folder"
-                      ? <Folder className="h-5 w-5 shrink-0 text-amber-300" />
-                      : <FileIcon className="h-5 w-5 shrink-0 text-muted-foreground" />}
+                    {it.ref.type === "yacht_all"
+                      ? <Ship className="h-5 w-5 shrink-0 text-sky-300" />
+                      : it.kind === "folder"
+                        ? <Folder className="h-5 w-5 shrink-0 text-amber-300" />
+                        : <FileIcon className="h-5 w-5 shrink-0 text-muted-foreground" />}
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-medium text-foreground">{it.name}</span>
                       <span className="block truncate text-xs text-muted-foreground">
-                        Shared{it.sharedBy ? ` by ${it.sharedBy}` : ""} · {fmtDate(it.sharedAt)}
+                        {it.sub ? `${it.sub} · ` : ""}Shared{it.sharedBy ? ` by ${it.sharedBy}` : ""} · {fmtDate(it.sharedAt)}
                         {it.expiresAt ? ` · until ${fmtDate(it.expiresAt)}` : ""}
                       </span>
                     </span>
@@ -499,21 +510,22 @@ function SharedBrowser({ email, onSignOut }: { email: string; onSignOut: () => v
           <div className="py-16 text-center">
             <Folder className="mx-auto mb-3 h-10 w-10 text-muted-foreground/40" />
             <p className="text-sm text-muted-foreground">This folder is empty.</p>
-            {canWrite && <p className="mt-1 text-xs text-muted-foreground/70">Drag files here, or use Upload files.</p>}
+            {canUpload && <p className="mt-1 text-xs text-muted-foreground/70">Drag files here, or use Upload files.</p>}
           </div>
         ) : (
           <ul>
             {view.folders.map((f) => (
-              <li key={f.id} className="group flex items-center gap-1 rounded-xl transition hover:bg-background/40">
-                <button onClick={() => setFolderId(f.id)} className="flex min-w-0 flex-1 items-center gap-3 px-3 py-3 text-left">
+              <li key={refKey(f)} className="group flex items-center gap-1 rounded-xl transition hover:bg-background/40">
+                <button onClick={() => setAt({ type: f.type, id: f.id })} className="flex min-w-0 flex-1 items-center gap-3 px-3 py-3 text-left">
                   <Folder className="h-5 w-5 shrink-0 text-amber-300" />
                   <span className="truncate text-sm font-medium text-foreground">{f.name}</span>
                 </button>
-                {canWrite && (
+                {/* Vessel folders mirror SharePoint folders — only Training folders change here. */}
+                {canWrite && f.type === "training_folder" && (
                   <RowMenu>
-                    <DropdownMenuItem onClick={() => renameItem("folder", f.id, f.name)}><Pencil className="mr-2 h-4 w-4" /> Rename</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => renameItem(f, f.name)}><Pencil className="mr-2 h-4 w-4" /> Rename</DropdownMenuItem>
                     {f.guestAdded && (
-                      <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => removeItem("folder", f.id, f.name)}>
+                      <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => removeItem(f, f.name)}>
                         <Trash2 className="mr-2 h-4 w-4" /> Remove
                       </DropdownMenuItem>
                     )}
@@ -522,25 +534,28 @@ function SharedBrowser({ email, onSignOut }: { email: string; onSignOut: () => v
               </li>
             ))}
             {view.documents.map((d) => (
-              <li key={d.id} className="group flex items-center gap-1 rounded-xl transition hover:bg-background/40">
-                <button onClick={() => void openDoc(d.id)} className="flex min-w-0 flex-1 items-center gap-3 px-3 py-3 text-left">
+              <li key={refKey(d)} className="group flex items-center gap-1 rounded-xl transition hover:bg-background/40">
+                <button onClick={() => void openDoc(d)} className="flex min-w-0 flex-1 items-center gap-3 px-3 py-3 text-left">
                   <FileIcon className="h-5 w-5 shrink-0 text-muted-foreground" />
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-medium text-foreground">{d.name}</span>
-                    <span className="block text-xs text-muted-foreground">Added {fmtDate(d.createdAt)}{d.guestAdded ? " · by a guest" : ""}</span>
+                    <span className="block text-xs text-muted-foreground">
+                      {[d.createdAt ? `Added ${fmtDate(d.createdAt)}` : null, d.guestAdded ? "by a guest" : null, d.sub].filter(Boolean).join(" · ")}
+                    </span>
                   </span>
                 </button>
                 <RowMenu>
-                  <DropdownMenuItem onClick={() => void openDoc(d.id, true)}><Download className="mr-2 h-4 w-4" /> Download</DropdownMenuItem>
-                  {canWrite && (
+                  <DropdownMenuItem onClick={() => void openDoc(d, true)}><Download className="mr-2 h-4 w-4" /> Download</DropdownMenuItem>
+                  {/* SharePoint-only files are read-only from here. */}
+                  {canWrite && d.type !== "yacht_sp" && (
                     <>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={() => renameItem("document", d.id, d.name)}><Pencil className="mr-2 h-4 w-4" /> Rename</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => { replaceTarget.current = d.id; replaceRef.current?.click(); }}>
+                      <DropdownMenuItem onClick={() => renameItem(d, d.name)}><Pencil className="mr-2 h-4 w-4" /> Rename</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => { replaceTarget.current = { type: d.type, id: d.id }; replaceRef.current?.click(); }}>
                         <Upload className="mr-2 h-4 w-4" /> Replace with a new version
                       </DropdownMenuItem>
                       {d.guestAdded && (
-                        <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => removeItem("document", d.id, d.name)}>
+                        <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => removeItem(d, d.name)}>
                           <Trash2 className="mr-2 h-4 w-4" /> Remove
                         </DropdownMenuItem>
                       )}
@@ -555,7 +570,7 @@ function SharedBrowser({ email, onSignOut }: { email: string; onSignOut: () => v
         {dragOver && (
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-primary bg-black/60">
             <Upload className="h-7 w-7 text-primary" />
-            <span className="text-sm">Drop to upload to “{view?.folder.name}”</span>
+            <span className="text-sm">Drop to upload to “{view?.container.name}”</span>
           </div>
         )}
       </div>

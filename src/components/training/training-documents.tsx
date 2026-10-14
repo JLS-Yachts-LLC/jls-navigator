@@ -486,9 +486,19 @@ export function TrainingDocuments({ yachtId }: { yachtId: string | null }) {
   }
 
   function openShare(t: Target) {
+    // Every folder above the item — a share on any of them reaches it too.
+    const above = (start: string | null) => {
+      const out: { type: "training_folder"; id: string; name: string }[] = [];
+      const seen = new Set<string>();
+      for (let cur = start; cur && !seen.has(cur); cur = folders.find((f) => f.id === cur)?.parent_id ?? null) {
+        seen.add(cur);
+        out.push({ type: "training_folder", id: cur, name: folders.find((f) => f.id === cur)?.name ?? "Folder" });
+      }
+      return out;
+    };
     setSharing(t.kind === "folder"
-      ? { type: "training_folder", id: t.folder.id, name: t.folder.name, folderId: t.folder.id }
-      : { type: "training_document", id: t.doc.id, name: targetName(t), folderId: t.doc.folder_id ?? null });
+      ? { type: "training_folder", id: t.folder.id, name: t.folder.name, parents: above(t.folder.parent_id ?? null) }
+      : { type: "training_document", id: t.doc.id, name: targetName(t), parents: above(t.doc.folder_id ?? null) });
   }
 
   /**
@@ -901,7 +911,7 @@ export function TrainingDocuments({ yachtId }: { yachtId: string | null }) {
         </DialogContent>
       </Dialog>
 
-      <ShareDialog target={sharing} folders={folders} onClose={() => setSharing(null)} onChanged={() => void loadShared()} />
+      <ShareDialog target={sharing} onClose={() => setSharing(null)} onChanged={() => void loadShared()} />
 
       <AlertDialog open={!!deleteFolder} onOpenChange={(o) => !o && setDeleteFolder(null)}>
         <AlertDialogContent>
