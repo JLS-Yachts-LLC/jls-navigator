@@ -1,9 +1,12 @@
 /**
- * Share Training files and folders, and Vessel documents (a whole vessel, one of
- * its folders, or one document), with guests — any staff member.
+ * Share Training files and folders, Vessel documents (a whole vessel, one of its
+ * folders, or one document) and Crew documents (a crew member's whole file, a
+ * folder, or one file) with guests — any staff member. Crew documents are
+ * personal data, so sharing (or changing a share of) them also needs Crew &
+ * Immigration access.
  *
  *   POST /api/guest-shares
- *     { action: "share", resourceType, resourceId, targets: [{ guestId } | { groupId }],
+ *     { action: "share", resourceType, resourceId, resourcePart?, targets: [{ guestId } | { groupId }],
  *       permission: "read" | "read_write", expiresAt?, note?, notify?, message? }
  *         → one live share per target (sharing again with someone updates theirs),
  *           then, if notify, one email per guest reached (group members included).
@@ -15,12 +18,62 @@
 import { logAuditEvent } from "@/lib/admin/audit";
 import { json, requireStaff } from "@/lib/guest/guest-auth.server";
 import { sendShareNotice } from "@/lib/guest/guest-email.server";
-import { PERMISSION_LABEL, isContainer, type SharePermission, type ShareResourceType } from "@/lib/guest/shares";
+import { PERMISSION_LABEL, isContainer, isCrewType, type SharePermission, type ShareResourceType } from "@/lib/guest/shares";
+import { requireAccess } from "@/lib/auth/requireAccess.server";
+import { PASSPORT_SLOTS } from "@/lib/crew-docs/library";
+import { crewIdentity, loadCrewLibrary } from "@/lib/guest/crew-docs.server";
+import { loadVesselLibrary } from "@/lib/guest/vessel-docs.server";
 
-const TYPES: ShareResourceType[] = ["training_folder", "training_document", "yacht_all", "yacht_folder", "yacht_document"];
+const TYPES: ShareResourceType[] = [
+  "training_folder", "training_document", "yacht_all", "yacht_folder", "yacht_document", "yacht_sp_file",
+  "crew_all", "crew_folder", "crew_document", "crew_passport_file", "crew_sp_file",
+];
+
+/** Crew documents need Crew & Immigration access to share, change or revoke. */
+async function crewAllowed(request: Request): Promise<boolean> {
+  const a = await requireAccess(request, { module: "crew_immigration", level: "view" });
+  return a.ok;
+}
+const CREW_DENIED = "Sharing crew documents needs Crew & Immigration access.";
 const PERMS: SharePermission[] = ["read", "read_write"];
 
-async function resourceName(sb: any, type: ShareResourceType, id: string): Promise<string | null> {
+async function resourceName(sb: any, type: ShareResourceType, id: string, part: string | null = null): Promise<string | null> {
+  if (type === "crew_all") {
+    const c = await crewIdentity(sb, id);
+    return c ? `${c.name} — all documents` : null;
+  }
+  if (type === "crew_folder") {
+    const { data } = await sb.from("crew_document_folders").select("name, crew_member_id").eq("id", id).maybeSingle();
+    if (!data) return null;
+    const c = await crewIdentity(sb, data.crew_member_id);
+    return `${data.name} (${c?.name ?? "crew member"})`;
+  }
+  if (type === "crew_document") {
+    const { data } = await sb.from("crew_documents").select("title, file_name, doc_type, crew_member_id").eq("id", id).maybeSingle();
+    if (!data) return null;
+    const c = await crewIdentity(sb, data.crew_member_id);
+    return `${data.title ?? data.file_name ?? data.doc_type ?? "Document"} (${c?.name ?? "crew member"})`;
+  }
+  if (type === "crew_passport_file") {
+    const slot = PASSPORT_SLOTS.find((x) => x.col === part);
+    if (!slot) return null;
+    const { data } = await sb.from("crew_passports").select(`crew_id, passport_number, ${slot.col}`).eq("id", id).maybeSingle();
+    if (!data || !(data as any)[slot.col]) return null;
+    const c = await crewIdentity(sb, data.crew_id);
+    return `${slot.label}${data.passport_number ? ` ${data.passport_number}` : ""} (${c?.name ?? "crew member"})`;
+  }
+  if (type === "crew_sp_file") {
+    // Must be a file the crew card lists as SharePoint-only — never anything else.
+    const lib = part ? await loadCrewLibrary(sb, id) : null;
+    const f = lib?.items.find((it) => it.kind === "sp" && it.key === `sp:${part}`);
+    return f ? `${f.name} (${lib!.crew.name})` : null;
+  }
+  if (type === "yacht_sp_file") {
+    // Must be a file the vessel card lists as SharePoint-only — never Crew Documents.
+    const lib = part ? await loadVesselLibrary(sb, id) : null;
+    const f = lib?.items.find((it) => it.kind === "sp" && it.id === part);
+    return f ? f.name : null;
+  }
   if (type === "yacht_all") {
     const { data } = await sb.from("yachts").select("vessel_name").eq("id", id).maybeSingle();
     return data ? `${data.vessel_name ?? "Vessel"} — all vessel documents` : null;
@@ -68,11 +121,14 @@ export async function guestSharesHandler(request: Request): Promise<Response> {
     const type = body.resourceType as ShareResourceType;
     const id = String(body.resourceId ?? "");
     const permission = (body.permission ?? "read") as SharePermission;
+    const part = body.resourcePart ? String(body.resourcePart) : null;
     if (!TYPES.includes(type) || !id) return json({ error: "Nothing to share." }, 400);
+    if (isCrewType(type) && !(await crewAllowed(request))) return json({ error: CREW_DENIED }, 403);
+    if ((type === "crew_passport_file" || type === "crew_sp_file" || type === "yacht_sp_file") !== !!part) return json({ error: "Nothing to share." }, 400);
     if (!PERMS.includes(permission)) return json({ error: "Unknown permission." }, 400);
     const expiry = parseExpiry(body.expiresAt);
     if (!expiry.ok) return json({ error: expiry.error }, 400);
-    const name = await resourceName(sb, type, id);
+    const name = await resourceName(sb, type, id, part);
     if (!name) return json({ error: "That file or folder no longer exists." }, 404);
 
     const targets = (Array.isArray(body.targets) ? body.targets : [])
@@ -85,16 +141,18 @@ export async function guestSharesHandler(request: Request): Promise<Response> {
     for (const t of targets) {
       const col = t.guestId ? "guest_id" : "group_id";
       const val = t.guestId ?? t.groupId;
-      const { data: live } = await sb.from("guest_shares").select("id")
-        .eq("resource_type", type).eq("resource_id", id).eq(col, val).is("revoked_at", null).maybeSingle();
+      let q = sb.from("guest_shares").select("id")
+        .eq("resource_type", type).eq("resource_id", id).eq(col, val).is("revoked_at", null);
+      q = part ? q.eq("resource_part", part) : q.is("resource_part", null);
+      const { data: live } = await q.maybeSingle();
       if (live) {
         const { error } = await sb.from("guest_shares")
-          .update({ permission, expires_at: expiry.value, note }).eq("id", live.id);
+          .update({ permission, expires_at: expiry.value, note, resource_label: name }).eq("id", live.id);
         if (error) return json({ error: error.message }, 500);
         saved.push(live.id);
       } else {
         const { data: row, error } = await sb.from("guest_shares").insert({
-          resource_type: type, resource_id: id, [col]: val, permission,
+          resource_type: type, resource_id: id, resource_part: part, resource_label: name, [col]: val, permission,
           expires_at: expiry.value, note, shared_by: staff.userId, shared_by_name: staff.name,
         }).select("id").single();
         if (error) return json({ error: error.message }, 500);
@@ -135,9 +193,10 @@ export async function guestSharesHandler(request: Request): Promise<Response> {
   }
 
   if (body.action === "update") {
-    const { data: share } = await sb.from("guest_shares").select("id, resource_type, resource_id, revoked_at")
+    const { data: share } = await sb.from("guest_shares").select("id, resource_type, resource_id, resource_part, resource_label, revoked_at")
       .eq("id", body.shareId).maybeSingle();
     if (!share || share.revoked_at) return json({ error: "That share no longer exists." }, 404);
+    if (isCrewType(share.resource_type) && !(await crewAllowed(request))) return json({ error: CREW_DENIED }, 403);
     const patch: Record<string, unknown> = {};
     if ("permission" in body) {
       if (!PERMS.includes(body.permission)) return json({ error: "Unknown permission." }, 400);
@@ -150,7 +209,7 @@ export async function guestSharesHandler(request: Request): Promise<Response> {
     }
     const { error } = await sb.from("guest_shares").update(patch).eq("id", share.id);
     if (error) return json({ error: error.message }, 500);
-    const name = (await resourceName(sb, share.resource_type, share.resource_id)) ?? share.resource_id;
+    const name = share.resource_label ?? (await resourceName(sb, share.resource_type, share.resource_id, share.resource_part)) ?? share.resource_id;
     await audit(name, `Guest share changed: ${Object.entries(patch).map(([k, v]) => `${k}=${v ?? "none"}`).join(", ")}`);
     return json({ success: true });
   }
@@ -158,6 +217,10 @@ export async function guestSharesHandler(request: Request): Promise<Response> {
   if (body.action === "revoke") {
     const ids: string[] = (Array.isArray(body.shareIds) ? body.shareIds : [body.shareId]).filter(Boolean).map(String);
     if (!ids.length) return json({ error: "Nothing to revoke." }, 400);
+    const { data: targets } = await sb.from("guest_shares").select("resource_type").in("id", ids);
+    if ((targets ?? []).some((t: any) => isCrewType(t.resource_type)) && !(await crewAllowed(request))) {
+      return json({ error: CREW_DENIED }, 403);
+    }
     const { data, error } = await sb.from("guest_shares")
       .update({ revoked_at: new Date().toISOString(), revoked_by: staff.userId, revoked_by_name: staff.name })
       .in("id", ids).is("revoked_at", null).select("id");

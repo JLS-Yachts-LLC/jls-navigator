@@ -29,7 +29,16 @@ export type ShareTarget = {
   parents: { type: ShareResourceType; id: string; name: string }[];
   /** An extra line under the title, e.g. about SharePoint-only files. */
   note?: string;
+  /** Which piece of the item: a passport file's column, or a SharePoint item id. */
+  part?: string | null;
+  /** Personal data (crew documents): show a warning and start with an end date. */
+  sensitive?: boolean;
 };
+
+/** Crew documents start with this end date; it can be changed or cleared. */
+const SENSITIVE_DEFAULT_DAYS = 30;
+const isoDay = (d: Date) => d.toISOString().slice(0, 10);
+const samePart = (s: GuestShare, part: string | null | undefined) => (s.resource_part ?? null) === (part ?? null);
 export type GuestRow = { id: string; email: string; display_name: string | null; company: string | null; active: boolean };
 export type GroupRow = { id: string; name: string; description: string | null };
 
@@ -113,7 +122,9 @@ export function ShareDialog({ target, onClose, onChanged }: {
       db.from("guest_accounts").select("id, email, display_name, company, active").order("display_name"),
       db.from("guest_groups").select("id, name, description").order("name"),
       db.from("guest_group_members").select("group_id"),
-      db.from("guest_shares").select("*").eq("resource_type", target.type).eq("resource_id", target.id)
+      (target.part
+        ? db.from("guest_shares").select("*").eq("resource_type", target.type).eq("resource_id", target.id).eq("resource_part", target.part)
+        : db.from("guest_shares").select("*").eq("resource_type", target.type).eq("resource_id", target.id).is("resource_part", null))
         .is("revoked_at", null).order("created_at"),
       above.length
         ? db.from("guest_shares").select("*").in("resource_id", above.map((p) => p.id)).is("revoked_at", null)
@@ -125,14 +136,15 @@ export function ShareDialog({ target, onClose, onChanged }: {
     for (const r of m.data ?? []) counts[r.group_id] = (counts[r.group_id] ?? 0) + 1;
     setMemberCount(counts);
     const inherited = ((inh.data ?? []) as GuestShare[])
-      .filter((s) => above.some((p) => p.type === s.resource_type && p.id === s.resource_id));
+      .filter((s) => !s.resource_part && above.some((p) => p.type === s.resource_type && p.id === s.resource_id));
     setShares([...(own.data ?? []), ...inherited] as GuestShare[]);
     setLoading(false);
   }, [target]);
 
   useEffect(() => {
     if (!target) return;
-    setPicked(new Set()); setQuery(""); setPermission("read"); setExpires(""); setNotify(true); setMessage("");
+    setPicked(new Set()); setQuery(""); setPermission("read"); setNotify(true); setMessage("");
+    setExpires(target.sensitive ? isoDay(new Date(Date.now() + SENSITIVE_DEFAULT_DAYS * 86400000)) : "");
     void load();
   }, [target, load]);
 
@@ -142,8 +154,9 @@ export function ShareDialog({ target, onClose, onChanged }: {
     ? (guestById.get(s.guest_id) ? guestLabel(guestById.get(s.guest_id)!) : "Guest")
     : (groupById.get(s.group_id ?? "")?.name ?? "Group");
 
-  const own = shares.filter((s) => s.resource_type === target?.type && s.resource_id === target?.id);
-  const inherited = shares.filter((s) => !(s.resource_type === target?.type && s.resource_id === target?.id));
+  const isOwn = (s: GuestShare) => s.resource_type === target?.type && s.resource_id === target?.id && samePart(s, target?.part);
+  const own = shares.filter(isOwn);
+  const inherited = shares.filter((s) => !isOwn(s));
 
   const q = query.trim().toLowerCase();
   const matches = (...xs: (string | null | undefined)[]) => !q || xs.some((x) => (x ?? "").toLowerCase().includes(q));
@@ -162,7 +175,7 @@ export function ShareDialog({ target, onClose, onChanged }: {
     try {
       const targets = [...picked].map((k) => (k.startsWith("G:") ? { groupId: k.slice(2) } : { guestId: k.slice(2) }));
       const r = await guestApi("/api/guest-shares", token, {
-        action: "share", resourceType: target.type, resourceId: target.id, targets, permission,
+        action: "share", resourceType: target.type, resourceId: target.id, resourcePart: target.part ?? null, targets, permission,
         expiresAt: expires ? new Date(`${expires}T23:59:59`).toISOString() : null,
         notify, message,
       });
@@ -211,6 +224,12 @@ export function ShareDialog({ target, onClose, onChanged }: {
             Guests see only what is shared with them.{" "}
             {target && isContainer(target.type) ? "Sharing a folder shares everything inside it, including anything added later." : ""}
             {target?.note ? <span className="mt-1 block">{target.note}</span> : null}
+            {target?.sensitive && (
+              <span className="mt-2 block rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                Personal data — passports, ID and other crew records. Only share with someone entitled to see them, for as
+                long as they need. Access ends in {SENSITIVE_DEFAULT_DAYS} days unless you change the date below.
+              </span>
+            )}
           </DialogDescription>
         </DialogHeader>
 

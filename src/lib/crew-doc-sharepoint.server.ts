@@ -69,12 +69,9 @@ export type SpCrewItem = {
  * a crew member with no folder yet comes back `exists: false`, which the card
  * renders as "not in SharePoint" rather than as an error.
  */
-export const listCrewSharePointFolder = createServerFn({ method: "POST" })
-  // @ts-expect-error — TanStack Start v1 serverFn type requires explicit ctx typing
-  .handler(async (ctx: {
-    data: { vesselName: string | null; crewName: string };
-  }): Promise<{ exists: boolean; webUrl: string | null; items: SpCrewItem[]; error?: string }> => {
-    const { vesselName, crewName } = ctx.data;
+export async function listCrewSharePointItems(
+  vesselName: string | null, crewName: string,
+): Promise<{ exists: boolean; webUrl: string | null; items: SpCrewItem[]; error?: string }> {
     try {
       const { token, siteId } = await crewSpContext();
       const { segments, found } = await resolveCrewPath(siteId, token, vesselName, crewName);
@@ -103,7 +100,14 @@ export const listCrewSharePointFolder = createServerFn({ method: "POST" })
       // SharePoint being unreachable must never break the Documents card.
       return { exists: false, webUrl: null, items: [], error: e?.message ?? String(e) };
     }
-  });
+}
+
+/** The card's entry point. listCrewSharePointItems is the same, callable from server code. */
+export const listCrewSharePointFolder = createServerFn({ method: "POST" })
+  // @ts-expect-error — TanStack Start v1 serverFn type requires explicit ctx typing
+  .handler(async (ctx: {
+    data: { vesselName: string | null; crewName: string };
+  }) => listCrewSharePointItems(ctx.data.vesselName, ctx.data.crewName));
 
 /** Create a subfolder in the crew folder so a Polaris folder has a SharePoint twin. */
 export const createCrewSharePointFolder = createServerFn({ method: "POST" })

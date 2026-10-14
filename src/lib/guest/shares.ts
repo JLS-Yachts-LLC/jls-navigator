@@ -5,7 +5,13 @@
  *   · Training documents — nested folders (training_folder / training_document).
  *   · Vessel documents (the Documents card on a yacht) — a whole vessel
  *     (yacht_all), one of its flat folders (yacht_folder) or one document
- *     (yacht_document).
+ *     (yacht_document), or one SharePoint-only file (yacht_sp_file,
+ *     resource_id = the vessel, resource_part = the SharePoint item id).
+ *   · Crew documents (the Documents card on a crew profile) — all of one crew
+ *     member's files (crew_all), a folder (crew_folder), one document
+ *     (crew_document), one passport file (crew_passport_file, resource_part =
+ *     the column) or one SharePoint-only file (crew_sp_file, resource_part = the
+ *     SharePoint item id). Personal data — see api.guest-shares.
  *
  * A share puts ONE item in front of
  * one guest or one guest group, as Read or Read & write. A folder share covers
@@ -17,10 +23,13 @@
 
 export type ShareResourceType =
   | "training_folder" | "training_document"
-  | "yacht_all" | "yacht_folder" | "yacht_document";
+  | "yacht_all" | "yacht_folder" | "yacht_document" | "yacht_sp_file"
+  | "crew_all" | "crew_folder" | "crew_document" | "crew_passport_file" | "crew_sp_file";
 
 /** The shareable things that hold other things (open into a list). */
-export const CONTAINER_TYPES: ShareResourceType[] = ["training_folder", "yacht_all", "yacht_folder"];
+export const CONTAINER_TYPES: ShareResourceType[] = ["training_folder", "yacht_all", "yacht_folder", "crew_all", "crew_folder"];
+/** Crew documents are personal data (passports, ID) — handled with extra care. */
+export const isCrewType = (t: string) => t.startsWith("crew_");
 export const isContainer = (t: string) => (CONTAINER_TYPES as string[]).includes(t);
 export type SharePermission = "read" | "read_write";
 
@@ -28,6 +37,10 @@ export type GuestShare = {
   id: string;
   resource_type: ShareResourceType;
   resource_id: string;
+  /** For a crew passport file: the column; for a SharePoint file (crew or vessel): its item id. */
+  resource_part?: string | null;
+  /** The item's name when it was shared. */
+  resource_label?: string | null;
   guest_id: string | null;
   group_id: string | null;
   permission: SharePermission;
@@ -135,19 +148,47 @@ export function accessTo(
  *   · the vessel: { yachtId, folderId: null }
  */
 export function vesselAccess(
-  item: { yachtId: string; folderId: string | null; docId?: string | null },
+  item: { yachtId: string; folderId: string | null; docId?: string | null; spId?: string | null },
   shares: GuestShare[],
 ): Access | null {
   let best: Access | null = null;
-  const consider = (type: ShareResourceType, id: string | null | undefined) => {
+  const consider = (type: ShareResourceType, id: string | null | undefined, part: string | null = null) => {
     if (!id) return;
     for (const s of shares) {
       if (s.resource_type !== type || s.resource_id !== id) continue;
+      if (part !== (s.resource_part ?? null)) continue;
       if (!best || rank(s.permission) > rank(best.permission)) best = { permission: s.permission, share: s, root: { type, id } };
     }
   };
   consider("yacht_document", item.docId);
+  if (item.spId) consider("yacht_sp_file", item.yachtId, item.spId);
   consider("yacht_folder", item.folderId);
   consider("yacht_all", item.yachtId);
+  return best;
+}
+
+/**
+ * Access to a crew-document item. Strongest share wins, nearest first on a tie:
+ * the file itself, then the folder it is filed in, then the crew member.
+ *   · a file:   { crewId, folderId, file: { type, id, part? } }
+ *   · a folder: { crewId, folderId }
+ *   · the crew member's whole file: { crewId, folderId: null }
+ */
+export function crewAccess(
+  item: { crewId: string; folderId: string | null; file?: { type: ShareResourceType; id: string; part?: string | null } },
+  shares: GuestShare[],
+): Access | null {
+  let best: Access | null = null;
+  const consider = (type: ShareResourceType, id: string | null | undefined, part?: string | null) => {
+    if (!id) return;
+    for (const s of shares) {
+      if (s.resource_type !== type || s.resource_id !== id) continue;
+      if ((part ?? null) !== (s.resource_part ?? null)) continue;
+      if (!best || rank(s.permission) > rank(best.permission)) best = { permission: s.permission, share: s, root: { type, id } };
+    }
+  };
+  if (item.file) consider(item.file.type, item.file.id, item.file.part);
+  consider("crew_folder", item.folderId);
+  consider("crew_all", item.crewId);
   return best;
 }

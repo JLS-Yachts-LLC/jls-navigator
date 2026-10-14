@@ -2,7 +2,7 @@
  * The guest page (/guest) — for outside people JLS has given a guest login.
  *
  * A guest sees only the files and folders a member of staff has shared with them
- * (or with a guest group they're in) — Training documents and Vessel documents. Everything comes from /api/guest,
+ * (or with a guest group they're in) — Training, Vessel and Crew documents. Everything comes from /api/guest,
  * which checks each request against the guest's live shares; the guest's own
  * login can read nothing from the database directly.
  *
@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft, CheckCircle2, ChevronRight, Download, File as FileIcon, Folder, FolderPlus, Loader2,
-  LogOut, Mail, MoreHorizontal, Pencil, RefreshCw, Shield, Ship, Trash2, Upload,
+  LogOut, Mail, MoreHorizontal, Pencil, RefreshCw, Shield, Ship, Trash2, Upload, UserRound,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -311,6 +311,8 @@ function PermissionBadge({ p }: { p: SharePermission }) {
 }
 
 const refKey = (r: Ref) => `${r.type}:${r.id}`;
+/** Document kinds a Read & write guest may rename / replace (the rest are read-only). */
+const EDITABLE_DOCS = ["training_document", "yacht_document", "crew_document"];
 
 function SharedBrowser({ email, onSignOut }: { email: string; onSignOut: () => void }) {
   const [home, setHome] = useState<{ me: { displayName: string | null }; items: HomeItem[] } | null>(null);
@@ -490,6 +492,8 @@ function SharedBrowser({ email, onSignOut }: { email: string; onSignOut: () => v
                     className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition hover:bg-background/40">
                     {it.ref.type === "yacht_all"
                       ? <Ship className="h-5 w-5 shrink-0 text-sky-300" />
+                      : it.ref.type === "crew_all"
+                      ? <UserRound className="h-5 w-5 shrink-0 text-emerald-300" />
                       : it.kind === "folder"
                         ? <Folder className="h-5 w-5 shrink-0 text-amber-300" />
                         : <FileIcon className="h-5 w-5 shrink-0 text-muted-foreground" />}
@@ -546,8 +550,8 @@ function SharedBrowser({ email, onSignOut }: { email: string; onSignOut: () => v
                 </button>
                 <RowMenu>
                   <DropdownMenuItem onClick={() => void openDoc(d, true)}><Download className="mr-2 h-4 w-4" /> Download</DropdownMenuItem>
-                  {/* SharePoint-only files are read-only from here. */}
-                  {canWrite && d.type !== "yacht_sp" && (
+                  {/* SharePoint-only files and passport files are read-only from here. */}
+                  {canWrite && EDITABLE_DOCS.includes(d.type) && (
                     <>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onClick={() => renameItem(d, d.name)}><Pencil className="mr-2 h-4 w-4" /> Rename</DropdownMenuItem>

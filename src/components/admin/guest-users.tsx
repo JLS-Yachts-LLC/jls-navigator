@@ -3,7 +3,8 @@
  *
  * Guests are outside people with a login that shows them ONLY the files and
  * folders a member of staff shares with them (Read, or Read & write) — Training
- * documents, and Vessel documents (a whole vessel, a folder or one file). Four
+ * documents, Vessel documents (a whole vessel, a folder or one file) and Crew
+ * documents (a crew member's whole file, a folder or one file). Four
  * mini tabs:
  *   · Guests        — invite (email with a set-your-password link), edit,
  *                     re-send the invite, deactivate / reactivate.
@@ -132,8 +133,8 @@ export function GuestUsersPanel() {
     <div>
       <p className="mb-3 text-xs text-muted-foreground">
         Outside people with a guest login. They see nothing but the files and folders shared with them — share from
-        Training → Documents (right-click, or ⋯ → Share with guests) or from a vessel's Documents card (Share, or
-        right-click a file or folder). They sign in at
+        Training → Documents (right-click, or ⋯ → Share with guests), or from the Documents card on a vessel or a crew
+        profile (Share, or right-click a file or folder). They sign in at
         <span className="font-mono text-foreground/80"> /guest</span>.
       </p>
       <div className="mb-4 flex flex-wrap items-center gap-1.5">
@@ -567,7 +568,7 @@ function SharesTab({ guests, groups, members, shares, folders, docNames, activit
   const pathOf = (folderId: string | null) =>
     ["Training documents", ...folderChain(folderId, byId).reverse().map((id) => byId.get(id)?.name ?? "…")].join(" › ");
   const vesselPath = (yachtId: string | null | undefined) => `Vessel documents › ${(yachtId && docNames.get(yachtId)?.name) || "vessel"}`;
-  const itemOf = (s: GuestShare): { name: string; where: string; icon: "folder" | "file" | "vessel" } => {
+  const itemOf = (s: GuestShare): { name: string; where: string; icon: "folder" | "file" | "vessel" | "crew" } => {
     const n = docNames.get(s.resource_id);
     switch (s.resource_type) {
       case "training_folder":
@@ -578,6 +579,16 @@ function SharesTab({ guests, groups, members, shares, folders, docNames, activit
         return { name: n ? `${n.name} — all documents` : "(vessel removed)", where: "Vessel documents", icon: "vessel" };
       case "yacht_folder":
         return { name: n?.name ?? "(folder removed)", where: vesselPath(n?.yachtId), icon: "folder" };
+      case "yacht_sp_file":
+        return { name: s.resource_label ?? "(SharePoint file)", where: `${vesselPath(s.resource_id)} · SharePoint`, icon: "file" };
+      // Crew items are named from the label saved when they were shared — it
+      // carries the crew member's name, and outlives a rename or removal.
+      case "crew_all":
+        return { name: s.resource_label ?? "(crew member)", where: "Crew documents", icon: "crew" };
+      case "crew_folder":
+        return { name: s.resource_label ?? "(folder)", where: "Crew documents", icon: "folder" };
+      case "crew_document": case "crew_passport_file": case "crew_sp_file":
+        return { name: s.resource_label ?? "(file)", where: s.resource_type === "crew_sp_file" ? "Crew documents · SharePoint" : "Crew documents", icon: "file" };
       default:
         return { name: n?.name ?? "(file removed)", where: vesselPath(n?.yachtId), icon: "file" };
     }
@@ -688,6 +699,7 @@ function SharesTab({ guests, groups, members, shares, folders, docNames, activit
                     <td className="max-w-[320px] px-3 py-2.5">
                       <div className="flex items-center gap-2 font-medium">
                         {it.icon === "vessel" ? <Ship className="h-4 w-4 shrink-0 text-sky-300" />
+                          : it.icon === "crew" ? <UserRound className="h-4 w-4 shrink-0 text-emerald-300" />
                           : it.icon === "folder" ? <Folder className="h-4 w-4 shrink-0 text-amber-300" />
                           : <FileIcon className="h-4 w-4 shrink-0 text-muted-foreground" />}
                         <span className="truncate">{it.name}</span>
@@ -752,7 +764,7 @@ function ActivityTab({ activity, guests }: { activity: ActivityRow[]; guests: Gu
                 <td className="px-3 py-2">{ACTION_LABEL[a.action] ?? a.action}</td>
                 <td className="px-3 py-2">
                   <span className="inline-flex items-center gap-1.5">
-                    {a.resource_type === "training_folder" || a.resource_type === "yacht_folder" || a.resource_type === "yacht_all"
+                    {["training_folder", "yacht_folder", "yacht_all", "crew_folder", "crew_all"].includes(a.resource_type ?? "")
                       ? <Folder className="h-3.5 w-3.5 text-amber-300" /> : <FileIcon className="h-3.5 w-3.5 text-muted-foreground" />}
                     {a.resource_name ?? "—"}
                   </span>
