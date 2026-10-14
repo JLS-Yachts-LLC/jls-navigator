@@ -3,5 +3,5 @@ import { AnchorPage } from "@/components/anchor/anchor-page";
 
 export const Route = createFileRoute("/_app/esign/")({
   component: AnchorPage,
-  head: () => ({ meta: [{ title: "Anchor — Aquila One" }] }),
+  head: () => ({ meta: [{ title: "Anchor — Polaris" }] }),
 });

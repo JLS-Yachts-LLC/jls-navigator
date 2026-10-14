@@ -41,6 +41,10 @@ export interface FormDef {
   /** Letter-style forms: prose body with {{field}} placeholders (rendered as a
    *  letter on the PDF instead of a field table). */
   bodyTemplate?: string;
+  /** PDF layout: "jls" (default) = JLS corporate letterhead, for documents JLS
+   *  issues; "client-letter" = the client's own letter with no JLS branding
+   *  (e.g. the vessel's Agency Appointment Letter to the authorities). */
+  layout?: "jls" | "client-letter";
   sections: FormSection[];
 }
 
@@ -113,8 +117,12 @@ export const ANCHOR_FORMS: FormDef[] = [
     title: "Agency Appointment Letter",
     description: "Authorisation appointing JLS Yachts LLC as UAE agent for a vessel.",
     category: "Agency",
+    // Issued by the VESSEL (it appoints JLS), so it's printed as the client's own
+    // letter — matching their Word template (Dubai Yacht_Agency Appointment
+    // Letter_Draft.docx): no JLS branding, room at the top for their letterhead.
+    layout: "client-letter",
     bodyTemplate:
-      "{{letter_date}}\n\nThe Manager\nCc: General Directorate of Residency and Foreigners Affairs, Federal Transport Authority, & UAE Coast Guard\nUnited Arab Emirates\n\nDear Sir,\n\nM/Y “{{vessel_name}}” – IMO NO. {{imo}}\nAGENT APPOINTMENT LETTER / AUTHORIZATION LETTER\n\nWe do hereby authorize JLS Yachts LLC as our agent in the United Arab Emirates. JLS Yachts LLC will liaise, arrange and complete all necessary documentations, procedures and formalities not limited to the UAE Immigration clearances, Customs, Coast Guard formalities, Health Authority, Port Authorities, all official matters related to the Yacht with the Federal Transport Authority of the UAE, including sailing permit applications for “{{vessel_name}}”.\n\nWe hope that you would provide all necessary assistance to our agent.\n\nThank you.\n\nSincerely,\n[[signature]]{{signatory_name}}\n{{signatory_title}}",
+      "{{letter_date}}\n\n\n\nThe Manager\n\nCc: General Directorate of Residency and Foreigners Affairs,\nFederal Transport Authority, &\nUAE Coast Guard\nUnited Arab Emirates\n\n\n\nDear Sir,\n\n**M/Y “{{vessel_name}}” – IMO NO. {{imo}}**\n**AGENT APPOINTMENT LETTER / AUTHORIZATION LETTER**\n\n\nWe do hereby authorize JLS Yachts LLC as our agent in the United Arab Emirates. JLS Yachts LLC will liaise, arrange and complete all necessary documentations, procedures and formalities not limited to the UAE Immigration clearances, Customs, Coast Guard formalities, Health Authority, Port Authorities, all official matters related to the Yacht with the Federal Transport Authority of the UAE, including sailing permit applications for “{{vessel_name}}”.\n\nWe hope that you would provide all necessary assistance to our agent.\n\nThank you.\n\n\n\n\nSincerely,\n[[signature]]{{signatory_name}}\n{{signatory_title}}",
     sections: [
       {
         title: "Letter Details",

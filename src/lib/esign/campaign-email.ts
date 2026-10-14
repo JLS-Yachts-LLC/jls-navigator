@@ -10,7 +10,8 @@
  *   https://…    → link
  * Merge tags fill per recipient: {{first_name}} {{name}} {{vessel}} {{document}} {{sender}}.
  */
-import { emailBrandLockup } from "@/lib/email/brand-mark";
+import { jlsEmailHeaderRow, jlsEmailFooterRow } from "@/lib/brand/jls-email";
+import { JLS_COLORS } from "@/lib/brand/jls-company";
 
 export type CampaignEmailInput = {
   subject: string;
@@ -57,7 +58,7 @@ export function noteToHtml(text: string): string {
   const inline = (s: string) =>
     esc(s)
       .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-      .replace(/(https?:\/\/[^\s<]+[^\s<.,;:!?)])/g, '<a href="$1" style="color:#1e40af;">$1</a>');
+      .replace(/(https?:\/\/[^\s<]+[^\s<.,;:!?)])/g, '<a href="$1" style="color:#0070C0;">$1</a>');
   const blocks = (text || "").replace(/\r\n/g, "\n").split(/\n{2,}/).map((b) => b.trim()).filter(Boolean);
   return blocks.map((b) => {
     const lines = b.split("\n");
@@ -87,8 +88,8 @@ export function renderCampaignEmail(
   const signOff = m(c.signOff).trim();
 
   const button = c.allowEsign
-    ? `<a href="${esc(opts.link)}" style="background:#1e40af;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;padding:13px 26px;border-radius:8px;display:inline-block;">Review &amp; sign online</a>`
-    : `<a href="${esc(opts.link)}" style="background:#1e40af;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;padding:13px 26px;border-radius:8px;display:inline-block;">Open document &amp; upload signed copy</a>`;
+    ? `<a href="${esc(opts.link)}" style="background:${JLS_COLORS.blue};color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;padding:13px 26px;border-radius:8px;display:inline-block;">Review &amp; sign online</a>`
+    : `<a href="${esc(opts.link)}" style="background:${JLS_COLORS.blue};color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;padding:13px 26px;border-radius:8px;display:inline-block;">Open document &amp; upload signed copy</a>`;
 
   const paper = c.includePdf
     ? c.allowEsign
@@ -101,8 +102,8 @@ export function renderCampaignEmail(
   const html = `<!DOCTYPE html><html><body style="margin:0;background:#f1f5f9;font-family:Inter,Segoe UI,Arial,sans-serif;color:#0f172a;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:32px 12px;"><tr><td align="center">
   <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(15,23,42,.08);">
-    <tr><td style="background:#0b1f3a;padding:22px 32px;">${emailBrandLockup('<span style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:.2px;">JLS Yachts</span><br><span style="color:#93c5fd;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;">A Family of Excellence</span>', 30)}</td></tr>
-    ${heading ? `<tr><td style="padding:28px 32px 0;"><h1 style="margin:0;font-size:21px;line-height:1.3;color:#0b1f3a;">${esc(heading)}</h1></td></tr>` : ""}
+    ${jlsEmailHeaderRow()}
+    ${heading ? `<tr><td style="padding:28px 32px 0;"><h1 style="margin:0;font-size:21px;line-height:1.3;color:${JLS_COLORS.navy};">${esc(heading)}</h1></td></tr>` : ""}
     <tr><td style="padding:${heading ? "18px" : "28px"} 32px 4px;">${noteToHtml(note)}</td></tr>
     <tr><td style="padding:4px 32px 8px;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc;">
@@ -117,7 +118,7 @@ export function renderCampaignEmail(
     <tr><td style="padding:10px 32px 4px;font-size:13px;line-height:1.6;color:#475569;">${paper}</td></tr>
     ${signOff ? `<tr><td style="padding:16px 32px 4px;">${noteToHtml(signOff)}</td></tr>` : ""}
     <tr><td style="padding:8px 32px 24px;font-size:12px;line-height:1.5;color:#94a3b8;">This link is personal to you and expires in ${c.expiresDays} days. If the button doesn't work, paste this into your browser:<br><span style="color:#64748b;word-break:break-all;">${esc(opts.link)}</span></td></tr>
-    <tr><td style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:14px 32px;text-align:center;font-size:11px;color:#94a3b8;">JLS Yachts LLC · C1, Marina View, Mina Rashid, Dubai, UAE · +971 4 331 3555 · info@jlsyachts.com</td></tr>
+    ${jlsEmailFooterRow()}
   </table>
 </td></tr></table></body></html>`;
 

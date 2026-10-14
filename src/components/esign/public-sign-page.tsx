@@ -4,6 +4,7 @@ import { getSigningDocument, doSubmitSignature, doDeclineSignature, doUploadSign
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { SignaturePad } from "./signature-pad";
+import { JLS_COMPANY, JLS_CONTACT_LINE } from "@/lib/brand/jls-company";
 import { Loader2, FileSignature, CheckCircle2, XCircle, ShieldCheck, Download, Upload, Printer } from "lucide-react";
 import { toast } from "sonner";
 
@@ -87,10 +88,10 @@ export function PublicSignPage() {
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900">
-      <header className="border-b border-slate-200 bg-[#0f172a] px-6 py-4 text-white">
-        <div className="mx-auto flex max-w-4xl items-center gap-2">
-          <FileSignature className="h-5 w-5" />
-          <span className="font-semibold">JLS Yachts · Aquila One</span>
+      <header className="border-b-[3px] border-[#0070C0] bg-white px-6 py-3">
+        <div className="mx-auto flex max-w-4xl items-center justify-between gap-3">
+          <img src="/email/jlsyachts-logo.png" alt="jlsyachts — A Family of Excellence" className="h-10 w-auto" />
+          <span className="flex items-center gap-1.5 text-xs font-medium text-slate-500"><FileSignature className="h-4 w-4" /> Secure document signing</span>
         </div>
       </header>
 
@@ -183,10 +184,18 @@ export function PublicSignPage() {
               </div>
             )}
 
-            <p className="text-center text-xs text-slate-400">Sent securely via the Aquila One platform. Do not share this link.</p>
+            <p className="text-center text-xs text-slate-400">This link is personal to you — please don't share it.</p>
           </div>
         ) : null}
       </main>
+
+      <footer className="border-t border-slate-200 bg-white px-6 py-4 text-[11px] leading-relaxed text-slate-500">
+        <div className="mx-auto max-w-4xl">
+          <strong className="text-slate-700">{JLS_COMPANY.legalName}</strong><br />
+          {JLS_COMPANY.address}<br />
+          {JLS_CONTACT_LINE}
+        </div>
+      </footer>
     </div>
   );
 }

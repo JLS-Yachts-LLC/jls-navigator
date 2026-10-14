@@ -33,6 +33,6 @@ export async function buildUploadedSignedPdf(
   line("Method", bold); line("Signed on paper — signed copy uploaded"); line(`Uploaded by: ${cert.by}`, font, 10); y -= 6;
   line("Received at (UTC)", bold); line(cert.at.toISOString());
   if (cert.ip) { line("Uploader IP", bold); line(cert.ip); }
-  page.drawText("Received via the Aquila One platform — JLS Yachts.", { x: 56, y: 48, size: 9, font, color: rgb(0.5, 0.55, 0.6) });
+  page.drawText("Received by JLS Yachts LLC secure e-signature (Polaris).", { x: 56, y: 48, size: 9, font, color: rgb(0.5, 0.55, 0.6) });
   return pdf.save();
 }

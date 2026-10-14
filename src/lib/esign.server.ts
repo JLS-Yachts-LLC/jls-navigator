@@ -4,7 +4,7 @@
  * WITHOUT a session (the anonymous signer), so they authorise purely on the
  * unguessable signing token and operate via `supabaseAdmin`.
  */
-import { emailBrandLockup } from "@/lib/email/brand-mark";
+import { jlsEmailHeaderRow, jlsEmailFooterRow } from "@/lib/brand/jls-email";
 import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
@@ -69,16 +69,16 @@ function inviteHtml(doc: any, link: string): string {
   return `<!DOCTYPE html><html><body style="margin:0;background:#f8fafc;font-family:Inter,Arial,sans-serif;color:#0f172a;">
   <table width="100%" cellpadding="0" cellspacing="0" style="padding:32px 16px;"><tr><td align="center">
     <table width="560" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08);">
-      <tr><td style="background:#0f172a;padding:22px 32px;">${emailBrandLockup('<span style="color:#fff;font-size:18px;font-weight:700;">JLS Yachts · Aquila One</span>', 28)}</td></tr>
+      ${jlsEmailHeaderRow()}
       <tr><td style="padding:32px;">
         <p style="margin:0 0 6px;font-size:15px;color:#64748b;">Dear ${doc.signer_name},</p>
         <p style="margin:0 0 20px;font-size:15px;line-height:1.6;">You have a document waiting for your electronic signature: <strong>${doc.title}</strong>${doc.reference ? ` <span style="color:#94a3b8;">(${doc.reference})</span>` : ""}.</p>
-        ${doc.message ? `<p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:#374151;border-left:3px solid #1e40af;padding-left:12px;">${doc.message}</p>` : ""}
-        <p style="margin:0 0 24px;"><a href="${link}" style="background:#1e40af;color:#fff;text-decoration:none;font-weight:600;font-size:15px;padding:12px 24px;border-radius:8px;display:inline-block;">Review &amp; Sign</a></p>
+        ${doc.message ? `<p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:#374151;border-left:3px solid #0070C0;padding-left:12px;">${doc.message}</p>` : ""}
+        <p style="margin:0 0 24px;"><a href="${link}" style="background:#0070C0;color:#fff;text-decoration:none;font-weight:600;font-size:15px;padding:12px 24px;border-radius:8px;display:inline-block;">Review &amp; Sign</a></p>
         <p style="margin:0;font-size:12px;color:#94a3b8;">Or paste this link into your browser:<br>${link}</p>
         <p style="margin:16px 0 0;font-size:12px;color:#94a3b8;">This link expires in ${TOKEN_TTL_DAYS} days.</p>
       </td></tr>
-      <tr><td style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:14px 32px;text-align:center;font-size:11px;color:#94a3b8;">Sent securely via the Aquila One platform.</td></tr>
+      ${jlsEmailFooterRow()}
     </table></td></tr></table></body></html>`;
 }
 
@@ -117,7 +117,7 @@ export const doSendForSignature = createServerFn({ method: "POST" })
       cc: senderEmail ? [senderEmail] : [],
       subject: `Signature requested: ${doc.title}${doc.reference ? ` (${doc.reference})` : ""}`,
       html: inviteHtml(doc, link),
-      text: `Dear ${doc.signer_name},\n\nYou have a document waiting for your signature: ${doc.title}.\n${doc.message ? `\n${doc.message}\n` : ""}\nReview & sign: ${link}\n\nThis link expires in ${TOKEN_TTL_DAYS} days.\n\nJLS Yachts · Aquila One`,
+      text: `Dear ${doc.signer_name},\n\nYou have a document waiting for your signature: ${doc.title}.\n${doc.message ? `\n${doc.message}\n` : ""}\nReview & sign: ${link}\n\nThis link expires in ${TOKEN_TTL_DAYS} days.\n\nJLS Yachts LLC`,
     });
 
     await (supabaseAdmin as any).from("esign_documents").update({
@@ -227,7 +227,7 @@ export const doSubmitSignature = createServerFn({ method: "POST" })
       page.drawLine({ start: { x: 56, y }, end: { x: 56 + w, y }, thickness: 1, color: rgb(0.6, 0.65, 0.7) });
     } catch { /* if the signature image fails, the typed name + audit still stand */ }
 
-    page.drawText("Signed electronically via the Aquila One platform — JLS Yachts.", {
+    page.drawText("Signed electronically with JLS Yachts LLC secure e-signature (Polaris).", {
       x: 56, y: 48, size: 9, font, color: rgb(0.5, 0.55, 0.6),
     });
 
@@ -318,7 +318,7 @@ export const doSubmitSignature = createServerFn({ method: "POST" })
         from: ANCHOR_SENDER,
         to: [doc.signer_email],
         subject: `Signed: ${doc.title}${doc.reference ? ` (${doc.reference})` : ""}`,
-        html: `<p>Thank you, ${doc.signer_name}. Your signed copy of <strong>${doc.title}</strong> is attached as a link below.</p><p><a href="${url}">Download signed document</a></p><p style="color:#94a3b8;font-size:12px;">JLS Yachts · Aquila One</p>`,
+        html: `<p>Thank you, ${doc.signer_name}. Your signed copy of <strong>${doc.title}</strong> is attached as a link below.</p><p><a href="${url}">Download signed document</a></p><p style="color:#94a3b8;font-size:12px;">JLS Yachts LLC</p>`,
         text: `Thank you, ${doc.signer_name}. Signed copy: ${url}`,
       });
     } catch { /* non-fatal */ }
@@ -381,7 +381,7 @@ export const doUploadSignedCopy = createServerFn({ method: "POST" })
         from: ANCHOR_SENDER,
         to: [doc.signer_email],
         subject: `Received: ${doc.title}${doc.reference ? ` (${doc.reference})` : ""}`,
-        html: `<p>Thank you, ${String(doc.signer_name).replace(/</g, "&lt;")}. We have received your signed copy of <strong>${doc.title}</strong>.</p><p><a href="${url}">Download your copy</a></p><p style="color:#94a3b8;font-size:12px;">JLS Yachts · Aquila One</p>`,
+        html: `<p>Thank you, ${String(doc.signer_name).replace(/</g, "&lt;")}. We have received your signed copy of <strong>${doc.title}</strong>.</p><p><a href="${url}">Download your copy</a></p><p style="color:#94a3b8;font-size:12px;">JLS Yachts LLC</p>`,
         text: `Thank you, ${doc.signer_name}. We have received your signed copy of ${doc.title}: ${url}`,
       });
     } catch { /* non-fatal */ }
