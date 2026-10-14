@@ -71,6 +71,14 @@ export async function requireAccess(
 
   const email = (user.email ?? "").toLowerCase();
 
+  // A guest login (outside person who only sees documents shared with them) is
+  // never staff. Everything after this runs with the service role, so RLS's
+  // guest fence can't help here — refuse outright, even for "any signed-in user"
+  // routes.
+  const { data: guestAcct } = await sb
+    .from("guest_accounts").select("id").eq("user_id", user.id).eq("active", true).limit(1);
+  if (guestAcct?.length) return deny(403, "Guest accounts cannot use this");
+
   // Resolve claims from user_profiles (+ module access).
   const { data: profile } = await sb
     .from("user_profiles")

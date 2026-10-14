@@ -7,6 +7,8 @@
  *     email/login when ready (temp password shown once), reset passwords,
  *     deactivate, preview. Everyone signs in at /portal with mandatory MFA. A boat
  *     owner with several boats has one row per boat, all on the same login.
+ *   · Guests — outside people who see only the documents staff share with them
+ *     (see guest-users.tsx).
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -20,6 +22,7 @@ import { PortalAlertRecipients } from "@/components/admin/portal-alert-recipient
 import { PORTAL_THEMES } from "@/lib/portal/portal-theme";
 import { BOAT_FEATURES, PORTAL_MODULES, boatHiddenSections, moduleState, type PortalModuleKey, type PortalModuleRow } from "@/lib/portal/portal-modules";
 import { PortalAddresses } from "./portal-addresses";
+import { GuestUsersPanel } from "./guest-users";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { UserTable } from "@/components/admin/users/UserTable";
@@ -47,7 +50,7 @@ const openPreview = (r: CaptainRow) =>
 
 
 export function ManageUsers() {
-  const [tab, setTab] = useState<"staff" | "vessel">("staff");
+  const [tab, setTab] = useState<"staff" | "vessel" | "guests">("staff");
 
   return (
     <div className="dark pds-embed rounded-xl border border-border/60 overflow-hidden" style={{ background: "transparent" }}>
@@ -70,9 +73,18 @@ export function ManageUsers() {
         >
           <Anchor className="h-4 w-4" /> Client Portal
         </button>
+        <button
+          onClick={() => setTab("guests")}
+          className={cn(
+            "flex shrink-0 items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition",
+            tab === "guests" ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <UserRound className="h-4 w-4" /> Guests
+        </button>
       </div>
       <div className="p-4">
-        {tab === "staff" ? <StaffPanel /> : <VesselUsersPanel />}
+        {tab === "staff" ? <StaffPanel /> : tab === "vessel" ? <VesselUsersPanel /> : <GuestUsersPanel />}
       </div>
     </div>
   );

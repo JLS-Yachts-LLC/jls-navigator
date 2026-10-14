@@ -1104,6 +1104,23 @@ export default {
       const { documentShareOpenHandler } = await import('./routes/api.documents')
       return documentShareOpenHandler(request)
     }
+    // Guests — outside logins that see only the Training files/folders shared with them.
+    if (url.pathname === '/api/admin/guests') {
+      const { adminGuestsHandler } = await import('./routes/api.admin.guests')
+      return adminGuestsHandler(request)
+    }
+    if (url.pathname === '/api/guest-shares') {
+      const { guestSharesHandler } = await import('./routes/api.guest-shares')
+      return guestSharesHandler(request)
+    }
+    if (url.pathname === '/api/guest/forgot-password') {
+      const { guestForgotPasswordHandler } = await import('./routes/api.guest.forgot-password')
+      return guestForgotPasswordHandler(request)
+    }
+    if (url.pathname === '/api/guest') {
+      const { guestHandler } = await import('./routes/api.guest')
+      return guestHandler(request)
+    }
     // Staff-only: kill a link that has already gone out, or put it back.
     if (url.pathname === '/api/documents/revoke') {
       const { documentRevokeHandler } = await import('./routes/api.documents.revoke')

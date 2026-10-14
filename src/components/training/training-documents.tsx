@@ -31,6 +31,12 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import { DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+import { ShareDialog, type ShareTarget } from "@/components/guest/share-dialog";
+import { isLive } from "@/lib/guest/shares";
+import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
@@ -113,6 +119,10 @@ export function TrainingDocuments({ yachtId }: { yachtId: string | null }) {
   const [renaming, setRenaming] = useState<Target | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [moving, setMoving] = useState<Target | null>(null);
+  /** Share with guests — the item whose share dialog is open. */
+  const [sharing, setSharing] = useState<ShareTarget | null>(null);
+  /** Folder and document ids with at least one live guest share, for the row marker. */
+  const [sharedIds, setSharedIds] = useState<Set<string>>(new Set());
   /** Long-running row action, e.g. zipping a folder — shown on the row itself. */
   const [working, setWorking] = useState<{ id: string; label: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -140,6 +150,14 @@ export function TrainingDocuments({ yachtId }: { yachtId: string | null }) {
   }, [yachtId]);
 
   useEffect(() => { void load(); }, [load]);
+
+  const loadShared = useCallback(async () => {
+    const { data } = await db().from("guest_shares").select("resource_id, revoked_at, expires_at")
+      .in("resource_type", ["training_folder", "training_document"]).is("revoked_at", null);
+    setSharedIds(new Set(((data ?? []) as any[]).filter((r) => isLive(r)).map((r) => r.resource_id)));
+  }, []);
+  useEffect(() => { void loadShared(); }, [loadShared]);
+
   // Switching vessel can leave us inside a folder that view cannot see.
   useEffect(() => { setPath([]); }, [yachtId]);
 
@@ -467,6 +485,36 @@ export function TrainingDocuments({ yachtId }: { yachtId: string | null }) {
       .map(({ f }) => f);
   }
 
+  function openShare(t: Target) {
+    setSharing(t.kind === "folder"
+      ? { type: "training_folder", id: t.folder.id, name: t.folder.name, folderId: t.folder.id }
+      : { type: "training_document", id: t.doc.id, name: targetName(t), folderId: t.doc.folder_id ?? null });
+  }
+
+  /**
+   * The row's actions, for both the ⋯ menu and the right-click menu — they take
+   * the same item components, so the two can never drift apart.
+   */
+  function rowActions(target: Target, Item: typeof DropdownMenuItem, Separator: typeof DropdownMenuSeparator) {
+    return (
+      <>
+        <Item onClick={() => openShare(target)}>
+          <TIcon name="share" size={14} style={{ marginRight: 8 }} /> Share with guests…
+        </Item>
+        <Separator />
+        <Item onClick={() => openRename(target)}>Rename</Item>
+        <Item onClick={() => setMoving(target)}>Move to folder…</Item>
+        <Item onClick={() => void doDownload(target)}>Download</Item>
+        <Item onClick={() => void doDuplicate(target)}>Duplicate</Item>
+        <Item
+          className="text-destructive focus:text-destructive"
+          onClick={() => target.kind === "folder" ? setDeleteFolder(target.folder) : setDeleteDoc(target.doc)}>
+          Remove
+        </Item>
+      </>
+    );
+  }
+
   /** The row's ⋯ menu — same actions for a folder and a document. */
   function RowMenu({ target }: { target: Target }) {
     return (
@@ -479,19 +527,32 @@ export function TrainingDocuments({ yachtId }: { yachtId: string | null }) {
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={() => openRename(target)}>Rename</DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setMoving(target)}>Move to folder…</DropdownMenuItem>
-          <DropdownMenuItem onClick={() => void doDownload(target)}>Download</DropdownMenuItem>
-          <DropdownMenuItem onClick={() => void doDuplicate(target)}>Duplicate</DropdownMenuItem>
-          <DropdownMenuItem
-            className="text-destructive focus:text-destructive"
-            onClick={() => target.kind === "folder" ? setDeleteFolder(target.folder) : setDeleteDoc(target.doc)}>
-            Remove
-          </DropdownMenuItem>
+          {rowActions(target, DropdownMenuItem, DropdownMenuSeparator)}
         </DropdownMenuContent>
       </DropdownMenu>
     );
   }
+
+  /** A folder or document row — right-click opens the same actions as the ⋯ menu. */
+  function rowShell(key: string, target: Target, children: React.ReactNode) {
+    return (
+      <ContextMenu key={key}>
+        <ContextMenuTrigger asChild>
+          <div style={rowStyle} className="group">{children}</div>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          {rowActions(target, ContextMenuItem as unknown as typeof DropdownMenuItem, ContextMenuSeparator as unknown as typeof DropdownMenuSeparator)}
+        </ContextMenuContent>
+      </ContextMenu>
+    );
+  }
+
+  /** "Shared with guests" marker beside a name. */
+  const sharedMark = (id: string) => sharedIds.has(id) ? (
+    <span title="Shared with guests" style={{ display: "inline-flex", marginLeft: 6, verticalAlign: "middle" }}>
+      <TIcon name="share" size={12} color="var(--pds-accent)" />
+    </span>
+  ) : null;
 
   /** How many documents sit in this folder and everything under it. */
   function countIn(folderId: string): number {
@@ -642,28 +703,27 @@ export function TrainingDocuments({ yachtId }: { yachtId: string | null }) {
             {folderHits.slice(0, SEARCH_LIMIT).map((f) => {
               const n = countIn(f.id);
               return (
-                <div key={f.id} style={rowStyle} className="group">
+                rowShell(f.id, { kind: "folder", folder: f }, <>
                   <button onClick={() => openFolder(f.id)}
                     style={{ display: "flex", alignItems: "center", gap: 12, background: "none", border: "none", padding: 0, cursor: "pointer", flex: 1, minWidth: 0, textAlign: "left" }}>
                     <TIcon name="folder" size={18} color="var(--pds-gold-light)" />
                     <span style={{ minWidth: 0 }}>
-                      <span style={{ ...nameStyle, display: "block" }}>{f.name}</span>
+                      <span style={{ ...nameStyle, display: "block" }}>{f.name}{sharedMark(f.id)}</span>
                       <span style={{ ...subStyle, display: "block" }}>
                         In {locationOf(f.parent_id ?? null)} · {n === 0 ? "empty" : `${n} document${n === 1 ? "" : "s"}`}
                       </span>
                     </span>
                   </button>
                   <RowMenu target={{ kind: "folder", folder: f }} />
-                </div>
+                </>)
               );
             })}
 
-            {docHits.slice(0, Math.max(0, SEARCH_LIMIT - folderHits.length)).map((d) => (
-              <div key={d.id} style={rowStyle} className="group">
+            {docHits.slice(0, Math.max(0, SEARCH_LIMIT - folderHits.length)).map((d) => rowShell(d.id, { kind: "doc", doc: d }, <>
                 <TIcon name="file-description" size={18} color="var(--pds-text-secondary)" />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <SignedAnchor stored={d.file_url} style={{ ...nameStyle, display: "block", textDecoration: "none" }}>
-                    {d.title ?? d.file_name ?? "Document"}
+                    {d.title ?? d.file_name ?? "Document"}{sharedMark(d.id)}
                   </SignedAnchor>
                   <span style={{ ...subStyle, display: "block" }}>
                     {working?.id === d.id ? working.label : (
@@ -681,8 +741,7 @@ export function TrainingDocuments({ yachtId }: { yachtId: string | null }) {
                 {working?.id === d.id
                   ? <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--pds-text-secondary)", margin: 4 }} />
                   : <RowMenu target={{ kind: "doc", doc: d }} />}
-              </div>
-            ))}
+              </>))}
 
             {hitCount > SEARCH_LIMIT && (
               <p style={{ fontSize: "var(--pds-fs-label)", color: "var(--pds-text-secondary)", padding: "12px 0 0", margin: 0 }}>
@@ -707,12 +766,12 @@ export function TrainingDocuments({ yachtId }: { yachtId: string | null }) {
           {childFolders.map((f) => {
             const n = countIn(f.id);
             return (
-              <div key={f.id} style={rowStyle} className="group">
+              rowShell(f.id, { kind: "folder", folder: f }, <>
                 <button onClick={() => setPath([...path, f.id])}
                   style={{ display: "flex", alignItems: "center", gap: 12, background: "none", border: "none", padding: 0, cursor: "pointer", flex: 1, minWidth: 0, textAlign: "left" }}>
                   <TIcon name="folder" size={18} color="var(--pds-gold-light)" />
                   <span style={{ minWidth: 0 }}>
-                    <span style={{ ...nameStyle, display: "block" }}>{f.name}</span>
+                    <span style={{ ...nameStyle, display: "block" }}>{f.name}{sharedMark(f.id)}</span>
                     <span style={{ ...subStyle, display: "block" }}>
                       {working?.id === f.id ? working.label : (
                         <>
@@ -726,16 +785,15 @@ export function TrainingDocuments({ yachtId }: { yachtId: string | null }) {
                 {working?.id === f.id
                   ? <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--pds-text-secondary)", margin: 4 }} />
                   : <RowMenu target={{ kind: "folder", folder: f }} />}
-              </div>
+              </>)
             );
           })}
 
-          {childDocs.map((d) => (
-            <div key={d.id} style={rowStyle} className="group">
+          {childDocs.map((d) => rowShell(d.id, { kind: "doc", doc: d }, <>
               <TIcon name="file-description" size={18} color="var(--pds-text-secondary)" />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <SignedAnchor stored={d.file_url} style={{ ...nameStyle, display: "block", textDecoration: "none" }}>
-                  {d.title ?? d.file_name ?? "Document"}
+                  {d.title ?? d.file_name ?? "Document"}{sharedMark(d.id)}
                 </SignedAnchor>
                 <span style={{ ...subStyle, display: "block" }}>
                   {working?.id === d.id ? working.label : (
@@ -749,8 +807,7 @@ export function TrainingDocuments({ yachtId }: { yachtId: string | null }) {
               {working?.id === d.id
                 ? <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--pds-text-secondary)", margin: 4 }} />
                 : <RowMenu target={{ kind: "doc", doc: d }} />}
-            </div>
-          ))}
+            </>))}
         </div>
       )}
 
@@ -843,6 +900,8 @@ export function TrainingDocuments({ yachtId }: { yachtId: string | null }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ShareDialog target={sharing} folders={folders} onClose={() => setSharing(null)} onChanged={() => void loadShared()} />
 
       <AlertDialog open={!!deleteFolder} onOpenChange={(o) => !o && setDeleteFolder(null)}>
         <AlertDialogContent>

@@ -42,6 +42,11 @@ export function AppLayout() {
       .then(({ data }: any) => {
         if (data?.length) window.location.assign("/portal");
       });
+    // Guests (outside people who only see documents shared with them) have their
+    // own page. They can't read guest_accounts, so ask the database directly.
+    (supabase as any).rpc("is_portal_guest").then(({ data }: any) => {
+      if (data === true) window.location.assign("/guest");
+    });
   }, [user]);
 
   // Capture JS errors once, for the bug-report widget's activity log + the

@@ -65,6 +65,14 @@ export async function requireAdminAccess(
     .eq('active', true)
     .limit(1)
   if (captainAcct?.length) return denied(403, 'Client-portal accounts cannot access staff areas')
+  // The same goes for a guest login (outside people who only see shared documents).
+  const { data: guestAcct } = await sb
+    .from('guest_accounts')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('active', true)
+    .limit(1)
+  if (guestAcct?.length) return denied(403, 'Guest accounts cannot access staff areas')
 
   // Resolve role + org. Source order:
   //   1. app_metadata (set by the JWT hook — not deployed yet, Edge Fns off)
