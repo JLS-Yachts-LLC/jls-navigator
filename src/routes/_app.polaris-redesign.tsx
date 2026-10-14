@@ -10,7 +10,7 @@ import { useAuth } from "@/lib/auth";
 import { usePolarisRole } from "@/lib/use-polaris-role";
 import { LeoFloatingChat } from "@/components/leo/LeoFloatingChat";
 import "@/components/polaris-ui/tokens.css";
-import { PolarisShell, navItemForScreen, type PolarisRole } from "@/components/polaris-ui/shell";
+import { PolarisShell, navItemForScreen, RESTRICTED_NAV, type PolarisRole } from "@/components/polaris-ui/shell";
 import { ToastProvider } from "@/components/polaris-ui/feedback";
 import {
   PolarisButton,
@@ -100,9 +100,8 @@ function PolarisRedesignApp() {
   // (including the default Dashboard landing) redirects to their first page.
   const role = usePolarisRole();
   useEffect(() => {
-    if (role === "logistics_team" && !["vessels", "logistics"].includes(screen)) {
-      setScreen("vessels");
-    }
+    const allowed = RESTRICTED_NAV[role];
+    if (allowed && !allowed.includes(screen)) setScreen(allowed[0]);
   }, [role, screen]);
 
   /**

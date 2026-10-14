@@ -2,7 +2,6 @@ import { Outlet, useNavigate, useLocation } from "@tanstack/react-router";
 import { useEffect } from "react";
 import "@/components/polaris-ui/tokens.css";
 import { PolarisShell, navItemForScreen, activeScreenForPath } from "@/components/polaris-ui/shell";
-import { ViewAsBanner } from "@/components/view-as-banner";
 import { LeoFloatingChat } from "@/components/leo/LeoFloatingChat";
 import { DeployWatcher } from "@/components/deploy-watcher";
 import { WorkingIndicator } from "@/components/working-indicator";
@@ -113,7 +112,7 @@ export function AppLayout() {
         userInitials={(user.email ?? "?").slice(0, 2).toUpperCase()}
         userName={user.email ?? "User"}
       >
-        <ViewAsBanner />
+        {/* The View-as banner is drawn by PolarisShell itself, once. */}
         <Outlet />
       </PolarisShell>
       <WorkingIndicator />

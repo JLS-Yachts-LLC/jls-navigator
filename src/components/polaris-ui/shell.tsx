@@ -26,7 +26,10 @@ export type PolarisRole =
   | "crew_immigration"
   | "captain"
   | "crew"
-  | "logistics_team";
+  | "logistics_team"
+  /** The Port Agency team: Orbit 2 (Bunkering only) and the Bunkering screen.
+   *  Not a database role — anyone with `orbit2_bunkering` and no `orbit` (see use-polaris-role). */
+  | "port_bunkering";
 
 export interface NavItem {
   label: string;
@@ -204,8 +207,9 @@ export const NAV_GROUPS: NavGroup[] = [
 
 /** Restricted roles see ONLY these screens — everything else is hidden, even
  *  items with no `roles` gate (which are otherwise visible to all). */
-const RESTRICTED_NAV: Partial<Record<PolarisRole, string[]>> = {
+export const RESTRICTED_NAV: Partial<Record<PolarisRole, string[]>> = {
   logistics_team: ["vessels", "logistics"],
+  port_bunkering: ["orbit2", "route-bunkering"],
 };
 
 /**
