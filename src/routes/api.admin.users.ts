@@ -170,6 +170,17 @@ const handlers = {
     if (!STAFF_ROLES.includes(role)) {
       return json({ error: `${role} is a client-portal role — invite staff from the Internal Staff tab only.` }, 400)
     }
+    // An active guest login must never also become staff: the staff record would
+    // carry it straight past the guest fence (storage treats "has a user_profiles
+    // row" as staff). Deactivate the guest first if they really are joining.
+    {
+      const sbCheck = getAdmin()
+      const { data: guest } = await sbCheck.from('guest_accounts').select('id')
+        .ilike('email', email.trim()).eq('active', true).limit(1)
+      if (guest?.length) {
+        return json({ error: `${email} is a guest login. Deactivate it under Manage Users → Guests before inviting them as staff.` }, 400)
+      }
+    }
 
     // Org admins may not grant global-scope roles.
     if (session.user.role === 'org_admin' && roleRow.scope === 'global') {

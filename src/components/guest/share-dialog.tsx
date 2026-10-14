@@ -241,7 +241,7 @@ export function ShareDialog({ target, onClose, onChanged }: {
             <section className="grid gap-3">
               {guests.length === 0 && groups.length === 0 ? (
                 <p className="rounded-lg border border-border/60 bg-card/40 p-3 text-sm text-muted-foreground">
-                  There are no guests yet. An admin can add them in <span className="text-foreground">Settings → Manage Users → Guests</span>.
+                  There are no guests yet. An admin, or anyone with the Guest Access permission, can add them in <span className="text-foreground">Settings → Manage Users → Guests</span>.
                 </p>
               ) : (
                 <>

@@ -1,5 +1,8 @@
 /**
- * Guest accounts and guest groups — admin only.
+ * Guest accounts and guest groups — admins, and staff given the "Guest Access"
+ * permission (Settings → Manage Users → the person → Modules):
+ *   Create or higher → everything below except set-active;
+ *   Edit or higher   → set-active too (deactivate / reactivate).
  *
  *   POST /api/admin/guests
  *     { action: "invite", email, displayName?, company?, groupIds? }
@@ -18,13 +21,18 @@
  * so the login, the email and the audit trail always happen together.
  *
  * Safety: never turns a staff or Client Portal login into a guest — a staff
- * account converted to a guest would instantly lose all staff access (RLS).
+ * account converted to a guest would instantly lose all staff access (RLS), and
+ * its staff record (user_profiles) is referenced by its history, so it can't
+ * simply be removed. A JLS / New Horizon address IS allowed as a guest, as long
+ * as it has no staff login: ad-hoc people are sometimes given a company mailbox
+ * but should still see only what is shared with them.
  */
 import { requireAdminAccess } from "@/lib/admin/access";
+import { requireAccess } from "@/lib/auth/requireAccess.server";
+import { PERMISSION_ORDER, type PermissionLevel } from "@/lib/auth/claims";
 import { logAuditEvent } from "@/lib/admin/audit";
 import { guestAdmin, json } from "@/lib/guest/guest-auth.server";
 import { sendGuestInvite } from "@/lib/guest/guest-email.server";
-import { isInternalAddress } from "@/lib/mail-guard.server";
 
 /** Staff identity rows the auth.users triggers would create — a guest must have none. */
 async function stripStaffIdentity(sb: any, userId: string): Promise<void> {
@@ -50,20 +58,45 @@ const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 /** Effectively "until reactivated". */
 const BAN_FOREVER = "876000h";
 
+type Manager = { id: string; email: string; role: string; canDeactivate: boolean };
+
+/**
+ * Who may manage guests: an admin (global / org), or a staff member holding the
+ * Guest Access module at Create or above. Both checks refuse portal and guest
+ * logins outright.
+ */
+async function guestManager(request: Request): Promise<{ ok: true; actor: Manager } | { ok: false; response: Response }> {
+  const admin = await requireAdminAccess(request);
+  if (admin.ok) return { ok: true, actor: { ...admin.user, canDeactivate: true } };
+  const access = await requireAccess(request, { module: "guest_access", level: "create" });
+  if (!access.ok) {
+    return { ok: false, response: json({ error: "Managing guests needs the Guest Access permission. Ask an admin to switch it on for you." }, 403) };
+  }
+  const level = access.claims.moduleLevels.guest_access as PermissionLevel | undefined;
+  const atLeast = (want: PermissionLevel) => !!level && PERMISSION_ORDER.indexOf(level) >= PERMISSION_ORDER.indexOf(want);
+  return {
+    ok: true,
+    actor: {
+      id: access.claims.userId, email: access.claims.email, role: access.claims.roleName ?? "staff",
+      canDeactivate: access.claims.isGlobalAdmin || atLeast("edit"),
+    },
+  };
+}
+
 export async function adminGuestsHandler(request: Request): Promise<Response> {
   if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);
-  const session = await requireAdminAccess(request);
+  const session = await guestManager(request);
   if (!session.ok) return session.response;
 
   const body = (await request.json().catch(() => ({}))) as Record<string, any>;
   const sb = guestAdmin();
-  const actor = session.user;
+  const actor = session.actor;
   const { data: me } = await sb.from("user_profiles").select("display_name").eq("user_id", actor.id).maybeSingle();
   const actorName: string = me?.display_name ?? actor.email;
 
   const audit = (label: string, detail: string, targetType = "guest_account") => logAuditEvent({
     event_type: "PERM",
-    actor_id: actor.id, actor_email: actor.email, actor_role: actor.role,
+    actor_id: actor.id, actor_email: actor.email, actor_role: actor.role as any,
     target_type: targetType, target_label: label, detail,
     ip_address: request.headers.get("x-forwarded-for"), result: "success",
   });
@@ -94,9 +127,6 @@ export async function adminGuestsHandler(request: Request): Promise<Response> {
   if (body.action === "invite") {
     const email = String(body.email ?? "").trim().toLowerCase();
     if (!EMAIL_RE.test(email)) return json({ error: "Enter a valid email address." }, 400);
-    if (isInternalAddress(email)) {
-      return json({ error: `${email} is a JLS / New Horizon address — staff should be invited from the Internal Staff tab.` }, 400);
-    }
     const displayName = String(body.displayName ?? "").trim() || null;
     const company = String(body.company ?? "").trim() || null;
 
@@ -109,7 +139,11 @@ export async function adminGuestsHandler(request: Request): Promise<Response> {
         sb.from("guest_accounts").select("id").eq("user_id", existing.id).limit(1),
       ]);
       if (captain?.length) return json({ error: `${email} is a Client Portal login — a guest needs its own email address.` }, 400);
-      if (profile && !guestRow?.length) return json({ error: `${email} is a STAFF account — a guest needs its own email address.` }, 400);
+      if (profile && !guestRow?.length) {
+        return json({
+          error: `${email} already has a staff login, so it can't also be a guest. Remove their staff access first, or invite them with a different email address.`,
+        }, 400);
+      }
       userId = existing.id;
       await sb.auth.admin.updateUserById(userId, {
         ban_duration: "none",
@@ -169,6 +203,9 @@ export async function adminGuestsHandler(request: Request): Promise<Response> {
     }
 
     // set-active: the flag stops every /api/guest call at once; the ban stops new sign-ins.
+    if (!actor.canDeactivate) {
+      return json({ error: "Deactivating guests needs Guest Access at Edit or above." }, 403);
+    }
     const active = !!body.active;
     const { error } = await sb.from("guest_accounts").update({ active }).eq("id", guest.id);
     if (error) return json({ error: error.message }, 500);

@@ -14,6 +14,11 @@
  *                     end date, last opened. Change or revoke from here.
  *   · Activity      — what guests opened, downloaded, uploaded or changed.
  *
+ * Who can do what: admins can do everything. Other staff need the "Guest
+ * Access" permission (their Modules in Internal Staff): Create to invite and
+ * edit guests and groups, Edit to also deactivate. Without it the tabs are
+ * read-only. Sharing itself is open to every staff member.
+ *
  * Reads are direct (staff RLS on the guest tables); writes go through
  * /api/admin/guests and /api/guest-shares so emails and the audit trail follow.
  */
@@ -25,6 +30,7 @@ import {
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import { useAccess } from "@/lib/auth/useAccess";
 import { cn } from "@/lib/utils";
 import { fetchAllRows } from "@/lib/fetch-all";
 import { Button } from "@/components/ui/button";
@@ -47,6 +53,8 @@ type ActivityRow = {
   resource_name: string | null; detail: string | null; created_at: string;
 };
 type Sub = "guests" | "groups" | "shares" | "activity";
+/** What the signed-in staff member may change here (the server checks again). */
+type GuestPerms = { manage: boolean; deactivate: boolean };
 /** Names for shared things that aren't Training folders, keyed by id. */
 type Named = { name: string; folderId?: string | null; yachtId?: string | null };
 
@@ -67,6 +75,12 @@ export function GuestUsersPanel() {
   const { session } = useAuth();
   const token = (session as any)?.access_token ?? "";
   const [sub, setSub] = useState<Sub>("guests");
+  const access = useAccess();
+  const isAdmin = access.isGlobalAdmin || access.claims.roleName === "org_admin";
+  const perms: GuestPerms = {
+    manage: isAdmin || access.canAccessModule("guest_access", "create"),
+    deactivate: isAdmin || access.canAccessModule("guest_access", "edit"),
+  };
   const [loading, setLoading] = useState(true);
   const [guests, setGuests] = useState<Guest[]>([]);
   const [groups, setGroups] = useState<GroupRow[]>([]);
@@ -155,10 +169,10 @@ export function GuestUsersPanel() {
       {loading && !guests.length && !groups.length ? (
         <div className="flex h-32 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
       ) : sub === "guests" ? (
-        <GuestsTab guests={guests} groups={groups} members={members} shares={shares} api={api} reload={load}
+        <GuestsTab perms={perms} guests={guests} groups={groups} members={members} shares={shares} api={api} reload={load}
           onShowShares={(id) => { setShareFilter(`g:${id}`); setSub("shares"); }} />
       ) : sub === "groups" ? (
-        <GroupsTab guests={guests} groups={groups} members={members} shares={shares} api={api} reload={load}
+        <GroupsTab perms={perms} guests={guests} groups={groups} members={members} shares={shares} api={api} reload={load}
           onShowShares={(id) => { setShareFilter(`G:${id}`); setSub("shares"); }} />
       ) : sub === "shares" ? (
         <SharesTab guests={guests} groups={groups} members={members} shares={shares} folders={folders} docNames={docNames}
@@ -171,7 +185,8 @@ export function GuestUsersPanel() {
 }
 
 // ── Guests ───────────────────────────────────────────────────────────────────
-function GuestsTab({ guests, groups, members, shares, api, reload, onShowShares }: {
+function GuestsTab({ perms, guests, groups, members, shares, api, reload, onShowShares }: {
+  perms: GuestPerms;
   guests: Guest[]; groups: GroupRow[]; members: Member[]; shares: GuestShare[];
   api: (path: string, body: unknown) => Promise<any>; reload: () => Promise<void>;
   onShowShares: (guestId: string) => void;
@@ -209,7 +224,11 @@ function GuestsTab({ guests, groups, members, shares, api, reload, onShowShares 
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search guests…" className={cn(inputCls, "w-64 pl-8")} />
         </div>
-        <Button size="sm" className="ml-auto gap-1.5" onClick={() => setEditing("new")}><Plus className="h-4 w-4" /> Invite guest</Button>
+        {perms.manage ? (
+          <Button size="sm" className="ml-auto gap-1.5" onClick={() => setEditing("new")}><Plus className="h-4 w-4" /> Invite guest</Button>
+        ) : (
+          <span className="ml-auto text-xs text-muted-foreground">Inviting guests needs the Guest Access permission — ask an admin.</span>
+        )}
       </div>
 
       {shown.length === 0 ? (
@@ -255,7 +274,7 @@ function GuestsTab({ guests, groups, members, shares, api, reload, onShowShares 
                     </td>
                     <td className="px-3 py-2.5">
                       <div className="flex justify-end gap-1">
-                        {busyId === g.id ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> : (
+                        {busyId === g.id ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> : !perms.manage ? null : (
                           <>
                             <IconBtn title="Edit" onClick={() => setEditing(g)}><Pencil className="h-4 w-4" /></IconBtn>
                             {g.active && (
@@ -264,7 +283,7 @@ function GuestsTab({ guests, groups, members, shares, api, reload, onShowShares 
                                 <Mail className="h-4 w-4" />
                               </IconBtn>
                             )}
-                            {g.active ? (
+                            {!perms.deactivate ? null : g.active ? (
                               <IconBtn title="Deactivate — blocks sign-in and all access" danger
                                 onClick={() => { if (window.confirm(`Deactivate ${g.email}? They lose access to everything shared with them straight away.`)) void run(g.id, () => api("/api/admin/guests", { action: "set-active", guestId: g.id, active: false }), "Guest deactivated"); }}>
                                 <Ban className="h-4 w-4" />
@@ -420,7 +439,8 @@ function InviteLinkDialog({ data, onClose }: { data: { email: string; link: stri
 }
 
 // ── Groups ───────────────────────────────────────────────────────────────────
-function GroupsTab({ guests, groups, members, shares, api, reload, onShowShares }: {
+function GroupsTab({ perms, guests, groups, members, shares, api, reload, onShowShares }: {
+  perms: GuestPerms;
   guests: Guest[]; groups: GroupRow[]; members: Member[]; shares: GuestShare[];
   api: (path: string, body: unknown) => Promise<any>; reload: () => Promise<void>;
   onShowShares: (groupId: string) => void;
@@ -437,7 +457,7 @@ function GroupsTab({ guests, groups, members, shares, api, reload, onShowShares 
   return (
     <div>
       <div className="mb-3 flex justify-end">
-        <Button size="sm" className="gap-1.5" onClick={() => setEditing("new")}><Plus className="h-4 w-4" /> New group</Button>
+        {perms.manage && <Button size="sm" className="gap-1.5" onClick={() => setEditing("new")}><Plus className="h-4 w-4" /> New group</Button>}
       </div>
       {groups.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border/60 p-8 text-center text-sm text-muted-foreground">
@@ -457,8 +477,12 @@ function GroupsTab({ guests, groups, members, shares, api, reload, onShowShares 
                     {g.description && <p className="mt-0.5 text-xs text-muted-foreground">{g.description}</p>}
                   </div>
                   <div className="flex gap-1">
-                    <IconBtn title="Edit group" onClick={() => setEditing(g)}><Pencil className="h-4 w-4" /></IconBtn>
-                    <IconBtn title="Delete group" danger onClick={() => void remove(g)}><Trash2 className="h-4 w-4" /></IconBtn>
+                    {perms.manage && (
+                      <>
+                        <IconBtn title="Edit group" onClick={() => setEditing(g)}><Pencil className="h-4 w-4" /></IconBtn>
+                        <IconBtn title="Delete group" danger onClick={() => void remove(g)}><Trash2 className="h-4 w-4" /></IconBtn>
+                      </>
+                    )}
                   </div>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-1">

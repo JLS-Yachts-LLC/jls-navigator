@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import { useAccess } from "@/lib/auth/useAccess";
 import { cn } from "@/lib/utils";
 import { PORTAL_POSITIONS, positionLabel } from "@/lib/portal/portal-positions";
 import { PortalAlertRecipients } from "@/components/admin/portal-alert-recipients";
@@ -64,6 +65,13 @@ const openPreview = (r: CaptainRow) =>
 
 export function ManageUsers() {
   const [tab, setTab] = useState<"staff" | "vessel" | "guests">("staff");
+  // Staff who aren't admins can only use the Guests tab (with the Guest Access
+  // permission), so open them there rather than on lists they can't load.
+  const access = useAccess();
+  const isAdmin = access.isGlobalAdmin || access.claims.roleName === "org_admin";
+  useEffect(() => {
+    if (!access.loading && !isAdmin) setTab("guests");
+  }, [access.loading, isAdmin]);
 
   return (
     <div className="dark pds-embed rounded-xl border border-border/60 overflow-hidden" style={{ background: "transparent" }}>
