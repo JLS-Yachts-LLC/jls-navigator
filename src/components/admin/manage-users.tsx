@@ -791,12 +791,12 @@ function PersonVesselsDialog({ person, rows, options, api, onClose, onSaved }: {
   const toAdd = [...selected].filter((k) => !initial.has(k));
   const toRemove = rows.filter((r) => !selected.has(vesselKeyOf(r)));
   const name = person.display_name ?? person.email ?? "this person";
-  const label = (k: string) => options.find((o) => o.key === k)?.label ?? "vessel";
+  const label = (k: string) =>
+    options.find((o) => o.key === k)?.label ?? vesselNameOf(rows.find((r) => vesselKeyOf(r) === k) ?? person) ?? "vessel";
+  // Save first shows what is about to change; nothing is written until it's confirmed.
+  const [confirming, setConfirming] = useState(false);
 
   const save = async () => {
-    if (toRemove.length && !confirm(
-      `Take ${name} off ${toRemove.map(vesselNameOf).join(", ")}? They lose access to ${toRemove.length === 1 ? "it" : "them"} straight away.`,
-    )) return;
     setBusy(true);
     const done: string[] = [];
     let reveal: { email: string; password: string; portalUrl?: string } | null = null;
@@ -827,7 +827,8 @@ function PersonVesselsDialog({ person, rows, options, api, onClose, onSaved }: {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    // While saving, a stray click outside must not close it half-way.
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
       <div className="w-full max-w-md space-y-4 rounded-2xl border border-border bg-card p-5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -836,24 +837,75 @@ function PersonVesselsDialog({ person, rows, options, api, onClose, onSaved }: {
           </div>
           <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
         </div>
-        <p className="text-xs text-muted-foreground">
-          Tick every yacht and boat {name} should see. {person.user_id
-            ? "New ones appear in their portal Fleet straight away — same login, same password."
-            : "They share one login once it's created."}
-        </p>
-        <VesselChecklist options={options} selected={selected} onToggle={toggle} />
-        <div className="text-xs text-muted-foreground">
-          {selected.size} selected
-          {toAdd.length > 0 && <span className="text-emerald-300"> · +{toAdd.length} to add</span>}
-          {toRemove.length > 0 && <span className="text-red-300"> · −{toRemove.length} to remove</span>}
-        </div>
-        <div className="flex gap-2">
-          <Button onClick={() => void save()} disabled={busy || (!toAdd.length && !toRemove.length)} className="flex-1 gap-1.5">
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Save vessels
-          </Button>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-        </div>
+        {confirming ? (
+          <>
+            <p className="text-sm font-semibold">Are you sure? Please check these changes.</p>
+            {toAdd.length > 0 && (
+              <ConfirmVesselList tone="add" title={`Assigning ${toAdd.length} vessel${toAdd.length === 1 ? "" : "s"} to ${name}`}
+                                 items={toAdd.map((k) => ({ key: k, label: label(k), sub: options.find((o) => o.key === k)?.sub ?? "" }))} />
+            )}
+            {toRemove.length > 0 && (
+              <ConfirmVesselList tone="remove" title={`Removing ${toRemove.length} vessel${toRemove.length === 1 ? "" : "s"} — access ends straight away`}
+                                 items={toRemove.map((r) => ({ key: vesselKeyOf(r), label: vesselNameOf(r), sub: r.yacht_id ? "Yacht" : "Managed boat" }))} />
+            )}
+            <p className="text-xs text-muted-foreground">
+              Afterwards {name} will see {selected.size === 0 ? "no vessels" : `${selected.size} vessel${selected.size === 1 ? "" : "s"}`}
+              {selected.size > 0 && `: ${[...selected].map(label).sort().join(", ")}`}.
+            </p>
+            <div className="flex gap-2">
+              <Button onClick={() => void save()} disabled={busy} className="flex-1 gap-1.5">
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Yes, save these changes
+              </Button>
+              <Button variant="outline" disabled={busy} onClick={() => setConfirming(false)}>No, go back</Button>
+            </div>
+            <button type="button" disabled={busy} onClick={onClose}
+                    className="w-full text-center text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">
+              Cancel — make no changes
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="text-xs text-muted-foreground">
+              Tick every yacht and boat {name} should see. {person.user_id
+                ? "New ones appear in their portal Fleet straight away — same login, same password."
+                : "They share one login once it's created."}
+            </p>
+            <VesselChecklist options={options} selected={selected} onToggle={toggle} />
+            <div className="text-xs text-muted-foreground">
+              {selected.size} selected
+              {toAdd.length > 0 && <span className="text-emerald-300"> · +{toAdd.length} to add</span>}
+              {toRemove.length > 0 && <span className="text-red-300"> · −{toRemove.length} to remove</span>}
+            </div>
+            <div className="flex gap-2">
+              <Button onClick={() => setConfirming(true)} disabled={!toAdd.length && !toRemove.length} className="flex-1 gap-1.5">
+                <Check className="h-4 w-4" /> Save vessels
+              </Button>
+              <Button variant="outline" onClick={onClose}>Cancel</Button>
+            </div>
+          </>
+        )}
       </div>
+    </div>
+  );
+}
+
+/** The vessels a save is about to add or remove, for the confirm step. */
+function ConfirmVesselList({ tone, title, items }: {
+  tone: "add" | "remove"; title: string; items: Array<{ key: string; label: string; sub: string }>;
+}) {
+  return (
+    <div className={cn("rounded-lg border p-3",
+      tone === "add" ? "border-emerald-500/30 bg-emerald-500/5" : "border-red-500/30 bg-red-500/5")}>
+      <div className={cn("mb-2 text-xs font-semibold", tone === "add" ? "text-emerald-300" : "text-red-300")}>{title}</div>
+      <ul className="max-h-44 space-y-1 overflow-auto">
+        {items.map((i) => (
+          <li key={i.key} className="flex items-center gap-2 text-sm">
+            {i.key.startsWith("y:") ? <Anchor className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : <Ship className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+            <span className={cn("min-w-0 flex-1 truncate font-medium", tone === "remove" && "line-through decoration-red-400/60")}>{i.label}</span>
+            <span className="shrink-0 text-xs text-muted-foreground">{i.sub}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
