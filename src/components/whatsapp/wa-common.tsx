@@ -154,3 +154,48 @@ export function Empty({ title, children }: { title: string; children?: React.Rea
     </div>
   );
 }
+
+// ─── Numbers ("lines") ────────────────────────────────────────────────────────
+
+/** A WhatsApp number Polaris speaks for (see lib/whatsapp/lines.server.ts). */
+export interface WaLine {
+  id: string;
+  label: string;
+  phone_number_id: string | null;
+  waba_id: string | null;
+  display_phone: string | null;
+  verified_name: string | null;
+  is_default: boolean;
+  status: "pending" | "connected" | "disconnected";
+  coexistence: boolean;
+  auto_replies_enabled: boolean;
+  human_pause_hours: number;
+  onboarded_at: string | null;
+  contacts_sync_requested_at: string | null;
+  contacts_sync_error: string | null;
+  history_sync_requested_at: string | null;
+  history_sync_error: string | null;
+  history_progress: number | null;
+  history_declined: boolean;
+  disconnected_at: string | null;
+  disconnect_reason: string | null;
+}
+export type LineLevel = "view" | "send";
+export type MyLine = WaLine & { level: LineLevel };
+
+/**
+ * The numbers the signed-in person can use, and how: "view" reads that number's
+ * conversations, "send" also replies. The database decides (wa_my_lines), the
+ * same rule the server and row-level security apply.
+ */
+export async function loadMyLines(): Promise<MyLine[]> {
+  const [{ data: mine }, { data: lines }] = await Promise.all([
+    db().rpc("wa_my_lines"),
+    db().from("wa_lines").select("*").order("is_default", { ascending: false }).order("created_at"),
+  ]);
+  const level = new Map<string, LineLevel>(((mine ?? []) as any[]).map((r) => [r.line_id, r.level]));
+  return ((lines ?? []) as WaLine[]).filter((l) => level.has(l.id)).map((l) => ({ ...l, level: level.get(l.id)! }));
+}
+
+export const lineName = (l: Pick<WaLine, "label" | "display_phone"> | null | undefined) =>
+  l ? (l.display_phone ? `${l.label} · ${l.display_phone}` : l.label) : "";

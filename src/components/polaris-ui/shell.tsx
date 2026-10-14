@@ -17,6 +17,8 @@ import { GlobalSearch } from "./global-search";
 import { useTheme } from "@/lib/theme";
 import { useAccess } from "@/lib/auth/useAccess";
 import { canAccessModule, type PolarisClaims } from "@/lib/auth/claims";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 
 export type PolarisRole =
   | "global_admin"
@@ -201,7 +203,24 @@ const RESTRICTED_NAV: Partial<Record<PolarisRole, string[]>> = {
   logistics_team: ["vessels", "logistics"],
 };
 
-function visibleGroups(role: PolarisRole, claims?: PolarisClaims): NavGroup[] {
+/**
+ * Screens a person can reach without the item's module: WhatsApp for someone
+ * given a WhatsApp number (Setup → Numbers) but not Communications.
+ */
+function useExtraScreens(userId: string | null | undefined): Set<string> {
+  const { data } = useQuery({
+    queryKey: ["wa-my-lines", userId],
+    enabled: !!userId,
+    staleTime: 5 * 60_000,
+    queryFn: async () => {
+      const { data } = await (supabase as any).rpc("wa_my_lines");
+      return ((data ?? []) as any[]).length > 0;
+    },
+  });
+  return new Set(data ? ["whatsapp"] : []);
+}
+
+function visibleGroups(role: PolarisRole, claims?: PolarisClaims, extra: Set<string> = new Set()): NavGroup[] {
   const allow = RESTRICTED_NAV[role];
   // Module gating only bites once the user actually has module grants — a user
   // with none configured keeps the full (role-filtered) menu during rollout.
@@ -210,6 +229,7 @@ function visibleGroups(role: PolarisRole, claims?: PolarisClaims): NavGroup[] {
     ...g,
     items: g.items.filter((i) => {
       if (allow ? !allow.includes(i.screen) : (i.roles && !i.roles.includes(role))) return false;
+      if (extra.has(i.screen)) return true;
       if (gate && i.module && !canAccessModule(claims!, i.module)) return false;
       if (i.grantOnly && !(claims && i.module && canAccessModule(claims, i.module))) return false;
       return true;
@@ -397,6 +417,7 @@ function NavList({
 }) {
   const badges = useFeatureBadges();
   const { claims } = useAccess();
+  const extra = useExtraScreens(claims?.userId);
   // Sections the person has folded away — saved to their account, so it's the
   // same layout on any device. A folded section holding the open screen is highlighted.
   const [closedList, setClosedList] = useUserPreference<string[]>("nav.closedGroups", [], { key: NAV_CLOSED_KEY, parse: JSON.parse });
@@ -417,7 +438,7 @@ function NavList({
         padding: collapsed ? "12px 8px" : "16px 12px",
       }}
     >
-      {visibleGroups(role, claims).map((g) => {
+      {visibleGroups(role, claims, extra).map((g) => {
         const holdsActive = g.items.some((i) => i.screen === active);
         // The icon-only rail always shows every icon. A folded section holding
         // the open screen is highlighted instead, so you can see where you are.

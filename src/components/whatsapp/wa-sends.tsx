@@ -397,7 +397,10 @@ function NewSendDialog({ onClose, onSaved }: { onClose: () => void; onSaved: (id
 
   useEffect(() => {
     void db().from("wa_lists").select("*").eq("archived", false).order("name").then(({ data }: any) => setLists(data ?? []));
-    void db().from("wa_templates").select("*").eq("status", "approved").order("name").then(({ data }: any) => setTemplates(data ?? []));
+    // Broadcasts go from the office number, so only its templates can be used.
+    void db().from("wa_lines").select("id").eq("is_default", true).maybeSingle().then(({ data: office }: any) =>
+      db().from("wa_templates").select("*").eq("status", "approved").eq("line_id", office?.id ?? "").order("name")
+        .then(({ data }: any) => setTemplates(data ?? [])));
   }, []);
 
   const t = templates.find((x) => x.id === templateId);

@@ -13,8 +13,15 @@
  * default), WhatsApp sending is on, and the contact's vessel is switched on for
  * automatic messages (client_auto_messages). Free text — allowed because the client's
  * own message has just opened the 24-hour window.
+ *
+ * Per number ("line"): the reply goes out from the number the client wrote to,
+ * only if that line allows auto-replies (the office does; a newly onboarded
+ * number doesn't until switched on), and never while a person is handling the
+ * chat — any human reply, in Polaris or typed on the phone (a Coexistence echo),
+ * sets wa_conversations.human_until and the bots stay quiet until it passes.
  */
-import { waConfig, sendingEnabled, sendText } from "@/lib/whatsapp/cloud-api.server";
+import { sendingEnabled, sendText } from "@/lib/whatsapp/cloud-api.server";
+import { configForLine, lineById } from "@/lib/whatsapp/lines.server";
 import { personalise, recipientOf } from "@/lib/whatsapp/shared";
 import { allowed, autoMessageTargets } from "@/lib/client-auto-messages.server";
 
@@ -46,6 +53,8 @@ export function officeOpen(o: AwayOptions, at = new Date()): boolean {
 
 interface Inbound {
   contactId: string | null;
+  /** The number they wrote to. */
+  lineId: string;
   fromPhone: string;
   type: string | null;
   text: string | null;
@@ -59,8 +68,14 @@ export async function maybeAutoReply(db: any, inb: Inbound): Promise<void> {
   if (!inb.contactId || inb.action) return;
   // Meta retries and replays: only answer something that's just arrived.
   if (Date.now() - Date.parse(inb.receivedAt) > 10 * 60_000) return;
-  const cfg = waConfig();
+  const line = await lineById(db, inb.lineId);
+  if (!line?.auto_replies_enabled) return;
+  const cfg = await configForLine(db, line);
   if (!cfg || !sendingEnabled()) return;
+  // A person is in this chat (replied here or on the phone recently): stay out of it.
+  const { data: conv } = await db.from("wa_conversations").select("human_until")
+    .eq("contact_id", inb.contactId).eq("line_id", line.id).maybeSingle();
+  if (conv?.human_until && Date.parse(conv.human_until) > Date.now()) return;
   // Only contacts on a vessel staff have switched on for automatic messages.
   const { data: owner } = await db.from("wa_contacts").select("yacht_id").eq("id", inb.contactId).maybeSingle();
   if (!allowed(await autoMessageTargets(), { yachtId: owner?.yacht_id })) return;
@@ -70,7 +85,7 @@ export async function maybeAutoReply(db: any, inb: Inbound): Promise<void> {
 
   if (isButton) {
     if (!inb.contextWamid || !inb.text) return;
-    const { data: orig } = await db.from("wa_messages").select("template_id").eq("wa_message_id", inb.contextWamid).maybeSingle();
+    const { data: orig } = await db.from("wa_messages").select("template_id").eq("wa_message_id", inb.contextWamid).eq("line_id", line.id).maybeSingle();
     if (!orig?.template_id) return;
     const { data: rules } = await db.from("wa_auto_replies").select("button_text, reply_text")
       .eq("kind", "button").eq("template_id", orig.template_id).eq("enabled", true);
@@ -79,7 +94,7 @@ export async function maybeAutoReply(db: any, inb: Inbound): Promise<void> {
     if (!rule?.reply_text?.trim()) return;
     // Tapped twice in quick succession: answer once.
     const { count: recent } = await db.from("wa_messages").select("id", { count: "exact", head: true })
-      .eq("contact_id", inb.contactId).eq("auto_reply", true).gte("queued_at", new Date(Date.now() - 2 * 60_000).toISOString());
+      .eq("contact_id", inb.contactId).eq("line_id", line.id).eq("auto_reply", true).gte("queued_at", new Date(Date.now() - 2 * 60_000).toISOString());
     if (recent) return;
     reply = rule.reply_text;
   } else {
@@ -91,7 +106,7 @@ export async function maybeAutoReply(db: any, inb: Inbound): Promise<void> {
     // Once per cooldown — and not if staff have replied in that time.
     const since = new Date(Date.now() - Math.max(1, Number(o.cooldown_hours ?? 12)) * 3_600_000).toISOString();
     const { count: answered } = await db.from("wa_messages").select("id", { count: "exact", head: true })
-      .eq("contact_id", inb.contactId).eq("kind", "reply").gte("queued_at", since);
+      .eq("contact_id", inb.contactId).eq("line_id", line.id).eq("kind", "reply").gte("queued_at", since);
     if (answered) return;
     reply = away.reply_text;
   }
@@ -103,14 +118,14 @@ export async function maybeAutoReply(db: any, inb: Inbound): Promise<void> {
   try {
     const wamid = await sendText(cfg, { toE164: inb.fromPhone, text });
     await db.from("wa_messages").insert({
-      contact_id: inb.contactId, kind: "reply", auto_reply: true, body: text, phone_e164: inb.fromPhone,
+      contact_id: inb.contactId, line_id: line.id, kind: "reply", auto_reply: true, body: text, phone_e164: inb.fromPhone,
       status: "sent", queued_at: now, sent_at: now, wa_message_id: wamid,
     });
   } catch (e) {
     const msg = (e instanceof Error ? e.message : String(e)).slice(0, 500);
     console.error("[wa-auto-reply] not sent:", msg);
     await db.from("wa_messages").insert({
-      contact_id: inb.contactId, kind: "reply", auto_reply: true, body: text, phone_e164: inb.fromPhone,
+      contact_id: inb.contactId, line_id: line.id, kind: "reply", auto_reply: true, body: text, phone_e164: inb.fromPhone,
       status: "failed", queued_at: now, failed_at: now, error_message: msg,
     }).then(() => {}, () => {});
   }

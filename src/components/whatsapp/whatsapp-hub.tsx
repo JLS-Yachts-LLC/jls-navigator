@@ -4,13 +4,17 @@
  * Meta-approved templates and sends with delivery tracking.
  *
  * View access reads everything; edit access sends, invites and changes.
+ *
+ * Numbers: someone given a WhatsApp number in Setup → Numbers (e.g. the
+ * Training number) but not the Communications permission sees only the Inbox,
+ * and only that number's conversations.
  */
 import { useEffect, useState } from "react";
 import { Inbox, Users, Radio, FileText, Send, Gauge, CalendarClock, ListChecks } from "lucide-react";
 import { useAccess } from "@/lib/auth/useAccess";
 import { useUserPreference } from "@/lib/user-preferences";
 import { cn } from "@/lib/utils";
-import { db } from "./wa-common";
+import { db, loadMyLines, type MyLine } from "./wa-common";
 import { WaInbox } from "./wa-inbox";
 import { WaContacts } from "./wa-contacts";
 import { WaLists } from "./wa-lists";
@@ -42,6 +46,9 @@ export function WhatsAppHub() {
   const [unread, setUnread] = useState(0);
   // A contact's Message button opens their Inbox thread.
   const [openContact, setOpenContact] = useState<string | null>(null);
+  /** The numbers this person can use (null while loading). */
+  const [lines, setLines] = useState<MyLine[] | null>(null);
+  useEffect(() => { void loadMyLines().then(setLines).catch(() => setLines([])); }, []);
 
   // Unread badge on the Inbox tab, whichever tab is open.
   useEffect(() => {
@@ -52,11 +59,15 @@ export function WhatsAppHub() {
     return () => clearInterval(t);
   }, []);
 
-  if (loading) return null;
-  if (!canAccessModule("communications", "view")) {
-    return <div className="p-8 text-sm text-muted-foreground">You don't have access to Communications.</div>;
+  if (loading || lines === null) return null;
+  const full = canAccessModule("communications", "view");
+  if (!full && lines.length === 0) {
+    return <div className="p-8 text-sm text-muted-foreground">You don't have access to WhatsApp. An admin can give you a number in WhatsApp → Setup → Numbers.</div>;
   }
   const canEdit = canAccessModule("communications", "edit");
+  // A number-only user: just the Inbox.
+  const tabs = full ? TABS : TABS.filter((t) => t.key === "inbox");
+  const current: Tab = tabs.some((t) => t.key === tab) ? tab : "inbox";
 
   return (
     <div className="space-y-4 p-6">
@@ -69,10 +80,10 @@ export function WhatsAppHub() {
       </div>
 
       <div className="flex flex-wrap gap-1 border-b border-border">
-        {TABS.map(({ key, label, icon: Icon }) => (
+        {tabs.map(({ key, label, icon: Icon }) => (
           <button key={key} onClick={() => { setOpenContact(null); setTab(key); }}
             className={cn("-mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm",
-              tab === key ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>
+              current === key ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>
             <Icon className="h-4 w-4" /> {label}
             {key === "inbox" && unread > 0 && (
               <span className="grid h-4 min-w-4 place-items-center rounded-full bg-emerald-500 px-1 text-[10px] font-semibold text-white">{unread}</span>
@@ -81,14 +92,14 @@ export function WhatsAppHub() {
         ))}
       </div>
 
-      {tab === "inbox" && <WaInbox key={openContact ?? "inbox"} canEdit={canEdit} openContactId={openContact} />}
-      {tab === "contacts" && <WaContacts canEdit={canEdit} onMessage={(id) => { setOpenContact(id); setTab("inbox"); }} />}
-      {tab === "lists" && <WaLists canEdit={canEdit} />}
-      {tab === "templates" && <WaTemplates canEdit={canEdit} />}
-      {tab === "sends" && <WaSends canEdit={canEdit} />}
-      {tab === "responses" && <WaResponses canEdit={canEdit} />}
-      {tab === "automations" && <WaAutomations canEdit={canEdit} />}
-      {tab === "overview" && <WaOverview />}
+      {current === "inbox" && <WaInbox key={openContact ?? "inbox"} lines={lines} openContactId={openContact} />}
+      {current === "contacts" && <WaContacts canEdit={canEdit} onMessage={(id) => { setOpenContact(id); setTab("inbox"); }} />}
+      {current === "lists" && <WaLists canEdit={canEdit} />}
+      {current === "templates" && <WaTemplates canEdit={canEdit} />}
+      {current === "sends" && <WaSends canEdit={canEdit} />}
+      {current === "responses" && <WaResponses canEdit={canEdit} />}
+      {current === "automations" && <WaAutomations canEdit={canEdit} />}
+      {current === "overview" && <WaOverview onLinesChanged={() => void loadMyLines().then(setLines)} />}
     </div>
   );
 }

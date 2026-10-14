@@ -7,6 +7,7 @@ import { Copy, CheckCircle2, XCircle, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { db, waApi, Chip } from "./wa-common";
+import { WaNumbers } from "./wa-numbers";
 
 interface Status {
   connected: boolean;
@@ -31,7 +32,7 @@ const SECRETS: Array<[string, string, string]> = [
   ["automations_enabled", "WHATSAPP_AUTOMATIONS_ENABLED", "In wrangler.jsonc — \"true\" allows the daily expiry reminders (off by default)"],
 ];
 
-export function WaOverview() {
+export function WaOverview({ onLinesChanged }: { onLinesChanged?: () => void } = {}) {
   const [status, setStatus] = useState<Status | null>(null);
   const [loading, setLoading] = useState(true);
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -86,6 +87,8 @@ export function WaOverview() {
         <Stat label="Lists" value={counts.lists} />
         <Stat label="Approved templates" value={counts.approved} />
       </div>
+
+      <WaNumbers onChanged={onLinesChanged} />
 
       <div className="rounded-xl border border-border bg-card p-5">
         <div className="flex items-start justify-between gap-3">
@@ -162,7 +165,7 @@ export function WaOverview() {
           <div className="mt-4 rounded-lg border border-border bg-muted/30 p-3 text-sm">
             <p className="text-xs text-muted-foreground">
               Webhook URL — paste into your Meta app (WhatsApp → Configuration), with the same verify token, and
-              subscribe to <code>messages</code>, <code>message_template_status_update</code> and <code>user_preferences</code>:
+              subscribe to <code>messages</code>, <code>message_template_status_update</code>, <code>user_preferences</code>, <code>smb_message_echoes</code>, <code>smb_app_state_sync</code>, <code>history</code> and <code>account_update</code> (the last four are for numbers that also run in the WhatsApp Business app):
             </p>
             <div className="mt-1.5 flex items-center gap-2">
               <code className="truncate text-xs">{status.webhook_url}</code>

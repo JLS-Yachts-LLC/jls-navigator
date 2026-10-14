@@ -15,6 +15,12 @@
  *                              everything else works, and a send says plainly why it didn't.
  *   WHATSAPP_GRAPH_VERSION     optional, default v23.0
  *   WHATSAPP_APP_ID            optional; the Meta app id (looked up from the token if absent)
+ *   WHATSAPP_ES_CONFIG_ID      Facebook Login for Business configuration id for
+ *                              Embedded Signup (a wrangler var — not a secret)
+ *
+ * Those secrets are the OFFICE number — the default "line". Other numbers (see
+ * lines.server.ts) are onboarded through Embedded Signup and carry their own
+ * token in wa_line_tokens; waConfig() always means the office number.
  */
 
 import type { WaButton } from "@/lib/whatsapp/shared";
@@ -55,24 +61,40 @@ export function configPresence() {
 }
 
 export class MetaError extends Error {
-  constructor(message: string, public code?: string | number, public status?: number) {
+  constructor(
+    message: string, public code?: string | number, public status?: number,
+    /** Meta's request id — what their support asks for. */
+    public fbtraceId?: string | null,
+    public subcode?: string | number | null,
+  ) {
     super(message);
   }
 }
 
-async function graph(cfg: WaConfig, path: string, init: RequestInit = {}): Promise<any> {
-  const res = await fetch(`https://graph.facebook.com/${cfg.version}/${path}`, {
+export const graphVersion = () => env("WHATSAPP_GRAPH_VERSION") || "v23.0";
+
+/** One Graph call with any token — the onboarding flow has no WaConfig yet. */
+export async function graphCall(token: string | null, path: string, init: RequestInit = {}, version = graphVersion()): Promise<any> {
+  const res = await fetch(`https://graph.facebook.com/${version}/${path}`, {
     ...init,
-    headers: { Authorization: `Bearer ${cfg.token}`, "Content-Type": "application/json", ...(init.headers ?? {}) },
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      "Content-Type": "application/json", ...(init.headers ?? {}),
+    },
     signal: AbortSignal.timeout(20_000),
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok || body?.error) {
     const e = body?.error ?? {};
     // Meta's user-facing text is the useful part; the code goes alongside.
-    throw new MetaError(e.error_user_msg || e.message || `Meta returned ${res.status}`, e.code, res.status);
+    throw new MetaError(e.error_user_msg || e.message || `Meta returned ${res.status}`, e.code, res.status,
+      e.fbtrace_id ?? res.headers.get("x-fb-trace-id") ?? null, e.error_subcode ?? null);
   }
   return body;
+}
+
+function graph(cfg: WaConfig, path: string, init: RequestInit = {}): Promise<any> {
+  return graphCall(cfg.token, path, init, cfg.version);
 }
 
 /** The connected number, as Meta knows it. */
@@ -351,3 +373,63 @@ export async function verifySignature(rawBody: string, header: string | null): P
 }
 
 export const verifyToken = () => env("WHATSAPP_VERIFY_TOKEN");
+
+// ─── Embedded Signup (onboarding another number) ─────────────────────────────
+
+/**
+ * Swap the code Embedded Signup hands the browser for a Business Integration
+ * token. Server-to-server with the app secret; the code lives ~30 seconds.
+ */
+export async function exchangeSignupCode(code: string): Promise<string> {
+  const appIdEnv = env("WHATSAPP_APP_ID");
+  const secret = env("WHATSAPP_APP_SECRET");
+  if (!appIdEnv || !secret) throw new MetaError("WHATSAPP_APP_ID and WHATSAPP_APP_SECRET must both be set on the Worker.");
+  const q = new URLSearchParams({ client_id: appIdEnv, client_secret: secret, code });
+  const out = await graphCall(null, `oauth/access_token?${q}`);
+  if (!out?.access_token) throw new MetaError("Meta didn't return an access token for the signup code.");
+  return String(out.access_token);
+}
+
+/** The WhatsApp Business Account ids a token was granted (a fallback when the browser event lacked one). */
+export async function grantedWabaIds(token: string): Promise<string[]> {
+  const appIdEnv = env("WHATSAPP_APP_ID");
+  const secret = env("WHATSAPP_APP_SECRET");
+  if (!appIdEnv || !secret) return [];
+  const out = await graphCall(`${appIdEnv}|${secret}`, `debug_token?input_token=${encodeURIComponent(token)}`);
+  const scopes: any[] = out?.data?.granular_scopes ?? [];
+  const ids = scopes.filter((g) => /whatsapp_business_(management|messaging)/.test(String(g.scope)))
+    .flatMap((g) => (Array.isArray(g.target_ids) ? g.target_ids : []).map(String));
+  return [...new Set(ids)];
+}
+
+export async function wabaPhoneNumbers(token: string, wabaId: string): Promise<Array<{ id: string; display_phone_number: string; verified_name?: string }>> {
+  const out = await graphCall(token, `${encodeURIComponent(wabaId)}/phone_numbers?fields=id,display_phone_number,verified_name`);
+  return (out?.data ?? []).map((n: any) => ({ id: String(n.id), display_phone_number: String(n.display_phone_number ?? ""), verified_name: n.verified_name }));
+}
+
+/** A number's details; is_on_biz_app / platform_type confirm a Coexistence connection. */
+export async function phoneDetails(token: string, phoneNumberId: string): Promise<Record<string, any>> {
+  try {
+    return await graphCall(token, `${encodeURIComponent(phoneNumberId)}?fields=display_phone_number,verified_name,is_on_biz_app,platform_type`);
+  } catch {
+    // Older versions don't know the coexistence fields — the basics still help.
+    return graphCall(token, `${encodeURIComponent(phoneNumberId)}?fields=display_phone_number,verified_name`);
+  }
+}
+
+export async function subscribeWaba(token: string, wabaId: string): Promise<void> {
+  await graphCall(token, `${encodeURIComponent(wabaId)}/subscribed_apps`, { method: "POST" });
+}
+
+/**
+ * Ask Meta to send a Coexistence number's Business-app data to our webhook:
+ * "smb_app_state_sync" (contacts) or "history" (up to 6 months of chats). Each
+ * can be requested ONCE, within 24 hours of onboarding.
+ */
+export async function requestSmbSync(token: string, phoneNumberId: string, syncType: "smb_app_state_sync" | "history"): Promise<string | null> {
+  const out = await graphCall(token, `${encodeURIComponent(phoneNumberId)}/smb_app_data`, {
+    method: "POST",
+    body: JSON.stringify({ messaging_product: "whatsapp", sync_type: syncType }),
+  });
+  return out?.request_id ? String(out.request_id) : null;
+}

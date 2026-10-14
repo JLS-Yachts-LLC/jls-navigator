@@ -1318,6 +1318,19 @@ export default {
           return (await import('./lib/whatsapp/automations.server')).whatsappAutomationTestHandler(request)
         case 'POST /api/whatsapp/automations/starter':
           return (await import('./lib/whatsapp/automations.server')).whatsappAutomationStarterHandler(request)
+        // Another number (Embedded Signup / Coexistence), and who can use each number.
+        case 'POST /api/whatsapp/onboard/start':
+          return (await import('./lib/whatsapp/onboarding.server')).onboardStartHandler(request)
+        case 'POST /api/whatsapp/onboard/event':
+          return (await import('./lib/whatsapp/onboarding.server')).onboardEventHandler(request)
+        case 'POST /api/whatsapp/onboard/complete':
+          return (await import('./lib/whatsapp/onboarding.server')).onboardCompleteHandler(request)
+        case 'POST /api/whatsapp/onboard/sync':
+          return (await import('./lib/whatsapp/onboarding.server')).onboardSyncHandler(request)
+        case 'POST /api/whatsapp/lines/members':
+          return (await import('./lib/whatsapp/onboarding.server')).lineMembersHandler(request)
+        case 'POST /api/whatsapp/lines/update':
+          return (await import('./lib/whatsapp/onboarding.server')).lineUpdateHandler(request)
         case 'POST /api/whatsapp/reply':return wa.whatsappReplyHandler(request)
         case 'POST /api/whatsapp/reply-media': return wa.whatsappReplyMediaHandler(request)
         case 'POST /api/whatsapp/conversations/read': return wa.whatsappConversationReadHandler(request)

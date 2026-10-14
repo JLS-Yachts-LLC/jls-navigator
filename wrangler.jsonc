@@ -24,6 +24,10 @@
     // The Meta app ("Polaris", developers.facebook.com) behind the WhatsApp token.
     // Public id, not a secret — needed to upload template header images for review.
     "WHATSAPP_APP_ID": "1075020985286511",
+    // Facebook Login for Business → Configurations → the "WhatsApp Embedded
+    // Signup" configuration's id. Public, not a secret. Until it's set, "Connect
+    // a WhatsApp Business app number" (WhatsApp → Setup) explains what's missing.
+    "WHATSAPP_ES_CONFIG_ID": "",
     // Scheduled WhatsApp expiry reminders (visa / passport / permit). OFF by
     // default — even with this "true", each reminder and each yacht must also
     // be switched on in Communications → WhatsApp → Automations.

@@ -24,7 +24,7 @@ import {
   placeholderCount, toTemplateName, fillTemplate, normalizeButtons, buttonsError, hasOptOut, HEADER_MEDIA,
   MARKETING_OPT_OUT_BUTTON, type WaButton, type HeaderFormat,
 } from "@/lib/whatsapp/shared";
-import { db, waApi, uploadWaMedia, waMediaUrl, TemplateStatusChip, fmtDate, Empty, Chip, type WaTemplate } from "./wa-common";
+import { db, waApi, uploadWaMedia, waMediaUrl, TemplateStatusChip, fmtDate, Empty, Chip, lineName, type WaTemplate, type WaLine } from "./wa-common";
 
 const OPT_OUT_FOOTER = "Reply STOP to opt out";
 
@@ -39,13 +39,25 @@ export function WaTemplates({ canEdit }: { canEdit: boolean }) {
   const [rows, setRows] = useState<WaTemplate[] | null>(null);
   const [editing, setEditing] = useState<WaTemplate | "new" | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  // Templates live on each number's WhatsApp Business Account — one number at a time.
+  const [lines, setLines] = useState<WaLine[]>([]);
+  const [lineId, setLineId] = useState<string | null>(null);
+  useEffect(() => {
+    void db().from("wa_lines").select("*").neq("status", "disconnected").order("is_default", { ascending: false }).order("created_at")
+      .then(({ data }: any) => {
+        const ls = (data ?? []) as WaLine[];
+        setLines(ls);
+        setLineId((cur) => cur ?? ls.find((l) => l.is_default)?.id ?? ls[0]?.id ?? null);
+      });
+  }, []);
 
   async function load() {
-    const { data, error } = await db().from("wa_templates").select("*").order("updated_at", { ascending: false });
+    if (!lineId) return;
+    const { data, error } = await db().from("wa_templates").select("*").eq("line_id", lineId).order("updated_at", { ascending: false });
     if (error) toast.error(error.message);
     setRows((data ?? []) as WaTemplate[]);
   }
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { setRows(null); void load(); }, [lineId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function submit(t: WaTemplate) {
     setBusy(t.id);
@@ -63,7 +75,7 @@ export function WaTemplates({ canEdit }: { canEdit: boolean }) {
   async function sync() {
     setBusy("sync");
     try {
-      const r = await waApi<{ onMeta: number; updated: number; imported: number; skipped: Array<{ name: string; reason: string }>; unsent?: string[] }>("templates/sync", {});
+      const r = await waApi<{ onMeta: number; updated: number; imported: number; skipped: Array<{ name: string; reason: string }>; unsent?: string[] }>("templates/sync", { lineId });
       const unsent = r.unsent ?? [];
       const parts = [`${r.imported} imported`, `${r.updated} updated`, ...r.skipped.map((s) => `${s.name}: ${s.reason}`),
         ...unsent.map((n) => `${n}: has changes not yet sent to Meta — click Submit to Meta on it`)];
@@ -87,8 +99,15 @@ export function WaTemplates({ canEdit }: { canEdit: boolean }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
+        {lines.length > 1 && (
+          <select value={lineId ?? ""} onChange={(e) => setLineId(e.target.value)} aria-label="WhatsApp number"
+            className="h-8 rounded-md border border-border bg-background px-2 text-sm">
+            {lines.map((l) => <option key={l.id} value={l.id}>{lineName(l)}</option>)}
+          </select>
+        )}
         <p className="flex-1 text-xs text-muted-foreground">
           Templates start conversations. Replies inside the 24-hour window don't need one.
+          {lines.length > 1 && " Each number has its own templates, approved by Meta separately."}
         </p>
         {canEdit && (
           <>
@@ -146,7 +165,7 @@ export function WaTemplates({ canEdit }: { canEdit: boolean }) {
           </div>
         )}
 
-      {editing && <TemplateDialog t={editing === "new" ? null : editing} onClose={() => setEditing(null)} onSaved={load} />}
+      {editing && lineId && <TemplateDialog t={editing === "new" ? null : editing} lineId={lineId} onClose={() => setEditing(null)} onSaved={load} />}
     </div>
   );
 }
@@ -253,7 +272,7 @@ const HEADER_CHOICES: Array<{ f: HeaderFormat | "NONE"; label: string; icon: typ
   { f: "DOCUMENT", label: "PDF", icon: FileText },
 ];
 
-function TemplateDialog({ t, onClose, onSaved }: { t: WaTemplate | null; onClose: () => void; onSaved: () => void }) {
+function TemplateDialog({ t, lineId, onClose, onSaved }: { t: WaTemplate | null; lineId: string; onClose: () => void; onSaved: () => void }) {
   const onMeta = !!t?.meta_template_id;
   const [name, setName] = useState(t?.name ?? "");
   const [category, setCategory] = useState<WaTemplate["category"]>(t?.category ?? "UTILITY");
@@ -321,7 +340,7 @@ function TemplateDialog({ t, onClose, onSaved }: { t: WaTemplate | null; onClose
       // Any edit goes back through Meta's review before it can be sent again.
       status: "draft",
     };
-    const { error } = t ? await db().from("wa_templates").update(row).eq("id", t.id) : await db().from("wa_templates").insert(row);
+    const { error } = t ? await db().from("wa_templates").update(row).eq("id", t.id) : await db().from("wa_templates").insert({ ...row, line_id: lineId });
     setSaving(false);
     if (error) { toast.error(error.code === "23505" ? "A template with that name and language already exists" : error.message); return; }
     toast.success(onMeta ? "Saved — submit it to send the change to Meta for review" : "Template saved as a draft");

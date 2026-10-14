@@ -9,6 +9,10 @@
  * In the window the reply box can also send a file (photo, PDF/Office document,
  * video, audio — /api/whatsapp/reply-media) and drop in a saved quick reply
  * (the ⚡ button, or type "/" — see wa-quick-replies).
+ *
+ * Several numbers: a thread is one contact on one number (the office number,
+ * the Training number…). People see only the numbers they have access to, and
+ * can reply only where they have "send" (WhatsApp → Setup → Numbers).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -25,7 +29,7 @@ import { cn } from "@/lib/utils";
 import { windowRemaining, placeholderCount, dynamicUrlButtons, personalise, placeholderContext, recipientOf } from "@/lib/whatsapp/shared";
 import { TokenScope, TokenBar, TokenInput } from "./wa-tokens";
 import { WaTemplatePreview, templateBlocker } from "./wa-templates";
-import { db, waApi, waBlobUrl, ConsentChip, Chip, Empty, type WaContact, type WaTemplate } from "./wa-common";
+import { db, waApi, waBlobUrl, ConsentChip, Chip, Empty, lineName, type WaContact, type WaTemplate, type MyLine } from "./wa-common";
 import { QuickReplyMenu, QuickRepliesManager, noteQuickReplyUsed, type QuickReply } from "./wa-quick-replies";
 
 /** What the paperclip accepts — the same kinds the server sends (see OUTBOUND_MEDIA). */
@@ -47,6 +51,7 @@ const fileSize = (n: number) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB`
 interface Conversation {
   id: string;
   contact_id: string;
+  line_id: string;
   status: "open" | "closed";
   assigned_to: string | null;
   last_inbound_at: string | null;
@@ -81,25 +86,36 @@ interface ThreadItem {
   outMedia?: { type: string; mime: string | null; name: string | null } | null;
   /** Typed in the WhatsApp Business app on the phone, not in Polaris. */
   fromPhone?: boolean;
+  /** Imported from the Business app's chat history when the number was connected. */
+  imported?: boolean;
 }
+
+/** The thread on screen: one contact, on one number. */
+type Active = { contactId: string; lineId: string };
 
 type Filter = "open" | "mine" | "unassigned" | "closed";
 const POLL_MS = 15_000;
 
-export function WaInbox({ canEdit, openContactId = null }: { canEdit: boolean; openContactId?: string | null }) {
+export function WaInbox({ lines, openContactId = null }: { lines: MyLine[]; openContactId?: string | null }) {
   const [convs, setConvs] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>("open");
   const [q, setQ] = useState("");
-  // Opened from a contact's Message button: start in their thread.
-  const [activeId, setActiveId] = useState<string | null>(openContactId);
+  /** Which number's threads to show — "all" for every number the person can use. */
+  const [lineFilter, setLineFilter] = useState<string>("all");
+  const lineOf = (id: string | null | undefined) => lines.find((l) => l.id === id) ?? null;
+  const defaultLine = lines.find((l) => l.is_default) ?? lines[0] ?? null;
+  const sendable = lines.filter((l) => l.level === "send" && l.status !== "disconnected");
+  // Opened from a contact's Message button: start in their thread (on the office number, or the only one they have).
+  const [active, setActive] = useState<Active | null>(
+    openContactId && (defaultLine) ? { contactId: openContactId, lineId: defaultLine.id } : null);
   const [me, setMe] = useState<string | null>(null);
   const [staff, setStaff] = useState<Array<{ id: string; display_name: string | null }>>([]);
   const [starting, setStarting] = useState(false);
 
   const loadConvs = useCallback(async () => {
     const { data, error } = await db().from("wa_conversations")
-      .select("*, contact:wa_contacts(id, name, email, phone_e164, phone_confirmed, consent_status, consent_updates, consent_marketing, yacht:yachts(vessel_name))")
+      .select("*, contact:wa_contacts(id, name, first_name, last_name, email, phone_e164, phone_confirmed, consent_status, consent_updates, consent_marketing, yacht:yachts(vessel_name))")
       .order("last_message_at", { ascending: false, nullsFirst: false }).limit(500);
     if (error) toast.error(error.message);
     else setConvs((data ?? []) as Conversation[]);
@@ -115,39 +131,54 @@ export function WaInbox({ canEdit, openContactId = null }: { canEdit: boolean; o
     return () => clearInterval(t);
   }, [loadConvs]);
 
+  // Only numbers the person can use reach the browser (row-level security);
+  // this narrows to the one picked.
+  const onLine = useMemo(() => convs.filter((c) => lineFilter === "all" || c.line_id === lineFilter), [convs, lineFilter]);
   const counts = useMemo(() => ({
-    open: convs.filter((c) => c.status === "open").length,
-    mine: convs.filter((c) => c.status === "open" && c.assigned_to === me).length,
-    unassigned: convs.filter((c) => c.status === "open" && !c.assigned_to).length,
-    closed: convs.filter((c) => c.status === "closed").length,
-    unread: convs.reduce((n, c) => n + (c.unread_count || 0), 0),
-  }), [convs, me]);
+    open: onLine.filter((c) => c.status === "open").length,
+    mine: onLine.filter((c) => c.status === "open" && c.assigned_to === me).length,
+    unassigned: onLine.filter((c) => c.status === "open" && !c.assigned_to).length,
+    closed: onLine.filter((c) => c.status === "closed").length,
+    unread: onLine.reduce((n, c) => n + (c.unread_count || 0), 0),
+  }), [onLine, me]);
+  const unreadOn = (lineId: string) => convs.filter((c) => c.line_id === lineId).reduce((n, c) => n + (c.unread_count || 0), 0);
 
   const shown = useMemo(() => {
     const s = q.trim().toLowerCase();
-    return convs.filter((c) => {
+    return onLine.filter((c) => {
       if (filter === "closed" ? c.status !== "closed" : c.status !== "open") return false;
       if (filter === "mine" && c.assigned_to !== me) return false;
       if (filter === "unassigned" && c.assigned_to) return false;
       return !s || [c.contact?.name, c.contact?.phone_e164, c.contact?.yacht?.vessel_name, c.last_preview]
         .some((v) => (v ?? "").toLowerCase().includes(s));
     });
-  }, [convs, filter, q, me]);
+  }, [onLine, filter, q, me]);
 
-  const active = convs.find((c) => c.contact_id === activeId) ?? null;
+  const activeConv = active ? convs.find((c) => c.contact_id === active.contactId && c.line_id === active.lineId) ?? null : null;
+  const activeLine = active ? lineOf(active.lineId) : null;
   const staffName = (id: string | null | undefined) => staff.find((s) => s.id === id)?.display_name ?? null;
 
   return (
     <div className="grid h-[calc(100vh-15rem)] min-h-[520px] grid-cols-1 overflow-hidden rounded-xl border border-border md:grid-cols-[320px_1fr]">
       {/* ── Conversation list ── */}
-      <aside className={cn("flex min-h-0 flex-col border-r border-border", activeId && "hidden md:flex")}>
+      <aside className={cn("flex min-h-0 flex-col border-r border-border", active && "hidden md:flex")}>
         <div className="space-y-2 border-b border-border p-3">
+          {lines.length > 1 && (
+            <select value={lineFilter} onChange={(e) => setLineFilter(e.target.value)} aria-label="WhatsApp number"
+              className="h-8 w-full rounded-md border border-border bg-background px-2 text-xs">
+              <option value="all">All my numbers</option>
+              {lines.map((l) => {
+                const n = unreadOn(l.id);
+                return <option key={l.id} value={l.id}>{lineName(l)}{n ? ` (${n} unread)` : ""}{l.level === "view" ? " — read only" : ""}</option>;
+              })}
+            </select>
+          )}
           <div className="flex gap-2">
             <div className="relative flex-1">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search conversations" className="h-8 pl-8" />
             </div>
-            {canEdit && (
+            {sendable.length > 0 && (
               <Button size="sm" variant="outline" className="h-8 px-2" title="Message a contact" onClick={() => setStarting(true)}>
                 <MessageSquarePlus className="h-4 w-4" />
               </Button>
@@ -173,9 +204,9 @@ export function WaInbox({ canEdit, openContactId = null }: { canEdit: boolean; o
           ) : shown.map((c) => {
             const open = windowRemaining(c.last_inbound_at) > 0;
             return (
-              <button key={c.id} onClick={() => setActiveId(c.contact_id)}
+              <button key={c.id} onClick={() => setActive({ contactId: c.contact_id, lineId: c.line_id })}
                 className={cn("flex w-full gap-2 border-b border-border/60 px-3 py-2.5 text-left hover:bg-muted/50",
-                  activeId === c.contact_id && "bg-muted")}>
+                  activeConv?.id === c.id && "bg-muted")}>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
                     <span className={cn("truncate text-sm", c.unread_count > 0 ? "font-semibold" : "font-medium")}>{c.contact?.name}</span>
@@ -185,7 +216,8 @@ export function WaInbox({ canEdit, openContactId = null }: { canEdit: boolean; o
                     {c.last_direction === "out" && "You: "}{c.last_preview ?? ""}
                   </p>
                   <p className="mt-0.5 truncate text-[10px] text-muted-foreground/80">
-                    {[c.contact?.yacht?.vessel_name, staffName(c.assigned_to) ? `→ ${staffName(c.assigned_to)}` : null].filter(Boolean).join(" · ")}
+                    {[lines.length > 1 && lineFilter === "all" ? lineOf(c.line_id)?.label : null,
+                      c.contact?.yacht?.vessel_name, staffName(c.assigned_to) ? `→ ${staffName(c.assigned_to)}` : null].filter(Boolean).join(" · ")}
                   </p>
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-1">
@@ -201,10 +233,11 @@ export function WaInbox({ canEdit, openContactId = null }: { canEdit: boolean; o
       </aside>
 
       {/* ── Thread ── */}
-      <section className={cn("min-h-0", !activeId && "hidden md:block")}>
-        {activeId ? (
-          <Thread key={activeId} contactId={activeId} conv={active} canEdit={canEdit} staff={staff} me={me}
-            onBack={() => setActiveId(null)} onChanged={loadConvs} />
+      <section className={cn("min-h-0", !active && "hidden md:block")}>
+        {active && activeLine ? (
+          <Thread key={`${active.contactId}:${active.lineId}`} contactId={active.contactId} line={activeLine} showLine={lines.length > 1}
+            conv={activeConv} canEdit={activeLine.level === "send"} staff={staff} me={me}
+            onBack={() => setActive(null)} onChanged={loadConvs} />
         ) : (
           <div className="grid h-full place-items-center p-6">
             <Empty title={counts.unread ? `${counts.unread} unread message${counts.unread === 1 ? "" : "s"}` : "Choose a conversation"}>
@@ -215,7 +248,8 @@ export function WaInbox({ canEdit, openContactId = null }: { canEdit: boolean; o
       </section>
 
       {starting && (
-        <StartDialog onClose={() => setStarting(false)} onPick={(id) => { setStarting(false); setActiveId(id); }} />
+        <StartDialog lines={sendable} initialLineId={lineFilter !== "all" && sendable.some((l) => l.id === lineFilter) ? lineFilter : (sendable.find((l) => l.is_default) ?? sendable[0])?.id ?? ""}
+          onClose={() => setStarting(false)} onPick={(contactId, lineId) => { setStarting(false); setActive({ contactId, lineId }); }} />
       )}
     </div>
   );
@@ -223,8 +257,8 @@ export function WaInbox({ canEdit, openContactId = null }: { canEdit: boolean; o
 
 // ─── One conversation ─────────────────────────────────────────────────────────
 
-function Thread({ contactId, conv, canEdit, staff, me, onBack, onChanged }: {
-  contactId: string; conv: Conversation | null; canEdit: boolean;
+function Thread({ contactId, line, showLine, conv, canEdit, staff, me, onBack, onChanged }: {
+  contactId: string; line: MyLine; showLine: boolean; conv: Conversation | null; canEdit: boolean;
   staff: Array<{ id: string; display_name: string | null }>; me: string | null;
   onBack: () => void; onChanged: () => void;
 }) {
@@ -247,27 +281,30 @@ function Thread({ contactId, conv, canEdit, staff, me, onBack, onChanged }: {
   const load = useCallback(async () => {
     const [{ data: c }, { data: ins }, { data: outs }] = await Promise.all([
       db().from("wa_contacts").select("*, yacht:yachts(vessel_name)").eq("id", contactId).maybeSingle(),
-      db().from("wa_inbound").select("id, wa_message_id, type, body, action, media_id, media_mime, context_wamid, received_at")
-        .eq("contact_id", contactId).order("received_at", { ascending: false }).limit(300),
-      db().from("wa_messages").select("id, kind, auto_reply, body, status, error_message, sent_by, wa_message_id, queued_at, sent_at, media_type, media_mime, media_name, media_path, media_id, from_phone, campaign:wa_campaigns(name)")
-        .eq("contact_id", contactId).neq("status", "skipped").order("queued_at", { ascending: false }).limit(300),
+      db().from("wa_inbound").select("id, wa_message_id, type, body, action, media_id, media_mime, context_wamid, received_at, source")
+        .eq("contact_id", contactId).eq("line_id", line.id).order("received_at", { ascending: false }).limit(300),
+      db().from("wa_messages").select("id, kind, auto_reply, body, status, error_message, sent_by, wa_message_id, queued_at, sent_at, media_type, media_mime, media_name, media_path, media_id, from_phone, source, campaign:wa_campaigns(name)")
+        .eq("contact_id", contactId).eq("line_id", line.id).neq("status", "skipped").order("queued_at", { ascending: false }).limit(300),
     ]);
     setContact(c as WaContact);
     const merged: ThreadItem[] = [
       ...((ins ?? []) as any[]).map((m): ThreadItem => ({
         key: `i${m.id}`, dir: "in", at: m.received_at, body: m.body, inboundId: m.id, type: m.type,
         hasMedia: !!m.media_id, mediaMime: m.media_mime, action: m.action, contextWamid: m.context_wamid, wamid: m.wa_message_id,
+        imported: m.source === "history",
       })),
       ...((outs ?? []) as any[]).map((m): ThreadItem => ({
         key: `o${m.id}`, dir: "out", at: m.sent_at ?? m.queued_at, body: m.body, kind: m.kind, auto: !!m.auto_reply, status: m.status,
         error: m.error_message, sentBy: m.sent_by, campaignName: m.campaign?.name ?? null, wamid: m.wa_message_id,
         outboundId: m.id, outMedia: m.media_path || m.media_id ? { type: m.media_type, mime: m.media_mime, name: m.media_name } : null,
         fromPhone: !!m.from_phone,
+        imported: m.source === "history",
       })),
     ].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
     setItems(merged);
-    setLastInboundAt(((ins ?? []) as any[])[0]?.received_at ?? null);
-  }, [contactId]);
+    // Only a real message opens the reply window — never imported history.
+    setLastInboundAt(((ins ?? []) as any[]).find((m) => m.source !== "history")?.received_at ?? null);
+  }, [contactId, line.id]);
 
   useEffect(() => {
     void load();
@@ -278,8 +315,8 @@ function Thread({ contactId, conv, canEdit, staff, me, onBack, onChanged }: {
 
   // Reading the thread clears unread (and gives the client blue ticks).
   useEffect(() => {
-    if (unread > 0) void waApi("conversations/read", { contactId }).then(onChanged).catch(() => {});
-  }, [unread, contactId, onChanged]);
+    if (unread > 0) void waApi("conversations/read", { contactId, lineId: line.id }).then(onChanged).catch(() => {});
+  }, [unread, contactId, line.id, onChanged]);
 
   useEffect(() => {
     if (items && items.length !== lastCount.current) {
@@ -301,13 +338,14 @@ function Thread({ contactId, conv, canEdit, staff, me, onBack, onChanged }: {
         // The text goes as the file's caption.
         const form = new FormData();
         form.append("contactId", contactId);
+        form.append("lineId", line.id);
         form.append("file", file);
         if (body) form.append("caption", body);
         if (replyTo?.wamid) form.append("replyTo", replyTo.wamid);
         await sendMediaReply(form);
         setFile(null);
       } else {
-        await waApi("reply", { contactId, text: body, replyTo: replyTo?.wamid ?? null });
+        await waApi("reply", { contactId, lineId: line.id, text: body, replyTo: replyTo?.wamid ?? null });
       }
       setText("");
       setReplyTo(null);
@@ -353,7 +391,7 @@ function Thread({ contactId, conv, canEdit, staff, me, onBack, onChanged }: {
             {contact && <ConsentChip c={contact} />}
           </div>
           <p className="truncate text-xs text-muted-foreground">
-            {[contact?.phone_e164, contact?.yacht?.vessel_name].filter(Boolean).join(" · ")}
+            {[contact?.phone_e164, contact?.yacht?.vessel_name, showLine ? `via ${line.label}` : null].filter(Boolean).join(" · ")}
           </p>
         </div>
         {conv && canEdit && (
@@ -405,7 +443,8 @@ function Thread({ contactId, conv, canEdit, staff, me, onBack, onChanged }: {
                   )}
                   {m.kind === "template" && <p className="mb-1 text-[10px] font-medium uppercase tracking-wide opacity-75">Template</p>}
                   {m.auto && <p className="mb-1 text-[10px] font-medium uppercase tracking-wide opacity-75">Auto-reply</p>}
-                  {m.fromPhone && <p className="mb-1 text-[10px] font-medium uppercase tracking-wide opacity-75" title="Typed in the WhatsApp Business app on the office phone">From the phone</p>}
+                  {m.imported && <p className="mb-1 text-[10px] font-medium uppercase tracking-wide opacity-75" title="Imported from the WhatsApp Business app's chat history when this number was connected">Imported</p>}
+                  {m.fromPhone && !m.imported && <p className="mb-1 text-[10px] font-medium uppercase tracking-wide opacity-75" title="Typed in the WhatsApp Business app on the phone">From the phone</p>}
                   {m.dir === "in" && (m.type === "button" || m.type === "interactive") && (
                     <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-emerald-600">Tapped a button</p>
                   )}
@@ -447,6 +486,9 @@ function Thread({ contactId, conv, canEdit, staff, me, onBack, onChanged }: {
       </div>
 
       {/* Composer */}
+      {!canEdit && contact && (
+        <p className="border-t border-border p-3 text-center text-xs text-muted-foreground">You can read {line.label}'s messages but not reply from it.</p>
+      )}
       {canEdit && contact && (
         remaining > 0 ? (
           <div className="border-t border-border p-3">
@@ -493,7 +535,7 @@ function Thread({ contactId, conv, canEdit, staff, me, onBack, onChanged }: {
             </div>
           </div>
         ) : (
-          <TemplateComposer contact={contact} onSent={async () => { await load(); onChanged(); }} />
+          <TemplateComposer contact={contact} lineId={line.id} onSent={async () => { await load(); onChanged(); }} />
         )
       )}
       <QuickRepliesManager open={manageQr} onClose={() => setManageQr(false)} />
@@ -541,16 +583,17 @@ function MediaLink({ src, type, mime, name }: { src: string; type?: string | nul
 
 // ─── Outside the window: approved templates only ──────────────────────────────
 
-function TemplateComposer({ contact, onSent }: { contact: WaContact; onSent: () => void }) {
+function TemplateComposer({ contact, lineId, onSent }: { contact: WaContact; lineId: string; onSent: () => void }) {
   const [templates, setTemplates] = useState<WaTemplate[]>([]);
   const [tid, setTid] = useState("");
   const [values, setValues] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
 
   useEffect(() => {
-    void db().from("wa_templates").select("*").eq("status", "approved").order("name")
+    // Templates belong to a number's WhatsApp Business Account — only this number's.
+    void db().from("wa_templates").select("*").eq("status", "approved").eq("line_id", lineId).order("name")
       .then(({ data }: any) => setTemplates(data ?? []));
-  }, []);
+  }, [lineId]);
 
   const t = templates.find((x) => x.id === tid) ?? null;
   const needed = t ? placeholderCount(t.body_text) : 0;
@@ -568,7 +611,7 @@ function TemplateComposer({ contact, onSent }: { contact: WaContact; onSent: () 
     if (!t) return;
     setSending(true);
     try {
-      await waApi("reply", { contactId: contact.id, templateId: t.id, variables: values.slice(0, needed), buttonValues });
+      await waApi("reply", { contactId: contact.id, lineId, templateId: t.id, variables: values.slice(0, needed), buttonValues });
       toast.success("Template sent");
       setTid(""); setValues([]); setButtonValues([]);
       onSent();
@@ -624,9 +667,12 @@ function TemplateComposer({ contact, onSent }: { contact: WaContact; onSent: () 
 
 // ─── Start a conversation with an opted-in contact ────────────────────────────
 
-function StartDialog({ onClose, onPick }: { onClose: () => void; onPick: (contactId: string) => void }) {
+function StartDialog({ lines, initialLineId, onClose, onPick }: {
+  lines: MyLine[]; initialLineId: string; onClose: () => void; onPick: (contactId: string, lineId: string) => void;
+}) {
   const [rows, setRows] = useState<WaContact[] | null>(null);
   const [q, setQ] = useState("");
+  const [lineId, setLineId] = useState(initialLineId);
   useEffect(() => {
     void db().from("wa_contacts").select("*, yacht:yachts(vessel_name)").eq("consent_status", "opted_in")
       .not("phone_e164", "is", null).order("name").then(({ data }: any) => setRows(data ?? []));
@@ -641,12 +687,21 @@ function StartDialog({ onClose, onPick }: { onClose: () => void; onPick: (contac
           <DialogTitle>Message a contact</DialogTitle>
           <DialogDescription>Only contacts who have opted in can be messaged first — and the first message must be an approved template.</DialogDescription>
         </DialogHeader>
+        {lines.length > 1 && (
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            From
+            <select value={lineId} onChange={(e) => setLineId(e.target.value)}
+              className="h-8 flex-1 rounded-md border border-border bg-background px-2 text-sm text-foreground">
+              {lines.map((l) => <option key={l.id} value={l.id}>{lineName(l)}</option>)}
+            </select>
+          </label>
+        )}
         <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search opted-in contacts" autoFocus />
         <div className="max-h-80 overflow-y-auto">
           {rows === null ? <Loader2 className="mx-auto my-6 h-5 w-5 animate-spin text-muted-foreground" />
             : list.length === 0 ? <p className="py-6 text-center text-xs text-muted-foreground">No opted-in contacts{s ? " match" : " yet"}.</p>
             : list.map((r) => (
-              <button key={r.id} onClick={() => onPick(r.id)} className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-2 text-left hover:bg-muted">
+              <button key={r.id} onClick={() => lineId && onPick(r.id, lineId)} className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-2 text-left hover:bg-muted">
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-medium">{r.name}</span>
                   <span className="block truncate text-xs text-muted-foreground">{[r.phone_e164, r.yacht?.vessel_name].filter(Boolean).join(" · ")}</span>
