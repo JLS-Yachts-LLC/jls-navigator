@@ -26,10 +26,7 @@ export type PolarisRole =
   | "crew_immigration"
   | "captain"
   | "crew"
-  | "logistics_team"
-  /** The Port Agency team: Orbit 2 (Bunkering only) and the Bunkering screen.
-   *  Not a database role — anyone with `orbit2_bunkering` and no `orbit` (see use-polaris-role). */
-  | "port_bunkering";
+  | "logistics_team";
 
 export interface NavItem {
   label: string;
@@ -41,9 +38,6 @@ export interface NavItem {
    *  Only enforced once the user HAS module grants; a user with none configured
    *  sees everything, so the permissions rollout can't blank anyone's sidebar. */
   module?: string;
-  /** Other modules that also open this item (any one is enough) — e.g. Orbit 2
-   *  for staff who have only `orbit2_bunkering`. */
-  alsoModules?: string[];
   /** Route-backed item: navigates to this app route (rendered inside the same
    *  Polaris chrome by AppLayout) instead of switching an in-shell screen. */
   route?: string;
@@ -123,8 +117,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: "Bunkering", icon: "gas-station", screen: "route-bunkering", route: "/bunkering" },
       { label: "Berth Billing", module: "finance", icon: "receipt-2", screen: "berth-billing", roles: ["global_admin"] },
       { label: "Orbit", module: "orbit", icon: "orbit", screen: "orbit" },
-      // Also for bunkering-only staff (the Port Agency team) — the hub then shows them just Bunkering.
-      { label: "Orbit 2", module: "orbit", alsoModules: ["orbit2_bunkering"], icon: "chart-donut", screen: "orbit2" },
+      { label: "Orbit 2", module: "orbit", icon: "chart-donut", screen: "orbit2" },
       {
         // Captain's Portal triage — requests raised by client captains at /portal.
         label: "Client Requests",
@@ -209,7 +202,6 @@ export const NAV_GROUPS: NavGroup[] = [
  *  items with no `roles` gate (which are otherwise visible to all). */
 export const RESTRICTED_NAV: Partial<Record<PolarisRole, string[]>> = {
   logistics_team: ["vessels", "logistics"],
-  port_bunkering: ["orbit2", "route-bunkering"],
 };
 
 /**
@@ -239,8 +231,7 @@ function visibleGroups(role: PolarisRole, claims?: PolarisClaims, extra: Set<str
     items: g.items.filter((i) => {
       if (allow ? !allow.includes(i.screen) : (i.roles && !i.roles.includes(role))) return false;
       if (extra.has(i.screen)) return true;
-      if (gate && i.module && !canAccessModule(claims!, i.module)
-          && !(i.alsoModules ?? []).some((m) => canAccessModule(claims!, m))) return false;
+      if (gate && i.module && !canAccessModule(claims!, i.module)) return false;
       if (i.grantOnly && !(claims && i.module && canAccessModule(claims, i.module))) return false;
       return true;
     }),
