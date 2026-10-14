@@ -119,17 +119,20 @@ function LineCard({ line, members, people, canManage, isGlobalAdmin, onChanged }
             Not connected yet — people can be added now; connecting this number takes this entry over, keeping its name and people.
           </p>
           <p className="text-muted-foreground">
-            Linked it in WhatsApp Manager (Phone numbers → Connect WhatsApp account)? Add it here straight away — the contacts
-            and chat-history imports must be requested within 24 hours of linking.
+            Added and verified it in WhatsApp Manager? Add it here — Polaris finds it, registers it if needed, and connects it.
+            (For a number still in the WhatsApp Business app, do this straight away: its contacts and chat-history imports
+            must be requested within 24 hours of linking.)
           </p>
           {isGlobalAdmin && (
             <Button size="sm" variant="outline" className="h-7 gap-1.5 text-xs" disabled={!!busy}
               onClick={async () => {
                 setBusy("adopt");
                 try {
-                  const r = await waApi<{ contacts?: { ok: boolean; error?: string }; history?: { ok: boolean; error?: string } }>("lines/adopt", { lineId: line.id });
+                  const r = await waApi<{ coexistence?: boolean; registered?: boolean; contacts?: { ok: boolean; error?: string }; history?: { ok: boolean; error?: string } }>("lines/adopt", { lineId: line.id });
                   toast.success(`${line.label} connected`, {
-                    description: `Contacts import ${r.contacts?.ok ? "requested" : `not requested — ${r.contacts?.error}`}; history import ${r.history?.ok ? "requested" : `not requested — ${r.history?.error}`}`,
+                    description: r.coexistence
+                      ? `Contacts import ${r.contacts?.ok ? "requested" : `not requested — ${r.contacts?.error}`}; history import ${r.history?.ok ? "requested" : `not requested — ${r.history?.error}`}`
+                      : `Now on WhatsApp through Polaris${r.registered ? " (registered with Meta)" : ""}. Message it from a phone to test.`,
                     duration: 12000,
                   });
                   await onChanged();

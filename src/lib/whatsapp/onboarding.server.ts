@@ -27,7 +27,7 @@ import { createClient } from "@supabase/supabase-js";
 import { requireAccess } from "@/lib/auth/requireAccess.server";
 import { logAuditEvent } from "@/lib/admin/audit";
 import {
-  MetaError, exchangeSignupCode, grantedWabaIds, graphVersion, phoneDetails, requestSmbSync, subscribeWaba, wabaPhoneNumbers,
+  MetaError, exchangeSignupCode, grantedWabaIds, graphVersion, phoneDetails, registerNumber, requestSmbSync, subscribeWaba, wabaPhoneNumbers,
 } from "@/lib/whatsapp/cloud-api.server";
 import { loadLines, type WaLine } from "@/lib/whatsapp/lines.server";
 
@@ -319,16 +319,47 @@ export async function lineAdoptHandler(request: Request): Promise<Response> {
 
   let details: Record<string, any> = {};
   try { details = await phoneDetails(token, found.id); } catch (e) { console.warn("[wa-adopt] details", metaFailure(e)); }
+  // Shared with the WhatsApp Business app (Coexistence), or moved fully onto the API?
+  const coexist = details.is_on_biz_app === true;
+  if (!coexist && String(details.code_verification_status ?? "").toUpperCase() === "NOT_VERIFIED") {
+    return json({
+      error: `${pending.display_phone} is in WhatsApp Manager but not verified yet. Verify it there with the SMS or call code first, then press this again.`,
+    }, 409);
+  }
   try { await subscribeWaba(token, found.waba); } catch (e) {
     const f = metaFailure(e);
     return json({ error: `Couldn't subscribe Polaris to that WhatsApp account: ${f.message}`, code: f.code, fbtrace_id: f.fbtrace_id }, 502);
+  }
+
+  // A number moved fully onto the API must be registered before it can send or
+  // receive. Polaris sets its two-step PIN and keeps it (server-only) for any
+  // later re-registration. Never for a Coexistence number — it's registered already.
+  let registered = false;
+  if (!coexist && details.platform_type !== "CLOUD_API") {
+    const { data: kept } = await db.from("wa_line_tokens").select("two_step_pin").eq("line_id", pending.id).maybeSingle();
+    const pin = kept?.two_step_pin
+      || String(crypto.getRandomValues(new Uint32Array(1))[0] % 1_000_000).padStart(6, "0");
+    try {
+      await registerNumber(token, found.id, pin);
+    } catch (e) {
+      const f = metaFailure(e);
+      console.error("[wa-adopt] register failed", f.code, f.subcode, f.message, "fbtrace", f.fbtrace_id);
+      return json({
+        error: `Meta wouldn't register the number: ${f.message}${f.code ? ` (code ${f.code})` : ""}`,
+        code: f.code, fbtrace_id: f.fbtrace_id,
+      }, 502);
+    }
+    await db.from("wa_line_tokens").upsert(
+      { line_id: pending.id, access_token: null, token_kind: "system_user_env", two_step_pin: pin, updated_at: new Date().toISOString() },
+      { onConflict: "line_id" });
+    registered = true;
   }
 
   const { data: line, error } = await db.from("wa_lines").update({
     phone_number_id: found.id, waba_id: found.waba, token_source: "env", status: "connected",
     display_phone: details.display_phone_number ?? found.number ?? pending.display_phone,
     verified_name: details.verified_name ?? found.name ?? null,
-    coexistence: details.is_on_biz_app !== false,
+    coexistence: coexist,
     onboarded_at: new Date().toISOString(), onboarded_by: access.claims.userId,
     disconnected_at: null, disconnect_reason: null,
     contacts_sync_requested_at: null, contacts_sync_error: null,
@@ -336,18 +367,22 @@ export async function lineAdoptHandler(request: Request): Promise<Response> {
   }).eq("id", pending.id).select("*").single();
   if (error || !line) return json({ error: error?.message ?? "Couldn't save the number" }, 500);
 
-  const contacts = await runSync(db, line as WaLine, token, "contacts");
-  const history = await runSync(db, line as WaLine, token, "history");
+  // The phone's contacts and chat history can only be imported for a number that
+  // still runs in the WhatsApp Business app (Coexistence).
+  const notCoexist = { ok: false, error: "only for a number still in the WhatsApp Business app" };
+  const contacts = coexist ? await runSync(db, line as WaLine, token, "contacts") : notCoexist;
+  const history = coexist ? await runSync(db, line as WaLine, token, "history") : notCoexist;
   await logAuditEvent({
     event_type: "ADMIN", module: "communications",
     actor_id: access.claims.userId, actor_email: access.claims.email, actor_role: (access.claims.roleName ?? "admin") as any,
     target_type: "whatsapp_line", target_label: `${line.label} ${line.display_phone ?? ""}`.trim(),
-    detail: `WhatsApp number added from WhatsApp Manager — WABA ${found.waba}, phone ${found.id}; contacts sync ${contacts.ok ? "requested" : "failed"}, history sync ${history.ok ? "requested" : "failed"}`,
+    detail: `WhatsApp number added from WhatsApp Manager — WABA ${found.waba}, phone ${found.id}; ${coexist ? `Coexistence; contacts sync ${contacts.ok ? "requested" : "failed"}, history sync ${history.ok ? "requested" : "failed"}` : `API only${registered ? ", registered by Polaris" : ""}`}`,
     ip_address: request.headers.get("x-forwarded-for"), result: "success",
   } as any);
   return json({
     ok: true, line: { id: line.id, label: line.label, display_phone: line.display_phone },
-    platform_type: details.platform_type ?? null, is_on_biz_app: details.is_on_biz_app ?? null, contacts, history,
+    platform_type: details.platform_type ?? null, is_on_biz_app: details.is_on_biz_app ?? null, registered, coexistence: coexist,
+    contacts, history,
   });
 }
 

@@ -410,11 +410,23 @@ export async function wabaPhoneNumbers(token: string, wabaId: string): Promise<A
 /** A number's details; is_on_biz_app / platform_type confirm a Coexistence connection. */
 export async function phoneDetails(token: string, phoneNumberId: string): Promise<Record<string, any>> {
   try {
-    return await graphCall(token, `${encodeURIComponent(phoneNumberId)}?fields=display_phone_number,verified_name,is_on_biz_app,platform_type`);
+    return await graphCall(token, `${encodeURIComponent(phoneNumberId)}?fields=display_phone_number,verified_name,is_on_biz_app,platform_type,status,code_verification_status`);
   } catch {
     // Older versions don't know the coexistence fields — the basics still help.
-    return graphCall(token, `${encodeURIComponent(phoneNumberId)}?fields=display_phone_number,verified_name`);
+    return graphCall(token, `${encodeURIComponent(phoneNumberId)}?fields=display_phone_number,verified_name,platform_type,status,code_verification_status`);
   }
+}
+
+/**
+ * Register a verified number on the Cloud API so it can send and receive. Only
+ * for a number moved fully onto the API — a Coexistence number is already
+ * registered and must never be. `pin` is the six-digit two-step verification PIN.
+ */
+export async function registerNumber(token: string, phoneNumberId: string, pin: string): Promise<void> {
+  await graphCall(token, `${encodeURIComponent(phoneNumberId)}/register`, {
+    method: "POST",
+    body: JSON.stringify({ messaging_product: "whatsapp", pin }),
+  });
 }
 
 export async function subscribeWaba(token: string, wabaId: string): Promise<void> {
