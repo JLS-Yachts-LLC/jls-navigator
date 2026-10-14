@@ -1375,6 +1375,11 @@ export default {
       return anchorFormsHandler(request)
     }
 
+    if (url.pathname === '/api/esign-campaigns') {
+      const { esignCampaignsHandler } = await import('./routes/api.esign-campaigns')
+      return esignCampaignsHandler(request)
+    }
+
     if (url.pathname === '/api/feedback/notify' && request.method === 'POST') {
       return feedbackNotifyHandler(request)
     }

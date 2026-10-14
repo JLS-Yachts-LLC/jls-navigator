@@ -452,7 +452,12 @@ function TemplateEditDialog({ template, onClose, onSaved }: {
         name: form.name.trim(),
         category: form.category.trim() || null,
         description: form.description.trim() || null,
-        signature_fields: [sig],
+        // Keep the first field's extra settings (role, label) and any further
+        // fields (e.g. the Tariff Sheet's date field) — only the mark moves.
+        signature_fields: [
+          { ...(first ?? {}), ...sig },
+          ...(Array.isArray(template.signature_fields) ? template.signature_fields.slice(1) : []),
+        ],
         file_path,
         file_name,
         updated_at: new Date().toISOString(),

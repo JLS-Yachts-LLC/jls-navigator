@@ -25,6 +25,8 @@ export interface SendEmailOptions {
   /** Optional sender mailbox override (must be accessible to the Graph app). */
   from?: string;
   attachments?: EmailAttachment[];
+  /** Where replies should go (e.g. the staff member who sent it). */
+  replyTo?: string[];
 }
 
 export async function sendEmail(opts: SendEmailOptions): Promise<void> {
@@ -36,5 +38,6 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
     text: opts.text,
     from: opts.from,
     attachments: opts.attachments,
+    replyTo: opts.replyTo,
   });
 }

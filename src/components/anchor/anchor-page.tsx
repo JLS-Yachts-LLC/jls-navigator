@@ -6,11 +6,13 @@ import { EsignDetailPage } from "@/components/esign/esign-detail-page";
 import { EsignTemplatesPage } from "@/components/esign/esign-templates-page";
 import { FormsPage } from "@/components/anchor/forms-page";
 import { SignatoriesPage } from "@/components/anchor/signatories-page";
-import { PenLine } from "lucide-react";
+import { CampaignsPage } from "@/components/anchor/campaigns/campaigns-page";
+import { PenLine, Megaphone } from "lucide-react";
 
-/** Anchor — Documents (e-Sign) + Templates + Digital Forms + Signatories, as tabs. */
+/** Anchor — Documents (e-Sign) + Campaigns + Templates + Digital Forms + Signatories, as tabs. */
 const TABS = [
   { key: "documents", label: "Documents", icon: FileSignature },
+  { key: "campaigns", label: "Campaigns", icon: Megaphone },
   { key: "templates", label: "Templates", icon: FileStack },
   { key: "forms", label: "Forms", icon: FileText },
   { key: "signatories", label: "Signatories", icon: PenLine },
@@ -19,6 +21,8 @@ const TABS = [
 export function AnchorPage() {
   const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("documents");
   const [openDocId, setOpenDocId] = useState<string | null>(null);
+  // Remember the campaign being tracked, so "back" from a document returns to it.
+  const [campaignId, setCampaignId] = useState<string | null>(null);
 
   // Document detail renders INLINE (stays in the Beta view instead of routing away).
   if (openDocId) {
@@ -50,7 +54,7 @@ export function AnchorPage() {
         })}
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
-        {tab === "documents" ? <EsignPage onOpenDocument={setOpenDocId} /> : tab === "templates" ? <EsignTemplatesPage /> : tab === "signatories" ? <SignatoriesPage /> : <FormsPage />}
+        {tab === "documents" ? <EsignPage onOpenDocument={setOpenDocId} /> : tab === "campaigns" ? <CampaignsPage onOpenDocument={setOpenDocId} resumeCampaignId={campaignId} onDetailChange={setCampaignId} /> : tab === "templates" ? <EsignTemplatesPage /> : tab === "signatories" ? <SignatoriesPage /> : <FormsPage />}
       </div>
     </div>
   );

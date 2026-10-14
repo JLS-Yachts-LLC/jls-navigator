@@ -84,6 +84,7 @@ export async function sendGraphEmail(opts: {
   text?: string
   from?: string
   attachments?: { filename: string; contentBase64: string; contentType: string }[]
+  replyTo?: string[]
 }): Promise<void> {
   const guard = guardRecipients(opts.to, opts.cc ?? [], `email "${opts.subject}"`)
   if (guard.suppressed) throw new ClientEmailDisabledError(opts.subject, guard.blocked)
@@ -99,6 +100,7 @@ export async function sendGraphEmail(opts: {
     toRecipients: guard.to.map((a) => ({ emailAddress: { address: a } })),
   }
   if (guard.cc.length) message.ccRecipients = guard.cc.map((a) => ({ emailAddress: { address: a } }))
+  if (opts.replyTo?.length) message.replyTo = opts.replyTo.map((a) => ({ emailAddress: { address: a } }))
   if (opts.attachments?.length) {
     message.attachments = opts.attachments.map((a) => ({
       '@odata.type': '#microsoft.graph.fileAttachment',

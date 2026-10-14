@@ -10,6 +10,7 @@ import { getRequest } from "@tanstack/react-start/server";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { sendEmail } from "@/lib/ses.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { buildUploadedSignedPdf } from "@/lib/esign/signed-copy.server";
 
 const BUCKET = "esign-documents";
 const TOKEN_TTL_DAYS = 14;
@@ -165,6 +166,10 @@ async function responseFor(doc: any, status: string) {
     signerName: doc.signer_name as string,
     message: (doc.message ?? null) as string | null,
     status,
+    // Campaigns can switch e-signature off (paper only) — the page then offers
+    // just the download + upload-a-signed-copy route.
+    allowEsign: doc.allow_esign !== false,
+    signedMethod: (doc.signed_method ?? null) as string | null,
     fileUrl: await signedUrl(doc.file_path),
     signedFileUrl: doc.signed_file_path ? await signedUrl(doc.signed_file_path) : null,
   };
@@ -185,6 +190,7 @@ export const doSubmitSignature = createServerFn({ method: "POST" })
     if (doc.status === "signed") throw new Error("This document is already signed.");
     if (!["sent", "viewed"].includes(doc.status)) throw new Error("This document can no longer be signed.");
     if (doc.token_expires_at && new Date(doc.token_expires_at) < new Date()) throw new Error("This signing link has expired.");
+    if (doc.allow_esign === false) throw new Error("This document is signed on paper — please download it, sign it and upload the signed copy.");
 
     // Load the original PDF
     const { data: blob, error: dlErr } = await (supabaseAdmin as any).storage.from(BUCKET).download(doc.file_path);
@@ -229,8 +235,21 @@ export const doSubmitSignature = createServerFn({ method: "POST" })
     // Fields carry a role: 'client' (default) = the signer's drawn signature;
     // 'company' = the chosen JLS signatory's stored signature image.
     try {
-      const fields: { page?: number; pos?: string; role?: string; signatory_id?: string }[] =
+      const allFields: { page?: number; pos?: string; role?: string; signatory_id?: string; type?: string; label?: boolean; x?: number; y?: number }[] =
         Array.isArray(doc.signature_fields) ? doc.signature_fields : [];
+      // 'date' fields print the signing date at their spot (e.g. the Tariff
+      // Sheet's "Date" line); everything else is a signature.
+      const dateFields = allFields.filter(f => f.type === "date");
+      const fields = allFields.filter(f => f.type !== "date");
+      for (const f of dateFields) {
+        const p = pdf.getPages()[Math.max(0, (f.page ?? 1) - 1)];
+        if (!p || typeof f.x !== "number" || typeof f.y !== "number") continue;
+        const { width, height } = p.getSize();
+        const txt = signedAt.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Dubai" });
+        const size = 10;
+        const tw = font.widthOfTextAtSize(txt, size);
+        p.drawText(txt, { x: f.x * width - tw / 2, y: (1 - f.y) * height - size / 2, size, font, color: rgb(0.1, 0.12, 0.16) });
+      }
       if (fields.length) {
         const b64 = signatureDataUrl.includes(",") ? signatureDataUrl.split(",")[1] : signatureDataUrl;
         const clientSig = await pdf.embedPng(b64);
@@ -273,6 +292,7 @@ export const doSubmitSignature = createServerFn({ method: "POST" })
             y = pos.includes("top") ? height - pad - sh : pos.includes("middle") ? (height - sh) / 2 : pad + 12;
           }
           p.drawImage(sig, { x, y, width: sw, height: sh });
+          if ((f as any).label === false) continue;
           const label = isCompany ? `${entry!.name} · JLS Yachts · ${signedAt.toISOString().slice(0, 10)}` : `${doc.signer_name} · ${signedAt.toISOString().slice(0, 10)}`;
           p.drawText(label, { x, y: y - 9, size: 6.5, font, color: rgb(0.45, 0.5, 0.55) });
         }
@@ -286,7 +306,7 @@ export const doSubmitSignature = createServerFn({ method: "POST" })
     if (upErr) throw new Error("Could not store the signed document.");
 
     await (supabaseAdmin as any).from("esign_documents").update({
-      status: "signed", signed_at: signedAt.toISOString(), signed_file_path: signedPath,
+      status: "signed", signed_at: signedAt.toISOString(), signed_file_path: signedPath, signed_method: "esign",
     }).eq("id", doc.id);
     await logEvent(doc.id, "signed", doc.signer_email, meta);
 
@@ -300,6 +320,69 @@ export const doSubmitSignature = createServerFn({ method: "POST" })
         subject: `Signed: ${doc.title}${doc.reference ? ` (${doc.reference})` : ""}`,
         html: `<p>Thank you, ${doc.signer_name}. Your signed copy of <strong>${doc.title}</strong> is attached as a link below.</p><p><a href="${url}">Download signed document</a></p><p style="color:#94a3b8;font-size:12px;">JLS Yachts · Aquila One</p>`,
         text: `Thank you, ${doc.signer_name}. Signed copy: ${url}`,
+      });
+    } catch { /* non-fatal */ }
+
+    return { ok: true, signedFileUrl: url };
+  });
+
+// ── public: upload a paper-signed copy ──────────────────────────────────────
+// For signers who print, sign (and stamp) the PDF instead of signing on screen.
+// Accepts a PDF or a photo/scan (PNG/JPEG); images are wrapped into a PDF so
+// the signed copy is always a PDF. A certificate page records the upload.
+
+const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+
+export const doUploadSignedCopy = createServerFn({ method: "POST" })
+  // @ts-expect-error — explicit ctx typing
+  .handler(async (ctx: { data: { token: string; fileBase64: string; fileName?: string; contentType: string } }) => {
+    const { token, fileBase64, contentType } = ctx.data;
+    const meta = reqMeta();
+    if (!/^(application\/pdf|image\/png|image\/jpe?g)$/i.test(contentType ?? "")) {
+      throw new Error("Please upload a PDF, or a photo/scan as PNG or JPEG.");
+    }
+    const bin = atob(String(fileBase64 ?? "").replace(/^data:[^,]+,/, ""));
+    if (!bin.length) throw new Error("The file was empty.");
+    if (bin.length > MAX_UPLOAD_BYTES) throw new Error("That file is too large (8 MB maximum).");
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+
+    const { data: doc, error } = await (supabaseAdmin as any)
+      .from("esign_documents").select("*").eq("signing_token", token).maybeSingle();
+    if (error) throw adminError(error, "Could not load the document");
+    if (!doc) throw new Error("This signing link is invalid.");
+    if (doc.status === "signed") throw new Error("This document is already signed.");
+    if (!["sent", "viewed"].includes(doc.status)) throw new Error("This document can no longer be signed.");
+    if (doc.token_expires_at && new Date(doc.token_expires_at) < new Date()) throw new Error("This signing link has expired.");
+
+    const at = new Date();
+    let out: Uint8Array;
+    try {
+      out = await buildUploadedSignedPdf(bytes, contentType, {
+        title: doc.title, reference: doc.reference, signerName: doc.signer_name, signerEmail: doc.signer_email,
+        by: doc.signer_name, ip: meta.ip, at,
+      });
+    } catch {
+      throw new Error("That file could not be read. Please upload a PDF, PNG or JPEG.");
+    }
+    const signedPath = `signed/${doc.id}.pdf`;
+    const { error: upErr } = await (supabaseAdmin as any).storage.from(BUCKET)
+      .upload(signedPath, out, { contentType: "application/pdf", upsert: true });
+    if (upErr) throw new Error("Could not store the signed copy.");
+
+    await (supabaseAdmin as any).from("esign_documents").update({
+      status: "signed", signed_at: at.toISOString(), signed_file_path: signedPath, signed_method: "upload",
+    }).eq("id", doc.id);
+    await logEvent(doc.id, "signed_upload", doc.signer_email, meta);
+
+    const url = await signedUrl(signedPath, 60 * 60 * 24 * 14);
+    try {
+      await sendEmail({
+        from: ANCHOR_SENDER,
+        to: [doc.signer_email],
+        subject: `Received: ${doc.title}${doc.reference ? ` (${doc.reference})` : ""}`,
+        html: `<p>Thank you, ${String(doc.signer_name).replace(/</g, "&lt;")}. We have received your signed copy of <strong>${doc.title}</strong>.</p><p><a href="${url}">Download your copy</a></p><p style="color:#94a3b8;font-size:12px;">JLS Yachts · Aquila One</p>`,
+        text: `Thank you, ${doc.signer_name}. We have received your signed copy of ${doc.title}: ${url}`,
       });
     } catch { /* non-fatal */ }
 

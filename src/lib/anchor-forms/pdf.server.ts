@@ -16,7 +16,18 @@ function fmtVal(v: unknown): string {
   return String(v);
 }
 
+/** Where a letter's [[signature]] spot landed — page (1-based) and the centre of
+ *  the space as fractions of the page from the top-left (the e-Sign field shape). */
+export type SignatureAnchor = { page: number; x: number; y: number };
+
 export async function buildFormPdf(def: FormDef, values: Record<string, unknown>): Promise<Uint8Array> {
+  return (await buildFormPdfDetailed(def, values)).bytes;
+}
+
+export async function buildFormPdfDetailed(
+  def: FormDef, values: Record<string, unknown>,
+): Promise<{ bytes: Uint8Array; signature: SignatureAnchor | null }> {
+  let signature: SignatureAnchor | null = null;
   const pdf = await PDFDocument.create();
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
@@ -68,7 +79,20 @@ export async function buildFormPdf(def: FormDef, values: Record<string, unknown>
       const v = values[k];
       return v === null || v === undefined || v === "" ? "" : String(v);
     });
-    draw(merged, { size: 11, gap: 5 });
+    // [[signature]] marks where the signer signs: leave a gap there and record it.
+    const [before, ...after] = merged.split("[[signature]]");
+    draw(before, { size: 11, gap: 5 });
+    if (after.length) {
+      const SIG_SPACE = 52;
+      ensure(SIG_SPACE + 20);
+      signature = {
+        page: pdf.getPageCount(),
+        x: (margin + 70) / W,
+        y: (H - (y - SIG_SPACE / 2)) / H,
+      };
+      y -= SIG_SPACE;
+      draw(after.join(""), { size: 11, gap: 5 });
+    }
   } else {
     for (const section of def.sections) {
       if (section.title) { y -= 6; draw(section.title.toUpperCase(), { f: bold, size: 11, color: GOLD, gap: 6 }); }
@@ -89,5 +113,5 @@ export async function buildFormPdf(def: FormDef, values: Record<string, unknown>
     );
   });
 
-  return pdf.save();
+  return { bytes: await pdf.save(), signature };
 }

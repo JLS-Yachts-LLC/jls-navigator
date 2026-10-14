@@ -172,7 +172,7 @@ function Stamp({ icon, label, value }: { icon: React.ReactNode; label: string; v
 }
 
 // ── Signature field editor — place client + company signatures on the document ──
-type SigField = { page: number; pos: string; role: "client" | "company"; signatory_id?: string; signatory_name?: string; x?: number; y?: number };
+type SigField = { page: number; pos: string; role: "client" | "company"; signatory_id?: string; signatory_name?: string; x?: number; y?: number; type?: string; label?: boolean };
 const SIG_POSITIONS = ["bottom-right", "bottom-left", "bottom-center", "top-right", "top-left", "middle-center"];
 
 function SignatureFieldsEditor({ doc, fileUrl, onSaved }: { doc: Doc; fileUrl?: string | null; onSaved: () => void }) {
@@ -183,6 +183,8 @@ function SignatureFieldsEditor({ doc, fileUrl, onSaved }: { doc: Doc; fileUrl?: 
       role: f.role === "company" ? "company" : "client",
       signatory_id: f.signatory_id, signatory_name: f.signatory_name,
       x: typeof f.x === "number" ? f.x : undefined, y: typeof f.y === "number" ? f.y : undefined,
+      // Pass-through: 'date' fields and label:false must survive a re-save.
+      ...(f.type ? { type: String(f.type) } : {}), ...(f.label === false ? { label: false } : {}),
     })),
   );
   const [placerOpen, setPlacerOpen] = useState(false);
@@ -267,7 +269,7 @@ function SignatureFieldsEditor({ doc, fileUrl, onSaved }: { doc: Doc; fileUrl?: 
                 "rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
                 f.role === "company" ? "bg-primary/15 text-primary" : "bg-emerald-500/15 text-emerald-500",
               )}>
-                {f.role === "company" ? `Company · ${f.signatory_name ?? "signatory"}` : "Client"}
+                {f.type === "date" ? "Date" : f.role === "company" ? `Company · ${f.signatory_name ?? "signatory"}` : "Client"}
               </span>
               <span className="text-muted-foreground">Page {f.page}</span>
               <span className="capitalize text-muted-foreground">
@@ -488,7 +490,7 @@ function VisualFieldPlacer({ fileUrl, initialFields, signatories, onClose, onDon
                   )}
                   title="Drag to move"
                 >
-                  ✒ {f.role === "company" ? (f.signatory_name ?? "Company") : "Client"}
+                  {f.type === "date" ? "📅 Date" : <>✒ {f.role === "company" ? (f.signatory_name ?? "Company") : "Client"}</>}
                   <button
                     onClick={(e) => { e.stopPropagation(); setFields((all) => all.filter((_, x) => x !== i)); }}
                     onPointerDown={(e) => e.stopPropagation()}
