@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { YachtAgentPicker } from "./YachtAgentPicker";
 import { useYachtAgents, agentsLine, type AgentRow } from "./vessel-agents";
-import { useFleetPermitExpiry, PermitExpiryChips } from "./permit-expiry";
+import { useFleetPermitExpiry, PermitExpiryChips, PermitExpiryField } from "./permit-expiry";
 import type { CurrentPermit } from "@/lib/permit-expiry";
 import { VesselProvenance, SameNameBadge, VesselConfirmDetails, normVesselName } from "./VesselProvenance";
 import { JLS_QBO_REALM } from "@/lib/qb/realms";
@@ -1246,6 +1246,8 @@ function CardsView({ rows, staleIds, small, onArchive, onOpenYacht, onMovementFi
                 <div><div className="text-muted-foreground">LOA</div><div className="font-medium tabular-nums">{fmt(y.length_overall_m)} m</div></div>
                 <div><div className="text-muted-foreground">ETA</div><div className="font-medium tabular-nums">{fmt(y.eta)}</div></div>
                 <div><div className="text-muted-foreground">ETD</div><div className="font-medium tabular-nums">{fmt(y.etd)}</div></div>
+                <PermitExpiryField kind="fma" items={expiryByYacht?.get(y.id)} />
+                <PermitExpiryField kind="dma" items={expiryByYacht?.get(y.id)} />
               </div>
               {/* Permit expiry — the soonest first, coloured by urgency (SD-0047) */}
               <PermitExpiryChips items={expiryByYacht?.get(y.id)} />
