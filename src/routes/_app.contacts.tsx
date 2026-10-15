@@ -3,8 +3,9 @@ import { ResourcePage, type ResourceConfig } from "@/components/resource-page";
 import { Contact } from "lucide-react";
 
 // Business / network Contacts Directory (internal, staff-only). Grouped into
-// Networks, Managers, Yacht Captains (and any group added later). The group field
-// is a select, so ResourcePage surfaces it as a quick filter automatically.
+// Networks, Managers, Yacht Captains and any group staff create ("New group" —
+// kept in directory_contact_groups). The group field is a select, so
+// ResourcePage surfaces it as a quick filter automatically.
 const config: ResourceConfig = {
   table: "directory_contacts",
   title: "Contacts",
@@ -14,7 +15,8 @@ const config: ResourceConfig = {
   emptyHint: "Industry network, yacht managers and captains — JLS's external contact book.",
   orderBy: { col: "name", asc: true },
   fields: [
-    { key: "group_name", label: "Group", type: "select", table: true, options: ["Networks", "Managers", "Yacht Captains"] },
+    { key: "group_name", label: "Group", type: "select", table: true, options: ["Networks", "Managers", "Yacht Captains"],
+      optionsTable: { table: "directory_contact_groups", noun: "group" } },
     { key: "name", label: "Name", table: true },
     { key: "company", label: "Company", table: true },
     { key: "position", label: "Position", table: true },

@@ -12,7 +12,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Search, Pencil, Trash2, Loader2, Download, RefreshCw, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, Loader2, Download, RefreshCw, ArrowUpDown, ArrowUp, ArrowDown, FolderPlus } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -23,6 +23,10 @@ export interface FieldDef {
   label: string;
   type?: FieldType;
   options?: string[];
+  /** A select whose list staff can add to: its choices are also kept in this
+   *  table (one row per choice, in a `name` column), and the page offers
+   *  "New {noun}" in the header and in the form. */
+  optionsTable?: { table: string; noun: string };
   required?: boolean;
   table?: boolean;       // show as a table column
   badge?: boolean;       // render as a status pill (uses statusColors)
@@ -67,9 +71,29 @@ export function ResourcePage({ config }: { config: ResourceConfig }) {
   const [sortAsc, setSortAsc] = useState<boolean>(config.orderBy?.asc ?? true);
   const [extraOpen, setExtraOpen] = useState(false);
 
+  // Choices staff have added to a select (FieldDef.optionsTable), by field key.
+  const [addedOptions, setAddedOptions] = useState<Record<string, string[]>>({});
+  const [newOption, setNewOption] = useState<{ field: FieldDef; name: string; intoForm: boolean } | null>(null);
+  const [creatingOption, setCreatingOption] = useState(false);
+  const creatableFields = config.fields.filter((f) => f.type === "select" && f.optionsTable);
+
+  /** A select's choices: the fixed ones, then those added, then any value already on a record. */
+  function optionsOf(f: FieldDef): string[] {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    const add = (v: unknown) => {
+      const s = typeof v === "string" ? v.trim() : "";
+      if (s && !seen.has(s.toLowerCase())) { seen.add(s.toLowerCase()); out.push(s); }
+    };
+    (f.options ?? []).forEach(add);
+    [...(addedOptions[f.key] ?? [])].sort((a, b) => a.localeCompare(b)).forEach(add);
+    if (f.optionsTable) rows.map((r) => r[f.key]).forEach(add);
+    return out;
+  }
+
   // Select-type columns (other than the status field) become quick filters.
   const filterFields = config.fields.filter(
-    (f) => f.type === "select" && f.table && f.key !== config.statusKey && (f.options?.length ?? 0) > 0,
+    (f) => f.type === "select" && f.table && f.key !== config.statusKey && optionsOf(f).length > 0,
   );
   const sortableCols = config.fields.filter((f) => f.table);
   const [open, setOpen] = useState(false);
@@ -106,7 +130,38 @@ export function ResourcePage({ config }: { config: ResourceConfig }) {
   const hasYacht = config.fields.some((f) => f.type === "yacht") || config.fields.some((f) => f.key === "yacht_id");
   const hasOrg = config.fields.some((f) => f.type === "org") || config.fields.some((f) => f.key === "org_id");
 
-  useEffect(() => { void load(); if (hasYacht) void loadYachts(); if (hasOrg) void loadOrganisations(); }, [config.table]);
+  useEffect(() => { void load(); if (hasYacht) void loadYachts(); if (hasOrg) void loadOrganisations(); void loadAddedOptions(); }, [config.table]);
+
+  async function loadAddedOptions() {
+    if (!creatableFields.length) return;
+    const entries = await Promise.all(creatableFields.map(async (f) => {
+      const { data } = await (supabase as any).from(f.optionsTable!.table).select("name");
+      return [f.key, ((data ?? []) as Array<{ name: string }>).map((r) => r.name)] as const;
+    }));
+    setAddedOptions(Object.fromEntries(entries));
+  }
+
+  /** Add a choice to a creatable select; optionally put it straight on the open form. */
+  async function createOption() {
+    if (!newOption) return;
+    const name = newOption.name.trim().replace(/\s+/g, " ");
+    const { field, intoForm } = newOption;
+    if (!name) return;
+    if (name.length > 60) { toast.error(`Keep the ${field.optionsTable!.noun} name to 60 characters`); return; }
+    const existing = optionsOf(field).find((o) => o.toLowerCase() === name.toLowerCase());
+    if (existing) {
+      toast.info(`"${existing}" already exists`);
+    } else {
+      setCreatingOption(true);
+      const { error } = await (supabase as any).from(field.optionsTable!.table).insert([{ name, created_by: user?.id }]);
+      setCreatingOption(false);
+      if (error) { toast.error(error.message); return; }
+      setAddedOptions((p) => ({ ...p, [field.key]: [...(p[field.key] ?? []), name] }));
+      toast.success(`${field.optionsTable!.noun.charAt(0).toUpperCase()}${field.optionsTable!.noun.slice(1)} "${name}" created`);
+    }
+    if (intoForm) setForm((s) => ({ ...s, [field.key]: existing ?? name }));
+    setNewOption(null);
+  }
 
   async function load() {
     setLoading(true);
@@ -251,9 +306,14 @@ export function ResourcePage({ config }: { config: ResourceConfig }) {
               <SelectTrigger className="h-9 w-40 text-xs"><SelectValue placeholder={`All ${f.label}`} /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All {f.label}</SelectItem>
-                {f.options!.map((o) => <SelectItem key={o} value={o} className="capitalize">{o}</SelectItem>)}
+                {optionsOf(f).map((o) => <SelectItem key={o} value={o} className="capitalize">{o}</SelectItem>)}
               </SelectContent>
             </Select>
+          ))}
+          {creatableFields.map((f) => (
+            <Button key={f.key} size="sm" variant="outline" onClick={() => setNewOption({ field: f, name: "", intoForm: false })} className="h-9 gap-1.5 text-xs">
+              <FolderPlus className="h-3.5 w-3.5" /> New {f.optionsTable!.noun}
+            </Button>
           ))}
           <div className="flex items-center">
             <Select value={sortCol} onValueChange={setSortCol}>
@@ -352,11 +412,15 @@ export function ResourcePage({ config }: { config: ResourceConfig }) {
                 {f.type === "textarea" ? (
                   <Textarea value={form[f.key] ?? ""} onChange={(e) => setForm((s) => ({ ...s, [f.key]: e.target.value }))} rows={2} className="resize-none text-sm" placeholder={f.placeholder} />
                 ) : f.type === "select" ? (
-                  <Select value={form[f.key] ?? "__none"} onValueChange={(v) => setForm((s) => ({ ...s, [f.key]: v === "__none" ? "" : v }))}>
+                  <Select value={form[f.key] || "__none"} onValueChange={(v) => {
+                    if (v === "__new") { setNewOption({ field: f, name: "", intoForm: true }); return; }
+                    setForm((s) => ({ ...s, [f.key]: v === "__none" ? "" : v }));
+                  }}>
                     <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="— Select —" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__none">— Select —</SelectItem>
-                      {(f.options ?? []).map((o) => <SelectItem key={o} value={o}>{config.statusLabels?.[o] ?? o}</SelectItem>)}
+                      {optionsOf(f).map((o) => <SelectItem key={o} value={o}>{config.statusLabels?.[o] ?? o}</SelectItem>)}
+                      {f.optionsTable && <SelectItem value="__new" className="text-primary">+ New {f.optionsTable.noun}…</SelectItem>}
                     </SelectContent>
                   </Select>
                 ) : f.type === "yacht" ? (
@@ -387,6 +451,30 @@ export function ResourcePage({ config }: { config: ResourceConfig }) {
             <Button variant="outline" onClick={() => setOpen(false)} disabled={busy}>Cancel</Button>
             <Button onClick={save} disabled={busy} className="gap-1.5">{busy && <Loader2 className="h-4 w-4 animate-spin" />}{editing ? "Save Changes" : `Add ${config.singular}`}</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* New choice for a creatable select (e.g. a new Contacts group) */}
+      <Dialog open={!!newOption} onOpenChange={(o) => { if (!o) setNewOption(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>New {newOption?.field.optionsTable?.noun}</DialogTitle></DialogHeader>
+          <form onSubmit={(e) => { e.preventDefault(); void createOption(); }} className="space-y-3 py-1">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Name</Label>
+              <Input autoFocus value={newOption?.name ?? ""} maxLength={60}
+                     onChange={(e) => setNewOption((n) => (n ? { ...n, name: e.target.value } : n))}
+                     placeholder={`e.g. ${newOption?.field.key === "group_name" ? "Suppliers" : "New"}`} className="h-9" />
+              {newOption && optionsOf(newOption.field).length > 0 && (
+                <p className="text-[11px] text-muted-foreground">Already: {optionsOf(newOption.field).join(", ")}</p>
+              )}
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setNewOption(null)} disabled={creatingOption}>Cancel</Button>
+              <Button type="submit" disabled={creatingOption || !newOption?.name.trim()} className="gap-1.5">
+                {creatingOption && <Loader2 className="h-4 w-4 animate-spin" />} Create
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 
