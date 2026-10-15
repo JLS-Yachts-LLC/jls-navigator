@@ -5,7 +5,7 @@
  *
  *   GET  /api/guest?op=home                         → who they are + the items shared with them
  *   GET  /api/guest?op=folder&type=&id=             → one shared container's contents
- *   GET  /api/guest?op=open&type=&id=[&download=1]  → a short-lived link to one file
+ *   GET  /api/guest?op=open&type=&id=[&download=1]  → { url, name }: a short-lived link to one file
  *   POST /api/guest  { op: "mkdir",  parentId, name }        (Training, Read & write)
  *   POST /api/guest  { op: "rename", type, id, name }        (Read & write, inside a share)
  *   POST /api/guest  { op: "remove", type, id }              (Read & write, guest-added only)
@@ -39,7 +39,7 @@ import { loadVesselLibrary, placementOf, vesselName, type VesselLibrary } from "
 import { crewIdentity, loadCrewLibrary, type CrewLibrary } from "@/lib/guest/crew-docs.server";
 import { PASSPORT_COLUMNS } from "@/lib/crew-docs/library";
 import { sharePointDownloadUrl } from "@/lib/yacht-doc-sharepoint.server";
-import { parseStorageRef, storageRef } from "@/lib/signed-url";
+import { parseStorageRefOrPath, storageRef } from "@/lib/signed-url";
 import { uploadContentType, uploadRejectionReason } from "@/lib/upload-guard";
 
 const BUCKET = "permit-documents";
@@ -72,7 +72,7 @@ async function log(ctx: Ctx, action: string, a: Access | null, res: { type: stri
 }
 
 async function removeObjects(sb: any, refs: (string | null)[]) {
-  const paths = refs.map((r) => (r ? parseStorageRef(r, BUCKET) : null))
+  const paths = refs.map((r) => (r ? parseStorageRefOrPath(r, BUCKET) : null))
     .filter((p): p is { bucket: string; path: string } => !!p && p.bucket === BUCKET).map((p) => p.path);
   for (let i = 0; i < paths.length; i += 1000) await sb.storage.from(BUCKET).remove(paths.slice(i, i + 1000));
 }
@@ -86,8 +86,11 @@ async function storeFile(sb: any, prefix: string, file: File): Promise<{ ref: st
   return { ref: storageRef(BUCKET, key) };
 }
 
+// Stored values are "<bucket>/<path>" ("permit-documents/training/…"). NOT
+// parseStorageRef(value, BUCKET): given a default bucket it reads the WHOLE value
+// as the path, so the bucket name was doubled and no guest file would open.
 async function signed(sb: any, fileUrl: string | null, name: string, download: boolean): Promise<string | null> {
-  const ref = fileUrl ? parseStorageRef(fileUrl, BUCKET) : null;
+  const ref = fileUrl ? parseStorageRefOrPath(fileUrl, BUCKET) : null;
   if (!ref) return null;
   const { data } = await sb.storage.from(ref.bucket).createSignedUrl(ref.path, OPEN_TTL, download ? { download: name } : undefined);
   return data?.signedUrl ?? null;
@@ -345,7 +348,7 @@ async function crewOpen(ctx: Ctx, ref: Ref, download: boolean): Promise<Response
     const url = await signed(ctx.sb, d.file_url, d.file_name ?? docName(d), download);
     if (!url) return json({ error: "This file can't be opened right now." }, 500);
     await log(ctx, download ? "download" : "open", a, { type: ref.type, id: d.id, name: docName(d) });
-    return json({ url });
+    return json({ url, name: d.file_name ?? docName(d) });
   }
   const sep = ref.id.indexOf(":");
   const [head, tail] = [ref.id.slice(0, sep), ref.id.slice(sep + 1)];
@@ -366,7 +369,7 @@ async function crewOpen(ctx: Ctx, ref: Ref, download: boolean): Promise<Response
     const url = await signed(ctx.sb, item.stored, `${lib.crew.name} - ${item.name}.${ext}`, download);
     if (!url) return json({ error: "This file can't be opened right now." }, 500);
     await log(ctx, download ? "download" : "open", a, { type: "crew_passport_file", id: head, name: item.name }, lib.crew.name);
-    return json({ url });
+    return json({ url, name: `${lib.crew.name} - ${item.name}.${ext}` });
   }
 
   if (ref.type === "crew_sp") {
@@ -379,7 +382,7 @@ async function crewOpen(ctx: Ctx, ref: Ref, download: boolean): Promise<Response
     const url = await sharePointDownloadUrl(tail);
     if (!url) return json({ error: "SharePoint couldn't provide this file just now — try again shortly." }, 502);
     await log(ctx, download ? "download" : "open", a, { type: "crew_sp_file", id: head, name: item.name }, `${lib.crew.name} · SharePoint`);
-    return json({ url });
+    return json({ url, name: item.name });
   }
   return json({ error: "Unknown file type" }, 400);
 }
@@ -472,7 +475,7 @@ async function open(ctx: Ctx, ref: Ref, download: boolean): Promise<Response> {
     const url = await signed(ctx.sb, d.file_url, d.file_name ?? docName(d), download);
     if (!url) return json({ error: "This file can't be opened right now." }, 500);
     await log(ctx, download ? "download" : "open", a, { type: ref.type, id: d.id, name: docName(d) });
-    return json({ url });
+    return json({ url, name: d.file_name ?? docName(d) });
   }
   if (ref.type === "yacht_document") {
     const d = await getYachtDoc(ctx.sb, ref.id);
@@ -482,7 +485,7 @@ async function open(ctx: Ctx, ref: Ref, download: boolean): Promise<Response> {
     const url = await signed(ctx.sb, d.file_url, d.file_name ?? docName(d), download);
     if (!url) return json({ error: "This file can't be opened right now." }, 500);
     await log(ctx, download ? "download" : "open", a, { type: ref.type, id: d.id, name: docName(d) });
-    return json({ url });
+    return json({ url, name: d.file_name ?? docName(d) });
   }
   if (ref.type === "yacht_sp") {
     const [yachtId, spId] = [ref.id.slice(0, ref.id.indexOf(":")), ref.id.slice(ref.id.indexOf(":") + 1)];
@@ -505,7 +508,7 @@ async function open(ctx: Ctx, ref: Ref, download: boolean): Promise<Response> {
     const url = await sharePointDownloadUrl(spId);
     if (!url) return json({ error: "SharePoint couldn't provide this file just now — try again shortly." }, 502);
     await log(ctx, download ? "download" : "open", a, { type: "yacht_sp", id: spId, name: item.name }, `${lib.yacht.name} · SharePoint`);
-    return json({ url });
+    return json({ url, name: item.name });
   }
   if (ref.type.startsWith("crew_")) return crewOpen(ctx, ref, download);
   return json({ error: "Unknown file type" }, 400);
