@@ -403,7 +403,8 @@ export const doSubmitSignature = createServerFn({ method: "POST" })
     } catch { /* in-place stamp is best-effort; certificate page still carries the signature */ }
 
     const outBytes = await pdf.save();
-    const signedPath = `signed/${doc.id}.pdf`;
+    // Confidential documents keep their files under the fenced "confidential/" prefix.
+    const signedPath = `${doc.confidential ? "confidential/" : ""}signed/${doc.id}.pdf`;
     const { error: upErr } = await (supabaseAdmin as any).storage.from(BUCKET)
       .upload(signedPath, outBytes, { contentType: "application/pdf", upsert: true });
     if (upErr) throw new Error("Could not store the signed document.");
@@ -471,7 +472,8 @@ export const doUploadSignedCopy = createServerFn({ method: "POST" })
     } catch {
       throw new Error("That file could not be read. Please upload a PDF, PNG or JPEG.");
     }
-    const signedPath = `signed/${doc.id}.pdf`;
+    // Confidential documents keep their files under the fenced "confidential/" prefix.
+    const signedPath = `${doc.confidential ? "confidential/" : ""}signed/${doc.id}.pdf`;
     const { error: upErr } = await (supabaseAdmin as any).storage.from(BUCKET)
       .upload(signedPath, out, { contentType: "application/pdf", upsert: true });
     if (upErr) throw new Error("Could not store the signed copy.");
