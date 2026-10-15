@@ -4,6 +4,7 @@
  */
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib'
 import { declarationDate, type DeclarationPrefill } from '@/lib/bunkering/master-declaration'
+import { JLS_COMPANY } from '@/lib/brand/jls-company'
 
 const NAVY = rgb(0.05, 0.10, 0.16)
 const GREY = rgb(0.45, 0.49, 0.54)
@@ -42,7 +43,7 @@ export async function buildMasterDeclaration(prefill: Partial<DeclarationPrefill
 
   // letterhead
   centre('JLS YACHTS LLC', 16, bold); y -= 16
-  centre('Rm. 906 Sheikha Noora Bldg., Barsha Heights, P.O. Box 213623, Dubai, UAE', 8.5, font, GREY); y -= 12
+  centre(JLS_COMPANY.address, 8.5, font, GREY); y -= 12
   centre('Tel.: +971 (0)4 447 0782 | E-mail: info@jlsyachts.com | Web: www.jlsyachts.com', 8.5, font, GREY); y -= 14
   page.drawLine({ start: { x: M, y }, end: { x: W - M, y }, thickness: 0.8, color: GREY })
   y -= 30

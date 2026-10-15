@@ -7,7 +7,9 @@
 export const JLS_COMPANY = {
   legalName: "JLS YACHTS LLC",
   tagline: "A Family of Excellence",
-  address: "C1, Marina View, Mina Rashid, P.O. Box 341766, Dubai, United Arab Emirates",
+  // Legal address as registered on the Ejari (confirmed by Matt, 15 Oct 2026) —
+  // required on every JLS document.
+  address: "Leader Sport Trading, Compound No. 58, Dubai Investment Park First, Dubai, UAE",
   phone: "+971 (0)4 331 3555",
   email: "info@jlsyachts.com",
   websites: ["www.jlsyachts.com", "www.superyachtme.com"],

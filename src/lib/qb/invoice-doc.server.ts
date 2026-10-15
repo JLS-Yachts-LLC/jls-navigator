@@ -211,7 +211,7 @@ type Company = { name: string; addressLines: string[]; contact: string; website:
 // (for qb-invoice-pdf) can override any part without a deploy.
 const TEMPLATE_LETTERHEAD: Company = {
   name: 'JLS YACHTS LLC',
-  addressLines: ['Office 58-2 Leader Sport Compound, Plot 598-1000', 'DIP 1, P.O.Box 341766, Dubai, United Arab Emirates'],
+  addressLines: ['Leader Sport Trading, Compound No. 58', 'Dubai Investment Park First, Dubai, UAE'],
   contact: 'T: +971(0)4 331 3555 | E: info@jlsyachts.com',
   website: 'Website: www.jlsyachts.com',
   trn: 'TRN NO: 100293518500003',

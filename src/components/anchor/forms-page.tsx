@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ANCHOR_FORMS, type FormDef, type FormField } from "@/lib/anchor-forms/definitions";
+import { JLS_COMPANY } from "@/lib/brand/jls-company";
 
 // yachts column → form field key(s) (auto-populate vessel data). A column may feed
 // several forms' fields (e.g. port_of_registry). Anything we don't hold on the yacht
@@ -27,7 +28,7 @@ const VESSEL_COLS =
 
 // JLS is the Approved Maritime Agent — pre-fill the agent block on every DMA form.
 const AGENT_DEFAULTS: Record<string, string> = {
-  agent_details: "JLS Yachts LLC, Office 58-2 Leader Sport Compound, Plot 598-1000, DIP 1, P.O. Box 341766, Dubai, United Arab Emirates",
+  agent_details: `JLS Yachts LLC, ${JLS_COMPANY.address}`,
   contact_number: "+971 (0)4 331 3555",
   email: "info@jlsyachts.com",
   // CF12a agent block
