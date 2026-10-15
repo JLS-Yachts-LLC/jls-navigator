@@ -105,8 +105,10 @@ function FormPrefill({ def, values, onChange }: { def: FormDef; values: Record<s
   );
 }
 
-export function CampaignEditor({ campaignId, onClose, onSent }: {
+export function CampaignEditor({ campaignId, onClose, onSent, confidential = false }: {
   campaignId: string | null;
+  /** A confidential campaign: saved as confidential, offered confidential templates only. */
+  confidential?: boolean;
   onClose: () => void;
   onSent: (id: string) => void;
 }) {
@@ -131,7 +133,8 @@ export function CampaignEditor({ campaignId, onClose, onSent }: {
     setLoading(true);
     try {
       const [{ data: tpls }, profile] = await Promise.all([
-        db().from("esign_templates").select("id, name, description, category").order("name"),
+        // Only templates of the same kind — a normal campaign must never send a confidential template.
+        db().from("esign_templates").select("id, name, description, category").eq("confidential", confidential).order("name"),
         user?.id ? db().from("user_profiles").select("display_name").eq("user_id", user.id).maybeSingle() : Promise.resolve({ data: null }),
       ]);
       setSenderName((profile as any)?.data?.display_name || user?.email || "JLS Yachts");
@@ -260,7 +263,7 @@ export function CampaignEditor({ campaignId, onClose, onSent }: {
         if (error) throw error;
       } else {
         const { data, error } = await db().from("esign_campaigns")
-          .insert({ ...row, created_by: user?.id ?? null, created_by_name: senderName }).select("id").single();
+          .insert({ ...row, confidential, created_by: user?.id ?? null, created_by_name: senderName }).select("id").single();
         if (error) throw error;
         id = data.id as string;
         setD((cur) => ({ ...cur, id }));

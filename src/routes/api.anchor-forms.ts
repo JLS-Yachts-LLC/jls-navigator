@@ -58,15 +58,31 @@ export async function anchorFormsHandler(request: Request): Promise<Response> {
   try { body = await request.json(); } catch { /* allow empty */ }
   const action = body.action as string;
 
+  // Anchor → Confidential: a confidential form exists only for admins and people with
+  // the "Anchor — Confidential" permission. This route runs as the service role (RLS
+  // doesn't apply), so every action checks it here. Its files go under "confidential/".
+  let confOk: boolean | null = null;
+  const canSeeConfidential = async () => {
+    if (confOk === null) {
+      const { data } = await db().rpc("can_see_anchor_confidential", { p_user_id: user.id });
+      confOk = data === true;
+    }
+    return confOk;
+  };
+  const hiddenFromCaller = async (sub: any) => !!sub?.confidential && !(await canSeeConfidential());
+  const inArea = (confidential: boolean | null | undefined, path: string) => (confidential ? `confidential/${path}` : path);
+
   try {
     // ── Generate: save submission + build PDF ──
     if (action === "generate") {
       const def = getFormDef(body.formKey);
       if (!def) return json({ ok: false, error: `Unknown form: ${body.formKey}` }, 400);
       const values = (body.values ?? {}) as Record<string, unknown>;
+      const confidential = body.confidential === true;
+      if (confidential && !(await canSeeConfidential())) return json({ ok: false, error: "You don't have access to Anchor's confidential area." }, 403);
 
       const { data: sub, error } = await db().from("anchor_form_submissions").insert({
-        form_key: def.key, title: def.title, values, status: "completed", created_by: user.id,
+        form_key: def.key, title: def.title, values, status: "completed", created_by: user.id, confidential,
       }).select("id").single();
       if (error) return json({ ok: false, error: error.message }, 500);
 
@@ -83,7 +99,7 @@ export async function anchorFormsHandler(request: Request): Promise<Response> {
       } else {
         pdfBytes = await buildFormPdf(def, values);
       }
-      const path = `forms/${sub.id}.pdf`;
+      const path = inArea(confidential, `forms/${sub.id}.pdf`);
       const { error: upErr } = await db().storage.from(BUCKET)
         .upload(path, pdfBytes, { contentType: "application/pdf", upsert: true });
       if (upErr) return json({ ok: false, error: `PDF upload failed: ${upErr.message}` }, 500);
@@ -95,7 +111,7 @@ export async function anchorFormsHandler(request: Request): Promise<Response> {
     // ── Email: send the completed PDF link ──
     if (action === "email") {
       const { data: sub } = await db().from("anchor_form_submissions").select("*").eq("id", body.submissionId).maybeSingle();
-      if (!sub?.pdf_path) return json({ ok: false, error: "Submission or PDF not found" }, 404);
+      if (!sub?.pdf_path || await hiddenFromCaller(sub)) return json({ ok: false, error: "Submission or PDF not found" }, 404);
       const to = String(body.to ?? "").trim();
       if (!to) return json({ ok: false, error: "Recipient email required" }, 400);
       const url = await signedUrl(sub.pdf_path);
@@ -114,7 +130,7 @@ export async function anchorFormsHandler(request: Request): Promise<Response> {
     // ── Sign: create an Anchor e-Sign document from the PDF + send it ──
     if (action === "sign") {
       const { data: sub } = await db().from("anchor_form_submissions").select("*").eq("id", body.submissionId).maybeSingle();
-      if (!sub?.pdf_path) return json({ ok: false, error: "Submission or PDF not found" }, 404);
+      if (!sub?.pdf_path || await hiddenFromCaller(sub)) return json({ ok: false, error: "Submission or PDF not found" }, 404);
       const signerName = String(body.signerName ?? "").trim();
       const signerEmail = String(body.signerEmail ?? "").trim();
       if (!signerName || !signerEmail) return json({ ok: false, error: "Signer name and email required" }, 400);
@@ -128,6 +144,7 @@ export async function anchorFormsHandler(request: Request): Promise<Response> {
         signer_name: signerName, signer_email: signerEmail,
         status: "sent", signing_token: token, token_expires_at: expires,
         sent_at: new Date().toISOString(), created_by: user.id,
+        confidential: !!sub.confidential, // a confidential form makes a confidential document
       }).select("id").single();
       if (error) return json({ ok: false, error: error.message }, 500);
 
@@ -148,8 +165,8 @@ export async function anchorFormsHandler(request: Request): Promise<Response> {
     if (action === "submit-approval") {
       const chain = (body.chain ?? []) as { name: string; email: string }[];
       if (!chain.length) return json({ ok: false, error: "Add at least one approver" }, 400);
-      const { data: sub } = await db().from("anchor_form_submissions").select("id, title, pdf_path").eq("id", body.submissionId).maybeSingle();
-      if (!sub?.pdf_path) return json({ ok: false, error: "Submission or PDF not found" }, 404);
+      const { data: sub } = await db().from("anchor_form_submissions").select("id, title, pdf_path, confidential").eq("id", body.submissionId).maybeSingle();
+      if (!sub?.pdf_path || await hiddenFromCaller(sub)) return json({ ok: false, error: "Submission or PDF not found" }, 404);
 
       await db().from("anchor_form_submissions").update({
         approval_status: "pending", approval_chain: chain, approval_step: 0,
@@ -172,7 +189,7 @@ export async function anchorFormsHandler(request: Request): Promise<Response> {
     // ── Approve: advance the chain; finalise (stamp + email authority) on the last step ──
     if (action === "approve") {
       const { data: sub } = await db().from("anchor_form_submissions").select("*").eq("id", body.submissionId).maybeSingle();
-      if (!sub) return json({ ok: false, error: "Submission not found" }, 404);
+      if (!sub || await hiddenFromCaller(sub)) return json({ ok: false, error: "Submission not found" }, 404);
       if (sub.approval_status !== "pending") return json({ ok: false, error: "Not awaiting approval" }, 400);
       const chain = (sub.approval_chain ?? []) as { name: string; email: string }[];
       const step = sub.approval_step ?? 0;
@@ -183,7 +200,7 @@ export async function anchorFormsHandler(request: Request): Promise<Response> {
         // Final approval → stamp signatory signature + email the authority.
         let finalPath = sub.pdf_path;
         if (sub.signatory_id && sub.pdf_path) {
-          const out = `forms/${sub.id}-signed.pdf`;
+          const out = inArea(sub.confidential, `forms/${sub.id}-signed.pdf`);
           const ok = await stampSignature(sub.pdf_path, sub.signatory_id, out).catch(() => false);
           if (ok) finalPath = out;
         }
@@ -221,8 +238,8 @@ export async function anchorFormsHandler(request: Request): Promise<Response> {
 
     // ── Reject ──
     if (action === "reject") {
-      const { data: sub } = await db().from("anchor_form_submissions").select("approval_log").eq("id", body.submissionId).maybeSingle();
-      if (!sub) return json({ ok: false, error: "Submission not found" }, 404);
+      const { data: sub } = await db().from("anchor_form_submissions").select("approval_log, confidential").eq("id", body.submissionId).maybeSingle();
+      if (!sub || await hiddenFromCaller(sub)) return json({ ok: false, error: "Submission not found" }, 404);
       await db().from("anchor_form_submissions").update({
         approval_status: "rejected", status: "completed",
         approval_log: [...(sub.approval_log ?? []), logEntry(user.email ?? "user", "rejected", body.note)],

@@ -12,9 +12,10 @@ import { PenLine, Megaphone } from "lucide-react";
 
 /**
  * Anchor — Documents (e-Sign) + Campaigns + Templates + Digital Forms + Signatories,
- * as tabs, plus Confidential (its own Documents / Templates / Signatories) for
- * admins and people with the "Anchor — Confidential" permission only. The
- * database hides confidential items from everyone else; the tab is just not shown.
+ * as tabs, plus Confidential (its own Documents / Campaigns / Templates / Forms /
+ * Signatories) for admins and people with the "Anchor — Confidential" permission
+ * only. The database hides confidential items from everyone else; the tab is just
+ * not shown.
  */
 const TABS = [
   { key: "documents", label: "Documents", icon: FileSignature },
@@ -28,7 +29,9 @@ type TabKey = (typeof TABS)[number]["key"];
 
 const CONFIDENTIAL_TABS = [
   { key: "documents", label: "Documents", icon: FileSignature },
+  { key: "campaigns", label: "Campaigns", icon: Megaphone },
   { key: "templates", label: "Templates", icon: FileStack },
+  { key: "forms", label: "Forms", icon: FileText },
   { key: "signatories", label: "Signatories", icon: PenLine },
 ] as const;
 type ConfidentialKey = (typeof CONFIDENTIAL_TABS)[number]["key"];
@@ -99,7 +102,9 @@ export function AnchorPage() {
       <div className="min-h-0 flex-1 overflow-auto">
         {current === "confidential"
           ? confTab === "documents" ? <EsignPage confidential onOpenDocument={setOpenDocId} />
+            : confTab === "campaigns" ? <CampaignsPage confidential onOpenDocument={setOpenDocId} />
             : confTab === "templates" ? <EsignTemplatesPage confidential />
+            : confTab === "forms" ? <FormsPage confidential />
             : <SignatoriesPage confidential />
           : current === "documents" ? <EsignPage onOpenDocument={setOpenDocId} />
           : current === "campaigns" ? <CampaignsPage onOpenDocument={setOpenDocId} resumeCampaignId={campaignId} onDetailChange={setCampaignId} />

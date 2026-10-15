@@ -215,9 +215,10 @@ async function fileCompletedForms(doc: any, pack: PackPart[], partBytes: Uint8Ar
       const { data: sub } = await (supabaseAdmin as any).from("anchor_form_submissions").insert({
         form_key: p.key, title: `${p.title}${doc.title.includes(" — ") ? ` — ${doc.title.split(" — ").pop()}` : ""}`,
         values: p.values, status: p.signs ? "signed" : "returned", esign_document_id: doc.id, created_by: doc.created_by ?? null,
+        confidential: !!doc.confidential, // forms from a confidential document stay confidential
       }).select("id").single();
       if (!sub) continue;
-      const path = `forms/${sub.id}.pdf`;
+      const path = `${doc.confidential ? "confidential/" : ""}forms/${sub.id}.pdf`;
       const up = await (supabaseAdmin as any).storage.from(BUCKET).upload(path, partBytes[i], { contentType: "application/pdf", upsert: true });
       if (!up.error) await (supabaseAdmin as any).from("anchor_form_submissions").update({ pdf_path: path }).eq("id", sub.id);
     } catch { /* filing is best-effort; the signed pack is the record */ }

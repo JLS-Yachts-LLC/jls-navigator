@@ -125,6 +125,20 @@ export async function esignCampaignsHandler(request: Request): Promise<Response>
   try { body = await request.json(); } catch { /* empty */ }
   const action = String(body.action ?? "");
 
+  // Anchor → Confidential: a confidential campaign (and its documents) exists only for
+  // admins and people with the "Anchor — Confidential" permission. This route runs as
+  // the service role (RLS doesn't apply), so each action checks it here.
+  let confOk: boolean | null = null;
+  const hiddenFromCaller = async (row: { confidential?: boolean | null } | null | undefined) => {
+    if (!row?.confidential) return false;
+    if (confOk === null) {
+      const { data } = await sb.rpc("can_see_anchor_confidential", { p_user_id: staff.userId });
+      confOk = data === true;
+    }
+    return !confOk;
+  };
+  const inArea = (confidential: boolean | null | undefined, path: string) => (confidential ? `confidential/${path}` : path);
+
   try {
     if (action === "status") {
       return json({ ok: true, emailEnabled: outboundEmailEnabled(), clientEmailEnabled: clientEmailEnabled() });
@@ -133,7 +147,7 @@ export async function esignCampaignsHandler(request: Request): Promise<Response>
     // ── Test: the real email, to the caller only ──
     if (action === "test") {
       const { data: campaign } = await sb.from("esign_campaigns").select("*").eq("id", body.campaignId).maybeSingle();
-      if (!campaign) return json({ error: "Campaign not found" }, 404);
+      if (!campaign || await hiddenFromCaller(campaign)) return json({ error: "Campaign not found" }, 404);
       const { data: first } = await sb.from("esign_campaign_recipients")
         .select(`*, yachts:yacht_id(${VESSEL_COLS})`).eq("campaign_id", campaign.id)
         .order("created_at").limit(1).maybeSingle();
@@ -163,7 +177,7 @@ export async function esignCampaignsHandler(request: Request): Promise<Response>
       if (r.status === "sent" && r.esign_document_id) return json({ ok: true, skipped: true, status: "sent" });
       if (r.status === "cancelled") return json({ ok: true, skipped: true, status: "cancelled" });
       const { data: campaign } = await sb.from("esign_campaigns").select("*").eq("id", r.campaign_id).maybeSingle();
-      if (!campaign) return json({ error: "Campaign not found" }, 404);
+      if (!campaign || await hiddenFromCaller(campaign)) return json({ error: "Campaign not found" }, 404);
       if (campaign.status === "cancelled") return json({ error: "This campaign was cancelled" }, 409);
       const email = String(r.email ?? "").trim();
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -175,7 +189,7 @@ export async function esignCampaignsHandler(request: Request): Promise<Response>
       const vessel: string | null = r.yachts?.vessel_name ?? null;
       const title = docTitleFor(campaign, vessel);
       const built = await buildDocument(sb, campaign, r, r.yachts);
-      const filePath = `campaigns/${campaign.id}/${r.id}.pdf`;
+      const filePath = inArea(campaign.confidential, `campaigns/${campaign.id}/${r.id}.pdf`);
       const up = await sb.storage.from(BUCKET).upload(filePath, built.bytes, { contentType: "application/pdf", upsert: true });
       if (up.error) throw new Error(`Could not store the document: ${up.error.message}`);
 
@@ -189,6 +203,7 @@ export async function esignCampaignsHandler(request: Request): Promise<Response>
         status: "sent", signing_token: token,
         token_expires_at: new Date(now.getTime() + campaign.expires_days * 86400_000).toISOString(),
         sent_at: now.toISOString(), created_by: staff.userId,
+        confidential: !!campaign.confidential, // a confidential campaign sends confidential documents
         signature_fields: built.signatureFields, pack: built.pack,
         campaign_id: campaign.id, yacht_id: r.yacht_id ?? null, allow_esign: campaign.allow_esign,
       }).select("id").single();
@@ -236,7 +251,7 @@ export async function esignCampaignsHandler(request: Request): Promise<Response>
         sb.from("esign_campaigns").select("*").eq("id", r.campaign_id).maybeSingle(),
         sb.from("esign_documents").select("*").eq("id", r.esign_document_id).maybeSingle(),
       ]);
-      if (!campaign || !doc) return json({ error: "Document not found" }, 404);
+      if (!campaign || !doc || await hiddenFromCaller(campaign) || await hiddenFromCaller(doc)) return json({ error: "Document not found" }, 404);
       if (doc.status === "signed") return json({ error: "Already signed" }, 409);
       if (["declined", "voided"].includes(doc.status)) return json({ error: `This document was ${doc.status}` }, 409);
 
@@ -279,7 +294,7 @@ export async function esignCampaignsHandler(request: Request): Promise<Response>
       const { data: r } = await sb.from("esign_campaign_recipients").select("id, esign_document_id").eq("id", body.recipientId).maybeSingle();
       if (!r?.esign_document_id) return json({ error: "This recipient hasn't been sent anything yet" }, 400);
       const { data: doc } = await sb.from("esign_documents").select("*").eq("id", r.esign_document_id).maybeSingle();
-      if (!doc) return json({ error: "Document not found" }, 404);
+      if (!doc || await hiddenFromCaller(doc)) return json({ error: "Document not found" }, 404);
       if (doc.status === "signed") return json({ error: "Already signed" }, 409);
       const at = new Date();
       let out: Uint8Array;
@@ -289,7 +304,7 @@ export async function esignCampaignsHandler(request: Request): Promise<Response>
           by: `${staff.name} (JLS staff, copy returned by the signer)`, at,
         });
       } catch { return json({ error: "That file could not be read" }, 400); }
-      const signedPath = `signed/${doc.id}.pdf`;
+      const signedPath = inArea(doc.confidential, `signed/${doc.id}.pdf`);
       const up = await sb.storage.from(BUCKET).upload(signedPath, out, { contentType: "application/pdf", upsert: true });
       if (up.error) throw new Error(up.error.message);
       await sb.from("esign_documents").update({
@@ -301,8 +316,8 @@ export async function esignCampaignsHandler(request: Request): Promise<Response>
 
     // ── Cancel: withdraw everything unsigned ──
     if (action === "cancel") {
-      const { data: campaign } = await sb.from("esign_campaigns").select("id").eq("id", body.campaignId).maybeSingle();
-      if (!campaign) return json({ error: "Campaign not found" }, 404);
+      const { data: campaign } = await sb.from("esign_campaigns").select("id, confidential").eq("id", body.campaignId).maybeSingle();
+      if (!campaign || await hiddenFromCaller(campaign)) return json({ error: "Campaign not found" }, 404);
       await sb.from("esign_documents").update({ status: "voided" })
         .eq("campaign_id", campaign.id).in("status", ["draft", "sent", "viewed", "expired"]);
       await sb.from("esign_campaign_recipients").update({ status: "cancelled" })

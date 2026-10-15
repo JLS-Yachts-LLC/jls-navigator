@@ -6,7 +6,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Megaphone, Plus, Loader2, FolderHeart, Trash2, ChevronRight } from "lucide-react";
+import { Megaphone, Plus, Loader2, FolderHeart, Trash2, ChevronRight, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { CampaignEditor } from "./campaign-editor";
@@ -32,8 +32,10 @@ const STATUS_CLS: Record<string, string> = {
 
 type View = { kind: "list" } | { kind: "edit"; id: string | null } | { kind: "detail"; id: string };
 
-export function CampaignsPage({ onOpenDocument, resumeCampaignId, onDetailChange }: {
+export function CampaignsPage({ onOpenDocument, resumeCampaignId, onDetailChange, confidential = false }: {
   onOpenDocument?: (id: string) => void;
+  /** The Confidential area's campaigns (admins + the Anchor — Confidential permission only). */
+  confidential?: boolean;
   /** Re-open this campaign's tracking view (e.g. coming back from a document). */
   resumeCampaignId?: string | null;
   onDetailChange?: (id: string | null) => void;
@@ -44,12 +46,13 @@ export function CampaignsPage({ onOpenDocument, resumeCampaignId, onDetailChange
   const [rows, setRows] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => { if (view.kind === "list") void load(); }, [view.kind]);
+  useEffect(() => { if (view.kind === "list") void load(); }, [view.kind, confidential]);
 
   async function load() {
     setLoading(true);
     const { data, error } = await db().from("esign_campaigns")
       .select("id, reference, name, doc_title, status, created_at, sent_at, created_by_name, recipients:esign_campaign_recipients(status, doc:esign_document_id(status))")
+      .eq("confidential", confidential)
       .order("created_at", { ascending: false });
     if (error) toast.error(error.message);
     setRows((data ?? []) as Campaign[]);
@@ -63,7 +66,7 @@ export function CampaignsPage({ onOpenDocument, resumeCampaignId, onDetailChange
   }
 
   if (view.kind === "edit") {
-    return <CampaignEditor campaignId={view.id} onClose={() => setView({ kind: "list" })} onSent={(id) => setView({ kind: "detail", id })} />;
+    return <CampaignEditor campaignId={view.id} confidential={confidential} onClose={() => setView({ kind: "list" })} onSent={(id) => setView({ kind: "detail", id })} />;
   }
   if (view.kind === "detail") {
     return <CampaignDetail campaignId={view.id} onBack={() => setView({ kind: "list" })} onOpenDocument={onOpenDocument} />;
@@ -73,8 +76,10 @@ export function CampaignsPage({ onOpenDocument, resumeCampaignId, onDetailChange
     <div className="flex h-full flex-col">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 bg-card/30 px-6 py-3.5">
         <div>
-          <div className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-muted-foreground/60">Anchor</div>
-          <h1 className="mt-0.5 flex items-center gap-2 font-display text-[1.25rem] font-semibold tracking-tight"><Megaphone className="h-4 w-4 text-primary/80" /> Signature Campaigns</h1>
+          <div className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-muted-foreground/60">{confidential ? "Confidential" : "Anchor"}</div>
+          <h1 className="mt-0.5 flex items-center gap-2 font-display text-[1.25rem] font-semibold tracking-tight">
+            {confidential ? <><Lock className="h-4 w-4 text-primary/80" /> Confidential campaigns</> : <><Megaphone className="h-4 w-4 text-primary/80" /> Signature Campaigns</>}
+          </h1>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex rounded-lg border border-border/70 p-0.5 text-sm">

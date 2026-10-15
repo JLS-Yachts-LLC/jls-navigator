@@ -50,7 +50,7 @@ function Field({ field, value, onChange }: { field: FormField; value: string; on
   );
 }
 
-function FillForm({ def, onBack }: { def: FormDef; onBack: () => void }) {
+function FillForm({ def, onBack, confidential = false }: { def: FormDef; onBack: () => void; confidential?: boolean }) {
   const [values, setValues] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [result, setResult] = useState<Result | null>(null);
@@ -128,7 +128,7 @@ function FillForm({ def, onBack }: { def: FormDef; onBack: () => void }) {
     if (missing.length) { toast.error(`Required: ${missing.map((f) => f.label).join(", ")}`); return; }
     setBusy("generate");
     try {
-      const r = await api({ action: "generate", formKey: def.key, values });
+      const r = await api({ action: "generate", formKey: def.key, values, confidential });
       setResult(r); setEmailTo(r.emailTo ?? "");
       toast.success("Form generated");
     } catch (e: any) { toast.error(e.message); } finally { setBusy(null); }
@@ -246,7 +246,8 @@ const APPROVAL_META: Record<string, { label: string; cls: string }> = {
   rejected: { label: "Rejected", cls: "bg-red-500/15 text-red-400" },
 };
 
-export function FormsPage() {
+/** `confidential` → the Confidential area's forms (admins + the Anchor — Confidential permission only). */
+export function FormsPage({ confidential = false }: { confidential?: boolean } = {}) {
   const [active, setActive] = useState<FormDef | null>(null);
   const [subs, setSubs] = useState<any[]>([]);
   const [approveTarget, setApproveTarget] = useState<any | null>(null);
@@ -254,9 +255,10 @@ export function FormsPage() {
   const reload = useCallback(async () => {
     const { data } = await (supabase as any).from("anchor_form_submissions")
       .select("id, form_key, title, status, created_at, pdf_path, signed_pdf_path, approval_status, approval_chain, approval_step, approval_log")
+      .eq("confidential", confidential)
       .order("created_at", { ascending: false }).limit(25);
     setSubs(data ?? []);
-  }, []);
+  }, [confidential]);
   useEffect(() => { void reload(); }, [reload, active]);
 
   async function viewPdf(path: string) {
@@ -271,11 +273,11 @@ export function FormsPage() {
     catch (e: any) { toast.error(e.message ?? "Failed"); } finally { setBusyId(null); }
   }
 
-  if (active) return <FillForm def={active} onBack={() => setActive(null)} />;
+  if (active) return <FillForm def={active} confidential={confidential} onBack={() => setActive(null)} />;
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-5">
-      <h1 className="font-display text-xl font-semibold">Digital Forms</h1>
+      <h1 className="font-display text-xl font-semibold">{confidential ? "Confidential forms" : "Digital Forms"}</h1>
       <p className="mt-1 text-sm text-muted-foreground">Fill a form, generate a PDF, then download, email, or send it for signature.</p>
       <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
         {ANCHOR_FORMS.map((f) => (
