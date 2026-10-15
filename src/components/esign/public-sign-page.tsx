@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
 import { Route } from "@/routes/sign.$token";
-import { getSigningDocument, doSubmitSignature, doDeclineSignature, doUploadSignedCopy } from "@/lib/esign.server";
+import { getSigningDocument, doSubmitSignature, doDeclineSignature, doUploadSignedCopy, previewSigningPack } from "@/lib/esign.server";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { SignaturePad, VesselStampPicker } from "./signature-pad";
+import { PackForms, missingPackFields, type PackForm, type PackValues } from "./pack-forms";
 import { JLS_COMPANY, JLS_CONTACT_LINE } from "@/lib/brand/jls-company";
-import { Loader2, FileSignature, CheckCircle2, XCircle, ShieldCheck, Download, Upload, Printer } from "lucide-react";
+import { Loader2, FileSignature, CheckCircle2, XCircle, ShieldCheck, Download, Upload, Printer, Eye } from "lucide-react";
 import { toast } from "sonner";
 
 type Loaded = {
@@ -13,6 +14,7 @@ type Loaded = {
   signerName: string; message: string | null; status: string;
   allowEsign?: boolean; signedMethod?: string | null;
   fileUrl: string; signedFileUrl: string | null;
+  forms?: PackForm[]; documents?: string[];
 };
 
 const UPLOAD_TYPES = ["application/pdf", "image/png", "image/jpeg"];
@@ -33,6 +35,9 @@ export function PublicSignPage() {
   const [error, setError] = useState<string | null>(null);
   const [sig, setSig] = useState<string | null>(null);
   const [stamp, setStamp] = useState<string | null>(null);
+  const [formValues, setFormValues] = useState<PackValues>({});
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewing, setPreviewing] = useState(false);
   const [agreed, setAgreed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState<null | "signed" | "declined">(null);
@@ -50,18 +55,36 @@ export function PublicSignPage() {
     try {
       const d = await getSigningDocument({ data: { token } } as any) as Loaded;
       setDoc(d);
+      setFormValues(Object.fromEntries((d.forms ?? []).map((f) => [f.index, { ...f.values }])));
       if (d.status === "signed") { setDone("signed"); setSignedUrl(d.signedFileUrl); setUploaded(d.signedMethod === "upload" || d.signedMethod === "staff_upload"); }
       if (d.status === "declined") setDone("declined");
     } catch (e: any) { setError(e?.message ?? "This signing link is invalid."); }
     finally { setLoading(false); }
   }
 
+  // Show the documents with the vessel's answers before they sign.
+  async function preview() {
+    setPreviewing(true);
+    try {
+      const res = await previewSigningPack({ data: { token, formValues } } as any) as { pdfBase64: string };
+      const bin = atob(res.pdfBase64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(URL.createObjectURL(new Blob([bytes], { type: "application/pdf" })));
+      document.getElementById("sign-doc")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (e: any) { toast.error(e?.message ?? "Could not build the preview"); }
+    finally { setPreviewing(false); }
+  }
+
   async function submit() {
+    const missing = missingPackFields(doc?.forms ?? [], formValues);
+    if (missing.length) { toast.error("Please complete the remaining details", { description: missing.slice(0, 4).join(" · ") + (missing.length > 4 ? " …" : "") }); return; }
     if (!sig) { toast.error("Please add your signature"); return; }
     if (!agreed) { toast.error("Please confirm you agree to sign electronically"); return; }
     setSubmitting(true);
     try {
-      const res = await doSubmitSignature({ data: { token, signatureDataUrl: sig, stampDataUrl: stamp ?? undefined, typedName: doc?.signerName } } as any) as { signedFileUrl: string };
+      const res = await doSubmitSignature({ data: { token, signatureDataUrl: sig, stampDataUrl: stamp ?? undefined, typedName: doc?.signerName, formValues } } as any) as { signedFileUrl: string };
       setSignedUrl(res.signedFileUrl); setDone("signed");
     } catch (e: any) { toast.error(e?.message ?? "Could not submit signature"); }
     finally { setSubmitting(false); }
@@ -127,9 +150,27 @@ export function PublicSignPage() {
               {doc.message && <p className="mt-3 whitespace-pre-line border-l-2 border-blue-600 pl-3 text-sm text-slate-600">{doc.message.replace(/\*\*/g, "")}</p>}
             </div>
 
-            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-              <iframe title="Document to sign" src={doc.fileUrl} className="h-[65vh] w-full border-0" />
+            {(doc.documents?.length ?? 0) > 1 && (
+              <div className="rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm text-slate-600 shadow-sm">
+                <span className="font-medium text-slate-800">{doc.documents!.length} documents, one signature:</span> {doc.documents!.join(" · ")}
+              </div>
+            )}
+
+            <div id="sign-doc" className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+              {previewUrl && <div className="border-b border-slate-200 bg-emerald-50 px-4 py-2 text-xs text-emerald-800">Showing a preview with your answers. Change anything below and preview again.</div>}
+              <iframe title="Document to sign" src={previewUrl ?? doc.fileUrl} className="h-[65vh] w-full border-0" />
             </div>
+
+            {doc.allowEsign !== false && (doc.forms?.length ?? 0) > 0 && (
+              <>
+                <PackForms forms={doc.forms!} values={formValues} onChange={setFormValues} />
+                <div className="flex justify-end">
+                  <Button variant="outline" onClick={preview} disabled={previewing} className="gap-1.5 border-slate-300 bg-white text-slate-700 hover:bg-slate-50">
+                    {previewing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />} Preview with my answers
+                  </Button>
+                </div>
+              </>
+            )}
 
             {doc.allowEsign !== false && (
             <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">

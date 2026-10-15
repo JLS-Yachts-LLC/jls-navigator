@@ -15,22 +15,25 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ArrowLeft, FileText, Users, Mail, Settings2, Plus, Trash2, Send, Save, Loader2, FlaskConical, AlertTriangle, Paperclip, PenLine } from "lucide-react";
+import { ArrowLeft, FileText, Users, Mail, Settings2, Plus, Trash2, Send, Save, Loader2, FlaskConical, AlertTriangle, Paperclip, PenLine, ArrowUp, ArrowDown, ChevronDown, Check, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { getFormDef } from "@/lib/anchor-forms/definitions";
-import { CAMPAIGN_FORMS, MERGE_TAGS, defaultCampaignCopy, renderCampaignEmail } from "@/lib/esign/campaign-email";
+import { getFormDef, type FormDef } from "@/lib/anchor-forms/definitions";
+import { AGENT_KEYS, VESSEL_FIELD_KEYS } from "@/lib/anchor-forms/prefill";
+import { CAMPAIGN_FORMS, MERGE_TAGS, defaultPackCopy, packTitle, renderCampaignEmail } from "@/lib/esign/campaign-email";
 import { campaignApi, parseEmails } from "@/lib/esign/campaign-client";
 import { RecipientPicker, recipientKey, type RecipientDraft } from "./recipient-picker";
 
 const db = () => supabase as any;
 
-type DocOption = { kind: "template" | "form"; key: string; title: string; description: string | null; perVessel: boolean };
+type DocOption = { kind: "template" | "form"; key: string; title: string; description: string | null; perVessel: boolean; agentSigns?: boolean };
+/** A document in the campaign, with any form values staff pre-filled for everyone. */
+type DocItem = DocOption & { values: Record<string, string> };
 
 type Draft = {
   id: string | null;
   name: string;
-  doc: DocOption | null;
+  items: DocItem[];
   subject: string;
   heading: string;
   note: string;
@@ -41,7 +44,7 @@ type Draft = {
 };
 
 const EMPTY: Draft = {
-  id: null, name: "", doc: null, subject: "", heading: "", note: "", sign_off: "",
+  id: null, name: "", items: [], subject: "", heading: "", note: "", sign_off: "",
   include_pdf: true, allow_esign: true, expires_days: 30,
 };
 
@@ -52,6 +55,53 @@ function Section({ icon: Icon, title, children, hint }: { icon: any; title: stri
       {hint && <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>}
       <div className="mt-4">{children}</div>
     </section>
+  );
+}
+
+// Filled for each recipient automatically — not set campaign-wide.
+const PER_RECIPIENT_KEYS = new Set(["signatory_name", "signatory_title", "applicant_name", "letter_date", "date_of_application", "declaration_date", "captain_name", "captain_email"]);
+
+const defaultName = (items: DocItem[]) =>
+  `${packTitle(items.map((x) => x.title))} — ${new Date().toLocaleDateString("en-GB", { month: "short", year: "numeric" })}`;
+
+/** Campaign-wide pre-fill for one form: what fills itself, and what staff can set for everyone. */
+function FormPrefill({ def, values, onChange }: { def: FormDef; values: Record<string, string>; onChange: (v: Record<string, string>) => void }) {
+  const fields = def.sections.flatMap((s) => s.fields);
+  const isAuto = (k: string) => AGENT_KEYS.has(k) || VESSEL_FIELD_KEYS.has(k) || PER_RECIPIENT_KEYS.has(k);
+  const auto = fields.filter((f) => isAuto(f.key));
+  const open = fields.filter((f) => !isAuto(f.key));
+  const filled = open.filter((f) => values[f.key]?.trim()).length;
+  const set = (k: string, v: string) => onChange({ ...values, [k]: v });
+  return (
+    <div className="space-y-3 border-t border-border/50 px-3.5 py-3">
+      <p className="text-[11px] text-muted-foreground">
+        <strong className="font-medium text-foreground">Filled in automatically ({auto.length}):</strong>{" "}
+        {auto.map((f) => f.label).join(", ") || "none"} — from each vessel's record, the recipient and JLS's own details.
+      </p>
+      {open.length > 0 && (
+        <div>
+          <p className="mb-2 text-[11px] text-muted-foreground">Anything you fill in here goes on every recipient's copy ({filled}/{open.length} set). Leave a field blank for the vessel to complete online.</p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {open.map((f) => (
+              <label key={f.key} className={cn("block", f.full && "sm:col-span-2")}>
+                <span className="text-[11px] font-medium text-muted-foreground">{f.label}{f.required && <span className="text-destructive"> *</span>}</span>
+                {f.type === "select" ? (
+                  <select value={values[f.key] ?? ""} onChange={(e) => set(f.key, e.target.value)} className="mt-0.5 h-8 w-full rounded-md border border-border bg-background px-2 text-sm">
+                    <option value="">Vessel completes</option>
+                    {f.options?.map((o) => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                ) : f.type === "textarea" ? (
+                  <Textarea rows={2} value={values[f.key] ?? ""} onChange={(e) => set(f.key, e.target.value)} placeholder="Vessel completes" className="mt-0.5 text-sm" />
+                ) : (
+                  <Input type={f.type === "date" ? "date" : f.type === "time" ? "time" : f.type === "number" ? "number" : f.type === "email" ? "email" : "text"}
+                    value={values[f.key] ?? ""} onChange={(e) => set(f.key, e.target.value)} placeholder="Vessel completes" className="mt-0.5 h-8 text-sm" />
+                )}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -72,6 +122,7 @@ export function CampaignEditor({ campaignId, onClose, onSent }: {
   const [testing, setTesting] = useState(false);
   const [mailStatus, setMailStatus] = useState<{ emailEnabled: boolean; clientEmailEnabled: boolean } | null>(null);
   const [previewIdx, setPreviewIdx] = useState(0);
+  const [openPrefill, setOpenPrefill] = useState<string | null>(null);
   const [senderName, setSenderName] = useState("");
 
   useEffect(() => { void init(); }, [campaignId]);
@@ -87,7 +138,12 @@ export function CampaignEditor({ campaignId, onClose, onSent }: {
       const opts: DocOption[] = [
         ...CAMPAIGN_FORMS.map((k) => {
           const def = getFormDef(k)!;
-          return { kind: "form" as const, key: k, title: def.title, description: "Personalised per vessel — vessel name & IMO filled in for each recipient.", perVessel: true };
+          return {
+            kind: "form" as const, key: k, title: def.title, perVessel: true, agentSigns: def.signedBy === "agent",
+            description: def.signedBy === "agent"
+              ? "Filled in from each vessel's record; the vessel completes the rest. JLS signs it as agent afterwards — it comes back to Anchor Forms for approval."
+              : "Filled in from each vessel's record; the vessel completes the rest online, then signs.",
+          };
         }),
         ...((tpls ?? []) as any[]).map((t) => ({ kind: "template" as const, key: t.id, title: t.name, description: t.description, perVessel: false })),
       ];
@@ -99,9 +155,14 @@ export function CampaignEditor({ campaignId, onClose, onSent }: {
           db().from("esign_campaign_recipients").select("*, yachts:yacht_id(vessel_name)").eq("campaign_id", campaignId).order("created_at"),
         ]);
         if (c) {
-          const doc = opts.find((o) => (c.source_kind === "form" ? o.kind === "form" && o.key === c.form_key : o.kind === "template" && o.key === c.template_id)) ?? null;
+          const saved: any[] = Array.isArray(c.items) && c.items.length ? c.items
+            : [{ kind: c.source_kind, key: c.source_kind === "form" ? c.form_key : c.template_id, values: {} }];
+          const items: DocItem[] = saved.flatMap((it) => {
+            const o = opts.find((x) => x.kind === it.kind && x.key === it.key);
+            return o ? [{ ...o, values: (it.values ?? {}) as Record<string, string> }] : [];
+          });
           setD({
-            id: c.id, name: c.name, doc, subject: c.subject, heading: c.heading ?? "", note: c.note ?? "", sign_off: c.sign_off ?? "",
+            id: c.id, name: c.name, items, subject: c.subject, heading: c.heading ?? "", note: c.note ?? "", sign_off: c.sign_off ?? "",
             include_pdf: c.include_pdf, allow_esign: c.allow_esign, expires_days: c.expires_days,
           });
           setRecipients(((rs ?? []) as any[]).map((r) => ({
@@ -115,28 +176,49 @@ export function CampaignEditor({ campaignId, onClose, onSent }: {
     campaignApi("status").then(setMailStatus).catch(() => {});
   }
 
-  function chooseDoc(o: DocOption) {
+  /** Add or remove a document; the copy follows the selection until staff edit it. */
+  function toggleDoc(o: DocOption) {
     setD((cur) => {
-      const copy = defaultCampaignCopy(o);
-      // Only fill copy that hasn't been written yet — never overwrite staff edits.
-      const untouched = !cur.note.trim() || (cur.doc && cur.note === defaultCampaignCopy(cur.doc).note);
-      return {
-        ...cur, doc: o,
-        name: cur.name.trim() ? cur.name : `${o.title} — ${new Date().toLocaleDateString("en-GB", { month: "short", year: "numeric" })}`,
-        ...(untouched ? { subject: copy.subject, heading: copy.heading, note: copy.note, sign_off: cur.sign_off || copy.signOff } : {}),
-      };
+      const on = cur.items.some((x) => x.kind === o.kind && x.key === o.key);
+      const items = on ? cur.items.filter((x) => !(x.kind === o.kind && x.key === o.key)) : [...cur.items, { ...o, values: {} }];
+      return withCopy(cur, items);
     });
+  }
+  function moveDoc(i: number, dir: -1 | 1) {
+    setD((cur) => {
+      const j = i + dir;
+      if (j < 0 || j >= cur.items.length) return cur;
+      const items = [...cur.items];
+      [items[i], items[j]] = [items[j], items[i]];
+      return withCopy(cur, items);
+    });
+  }
+  function setItemValues(i: number, values: Record<string, string>) {
+    setD((cur) => ({ ...cur, items: cur.items.map((x, k) => (k === i ? { ...x, values } : x)) }));
+  }
+  // Only refresh the name and copy while they're still the defaults — never overwrite staff edits.
+  function withCopy(cur: Draft, items: DocItem[]): Draft {
+    const untouched = !cur.note.trim() || (cur.items.length > 0 && cur.note === defaultPackCopy(cur.items).note);
+    const autoName = !cur.name.trim() || (cur.items.length > 0 && cur.name === defaultName(cur.items));
+    const copy = items.length ? defaultPackCopy(items) : null;
+    return {
+      ...cur, items,
+      name: autoName ? (items.length ? defaultName(items) : "") : cur.name,
+      ...(untouched && copy ? { subject: copy.subject, heading: copy.heading, note: copy.note, sign_off: cur.sign_off || copy.signOff } : {}),
+    };
   }
 
   // Row keys stay stable while a name/email is edited; duplicates are judged on email + vessel.
   const existingKeys = useMemo(() => new Set(recipients.map((r) => recipientKey(r.email, r.yacht_id))), [recipients]);
-  const perVesselMissing = d.doc?.perVessel ? recipients.filter((r) => !r.yacht_id).length : 0;
+  const docTitle = packTitle(d.items.map((x) => x.title));
+  const perVessel = d.items.some((x) => x.perVessel);
+  const perVesselMissing = perVessel ? recipients.filter((r) => !r.yacht_id).length : 0;
   const invalid = recipients.filter((r) => !parseEmails(r.email).length).length;
 
   const sample = recipients[Math.min(previewIdx, Math.max(0, recipients.length - 1))] ?? { name: "Captain John Smith", vessel: "M/Y Example" };
   const preview = useMemo(() => renderCampaignEmail({
     subject: d.subject, heading: d.heading, note: d.note, signOff: d.sign_off,
-    docTitle: d.doc?.title ?? "Document", includePdf: d.include_pdf, allowEsign: d.allow_esign, expiresDays: d.expires_days,
+    docTitle: d.items.length ? docTitle : "Document", includePdf: d.include_pdf, allowEsign: d.allow_esign, expiresDays: d.expires_days,
   }, { name: sample.name, vessel: (sample as any).vessel }, { link: "https://polaris.jlsyachts.com/sign/…", sender: senderName }),
   [d, sample, senderName]);
 
@@ -145,7 +227,7 @@ export function CampaignEditor({ campaignId, onClose, onSent }: {
   }
 
   function validate(): string | null {
-    if (!d.doc) return "Choose the document to send";
+    if (!d.items.length) return "Choose at least one document to send";
     if (!d.name.trim()) return "Give the campaign a name";
     if (!d.subject.trim()) return "Add an email subject";
     if (!d.include_pdf && !d.allow_esign) return "Switch on e-signature, the PDF attachment, or both";
@@ -160,10 +242,15 @@ export function CampaignEditor({ campaignId, onClose, onSent }: {
     setSaving(true);
     try {
       const row = {
-        name: d.name.trim(), source_kind: d.doc!.kind,
-        template_id: d.doc!.kind === "template" ? d.doc!.key : null,
-        form_key: d.doc!.kind === "form" ? d.doc!.key : null,
-        doc_title: d.doc!.title, subject: d.subject.trim(), heading: d.heading.trim() || null,
+        // The first document also fills the single-document columns older code reads.
+        name: d.name.trim(), source_kind: d.items[0].kind,
+        template_id: d.items[0].kind === "template" ? d.items[0].key : null,
+        form_key: d.items[0].kind === "form" ? d.items[0].key : null,
+        items: d.items.map((x) => ({
+          kind: x.kind, key: x.key, title: x.title,
+          values: Object.fromEntries(Object.entries(x.values).filter(([, v]) => String(v).trim())),
+        })),
+        doc_title: docTitle, subject: d.subject.trim(), heading: d.heading.trim() || null,
         note: d.note, sign_off: d.sign_off, include_pdf: d.include_pdf, allow_esign: d.allow_esign,
         expires_days: Math.min(365, Math.max(1, Number(d.expires_days) || 30)),
       };
@@ -277,17 +364,50 @@ export function CampaignEditor({ campaignId, onClose, onSent }: {
 
       <div className="grid min-h-0 flex-1 gap-5 overflow-auto p-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <div className="space-y-5">
-          <Section icon={FileText} title="1 · Document" hint="What each recipient is asked to sign.">
+          <Section icon={FileText} title={`1 · Documents (${d.items.length})`} hint="Pick one or more — they go together in one link, so each vessel signs and stamps once.">
+            {d.items.length > 0 && (
+              <div className="mb-4 space-y-2">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/70">In this send, in order</div>
+                {d.items.map((x, i) => {
+                  const def = x.kind === "form" ? getFormDef(x.key) : null;
+                  const pk = `${x.kind}:${x.key}`;
+                  const setCount = Object.values(x.values).filter((v) => String(v).trim()).length;
+                  return (
+                    <div key={pk} className="rounded-lg border border-primary/40 bg-primary/5">
+                      <div className="flex items-center gap-2 px-3 py-2">
+                        <span className="w-5 text-center text-xs font-semibold tabular-nums text-muted-foreground">{i + 1}</span>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-medium">{x.title}</div>
+                          <div className="text-[11px] text-muted-foreground">{x.kind === "form" ? (x.agentSigns ? "Form · vessel completes, JLS signs" : "Form · vessel completes & signs") : "Template · vessel signs"}</div>
+                        </div>
+                        {def && (
+                          <button onClick={() => setOpenPrefill(openPrefill === pk ? null : pk)} className="flex items-center gap-1 rounded-md border border-border/70 px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted">
+                            Pre-fill{setCount ? ` (${setCount})` : ""} <ChevronDown className={cn("h-3 w-3 transition", openPrefill === pk && "rotate-180")} />
+                          </button>
+                        )}
+                        <button onClick={() => moveDoc(i, -1)} disabled={i === 0} className="rounded p-1 text-muted-foreground hover:bg-muted disabled:opacity-30" title="Move up"><ArrowUp className="h-3.5 w-3.5" /></button>
+                        <button onClick={() => moveDoc(i, 1)} disabled={i === d.items.length - 1} className="rounded p-1 text-muted-foreground hover:bg-muted disabled:opacity-30" title="Move down"><ArrowDown className="h-3.5 w-3.5" /></button>
+                        <button onClick={() => toggleDoc(x)} className="rounded p-1 text-muted-foreground hover:bg-red-500/10 hover:text-red-600" title="Remove"><X className="h-3.5 w-3.5" /></button>
+                      </div>
+                      {def && openPrefill === pk && <FormPrefill def={def} values={x.values} onChange={(v) => setItemValues(i, v)} />}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
             <div className="grid gap-2">
               {docs.map((o) => {
-                const on = d.doc?.kind === o.kind && d.doc.key === o.key;
+                const on = d.items.some((x) => x.kind === o.kind && x.key === o.key);
                 return (
-                  <button key={`${o.kind}:${o.key}`} onClick={() => chooseDoc(o)}
-                    className={cn("rounded-lg border px-3.5 py-2.5 text-left transition", on ? "border-primary bg-primary/10 ring-1 ring-primary/30" : "border-border/60 hover:bg-muted/40")}>
-                    <div className="flex items-center gap-2 text-sm font-medium">{o.title}
-                      {o.perVessel && <span className="rounded-full bg-sky-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase text-sky-600">Per vessel</span>}
-                    </div>
-                    {o.description && <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{o.description}</div>}
+                  <button key={`${o.kind}:${o.key}`} onClick={() => toggleDoc(o)}
+                    className={cn("flex items-start gap-2.5 rounded-lg border px-3.5 py-2.5 text-left transition", on ? "border-primary bg-primary/10 ring-1 ring-primary/30" : "border-border/60 hover:bg-muted/40")}>
+                    <span className={cn("mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border", on ? "border-primary bg-primary text-primary-foreground" : "border-border")}>{on && <Check className="h-3 w-3" />}</span>
+                    <span className="min-w-0">
+                      <span className="flex items-center gap-2 text-sm font-medium">{o.title}
+                        {o.perVessel && <span className="rounded-full bg-sky-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase text-sky-600">Per vessel</span>}
+                      </span>
+                      {o.description && <span className="mt-0.5 line-clamp-2 block text-xs text-muted-foreground">{o.description}</span>}
+                    </span>
                   </button>
                 );
               })}
@@ -395,7 +515,7 @@ export function CampaignEditor({ campaignId, onClose, onSent }: {
               )}
             </div>
             <iframe title="Email preview" srcDoc={preview.html} sandbox="" className="h-[640px] w-full border-0 bg-white" />
-            {d.include_pdf && <div className="flex items-center gap-1.5 border-t border-border/60 px-4 py-2 text-xs text-muted-foreground"><Paperclip className="h-3.5 w-3.5" /> {d.doc ? `${d.doc.title}${(sample as any).vessel ? ` — ${(sample as any).vessel}` : ""}.pdf` : "Document.pdf"}</div>}
+            {d.include_pdf && <div className="flex items-center gap-1.5 border-t border-border/60 px-4 py-2 text-xs text-muted-foreground"><Paperclip className="h-3.5 w-3.5" /> {d.items.length ? `${docTitle}${(sample as any).vessel ? ` — ${(sample as any).vessel}` : ""}.pdf` : "Document.pdf"}</div>}
           </section>
         </div>
       </div>
@@ -411,7 +531,7 @@ export function CampaignEditor({ campaignId, onClose, onSent }: {
               <div className="space-y-2 text-sm">
                 <p>This sends <strong>{recipients.length} separate email{recipients.length === 1 ? "" : "s"}</strong> — one per person, each with their own signing link. Nobody is CC'd and nobody sees who else received it.</p>
                 <ul className="list-disc space-y-0.5 pl-5">
-                  <li>Document: <strong>{d.doc?.title}</strong>{d.doc?.perVessel ? " (filled in per vessel)" : ""}</li>
+                  <li>{d.items.length === 1 ? "Document" : `${d.items.length} documents in one link (signed & stamped once)`}: <strong>{docTitle}</strong>{perVessel ? " — forms filled in per vessel" : ""}</li>
                   <li>{d.allow_esign ? "E-signature on" : "E-signature off (paper only)"} · {d.include_pdf ? "PDF attached" : "no PDF attachment"}</li>
                   <li>Links valid for {d.expires_days} days</li>
                 </ul>

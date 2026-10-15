@@ -152,9 +152,7 @@ export function defaultPackCopy(docs: { kind: "template" | "form"; key: string; 
   if (docs.length === 1) {
     const one = defaultCampaignCopy(docs[0]);
     if (docs[0].kind === "form" && docs[0].key !== "agency-appointment-letter") {
-      return { ...one, note: `${one.note}
-
-We've filled in the details we already hold for **{{vessel}}** — the link shows what's left to complete before you sign.` };
+      return { ...one, note: `${one.note}\n\nWe've filled in the details we already hold for **{{vessel}}** — the link shows what's left to complete before you sign.` };
     }
     return one;
   }
@@ -162,19 +160,10 @@ We've filled in the details we already hold for **{{vessel}}** — the link show
   return {
     subject: "{{vessel}} — documents for signature",
     heading: "Documents for signature",
-    note: `Dear {{first_name}},
-
-Please find the following documents for **{{vessel}}**:
-
-${docs.map((d) => `- ${d.title}`).join("
-")}
-
-They're together in one link, so you only need to sign${hasForms ? ", complete the remaining details" : ""} and add your vessel stamp once.${hasForms ? " We've already filled in the details we hold for your vessel." : ""}
-
-If you have any questions, just reply to this email.`,
-    signOff: "Kind regards,
-{{sender}}
-JLS Yachts LLC",
+    note: `Dear {{first_name}},\n\nPlease find the following documents for **{{vessel}}**:\n\n${docs.map((d) => `- ${d.title}`).join("\n")}\n\n`
+      + `They're together in one link, so you only need to sign${hasForms ? ", complete the remaining details" : ""} and add your vessel stamp once.`
+      + `${hasForms ? " We've already filled in the details we hold for your vessel." : ""}\n\nIf you have any questions, just reply to this email.`,
+    signOff: "Kind regards,\n{{sender}}\nJLS Yachts LLC",
   };
 }
 
