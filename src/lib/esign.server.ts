@@ -179,8 +179,10 @@ async function responseFor(doc: any, status: string) {
 
 export const doSubmitSignature = createServerFn({ method: "POST" })
   // @ts-expect-error — explicit ctx typing
-  .handler(async (ctx: { data: { token: string; signatureDataUrl: string; typedName?: string } }) => {
-    const { token, signatureDataUrl, typedName } = ctx.data;
+  .handler(async (ctx: { data: { token: string; signatureDataUrl: string; stampDataUrl?: string; typedName?: string } }) => {
+    const { token, signatureDataUrl, stampDataUrl, typedName } = ctx.data;
+    // Optional vessel stamp — a PNG the signing page has already cleaned up.
+    if (stampDataUrl && (typeof stampDataUrl !== "string" || stampDataUrl.length > 4_000_000)) throw new Error("That stamp image is too large — please use a smaller one.");
     const meta = reqMeta();
 
     const { data: doc, error } = await (supabaseAdmin as any)
@@ -216,7 +218,14 @@ export const doSubmitSignature = createServerFn({ method: "POST" })
     if (meta.ip) { line("Signer IP", bold, 11); line(meta.ip); }
     y -= 10;
 
-    // Embed the drawn/typed signature image
+    // Optional vessel stamp (best-effort: a bad image never blocks signing).
+    let stampImg: any = null;
+    if (stampDataUrl) {
+      try { stampImg = await pdf.embedPng(stampDataUrl.includes(",") ? stampDataUrl.split(",")[1] : stampDataUrl); } catch { stampImg = null; }
+    }
+
+    // Embed the drawn/typed signature image, with the vessel stamp beside it
+    const sigTop = y;
     try {
       const b64 = signatureDataUrl.includes(",") ? signatureDataUrl.split(",")[1] : signatureDataUrl;
       const png = await pdf.embedPng(b64);
@@ -226,6 +235,13 @@ export const doSubmitSignature = createServerFn({ method: "POST" })
       y -= h + 10;
       page.drawLine({ start: { x: 56, y }, end: { x: 56 + w, y }, thickness: 1, color: rgb(0.6, 0.65, 0.7) });
     } catch { /* if the signature image fails, the typed name + audit still stand */ }
+    if (stampImg) {
+      const k = Math.min(130 / stampImg.width, 130 / stampImg.height);
+      const sw = stampImg.width * k, sh = stampImg.height * k;
+      page.drawText("Vessel stamp:", { x: 316, y: sigTop, size: 11, font: bold });
+      page.drawImage(stampImg, { x: 316, y: sigTop - 10 - sh, width: sw, height: sh });
+      y = Math.min(y, sigTop - 10 - sh - 10);
+    }
 
     page.drawText("Signed electronically with JLS Yachts LLC secure e-signature (Polaris).", {
       x: 56, y: 48, size: 9, font, color: rgb(0.5, 0.55, 0.6),
@@ -239,8 +255,23 @@ export const doSubmitSignature = createServerFn({ method: "POST" })
         Array.isArray(doc.signature_fields) ? doc.signature_fields : [];
       // 'date' fields print the signing date at their spot (e.g. the Tariff
       // Sheet's "Date" line); everything else is a signature.
+      // 'stamp' fields mark where the vessel stamp goes (e.g. the Tariff
+      // Sheet's "Yacht Stamp" line); without one it sits beside the signature.
       const dateFields = allFields.filter(f => f.type === "date");
-      const fields = allFields.filter(f => f.type !== "date");
+      const stampFields = allFields.filter(f => f.type === "stamp");
+      const fields = allFields.filter(f => f.type !== "date" && f.type !== "stamp");
+      if (stampImg) {
+        for (const f of stampFields) {
+          const p = pdf.getPages()[Math.max(0, (f.page ?? 1) - 1)];
+          if (!p || typeof f.x !== "number" || typeof f.y !== "number") continue;
+          const { width, height } = p.getSize();
+          const k = Math.min(78 / stampImg.width, 78 / stampImg.height);
+          const tw = stampImg.width * k, th = stampImg.height * k;
+          const tx = Math.min(Math.max(f.x * width - tw / 2, 4), width - tw - 4);
+          const ty = Math.min(Math.max((1 - f.y) * height - th / 2, 4), height - th - 4);
+          p.drawImage(stampImg, { x: tx, y: ty, width: tw, height: th, opacity: 0.92 });
+        }
+      }
       for (const f of dateFields) {
         const p = pdf.getPages()[Math.max(0, (f.page ?? 1) - 1)];
         if (!p || typeof f.x !== "number" || typeof f.y !== "number") continue;
@@ -292,6 +323,16 @@ export const doSubmitSignature = createServerFn({ method: "POST" })
             y = pos.includes("top") ? height - pad - sh : pos.includes("middle") ? (height - sh) / 2 : pad + 12;
           }
           p.drawImage(sig, { x, y, width: sw, height: sh });
+          // The vessel stamp sits beside the signer's signature, slightly
+          // overlapping it as a stamp on paper would.
+          if (!isCompany && stampImg && !stampFields.length) {
+            const k = Math.min(78 / stampImg.width, 78 / stampImg.height);
+            const tw = stampImg.width * k, th = stampImg.height * k;
+            let tx = x + sw * 0.8;
+            if (tx + tw > width - 4) tx = Math.max(4, x - tw * 0.8);
+            const ty = Math.min(Math.max(y + sh / 2 - th / 2, 4), height - th - 4);
+            p.drawImage(stampImg, { x: tx, y: ty, width: tw, height: th, opacity: 0.92 });
+          }
           if ((f as any).label === false) continue;
           const label = isCompany ? `${entry!.name} · JLS Yachts · ${signedAt.toISOString().slice(0, 10)}` : `${doc.signer_name} · ${signedAt.toISOString().slice(0, 10)}`;
           p.drawText(label, { x, y: y - 9, size: 6.5, font, color: rgb(0.45, 0.5, 0.55) });
@@ -309,6 +350,7 @@ export const doSubmitSignature = createServerFn({ method: "POST" })
       status: "signed", signed_at: signedAt.toISOString(), signed_file_path: signedPath, signed_method: "esign",
     }).eq("id", doc.id);
     await logEvent(doc.id, "signed", doc.signer_email, meta);
+    if (stampImg) await logEvent(doc.id, "stamped", doc.signer_email, meta);
 
     // Notify signer + sender with the completed copy (long-lived link — the
     // recipient may open it days later).

@@ -1,7 +1,8 @@
 import { useRef, useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { Eraser, PenLine, Type, ImageUp, Loader2 } from "lucide-react";
+import { Eraser, PenLine, Type, ImageUp, Loader2, Stamp } from "lucide-react";
+import { cleanInkImage } from "@/lib/esign/clean-image";
 
 // Captures a signature as a PNG data URL — drawn on a canvas, typed (rendered
 // to a canvas in a script-style font) or uploaded as a photo/scan of a signature
@@ -14,58 +15,9 @@ import { Eraser, PenLine, Type, ImageUp, Loader2 } from "lucide-react";
 
 const OUT_W = 600;
 const OUT_H = 200;
-const MAX_UPLOAD = 8 * 1024 * 1024;
 const SCRIPT_FONT = "'Brush Script MT','Segoe Script',cursive";
 
 type Mode = "draw" | "type" | "upload";
-
-/** Photo/scan of a signature → transparent PNG trimmed to the ink, fitted to 600×200. */
-async function signatureFromImage(file: File): Promise<string> {
-  const url = URL.createObjectURL(file);
-  try {
-    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const i = new Image();
-      i.onload = () => resolve(i);
-      i.onerror = () => reject(new Error("That file couldn't be read as an image"));
-      i.src = url;
-    });
-    // Work at a capped size — phone photos are huge.
-    const scale = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
-    const w = Math.max(1, Math.round(img.naturalWidth * scale));
-    const h = Math.max(1, Math.round(img.naturalHeight * scale));
-    const work = document.createElement("canvas");
-    work.width = w; work.height = h;
-    const wctx = work.getContext("2d", { willReadFrequently: true })!;
-    wctx.drawImage(img, 0, 0, w, h);
-    const px = wctx.getImageData(0, 0, w, h);
-    const d = px.data;
-
-    // Light pixels are paper → transparent; find the ink's bounding box.
-    let minX = w, minY = h, maxX = -1, maxY = -1;
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
-        const k = (y * w + x) * 4;
-        const lum = 0.299 * d[k] + 0.587 * d[k + 1] + 0.114 * d[k + 2];
-        if (d[k + 3] < 20 || lum > 200) { d[k + 3] = 0; continue; }
-        if (x < minX) minX = x; if (x > maxX) maxX = x;
-        if (y < minY) minY = y; if (y > maxY) maxY = y;
-      }
-    }
-    if (maxX < 0) throw new Error("No signature found in that image — try a darker pen or a clearer photo");
-    wctx.putImageData(px, 0, 0);
-
-    const bw = maxX - minX + 1, bh = maxY - minY + 1;
-    const pad = 12;
-    const fit = Math.min((OUT_W - 2 * pad) / bw, (OUT_H - 2 * pad) / bh);
-    const dw = bw * fit, dh = bh * fit;
-    const out = document.createElement("canvas");
-    out.width = OUT_W; out.height = OUT_H;
-    out.getContext("2d")!.drawImage(work, minX, minY, bw, bh, (OUT_W - dw) / 2, (OUT_H - dh) / 2, dw, dh);
-    return out.toDataURL("image/png");
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
 
 export function SignaturePad({ onChange }: { onChange: (dataUrl: string | null) => void }) {
   const [mode, setMode] = useState<Mode>("draw");
@@ -131,11 +83,9 @@ export function SignaturePad({ onChange }: { onChange: (dataUrl: string | null) 
   async function pickFile(file: File | undefined) {
     if (!file) return;
     setUploadError(null);
-    if (!/^image\/(png|jpe?g|webp)$/i.test(file.type)) { setUploadError("Please choose a PNG or JPEG image"); return; }
-    if (file.size > MAX_UPLOAD) { setUploadError("That image is over 8 MB — please choose a smaller one"); return; }
     setProcessing(true);
     try {
-      const dataUrl = await signatureFromImage(file);
+      const dataUrl = await cleanInkImage(file, { w: OUT_W, h: OUT_H, fixed: true });
       setUploaded(dataUrl); onChange(dataUrl);
     } catch (e: any) {
       setUploaded(null); onChange(null); setUploadError(e?.message ?? "That image couldn't be used");
@@ -235,6 +185,73 @@ export function SignaturePad({ onChange }: { onChange: (dataUrl: string | null) 
           {uploaded && <p className="mt-1 text-center text-[11px] text-slate-500">The paper background is removed so only your signature appears on the document</p>}
         </div>
       )}
+    </div>
+  );
+}
+
+// Optional vessel / boat stamp: a photo or scan of the stamp, cleaned the same
+// way as an uploaded signature but keeping its own shape and ink colour. It is
+// placed next to the signature on the document.
+export function VesselStampPicker({ onChange }: { onChange: (dataUrl: string | null) => void }) {
+  const [stamp, setStamp] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [processing, setProcessing] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  async function pickFile(file: File | undefined) {
+    if (!file) return;
+    setError(null); setProcessing(true);
+    try {
+      const dataUrl = await cleanInkImage(file, { w: 500, h: 500, fixed: false });
+      setStamp(dataUrl); onChange(dataUrl);
+    } catch (e: any) {
+      setStamp(null); onChange(null); setError(e?.message ?? "That image couldn't be used");
+    } finally {
+      setProcessing(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+  function clear() { setStamp(null); setError(null); onChange(null); }
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+      <div className="flex items-start gap-2">
+        <Stamp className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-medium text-slate-800">
+            Vessel stamp <span className="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">Optional · advised</span>
+          </div>
+          <p className="mt-0.5 text-xs text-slate-500">If your vessel has an official stamp, add a photo or scan of it. It's placed next to your signature, which helps the authorities accept the document.</p>
+        </div>
+      </div>
+      <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={e => void pickFile(e.target.files?.[0])} />
+      {stamp ? (
+        <div className="mt-3 flex items-center gap-3">
+          <div className="flex h-24 w-32 items-center justify-center rounded-md border border-slate-300 bg-white p-1.5">
+            <img src={stamp} alt="Your vessel stamp" className="max-h-full max-w-full" />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <button type="button" onClick={() => fileRef.current?.click()} className="flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] text-slate-600 hover:bg-slate-50">
+              <ImageUp className="h-3 w-3" /> Change
+            </button>
+            <button type="button" onClick={clear} className="flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] text-slate-600 hover:bg-slate-50">
+              <Eraser className="h-3 w-3" /> Remove
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          disabled={processing}
+          className="mt-3 inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+        >
+          {processing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageUp className="h-3.5 w-3.5" />}
+          {processing ? "Preparing your stamp…" : "Add vessel stamp"}
+        </button>
+      )}
+      {error && <p className="mt-1.5 text-[11px] text-red-600">{error}</p>}
+      <p className="mt-1.5 text-[11px] text-slate-400">PNG or JPEG, up to 8 MB. Stamp on plain white paper and take a straight-on photo; the background is removed.</p>
     </div>
   );
 }

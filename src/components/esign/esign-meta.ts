@@ -18,4 +18,5 @@ export const ESIGN_STATUS_COLOR: Record<string, string> = {
 export const ESIGN_EVENT_LABEL: Record<string, string> = {
   created: "Created", sent: "Sent for signature", viewed: "Opened by signer",
   signed: "Signed", declined: "Declined", downloaded: "Downloaded", voided: "Voided",
+  stamped: "Vessel stamp added",
 };

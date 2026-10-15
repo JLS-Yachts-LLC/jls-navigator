@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   ArrowLeft, Loader2, FileText, Download, Send, Ban, Mail, Eye, CheckCircle2,
-  Clock, FileSignature, Link2, XCircle,
+  Clock, FileSignature, Link2, XCircle, Stamp as StampIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -32,6 +32,7 @@ const EVENT_ICON: Record<string, React.ReactNode> = {
   created: <FileText className="h-3.5 w-3.5" />, sent: <Mail className="h-3.5 w-3.5" />,
   viewed: <Eye className="h-3.5 w-3.5" />, signed: <CheckCircle2 className="h-3.5 w-3.5" />,
   declined: <XCircle className="h-3.5 w-3.5" />, voided: <Ban className="h-3.5 w-3.5" />,
+  stamped: <StampIcon className="h-3.5 w-3.5" />,
 };
 const dt = (d: string | null) => d ? new Date(d).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
 

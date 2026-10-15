@@ -3,7 +3,7 @@ import { Route } from "@/routes/sign.$token";
 import { getSigningDocument, doSubmitSignature, doDeclineSignature, doUploadSignedCopy } from "@/lib/esign.server";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { SignaturePad } from "./signature-pad";
+import { SignaturePad, VesselStampPicker } from "./signature-pad";
 import { JLS_COMPANY, JLS_CONTACT_LINE } from "@/lib/brand/jls-company";
 import { Loader2, FileSignature, CheckCircle2, XCircle, ShieldCheck, Download, Upload, Printer } from "lucide-react";
 import { toast } from "sonner";
@@ -32,6 +32,7 @@ export function PublicSignPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sig, setSig] = useState<string | null>(null);
+  const [stamp, setStamp] = useState<string | null>(null);
   const [agreed, setAgreed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState<null | "signed" | "declined">(null);
@@ -60,7 +61,7 @@ export function PublicSignPage() {
     if (!agreed) { toast.error("Please confirm you agree to sign electronically"); return; }
     setSubmitting(true);
     try {
-      const res = await doSubmitSignature({ data: { token, signatureDataUrl: sig, typedName: doc?.signerName } } as any) as { signedFileUrl: string };
+      const res = await doSubmitSignature({ data: { token, signatureDataUrl: sig, stampDataUrl: stamp ?? undefined, typedName: doc?.signerName } } as any) as { signedFileUrl: string };
       setSignedUrl(res.signedFileUrl); setDone("signed");
     } catch (e: any) { toast.error(e?.message ?? "Could not submit signature"); }
     finally { setSubmitting(false); }
@@ -134,9 +135,10 @@ export function PublicSignPage() {
             <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
               <h2 className="mb-3 font-semibold">Your signature</h2>
               <SignaturePad onChange={setSig} />
+              <div className="mt-4"><VesselStampPicker onChange={setStamp} /></div>
               <label className="mt-4 flex items-start gap-2 text-sm text-slate-600">
                 <input type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)} className="mt-0.5" />
-                <span>I agree to sign this document electronically, and I consent to my signature, name, IP address and timestamp being recorded as evidence of signing.</span>
+                <span>I agree to sign this document electronically, and I consent to my signature, any vessel stamp I added, my name, IP address and timestamp being recorded as evidence of signing.</span>
               </label>
               <div className="mt-4 flex items-center justify-between gap-3">
                 <Button variant="ghost" className="text-slate-500 hover:text-red-600" onClick={() => setDeclineOpen(true)} disabled={submitting}>Decline</Button>
