@@ -362,7 +362,7 @@ function VisualFieldPlacer({ fileUrl, initialFields, signatories, onClose, onDon
           // Vite ?url asset import for the pdf.js worker
           const workerUrl = ((await import("pdfjs-dist/build/pdf.worker.min.mjs?url" as any)) as any).default;
           pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
-          pdfRef.current = await pdfjs.getDocument(fileUrl).promise;
+          pdfRef.current = await pdfjs.getDocument({ url: fileUrl }).promise;
           if (cancelled) return;
           setNumPages(pdfRef.current.numPages);
         }
