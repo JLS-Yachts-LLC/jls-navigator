@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { FileSignature, Plus, Search, Loader2, Send, Upload, UploadCloud } from "lucide-react";
+import { FileSignature, Lock, Plus, Search, Loader2, Send, Upload, UploadCloud } from "lucide-react";
+import { confidentialPath } from "@/components/anchor/confidential";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ESIGN_STATUS_ORDER, ESIGN_STATUS_LABEL, ESIGN_STATUS_COLOR } from "./esign-meta";
@@ -21,7 +22,8 @@ type Doc = {
 const EMPTY = { title: "", description: "", signer_name: "", signer_email: "", message: "" };
 const fmt = (d: string | null) => d ? new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—";
 
-export function EsignPage({ onOpenDocument }: { onOpenDocument?: (id: string) => void } = {}) {
+/** `confidential` → the Confidential area's list (admins + the Anchor — Confidential permission only). */
+export function EsignPage({ onOpenDocument, confidential = false }: { onOpenDocument?: (id: string) => void; confidential?: boolean } = {}) {
   const { user } = useAuth();
   const [rows, setRows] = useState<Doc[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,12 +37,13 @@ export function EsignPage({ onOpenDocument }: { onOpenDocument?: (id: string) =>
   const [sigPage, setSigPage] = useState("1");
   const [sigPos, setSigPos] = useState("bottom-right");
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load(); }, [confidential]);
 
   async function load() {
     setLoading(true);
     const { data, error } = await (supabase as any).from("esign_documents")
       .select("id, reference, title, signer_name, signer_email, status, sent_at, signed_at, updated_at")
+      .eq("confidential", confidential)
       .order("created_at", { ascending: false });
     if (error) toast.error(error.message);
     setRows((data ?? []) as Doc[]);
@@ -53,7 +56,7 @@ export function EsignPage({ onOpenDocument }: { onOpenDocument?: (id: string) =>
     if (!file) { toast.error("Please attach a PDF to sign"); return; }
     setBusy(true);
     try {
-      const path = `originals/${crypto.randomUUID()}-${file.name.replace(/[^\w.\-]+/g, "_")}`;
+      const path = confidentialPath(confidential, `originals/${crypto.randomUUID()}-${file.name.replace(/[^\w.\-]+/g, "_")}`);
       const up = await supabase.storage.from("esign-documents").upload(path, file, { contentType: file.type || "application/pdf" });
       if (up.error) throw up.error;
 
@@ -67,6 +70,7 @@ export function EsignPage({ onOpenDocument }: { onOpenDocument?: (id: string) =>
         file_name: file.name,
         status: "draft",
         signature_fields: [{ page: Number(sigPage) || 1, pos: sigPos }],
+        confidential,
         created_by: user?.id ?? null,
       }]).select("id").single();
       if (error) throw error;
@@ -106,9 +110,11 @@ export function EsignPage({ onOpenDocument }: { onOpenDocument?: (id: string) =>
     <div className="flex h-full flex-col">
       <header className="flex items-center justify-between border-b border-border/70 bg-card/30 px-6 py-3.5">
         <div>
-          <div className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-muted-foreground/60">Documents</div>
+          <div className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-muted-foreground/60">{confidential ? "Confidential" : "Documents"}</div>
           <h1 className="mt-0.5 flex items-center gap-2 font-display text-[1.25rem] font-semibold tracking-tight">
-            <FileSignature className="h-4 w-4 text-primary/80" /> Anchor
+            {confidential
+              ? <><Lock className="h-4 w-4 text-primary/80" /> Confidential documents</>
+              : <><FileSignature className="h-4 w-4 text-primary/80" /> Anchor</>}
           </h1>
         </div>
         <div className="flex items-center gap-2.5">

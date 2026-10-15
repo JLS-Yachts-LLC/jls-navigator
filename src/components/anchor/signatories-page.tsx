@@ -7,7 +7,8 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { PenLine, Plus, Loader2, X, Pencil, UploadCloud, Trash2 } from "lucide-react";
+import { PenLine, Plus, Loader2, X, Pencil, UploadCloud, Trash2, Lock } from "lucide-react";
+import { confidentialPath } from "@/components/anchor/confidential";
 
 type Sig = {
   id: string; full_name: string; email: string | null; title: string | null;
@@ -28,15 +29,16 @@ function SigPreview({ path, className }: { path: string | null; className?: stri
   return <img src={url} alt="signature" className={className ?? "h-10 object-contain"} />;
 }
 
-export function SignatoriesPage() {
+/** `confidential` → the Confidential area's signatories (admins + the Anchor — Confidential permission only). */
+export function SignatoriesPage({ confidential = false }: { confidential?: boolean } = {}) {
   const [rows, setRows] = useState<Sig[]>([]);
   const [loading, setLoading] = useState(true);
   const [edit, setEdit] = useState<Partial<Sig> | null>(null);
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load(); }, [confidential]);
   async function load() {
     setLoading(true);
-    const { data, error } = await db().from("jls_signatories").select("*").order("full_name");
+    const { data, error } = await db().from("jls_signatories").select("*").eq("confidential", confidential).order("full_name");
     if (error) toast.error(error.message); else setRows(data ?? []);
     setLoading(false);
   }
@@ -50,8 +52,10 @@ export function SignatoriesPage() {
     <div className="flex h-full flex-col">
       <header className="flex items-center justify-between border-b border-border/70 bg-card/30 px-6 py-3.5">
         <div>
-          <div className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-muted-foreground/60">Anchor</div>
-          <h1 className="mt-0.5 flex items-center gap-2 font-display text-[1.25rem] font-semibold tracking-tight"><PenLine className="h-4 w-4 text-primary/80" /> Signatories</h1>
+          <div className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-muted-foreground/60">{confidential ? "Confidential" : "Anchor"}</div>
+          <h1 className="mt-0.5 flex items-center gap-2 font-display text-[1.25rem] font-semibold tracking-tight">
+            {confidential ? <><Lock className="h-4 w-4 text-primary/80" /> Confidential signatories</> : <><PenLine className="h-4 w-4 text-primary/80" /> Signatories</>}
+          </h1>
         </div>
         <Button size="sm" onClick={() => setEdit({ active: true })} className="h-9 gap-1.5"><Plus className="h-3.5 w-3.5" /> Add Signatory</Button>
       </header>
@@ -86,12 +90,12 @@ export function SignatoriesPage() {
         )}
       </div>
 
-      {edit && <SignatoryDialog init={edit} onClose={() => setEdit(null)} onDone={() => { setEdit(null); void load(); }} />}
+      {edit && <SignatoryDialog init={edit} confidential={confidential} onClose={() => setEdit(null)} onDone={() => { setEdit(null); void load(); }} />}
     </div>
   );
 }
 
-function SignatoryDialog({ init, onClose, onDone }: { init: Partial<Sig>; onClose: () => void; onDone: () => void }) {
+function SignatoryDialog({ init, confidential, onClose, onDone }: { init: Partial<Sig>; confidential: boolean; onClose: () => void; onDone: () => void }) {
   const [f, setF] = useState<Partial<Sig>>(init);
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
@@ -105,7 +109,7 @@ function SignatoryDialog({ init, onClose, onDone }: { init: Partial<Sig>; onClos
       if (file) {
         if (file.type !== "image/png") { toast.error("Signature must be a PNG"); setBusy(false); return; }
         if (file.size > 5 * 1024 * 1024) { toast.error("Max 5 MB"); setBusy(false); return; }
-        const path = `${f.id ?? crypto.randomUUID()}-${Date.now()}.png`;
+        const path = confidentialPath(confidential, `${f.id ?? crypto.randomUUID()}-${Date.now()}.png`);
         const { error: upErr } = await db().storage.from("signatures").upload(path, file, { upsert: true, contentType: "image/png" });
         if (upErr) { toast.error(`Upload failed: ${upErr.message}`); setBusy(false); return; }
         signature_path = path;
@@ -113,7 +117,7 @@ function SignatoryDialog({ init, onClose, onDone }: { init: Partial<Sig>; onClos
       const row = {
         full_name: f.full_name.trim(), email: f.email || null, title: f.title || null,
         approver_name: f.approver_name || null, approver_email: f.approver_email || null,
-        active: f.active ?? true, signature_path, updated_at: new Date().toISOString(),
+        active: f.active ?? true, signature_path, confidential, updated_at: new Date().toISOString(),
       };
       const { error } = f.id ? await db().from("jls_signatories").update(row).eq("id", f.id) : await db().from("jls_signatories").insert(row);
       if (error) { toast.error(error.message); setBusy(false); return; }
