@@ -236,6 +236,8 @@ const STATUS_META: Record<string, { label: string; cls: string }> = {
   emailed: { label: "Emailed", cls: "bg-primary/15 text-primary" },
   sent_for_signature: { label: "Sent for signature", cls: "bg-amber-500/15 text-amber-500" },
   signed: { label: "Signed", cls: "bg-emerald-500/15 text-emerald-500" },
+  // Completed by the vessel through a campaign; DMA notices then go for JLS approval.
+  returned: { label: "Completed by vessel", cls: "bg-sky-500/15 text-sky-500" },
 };
 
 const APPROVAL_META: Record<string, { label: string; cls: string }> = {

@@ -12,6 +12,7 @@
  */
 import { jlsEmailHeaderRow, jlsEmailFooterRow } from "@/lib/brand/jls-email";
 import { JLS_COLORS } from "@/lib/brand/jls-company";
+import { ANCHOR_FORMS } from "@/lib/anchor-forms/definitions";
 
 export type CampaignEmailInput = {
   subject: string;
@@ -136,8 +137,46 @@ export function renderCampaignEmail(
   return { subject, html, text };
 }
 
-/** Per-vessel Anchor forms a campaign can personalise (vessel details filled per recipient). */
-export const CAMPAIGN_FORMS = ["agency-appointment-letter"] as const;
+/** Anchor forms a campaign can send — every Digital Form. Each is filled per
+ *  recipient from their vessel record; the vessel completes the rest online. */
+export const CAMPAIGN_FORMS = ANCHOR_FORMS.map((f) => f.key);
+
+/** "A", "A & B", "A, B & C" — the pack's name in emails and file names. */
+export function packTitle(titles: string[]): string {
+  if (titles.length <= 1) return titles[0] ?? "Document";
+  return `${titles.slice(0, -1).join(", ")} & ${titles[titles.length - 1]}`;
+}
+
+/** Starting copy for a campaign with one or more documents. */
+export function defaultPackCopy(docs: { kind: "template" | "form"; key: string; title: string }[]) {
+  if (docs.length === 1) {
+    const one = defaultCampaignCopy(docs[0]);
+    if (docs[0].kind === "form" && docs[0].key !== "agency-appointment-letter") {
+      return { ...one, note: `${one.note}
+
+We've filled in the details we already hold for **{{vessel}}** — the link shows what's left to complete before you sign.` };
+    }
+    return one;
+  }
+  const hasForms = docs.some((d) => d.kind === "form");
+  return {
+    subject: "{{vessel}} — documents for signature",
+    heading: "Documents for signature",
+    note: `Dear {{first_name}},
+
+Please find the following documents for **{{vessel}}**:
+
+${docs.map((d) => `- ${d.title}`).join("
+")}
+
+They're together in one link, so you only need to sign${hasForms ? ", complete the remaining details" : ""} and add your vessel stamp once.${hasForms ? " We've already filled in the details we hold for your vessel." : ""}
+
+If you have any questions, just reply to this email.`,
+    signOff: "Kind regards,
+{{sender}}
+JLS Yachts LLC",
+  };
+}
 
 /** Starting copy for a new campaign, by document — staff edit freely. */
 export function defaultCampaignCopy(doc: { kind: "template" | "form"; key: string; title: string }) {

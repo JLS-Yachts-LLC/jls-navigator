@@ -214,7 +214,7 @@ async function fileCompletedForms(doc: any, pack: PackPart[], partBytes: Uint8Ar
     try {
       const { data: sub } = await (supabaseAdmin as any).from("anchor_form_submissions").insert({
         form_key: p.key, title: `${p.title}${doc.title.includes(" — ") ? ` — ${doc.title.split(" — ").pop()}` : ""}`,
-        values: p.values, status: p.signs ? "signed" : "completed", esign_document_id: doc.id, created_by: doc.created_by ?? null,
+        values: p.values, status: p.signs ? "signed" : "returned", esign_document_id: doc.id, created_by: doc.created_by ?? null,
       }).select("id").single();
       if (!sub) continue;
       const path = `forms/${sub.id}.pdf`;
