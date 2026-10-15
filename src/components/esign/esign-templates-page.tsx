@@ -13,14 +13,15 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { FileStack, Plus, Search, Loader2, Send, Upload, UploadCloud, FileText, Download, Trash2, Wand2, Pencil, ChevronLeft, ChevronRight, PenLine, History } from "lucide-react";
+import { FileStack, Plus, Search, Loader2, Send, Upload, UploadCloud, FileText, Download, Trash2, Wand2, Pencil, ChevronLeft, ChevronRight, PenLine, History, Stamp, Lock } from "lucide-react";
+import { confidentialPath } from "@/components/anchor/confidential";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 type Template = {
   id: string; name: string; description: string | null; category: string | null;
   file_path: string; file_name: string; signature_fields: any; updated_at: string;
-  version: number;
+  version: number; confidential: boolean;
 };
 
 type TemplateVersion = {
@@ -32,7 +33,8 @@ const SIG_POSITIONS = ["bottom-right", "bottom-left", "bottom-center", "top-righ
 const EMPTY_NEW = { name: "", category: "", description: "", sigPage: "1", sigPos: "bottom-right" };
 const EMPTY_USE = { title: "", signer_name: "", signer_email: "", message: "" };
 
-export function EsignTemplatesPage() {
+/** `confidential` → the Confidential area's templates (admins + the Anchor — Confidential permission only). */
+export function EsignTemplatesPage({ confidential = false }: { confidential?: boolean } = {}) {
   const { user } = useAuth();
   const [rows, setRows] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
@@ -55,12 +57,13 @@ export function EsignTemplatesPage() {
   // View / edit a template — see the PDF and interact with it.
   const [editTarget, setEditTarget] = useState<Template | null>(null);
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load(); }, [confidential]);
 
   async function load() {
     setLoading(true);
     const { data, error } = await (supabase as any).from("esign_templates")
-      .select("id, name, description, category, file_path, file_name, signature_fields, updated_at, version")
+      .select("id, name, description, category, file_path, file_name, signature_fields, updated_at, version, confidential")
+      .eq("confidential", confidential)
       .order("category", { nullsFirst: true }).order("name");
     if (error) toast.error(error.message);
     setRows((data ?? []) as Template[]);
@@ -72,10 +75,11 @@ export function EsignTemplatesPage() {
     if (!file) { toast.error("Attach a PDF"); return; }
     setBusy(true);
     try {
-      const path = `templates/${crypto.randomUUID()}-${file.name.replace(/[^\w.\-]+/g, "_")}`;
+      const path = confidentialPath(confidential, `templates/${crypto.randomUUID()}-${file.name.replace(/[^\w.\-]+/g, "_")}`);
       const up = await supabase.storage.from("esign-documents").upload(path, file, { contentType: file.type || "application/pdf" });
       if (up.error) throw up.error;
       const { error } = await (supabase as any).from("esign_templates").insert([{
+        confidential,
         name: form.name.trim(),
         category: form.category.trim() || null,
         description: form.description.trim() || null,
@@ -104,7 +108,8 @@ export function EsignTemplatesPage() {
     setUsing(true);
     try {
       // Copy the template PDF to a fresh originals/ path so the document is independent.
-      const newPath = `originals/${crypto.randomUUID()}-${useTarget.file_name.replace(/[^\w.\-]+/g, "_")}`;
+      // A confidential template makes a confidential document.
+      const newPath = confidentialPath(useTarget.confidential, `originals/${crypto.randomUUID()}-${useTarget.file_name.replace(/[^\w.\-]+/g, "_")}`);
       const copy = await (supabase.storage.from("esign-documents") as any).copy(useTarget.file_path, newPath);
       if (copy.error) throw copy.error;
 
@@ -118,6 +123,7 @@ export function EsignTemplatesPage() {
         file_name: useTarget.file_name,
         status: "draft",
         signature_fields: useTarget.signature_fields ?? [{ page: 1, pos: "bottom-right" }],
+        confidential: useTarget.confidential,
         created_by: user?.id ?? null,
       }]).select("id").single();
       if (error) throw error;
@@ -126,7 +132,9 @@ export function EsignTemplatesPage() {
         await doSendForSignature({ data: { documentId: inserted.id, senderEmail: user?.email } } as any);
         toast.success(`Document created from template and sent to ${useForm.signer_email}`);
       } else {
-        toast.success("Draft created from template — find it under Documents");
+        toast.success(useTarget.confidential
+          ? "Draft created from template — find it under Confidential → Documents"
+          : "Draft created from template — find it under Documents");
       }
       setUseTarget(null); setUseForm(EMPTY_USE);
     } catch (e: any) { toast.error(e.message ?? "Failed to create from template"); }
@@ -167,9 +175,11 @@ export function EsignTemplatesPage() {
     <div className="flex h-full flex-col">
       <header className="flex items-center justify-between border-b border-border/70 bg-card/30 px-6 py-3.5">
         <div>
-          <div className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-muted-foreground/60">Documents</div>
+          <div className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-muted-foreground/60">{confidential ? "Confidential" : "Documents"}</div>
           <h1 className="mt-0.5 flex items-center gap-2 font-display text-[1.25rem] font-semibold tracking-tight">
-            <FileStack className="h-4 w-4 text-primary/80" /> Templates
+            {confidential
+              ? <><Lock className="h-4 w-4 text-primary/80" /> Confidential templates</>
+              : <><FileStack className="h-4 w-4 text-primary/80" /> Templates</>}
           </h1>
         </div>
         <div className="flex items-center gap-2.5">
@@ -331,6 +341,7 @@ export function EsignTemplatesPage() {
 
 // ── View & edit a template: live PDF preview + click/drag signature placement + metadata ──
 type SigMark = { page: number; pos: string; x?: number; y?: number };
+type StampMark = { page: number; x: number; y: number };
 
 function TemplateEditDialog({ template, onClose, onSaved }: {
   template: Template;
@@ -349,6 +360,15 @@ function TemplateEditDialog({ template, onClose, onSaved }: {
     first ? { page: Number(first.page) || 1, pos: first.pos ?? "bottom-right", x: first.x, y: first.y }
           : { page: 1, pos: "bottom-right" },
   );
+  // Optional Yacht Stamp spot: where a vessel stamp added when signing is placed
+  // (without one it sits beside the signature).
+  const existingFields: any[] = Array.isArray(template.signature_fields) ? template.signature_fields : [];
+  const firstStamp = existingFields.find((f) => f?.type === "stamp");
+  const [stamp, setStamp] = useState<StampMark | null>(
+    firstStamp && typeof firstStamp.x === "number" ? { page: Number(firstStamp.page) || 1, x: firstStamp.x, y: firstStamp.y } : null,
+  );
+  // What a click on the page places.
+  const [placing, setPlacing] = useState<"signature" | "stamp">("signature");
   const [replaceFile, setReplaceFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   // Changing the PDF or the signature spot makes a new version; say what changed.
@@ -381,7 +401,9 @@ function TemplateEditDialog({ template, onClose, onSaved }: {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const pdfRef = useRef<any>(null);
-  const dragging = useRef(false);
+  const dragging = useRef<null | "signature" | "stamp">(null);
+  // Page size in PDF points — sizes the stamp marker like the real stamp (78pt).
+  const [pageSize, setPageSize] = useState({ w: 612, h: 792 });
 
   useEffect(() => {
     let cancelled = false;
@@ -393,7 +415,7 @@ function TemplateEditDialog({ template, onClose, onSaved }: {
         const workerUrl = ((await import("pdfjs-dist/build/pdf.worker.min.mjs?url" as any)) as any).default;
         pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
         if (!pdfRef.current || pdfRef.current.__url !== renderUrl) {
-          pdfRef.current = await pdfjs.getDocument(renderUrl).promise;
+          pdfRef.current = await pdfjs.getDocument({ url: renderUrl }).promise;
           pdfRef.current.__url = renderUrl;
           if (cancelled) return;
           setNumPages(pdfRef.current.numPages);
@@ -403,6 +425,7 @@ function TemplateEditDialog({ template, onClose, onSaved }: {
         if (!canvas || cancelled) return;
         const containerWidth = 460;
         const base = page.getViewport({ scale: 1 });
+        setPageSize({ w: base.width, h: base.height });
         const scale = containerWidth / base.width;
         const viewport = page.getViewport({ scale });
         canvas.width = viewport.width; canvas.height = viewport.height;
@@ -426,24 +449,27 @@ function TemplateEditDialog({ template, onClose, onSaved }: {
       y: Math.min(0.98, Math.max(0.02, (e.clientY - r.top) / r.height)),
     };
   }
+  function put(which: "signature" | "stamp", p: { x: number; y: number }) {
+    if (which === "stamp") setStamp({ page: pageNum, x: p.x, y: p.y });
+    else setSig({ page: pageNum, pos: "custom", x: p.x, y: p.y });
+  }
   function place(e: React.MouseEvent) {
     if (dragging.current) return;
     const p = fracFromEvent(e);
-    if (!p) return;
-    setSig({ page: pageNum, pos: "custom", x: p.x, y: p.y });
+    if (p) put(placing, p);
   }
-  function startDrag(e: React.PointerEvent) {
+  const startDrag = (which: "signature" | "stamp") => (e: React.PointerEvent) => {
     e.stopPropagation();
-    dragging.current = true;
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-  }
+    dragging.current = which;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
   function onDrag(e: React.PointerEvent) {
     if (!dragging.current) return;
     const p = fracFromEvent(e);
-    if (!p) return;
-    setSig({ page: pageNum, pos: "custom", x: p.x, y: p.y });
+    if (p) put(dragging.current, p);
   }
-  function endDrag() { dragging.current = false; }
+  // Clear after the click that ends a drag, so it doesn't also place a marker.
+  function endDrag() { setTimeout(() => { dragging.current = null; }, 0); }
 
   // Where to draw the marker on the current page (custom x/y, else a preset corner).
   const presetFrac = (pos: string) => ({
@@ -453,6 +479,10 @@ function TemplateEditDialog({ template, onClose, onSaved }: {
   const markPage = sig.x != null && sig.y != null ? sig.page : 1;
   const markFrac = sig.x != null && sig.y != null ? { x: sig.x, y: sig.y } : presetFrac(sig.pos);
   const showMark = markPage === pageNum;
+  const showStamp = !!stamp && stamp.page === pageNum;
+  const stampChanged = JSON.stringify(stamp) !== JSON.stringify(
+    firstStamp && typeof firstStamp.x === "number" ? { page: Number(firstStamp.page) || 1, x: firstStamp.x, y: firstStamp.y } : null,
+  );
 
   async function save() {
     if (!form.name.trim()) { toast.error("Template name is required"); return; }
@@ -461,7 +491,7 @@ function TemplateEditDialog({ template, onClose, onSaved }: {
       let file_path = template.file_path;
       let file_name = template.file_name;
       if (replaceFile) {
-        const path = `templates/${crypto.randomUUID()}-${replaceFile.name.replace(/[^\w.\-]+/g, "_")}`;
+        const path = confidentialPath(template.confidential, `templates/${crypto.randomUUID()}-${replaceFile.name.replace(/[^\w.\-]+/g, "_")}`);
         const up = await supabase.storage.from("esign-documents").upload(path, replaceFile, { contentType: replaceFile.type || "application/pdf" });
         if (up.error) throw up.error;
         // The old PDF is kept — the version history still links to it.
@@ -472,14 +502,16 @@ function TemplateEditDialog({ template, onClose, onSaved }: {
         category: form.category.trim() || null,
         description: form.description.trim() || null,
         // Keep the first field's extra settings (role, label) and any further
-        // fields (e.g. the Tariff Sheet's date field) — only the mark moves.
+        // fields (e.g. the Tariff Sheet's date field) — only the marks move.
         signature_fields: [
           { ...(first ?? {}), ...sig },
-          ...(Array.isArray(template.signature_fields) ? template.signature_fields.slice(1) : []),
+          ...existingFields.slice(1).filter((f) => f?.type !== "stamp"),
+          ...(stamp ? [{ type: "stamp", page: stamp.page, x: stamp.x, y: stamp.y }] : []),
         ],
         file_path,
         file_name,
-        version_note: changeNote.trim() || null,
+        version_note: changeNote.trim()
+          || (stampChanged ? (stamp ? (firstStamp ? "Yacht Stamp spot moved" : `Yacht Stamp spot added on page ${stamp.page}`) : "Yacht Stamp spot removed") : null),
         updated_at: new Date().toISOString(),
       }).eq("id", template.id);
       if (error) throw error;
@@ -512,11 +544,22 @@ function TemplateEditDialog({ template, onClose, onSaved }: {
               <div ref={overlayRef} className="relative cursor-crosshair" onClick={place}>
                 <canvas ref={canvasRef} className="block w-full" />
                 {rendering && <div className="absolute inset-0 flex items-center justify-center bg-background/40"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>}
+                {showStamp && (
+                  // Drawn at the stamp's real size (up to 78pt square) so it can be lined up with the box on the page.
+                  <div
+                    className="absolute flex -translate-x-1/2 -translate-y-1/2 select-none items-center justify-center rounded-full border-2 border-dashed border-amber-500 bg-amber-400/15 text-center text-[9px] font-semibold leading-tight text-amber-700 shadow-sm"
+                    style={{ left: `${stamp!.x * 100}%`, top: `${stamp!.y * 100}%`, width: `${(78 / pageSize.w) * 100}%`, height: `${(78 / pageSize.h) * 100}%`, cursor: "grab", touchAction: "none" }}
+                    onPointerDown={startDrag("stamp")} onPointerMove={onDrag} onPointerUp={endDrag}
+                    title="Drag to reposition the yacht stamp"
+                  >
+                    <span className="flex flex-col items-center"><Stamp className="h-3 w-3" /> Yacht stamp</span>
+                  </div>
+                )}
                 {showMark && (
                   <div
                     className="absolute flex -translate-x-1/2 -translate-y-1/2 select-none items-center gap-1 rounded border border-primary bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary shadow-sm"
                     style={{ left: `${markFrac.x * 100}%`, top: `${markFrac.y * 100}%`, cursor: "grab", touchAction: "none" }}
-                    onPointerDown={startDrag} onPointerMove={onDrag} onPointerUp={endDrag}
+                    onPointerDown={startDrag("signature")} onPointerMove={onDrag} onPointerUp={endDrag}
                     title="Drag to reposition the signature"
                   >
                     <PenLine className="h-3 w-3" /> Signature
@@ -524,7 +567,20 @@ function TemplateEditDialog({ template, onClose, onSaved }: {
                 )}
               </div>
             </div>
-            <p className="text-[11px] text-muted-foreground/70">Click anywhere on the page to place the signature, or drag the marker to fine-tune. This is where signers sign documents created from this template.</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] text-muted-foreground">A click places:</span>
+              <div className="inline-flex rounded-md border border-border p-0.5">
+                <button type="button" onClick={() => setPlacing("signature")}
+                  className={cn("flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium", placing === "signature" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")}>
+                  <PenLine className="h-3 w-3" /> Signature
+                </button>
+                <button type="button" onClick={() => setPlacing("stamp")}
+                  className={cn("flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium", placing === "stamp" ? "bg-amber-500 text-white" : "text-muted-foreground hover:text-foreground")}>
+                  <Stamp className="h-3 w-3" /> Yacht stamp
+                </button>
+              </div>
+            </div>
+            <p className="text-[11px] text-muted-foreground/70">Click anywhere on the page to place the {placing === "stamp" ? "yacht stamp" : "signature"}, or drag a marker to fine-tune. This is where signers sign — and where their vessel stamp goes — on documents created from this template.</p>
           </div>
 
           {/* Metadata */}
@@ -554,9 +610,23 @@ function TemplateEditDialog({ template, onClose, onSaved }: {
               <Download className="h-3.5 w-3.5" /> Open current PDF in new tab
             </a>
             <div className="space-y-1.5">
+              <Label className="text-xs">Yacht Stamp spot</Label>
+              <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs">
+                <Stamp className={cn("h-3.5 w-3.5 shrink-0", stamp ? "text-amber-500" : "text-muted-foreground")} />
+                <span className="min-w-0 flex-1 text-muted-foreground">
+                  {stamp
+                    ? <>On page {stamp.page}{stamp.page !== pageNum && <> — <button type="button" className="text-primary hover:underline" onClick={() => setPageNum(stamp.page)}>show</button></>}</>
+                    : "Not set — a vessel stamp goes beside the signature"}
+                </span>
+                {stamp
+                  ? <button type="button" className="text-[11px] text-destructive/80 hover:text-destructive hover:underline" onClick={() => setStamp(null)}>Remove</button>
+                  : <button type="button" className="text-[11px] text-primary hover:underline" onClick={() => setPlacing("stamp")}>Place it</button>}
+              </div>
+            </div>
+            <div className="space-y-1.5">
               <Label className="text-xs">What changed?</Label>
               <Input value={changeNote} onChange={e => setChangeNote(e.target.value)} className="h-8" placeholder="Recorded with the new version, e.g. Address updated" />
-              <p className="text-[11px] text-muted-foreground/70">A new PDF or signature spot saves as version {(template.version ?? 1) + 1}.</p>
+              <p className="text-[11px] text-muted-foreground/70">A new PDF, signature spot or stamp spot saves as version {(template.version ?? 1) + 1}.</p>
             </div>
             {versions.length > 0 && (
               <div className="space-y-1.5">
