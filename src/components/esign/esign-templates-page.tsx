@@ -13,13 +13,19 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { FileStack, Plus, Search, Loader2, Send, Upload, UploadCloud, FileText, Download, Trash2, Wand2, Pencil, ChevronLeft, ChevronRight, PenLine } from "lucide-react";
+import { FileStack, Plus, Search, Loader2, Send, Upload, UploadCloud, FileText, Download, Trash2, Wand2, Pencil, ChevronLeft, ChevronRight, PenLine, History } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 type Template = {
   id: string; name: string; description: string | null; category: string | null;
   file_path: string; file_name: string; signature_fields: any; updated_at: string;
+  version: number;
+};
+
+type TemplateVersion = {
+  id: string; version: number; file_path: string; file_name: string | null;
+  change_note: string | null; created_at: string;
 };
 
 const SIG_POSITIONS = ["bottom-right", "bottom-left", "bottom-center", "top-right", "top-left", "middle-center"];
@@ -54,7 +60,7 @@ export function EsignTemplatesPage() {
   async function load() {
     setLoading(true);
     const { data, error } = await (supabase as any).from("esign_templates")
-      .select("id, name, description, category, file_path, file_name, signature_fields, updated_at")
+      .select("id, name, description, category, file_path, file_name, signature_fields, updated_at, version")
       .order("category", { nullsFirst: true }).order("name");
     if (error) toast.error(error.message);
     setRows((data ?? []) as Template[]);
@@ -198,7 +204,7 @@ export function EsignTemplatesPage() {
                         <div className="min-w-0 flex-1">
                           <div className="font-medium leading-tight line-clamp-2 group-hover:text-primary">{t.name}</div>
                           {t.description && <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{t.description}</div>}
-                          <div className="mt-1 truncate text-[11px] text-muted-foreground/70">{t.file_name}</div>
+                          <div className="mt-1 truncate text-[11px] text-muted-foreground/70"><span className="font-medium text-muted-foreground">v{t.version ?? 1}</span> · {t.file_name}</div>
                         </div>
                       </button>
                       <div className="mt-3 flex items-center gap-1.5 border-t border-border/40 pt-3">
@@ -345,6 +351,19 @@ function TemplateEditDialog({ template, onClose, onSaved }: {
   );
   const [replaceFile, setReplaceFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
+  // Changing the PDF or the signature spot makes a new version; say what changed.
+  const [changeNote, setChangeNote] = useState("");
+  const [versions, setVersions] = useState<TemplateVersion[]>([]);
+  useEffect(() => {
+    void (supabase as any).from("esign_template_versions")
+      .select("id, version, file_path, file_name, change_note, created_at")
+      .eq("template_id", template.id).order("version", { ascending: false })
+      .then(({ data }: any) => setVersions((data ?? []) as TemplateVersion[]));
+  }, [template.id]);
+  async function openVersion(v: TemplateVersion) {
+    try { window.open(await resolveSignedUrl(v.file_path, "esign-documents"), "_blank", "noopener"); }
+    catch (e: any) { toast.error(e.message ?? "Could not open that version"); }
+  }
 
   // Preview the replacement locally before it's uploaded; otherwise the stored file.
   const [localUrl, setLocalUrl] = useState<string | null>(null);
@@ -445,8 +464,8 @@ function TemplateEditDialog({ template, onClose, onSaved }: {
         const path = `templates/${crypto.randomUUID()}-${replaceFile.name.replace(/[^\w.\-]+/g, "_")}`;
         const up = await supabase.storage.from("esign-documents").upload(path, replaceFile, { contentType: replaceFile.type || "application/pdf" });
         if (up.error) throw up.error;
+        // The old PDF is kept — the version history still links to it.
         file_path = path; file_name = replaceFile.name;
-        await (supabase.storage.from("esign-documents") as any).remove([template.file_path]).catch(() => {});
       }
       const { error } = await (supabase as any).from("esign_templates").update({
         name: form.name.trim(),
@@ -460,6 +479,7 @@ function TemplateEditDialog({ template, onClose, onSaved }: {
         ],
         file_path,
         file_name,
+        version_note: changeNote.trim() || null,
         updated_at: new Date().toISOString(),
       }).eq("id", template.id);
       if (error) throw error;
@@ -533,6 +553,28 @@ function TemplateEditDialog({ template, onClose, onSaved }: {
             <a className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground" href={storedUrl || undefined} target="_blank" rel="noreferrer">
               <Download className="h-3.5 w-3.5" /> Open current PDF in new tab
             </a>
+            <div className="space-y-1.5">
+              <Label className="text-xs">What changed?</Label>
+              <Input value={changeNote} onChange={e => setChangeNote(e.target.value)} className="h-8" placeholder="Recorded with the new version, e.g. Address updated" />
+              <p className="text-[11px] text-muted-foreground/70">A new PDF or signature spot saves as version {(template.version ?? 1) + 1}.</p>
+            </div>
+            {versions.length > 0 && (
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/60"><History className="h-3 w-3" /> Version history</div>
+                <ul className="max-h-48 space-y-1 overflow-y-auto">
+                  {versions.map(v => (
+                    <li key={v.id} className="flex items-start gap-2 rounded-md border border-border/50 px-2 py-1.5 text-xs">
+                      <span className="shrink-0 font-semibold tabular-nums">v{v.version}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block">{v.change_note || "Updated"}</span>
+                        <span className="text-[11px] text-muted-foreground">{new Date(v.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
+                      </span>
+                      <button type="button" className="shrink-0 text-[11px] text-primary hover:underline" onClick={() => openVersion(v)}>Open</button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         </div>
 
