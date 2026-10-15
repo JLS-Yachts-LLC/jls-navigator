@@ -11,6 +11,7 @@ import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { sendEmail } from "@/lib/ses.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { buildUploadedSignedPdf } from "@/lib/esign/signed-copy.server";
+import { buildPackPdf, applySignerValues, type PackPart } from "@/lib/esign/pack.server";
 
 const BUCKET = "esign-documents";
 const TOKEN_TTL_DAYS = 14;
@@ -170,17 +171,65 @@ async function responseFor(doc: any, status: string) {
     // just the download + upload-a-signed-copy route.
     allowEsign: doc.allow_esign !== false,
     signedMethod: (doc.signed_method ?? null) as string | null,
+    // Campaign packs: the forms the vessel completes before signing (index =
+    // the part's position in the pack, values = what we pre-filled).
+    forms: (Array.isArray(doc.pack) ? (doc.pack as PackPart[]) : [])
+      .map((p, index) => ({ p, index }))
+      .filter(({ p }) => p.kind === "form")
+      .map(({ p, index }) => ({ index, key: p.key, title: p.title, signs: p.signs, values: (p as any).values ?? {} })),
+    documents: Array.isArray(doc.pack) ? (doc.pack as PackPart[]).map((p) => p.title) : [],
     fileUrl: await signedUrl(doc.file_path),
     signedFileUrl: doc.signed_file_path ? await signedUrl(doc.signed_file_path) : null,
   };
+}
+
+// ── public: preview a pack with the vessel's answers (before signing) ───────
+
+export const previewSigningPack = createServerFn({ method: "POST" })
+  // @ts-expect-error — explicit ctx typing
+  .handler(async (ctx: { data: { token: string; formValues?: Record<string, Record<string, unknown>> } }) => {
+    const { token, formValues } = ctx.data;
+    const { data: doc, error } = await (supabaseAdmin as any)
+      .from("esign_documents").select("id, status, token_expires_at, pack").eq("signing_token", token).maybeSingle();
+    if (error) throw adminError(error, "Could not load the document");
+    if (!doc || !Array.isArray(doc.pack)) throw new Error("This signing link is invalid.");
+    if (!["sent", "viewed"].includes(doc.status)) throw new Error("This document can no longer be changed.");
+    if (doc.token_expires_at && new Date(doc.token_expires_at) < new Date()) throw new Error("This signing link has expired.");
+    const { parts } = applySignerValues(doc.pack, formValues);
+    const { bytes } = await buildPackPdf(supabaseAdmin as any, parts);
+    let bin = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return { pdfBase64: btoa(bin) };
+  });
+
+/**
+ * File each form the vessel completed into Anchor Forms, so the answers are in
+ * Polaris. DMA notices (signed by JLS as agent) wait there for JLS approval and
+ * signing; the rest are recorded as signed through this document.
+ */
+async function fileCompletedForms(doc: any, pack: PackPart[], partBytes: Uint8Array[]) {
+  for (let i = 0; i < pack.length; i++) {
+    const p = pack[i];
+    if (p.kind !== "form" || !partBytes[i]) continue;
+    try {
+      const { data: sub } = await (supabaseAdmin as any).from("anchor_form_submissions").insert({
+        form_key: p.key, title: `${p.title}${doc.title.includes(" — ") ? ` — ${doc.title.split(" — ").pop()}` : ""}`,
+        values: p.values, status: p.signs ? "signed" : "completed", esign_document_id: doc.id, created_by: doc.created_by ?? null,
+      }).select("id").single();
+      if (!sub) continue;
+      const path = `forms/${sub.id}.pdf`;
+      const up = await (supabaseAdmin as any).storage.from(BUCKET).upload(path, partBytes[i], { contentType: "application/pdf", upsert: true });
+      if (!up.error) await (supabaseAdmin as any).from("anchor_form_submissions").update({ pdf_path: path }).eq("id", sub.id);
+    } catch { /* filing is best-effort; the signed pack is the record */ }
+  }
 }
 
 // ── public: submit a signature ──────────────────────────────────────────────
 
 export const doSubmitSignature = createServerFn({ method: "POST" })
   // @ts-expect-error — explicit ctx typing
-  .handler(async (ctx: { data: { token: string; signatureDataUrl: string; stampDataUrl?: string; typedName?: string } }) => {
-    const { token, signatureDataUrl, stampDataUrl, typedName } = ctx.data;
+  .handler(async (ctx: { data: { token: string; signatureDataUrl: string; stampDataUrl?: string; typedName?: string; formValues?: Record<string, Record<string, unknown>> } }) => {
+    const { token, signatureDataUrl, stampDataUrl, typedName, formValues } = ctx.data;
     // Optional vessel stamp — a PNG the signing page has already cleaned up.
     if (stampDataUrl && (typeof stampDataUrl !== "string" || stampDataUrl.length > 4_000_000)) throw new Error("That stamp image is too large — please use a smaller one.");
     const meta = reqMeta();
@@ -194,10 +243,23 @@ export const doSubmitSignature = createServerFn({ method: "POST" })
     if (doc.token_expires_at && new Date(doc.token_expires_at) < new Date()) throw new Error("This signing link has expired.");
     if (doc.allow_esign === false) throw new Error("This document is signed on paper — please download it, sign it and upload the signed copy.");
 
-    // Load the original PDF
-    const { data: blob, error: dlErr } = await (supabaseAdmin as any).storage.from(BUCKET).download(doc.file_path);
-    if (dlErr || !blob) throw new Error("Could not load the document to sign.");
-    const srcBytes = new Uint8Array(await blob.arrayBuffer());
+    // Campaign packs with forms are rebuilt with what the vessel filled in, so
+    // they sign the completed documents; anything else is signed as sent.
+    let srcBytes: Uint8Array;
+    let sigFields: any[] = Array.isArray(doc.signature_fields) ? doc.signature_fields : [];
+    let pack: PackPart[] | null = Array.isArray(doc.pack) ? doc.pack : null;
+    let partBytes: Uint8Array[] = [];
+    if (pack && pack.some((p) => p.kind === "form")) {
+      const applied = applySignerValues(pack, formValues);
+      if (applied.missing.length) throw new Error(`Please complete: ${applied.missing.slice(0, 6).join(", ")}${applied.missing.length > 6 ? "…" : ""}`);
+      pack = applied.parts;
+      const built = await buildPackPdf(supabaseAdmin as any, pack);
+      srcBytes = built.bytes; sigFields = built.fields; partBytes = built.partBytes;
+    } else {
+      const { data: blob, error: dlErr } = await (supabaseAdmin as any).storage.from(BUCKET).download(doc.file_path);
+      if (dlErr || !blob) throw new Error("Could not load the document to sign.");
+      srcBytes = new Uint8Array(await blob.arrayBuffer());
+    }
 
     // Stamp a signature certificate page
     const pdf = await PDFDocument.load(srcBytes, { ignoreEncryption: true });
@@ -252,7 +314,7 @@ export const doSubmitSignature = createServerFn({ method: "POST" })
     // 'company' = the chosen JLS signatory's stored signature image.
     try {
       const allFields: { page?: number; pos?: string; role?: string; signatory_id?: string; type?: string; label?: boolean; x?: number; y?: number }[] =
-        Array.isArray(doc.signature_fields) ? doc.signature_fields : [];
+        sigFields;
       // 'date' fields print the signing date at their spot (e.g. the Tariff
       // Sheet's "Date" line); everything else is a signature.
       // 'stamp' fields mark where the vessel stamp goes (e.g. the Tariff
@@ -348,7 +410,9 @@ export const doSubmitSignature = createServerFn({ method: "POST" })
 
     await (supabaseAdmin as any).from("esign_documents").update({
       status: "signed", signed_at: signedAt.toISOString(), signed_file_path: signedPath, signed_method: "esign",
+      ...(pack ? { pack } : {}),
     }).eq("id", doc.id);
+    if (pack && partBytes.length) await fileCompletedForms(doc, pack, partBytes);
     await logEvent(doc.id, "signed", doc.signer_email, meta);
     if (stampImg) await logEvent(doc.id, "stamped", doc.signer_email, meta);
 

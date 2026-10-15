@@ -19,8 +19,9 @@ import { requireStaff } from "@/lib/guest/guest-auth.server";
 import { sendEmail } from "@/lib/ses.server";
 import { outboundEmailEnabled, clientEmailEnabled, ClientEmailDisabledError } from "@/lib/mail-guard.server";
 import { renderCampaignEmail, mergeTags } from "@/lib/esign/campaign-email";
-import { buildFormPdfDetailed } from "@/lib/anchor-forms/pdf.server";
 import { getFormDef } from "@/lib/anchor-forms/definitions";
+import { prefillFor, VESSEL_COLS } from "@/lib/anchor-forms/prefill";
+import { buildPackPdf, vesselSigns, type PackPart } from "@/lib/esign/pack.server";
 import { buildUploadedSignedPdf } from "@/lib/esign/signed-copy.server";
 
 const BUCKET = "esign-documents";
@@ -60,32 +61,45 @@ function letterDate(d = new Date()): string {
   return `${get("day")}-${get("month")}-${get("year")}`;
 }
 
-type Built = { bytes: Uint8Array; signatureFields: any[] };
+type Built = { bytes: Uint8Array; signatureFields: any[]; pack: PackPart[] };
+type CampaignItem = { kind: "template" | "form"; key: string; title?: string; values?: Record<string, unknown> };
 
-/** The recipient's personal copy of the campaign document. */
+/** The campaign's documents, in order (older campaigns had exactly one). */
+export function campaignItems(campaign: any): CampaignItem[] {
+  if (Array.isArray(campaign.items) && campaign.items.length) return campaign.items;
+  return [{
+    kind: campaign.source_kind, key: campaign.source_kind === "form" ? campaign.form_key : campaign.template_id,
+    title: campaign.doc_title, values: {},
+  }];
+}
+
+/**
+ * The recipient's personal pack: every campaign document, forms pre-filled
+ * from their vessel record + the campaign's pre-filled values, merged into
+ * one PDF so they sign and stamp once.
+ */
 async function buildDocument(sb: any, campaign: any, recipient: any, yacht: any): Promise<Built> {
-  if (campaign.source_kind === "form") {
-    const def = getFormDef(campaign.form_key);
-    if (!def) throw new Error(`Unknown form "${campaign.form_key}"`);
-    const values: Record<string, unknown> = {
-      letter_date: letterDate(),
-      // The letter already prints M/Y “…”, so drop a prefix if the record has one.
-      vessel_name: String(yacht?.vessel_name ?? "").replace(/^(M\/?Y|S\/?Y)\.?\s+/i, ""),
-      imo: yacht?.imo_no || yacht?.official_no || "",
-      signatory_name: recipient.name,
-      signatory_title: recipient.role || "",
-    };
-    const { bytes, signature } = await buildFormPdfDetailed(def, values);
-    return {
-      bytes,
-      signatureFields: signature ? [{ page: signature.page, x: signature.x, y: signature.y, role: "client", label: false }] : [],
-    };
+  const parts: PackPart[] = [];
+  for (const it of campaignItems(campaign)) {
+    if (it.kind === "form") {
+      const def = getFormDef(it.key);
+      if (!def) throw new Error(`Unknown form "${it.key}"`);
+      const values = prefillFor(def, {
+        yacht, recipient: { name: recipient.name, email: recipient.email, role: recipient.role },
+        staffValues: it.values, letterDate: letterDate(),
+      });
+      parts.push({ kind: "form", key: def.key, title: it.title || def.title, signs: vesselSigns(def), values });
+    } else {
+      const { data: tpl } = await sb.from("esign_templates").select("name, file_path, signature_fields").eq("id", it.key).maybeSingle();
+      if (!tpl?.file_path) throw new Error(`The template “${it.title ?? it.key}” no longer exists`);
+      parts.push({
+        kind: "template", key: it.key, title: it.title || tpl.name, signs: true,
+        file_path: tpl.file_path, fields: Array.isArray(tpl.signature_fields) ? tpl.signature_fields : [],
+      });
+    }
   }
-  const { data: tpl } = await sb.from("esign_templates").select("file_path, signature_fields").eq("id", campaign.template_id).maybeSingle();
-  if (!tpl?.file_path) throw new Error("The campaign's template no longer exists");
-  const { data: blob, error } = await sb.storage.from(BUCKET).download(tpl.file_path);
-  if (error || !blob) throw new Error("Could not load the template PDF");
-  return { bytes: new Uint8Array(await blob.arrayBuffer()), signatureFields: Array.isArray(tpl.signature_fields) ? tpl.signature_fields : [] };
+  const { bytes, fields } = await buildPackPdf(sb, parts);
+  return { bytes, signatureFields: fields, pack: parts };
 }
 
 function docTitleFor(campaign: any, vessel: string | null): string {
@@ -121,7 +135,7 @@ export async function esignCampaignsHandler(request: Request): Promise<Response>
       const { data: campaign } = await sb.from("esign_campaigns").select("*").eq("id", body.campaignId).maybeSingle();
       if (!campaign) return json({ error: "Campaign not found" }, 404);
       const { data: first } = await sb.from("esign_campaign_recipients")
-        .select("*, yachts:yacht_id(vessel_name, imo_no, official_no)").eq("campaign_id", campaign.id)
+        .select(`*, yachts:yacht_id(${VESSEL_COLS})`).eq("campaign_id", campaign.id)
         .order("created_at").limit(1).maybeSingle();
       const sample = first ?? { name: staff.name, role: null, yacht_id: null, yachts: null };
       const vessel = (sample as any).yachts?.vessel_name ?? null;
@@ -144,7 +158,7 @@ export async function esignCampaignsHandler(request: Request): Promise<Response>
     // ── Send one recipient their own document ──
     if (action === "send-one") {
       const { data: r } = await sb.from("esign_campaign_recipients")
-        .select("*, yachts:yacht_id(vessel_name, imo_no, official_no)").eq("id", body.recipientId).maybeSingle();
+        .select(`*, yachts:yacht_id(${VESSEL_COLS})`).eq("id", body.recipientId).maybeSingle();
       if (!r) return json({ error: "Recipient not found" }, 404);
       if (r.status === "sent" && r.esign_document_id) return json({ ok: true, skipped: true, status: "sent" });
       if (r.status === "cancelled") return json({ ok: true, skipped: true, status: "cancelled" });
@@ -175,7 +189,7 @@ export async function esignCampaignsHandler(request: Request): Promise<Response>
         status: "sent", signing_token: token,
         token_expires_at: new Date(now.getTime() + campaign.expires_days * 86400_000).toISOString(),
         sent_at: now.toISOString(), created_by: staff.userId,
-        signature_fields: built.signatureFields,
+        signature_fields: built.signatureFields, pack: built.pack,
         campaign_id: campaign.id, yacht_id: r.yacht_id ?? null, allow_esign: campaign.allow_esign,
       }).select("id").single();
       if (docErr) throw new Error(docErr.message);

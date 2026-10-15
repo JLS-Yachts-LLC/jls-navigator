@@ -45,6 +45,10 @@ export interface FormDef {
    *  issues; "client-letter" = the client's own letter with no JLS branding
    *  (e.g. the vessel's Agency Appointment Letter to the authorities). */
   layout?: "jls" | "client-letter";
+  /** "agent" = JLS signs and stamps it as the Approved Maritime Agent (the DMA
+   *  notices). In a campaign the vessel fills in its details but doesn't sign
+   *  it; the completed form comes back to Anchor Forms for JLS approval. */
+  signedBy?: "vessel" | "agent";
   sections: FormSection[];
 }
 
@@ -66,6 +70,7 @@ const agentBlock: FormField[] = [
 export const ANCHOR_FORMS: FormDef[] = [
   {
     key: "dma-notice-of-arrival",
+    signedBy: "agent",
     title: "DMA — Notice of Arrival",
     description: "Notice of Arrival for vessels engaged in international voyages.",
     category: "DMA / Port Operations",
@@ -91,6 +96,7 @@ export const ANCHOR_FORMS: FormDef[] = [
   },
   {
     key: "dma-notice-of-departure",
+    signedBy: "agent",
     title: "DMA — Notice of Departure",
     description: "Notice of Departure for vessels engaged in international voyages.",
     category: "DMA / Port Operations",
