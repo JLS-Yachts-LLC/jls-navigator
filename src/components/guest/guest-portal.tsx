@@ -6,7 +6,8 @@
  * which checks each request against the guest's live shares; the guest's own
  * login can read nothing from the database directly.
  *
- * Read           — browse, open, download.
+ * Read           — browse, open (in the built-in viewer, or in Word / Excel /
+ *                  PowerPoint on the device), download.
  * Read & write   — also upload files, add folders, rename and replace inside a
  *                  shared folder, and remove what a guest added.
  *
@@ -15,7 +16,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft, CheckCircle2, ChevronRight, Download, File as FileIcon, Folder, FolderPlus, Loader2,
-  LogOut, Mail, MoreHorizontal, Pencil, RefreshCw, Shield, Ship, Trash2, Upload, UserRound,
+  ExternalLink, LogOut, Mail, MoreHorizontal, Pencil, RefreshCw, Shield, Ship, Trash2, Upload, UserRound,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -25,6 +26,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { PERMISSION_LABEL, type SharePermission } from "@/lib/guest/shares";
+import { GuestFileViewer, launchOfficeApp, officeAppFor } from "@/components/guest/file-viewer";
 import "@/components/polaris-ui/tokens.css";
 
 type Stage = "loading" | "signed-out" | "reset-password" | "link-expired" | "not-guest" | "ready";
@@ -342,16 +344,34 @@ function SharedBrowser({ email, onSignOut }: { email: string; onSignOut: () => v
   const canUpload = !!view?.caps.upload;
   const canWrite = view?.permission === "read_write";
 
-  /** Opened in a tab made synchronously, so the browser doesn't block it as a pop-up. */
-  async function openDoc(ref: Ref, download = false) {
-    const tab = download ? null : window.open("", "_blank");
+  /** The file open in the built-in viewer (url null while its link is fetched). */
+  const [viewing, setViewing] = useState<{ ref: Ref; name: string; url: string | null; writable: boolean } | null>(null);
+
+  /** A fresh short-lived link — they last 5 minutes, so each action asks again. */
+  const fileLink = (ref: Ref, download = false): Promise<{ url: string; name?: string }> =>
+    guestFetch(`/api/guest?op=open&type=${encodeURIComponent(ref.type)}&id=${encodeURIComponent(ref.id)}${download ? "&download=1" : ""}`);
+
+  async function openDoc(ref: Ref, name: string, writable = false) {
+    setViewing({ ref, name, url: null, writable });
     try {
-      const { url } = await guestFetch(`/api/guest?op=open&type=${encodeURIComponent(ref.type)}&id=${encodeURIComponent(ref.id)}${download ? "&download=1" : ""}`);
-      if (tab) tab.location.href = url; else window.location.assign(url);
+      const r = await fileLink(ref);
+      setViewing((v) => (v && refKey(v.ref) === refKey(ref) ? { ...v, name: r.name || name, url: r.url } : v));
     } catch (e) {
-      tab?.close();
+      setViewing(null);
       toast.error(e instanceof Error ? e.message : "Could not open the file");
     }
+  }
+
+  async function downloadDoc(ref: Ref) {
+    try { window.location.assign((await fileLink(ref, true)).url); }
+    catch (e) { toast.error(e instanceof Error ? e.message : "Could not download the file"); }
+  }
+
+  async function openInApp(ref: Ref, name: string) {
+    try {
+      const r = await fileLink(ref);
+      if (!launchOfficeApp(r.name || name, r.url)) toast.error("This file type doesn't open in an Office app.");
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Could not open the file"); }
   }
 
   async function uploadFiles(files: File[]) {
@@ -488,7 +508,7 @@ function SharedBrowser({ email, onSignOut }: { email: string; onSignOut: () => v
             <ul>
               {home!.items.map((it) => (
                 <li key={refKey(it.ref)}>
-                  <button onClick={() => (it.kind === "folder" ? setAt(it.ref) : void openDoc(it.ref))}
+                  <button onClick={() => (it.kind === "folder" ? setAt(it.ref) : void openDoc(it.ref, it.name, it.permission === "read_write" && EDITABLE_DOCS.includes(it.ref.type)))}
                     className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition hover:bg-background/40">
                     {it.ref.type === "yacht_all"
                       ? <Ship className="h-5 w-5 shrink-0 text-sky-300" />
@@ -539,7 +559,7 @@ function SharedBrowser({ email, onSignOut }: { email: string; onSignOut: () => v
             ))}
             {view.documents.map((d) => (
               <li key={refKey(d)} className="group flex items-center gap-1 rounded-xl transition hover:bg-background/40">
-                <button onClick={() => void openDoc(d)} className="flex min-w-0 flex-1 items-center gap-3 px-3 py-3 text-left">
+                <button onClick={() => void openDoc(d, d.name, canWrite && EDITABLE_DOCS.includes(d.type))} className="flex min-w-0 flex-1 items-center gap-3 px-3 py-3 text-left">
                   <FileIcon className="h-5 w-5 shrink-0 text-muted-foreground" />
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-medium text-foreground">{d.name}</span>
@@ -549,7 +569,12 @@ function SharedBrowser({ email, onSignOut }: { email: string; onSignOut: () => v
                   </span>
                 </button>
                 <RowMenu>
-                  <DropdownMenuItem onClick={() => void openDoc(d, true)}><Download className="mr-2 h-4 w-4" /> Download</DropdownMenuItem>
+                  {officeAppFor(d.name) && (
+                    <DropdownMenuItem onClick={() => void openInApp(d, d.name)}>
+                      <ExternalLink className="mr-2 h-4 w-4" /> Open in {officeAppFor(d.name)!.label}
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuItem onClick={() => void downloadDoc(d)}><Download className="mr-2 h-4 w-4" /> Download</DropdownMenuItem>
                   {/* SharePoint-only files and passport files are read-only from here. */}
                   {canWrite && EDITABLE_DOCS.includes(d.type) && (
                     <>
@@ -578,6 +603,16 @@ function SharedBrowser({ email, onSignOut }: { email: string; onSignOut: () => v
           </div>
         )}
       </div>
+
+      <GuestFileViewer
+        file={viewing ? { name: viewing.name, url: viewing.url } : null}
+        onClose={() => setViewing(null)}
+        onDownload={() => viewing && void downloadDoc(viewing.ref)}
+        onOpenInApp={() => viewing && void openInApp(viewing.ref, viewing.name)}
+        appHint={viewing?.writable
+          ? "Opens a copy on this device. To update the shared file, save it and use Replace with a new version."
+          : undefined}
+      />
     </div>
   );
 }
