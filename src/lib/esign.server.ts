@@ -12,6 +12,8 @@ import { sendEmail } from "@/lib/ses.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { buildUploadedSignedPdf } from "@/lib/esign/signed-copy.server";
 import { buildPackPdf, applySignerValues, type PackPart } from "@/lib/esign/pack.server";
+import { attachSupabaseAuth } from "@/integrations/supabase/auth-attacher";
+import { requireStaff } from "@/lib/guest/guest-auth.server";
 
 const BUCKET = "esign-documents";
 const TOKEN_TTL_DAYS = 14;
@@ -95,17 +97,31 @@ function adminError(error: any, context: string): Error {
   return new Error(`${context}: ${m || "unknown error"}`);
 }
 
+// Staff only. The caller's login rides along (attachSupabaseAuth) and is checked
+// here — before, anyone holding a document id could make Polaris email a signing
+// link. Client-portal and guest logins are refused, a confidential document needs
+// Anchor — Confidential access, and the CC'd sender is the signed-in staff member
+// (the client's `senderEmail` is ignored; kept in the type so old callers compile).
 export const doSendForSignature = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth])
   .inputValidator((d: { documentId: string; senderEmail?: string }) => d)
   .handler(async ({ data }) => {
-    const { documentId, senderEmail } = data ?? {};
+    const { documentId } = data ?? {};
     if (!documentId) throw new Error("No document id was supplied to the signing request.");
+    const request = getRequest();
+    const gate = request ? await requireStaff(request) : null;
+    if (!gate?.ok) throw new Error("Please sign in to Polaris as a member of staff to send documents.");
+    const senderEmail = gate.staff.email || undefined;
     const meta = reqMeta();
 
     const { data: doc, error } = await (supabaseAdmin as any)
       .from("esign_documents").select("*").eq("id", documentId).maybeSingle();
     if (error) throw adminError(error, "Could not load the document");
     if (!doc) throw new Error("Document not found");
+    if (doc.confidential) {
+      const { data: allowed } = await (supabaseAdmin as any).rpc("can_see_anchor_confidential", { p_user_id: gate.staff.userId });
+      if (allowed !== true) throw new Error("Document not found");
+    }
     if (doc.status === "signed") throw new Error("This document is already signed.");
 
     const token = doc.signing_token || randomToken();
