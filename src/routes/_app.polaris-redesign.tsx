@@ -50,6 +50,7 @@ import { PermitsHub } from "@/components/permits/permits-hub";
 import { ClientRequestsPage } from "@/components/portal/client-requests-page";
 import { SyncHubPage } from "@/components/dev/sync-hub-page";
 import { WhatsAppHub } from "@/components/whatsapp/whatsapp-hub";
+import { ReviewsHub } from "@/components/reviews/reviews-hub";
 import { VesselReportsPage } from "@/components/vessel-reports/vessel-reports-page";
 
 /** Beta screens that simply embed an existing full app page (Beta styling is inherited
@@ -66,6 +67,7 @@ const EMBED_SCREENS: Record<string, React.ComponentType> = {
   "admin-errors": ErrorLogPage,
   "admin-feedback": FeedbackPage,
   whatsapp: WhatsAppHub,
+  reviews: ReviewsHub,
   "vessel-report-automations": VesselReportsPage,
 };
 

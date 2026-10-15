@@ -1345,6 +1345,24 @@ export default {
       }
     }
 
+    // Communications → Reviews (Google Business Profile). The callback is public
+    // by necessity (Google redirects the browser there); it is gated on a signed,
+    // 10-minute state issued to a global admin.
+    if (url.pathname.startsWith('/api/reviews/')) {
+      const rv = await import('./lib/reviews/api.server')
+      switch (`${request.method} ${url.pathname}`) {
+        case 'POST /api/reviews/google/connect': return rv.reviewsConnectHandler(request)
+        case 'GET /api/reviews/google/callback': return rv.reviewsCallbackHandler(request)
+        case 'GET /api/reviews/status': return rv.reviewsStatusHandler(request)
+        case 'GET /api/reviews/google/locations': return rv.reviewsLocationsHandler(request)
+        case 'POST /api/reviews/brands/link': return rv.reviewsLinkHandler(request)
+        case 'POST /api/reviews/sync': return rv.reviewsSyncHandler(request)
+        case 'POST /api/reviews/reply': return rv.reviewsReplyHandler(request)
+        case 'POST /api/reviews/reply/remove': return rv.reviewsReplyRemoveHandler(request)
+        case 'POST /api/reviews/draft': return rv.reviewsDraftHandler(request)
+      }
+    }
+
     if (url.pathname === '/api/internal-services/renewal-check' && request.method === 'POST') {
       return internalServicesRenewalCheckHandler(request)
     }
@@ -1747,6 +1765,17 @@ export default {
     }
 
     if (!isQuarterly) return;
+
+    // ── Google reviews for each JLS brand (Communications → Reviews). Quietly
+    //    does nothing until a Google account is connected and Google has
+    //    approved API access. Once a day (03:00 UTC tick) it re-reads every page
+    //    to catch reviews that were deleted on Google. ──
+    ctx.waitUntil(
+      import('./lib/reviews/sync.server')
+        .then((m) => m.syncReviews({ full: utcHour === 3 && new Date().getUTCMinutes() < 15 }))
+        .then((r) => { if (!r.skipped || r.brands.length) console.log(`[reviews-sync] ${JSON.stringify(r)}`) })
+        .catch((e) => console.error('[reviews-sync] error:', e))
+    )
 
     // ── Daily full refresh (02:00 UTC tick): clear all delta tokens so every
     //    enabled list does a complete re-pull today. The rotating syncStalestList()

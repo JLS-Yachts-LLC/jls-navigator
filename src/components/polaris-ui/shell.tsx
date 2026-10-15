@@ -132,6 +132,8 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       // Client messaging: inbox, contacts + consent, broadcast lists, templates, sends.
       { label: "WhatsApp", module: "communications", icon: "brand-whatsapp", screen: "whatsapp", grantOnly: true },
+      // Google reviews for each JLS brand — read and reply. Global admins only until Google approves API access.
+      { label: "Reviews", module: "reviews", icon: "star", screen: "reviews", grantOnly: true },
     ],
   },
   {
