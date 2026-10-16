@@ -5,9 +5,269 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.75.0",
+    "date": "2026-10-16",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Vessel Documents now find their SharePoint folder when the vessel name carries a note in brackets, such as \"DEEP BREATH (ex Hermitage)\" or \"Platinum (66.90m)\", and SharePoint folders with more than 200 items are listed in full"
+      },
+      {
+        "type": "feature",
+        "title": "Interface refinement — pill tabs, quieter lines with a Column lines tick box, type scale, one-meaning status colours, client/time filters and / search on all three boards, compact \"N files\" chip, row action menus, pagination, loading and empty states"
+      },
+      {
+        "type": "feature",
+        "title": "GDRFA entry permits are now watched like the DMA and FMA permits — each vessel card shows its entry permit's expiry, the expiry reminders at 60, 30 and 7 days (and on the day) go to the vessel's agents, a new entry permit's expiry fills in as 180 days from the date of entry, and moving an existing entry permit's expiry later asks first, because updating it for crew changes doesn't extend it (SD-0058)"
+      },
+      {
+        "type": "feature",
+        "title": "Dashboard bar graphs for Import, Transit, Local and Export — each with Daily / Weekly / Monthly and its own client dropdown"
+      },
+      {
+        "type": "feature",
+        "title": "Dashboard Import/Transit/Export overview, ETA and ETD columns, daily/weekly/monthly + client chart options; fix empty Routing and Dispatched boards (Import/Transit parcels were never loaded)"
+      },
+      {
+        "type": "fix",
+        "title": "Power App comparison pairs each SharePoint record with the matching Polaris row and counts duplicate-AWB differences separately"
+      },
+      {
+        "type": "feature",
+        "title": "Drivers can add an item to a delivery under way — scan its label (or search by boat) from the delivery screen; an unknown label offers to be added"
+      },
+      {
+        "type": "fix",
+        "title": "Tickets raised from email no longer open with the mail gateway's phishing warning, read as one unbroken block on the New Horizon desk, or get raised at all for vendor maintenance notices"
+      }
+    ]
+  },
+  {
+    "version": "2.74.0",
+    "date": "2026-10-15",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Only signed-in staff can send an Anchor document for signature — the send action used to work for anyone who had a document's id; client-portal and guest logins are refused, confidential documents need Anchor — Confidential access, and the CC goes to the staff member actually sending it"
+      },
+      {
+        "type": "feature",
+        "title": "Communications → Reviews shows Google reviews for each JLS brand and lets you reply from Polaris"
+      },
+      {
+        "type": "feature",
+        "title": "Anchor's Confidential tab now has its own Campaigns and Forms — confidential campaigns send confidential documents and can only use confidential templates, and confidential forms (and anything signed from them) stay hidden from everyone without Anchor — Confidential access"
+      },
+      {
+        "type": "feature",
+        "title": "Anchor has a Confidential tab — its own Documents, Templates and Signatories that only admins and people given the new \"Anchor — Confidential\" permission can see; the rest of the team can't see them anywhere in Polaris, including their files and history, and documents made from a confidential template stay confidential"
+      },
+      {
+        "type": "feature",
+        "title": "Contacts can have new groups — create one from the header or straight from a contact's Group field"
+      },
+      {
+        "type": "feature",
+        "title": "Place a Yacht Stamp spot in the Templates editor — switch a click between Signature and Yacht stamp, drag the stamp marker (shown at the stamp's real size) onto the template's stamp box, or remove it; saving records a new template version, and the editor's PDF preview loads again"
+      },
+      {
+        "type": "fix",
+        "title": "The PDF preview on an Anchor document's signature-placement view shows the document again — it had stopped loading after the PDF viewer update"
+      },
+      {
+        "type": "feature",
+        "title": "Anchor campaigns can send several documents in one link — every Digital Form as well as templates — filled in from each vessel's record, so the captain completes only what's missing online, previews it, and signs and stamps once; completed forms come back to Anchor Forms, with the DMA notices waiting for JLS to sign as agent"
+      },
+      {
+        "type": "feature",
+        "title": "Vessel cards show FMA and DMA permit expiry dates next to Berth, LOA, ETA and ETD — coloured by how soon they expire, \"—\" when there's none on file, and a cruising permit still issued by MOEI is marked \"(MOEI)\""
+      },
+      {
+        "type": "feature",
+        "title": "Signers can add their vessel stamp when signing — optional but advised — placed on the document's Yacht Stamp line (or beside the signature) and on the signature certificate, with \"Vessel stamp added\" in the document history"
+      },
+      {
+        "type": "feature",
+        "title": "Signers can upload a photo or scan of their signature on the signing page — the paper background is removed and it's trimmed to fit — and the Type button is no longer hidden by its dark background"
+      },
+      {
+        "type": "feature",
+        "title": "Document templates have version numbers — changing a template's PDF or signature spot saves a new version with a note of what changed, and the template shows its version history with each earlier PDF still openable"
+      },
+      {
+        "type": "fix",
+        "title": "JLS documents now show the Ejari legal address — Leader Sport Trading, Compound No. 58, Dubai Investment Park First, Dubai, UAE — on the letterhead, signing pages, client emails, invoices, DMA agent details and the bunkering declaration"
+      },
+      {
+        "type": "feature",
+        "title": "Files on the guest page now open in a built-in viewer — Word, Excel and PowerPoint through Microsoft's Office viewer, PDFs, images and text right in the page — with \"Open in Word / Excel / PowerPoint\" to open the file in the Office app on the guest's computer or phone, plus Download"
+      },
+      {
+        "type": "fix",
+        "title": "Guests can open shared files again — every shared Training, vessel and crew file stored in Polaris failed with \"This file can't be opened right now\", and files a guest removed left their stored copy behind"
+      }
+    ]
+  },
+  {
+    "version": "2.73.0",
+    "date": "2026-10-14",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "The Port Agency team's menu is just Orbit 2 (Bunkering only) and the Bunkering screen — anyone with Orbit 2 — Bunkering only and no ORBIT sees only those two items and lands on Orbit 2; View as shows the same; the \"Viewing as\" banner no longer appears twice on embedded pages"
+      },
+      {
+        "type": "feature",
+        "title": "View as a staff member — admins pick anyone from View as in the top bar and see Polaris with that person's real access (their department and module permissions, e.g. Orbit 2 Bunkering only), with an amber \"Viewing as …\" banner and Exit view; it is a preview of what they see, every request still runs as the admin"
+      },
+      {
+        "type": "feature",
+        "title": "Orbit 2 \"Bunkering only\" access — staff given the new Orbit 2 — Bunkering only permission (and not ORBIT) see Orbit 2 in their sidebar but only its Bunkering list (All / To Be Invoiced / Invoiced), with no Dashboard, Project List, EHS NOC Record or Managed Boats; granted per person in Manage Users → Module access or per department in Permissions"
+      },
+      {
+        "type": "fix",
+        "title": "\"Add from WhatsApp Manager\" now also connects a number moved fully onto WhatsApp's API — it registers the verified number with Meta itself (keeping its PIN safe for later), and only asks for the phone-app contacts and history imports when the number still runs in the WhatsApp Business app"
+      },
+      {
+        "type": "feature",
+        "title": "Documents Polaris generates for JLS now use the JLS corporate letterhead (the same logo, document box, group brands strip, address and certification badges as the Standard Tariff Sheet), while the Agency Appointment Letter now matches the vessel's own letter template with no JLS branding, ready for the vessel's letterhead and signature; signing emails and the signing page now carry the JLS Yachts logo and company details instead of \"Aquila One\""
+      },
+      {
+        "type": "feature",
+        "title": "A WhatsApp number linked in WhatsApp Manager can be added to Polaris with one click — \"Add from WhatsApp Manager\" on the pending number finds it, uses the existing connection, and requests its contacts and chat history straight away"
+      },
+      {
+        "type": "feature",
+        "title": "Signature Campaigns in Anchor — send a document such as the Standard Tariff Sheet or the Agency Appointment Letter to many yachts and contacts at once, with each person getting their own email and signing link (nobody is CC'd); choose recipients from yachts, contacts, saved groups or by typing them in; write a personal note with name and vessel tags and preview it before sending; switch e-signature and the PDF attachment on or off; track who has opened and signed; send reminders; and attach copies that were signed on paper. The Standard Tariff Sheet (May 2026) is now a ready-to-send template, and anyone sent a document can sign it on paper and upload the signed copy instead of signing on screen."
+      },
+      {
+        "type": "fix",
+        "title": "A WhatsApp number can be set up as \"pending\" with its people chosen before it's connected — connecting that number later takes the entry over and keeps its name and who can use it"
+      },
+      {
+        "type": "feature",
+        "title": "WhatsApp can now run more than one number — connect a WhatsApp Business app number (such as the Training number) from WhatsApp → Setup with Meta's sign-in, keep using it on the phone, and send and read its messages in the Inbox; Setup → Numbers sets who can read or send from each number, each number has its own templates, chats imported from the phone are labelled, and automatic replies stay quiet while a person is chatting"
+      },
+      {
+        "type": "feature",
+        "title": "A new \"Guest Access\" permission lets chosen staff manage guests without being an admin — switch it on in a person's Modules (Create: invite guests, re-send invites, edit guests and groups; Edit: also deactivate them); guests can now have a JLS email address as long as it isn't a staff login, and a guest's email can no longer be invited as staff by mistake"
+      },
+      {
+        "type": "feature",
+        "title": "Share crew documents with guests — from a crew profile's Documents card, share all of a crew member's files, one folder, or one file (a document, a single passport file, or a SharePoint-only file) by button or right-click; crew shares warn that they hold personal data, end after 30 days unless changed, and need Crew & Immigration access. Sharing a single SharePoint-only vessel file no longer imports it first — guests open it straight from SharePoint"
+      },
+      {
+        "type": "fix",
+        "title": "Importing or releasing a vessel's SharePoint file whose name has no real type (such as \"….octet-stream\" email attachments) now works — Polaris reads the file to tell it is a PDF, image or Office document and saves it with the right extension, instead of refusing it"
+      },
+      {
+        "type": "feature",
+        "title": "Saving a Client Portal person's Vessels now asks \"Are you sure?\" first — it lists the vessels being assigned (and any being removed) plus everything they'll see afterwards, with Yes, save these changes / No, go back / Cancel — make no changes; nothing is written until Yes"
+      },
+      {
+        "type": "feature",
+        "title": "Share vessel documents with guests — from a vessel's Documents card, share all of its documents, one folder or one file (button or right-click) as Read or Read & write; guests see the vessel's SharePoint files too (read-only, never Crew Documents), and every vessel share appears in Manage Users → Guests → Shared items"
+      },
+      {
+        "type": "feature",
+        "title": "Give one Client Portal representative several vessels from Settings — a Vessels button on each person's row opens a searchable tick-list of every yacht and managed boat (tick to add it to their existing login with no new password, untick to remove it), people on more than one vessel are tagged \"Fleet · N\", and Add portal user can tick several vessels at once"
+      },
+      {
+        "type": "feature",
+        "title": "Guest accounts — invite outside people by email, put them in guest groups, and share Training files and folders with them (right-click → Share with guests) as Read or Read & write, with an optional end date; guests sign in at /guest and see only what is shared with them, and Settings → Manage Users → Guests lists every shared item to change or revoke, plus what guests opened"
+      },
+      {
+        "type": "feature",
+        "title": "Add Client Portal user's Vessel field is type-to-search — type part of a yacht or managed boat name to find it (each labelled Yacht or Managed boat with its client); in every searchable dropdown Enter now picks the first match instead of submitting the form, and Esc closes the list"
+      }
+    ]
+  },
+  {
+    "version": "2.72.0",
+    "date": "2026-10-13",
+    "entries": [
+      {
+        "type": "fix",
+        "title": "Client Portal data routes crashed on load (\"stream is not defined\") — keep the Anthropic SDK's Node-only helper out of the Worker bundle"
+      },
+      {
+        "type": "feature",
+        "title": "Captain / Chief Engineer confirm and approve in the Client Portal, signed Master's declaration upload, pre-filled Bunker Delivery Note PDF"
+      },
+      {
+        "type": "feature",
+        "title": "UAE VAT and fuel guidance — 'Good to know' for clients, VAT and 48-hour rule worked out per enquiry"
+      },
+      {
+        "type": "feature",
+        "title": "Bunkering enquiries — enquiry form, supplier quotations, vessel confirmation and approval, delivery, audit log; visible to the vessel in the Client Portal"
+      },
+      {
+        "type": "feature",
+        "title": "Standard incoming / picking / dispatch request forms with documents and photos"
+      },
+      {
+        "type": "fix",
+        "title": "Delivery note drops Van and Destination and shows Courier per line; confirmation email sends one delivered and one received photo per shipment"
+      },
+      {
+        "type": "fix",
+        "title": "Two Power App records for one AWB no longer overwrite each other; a Completed parcel stays Completed"
+      },
+      {
+        "type": "fix",
+        "title": "The photo-shrink check reads the stored size from storage records, not a cached download"
+      },
+      {
+        "type": "fix",
+        "title": "Dates on the phone can be typed (DD/MM/YYYY) or picked from a calendar button"
+      },
+      {
+        "type": "fix",
+        "title": "Opening the Admin Panel directly no longer bounces to the home screen"
+      },
+      {
+        "type": "feature",
+        "title": "Admin Panel link in the avatar menu for admins and developers"
+      },
+      {
+        "type": "fix",
+        "title": "Proof-of-delivery email attaches the PDF and photos of the goods; signature pad is black on white"
+      },
+      {
+        "type": "fix",
+        "title": "Fetch a SharePoint picture through its item id when the folder listing gives no download link"
+      },
+      {
+        "type": "feature",
+        "title": "Power App vs Polaris comparison page (read-only) at /admin/shipsync-compare"
+      },
+      {
+        "type": "fix",
+        "title": "Pick up delivery photos and signatures saved loose in a note folder, and log what each folder holds"
+      },
+      {
+        "type": "fix",
+        "title": "Read Power App pictures from the Site Assets library and find stage folders by tolerant name"
+      },
+      {
+        "type": "fix",
+        "title": "The Orbit app only claims its own page, so Polaris Logistics links open Logistics instead of being captured by Orbit"
+      },
+      {
+        "type": "fix",
+        "title": "Photos the SharePoint sync can't find no longer use up every run's photo budget"
+      }
+    ]
+  },
+  {
     "version": "2.71.0",
     "date": "2026-10-12",
     "entries": [
+      {
+        "type": "fix",
+        "title": "The visa compliance monitor endpoint now needs a global admin login or the cron secret, so nobody on the internet can trigger a compliance sweep any more — it used to let anyone in whenever the cron secret wasn't set"
+      },
       {
         "type": "fix",
         "title": "Invoices and estimates deleted in QuickBooks no longer stay in Finance — deletions are picked up from the webhook, a 5-minute check and a nightly comparison with QuickBooks, voided invoices show as Voided, and the nightly check also fetches any invoice the Finance list is missing"
