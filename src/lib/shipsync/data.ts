@@ -86,6 +86,8 @@ export async function loadImportPackages(): Promise<ShipSyncPackage[]> {
 export const loadExportPackages = () => loadPackagesByType('Export')
 /** EDAS-tab packages. */
 export const loadEdasPackages = () => loadPackagesByType('EDAS')
+/** Gate-Pass-tab rows: the mirror of the Monday Gate Pass board (see monday-gatepass-board.server.ts). */
+export const loadGatePassPackages = () => loadPackagesByType('Gate Pass')
 export async function loadDrivers(): Promise<ShipSyncDriver[]> {
   const { data } = await db().from('shipsync_drivers').select('*').order('name')
   return (data ?? []) as ShipSyncDriver[]

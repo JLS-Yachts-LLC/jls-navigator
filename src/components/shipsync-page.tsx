@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Loader2, Package, Truck, Warehouse, Users, BarChart3, Smartphone, ArrowDownToLine, ArrowUpFromLine, Route, Navigation, MapPin, LifeBuoy, Boxes, FileCheck2, LayoutDashboard } from "lucide-react";
+import { Loader2, Package, Truck, Warehouse, Users, BarChart3, Smartphone, ArrowDownToLine, ArrowUpFromLine, Route, Navigation, MapPin, LifeBuoy, Boxes, FileCheck2, LayoutDashboard, DoorOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   loadDeliverablePackages, isLocalPackage, loadDrivers, loadNotes, loadDestinations, loadDeliverySchedules, loadVehicles, loadYachtNames,
@@ -18,6 +18,7 @@ import { ShipSyncWarehouse } from "@/components/shipsync/ShipSyncWarehouse";
 import { ShipSyncDrivers } from "@/components/shipsync/ShipSyncDrivers";
 import { ShipSyncDashboard } from "@/components/shipsync/ShipSyncDashboard";
 import { ShipSyncOverview } from "@/components/shipsync/ShipSyncOverview";
+import { ShipSyncGatePassBoard } from "@/components/shipsync/ShipSyncGatePassBoard";
 import { TableSkeleton } from "@/components/shipsync/shared";
 import { FleetTrackingPage } from "@/components/fleet-tracking-page";
 
@@ -40,6 +41,7 @@ const TABS = [
   { key: "import",   label: "Import",         icon: ArrowDownToLine },
   { key: "export",   label: "Export",         icon: ArrowUpFromLine },
   { key: "edas",     label: "EDAS",           icon: FileCheck2 },
+  { key: "gatepass", label: "Gate Pass",      icon: DoorOpen },
   { key: "routing",  label: "Routing",        icon: Route },
   { key: "dispatch", label: "Dispatched",     icon: Truck },
   { key: "warehouse", label: "Warehouse",     icon: Warehouse },
@@ -153,6 +155,7 @@ export function ShipSyncPage({ initialTab }: { initialTab?: string } = {}) {
             {tab === "import" && <ShipSyncImportBoard />}
             {tab === "export" && <ShipSyncExportBoard />}
             {tab === "edas" && <ShipSyncEdasBoard />}
+            {tab === "gatepass" && <ShipSyncGatePassBoard />}
             {tab === "dispatch" && <ShipSyncDispatch data={data} reload={reload} />}
             {tab === "routing" && <ShipSyncRouting data={data} reload={reload} />}
             {tab === "warehouse" && <ShipSyncWarehouse data={data} reload={reload} />}
