@@ -85,15 +85,56 @@ async function matchTicket(db: any, subject: string, conversationId?: string): P
 const ZERO_WIDTH = new RegExp('[​-‏  ﻿]', 'g')
 const NBSP = new RegExp(' ', 'g')
 
-/** Security-gateway notices that sit above the real message. */
+/**
+ * Security-gateway notices that sit above the real message.
+ *
+ * None of these may be anchored with `^` alone. Our gateway prefixes its banner
+ * with a warning emoji and a label — `⚠️ Unverified Sender: This email originated
+ * from outside the organization…` — so the anchored "originated from outside"
+ * pattern never fired and the phishing warning was stored as the opening line of
+ * every externally-raised ticket (SD-0031, SD-0034, SD-0038, SD-0056, SD-0057),
+ * then mirrored to New Horizon, where it reads as if Polaris had flagged the
+ * ticket itself. Match the distinctive phrase wherever it falls on the line.
+ */
 const GATEWAY_BANNER = [
   /Trusted Sender\s*:/i,
+  /Unverified Sender\s*:/i,
   /^\s*\[?\s*EXTERNAL\s*\]?\s*[:-]/i,
   /^\s*CAUTION\s*[:-]/i,
-  /^\s*This (?:message|email) (?:originated|came|was sent) from outside/i,
+  /This (?:message|email) (?:originated|came|was sent) from outside/i,
+  // The banner's second sentence, in case the gateway wraps it onto its own line.
+  /^\s*Do not click links or (?:download|open) attachments/i,
   /^\s*External (?:email|sender)\s*[:-]/i,
   /^\s*You don't often get email from/i,
 ]
+
+/**
+ * The individual pieces a banner is made of, cut out of a line rather than taking
+ * the line with them.
+ *
+ * A gateway does not always put its banner on a line of its own — it may run it
+ * straight into the first sentence of the message. Dropping the whole line then
+ * threw the message away, and a ticket with no body is worse than a ticket with a
+ * stray word of boilerplate. Keep in step with GATEWAY_BANNER above: anything that
+ * marks a line as a banner needs a piece here, or the line survives intact.
+ */
+const BANNER_SENTENCE = [
+  /⚠️?/g,
+  /^\s*\[?\s*EXTERNAL\s*\]?\s*[:-]\s*/i,
+  /^\s*CAUTION\s*[:-]\s*/i,
+  /(?:Unverified|Trusted|External) (?:Sender|email)\s*:\s*/gi,
+  /This (?:message|email) (?:originated|came|was sent) from outside[^.!?]*[.!?]/gi,
+  /This email is from an approved and trusted sender[^.!?]*[.!?]/gi,
+  /Do not click links or (?:download|open) attachments[^.!?]*[.!?]/gi,
+  /You don't often get email from[^.!?]*[.!?]/gi,
+]
+
+/** A banner line reduced to whatever of the real message was left on it. */
+function stripBanner(line: string): string {
+  let s = line
+  for (const re of BANNER_SENTENCE) s = s.replace(re, ' ')
+  return s.trim() ? s.replace(/[ \t]+/g, ' ').trim() : ''
+}
 
 /**
  * Legal footers. Unlike the other boilerplate these are removed line by line
@@ -163,14 +204,14 @@ function tidy(lines: string[]): string {
 /** Reduce a received email to just what the person actually wrote. */
 export function extractReplyText(raw: string): string {
   const norm = String(raw ?? '').replace(/\r/g, '').replace(ZERO_WIDTH, '').replace(NBSP, ' ')
-  let lines = norm.split('\n')
+  const lines = norm.split('\n')
 
-  // Drop gateway banners sitting above the message.
-  let start = 0
+  // Clear gateway banners sitting above the message. The line is blanked rather
+  // than removed, so a message the gateway ran onto the banner's own line is kept;
+  // tidy() collapses what is left to nothing when the line was banner alone.
   for (let i = 0; i < Math.min(lines.length, 6); i++) {
-    if (GATEWAY_BANNER.some(re => re.test(lines[i]))) start = i + 1
+    if (GATEWAY_BANNER.some(re => re.test(lines[i]))) lines[i] = stripBanner(lines[i])
   }
-  lines = lines.slice(start)
 
   const kept: string[] = []
   let hasText = false
@@ -219,11 +260,13 @@ export function extractForwardedText(raw: string): string {
 
   const note = extractReplyText(lines.slice(0, at).join('\n'))
   const body = tidy(
-    lines.slice(at).filter((l) => {
+    lines.slice(at).flatMap((l) => {
       const t = l.trim()
-      if (GATEWAY_BANNER.some(re => re.test(t))) return false
-      if (DISCLAIMER.some(re => re.test(t))) return false
-      return true
+      // A banner keeps whatever of the message shared its line; a disclaimer never
+      // does, so that one still takes the line with it.
+      if (GATEWAY_BANNER.some(re => re.test(t))) return [stripBanner(l)]
+      if (DISCLAIMER.some(re => re.test(t))) return []
+      return [l]
     }),
   )
 
@@ -262,6 +305,37 @@ const AUTOMATED_SUBJECT = [
 ]
 
 /**
+ * Colleagues. Mail from these domains always deserves a ticket, so the vendor
+ * rules below never apply to it — a captain emailing the desk about a
+ * "maintenance window" for the bridge PC is asking for help, not broadcasting.
+ */
+const INTERNAL_DOMAIN = /@(?:jlsyachts\.com|newhorizon-it\.co\.uk)$/i
+
+/**
+ * Mailbox names that broadcast rather than ask.
+ *
+ * `no-reply@` already covers the obvious ones, but a vendor's marketing desk
+ * usually accepts replies: Q-SYS's maintenance notice (communications@qsc.com)
+ * and Microsoft's quarantine digest (quarantine@messaging.microsoft.com) both
+ * raised tickets on 15 Oct 2026 and were mirrored to New Horizon, burning a
+ * reference on each desk for mail nobody works.
+ *
+ * `alerts@`/`support@` are deliberately absent — a monitoring alert about a
+ * vessel's VSAT dropping is exactly the work this mailbox exists for.
+ */
+const BROADCAST_SENDER =
+  /^(?:communications?|marketing|news|newsletters?|notifications?|updates?|quarantine)@/i
+
+/** Vendor announcements: something is happening to their service, not ours. */
+const VENDOR_NOTICE_SUBJECT = [
+  /\b(?:scheduled|planned|upcoming|emergency)\s+maintenance\b/i,
+  /\bmaintenance\s+(?:notice|notification|window|advisory|reminder)\b/i,
+  /\bmessages?\s+(?:are\s+)?(?:being\s+)?held\b/i,
+  /\bin\s+quarantine\b/i,
+  /\b(?:service|system)\s+(?:status|advisory)\s+(?:update|notification)\b/i,
+]
+
+/**
  * Should this unreferenced email be left alone rather than raising a ticket?
  * Returns the reason to record, or null to go ahead.
  *
@@ -275,7 +349,7 @@ const AUTOMATED_SUBJECT = [
  * the domain-wide version bought nothing and cost real work: a New Horizon
  * engineer emailing the IT desk from their own address raised no ticket at all.
  */
-function shouldNotRaiseTicket(from: string, subject: string, headers: Record<string, string>): string | null {
+export function shouldNotRaiseTicket(from: string, subject: string, headers: Record<string, string>): string | null {
   if (from.trim().toLowerCase() === NH_SUPPORT_MAILBOX.trim().toLowerCase()) {
     return 'new_horizon_no_ref'
   }
@@ -283,6 +357,12 @@ function shouldNotRaiseTicket(from: string, subject: string, headers: Record<str
   // vulnerability digests (defender-noreply@) raised two tickets on 30 Sep 2026.
   if (/^(no-?reply|do-?not-?reply|donotreply|mailer-daemon|postmaster|[\w.-]*-noreply)@/i.test(from.trim())) return 'automated'
   if (AUTOMATED_SUBJECT.some(re => re.test(subject))) return 'automated'
+  // Vendor broadcasts — never applied to colleagues, who do ask the desk for help
+  // about maintenance and quarantined mail.
+  if (!INTERNAL_DOMAIN.test(from.trim())) {
+    if (BROADCAST_SENDER.test(from.trim())) return 'automated'
+    if (VENDOR_NOTICE_SUBJECT.some(re => re.test(subject))) return 'automated'
+  }
   for (const name of AUTO_HEADERS) {
     const v = (headers[name] ?? '').toLowerCase()
     if (!v) continue

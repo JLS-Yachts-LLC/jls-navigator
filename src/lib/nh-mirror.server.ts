@@ -56,6 +56,17 @@ function admin() {
 const esc = (s: string) =>
   String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
+/**
+ * Escape a multi-line body and turn its newlines into real `<br>` tags.
+ *
+ * `white-space:pre-wrap` on the wrapper is not enough: New Horizon's desk strips
+ * inline styles when it ingests the mail, so the raw newlines collapsed to spaces
+ * and a mirrored ticket arrived as one unreadable block (SD-0056, 15 Oct 2026) —
+ * while the same body read correctly in Polaris. Carrying the breaks in the markup
+ * survives any sanitiser.
+ */
+const escBody = (s: string) => esc(s).replace(/\r\n|\r|\n/g, '<br>')
+
 /** Where a mirrored item came from — shown on the New Horizon ticket. */
 export type MirrorOrigin =
   | 'Polaris Service Desk'
@@ -104,7 +115,7 @@ export async function sendNewHorizonMirror(input: MirrorInput): Promise<void> {
   const html = `<div style="font-family:Arial,sans-serif;color:#0f172a;max-width:640px;">
   <h2 style="font-size:17px;margin:0 0 10px;">${esc(subject)}</h2>
   <table style="border-collapse:collapse;font-size:13px;margin:0 0 16px;">${rows.join('')}</table>
-  <div style="font-size:14px;line-height:1.6;white-space:pre-wrap;">${esc(input.body || '(no detail supplied)')}</div>
+  <div style="font-size:14px;line-height:1.6;white-space:pre-wrap;">${escBody(input.body || '(no detail supplied)')}</div>
   <p style="margin:20px 0 0;font-size:11px;color:#94a3b8;">
     Raised on the JLS Yachts service desk${ref ? ` as ${esc(ref)}` : ''} and mirrored here so it is tracked
     on both platforms. Replying to this email adds your reply to the Polaris ticket${ref ? ` (${esc(ref)})` : ''}.
