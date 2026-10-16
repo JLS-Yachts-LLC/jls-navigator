@@ -503,10 +503,10 @@
    room in the rows, and short, gentle transitions that switch themselves off for anyone who has
    asked their system for reduced motion. */
 .shipsync-ui {
-  --border: rgba(167, 179, 202, 0.14);
+  --border: rgba(167, 179, 202, 0.2);
   --input:  rgba(167, 179, 202, 0.24);
   /* Hovers and soft fills are neutral, so gold stays for the main action and the selected state. */
-  --accent: rgba(255, 255, 255, 0.06);
+  --accent: rgba(255, 255, 255, 0.14);
 }
 
 /* Type scale: captions 11.5px, body 13px, controls 14px, titles larger. ShipSync had grown 10, 10.5, 11, 12 and
@@ -521,12 +521,13 @@
 .shipsync-ui table.ss-vlines th,
 .shipsync-ui table.ss-vlines td { border-right: 1px solid rgba(167, 179, 202, 0.2); }
 .shipsync-ui table.ss-vlines td[colspan] { border-right-width: 0; }
+/* Headers may break inside a word only where the columns have fixed widths (the three boards); in every other table a header
+   keeps its natural width and the table scrolls instead. */
+.shipsync-ui table.table-fixed thead th { overflow: hidden; overflow-wrap: anywhere; }
 .shipsync-ui table thead th {
   font-weight: 600;
   letter-spacing: 0.06em;
   line-height: 1.3;
-  overflow: hidden;
-  overflow-wrap: anywhere;
   color: color-mix(in oklab, var(--foreground) 78%, transparent);
   background: color-mix(in oklab, var(--card) 72%, #050b1c);
 }

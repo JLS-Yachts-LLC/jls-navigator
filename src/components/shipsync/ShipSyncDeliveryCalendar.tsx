@@ -42,9 +42,10 @@ export function ShipSyncDeliveryCalendar({ data, reload }: { data: ShipSyncData;
   const boats = useMemo(
     () => Array.from(new Set([
       ...data.destinations.map((d) => d.boat_name),
-      ...(data.packages.map((p) => p.boat_name).filter(Boolean) as string[]),
+      ...data.yachts,
+      ...(data.deliverable.map((p) => p.boat_name).filter(Boolean) as string[]),
     ])).sort(),
-    [data.destinations, data.packages],
+    [data.destinations, data.yachts, data.deliverable],
   );
 
   async function add(boat: string, weekday: number) {

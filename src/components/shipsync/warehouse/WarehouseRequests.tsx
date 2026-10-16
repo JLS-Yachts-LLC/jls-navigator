@@ -38,8 +38,10 @@ export function WarehouseRequests({ openNumber }: { openNumber?: string }) {
   const [files, setFiles] = useState<PendingFile[]>([]);
   const [saving, setSaving] = useState(false);
 
-  const reload = useCallback(async () => { setRows(await loadRequests()); }, []);
-  useEffect(() => { void reload().catch((e) => toast.error(errorMessage(e, "Could not load the requests"))); }, [reload]);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const reload = useCallback(async () => { setRows(await loadRequests()); setLoadError(null); }, []);
+  const firstLoad = useCallback(() => { setLoadError(null); void reload().catch((e) => { const m = errorMessage(e, "Could not load the requests"); toast.error(m); setLoadError(m); }); }, [reload]);
+  useEffect(() => { firstLoad(); }, [firstLoad]);
 
   // A link from an email opens that request.
   useEffect(() => {
@@ -94,7 +96,12 @@ export function WarehouseRequests({ openNumber }: { openNumber?: string }) {
         {rows && <span className="text-sm text-muted-foreground">{shown.length} of {rows.length}</span>}
       </div>
 
-      {rows === null ? <div className="flex h-32 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div> : shown.length === 0 ? (
+      {rows === null ? (loadError ? (
+        <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
+          <span>{loadError}</span>
+          <Button size="sm" variant="outline" onClick={firstLoad}>Try again</Button>
+        </div>
+      ) : <div className="flex h-32 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>) : shown.length === 0 ? (
         <p className="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">{rows.length === 0 ? "No requests yet. Use one of the buttons above to raise the first." : "Nothing matches these filters."}</p>
       ) : (
         <ul className="min-h-0 flex-1 space-y-2 overflow-auto">

@@ -211,3 +211,26 @@ test("Add Item: nothing to add changes nothing", async () => {
   const r = await dd.addToRun(be.rows("shipsync_delivery_notes")[0] as any, { id: "D1" } as any, [], true);
   assert.deepEqual(r, { added: [], skipped: 0 });
 });
+
+// ── dispatching a route from the office Routing board ────────────────────────
+
+test("dispatching a route assigns the parcels, saves the date and marks the note dispatched", async () => {
+  const sd = await import("@/lib/shipsync/data");
+  be.rows("shipsync_packages").push(lite("P1"), lite("P2"));
+  const note = await sd.dispatchRoute(["P1", "P2"], "D1", "ORKA", "2026-10-20", null);
+  assert.equal(note.status, "dispatched");
+  const stored = be.rows("shipsync_delivery_notes").find((n) => n.id === note.id)!;
+  assert.equal(stored.status, "dispatched");
+  assert.equal(pk("P1").delivery_note_id, note.id);
+  assert.equal(pk("P1").status, "assigned");
+  assert.equal(pk("P2").planned_delivery_date, "2026-10-20");
+});
+
+test("a dispatch that cannot take its parcels leaves no empty delivery note behind", async () => {
+  const sd = await import("@/lib/shipsync/data");
+  be.rows("shipsync_packages").push(lite("P1"), lite("P2", "ORKA", { delivery_note_id: "OTHER" }));
+  await assert.rejects(sd.dispatchRoute(["P1", "P2"], "D1", "ORKA", null, null), /another delivery note/);
+  assert.equal(be.rows("shipsync_delivery_notes").length, 0, "no orphan note to clutter Dispatched");
+  assert.equal(pk("P1").delivery_note_id, null);
+  assert.equal(pk("P2").delivery_note_id, "OTHER");
+});

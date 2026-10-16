@@ -273,6 +273,10 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
     } finally { setBulkBusy(false); }
   }
 
+  // The preview of a photo just picked in the form; released when it changes so the browser isn't left holding every one.
+  const photoPreview = useMemo(() => (photo ? URL.createObjectURL(photo) : null), [photo]);
+  useEffect(() => () => { if (photoPreview) URL.revokeObjectURL(photoPreview); }, [photoPreview]);
+
   function openNew() { setForm(EMPTY); setPhoto(null); setOpen(true); }
   function openEdit(p: ShipSyncPackage) { setForm({ ...p }); setPhoto(null); setOpen(true); }
 
@@ -663,7 +667,9 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
               <Label className="text-xs">Item photo</Label>
               <div className="flex items-center gap-3">
                 {(photo || form.item_photo_url) && (
-                  <img src={photo ? URL.createObjectURL(photo) : form.item_photo_url!} alt="" className="h-14 w-14 rounded object-cover border border-border" />
+                  photoPreview
+                    ? <img src={photoPreview} alt="" className="h-14 w-14 rounded object-cover border border-border" />
+                    : <SignedImage stored={form.item_photo_url!} alt="Item photo" className="h-14 w-14 rounded object-cover border border-border" />
                 )}
                 <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => setPhoto(e.target.files?.[0] ?? null)} />
                 <Button type="button" variant="outline" size="sm" className="h-8 gap-1.5" onClick={() => fileRef.current?.click()}><Camera className="h-3.5 w-3.5" /> {photo || form.item_photo_url ? "Replace" : "Add photo"}</Button>

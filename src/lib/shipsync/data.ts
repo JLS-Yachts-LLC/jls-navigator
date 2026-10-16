@@ -143,6 +143,11 @@ export async function saveDestination(d: Partial<ShipSyncDestination> & { boat_n
   const { error } = await db().from('shipsync_destinations').upsert([d], { onConflict: 'boat_name' })
   if (error) throw error
 }
+/** Edit a saved place by its id — a rename must change the row, not add a second one (saveDestination matches on the name). */
+export async function updateDestination(id: string, patch: Partial<ShipSyncDestination>): Promise<void> {
+  const { error } = await db().from('shipsync_destinations').update(patch).eq('id', id)
+  if (error) throw error
+}
 export async function deleteDestination(id: string): Promise<void> {
   const { error } = await db().from('shipsync_destinations').delete().eq('id', id)
   if (error) throw error
@@ -215,16 +220,28 @@ export async function dispatchRoute(
   packageIds: string[], driverId: string, boatLabel: string | null, plannedDate?: string | null, vehicleId?: string | null,
 ): Promise<ShipSyncDeliveryNote> {
   const note = await createDeliveryNote(boatLabel ?? '', driverId, vehicleId)
-  await assignPackagesToNote(packageIds, note, driverId)
-  if (plannedDate) await db().from('shipsync_packages').update({ planned_delivery_date: plannedDate }).in('id', packageIds)
-  await db().from('shipsync_delivery_notes').update({ status: 'dispatched' }).eq('id', note.id)
+  try {
+    await assignPackagesToNote(packageIds, note, driverId)
+  } catch (e) {
+    // Nothing was assigned, so the note just created is an empty shell — don't leave it in the Dispatched list.
+    await db().from('shipsync_delivery_notes').delete().eq('id', note.id)
+    throw e
+  }
+  if (plannedDate) {
+    const { error } = await db().from('shipsync_packages').update({ planned_delivery_date: plannedDate }).in('id', packageIds)
+    if (error) throw new Error(`Parcels were assigned to ${note.number} but the delivery date could not be saved — check it in Dispatched. (${error.message})`)
+  }
+  const { error: statusError } = await db().from('shipsync_delivery_notes').update({ status: 'dispatched' }).eq('id', note.id)
+  if (statusError) throw new Error(`Parcels were assigned to ${note.number} but it could not be marked dispatched — open it in Dispatched. (${statusError.message})`)
   return { ...note, status: 'dispatched' }
 }
 
 /** Set/replace the driver on a note and all its packages. */
 export async function setNoteDriver(noteId: string, driverId: string | null): Promise<void> {
-  await db().from('shipsync_delivery_notes').update({ driver_id: driverId }).eq('id', noteId)
-  await db().from('shipsync_packages').update({ driver_id: driverId }).eq('delivery_note_id', noteId)
+  const { error: noteError } = await db().from('shipsync_delivery_notes').update({ driver_id: driverId }).eq('id', noteId)
+  if (noteError) throw noteError
+  const { error: pkgError } = await db().from('shipsync_packages').update({ driver_id: driverId }).eq('delivery_note_id', noteId)
+  if (pkgError) throw pkgError
 }
 
 /** Remove a package from its note (back to the routing pool, unassigned).
