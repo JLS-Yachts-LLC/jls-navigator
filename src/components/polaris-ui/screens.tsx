@@ -540,6 +540,10 @@ export function PolarisVisaReports({
   );
   const [showActive, setShowActive] = useState(false);
   const [confirm, setConfirm] = useState(false);
+  // Set when "Send to vessel" is clicked for a vessel with no recipients. The
+  // button used to just sit greyed out with a hover-only hint, which read as broken.
+  const [noRecipients, setNoRecipients] = useState(false);
+  useEffect(() => setNoRecipients(false), [selectedId]);
 
   const canSend = !!yacht?.send_visa_reports && !!yacht?.visa_report_email;
   const expired = rows.filter((r) => r.status === "expired");
@@ -582,17 +586,35 @@ export function PolarisVisaReports({
               variant="ghost"
               icon="send"
               label="Send to vessel"
-              onClick={() => setConfirm(true)}
-              disabled={!canSend || sending}
-              title={
-                canSend
-                  ? undefined
-                  : "Add this vessel's visa report recipients in Reports → Automated Reports first"
-              }
+              onClick={() => (canSend ? setConfirm(true) : setNoRecipients(true))}
+              disabled={!selectedId || sending}
             />
           </>
         }
       />
+
+      {noRecipients && (
+        <div
+          style={{
+            marginBottom: 16,
+            padding: "11px 14px",
+            borderRadius: 8,
+            background: "var(--pds-expiring-bg)",
+            color: "var(--pds-expiring-text)",
+            fontSize: "var(--pds-fs-label)",
+          }}
+        >
+          {yacht?.vessel_name ?? "This vessel"} has no one to send its visa report to yet.
+          Add the recipients to its Visa status report in{" "}
+          <a
+            href="/polaris-redesign?screen=vessel-report-automations"
+            style={{ color: "inherit", textDecoration: "underline", fontWeight: 600 }}
+          >
+            Reports → Automated Reports
+          </a>
+          , then send it from here. Adding recipients doesn't switch on the scheduled email.
+        </div>
+      )}
 
       {/* Vessel selector — every vessel, plus fleet-wide "All vessels". */}
       <SectionLabel>Vessel</SectionLabel>
