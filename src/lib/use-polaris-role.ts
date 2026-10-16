@@ -1,7 +1,7 @@
 /**
  * Resolve the PolarisRole that drives shell nav visibility.
  *
- * Restricted roles (currently logistics_team) get a scoped nav; every other
+ * Restricted roles (logistics_team, hr) get a scoped nav; every other
  * role keeps the current full-nav behaviour ("global_admin" preview default —
  * real per-role enforcement for the rest lands with the RBAC rollout).
  *
@@ -18,7 +18,7 @@ import { useViewAsRole } from "@/lib/view-as";
 import { useAccess } from "@/lib/auth/useAccess";
 import type { PolarisRole } from "@/components/polaris-ui/shell";
 
-const RESTRICTED_ROLES: PolarisRole[] = ["logistics_team"];
+const RESTRICTED_ROLES: PolarisRole[] = ["logistics_team", "hr"];
 
 export function usePolarisRole(): PolarisRole {
   const { user } = useAuth();

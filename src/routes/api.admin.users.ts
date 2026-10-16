@@ -25,6 +25,8 @@ function json(body: unknown, status = 200): Response {
  */
 const STAFF_ROLES: string[] = [
   'platform_owner', 'developer', 'global_admin', 'dept_admin', 'jls_staff', 'read_only',
+  // Restricted to Anchor + staff resources (RESTRICTED_NAV) — pair with the HR department.
+  'hr',
 ]
 
 const handlers = {

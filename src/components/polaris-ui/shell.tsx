@@ -26,7 +26,8 @@ export type PolarisRole =
   | "crew_immigration"
   | "captain"
   | "crew"
-  | "logistics_team";
+  | "logistics_team"
+  | "hr";
 
 export interface NavItem {
   label: string;
@@ -204,6 +205,9 @@ export const NAV_GROUPS: NavGroup[] = [
  *  items with no `roles` gate (which are otherwise visible to all). */
 export const RESTRICTED_NAV: Partial<Record<PolarisRole, string[]>> = {
   logistics_team: ["vessels", "logistics"],
+  // Head of HR: staff contracts and confidential documents live in Anchor; no
+  // crew, vessel, finance or operations screens.
+  hr: ["anchor", "route-guides", "route-forms", "route-directory", "route-emergency"],
 };
 
 /**
