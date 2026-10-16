@@ -10,6 +10,34 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "fix",
+        "title": "The visa report \"Send to vessel\" button no longer sits greyed out with no explanation — when a vessel has no recipients yet, clicking it says so and links to Reports → Automated Reports to add them"
+      },
+      {
+        "type": "feature",
+        "title": "Local Packages — add or replace the delivery photo from the Delivery Photo cell and the side panel"
+      },
+      {
+        "type": "fix",
+        "title": "Local Packages select-all only selects the rows on the current page (pagination made it quietly select every page), and selection clears when filters or groups change"
+      },
+      {
+        "type": "feature",
+        "title": "HR can now use Crew Placement (placed crew contracts, payroll and documents)"
+      },
+      {
+        "type": "feature",
+        "title": "Local Packages — click a row for a detail side panel, double-click a value to edit it in place, Add photo back on the Received Photo cell and in the panel"
+      },
+      {
+        "type": "feature",
+        "title": "New HR role and HR department for staff invites — HR sees only Anchor (including its Confidential documents), the Knowledge Base, Forms, Directory and Emergency Contacts"
+      },
+      {
+        "type": "fix",
+        "title": "The weekly Sign On / Sign Off reports, the Sign On/Off reports sent to vessels and the visa report PDFs no longer fail when a crew member's name has letters such as \"Ć\" or \"Č\", or a flight route is filled in (SD-0060)"
+      },
+      {
+        "type": "fix",
         "title": "Vessel Documents now find their SharePoint folder when the vessel name carries a note in brackets, such as \"DEEP BREATH (ex Hermitage)\" or \"Platinum (66.90m)\", and SharePoint folders with more than 200 items are listed in full"
       },
       {
