@@ -20,6 +20,9 @@ import { ViewAsBanner } from "@/components/view-as-banner";
 import { canAccessModule, type PolarisClaims } from "@/lib/auth/claims";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useIsUsageAdmin } from "@/lib/usage-admin";
+import { useFlagMap } from "@/lib/release-flags";
+import { useDevAccess } from "@/lib/dev-access";
 
 export type PolarisRole =
   | "global_admin"
@@ -45,6 +48,10 @@ export interface NavItem {
   /** Shown only to people actually granted `module` (and global admins) — never
    *  to someone with no grants yet. For areas that reach clients directly. */
   grantOnly?: boolean;
+  /** Shown only to admins (global admin or has_role admin — is_usage_admin()). */
+  adminOnly?: boolean;
+  /** feature_flags key (Dev Settings): hidden while the flag is on Dev, except to dev access. */
+  flag?: string;
 }
 export interface NavGroup {
   label: string;
@@ -195,6 +202,8 @@ export const NAV_GROUPS: NavGroup[] = [
       // duplicating both that tab and Sync Centre, so the standalone page is gone.
       { label: "Error & Warnings", icon: "alert-triangle", screen: "admin-errors", roles: ["global_admin"] },
       { label: "Changelog", icon: "news", screen: "admin-changelog", roles: ["global_admin"] },
+      // Who uses Polaris, how often and what they get done — admins only.
+      { label: "Staff Usage", icon: "chart-bar", screen: "route-staff-usage", route: "/staff-usage", adminOnly: true, flag: "staff-usage" },
       { label: "Recycle Bin", icon: "trash", screen: "route-recycle-bin", route: "/recycle-bin", roles: ["global_admin", "crew_immigration"] },
       { label: "Feedback", icon: "message-2", screen: "admin-feedback", roles: ["global_admin"] },
     ],
@@ -425,6 +434,11 @@ function NavList({
   const badges = useFeatureBadges();
   const { claims } = useAccess();
   const extra = useExtraScreens(claims?.userId);
+  const { allowed: usageAdmin } = useIsUsageAdmin();
+  const { map: flags } = useFlagMap();
+  const devAccess = useDevAccess();
+  const shown = (i: NavItem) =>
+    (!i.adminOnly || usageAdmin) && (!i.flag || (flags.get(i.flag)?.stage ?? "dev") !== "dev" || devAccess);
   // Sections the person has folded away — saved to their account, so it's the
   // same layout on any device. A folded section holding the open screen is highlighted.
   const [closedList, setClosedList] = useUserPreference<string[]>("nav.closedGroups", [], { key: NAV_CLOSED_KEY, parse: JSON.parse });
@@ -445,7 +459,10 @@ function NavList({
         padding: collapsed ? "12px 8px" : "16px 12px",
       }}
     >
-      {visibleGroups(role, claims, extra).map((g) => {
+      {visibleGroups(role, claims, extra)
+        .map((g) => ({ ...g, items: g.items.filter(shown) }))
+        .filter((g) => g.items.length > 0)
+        .map((g) => {
         const holdsActive = g.items.some((i) => i.screen === active);
         // The icon-only rail always shows every icon. A folded section holding
         // the open screen is highlighted instead, so you can see where you are.

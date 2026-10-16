@@ -50,6 +50,7 @@ import { adminPermissionsHandler } from './routes/api.admin.permissions'
 import { adminAuditHandler } from './routes/api.admin.audit'
 import { adminAuditExportHandler } from './routes/api.admin.audit.export'
 import { adminStatsHandler } from './routes/api.admin.stats'
+import { adminStaffUsageHandler } from './routes/api.admin.staff-usage'
 import { automationEventHandler } from './routes/api.automations.event'
 import { qbWebhookHandler, retryPendingQbWebhookEvents } from './routes/api.qb.webhook'
 import { movementsNotifyHandler } from './routes/api.movements.notify'
@@ -1496,6 +1497,9 @@ export default {
     }
     if (url.pathname === '/api/admin/stats' && request.method === 'GET') {
       return adminStatsHandler(request)
+    }
+    if (url.pathname === '/api/admin/staff-usage') {
+      return adminStaffUsageHandler(request)
     }
     if (url.pathname === '/api/admin/permissions') {
       return adminPermissionsHandler(request)

@@ -30,6 +30,7 @@ import { Route as AppYachtItRouteImport } from './routes/_app.yacht-it'
 import { Route as AppWaypointRouteImport } from './routes/_app.waypoint'
 import { Route as AppWarehouseRequestsRouteImport } from './routes/_app.warehouse-requests'
 import { Route as AppTrainingRouteImport } from './routes/_app.training'
+import { Route as AppStaffUsageRouteImport } from './routes/_app.staff-usage'
 import { Route as AppSmallBoatRegistrationRouteImport } from './routes/_app.small-boat-registration'
 import { Route as AppShipsyncRouteImport } from './routes/_app.shipsync'
 import { Route as AppShipSparesRouteImport } from './routes/_app.ship-spares'
@@ -139,7 +140,6 @@ import { Route as AppCrewCabLocationsRouteImport } from './routes/_app.crew-cab.
 import { Route as AppCrewCabJourneysRouteImport } from './routes/_app.crew-cab.journeys'
 import { Route as AppCrewCabDriversRouteImport } from './routes/_app.crew-cab.drivers'
 import { Route as AppAdminUsersRouteImport } from './routes/_app.admin.users'
-import { Route as AppAdminUsageRouteImport } from './routes/_app.admin.usage'
 import { Route as AppAdminShrinkPhotosRouteImport } from './routes/_app.admin.shrink-photos'
 import { Route as AppAdminShipsyncCompareRouteImport } from './routes/_app.admin.shipsync-compare'
 import { Route as AppAdminPermissionsRouteImport } from './routes/_app.admin.permissions'
@@ -271,6 +271,11 @@ const AppWarehouseRequestsRoute = AppWarehouseRequestsRouteImport.update({
 const AppTrainingRoute = AppTrainingRouteImport.update({
   id: '/training',
   path: '/training',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppStaffUsageRoute = AppStaffUsageRouteImport.update({
+  id: '/staff-usage',
+  path: '/staff-usage',
   getParentRoute: () => AppRoute,
 } as any)
 const AppSmallBoatRegistrationRoute =
@@ -828,11 +833,6 @@ const AppAdminUsersRoute = AppAdminUsersRouteImport.update({
   path: '/users',
   getParentRoute: () => AppAdminRoute,
 } as any)
-const AppAdminUsageRoute = AppAdminUsageRouteImport.update({
-  id: '/usage',
-  path: '/usage',
-  getParentRoute: () => AppAdminRoute,
-} as any)
 const AppAdminShrinkPhotosRoute = AppAdminShrinkPhotosRouteImport.update({
   id: '/shrink-photos',
   path: '/shrink-photos',
@@ -1036,6 +1036,7 @@ export interface FileRoutesByFullPath {
   '/ship-spares': typeof AppShipSparesRoute
   '/shipsync': typeof AppShipsyncRoute
   '/small-boat-registration': typeof AppSmallBoatRegistrationRoute
+  '/staff-usage': typeof AppStaffUsageRoute
   '/training': typeof AppTrainingRouteWithChildren
   '/warehouse-requests': typeof AppWarehouseRequestsRoute
   '/waypoint': typeof AppWaypointRouteWithChildren
@@ -1055,7 +1056,6 @@ export interface FileRoutesByFullPath {
   '/admin/permissions': typeof AppAdminPermissionsRoute
   '/admin/shipsync-compare': typeof AppAdminShipsyncCompareRoute
   '/admin/shrink-photos': typeof AppAdminShrinkPhotosRoute
-  '/admin/usage': typeof AppAdminUsageRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/crew-cab/drivers': typeof AppCrewCabDriversRoute
   '/crew-cab/journeys': typeof AppCrewCabJourneysRoute
@@ -1186,6 +1186,7 @@ export interface FileRoutesByTo {
   '/ship-spares': typeof AppShipSparesRoute
   '/shipsync': typeof AppShipsyncRoute
   '/small-boat-registration': typeof AppSmallBoatRegistrationRoute
+  '/staff-usage': typeof AppStaffUsageRoute
   '/warehouse-requests': typeof AppWarehouseRequestsRoute
   '/yacht-it': typeof AppYachtItRoute
   '/d/$token': typeof DTokenRoute
@@ -1202,7 +1203,6 @@ export interface FileRoutesByTo {
   '/admin/permissions': typeof AppAdminPermissionsRoute
   '/admin/shipsync-compare': typeof AppAdminShipsyncCompareRoute
   '/admin/shrink-photos': typeof AppAdminShrinkPhotosRoute
-  '/admin/usage': typeof AppAdminUsageRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/crew-cab/drivers': typeof AppCrewCabDriversRoute
   '/crew-cab/journeys': typeof AppCrewCabJourneysRoute
@@ -1339,6 +1339,7 @@ export interface FileRoutesById {
   '/_app/ship-spares': typeof AppShipSparesRoute
   '/_app/shipsync': typeof AppShipsyncRoute
   '/_app/small-boat-registration': typeof AppSmallBoatRegistrationRoute
+  '/_app/staff-usage': typeof AppStaffUsageRoute
   '/_app/training': typeof AppTrainingRouteWithChildren
   '/_app/warehouse-requests': typeof AppWarehouseRequestsRoute
   '/_app/waypoint': typeof AppWaypointRouteWithChildren
@@ -1358,7 +1359,6 @@ export interface FileRoutesById {
   '/_app/admin/permissions': typeof AppAdminPermissionsRoute
   '/_app/admin/shipsync-compare': typeof AppAdminShipsyncCompareRoute
   '/_app/admin/shrink-photos': typeof AppAdminShrinkPhotosRoute
-  '/_app/admin/usage': typeof AppAdminUsageRoute
   '/_app/admin/users': typeof AppAdminUsersRoute
   '/_app/crew-cab/drivers': typeof AppCrewCabDriversRoute
   '/_app/crew-cab/journeys': typeof AppCrewCabJourneysRoute
@@ -1499,6 +1499,7 @@ export interface FileRouteTypes {
     | '/ship-spares'
     | '/shipsync'
     | '/small-boat-registration'
+    | '/staff-usage'
     | '/training'
     | '/warehouse-requests'
     | '/waypoint'
@@ -1518,7 +1519,6 @@ export interface FileRouteTypes {
     | '/admin/permissions'
     | '/admin/shipsync-compare'
     | '/admin/shrink-photos'
-    | '/admin/usage'
     | '/admin/users'
     | '/crew-cab/drivers'
     | '/crew-cab/journeys'
@@ -1649,6 +1649,7 @@ export interface FileRouteTypes {
     | '/ship-spares'
     | '/shipsync'
     | '/small-boat-registration'
+    | '/staff-usage'
     | '/warehouse-requests'
     | '/yacht-it'
     | '/d/$token'
@@ -1665,7 +1666,6 @@ export interface FileRouteTypes {
     | '/admin/permissions'
     | '/admin/shipsync-compare'
     | '/admin/shrink-photos'
-    | '/admin/usage'
     | '/admin/users'
     | '/crew-cab/drivers'
     | '/crew-cab/journeys'
@@ -1801,6 +1801,7 @@ export interface FileRouteTypes {
     | '/_app/ship-spares'
     | '/_app/shipsync'
     | '/_app/small-boat-registration'
+    | '/_app/staff-usage'
     | '/_app/training'
     | '/_app/warehouse-requests'
     | '/_app/waypoint'
@@ -1820,7 +1821,6 @@ export interface FileRouteTypes {
     | '/_app/admin/permissions'
     | '/_app/admin/shipsync-compare'
     | '/_app/admin/shrink-photos'
-    | '/_app/admin/usage'
     | '/_app/admin/users'
     | '/_app/crew-cab/drivers'
     | '/_app/crew-cab/journeys'
@@ -2073,6 +2073,13 @@ declare module '@tanstack/react-router' {
       path: '/training'
       fullPath: '/training'
       preLoaderRoute: typeof AppTrainingRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/staff-usage': {
+      id: '/_app/staff-usage'
+      path: '/staff-usage'
+      fullPath: '/staff-usage'
+      preLoaderRoute: typeof AppStaffUsageRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/small-boat-registration': {
@@ -2838,13 +2845,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAdminUsersRouteImport
       parentRoute: typeof AppAdminRoute
     }
-    '/_app/admin/usage': {
-      id: '/_app/admin/usage'
-      path: '/usage'
-      fullPath: '/admin/usage'
-      preLoaderRoute: typeof AppAdminUsageRouteImport
-      parentRoute: typeof AppAdminRoute
-    }
     '/_app/admin/shrink-photos': {
       id: '/_app/admin/shrink-photos'
       path: '/shrink-photos'
@@ -3036,7 +3036,6 @@ interface AppAdminRouteChildren {
   AppAdminPermissionsRoute: typeof AppAdminPermissionsRoute
   AppAdminShipsyncCompareRoute: typeof AppAdminShipsyncCompareRoute
   AppAdminShrinkPhotosRoute: typeof AppAdminShrinkPhotosRoute
-  AppAdminUsageRoute: typeof AppAdminUsageRoute
   AppAdminUsersRoute: typeof AppAdminUsersRoute
   AppAdminIndexRoute: typeof AppAdminIndexRoute
 }
@@ -3047,7 +3046,6 @@ const AppAdminRouteChildren: AppAdminRouteChildren = {
   AppAdminPermissionsRoute: AppAdminPermissionsRoute,
   AppAdminShipsyncCompareRoute: AppAdminShipsyncCompareRoute,
   AppAdminShrinkPhotosRoute: AppAdminShrinkPhotosRoute,
-  AppAdminUsageRoute: AppAdminUsageRoute,
   AppAdminUsersRoute: AppAdminUsersRoute,
   AppAdminIndexRoute: AppAdminIndexRoute,
 }
@@ -3406,6 +3404,7 @@ interface AppRouteChildren {
   AppShipSparesRoute: typeof AppShipSparesRoute
   AppShipsyncRoute: typeof AppShipsyncRoute
   AppSmallBoatRegistrationRoute: typeof AppSmallBoatRegistrationRoute
+  AppStaffUsageRoute: typeof AppStaffUsageRoute
   AppTrainingRoute: typeof AppTrainingRouteWithChildren
   AppWarehouseRequestsRoute: typeof AppWarehouseRequestsRoute
   AppWaypointRoute: typeof AppWaypointRouteWithChildren
@@ -3482,6 +3481,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppShipSparesRoute: AppShipSparesRoute,
   AppShipsyncRoute: AppShipsyncRoute,
   AppSmallBoatRegistrationRoute: AppSmallBoatRegistrationRoute,
+  AppStaffUsageRoute: AppStaffUsageRoute,
   AppTrainingRoute: AppTrainingRouteWithChildren,
   AppWarehouseRequestsRoute: AppWarehouseRequestsRoute,
   AppWaypointRoute: AppWaypointRouteWithChildren,

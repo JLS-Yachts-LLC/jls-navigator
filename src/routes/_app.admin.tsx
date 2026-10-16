@@ -34,8 +34,8 @@ const ADMIN_NAV = [
   { to: '/admin/organisations', label: 'Organisations' },
   { to: '/admin/permissions',   label: 'Permissions' },
   { to: '/admin/audit',         label: 'Audit Log' },
-  // Who is and isn't using Polaris — global admins only (the report refuses anyone else).
-  { to: '/admin/usage',         label: 'Usage', globalOnly: true },
+  // Who is and isn't using Polaris (its own page, in the sidebar) — admins only; the report refuses anyone else.
+  { to: '/staff-usage',         label: 'Staff Usage', globalOnly: true },
   { to: '/admin/shipsync-compare', label: 'Power App vs Polaris' },
   { to: '/admin/shrink-photos',   label: 'Shrink Old Photos' },
 ]
