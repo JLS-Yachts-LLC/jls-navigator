@@ -69,6 +69,10 @@ export function VesselReportScreen() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  // Set when "Send report" is clicked for a vessel with no recipients. The button
+  // used to just sit greyed out with a hover-only hint, which read as broken.
+  const [noRecipients, setNoRecipients] = useState(false);
+  useEffect(() => setNoRecipients(false), [selectedId]);
 
   const selectedYacht = yachts.find((y) => y.id === selectedId) ?? null;
 
@@ -591,18 +595,37 @@ export function VesselReportScreen() {
               </span>
             )}
             <button
-              onClick={() => canSend && setConfirmSend(currentReport)}
-              disabled={!canSend || sending}
-              title={
-                canSend
-                  ? "Send this report to the vessel"
-                  : "Add this vessel's visa report recipients in Reports → Automated Reports first"
-              }
-              style={btn(!canSend || sending ? "disabled" : "primary")}
+              onClick={() => (canSend ? setConfirmSend(currentReport) : setNoRecipients(true))}
+              disabled={sending}
+              title={canSend ? "Send this report to the vessel" : undefined}
+              style={btn(sending ? "disabled" : canSend ? "primary" : "ghost")}
             >
               {sending ? "Sending…" : "Send report"}
             </button>
           </div>
+          {noRecipients && (
+            <div
+              style={{
+                marginBottom: 18,
+                padding: "11px 14px",
+                borderRadius: 8,
+                background: `${COLORS.warn}14`,
+                border: `1px solid ${COLORS.warn}40`,
+                fontSize: 14,
+                color: COLORS.warn,
+              }}
+            >
+              {selectedYacht?.vessel_name ?? "This vessel"} has no one to send its visa report to yet.
+              Add the recipients to its Visa status report in{" "}
+              <a
+                href="/polaris-redesign?screen=vessel-report-automations"
+                style={{ color: "inherit", textDecoration: "underline", fontWeight: 600 }}
+              >
+                Reports → Automated Reports
+              </a>
+              , then send it from here. Adding recipients doesn't switch on the scheduled email.
+            </div>
+          )}
 
           {/* Expired (always open) */}
           {expired.length > 0 && (
