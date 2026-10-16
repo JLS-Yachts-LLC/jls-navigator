@@ -93,6 +93,8 @@ export const NAV_GROUPS: NavGroup[] = [
         screen: "permits",
         roles: ["global_admin", "crew_immigration", "captain"],
       },
+      // Port Operations TV board (/wall) — pair a screen with its code here.
+      { label: "Wall Displays", module: "agency", icon: "device-tv", screen: "route-wall-displays", route: "/wall-displays", roles: ["global_admin", "crew_immigration", "logistics_team"], flag: "wall-displays" },
     ],
   },
   {

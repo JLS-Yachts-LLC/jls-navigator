@@ -1000,6 +1000,12 @@ export default {
       return formsPublicHandler(request)
     }
 
+    // Port Operations wall: TV screens (key-authorised) and pairing them (staff).
+    if (url.pathname === '/api/wall/display' || url.pathname === '/api/wall/admin') {
+      const { wallDisplayHandler, wallAdminHandler } = await import('./routes/api.wall')
+      return url.pathname === '/api/wall/display' ? wallDisplayHandler(request) : wallAdminHandler(request)
+    }
+
     // Your own name and picture — scoped to the caller by their token.
     if (url.pathname === '/api/me/profile') {
       const { myProfileHandler } = await import('./routes/api.me.profile')

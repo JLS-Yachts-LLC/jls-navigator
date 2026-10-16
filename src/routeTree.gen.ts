@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as WallRouteImport } from './routes/wall'
 import { Route as PortalRouteImport } from './routes/portal'
 import { Route as OrbitAppRouteImport } from './routes/orbit-app'
 import { Route as LogisticsAppRouteImport } from './routes/logistics-app'
@@ -29,6 +30,7 @@ import { Route as AppYachtShipmentsRouteImport } from './routes/_app.yacht-shipm
 import { Route as AppYachtItRouteImport } from './routes/_app.yacht-it'
 import { Route as AppWaypointRouteImport } from './routes/_app.waypoint'
 import { Route as AppWarehouseRequestsRouteImport } from './routes/_app.warehouse-requests'
+import { Route as AppWallDisplaysRouteImport } from './routes/_app.wall-displays'
 import { Route as AppTrainingRouteImport } from './routes/_app.training'
 import { Route as AppStaffUsageRouteImport } from './routes/_app.staff-usage'
 import { Route as AppSmallBoatRegistrationRouteImport } from './routes/_app.small-boat-registration'
@@ -167,6 +169,11 @@ import { Route as AppCrewImmigrationCrewIdRouteImport } from './routes/_app.crew
 import { Route as AppCrewImmigrationVisasInfoCountryCodeRouteImport } from './routes/_app.crew-immigration.visas.info.$countryCode'
 import { Route as AppCrewImmigrationCrewAddCrewMemberIdPassportRouteImport } from './routes/_app.crew-immigration.crew.add.$crewMemberId.passport'
 
+const WallRoute = WallRouteImport.update({
+  id: '/wall',
+  path: '/wall',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PortalRoute = PortalRouteImport.update({
   id: '/portal',
   path: '/portal',
@@ -266,6 +273,11 @@ const AppWaypointRoute = AppWaypointRouteImport.update({
 const AppWarehouseRequestsRoute = AppWarehouseRequestsRouteImport.update({
   id: '/warehouse-requests',
   path: '/warehouse-requests',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppWallDisplaysRoute = AppWallDisplaysRouteImport.update({
+  id: '/wall-displays',
+  path: '/wall-displays',
   getParentRoute: () => AppRoute,
 } as any)
 const AppTrainingRoute = AppTrainingRouteImport.update({
@@ -989,6 +1001,7 @@ export interface FileRoutesByFullPath {
   '/logistics-app': typeof LogisticsAppRoute
   '/orbit-app': typeof OrbitAppRoute
   '/portal': typeof PortalRoute
+  '/wall': typeof WallRoute
   '/admin': typeof AppAdminRouteWithChildren
   '/agency': typeof AppAgencyRoute
   '/ai-assistant': typeof AppAiAssistantRoute
@@ -1038,6 +1051,7 @@ export interface FileRoutesByFullPath {
   '/small-boat-registration': typeof AppSmallBoatRegistrationRoute
   '/staff-usage': typeof AppStaffUsageRoute
   '/training': typeof AppTrainingRouteWithChildren
+  '/wall-displays': typeof AppWallDisplaysRoute
   '/warehouse-requests': typeof AppWarehouseRequestsRoute
   '/waypoint': typeof AppWaypointRouteWithChildren
   '/yacht-it': typeof AppYachtItRoute
@@ -1147,6 +1161,7 @@ export interface FileRoutesByTo {
   '/logistics-app': typeof LogisticsAppRoute
   '/orbit-app': typeof OrbitAppRoute
   '/portal': typeof PortalRoute
+  '/wall': typeof WallRoute
   '/agency': typeof AppAgencyRoute
   '/ai-assistant': typeof AppAiAssistantRoute
   '/automations': typeof AppAutomationsRoute
@@ -1187,6 +1202,7 @@ export interface FileRoutesByTo {
   '/shipsync': typeof AppShipsyncRoute
   '/small-boat-registration': typeof AppSmallBoatRegistrationRoute
   '/staff-usage': typeof AppStaffUsageRoute
+  '/wall-displays': typeof AppWallDisplaysRoute
   '/warehouse-requests': typeof AppWarehouseRequestsRoute
   '/yacht-it': typeof AppYachtItRoute
   '/d/$token': typeof DTokenRoute
@@ -1292,6 +1308,7 @@ export interface FileRoutesById {
   '/logistics-app': typeof LogisticsAppRoute
   '/orbit-app': typeof OrbitAppRoute
   '/portal': typeof PortalRoute
+  '/wall': typeof WallRoute
   '/_app/admin': typeof AppAdminRouteWithChildren
   '/_app/agency': typeof AppAgencyRoute
   '/_app/ai-assistant': typeof AppAiAssistantRoute
@@ -1341,6 +1358,7 @@ export interface FileRoutesById {
   '/_app/small-boat-registration': typeof AppSmallBoatRegistrationRoute
   '/_app/staff-usage': typeof AppStaffUsageRoute
   '/_app/training': typeof AppTrainingRouteWithChildren
+  '/_app/wall-displays': typeof AppWallDisplaysRoute
   '/_app/warehouse-requests': typeof AppWarehouseRequestsRoute
   '/_app/waypoint': typeof AppWaypointRouteWithChildren
   '/_app/yacht-it': typeof AppYachtItRoute
@@ -1452,6 +1470,7 @@ export interface FileRouteTypes {
     | '/logistics-app'
     | '/orbit-app'
     | '/portal'
+    | '/wall'
     | '/admin'
     | '/agency'
     | '/ai-assistant'
@@ -1501,6 +1520,7 @@ export interface FileRouteTypes {
     | '/small-boat-registration'
     | '/staff-usage'
     | '/training'
+    | '/wall-displays'
     | '/warehouse-requests'
     | '/waypoint'
     | '/yacht-it'
@@ -1610,6 +1630,7 @@ export interface FileRouteTypes {
     | '/logistics-app'
     | '/orbit-app'
     | '/portal'
+    | '/wall'
     | '/agency'
     | '/ai-assistant'
     | '/automations'
@@ -1650,6 +1671,7 @@ export interface FileRouteTypes {
     | '/shipsync'
     | '/small-boat-registration'
     | '/staff-usage'
+    | '/wall-displays'
     | '/warehouse-requests'
     | '/yacht-it'
     | '/d/$token'
@@ -1754,6 +1776,7 @@ export interface FileRouteTypes {
     | '/logistics-app'
     | '/orbit-app'
     | '/portal'
+    | '/wall'
     | '/_app/admin'
     | '/_app/agency'
     | '/_app/ai-assistant'
@@ -1803,6 +1826,7 @@ export interface FileRouteTypes {
     | '/_app/small-boat-registration'
     | '/_app/staff-usage'
     | '/_app/training'
+    | '/_app/wall-displays'
     | '/_app/warehouse-requests'
     | '/_app/waypoint'
     | '/_app/yacht-it'
@@ -1914,6 +1938,7 @@ export interface RootRouteChildren {
   LogisticsAppRoute: typeof LogisticsAppRoute
   OrbitAppRoute: typeof OrbitAppRoute
   PortalRoute: typeof PortalRoute
+  WallRoute: typeof WallRoute
   DTokenRoute: typeof DTokenRoute
   LegalEulaRoute: typeof LegalEulaRoute
   LegalPrivacyRoute: typeof LegalPrivacyRoute
@@ -1928,6 +1953,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/wall': {
+      id: '/wall'
+      path: '/wall'
+      fullPath: '/wall'
+      preLoaderRoute: typeof WallRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/portal': {
       id: '/portal'
       path: '/portal'
@@ -2066,6 +2098,13 @@ declare module '@tanstack/react-router' {
       path: '/warehouse-requests'
       fullPath: '/warehouse-requests'
       preLoaderRoute: typeof AppWarehouseRequestsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/wall-displays': {
+      id: '/_app/wall-displays'
+      path: '/wall-displays'
+      fullPath: '/wall-displays'
+      preLoaderRoute: typeof AppWallDisplaysRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/training': {
@@ -3406,6 +3445,7 @@ interface AppRouteChildren {
   AppSmallBoatRegistrationRoute: typeof AppSmallBoatRegistrationRoute
   AppStaffUsageRoute: typeof AppStaffUsageRoute
   AppTrainingRoute: typeof AppTrainingRouteWithChildren
+  AppWallDisplaysRoute: typeof AppWallDisplaysRoute
   AppWarehouseRequestsRoute: typeof AppWarehouseRequestsRoute
   AppWaypointRoute: typeof AppWaypointRouteWithChildren
   AppYachtItRoute: typeof AppYachtItRoute
@@ -3483,6 +3523,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppSmallBoatRegistrationRoute: AppSmallBoatRegistrationRoute,
   AppStaffUsageRoute: AppStaffUsageRoute,
   AppTrainingRoute: AppTrainingRouteWithChildren,
+  AppWallDisplaysRoute: AppWallDisplaysRoute,
   AppWarehouseRequestsRoute: AppWarehouseRequestsRoute,
   AppWaypointRoute: AppWaypointRouteWithChildren,
   AppYachtItRoute: AppYachtItRoute,
@@ -3520,6 +3561,7 @@ const rootRouteChildren: RootRouteChildren = {
   LogisticsAppRoute: LogisticsAppRoute,
   OrbitAppRoute: OrbitAppRoute,
   PortalRoute: PortalRoute,
+  WallRoute: WallRoute,
   DTokenRoute: DTokenRoute,
   LegalEulaRoute: LegalEulaRoute,
   LegalPrivacyRoute: LegalPrivacyRoute,
