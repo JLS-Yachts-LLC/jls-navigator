@@ -9,7 +9,7 @@
  */
 import { supabase } from "@/integrations/supabase/client";
 import { errorMessage } from "@/lib/error-message";
-import { assignPackagesToNote, unassignPackage } from "@/lib/shipsync/data";
+import { addParcelsToNote, assignPackagesToNote, unassignPackage } from "@/lib/shipsync/data";
 import { deliverBoat, queueDelivery, scanOntoVan, type DeliveryProof } from "@/lib/shipsync/driver-data";
 import { isNetworkError } from "@/lib/network-error";
 import type { ShipSyncDeliveryNote, ShipSyncDriver, ShipSyncPackage } from "@/lib/shipsync/model";
@@ -38,26 +38,16 @@ export const isScanned = (p: ShipSyncPackage) => p.driver_scanned || p.status ==
 export async function addToRun(
   note: ShipSyncDeliveryNote, driver: ShipSyncDriver, parcels: ParcelLite[], scanned: boolean,
 ): Promise<{ added: ParcelLite[]; skipped: number }> {
-  const ids = Array.from(new Set(parcels.map((p) => p.id)));
-  if (ids.length === 0) return { added: [], skipped: 0 };
-  const now = new Date().toISOString();
-  const { data, error } = await sb.from("shipsync_packages").update({
-    delivery_note_id: note.id, driver_id: driver.id, scan_out_time: now,
-    status: scanned ? "out_for_delivery" : "assigned",
-    ...(scanned ? { driver_scanned: true, driver_scan_out_time: now } : {}),
-  }).in("id", ids).is("delivery_note_id", null).in("status", ["in_office", "in_storage"]).select("id");
-  if (error) throw error;
-  const got = new Set<string>((data ?? []).map((r: any) => r.id));
-  const added = parcels.filter((p) => got.has(p.id));
+  const r = await addParcelsToNote({ id: note.id, status: "dispatched", driver_id: driver.id }, parcels.map((p) => p.id), { scanned });
+  const got = new Set(r.addedIds);
+  return { added: parcels.filter((p) => got.has(p.id)), skipped: r.skipped };
+}
 
-  if (added.length) {
-    const { data: onNote, error: be } = await sb.from("shipsync_packages").select("boat_name").eq("delivery_note_id", note.id);
-    if (be) throw be;
-    const boats = Array.from(new Set<string>((onNote ?? []).map((r: any) => String(r.boat_name ?? "").trim()).filter(Boolean)));
-    const { error: ne } = await sb.from("shipsync_delivery_notes").update({ boat_name: boats.length === 1 ? boats[0] : null }).eq("id", note.id);
-    if (ne) throw ne;
-  }
-  return { added, skipped: ids.length - added.length };
+/** The office adding parcels to a delivery note from Manage Deliveries: onto the driver's run if it is out, reserved if it is a draft. */
+export async function addToNote(note: ShipSyncDeliveryNote, parcels: ParcelLite[]): Promise<{ added: ParcelLite[]; skipped: number }> {
+  const r = await addParcelsToNote(note, parcels.map((p) => p.id));
+  const got = new Set(r.addedIds);
+  return { added: parcels.filter((p) => got.has(p.id)), skipped: r.skipped };
 }
 
 /** "Removed from List": the parcel was loaded by mistake, so it goes back to the office's pool. */

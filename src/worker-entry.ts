@@ -207,6 +207,18 @@ async function handleSharePointWebhook(request: Request, ctx: { waitUntil: (p: P
     }
   }
 
+  // Manual ShipSync Gate Pass board sync: `?run=shipsync-gatepass-board` pulls the Monday.com Gate Pass board
+  // into shipsync_packages (local_import = 'Gate Pass') now, same as the "Sync from Monday" button on the Gate Pass tab.
+  if (url.searchParams.get('run') === 'shipsync-gatepass-board') {
+    try {
+      const { importMondayGatePassBoard } = await import('./lib/shipsync/monday-gatepass-board.server')
+      const r = await importMondayGatePassBoard()
+      return new Response(JSON.stringify(r), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
+  }
+
   // Manual ShipSync proximity check: `?run=shipsync-proximity-check` runs the
   // "arriving in ~5 minutes" pass now, same as the 5-min cron tick — useful
   // for confirming the Google Maps key actually works server-side (it's
@@ -1729,6 +1741,15 @@ export default {
           .then(({ importMondayImportBoard }) => importMondayImportBoard())
           .then((r) => console.log(`[shipsync-import-board-cron] synced=${r.synced} errors=${r.errors}`))
           .catch((e) => console.error('[shipsync-import-board-cron] error:', e instanceof Error ? e.message : String(e)))
+      )
+
+      // ── Hourly: mirror the Monday.com Gate Pass board into the ShipSync Gate Pass tab (read-only). Skips
+      //    itself if a manual sync is mid-flight; no-ops with an error line until the Monday token is set. ──
+      ctx.waitUntil(
+        import('./lib/shipsync/monday-gatepass-board.server')
+          .then(({ importMondayGatePassBoard }) => importMondayGatePassBoard())
+          .then((r) => console.log(`[shipsync-gatepass-board-cron] ${r.skipped ? 'skipped (already running)' : `synced=${r.synced} errors=${r.errors} pruned=${r.pruned}`}`))
+          .catch((e) => console.error('[shipsync-gatepass-board-cron] error:', e instanceof Error ? e.message : String(e)))
       )
 
       // ── Hourly: mirror the Monday.com Yacht Shipments Import + Export boards

@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  progressOf, tradeKind, tradeTotals, incomingShipments, exportTotals, upcomingExports, isRoutable, awbOf, type TradeRow,
+  progressOf, tradeKind, tradeTotals, incomingShipments, arrivingShipments, isIncomingStatus, exportTotals, upcomingExports, isRoutable, awbOf, type TradeRow,
 } from "../trade-summary";
 import { bucketKey, bucketRange, timeSeries } from "../chart-buckets";
 
@@ -125,5 +125,25 @@ test("the time series is quantity per bucket by client: empty buckets are zero r
   const weekly = timeSeries(rows, "weekly", NOW, ["ORKA", "ZEUS"]);
   assert.equal(weekly[11].ORKA, 3); assert.equal(weekly[11].ZEUS, 4);
   const monthly = timeSeries(rows, "monthly", NOW, ["ORKA"]);
-  assert.equal(monthly[11].ORKA, 3); assert.equal(monthly[11].Other, 9);
+  assert.equal(monthly[11].ORKA, 3); assert.equal(monthly[11].Other, 9);  // every row carries its own total, for the figure above the bar
+  assert.equal(daily[29].__total, 3);
+  assert.equal(daily[27].__total, 9, "ZEUS 4 + the others folded into Other 5");
+  assert.equal(daily[28].__total, 0, "a quiet day totals zero");
+  assert.equal(weekly[11].__total, 12);
+});
+
+test("the Incoming list is only shipments whose status is Incoming, not ones already in the Warehouse or Office", () => {
+  assert.equal(isIncomingStatus("Incoming"), true);
+  assert.equal(isIncomingStatus("  incoming "), true);
+  assert.equal(isIncomingStatus("Warehouse"), false);
+  assert.equal(isIncomingStatus(""), false);
+  const list = arrivingShipments([
+    row({ boat_name: "ON ITS WAY", eta: "2026-10-20" }, { STATUS: "Incoming" }, "TRANSIT"),
+    row({ boat_name: "IN WAREHOUSE", eta: "2026-10-18" }, { STATUS: "Warehouse" }, "IMPORT"),
+    row({ boat_name: "IN OFFICE" }, { STATUS: "Office" }, "IMPORT"),
+    row({ boat_name: "NO STATUS" }, {}, "IMPORT"),
+    row({ boat_name: "ALSO INCOMING", eta: "2026-10-25" }, { STATUS: "Incoming" }, "IMPORT"),
+    row({ boat_name: "ARRIVED AND DONE" }, { STATUS: "Incoming" }, "Completed"),
+  ]);
+  assert.deepEqual(list.map((r) => r.client), ["ON ITS WAY", "ALSO INCOMING"]);
 });

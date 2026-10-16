@@ -11,17 +11,20 @@
  *                    note PDF and a Resend box.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FileText, Loader2, Search } from "lucide-react";
+import { FileText, Loader2, Plus, ScanLine, Search } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { errorMessage } from "@/lib/error-message";
 import { SignedImage } from "@/components/ui/signed-file";
+import { BarcodeScannerDialog } from "@/components/shipsync/BarcodeScanner";
 import type { ShipSyncDriver, ShipSyncPackage } from "@/lib/shipsync/model";
 import { loadCheckoutNotes, type CheckoutNote } from "./logistics-data";
 import {
   searchDelivered, loadNoteFull, loadDeliveredBoats, adminSetStatus, resendPod, listActiveDrivers, setNoteDriver,
-  type DeliveredRow,
+  addToNote, findReleasableByAwb, type DeliveredRow,
 } from "./logistics-delivery-data";
+import { SearchToAdd } from "./parcel-pickers";
+import type { ParcelLite } from "./logistics-data";
 import { generateNotePdf } from "./logistics-api";
 import { Screen, Lbl, inputCls, Sheet, DateField } from "./logistics-ui";
 
@@ -81,12 +84,34 @@ function ActiveList({ onOpen }: { onOpen: (r: CheckoutNote) => void }) {
 function ActiveDetail({ row, onBack }: { row: CheckoutNote; onBack: () => void }) {
   const { note } = row;
   const [parcels, setParcels] = useState<ShipSyncPackage[] | null>(null);
-  const [sheet, setSheet] = useState<null | "status" | "driver" | "cancel">(null);
+  const [sheet, setSheet] = useState<null | "status" | "driver" | "cancel" | "add">(null);
+  const [searching, setSearching] = useState(false);
+  const [scanning, setScanning] = useState(false);
   const [drivers, setDrivers] = useState<ShipSyncDriver[]>([]);
   const [pick, setPick] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => { let on = true; void loadNoteFull(note.id).then((p) => { if (on) setParcels(p); }).catch((e) => { if (on) { toast.error(errorMessage(e, "Could not load this delivery")); setParcels([]); } }); void listActiveDrivers().then((d) => { if (on) setDrivers(d); }).catch(() => {}); return () => { on = false; }; }, [note.id]);
+
+  /** Put more parcels on this delivery — scanned in or picked from what is waiting — and show the new list. */
+  async function addParcels(list: ParcelLite[]) {
+    setBusy(true);
+    try {
+      const r = await addToNote(note, list);
+      setParcels(await loadNoteFull(note.id));
+      if (r.added.length) toast.success(`${r.added.length === 1 ? (r.added[0].barcode ?? "Parcel") : `${r.added.length} parcels`} added to DN ${note.number ?? ""}`);
+      if (r.skipped) toast.warning(`${r.skipped} parcel${r.skipped === 1 ? " was" : "s were"} taken by someone else just now and not added.`);
+    } catch (e) { toast.error(errorMessage(e, "Could not add the parcel")); } finally { setBusy(false); }
+  }
+
+  async function onScanned(code: string) {
+    setScanning(false);
+    if (parcels?.some((p) => p.barcode?.trim().toLowerCase() === code.trim().toLowerCase())) { toast.info(`${code} is already on this delivery.`); return; }
+    let r: Awaited<ReturnType<typeof findReleasableByAwb>>;
+    try { r = await findReleasableByAwb(code); } catch (e) { toast.error(errorMessage(e, "Could not look that up — check your connection")); return; }
+    if (!r.parcel) { toast.error(r.reason ?? `${code} can't be added.`); return; }
+    await addParcels([r.parcel]);
+  }
 
   async function act(fn: () => Promise<void>, ok: string) {
     setBusy(true);
@@ -103,9 +128,28 @@ function ActiveDetail({ row, onBack }: { row: CheckoutNote; onBack: () => void }
       </div>}>
       <div className={cn("rounded-xl border p-3 text-[15px]", t.cls)}>
         <div className="font-semibold">{t.label}</div>
-        <div className="text-muted-foreground">Status: {note.status === "open" ? "Draft" : note.status} · Total Package: {row.total}</div>
+        <div className="text-muted-foreground">Status: {note.status === "open" ? "Draft" : note.status} · Total Package: {parcels ? parcels.reduce((n, p) => n + (p.num_packages ?? 1), 0) : row.total}</div>
       </div>
+      <button type="button" onClick={() => setSheet("add")} disabled={busy}
+        className="flex h-12 w-full items-center justify-center gap-2 rounded-lg border border-primary text-[15px] font-semibold text-primary disabled:opacity-50">
+        <Plus className="h-5 w-5" /> Add Parcel to this delivery
+      </button>
       {parcels === null ? <Loader2 className="mx-auto h-5 w-5 animate-spin" /> : <ItemTable parcels={parcels} />}
+
+      {sheet === "add" && (
+        <Sheet title="Add Parcel" onClose={() => setSheet(null)}>
+          <p className="text-[14px] text-muted-foreground">It must be checked in and waiting in the office, on no other delivery.{note.driver_id ? " It goes onto the driver's run." : " This delivery has no driver yet, so it is only reserved."}</p>
+          <button type="button" onClick={() => { setSheet(null); setScanning(true); }}
+            className="flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-primary text-[15px] font-semibold text-primary-foreground"><ScanLine className="h-5 w-5" /> Scan its label</button>
+          <button type="button" onClick={() => { setSheet(null); setSearching(true); }}
+            className="h-12 w-full rounded-lg border border-border text-[15px] font-semibold">Search by boat</button>
+        </Sheet>
+      )}
+      {searching && (
+        <SearchToAdd taken={new Set((parcels ?? []).map((p) => p.id))} onClose={() => setSearching(false)}
+          onAdd={(list) => { setSearching(false); void addParcels(list); }} />
+      )}
+      <BarcodeScannerDialog open={scanning} onClose={() => setScanning(false)} title="Scan the parcel's label" onDetected={(code) => void onScanned(code)} />
 
       {sheet === "status" && (
         <Sheet title="Change Status" onClose={() => setSheet(null)}>

@@ -86,6 +86,8 @@ export async function loadImportPackages(): Promise<ShipSyncPackage[]> {
 export const loadExportPackages = () => loadPackagesByType('Export')
 /** EDAS-tab packages. */
 export const loadEdasPackages = () => loadPackagesByType('EDAS')
+/** Gate-Pass-tab rows: the mirror of the Monday Gate Pass board (see monday-gatepass-board.server.ts). */
+export const loadGatePassPackages = () => loadPackagesByType('Gate Pass')
 export async function loadDrivers(): Promise<ShipSyncDriver[]> {
   const { data } = await db().from('shipsync_drivers').select('*').order('name')
   return (data ?? []) as ShipSyncDriver[]
@@ -234,6 +236,46 @@ export async function dispatchRoute(
   const { error: statusError } = await db().from('shipsync_delivery_notes').update({ status: 'dispatched' }).eq('id', note.id)
   if (statusError) throw new Error(`Parcels were assigned to ${note.number} but it could not be marked dispatched — open it in Dispatched. (${statusError.message})`)
   return { ...note, status: 'dispatched' }
+}
+
+/**
+ * Put more parcels on a delivery note that already exists — the office adding one to a note with four on it.
+ *
+ *  - a note that has a driver (whether it reads Draft or Dispatched — a note can have a driver and still be a draft): the parcels
+ *    join that driver's run as "assigned" (or, when `scanned`, already loaded on the van), so they appear on the driver's phone;
+ *  - a note with no driver yet: the parcels are only reserved on it, as the Check-Out screen does.
+ *
+ * A parcel is claimed only if it is still free — on no note and still in the office or storage — so one another note took a
+ * moment ago is left alone and counted in `skipped`. The note's boat label follows its parcels: one boat keeps it, several make
+ * it a multi-boat run.
+ */
+export async function addParcelsToNote(
+  note: Pick<ShipSyncDeliveryNote, 'id' | 'status' | 'driver_id'>, parcelIds: string[], opts: { scanned?: boolean } = {},
+): Promise<{ addedIds: string[]; skipped: number }> {
+  const ids = Array.from(new Set(parcelIds))
+  if (ids.length === 0) return { addedIds: [], skipped: 0 }
+  const now = new Date().toISOString()
+  const live = !!note.driver_id && (note.status === 'dispatched' || note.status === 'open')
+  const patch: Record<string, unknown> = live
+    ? {
+        delivery_note_id: note.id, driver_id: note.driver_id, scan_out_time: now,
+        status: opts.scanned ? 'out_for_delivery' : 'assigned',
+        ...(opts.scanned ? { driver_scanned: true, driver_scan_out_time: now } : {}),
+      }
+    : { delivery_note_id: note.id }
+  const { data, error } = await db().from('shipsync_packages').update(patch)
+    .in('id', ids).is('delivery_note_id', null).in('status', ['in_office', 'in_storage']).select('id')
+  if (error) throw error
+  const addedIds = (data ?? []).map((r: any) => r.id as string)
+
+  if (addedIds.length) {
+    const { data: onNote, error: be } = await db().from('shipsync_packages').select('boat_name').eq('delivery_note_id', note.id)
+    if (be) throw be
+    const boats = Array.from(new Set<string>((onNote ?? []).map((r: any) => String(r.boat_name ?? '').trim()).filter(Boolean)))
+    const { error: ne } = await db().from('shipsync_delivery_notes').update({ boat_name: boats.length === 1 ? boats[0] : null }).eq('id', note.id)
+    if (ne) throw ne
+  }
+  return { addedIds, skipped: ids.length - addedIds.length }
 }
 
 /** Set/replace the driver on a note and all its packages. */

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Loader2, Package, Truck, Warehouse, Users, BarChart3, Smartphone, ArrowDownToLine, ArrowUpFromLine, Route, Navigation, MapPin, LifeBuoy, Boxes, FileCheck2 } from "lucide-react";
+import { Loader2, Package, Truck, Warehouse, Users, BarChart3, Smartphone, ArrowDownToLine, ArrowUpFromLine, Route, Navigation, MapPin, LifeBuoy, Boxes, FileCheck2, LayoutDashboard, DoorOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   loadDeliverablePackages, isLocalPackage, loadDrivers, loadNotes, loadDestinations, loadDeliverySchedules, loadVehicles, loadYachtNames,
@@ -17,6 +17,8 @@ import { ShipSyncRouting } from "@/components/shipsync/ShipSyncRouting";
 import { ShipSyncWarehouse } from "@/components/shipsync/ShipSyncWarehouse";
 import { ShipSyncDrivers } from "@/components/shipsync/ShipSyncDrivers";
 import { ShipSyncDashboard } from "@/components/shipsync/ShipSyncDashboard";
+import { ShipSyncOverview } from "@/components/shipsync/ShipSyncOverview";
+import { ShipSyncGatePassBoard } from "@/components/shipsync/ShipSyncGatePassBoard";
 import { TableSkeleton } from "@/components/shipsync/shared";
 import { FleetTrackingPage } from "@/components/fleet-tracking-page";
 
@@ -34,10 +36,12 @@ export interface ShipSyncData {
 }
 
 const TABS = [
+  { key: "overview", label: "Overview",       icon: LayoutDashboard },
   { key: "packages", label: "Local Packages", icon: Package },
   { key: "import",   label: "Import",         icon: ArrowDownToLine },
   { key: "export",   label: "Export",         icon: ArrowUpFromLine },
   { key: "edas",     label: "EDAS",           icon: FileCheck2 },
+  { key: "gatepass", label: "Gate Pass",      icon: DoorOpen },
   { key: "routing",  label: "Routing",        icon: Route },
   { key: "dispatch", label: "Dispatched",     icon: Truck },
   { key: "warehouse", label: "Warehouse",     icon: Warehouse },
@@ -60,7 +64,7 @@ const TAB_KEYS = TABS.map((t) => t.key) as readonly string[];
 
 export function ShipSyncPage({ initialTab }: { initialTab?: string } = {}) {
   const [tab, setTab] = useState<(typeof TABS)[number]["key"]>(
-    initialTab && TAB_KEYS.includes(initialTab) ? (initialTab as (typeof TABS)[number]["key"]) : "packages",
+    initialTab && TAB_KEYS.includes(initialTab) ? (initialTab as (typeof TABS)[number]["key"]) : "overview",
   );
   const [data, setData] = useState<ShipSyncData>({ packages: [], deliverable: [], drivers: [], notes: [], destinations: [], schedule: [], vehicles: [], yachts: [] });
   const [loading, setLoading] = useState(true);
@@ -146,10 +150,12 @@ export function ShipSyncPage({ initialTab }: { initialTab?: string } = {}) {
           </div>
         ) : (
           <>
+            {tab === "overview" && <ShipSyncOverview data={data} />}
             {tab === "packages" && <ShipSyncPackages data={data} reload={reload} />}
             {tab === "import" && <ShipSyncImportBoard />}
             {tab === "export" && <ShipSyncExportBoard />}
             {tab === "edas" && <ShipSyncEdasBoard />}
+            {tab === "gatepass" && <ShipSyncGatePassBoard />}
             {tab === "dispatch" && <ShipSyncDispatch data={data} reload={reload} />}
             {tab === "routing" && <ShipSyncRouting data={data} reload={reload} />}
             {tab === "warehouse" && <ShipSyncWarehouse data={data} reload={reload} />}

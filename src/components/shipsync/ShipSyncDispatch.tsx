@@ -9,6 +9,7 @@ import { Loader2, Plus, MapPin, X, FileText, Mail, Ship, Trash2, Truck, Map as M
 import { RouteMapDialog, type RouteStop } from "@/components/shipsync/RouteMapDialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/shipsync/shared";
+import { AddParcelsDialog } from "@/components/shipsync/AddParcelsDialog";
 import {
   createDeliveryNote, setNoteDriver, unassignPackage, deleteRun, saveDestination as saveBoatDestination,
 } from "@/lib/shipsync/data";
@@ -34,6 +35,7 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
   const boats = useMemo(() => Array.from(new Set(data.deliverable.map((p) => p.boat_name).filter(Boolean) as string[])).sort(), [data.deliverable]);
   const [confirmDel, setConfirmDel] = useState(false);
   const [showRouteMap, setShowRouteMap] = useState(false);
+  const [addingParcels, setAddingParcels] = useState(false);
 
   // Who to send "Email pre-delivery"/"Email POD" to. Pre-fills from a
   // receiver email already on one of the note's packages (only ever set by
@@ -354,7 +356,10 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
 
             {/* Packages on this note */}
             <div className="rounded-xl border border-border bg-card">
-              <div className="border-b border-border px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">On this note ({pkgsOnNote.length})</div>
+              <div className="flex items-center justify-between border-b border-border px-3 py-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">On this note ({pkgsOnNote.length})</span>
+                <Button size="sm" variant="outline" className="h-7 gap-1.5 text-xs" onClick={() => setAddingParcels(true)}><Plus className="h-3.5 w-3.5" /> Add parcels</Button>
+              </div>
               {pkgsOnNote.length === 0 ? <div className="px-3 py-6 text-center text-sm text-muted-foreground">No packages on this note.</div> : (
                 <div className="divide-y divide-border/40">
                   {pkgsOnNote.map((p) => (
@@ -372,6 +377,10 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
           </div>
         )}
       </div>
+
+      {sel && (
+        <AddParcelsDialog note={sel} parcels={data.deliverable} open={addingParcels} onClose={() => setAddingParcels(false)} onDone={reload} />
+      )}
 
       {sel && showRouteMap && (
         <RouteMapDialog

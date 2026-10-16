@@ -53,6 +53,9 @@ export function bucketLabel(period: Period, key: string): string {
   return period === 'weekly' ? `w/c ${label}` : label
 }
 
+/** The key under which a series row carries the total of its buckets. */
+export const TOTAL_KEY = '__total'
+
 export interface SeriesRow { received_at: string | null; boat_name: string | null; num_packages: number | null }
 
 /**
@@ -75,5 +78,10 @@ export function timeSeries(
     const name = shown.has(boat) ? boat : 'Other'
     bucket[name] = (bucket[name] ?? 0) + (p.num_packages ?? 1)
   }
-  return keys.map((k) => ({ label: bucketLabel(period, k), ...byKey.get(k)! }))
+  // Each row also carries its own total (the sum of its clients), for the figure above the bar and the hover box.
+  return keys.map((k) => {
+    const bucket = byKey.get(k)!
+    const total = Object.values(bucket).reduce((sum, n) => sum + n, 0)
+    return { label: bucketLabel(period, k), ...bucket, [TOTAL_KEY]: total }
+  })
 }
