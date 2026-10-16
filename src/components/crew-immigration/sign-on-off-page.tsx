@@ -100,7 +100,11 @@ export function SignOnOffPage() {
       }
       if (weekly && reportWeek) params.set("week", reportWeek);
       const res = await fetch(`${path}?${params}`, { headers: { Authorization: `Bearer ${(session as any)?.access_token ?? ""}` } });
-      if (!res.ok) { toast.error("Could not generate report"); return; }
+      if (!res.ok) {
+        const reason = await res.json().then((j: any) => j?.error).catch(() => null);
+        toast.error(reason ? `Could not generate report: ${reason}` : "Could not generate report");
+        return;
+      }
       const blob = await res.blob();
       const cd = res.headers.get("Content-Disposition") ?? "";
       const filename = /filename="([^"]+)"/.exec(cd)?.[1] ?? `report.${format}`;

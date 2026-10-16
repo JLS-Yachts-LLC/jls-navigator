@@ -21,6 +21,7 @@ import { PDFDocument, StandardFonts, rgb, PDFFont } from 'pdf-lib'
 import { createClient } from '@supabase/supabase-js'
 import { sendEmail } from '@/lib/ses.server'
 import { requireAccess } from '@/lib/auth/requireAccess.server'
+import { winAnsiSafe, deepWinAnsiSafe } from '@/lib/pdf-winansi'
 
 function getAdmin() {
   const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? ''
@@ -155,6 +156,9 @@ function buildCsv(rows: VisaRow[], vesselName: string): string {
 
 // ─── PDF ──────────────────────────────────────────────────────────────────────
 async function buildPdf(rows: VisaRow[], vesselName: string): Promise<Uint8Array> {
+  // Helvetica only encodes WinAnsi and throws on anything else (e.g. "Ć", "Č").
+  rows = deepWinAnsiSafe(rows)
+  vesselName = winAnsiSafe(vesselName)
   const doc = await PDFDocument.create()
   const boldFont   = await doc.embedFont(StandardFonts.HelveticaBold)
   const normalFont = await doc.embedFont(StandardFonts.Helvetica)

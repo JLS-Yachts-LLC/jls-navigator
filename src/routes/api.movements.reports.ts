@@ -18,6 +18,7 @@ import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 import { requireAccess } from '@/lib/auth/requireAccess.server'
 import { sendEmail } from '@/lib/ses.server'
 import { fetchAllRows } from '@/lib/fetch-all'
+import { winAnsiSafe } from '@/lib/pdf-winansi'
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -38,6 +39,11 @@ function pdfResponse(bytes: Uint8Array, filename: string): Response {
 }
 
 export async function buildReportPdf(title: string, headers: string[], rows: string[][], weights: number[]): Promise<Uint8Array> {
+  // Helvetica only encodes WinAnsi and throws on anything else, so one crew name
+  // like "Ćosić" (or a "DXB → SPU" route) used to fail the whole report.
+  title = winAnsiSafe(title)
+  headers = headers.map(winAnsiSafe)
+  rows = rows.map((r) => r.map(winAnsiSafe))
   const doc = await PDFDocument.create()
   const bold = await doc.embedFont(StandardFonts.HelveticaBold)
   const reg = await doc.embedFont(StandardFonts.Helvetica)

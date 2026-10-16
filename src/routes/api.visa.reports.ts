@@ -20,6 +20,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 import { requireAccess } from '@/lib/auth/requireAccess.server'
+import { winAnsiSafe } from '@/lib/pdf-winansi'
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -71,6 +72,10 @@ function csvResponse(rows: string[][], filename: string): Response {
  * are proportional to `weights`. Mirrors the house style in api.visa.export.ts.
  */
 async function buildReportPdf(title: string, headers: string[], rows: string[][], weights: number[]): Promise<Uint8Array> {
+  // Helvetica only encodes WinAnsi and throws on anything else (e.g. "Ć", "Č").
+  title = winAnsiSafe(title)
+  headers = headers.map(winAnsiSafe)
+  rows = rows.map((r) => r.map(winAnsiSafe))
   const doc = await PDFDocument.create()
   const bold = await doc.embedFont(StandardFonts.HelveticaBold)
   const reg = await doc.embedFont(StandardFonts.Helvetica)

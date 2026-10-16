@@ -14,12 +14,13 @@ const SPECIAL: Record<string, string> = {
   'ı': 'i', 'İ': 'I', 'ł': 'l', 'Ł': 'L', 'đ': 'd', 'Đ': 'D',
   'œ': 'oe', 'Œ': 'OE', 'ẞ': 'SS', 'ĳ': 'ij', 'Ĳ': 'IJ',
   '“': '"', '”': '"', '‘': "'", '’': "'", '–': '-', '—': '-', '…': '...',
+  '→': '->', '←': '<-',
 }
 
 export function winAnsiSafe(input?: string | number | null): string {
   if (input == null) return ''
   let s = String(input)
-  s = s.replace(/[ıİłŁđĐœŒẞĳĲ“”‘’–—…]/g, (ch) => SPECIAL[ch] ?? ch)
+  s = s.replace(/[ıİłŁđĐœŒẞĳĲ“”‘’–—…→←]/g, (ch) => SPECIAL[ch] ?? ch)
   let out = ''
   for (const ch of s) {
     const code = ch.charCodeAt(0)
