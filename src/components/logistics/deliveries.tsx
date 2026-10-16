@@ -16,7 +16,7 @@
  * change driver and closing the note need a connection and say so.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, ScanLine, UserRoundCog } from "lucide-react";
+import { Loader2, Plus, ScanLine, UserRoundCog } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { errorMessage } from "@/lib/error-message";
@@ -26,8 +26,10 @@ import { SignedImage } from "@/components/ui/signed-file";
 import type { ShipSyncDeliveryNote, ShipSyncDriver, ShipSyncPackage } from "@/lib/shipsync/model";
 import {
   loadDriverRuns, listActiveDrivers, scanOntoVan, setNoteDriver, removeFromRun, markAwaiting,
-  cancelDelivery, completeDelivery, isScanned,
+  cancelDelivery, completeDelivery, isScanned, addToRun, findReleasableByAwb,
 } from "./logistics-delivery-data";
+import type { ParcelLite } from "./logistics-data";
+import { SearchToAdd } from "./parcel-pickers";
 import type { LogisticsIdentity } from "./logistics-identity";
 import { Screen, Lbl, inputCls, PhotoField, Sheet } from "./logistics-ui";
 import { usePersistedFile } from "./persisted-file";
@@ -123,6 +125,9 @@ function Manifest({ note, parcels, driver, reload, onBack }: {
 
   const [busy, setBusy] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [addMenu, setAddMenu] = useState(false);
+  const [addSearching, setAddSearching] = useState(false);
+  const [addScanning, setAddScanning] = useState(false);
   const [detail, setDetail] = useState<ShipSyncPackage | null>(null);
   const [changing, setChanging] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
@@ -153,9 +158,32 @@ function Manifest({ note, parcels, driver, reload, onBack }: {
   function onDetected(code: string) {
     setScanning(false);
     const p = parcels.find((x) => x.barcode?.trim().toLowerCase() === code.trim().toLowerCase());
-    if (!p) { toast.error(`${code} isn't on this delivery.`); return; }
+    // Not on this delivery yet: if it is a parcel waiting in the office, offer to take it along.
+    if (!p) { void offerToAdd(code); return; }
     if (isScanned(p)) { toast.info(`${code} is already scanned.`); return; }
     void scan(p);
+  }
+
+  /** Put parcels on this run. `scanned` = the driver has the label in hand, so they go straight onto the van. */
+  const addParcels = (list: ParcelLite[], scanned: boolean) => run("add", async () => {
+    if (!needOnline("Adding an item")) return;
+    const r = await addToRun(note, driver, list, scanned);
+    await reload().catch(() => {});
+    if (r.added.length) {
+      const other = r.added.find((a) => (a.boat_name ?? "—") !== boat);
+      toast.success(`${r.added.length === 1 ? (r.added[0].barcode ?? "Item") : `${r.added.length} items`} added to this delivery${other ? ` — it's for ${other.boat_name}, pick that boat under "Delivering to"` : ""}`);
+    }
+    if (r.skipped) toast.warning(`${r.skipped} item${r.skipped === 1 ? " was" : "s were"} taken by someone else just now and not added.`);
+  });
+
+  /** A scanned label that isn't on this delivery: add it if it is free to send out, otherwise say why not. */
+  async function offerToAdd(code: string) {
+    if (!needOnline("Adding an item")) return;
+    let r: Awaited<ReturnType<typeof findReleasableByAwb>>;
+    try { r = await findReleasableByAwb(code); } catch (e) { toast.error(errorMessage(e, "Could not look that up — check your connection")); return; }
+    if (!r.parcel) { toast.error(r.reason ?? `${code} isn't on this delivery.`); return; }
+    if (!window.confirm(`${code} (${[r.parcel.boat_name, r.parcel.package_owner].filter(Boolean).join(" · ") || "no boat"}) isn't on this delivery. Add it and load it onto the van?`)) return;
+    await addParcels([r.parcel], true);
   }
 
   const markAll = () => run("all", async () => { for (const p of items.filter((x) => !isScanned(x))) await scanOntoVan(p); await reload(); });
@@ -215,6 +243,11 @@ function Manifest({ note, parcels, driver, reload, onBack }: {
         <button type="button" onClick={() => void markAll()} disabled={!!busy || allGreen} className="h-12 rounded-lg border border-border text-[15px] font-semibold disabled:opacity-50">Mark All as Scanned</button>
       </div>
 
+      <button type="button" onClick={() => setAddMenu(true)} disabled={!!busy}
+        className="flex h-12 w-full items-center justify-center gap-2 rounded-lg border border-primary text-[15px] font-semibold text-primary disabled:opacity-50">
+        <Plus className="h-5 w-5" /> Add Item to this delivery
+      </button>
+
       <p className="text-[14px] text-muted-foreground">Total Item: {items.reduce((n, p) => n + (p.num_packages ?? 1), 0)} · {items.filter(isScanned).length} of {items.length} scanned</p>
       <ul className="space-y-2">
         {items.map((p) => (
@@ -239,6 +272,22 @@ function Manifest({ note, parcels, driver, reload, onBack }: {
       )}
 
       <BarcodeScannerDialog open={scanning} onClose={() => setScanning(false)} title="Scan parcel label" onDetected={onDetected} />
+      <BarcodeScannerDialog open={addScanning} onClose={() => setAddScanning(false)} title="Scan the extra parcel's label"
+        onDetected={(code) => { setAddScanning(false); onDetected(code); }} />
+
+      {addMenu && (
+        <Sheet title="Add Item to this delivery" onClose={() => setAddMenu(false)}>
+          <p className="text-[14px] text-muted-foreground">Someone asked you to take another parcel? It must be checked in and waiting in the office.</p>
+          <button type="button" onClick={() => { setAddMenu(false); setAddScanning(true); }}
+            className="flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-primary text-[15px] font-semibold text-primary-foreground"><ScanLine className="h-5 w-5" /> Scan its label</button>
+          <button type="button" onClick={() => { setAddMenu(false); setAddSearching(true); }}
+            className="h-12 w-full rounded-lg border border-border text-[15px] font-semibold">Search by boat</button>
+        </Sheet>
+      )}
+      {addSearching && (
+        <SearchToAdd taken={new Set(parcels.map((p) => p.id))} onClose={() => setAddSearching(false)}
+          onAdd={(list) => { setAddSearching(false); void addParcels(list, false); }} />
+      )}
 
       {detail && (
         <Sheet title={detail.boat_name ?? "Parcel"} onClose={() => setDetail(null)}>

@@ -161,3 +161,53 @@ test("cancelling a delivery returns every parcel (scan marks cleared) and closes
   assert.equal(pk("A1").driver_scanned, false);
   assert.equal(be.rows("shipsync_delivery_notes")[0].status, "cancelled");
 });
+
+// ── adding to a run under way ────────────────────────────────────────────────
+
+test("Add Item: a parcel scanned in joins the run already scanned; one searched for joins as 'assigned'", async () => {
+  be.rows("shipsync_delivery_notes").push({ id: "N1", status: "dispatched", driver_id: "D1", boat_name: "ORKA" });
+  be.rows("shipsync_packages").push(
+    { id: "A1", status: "out_for_delivery", delivery_note_id: "N1", boat_name: "ORKA", driver_id: "D1", driver_scanned: true },
+    lite("P1", "ORKA"), lite("P2", "ORKA"),
+  );
+  const note = be.rows("shipsync_delivery_notes")[0] as any;
+  const driver = { id: "D1" } as any;
+
+  const a = await dd.addToRun(note, driver, [pk("P1")] as any, true);
+  assert.equal(a.added.length, 1);
+  assert.equal(pk("P1").delivery_note_id, "N1");
+  assert.equal(pk("P1").driver_id, "D1");
+  assert.equal(pk("P1").status, "out_for_delivery");
+  assert.equal(pk("P1").driver_scanned, true);
+
+  const b = await dd.addToRun(note, driver, [pk("P2")] as any, false);
+  assert.equal(b.added.length, 1);
+  assert.equal(pk("P2").status, "assigned");
+  assert.notEqual(pk("P2").driver_scanned, true, "searched for, not yet scanned onto the van");
+  assert.equal(be.rows("shipsync_delivery_notes")[0].boat_name, "ORKA", "same boat keeps the label");
+
+  // and they show up on the driver's run
+  const runs = await drv.loadDriverRuns("D1");
+  assert.deepEqual(runs.packages.map((p) => p.id).sort(), ["A1", "P1", "P2"]);
+});
+
+test("Add Item: a parcel for another boat makes the run a multi-boat one; one taken meanwhile is left alone and counted", async () => {
+  be.rows("shipsync_delivery_notes").push({ id: "N1", status: "dispatched", driver_id: "D1", boat_name: "ORKA" });
+  be.rows("shipsync_packages").push(
+    { id: "A1", status: "assigned", delivery_note_id: "N1", boat_name: "ORKA", driver_id: "D1" },
+    lite("P1", "ZEUS"), lite("P2", "ZEUS", { delivery_note_id: "OTHER", status: "assigned" }), lite("P3", "ZEUS", { status: "delivered" }),
+  );
+  const note = be.rows("shipsync_delivery_notes")[0] as any;
+  const r = await dd.addToRun(note, { id: "D1" } as any, [pk("P1"), pk("P2"), pk("P3")] as any, false);
+  assert.deepEqual(r.added.map((p) => p.id), ["P1"]);
+  assert.equal(r.skipped, 2);
+  assert.equal(pk("P2").delivery_note_id, "OTHER", "the other note's parcel is untouched");
+  assert.equal(pk("P3").delivery_note_id, null, "a delivered parcel can't be put back on a run");
+  assert.equal(be.rows("shipsync_delivery_notes")[0].boat_name, null, "two boats on it now");
+});
+
+test("Add Item: nothing to add changes nothing", async () => {
+  be.rows("shipsync_delivery_notes").push({ id: "N1", status: "dispatched", driver_id: "D1", boat_name: "ORKA" });
+  const r = await dd.addToRun(be.rows("shipsync_delivery_notes")[0] as any, { id: "D1" } as any, [], true);
+  assert.deepEqual(r, { added: [], skipped: 0 });
+});

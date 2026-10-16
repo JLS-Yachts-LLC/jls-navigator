@@ -14,10 +14,12 @@ import { deliverBoat, queueDelivery, scanOntoVan, type DeliveryProof } from "@/l
 import { isNetworkError } from "@/lib/network-error";
 import type { ShipSyncDeliveryNote, ShipSyncDriver, ShipSyncPackage } from "@/lib/shipsync/model";
 import { generateNotePdf, shipsyncApi } from "./logistics-api";
+import type { ParcelLite } from "./logistics-data";
 
 const sb = supabase as any;
 
 export { loadDriverRuns, listActiveDrivers } from "@/lib/shipsync/driver-data";
+export { findReleasableByAwb } from "./logistics-data";
 export { scanOntoVan };
 
 /** Packages still to hand over — assigned to the run, not yet delivered. */
@@ -25,6 +27,38 @@ export const PENDING = ["assigned", "out_for_delivery"] as const;
 
 /** A parcel the driver has already scanned or confirmed onto the van. */
 export const isScanned = (p: ShipSyncPackage) => p.driver_scanned || p.status === "out_for_delivery";
+
+/**
+ * "Add Item": someone asks the driver to take another parcel while the run is under way. The parcels join THIS note and this
+ * driver; ones the driver has the label in hand for (`scanned`) go straight onto the van as scanned. A parcel is only claimed
+ * if it is still free (on no note, still in the office or storage), so one the office or another driver took a moment ago is
+ * left alone and counted in `skipped`. The note's boat label follows its parcels: one boat keeps it, several make it a
+ * multi-boat run.
+ */
+export async function addToRun(
+  note: ShipSyncDeliveryNote, driver: ShipSyncDriver, parcels: ParcelLite[], scanned: boolean,
+): Promise<{ added: ParcelLite[]; skipped: number }> {
+  const ids = Array.from(new Set(parcels.map((p) => p.id)));
+  if (ids.length === 0) return { added: [], skipped: 0 };
+  const now = new Date().toISOString();
+  const { data, error } = await sb.from("shipsync_packages").update({
+    delivery_note_id: note.id, driver_id: driver.id, scan_out_time: now,
+    status: scanned ? "out_for_delivery" : "assigned",
+    ...(scanned ? { driver_scanned: true, driver_scan_out_time: now } : {}),
+  }).in("id", ids).is("delivery_note_id", null).in("status", ["in_office", "in_storage"]).select("id");
+  if (error) throw error;
+  const got = new Set<string>((data ?? []).map((r: any) => r.id));
+  const added = parcels.filter((p) => got.has(p.id));
+
+  if (added.length) {
+    const { data: onNote, error: be } = await sb.from("shipsync_packages").select("boat_name").eq("delivery_note_id", note.id);
+    if (be) throw be;
+    const boats = Array.from(new Set<string>((onNote ?? []).map((r: any) => String(r.boat_name ?? "").trim()).filter(Boolean)));
+    const { error: ne } = await sb.from("shipsync_delivery_notes").update({ boat_name: boats.length === 1 ? boats[0] : null }).eq("id", note.id);
+    if (ne) throw ne;
+  }
+  return { added, skipped: ids.length - added.length };
+}
 
 /** "Removed from List": the parcel was loaded by mistake, so it goes back to the office's pool. */
 export async function removeFromRun(p: ShipSyncPackage): Promise<void> {
