@@ -11,6 +11,7 @@ import { ShipSyncDeliveryCalendar } from "@/components/shipsync/ShipSyncDelivery
 import { BarcodeScannerDialog } from "@/components/shipsync/BarcodeScanner";
 import { RouteMapDialog, type RouteStop } from "@/components/shipsync/RouteMapDialog";
 import { dispatchRoute, saveDestination } from "@/lib/shipsync/data";
+import { isRoutable } from "@/lib/shipsync/trade-summary";
 import { vanLabel, driverWorks, weekdayOf, WEEKDAYS, type ShipSyncPackage, type ShipSyncDestination } from "@/lib/shipsync/model";
 import type { ShipSyncData } from "@/components/shipsync-page";
 
@@ -187,9 +188,10 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
 
   // Parcels waiting to be routed: in the office/storage with no delivery note yet.
   const unrouted = useMemo(
-    // A parcel moved into the warehouse (extra.warehouse_ref) is stock now, and leaves through Warehouse - Out.
-    () => data.packages.filter((p) => !p.delivery_note_id && !(p.extra as { warehouse_ref?: string } | null)?.warehouse_ref && (p.status === "in_office" || p.status === "in_storage")),
-    [data.packages],
+    // Local, Import and Transit parcels (a phone check-in is tagged Import). A parcel moved into the warehouse
+    // (extra.warehouse_ref) is stock now and leaves through Warehouse - Out; one Monday calls Completed is not waiting.
+    () => data.deliverable.filter(isRoutable),
+    [data.deliverable],
   );
 
   // Map of boat name -> its waiting parcels.

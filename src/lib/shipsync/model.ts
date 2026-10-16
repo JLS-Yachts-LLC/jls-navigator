@@ -133,6 +133,9 @@ export interface ShipSyncPackage {
   received_at: string | null
   received_by: string | null
   planned_delivery_date: string | null
+  /** Expected arrival (Import / Transit) and expected departure (Export), entered by staff — Monday has neither. */
+  eta?: string | null
+  etd?: string | null
   description: string | null
   phase_status: string | null
   scan_out_time: string | null

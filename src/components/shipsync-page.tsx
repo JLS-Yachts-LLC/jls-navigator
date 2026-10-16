@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Loader2, Package, Truck, Warehouse, Users, BarChart3, Smartphone, ArrowDownToLine, ArrowUpFromLine, Route, Navigation, MapPin, LifeBuoy, Boxes, FileCheck2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
-  loadPackages, loadDrivers, loadNotes, loadDestinations, loadDeliverySchedules, loadVehicles, loadYachtNames,
+  loadDeliverablePackages, isLocalPackage, loadDrivers, loadNotes, loadDestinations, loadDeliverySchedules, loadVehicles, loadYachtNames,
 } from "@/lib/shipsync/data";
 import { ShipSyncLocations } from "@/components/shipsync/ShipSyncLocations";
 import type {
@@ -20,7 +20,10 @@ import { ShipSyncDashboard } from "@/components/shipsync/ShipSyncDashboard";
 import { FleetTrackingPage } from "@/components/fleet-tracking-page";
 
 export interface ShipSyncData {
+  /** Local Packages: the Local (and untagged) parcels only. */
   packages: ShipSyncPackage[];
+  /** Everything that can go out on a van — Local plus Import and Transit — for Routing and Dispatched. */
+  deliverable: ShipSyncPackage[];
   drivers: ShipSyncDriver[];
   notes: ShipSyncDeliveryNote[];
   destinations: ShipSyncDestination[];
@@ -58,15 +61,15 @@ export function ShipSyncPage({ initialTab }: { initialTab?: string } = {}) {
   const [tab, setTab] = useState<(typeof TABS)[number]["key"]>(
     initialTab && TAB_KEYS.includes(initialTab) ? (initialTab as (typeof TABS)[number]["key"]) : "packages",
   );
-  const [data, setData] = useState<ShipSyncData>({ packages: [], drivers: [], notes: [], destinations: [], schedule: [], vehicles: [], yachts: [] });
+  const [data, setData] = useState<ShipSyncData>({ packages: [], deliverable: [], drivers: [], notes: [], destinations: [], schedule: [], vehicles: [], yachts: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     // allSettled + per-source fallbacks: one failing/slow query degrades that
     // section gracefully instead of blanking or hanging the whole module.
-    const [packages, drivers, notes, destinations, schedule, vehicles, yachts] = await Promise.all([
-      withTimeout(loadPackages(), 20000, "Packages").catch(() => [] as ShipSyncData["packages"]),
+    const [deliverable, drivers, notes, destinations, schedule, vehicles, yachts] = await Promise.all([
+      withTimeout(loadDeliverablePackages(), 20000, "Packages").catch(() => [] as ShipSyncData["packages"]),
       withTimeout(loadDrivers(), 20000, "Drivers").catch(() => [] as ShipSyncData["drivers"]),
       withTimeout(loadNotes(), 20000, "Notes").catch(() => [] as ShipSyncData["notes"]),
       withTimeout(loadDestinations(), 20000, "Destinations").catch(() => [] as ShipSyncData["destinations"]),
@@ -74,7 +77,7 @@ export function ShipSyncPage({ initialTab }: { initialTab?: string } = {}) {
       withTimeout(loadVehicles(), 20000, "Vehicles").catch(() => [] as ShipSyncData["vehicles"]),
       withTimeout(loadYachtNames(), 20000, "Yachts").catch(() => [] as string[]),
     ]);
-    setData({ packages, drivers, notes, destinations, schedule, vehicles, yachts });
+    setData({ packages: deliverable.filter(isLocalPackage), deliverable, drivers, notes, destinations, schedule, vehicles, yachts });
   }, []);
 
   const runReload = useCallback(() => {

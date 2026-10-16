@@ -24,14 +24,14 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
 
   const openNotes = useMemo(() => data.notes.filter((n) => n.status !== "delivered" && n.status !== "cancelled"), [data.notes]);
   const sel = data.notes.find((n) => n.id === selId) ?? null;
-  const pkgsOnNote = useMemo(() => data.packages.filter((p) => p.delivery_note_id === selId), [data.packages, selId]);
+  const pkgsOnNote = useMemo(() => data.deliverable.filter((p) => p.delivery_note_id === selId), [data.deliverable, selId]);
   // Per-boat parcel counts for the selected note (a route can span several boats).
   const pkgsByBoat = useMemo(() => {
     const m = new Map<string, number>();
     for (const p of pkgsOnNote) { const k = p.boat_name || "No boat"; m.set(k, (m.get(k) ?? 0) + 1); }
     return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   }, [pkgsOnNote]);
-  const boats = useMemo(() => Array.from(new Set(data.packages.map((p) => p.boat_name).filter(Boolean) as string[])).sort(), [data.packages]);
+  const boats = useMemo(() => Array.from(new Set(data.deliverable.map((p) => p.boat_name).filter(Boolean) as string[])).sort(), [data.deliverable]);
   const [confirmDel, setConfirmDel] = useState(false);
   const [showRouteMap, setShowRouteMap] = useState(false);
 
@@ -218,7 +218,7 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
         <div className="flex flex-col gap-1.5">
           {openNotes.length === 0 && <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">No open delivery notes.</div>}
           {openNotes.map((n) => {
-            const notePkgs = data.packages.filter((p) => p.delivery_note_id === n.id);
+            const notePkgs = data.deliverable.filter((p) => p.delivery_note_id === n.id);
             const count = notePkgs.length;
             const noteBoats = Array.from(new Set(notePkgs.map((p) => p.boat_name).filter(Boolean) as string[])).sort();
             const boatList = n.boat_name ? [n.boat_name] : (noteBoats.length ? noteBoats : ["—"]);

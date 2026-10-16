@@ -44,6 +44,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { fmtDate, mondayRow, extraMondayColumns, DocumentDropzoneDialog, TableChartToggle, ShipSyncChartsPanel } from "@/components/shipsync/shared";
+import { exportTotals } from "@/lib/shipsync/trade-summary";
 import { loadExportPackages, patchPackage, createPackage, deletePackage, addPackageDocuments, removePackageDocument, uploadShipSyncFile } from "@/lib/shipsync/data";
 import type { ShipSyncPackage } from "@/lib/shipsync/model";
 
@@ -142,6 +143,8 @@ const CELLS: CellSpec[] = [
   { kind: "field", col: mondayCol("awb", "AWB/Tracking Number", "w-32", "Air WayBill/Tracking Number") },
   { kind: "field", col: mondayCol("invoiceNo", "Invoice No.", "w-28", "Invoice number") },
   { kind: "field", col: fieldCol("received_at", "Requested Date", "w-28", "date", "received_at") },
+  // ETD is Polaris's own column (Monday has none): when the shipment is due to leave, entered by staff.
+  { kind: "field", col: fieldCol("etd", "ETD", "w-28", "date", "etd") },
   { kind: "exportStatus" },
   { kind: "field", col: fieldCol("courier", "Courier/Agent", "w-24", "text", "courier") },
   { kind: "field", col: mondayCol("consignee", "Consignee", "w-28", "Consignee") },
@@ -312,6 +315,7 @@ export function ShipSyncExportBoard() {
   }
 
   const colCount = 2 + CELLS.length + mondayColumns.length + 1;
+  const totals = exportTotals(rows);
   const deleteTarget = confirmDeleteIds && confirmDeleteIds.length === 1
     ? rows.find((r) => r.id === confirmDeleteIds[0])
     : null;
@@ -335,6 +339,22 @@ export function ShipSyncExportBoard() {
           </Button>
         )}
       </div>
+
+      {rows.length > 0 && (
+        <div className="mb-3 flex shrink-0 flex-wrap gap-3">
+          {[
+            { label: "Total export shipments", value: totals.total },
+            { label: "Still open", value: totals.open },
+            { label: "Completed", value: totals.completed },
+            { label: "Total quantity", value: totals.qty },
+          ].map((t) => (
+            <div key={t.label} className="min-w-[9rem] rounded-xl border border-border bg-card px-4 py-2.5">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{t.label}</div>
+              <div className="font-display text-2xl font-bold tabular-nums">{t.value.toLocaleString()}</div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {view === "chart" ? (
         <div className="min-h-0 flex-1 overflow-auto">

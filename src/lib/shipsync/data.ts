@@ -39,6 +39,27 @@ export async function loadPackages(): Promise<ShipSyncPackage[]> {
   }
   return all
 }
+/** Everything that can go out on a van: Local, untagged, Import and Transit parcels (Export and EDAS leave by freight).
+ *  Local Packages shows only the Local part of this; Routing and Dispatched need all of it — a phone check-in is tagged
+ *  Import, so they used to see none of those. Paginated for the same reason as loadPackages. */
+export async function loadDeliverablePackages(): Promise<ShipSyncPackage[]> {
+  const all: ShipSyncPackage[] = []
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error } = await db().from('shipsync_packages').select('*')
+      .or('local_import.is.null,local_import.in.(Local,Import,Transit)')
+      .order('received_at', { ascending: false })
+      .order('id', { ascending: true })
+      .range(offset, offset + 999)
+    if (error) throw error
+    if (!data || data.length === 0) break
+    all.push(...(data as ShipSyncPackage[]))
+    if (data.length < 1000) break
+  }
+  return all
+}
+/** The part of loadDeliverablePackages the Local Packages tab shows. */
+export const isLocalPackage = (p: { local_import: string | null }) => !p.local_import || p.local_import === 'Local'
+
 /** Packages of a given trade type (local_import), newest first. Used by the
  *  Export tab (Import has its own loader — see loadImportPackages — since it
  *  also needs to catch 'Transit'-tagged rows). */

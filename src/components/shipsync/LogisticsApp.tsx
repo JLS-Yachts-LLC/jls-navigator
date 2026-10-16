@@ -13,7 +13,7 @@ import {
   PackageSearch, FileText, Smartphone, LifeBuoy,
 } from "lucide-react";
 import {
-  loadPackages, loadDrivers, loadNotes, loadDestinations, loadDeliverySchedules, loadVehicles, loadYachtNames,
+  loadDeliverablePackages, isLocalPackage, loadDrivers, loadNotes, loadDestinations, loadDeliverySchedules, loadVehicles, loadYachtNames,
 } from "@/lib/shipsync/data";
 import type { ShipSyncData } from "@/components/shipsync-page";
 import { ShipSyncPackages } from "@/components/shipsync/ShipSyncPackages";
@@ -43,12 +43,12 @@ const TITLES: Record<Exclude<Screen, "menu">, string> = {
 
 export function LogisticsApp() {
   const [screen, setScreen] = useState<Screen>("menu");
-  const [data, setData] = useState<ShipSyncData>({ packages: [], drivers: [], notes: [], destinations: [], schedule: [], vehicles: [], yachts: [] });
+  const [data, setData] = useState<ShipSyncData>({ packages: [], deliverable: [], drivers: [], notes: [], destinations: [], schedule: [], vehicles: [], yachts: [] });
   const [loading, setLoading] = useState(true);
 
   const reload = useCallback(async () => {
-    const [packages, drivers, notes, destinations, schedule, vehicles, yachts] = await Promise.all([
-      loadPackages().catch(() => [] as ShipSyncData["packages"]),
+    const [deliverable, drivers, notes, destinations, schedule, vehicles, yachts] = await Promise.all([
+      loadDeliverablePackages().catch(() => [] as ShipSyncData["packages"]),
       loadDrivers().catch(() => [] as ShipSyncData["drivers"]),
       loadNotes().catch(() => [] as ShipSyncData["notes"]),
       loadDestinations().catch(() => [] as ShipSyncData["destinations"]),
@@ -56,7 +56,7 @@ export function LogisticsApp() {
       loadVehicles().catch(() => [] as ShipSyncData["vehicles"]),
       loadYachtNames().catch(() => [] as string[]),
     ]);
-    setData({ packages, drivers, notes, destinations, schedule, vehicles, yachts });
+    setData({ packages: deliverable.filter(isLocalPackage), deliverable, drivers, notes, destinations, schedule, vehicles, yachts });
   }, []);
 
   useEffect(() => { void reload().finally(() => setLoading(false)); }, [reload]);

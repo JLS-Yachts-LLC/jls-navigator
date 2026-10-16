@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { STATUS_META, type PackageStatus, type ShipSyncPackage } from "@/lib/shipsync/model";
+import { PERIODS, bucketRange, bucketKey, timeSeries, type Period } from "@/lib/shipsync/chart-buckets";
 
 const TONE: Record<string, string> = {
   sky: "bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/20",
@@ -188,31 +189,6 @@ function topVessels(rows: ShipSyncPackage[], n = 8): { name: string; qty: number
   return top;
 }
 
-const monthKey = (iso: string) => { const d = new Date(iso); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
-const monthLabel = (key: string) => {
-  const [y, m] = key.split("-").map(Number);
-  return new Date(y, m - 1, 1).toLocaleDateString("en-GB", { month: "short", year: "numeric" });
-};
-
-/** Quantity per month, stacked by the same vessels `topVessels` ranked (plus
- *  "Other" if it picked one) — Monday's stacked monthly view. Rows without a
- *  received date don't have a month to sit in, so they're left out here
- *  (they still count in the other three widgets). */
-function monthlyByVessel(rows: ShipSyncPackage[], vessels: { name: string }[]): Record<string, number | string>[] {
-  const names = new Set(vessels.map((v) => v.name));
-  const byMonth = new Map<string, Record<string, number>>();
-  for (const p of rows) {
-    if (!p.received_at) continue;
-    const key = monthKey(p.received_at);
-    const boat = p.boat_name?.trim() || "Unassigned";
-    const bucket = names.has(boat) ? boat : "Other";
-    if (!byMonth.has(key)) byMonth.set(key, {});
-    const m = byMonth.get(key)!;
-    m[bucket] = (m[bucket] ?? 0) + (p.num_packages ?? 1);
-  }
-  return [...byMonth.keys()].sort().map((key) => ({ month: monthLabel(key), ...byMonth.get(key)! }));
-}
-
 function ChartCard({ title, className, empty, children }: { title: string; className?: string; empty: boolean; children: ReactNode }) {
   return (
     <div className={cn("rounded-xl border border-border bg-card p-4", className)}>
@@ -280,7 +256,7 @@ function TopVesselsCard({ data, title }: { data: { name: string; qty: number; co
   );
 }
 
-function MonthlyStackedCard({
+function TimeStackedCard({
   data, vessels, title,
 }: {
   data: Record<string, number | string>[];
@@ -292,7 +268,7 @@ function MonthlyStackedCard({
       <ResponsiveContainer width="100%" height={320}>
         <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
           <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--border)" />
-          <XAxis dataKey="month" tick={AXIS_TICK} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
+          <XAxis dataKey="label" tick={AXIS_TICK} axisLine={{ stroke: "var(--border)" }} tickLine={false} interval="preserveStartEnd" minTickGap={14} />
           <YAxis allowDecimals={false} width={32} tick={AXIS_TICK} axisLine={false} tickLine={false} />
           <Tooltip contentStyle={TOOLTIP_STYLE} />
           {vessels.map((v) => <Bar key={v.name} dataKey={v.name} stackId="qty" fill={v.color} maxBarSize={56} />)}
@@ -311,9 +287,13 @@ function MonthlyStackedCard({
 
 /** A board's whole "Chart" view — the multi-widget layout Monday's own Chart
  *  tab shows (status breakdown, total quantity, top vessels by quantity, and
- *  quantity per month stacked by vessel), built from the same rows and
+ *  quantity over time stacked by vessel), built from the same rows and
  *  status/colour vocabulary the board's table already uses. `rows` should be
- *  the board's current (search-)filtered set, same data the table shows. */
+ *  the board's current (search-)filtered set, same data the table shows.
+ *
+ *  Period (daily / weekly / monthly) and Client choose what the numbers, the
+ *  vessel bars and the time chart show; the status pie is always the whole
+ *  board. */
 export function ShipSyncChartsPanel({
   rows, statusData, title,
 }: {
@@ -321,14 +301,64 @@ export function ShipSyncChartsPanel({
   statusData: StatusDatum[];
   title: string;
 }) {
-  const vessels = useMemo(() => topVessels(rows), [rows]);
-  const monthly = useMemo(() => monthlyByVessel(rows, vessels), [rows, vessels]);
+  const [period, setPeriod] = useState<Period>("monthly");
+  const [client, setClient] = useState("all");
+  const now = useMemo(() => new Date(), []);
+
+  const clients = useMemo(
+    () => Array.from(new Set(rows.map((p) => p.boat_name?.trim()).filter((n): n is string => !!n))).sort((a, b) => a.localeCompare(b)),
+    [rows],
+  );
+  // A client picked earlier can vanish when the board is searched or reloaded: fall back to everyone rather than chart nothing.
+  const chosen = client !== "all" && clients.includes(client) ? client : "all";
+
+  const inWindow = useMemo(() => {
+    const keys = new Set(bucketRange(period, now));
+    return rows.filter((p) => {
+      if (!p.received_at) return false;
+      const d = new Date(p.received_at);
+      return !Number.isNaN(d.getTime()) && keys.has(bucketKey(period, d));
+    });
+  }, [rows, period, now]);
+  const scoped = useMemo(
+    () => (chosen === "all" ? inWindow : inWindow.filter((p) => (p.boat_name?.trim() || "Unassigned") === chosen)),
+    [inWindow, chosen],
+  );
+
+  const vessels = useMemo(() => topVessels(scoped), [scoped]);
+  const series = useMemo(() => timeSeries(scoped, period, now, vessels.map((v) => v.name)), [scoped, period, now, vessels]);
+  const windowText = PERIODS.find((x) => x.key === period)!.window;
+  const label = PERIODS.find((x) => x.key === period)!.label.toLowerCase();
+
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      <StatusPieCard data={statusData} title={`${title} by status`} />
-      <NumbersCard rows={rows} />
-      <TopVesselsCard data={vessels} title={`${title} by vessel (qty)`} />
-      <MonthlyStackedCard data={monthly} vessels={vessels} title={`${title} by month`} />
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
+        <div className="inline-flex items-center rounded-lg border border-border bg-muted/30 p-0.5" role="group" aria-label="Period">
+          {PERIODS.map((x) => (
+            <button key={x.key} type="button" onClick={() => setPeriod(x.key)}
+              className={cn("rounded-md px-3 py-1.5 text-[12px] font-medium transition-colors",
+                period === x.key ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+              {x.label}
+            </button>
+          ))}
+        </div>
+        <label className="flex items-center gap-2 text-[12px] text-muted-foreground">
+          Client
+          <select value={chosen} onChange={(e) => setClient(e.target.value)}
+            className="h-8 max-w-[14rem] rounded-md border border-border bg-background px-2 text-[12px] text-foreground">
+            <option value="all">All clients</option>
+            {clients.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </label>
+        <span className="text-[12px] text-muted-foreground">Showing the {windowText}, by date received — {chosen === "all" ? "all clients" : chosen}.</span>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <StatusPieCard data={statusData} title={`${title} by status (whole board)`} />
+        <NumbersCard rows={scoped} />
+        {chosen === "all" && <TopVesselsCard data={vessels} title={`${title} by vessel (qty, ${windowText})`} />}
+        <TimeStackedCard data={series} vessels={vessels} title={`${title} — ${label}${chosen === "all" ? "" : `, ${chosen}`}`} />
+      </div>
     </div>
   );
 }

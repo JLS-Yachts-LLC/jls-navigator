@@ -268,6 +268,8 @@ const CELLS: CellSpec[] = [
   { kind: "shipmentType" },
   { kind: "field", col: fieldCol("boe_no", "BOE No.", "w-24", "text", "boe_no") },
   { kind: "field", col: fieldCol("supplier", "Supplier", "w-28", "text", "supplier") },
+  // ETA is Polaris's own column (Monday has none): when the shipment is expected, entered by staff.
+  { kind: "field", col: fieldCol("eta", "ETA", "w-24", "date", "eta") },
   { kind: "field", col: fieldCol("received_at", "Date Received", "w-24", "date", "received_at") },
   { kind: "field", col: fieldCol("delivered_at", "Date Delivered", "w-24", "date", "delivered_at") },
   { kind: "field", col: fieldCol("delivery_note_no", "DN No.", "w-20", "text", "delivery_note_no") },

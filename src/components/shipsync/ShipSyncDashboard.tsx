@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { STATUS_META, ACTIVE_STATUSES, type PackageStatus } from "@/lib/shipsync/model";
 import { StatusBadge } from "@/components/shipsync/shared";
 import type { ShipSyncData } from "@/components/shipsync-page";
+import { ShipSyncTradeOverview } from "@/components/shipsync/ShipSyncTradeOverview";
 
 export function ShipSyncDashboard({ data }: { data: ShipSyncData }) {
   const s = useMemo(() => {
@@ -35,6 +36,9 @@ export function ShipSyncDashboard({ data }: { data: ShipSyncData }) {
 
   return (
     <div className="px-6 py-5">
+      <ShipSyncTradeOverview />
+
+      <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Local packages</div>
       <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-4">
         {cards.map((c) => (
           <div key={c.label} className="rounded-xl border border-border bg-card p-4">
