@@ -314,12 +314,13 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
     finally { setBusy(false); }
   }
 
-  /** Add or replace a package's received photo straight from the table or the side panel. */
-  async function uploadReceivedPhoto(p: ShipSyncPackage, file: File) {
-    setPhotoBusy(p.id);
+  /** Add or replace a package's received or delivery photo straight from the table or the side panel. */
+  async function uploadPackagePhoto(p: ShipSyncPackage, file: File, kind: "item" | "delivery") {
+    const key = `${p.id}:${kind}`;
+    setPhotoBusy(key);
     try {
-      const url = await uploadShipSyncImage(file, `packages/${p.id}/item_${Date.now()}.jpg`);
-      await patchPackage(p.id, { item_photo_url: url });
+      const url = await uploadShipSyncImage(file, `packages/${p.id}/${kind}_${Date.now()}.jpg`);
+      await patchPackage(p.id, kind === "item" ? { item_photo_url: url } : { delivery_photo_url: url });
       toast.success("Photo saved");
       await reload();
     } catch (e: any) { toast.error(e?.message ?? "Couldn't upload that photo"); }
@@ -509,7 +510,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
                         <td className="px-3 py-2.5 whitespace-nowrap"><InlineText label="Client" value={p.boat_name} upper listId="ss-clients" onSave={(v) => saveField(p, { boat_name: v || null })} display={p.boat_name ? <Chip className="font-semibold uppercase tracking-wide">{p.boat_name}</Chip> : undefined} /></td>
                         <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{fmtDate(p.received_at)}</td>
                         <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
-                          <PhotoUploadCell stored={p.item_photo_url} alt="Item photo" uploading={photoBusy === p.id} onFile={(f) => void uploadReceivedPhoto(p, f)} />
+                          <PhotoUploadCell stored={p.item_photo_url} alt="Item photo" uploading={photoBusy === `${p.id}:item`} onFile={(f) => void uploadPackagePhoto(p, f, "item")} />
                         </td>
                         <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap"><InlineText label="Consignee" value={p.package_owner} onSave={(v) => saveField(p, { package_owner: v || null })} /></td>
                         <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap"><InlineText label="Receiver" value={p.receiver_full_name} onSave={(v) => saveField(p, { receiver_full_name: v || null })} /></td>
@@ -520,11 +521,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
                         <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{driver?.name ?? "—"}</td>
                         <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{fmtDate(p.delivered_at)}</td>
                         <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
-                          {p.delivery_photo_url ? (
-                            <SignedAnchor stored={p.delivery_photo_url}>
-                              <SignedImage stored={p.delivery_photo_url} alt="Delivery photo" className="h-8 w-8 rounded object-cover border border-border hover:ring-2 hover:ring-primary/40" />
-                            </SignedAnchor>
-                          ) : <span className="text-muted-foreground/30">—</span>}
+                          <PhotoUploadCell stored={p.delivery_photo_url} alt="Delivery photo" uploading={photoBusy === `${p.id}:delivery`} onFile={(f) => void uploadPackagePhoto(p, f, "delivery")} />
                         </td>
                         <td className="px-3 py-2.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                           {docs.length === 0 && !noteDoc ? (
@@ -609,8 +606,8 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
             onAddFiles={(x) => setDocTarget(x)}
             onRemoveFile={(x, i) => removeDocument(x, i)}
             onDelete={(x) => { setDetailId(null); setDelTarget(x); }}
-            onUploadPhoto={(x, f) => void uploadReceivedPhoto(x, f)}
-            photoBusy={!!detail && photoBusy === detail.id}
+            onUploadPhoto={(x, f, kind) => void uploadPackagePhoto(x, f, kind)}
+            photoBusy={detail && photoBusy?.startsWith(`${detail.id}:`) ? (photoBusy.endsWith(":item") ? "item" : "delivery") : null}
           />
         );
       })()}
