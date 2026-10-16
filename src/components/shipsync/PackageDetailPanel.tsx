@@ -80,9 +80,10 @@ export function PackageDetailPanel({ pkg, note, driver, onClose, onEdit, onAddFi
   onAddFiles: (p: ShipSyncPackage) => void;
   onRemoveFile: (p: ShipSyncPackage, index: number) => void;
   onDelete: (p: ShipSyncPackage) => void;
-  /** Add or replace the received photo. */
-  onUploadPhoto?: (p: ShipSyncPackage, file: File) => void;
-  photoBusy?: boolean;
+  /** Add or replace the received or delivery photo. */
+  onUploadPhoto?: (p: ShipSyncPackage, file: File, kind: "item" | "delivery") => void;
+  /** Which photo is being uploaded right now, if any. */
+  photoBusy?: "item" | "delivery" | null;
 }) {
   const docs = pkg?.documents ?? [];
   const notePdf = note?.delivery_pdf_url || note?.predelivery_pdf_url;
@@ -143,8 +144,8 @@ export function PackageDetailPanel({ pkg, note, driver, onClose, onEdit, onAddFi
 
                 <Section title="Photos">
                   <div className="flex flex-wrap gap-4">
-                    <Photo stored={pkg.item_photo_url} label="Received" busy={photoBusy} onFile={onUploadPhoto ? (f) => onUploadPhoto(pkg, f) : undefined} />
-                    <Photo stored={pkg.delivery_photo_url} label="Delivery" />
+                    <Photo stored={pkg.item_photo_url} label="Received" busy={photoBusy === "item"} onFile={onUploadPhoto ? (f) => onUploadPhoto(pkg, f, "item") : undefined} />
+                    <Photo stored={pkg.delivery_photo_url} label="Delivery" busy={photoBusy === "delivery"} onFile={onUploadPhoto ? (f) => onUploadPhoto(pkg, f, "delivery") : undefined} />
                     <Photo stored={pkg.signature_url} label="Signature" />
                   </div>
                 </Section>
