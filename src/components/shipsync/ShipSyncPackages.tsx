@@ -12,9 +12,10 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Search, Loader2, Trash2, Camera, FileText, ScanLine, ChevronDown, ChevronRight, X, ArrowDownToLine, PackageSearch, Pencil } from "lucide-react";
+import { Plus, Search, Loader2, Trash2, Camera, FileText, ScanLine, ChevronDown, ChevronRight, X, ArrowDownToLine, PackageSearch, Pencil, PanelRightOpen } from "lucide-react";
 import { BarcodeScannerDialog } from "@/components/shipsync/BarcodeScanner";
-import { StatusBadge, fmtDate, DocumentDropzoneDialog, TableChartToggle, ShipSyncChartsPanel, TONE_HEX, downloadCsv, PillTabs, Chip, CourierChip, EmptyState, Pagination, RowMenu, ShipmentFilters, matchesWhen, clientsOf, useSearchShortcut, type When, useColumnLines, ColumnLinesToggle } from "@/components/shipsync/shared";
+import { PackageDetailPanel } from "@/components/shipsync/PackageDetailPanel";
+import { StatusBadge, fmtDate, DocumentDropzoneDialog, TableChartToggle, ShipSyncChartsPanel, TONE_HEX, downloadCsv, PillTabs, Chip, CourierChip, EmptyState, Pagination, RowMenu, InlineText, PhotoUploadCell, ShipmentFilters, matchesWhen, clientsOf, useSearchShortcut, type When, useColumnLines, ColumnLinesToggle } from "@/components/shipsync/shared";
 import { ALL_ZONES, STATUS_META, type PackageStatus, type ShipSyncPackage } from "@/lib/shipsync/model";
 import { createPackage, patchPackage, deletePackage, uploadShipSyncImage, addPackageDocuments, removePackageDocument } from "@/lib/shipsync/data";
 import type { ShipSyncData } from "@/components/shipsync-page";
@@ -99,6 +100,13 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
   const [when, setWhen] = useState<When>("all");
   const [clientFilter, setClientFilter] = useState("");
   const [page, setPage] = useState(1);
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [photoBusy, setPhotoBusy] = useState<string | null>(null);
+  // A single click on a row opens its panel — after a moment, so a double-click (to edit a value in place) can cancel it.
+  const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelOpen = () => { if (openTimer.current) { clearTimeout(openTimer.current); openTimer.current = null; } };
+  const scheduleOpen = (id: string) => { cancelOpen(); openTimer.current = setTimeout(() => { openTimer.current = null; setDetailId(id); }, 260); };
+  useEffect(() => cancelOpen, []);
   const searchRef = useRef<HTMLInputElement>(null);
   useSearchShortcut(searchRef);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -298,6 +306,24 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
     finally { setBusy(false); }
   }
 
+  /** Add or replace a package's received photo straight from the table or the side panel. */
+  async function uploadReceivedPhoto(p: ShipSyncPackage, file: File) {
+    setPhotoBusy(p.id);
+    try {
+      const url = await uploadShipSyncImage(file, `packages/${p.id}/item_${Date.now()}.jpg`);
+      await patchPackage(p.id, { item_photo_url: url });
+      toast.success("Photo saved");
+      await reload();
+    } catch (e: any) { toast.error(e?.message ?? "Couldn't upload that photo"); }
+    finally { setPhotoBusy(null); }
+  }
+
+  /** Save one value edited in place in the table. */
+  async function saveField(p: ShipSyncPackage, patch: Partial<ShipSyncPackage>) {
+    try { await patchPackage(p.id, patch); toast.success("Saved"); await reload(); }
+    catch (e: any) { toast.error(e?.message ?? "Could not save that change"); }
+  }
+
   async function quickStatus(p: ShipSyncPackage, status: PackageStatus) {
     try { await patchPackage(p.id, { status }); await reload(); }
     catch (e: any) { toast.error(e?.message ?? "Update failed"); }
@@ -463,7 +489,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
                       ? { url: notePdf, name: note?.delivery_pdf_url ? "Delivery note" : "Pre-delivery note" }
                       : null;
                     return (
-                      <tr key={p.id} onClick={() => openEdit(p)} className="group cursor-pointer shadow-[inset_0_-1px_0_0_var(--border)] hover:bg-accent/20">
+                      <tr key={p.id} onClick={() => scheduleOpen(p.id)} onDoubleClick={cancelOpen} className="group cursor-pointer shadow-[inset_0_-1px_0_0_var(--border)] hover:bg-accent/20">
                         <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
                           <Checkbox
                             checked={selected.has(p.id)}
@@ -471,20 +497,16 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
                             aria-label={`Select ${p.barcode ?? p.boat_name ?? "package"}`}
                           />
                         </td>
-                        <td className="px-3 py-2.5 font-mono text-[12px] text-foreground whitespace-nowrap">{p.barcode ?? "—"}</td>
-                        <td className="px-3 py-2.5 whitespace-nowrap">{p.boat_name ? <Chip className="font-semibold uppercase tracking-wide">{p.boat_name}</Chip> : <span className="text-muted-foreground/40">—</span>}</td>
+                        <td className="px-3 py-2.5 font-mono text-[12px] text-foreground whitespace-nowrap"><InlineText label="Air waybill" value={p.barcode} onSave={(v) => saveField(p, { barcode: v || null })} /></td>
+                        <td className="px-3 py-2.5 whitespace-nowrap"><InlineText label="Client" value={p.boat_name} upper listId="ss-clients" onSave={(v) => saveField(p, { boat_name: v || null })} display={p.boat_name ? <Chip className="font-semibold uppercase tracking-wide">{p.boat_name}</Chip> : undefined} /></td>
                         <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{fmtDate(p.received_at)}</td>
                         <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
-                          {p.item_photo_url ? (
-                            <SignedAnchor stored={p.item_photo_url}>
-                              <SignedImage stored={p.item_photo_url} alt="Item photo" className="h-8 w-8 rounded object-cover border border-border hover:ring-2 hover:ring-primary/40" />
-                            </SignedAnchor>
-                          ) : <span className="text-muted-foreground/30">—</span>}
+                          <PhotoUploadCell stored={p.item_photo_url} alt="Item photo" uploading={photoBusy === p.id} onFile={(f) => void uploadReceivedPhoto(p, f)} />
                         </td>
-                        <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{p.package_owner ?? "—"}</td>
-                        <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{p.receiver_full_name ?? "—"}</td>
-                        <td className="px-3 py-2.5 tabular-nums text-muted-foreground text-center">{p.num_packages ?? 1}</td>
-                        <td className="px-3 py-2.5 whitespace-nowrap"><CourierChip name={p.courier} /></td>
+                        <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap"><InlineText label="Consignee" value={p.package_owner} onSave={(v) => saveField(p, { package_owner: v || null })} /></td>
+                        <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap"><InlineText label="Receiver" value={p.receiver_full_name} onSave={(v) => saveField(p, { receiver_full_name: v || null })} /></td>
+                        <td className="px-3 py-2.5 tabular-nums text-muted-foreground text-center"><InlineText label="Number of packages" type="number" value={p.num_packages ?? 1} onSave={(v) => { const n = Math.max(1, Math.floor(Number(v))); if (Number.isFinite(n)) return saveField(p, { num_packages: n }); }} /></td>
+                        <td className="px-3 py-2.5 whitespace-nowrap"><InlineText label="Courier" value={p.courier} onSave={(v) => saveField(p, { courier: v || null })} display={p.courier ? <CourierChip name={p.courier} /> : undefined} /></td>
                         <td className="px-3 py-2.5 whitespace-nowrap">{p.local_import ? <Chip className="text-muted-foreground">{p.local_import}</Chip> : <span className="text-muted-foreground/40">—</span>}</td>
                         <td className="px-3 py-2.5 whitespace-nowrap">{(p.delivery_note_no ?? note?.number) ? <Chip className="tabular-nums">{p.delivery_note_no ?? note?.number}</Chip> : <span className="text-muted-foreground/40">—</span>}</td>
                         <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{driver?.name ?? "—"}</td>
@@ -533,8 +555,8 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
                             </div>
                           )}
                         </td>
-                        <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{p.invoice_no ?? "—"}</td>
-                        <td className="px-3 py-2.5 max-w-[200px] truncate text-muted-foreground">{p.description || "—"}</td>
+                        <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap"><InlineText label="Invoice number" value={p.invoice_no} onSave={(v) => saveField(p, { invoice_no: v || null })} /></td>
+                        <td className="px-3 py-2.5 max-w-[200px] truncate text-muted-foreground"><InlineText label="Remarks" value={p.description} onSave={(v) => saveField(p, { description: v || null })} /></td>
                         <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
                           <Select value={p.status} onValueChange={(v) => quickStatus(p, v as PackageStatus)}>
                             <SelectTrigger className="h-7 w-[132px] border-none bg-transparent p-0 hover:bg-accent/40"><StatusBadge status={p.status} /></SelectTrigger>
@@ -543,6 +565,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
                         </td>
                         <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
                           <RowMenu items={[
+                            { label: "View details", icon: PanelRightOpen, onSelect: () => setDetailId(p.id) },
                             { label: "Edit details", icon: Pencil, onSelect: () => openEdit(p) },
                             { label: "Add files", icon: FileText, onSelect: () => setDocTarget(p) },
                             { label: "Delete", icon: Trash2, danger: true, onSelect: () => setDelTarget(p) },
@@ -562,6 +585,27 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
         <Pagination page={page} pages={pages} onPage={setPage} total={visibleTotal} noun="packages"
           from={(page - 1) * PAGE_SIZE + 1} to={Math.min(page * PAGE_SIZE, visibleTotal)} />
       )}
+
+      <datalist id="ss-clients">{boats.map((b) => <option key={b} value={b} />)}</datalist>
+
+      {/* The package's full story, opened by clicking its row. Editing, files and deleting hand over to the dialogs below. */}
+      {(() => {
+        const detail = detailId ? data.packages.find((x) => x.id === detailId) ?? null : null;
+        return (
+          <PackageDetailPanel
+            pkg={detail}
+            note={detail ? data.notes.find((n) => n.id === detail.delivery_note_id) : undefined}
+            driver={detail ? data.drivers.find((d) => d.id === detail.driver_id) : undefined}
+            onClose={() => setDetailId(null)}
+            onEdit={(x) => { setDetailId(null); openEdit(x); }}
+            onAddFiles={(x) => setDocTarget(x)}
+            onRemoveFile={(x, i) => removeDocument(x, i)}
+            onDelete={(x) => { setDetailId(null); setDelTarget(x); }}
+            onUploadPhoto={(x, f) => void uploadReceivedPhoto(x, f)}
+            photoBusy={!!detail && photoBusy === detail.id}
+          />
+        );
+      })()}
 
       {/* Check-in / edit dialog */}
       <Dialog open={open} onOpenChange={setOpen}>

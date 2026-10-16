@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { toast } from "sonner";
-import { Loader2, UploadCloud, Table as TableIcon, BarChart3, ChevronLeft, ChevronRight, FileText, Plus, X, MoreHorizontal, type LucideIcon } from "lucide-react";
+import { Loader2, UploadCloud, Table as TableIcon, BarChart3, ChevronLeft, ChevronRight, FileText, Plus, X, MoreHorizontal, Camera, type LucideIcon } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { SignedAnchor } from "@/components/ui/signed-file";
+import { SignedAnchor, SignedImage } from "@/components/ui/signed-file";
 import { Checkbox } from "@/components/ui/checkbox";
 import { BarChart, Bar, PieChart, Pie, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -445,6 +445,94 @@ export function ColumnLinesToggle({ on, onChange }: { on: boolean; onChange: (on
       <Checkbox checked={on} onCheckedChange={(v) => onChange(v === true)} aria-label="Column lines" />
       Column lines
     </label>
+  );
+}
+
+/**
+ * A table value you edit where it sits: double-click it, type, press Enter (or click away) to save, Escape to leave it as it was.
+ * `onSave` is only called when the value really changed. A single click is left alone so the row can still react to it.
+ */
+export function InlineText({ value, display, onSave, type = "text", upper = false, listId, className, label }: {
+  value: string | number | null | undefined;
+  /** What to show when not editing (defaults to the value, or "—" when empty). */
+  display?: ReactNode;
+  onSave: (next: string) => void | Promise<void>;
+  type?: "text" | "number";
+  upper?: boolean;
+  listId?: string;
+  className?: string;
+  label?: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const current = value == null ? "" : String(value);
+
+  if (editing) {
+    const commit = () => {
+      setEditing(false);
+      const next = upper ? draft.trim().toUpperCase() : draft.trim();
+      if (next !== current) void onSave(next);
+    };
+    return (
+      <input
+        autoFocus
+        type={type}
+        value={draft}
+        list={listId}
+        aria-label={label ?? "Edit value"}
+        onFocus={(e) => e.currentTarget.select()}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") { e.preventDefault(); commit(); }
+          if (e.key === "Escape") { e.preventDefault(); setEditing(false); }
+        }}
+        className={cn("h-8 w-full min-w-[6rem] rounded-md border border-primary/60 bg-background px-2 text-[13px] text-foreground outline-none ring-2 ring-primary/20", type === "number" && "w-20 text-center")}
+      />
+    );
+  }
+  return (
+    <span
+      onDoubleClick={() => { setDraft(current); setEditing(true); }}
+      title="Double-click to edit"
+      className={cn("-mx-1 inline-block max-w-full cursor-text truncate rounded px-1 transition-colors duration-150 hover:bg-white/[0.07]", className)}
+    >
+      {display ?? (current || <span className="text-muted-foreground/40">—</span>)}
+    </span>
+  );
+}
+
+/**
+ * A package photo in a table cell: a thumbnail that opens full size, or an "Add photo" button when there is none. Hover the
+ * thumbnail for a small camera to replace it. On a phone the file picker offers the camera.
+ */
+export function PhotoUploadCell({ stored, alt, uploading, onFile }: {
+  stored: string | null; alt: string; uploading: boolean; onFile: (file: File) => void;
+}) {
+  const input = (
+    <input type="file" accept="image/*" className="hidden" disabled={uploading}
+      onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) onFile(f); }} />
+  );
+  if (!stored) {
+    return (
+      <label className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-dashed border-border px-2 py-0.5 text-[11.5px] text-muted-foreground transition-colors duration-150 hover:border-primary hover:text-primary">
+        {uploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Camera className="h-3 w-3" />} Add photo
+        {input}
+      </label>
+    );
+  }
+  return (
+    <div className="group/photo relative inline-block">
+      <SignedAnchor stored={stored}>
+        <SignedImage stored={stored} alt={alt} className="h-8 w-8 rounded border border-border object-cover hover:ring-2 hover:ring-primary/40" />
+      </SignedAnchor>
+      <label title="Replace photo"
+        className="absolute -bottom-1 -right-1 hidden h-4 w-4 cursor-pointer items-center justify-center rounded-full bg-primary text-primary-foreground shadow group-hover/photo:flex">
+        {uploading ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Camera className="h-2.5 w-2.5" />}
+        {input}
+      </label>
+    </div>
   );
 }
 
