@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 import { fmtDate, PeriodBarChart } from "@/components/shipsync/shared";
 import type { ShipSyncPackage } from "@/lib/shipsync/model";
 import {
-  tradeTotals, incomingShipments, exportTotals, upcomingExports, tradeKind, progressOf,
+  tradeTotals, arrivingShipments, exportTotals, upcomingExports, tradeKind, progressOf,
   type TradeRow, type Tally, type IncomingRow, type UpcomingExport,
 } from "@/lib/shipsync/trade-summary";
 
@@ -55,12 +55,12 @@ export function IncomingList({ incoming, limit = SHOWN }: { incoming: IncomingRo
   const rows = showAll ? incoming : incoming.slice(0, limit);
   return (
     <ListCard title={`Incoming Import and Transit (${incoming.length})`}
-      note={noEta ? `${noEta} ha${noEta === 1 ? "s" : "ve"} no ETA yet — set it on the Import board's ETA column.` : "Not yet delivered, soonest ETA first."}>
+      note={noEta ? `${noEta} ha${noEta === 1 ? "s" : "ve"} no ETA yet — set it on the Import board's ETA column.` : "Still on their way here, soonest ETA first."}>
       {incoming.length === 0 ? <div className="text-sm text-muted-foreground">Nothing incoming right now.</div> : (
         <>
           <div className="overflow-x-auto">
-            <table className="w-full max-w-3xl">
-              <thead><tr><th className={th}>Client</th><th className={th}>Type</th><th className={th}>AWB</th><th className={th}>ETA</th><th className={th}>Status</th></tr></thead>
+            <table className="w-full max-w-2xl">
+              <thead><tr><th className={th}>Client</th><th className={th}>Type</th><th className={th}>AWB</th><th className={th}>ETA</th></tr></thead>
               <tbody className="divide-y divide-border/50">
                 {rows.map((r) => (
                   <tr key={r.id}>
@@ -68,7 +68,6 @@ export function IncomingList({ incoming, limit = SHOWN }: { incoming: IncomingRo
                     <td className={td}>{r.kind}</td>
                     <td className={cn(td, "font-mono")}>{r.awb || "—"}</td>
                     <td className={td}><DateCell value={r.eta} /></td>
-                    <td className={cn(td, "text-muted-foreground")}>{r.status || "—"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -123,7 +122,7 @@ export function OpenExportList({ upcoming, limit = SHOWN }: { upcoming: Upcoming
 
 export function ShipSyncTradeOverview({ imports, exports, locals }: { imports: ShipSyncPackage[]; exports: ShipSyncPackage[]; locals: ShipSyncPackage[] }) {
   const totals = useMemo(() => tradeTotals(imports as TradeRow[]), [imports]);
-  const incoming = useMemo(() => incomingShipments(imports as TradeRow[]), [imports]);
+  const incoming = useMemo(() => arrivingShipments(imports as TradeRow[]), [imports]);
   const out = useMemo(() => exportTotals(exports as TradeRow[]), [exports]);
   const upcoming = useMemo(() => upcomingExports(exports as TradeRow[]), [exports]);
   // The graphs count what arrived, so a cancelled shipment (which never did) is left out.
@@ -144,15 +143,6 @@ export function ShipSyncTradeOverview({ imports, exports, locals }: { imports: S
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <PeriodBarChart title="Import shipments" rows={importOnly} hint="by date received" />
-        <PeriodBarChart title="Transit shipments" rows={transitOnly} hint="by date received" />
-        <PeriodBarChart title="Local packages" rows={locals} hint="by date received" />
-        <PeriodBarChart title="Export shipments" rows={exportLive} hint="by requested date" />
-      </div>
-
-      <IncomingList incoming={incoming} />
-
       <div>
         <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Export</div>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -162,7 +152,17 @@ export function ShipSyncTradeOverview({ imports, exports, locals }: { imports: S
         </div>
       </div>
 
-      <OpenExportList upcoming={upcoming} />
+      <div className="grid gap-4 lg:grid-cols-2">
+        <PeriodBarChart title="Import shipments" rows={importOnly} hint="by date received" />
+        <PeriodBarChart title="Transit shipments" rows={transitOnly} hint="by date received" />
+        <PeriodBarChart title="Local packages" rows={locals} hint="by date received" />
+        <PeriodBarChart title="Export shipments" rows={exportLive} hint="by requested date" />
+      </div>
+
+      <div className="grid items-start gap-4 lg:grid-cols-2">
+        <IncomingList incoming={incoming} />
+        <OpenExportList upcoming={upcoming} />
+      </div>
     </div>
   );
 }

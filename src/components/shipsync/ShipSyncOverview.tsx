@@ -12,7 +12,7 @@ import { fmtDate } from "@/components/shipsync/shared";
 import { loadImportPackages, loadExportPackages } from "@/lib/shipsync/data";
 import type { ShipSyncPackage } from "@/lib/shipsync/model";
 import {
-  tradeTotals, incomingShipments, exportTotals, upcomingExports, isRoutable, type TradeRow,
+  tradeTotals, arrivingShipments, exportTotals, upcomingExports, isRoutable, type TradeRow,
 } from "@/lib/shipsync/trade-summary";
 import { yachtOverviewRows, type YachtOverviewRow, type YachtShipmentRow } from "@/lib/shipsync/yacht-overview";
 import { IncomingList, OpenExportList, ListCard, Tile, th, td } from "@/components/shipsync/ShipSyncTradeOverview";
@@ -29,7 +29,7 @@ function YachtList({ title, rows, dateLabel, empty }: { title: string; rows: Yac
       {rows.length === 0 ? <div className="text-sm text-muted-foreground">{empty}</div> : (
         <>
           <div className="overflow-x-auto">
-            <table className="w-full max-w-4xl">
+            <table className="w-full">
               <thead>
                 <tr>
                   <th className={th}>Client</th><th className={th}>LOA</th><th className={th}>POL</th><th className={th}>POD</th>
@@ -83,7 +83,7 @@ export function ShipSyncOverview({ data }: { data: ShipSyncData }) {
   }, []);
 
   const totals = useMemo(() => (boards ? tradeTotals(boards.imports as TradeRow[]) : null), [boards]);
-  const incoming = useMemo(() => (boards ? incomingShipments(boards.imports as TradeRow[]) : []), [boards]);
+  const incoming = useMemo(() => (boards ? arrivingShipments(boards.imports as TradeRow[]) : []), [boards]);
   const out = useMemo(() => (boards ? exportTotals(boards.exports as TradeRow[]) : null), [boards]);
   const upcoming = useMemo(() => (boards ? upcomingExports(boards.exports as TradeRow[]) : []), [boards]);
   const waiting = useMemo(() => data.deliverable.filter(isRoutable), [data.deliverable]);
@@ -112,18 +112,20 @@ export function ShipSyncOverview({ data }: { data: ShipSyncData }) {
               <Tile label="Parcels out for delivery" tally={{ shipments: onTheRoad.length, qty: pieces(onTheRoad) }} tone="ok" />
             </div>
 
-            <IncomingList incoming={incoming} limit={10} />
-            <OpenExportList upcoming={upcoming} limit={10} />
+            <div className="grid items-start gap-4 lg:grid-cols-2">
+              <IncomingList incoming={incoming} limit={10} />
+              <OpenExportList upcoming={upcoming} limit={10} />
+            </div>
           </>
         )}
 
       {yachtError ? <div className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">{yachtError}</div>
         : !yachts ? <div className="flex h-16 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
         : (
-          <>
+          <div className="grid items-start gap-4 lg:grid-cols-2">
             <YachtList title="Yacht import shipments" rows={yachtImports} dateLabel="ETA" empty="No yacht import shipments right now." />
             <YachtList title="Yacht export shipments" rows={yachtExports} dateLabel="ETD" empty="No yacht export shipments right now." />
-          </>
+          </div>
         )}
     </div>
   );

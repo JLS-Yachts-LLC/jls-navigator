@@ -89,6 +89,14 @@ export function incomingShipments(rows: TradeRow[]): IncomingRow[] {
     .map(({ received: _r, ...rest }) => rest)
 }
 
+/** Not yet arrived: Monday's status is "Incoming". Once a shipment is in the Warehouse or the Office it has arrived. */
+export const isIncomingStatus = (status: string | null | undefined) => /^incoming$/i.test((status ?? '').trim())
+
+/** The shipments still on their way here — the "Incoming" list on the Overview and the Dashboard. */
+export function arrivingShipments(rows: TradeRow[]): IncomingRow[] {
+  return incomingShipments(rows).filter((r) => isIncomingStatus(r.status))
+}
+
 export interface ExportTotals { total: number; open: number; completed: number; qty: number; openQty: number }
 
 /** Export shipments: all of them (cancelled ones aside), and how many are still open or already completed. */
