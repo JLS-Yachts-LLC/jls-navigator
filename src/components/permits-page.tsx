@@ -31,8 +31,8 @@ import { DmaDialog } from "@/components/dma-dialog";
 import { NavigationLicenseDialog } from "@/components/navigation-license-dialog";
 import { GatePassDialog } from "@/components/gate-pass-dialog";
 import { AbuDhabiDialog } from "@/components/abu-dhabi-dialog";
-import { sendPermitEmail, deliveryNote } from "@/lib/permits/send-permit-email";
-import { Plus, Search, FileCheck2, Pencil, Trash2, AlertTriangle, CheckCircle2, Clock, Mail, MailCheck, Loader2 as SpinnerIcon } from "lucide-react";
+import { PermitEmailReviewDialog } from "@/components/permits/permit-email-review-dialog";
+import { Plus, Search, FileCheck2, Pencil, Trash2, AlertTriangle, CheckCircle2, Clock, Mail, MailCheck } from "lucide-react";
 import { toast } from "sonner";
 import { doPushToSharePoint } from "@/lib/sharepoint-push.server";
 import { cn } from "@/lib/utils";
@@ -49,27 +49,15 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
   const [editing, setEditing] = useState<Permit | null>(null);
   const [open, setOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Permit | null>(null);
-  const [sendingEmail, setSendingEmail] = useState<string | null>(null);
+  const [reviewEmailId, setReviewEmailId] = useState<string | null>(null);
 
   useEffect(() => { void load(); void loadYachts(); }, [permitType]);
 
-  async function handleSendEmail(permit: Permit) {
+  /** Open the review window — the email is only sent from there, once checked. */
+  function handleSendEmail(permit: Permit) {
     if (!user?.email) { toast.error("You must be signed in to send emails"); return; }
     if (!permit.contact_email) { toast.error("This permit has no contact email address"); return; }
-    setSendingEmail(permit.id);
-    try {
-      // Same path as the permit dialogs, so the client gets the secure-document
-      // button and the send is logged against the vessel either way.
-      const res = await sendPermitEmail(permit.id);
-      toast.success(`Email sent to ${res.to}`, {
-        description: deliveryNote(res),
-      });
-      void load(); // refresh to show email_sent_at
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Email failed to send");
-    } finally {
-      setSendingEmail(null);
-    }
+    setReviewEmailId(permit.id);
   }
 
   async function load() {
@@ -302,13 +290,10 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
                             <Button
                               size="sm" variant="ghost"
                               className="h-7 gap-1 px-2 text-muted-foreground/60 hover:text-primary text-[11px]"
-                              disabled={sendingEmail === r.id}
                               onClick={() => handleSendEmail(r)}
-                              title={`Send to ${r.contact_email}`}
+                              title={`Review the email to ${r.contact_email} before sending`}
                             >
-                              {sendingEmail === r.id
-                                ? <SpinnerIcon className="h-3 w-3 animate-spin" />
-                                : <Mail className="h-3 w-3" />}
+                              <Mail className="h-3 w-3" />
                               Send
                             </Button>
                           )
@@ -358,6 +343,12 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <PermitEmailReviewDialog
+        permitId={reviewEmailId}
+        onClose={() => setReviewEmailId(null)}
+        onSent={() => { setReviewEmailId(null); void load(); /* refresh to show email_sent_at */ }}
+      />
     </div>
   );
 }
