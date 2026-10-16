@@ -207,3 +207,22 @@ test("the loser still fills in what the winner doesn't know, and an equal pair k
   assert.equal(m.receiver_full_name, "Pat");
   assert.equal(m.extra.n, 2);
 });
+
+// ── The Power App comparison and duplicate AWBs ──────────────────────────────
+
+test("comparison: a SharePoint record is paired with the Polaris row that agrees with it, not whichever came last", () => {
+  const map = new Map<string, string[]>([["courier", ["Courier"]], ["status", ["Status"]], ["delivery_note_no", ["DeliveryNote"]], ["boat_name", ["Location"]]]);
+  const monday = { id: "M", courier: "Jeebly", status: "completed", delivery_note_no: null, boat_name: "NORD" };
+  const power = { id: "P", courier: "Amazon", status: "delivered", delivery_note_no: "1709", boat_name: "NORD" };
+  const fields = { Courier: "amazon", Status: "Delivered", DeliveryNote: "1709", Location: "nord" };
+  assert.equal(sp.pickComparisonRow([monday, power], map, fields, new Set())?.id, "P");
+  assert.equal(sp.pickComparisonRow([power, monday], map, fields, new Set())?.id, "P", "the order of the rows doesn't matter");
+});
+
+test("comparison: when two rows agree equally, the one no other SharePoint record has been paired with is used; one row or none is returned as is", () => {
+  const map = new Map<string, string[]>([["boat_name", ["Location"]]]);
+  const a = { id: "A", boat_name: "ORKA" }, b = { id: "B", boat_name: "ORKA" };
+  assert.equal(sp.pickComparisonRow([a, b], map, { Location: "orka" }, new Set(["A"]))?.id, "B");
+  assert.equal(sp.pickComparisonRow([a], map, { Location: "other" }, new Set())?.id, "A");
+  assert.equal(sp.pickComparisonRow([], map, {}, new Set()), undefined);
+});

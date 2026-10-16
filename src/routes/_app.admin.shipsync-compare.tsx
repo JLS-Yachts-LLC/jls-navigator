@@ -63,6 +63,10 @@ function ShipSyncComparePage() {
                 Not in Polaris: <b style={{ color: l.notInPolaris ? COLORS.warn : COLORS.success }}>{l.notInPolaris.toLocaleString()}</b>.
                 With attachments: <b>{l.withAttachments.toLocaleString()}</b>.
               </p>
+              <p style={{ fontSize: 14, color: COLORS.muted, marginTop: 4 }}>
+                Duplicate AWBs: <b>{l.duplicateAwbs.sharePoint.toLocaleString()}</b> with more than one record in SharePoint,{' '}
+                <b>{l.duplicateAwbs.polaris.toLocaleString()}</b> with more than one row in Polaris. Differences on those are counted in their own column, not as wrong values.
+              </p>
 
               <h3 style={{ fontSize: 15, margin: '12px 0 4px', color: COLORS.muted }}>Pictures</h3>
               <table style={{ borderCollapse: 'collapse', width: '100%' }}>
@@ -74,9 +78,9 @@ function ShipSyncComparePage() {
 
               <h3 style={{ fontSize: 15, margin: '12px 0 4px', color: COLORS.muted }}>Fields that disagree (parcels in both)</h3>
               <table style={{ borderCollapse: 'collapse', width: '100%' }}>
-                <thead><tr><th style={th}>Field</th><th style={th}>Polaris blank</th><th style={th}>Different</th><th style={th}>Example (SharePoint → Polaris)</th></tr></thead>
+                <thead><tr><th style={th}>Field</th><th style={th}>Polaris blank</th><th style={th}>Different</th><th style={th}>On duplicate AWBs</th><th style={th}>Example (SharePoint → Polaris)</th></tr></thead>
                 <tbody>{Object.entries(l.fieldDifferences).map(([k, v]) => (
-                  <tr key={k}><td style={td}>{k}</td><td style={td}>{v.missingInPolaris.toLocaleString()}</td><td style={td}>{v.different.toLocaleString()}</td>
+                  <tr key={k}><td style={td}>{k}</td><td style={td}>{v.missingInPolaris.toLocaleString()}</td><td style={td}>{v.different.toLocaleString()}</td><td style={td}>{v.onDuplicateAwb.toLocaleString()}</td>
                     <td style={{ ...td, fontSize: 14, color: COLORS.muted }}>{v.samples[0] ? `${v.samples[0].barcode}: ${v.samples[0].sharepoint} → ${v.samples[0].polaris || '(blank)'}` : '—'}</td></tr>
                 ))}</tbody>
               </table>

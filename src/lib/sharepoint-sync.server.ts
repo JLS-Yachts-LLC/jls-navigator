@@ -3131,8 +3131,12 @@ export interface ShipSyncCompareList {
   /** In SharePoint but nowhere in Polaris. */
   notInPolaris: number
   notInPolarisSample: Array<{ barcode: string; vessel: string; note: string; status: string }>
-  /** Per field: SharePoint has a value and Polaris is blank, or both have one and they disagree. */
-  fieldDifferences: Record<string, { missingInPolaris: number; different: number; samples: Array<{ barcode: string; sharepoint: string; polaris: string }> }>
+  /** Per field: SharePoint has a value and Polaris is blank, or both have one and they disagree. `onDuplicateAwb` counts the
+   *  disagreements on AWBs that have several records (in SharePoint or in Polaris) — those are the duplicate problem, not a
+   *  wrong value, so they are kept out of `different`. */
+  fieldDifferences: Record<string, { missingInPolaris: number; different: number; onDuplicateAwb: number; samples: Array<{ barcode: string; sharepoint: string; polaris: string }> }>
+  /** AWBs with more than one record in this SharePoint list, and AWBs (of this list's) with more than one row in Polaris. */
+  duplicateAwbs: { sharePoint: number; polaris: number }
   /** Per picture column: how many SharePoint items have one, how many of those Polaris holds. */
   pictures: Record<string, { inSharePoint: number; inPolaris: number; inSharePointNotInPolaris: number }>
   withAttachments: number
@@ -3147,6 +3151,28 @@ export interface ShipSyncCompareResult {
 }
 
 const COMPARE_FIELDS = ['status', 'boat_name', 'courier', 'delivery_note_no', 'receiver_full_name', 'num_packages', 'delivered_at', 'received_at'] as const
+
+/**
+ * Several Polaris rows can share one AWB (the same parcel from Monday and from the Power App). Pairing a SharePoint record
+ * with whichever came last is arbitrary and reports "differences" that are really just the other copy, so pick the row that
+ * agrees on the most fields — and, between equals, one no other SharePoint record has already been paired with.
+ */
+export function pickComparisonRow(
+  candidates: Array<Record<string, any>>, mappedByDb: Map<string, string[]>, fields: Record<string, any>, claimed: Set<string>,
+): Record<string, any> | undefined {
+  if (candidates.length <= 1) return candidates[0]
+  let best: Record<string, any> | undefined
+  let bestScore = -Infinity
+  for (const row of candidates) {
+    let score = claimed.has(String(row.id)) ? -0.5 : 0
+    for (const db of COMPARE_FIELDS) {
+      const theirs = (mappedByDb.get(db) ?? []).map((c) => normForCompare(db, fields[c])).filter(Boolean)
+      if (theirs.length && theirs.includes(normForCompare(db, row[db]))) score++
+    }
+    if (score > bestScore) { best = row; bestScore = score }
+  }
+  return best
+}
 
 export function normForCompare(dbField: string, v: unknown): string {
   if (v == null) return ''
@@ -3202,8 +3228,8 @@ export async function compareShipSyncWithSharePoint(): Promise<ShipSyncCompareRe
     .select('id, barcode, boat_name, courier, delivery_note_no, receiver_full_name, num_packages, status, delivered_at, received_at, item_photo_url, delivery_photo_url, signature_url, extra')
     .order('id'))
   const rows = (rowsRaw ?? []) as Array<Record<string, any>>
-  const byBarcode = new Map<string, Record<string, any>>()
-  for (const r of rows) if (r.barcode) byBarcode.set(String(r.barcode).toLowerCase().trim(), r)
+  const byBarcode = new Map<string, Array<Record<string, any>>>()
+  for (const r of rows) if (r.barcode) { const k = String(r.barcode).toLowerCase().trim(); byBarcode.set(k, [...(byBarcode.get(k) ?? []), r]) }
 
   const seenBarcodes = new Set<string>()
   const lists: ShipSyncCompareList[] = []
@@ -3221,8 +3247,20 @@ export async function compareShipSyncWithSharePoint(): Promise<ShipSyncCompareRe
 
     const res: ShipSyncCompareList = {
       list: sync.listName, spItems: 0, inPolaris: 0, notInPolaris: 0, notInPolarisSample: [], fieldDifferences: {}, pictures: {}, withAttachments: 0,
+      duplicateAwbs: { sharePoint: 0, polaris: 0 },
     }
-    for (const f of COMPARE_FIELDS) res.fieldDifferences[f] = { missingInPolaris: 0, different: 0, samples: [] }
+    for (const f of COMPARE_FIELDS) res.fieldDifferences[f] = { missingInPolaris: 0, different: 0, onDuplicateAwb: 0, samples: [] }
+
+    // How many records this list holds per AWB, and which Polaris rows have already been paired with one.
+    const spBarcodeCount = new Map<string, number>()
+    for (const it of items) {
+      if (it['@removed']) continue
+      const b = String(barcodeField ? it.fields?.[barcodeField] ?? '' : '').trim().toLowerCase()
+      if (b) spBarcodeCount.set(b, (spBarcodeCount.get(b) ?? 0) + 1)
+    }
+    res.duplicateAwbs.sharePoint = [...spBarcodeCount.values()].filter((n) => n > 1).length
+    const claimed = new Set<string>()
+    const polarisDupSeen = new Set<string>()
     for (const kind of ['item', 'delivery', 'signature'] as const) res.pictures[kind] = { inSharePoint: 0, inPolaris: 0, inSharePointNotInPolaris: 0 }
 
     // Which SharePoint columns are pictures, whether or not they are mapped to a photo field.
@@ -3239,7 +3277,11 @@ export async function compareShipSyncWithSharePoint(): Promise<ShipSyncCompareRe
       const f = it.fields ?? {}
       const barcode = String(barcodeField ? f[barcodeField] ?? '' : '').trim()
       if (barcode) seenBarcodes.add(barcode.toLowerCase())
-      const row = bySpId.get(String(it.id)) ?? (barcode ? byBarcode.get(barcode.toLowerCase()) : undefined)
+      const candidates = barcode ? byBarcode.get(barcode.toLowerCase()) ?? [] : []
+      const row = bySpId.get(String(it.id)) ?? pickComparisonRow(candidates, mappedByDb, f, claimed)
+      if (row) claimed.add(String(row.id))
+      const dupAwb = !!barcode && ((spBarcodeCount.get(barcode.toLowerCase()) ?? 0) > 1 || candidates.length > 1)
+      if (barcode && candidates.length > 1 && !polarisDupSeen.has(barcode.toLowerCase())) { polarisDupSeen.add(barcode.toLowerCase()); res.duplicateAwbs.polaris++ }
       if (f.Attachments === true) res.withAttachments++
 
       for (const [kind, cols] of pictureCols) {
@@ -3266,7 +3308,7 @@ export async function compareShipSyncWithSharePoint(): Promise<ShipSyncCompareRe
         const mine = normForCompare(db, row[db])
         const d = res.fieldDifferences[db]
         if (!mine) d.missingInPolaris++
-        else if (!candidates.includes(mine)) d.different++
+        else if (!candidates.includes(mine)) { if (dupAwb) d.onDuplicateAwb++; else d.different++ }
         else continue
         if (d.samples.length < 6) d.samples.push({ barcode: barcode || String(row.barcode ?? ''), sharepoint: candidates[0], polaris: mine })
       }
