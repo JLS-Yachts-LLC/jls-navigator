@@ -363,6 +363,94 @@ export function ShipSyncChartsPanel({
   );
 }
 
+/**
+ * One self-contained bar graph of shipments over time: Daily / Weekly / Monthly buttons and its own Client dropdown, stacked by
+ * client when "All clients" is chosen. Used four times on the ShipSync Dashboard (Import, Transit, Local, Export). `rows` are
+ * everything that belongs in the graph; the date a shipment counts on is the date it was received (Export: requested).
+ */
+export function PeriodBarChart({ title, rows, hint }: { title: string; rows: ShipSyncPackage[]; hint?: string }) {
+  const [period, setPeriod] = useState<Period>("weekly");
+  const [client, setClient] = useState("all");
+  const now = useMemo(() => new Date(), []);
+
+  const clients = useMemo(
+    () => Array.from(new Set(rows.map((p) => p.boat_name?.trim()).filter((n): n is string => !!n))).sort((a, b) => a.localeCompare(b)),
+    [rows],
+  );
+  const chosen = client !== "all" && clients.includes(client) ? client : "all";
+
+  const scoped = useMemo(() => {
+    const keys = new Set(bucketRange(period, now));
+    return rows.filter((p) => {
+      if (!p.received_at) return false;
+      const d = new Date(p.received_at);
+      if (Number.isNaN(d.getTime()) || !keys.has(bucketKey(period, d))) return false;
+      return chosen === "all" || (p.boat_name?.trim() || "Unassigned") === chosen;
+    });
+  }, [rows, period, now, chosen]);
+
+  const vessels = useMemo(() => topVessels(scoped, 6), [scoped]);
+  const series = useMemo(() => timeSeries(scoped, period, now, vessels.map((v) => v.name)), [scoped, period, now, vessels]);
+  const windowText = PERIODS.find((x) => x.key === period)!.window;
+  const pieces = sumQty(scoped);
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <div className="text-sm font-semibold">{title}</div>
+          <div className="text-[12px] text-muted-foreground">
+            {pieces.toLocaleString()} piece{pieces === 1 ? "" : "s"} in {scoped.length.toLocaleString()} shipment{scoped.length === 1 ? "" : "s"} · {windowText}
+          </div>
+        </div>
+        <div className="inline-flex items-center rounded-lg border border-border bg-muted/30 p-0.5" role="group" aria-label={`${title} period`}>
+          {PERIODS.map((x) => (
+            <button key={x.key} type="button" onClick={() => setPeriod(x.key)}
+              className={cn("rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors",
+                period === x.key ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+              {x.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="mt-2 flex items-center gap-2 text-[12px] text-muted-foreground">
+        <span>Client</span>
+        <select value={chosen} onChange={(e) => setClient(e.target.value)} aria-label={`${title} client`}
+          className="h-7 max-w-[13rem] rounded-md border border-border bg-background px-2 text-[12px] text-foreground">
+          <option value="all">All clients</option>
+          {clients.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+        {hint && <span className="ml-auto hidden text-[11px] sm:inline">{hint}</span>}
+      </div>
+
+      {scoped.length === 0 ? (
+        <div className="flex h-56 items-center justify-center text-sm text-muted-foreground">Nothing in this period{chosen === "all" ? "" : ` for ${chosen}`}.</div>
+      ) : (
+        <>
+          <ResponsiveContainer width="100%" height={240}>
+            <BarChart data={series} margin={{ top: 12, right: 8, left: 0, bottom: 4 }}>
+              <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--border)" />
+              <XAxis dataKey="label" tick={AXIS_TICK} axisLine={{ stroke: "var(--border)" }} tickLine={false} interval="preserveStartEnd" minTickGap={16} />
+              <YAxis allowDecimals={false} width={32} tick={AXIS_TICK} axisLine={false} tickLine={false} />
+              <Tooltip cursor={{ fill: "var(--muted)" }} contentStyle={TOOLTIP_STYLE} />
+              {vessels.map((v) => <Bar key={v.name} dataKey={v.name} stackId="qty" fill={v.color} maxBarSize={36} />)}
+            </BarChart>
+          </ResponsiveContainer>
+          {chosen === "all" && (
+            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+              {vessels.map((v) => (
+                <div key={v.name} className="flex items-center gap-1.5">
+                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: v.color }} /> {v.name}
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 /** Column titles from `mondayRow`/`mondayColumnOrder` not already covered by a
  *  tab's own base columns — so real Monday data never goes missing, and nothing
  *  gets shown that isn't a genuine Monday column. */

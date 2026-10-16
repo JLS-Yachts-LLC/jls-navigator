@@ -8,13 +8,12 @@
  * ETA and ETD are typed into the Import and Export boards (Monday has neither), so a shipment without one sits at the
  * bottom of its list until somebody sets it.
  */
-import { useEffect, useMemo, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
-import { fmtDate } from "@/components/shipsync/shared";
-import { loadImportPackages, loadExportPackages } from "@/lib/shipsync/data";
+import { fmtDate, PeriodBarChart } from "@/components/shipsync/shared";
+import type { ShipSyncPackage } from "@/lib/shipsync/model";
 import {
-  tradeTotals, incomingShipments, exportTotals, upcomingExports, type TradeRow, type Tally,
+  tradeTotals, incomingShipments, exportTotals, upcomingExports, tradeKind, progressOf, type TradeRow, type Tally,
 } from "@/lib/shipsync/trade-summary";
 
 const SHOWN = 12;
@@ -48,28 +47,19 @@ function DateCell({ value }: { value: string | null }) {
   return value ? <span>{fmtDate(value)}</span> : <span className="text-muted-foreground/60">Not set</span>;
 }
 
-export function ShipSyncTradeOverview() {
-  const [imports, setImports] = useState<TradeRow[] | null>(null);
-  const [exports, setExports] = useState<TradeRow[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+export function ShipSyncTradeOverview({ imports, exports, locals }: { imports: ShipSyncPackage[]; exports: ShipSyncPackage[]; locals: ShipSyncPackage[] }) {
   const [showAllIn, setShowAllIn] = useState(false);
   const [showAllOut, setShowAllOut] = useState(false);
 
-  useEffect(() => {
-    let on = true;
-    Promise.all([loadImportPackages(), loadExportPackages()])
-      .then(([i, e]) => { if (on) { setImports(i as TradeRow[]); setExports(e as TradeRow[]); } })
-      .catch((e) => { if (on) setError(e?.message ?? "Could not load the Import and Export boards"); });
-    return () => { on = false; };
-  }, []);
-
-  const totals = useMemo(() => (imports ? tradeTotals(imports) : null), [imports]);
-  const incoming = useMemo(() => (imports ? incomingShipments(imports) : []), [imports]);
-  const out = useMemo(() => (exports ? exportTotals(exports) : null), [exports]);
-  const upcoming = useMemo(() => (exports ? upcomingExports(exports) : []), [exports]);
-
-  if (error) return <div className="mb-5 rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">{error}</div>;
-  if (!totals || !out) return <div className="mb-5 flex h-24 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
+  const totals = useMemo(() => tradeTotals(imports as TradeRow[]), [imports]);
+  const incoming = useMemo(() => incomingShipments(imports as TradeRow[]), [imports]);
+  const out = useMemo(() => exportTotals(exports as TradeRow[]), [exports]);
+  const upcoming = useMemo(() => upcomingExports(exports as TradeRow[]), [exports]);
+  // The graphs count what arrived, so a cancelled shipment (which never did) is left out.
+  const live = (rows: ShipSyncPackage[]) => rows.filter((p) => progressOf(p as TradeRow) !== "cancelled");
+  const importOnly = useMemo(() => live(imports).filter((p) => tradeKind(p as TradeRow) === "Import"), [imports]);
+  const transitOnly = useMemo(() => live(imports).filter((p) => tradeKind(p as TradeRow) === "Transit"), [imports]);
+  const exportLive = useMemo(() => live(exports), [exports]);
 
   const noEta = incoming.filter((r) => !r.eta).length;
   const noEtd = upcoming.filter((r) => !r.etd).length;
@@ -86,6 +76,13 @@ export function ShipSyncTradeOverview() {
           <Tile label="Transit — not yet delivered" tally={totals.Transit.pending} tone="warn" />
           <Tile label="Transit — delivered" tally={totals.Transit.delivered} tone="ok" />
         </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <PeriodBarChart title="Import shipments" rows={importOnly} hint="by date received" />
+        <PeriodBarChart title="Transit shipments" rows={transitOnly} hint="by date received" />
+        <PeriodBarChart title="Local packages" rows={locals} hint="by date received" />
+        <PeriodBarChart title="Export shipments" rows={exportLive} hint="by requested date" />
       </div>
 
       <ListCard title={`Incoming Import and Transit (${incoming.length})`}

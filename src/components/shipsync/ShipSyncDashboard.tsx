@@ -1,10 +1,23 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Loader2 } from "lucide-react";
+import { loadImportPackages, loadExportPackages } from "@/lib/shipsync/data";
+import type { ShipSyncPackage } from "@/lib/shipsync/model";
 import { STATUS_META, ACTIVE_STATUSES, type PackageStatus } from "@/lib/shipsync/model";
 import { StatusBadge } from "@/components/shipsync/shared";
 import type { ShipSyncData } from "@/components/shipsync-page";
 import { ShipSyncTradeOverview } from "@/components/shipsync/ShipSyncTradeOverview";
 
 export function ShipSyncDashboard({ data }: { data: ShipSyncData }) {
+  const [boards, setBoards] = useState<{ imports: ShipSyncPackage[]; exports: ShipSyncPackage[] } | null>(null);
+  const [boardError, setBoardError] = useState<string | null>(null);
+  useEffect(() => {
+    let on = true;
+    Promise.all([loadImportPackages(), loadExportPackages()])
+      .then(([imports, exports]) => { if (on) setBoards({ imports, exports }); })
+      .catch((e) => { if (on) setBoardError(e?.message ?? "Could not load the Import and Export boards"); });
+    return () => { on = false; };
+  }, []);
+
   const s = useMemo(() => {
     const pkgs = data.packages;
     const active = pkgs.filter((p) => ACTIVE_STATUSES.includes(p.status)).length;
@@ -36,7 +49,9 @@ export function ShipSyncDashboard({ data }: { data: ShipSyncData }) {
 
   return (
     <div className="px-6 py-5">
-      <ShipSyncTradeOverview />
+      {boardError ? <div className="mb-5 rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">{boardError}</div>
+        : !boards ? <div className="mb-5 flex h-24 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+        : <ShipSyncTradeOverview imports={boards.imports} exports={boards.exports} locals={data.packages} />}
 
       <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Local packages</div>
       <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-4">
