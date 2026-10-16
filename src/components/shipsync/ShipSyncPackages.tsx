@@ -12,9 +12,9 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Search, Loader2, Trash2, Camera, FileText, ScanLine, ChevronDown, ChevronRight, X, ArrowDownToLine } from "lucide-react";
+import { Plus, Search, Loader2, Trash2, Camera, FileText, ScanLine, ChevronDown, ChevronRight, X, ArrowDownToLine, PackageSearch, Pencil } from "lucide-react";
 import { BarcodeScannerDialog } from "@/components/shipsync/BarcodeScanner";
-import { StatusBadge, fmtDate, DocumentDropzoneDialog, TableChartToggle, ShipSyncChartsPanel, TONE_HEX, downloadCsv } from "@/components/shipsync/shared";
+import { StatusBadge, fmtDate, DocumentDropzoneDialog, TableChartToggle, ShipSyncChartsPanel, TONE_HEX, downloadCsv, PillTabs, Chip, CourierChip, EmptyState, Pagination, RowMenu, ShipmentFilters, matchesWhen, clientsOf, useSearchShortcut, type When, useColumnLines, ColumnLinesToggle } from "@/components/shipsync/shared";
 import { ALL_ZONES, STATUS_META, type PackageStatus, type ShipSyncPackage } from "@/lib/shipsync/model";
 import { createPackage, patchPackage, deletePackage, uploadShipSyncImage, addPackageDocuments, removePackageDocument } from "@/lib/shipsync/data";
 import type { ShipSyncData } from "@/components/shipsync-page";
@@ -76,6 +76,7 @@ const STAGES = {
   },
 } as const;
 type Stage = keyof typeof STAGES;
+const PAGE_SIZE = 25;
 /** Group headings in the table that read differently from the status's usual name. TBI = to be invoiced. */
 const GROUP_LABEL: Partial<Record<PackageStatus, string>> = { delivered: "Delivered TBI" };
 const STAGE_KEYS = Object.keys(STAGES) as Stage[];
@@ -93,7 +94,13 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
   const [docTarget, setDocTarget] = useState<ShipSyncPackage | null>(null);
   const [scanOpen, setScanOpen] = useState(false);
   const [view, setView] = useState<"table" | "chart">("table");
+  const [lines, setLines] = useColumnLines();
   const [stage, setStage] = useState<Stage>("active");
+  const [when, setWhen] = useState<When>("all");
+  const [clientFilter, setClientFilter] = useState("");
+  const [page, setPage] = useState(1);
+  const searchRef = useRef<HTMLInputElement>(null);
+  useSearchShortcut(searchRef);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulk, setBulk] = useState<{ status: string; description: string; invoice_no: string }>(
@@ -133,8 +140,13 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
    */
   const searching = search.trim().length > 0;
 
+  /** Every client that has a package here, for the client filter. */
+  const clientOptions = useMemo(() => clientsOf(data.packages), [data.packages]);
+
   const filtered = useMemo(() => data.packages.filter((p) => {
     if (!searching && !STAGES[stage].match(p.status)) return false;
+    if (clientFilter && (p.boat_name?.trim() ?? "") !== clientFilter) return false;
+    if (!matchesWhen(p, when)) return false;
     if (searching) {
       const s = search.trim().toLowerCase();
       const haystack = [
@@ -148,7 +160,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
       if (!haystack.join(" ").toLowerCase().includes(s)) return false;
     }
     return true;
-  }), [data.packages, search, searching, stage, noteNumberById]);
+  }), [data.packages, search, searching, stage, noteNumberById, clientFilter, when]);
 
   /** Counts for the stage bar, independent of the search box. */
   const stageCounts = useMemo(() => {
@@ -169,6 +181,23 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
     }
     return STATUS_OPTIONS.filter((s) => map.has(s)).map((s) => ({ status: s, rows: map.get(s)! }));
   }, [filtered]);
+
+  // Pages run across the groups: a group's rows are shown only while it is open, and one page holds PAGE_SIZE of them.
+  const { pagedGroups, visibleTotal } = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE;
+    const end = start + PAGE_SIZE;
+    let seen = 0;
+    const out = groups.map((g) => {
+      if (collapsed[g.status]) return { ...g, shown: [] as ShipSyncPackage[] };
+      const shown = g.rows.slice(Math.max(0, start - seen), Math.max(0, end - seen));
+      seen += g.rows.length;
+      return { ...g, shown };
+    });
+    return { pagedGroups: out, visibleTotal: seen };
+  }, [groups, collapsed, page]);
+  const pages = Math.max(1, Math.ceil(visibleTotal / PAGE_SIZE));
+  useEffect(() => { setPage(1); }, [stage, search, clientFilter, when]);
+  useEffect(() => { if (page > pages) setPage(pages); }, [page, pages]);
 
   const chartData = useMemo(() => STATUS_OPTIONS.map((s) => ({
     label: STATUS_META[s].label,
@@ -320,49 +349,29 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
   }
 
   return (
-    <div className="flex h-full min-w-0 flex-col px-6 py-5">
+    <div className="flex h-full min-w-0 flex-col px-6 py-3">
       {/* Where a package is in its journey. Keeping what's still to go out apart
           from what's finished is the whole point of the split. */}
-      <div className="mb-3 flex shrink-0 items-center gap-1 rounded-lg border border-border bg-card p-1 w-fit">
-        {STAGE_KEYS.map((key) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setStage(key)}
-            title={STAGES[key].hint}
-            aria-current={stage === key}
-            className={cn(
-              "flex items-center gap-2 rounded-md px-3 py-1.5 text-[12.5px] font-medium transition",
-              stage === key
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-accent/40 hover:text-foreground",
-            )}
-          >
-            {STAGES[key].label}
-            <span className={cn(
-              "rounded-full px-1.5 py-px text-[10.5px] tabular-nums",
-              stage === key ? "bg-primary-foreground/20" : "bg-muted text-muted-foreground",
-            )}>
-              {stageCounts[key]}
-            </span>
-          </button>
-        ))}
+      <div className="mb-3 shrink-0">
+        <PillTabs tabs={STAGE_KEYS.map((key) => ({ key, label: STAGES[key].label, count: stageCounts[key], hint: STAGES[key].hint }))} value={stage} onChange={setStage} />
       </div>
-      <p className="mb-3 shrink-0 text-[11.5px] text-muted-foreground">
+      <p className="mb-3 shrink-0 text-[12.5px] text-muted-foreground">
         {searching ? "Searching every stage — clear the box to go back to browsing." : STAGES[stage].hint}
       </p>
 
       <div className="mb-3 flex shrink-0 flex-wrap items-center gap-2.5">
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/50" />
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search barcode, boat, delivery note, invoice, receiver…" className="h-9 w-72 pl-8 text-sm" />
+          <Input ref={searchRef} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search barcode, boat, delivery note, invoice, receiver…" title="Press / to search" className="h-9 w-72 pl-8 text-sm" />
         </div>
         <span className="text-[12px] text-muted-foreground">
           {searching
             ? `${filtered.length} match${filtered.length === 1 ? "" : "es"} across all stages`
-            : `${filtered.length} of ${stageCounts[stage]}`}
+            : `${filtered.length.toLocaleString()} of ${stageCounts[stage].toLocaleString()}`}
         </span>
         <TableChartToggle value={view} onChange={setView} />
+        <ColumnLinesToggle on={lines} onChange={setLines} />
+        <ShipmentFilters when={when} onWhen={setWhen} client={clientFilter} onClient={setClientFilter} clients={clientOptions} />
         <Button size="sm" onClick={openNew} className="ml-auto h-9 gap-1.5"><Plus className="h-4 w-4" /> Check in package</Button>
         <Button size="sm" variant="outline" onClick={exportSpreadsheet} className="h-9 gap-1.5"
           title="Download the packages shown as a CSV — opens straight in Excel">
@@ -392,7 +401,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
             sticky <thead> bleed through as a ghost overlap in Chrome, and
             border-b on a <tr> stops painting under border-separate (that
             model only recognises borders on <td>/<th>, not <tr>). */}
-        <table className="w-full min-w-[1400px] border-separate border-spacing-0 text-sm [&_td]:border-r [&_td]:border-border/40 [&_th]:border-r [&_th]:border-border/40">
+        <table className={cn("ss-roomy w-full min-w-[1400px] border-separate border-spacing-0 text-sm", lines && "ss-vlines")}>
           <thead className="sticky top-0 z-10 will-change-transform">
             <tr className="bg-card text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground shadow-[inset_0_-1px_0_0_var(--border)]">
               {/* The delivery note used to have its own column; it now sits with
@@ -413,16 +422,19 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
           </thead>
           <tbody>
             {groups.length === 0 ? (
-              <tr><td colSpan={18} className="px-4 py-12 text-center text-sm text-muted-foreground">
+              <tr><td colSpan={18} className="p-0">
                 {data.packages.length === 0 ? (
-                  <div className="flex flex-col items-center gap-3">
-                    <span>No packages yet — check one in to get started.</span>
-                    <Button size="sm" onClick={openNew} className="gap-1.5"><Plus className="h-4 w-4" /> Check in package</Button>
-                  </div>
-                ) : "No packages match."}
+                  <EmptyState icon={PackageSearch} title="No packages yet" hint="Check a package in and it will appear here."
+                    action={<Button size="sm" onClick={openNew} className="gap-1.5"><Plus className="h-4 w-4" /> Check in package</Button>} />
+                ) : (
+                  <EmptyState icon={PackageSearch} title="No packages match"
+                    hint={searching ? "Nothing matches that search in any stage." : stage === "assigned" ? "Nothing is assigned to a driver right now." : "Nothing here with the filters you have set."}
+                    action={(searching || clientFilter || when !== "all") ? <Button size="sm" variant="outline" onClick={() => { setSearch(""); setClientFilter(""); setWhen("all"); }}>Clear search and filters</Button> : undefined} />
+                )}
               </td></tr>
-            ) : groups.map((g) => {
+            ) : pagedGroups.map((g) => {
               const isCollapsed = collapsed[g.status];
+              if (!isCollapsed && g.shown.length === 0) return null;
               return (
                 <Fragment key={g.status}>
                   <tr>
@@ -436,11 +448,11 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
                         className={cn("sticky left-0 flex w-fit min-w-[220px] items-center gap-2 border-l-4 bg-muted/20 px-4 py-2 text-left", statusBorder(g.status))}>
                         {isCollapsed ? <ChevronRight className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
                         <span className="font-display text-sm font-semibold uppercase tracking-wide">{GROUP_LABEL[g.status] ?? STATUS_META[g.status].label}</span>
-                        <span className="text-xs text-muted-foreground">{g.rows.length} package{g.rows.length === 1 ? "" : "s"}</span>
+                        <span className="text-xs text-muted-foreground">{g.rows.length.toLocaleString()} package{g.rows.length === 1 ? "" : "s"}</span>
                       </button>
                     </td>
                   </tr>
-                  {!isCollapsed && g.rows.map((p) => {
+                  {!isCollapsed && g.shown.map((p) => {
                     const note = data.notes.find((n) => n.id === p.delivery_note_id);
                     const driver = data.drivers.find((d) => d.id === p.driver_id);
                     const docs = p.documents ?? [];
@@ -460,7 +472,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
                           />
                         </td>
                         <td className="px-3 py-2.5 font-mono text-[12px] text-foreground whitespace-nowrap">{p.barcode ?? "—"}</td>
-                        <td className="px-3 py-2.5 font-medium whitespace-nowrap">{p.boat_name ?? "—"}</td>
+                        <td className="px-3 py-2.5 whitespace-nowrap">{p.boat_name ? <Chip className="font-semibold uppercase tracking-wide">{p.boat_name}</Chip> : <span className="text-muted-foreground/40">—</span>}</td>
                         <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{fmtDate(p.received_at)}</td>
                         <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
                           {p.item_photo_url ? (
@@ -472,9 +484,9 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
                         <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{p.package_owner ?? "—"}</td>
                         <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{p.receiver_full_name ?? "—"}</td>
                         <td className="px-3 py-2.5 tabular-nums text-muted-foreground text-center">{p.num_packages ?? 1}</td>
-                        <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{p.courier ?? "—"}</td>
-                        <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{p.local_import ?? "—"}</td>
-                        <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{p.delivery_note_no ?? note?.number ?? "—"}</td>
+                        <td className="px-3 py-2.5 whitespace-nowrap"><CourierChip name={p.courier} /></td>
+                        <td className="px-3 py-2.5 whitespace-nowrap">{p.local_import ? <Chip className="text-muted-foreground">{p.local_import}</Chip> : <span className="text-muted-foreground/40">—</span>}</td>
+                        <td className="px-3 py-2.5 whitespace-nowrap">{(p.delivery_note_no ?? note?.number) ? <Chip className="tabular-nums">{p.delivery_note_no ?? note?.number}</Chip> : <span className="text-muted-foreground/40">—</span>}</td>
                         <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{driver?.name ?? "—"}</td>
                         <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">{fmtDate(p.delivered_at)}</td>
                         <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
@@ -530,9 +542,11 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
                           </Select>
                         </td>
                         <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
-                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground/60 hover:text-destructive opacity-0 group-hover:opacity-100" onClick={() => setDelTarget(p)}>
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
+                          <RowMenu items={[
+                            { label: "Edit details", icon: Pencil, onSelect: () => openEdit(p) },
+                            { label: "Add files", icon: FileText, onSelect: () => setDocTarget(p) },
+                            { label: "Delete", icon: Trash2, danger: true, onSelect: () => setDelTarget(p) },
+                          ]} />
                         </td>
                       </tr>
                     );
@@ -543,6 +557,10 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
           </tbody>
         </table>
       </div>
+      )}
+      {view === "table" && visibleTotal > 0 && (
+        <Pagination page={page} pages={pages} onPage={setPage} total={visibleTotal} noun="packages"
+          from={(page - 1) * PAGE_SIZE + 1} to={Math.min(page * PAGE_SIZE, visibleTotal)} />
       )}
 
       {/* Check-in / edit dialog */}

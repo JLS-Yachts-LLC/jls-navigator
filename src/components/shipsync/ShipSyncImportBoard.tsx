@@ -37,7 +37,7 @@
  */
 import { SignedAnchor, SignedImage } from "@/components/ui/signed-file";
 import { AwbScanDialog, type AwbScan } from "@/components/shipsync/AwbScanDialog";
-import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Loader2, Search, ChevronDown, ChevronRight, FileText, ArrowDownToLine, Plus, Trash2, X, ScanLine, Camera } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -51,7 +51,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { fmtDate, mondayRow, extraMondayColumns, DocumentDropzoneDialog, TableChartToggle, ShipSyncChartsPanel, downloadCsv } from "@/components/shipsync/shared";
+import { fmtDate, mondayRow, extraMondayColumns, DocumentDropzoneDialog, TableChartToggle, ShipSyncChartsPanel, downloadCsv, PillTabs, ShipmentFilters, matchesWhen, clientsOf, useSearchShortcut, type When, FilesCell, TableSkeleton, RowMenu, semanticGroupBorder, semanticStatusColor, useColumnLines, ColumnLinesToggle } from "@/components/shipsync/shared";
 import { loadImportPackages, patchPackage, createPackage, deletePackage, addPackageDocuments, removePackageDocument, uploadShipSyncFile } from "@/lib/shipsync/data";
 import { nextItemId, type ShipSyncPackage } from "@/lib/shipsync/model";
 import { pushShipmentStatus } from "@/lib/shipsync/monday-import-board.server";
@@ -63,15 +63,13 @@ const GROUP_PALETTE = [
   "border-rose-500", "border-cyan-500", "border-lime-500", "border-fuchsia-500",
 ];
 function groupColor(title: string): string {
-  let h = 0;
-  for (let i = 0; i < title.length; i++) h = (h * 31 + title.charCodeAt(i)) >>> 0;
-  return GROUP_PALETTE[h % GROUP_PALETTE.length];
+  return semanticGroupBorder(title);
 }
 
 /** Monday's real STATUS column — its exact 18 labels and colours (from the
  *  board's column settings), in the same order Monday's own label picker
  *  shows them. Independent of the group/section a shipment sits in. */
-const MONDAY_STATUS_LABELS: { label: string; color: string }[] = [
+const MONDAY_STATUS_RAW: { label: string; color: string }[] = [
   { label: "New Request", color: "#ff007f" },
   { label: "Intransit", color: "#784bd1" },
   { label: "Incoming", color: "#c4c4c4" },
@@ -91,6 +89,8 @@ const MONDAY_STATUS_LABELS: { label: string; color: string }[] = [
   { label: "Canceled", color: "#66ccff" },
   { label: "Complete", color: "#00c875" },
 ];
+/** Same labels and order as Monday, coloured by meaning (waiting / on its way / done / problem) rather than Monday's own palette. */
+const MONDAY_STATUS_LABELS = MONDAY_STATUS_RAW.map((x) => ({ label: x.label, color: semanticStatusColor(x.label) }));
 function mondayStatusColor(label: string): string {
   return MONDAY_STATUS_LABELS.find((s) => s.label === label)?.color ?? "#6b7280";
 }
@@ -139,8 +139,9 @@ const SHIPMENT_TYPE_LABELS: { label: string; color: string }[] = [
   { label: "Import Shipment", color: "#fdab3d" },
   { label: "DDP Shipment", color: "#e2445c" },
 ];
-function shipmentTypeColor(label: string): string {
-  return SHIPMENT_TYPE_LABELS.find((s) => s.label === label)?.color ?? "#6b7280";
+/** Shipment type is a category, not a status, so it stays neutral: green, amber and red are reserved for status meanings. */
+function shipmentTypeColor(_label: string): string {
+  return "#5b6b8c";
 }
 
 /**
@@ -260,9 +261,9 @@ type CellSpec =
  *  Courier, Paid Amount, Payment Copy, Remarks, Payment Method, Client
  *  Email, Requestor, Quotation, Collection and Destination, Duty, VAT). */
 const CELLS: CellSpec[] = [
-  { kind: "field", col: fieldCol("barcode", "Air waybill/tracking", "w-32", "text", "barcode") },
+  { kind: "field", col: fieldCol("barcode", "Air waybill/tracking", "w-44", "text", "barcode") },
   { kind: "field", col: mondayCol("invoiceNo", "Invoice No.", "w-24", "Invoice No.") },
-  { kind: "field", col: mondayCol("itemId", "Item ID", "w-24", "Item ID") },
+  { kind: "field", col: mondayCol("itemId", "Item ID", "w-28", "Item ID") },
   { kind: "field", col: fieldCol("boat_name", "Yacht Name", "w-32", "text", "boat_name") },
   { kind: "mondayStatus" },
   { kind: "shipmentType" },
@@ -299,6 +300,10 @@ export function ShipSyncImportBoard() {
   const [rows, setRows] = useState<ShipSyncPackage[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [when, setWhen] = useState<When>("all");
+  const [clientFilter, setClientFilter] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+  useSearchShortcut(searchRef);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [savingCell, setSavingCell] = useState<string | null>(null);
   const [addingIn, setAddingIn] = useState<string | null>(null);
@@ -313,6 +318,7 @@ export function ShipSyncImportBoard() {
   const [docTarget, setDocTarget] = useState<ShipSyncPackage | null>(null);
   const [paymentCopyTarget, setPaymentCopyTarget] = useState<ShipSyncPackage | null>(null);
   const [view, setView] = useState<"table" | "chart">("table");
+  const [lines, setLines] = useColumnLines();
   const [tab, setTab] = useState<Tab>("active");
 
   function toggleSelect(id: string) {
@@ -501,14 +507,17 @@ export function ShipSyncImportBoard() {
 
   const searching = search.trim() !== "";
   // Searching looks across both lists; clear the box to go back to browsing one.
+  const clientOptions = useMemo(() => clientsOf(rows), [rows]);
   const filtered = useMemo(() => {
-    if (!search.trim()) return rows.filter((p) => tabOf(p) === tab);
     const s = search.toLowerCase();
-    return rows.filter((p) =>
-      [p.barcode, p.boat_name, p.supplier, p.courier, p.boe_no, p.receiver_full_name,
-       ...Object.values(mondayRow(p))].join(" ").toLowerCase().includes(s),
-    );
-  }, [rows, search, tab]);
+    const base = !search.trim()
+      ? rows.filter((p) => tabOf(p) === tab)
+      : rows.filter((p) =>
+        [p.barcode, p.boat_name, p.supplier, p.courier, p.boe_no, p.receiver_full_name,
+         ...Object.values(mondayRow(p))].join(" ").toLowerCase().includes(s),
+      );
+    return base.filter((p) => (!clientFilter || (p.boat_name?.trim() ?? "") === clientFilter) && matchesWhen(p, when));
+  }, [rows, search, tab, clientFilter, when]);
   const tabCounts = useMemo(() => {
     const c: Record<Tab, number> = { active: 0, delivered: 0, completed: 0 };
     for (const p of rows) c[tabOf(p)]++;
@@ -581,9 +590,7 @@ export function ShipSyncImportBoard() {
     toast.success(`Exported ${rows.length} shipment${rows.length === 1 ? "" : "s"}`);
   }
 
-  if (loading) {
-    return <div className="flex h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
-  }
+  if (loading) return <TableSkeleton />;
 
   const colCount = 2 + CELLS.length + mondayColumns.length + 1;
   const deleteTarget = confirmDeleteIds && confirmDeleteIds.length === 1
@@ -591,33 +598,28 @@ export function ShipSyncImportBoard() {
     : null;
 
   return (
-    <div className="flex h-full min-w-0 flex-col px-6 py-5">
+    <div className="flex h-full min-w-0 flex-col px-6 py-3">
       {/* Pending, Delivered - TBI and Complete — the last two are the long lists. */}
-      <div className="mb-3 flex w-fit shrink-0 items-center gap-1 rounded-lg border border-border bg-card p-1">
-        {TABS.map(({ key, label, hint }) => (
-          <button key={key} type="button" onClick={() => setTab(key)} title={hint} aria-current={tab === key}
-            className={cn("flex items-center gap-2 rounded-md px-3 py-1.5 text-[12.5px] font-medium transition",
-              tab === key ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent/40 hover:text-foreground")}>
-            {label}
-            <span className={cn("rounded-full px-1.5 py-px text-[10.5px] tabular-nums", tab === key ? "bg-primary-foreground/20" : "bg-muted text-muted-foreground")}>{tabCounts[key]}</span>
-          </button>
-        ))}
+      <div className="mb-3 shrink-0">
+        <PillTabs tabs={TABS.map(({ key, label, hint }) => ({ key, label, hint, count: tabCounts[key] }))} value={tab} onChange={setTab} />
       </div>
       {searching && <p className="mb-3 shrink-0 text-[11.5px] text-muted-foreground">Searching every list — clear the box to go back to browsing.</p>}
 
       <div className="mb-3 flex shrink-0 flex-wrap items-center gap-2.5">
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/50" />
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search import shipments…" className="h-9 w-72 pl-8 text-sm" />
+          <Input ref={searchRef} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search import shipments…" title="Press / to search" className="h-9 w-72 pl-8 text-sm" />
         </div>
         <span className="text-[12px] text-muted-foreground">{filtered.length} of {rows.length}</span>
         <TableChartToggle value={view} onChange={setView} />
+        <ColumnLinesToggle on={lines} onChange={setLines} />
+        <ShipmentFilters when={when} onWhen={setWhen} client={clientFilter} onClient={setClientFilter} clients={clientOptions} />
         <Button size="sm" variant="outline" className="ml-auto h-9 gap-1.5"
           onClick={() => { setScanGroup(allGroups[0]?.title ?? ""); setScanOpen(true); }}>
           <ScanLine className="h-4 w-4" /> Scan AWB
         </Button>
         <Button size="sm" onClick={() => { setNpGroup(allGroups[0]?.title ?? ""); setNpName(""); setNewPackageOpen(true); }} className="h-9 gap-1.5">
-          <Plus className="h-4 w-4" /> New Package
+          <Plus className="h-4 w-4" /> New shipment
         </Button>
         {selected.size > 0 && (
           <Button size="sm" variant="outline" className="h-9 gap-1.5 text-xs text-destructive"
@@ -641,7 +643,7 @@ export function ShipSyncImportBoard() {
             <ArrowDownToLine className="h-5 w-5 text-muted-foreground" />
           </div>
           <div className="text-sm font-semibold">No import shipments yet</div>
-          <p className="max-w-md text-[13px] text-muted-foreground">The board fills from Monday by itself every hour, or add one with New Package.</p>
+          <p className="max-w-md text-[13px] text-muted-foreground">The board fills from Monday by itself every hour, or add one with New shipment.</p>
         </div>
       ) : (
         // The one and only scroll box for the whole board — bounded, its own
@@ -650,7 +652,7 @@ export function ShipSyncImportBoard() {
         // sticky <thead> in a collapsed-border table) so the sticky column
         // header renders cleanly.
         <div className="pds-scroll min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-card">
-          <table className="w-full table-fixed border-separate border-spacing-0 text-[12.5px] [&_td]:border-r [&_td]:border-border/40 [&_th]:border-r [&_th]:border-border/40">
+          <table className={cn("w-full table-fixed border-separate border-spacing-0 text-[12.5px] [&_td]:border-r [&_td]:border-border/40 [&_th]:border-r [&_th]:border-border/40", lines && "ss-vlines")}>
             <thead className="sticky top-0 z-20 will-change-transform">
               {/* box-shadow instead of border-b: border-separate drops <tr>
                   borders (the separated-borders model only recognises
@@ -663,7 +665,7 @@ export function ShipSyncImportBoard() {
                 {CELLS.map((c) => {
                   if (c.kind === "field") return <th key={c.col.key} className={cn("px-2 py-1.5", c.col.width)}>{c.col.label}</th>;
                   if (c.kind === "mondayStatus") return <th key="mondayStatus" className="w-36 px-2 py-1.5">Status</th>;
-                  if (c.kind === "shipmentType") return <th key="shipmentType" className="w-28 px-2 py-1.5">Shipment Type</th>;
+                  if (c.kind === "shipmentType") return <th key="shipmentType" className="w-36 px-2 py-1.5">Shipment Type</th>;
                   if (c.kind === "documents") return <th key="documents" className="w-28 px-2 py-1.5">Files</th>;
                   if (c.kind === "photo") return <th key="photo" className="w-16 px-2 py-1.5">Photo</th>;
                   if (c.kind === "paymentCopy") return <th key="paymentCopy" className="w-28 px-2 py-1.5">Payment Copy</th>;
@@ -788,31 +790,7 @@ export function ShipSyncImportBoard() {
                             if (c.kind === "documents") {
                               return (
                                 <td key="documents" className="overflow-hidden px-2 py-1" onClick={(e) => e.stopPropagation()}>
-                                  {docs.length === 0 ? (
-                                    <button type="button" onClick={() => setDocTarget(p)}
-                                      className="inline-flex items-center gap-1 rounded border border-dashed border-border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:border-primary hover:text-primary">
-                                      <Plus className="h-3 w-3" /> Add files
-                                    </button>
-                                  ) : (
-                                    <div className="flex flex-wrap items-center gap-1">
-                                      {docs.map((d, i) => (
-                                        <span key={i} className="group/doc inline-flex max-w-[100px] items-center gap-1 rounded border border-border pl-1 pr-0.5 py-0.5 text-[10px] text-primary hover:bg-primary/5">
-                                          <SignedAnchor stored={d.url} title={d.name}
-                                            className="flex min-w-0 items-center gap-1 truncate">
-                                            <FileText className="h-3 w-3 shrink-0" /> <span className="truncate">{d.name}</span>
-                                          </SignedAnchor>
-                                          <button type="button" onClick={() => removeDocument(p, i)} title="Remove file"
-                                            className="shrink-0 rounded p-0.5 text-muted-foreground/60 opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover/doc:opacity-100">
-                                            <X className="h-3 w-3" />
-                                          </button>
-                                        </span>
-                                      ))}
-                                      <button type="button" onClick={() => setDocTarget(p)} title="Add files"
-                                        className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border border-dashed border-border text-muted-foreground hover:border-primary hover:text-primary">
-                                        <Plus className="h-3 w-3" />
-                                      </button>
-                                    </div>
-                                  )}
+                                  <FilesCell files={docs} onAdd={() => setDocTarget(p)} onRemove={(i) => removeDocument(p, i)} addLabel="Add files" />
                                 </td>
                               );
                             }
@@ -844,30 +822,7 @@ export function ShipSyncImportBoard() {
                               const copies = paymentCopies(p);
                               return (
                                 <td key="paymentCopy" className="overflow-hidden px-2 py-1" onClick={(e) => e.stopPropagation()}>
-                                  {copies.length === 0 ? (
-                                    <button type="button" onClick={() => setPaymentCopyTarget(p)}
-                                      className="inline-flex items-center gap-1 rounded border border-dashed border-border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:border-primary hover:text-primary">
-                                      <Plus className="h-3 w-3" /> Add file
-                                    </button>
-                                  ) : (
-                                    <div className="flex flex-wrap items-center gap-1">
-                                      {copies.map((d, i) => (
-                                        <span key={i} className="group/doc inline-flex max-w-[100px] items-center gap-1 rounded border border-border pl-1 pr-0.5 py-0.5 text-[10px] text-primary hover:bg-primary/5">
-                                          <SignedAnchor stored={d.url} title={d.name} className="flex min-w-0 items-center gap-1 truncate">
-                                            <FileText className="h-3 w-3 shrink-0" /> <span className="truncate">{d.name}</span>
-                                          </SignedAnchor>
-                                          <button type="button" onClick={() => void removePaymentCopy(p, i)} title="Remove file"
-                                            className="shrink-0 rounded p-0.5 text-muted-foreground/60 opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover/doc:opacity-100">
-                                            <X className="h-3 w-3" />
-                                          </button>
-                                        </span>
-                                      ))}
-                                      <button type="button" onClick={() => setPaymentCopyTarget(p)} title="Add files"
-                                        className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border border-dashed border-border text-muted-foreground hover:border-primary hover:text-primary">
-                                        <Plus className="h-3 w-3" />
-                                      </button>
-                                    </div>
-                                  )}
+                                  <FilesCell files={copies} onAdd={() => setPaymentCopyTarget(p)} onRemove={(i) => void removePaymentCopy(p, i)} addLabel="Add file" />
                                 </td>
                               );
                             }
@@ -893,9 +848,10 @@ export function ShipSyncImportBoard() {
                             <td key={c} className="overflow-hidden truncate px-2 py-1 text-muted-foreground">{row[c] || "—"}</td>
                           ))}
                           <td className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
-                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground/60 hover:text-destructive opacity-0 group-hover:opacity-100" onClick={() => setConfirmDeleteIds([p.id])}>
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
+                            <RowMenu items={[
+                              { label: "Add files", icon: FileText, onSelect: () => setDocTarget(p) },
+                              { label: "Delete", icon: Trash2, danger: true, onSelect: () => setConfirmDeleteIds([p.id]) },
+                            ]} />
                           </td>
                         </tr>
                       );
@@ -941,7 +897,7 @@ export function ShipSyncImportBoard() {
 
       <Dialog open={newPackageOpen} onOpenChange={setNewPackageOpen}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>New package</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>New shipment</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5">
               <Label htmlFor="np-name">Airway bill / tracking no.</Label>

@@ -497,3 +497,53 @@
 /* Portaled surfaces should also carry the Beta shell font on their own root. */
 [data-radix-popper-content-wrapper], [data-sonner-toaster],
 [role="dialog"], [role="alertdialog"], [vaul-drawer] { font-family: var(--pds-font-body); }
+
+/* ── ShipSync polish (scoped to .shipsync-ui, so nothing else in Polaris changes) ───────────────
+   Quieter hairlines instead of the gold-tinted outlines, no vertical cell borders, a little more
+   room in the rows, and short, gentle transitions that switch themselves off for anyone who has
+   asked their system for reduced motion. */
+.shipsync-ui {
+  --border: rgba(167, 179, 202, 0.14);
+  --input:  rgba(167, 179, 202, 0.24);
+  /* Hovers and soft fills are neutral, so gold stays for the main action and the selected state. */
+  --accent: rgba(255, 255, 255, 0.06);
+}
+
+/* Type scale: captions 11.5px, body 13px, controls 14px, titles larger. ShipSync had grown 10, 10.5, 11, 12 and
+   12.5px as well — snap those onto the scale instead of editing hundreds of class names. */
+.shipsync-ui table { font-size: 13px; font-variant-numeric: tabular-nums; }
+.shipsync-ui table thead th { font-size: 11.5px; }
+.shipsync-ui :is(.text-\[10px\], .text-\[10\.5px\], .text-\[11px\], .text-\[11\.5px\]) { font-size: 11.5px; }
+.shipsync-ui :is(.text-\[12px\], .text-\[12\.5px\]) { font-size: 13px; }
+.shipsync-ui table th,
+.shipsync-ui table td { border-right-width: 0; }
+/* The "Column lines" tick box: a hairline between columns, but not through a group's heading row. */
+.shipsync-ui table.ss-vlines th,
+.shipsync-ui table.ss-vlines td { border-right: 1px solid rgba(167, 179, 202, 0.2); }
+.shipsync-ui table.ss-vlines td[colspan] { border-right-width: 0; }
+.shipsync-ui table thead th {
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: 1.3;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  color: color-mix(in oklab, var(--foreground) 78%, transparent);
+  background: color-mix(in oklab, var(--card) 72%, #050b1c);
+}
+.shipsync-ui .ss-roomy thead th { padding-left: 0.9rem; padding-right: 0.9rem; }
+.shipsync-ui .ss-roomy tbody td:not([colspan]) { padding-left: 0.9rem; padding-right: 0.9rem; }
+.shipsync-ui table tbody tr { transition: background-color 140ms ease; }
+.shipsync-ui table tbody tr:hover { background-color: rgba(255, 255, 255, 0.045); }
+.shipsync-ui [role="checkbox"] { border-color: rgba(167, 179, 202, 0.55); }
+.shipsync-ui .ss-roomy tbody td:not([colspan]) { padding-top: 0.8rem; padding-bottom: 0.8rem; }
+.shipsync-ui button,
+.shipsync-ui a,
+.shipsync-ui select,
+.shipsync-ui input { transition-duration: 140ms; }
+@media (prefers-reduced-motion: reduce) {
+  .shipsync-ui *, .shipsync-ui *::before, .shipsync-ui *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

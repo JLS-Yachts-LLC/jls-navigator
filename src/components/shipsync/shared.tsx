@@ -1,6 +1,10 @@
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { toast } from "sonner";
-import { Loader2, UploadCloud, Table as TableIcon, BarChart3 } from "lucide-react";
+import { Loader2, UploadCloud, Table as TableIcon, BarChart3, ChevronLeft, ChevronRight, FileText, Plus, X, MoreHorizontal, type LucideIcon } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { SignedAnchor } from "@/components/ui/signed-file";
+import { Checkbox } from "@/components/ui/checkbox";
 import { BarChart, Bar, PieChart, Pie, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -156,6 +160,294 @@ export function TableChartToggle({ value, onChange }: { value: "table" | "chart"
   );
 }
 
+/**
+ * Pill-shaped stage tabs with a count — In the office 12, Assigned 0, Delivered 1,261. The selected one is gold; the others are
+ * quiet outlines. Pills are for states and filters; buttons and inputs stay rounded rectangles.
+ */
+export function PillTabs<T extends string>({ tabs, value, onChange }: {
+  tabs: { key: T; label: string; count?: number; hint?: string }[];
+  value: T;
+  onChange: (key: T) => void;
+}) {
+  return (
+    <div role="tablist" className="flex flex-wrap items-center gap-2">
+      {tabs.map((t) => {
+        const on = t.key === value;
+        return (
+          <button key={t.key} type="button" role="tab" aria-selected={on} title={t.hint} onClick={() => onChange(t.key)}
+            className={cn(
+              "inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-[13.5px] font-medium transition-colors duration-150",
+              on ? "border-primary bg-primary font-semibold text-primary-foreground shadow-sm ring-2 ring-primary/25"
+                : "border-border bg-card/60 text-foreground/80 hover:border-primary/40 hover:bg-card hover:text-foreground",
+            )}>
+            {t.label}
+            {t.count != null && (
+              <span className={cn("rounded-full px-2 py-px text-[11.5px] font-semibold tabular-nums", on ? "bg-black/15" : "bg-white/10 text-muted-foreground")}>
+                {t.count.toLocaleString()}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** A small neutral pill for a value that is a "thing" — a client, a shipment type, a delivery note number. */
+export function Chip({ children, className, title }: { children: ReactNode; className?: string; title?: string }) {
+  return (
+    <span title={title} className={cn("inline-flex max-w-full items-center truncate rounded-full border border-border bg-white/[0.05] px-2.5 py-0.5 text-[12px] font-medium text-foreground/90", className)}>
+      {children}
+    </span>
+  );
+}
+
+/** A courier as a pill with its initial — recognisable at a glance without needing every brand's logo. */
+export function CourierChip({ name }: { name: string | null | undefined }) {
+  const n = (name ?? "").trim();
+  if (!n) return <span className="text-muted-foreground/40">—</span>;
+  return (
+    <span title={n} className="inline-flex max-w-full items-center gap-1.5 truncate rounded-full bg-white/[0.05] py-0.5 pl-0.5 pr-2.5 text-[12px] text-foreground/90">
+      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/15 text-[11px] font-semibold uppercase">{n[0]}</span>
+      <span className="truncate">{n}</span>
+    </span>
+  );
+}
+
+/** What to show instead of an empty table: say what is (not) here and what to do about it. */
+export function EmptyState({ icon: Icon, title, hint, action }: { icon: LucideIcon; title: string; hint?: string; action?: ReactNode }) {
+  return (
+    <div className="flex flex-col items-center gap-2 px-6 py-14 text-center">
+      <div className="flex h-11 w-11 items-center justify-center rounded-full border border-border bg-white/[0.04]">
+        <Icon className="h-5 w-5 text-muted-foreground" />
+      </div>
+      <div className="text-[15px] font-medium">{title}</div>
+      {hint && <p className="max-w-sm text-[13px] text-muted-foreground">{hint}</p>}
+      {action && <div className="mt-1">{action}</div>}
+    </div>
+  );
+}
+
+/** "Showing 1–25 of 312 packages" with previous / next and a short run of page numbers. */
+export function Pagination({ page, pages, onPage, from, to, total, noun }: {
+  page: number; pages: number; onPage: (p: number) => void; from: number; to: number; total: number; noun: string;
+}) {
+  const first = Math.max(1, Math.min(page - 2, pages - 4));
+  const nums = Array.from({ length: Math.min(5, pages) }, (_, i) => first + i);
+  const btn = "flex h-8 min-w-8 items-center justify-center rounded-lg border px-2 text-[13px] tabular-nums transition-colors duration-150";
+  return (
+    <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 px-1 pt-3 text-[13px] text-muted-foreground">
+      <span>{total === 0 ? `No ${noun}` : `Showing ${from.toLocaleString()}–${to.toLocaleString()} of ${total.toLocaleString()} ${noun}`}</span>
+      {pages > 1 && (
+        <div className="flex items-center gap-1.5">
+          <button type="button" aria-label="Previous page" disabled={page <= 1} onClick={() => onPage(page - 1)}
+            className={cn(btn, "border-border hover:border-primary/40 disabled:opacity-40 disabled:hover:border-border")}><ChevronLeft className="h-4 w-4" /></button>
+          {nums.map((n) => (
+            <button key={n} type="button" onClick={() => onPage(n)} aria-current={n === page}
+              className={cn(btn, n === page ? "border-primary bg-primary font-semibold text-primary-foreground" : "border-border hover:border-primary/40 hover:text-foreground")}>{n}</button>
+          ))}
+          <button type="button" aria-label="Next page" disabled={page >= pages} onClick={() => onPage(page + 1)}
+            className={cn(btn, "border-border hover:border-primary/40 disabled:opacity-40 disabled:hover:border-border")}><ChevronRight className="h-4 w-4" /></button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The "All time" filter: how far back a shipment's received date may be. */
+export const WHEN_OPTIONS = [
+  { key: "all", label: "All time" }, { key: "7", label: "Last 7 days" }, { key: "30", label: "Last 30 days" }, { key: "90", label: "Last 90 days" },
+] as const;
+export type When = (typeof WHEN_OPTIONS)[number]["key"];
+
+export function matchesWhen(p: { received_at: string | null }, when: When, now = Date.now()): boolean {
+  if (when === "all") return true;
+  if (!p.received_at) return false;
+  const t = new Date(p.received_at).getTime();
+  return !Number.isNaN(t) && t >= now - Number(when) * 86_400_000;
+}
+
+/** The distinct clients in a set of shipments, sorted — for the client filter. */
+export function clientsOf(rows: { boat_name: string | null }[]): string[] {
+  return Array.from(new Set(rows.map((p) => p.boat_name?.trim()).filter((n): n is string => !!n))).sort((a, b) => a.localeCompare(b));
+}
+
+const filterSelectCls = "h-9 rounded-full border border-border bg-card/60 px-3.5 text-[13px] text-foreground/90 outline-none transition-colors duration-150 hover:border-primary/40 focus-visible:border-primary";
+
+/** "All time" and "All clients" as rounded pills — the same two filters on Local Packages, Import and Export. */
+export function ShipmentFilters({ when, onWhen, client, onClient, clients }: {
+  when: When; onWhen: (w: When) => void; client: string; onClient: (c: string) => void; clients: string[];
+}) {
+  return (
+    <>
+      <select value={when} onChange={(e) => onWhen(e.target.value as When)} aria-label="Received" className={filterSelectCls}>
+        {WHEN_OPTIONS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+      </select>
+      <select value={client} onChange={(e) => onClient(e.target.value)} aria-label="Client" className={cn(filterSelectCls, "max-w-[12rem]")}>
+        <option value="">All clients</option>
+        {clients.map((c) => <option key={c} value={c}>{c}</option>)}
+      </select>
+    </>
+  );
+}
+
+/** Press "/" anywhere on the page (not while typing in a field) to jump to the search box. */
+export function useSearchShortcut(ref: RefObject<HTMLInputElement | null>) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+      e.preventDefault();
+      ref.current?.focus();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [ref]);
+}
+
+/**
+ * A row's attached files as ONE small chip ("3 files") that opens a short list to open or remove them and to add more.
+ * Wrapped file chips used to make some rows two or three lines tall; this keeps every row one line.
+ */
+export function FilesCell({ files, onAdd, onRemove, addLabel = "Add files" }: {
+  files: { name: string; url: string }[]; onAdd: () => void; onRemove: (index: number) => void; addLabel?: string;
+}) {
+  if (files.length === 0) {
+    return (
+      <button type="button" onClick={onAdd}
+        className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-2 py-0.5 text-[11px] text-muted-foreground transition-colors duration-150 hover:border-primary hover:text-primary">
+        <Plus className="h-3 w-3" /> {addLabel}
+      </button>
+    );
+  }
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button type="button"
+          className="inline-flex items-center gap-1 rounded-full border border-border bg-white/[0.05] px-2.5 py-0.5 text-[11.5px] font-medium text-primary transition-colors duration-150 hover:border-primary/50">
+          <FileText className="h-3 w-3" /> {files.length} file{files.length === 1 ? "" : "s"}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-72 space-y-0.5 p-1.5">
+        {files.map((d, i) => (
+          <div key={`${d.url}-${i}`} className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-white/5">
+            <SignedAnchor stored={d.url} title={d.name} className="flex min-w-0 flex-1 items-center gap-2 truncate text-[13px] text-primary">
+              <FileText className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{d.name}</span>
+            </SignedAnchor>
+            <button type="button" onClick={() => onRemove(i)} title="Remove file"
+              className="shrink-0 rounded p-1 text-muted-foreground transition-colors duration-150 hover:bg-destructive/10 hover:text-destructive">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ))}
+        <button type="button" onClick={onAdd}
+          className="mt-1 flex w-full items-center gap-2 rounded-md border border-dashed border-border px-2 py-1.5 text-[13px] text-muted-foreground transition-colors duration-150 hover:border-primary hover:text-primary">
+          <Plus className="h-3.5 w-3.5" /> {addLabel}
+        </button>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/** Placeholder rows while a board loads — the page keeps its shape instead of showing a lone spinner. */
+export function TableSkeleton({ rows = 9 }: { rows?: number }) {
+  return (
+    <div className="flex h-full min-w-0 flex-col px-6 py-3" aria-busy="true" aria-label="Loading">
+      <div className="mb-3 flex gap-2">
+        {[88, 76, 96].map((w, i) => <div key={i} className="h-8 animate-pulse rounded-full bg-white/[0.06]" style={{ width: w + 40 }} />)}
+      </div>
+      <div className="mb-3 flex gap-2">
+        <div className="h-9 w-72 animate-pulse rounded-md bg-white/[0.06]" />
+        <div className="h-9 w-28 animate-pulse rounded-full bg-white/[0.06]" />
+        <div className="h-9 w-32 animate-pulse rounded-full bg-white/[0.06]" />
+      </div>
+      <div className="overflow-hidden rounded-xl border border-border bg-card">
+        {Array.from({ length: rows }, (_, i) => (
+          <div key={i} className="flex items-center gap-4 border-b border-border/60 px-4 py-3.5 last:border-b-0">
+            <div className="h-4 w-4 animate-pulse rounded bg-white/[0.06]" />
+            <div className="h-3.5 w-32 animate-pulse rounded bg-white/[0.08]" />
+            <div className="h-5 w-24 animate-pulse rounded-full bg-white/[0.06]" />
+            <div className="h-3.5 w-20 animate-pulse rounded bg-white/[0.06]" />
+            <div className="h-3.5 flex-1 animate-pulse rounded bg-white/[0.04]" />
+            <div className="h-5 w-16 animate-pulse rounded-full bg-white/[0.06]" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** The "…" at the end of a row: its actions in one menu instead of a hidden icon. Quiet until the row is hovered or focused. */
+export function RowMenu({ items, label = "Row actions" }: {
+  items: { label: string; icon?: LucideIcon; onSelect: () => void; danger?: boolean }[]; label?: string;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button type="button" aria-label={label}
+          className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground opacity-50 transition duration-150 hover:bg-white/10 hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:bg-white/10 data-[state=open]:opacity-100">
+          <MoreHorizontal className="h-4 w-4" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-[10rem]">
+        {items.map((it) => (
+          <DropdownMenuItem key={it.label} onSelect={it.onSelect}
+            className={cn("gap-2 text-[13px]", it.danger && "text-destructive focus:text-destructive")}>
+            {it.icon && <it.icon className="h-3.5 w-3.5" />} {it.label}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+export { semanticTone, type SemanticTone } from "@/lib/shipsync/status-tone";
+import { semanticTone, type SemanticTone } from "@/lib/shipsync/status-tone";
+
+const SEMANTIC_HEX: Record<SemanticTone, string> = { amber: "#d99a1f", blue: "#3b8fd9", green: "#1fa97a", red: "#d9534f", grey: "#6b7280" };
+const SEMANTIC_BORDER: Record<SemanticTone, string> = {
+  amber: "border-amber-500", blue: "border-sky-500", green: "border-emerald-500", red: "border-red-500", grey: "border-slate-500",
+};
+
+/** A status label as a hex colour for its pill or chart bar. */
+export const semanticStatusColor = (label: string): string => SEMANTIC_HEX[semanticTone(label)];
+
+/** A board group's left bar: the open groups (Import, Export, Incoming) read as waiting; the rest by their name. */
+export function semanticGroupBorder(title: string): string {
+  const t = title.trim().toLowerCase();
+  if (/^(import|export|incoming)$/.test(t)) return SEMANTIC_BORDER.amber;
+  return SEMANTIC_BORDER[semanticTone(title)];
+}
+
+const COLUMN_LINES_KEY = "shipsync.columnLines";
+
+/**
+ * Whether the tables draw a line between columns — a personal preference kept in this browser (on by default, as the older
+ * screens had them). Storage can be blocked, so reading and writing never throw.
+ */
+export function useColumnLines(): [boolean, (on: boolean) => void] {
+  const [on, setOn] = useState(() => {
+    try { return localStorage.getItem(COLUMN_LINES_KEY) !== "0"; } catch { return true; }
+  });
+  const set = (v: boolean) => {
+    setOn(v);
+    try { localStorage.setItem(COLUMN_LINES_KEY, v ? "1" : "0"); } catch { /* the choice just won't be remembered */ }
+  };
+  return [on, set];
+}
+
+/** The tick box in each board's toolbar that shows or hides the lines between columns. */
+export function ColumnLinesToggle({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {
+  return (
+    <label className="inline-flex h-9 cursor-pointer select-none items-center gap-2 rounded-full border border-border bg-card/60 px-3.5 text-[13px] text-foreground/90 transition-colors duration-150 hover:border-primary/40"
+      title="Show or hide the lines between the columns">
+      <Checkbox checked={on} onCheckedChange={(v) => onChange(v === true)} aria-label="Column lines" />
+      Column lines
+    </label>
+  );
+}
+
 export interface StatusDatum { label: string; count: number; color: string }
 
 const TOOLTIP_STYLE = { background: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 };
@@ -165,10 +457,10 @@ const AXIS_TICK = { fontSize: 11, fill: "var(--muted-foreground)" };
  *  gets colour 0), so the same vessel keeps the same colour across the top-
  *  vessels bar and the monthly stacked bar below it. */
 const VESSEL_PALETTE = [
-  "#00c875", "#579bfc", "#fdab3d", "#e2445c", "#a25ddc", "#66ccff",
-  "#ff642e", "#037f4c", "#cab641", "#9d50dd",
+  "#C9A227", "#6C8EBF", "#4A9C94", "#8B7FB8", "#C07C6A", "#7C8AA5",
+  "#8A9A5B", "#B79F6B", "#5E7FA8", "#9A8C98",
 ];
-const OTHER_COLOR = "#6b7280";
+const OTHER_COLOR = "#5C6678";
 
 function sumQty(rows: ShipSyncPackage[]): number {
   return rows.reduce((s, p) => s + (p.num_packages ?? 1), 0);

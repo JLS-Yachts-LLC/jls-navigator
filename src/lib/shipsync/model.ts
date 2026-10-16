@@ -14,14 +14,15 @@ export type PackageStatus =
   | 'to_collect' | 'collected' | 'refused'
 
 export const STATUS_META: Record<PackageStatus, { label: string; tone: string }> = {
-  in_office:        { label: 'In office',        tone: 'sky' },
-  in_storage:       { label: 'Warehouse',        tone: 'violet' },
-  assigned:         { label: 'Assigned',         tone: 'amber' },
-  out_for_delivery: { label: 'Out for delivery', tone: 'orange' },
+  // One colour, one meaning: amber = waiting, blue = on its way, green = done, red = problem.
+  in_office:        { label: 'In office',        tone: 'amber' },
+  in_storage:       { label: 'Warehouse',        tone: 'amber' },
+  assigned:         { label: 'Assigned',         tone: 'sky' },
+  out_for_delivery: { label: 'Out for delivery', tone: 'sky' },
   delivered:        { label: 'Delivered',        tone: 'emerald' },
   // Delivered but not yet invoiced, then closed off. Same wording as the
   // equivalent Monday labels on the Import board, so both tabs read alike.
-  delivered_tbi:    { label: 'Delivered - TBI',  tone: 'amber' },
+  delivered_tbi:    { label: 'Delivered - TBI',  tone: 'emerald' },
   completed:        { label: 'Completed',        tone: 'emerald' },
   to_collect:       { label: 'To collect',       tone: 'amber' },
   collected:        { label: 'Collected',        tone: 'emerald' },

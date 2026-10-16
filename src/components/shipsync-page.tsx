@@ -17,6 +17,7 @@ import { ShipSyncRouting } from "@/components/shipsync/ShipSyncRouting";
 import { ShipSyncWarehouse } from "@/components/shipsync/ShipSyncWarehouse";
 import { ShipSyncDrivers } from "@/components/shipsync/ShipSyncDrivers";
 import { ShipSyncDashboard } from "@/components/shipsync/ShipSyncDashboard";
+import { TableSkeleton } from "@/components/shipsync/shared";
 import { FleetTrackingPage } from "@/components/fleet-tracking-page";
 
 export interface ShipSyncData {
@@ -90,24 +91,24 @@ export function ShipSyncPage({ initialTab }: { initialTab?: string } = {}) {
   useEffect(() => { runReload(); }, [runReload]);
 
   return (
-    <div className="flex h-full min-w-0 flex-col">
-      <header className="flex items-center justify-between border-b border-border/70 bg-card/30 px-6 py-3.5">
-        <div>
-          <div className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-muted-foreground/60">JLS Yacht Logistics</div>
-          <h1 className="mt-0.5 font-display text-[1.25rem] font-semibold tracking-tight">ShipSync</h1>
+    <div className="shipsync-ui flex h-full min-w-0 flex-col">
+      <header className="flex items-center justify-between border-b border-border/70 bg-card/30 px-6 py-1.5">
+        <div className="flex items-baseline gap-3">
+          <h1 className="font-display text-[1.15rem] font-semibold leading-tight tracking-tight">ShipSync</h1>
+          <span className="hidden text-[10.5px] font-medium uppercase tracking-[0.08em] text-muted-foreground/60 sm:inline">JLS Yacht Logistics</span>
         </div>
         <div className="flex items-center gap-2">
-          <a href="mailto:support@newhorizon-it.co.uk?subject=ShipSync%20problem%20report" className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium text-muted-foreground hover:border-primary/50 hover:text-foreground">
+          <a href="mailto:support@newhorizon-it.co.uk?subject=ShipSync%20problem%20report" className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-[13px] font-medium text-muted-foreground transition-colors duration-150 hover:border-primary/50 hover:text-foreground">
             <LifeBuoy className="h-4 w-4" /> Report a problem
           </a>
           {/* The two standalone apps, launched side by side (each opens full-screen). */}
-          <a href="/shipsync/logistics" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:border-primary/50">
+          <a href="/shipsync/logistics" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-[13px] font-medium transition-colors duration-150 hover:border-primary/50">
             <Boxes className="h-4 w-4" /> Logistics app
           </a>
-          <a href="/logistics-app" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 rounded-lg border border-primary/50 bg-primary/5 px-3 py-2 text-sm font-medium text-primary hover:bg-primary/10">
+          <a href="/logistics-app" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 rounded-lg border border-primary/50 bg-primary/5 px-3 py-1.5 text-[13px] font-medium text-primary transition-colors duration-150 hover:bg-primary/10">
             <Package className="h-4 w-4" /> Logistics mobile
           </a>
-          <a href="/shipsync/driver" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:border-primary/50">
+          <a href="/shipsync/driver" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-[13px] font-medium transition-colors duration-150 hover:border-primary/50">
             <Smartphone className="h-4 w-4" /> Driver app
           </a>
         </div>
@@ -121,8 +122,8 @@ export function ShipSyncPage({ initialTab }: { initialTab?: string } = {}) {
           return (
             <button key={t.key} onClick={() => setTab(t.key)}
               className={cn(
-                "flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition",
-                active ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+                "flex items-center gap-2 border-b-2 px-4 py-1.5 text-sm font-medium transition-colors duration-150",
+                active ? "border-primary bg-primary/10 font-semibold text-foreground" : "border-transparent text-muted-foreground hover:bg-white/[0.03] hover:text-foreground",
               )}>
               <Icon className="h-4 w-4" /> {t.label}
             </button>
@@ -137,7 +138,7 @@ export function ShipSyncPage({ initialTab }: { initialTab?: string } = {}) {
           worked but with no visible thumb (and no pds-scroll styling). */}
       <div className="pds-scroll min-h-0 min-w-0 flex-1 overflow-auto">
         {loading ? (
-          <div className="flex h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+          <TableSkeleton />
         ) : error ? (
           <div className="flex h-64 flex-col items-center justify-center gap-3 text-center">
             <p className="text-sm text-muted-foreground">Couldn’t load ShipSync data.<br /><span className="text-xs text-muted-foreground/70">{error}</span></p>

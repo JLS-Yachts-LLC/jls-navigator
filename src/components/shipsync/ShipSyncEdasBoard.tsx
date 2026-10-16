@@ -31,7 +31,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { fmtDate, mondayRow, extraMondayColumns, DocumentDropzoneDialog, TableChartToggle, ShipSyncChartsPanel, type StatusDatum } from "@/components/shipsync/shared";
+import { fmtDate, mondayRow, extraMondayColumns, DocumentDropzoneDialog, TableChartToggle, ShipSyncChartsPanel, type StatusDatum, FilesCell, TableSkeleton, RowMenu, semanticGroupBorder, semanticStatusColor, useColumnLines, ColumnLinesToggle } from "@/components/shipsync/shared";
 import { loadEdasPackages, patchPackage, createPackage, deletePackage, addPackageDocuments, removePackageDocument } from "@/lib/shipsync/data";
 import type { ShipSyncPackage } from "@/lib/shipsync/model";
 
@@ -42,9 +42,7 @@ const GROUP_PALETTE = [
   "border-rose-500", "border-cyan-500", "border-lime-500", "border-fuchsia-500",
 ];
 function groupColor(title: string): string {
-  let h = 0;
-  for (let i = 0; i < title.length; i++) h = (h * 31 + title.charCodeAt(i)) >>> 0;
-  return GROUP_PALETTE[h % GROUP_PALETTE.length];
+  return semanticGroupBorder(title);
 }
 
 function extraOf(p: ShipSyncPackage): Record<string, any> { return (p.extra as any) ?? {}; }
@@ -120,6 +118,7 @@ export function ShipSyncEdasBoard() {
   const [confirmDeleteIds, setConfirmDeleteIds] = useState<string[] | null>(null);
   const [docTarget, setDocTarget] = useState<ShipSyncPackage | null>(null);
   const [view, setView] = useState<"table" | "chart">("table");
+  const [lines, setLines] = useColumnLines();
 
   function toggleSelect(id: string) {
     setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -237,9 +236,7 @@ export function ShipSyncEdasBoard() {
 
   function toggle(title: string) { setCollapsed((p) => ({ ...p, [title]: !p[title] })); }
 
-  if (loading) {
-    return <div className="flex h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
-  }
+  if (loading) return <TableSkeleton />;
 
   const colCount = 2 + CELLS.length + mondayColumns.length + 1;
   const deleteTarget = confirmDeleteIds && confirmDeleteIds.length === 1
@@ -247,7 +244,7 @@ export function ShipSyncEdasBoard() {
     : null;
 
   return (
-    <div className="flex h-full min-w-0 flex-col px-6 py-5">
+    <div className="flex h-full min-w-0 flex-col px-6 py-3">
       <div className="mb-3 flex shrink-0 flex-wrap items-center gap-2.5">
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/50" />
@@ -255,6 +252,7 @@ export function ShipSyncEdasBoard() {
         </div>
         <span className="text-[12px] text-muted-foreground">{filtered.length} of {rows.length}</span>
         <TableChartToggle value={view} onChange={setView} />
+        <ColumnLinesToggle on={lines} onChange={setLines} />
         <Button size="sm" onClick={() => { setNpGroup(allGroups[0]?.title ?? ""); setNpName(""); setNewPackageOpen(true); }} className="ml-auto h-9 gap-1.5">
           <Plus className="h-4 w-4" /> New EDAS entry
         </Button>
@@ -282,7 +280,7 @@ export function ShipSyncEdasBoard() {
         // Same one-scroll-box structure as the Import/Export boards — see
         // Import's header comment for why (a table per group breaks sticky).
         <div className="pds-scroll min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-card">
-          <table className="w-full table-fixed border-separate border-spacing-0 text-[12.5px] [&_td]:border-r [&_td]:border-border/40 [&_th]:border-r [&_th]:border-border/40">
+          <table className={cn("w-full table-fixed border-separate border-spacing-0 text-[12.5px] [&_td]:border-r [&_td]:border-border/40 [&_th]:border-r [&_th]:border-border/40", lines && "ss-vlines")}>
             <thead className="sticky top-0 z-20 will-change-transform">
               <tr className="bg-card text-left text-[10px] font-semibold uppercase tracking-[0.05em] text-muted-foreground shadow-[inset_0_-1px_0_0_var(--border)]">
                 <th className="sticky left-0 z-20 w-9 bg-card px-3 py-1.5 will-change-transform"></th>
@@ -345,31 +343,7 @@ export function ShipSyncEdasBoard() {
                             }
                             return (
                               <td key="documents" className="overflow-hidden px-2 py-1" onClick={(e) => e.stopPropagation()}>
-                                {docs.length === 0 ? (
-                                  <button type="button" onClick={() => setDocTarget(p)}
-                                    className="inline-flex items-center gap-1 rounded border border-dashed border-border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:border-primary hover:text-primary">
-                                    <Plus className="h-3 w-3" /> Add files
-                                  </button>
-                                ) : (
-                                  <div className="flex flex-wrap items-center gap-1">
-                                    {docs.map((d, i) => (
-                                      <span key={i} className="group/doc inline-flex max-w-[100px] items-center gap-1 rounded border border-border pl-1 pr-0.5 py-0.5 text-[10px] text-primary hover:bg-primary/5">
-                                        <SignedAnchor stored={d.url} title={d.name}
-                                          className="flex min-w-0 items-center gap-1 truncate">
-                                          <FileText className="h-3 w-3 shrink-0" /> <span className="truncate">{d.name}</span>
-                                        </SignedAnchor>
-                                        <button type="button" onClick={() => removeDocument(p, i)} title="Remove file"
-                                          className="shrink-0 rounded p-0.5 text-muted-foreground/60 opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover/doc:opacity-100">
-                                          <X className="h-3 w-3" />
-                                        </button>
-                                      </span>
-                                    ))}
-                                    <button type="button" onClick={() => setDocTarget(p)} title="Add files"
-                                      className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border border-dashed border-border text-muted-foreground hover:border-primary hover:text-primary">
-                                      <Plus className="h-3 w-3" />
-                                    </button>
-                                  </div>
-                                )}
+                                <FilesCell files={docs} onAdd={() => setDocTarget(p)} onRemove={(i) => removeDocument(p, i)} addLabel="Add files" />
                               </td>
                             );
                           })}
@@ -377,9 +351,10 @@ export function ShipSyncEdasBoard() {
                             <td key={c} className="overflow-hidden truncate px-2 py-1 text-muted-foreground">{row[c] || "—"}</td>
                           ))}
                           <td className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
-                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground/60 hover:text-destructive opacity-0 group-hover:opacity-100" onClick={() => setConfirmDeleteIds([p.id])}>
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
+                            <RowMenu items={[
+                              { label: "Add files", icon: FileText, onSelect: () => setDocTarget(p) },
+                              { label: "Delete", icon: Trash2, danger: true, onSelect: () => setConfirmDeleteIds([p.id]) },
+                            ]} />
                           </td>
                         </tr>
                       );
