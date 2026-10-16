@@ -205,9 +205,9 @@ export const NAV_GROUPS: NavGroup[] = [
  *  items with no `roles` gate (which are otherwise visible to all). */
 export const RESTRICTED_NAV: Partial<Record<PolarisRole, string[]>> = {
   logistics_team: ["vessels", "logistics"],
-  // Head of HR: staff contracts and confidential documents live in Anchor; no
-  // crew, vessel, finance or operations screens.
-  hr: ["anchor", "route-guides", "route-forms", "route-directory", "route-emergency"],
+  // Head of HR: staff contracts and confidential documents live in Anchor, plus
+  // placed crew in Crew Placement; no vessel, visa, finance or operations screens.
+  hr: ["anchor", "crew-placement", "route-guides", "route-forms", "route-directory", "route-emergency"],
 };
 
 /**
