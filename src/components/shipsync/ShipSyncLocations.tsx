@@ -11,7 +11,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Plus, Search, Loader2, Trash2, Pencil, MapPin } from "lucide-react";
-import { saveDestination, deleteDestination } from "@/lib/shipsync/data";
+import { saveDestination, updateDestination, deleteDestination } from "@/lib/shipsync/data";
 import type { ShipSyncDestination } from "@/lib/shipsync/model";
 import type { ShipSyncData } from "@/components/shipsync-page";
 import { useGoogleMaps } from "@/lib/google-maps";
@@ -52,7 +52,7 @@ export function ShipSyncLocations({ data, reload }: { data: ShipSyncData; reload
     if (!form.name.trim()) { toast.error("Give the location a name"); return; }
     setBusy(true);
     try {
-      await saveDestination({
+      const place = {
         boat_name: form.name.trim(),
         type: "location",
         category: form.category,
@@ -61,7 +61,15 @@ export function ShipSyncLocations({ data, reload }: { data: ShipSyncData; reload
         lat: form.lat,
         lng: form.lng,
         yacht_id: null,
-      });
+      };
+      if (form.id) {
+        await updateDestination(form.id, place as any);
+      } else {
+        // saveDestination matches on the name, so adding one that exists would silently overwrite it (even a vessel's berth).
+        const clash = data.destinations.find((d) => d.boat_name.trim().toLowerCase() === place.boat_name.toLowerCase());
+        if (clash) { toast.error(`"${clash.boat_name}" already exists — edit it instead of adding it again.`); setBusy(false); return; }
+        await saveDestination(place as any);
+      }
       toast.success(form.id ? "Location updated" : "Location added");
       setOpen(false); setForm(EMPTY);
       await reload();

@@ -49,7 +49,7 @@ export function ZoneStorageStatus({ data, reload }: { data: WarehouseData; reloa
           onCreated={(zone) => { setAddingZone(false); setTab(zone); }} onSaved={reload} />
       )}
 
-      {tab === "finder" ? <ShelfFinderAndCalculator data={data} /> : <ZoneDetails zone={tab} data={data} reload={reload} />}
+      {tab === "finder" ? <ShelfFinderAndCalculator data={data} /> : <ZoneDetails key={tab} zone={tab} data={data} reload={reload} />}
     </div>
   );
 }

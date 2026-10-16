@@ -137,7 +137,7 @@ export function ShelfDashboard({ data }: { data: WarehouseData }) {
                   className={cn("flex items-center justify-between rounded-lg border px-3 py-2 text-left text-sm transition",
                     selectedClient === c.name ? "border-primary bg-primary/5" : "border-border/60 hover:bg-accent/30")}>
                   <span className="font-medium">{c.name}</span>
-                  <span className="text-[11px] text-muted-foreground">{c.shelves} shelf{c.shelves === 1 ? "" : "shelves"} · {c.cbm.toFixed(2)} m³ · {c.packages} pkg</span>
+                  <span className="text-[11px] text-muted-foreground">{c.shelves} {c.shelves === 1 ? "shelf" : "shelves"} · {c.cbm.toFixed(2)} m³ · {c.packages} pkg</span>
                 </button>
               ))}
             </div>
@@ -150,7 +150,7 @@ export function ShelfDashboard({ data }: { data: WarehouseData }) {
               {deptUsage.map((d) => (
                 <div key={d.name} className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2 text-sm">
                   <span className="font-medium">{d.name}</span>
-                  <span className="text-[11px] text-muted-foreground">{d.shelves} shelf{d.shelves === 1 ? "" : "shelves"} · {d.cbm.toFixed(2)} m³ · {d.count} item{d.count === 1 ? "" : "s"}</span>
+                  <span className="text-[11px] text-muted-foreground">{d.shelves} {d.shelves === 1 ? "shelf" : "shelves"} · {d.cbm.toFixed(2)} m³ · {d.count} item{d.count === 1 ? "" : "s"}</span>
                 </div>
               ))}
             </div>

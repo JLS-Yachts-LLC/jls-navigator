@@ -183,7 +183,9 @@ export function ShipSyncEdasBoard() {
     const ids = confirmDeleteIds;
     if (!ids || ids.length === 0) return;
     try {
-      await Promise.all(ids.map((id) => deletePackage(id)));
+      const results = await Promise.allSettled(ids.map((id) => deletePackage(id)));
+      const failed = results.filter((r) => r.status === "rejected").length;
+      if (failed) { await reload(); throw new Error(`${failed} of ${ids.length} could not be removed`); }
       setRows((prev) => prev.filter((r) => !ids.includes(r.id)));
       setSelected((prev) => { const n = new Set(prev); ids.forEach((id) => n.delete(id)); return n; });
       toast.success(ids.length > 1 ? `${ids.length} entries removed` : "Entry removed");
@@ -193,6 +195,10 @@ export function ShipSyncEdasBoard() {
       setConfirmDeleteIds(null);
     }
   }
+
+  // Ticked rows only mean something in the view they were ticked in: changing the tab, search, filters or collapsing a group
+  // must not leave hidden rows selected for "Delete N selected".
+  useEffect(() => { setSelected(new Set()); }, [search, collapsed]);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return rows;
@@ -475,7 +481,7 @@ function EditableCell({ col, p, saving, onChange }: { col: ColDef; p: ShipSyncPa
       value={col.type === "date" && draft ? draft.slice(0, 10) : draft}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}
-      onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") setEditing(false); }}
+      onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setDraft(value); setEditing(false); } }}
       className="h-7 w-full rounded border border-input bg-background px-1.5 text-[12.5px] outline-none ring-1 ring-primary/40"
     />
   );
