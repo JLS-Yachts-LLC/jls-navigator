@@ -13,12 +13,13 @@ import { cn } from "@/lib/utils";
 import { fmtDate, PeriodBarChart } from "@/components/shipsync/shared";
 import type { ShipSyncPackage } from "@/lib/shipsync/model";
 import {
-  tradeTotals, incomingShipments, exportTotals, upcomingExports, tradeKind, progressOf, type TradeRow, type Tally,
+  tradeTotals, incomingShipments, exportTotals, upcomingExports, tradeKind, progressOf,
+  type TradeRow, type Tally, type IncomingRow, type UpcomingExport,
 } from "@/lib/shipsync/trade-summary";
 
 const SHOWN = 12;
 
-function Tile({ label, tally, tone }: { label: string; tally: Tally; tone?: "warn" | "ok" }) {
+export function Tile({ label, tally, tone }: { label: string; tally: Tally; tone?: "warn" | "ok" }) {
   return (
     <div className="rounded-xl border border-border bg-card p-4">
       <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</div>
@@ -30,7 +31,7 @@ function Tile({ label, tally, tone }: { label: string; tally: Tally; tone?: "war
   );
 }
 
-function ListCard({ title, note, children }: { title: string; note?: string; children: React.ReactNode }) {
+export function ListCard({ title, note, children }: { title: string; note?: string; children: React.ReactNode }) {
   return (
     <div className="rounded-xl border border-border bg-card p-4">
       <div className="mb-1 text-sm font-semibold">{title}</div>
@@ -40,17 +41,87 @@ function ListCard({ title, note, children }: { title: string; note?: string; chi
   );
 }
 
-const th = "px-2 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground";
-const td = "px-2 py-1.5 text-[13px]";
+export const th = "px-2 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground";
+export const td = "px-2 py-1.5 text-[13px]";
 
-function DateCell({ value }: { value: string | null }) {
+export function DateCell({ value }: { value: string | null }) {
   return value ? <span>{fmtDate(value)}</span> : <span className="text-muted-foreground/60">Not set</span>;
 }
 
-export function ShipSyncTradeOverview({ imports, exports, locals }: { imports: ShipSyncPackage[]; exports: ShipSyncPackage[]; locals: ShipSyncPackage[] }) {
-  const [showAllIn, setShowAllIn] = useState(false);
-  const [showAllOut, setShowAllOut] = useState(false);
+/** Not-yet-delivered Import and Transit shipments, soonest ETA first. Narrow on purpose: five short columns read best close together. */
+export function IncomingList({ incoming, limit = SHOWN }: { incoming: IncomingRow[]; limit?: number }) {
+  const [showAll, setShowAll] = useState(false);
+  const noEta = incoming.filter((r) => !r.eta).length;
+  const rows = showAll ? incoming : incoming.slice(0, limit);
+  return (
+    <ListCard title={`Incoming Import and Transit (${incoming.length})`}
+      note={noEta ? `${noEta} ha${noEta === 1 ? "s" : "ve"} no ETA yet — set it on the Import board's ETA column.` : "Not yet delivered, soonest ETA first."}>
+      {incoming.length === 0 ? <div className="text-sm text-muted-foreground">Nothing incoming right now.</div> : (
+        <>
+          <div className="overflow-x-auto">
+            <table className="w-full max-w-3xl">
+              <thead><tr><th className={th}>Client</th><th className={th}>Type</th><th className={th}>AWB</th><th className={th}>ETA</th><th className={th}>Status</th></tr></thead>
+              <tbody className="divide-y divide-border/50">
+                {rows.map((r) => (
+                  <tr key={r.id}>
+                    <td className={td}>{r.client}</td>
+                    <td className={td}>{r.kind}</td>
+                    <td className={cn(td, "font-mono")}>{r.awb || "—"}</td>
+                    <td className={td}><DateCell value={r.eta} /></td>
+                    <td className={cn(td, "text-muted-foreground")}>{r.status || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {incoming.length > limit && (
+            <button type="button" onClick={() => setShowAll((v) => !v)} className="mt-2 text-[12px] font-medium text-primary hover:underline">
+              {showAll ? "Show fewer" : `Show all ${incoming.length}`}
+            </button>
+          )}
+        </>
+      )}
+    </ListCard>
+  );
+}
 
+/** Export shipments that are still open, soonest ETD first. */
+export function OpenExportList({ upcoming, limit = SHOWN }: { upcoming: UpcomingExport[]; limit?: number }) {
+  const [showAll, setShowAll] = useState(false);
+  const noEtd = upcoming.filter((r) => !r.etd).length;
+  const rows = showAll ? upcoming : upcoming.slice(0, limit);
+  return (
+    <ListCard title={`Open export shipments (${upcoming.length})`}
+      note={noEtd ? `${noEtd} ha${noEtd === 1 ? "s" : "ve"} no ETD yet — set it on the Export board's ETD column.` : "Soonest ETD first."}>
+      {upcoming.length === 0 ? <div className="text-sm text-muted-foreground">No open export shipments.</div> : (
+        <>
+          <div className="overflow-x-auto">
+            <table className="w-full max-w-2xl">
+              <thead><tr><th className={th}>Client</th><th className={th}>AWB</th><th className={th}>ETD</th><th className={th}>Status</th></tr></thead>
+              <tbody className="divide-y divide-border/50">
+                {rows.map((r) => (
+                  <tr key={r.id}>
+                    <td className={td}>{r.client}</td>
+                    <td className={cn(td, "font-mono")}>{r.awb || "—"}</td>
+                    <td className={td}><DateCell value={r.etd} /></td>
+                    <td className={cn(td, "text-muted-foreground")}>{r.status || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {upcoming.length > limit && (
+            <button type="button" onClick={() => setShowAll((v) => !v)} className="mt-2 text-[12px] font-medium text-primary hover:underline">
+              {showAll ? "Show fewer" : `Show all ${upcoming.length}`}
+            </button>
+          )}
+        </>
+      )}
+    </ListCard>
+  );
+}
+
+export function ShipSyncTradeOverview({ imports, exports, locals }: { imports: ShipSyncPackage[]; exports: ShipSyncPackage[]; locals: ShipSyncPackage[] }) {
   const totals = useMemo(() => tradeTotals(imports as TradeRow[]), [imports]);
   const incoming = useMemo(() => incomingShipments(imports as TradeRow[]), [imports]);
   const out = useMemo(() => exportTotals(exports as TradeRow[]), [exports]);
@@ -60,11 +131,6 @@ export function ShipSyncTradeOverview({ imports, exports, locals }: { imports: S
   const importOnly = useMemo(() => live(imports).filter((p) => tradeKind(p as TradeRow) === "Import"), [imports]);
   const transitOnly = useMemo(() => live(imports).filter((p) => tradeKind(p as TradeRow) === "Transit"), [imports]);
   const exportLive = useMemo(() => live(exports), [exports]);
-
-  const noEta = incoming.filter((r) => !r.eta).length;
-  const noEtd = upcoming.filter((r) => !r.etd).length;
-  const inRows = showAllIn ? incoming : incoming.slice(0, SHOWN);
-  const outRows = showAllOut ? upcoming : upcoming.slice(0, SHOWN);
 
   return (
     <div className="mb-5 space-y-4">
@@ -85,34 +151,7 @@ export function ShipSyncTradeOverview({ imports, exports, locals }: { imports: S
         <PeriodBarChart title="Export shipments" rows={exportLive} hint="by requested date" />
       </div>
 
-      <ListCard title={`Incoming Import and Transit (${incoming.length})`}
-        note={noEta ? `${noEta} ha${noEta === 1 ? "s" : "ve"} no ETA yet — set it on the Import board's ETA column.` : "Not yet delivered, soonest ETA first."}>
-        {incoming.length === 0 ? <div className="text-sm text-muted-foreground">Nothing incoming right now.</div> : (
-          <>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead><tr><th className={th}>Client</th><th className={th}>Type</th><th className={th}>AWB</th><th className={th}>ETA</th><th className={th}>Status</th></tr></thead>
-                <tbody className="divide-y divide-border/50">
-                  {inRows.map((r) => (
-                    <tr key={r.id}>
-                      <td className={td}>{r.client}</td>
-                      <td className={td}>{r.kind}</td>
-                      <td className={cn(td, "font-mono")}>{r.awb || "—"}</td>
-                      <td className={td}><DateCell value={r.eta} /></td>
-                      <td className={cn(td, "text-muted-foreground")}>{r.status || "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {incoming.length > SHOWN && (
-              <button type="button" onClick={() => setShowAllIn((v) => !v)} className="mt-2 text-[12px] font-medium text-primary hover:underline">
-                {showAllIn ? "Show fewer" : `Show all ${incoming.length}`}
-              </button>
-            )}
-          </>
-        )}
-      </ListCard>
+      <IncomingList incoming={incoming} />
 
       <div>
         <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Export</div>
@@ -123,33 +162,7 @@ export function ShipSyncTradeOverview({ imports, exports, locals }: { imports: S
         </div>
       </div>
 
-      <ListCard title={`Open export shipments (${upcoming.length})`}
-        note={noEtd ? `${noEtd} ha${noEtd === 1 ? "s" : "ve"} no ETD yet — set it on the Export board's ETD column.` : "Soonest ETD first."}>
-        {upcoming.length === 0 ? <div className="text-sm text-muted-foreground">No open export shipments.</div> : (
-          <>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead><tr><th className={th}>Client</th><th className={th}>AWB</th><th className={th}>ETD</th><th className={th}>Status</th></tr></thead>
-                <tbody className="divide-y divide-border/50">
-                  {outRows.map((r) => (
-                    <tr key={r.id}>
-                      <td className={td}>{r.client}</td>
-                      <td className={cn(td, "font-mono")}>{r.awb || "—"}</td>
-                      <td className={td}><DateCell value={r.etd} /></td>
-                      <td className={cn(td, "text-muted-foreground")}>{r.status || "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {upcoming.length > SHOWN && (
-              <button type="button" onClick={() => setShowAllOut((v) => !v)} className="mt-2 text-[12px] font-medium text-primary hover:underline">
-                {showAllOut ? "Show fewer" : `Show all ${upcoming.length}`}
-              </button>
-            )}
-          </>
-        )}
-      </ListCard>
+      <OpenExportList upcoming={upcoming} />
     </div>
   );
 }
