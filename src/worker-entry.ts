@@ -1811,6 +1811,20 @@ export default {
       )
     }
 
+    // ── Daily (03:00 UTC tick): drop usage_events older than 180 days (Admin →
+    //    Usage). pg_cron isn't installed on this project, so the purge runs here. ──
+    if (isHourly && utcHour === 3) {
+      ctx.waitUntil(
+        import('./integrations/supabase/client.server')
+          .then(({ supabaseAdmin }) => (supabaseAdmin as any).rpc('purge_usage_events'))
+          .then(({ data, error }: { data: number | null; error: { message: string } | null }) => {
+            if (error) console.error('[usage-purge] error:', error.message)
+            else if (data) console.log(`[usage-purge] removed=${data}`)
+          })
+          .catch((e) => console.error('[usage-purge] error:', e instanceof Error ? e.message : String(e)))
+      )
+    }
+
     // ── Hourly: one chunk of the two-way visa ⇄ tracker sync (rotating cursor,
     // snapshot-guarded newest-wins). Cycles through all vessels over ~8 hours. ──
     if (isHourly) {

@@ -12,6 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { recordVisit } from "@/lib/recent-tabs";
 import { recordAction, installErrorCapture } from "@/lib/action-log";
 import { installErrorLogging, setLogUser } from "@/lib/error-logger";
+import { trackScreen } from "@/lib/usage-tracking";
 
 // The classic sidebar + top-bar chrome is retired: every app route renders
 // inside the Polaris shell (see git history for the previous layout markup).
@@ -59,6 +60,13 @@ export function AppLayout() {
   useEffect(() => {
     if (user) { recordVisit(location.pathname); recordAction(`Navigated to ${location.pathname}`); }
   }, [location.pathname, user]);
+
+  // Usage tracking for Admin → Usage: one row per screen (route change or a
+  // ?screen= switch on the Polaris home), deduped and fire-and-forget.
+  const screenParam = (location.search as { screen?: unknown } | undefined)?.screen;
+  useEffect(() => {
+    if (user) trackScreen(user.id, location.pathname, typeof screenParam === "string" ? screenParam : null);
+  }, [location.pathname, screenParam, user?.id]);
 
   if (loading || fieldOnly) {
     return (

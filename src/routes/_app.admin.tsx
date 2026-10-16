@@ -34,6 +34,8 @@ const ADMIN_NAV = [
   { to: '/admin/organisations', label: 'Organisations' },
   { to: '/admin/permissions',   label: 'Permissions' },
   { to: '/admin/audit',         label: 'Audit Log' },
+  // Who is and isn't using Polaris — global admins only (the report refuses anyone else).
+  { to: '/admin/usage',         label: 'Usage', globalOnly: true },
   { to: '/admin/shipsync-compare', label: 'Power App vs Polaris' },
   { to: '/admin/shrink-photos',   label: 'Shrink Old Photos' },
 ]
@@ -83,7 +85,7 @@ function AdminLayout() {
 
         {/* Sub-nav */}
         <nav style={{ display: 'flex', gap: 4, marginLeft: 16 }}>
-          {ADMIN_NAV.map(({ to, label }) => {
+          {ADMIN_NAV.filter((n) => !('globalOnly' in n) || role === 'global_admin' || import.meta.env.DEV).map(({ to, label }) => {
             const isActive = location.pathname === to || location.pathname.startsWith(to + '/')
             return (
               <Link
