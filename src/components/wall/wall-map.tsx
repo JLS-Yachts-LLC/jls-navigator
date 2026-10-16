@@ -30,7 +30,7 @@ function Frame({ points }: { points: WallMapPoint[] }) {
     last.current = sig;
     // Frame the UAE coast — the boats that are here. One inbound vessel off
     // Jeddah would otherwise zoom the whole board out to the Arabian peninsula.
-    const uae = points.filter((p) => p.lat > 22.5 && p.lat < 26.6 && p.lon > 51 && p.lon < 56.6);
+    const uae = points.filter((p) => p.lat > 23.5 && p.lat < 26.6 && p.lon > 52 && p.lon < 56.6);
     const pts = uae.map((p) => [p.lat, p.lon] as [number, number]);
     if (pts.length) map.fitBounds(pts, { padding: [40, 40], maxZoom: 11 });
     else map.setView([25.15, 55.2], 9);
