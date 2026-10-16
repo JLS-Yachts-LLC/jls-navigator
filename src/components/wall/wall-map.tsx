@@ -46,7 +46,9 @@ export default function WallMap({ points }: { points: WallMapPoint[] }) {
       dragging={false} scrollWheelZoom={false} doubleClickZoom={false} keyboard={false} touchZoom={false} boxZoom={false}
       style={{ height: "100%", width: "100%", background: "#0A1A2B" }}
     >
-      <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" subdomains="abcd" />
+      {/* Esri dark canvas — keyless (CARTO's dark tiles now refuse this domain without an API key). */}
+      <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}" maxZoom={16} />
+      <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}" maxZoom={16} />
       <Frame points={points} />
       {sorted.map((p) => (
         <Marker key={p.id} position={[p.lat, p.lon]} icon={icon(p)} interactive={false}>
