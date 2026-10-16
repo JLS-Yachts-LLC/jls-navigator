@@ -220,12 +220,20 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
   // Ticked rows only mean anything in the view they were ticked in. Selection
   // surviving a stage or search change would leave rows you can no longer see
   // still selected — and then updated by the bulk action.
-  useEffect(() => { setSelected(new Set()); }, [stage, search]);
+  useEffect(() => { setSelected(new Set()); }, [stage, search, clientFilter, when, collapsed]);
 
-  const allShownSelected = filtered.length > 0 && filtered.every((p) => selected.has(p.id));
+  // "Select all" means the rows on this page — the ones you can see. Pages used to be one long list, so every row was visible;
+  // now that they are paged, selecting the whole stage would quietly include rows on other pages for a bulk update.
+  const pageRows = useMemo(() => pagedGroups.flatMap((g) => g.shown), [pagedGroups]);
+  const allShownSelected = pageRows.length > 0 && pageRows.every((p) => selected.has(p.id));
 
   function toggleAllShown() {
-    setSelected(allShownSelected ? new Set() : new Set(filtered.map((p) => p.id)));
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allShownSelected) pageRows.forEach((p) => next.delete(p.id));
+      else pageRows.forEach((p) => next.add(p.id));
+      return next;
+    });
   }
 
   function toggleOne(id: string) {
@@ -437,7 +445,7 @@ export function ShipSyncPackages({ data, reload }: { data: ShipSyncData; reload:
                 <Checkbox
                   checked={allShownSelected}
                   onCheckedChange={toggleAllShown}
-                  aria-label="Select every package shown"
+                  aria-label="Select every package on this page"
                 />
               </th>
               {["Air waybill/tracking info", "Client", "Date Received", "Received Photo", "Consignee", "Receiver", "Number of Packages", "Courier", "Shipment Type", "Delivery Note Number", "Driver", "Date Delivered", "Delivery Photo", "Documents", "Invoice Number", "Remarks", "Status"].map((h, i) => (
