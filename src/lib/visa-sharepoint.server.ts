@@ -44,13 +44,18 @@ export async function listFolderChildren(
   siteId: string, token: string, path: string,
 ): Promise<Record<string, any>[]> {
   const select = "id,name,size,webUrl,folder,file,lastModifiedDateTime";
-  const res = await fetch(
-    `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root:/${encodeURI(path)}:/children?%24top=200&%24select=${select}`,
-    { headers: { Authorization: `Bearer ${token}` } },
-  );
-  if (!res.ok) return [];
-  const body = (await res.json()) as Record<string, any>;
-  return (body.value ?? []) as Record<string, any>[];
+  // Follow Graph's paging — a folder past 200 children would otherwise be cut short.
+  let url: string | null =
+    `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root:/${encodeURI(path)}:/children?%24top=200&%24select=${select}`;
+  const out: Record<string, any>[] = [];
+  for (let page = 0; url && page < 25; page++) {
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) break;
+    const body = (await res.json()) as Record<string, any>;
+    out.push(...((body.value ?? []) as Record<string, any>[]));
+    url = (body["@odata.nextLink"] as string | undefined) ?? null;
+  }
+  return out;
 }
 
 /** Of several candidate folders, the one already in real use: most items first,

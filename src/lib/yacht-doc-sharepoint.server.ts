@@ -33,15 +33,20 @@ async function spContext(): Promise<{ token: string; siteId: string }> {
 const nameKey = (s: string) =>
   s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
 
+/** Every child of a folder — follows Graph's paging, since "Yacht" holds more than one page of vessels. */
 async function listChildren(siteId: string, token: string, path: string): Promise<Record<string, any>[]> {
   const select = 'id,name,size,webUrl,folder,file,lastModifiedDateTime'
-  const res = await fetch(
-    `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root:/${encodeURI(path)}:/children?%24top=200&%24select=${select}`,
-    { headers: { Authorization: `Bearer ${token}` } },
-  )
-  if (!res.ok) return []
-  const body = (await res.json()) as Record<string, any>
-  return (body.value ?? []) as Record<string, any>[]
+  let url: string | null =
+    `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root:/${encodeURI(path)}:/children?%24top=200&%24select=${select}`
+  const out: Record<string, any>[] = []
+  for (let page = 0; url && page < 25; page++) {
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+    if (!res.ok) break
+    const body = (await res.json()) as Record<string, any>
+    out.push(...((body.value ?? []) as Record<string, any>[]))
+    url = (body['@odata.nextLink'] as string | undefined) ?? null
+  }
+  return out
 }
 
 async function getItemByPath(siteId: string, token: string, path: string): Promise<Record<string, any> | null> {
@@ -57,18 +62,37 @@ async function getItemByPath(siteId: string, token: string, path: string): Promi
  * ("Yacth"/"Yacht") can win at random and files land in an empty twin.
  */
 async function resolveVesselFolder(siteId: string, token: string, vesselName: string): Promise<string | null> {
-  const want = nameKey(vesselName)
-  if (!want) return null
+  const names = vesselNameCandidates(vesselName)
+  if (!names.length) return null
   const folders = (await listChildren(siteId, token, 'Yacht')).filter(c => !!c.folder)
-  const exact = folders.filter(c => nameKey(String(c.name)) === want)
   const pick = (list: Record<string, any>[]) =>
     [...list].sort((a, b) => Number(b.folder?.childCount ?? 0) - Number(a.folder?.childCount ?? 0))[0]
-  if (exact.length) return String(pick(exact).name)
-  const words = want.split(' ').filter(w => w.length > 1)
-  const loose = words.length
-    ? folders.filter(c => { const k = nameKey(String(c.name)); return words.every(w => k.includes(w)) })
-    : []
-  return loose.length ? String(pick(loose).name) : null
+  // Exact matches first, in order of preference (full name, current name, former name)…
+  for (const want of names) {
+    const exact = folders.filter(c => nameKey(String(c.name)) === want)
+    if (exact.length) return String(pick(exact).name)
+  }
+  // …then a folder containing every word of one of them.
+  for (const want of names) {
+    const words = want.split(' ').filter(w => w.length > 1)
+    const loose = words.length
+      ? folders.filter(c => { const k = nameKey(String(c.name)); return words.every(w => k.includes(w)) })
+      : []
+    if (loose.length) return String(pick(loose).name)
+  }
+  return null
+}
+
+/**
+ * Names a vessel's folder may be filed under, most preferred first. Polaris names
+ * carry notes SharePoint folders don't — "DEEP BREATH (ex Hermitage)", "Platinum
+ * (66.90m)" — so also try the name with the brackets removed, and lastly the
+ * former name, in case the folder was never renamed.
+ */
+function vesselNameCandidates(vesselName: string): string[] {
+  const out = [nameKey(vesselName), nameKey(vesselName.replace(/\([^)]*\)|\[[^\]]*\]/g, ' '))]
+  for (const m of vesselName.matchAll(/[([]\s*ex\b[\s.:-]*([^)\]]+)[)\]]/gi)) out.push(nameKey(m[1]))
+  return [...new Set(out.filter(Boolean))]
 }
 
 export type SpYachtItem = {
