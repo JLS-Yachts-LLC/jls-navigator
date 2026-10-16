@@ -74,16 +74,22 @@ const TONE_TEXT: Record<ExpiryTone, string> = {
  * expiry date coloured by urgency, or "—" when there's none on file.
  *   FMA → the current cruising permit. FMA took over issuing from MOEI in Aug
  *         2026, so a still-valid MOEI (or other) permit shows with its issuer.
- *   DMA → the current DMA permit.
+ *   DMA   → the current DMA permit.
+ *   Entry → the GDRFA entry permit's original expiry, while the yacht is here (SD-0058).
  */
-export function PermitExpiryField({ kind, items }: { kind: "fma" | "dma"; items: CurrentPermit[] | undefined }) {
-  const p = items?.find((x) => x.permitType === (kind === "fma" ? "cruising_mothership" : "dma"));
+const FIELD: Record<"fma" | "dma" | "entry", { type: string; label: string }> = {
+  fma: { type: "cruising_mothership", label: "FMA" },
+  dma: { type: "dma", label: "DMA" },
+  entry: { type: "exit_entry", label: "Entry permit" },
+};
+export function PermitExpiryField({ kind, items }: { kind: "fma" | "dma" | "entry"; items: CurrentPermit[] | undefined }) {
+  const p = items?.find((x) => x.permitType === FIELD[kind].type);
   const issuer = kind === "fma" && p?.authority && !/^fma$/i.test(p.authority.trim())
     ? (/dubai maritime city authority/i.test(p.authority) ? "DMA" : p.authority.trim())
     : null;
   return (
     <div>
-      <div className="text-muted-foreground">{kind === "fma" ? "FMA" : "DMA"}</div>
+      <div className="text-muted-foreground">{FIELD[kind].label}</div>
       {p ? (
         <div className={cn("font-medium tabular-nums", TONE_TEXT[expiryTone(p.days)])}
           title={`${p.label} — ${daysText(p.days)} (${fmt(p.expiryDate)})${p.fromVesselRecord ? " · from the vessel record" : ""}`}>

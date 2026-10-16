@@ -10,10 +10,21 @@
  * so for that kind the later of the two wins.
  */
 
-/** Kinds tracked for expiry. Gate passes and exit/entry permits are per visit, so left out. */
+/**
+ * Kinds tracked for expiry. Gate passes are per visit, so left out. Of the exit &
+ * entry permits only the GDRFA ENTRY permit counts (dma_phase "Entry"): it expires
+ * about six months after the yacht entered, however often it is updated for crew
+ * changes, so its original expiry must be watched (SD-0058). Exit permits have none.
+ */
 export const TRACKED_PERMIT_TYPES = [
-  "cruising_mothership", "cruising_tenders", "dma", "navigation_license", "sanitation", "tdra", "abu_dhabi",
+  "cruising_mothership", "cruising_tenders", "dma", "navigation_license", "sanitation", "tdra", "abu_dhabi", "exit_entry",
 ] as const;
+
+/** A GDRFA entry permit runs this long from the date of entry (the agents' own records: 180 days). */
+export const ENTRY_PERMIT_DAYS = 180;
+
+const isEntryPermit = (r: { permit_type: string; dma_phase: string | null }) =>
+  r.permit_type === "exit_entry" && (r.dma_phase ?? "").toLowerCase() === "entry";
 const TRACKED = new Set<string>(TRACKED_PERMIT_TYPES);
 
 /** Reminder points, in days before expiry (0 = on the day it expires). */
@@ -34,7 +45,8 @@ export type ExpiryPermitRow = {
   status: string | null;
 };
 
-export type VesselExpiryRow = { id: string; cruising_permit_expiry?: string | null };
+/** `status` lets a departed yacht's old entry permit drop out (it no longer applies). */
+export type VesselExpiryRow = { id: string; cruising_permit_expiry?: string | null; status?: string | null };
 
 export type CurrentPermit = {
   /** vessel + kind (+ Abu Dhabi permit type) */
@@ -84,6 +96,7 @@ export function permitLabel(type: string, authority: string | null, phase: strin
     case "sanitation": return "Sanitation certificate";
     case "tdra": return "TDRA";
     case "abu_dhabi": return phase ? `Abu Dhabi · ${phase}` : "Abu Dhabi permit";
+    case "exit_entry": return "GDRFA entry permit";
     default: return type;
   }
 }
@@ -98,9 +111,12 @@ export function currentPermits(
   today: string,
   opts: { showExpiredForDays?: number } = {},
 ): CurrentPermit[] {
+  const departed = new Set(vessels.filter((v) => /^departed$/i.test((v.status ?? "").trim())).map((v) => v.id));
   const best = new Map<string, ExpiryPermitRow>();
   for (const r of rows) {
     if (!r.yacht_id || !r.expiry_date || r.status === "cancelled" || !TRACKED.has(r.permit_type)) continue;
+    // Only the entry permit, and only while the yacht is still here.
+    if (r.permit_type === "exit_entry" && (!isEntryPermit(r) || departed.has(r.yacht_id))) continue;
     const key = `${r.yacht_id}|${r.permit_type}${r.permit_type === "abu_dhabi" && r.dma_phase ? `|${r.dma_phase}` : ""}`;
     const have = best.get(key);
     if (!have || (r.expiry_date ?? "") > (have.expiry_date ?? "")) best.set(key, r);

@@ -13,8 +13,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, Mail, Paperclip, Save, X } from "lucide-react";
 import { toast } from "sonner";
 import { sendPermitEmail, deliveryNote } from "@/lib/permits/send-permit-email";
+import { ENTRY_PERMIT_DAYS } from "@/lib/permit-expiry";
 
 type Yacht = { id: string; vessel_name: string };
+
+/** YYYY-MM-DD plus n days. */
+function addDays(date: string, n: number): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
 type SubType = "Exit" | "Entry";
 
 const PORT_OPTIONS = [
@@ -94,6 +102,19 @@ export function ExitEntryDialog({
 
   async function doSave(): Promise<string> {
     if (!userId) throw new Error("Not authenticated");
+    if (subType === "Entry") {
+      if (form.issue_date && form.expiry_date && form.expiry_date < form.issue_date) {
+        throw new Error("The entry permit can't expire before the date of entry — check the two dates.");
+      }
+      // The ORIGINAL expiry is what counts (SD-0058): updating the permit for crew
+      // changes doesn't extend it, so moving it later needs a deliberate yes.
+      const was = editing?.dma_phase === "Entry" ? editing.expiry_date : null;
+      if (was && form.expiry_date && form.expiry_date > was && !window.confirm(
+        `This moves the entry permit's expiry from ${was} to ${form.expiry_date}.\n\n` +
+        "Updating the permit for crew arrivals or departures doesn't extend it — it still expires about " +
+        "6 months after the yacht entered. Only move it later for a new entry or a GDRFA renewal.\n\nSave the new date?",
+      )) throw new Error("Not saved — the original expiry was kept.");
+    }
     const payload = {
       permit_type: "exit_entry" as const,
       yacht_id: form.yacht_id ?? null,
@@ -229,7 +250,12 @@ export function ExitEntryDialog({
               <Input
                 type="date"
                 value={form.issue_date ?? ""}
-                onChange={(e) => set("issue_date", e.target.value)}
+                onChange={(e) => {
+                  const d = e.target.value;
+                  // A new entry permit runs ENTRY_PERMIT_DAYS from the date of entry —
+                  // filled in for them (still editable) when no expiry is set yet.
+                  setForm((f) => ({ ...f, issue_date: d, ...(d && !f.expiry_date ? { expiry_date: addDays(d, ENTRY_PERMIT_DAYS) } : {}) }));
+                }}
               />
             </div>
             <div className="space-y-1.5">
@@ -239,6 +265,10 @@ export function ExitEntryDialog({
                 value={form.expiry_date ?? ""}
                 onChange={(e) => set("expiry_date", e.target.value)}
               />
+              <p className="text-[11px] leading-snug text-muted-foreground">
+                The original expiry from the yacht's entry. Updating the permit for crew changes doesn't extend it — Polaris
+                reminds the vessel's agents at 60, 30 and 7 days.
+              </p>
             </div>
           </>
         )}

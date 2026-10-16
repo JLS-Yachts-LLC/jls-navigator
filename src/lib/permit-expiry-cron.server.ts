@@ -74,7 +74,7 @@ async function dueReminders(): Promise<DueReminder[]> {
 
   const { data: vessels, error: vErr } = await sb
     .from("yachts")
-    .select("id, vessel_name, cruising_permit_expiry, archive")
+    .select("id, vessel_name, cruising_permit_expiry, archive, status")
     .or(`id.in.(${[...new Set((permits ?? []).map((p: any) => p.yacht_id).filter(Boolean))].join(",") || "00000000-0000-0000-0000-000000000000"}),cruising_permit_expiry.gte.${from}`);
   if (vErr) throw new Error(`yachts: ${vErr.message}`);
   const live = ((vessels ?? []) as any[]).filter((v) => !v.archive);

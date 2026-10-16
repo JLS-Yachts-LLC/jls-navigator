@@ -1248,6 +1248,7 @@ function CardsView({ rows, staleIds, small, onArchive, onOpenYacht, onMovementFi
                 <div><div className="text-muted-foreground">ETD</div><div className="font-medium tabular-nums">{fmt(y.etd)}</div></div>
                 <PermitExpiryField kind="fma" items={expiryByYacht?.get(y.id)} />
                 <PermitExpiryField kind="dma" items={expiryByYacht?.get(y.id)} />
+                <PermitExpiryField kind="entry" items={expiryByYacht?.get(y.id)} />
               </div>
               {/* Permit expiry — the soonest first, coloured by urgency (SD-0047) */}
               <PermitExpiryChips items={expiryByYacht?.get(y.id)} />
