@@ -2,7 +2,9 @@ import { useState, useMemo } from 'react'
 import { toast } from 'sonner'
 import { useAuth } from '@/lib/auth'
 import { cn } from '@/lib/utils'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { downloadVisaExport, emailVisaExport } from '@/lib/visa/export-client'
+import { triggerBlobDownload } from '@/lib/visa/documentExport'
 
 // A visa row as loaded by VisaDashboard (subset we need here).
 type Row = {
@@ -31,14 +33,23 @@ const fmt = (d: string | null) => d ? new Date(d).toLocaleDateString('en-GB', { 
 const name = (r: Row) => `${r.given_name ?? ''} ${r.surname ?? ''}`.trim() || '—'
 const effDate = (r: Row) => r.submitted_at ?? r.visa_issuance_date ?? r.created_at
 
-export function VisaReportView({ applications, vessels, onClose }: {
+const CSV_HEADERS = ['Vessel', 'Given Name', 'Surname', 'Nationality', 'Passport No.', 'Visa Ref', 'Visa Issuance', 'Visa Expiry', 'Sign On', 'Sign Off', 'Status']
+const fileSafe = (s: string) => s.replace(/[^a-zA-Z0-9.\-]/g, '-')
+const pause = (ms: number) => new Promise(r => setTimeout(r, ms))
+
+export function VisaReportView({ applications, vessels, initialVessel, onClose }: {
   applications: Row[]
   vessels: [string, string][]
+  /** The vessel picked on the dashboard, if any — the report starts on it. */
+  initialVessel?: string | null
   onClose: () => void
 }) {
   const { user } = useAuth()
   const [tab, setTab] = useState<'immigration' | 'visa'>('immigration')
-  const [vessel, setVessel] = useState('all')
+  // Several vessels can be picked at once; none picked = every vessel (SD-0061).
+  const [picked, setPicked] = useState<string[]>(initialVessel ? [initialVessel] : [])
+  const [vesselSearch, setVesselSearch] = useState('')
+  const [downloading, setDownloading] = useState<'csv' | 'pdf' | null>(null)
   const [status, setStatus] = useState('all')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
@@ -46,14 +57,15 @@ export function VisaReportView({ applications, vessels, onClose }: {
 
   const vesselName = (id: string | null) => vessels.find(v => v[0] === id)?.[1] ?? 'Unassigned'
 
+  const pickedSet = useMemo(() => new Set(picked), [picked])
   const filtered = useMemo(() => applications.filter(r => {
-    if (vessel !== 'all' && r.yacht_id !== vessel) return false
+    if (pickedSet.size && !pickedSet.has(r.yacht_id ?? '')) return false
     if (status !== 'all' && r.status !== status) return false
     const d = (effDate(r) ?? '').slice(0, 10)
     if (from && d && d < from) return false
     if (to && d && d > to) return false
     return true
-  }), [applications, vessel, status, from, to])
+  }), [applications, pickedSet, status, from, to])
 
   const summary = useMemo(() => {
     const g: Record<string, { vessel: string; total: number; approved: number; cancelled: number; rejected: number }> = {}
@@ -75,18 +87,59 @@ export function VisaReportView({ applications, vessels, onClose }: {
     rejected: filtered.filter(r => r.status === 'rejected').length,
   }), [filtered])
 
-  function exportCsv() {
-    const headers = ['Vessel', 'Given Name', 'Surname', 'Nationality', 'Passport No.', 'Visa Ref', 'Visa Issuance', 'Visa Expiry', 'Sign On', 'Sign Off', 'Status']
+  function csvBlob(rows: Row[]): Blob {
     const esc = (s: string) => /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-    const lines = [headers.join(','), ...filtered.map(r => [
+    const lines = [CSV_HEADERS.join(','), ...rows.map(r => [
       r.yachts?.vessel_name ?? vesselName(r.yacht_id), r.given_name ?? '', r.surname ?? '', r.nationality ?? '',
       r.passport_number ?? '', r.visa_number ?? '', fmt(r.visa_issuance_date), fmt(r.visa_expiry),
       fmt(r.sign_on_date), fmt(r.sign_off_date), STATUS_LABEL[r.status] ?? r.status,
     ].map(x => esc(String(x))).join(','))]
-    const blob = new Blob([lines.join('\r\n')], { type: 'text/csv' })
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob)
-    a.download = `Visa-Report-${vessel === 'all' ? 'All' : vesselName(vessel)}.csv`.replace(/[^a-zA-Z0-9.\-]/g, '-'); a.click()
+    return new Blob([lines.join('\r\n')], { type: 'text/csv' })
   }
+
+  function exportCsv() {
+    const label = picked.length === 1 ? vesselName(picked[0]) : picked.length ? `${picked.length}-vessels` : 'All'
+    triggerBlobDownload(csvBlob(filtered), fileSafe(`Visa-Report-${label}.csv`))
+  }
+
+  /** One vessel's file, carrying exactly the records on screen for it. The server
+   *  defaults to this year's active visas, so ask for everything and then name
+   *  the records — whichever list is shorter, as the export review dialog does. */
+  async function downloadVessel(yachtId: string, format: 'csv' | 'pdf') {
+    const shown = filtered.filter(r => r.yacht_id === yachtId)
+    if (format === 'csv') { triggerBlobDownload(csvBlob(shown), fileSafe(`Visa-Report-${vesselName(yachtId)}.csv`)); return }
+    const keep = new Set(shown.map(r => r.id))
+    const hidden = applications.filter(r => r.yacht_id === yachtId && !keep.has(r.id)).map(r => r.id)
+    const selection = !hidden.length ? ''
+      : hidden.length <= keep.size ? `&exclude=${hidden.join(',')}` : `&include=${[...keep].join(',')}`
+    await downloadVisaExport(`/api/visa/export?yacht_id=${yachtId}&format=pdf&visa=all&year=all${selection}`)
+  }
+
+  /** A separate file for each picked vessel (SD-0061). */
+  async function downloadEach(format: 'csv' | 'pdf') {
+    const ids = summary.map(g => g.id).filter(id => id !== 'unknown')
+    if (!ids.length) { toast.error('No records for the picked vessels'); return }
+    setDownloading(format)
+    let failed = 0
+    try {
+      for (const id of ids) {
+        try { await downloadVessel(id, format) } catch (e: any) { failed++; toast.error(`${vesselName(id)}: ${e.message}`) }
+        // Browsers drop rapid back-to-back downloads; a short gap keeps every file.
+        await pause(400)
+      }
+    } finally { setDownloading(null) }
+    const done = ids.length - failed
+    if (done) toast.success(`Downloaded ${done} vessel report${done !== 1 ? 's' : ''}`)
+  }
+
+  function togglePicked(id: string) {
+    setPicked(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id])
+  }
+  const vesselOptions = useMemo(() => {
+    const q = vesselSearch.trim().toLowerCase()
+    return q ? vessels.filter(([, n]) => n.toLowerCase().includes(q)) : vessels
+  }, [vessels, vesselSearch])
+  const pickedLabel = !picked.length ? 'All Vessels' : picked.length === 1 ? vesselName(picked[0]) : `${picked.length} vessels`
 
   async function emailVessel(yachtId: string) {
     if (!user?.email) { toast.error('No email on your account'); return }
@@ -117,10 +170,33 @@ export function VisaReportView({ applications, vessels, onClose }: {
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3 border-b border-border/40 bg-muted/10 px-6 py-2.5 text-xs">
-        <select value={vessel} onChange={e => setVessel(e.target.value)} className="h-8 rounded-md border border-border bg-background px-2">
-          <option value="all">All Vessels</option>
-          {vessels.map(([id, n]) => <option key={id} value={id}>{n}</option>)}
-        </select>
+        <Popover onOpenChange={o => { if (!o) setVesselSearch('') }}>
+          <PopoverTrigger asChild>
+            <button className="flex h-8 max-w-[220px] items-center gap-2 rounded-md border border-border bg-background px-2">
+              <span className="truncate">{pickedLabel}</span><span className="text-muted-foreground">▾</span>
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-64 p-0 text-xs">
+            <div className="border-b border-border p-2">
+              <input autoFocus value={vesselSearch} onChange={e => setVesselSearch(e.target.value)} placeholder="Search vessels…"
+                className="h-7 w-full rounded-md border border-border bg-background px-2" />
+            </div>
+            <div className="max-h-72 overflow-auto py-1">
+              {vesselOptions.length === 0 ? (
+                <div className="px-3 py-2 text-muted-foreground">No vessels match</div>
+              ) : vesselOptions.map(([id, n]) => (
+                <label key={id} className="flex cursor-pointer items-center gap-2 px-3 py-1.5 hover:bg-accent/40">
+                  <input type="checkbox" checked={pickedSet.has(id)} onChange={() => togglePicked(id)} className="accent-primary" />
+                  <span className="truncate">{n}</span>
+                </label>
+              ))}
+            </div>
+            <div className="flex items-center justify-between border-t border-border px-3 py-2 text-muted-foreground">
+              <span>{picked.length ? `${picked.length} picked` : 'Showing all vessels'}</span>
+              {picked.length > 0 && <button onClick={() => setPicked([])} className="font-medium text-primary hover:underline">Clear</button>}
+            </div>
+          </PopoverContent>
+        </Popover>
         <select value={status} onChange={e => setStatus(e.target.value)} className="h-8 rounded-md border border-border bg-background px-2">
           <option value="all">All Status</option>
           {statuses.map(s => <option key={s} value={s}>{STATUS_LABEL[s] ?? s}</option>)}
@@ -129,6 +205,18 @@ export function VisaReportView({ applications, vessels, onClose }: {
         <label className="flex items-center gap-1.5 text-muted-foreground">To <input type="date" value={to} onChange={e => setTo(e.target.value)} className="h-8 rounded-md border border-border bg-background px-2" /></label>
         <span className="ml-auto font-medium text-muted-foreground">{filtered.length} record{filtered.length !== 1 ? 's' : ''}</span>
         <button onClick={exportCsv} disabled={!filtered.length} className="h-8 rounded-md border border-border px-3 font-medium hover:bg-accent/40 disabled:opacity-50">⬇ Export CSV</button>
+        {/* One file per picked vessel. Needs a pick: with nothing picked it would
+            be a file for every vessel in the fleet. */}
+        <div className="flex items-center overflow-hidden rounded-md border border-border"
+             title={picked.length ? 'Download a separate report for each picked vessel' : 'Pick vessels in the vessel filter first'}>
+          <span className="px-2 text-muted-foreground">Each vessel:</span>
+          {(['csv', 'pdf'] as const).map(f => (
+            <button key={f} onClick={() => downloadEach(f)} disabled={!picked.length || !filtered.length || !!downloading}
+              className="h-8 border-l border-border px-3 font-medium uppercase hover:bg-accent/40 disabled:opacity-50">
+              {downloading === f ? '…' : `⬇ ${f}`}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="flex-1 overflow-auto p-6">
@@ -172,7 +260,8 @@ export function VisaReportView({ applications, vessels, onClose }: {
                       <td className="px-4 py-2">
                         {g.id !== 'unknown' && (
                           <div className="flex items-center gap-1.5">
-                            <button onClick={() => downloadVisaExport(`/api/visa/export?yacht_id=${g.id}&format=pdf`).catch((e) => toast.error(e.message))} className="rounded bg-muted/40 px-2 py-1 text-[10.5px] font-medium hover:bg-muted/70">PDF</button>
+                            <button onClick={() => downloadVessel(g.id, 'csv')} className="rounded bg-muted/40 px-2 py-1 text-[10.5px] font-medium hover:bg-muted/70">CSV</button>
+                            <button onClick={() => downloadVessel(g.id, 'pdf').catch((e) => toast.error(e.message))} className="rounded bg-muted/40 px-2 py-1 text-[10.5px] font-medium hover:bg-muted/70">PDF</button>
                             <button onClick={() => emailVessel(g.id)} disabled={emailing} className="rounded bg-primary/10 px-2 py-1 text-[10.5px] font-medium text-primary hover:bg-primary/20">{emailing ? '…' : 'Email'}</button>
                           </div>
                         )}

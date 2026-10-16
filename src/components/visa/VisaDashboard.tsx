@@ -791,7 +791,7 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
     const [appsRes, alertsRes] = await Promise.all([
       fetchAllRows(() => (supabase as any)
         .from('visa_applications')
-        .select('id, crew_member_id, yacht_id, vessel_name, country_code, status, visa_document_url, passport_number, given_name, surname, nationality, visa_number, visa_expiry, sign_on_date, arrival_date, submitted_at, approved_at, visa_issuance_date, application_notes, created_at, crew_members(full_name, first_name, last_name), yachts(vessel_name)')
+        .select('id, crew_member_id, yacht_id, vessel_name, country_code, status, visa_document_url, passport_number, given_name, surname, nationality, visa_number, visa_expiry, sign_on_date, sign_off_date, arrival_date, submitted_at, approved_at, visa_issuance_date, application_notes, created_at, crew_members(full_name, first_name, last_name), yachts(vessel_name)')
         .order('created_at', { ascending: false })),
       // Pull the crew member's name too: the banner had no name to show, so alerts
       // read "AE visa for  expires …" and gave no way to find the record.
@@ -1053,7 +1053,7 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
   }
 
   if (showReport) {
-    return <VisaReportView applications={applications as any} vessels={vessels} onClose={() => setShowReport(false)} />
+    return <VisaReportView applications={applications as any} vessels={vessels} initialVessel={vessel !== 'all' ? vessel : null} onClose={() => setShowReport(false)} />
   }
 
   return (
