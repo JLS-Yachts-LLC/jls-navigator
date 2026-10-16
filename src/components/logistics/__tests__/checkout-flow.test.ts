@@ -234,3 +234,58 @@ test("a dispatch that cannot take its parcels leaves no empty delivery note behi
   assert.equal(pk("P1").delivery_note_id, null);
   assert.equal(pk("P2").delivery_note_id, "OTHER");
 });
+
+// ── the office adding a parcel to a delivery that already has parcels on it ──
+
+test("adding a parcel to a delivery that is out with a driver puts it on the driver's run", async () => {
+  const sd = await import("@/lib/shipsync/data");
+  be.rows("shipsync_delivery_notes").push({ id: "N1", status: "dispatched", driver_id: "D1", boat_name: "ORKA" });
+  be.rows("shipsync_packages").push(
+    { id: "A1", status: "assigned", delivery_note_id: "N1", boat_name: "ORKA", driver_id: "D1" }, lite("P1", "ORKA"),
+  );
+  const r = await sd.addParcelsToNote({ id: "N1", status: "dispatched", driver_id: "D1" }, ["P1"]);
+  assert.deepEqual(r, { addedIds: ["P1"], skipped: 0 });
+  assert.equal(pk("P1").delivery_note_id, "N1");
+  assert.equal(pk("P1").driver_id, "D1");
+  assert.equal(pk("P1").status, "assigned");
+  const runs = await drv.loadDriverRuns("D1");
+  assert.deepEqual(runs.packages.map((p) => p.id).sort(), ["A1", "P1"], "it shows up on the driver's phone");
+});
+
+test("adding a parcel to a draft delivery (no driver yet) only reserves it", async () => {
+  const sd = await import("@/lib/shipsync/data");
+  be.rows("shipsync_delivery_notes").push({ id: "N1", status: "open", driver_id: null, boat_name: "ORKA" });
+  be.rows("shipsync_packages").push({ id: "A1", status: "in_office", delivery_note_id: "N1", boat_name: "ORKA" }, lite("P1", "ORKA"));
+  const r = await sd.addParcelsToNote({ id: "N1", status: "open", driver_id: null }, ["P1"]);
+  assert.equal(r.addedIds.length, 1);
+  assert.equal(pk("P1").delivery_note_id, "N1");
+  assert.equal(pk("P1").status, "in_office", "still waiting — a draft has no driver to hand it to");
+  assert.equal(pk("P1").driver_id, null);
+});
+
+test("adding skips parcels that are taken, delivered or already on another note, and relabels a multi-boat note", async () => {
+  const sd = await import("@/lib/shipsync/data");
+  be.rows("shipsync_delivery_notes").push({ id: "N1", status: "dispatched", driver_id: "D1", boat_name: "ORKA" });
+  be.rows("shipsync_packages").push(
+    { id: "A1", status: "assigned", delivery_note_id: "N1", boat_name: "ORKA", driver_id: "D1" },
+    lite("P1", "ZEUS"), lite("P2", "ZEUS", { delivery_note_id: "OTHER", status: "assigned" }), lite("P3", "ZEUS", { status: "delivered" }),
+  );
+  const r = await sd.addParcelsToNote({ id: "N1", status: "dispatched", driver_id: "D1" }, ["P1", "P2", "P3", "P1"]);
+  assert.deepEqual(r.addedIds, ["P1"]);
+  assert.equal(r.skipped, 2);
+  assert.equal(pk("P2").delivery_note_id, "OTHER");
+  assert.equal(pk("P3").delivery_note_id, null);
+  assert.equal(be.rows("shipsync_delivery_notes")[0].boat_name, null, "ORKA and ZEUS now — a multi-boat note");
+  assert.deepEqual(await sd.addParcelsToNote({ id: "N1", status: "dispatched", driver_id: "D1" }, []), { addedIds: [], skipped: 0 });
+});
+
+test("a delivery that has a driver but still reads Draft takes the added parcel onto that driver's run", async () => {
+  const sd = await import("@/lib/shipsync/data");
+  be.rows("shipsync_delivery_notes").push({ id: "N1", status: "open", driver_id: "D1", boat_name: "ORKA" });
+  be.rows("shipsync_packages").push({ id: "A1", status: "assigned", delivery_note_id: "N1", boat_name: "ORKA", driver_id: "D1" }, lite("P1", "ORKA"));
+  await sd.addParcelsToNote({ id: "N1", status: "open", driver_id: "D1" }, ["P1"]);
+  assert.equal(pk("P1").driver_id, "D1");
+  assert.equal(pk("P1").status, "assigned", "like the parcels already on it");
+  const runs = await drv.loadDriverRuns("D1");
+  assert.deepEqual(runs.packages.map((p) => p.id).sort(), ["A1", "P1"]);
+});
