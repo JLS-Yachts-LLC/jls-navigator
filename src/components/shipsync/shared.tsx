@@ -5,12 +5,12 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { SignedAnchor, SignedImage } from "@/components/ui/signed-file";
 import { Checkbox } from "@/components/ui/checkbox";
-import { BarChart, Bar, PieChart, Pie, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
+import { BarChart, Bar, PieChart, Pie, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList } from "recharts";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { STATUS_META, type PackageStatus, type ShipSyncPackage } from "@/lib/shipsync/model";
-import { PERIODS, bucketRange, bucketKey, timeSeries, type Period } from "@/lib/shipsync/chart-buckets";
+import { PERIODS, TOTAL_KEY, bucketRange, bucketKey, timeSeries, type Period } from "@/lib/shipsync/chart-buckets";
 
 const TONE: Record<string, string> = {
   sky: "bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/20",
@@ -569,6 +569,37 @@ function topVessels(rows: ShipSyncPackage[], n = 8): { name: string; qty: number
   return top;
 }
 
+const ZERO_KEY = "__zero";
+
+/** Hover box for a stacked time chart: each client's share, then the bucket's total. */
+function TotalTooltip({ active, payload, label }: { active?: boolean; payload?: any[]; label?: string }) {
+  if (!active || !payload?.length) return null;
+  const rows = payload.filter((p) => p.dataKey !== ZERO_KEY && Number(p.value) > 0);
+  const total = Number(payload[0]?.payload?.[TOTAL_KEY] ?? 0);
+  return (
+    <div style={{ ...TOOLTIP_STYLE, padding: "8px 10px" }}>
+      <div className="mb-1 font-semibold">{label}</div>
+      {rows.map((p) => (
+        <div key={String(p.dataKey)} className="flex items-center gap-2">
+          <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: p.color }} />
+          <span className="flex-1">{p.name}</span>
+          <span className="tabular-nums">{p.value}</span>
+        </div>
+      ))}
+      <div className="mt-1 flex justify-between border-t border-border pt-1 font-semibold"><span>Total</span><span className="tabular-nums">{total}</span></div>
+    </div>
+  );
+}
+
+/** An invisible, zero-height bar on top of each stack whose label is the stack's total — the figure above the bar. */
+function totalLabelBar() {
+  return (
+    <Bar key={ZERO_KEY} dataKey={ZERO_KEY} stackId="qty" fill="transparent" isAnimationActive={false} legendType="none">
+      <LabelList dataKey={TOTAL_KEY} position="top" formatter={(v: any) => (Number(v) > 0 ? v : "")} style={{ fontSize: 11, fontWeight: 600, fill: "var(--foreground)" }} />
+    </Bar>
+  );
+}
+
 function ChartCard({ title, className, empty, children }: { title: string; className?: string; empty: boolean; children: ReactNode }) {
   return (
     <div className={cn("rounded-xl border border-border bg-card p-4", className)}>
@@ -646,12 +677,13 @@ function TimeStackedCard({
   return (
     <ChartCard title={title} empty={data.length === 0} className="lg:col-span-2">
       <ResponsiveContainer width="100%" height={320}>
-        <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+        <BarChart data={data.map((r) => ({ ...r, [ZERO_KEY]: 0 }))} margin={{ top: 22, right: 8, left: 0, bottom: 8 }}>
           <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--border)" />
           <XAxis dataKey="label" tick={AXIS_TICK} axisLine={{ stroke: "var(--border)" }} tickLine={false} interval="preserveStartEnd" minTickGap={14} />
           <YAxis allowDecimals={false} width={32} tick={AXIS_TICK} axisLine={false} tickLine={false} />
-          <Tooltip contentStyle={TOOLTIP_STYLE} />
+          <Tooltip cursor={{ fill: "var(--muted)" }} content={<TotalTooltip />} />
           {vessels.map((v) => <Bar key={v.name} dataKey={v.name} stackId="qty" fill={v.color} maxBarSize={56} />)}
+          {totalLabelBar()}
         </BarChart>
       </ResponsiveContainer>
       <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[11px] text-muted-foreground">
@@ -780,7 +812,7 @@ export function PeriodBarChart({ title, rows, hint }: { title: string; rows: Shi
         <div>
           <div className="text-sm font-semibold">{title}</div>
           <div className="text-[12px] text-muted-foreground">
-            {pieces.toLocaleString()} piece{pieces === 1 ? "" : "s"} in {scoped.length.toLocaleString()} shipment{scoped.length === 1 ? "" : "s"} · {windowText}
+            <span className="font-semibold text-foreground">Total {pieces.toLocaleString()} piece{pieces === 1 ? "" : "s"}</span> · {scoped.length.toLocaleString()} shipment{scoped.length === 1 ? "" : "s"} · {windowText}
           </div>
         </div>
         <div className="inline-flex items-center rounded-lg border border-border bg-muted/30 p-0.5" role="group" aria-label={`${title} period`}>
@@ -808,12 +840,13 @@ export function PeriodBarChart({ title, rows, hint }: { title: string; rows: Shi
       ) : (
         <>
           <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={series} margin={{ top: 12, right: 8, left: 0, bottom: 4 }}>
+            <BarChart data={series.map((r) => ({ ...r, [ZERO_KEY]: 0 }))} margin={{ top: 22, right: 8, left: 0, bottom: 4 }}>
               <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--border)" />
               <XAxis dataKey="label" tick={AXIS_TICK} axisLine={{ stroke: "var(--border)" }} tickLine={false} interval="preserveStartEnd" minTickGap={16} />
               <YAxis allowDecimals={false} width={32} tick={AXIS_TICK} axisLine={false} tickLine={false} />
-              <Tooltip cursor={{ fill: "var(--muted)" }} contentStyle={TOOLTIP_STYLE} />
+              <Tooltip cursor={{ fill: "var(--muted)" }} content={<TotalTooltip />} />
               {vessels.map((v) => <Bar key={v.name} dataKey={v.name} stackId="qty" fill={v.color} maxBarSize={36} />)}
+              {totalLabelBar()}
             </BarChart>
           </ResponsiveContainer>
           {chosen === "all" && (

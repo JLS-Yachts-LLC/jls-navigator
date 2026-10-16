@@ -125,5 +125,9 @@ test("the time series is quantity per bucket by client: empty buckets are zero r
   const weekly = timeSeries(rows, "weekly", NOW, ["ORKA", "ZEUS"]);
   assert.equal(weekly[11].ORKA, 3); assert.equal(weekly[11].ZEUS, 4);
   const monthly = timeSeries(rows, "monthly", NOW, ["ORKA"]);
-  assert.equal(monthly[11].ORKA, 3); assert.equal(monthly[11].Other, 9);
+  assert.equal(monthly[11].ORKA, 3); assert.equal(monthly[11].Other, 9);  // every row carries its own total, for the figure above the bar
+  assert.equal(daily[29].__total, 3);
+  assert.equal(daily[27].__total, 9, "ZEUS 4 + the others folded into Other 5");
+  assert.equal(daily[28].__total, 0, "a quiet day totals zero");
+  assert.equal(weekly[11].__total, 12);
 });
