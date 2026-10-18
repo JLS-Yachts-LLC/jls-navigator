@@ -512,22 +512,22 @@ function NavList({
                 key={item.screen}
                 onClick={() => onNavigate(item.screen)}
                 title={collapsed ? item.label : undefined}
+                // Colour, padding and the gold hover rail live in tokens.css
+                // (.pds-nav-item) — inline styles can't react to :hover.
+                className="pds-nav-item"
+                data-active={on || undefined}
+                data-collapsed={collapsed || undefined}
                 style={{
                   width: "100%",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: collapsed ? "center" : "flex-start",
                   gap: collapsed ? 0 : 10,
-                  padding: collapsed ? "10px 0" : "10px 8px",
                   minHeight: 44,
                   borderRadius: "var(--pds-radius-md)",
                   border: "none",
                   cursor: "pointer",
                   textAlign: "left",
-                  background: on ? "var(--pds-gold-muted)" : "transparent",
-                  color: on
-                    ? "var(--pds-gold-light)"
-                    : "var(--pds-text-secondary)",
                   fontSize: "var(--pds-fs-nav)",
                   fontWeight: on ? 600 : 500,
                   whiteSpace: "nowrap",
@@ -538,7 +538,7 @@ function NavList({
                   <TIcon
                     name={item.icon}
                     size={18}
-                    color={on ? "var(--pds-gold)" : "var(--pds-text-secondary)"}
+                    color={on ? "var(--pds-gold)" : "currentColor"}
                   />
                   {/* Collapsed rail: a tiny dot in the icon's corner marks a badged feature. */}
                   {collapsed && badges[item.screen] && (
