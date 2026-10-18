@@ -99,7 +99,7 @@ export function PolarisButton({
     gap: 6,
     whiteSpace: "nowrap",
     opacity: disabled ? 0.4 : 1,
-    transition: "opacity 0.15s, background 0.15s",
+    transition: "opacity 0.15s, background 0.15s, transform 0.15s",
   };
   const variantStyle: CSSProperties =
     variant === "primary"

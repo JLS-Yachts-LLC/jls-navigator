@@ -182,7 +182,7 @@ export function LeoPanel({ token, userName, onReady }: LeoPanelProps) {
               borderRadius: 8, padding: '9px 18px', cursor: 'pointer',
             }}
           >
-            ✦ Generate briefing
+            <span className="pds-spin" aria-hidden="true">✦</span> Generate briefing
           </button>
         ) : status === 'error' ? (
           <div
