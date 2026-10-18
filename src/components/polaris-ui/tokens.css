@@ -239,11 +239,23 @@
 @keyframes pds-shimmer-sweep {
   to { left: 130%; }
 }
-/* …plus "star spin": the button's ✦ / icon turns and grows on hover, and the
-   button squeezes slightly when pressed. */
+/* …plus "lift": on hover the button rises, brightens and casts a warm shadow
+   in its own colour (--pds-glow-rgb; Leo's amber overrides it via .pds-pulse)… */
 .pds-shimmer {
-  transition: transform 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  --pds-glow-rgb: 201, 162, 39;
+  transition:
+    transform 150ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 200ms ease,
+    filter 200ms ease;
 }
+.pds-shimmer:not(:disabled):hover,
+.pds-shimmer:not(:disabled):focus-visible {
+  transform: translateY(-2px);
+  filter: brightness(1.08);
+  box-shadow: 0 6px 16px -6px rgba(var(--pds-glow-rgb), 0.7);
+}
+/* …and "star spin": the button's ✦ / icon turns and grows on hover, and the
+   button squeezes slightly when pressed. */
 .pds-shimmer > .ti,
 .pds-shimmer .pds-spin {
   display: inline-block;
@@ -260,19 +272,25 @@
 }
 
 /* "Pulse": a slow ring breathes out from a button that is waiting to be used
-   (Leo's Generate briefing). Set --pds-pulse-rgb to the button's colour. */
+   (Leo's Generate briefing), in Leo's amber. On hover it gives way to a steady
+   ring plus the lift shadow. */
 .pds-pulse {
-  --pds-pulse-rgb: 232, 160, 32;
+  --pds-glow-rgb: 232, 160, 32;
   animation: pds-pulse-ring 2.4s ease-in-out infinite;
 }
 .pds-pulse:hover,
 .pds-pulse:focus-visible {
   animation: none;
-  box-shadow: 0 0 0 3px rgba(var(--pds-pulse-rgb), 0.35);
+}
+.pds-pulse:not(:disabled):hover,
+.pds-pulse:not(:disabled):focus-visible {
+  box-shadow:
+    0 0 0 3px rgba(var(--pds-glow-rgb), 0.35),
+    0 6px 16px -6px rgba(var(--pds-glow-rgb), 0.7);
 }
 @keyframes pds-pulse-ring {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(var(--pds-pulse-rgb), 0.55); }
-  60% { box-shadow: 0 0 0 8px rgba(var(--pds-pulse-rgb), 0); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(var(--pds-glow-rgb), 0.55); }
+  60% { box-shadow: 0 0 0 8px rgba(var(--pds-glow-rgb), 0); }
 }
 @media (prefers-reduced-motion: reduce) {
   .pds-nav-item,
@@ -288,6 +306,8 @@
   .pds-shimmer .pds-spin {
     transition: none;
   }
+  .pds-shimmer:not(:disabled):hover,
+  .pds-shimmer:not(:disabled):focus-visible,
   .pds-shimmer:not(:disabled):hover > .ti,
   .pds-shimmer:not(:disabled):hover .pds-spin,
   .pds-shimmer:not(:disabled):focus-visible > .ti,
