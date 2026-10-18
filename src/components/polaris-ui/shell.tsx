@@ -538,7 +538,8 @@ function NavList({
                   <TIcon
                     name={item.icon}
                     size={18}
-                    color={on ? "var(--pds-gold)" : "currentColor"}
+                    // No inline colour unless active, so the hover rule in tokens.css can turn it gold.
+                    color={on ? "var(--pds-gold)" : undefined}
                   />
                   {/* Collapsed rail: a tiny dot in the icon's corner marks a badged feature. */}
                   {collapsed && badges[item.screen] && (

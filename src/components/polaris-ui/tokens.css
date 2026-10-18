@@ -175,13 +175,29 @@
 }
 
 /* Sidebar items — "gold rail": on hover a gold bar grows at the left edge and
-   the label eases right; the current page keeps the bar. */
+   the label eases right; the current page keeps the bar. Plus "icon nudge":
+   the icon tilts and turns gold, the label warms and a faint wash appears. */
 .pds-nav-item {
   position: relative;
   padding: 10px 8px;
   background: transparent;
   color: var(--pds-text-secondary);
-  transition: color 180ms ease, padding-left 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition:
+    color 180ms ease,
+    background-color 180ms ease,
+    padding-left 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.pds-nav-item .ti {
+  transition: transform 250ms cubic-bezier(0.3, 1.6, 0.5, 1), color 180ms ease;
+}
+.pds-nav-item:hover .ti,
+.pds-nav-item:focus-visible .ti {
+  color: var(--pds-gold);
+  transform: translateX(2px) rotate(-8deg) scale(1.15);
+}
+.pds-nav-item:not([data-active]):hover,
+.pds-nav-item:not([data-active]):focus-visible {
+  background: var(--pds-surface-2);
 }
 .pds-nav-item[data-collapsed] {
   padding: 10px 0;
@@ -200,7 +216,7 @@
 }
 .pds-nav-item:hover,
 .pds-nav-item:focus-visible {
-  color: var(--pds-text);
+  color: var(--pds-gold-light);
 }
 .pds-nav-item:not([data-collapsed]):hover,
 .pds-nav-item:not([data-collapsed]):focus-visible {
@@ -294,8 +310,13 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .pds-nav-item,
-  .pds-nav-item::before {
+  .pds-nav-item::before,
+  .pds-nav-item .ti {
     transition: none;
+  }
+  .pds-nav-item:hover .ti,
+  .pds-nav-item:focus-visible .ti {
+    transform: none;
   }
   .pds-shimmer:hover::after,
   .pds-shimmer:focus-visible::after {
