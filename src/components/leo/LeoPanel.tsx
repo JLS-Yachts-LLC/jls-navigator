@@ -174,7 +174,7 @@ export function LeoPanel({ token, userName, onReady }: LeoPanelProps) {
         {status === 'idle' ? (
           <button
             onClick={() => streamBriefing()}
-            className="pds-shimmer"
+            className="pds-shimmer pds-pulse"
             style={{
               display: 'flex', alignItems: 'center', gap: 8,
               fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 700,
