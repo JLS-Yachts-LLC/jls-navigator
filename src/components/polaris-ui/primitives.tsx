@@ -118,6 +118,7 @@ export function PolarisButton({
       onClick={onClick}
       disabled={disabled}
       title={title}
+      className={variant === "primary" ? "pds-shimmer" : undefined}
       style={{ ...base, ...variantStyle }}
     >
       {icon && <TIcon name={icon} size={16} />}
