@@ -16,6 +16,7 @@ import {
 import { FileStack, Plus, Search, Loader2, Send, Upload, UploadCloud, FileText, Download, Trash2, Wand2, Pencil, ChevronLeft, ChevronRight, PenLine, History, Stamp, Lock } from "lucide-react";
 import { confidentialPath } from "@/components/anchor/confidential";
 import { toast } from "sonner";
+import { sendOutcome } from "./esign-meta";
 import { cn } from "@/lib/utils";
 
 type Template = {
@@ -129,8 +130,8 @@ export function EsignTemplatesPage({ confidential = false }: { confidential?: bo
       if (error) throw error;
 
       if (sendNow) {
-        await doSendForSignature({ data: { documentId: inserted.id, senderEmail: user?.email } } as any);
-        toast.success(`Document created from template and sent to ${useForm.signer_email}`);
+        const res = await doSendForSignature({ data: { documentId: inserted.id, senderEmail: user?.email } } as any);
+        toast.success(sendOutcome(res, `Document created from template and sent to ${useForm.signer_email}`));
       } else {
         toast.success(useTarget.confidential
           ? "Draft created from template — find it under Confidential → Documents"

@@ -14,6 +14,9 @@ import { buildUploadedSignedPdf } from "@/lib/esign/signed-copy.server";
 import { buildPackPdf, applySignerValues, type PackPart } from "@/lib/esign/pack.server";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-attacher";
 import { requireStaff } from "@/lib/guest/guest-auth.server";
+import {
+  companySignatoryIds, esignFingerprint, requestSignatoryUse, findApprovedUse, markApplied, logRefusedUse,
+} from "@/lib/anchor/signatory-auth.server";
 
 const BUCKET = "esign-documents";
 const TOKEN_TTL_DAYS = 14;
@@ -124,6 +127,40 @@ export const doSendForSignature = createServerFn({ method: "POST" })
     }
     if (doc.status === "signed") throw new Error("This document is already signed.");
 
+    // A JLS signatory's signature only goes on with their permission. In "every use
+    // needs my approval" mode the document waits for them; nothing is sent until then.
+    const companyIds = companySignatoryIds(doc.signature_fields, doc.pack);
+    if (companyIds.length) {
+      const fingerprint = await esignFingerprint(supabaseAdmin as any, doc);
+      const results = [];
+      for (const sid of companyIds) {
+        results.push(await requestSignatoryUse(supabaseAdmin as any, {
+          signatoryId: sid, target: { kind: "esign", documentId }, fingerprint, title: doc.title,
+          requester: { userId: gate.staff.userId, email: gate.staff.email, name: gate.staff.name }, origin: meta.origin,
+        }));
+      }
+      const refused = results.find((r) => r.status === "refused");
+      if (refused) {
+        await logEvent(documentId, "signatory_refused", `${refused.signatoryName} — requested by ${senderEmail ?? "staff"}`, meta);
+        throw new Error(refused.reason ?? `You're not authorised to use ${refused.signatoryName}'s signature.`);
+      }
+      const pending = results.filter((r) => r.status === "pending");
+      if (pending.length) {
+        await (supabaseAdmin as any).from("esign_documents").update({ status: "awaiting_approval" }).eq("id", documentId);
+        for (const p of pending) await logEvent(documentId, "signatory_requested", `${p.signatoryName} — requested by ${senderEmail ?? "staff"}`, meta);
+        return { ok: true, link: null, awaitingApproval: pending.map((p) => p.signatoryName) };
+      }
+    }
+
+    return deliverSigningInvite(doc, senderEmail ?? null, meta);
+  });
+
+/**
+ * Email the signing link and mark the document sent. Also called when a signatory
+ * approves the use of their signature on a document that was waiting for them.
+ */
+export async function deliverSigningInvite(doc: any, senderEmail: string | null, meta: { ip: string | null; ua: string | null; origin: string | null }) {
+    const documentId = doc.id as string;
     const token = doc.signing_token || randomToken();
     const expires = new Date(Date.now() + TOKEN_TTL_DAYS * 86400_000).toISOString();
     const link = `${baseUrl(meta.origin)}/sign/${token}`;
@@ -143,8 +180,8 @@ export const doSendForSignature = createServerFn({ method: "POST" })
     }).eq("id", documentId);
 
     await logEvent(documentId, "sent", senderEmail ?? null, meta);
-    return { ok: true, link };
-  });
+    return { ok: true, link, awaitingApproval: [] as string[] };
+}
 
 // ── public: load a document by token (marks viewed) ─────────────────────────
 
@@ -162,6 +199,7 @@ export const getSigningDocument = createServerFn({ method: "POST" })
     if (doc.status === "signed") return await responseFor(doc, "signed");
     if (doc.status === "declined") return await responseFor(doc, "declined");
     if (doc.status === "voided") throw new Error("This document has been withdrawn.");
+    if (doc.status === "awaiting_approval" || doc.status === "draft") throw new Error("This document isn't ready to sign yet.");
     if (doc.token_expires_at && new Date(doc.token_expires_at) < new Date()) {
       await (supabaseAdmin as any).from("esign_documents").update({ status: "expired" }).eq("id", doc.id);
       throw new Error("This signing link has expired.");
@@ -260,6 +298,14 @@ export const doSubmitSignature = createServerFn({ method: "POST" })
     if (doc.token_expires_at && new Date(doc.token_expires_at) < new Date()) throw new Error("This signing link has expired.");
     if (doc.allow_esign === false) throw new Error("This document is signed on paper — please download it, sign it and upload the signed copy.");
 
+    // Company signatures: fingerprint the document exactly as it was approved (before
+    // the vessel's answers are merged in) — a changed file means no company signature.
+    const companyIds = companySignatoryIds(doc.signature_fields, doc.pack);
+    let companyFingerprint = "";
+    if (companyIds.length) {
+      try { companyFingerprint = await esignFingerprint(supabaseAdmin as any, doc); } catch { companyFingerprint = ""; }
+    }
+
     // Campaign packs with forms are rebuilt with what the vessel filled in, so
     // they sign the completed documents; anything else is signed as sent.
     let srcBytes: Uint8Array;
@@ -329,6 +375,8 @@ export const doSubmitSignature = createServerFn({ method: "POST" })
     // Stamp signatures in-place at the sender-chosen field position(s).
     // Fields carry a role: 'client' (default) = the signer's drawn signature;
     // 'company' = the chosen JLS signatory's stored signature image.
+    const companySigs = new Map<string, { img: any; name: string; useId: string; approvedBy: string | null }>();
+    const stampedCompany = new Set<string>();
     try {
       const allFields: { page?: number; pos?: string; role?: string; signatory_id?: string; type?: string; label?: boolean; x?: number; y?: number }[] =
         sigFields;
@@ -364,17 +412,26 @@ export const doSubmitSignature = createServerFn({ method: "POST" })
         const b64 = signatureDataUrl.includes(",") ? signatureDataUrl.split(",")[1] : signatureDataUrl;
         const clientSig = await pdf.embedPng(b64);
 
-        // Pre-load company signatory signatures (one fetch per distinct signatory).
-        const companyIds = [...new Set(fields.filter(f => f.role === "company" && f.signatory_id).map(f => f.signatory_id!))];
-        const companySigs = new Map<string, { img: any; name: string }>();
-        for (const sid of companyIds) {
+        // Pre-load company signatory signatures (one fetch per distinct signatory) —
+        // only those with an approved use for this document and this exact file.
+        const fieldCompanyIds = [...new Set(fields.filter(f => f.role === "company" && f.signatory_id).map(f => f.signatory_id!))];
+        for (const sid of fieldCompanyIds) {
           try {
             const { data: s } = await (supabaseAdmin as any).from("jls_signatories").select("full_name, signature_path").eq("id", sid).maybeSingle();
             if (!s?.signature_path) continue;
+            const use = companyFingerprint
+              ? await findApprovedUse(supabaseAdmin as any, sid, { kind: "esign", documentId: doc.id }, companyFingerprint)
+              : null;
+            if (!use) {
+              const note = companyFingerprint ? "No approved permission for this document" : "Document could not be verified";
+              await logRefusedUse(supabaseAdmin as any, { signatoryId: sid, target: { kind: "esign", documentId: doc.id }, fingerprint: companyFingerprint, title: doc.title, note });
+              await logEvent(doc.id, "signatory_refused", `${s.full_name} — ${note.toLowerCase()}`, meta);
+              continue;
+            }
             const { data: blob } = await (supabaseAdmin as any).storage.from("signatures").download(s.signature_path);
             if (!blob) continue;
             const img = await pdf.embedPng(new Uint8Array(await blob.arrayBuffer()));
-            companySigs.set(sid, { img, name: s.full_name ?? "JLS Yachts" });
+            companySigs.set(sid, { img, name: s.full_name ?? "JLS Yachts", useId: use.id, approvedBy: use.decided_by_email });
           } catch { /* missing signatory signature — field skipped below */ }
         }
 
@@ -402,6 +459,7 @@ export const doSubmitSignature = createServerFn({ method: "POST" })
             y = pos.includes("top") ? height - pad - sh : pos.includes("middle") ? (height - sh) / 2 : pad + 12;
           }
           p.drawImage(sig, { x, y, width: sw, height: sh });
+          if (isCompany) stampedCompany.add(f.signatory_id!);
           // The vessel stamp sits beside the signer's signature, slightly
           // overlapping it as a stamp on paper would.
           if (!isCompany && stampImg && !stampFields.length) {
@@ -432,6 +490,15 @@ export const doSubmitSignature = createServerFn({ method: "POST" })
     }).eq("id", doc.id);
     if (pack && partBytes.length) await fileCompletedForms(doc, pack, partBytes);
     await logEvent(doc.id, "signed", doc.signer_email, meta);
+    // Usage log: each company signature that went on, and who approved it.
+    for (const sid of stampedCompany) {
+      const c = companySigs.get(sid);
+      if (!c) continue;
+      try {
+        await markApplied(supabaseAdmin as any, c.useId);
+        await logEvent(doc.id, "signatory_applied", `${c.name}${c.approvedBy ? ` — approved by ${c.approvedBy}` : ""}`, meta);
+      } catch { /* the log never blocks the signing */ }
+    }
     if (stampImg) await logEvent(doc.id, "stamped", doc.signer_email, meta);
 
     // Notify signer + sender with the completed copy (long-lived link — the

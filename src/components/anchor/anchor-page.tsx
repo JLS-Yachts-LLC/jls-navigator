@@ -37,7 +37,13 @@ const CONFIDENTIAL_TABS = [
 type ConfidentialKey = (typeof CONFIDENTIAL_TABS)[number]["key"];
 
 export function AnchorPage() {
-  const [tab, setTab] = useState<TabKey>("documents");
+  // ?tab=signatories (links in signature-approval emails / notifications) opens that tab.
+  const [tab, setTab] = useState<TabKey>(() => {
+    try {
+      const t = new URLSearchParams(window.location.search).get("tab");
+      return (TABS.some((x) => x.key === t) ? t : "documents") as TabKey;
+    } catch { return "documents"; }
+  });
   const [confTab, setConfTab] = useState<ConfidentialKey>("documents");
   const [openDocId, setOpenDocId] = useState<string | null>(null);
   // Remember the campaign being tracked, so "back" from a document returns to it.

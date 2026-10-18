@@ -12,6 +12,7 @@ import { generateCf12aPdf } from "@/lib/anchor-forms/cf12a-pdf.server";
 import { getFormDef } from "@/lib/anchor-forms/definitions";
 import { sendEmail } from "@/lib/ses.server";
 import { PDFDocument } from "pdf-lib";
+import { findApprovedUse, formFingerprint, logRefusedUse, markApplied, requestSignatoryUse } from "@/lib/anchor/signatory-auth.server";
 
 const BUCKET = "esign-documents";
 const ANCHOR_SENDER = process.env.ANCHOR_MAIL_SENDER ?? "anchor@jlsyachts.com";
@@ -23,15 +24,25 @@ async function signedUrl(path: string, expiresIn = 60 * 60 * 24 * 14): Promise<s
   return (data?.signedUrl as string) ?? "";
 }
 
-/** Stamp a signatory's signature image onto the bottom-right of the form PDF's last page. */
-async function stampSignature(formPdfPath: string, signatoryId: string, outPath: string): Promise<boolean> {
-  const { data: sig } = await db().from("jls_signatories").select("full_name, signature_path").eq("id", signatoryId).maybeSingle();
-  if (!sig?.signature_path) return false;
+/**
+ * Stamp a signatory's signature image onto the bottom-right of the form PDF's last page.
+ * Only with an approved use of their signature for this submission and this exact PDF.
+ */
+async function stampSignature(sub: any, outPath: string): Promise<{ ok: boolean; name?: string; approvedBy?: string | null; reason?: string }> {
+  const { data: sig } = await db().from("jls_signatories").select("full_name, signature_path").eq("id", sub.signatory_id).maybeSingle();
+  if (!sig?.signature_path) return { ok: false, reason: "no signature on file" };
+  const fingerprint = await formFingerprint(db(), sub.pdf_path);
+  const target = { kind: "form" as const, submissionId: sub.id };
+  const use = await findApprovedUse(db(), sub.signatory_id, target, fingerprint);
+  if (!use) {
+    await logRefusedUse(db(), { signatoryId: sub.signatory_id, target, fingerprint, title: sub.title, note: "No approved permission for this document" });
+    return { ok: false, name: sig.full_name, reason: "not authorised" };
+  }
   const [{ data: pdfBlob }, { data: pngBlob }] = await Promise.all([
-    db().storage.from(BUCKET).download(formPdfPath),
+    db().storage.from(BUCKET).download(sub.pdf_path),
     db().storage.from("signatures").download(sig.signature_path),
   ]);
-  if (!pdfBlob || !pngBlob) return false;
+  if (!pdfBlob || !pngBlob) return { ok: false, reason: "file missing" };
   const pdf = await PDFDocument.load(new Uint8Array(await pdfBlob.arrayBuffer()), { ignoreEncryption: true });
   const png = await pdf.embedPng(new Uint8Array(await pngBlob.arrayBuffer()));
   const page = pdf.getPages()[pdf.getPageCount() - 1];
@@ -40,9 +51,48 @@ async function stampSignature(formPdfPath: string, signatoryId: string, outPath:
   page.drawImage(png, { x: width - w - 48, y: 60, width: w, height: h });
   page.drawText(`Signed: ${sig.full_name}`, { x: width - w - 48, y: 50, size: 7 });
   const bytes = await pdf.save();
-  await db().storage.from(BUCKET).upload(outPath, bytes, { contentType: "application/pdf", upsert: true });
-  return true;
+  const { error } = await db().storage.from(BUCKET).upload(outPath, bytes, { contentType: "application/pdf", upsert: true });
+  if (error) return { ok: false, reason: "upload failed" };
+  await markApplied(db(), use.id);
+  return { ok: true, name: sig.full_name, approvedBy: use.decided_by_email };
 }
+
+/**
+ * The last approver has approved (and the signatory has allowed their signature):
+ * stamp it, mark the form approved and email the authority. Also called when the
+ * signatory approves a form that was waiting for them.
+ */
+export async function finaliseSubmission(sub: any, log: any[]): Promise<{ ok: boolean; error?: string }> {
+  let finalPath = sub.pdf_path;
+  const entries = [...log];
+  if (sub.signatory_id && sub.pdf_path) {
+    const out = inAreaFor(sub.confidential, `forms/${sub.id}-signed.pdf`);
+    const res = await stampSignature(sub, out).catch((e: any) => ({ ok: false, reason: String(e?.message ?? e) } as { ok: boolean; reason?: string; name?: string; approvedBy?: string | null }));
+    if (res.ok) {
+      finalPath = out;
+      entries.push(logEntry("system", "signature applied", `${res.name}${res.approvedBy ? ` — approved by ${res.approvedBy}` : ""}`));
+    } else if (res.reason === "not authorised") {
+      return { ok: false, error: `${res.name ?? "The signatory"} has not authorised their signature on this document.` };
+    }
+  }
+  await db().from("anchor_form_submissions").update({
+    approval_status: "approved", signed_pdf_path: finalPath !== sub.pdf_path ? finalPath : null,
+    approval_log: [...entries, logEntry("system", "finalised")], status: "approved", updated_at: new Date().toISOString(),
+  }).eq("id", sub.id);
+
+  if (sub.authority_email) {
+    const url = await signedUrl(finalPath);
+    await sendEmail({
+      from: ANCHOR_SENDER, to: [sub.authority_email],
+      subject: sub.title,
+      html: `<p>Please find the approved <strong>${sub.title}</strong> attached for your records.</p><p><a href="${url}">Open document</a></p><p style="color:#94a3b8;font-size:12px;">JLS Yachts · Anchor</p>`,
+      text: `${sub.title}\nOpen: ${url}`,
+    }).catch(() => {});
+  }
+  return { ok: true };
+}
+
+const inAreaFor = (confidential: boolean | null | undefined, path: string) => (confidential ? `confidential/${path}` : path);
 
 function logEntry(actor: string, action: string, note?: string) {
   return { actor, action, note: note ?? null, at: new Date().toISOString() };
@@ -163,15 +213,33 @@ export async function anchorFormsHandler(request: Request): Promise<Response> {
 
     // ── Submit for approval: start the DMA approval chain ──
     if (action === "submit-approval") {
-      const chain = (body.chain ?? []) as { name: string; email: string }[];
+      const chain = ((body.chain ?? []) as { name: string; email: string }[])
+        .map((c) => ({ name: String(c?.name ?? "").trim(), email: String(c?.email ?? "").trim() }))
+        .filter((c) => c.email);
       if (!chain.length) return json({ ok: false, error: "Add at least one approver" }, 400);
       const { data: sub } = await db().from("anchor_form_submissions").select("id, title, pdf_path, confidential").eq("id", body.submissionId).maybeSingle();
       if (!sub?.pdf_path || await hiddenFromCaller(sub)) return json({ ok: false, error: "Submission or PDF not found" }, 404);
 
+      const log = [logEntry(user.email ?? "user", "submitted")];
+      const signatoryId = body.signatoryId ? String(body.signatoryId) : null;
+      if (signatoryId) {
+        // The signatory's permission is asked for now, so it can run alongside the chain.
+        const { data: sig } = await db().from("jls_signatories").select("id, confidential").eq("id", signatoryId).maybeSingle();
+        if (!sig || (sig.confidential && !(await canSeeConfidential()))) return json({ ok: false, error: "Signatory not found" }, 404);
+        const { data: profile } = await db().from("user_profiles").select("display_name").eq("user_id", user.id).maybeSingle();
+        const res = await requestSignatoryUse(db(), {
+          signatoryId, target: { kind: "form", submissionId: sub.id }, fingerprint: await formFingerprint(db(), sub.pdf_path),
+          title: sub.title, requester: { userId: user.id, email: user.email ?? "", name: profile?.display_name ?? null },
+          origin: new URL(request.url).origin,
+        });
+        if (res.status === "refused") return json({ ok: false, error: res.reason }, 403);
+        log.push(logEntry("system", res.status === "approved" ? "signature authorised" : "signature approval requested", res.signatoryName));
+      }
+
       await db().from("anchor_form_submissions").update({
         approval_status: "pending", approval_chain: chain, approval_step: 0,
-        approval_log: [logEntry(user.email ?? "user", "submitted")],
-        signatory_id: body.signatoryId || null, authority_email: body.authorityEmail || null,
+        approval_log: log,
+        signatory_id: signatoryId, authority_email: body.authorityEmail || null,
         updated_at: new Date().toISOString(),
       }).eq("id", sub.id);
 
@@ -186,38 +254,48 @@ export async function anchorFormsHandler(request: Request): Promise<Response> {
       return json({ ok: true });
     }
 
+    // Only the current approver in the chain (or a global admin) can approve / reject.
+    const isCurrentApprover = async (sub: any) => {
+      const chain = (sub.approval_chain ?? []) as { name: string; email: string }[];
+      const current = chain[sub.approval_step ?? 0];
+      if (current?.email && user.email && current.email.trim().toLowerCase() === user.email.trim().toLowerCase()) return true;
+      const { data } = await db().rpc("is_polaris_global_admin", { p_user_id: user.id });
+      return data === true;
+    };
+
     // ── Approve: advance the chain; finalise (stamp + email authority) on the last step ──
     if (action === "approve") {
       const { data: sub } = await db().from("anchor_form_submissions").select("*").eq("id", body.submissionId).maybeSingle();
       if (!sub || await hiddenFromCaller(sub)) return json({ ok: false, error: "Submission not found" }, 404);
       if (sub.approval_status !== "pending") return json({ ok: false, error: "Not awaiting approval" }, 400);
+      if (!(await isCurrentApprover(sub))) return json({ ok: false, error: "Only the current approver can approve this document." }, 403);
       const chain = (sub.approval_chain ?? []) as { name: string; email: string }[];
       const step = sub.approval_step ?? 0;
       const approver = chain[step];
       const log = [...(sub.approval_log ?? []), logEntry(user.email ?? "user", "approved", body.note)];
 
       if (step >= chain.length - 1) {
-        // Final approval → stamp signatory signature + email the authority.
-        let finalPath = sub.pdf_path;
+        // Final approval → stamp the signatory's signature (with their permission) + email the authority.
         if (sub.signatory_id && sub.pdf_path) {
-          const out = inArea(sub.confidential, `forms/${sub.id}-signed.pdf`);
-          const ok = await stampSignature(sub.pdf_path, sub.signatory_id, out).catch(() => false);
-          if (ok) finalPath = out;
+          const fingerprint = await formFingerprint(db(), sub.pdf_path);
+          const target = { kind: "form" as const, submissionId: sub.id };
+          const approved = await findApprovedUse(db(), sub.signatory_id, target, fingerprint);
+          if (!approved) {
+            const { data: waiting } = await db().from("jls_signatory_uses").select("id")
+              .eq("signatory_id", sub.signatory_id).eq("form_submission_id", sub.id).eq("fingerprint", fingerprint).eq("status", "pending").limit(1);
+            if (waiting?.length) {
+              await db().from("anchor_form_submissions").update({
+                approval_status: "awaiting_signatory", approval_step: step,
+                approval_log: [...log, logEntry("system", "waiting for the signatory to approve their signature")],
+                updated_at: new Date().toISOString(),
+              }).eq("id", sub.id);
+              return json({ ok: true, awaitingSignatory: true });
+            }
+            return json({ ok: false, error: "The signatory has not authorised their signature on this document. Submit it again for approval, or without a signatory." }, 403);
+          }
         }
-        await db().from("anchor_form_submissions").update({
-          approval_status: "approved", approval_step: step, signed_pdf_path: finalPath !== sub.pdf_path ? finalPath : null,
-          approval_log: [...log, logEntry("system", "finalised")], status: "approved", updated_at: new Date().toISOString(),
-        }).eq("id", sub.id);
-
-        if (sub.authority_email) {
-          const url = await signedUrl(finalPath);
-          await sendEmail({
-            from: ANCHOR_SENDER, to: [sub.authority_email],
-            subject: sub.title,
-            html: `<p>Please find the approved <strong>${sub.title}</strong> attached for your records.</p><p><a href="${url}">Open document</a></p><p style="color:#94a3b8;font-size:12px;">JLS Yachts · Anchor</p>`,
-            text: `${sub.title}\nOpen: ${url}`,
-          }).catch(() => {});
-        }
+        const done = await finaliseSubmission({ ...sub, approval_step: step }, log);
+        if (!done.ok) return json({ ok: false, error: done.error }, 403);
         return json({ ok: true, finalised: true });
       }
 
@@ -238,8 +316,10 @@ export async function anchorFormsHandler(request: Request): Promise<Response> {
 
     // ── Reject ──
     if (action === "reject") {
-      const { data: sub } = await db().from("anchor_form_submissions").select("approval_log, confidential").eq("id", body.submissionId).maybeSingle();
+      const { data: sub } = await db().from("anchor_form_submissions").select("approval_log, approval_chain, approval_step, approval_status, confidential").eq("id", body.submissionId).maybeSingle();
       if (!sub || await hiddenFromCaller(sub)) return json({ ok: false, error: "Submission not found" }, 404);
+      if (sub.approval_status !== "pending") return json({ ok: false, error: "Not awaiting approval" }, 400);
+      if (!(await isCurrentApprover(sub))) return json({ ok: false, error: "Only the current approver can reject this document." }, 403);
       await db().from("anchor_form_submissions").update({
         approval_status: "rejected", status: "completed",
         approval_log: [...(sub.approval_log ?? []), logEntry(user.email ?? "user", "rejected", body.note)],
@@ -247,6 +327,7 @@ export async function anchorFormsHandler(request: Request): Promise<Response> {
       }).eq("id", body.submissionId);
       return json({ ok: true });
     }
+
 
     return json({ ok: false, error: "Unknown action" }, 400);
   } catch (e: any) {

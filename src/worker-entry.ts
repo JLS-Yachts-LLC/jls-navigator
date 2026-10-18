@@ -1414,6 +1414,11 @@ export default {
       return anchorFormsHandler(request)
     }
 
+    if (url.pathname === '/api/anchor-signatories') {
+      const { anchorSignatoriesHandler } = await import('./routes/api.anchor-signatories')
+      return anchorSignatoriesHandler(request)
+    }
+
     if (url.pathname === '/api/esign-campaigns') {
       const { esignCampaignsHandler } = await import('./routes/api.esign-campaigns')
       return esignCampaignsHandler(request)

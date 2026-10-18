@@ -7,6 +7,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { ANCHOR_FORMS, type FormDef, type FormField } from "@/lib/anchor-forms/definitions";
 import { VESSEL_MAP, VESSEL_COLS, AGENT_DEFAULTS } from "@/lib/anchor-forms/prefill";
+import { useAuth } from "@/lib/auth";
+import { useSignatoryAccess, ACCESS_HINT, RequestPermissionLinks } from "@/components/anchor/signatory-access";
 
 type Result = { submissionId: string; pdfUrl: string; emailTo: string | null; title: string };
 
@@ -242,6 +244,7 @@ const STATUS_META: Record<string, { label: string; cls: string }> = {
 
 const APPROVAL_META: Record<string, { label: string; cls: string }> = {
   pending: { label: "Awaiting approval", cls: "bg-amber-500/15 text-amber-500" },
+  awaiting_signatory: { label: "Awaiting signatory", cls: "bg-amber-500/15 text-amber-500" },
   approved: { label: "Approved", cls: "bg-emerald-500/15 text-emerald-500" },
   rejected: { label: "Rejected", cls: "bg-red-500/15 text-red-400" },
 };
@@ -252,6 +255,8 @@ export function FormsPage({ confidential = false }: { confidential?: boolean } =
   const [subs, setSubs] = useState<any[]>([]);
   const [approveTarget, setApproveTarget] = useState<any | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const { user } = useAuth();
+  const myEmail = (user?.email ?? "").trim().toLowerCase();
   const reload = useCallback(async () => {
     const { data } = await (supabase as any).from("anchor_form_submissions")
       .select("id, form_key, title, status, created_at, pdf_path, signed_pdf_path, approval_status, approval_chain, approval_step, approval_log")
@@ -269,7 +274,11 @@ export function FormsPage({ confidential = false }: { confidential?: boolean } =
   async function act(action: "approve" | "reject", id: string) {
     if (action === "reject" && !confirm("Reject this document?")) return;
     setBusyId(id);
-    try { await api({ action, submissionId: id }); toast.success(action === "approve" ? "Approved" : "Rejected"); await reload(); }
+    try {
+      const res = await api({ action, submissionId: id });
+      toast.success(action === "reject" ? "Rejected" : res?.awaitingSignatory ? "Approved — waiting for the signatory to approve their signature" : "Approved");
+      await reload();
+    }
     catch (e: any) { toast.error(e.message ?? "Failed"); } finally { setBusyId(null); }
   }
 
@@ -323,7 +332,7 @@ export function FormsPage({ confidential = false }: { confidential?: boolean } =
                     {isDma && (!s.approval_status || s.approval_status === "none" || s.approval_status === "rejected") && s.pdf_path && (
                       <button onClick={() => setApproveTarget(s)} className="rounded bg-primary/15 px-2 py-0.5 text-[11px] font-medium text-primary hover:bg-primary/25">Submit for approval</button>
                     )}
-                    {s.approval_status === "pending" && (
+                    {s.approval_status === "pending" && currentApprover?.email?.trim().toLowerCase() === myEmail && (
                       <>
                         <button disabled={busyId === s.id} onClick={() => act("approve", s.id)} className="rounded bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-400 hover:bg-emerald-500/25">{busyId === s.id ? "…" : "Approve"}</button>
                         <button disabled={busyId === s.id} onClick={() => act("reject", s.id)} className="rounded px-2 py-0.5 text-[11px] font-medium text-muted-foreground hover:text-red-400">Reject</button>
@@ -343,19 +352,12 @@ export function FormsPage({ confidential = false }: { confidential?: boolean } =
 }
 
 function ApprovalSubmitDialog({ sub, onClose, onDone }: { sub: any; onClose: () => void; onDone: () => void }) {
-  const [sigs, setSigs] = useState<any[]>([]);
+  const { signatories: sigs } = useSignatoryAccess({ activeOnly: true });
   const [chain, setChain] = useState<{ name: string; email: string }[]>([]);
   const [signatoryId, setSignatoryId] = useState("");
   const [authority, setAuthority] = useState("sail@pcfc.ae");
   const [pick, setPick] = useState("");
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    (async () => {
-      const { data } = await (supabase as any).from("jls_signatories").select("id, full_name, email, approver_name, approver_email, signature_path").eq("active", true).order("full_name");
-      setSigs(data ?? []);
-    })();
-  }, []);
 
   function addApprover() {
     const s = sigs.find((x) => x.id === pick);
@@ -404,8 +406,9 @@ function ApprovalSubmitDialog({ sub, onClose, onDone }: { sub: any; onClose: () 
               <label className="mb-1 block text-[10px] uppercase tracking-wide text-muted-foreground">Signatory (auto-signs on approval)</label>
               <select className={fld} value={signatoryId} onChange={(e) => setSignatoryId(e.target.value)}>
                 <option value="">— none —</option>
-                {sigs.map((s) => <option key={s.id} value={s.id} disabled={!s.signature_path}>{s.full_name}{s.signature_path ? "" : " (no signature)"}</option>)}
+                {sigs.map((s) => <option key={s.id} value={s.id} disabled={!s.signature_path || s.access === "none"}>{s.full_name}{s.signature_path ? ACCESS_HINT[s.access] : " (no signature)"}</option>)}
               </select>
+              <div className="mt-1"><RequestPermissionLinks signatories={sigs.filter((s) => s.signature_path)} /></div>
             </div>
             <div>
               <label className="mb-1 block text-[10px] uppercase tracking-wide text-muted-foreground">Email to authority on approval</label>

@@ -23,6 +23,9 @@ import { getFormDef } from "@/lib/anchor-forms/definitions";
 import { prefillFor, VESSEL_COLS } from "@/lib/anchor-forms/prefill";
 import { buildPackPdf, vesselSigns, type PackPart } from "@/lib/esign/pack.server";
 import { buildUploadedSignedPdf } from "@/lib/esign/signed-copy.server";
+import {
+  campaignFingerprint, companySignatoryIds, esignFingerprint, recordCampaignDocumentUse, requestSignatoryUse,
+} from "@/lib/anchor/signatory-auth.server";
 
 const BUCKET = "esign-documents";
 const ANCHOR_SENDER = process.env.ANCHOR_MAIL_SENDER ?? "anchor@jlsyachts.com";
@@ -189,6 +192,28 @@ export async function esignCampaignsHandler(request: Request): Promise<Response>
       const vessel: string | null = r.yachts?.vessel_name ?? null;
       const title = docTitleFor(campaign, vessel);
       const built = await buildDocument(sb, campaign, r, r.yachts);
+
+      // Company signatures in the campaign's templates need the signatory's permission —
+      // asked once per campaign; recipients are held (Retry later) until it is given.
+      const companyIds = companySignatoryIds(built.signatureFields, built.pack);
+      const campaignUses: string[] = [];
+      if (companyIds.length) {
+        const fingerprint = await campaignFingerprint(sb, built.pack);
+        for (const sid of companyIds) {
+          const res = await requestSignatoryUse(sb, {
+            signatoryId: sid, target: { kind: "campaign", campaignId: campaign.id }, fingerprint, title: campaign.doc_title,
+            requester: { userId: staff.userId, email: staff.email, name: staff.name }, origin: new URL(request.url).origin,
+          });
+          if (res.status !== "approved") {
+            const held = res.status === "pending";
+            const msg = held ? `Waiting for ${res.signatoryName} to approve the use of their signature — retry once approved` : (res.reason ?? "Signature not authorised");
+            await sb.from("esign_campaign_recipients").update({ status: held ? "held" : "failed", error: msg }).eq("id", r.id);
+            return json({ ok: false, status: held ? "held" : "failed", error: msg });
+          }
+          campaignUses.push(res.useId!);
+        }
+      }
+
       const filePath = inArea(campaign.confidential, `campaigns/${campaign.id}/${r.id}.pdf`);
       const up = await sb.storage.from(BUCKET).upload(filePath, built.bytes, { contentType: "application/pdf", upsert: true });
       if (up.error) throw new Error(`Could not store the document: ${up.error.message}`);
@@ -208,6 +233,16 @@ export async function esignCampaignsHandler(request: Request): Promise<Response>
         campaign_id: campaign.id, yacht_id: r.yacht_id ?? null, allow_esign: campaign.allow_esign,
       }).select("id").single();
       if (docErr) throw new Error(docErr.message);
+      if (campaignUses.length) {
+        // This document's own permission, bound to its exact file, from the campaign's approval.
+        const docFingerprint = await esignFingerprint(sb, { file_path: filePath, pack: built.pack }, built.bytes);
+        for (const useId of campaignUses) {
+          await recordCampaignDocumentUse(sb, {
+            campaignUseId: useId, documentId: doc.id, fingerprint: docFingerprint, title,
+            requester: { userId: staff.userId, email: staff.email, name: staff.name },
+          });
+        }
+      }
 
       const mail = renderCampaignEmail({
         subject: campaign.subject, heading: campaign.heading, note: campaign.note, signOff: campaign.sign_off,
@@ -226,6 +261,7 @@ export async function esignCampaignsHandler(request: Request): Promise<Response>
         });
       } catch (e: any) {
         // Nothing went out — remove the unsent document so it can't be signed or confused.
+        await sb.from("jls_signatory_uses").update({ status: "cancelled", note: "Document not sent" }).eq("esign_document_id", doc.id);
         await sb.from("esign_documents").delete().eq("id", doc.id);
         await sb.storage.from(BUCKET).remove([filePath]).catch(() => {});
         const held = e instanceof ClientEmailDisabledError;

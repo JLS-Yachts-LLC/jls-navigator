@@ -13,9 +13,10 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { ESIGN_STATUS_LABEL, ESIGN_STATUS_COLOR, ESIGN_EVENT_LABEL } from "./esign-meta";
+import { ESIGN_STATUS_LABEL, ESIGN_STATUS_COLOR, ESIGN_EVENT_LABEL, sendOutcome } from "./esign-meta";
 import { useSignedUrl } from "@/lib/signed-url";
 import { SignedAnchor } from "@/components/ui/signed-file";
+import { useSignatoryAccess, ACCESS_HINT, RequestPermissionLinks, requestSignatoryPermission, type PickableSignatory } from "@/components/anchor/signatory-access";
 
 type Doc = {
   id: string; reference: string | null; title: string; description: string | null;
@@ -64,7 +65,7 @@ export function EsignDetailPage({ documentId, onBack }: { documentId: string; on
   async function resend() {
     if (!doc) return;
     setBusy(true);
-    try { await doSendForSignature({ data: { documentId: doc.id, senderEmail: user?.email } } as any); toast.success(`Sent to ${doc.signer_email}`); void load(); }
+    try { const res = await doSendForSignature({ data: { documentId: doc.id, senderEmail: user?.email } } as any); toast.success(sendOutcome(res, `Sent to ${doc.signer_email}`)); void load(); }
     catch (e: any) { toast.error(e.message ?? "Send failed"); } finally { setBusy(false); }
   }
   async function voidDoc() {
@@ -189,7 +190,7 @@ function SignatureFieldsEditor({ doc, fileUrl, onSaved }: { doc: Doc; fileUrl?: 
     })),
   );
   const [placerOpen, setPlacerOpen] = useState(false);
-  const [signatories, setSignatories] = useState<{ id: string; full_name: string; signature_path: string | null }[]>([]);
+  const { signatories } = useSignatoryAccess();
   const [addRole, setAddRole] = useState<"client" | "company">("client");
   const [addSignatory, setAddSignatory] = useState("");
   const [addPage, setAddPage] = useState("1");
@@ -197,15 +198,11 @@ function SignatureFieldsEditor({ doc, fileUrl, onSaved }: { doc: Doc; fileUrl?: 
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    void (supabase as any).from("jls_signatories").select("id, full_name, signature_path").order("full_name")
-      .then(({ data }: any) => setSignatories(data ?? []));
-  }, []);
-
   function addField() {
     const sig = signatories.find((s) => s.id === addSignatory);
     if (addRole === "company" && !sig) { toast.error("Pick the company signatory"); return; }
     if (addRole === "company" && !sig?.signature_path) { toast.error(`${sig?.full_name} has no signature image uploaded (Anchor → Signatories)`); return; }
+    if (addRole === "company" && sig?.access === "none") { toast.error(`You don't have permission to use ${sig.full_name}'s signature — request it first`); return; }
     setFields((f) => [...f, {
       page: Math.max(1, Number(addPage) || 1), pos: addPos, role: addRole,
       ...(addRole === "company" ? { signatory_id: sig!.id, signatory_name: sig!.full_name } : {}),
@@ -307,9 +304,10 @@ function SignatureFieldsEditor({ doc, fileUrl, onSaved }: { doc: Doc; fileUrl?: 
                 className="h-8 rounded-md border border-border bg-background px-2 text-xs">
                 <option value="">Select…</option>
                 {signatories.map((s) => (
-                  <option key={s.id} value={s.id}>{s.full_name}{s.signature_path ? "" : " (no signature image)"}</option>
+                  <option key={s.id} value={s.id} disabled={s.access === "none"}>{s.full_name}{s.signature_path ? ACCESS_HINT[s.access] : " (no signature image)"}</option>
                 ))}
               </select>
+              <RequestPermissionLinks signatories={signatories} />
             </div>
           )}
           <div className="space-y-1">
@@ -336,7 +334,7 @@ function SignatureFieldsEditor({ doc, fileUrl, onSaved }: { doc: Doc; fileUrl?: 
 function VisualFieldPlacer({ fileUrl, initialFields, signatories, onClose, onDone }: {
   fileUrl: string;
   initialFields: SigField[];
-  signatories: { id: string; full_name: string; signature_path: string | null }[];
+  signatories: PickableSignatory[];
   onClose: () => void;
   onDone: (fields: SigField[]) => void;
 }) {
@@ -447,10 +445,15 @@ function VisualFieldPlacer({ fileUrl, initialFields, signatories, onClose, onDon
                 {signatories.filter((s) => s.signature_path).length === 0 && (
                   <div className="px-2 py-1.5 text-xs text-muted-foreground">No signatories with a signature image.</div>
                 )}
-                {signatories.filter((s) => s.signature_path).map((s) => (
+                {signatories.filter((s) => s.signature_path).map((s) => s.access === "none" ? (
+                  <div key={s.id} className="flex items-center justify-between gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground/60">
+                    <span className="truncate">{s.full_name}</span>
+                    <button className="shrink-0 text-[11px] text-primary hover:underline" onClick={() => { setPickSignatory(false); void requestSignatoryPermission(s); }}>Request permission</button>
+                  </div>
+                ) : (
                   <button key={s.id} className="block w-full rounded px-2 py-1.5 text-left text-xs hover:bg-accent"
                     onClick={() => { setAddMode({ role: "company", signatory_id: s.id, signatory_name: s.full_name }); setPickSignatory(false); }}>
-                    {s.full_name}
+                    {s.full_name}{s.access === "approval" && <span className="text-muted-foreground"> · needs their approval</span>}
                   </button>
                 ))}
               </div>

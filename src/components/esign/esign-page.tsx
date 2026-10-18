@@ -12,7 +12,7 @@ import { FileSignature, Lock, Plus, Search, Loader2, Send, Upload, UploadCloud }
 import { confidentialPath } from "@/components/anchor/confidential";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { ESIGN_STATUS_ORDER, ESIGN_STATUS_LABEL, ESIGN_STATUS_COLOR } from "./esign-meta";
+import { ESIGN_STATUS_ORDER, ESIGN_STATUS_LABEL, ESIGN_STATUS_COLOR, sendOutcome } from "./esign-meta";
 
 type Doc = {
   id: string; reference: string | null; title: string; signer_name: string; signer_email: string;
@@ -76,8 +76,8 @@ export function EsignPage({ onOpenDocument, confidential = false }: { onOpenDocu
       if (error) throw error;
 
       if (sendNow) {
-        await doSendForSignature({ data: { documentId: inserted.id, senderEmail: user?.email } } as any);
-        toast.success("Document sent for signature");
+        const res = await doSendForSignature({ data: { documentId: inserted.id, senderEmail: user?.email } } as any);
+        toast.success(sendOutcome(res, "Document sent for signature"));
       } else {
         toast.success("Draft saved");
       }
@@ -90,8 +90,8 @@ export function EsignPage({ onOpenDocument, confidential = false }: { onOpenDocu
   async function send(d: Doc) {
     setSendingId(d.id);
     try {
-      await doSendForSignature({ data: { documentId: d.id, senderEmail: user?.email } } as any);
-      toast.success(`Sent to ${d.signer_email}`);
+      const res = await doSendForSignature({ data: { documentId: d.id, senderEmail: user?.email } } as any);
+      toast.success(sendOutcome(res, `Sent to ${d.signer_email}`));
       void load();
     } catch (e: any) { toast.error(e.message ?? "Send failed"); }
     finally { setSendingId(null); }
