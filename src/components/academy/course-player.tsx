@@ -117,98 +117,98 @@ export function CoursePlayer({ title, from, content, passMark, initialProgress, 
       </aside>
 
       <div className="min-w-0 lg:max-w-[1120px]">
-      <div className="lg:hidden">
-        <div className="flex items-center justify-between gap-3">
-          <button onClick={onExit} className="inline-flex h-9 items-center gap-1.5 rounded-lg px-1 text-sm text-muted-foreground hover:text-foreground">
-            <ArrowLeft className="h-4 w-4" /> {exitLabel}
-          </button>
-          <span className="text-xs text-muted-foreground">{pct}% done</span>
+        <div className="lg:hidden">
+          <div className="flex items-center justify-between gap-3">
+            <button onClick={onExit} className="inline-flex h-9 items-center gap-1.5 rounded-lg px-1 text-sm text-muted-foreground hover:text-foreground">
+              <ArrowLeft className="h-4 w-4" /> {exitLabel}
+            </button>
+            <span className="text-xs text-muted-foreground">{pct}% done</span>
+          </div>
+
+          <h1 className="mt-3 text-xl font-bold leading-snug sm:text-2xl">{title}</h1>
+          {from && <div className="mt-0.5 text-xs text-muted-foreground">From {from}</div>}
+          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-border/60">
+            <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${pct}%` }} />
+          </div>
         </div>
 
-        <h1 className="mt-3 text-xl font-bold leading-snug sm:text-2xl">{title}</h1>
-        {from && <div className="mt-0.5 text-xs text-muted-foreground">From {from}</div>}
-        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-border/60">
-          <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${pct}%` }} />
+        {/* Big screens: the lesson's own heading (the outline replaces the dropdown) */}
+        <div className={cn("hidden lg:block", TEXT_WIDTH)}>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            Lesson {index + 1} of {lessons.length}{lesson?.sectionTitle ? ` · ${lesson.sectionTitle}` : ""}
+          </div>
+          <h1 className="mt-1 text-2xl font-bold leading-snug">{lesson?.title || "Lesson"}</h1>
         </div>
-      </div>
 
-      {/* Big screens: the lesson's own heading (the outline replaces the dropdown) */}
-      <div className={cn("hidden lg:block", TEXT_WIDTH)}>
-        <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Lesson {index + 1} of {lessons.length}{lesson?.sectionTitle ? ` · ${lesson.sectionTitle}` : ""}
-        </div>
-        <h1 className="mt-1 text-2xl font-bold leading-snug">{lesson?.title || "Lesson"}</h1>
-      </div>
+        <div className={TEXT_WIDTH}>{banner}</div>
 
-      <div className={TEXT_WIDTH}>{banner}</div>
-
-      {complete && (
-        <div className={cn("mt-5 flex items-start gap-3 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-4", TEXT_WIDTH)}>
-          <PartyPopper className="mt-0.5 h-5 w-5 shrink-0 text-emerald-300" />
-          <div>
-            <div className="font-semibold text-emerald-200">Course complete</div>
-            <div className="text-sm text-emerald-100/80">
-              {outcome.score != null ? `Your score: ${outcome.score}%. ` : ""}Well done — it's recorded on your training record.
+        {complete && (
+          <div className={cn("mt-5 flex items-start gap-3 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-4", TEXT_WIDTH)}>
+            <PartyPopper className="mt-0.5 h-5 w-5 shrink-0 text-emerald-300" />
+            <div>
+              <div className="font-semibold text-emerald-200">Course complete</div>
+              <div className="text-sm text-emerald-100/80">
+                {outcome.score != null ? `Your score: ${outcome.score}%. ` : ""}Well done — it's recorded on your training record.
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Lessons (phones and tablets) */}
-      <div className="mt-5 rounded-2xl border border-border bg-card/60 lg:hidden">
-        <button onClick={() => setListOpen((o) => !o)} className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left">
-          <div className="min-w-0">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-              Lesson {index + 1} of {lessons.length}{lesson?.sectionTitle ? ` · ${lesson.sectionTitle}` : ""}
+        {/* Lessons (phones and tablets) */}
+        <div className="mt-5 rounded-2xl border border-border bg-card/60 lg:hidden">
+          <button onClick={() => setListOpen((o) => !o)} className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left">
+            <div className="min-w-0">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                Lesson {index + 1} of {lessons.length}{lesson?.sectionTitle ? ` · ${lesson.sectionTitle}` : ""}
+              </div>
+              <div className="truncate font-semibold">{lesson?.title || "Lesson"}</div>
             </div>
-            <div className="truncate font-semibold">{lesson?.title || "Lesson"}</div>
-          </div>
-          <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted-foreground transition", listOpen && "rotate-180")} />
-        </button>
-        {listOpen && (
-          <ol className="border-t border-border/60 py-1">
-            {lessons.map((l, i) => (
-              <li key={l.id}>
-                <button onClick={() => { setIndex(i); setListOpen(false); }}
-                  className={cn("flex w-full items-center gap-2.5 px-4 py-2 text-left text-sm hover:bg-card", i === index && "text-primary")}>
-                  {lessonDone(l) ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" /> : <Circle className="h-4 w-4 shrink-0 text-muted-foreground/50" />}
-                  <span className="truncate">{l.title || `Lesson ${i + 1}`}</span>
-                </button>
-              </li>
-            ))}
-          </ol>
-        )}
-      </div>
-
-      <div className="mt-5 space-y-5">
-        {lesson?.blocks.map((b) => (
-          <div key={b.id} className={WIDE_BLOCKS.has(b.type) ? undefined : TEXT_WIDTH}>
-            <BlockView block={b} progress={byId.get(b.id)} passMark={passMark} api={api} onUpdate={apply} locked={status === "completed"} />
-          </div>
-        ))}
-      </div>
-
-      <div className={cn("mt-8 flex items-center justify-between gap-3", TEXT_WIDTH)}>
-        <button disabled={index === 0} onClick={() => setIndex((i) => i - 1)}
-          className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-border px-4 text-sm disabled:opacity-40">
-          <ArrowLeft className="h-4 w-4" /> Previous
-        </button>
-        {index < lessons.length - 1 ? (
-          <button onClick={() => setIndex((i) => i + 1)}
-            className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-primary px-5 text-sm font-semibold text-primary-foreground">
-            Next lesson <ArrowRight className="h-4 w-4" />
+            <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted-foreground transition", listOpen && "rotate-180")} />
           </button>
-        ) : (
-          <button onClick={onExit} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-primary px-5 text-sm font-semibold text-primary-foreground">
-            {complete ? "Finish" : "Back to my courses"}
+          {listOpen && (
+            <ol className="border-t border-border/60 py-1">
+              {lessons.map((l, i) => (
+                <li key={l.id}>
+                  <button onClick={() => { setIndex(i); setListOpen(false); }}
+                    className={cn("flex w-full items-center gap-2.5 px-4 py-2 text-left text-sm hover:bg-card", i === index && "text-primary")}>
+                    {lessonDone(l) ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" /> : <Circle className="h-4 w-4 shrink-0 text-muted-foreground/50" />}
+                    <span className="truncate">{l.title || `Lesson ${i + 1}`}</span>
+                  </button>
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+
+        <div className="mt-5 space-y-5">
+          {lesson?.blocks.map((b) => (
+            <div key={b.id} className={WIDE_BLOCKS.has(b.type) ? undefined : TEXT_WIDTH}>
+              <BlockView block={b} progress={byId.get(b.id)} passMark={passMark} api={api} onUpdate={apply} locked={status === "completed"} />
+            </div>
+          ))}
+        </div>
+
+        <div className={cn("mt-8 flex items-center justify-between gap-3", TEXT_WIDTH)}>
+          <button disabled={index === 0} onClick={() => setIndex((i) => i - 1)}
+            className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-border px-4 text-sm disabled:opacity-40">
+            <ArrowLeft className="h-4 w-4" /> Previous
           </button>
+          {index < lessons.length - 1 ? (
+            <button onClick={() => setIndex((i) => i + 1)}
+              className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-primary px-5 text-sm font-semibold text-primary-foreground">
+              Next lesson <ArrowRight className="h-4 w-4" />
+            </button>
+          ) : (
+            <button onClick={onExit} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-primary px-5 text-sm font-semibold text-primary-foreground">
+              {complete ? "Finish" : "Back to my courses"}
+            </button>
+          )}
+        </div>
+        {!complete && index === lessons.length - 1 && outcome.done < outcome.total && (
+          <p className={cn("mt-3 text-right text-xs text-muted-foreground", TEXT_WIDTH)}>
+            {outcome.total - outcome.done} part{outcome.total - outcome.done === 1 ? "" : "s"} still to finish — look for the empty circles in the lesson list.
+          </p>
         )}
-      </div>
-      {!complete && index === lessons.length - 1 && outcome.done < outcome.total && (
-        <p className={cn("mt-3 text-right text-xs text-muted-foreground", TEXT_WIDTH)}>
-          {outcome.total - outcome.done} part{outcome.total - outcome.done === 1 ? "" : "s"} still to finish — look for the empty circles in the lesson list.
-        </p>
-      )}
       </div>
     </div>
   );

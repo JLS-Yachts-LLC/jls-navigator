@@ -14,7 +14,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown, ArrowLeft, ArrowUp, Archive, CheckCircle2, Crosshair, Eye, FileText, Film, GraduationCap, Image as ImageIcon,
-  LayoutGrid, Link2, ListChecks, ListOrdered, Loader2, Plus, RotateCcw, Save, Send, Ship, Signature, Sparkles, Trash2, Type, Upload, X,
+  LayoutGrid, Link2, ListChecks, ListOrdered, Loader2, Maximize2, Minimize2, Plus, RotateCcw, Save, Send, Ship, Signature, Sparkles, Trash2, Type, Upload, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -272,6 +272,7 @@ function Editor({ id, onBack }: { id: string; onBack: () => void }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [problems, setProblems] = useState<string[]>([]);
   const [previewing, setPreviewing] = useState(false);
+  const [focus, setFocus] = useState(false); // preview over the whole window, Polaris menu hidden
   const [offering, setOffering] = useState(false);
 
   const load = useCallback(async () => {
@@ -337,8 +338,12 @@ function Editor({ id, onBack }: { id: string; onBack: () => void }) {
 
   if (previewing) {
     return (
-      <div className="pds pds-embed dark min-h-screen bg-background text-foreground" style={{ colorScheme: "dark" }}>
-        <Preview title={details.title} content={content} passMark={Number(details.passMark) || 80} onExit={() => setPreviewing(false)} />
+      <div className={cn("pds pds-embed dark bg-background text-foreground", focus ? "fixed inset-0 z-50 overflow-y-auto" : "min-h-screen")} style={{ colorScheme: "dark" }}>
+        <Preview title={details.title} content={content} passMark={Number(details.passMark) || 80} onExit={() => { setPreviewing(false); setFocus(false); }}
+          toolbar={<button onClick={() => setFocus((f) => !f)}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-card/60 px-2.5 text-xs text-muted-foreground hover:text-foreground">
+            {focus ? <><Minimize2 className="h-3.5 w-3.5" /> Show the Polaris menu</> : <><Maximize2 className="h-3.5 w-3.5" /> Focus mode</>}
+          </button>} />
       </div>
     );
   }
@@ -860,8 +865,8 @@ function QuizEditor({ block, onChange }: { block: QuizBlock; onChange: (b: Block
 }
 
 // ── Preview (local marking, nothing saved) ───────────────────────────────────
-export function Preview({ title, content, passMark, onExit, mediaUrl, from, banner }: {
-  title: string; content: CourseContent; passMark: number; onExit: () => void;
+export function Preview({ title, content, passMark, onExit, mediaUrl, from, banner, toolbar }: {
+  title: string; content: CourseContent; passMark: number; onExit: () => void; toolbar?: React.ReactNode;
   /** Defaults to the creator's backend. */
   mediaUrl?: (mediaId: string) => Promise<string | null>;
   from?: string; banner?: React.ReactNode;
@@ -905,7 +910,7 @@ export function Preview({ title, content, passMark, onExit, mediaUrl, from, bann
 
   return (
     <CoursePlayer title={title} from={from ?? backend.owner} content={learnerCopy} passMark={passMark} initialProgress={[]} api={api}
-      onExit={onExit} exitLabel={banner ? "Back" : "Back to editing"}
+      onExit={onExit} exitLabel={banner ? "Back" : "Back to editing"} toolbar={toolbar}
       banner={banner ?? <div className="mt-4 rounded-xl border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-sm text-sky-200">
         Preview of the unsaved draft, as crew will see it. Nothing here is recorded.
       </div>} />
