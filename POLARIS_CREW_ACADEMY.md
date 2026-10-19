@@ -1,7 +1,39 @@
 # Polaris — Crew Academy (training module) — PLAN
 
-Status: **Phases 1 and 2 done and live, 19 Oct 2026** — see "what was built" below.
+Status: **Phases 1, 2 and 3 done and live, 19 Oct 2026** — see "what was built" below.
 Decisions taken and still open are at the bottom.
+
+## Phase 3 — what was built (19 Oct 2026), plus MFA and 500 MB uploads
+
+- **Crew MFA (Matt: "via email or QR code via authenticator app"):** every `/api/academy` request
+  needs the second step. `resolveLearner()` accepts a JWT with `aal = aal2` (Supabase TOTP, set
+  up by scanning a QR code on `/academy`, same as the Client Portal) **or** a live row in
+  `academy_mfa_sessions` for the token's `session_id` (an emailed 6-digit code, checked by
+  `/api/academy/mfa`: SHA-256 hash with a server pepper, 10 min, 5 tries, 1/min and 5/hour, 30-day
+  session). Crew choose each time; email is offered only when the mail guard would deliver it
+  (EMAIL_ENABLED + CLIENT_EMAIL_ENABLED, or an internal address) — otherwise authenticator only.
+  Migration `20261019170000_crew_academy_mfa.sql`.
+- **Uploads up to 500 MB:** Supabase project Storage limit raised 50 MB → 500 MB (Management API,
+  19 Oct 2026, Matt approved); `MAX_UPLOAD_BYTES` matches. Uploads are a single (non-resumable)
+  request, so very large files want a good connection.
+- **Groups:** per vessel, seeded Bridge / Deck / Engineering / Interior / Galley on first open;
+  rename, add, delete, members. Assign at invite time.
+- **Live group enrolment:** enrolling a group writes a rule; today's members are enrolled, anyone
+  who joins later is enrolled (`enrolFromGroupRules`), leaving the group or withdrawing the rule
+  cancels only courses they hadn't started (`dropGroupEnrolments`). Due date fixed or "N days
+  after enrolment".
+- **The vessel's own courses:** the same course creator (`CourseEditor` with a `CourseBackend`),
+  shared server code `lib/academy/authoring.server.ts` scoped `{ owner: "vessel", yachtId }`;
+  files under `vessel/<yacht>/<course>/`.
+- **Sharing with JLS:** vessel shares a course (with a note) or a crew member's results; crew
+  can tick "Share my training results with JLS Yachts" on `/academy`. Staff see them on
+  `/academy-admin` → "Shared with JLS" (shared courses open in the read-only preview, files
+  served only while the share is live). Withdrawing stops it at once.
+- **Reports tab:** % of required training complete, overdue list, crew × course grid, CSV.
+- **Alerts:** `/api/portal/academy?op=summary` → "N required courses overdue / due this week" in
+  the portal's Alerts (links to Crew Academy).
+- Not yet (Phase 4): drag-and-drop blocks, certificates PDF + `training_certifications` link,
+  refresher re-enrolment job (expires_at is recorded, nothing re-enrols yet), question analysis.
 
 ## Phase 2 — what was built (19 Oct 2026)
 
@@ -282,8 +314,7 @@ Taken (Matt, 19 Oct 2026):
 Still open:
 
 5. Can a vessel **copy and adapt** a JLS course, or only use it as published?
-6. **MFA** for crew logins? (Captains need it; guests don't.) Built without MFA for now (the
-   recommendation) — Matt hasn't confirmed; easy to add later.
+6. ~~MFA for crew?~~ **Decided 19 Oct 2026: yes** — authenticator app (QR) or emailed code.
 7. Do we need to import **bought-in courses (SCORM)**?
 8. Should the Chief Stewardess / Chief Engineer manage only their own department's training?
 9. Does JLS see **anything** about JLS-course uptake without a share (e.g. counts per vessel, no
