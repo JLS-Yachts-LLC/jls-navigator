@@ -1,7 +1,36 @@
 # Polaris — Crew Academy (training module) — PLAN
 
-Status: **Phases 1, 2 and 3 done and live, 19 Oct 2026** — see "what was built" below.
+Status: **Phases 1–4 done and live, 19 Oct 2026** — see "what was built" below.
 Decisions taken and still open are at the bottom.
+
+## Phase 4 — what was built (19 Oct 2026)
+
+- **Exercises** (content.ts, player `exercises.tsx`, creator editors in `course-library.tsx`):
+  `match` (pairs; each pair has its own random `rightId`, so the learner's shuffled `choices`
+  can't be traced to the left items), `order` (authored order is the answer; learners get it
+  shuffled), `sort` (items into 2–6 groups; `bucketId` stripped), `hotspot` (tap a picture;
+  circles stored as percentages of the picture's WIDTH so they stay round). One `gradeBlock()`
+  marks every graded block with partial credit per item; passed at the course pass mark;
+  retry until passed; the full solution is sent only once passed. Dragging uses pointer
+  events (finger and mouse), with tap-to-place everywhere (and up/down buttons for order). The
+  staff Preview now shows the learner's stripped, shuffled copy.
+- **Certificates:** a row in `academy_certificates` on completion (number `CA-YYYY-XXXXXX`, no
+  confusable characters), PDF drawn on demand (`certificate.server.ts`, A4 landscape, JLS logo
+  for JLS courses, the vessel's logo + name for its own — PNG/JPG only, else name alone). Download:
+  crew (`/api/academy?op=certificate`), vessel managers (`/api/portal/academy?op=certificate`),
+  JLS staff only for crew who shared their results.
+- **Decision (19 Oct 2026): certificates are NOT written to `training_certifications`** — that
+  table is readable by every JLS staff member, which would break "private to the vessel unless
+  shared". They live in `academy_certificates` and show on the vessel's screens and the crew
+  member's record; JLS sees them only through a share.
+- **Refreshers:** `renewExpiredEnrolments()` on the worker's 5-minute tick — a completed
+  enrolment past `expires_at` becomes `expired` and, if the learner is still active and the
+  course still available, a new enrolment due in 30 days is created (same rule, required flag).
+- **Question analysis:** `/api/portal/academy?op=analysis&courseId=` re-marks every attempt
+  against the version it was taken on; per question / exercise item: answers and % right first
+  try, hardest first, no names. In the portal's Reports tab.
+- Not done (Phase 5): reminders (gated by the vessel's automatic-messages switch), offline
+  courses, AI help drafting quiz questions, SCORM import, JLS-side uptake numbers (decision 9).
 
 ## Phase 3 — what was built (19 Oct 2026), plus MFA and 500 MB uploads
 
