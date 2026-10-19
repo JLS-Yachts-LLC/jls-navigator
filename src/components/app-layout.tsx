@@ -39,17 +39,17 @@ export function AppLayout() {
       .eq("user_id", user.id)
       .eq("active", true)
       .limit(1)
-      .then(({ data }: any) => {
-        if (data?.length) window.location.assign("/portal");
+      .then(async ({ data }: any) => {
+        if (data?.length) { window.location.assign("/portal"); return; }
+        // Crew on a vessel's Crew Academy see only their training. Asked only
+        // once the captain check says no, so someone who is both lands on /portal.
+        const { data: isLearner } = await (supabase as any).rpc("is_portal_learner");
+        if (isLearner === true) window.location.assign("/academy");
       });
     // Guests (outside people who only see documents shared with them) have their
     // own page. They can't read guest_accounts, so ask the database directly.
     (supabase as any).rpc("is_portal_guest").then(({ data }: any) => {
       if (data === true) window.location.assign("/guest");
-    });
-    // Crew on a vessel's Crew Academy see only their training.
-    (supabase as any).rpc("is_portal_learner").then(({ data }: any) => {
-      if (data === true) window.location.assign("/academy");
     });
   }, [user]);
 
