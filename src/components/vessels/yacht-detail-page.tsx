@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { z } from "zod";
 import { YachtDocumentsCard } from "@/components/vessels/YachtDocumentsCard";
+import { HealthDeclarationsCard } from "@/components/vessels/HealthDeclarationsCard";
 import { YachtActivityLog } from "./YachtActivityLog";
 import { YachtAgentsPanel, useYachtAgents } from "@/components/vessels/vessel-agents";
 import { PermitExpiryPanel } from "@/components/vessels/permit-expiry";
@@ -478,7 +479,8 @@ export function YachtDetail({
         </div>
       ) : tab === "documents" ? (
         <div className="flex-1 overflow-auto p-6">
-          <div className="mx-auto max-w-4xl">
+          <div className="mx-auto max-w-4xl space-y-4">
+            <HealthDeclarationsCard yachtId={String(y.id)} />
             <YachtDocumentsCard yachtId={String(y.id)} vesselName={String(y.vessel_name ?? "")} />
           </div>
         </div>
