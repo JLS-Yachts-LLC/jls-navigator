@@ -7,13 +7,17 @@
  *
  * Blocks: reading (markdown) · video (uploaded MP4, or a YouTube / Vimeo link) ·
  * document (PDF) · image · quiz (single / multiple choice, true or false) ·
- * acknowledge ("I have read and understood").
+ * acknowledge ("I have read and understood") — and the interactive exercises:
+ * match (pair items up) · order (put steps in order) · sort (put items into
+ * groups) · hotspot (tap the right place on a picture).
  *
- * Answer keys (`correct`) and explanations live in the content. They never leave
- * the server before the learner submits: the player gets forLearner(content).
+ * Answer keys (`correct`, a pair's `rightId`, the authored order, an item's
+ * `bucketId`, a picture's `spots`) and explanations live in the content. They
+ * never leave the server before the learner submits: the player gets
+ * forLearner(content), which strips them and shuffles what needs shuffling.
  */
 
-export type BlockType = "reading" | "video" | "document" | "image" | "quiz" | "acknowledge";
+export type BlockType = "reading" | "video" | "document" | "image" | "quiz" | "acknowledge" | "match" | "order" | "sort" | "hotspot";
 export type QuestionKind = "single" | "multi" | "truefalse";
 
 export type Option = { id: string; text: string };
@@ -43,7 +47,32 @@ export type DocumentBlock = { id: string; type: "document"; mediaId: string | nu
 export type ImageBlock = { id: string; type: "image"; mediaId: string | null; caption?: string };
 export type QuizBlock = { id: string; type: "quiz"; title?: string; questions: Question[] };
 export type AcknowledgeBlock = { id: string; type: "acknowledge"; statement: string };
-export type Block = ReadingBlock | VideoBlock | DocumentBlock | ImageBlock | QuizBlock | AcknowledgeBlock;
+
+/**
+ * Pair each left item with its right one. `rightId` is a separate random id per
+ * pair (not derived from the pair id), so the learner's copy — rights shuffled
+ * into `choices`, keys removed — gives nothing away.
+ */
+export type MatchPair = { id: string; left: string; right: string; rightId: string };
+export type MatchBlock = { id: string; type: "match"; title?: string; prompt?: string; pairs: MatchPair[]; choices?: Option[] };
+/** Put the items in order. The authored order is the answer; learners get them shuffled. */
+export type OrderBlock = { id: string; type: "order"; title?: string; prompt?: string; items: Option[] };
+/** Put each item in the right group. `bucketId` is stripped for learners. */
+export type SortItem = { id: string; text: string; bucketId: string };
+export type SortBlock = { id: string; type: "sort"; title?: string; prompt?: string; buckets: Option[]; items: SortItem[] };
+/**
+ * Tap the right place on a picture. Spots are circles; x and y are percentages
+ * of the picture's WIDTH (so a circle stays round whatever the height), r too.
+ */
+export type HotspotSpot = { id: string; x: number; y: number; r: number };
+export type HotspotBlock = { id: string; type: "hotspot"; title?: string; prompt?: string; mediaId: string | null; spots: HotspotSpot[] };
+
+export type Block = ReadingBlock | VideoBlock | DocumentBlock | ImageBlock | QuizBlock | AcknowledgeBlock
+  | MatchBlock | OrderBlock | SortBlock | HotspotBlock;
+/** Blocks that are marked (and retried until passed). */
+export type GradedBlock = QuizBlock | MatchBlock | OrderBlock | SortBlock | HotspotBlock;
+export const GRADED_TYPES = new Set<BlockType>(["quiz", "match", "order", "sort", "hotspot"]);
+export const isGraded = (b: Block): b is GradedBlock => GRADED_TYPES.has(b.type);
 
 export type Lesson = { id: string; title: string; blocks: Block[] };
 export type Section = { id: string; title: string; lessons: Lesson[] };
@@ -68,6 +97,10 @@ export const BLOCK_LABELS: Record<BlockType, string> = {
   image: "Picture",
   quiz: "Quiz",
   acknowledge: "Read & understood",
+  match: "Match pairs",
+  order: "Put in order",
+  sort: "Sort into groups",
+  hotspot: "Tap the picture",
 };
 
 export const newId = () =>
@@ -88,8 +121,17 @@ export function newBlock(type: BlockType): Block {
     case "image": return { id, type, mediaId: null, caption: "" };
     case "quiz": return { id, type, title: "", questions: [newQuestion("single")] };
     case "acknowledge": return { id, type, statement: "I have read and understood this lesson." };
+    case "match": return { id, type, title: "", prompt: "Match each item with its pair.", pairs: [newPair(), newPair()] };
+    case "order": return { id, type, title: "", prompt: "Put these steps in the right order.", items: [{ id: newId(), text: "" }, { id: newId(), text: "" }] };
+    case "sort": {
+      const a = { id: newId(), text: "" }, b2 = { id: newId(), text: "" };
+      return { id, type, title: "", prompt: "Put each item in the right group.", buckets: [a, b2], items: [{ id: newId(), text: "", bucketId: a.id }, { id: newId(), text: "", bucketId: b2.id }] };
+    }
+    case "hotspot": return { id, type, title: "", prompt: "Tap the right place on the picture.", mediaId: null, spots: [] };
   }
 }
+
+export const newPair = (): MatchPair => ({ id: newId(), left: "", right: "", rightId: newId() });
 
 export function newQuestion(kind: QuestionKind): Question {
   return {
@@ -139,6 +181,36 @@ function cleanBlock(raw: any): Block | null {
       questions: (Array.isArray(raw.questions) ? raw.questions : []).slice(0, 100).map(cleanQuestion),
     };
     case "acknowledge": return { id, type: "acknowledge", statement: str(raw.statement, 1000) };
+    case "match": {
+      const pairs: MatchPair[] = (Array.isArray(raw.pairs) ? raw.pairs : []).slice(0, 20).map((pr: any) => ({
+        id: idOf(pr?.id), left: str(pr?.left, 300), right: str(pr?.right, 300), rightId: idOf(pr?.rightId),
+      }));
+      // A right id must never equal a pair id (that would give the answer away) or repeat.
+      const used = new Set(pairs.map((pr) => pr.id));
+      for (const pr of pairs) { while (used.has(pr.rightId)) pr.rightId = newId(); used.add(pr.rightId); }
+      return { id, type: "match", title: str(raw.title, 300), prompt: str(raw.prompt, 1000), pairs };
+    }
+    case "order": return {
+      id, type: "order", title: str(raw.title, 300), prompt: str(raw.prompt, 1000),
+      items: (Array.isArray(raw.items) ? raw.items : []).slice(0, 20).map((o: any) => ({ id: idOf(o?.id), text: str(o?.text, 300) })),
+    };
+    case "sort": {
+      const buckets: Option[] = (Array.isArray(raw.buckets) ? raw.buckets : []).slice(0, 6).map((o: any) => ({ id: idOf(o?.id), text: str(o?.text, 120) }));
+      const ids = new Set(buckets.map((b) => b.id));
+      const items: SortItem[] = (Array.isArray(raw.items) ? raw.items : []).slice(0, 30).map((o: any) => ({
+        id: idOf(o?.id), text: str(o?.text, 300), bucketId: ids.has(o?.bucketId) ? o.bucketId : (buckets[0]?.id ?? ""),
+      }));
+      return { id, type: "sort", title: str(raw.title, 300), prompt: str(raw.prompt, 1000), buckets, items };
+    }
+    case "hotspot": {
+      const num = (v: unknown, lo: number, hi: number) => Math.min(hi, Math.max(lo, Number(v) || 0));
+      return {
+        id, type: "hotspot", title: str(raw.title, 300), prompt: str(raw.prompt, 1000), mediaId: mediaRef(raw.mediaId),
+        spots: (Array.isArray(raw.spots) ? raw.spots : []).slice(0, 10).map((s: any) => ({
+          id: idOf(s?.id), x: num(s?.x, 0, 100), y: num(s?.y, 0, 400), r: num(s?.r, 1, 50) || 6,
+        })),
+      };
+    }
     default: return null;
   }
 }
@@ -183,6 +255,24 @@ export function publishProblems(content: CourseContent): string[] {
         if (b.type === "video" && !b.mediaId && !b.url) problems.push(`${where}: a video has no file or link.`);
         if ((b.type === "document" || b.type === "image") && !b.mediaId) problems.push(`${where}: a ${BLOCK_LABELS[b.type].toLowerCase()} has no file.`);
         if (b.type === "acknowledge" && !b.statement.trim()) problems.push(`${where}: a "read & understood" block has no statement.`);
+        if (b.type === "match") {
+          if (b.pairs.length < 2) problems.push(`${where}: a matching exercise needs at least two pairs.`);
+          if (b.pairs.some((pr) => !pr.left.trim() || !pr.right.trim())) problems.push(`${where}: a matching exercise has an empty item.`);
+        }
+        if (b.type === "order") {
+          if (b.items.length < 2) problems.push(`${where}: an ordering exercise needs at least two steps.`);
+          if (b.items.some((o) => !o.text.trim())) problems.push(`${where}: an ordering exercise has an empty step.`);
+        }
+        if (b.type === "sort") {
+          if (b.buckets.length < 2) problems.push(`${where}: a sorting exercise needs at least two groups.`);
+          if (b.buckets.some((o) => !o.text.trim())) problems.push(`${where}: a sorting exercise has a group with no name.`);
+          if (b.items.length < 2) problems.push(`${where}: a sorting exercise needs at least two items.`);
+          if (b.items.some((o) => !o.text.trim())) problems.push(`${where}: a sorting exercise has an empty item.`);
+        }
+        if (b.type === "hotspot") {
+          if (!b.mediaId) problems.push(`${where}: a picture exercise has no picture.`);
+          if (b.spots.length === 0) problems.push(`${where}: a picture exercise has no right place marked.`);
+        }
         if (b.type === "quiz") {
           if (b.questions.length === 0) problems.push(`${where}: a quiz has no questions.`);
           b.questions.forEach((q, qi) => {
@@ -199,18 +289,47 @@ export function publishProblems(content: CourseContent): string[] {
   return problems;
 }
 
+/** A shuffled copy — never left in the original order when that can be avoided. */
+export function shuffled<T>(list: T[]): T[] {
+  const out = [...list];
+  for (let tries = 0; tries < 5; tries++) {
+    for (let i = out.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [out[i], out[j]] = [out[j], out[i]];
+    }
+    if (out.length < 2 || out.some((x, i) => x !== list[i])) break;
+  }
+  return out;
+}
+
+/** One block as a learner's browser may have it: answer keys gone, answers shuffled. */
+export function blockForLearner(b: Block): Block {
+  switch (b.type) {
+    case "quiz":
+      return { ...b, questions: b.questions.map(({ correct: _c, explanation: _e, ...q }) => ({ ...q, correct: [] as string[] })) };
+    case "match":
+      return {
+        ...b,
+        pairs: b.pairs.map((pr) => ({ id: pr.id, left: pr.left, right: "", rightId: "" })),
+        choices: shuffled(b.pairs.map((pr) => ({ id: pr.rightId, text: pr.right }))),
+      };
+    case "order":
+      return { ...b, items: shuffled(b.items) };
+    case "sort":
+      return { ...b, items: shuffled(b.items.map((i) => ({ ...i, bucketId: "" }))) };
+    case "hotspot":
+      return { ...b, spots: [] };
+    default:
+      return b;
+  }
+}
+
 /** The content a learner's browser may have: no answer keys, no explanations. */
 export function forLearner(content: CourseContent): CourseContent {
   return {
     sections: content.sections.map((s) => ({
       ...s,
-      lessons: s.lessons.map((l) => ({
-        ...l,
-        blocks: l.blocks.map((b) => b.type !== "quiz" ? b : {
-          ...b,
-          questions: b.questions.map(({ correct: _c, explanation: _e, ...q }) => ({ ...q, correct: [] as string[] })),
-        }),
-      })),
+      lessons: s.lessons.map((l) => ({ ...l, blocks: l.blocks.map(blockForLearner) })),
     })),
   };
 }
@@ -235,14 +354,18 @@ export function findLesson(content: CourseContent, lessonId: string): Lesson | n
 export function mediaIdsIn(content: CourseContent): Set<string> {
   const ids = new Set<string>();
   for (const b of allBlocks(content)) {
-    if ((b.type === "video" || b.type === "document" || b.type === "image") && b.mediaId) ids.add(b.mediaId);
+    if ((b.type === "video" || b.type === "document" || b.type === "image" || b.type === "hotspot") && b.mediaId) ids.add(b.mediaId);
   }
   return ids;
 }
 
 // ── Marking ──────────────────────────────────────────────────────────────────
 export type QuestionResult = { id: string; correct: boolean; rightAnswers: string[]; explanation?: string };
-export type QuizResult = { score: number; right: number; total: number; passed: boolean; questions: QuestionResult[] };
+export type QuizResult = {
+  score: number; right: number; total: number; passed: boolean; questions: QuestionResult[];
+  /** The full answer for an exercise (pairs, order, groups, spots) — shown only once passed. */
+  solution?: unknown;
+};
 
 /** Mark one quiz. `answers` maps question id → chosen option ids. All-or-nothing per question. */
 export function gradeQuiz(block: QuizBlock, answers: Record<string, unknown>, passMark: number): QuizResult {
@@ -258,6 +381,67 @@ export function gradeQuiz(block: QuizBlock, answers: Record<string, unknown>, pa
   return { score, right, total, passed: score >= passMark, questions };
 }
 
+const result = (items: QuestionResult[], passMark: number, solution?: unknown): QuizResult => {
+  const right = items.filter((i) => i.correct).length;
+  const total = items.length;
+  const score = total ? Math.round((right / total) * 100) : 100;
+  return { score, right, total, passed: score >= passMark, questions: items, solution };
+};
+const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : {});
+
+/** Is a tap at (x, y) — percentages of the picture's width — inside one of the spots? */
+export function hitsSpot(spots: HotspotSpot[], x: number, y: number): boolean {
+  return spots.some((s) => Math.hypot(x - s.x, y - s.y) <= s.r);
+}
+
+/**
+ * Mark any graded block. Answers by type:
+ *   quiz     { [questionId]: optionId[] }
+ *   match    { [pairId]: rightId }
+ *   order    itemId[] (top to bottom)
+ *   sort     { [itemId]: bucketId }
+ *   hotspot  { x, y }   (percentages of the picture's width)
+ * Partial credit per item; the block is passed at the course pass mark.
+ */
+export function gradeBlock(block: GradedBlock, answers: unknown, passMark: number): QuizResult {
+  switch (block.type) {
+    case "quiz":
+      return gradeQuiz(block, obj(answers), passMark);
+    case "match": {
+      const a = obj(answers);
+      return result(block.pairs.map((pr) => ({ id: pr.id, correct: a[pr.id] === pr.rightId, rightAnswers: [pr.rightId] })), passMark,
+        Object.fromEntries(block.pairs.map((pr) => [pr.id, pr.rightId])));
+    }
+    case "order": {
+      const given = Array.isArray(answers) ? answers : [];
+      return result(block.items.map((it, i) => ({ id: String(i), correct: given[i] === it.id, rightAnswers: [it.id] })), passMark,
+        block.items.map((it) => it.id));
+    }
+    case "sort": {
+      const a = obj(answers);
+      return result(block.items.map((it) => ({ id: it.id, correct: a[it.id] === it.bucketId, rightAnswers: [it.bucketId] })), passMark,
+        Object.fromEntries(block.items.map((it) => [it.id, it.bucketId])));
+    }
+    case "hotspot": {
+      const a = obj(answers);
+      const x = Number(a.x), y = Number(a.y);
+      const hit = Number.isFinite(x) && Number.isFinite(y) && hitsSpot(block.spots, x, y);
+      return result([{ id: "tap", correct: hit, rightAnswers: [] }], passMark, block.spots);
+    }
+  }
+}
+
+/** One question / item of a graded block, for the question analysis report. */
+export function gradedItems(block: GradedBlock): { id: string; label: string }[] {
+  switch (block.type) {
+    case "quiz": return block.questions.map((q) => ({ id: q.id, label: q.prompt }));
+    case "match": return block.pairs.map((pr) => ({ id: pr.id, label: `${pr.left} → ${pr.right}` }));
+    case "order": return block.items.map((it, i) => ({ id: String(i), label: `Step ${i + 1}: ${it.text}` }));
+    case "sort": return block.items.map((it) => ({ id: it.id, label: `${it.text} → ${block.buckets.find((b) => b.id === it.bucketId)?.text ?? "?"}` }));
+    case "hotspot": return [{ id: "tap", label: block.prompt || "Tap the right place" }];
+  }
+}
+
 // ── Completion ───────────────────────────────────────────────────────────────
 /** Whether one block is finished, given its progress row. */
 export function blockDone(block: Block, p: BlockProgress | undefined): boolean {
@@ -267,6 +451,10 @@ export function blockDone(block: Block, p: BlockProgress | undefined): boolean {
       if (block.mediaId && block.mustWatch) return (p.video_percent ?? 0) >= VIDEO_DONE_PERCENT || !!p.completed_at;
       return !!p.viewed_at || !!p.completed_at;
     case "quiz":
+    case "match":
+    case "order":
+    case "sort":
+    case "hotspot":
     case "acknowledge":
       return !!p.completed_at;
     default:
@@ -275,9 +463,9 @@ export function blockDone(block: Block, p: BlockProgress | undefined): boolean {
 }
 
 /**
- * The course result. Complete when every block is done (a quiz is done once it
- * is passed — it can be retried until then). The score is the average of the
- * quiz scores, or null when the course has no quizzes.
+ * The course result. Complete when every block is done (a quiz or exercise is
+ * done once it is passed — it can be retried until then). The score is the
+ * average of the quiz and exercise scores, or null when the course has none.
  */
 export function courseOutcome(content: CourseContent, progress: BlockProgress[]): {
   done: number; total: number; complete: boolean; score: number | null;
@@ -285,7 +473,7 @@ export function courseOutcome(content: CourseContent, progress: BlockProgress[])
   const byId = new Map(progress.map((p) => [p.block_id, p]));
   const blocks = allBlocks(content);
   const done = blocks.filter((b) => blockDone(b, byId.get(b.id))).length;
-  const quizScores = blocks.filter((b) => b.type === "quiz").map((b) => byId.get(b.id)?.score ?? 0);
+  const quizScores = blocks.filter(isGraded).map((b) => byId.get(b.id)?.score ?? 0);
   return {
     done, total: blocks.length,
     complete: blocks.length > 0 && done === blocks.length,
