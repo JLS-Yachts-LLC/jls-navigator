@@ -8,6 +8,11 @@
  * and reports per list what a real sync WOULD do: rows updated (and which fields
  * actually change), rows added, and "risky" changes — a permit moving to another
  * vessel or person, the old failure mode. Nothing is written.
+ *
+ * A real run is two-way: the pull goes first, then every permit Polaris changed is
+ * PUSHED over SharePoint. So the panel also shows that half — how many would
+ * overwrite a SharePoint item, how many would create one, and how many of those
+ * are really a bulk/system stamp rather than a member of staff.
  */
 import { Fragment, useState } from "react";
 import { AlertTriangle, ChevronDown, FlaskConical, Loader2 } from "lucide-react";
@@ -23,11 +28,23 @@ interface Detail {
   samples: Array<{ id: string; holder: string; field: string; from: string; to: string; risky: boolean }>;
   insertSamples: Array<{ holder: string; vessel: string | null; permitNumber: string | null; expiry: string | null }>;
   insertsWithoutVessel: number;
+  dateFixOnlyRows: number;
+  unmatchedVessels: Array<{ name: string; count: number }>;
+  conflicts: number;
+  conflictSamples: Array<{ polarisId: string; itemId: string; reason: string; polaris: string; sharepoint: string }>;
+  twinLinks: Array<{ polarisId: string; itemId: string; holder: string; vessel: string | null; issue: string | null }>;
+  testItems: number;
+  testSamples: string[];
+  push: { dirty: number; bulkStamped: number; patch: number; create: number; heldBack: number };
 }
 interface ListResult { list: string; result: { synced: number; errors: number; samples?: string[]; dryRun?: Detail } }
 interface DryRun {
   ok: boolean; error?: string;
-  totals: { updates: number; changedRows: number; riskyChanges: number; inserts: number; errors: number };
+  totals: {
+    updates: number; changedRows: number; riskyChanges: number; inserts: number; errors: number;
+    dateFixOnlyRows: number; conflicts: number; twinLinks: number; testItems: number;
+    pushDirty: number; pushBulkStamped: number; pushPatch: number; pushCreate: number; heldBack: number;
+  };
   lists: ListResult[];
 }
 
@@ -102,6 +119,29 @@ export function PermitsDryRunPanel({ lists }: { lists: Array<{ name: string; ena
             ))}
           </div>
 
+          <div className="grid grid-cols-2 gap-px border-b border-border/60 bg-border/40 text-center sm:grid-cols-5">
+            {[
+              { k: "Polaris → SharePoint", v: run.totals.pushPatch, sub: "SharePoint items overwritten by Polaris", warn: run.totals.pushPatch > 0 },
+              { k: "New in SharePoint", v: run.totals.pushCreate, sub: "items Polaris would create", warn: run.totals.pushCreate > 0 },
+              { k: "Bulk-stamped", v: run.totals.pushBulkStamped, sub: `of ${run.totals.pushDirty.toLocaleString()} unpushed — not staff edits`, warn: run.totals.pushBulkStamped > 0 },
+              { k: "Left alone", v: run.totals.conflicts, sub: "SharePoint item now holds another permit" },
+              { k: "Linked to twin", v: run.totals.twinLinks, sub: "Polaris permit found in SharePoint" },
+            ].map((t) => (
+              <div key={t.k} className="bg-card px-3 py-2.5">
+                <div className={cn("font-display text-xl font-bold", t.warn ? "text-amber-300" : "text-foreground")}>{t.v.toLocaleString()}</div>
+                <div className="text-[11px] font-medium text-foreground/80">{t.k}</div>
+                <div className="text-[10px] text-muted-foreground">{t.sub}</div>
+              </div>
+            ))}
+          </div>
+          {(run.totals.dateFixOnlyRows > 0 || run.totals.heldBack > 0 || run.totals.testItems > 0) && (
+            <div className="space-y-0.5 border-b border-border/60 px-4 py-2 text-[11px] text-muted-foreground">
+              {run.totals.dateFixOnlyRows > 0 && <div>{run.totals.dateFixOnlyRows.toLocaleString()} of the changed rows only move a date one day later — the fix for the old one-day-early import. Expected.</div>}
+              {run.totals.heldBack > 0 && <div className="text-amber-300">{run.totals.heldBack.toLocaleString()} SharePoint updates would be held back because the Polaris row has unpushed changes — Polaris would overwrite SharePoint instead.</div>}
+              {run.totals.testItems > 0 && <div>{run.totals.testItems} SharePoint test entries (&ldquo;TEST&rdquo;, &ldquo;123456&rdquo;) would not be added.</div>}
+            </div>
+          )}
+
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead className="border-b border-border/60 text-[10.5px] uppercase tracking-wider text-muted-foreground">
@@ -112,6 +152,8 @@ export function PermitsDryRunPanel({ lists }: { lists: Array<{ name: string; ena
                   <th className="px-3 py-2 text-right font-semibold">Would change</th>
                   <th className="px-3 py-2 text-right font-semibold">Would add</th>
                   <th className="px-3 py-2 text-right font-semibold">Risky</th>
+                  <th className="px-3 py-2 text-right font-semibold">Left alone</th>
+                  <th className="px-3 py-2 text-right font-semibold">Would push</th>
                   <th className="w-8" />
                 </tr>
               </thead>
@@ -131,15 +173,19 @@ export function PermitsDryRunPanel({ lists }: { lists: Array<{ name: string; ena
                             <td className="px-3 py-2 text-right tabular-nums">{d.changedRows.toLocaleString()} <span className="text-muted-foreground">of {d.updates.toLocaleString()}</span></td>
                             <td className="px-3 py-2 text-right tabular-nums">{d.inserts.toLocaleString()}</td>
                             <td className={cn("px-3 py-2 text-right tabular-nums", d.riskyChanges && "font-semibold text-amber-300")}>{d.riskyChanges}</td>
+                            <td className="px-3 py-2 text-right tabular-nums">{d.conflicts}</td>
+                            <td className={cn("px-3 py-2 text-right tabular-nums", d.push.patch + d.push.create > 0 && "text-amber-300")}>
+                              {d.push.patch + d.push.create}{d.push.create > 0 && <span className="text-muted-foreground"> ({d.push.create} new)</span>}
+                            </td>
                             <td className="px-2"><ChevronDown className={cn("h-3.5 w-3.5 text-muted-foreground transition", isOpen && "rotate-180")} /></td>
                           </>
                         ) : (
-                          <td colSpan={6} className="px-3 py-2 text-red-300">{l.result.samples?.[0] ?? "Failed"}</td>
+                          <td colSpan={8} className="px-3 py-2 text-red-300">{l.result.samples?.[0] ?? "Failed"}</td>
                         )}
                       </tr>
                       {d && isOpen && (
                         <tr className="border-b border-border/40 bg-background/30">
-                          <td colSpan={7} className="space-y-3 px-4 py-3">
+                          <td colSpan={9} className="space-y-3 px-4 py-3">
                             {Object.keys(d.fieldChanges).length > 0 && (
                               <div>
                                 <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">Fields that would change</div>
@@ -181,6 +227,46 @@ export function PermitsDryRunPanel({ lists }: { lists: Array<{ name: string; ena
                                   ))}
                                 </div>
                               </div>
+                            )}
+                            {d.conflicts > 0 && (
+                              <div>
+                                <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">
+                                  Left alone — the SharePoint item now holds a different permit ({d.conflicts})
+                                </div>
+                                <table className="w-full">
+                                  <tbody>
+                                    {d.conflictSamples.map((c, i) => (
+                                      <tr key={i}>
+                                        <td className="py-0.5 pr-3 text-muted-foreground">item {c.itemId}</td>
+                                        <td className="py-0.5 pr-3">{c.polaris}</td>
+                                        <td className="py-0.5 pr-3 text-muted-foreground">≠ {c.sharepoint}</td>
+                                        <td className="py-0.5 text-muted-foreground">{c.reason}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                            {d.twinLinks.length > 0 && (
+                              <div>
+                                <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">Polaris permits linked to their SharePoint copy</div>
+                                {d.twinLinks.map((t) => (
+                                  <div key={t.polarisId} className="py-0.5">{t.holder} <span className="text-muted-foreground">· {t.vessel ?? "no vessel"}{t.issue ? ` · ${t.issue}` : ""} → item {t.itemId}</span></div>
+                                ))}
+                              </div>
+                            )}
+                            {d.push.dirty > 0 && (
+                              <div className="text-muted-foreground">
+                                Push: {d.push.dirty} Polaris row(s) with unpushed changes ({d.push.bulkStamped} bulk-stamped) — {d.push.patch} would overwrite a SharePoint item, {d.push.create} would create one; {d.push.heldBack} SharePoint update(s) held back.
+                              </div>
+                            )}
+                            {d.unmatchedVessels.length > 0 && (
+                              <div className="text-muted-foreground">
+                                Vessel names not found in Polaris: {d.unmatchedVessels.map((v) => `${v.name} (${v.count})`).join(", ")}
+                              </div>
+                            )}
+                            {d.testItems > 0 && (
+                              <div className="text-muted-foreground">Test entries not added: {d.testSamples.join("; ")}</div>
                             )}
                             {!Object.keys(d.fieldChanges).length && !d.inserts && (
                               <div className="text-muted-foreground">Nothing would change on this list.</div>
