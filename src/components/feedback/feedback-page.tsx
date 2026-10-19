@@ -4,6 +4,7 @@ import { fetchAllRows } from "@/lib/fetch-all";
 import { useAuth } from "@/lib/auth";
 import { useDevAccess } from "@/lib/dev-access";
 import { SignedAnchor } from "@/components/ui/signed-file";
+import { attachmentLabel } from "@/lib/feedback-attachment";
 import { Lightbulb, Bug, Sparkles, ChevronUp, ChevronDown, Loader2, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -27,18 +28,6 @@ const STATUS_CLS: Record<string, string> = {
   closed: "bg-muted text-muted-foreground",
 };
 const fmt = (d: string) => new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-
-/** Label the attachment by extension — it may be a screenshot, a screen
- *  recording, or a document (PDF / Word / …), all stored in screenshot_url. */
-function attachmentLabel(url: string): string {
-  const ext = (url.split("?")[0].split(".").pop() ?? "").toLowerCase();
-  if (["png", "jpg", "jpeg", "gif", "webp", "bmp", "heic"].includes(ext)) return "Screenshot";
-  if (["webm", "mp4", "mov", "mkv"].includes(ext)) return "Screen recording";
-  if (ext === "pdf") return "PDF";
-  if (["doc", "docx", "odt", "rtf"].includes(ext)) return "Document";
-  if (["xls", "xlsx", "csv"].includes(ext)) return "Spreadsheet";
-  return "Attachment";
-}
 
 export function FeedbackPage() {
   const { user } = useAuth();

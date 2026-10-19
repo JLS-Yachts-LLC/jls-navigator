@@ -47,6 +47,8 @@ export async function sendTicketEmail(opts: {
   html: string
   cc?: string | null
   replyTo?: string | null
+  /** Small files only — the whole request must stay under Graph's 4 MB sendMail cap. */
+  attachments?: { filename: string; contentBase64: string; contentType: string }[]
 }): Promise<void> {
   const toList = Array.isArray(opts.to) ? opts.to : [opts.to]
   const guard = guardRecipients(toList, opts.cc ? [opts.cc] : [], `ticket email "${opts.subject}"`)
@@ -61,6 +63,14 @@ export async function sendTicketEmail(opts: {
   }
   if (guard.cc.length) message.ccRecipients = guard.cc.map((a) => ({ emailAddress: { address: a } }))
   if (opts.replyTo) message.replyTo = [{ emailAddress: { address: opts.replyTo } }]
+  if (opts.attachments?.length) {
+    message.attachments = opts.attachments.map((a) => ({
+      '@odata.type': '#microsoft.graph.fileAttachment',
+      name: a.filename,
+      contentType: a.contentType,
+      contentBytes: a.contentBase64,
+    }))
+  }
 
   const res = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(TICKET_MAIL_SENDER)}/sendMail`, {
     method: 'POST',

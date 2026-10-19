@@ -10,8 +10,10 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  ArrowLeft, Loader2, Ship, Send, Lock, MessageSquare, Trash2, Save, Clock, CheckCircle2,
+  ArrowLeft, Loader2, Ship, Send, Lock, MessageSquare, Trash2, Save, Clock, CheckCircle2, Paperclip,
 } from "lucide-react";
+import { SignedAnchor } from "@/components/ui/signed-file";
+import { attachmentFileName, attachmentLabel } from "@/lib/feedback-attachment";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
@@ -52,6 +54,8 @@ type Message = {
   author_name: string | null;
   created_at: string;
 };
+/** A file sent with the Polaris feedback report that raised this ticket. */
+type FeedbackFile = { stored: string; created_at: string };
 type Yacht = { id: string; vessel_name: string };
 type Profile = { id: string; display_name: string | null };
 
@@ -71,6 +75,7 @@ export function TicketDetailPage() {
 
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [files, setFiles] = useState<FeedbackFile[]>([]);
   const [yachts, setYachts] = useState<Yacht[]>([]);
   const [itYachts, setItYachts] = useState<Yacht[]>([]);
   const [projects, setProjects] = useState<ProjectOption[]>([]);
@@ -92,7 +97,7 @@ export function TicketDetailPage() {
 
   async function load() {
     setLoading(true);
-    const [tRes, mRes, yRes, pRes, iRes, prjRes] = await Promise.all([
+    const [tRes, mRes, yRes, pRes, iRes, prjRes, fRes] = await Promise.all([
       (supabase as any).from("it_tickets").select("*").eq("id", ticketId).maybeSingle(),
       (supabase as any).from("it_ticket_messages").select("*").eq("ticket_id", ticketId).order("created_at"),
       supabase.from("yachts").select("id, vessel_name").order("vessel_name"),
@@ -102,6 +107,10 @@ export function TicketDetailPage() {
       // tickets it already has.
       (supabase as any).from("it_projects").select("id, name")
         .in("status", ["planning", "active", "on_hold"]).order("name"),
+      // A ticket raised from Polaris → Feedback keeps the reporter's screenshot
+      // or document on the feedback row (feedback.ticket_id points here).
+      (supabase as any).from("feedback").select("screenshot_url, created_at")
+        .eq("ticket_id", ticketId).not("screenshot_url", "is", null),
     ]);
     if (tRes.error || !tRes.data) {
       toast.error("Ticket not found");
@@ -114,6 +123,7 @@ export function TicketDetailPage() {
     setRequestedBy(t.requested_by ?? "");
     setRequesterEmail(t.requester_email ?? "");
     setMessages((mRes.data ?? []) as Message[]);
+    setFiles(((fRes.data ?? []) as any[]).map(f => ({ stored: f.screenshot_url, created_at: f.created_at })));
     setYachts((yRes.data ?? []) as Yacht[]);
     setItYachts(((iRes.data ?? []) as any[]).map(y => ({ id: y.id, vessel_name: y.name })));
     setProfiles((pRes.data ?? []) as Profile[]);
@@ -260,6 +270,20 @@ export function TicketDetailPage() {
                 <span className="text-xs text-muted-foreground">opened this ticket · {fmtDateTime(ticket.created_at)}</span>
               </div>
               <p className="whitespace-pre-wrap text-sm text-foreground/90">{ticket.description || <span className="text-muted-foreground italic">No description provided.</span>}</p>
+              {files.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2 border-t border-border pt-3">
+                  {files.map(f => (
+                    <SignedAnchor
+                      key={f.stored}
+                      stored={f.stored}
+                      title={attachmentFileName(f.stored, f.created_at)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 text-xs font-medium text-primary hover:bg-muted"
+                    >
+                      <Paperclip className="h-3.5 w-3.5" /> {attachmentLabel(f.stored)}
+                    </SignedAnchor>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Thread */}

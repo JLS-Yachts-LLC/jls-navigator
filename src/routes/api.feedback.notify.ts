@@ -26,6 +26,8 @@
 import { supabaseAdmin } from '@/integrations/supabase/client.server'
 import { sendTicketEmail } from '@/lib/graph-mail.server'
 import { mirrorTicketToNewHorizon, sendNewHorizonMirror } from '@/lib/nh-mirror.server'
+import { asMailAttachment, attachmentNote, loadFeedbackAttachment } from '@/lib/feedback-attachment.server'
+import { attachmentFileName, attachmentLabel } from '@/lib/feedback-attachment'
 
 /** The JLS support mailbox. Internal domain, so the client-email guard allows it. */
 const SUPPORT_RECIPIENTS = ['itsupport@jlsyachts.com']
@@ -140,6 +142,9 @@ export async function feedbackNotifyHandler(request: Request): Promise<Response>
     : null
 
   const ref = ticketNo ? `[${ticketNo}] ` : ''
+  // The reporter's file goes on the email itself; the stored path it used to
+  // link to only opens from inside Polaris.
+  const attachment = await loadFeedbackAttachment(f.screenshot_url, f.created_at)
   const log = f.log
     ? `<h3 style="margin:18px 0 6px;font-size:13px;">Activity log</h3>
        <p style="margin:0;font-size:12px;color:#64748b;">URL: ${esc(log_url(f.log))}</p>
@@ -165,7 +170,7 @@ export async function feedbackNotifyHandler(request: Request): Promise<Response>
     <p style="margin:0 0 12px;font-size:12px;color:#64748b;">${new Date(f.created_at).toLocaleString('en-GB')}</p>
     ${ticketLine}
     <p style="font-size:14px;line-height:1.6;white-space:pre-wrap;">${esc(f.message)}</p>
-    ${f.screenshot_url ? `<p style="margin:14px 0;"><a href="${esc(f.screenshot_url)}">📎 View screenshot</a></p>` : ''}
+    ${attachmentNote(attachment)}
     ${log}
     <p style="margin-top:18px;font-size:11px;color:#94a3b8;">Logged in Polaris → Feedback${ticketNo ? ` and tracked as ${esc(ticketNo)} in the Service Desk (Polaris queue)` : ''}. Reply to the submitter to follow up.</p>
   </div>`
@@ -188,6 +193,7 @@ export async function feedbackNotifyHandler(request: Request): Promise<Response>
         priority: priorityFor(f),
         raisedByEmail: reporterEmail,
         raisedByName: reporterName,
+        attachment,
       })
     } catch (e) {
       console.error('[feedback-notify] New Horizon mirror failed:', e)
@@ -201,6 +207,7 @@ export async function feedbackNotifyHandler(request: Request): Promise<Response>
       subject: `${ref}${isBug ? '[Bug]' : '[Feature]'} ${summary}`,
       html,
       replyTo: reporterEmail,
+      attachments: asMailAttachment(attachment),
     })
     await recordNotifyOutcome(feedbackId, null)
     return json({ ok: true, ticketId, ticketNo, ticketError })
@@ -234,7 +241,9 @@ function ticketDescription(f: any): string {
   if (f.log?.url) lines.push(`URL: ${log_url(f.log)}`)
   if (f.log?.userAgent) lines.push(`Browser: ${log_ua(f.log)}`)
   if (f.log?.lastError) lines.push(`Last error: ${String(f.log.lastError)}`)
-  if (f.screenshot_url) lines.push(`Screenshot: ${f.screenshot_url}`)
+  // Named, not linked: the stored path opens nowhere. The file itself shows on
+  // the Polaris ticket and travels with the emails.
+  if (f.screenshot_url) lines.push(`${attachmentLabel(f.screenshot_url)} attached: ${attachmentFileName(f.screenshot_url, f.created_at)}`)
   const actions = (f.log?.actions ?? []) as any[]
   if (actions.length) {
     lines.push('', 'Activity log:')

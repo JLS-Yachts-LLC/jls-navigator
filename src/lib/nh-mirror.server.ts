@@ -27,6 +27,9 @@
  */
 import { createClient } from '@supabase/supabase-js'
 import { sendTicketEmail } from '@/lib/graph-mail.server'
+import {
+  asMailAttachment, attachmentNote, loadFeedbackAttachment, type FeedbackAttachment,
+} from '@/lib/feedback-attachment.server'
 
 /** New Horizon-IT's support mailbox. Overridable so a test run can be diverted. */
 export const NH_SUPPORT_MAILBOX =
@@ -86,6 +89,11 @@ export interface MirrorInput {
   raisedByEmail?: string | null
   raisedByName?: string | null
   vessel?: string | null
+  /**
+   * A file the reporter sent with it (Polaris feedback). Attached to the email
+   * so it arrives on the New Horizon ticket; linked instead when it is too big.
+   */
+  attachment?: FeedbackAttachment | null
 }
 
 function row(label: string, value: string): string {
@@ -116,6 +124,7 @@ export async function sendNewHorizonMirror(input: MirrorInput): Promise<void> {
   <h2 style="font-size:17px;margin:0 0 10px;">${esc(subject)}</h2>
   <table style="border-collapse:collapse;font-size:13px;margin:0 0 16px;">${rows.join('')}</table>
   <div style="font-size:14px;line-height:1.6;white-space:pre-wrap;">${escBody(input.body || '(no detail supplied)')}</div>
+  ${attachmentNote(input.attachment)}
   <p style="margin:20px 0 0;font-size:11px;color:#94a3b8;">
     Raised on the JLS Yachts service desk${ref ? ` as ${esc(ref)}` : ''} and mirrored here so it is tracked
     on both platforms. Replying to this email adds your reply to the Polaris ticket${ref ? ` (${esc(ref)})` : ''}.
@@ -129,6 +138,7 @@ export async function sendNewHorizonMirror(input: MirrorInput): Promise<void> {
     // the Polaris inbound poller can thread that reply onto the same ticket.
     subject: ref ? `[${ref}] ${subject}` : subject,
     html,
+    attachments: asMailAttachment(input.attachment ?? null),
     // No replyTo: replies belong to the IT desk, which is the requester.
   })
 }
@@ -165,6 +175,14 @@ export async function mirrorTicketToNewHorizon(
     // raise a second one on the other desk.
     if (t.nh_mirrored_at) return { mirrored: false, skipped: 'already mirrored' }
 
+    // A ticket raised from Polaris feedback carries the reporter's file on the
+    // feedback row — send it along, so it is on the New Horizon ticket too.
+    const { data: fb } = await sb.from('feedback')
+      .select('screenshot_url, created_at')
+      .eq('ticket_id', ticketId).not('screenshot_url', 'is', null)
+      .limit(1).maybeSingle()
+    const attachment = await loadFeedbackAttachment(fb?.screenshot_url, fb?.created_at)
+
     await sendNewHorizonMirror({
       ref: t.ticket_no ?? null,
       subject: t.subject ?? '(no subject)',
@@ -175,6 +193,7 @@ export async function mirrorTicketToNewHorizon(
       raisedByEmail: t.requester_email,
       raisedByName: t.requested_by,
       vessel: t.yacht?.vessel_name ?? t.it_yacht?.name ?? null,
+      attachment,
     })
 
     await sb.from('it_tickets')
