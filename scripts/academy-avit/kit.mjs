@@ -30,10 +30,17 @@ export function terminal(x, y, w, h, title, lines, o = {}) {
   s += rect(x, y, w, 52, 14, T.bar) + rect(x, y + 38, w, 14, 0, T.bar);
   s += circle(x + 30, y + 26, 8, "#e5534b") + circle(x + 56, y + 26, 8, "#f0b030") + circle(x + 82, y + 26, 8, "#3fb27f");
   s += txt(x + w / 2, y + 34, title, { size: 20, fill: T.dim, anchor: "middle", family: SANS });
-  lines.forEach((ln, i) => {
-    const L = typeof ln === "string" ? { t: ln } : ln;
+  const norm = lines.map((ln) => (typeof ln === "string" ? { t: ln } : ln));
+  // one highlight band per run of highlighted lines
+  for (let i = 0; i < norm.length; i++) {
+    if (!norm[i].hi || norm[i - 1]?.hi) continue;
+    let j = i;
+    while (norm[j + 1]?.hi) j++;
+    const col = norm[i].hi === true ? T.hi : norm[i].hi;
+    s += rect(x + 10, rowY(i) - size * 1.0, w - 20, size * lh * (j - i + 1), 4, col, T.hiLine, 1.5);
+  }
+  norm.forEach((L, i) => {
     const by = rowY(i);
-    if (L.hi) s += rect(x + 10, by - size * 1.0, w - 20, size * lh, 4, L.hi === true ? T.hi : L.hi, L.hiStroke ?? T.hiLine, L.hiStroke === "none" ? 0 : 1.5);
     const m = !L.c && promptRe.exec(L.t);
     const weight = L.b ? 700 : 400;
     if (m && o.prompts !== false && /[#>]\s?$/.test(m[1]) && (m[2] !== undefined)) {
@@ -44,6 +51,27 @@ export function terminal(x, y, w, h, title, lines, o = {}) {
     }
   });
   return { svg: s, rowY, colX, size };
+}
+
+/** Height a terminal() needs for n lines at this size. */
+export const termHeight = (n, size, lh = 1.32, pad = 28) => 56 + pad * 2 + (n - 0.6) * size * lh + 8;
+
+/** Word-wrap long terminal lines (continuations keep the line's highlight). */
+export function wrapLines(lines, cols) {
+  const out = [];
+  for (const ln of lines) {
+    const L = typeof ln === "string" ? { t: ln } : ln;
+    if (L.t.length <= cols) { out.push(L); continue; }
+    let rest = L.t;
+    while (rest.length > cols) {
+      let cut = rest.lastIndexOf(" ", cols);
+      if (cut < cols * 0.5) cut = cols;
+      out.push({ ...L, t: rest.slice(0, cut) });
+      rest = "    " + rest.slice(cut).trimStart();
+    }
+    out.push({ ...L, t: rest });
+  }
+  return out;
 }
 
 /** Font size that fits the longest line of `lines` into width w. */
@@ -67,11 +95,12 @@ export function switchPanel(x, y, w, o = {}) {
   s += rect(X(0), Y(0), w, 18 * k, 0, "#3a4354");
   // left: brand strip, system LEDs, mode button
   s += txt(X(30), Y(58), model, { size: 18 * k, weight: 700, fill: "#c9d1de" });
-  const sys = [["SYST", C.green], ["STAT", C.green], ["SPED", "#4a5468"], ["DPLX", "#4a5468"], ["PoE", "#4a5468"]];
+  const sys = [["SYST", C.green], ["ACTV", C.green], ["STAT", C.green], ["SPEED", "#4a5468"], ["DUPLX", "#4a5468"], ["PoE", "#4a5468"]];
   sys.forEach(([n, c], i) => {
-    s += circle(X(42), Y(90 + i * 24), 5 * k, c) + txt(X(54), Y(96 + i * 24), n, { size: 13 * k, fill: "#9aa5b8" });
+    s += circle(X(42), Y(86 + i * 22), 5 * k, c) + txt(X(54), Y(91 + i * 22), n, { size: 13 * k, fill: "#9aa5b8" });
   });
-  s += rect(X(110), Y(150), 36 * k, 36 * k, 6 * k, "#1b2029", "#5a6478", 2) + txt(X(128), Y(206), "MODE", { size: 12 * k, fill: "#9aa5b8", anchor: "middle" });
+  s += rect(X(120), Y(150), 36 * k, 36 * k, 6 * k, "#1b2029", "#5a6478", 2) + txt(X(138), Y(206), "MODE", { size: 12 * k, fill: "#9aa5b8", anchor: "middle" });
+  s += circle(X(138), Y(100), 14 * k, "#1f4f99", "#6fa8dc", 2) + txt(X(138), Y(106), "B", { size: 15 * k, weight: 700, fill: "#ffffff", anchor: "middle" });
   // ports: 12 columns × 2 rows, odd on top, even below (Cisco numbering)
   const geo = { port: {}, uplink: {}, console: null, usbConsole: null, mgmt: null };
   const px0 = 230, pw = 58, ph = 54, gapCol = 6;
@@ -81,8 +110,8 @@ export function switchPanel(x, y, w, o = {}) {
       const n = c * 2 + r + 1;
       const px = px0 + c * (pw + gapCol) + group, py = 64 + r * 92;
       const st = ports[n] ?? "down";
-      const led = { up: C.green, poe: C.green, err: C.amber, down: "#3c4454", off: "#3c4454" }[st];
-      s += rect(X(px), Y(py), pw * k, ph * k, 4 * k, "#11151c", st === "err" ? C.amber : "#596377", st === "err" ? 3 : 1.5);
+      const led = { up: C.green, poe: C.green, err: "#3c4454", stp: C.amber, down: "#3c4454", off: "#3c4454" }[st];
+      s += rect(X(px), Y(py), pw * k, ph * k, 4 * k, "#11151c", "#596377", 1.5);
       s += rect(X(px + 14), Y(py + 8), (pw - 28) * k, 10 * k, 1, "#262c36") + rect(X(px + 8), Y(py + 20), (pw - 16) * k, 26 * k, 2, "#1d222b");
       s += circle(X(px + pw / 2), Y(py - 10 + (r ? ph + 22 : 0)), 5 * k, led);
       s += txt(X(px + pw / 2), Y(r ? py + ph + 46 : py - 22), String(n), { size: 14 * k, fill: "#9aa5b8", anchor: "middle" });
@@ -100,16 +129,15 @@ export function switchPanel(x, y, w, o = {}) {
     s += txt(X(ux + 37), Y(r ? uy + 82 : uy - 22), String(i + 1), { size: 14 * k, fill: "#9aa5b8", anchor: "middle" });
     geo.uplink[i + 1] = { cx: X(ux + 37), cy: Y(uy + 22), r: 46 * k };
   }
-  // right end: RJ-45 console, USB console, management port
-  const rx = ux0 + 2 * 86 + 20;
-  s += rect(X(rx), Y(70), 58 * k, 48 * k, 4 * k, "#11151c", "#6fa8dc", 2) + rect(X(rx + 10), Y(80), 38 * k, 26 * k, 2, "#1d222b");
-  s += txt(X(rx + 29), Y(140), "CON", { size: 13 * k, fill: "#9fc5e8", anchor: "middle" });
-  s += rect(X(rx + 8), Y(170), 42 * k, 18 * k, 3 * k, "#0d1016", "#9aa5b8", 2) + txt(X(rx + 29), Y(212), "USB", { size: 13 * k, fill: "#9aa5b8", anchor: "middle" });
-  s += rect(X(rx + 72), Y(70), 58 * k, 48 * k, 4 * k, "#11151c", "#596377", 1.5) + rect(X(rx + 82), Y(80), 38 * k, 26 * k, 2, "#1d222b");
-  s += txt(X(rx + 101), Y(140), "MGMT", { size: 13 * k, fill: "#9aa5b8", anchor: "middle" });
-  geo.console = { cx: X(rx + 29), cy: Y(94), r: 44 * k };
-  geo.usbConsole = { cx: X(rx + 29), cy: Y(179), r: 30 * k };
-  geo.mgmt = { cx: X(rx + 101), cy: Y(94), r: 40 * k };
+  // right end (front of a C9200L / C9300): USB mini-B console and USB-A storage port.
+  // The RJ-45 console and the MGMT port are on the back of these models.
+  const rx = ux0 + 2 * 86 + 30;
+  s += `<path d="M${X(rx)} ${Y(84)} h${50 * k} v${18 * k} l${-6 * k} ${8 * k} h${-38 * k} l${-6 * k} ${-8 * k} z" fill="#0d1016" stroke="#6fa8dc" stroke-width="2"/>`;
+  s += txt(X(rx + 25), Y(136), "CONSOLE", { size: 13 * k, fill: "#9fc5e8", anchor: "middle" });
+  s += rect(X(rx + 2), Y(170), 46 * k, 18 * k, 3 * k, "#0d1016", "#9aa5b8", 2) + rect(X(rx + 8), Y(174), 34 * k, 6 * k, 1, "#5a6578");
+  s += txt(X(rx + 25), Y(212), "USB", { size: 13 * k, fill: "#9aa5b8", anchor: "middle" });
+  geo.console = { cx: X(rx + 25), cy: Y(96), r: 40 * k };
+  geo.usb = { cx: X(rx + 25), cy: Y(179), r: 30 * k };
   geo.h = h;
   if (label) s += txt(x + w / 2, y + h + 40 * k, label, { size: 18 * k, fill: C.muted, anchor: "middle" });
   return { svg: s, geo };
