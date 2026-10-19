@@ -3,6 +3,8 @@
  * agent when it moves:
  *   · the Pre-Arrival / Cruising Permit form (vessel particulars filled in from
  *     the profile; the captain adds the trip), raised to JLS as a Client Request;
+ *   · the Maritime Declaration of Health for Abu Dhabi arrivals, signed by the
+ *     master and sent back to the Abu Dhabi agency team (health-declaration-panel);
  *   · Seaport Immigration sign-on / sign-off requests, which go straight into
  *     the seaport team's queue with its SLA, and whose completion report is
  *     emailed back to whoever submitted.
@@ -17,6 +19,7 @@ import {
   Anchor, ArrowRight, CheckCircle2, FileSignature, Loader2, Plane, Plus, Send, Ship, Trash2, UserMinus, UserPlus, X,
 } from "lucide-react";
 import { PREARRIVAL_FIELDS, PREARRIVAL_PROFILE, PREARRIVAL_REQUIRED } from "@/lib/portal/prearrival";
+import { HealthDeclarationPanel } from "./health-declaration-panel";
 import { SectionCard, SectionEmpty, SectionHeader, SectionLoading, StatusBadge, fmtDate } from "./section-ui";
 
 const db = supabase as any;
@@ -34,13 +37,13 @@ const inputCls =
 export function MovementsSection({ yachtId, canEdit, onOpenRequest }: {
   yachtId: string; canEdit: boolean; onOpenRequest: (requestId: string) => void;
 }) {
-  const [view, setView] = useState<"prearrival" | "seaport">("prearrival");
+  const [view, setView] = useState<"prearrival" | "health" | "seaport">("prearrival");
   return (
     <div className="space-y-4">
       <SectionHeader title="Arrivals & departures"
                      subtitle="Tell JLS where you're heading and who's joining or leaving — we handle the permits, immigration and clearance." />
-      <div className="inline-flex rounded-xl border border-border p-1 text-sm">
-        {([["prearrival", "Pre-arrival form"], ["seaport", "Crew sign-on / sign-off"]] as const).map(([v, label]) => (
+      <div className="inline-flex flex-wrap rounded-xl border border-border p-1 text-sm">
+        {([["prearrival", "Pre-arrival form"], ["health", "Health declaration"], ["seaport", "Crew sign-on / sign-off"]] as const).map(([v, label]) => (
           <button key={v} onClick={() => setView(v)}
                   className={cn("rounded-lg px-4 py-1.5 font-medium transition", view === v ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")}>
             {label}
@@ -49,7 +52,9 @@ export function MovementsSection({ yachtId, canEdit, onOpenRequest }: {
       </div>
       {view === "prearrival"
         ? <PreArrivalPanel canEdit={canEdit} onOpenRequest={onOpenRequest} />
-        : <SeaportPanel yachtId={yachtId} canEdit={canEdit} />}
+        : view === "health"
+          ? <HealthDeclarationPanel canEdit={canEdit} onOpenRequest={onOpenRequest} />
+          : <SeaportPanel yachtId={yachtId} canEdit={canEdit} />}
     </div>
   );
 }
