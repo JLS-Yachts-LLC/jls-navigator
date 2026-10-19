@@ -1,5 +1,5 @@
 -- Permits: let SharePoint win over Polaris's stale copies before the sync goes back on.
--- PREPARED 19 Oct 2026 — NOT RUN. Matt runs this (Supabase SQL editor), then re-runs the
+-- PREPARED 19 Oct 2026 — RUN 19 Oct 2026 at Matt's request (2,136 cleared, 5 kept; backup 2,172 rows). Next: re-run the
 -- dry run (Sync Centre → Permits), then decides whether to switch the 7 lists back on.
 --
 -- Why: a real permits sync PUSHES every row with sharepoint_dirty_at set over its
