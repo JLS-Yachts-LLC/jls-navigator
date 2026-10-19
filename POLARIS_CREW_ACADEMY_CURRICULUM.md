@@ -3,17 +3,24 @@
 19 Oct 2026. This is the proposed JLS library for Crew Academy beyond the first cyber course, plus specs for
 exercise types the player doesn't have yet. It goes with the module plan in `POLARIS_CREW_ACADEMY.md`.
 
-**Status (19 Oct 2026):** three courses are **drafts** in the JLS library, not offered to any vessel, all
-pictures and videos attached, and all passing the app's publish checks:
+**Status (19 Oct 2026, evening):** what's in the JLS library. None of it is offered to any vessel yet.
 
-| Course | academy_courses id | Generator |
-| --- | --- | --- |
-| A1 Cyber security at sea — crew awareness | `48783655-320b-4ba9-a08f-290049213c68` | `scripts/academy-cyber/` |
-| C2 Cisco switch essentials | `5240696d-8865-4262-ac16-d8a22b6ae79c` | `scripts/academy-avit/cisco/` |
-| C3 FortiGate essentials | `3913ba74-a7bc-4526-8d4f-a12edfdf2b85` | `scripts/academy-avit/fortigate/` |
+| Course | State | academy_courses id | Generator |
+| --- | --- | --- | --- |
+| A1 Cyber security at sea — crew awareness | Published | `48783655-320b-4ba9-a08f-290049213c68` | `scripts/academy-cyber/` |
+| A2 (as two courses) Cyber security for Captains | Published | `fc0e46cd-cb22-4cc6-9ea5-6d088380fd71` | `scripts/academy-cyber/` |
+| A2/A3 Cyber security for officers and Heads of Department | Published | `b36c6b08-f662-4486-9f78-6a0470156ed0` | `scripts/academy-cyber/` |
+| B1 Crew IT on board | Draft | `c1c63c53-c0e1-48fd-875c-d677619228f8` | `scripts/academy-everyday/` |
+| B2 Microsoft 365 essentials | Draft | `7d4825a9-ebb8-4a21-b19f-1939386584df` | `scripts/academy-everyday/` |
+| B4 AV first-line troubleshooting | Draft | `de24a568-428a-4c77-b1f4-677d5dc05add` | `scripts/academy-everyday/` |
+| C2 Cisco switch essentials | Draft | `5240696d-8865-4262-ac16-d8a22b6ae79c` | `scripts/academy-avit/cisco/` |
+| C3 FortiGate essentials | Draft | `3913ba74-a7bc-4526-8d4f-a12edfdf2b85` | `scripts/academy-avit/fortigate/` |
+
+C2 and C3 have all their pictures and videos attached and pass the app's publish checks.
 
 **Matt's pick for next (19 Oct):** C1 Yacht network basics, A2 Cyber risk for Captains and HoDs, and B4 AV
-first-line troubleshooting. Nothing beyond these is built until asked.
+first-line troubleshooting. B4 and A2 now exist (above), so **C1 is the one left to build**. Nothing else
+gets built until asked.
 
 Commands and output layouts in C2 and C3 were checked against Cisco's IOS-XE 17.x and Fortinet's FortiOS
 7.4 / 7.6 documentation. Points only confirmed from community sources or memory are worded cautiously in
@@ -40,8 +47,8 @@ Audience key: **All** = all crew · **Interior** = interior / guest-facing crew 
 
 | # | Course | Audience | Length | Status |
 |---|---|---|---|---|
-| A1 | Cyber security at sea — crew awareness | All | 40 min | **Draft built** |
-| A2 | Cyber risk for Captains and HoDs | Capt, HoD | 45 min | Proposed |
+| A1 | Cyber security at sea — crew awareness | All | 40 min | **Published** |
+| A2 | Cyber risk for Captains and HoDs | Capt, HoD | 45 min | **Built** (Captains + officers/HoDs courses) |
 | A3 | Cyber incident response — the first hour | ETO, HoD, Capt | 35 min | Proposed |
 | A4 | Guest privacy and data on board | All (Interior focus) | 20 min | Proposed |
 | A5 | Remote access, vendors and USB on board | ETO, HoD | 20 min | Proposed |
@@ -77,10 +84,10 @@ network with the right and wrong paths drawn on.
 
 | # | Course | Audience | Length | Status |
 |---|---|---|---|---|
-| B1 | Crew IT on board — Wi-Fi, internet and getting help | All (induction) | 20 min | Proposed |
-| B2 | Microsoft 365 essentials — Outlook, Teams, OneDrive, sign-in | All with a work account | 35 min | Proposed |
+| B1 | Crew IT on board — Wi-Fi, internet and getting help | All (induction) | 20 min | **Draft built** |
+| B2 | Microsoft 365 essentials — Outlook, Teams, OneDrive, sign-in | All with a work account | 35 min | **Draft built** |
 | B3 | Guest Wi-Fi and guest devices — first-line support | Interior, HoD | 25 min | Proposed |
-| B4 | AV first-line troubleshooting — guest areas | Interior, ETO | 30 min | Proposed |
+| B4 | AV first-line troubleshooting — guest areas | Interior, ETO | 30 min | **Draft built** |
 | B5 | Printers and scanning | All | 15 min | Proposed |
 | B6 | Phones on board — VoIP handsets, satphones, crew calling | All | 15 min | Proposed |
 
