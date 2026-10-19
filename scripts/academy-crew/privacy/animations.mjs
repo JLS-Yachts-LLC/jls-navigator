@@ -15,6 +15,8 @@ const LENS = [180 - 20, 226]; // left sunglasses lens, screen coordinates
 
 /** A highlight ring around a point on the phone screen. */
 const ringAt = (sx, sy, r, o) => { const [x, y] = P(sx, sy); return op(o, circle(x, y, r * PS, "none", C.gold, 5)); };
+/** A highlight box around an area of the phone screen. */
+const boxAt = (sx, sy, w, h, o) => { const [x, y] = P(sx, sy); return op(o, rect(x, y, w * PS, h * PS, 8, "none", C.gold, 4)); };
 
 function lifeRing(cx, cy, r, sw) {
   let s = circle(cx, cy, r, "none", "#f4f6fa", sw);
@@ -71,8 +73,8 @@ function onePost(t) {
     s += `<g transform="translate(${PX} ${PY + rise}) scale(${PS})">${phoneFrame(postScreen())}</g>`;
     // highlights on the phone
     s += ringAt(LENS[0] + 20, LENS[1], 46, vis(t, 9, 14.5, 0.3));
-    s += ringAt(42, 188, 54, vis(t, 14.5, 19.5, 0.3)) + ringAt(206, 94, 66, vis(t, 14.5, 19.5, 0.3));
-    s += ringAt(110, 40, 64, vis(t, 19.5, 24, 0.3)) + ringAt(44, 457, 40, vis(t, 19.5, 24, 0.3));
+    s += boxAt(24, 134, 36, 106, vis(t, 14.5, 19.5, 0.3)) + boxAt(144, 68, 124, 52, vis(t, 14.5, 19.5, 0.3));
+    s += boxAt(44, 30, 148, 24, vis(t, 19.5, 24, 0.3)) + boxAt(8, 448, 80, 22, vis(t, 19.5, 24, 0.3));
 
     // clue cards
     s += clue(t, 0, 9.3, "A reflection", "Gives away: the yacht's name");
@@ -97,6 +99,29 @@ function onePost(t) {
       s += op(mag, m);
     }
 
+    // zoom panel for clue 2: the background
+    const bg2 = vis(t, 14.5, 19.5, 0.4);
+    if (bg2 > 0) {
+      const x = 1030, y = 130, w = 520, h = 400;
+      let m = txt(x + w / 2, y - 20, "Zoomed in on the background", { size: 22, fill: C.muted, anchor: "middle" });
+      m += `<clipPath id="bgz"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="16"/></clipPath><g clip-path="url(#bgz)">` + rect(x, y, w, h, 0, "#8fc3e8") +
+        `<path d="M${x} ${y + 250} L${x + 140} ${y + 215} L${x + 300} ${y + 235} L${x + w} ${y + 205} L${x + w} ${y + 300} L${x} ${y + 300} Z" fill="#8aa37a"/>` + rect(x, y + 296, w, 104, 0, "#2f6ea8") +
+        rect(x + 70, y + 110, 46, 190, 2, C.white) + rect(x + 70, y + 150, 46, 24, 0, C.red) + rect(x + 70, y + 206, 46, 24, 0, C.red) + rect(x + 62, y + 88, 62, 24, 4, "#3a465e") +
+        rect(x + 210, y + 60, 280, 100, 10, "#1f4f7a", C.white, 4) + txt(x + 350, y + 108, "PORTO VERDE", { size: 34, weight: 800, fill: C.white, anchor: "middle", spacing: 2 }) + txt(x + 350, y + 142, "MARINA", { size: 22, fill: "#cfe3f5", anchor: "middle", spacing: 3 }) +
+        rect(x + 250, y + 160, 12, 140, 2, "#5a6578") + rect(x + 440, y + 160, 12, 140, 2, "#5a6578") + `</g>` + rect(x, y, w, h, 16, "none", "#8e98ab", 4);
+      s += op(bg2, m);
+    }
+    // zoom panel for clue 3: the tag and the time
+    const tg = vis(t, 19.5, 24, 0.4);
+    if (tg > 0) {
+      const x = 1030, y = 170, w = 520, h = 300;
+      let m = rect(x, y, w, h, 16, C.white, "#8e98ab", 4);
+      m += g(x + 36, y + 46, 0.7, pin("#e5534b")) + txt(x + 118, y + 104, "Porto Verde Marina", { size: 38, weight: 600, fill: C.ink });
+      m += line(x + 36, y + 160, x + w - 36, y + 160, "#e3e7ef", 2);
+      m += g(x + 46, y + 186, 0.62, prop.clock(10, 10)) + txt(x + 128, y + 240, "JUST NOW", { size: 38, weight: 800, fill: "#5b6476", spacing: 2 });
+      s += op(tg, m);
+    }
+
     // right panel 2: the stranger reads the same profile
     const prof = vis(t, 24, 29.5, 0.4);
     if (prof > 0) {
@@ -109,7 +134,7 @@ function onePost(t) {
       // three older posts
       const thumbs = ["#8fc3e8", "#2f6ea8", "#c79a63"];
       thumbs.forEach((c, i) => { m += rect(x + 24 + i * 162, y + 160, 148, 110, 6, c); });
-      m += g(x + 30, y + 175, 0.5, yacht()) + g(x + 220, y + 180, 0.7, prop.bottle("#3fb27f")) + g(x + 370, y + 180, 0.7, prop.clock(9, 0));
+      m += g(x + 32, y + 196, 0.22, yacht()) + g(x + 220, y + 180, 0.7, prop.bottle("#3fb27f")) + g(x + 370, y + 180, 0.7, prop.clock(9, 0));
       // the older post, opened
       const open = ramp(t, 25.5, 26.3);
       m += op(open, rect(x + 24, y + 290, w - 48, 150, 12, C.white, C.red, 3) +
@@ -117,8 +142,8 @@ function onePost(t) {
         txt(x + 46, y + 368, "\"Owner arrives Friday!", { size: 26, weight: 700, fill: C.ink }) +
         txt(x + 46, y + 404, "Busy week ahead #crewlife\"", { size: 26, weight: 700, fill: C.ink }));
       // the stranger
-      m += circle(x + w - 10, y + h + 70, 62, C.deep, C.line, 2) + g(x + w - 60, y + h + 22, 1.0, bust({ shirt: "#2d3646", skin: SKIN[1], hair: HAIR[4] }));
-      m += txt(x + w - 90, y + h + 80, "A stranger, anywhere", { size: 21, fill: C.muted, anchor: "end" });
+      m += circle(x + w - 60, y + h + 62, 52, C.deep, C.line, 2) + g(x + w - 102, y + h + 22, 0.84, bust({ shirt: "#2d3646", skin: SKIN[1], hair: HAIR[4] }));
+      m += txt(x + w - 128, y + h + 70, "A stranger, anywhere", { size: 21, fill: C.muted, anchor: "end" });
       s += op(prof, m);
     }
 
@@ -132,7 +157,7 @@ function onePost(t) {
         rect(x + 520, y + 228, 140, 18, 4, "#c7ced9") + rect(x + 600, y + 230, 18, 90, 4, "#c7ced9") + `</g>`;
       m += txt(x + 470, y + 130, "PORTO VERDE", { size: 22, weight: 700, fill: "#24361d", spacing: 2, anchor: "middle" });
       const drop = ramp(t, 30, 30.8);
-      m += g(x + 548, y + 268, 0.12, yacht());
+      m += g(x + 455, y + 262, 0.12, yacht());
       m += g(x + 560, y + 160 + drop * 60, 0.9, pin(C.red));
       m += op(ramp(t, 30.8, 31.4), rect(x + 680, y + 300, 300, 200, 14, C.deep, C.gold, 3) +
         txt(x + 704, y + 344, "LUMEN SEVEN", { size: 28, weight: 800, fill: C.white }) +
