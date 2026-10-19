@@ -121,8 +121,8 @@ function medicines() {
   // prescription
   b += `<g transform="rotate(-6 590 470)">` + rect(500, 350, 170, 230, 8, C.paper, "#9fb0d4", 2) + txt(520, 392, "Rx", { size: 34, weight: 700, fill: "#2b5fb8", family: SERIF }) +
     [420, 444, 468, 492, 516].map((y, i) => rect(520, y, [120, 96, 130, 80, 110][i], 7, 3, "#b8c2d6")).join("") + txt(520, 560, "Prescription", { size: 18, weight: 700, fill: C.ink }) + `</g>`;
-  b += g(150, 600, 1.2, prop.passport());
-  b += txt(390, 680, "In your hand luggage, with the", { size: 22, fill: C.muted, anchor: "middle" }) + txt(390, 710, "prescription in your name", { size: 22, fill: C.muted, anchor: "middle" });
+  b += g(110, 600, 1.2, prop.passport());
+  b += txt(250, 672, "Carry them in your hand luggage,", { size: 23, fill: C.muted }) + txt(250, 704, "with the prescription in your name", { size: 23, fill: C.muted });
   // checklist
   const rows = [
     [true, "Check the MOHAP list before you travel", "Some common medicines are controlled in the UAE."],
@@ -157,12 +157,12 @@ function inPublic() {
     waves(tw, 160, 1, C.teal) + rect(0, 196, tw, 60, 0, "#e6d3a3") + `<path d="M${tw / 2} 60 Q ${tw / 2 - 110} 60 ${tw / 2 - 120} 120 H ${tw / 2 + 120} Q ${tw / 2 + 110} 60 ${tw / 2} 60 Z" fill="${C.red}"/>` +
       `<path d="M${tw / 2} 60 Q ${tw / 2 - 30} 60 ${tw / 2 - 40} 120 H ${tw / 2 + 40} Q ${tw / 2 + 30} 60 ${tw / 2} 60 Z" fill="${C.paper}"/>` + rect(tw / 2 - 3, 116, 6, 86, 3, "#8e98ab") + circle(tw - 50, 50, 26, C.gold),
     g(tw / 2 - 110, 70, 1, bust({ skin: SKIN[1], hair: HAIR[1], shirt: "#3b4a63" })) + g(tw / 2 + 10, 70, 1, bust({ skin: SKIN[4], hair: HAIR[0], shirt: "#7a5a9a", long: true })) + g(tw / 2 - 40, 0, 0.8, prop.heart(C.gold)),
-    g(tw / 2 - 90, 30, 1.8, prop.speech("#3a4a6a")) + txt(tw / 2, 120, "#@!%", { size: 50, weight: 700, fill: C.white, anchor: "middle" }) + g(tw / 2 + 30, 110, 0.9, icon.cross()),
+    g(tw / 2 - 120, 20, 2.3, prop.speech("#3a4a6a")) + txt(tw / 2 - 5, 115, "#@!%", { size: 50, weight: 700, fill: C.white, anchor: "middle" }) + g(tw / 2 + 50, 120, 0.9, icon.cross()),
   ];
   tiles.forEach(([t, d], i) => {
     const x = x0 + i * (tw + gap);
     b += rect(x, y, tw, 590, 18, C.panel, C.line, 2);
-    b += `<svg x="${x}" y="${y + 10}" width="${tw}" height="250" viewBox="0 0 ${tw} 250" overflow="hidden">${art[i]}</svg>`;
+    b += `<svg x="${x + 14}" y="${y + 14}" width="${tw - 28}" height="246" viewBox="14 0 ${tw - 28} 246" overflow="hidden">${art[i]}</svg>`;
     b += line(x + 24, y + 275, x + tw - 24, y + 275, C.line, 2);
     b += para(x + 24, y + 320, t, { size: 28, weight: 700, width: 21, fill: C.white, lh: 1.25 });
     b += para(x + 24, y + (t.length > 21 ? 412 : 376), d, { size: 23, width: 26, fill: C.text, lh: 1.4 });
@@ -184,8 +184,8 @@ function ramadan() {
   b += `<path d="M${lx - 46} ${ly - 30} H${lx + 46} L${lx + 56} ${ly + 70} L${lx + 36} ${ly + 130} H${lx - 36} L${lx - 56} ${ly + 70} Z" fill="#f3c766" stroke="${C.gold}" stroke-width="4"/>`;
   b += `<path d="M${lx} ${ly - 30} V${ly + 130} M${lx - 51} ${ly + 40} H${lx + 51}" stroke="#a37d17" stroke-width="3"/>` + rect(lx - 30, ly + 130, 60, 16, 4, C.gold);
   // low skyline at the bottom of the panel
-  b += `<svg x="80" y="210" width="560" height="600" viewBox="0 0 560 600" overflow="hidden">${skyline(0, 560, 600, { fill: "#16264a", scale: 0.6 })}</svg>`;
-  b += txt(360, 780, "Ramadan Kareem", { size: 34, family: SERIF, fill: C.white, anchor: "middle" });
+  b += `<svg x="80" y="210" width="560" height="600" viewBox="0 0 560 600" overflow="hidden">${skyline(0, 560, 600, { fill: "#16264a", scale: 0.42 })}</svg>`;
+  b += txt(470, 560, "Ramadan Kareem", { size: 34, family: SERIF, fill: C.white, anchor: "middle" });
   const rows = [
     ["Don't eat, drink, smoke or chew gum in public", "Including in your car. Eat on board or inside a restaurant."],
     ["Dress more modestly than usual", "Especially in malls, streets and offices."],
@@ -223,9 +223,8 @@ function promenade() {
   for (let i = -6; i < 18; i++) b += line(800 + i * 110, 600, 800 + i * 210, PH, "#d8ccb4", 2);
   b += rect(0, 560, W, 8, 3, "#8e98ab") + rect(0, 582, W, 6, 3, "#8e98ab");
   for (let i = 0; i < 33; i++) b += rect(10 + i * 50, 560, 5, 28, 2, "#8e98ab");
-  // palms and a bench
-  b += g(60, 900, 1.25, palm()) + g(1500, 900, 1.25, palm());
-  b += rect(1380, 820, 200, 20, 6, "#7a5a3a") + rect(1390, 840, 10, 50, 3, "#5a4a3a") + rect(1560, 840, 10, 50, 3, "#5a4a3a") + rect(1380, 770, 200, 16, 6, "#7a5a3a");
+  // palms
+  b += g(60, 900, 1.25, palm()) + g(1530, 900, 1.25, palm());
   // 1. Two friends chatting
   b += fig(150, { shirt: UNIFORM.shore[0], legs: UNIFORM.shore[1], skin: SKIN[3], hair: HAIR[0] });
   b += fig(270, { shirt: "#e8dcc6", legs: "#3b4a63", skin: SKIN[0], hair: HAIR[2], long: true, arm: "cross" });
@@ -246,8 +245,8 @@ function promenade() {
   // 5. The family looking at the sea
   b += fig(1150, { shirt: "#7a5a9a", legs: "#e8dcc6", skin: SKIN[2], hair: HAIR[0], long: true });
   b += g(1275, FEET - 240 * 0.85, 0.85, person({ shirt: "#3fb27f", legs: "#1b2a4a", skin: SKIN[2], hair: HAIR[0] }));
-  // 6. Someone reading on the bench
-  b += g(1440, 640, 1.3, bust({ shirt: "#c97b5a", skin: SKIN[1], hair: HAIR[4] })) + rect(1452, 740, 106, 30, 4, "#c97b5a") + rect(1470, 712, 70, 46, 4, C.paper, "#9fb0d4", 2);
+  // 6. Someone walking off towards the palms, hands free
+  b += fig(1400, { shirt: "#c97b5a", legs: "#3b4a63", skin: SKIN[1], hair: HAIR[4] });
   return svg(W, PH, b, null);
 }
 export const SPOTS = {
