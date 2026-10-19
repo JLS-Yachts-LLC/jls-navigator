@@ -1,6 +1,6 @@
 # Polaris — Crew Academy (training module) — PLAN
 
-Status: **planning, nothing built** (19 Oct 2026). Open decisions are at the bottom.
+Status: **planning, nothing built** (19 Oct 2026). Decisions taken and still open are at the bottom.
 
 ## 1. What it is
 
@@ -28,7 +28,7 @@ the two apart, the new module is called **Crew Academy** and its tables use the 
 
 | Who | Where | Can do |
 | --- | --- | --- |
-| JLS staff with the `academy` module | Polaris → Academy | Write JLS courses, publish them to all vessels or chosen ones, see fleet-wide reports for JLS courses |
+| JLS staff with the `academy` module | Polaris → Academy | Write JLS courses, publish them to all vessels or chosen ones, review anything a vessel or crew member has shared with JLS |
 | Vessel managers (captain_accounts with a training-manager position) | Portal → Crew Academy | Invite crew, run groups, enrol, write the vessel's own courses, see the vessel's reports |
 | Crew (learners) | `/academy` | Take the courses enrolled to them, see their own results and certificates. Nothing else |
 
@@ -41,8 +41,8 @@ reports but don't run the training.
 A crew login must reach the training module and nothing else. The portal already has a proven
 pattern for this (Guest accounts, Oct 2026), so we reuse it rather than invent a new one.
 
-1. **New account type: learner.** Table `academy_learners` (one row per person: `user_id`, email,
-   name, optional `crew_member_id`, active, invited/last-seen). New auth users are tagged
+1. **New account type: learner.** Table `academy_learners` (one row per person **per vessel**:
+   `user_id`, `yacht_id`, email, name, optional `crew_member_id`, active, invited/last-seen). New auth users are tagged
    `raw_user_meta_data.portal = 'learner'`, and the `handle_new_user` / `handle_new_auth_user`
    triggers stand down for it (same as `captain` and `guest`), so a learner is never born as staff.
 2. **Fenced out of everything by the database.** `is_portal_captain()` and
@@ -107,8 +107,22 @@ tap where it goes) for accessibility and for poor touch screens.
 
 **People and groups**
 
-- `academy_learners` — the person (see §3). A learner can belong to more than one vessel over their
-  career: `academy_learner_vessels` (learner, yacht, active, joined/left).
+- `academy_learners` — the person on **one vessel** (see §3). **Records stay with the vessel**
+  (decided): when someone moves yacht, their row on the old vessel is deactivated and the old vessel
+  keeps their history; the new vessel invites them again and they start fresh there. The same email
+  and login can be reused, but they only ever see their active vessel's training.
+
+**Sharing with JLS** (decided: private to the vessel unless shared)
+
+- A vessel's own courses, its crew's results and its reports are private to the vessel. JLS staff
+  see none of it by default, including results on JLS courses taken on that vessel.
+- `academy_jls_shares` — something shared with JLS for review: a course (shared by a vessel
+  manager, e.g. "please check our SOP course"), a crew member's results (shared by the vessel or by
+  the crew member themselves), or a single course result/certificate. It records who shared, when,
+  and a revoke time (kept for history). Sharing is a tick box / "Share with JLS" button on the
+  course, the person and the result.
+- JLS still sees what it needs to run its own library: which vessels a JLS course is offered to and
+  switched on for. No names or scores unless shared.
 - `academy_groups` — per vessel; seeded with Interior, Deck, Engineering, Galley, Bridge; vessels
   can add their own. `academy_group_members`.
   (Note: `crew_members.department` is blank for 458 of 466 current crew, so groups can't be filled
@@ -149,16 +163,20 @@ Settings → Manage Users → Client Portal, alongside Core and On board)
 
 **JLS staff — Polaris → Academy**
 - The same course creator for JLS courses, plus "Offer to vessels".
-- Fleet view: uptake and completion of JLS courses per vessel.
+- "Shared with JLS" inbox: courses, results and certificates vessels or crew have shared for
+  review.
 - Uses a new `academy` entry in `modules` (view / create / edit), like `guest_access`.
 
 ## 6. Video and offline
 
-- Recommend **Cloudflare Stream** for video: we already run on Cloudflare, it does adaptive quality
-  (matters on VSAT/Starlink), signed per-viewer URLs, and its player reports watch progress. Cost is
-  per minute stored + delivered. Alternative: plain MP4 in Supabase storage (cheaper to start, poor
-  on weak connections, no adaptive quality).
-- YouTube/Vimeo links allowed for public material JLS doesn't need to protect.
+- **Decided: MP4 in Supabase storage**, in the private `academy-media` bucket, played with the
+  browser's own video player from a short-lived signed URL (Supabase serves byte ranges, so
+  seeking works). Watch progress is tracked by the player page and saved to `academy_progress`.
+- Because there is only one quality, keep files small for VSAT/Starlink: the creator asks for 720p
+  H.264 MP4 and shows the file size; set a bucket size limit (e.g. 500 MB per file) and warn above
+  ~150 MB. If weak connections become a real complaint, Cloudflare Stream can be added later
+  without changing the course format (the block just points at a different source).
+- YouTube/Vimeo links allowed for public material that doesn't need protecting.
 - Later: download a course to the phone for offline use (the portal app's service worker already
   caches data); results upload when back online.
 
@@ -187,19 +205,26 @@ Settings → Manage Users → Client Portal, alongside Core and On board)
    reading/PDF (staff review before publishing; reuses the guide-import pipeline), SCORM import if
    bought-in content needs it.
 
-New dependencies to expect: a rich-text editor for reading blocks (e.g. Tiptap), `@dnd-kit` for
-the creator and the drag-and-drop blocks, and the Cloudflare Stream player. None are in the repo
-today.
+New dependencies to expect: a rich-text editor for reading blocks (e.g. Tiptap) and `@dnd-kit`
+for the creator and the drag-and-drop blocks. Neither is in the repo today.
 
-## 9. Open decisions
+## 9. Decisions
 
-1. Do crew training records follow the **person** when they move to another yacht (JLS courses at
-   least), or stay with the vessel?
-2. Can JLS staff see a **vessel's own courses and results**, or are they private to the vessel like
-   the rest of "On board"?
-3. Can a vessel **copy and adapt** a JLS course, or only use it as published?
-4. Is Crew Academy **charged** separately (its own switchable portal module) or part of On board?
-5. **MFA** for crew logins? (Captains need it; guests don't.) Recommendation: no MFA for crew.
-6. Video hosting: Cloudflare Stream (recommended) or plain storage?
+Taken (Matt, 19 Oct 2026):
+
+1. **Records stay with the vessel.** A crew member who moves yacht starts fresh on the new one;
+   the old vessel keeps their history.
+2. **Private to the vessel**, unless the vessel or the crew member ticks a box / shares it with JLS
+   for review (`academy_jls_shares`).
+3. **Its own portal module**, switched on per vessel next to Core and On board.
+4. **Video: MP4 in Supabase storage** (private bucket, signed URLs). Cloudflare Stream only if weak
+   connections become a problem.
+
+Still open:
+
+5. Can a vessel **copy and adapt** a JLS course, or only use it as published?
+6. **MFA** for crew logins? (Captains need it; guests don't.) Recommendation: no MFA for crew.
 7. Do we need to import **bought-in courses (SCORM)**?
-8. Should the Chief Stewardess / Chief Engineer manage their own department's training only?
+8. Should the Chief Stewardess / Chief Engineer manage only their own department's training?
+9. Does JLS see **anything** about JLS-course uptake without a share (e.g. counts per vessel, no
+   names)? Current plan: no, only which vessels have the course switched on.
