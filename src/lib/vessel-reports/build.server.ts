@@ -53,6 +53,10 @@ export async function buildVesselReport(key: ReportKey, yachtId: string, opts: {
     const { buildDocumentExpiries } = await import("./expiries.server");
     return buildDocumentExpiries(yachtId, vessel);
   }
+  if (key === "weekly_operations") {
+    const { buildWeeklyOperations } = await import("./weekly-ops.server");
+    return buildWeeklyOperations({ yachtIds: [yachtId], staffCopy: opts.staffCopy });
+  }
   if (key === "crew_on_board") {
     const { buildCrewOnBoard } = await import("./crew.server");
     return buildCrewOnBoard(yachtId, vessel);

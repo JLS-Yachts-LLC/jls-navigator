@@ -4,7 +4,7 @@
  * the same key in vessel_report_subscriptions' CHECK, and a builder in
  * lib/vessel-reports/build.server.ts.
  */
-export type ReportKey = "visa_status" | "sign_on_off" | "statement_of_account" | "crew_on_board" | "document_expiries";
+export type ReportKey = "visa_status" | "sign_on_off" | "statement_of_account" | "crew_on_board" | "document_expiries" | "weekly_operations";
 /** A weekday, every day, or "monthly" = the 1st of each month. */
 export type ReportDay = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun" | "daily" | "monthly";
 export type ReportSchedule = { day: ReportDay; time: string; tz?: string };
@@ -44,6 +44,12 @@ export const VESSEL_REPORTS: Array<{
     label: "Document & permit expiries",
     description: "Every permit, vessel document, certificate and crew document (passports, seaman's books, certificates, visas) that has expired or falls due in the next 90 days, grouped by urgency, with the PDF attached.",
     defaultSchedule: { day: "mon", time: "08:30", tz: "Asia/Dubai" },
+  },
+  {
+    key: "weekly_operations",
+    label: "Weekly operations",
+    description: "A summary, then Agency (entry, FMA and DMA permits), Crew Care (sign-ons, sign-offs and transfers) and Visas: what was done last week, what is planned this week and anything needing attention, with the PDF attached.",
+    defaultSchedule: { day: "mon", time: "08:00", tz: "Asia/Dubai" },
   },
 ];
 

@@ -100,8 +100,9 @@ export async function wallDisplayHandler(request: Request): Promise<Response> {
 }
 
 export async function wallAdminHandler(request: Request): Promise<Response> {
-  const write = request.method !== "GET";
-  const access = await requireAccess(request, { module: "agency", level: write ? "edit" : "view" });
+  // Agency view is enough to pair, rename and unpair screens: setting up an
+  // office TV isn't agency work, and the board never shows anything confidential.
+  const access = await requireAccess(request, { module: "agency", level: "view" });
   if (!access.ok) return access.response;
   const db = supabaseAdmin as any;
 

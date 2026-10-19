@@ -7,7 +7,7 @@ import { COLORS } from "@/lib/tokens";
 import { WALL_PANELS, type WallPanelKey, type WallSettings } from "@/lib/wall-types";
 
 // Operations → Wall Displays: pair a TV showing /wall with its code, choose what
-// it shows, and unpair it. Pairing needs agency edit (global admins always pass).
+// it shows, and unpair it. Pairing needs agency view (global admins always pass).
 export const Route = createFileRoute("/_app/wall-displays")({
   validateSearch: (s: Record<string, unknown>) => ({ code: typeof s.code === "string" ? s.code : undefined }),
   component: WallDisplaysPage,
