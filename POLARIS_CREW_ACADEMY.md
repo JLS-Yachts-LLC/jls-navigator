@@ -1,6 +1,31 @@
 # Polaris — Crew Academy (training module) — PLAN
 
-Status: **planning, nothing built** (19 Oct 2026). Decisions taken and still open are at the bottom.
+Status: **Phase 1 (foundation) done and live, 19 Oct 2026** — see "Phase 1 — what was built" below.
+Decisions taken and still open are at the bottom.
+
+## Phase 1 — what was built (19 Oct 2026)
+
+- Migration `20261019120000_crew_academy_foundation.sql` (applied live): all `academy_*` tables
+  from §4, `is_portal_learner()`, `is_portal_captain()` / `assert_not_portal_captain()` widened to
+  learners, auth triggers stand down for `portal = 'learner'`, every academy table closed with a
+  restrictive `portal_captain_denied` and **no permissive policy** (all access via `/api/academy*`),
+  `yacht_portal_modules.module` accepts `'academy'`, `modules` row `academy` ("Crew Academy").
+- Code guards refuse learners: `requireAccess`, `requireAdminAccess`, `isOutsideLogin`, staff
+  invite (`/api/admin/users`) refuses an active learner email. Learner logins are sent to
+  `/academy` from the staff app, `/portal` and `/guest` (a vessel manager who is also a learner
+  lands on `/portal`).
+- `src/lib/academy/academy-auth.server.ts` → `resolveLearner()`; `/api/academy?op=home`;
+  `/api/academy/forgot-password`; page `/academy` (sign in, set/reset password, My courses list).
+- **Verified:** isolation sweep as a throwaway learner — 0 rows in every real table (only
+  `portal_directory`'s 7 support contacts, the public `vessel-images` bucket and empty zero-count
+  views are visible, same as guests); writes refused; RPC guard raises; no staff rows created.
+  Live with a real learner token on polaris.jlsyachts.com: `/api/academy` 200 (own vessel),
+  `/api/admin/users` + `/api/admin/portal-users` 403 "Crew training logins cannot access staff
+  areas", `/api/admin/guests`, `/api/guest`, `/api/guest-shares`, `/api/portal/*` all 403; direct
+  table reads return `[]`. Test login deleted afterwards.
+- Not yet: the `academy` portal module isn't in `PORTAL_MODULES` (added with the vessel screens in
+  Phase 3); the `academy-media` storage bucket comes with uploads in Phase 2; no way to invite a
+  learner from the UI yet (Phase 2).
 
 ## 1. What it is
 
