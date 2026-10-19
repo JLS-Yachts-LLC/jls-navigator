@@ -78,6 +78,10 @@ export async function requireAccess(
   const { data: guestAcct } = await sb
     .from("guest_accounts").select("id").eq("user_id", user.id).eq("active", true).limit(1);
   if (guestAcct?.length) return deny(403, "Guest accounts cannot use this");
+  // Nor is a Crew Academy login (crew who only see their own training).
+  const { data: learnerAcct } = await sb
+    .from("academy_learners").select("id").eq("user_id", user.id).eq("active", true).limit(1);
+  if (learnerAcct?.length) return deny(403, "Crew training logins cannot use this");
 
   // Resolve claims from user_profiles (+ module access).
   const { data: profile } = await sb

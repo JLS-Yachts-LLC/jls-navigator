@@ -182,6 +182,12 @@ const handlers = {
       if (guest?.length) {
         return json({ error: `${email} is a guest login. Deactivate it under Manage Users → Guests before inviting them as staff.` }, 400)
       }
+      // Same for a Crew Academy login (crew training on a vessel).
+      const { data: learner } = await sbCheck.from('academy_learners').select('id')
+        .ilike('email', email.trim()).eq('active', true).limit(1)
+      if (learner?.length) {
+        return json({ error: `${email} is a crew training login on a vessel. Remove them from that vessel's Crew Academy before inviting them as staff.` }, 400)
+      }
     }
 
     // Org admins may not grant global-scope roles.

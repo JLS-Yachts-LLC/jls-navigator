@@ -63,13 +63,14 @@ export async function resolveGuest(request: Request): Promise<{ ok: true; guest:
   };
 }
 
-/** True when this auth user is a Client Portal captain or a guest — never staff. */
+/** True when this auth user is a Client Portal captain, a guest or a Crew Academy learner — never staff. */
 export async function isOutsideLogin(sb: any, userId: string): Promise<boolean> {
-  const [{ data: cap }, { data: guest }] = await Promise.all([
+  const [{ data: cap }, { data: guest }, { data: learner }] = await Promise.all([
     sb.from("captain_accounts").select("id").eq("user_id", userId).eq("active", true).limit(1),
     sb.from("guest_accounts").select("id").eq("user_id", userId).eq("active", true).limit(1),
+    sb.from("academy_learners").select("id").eq("user_id", userId).eq("active", true).limit(1),
   ]);
-  return !!cap?.length || !!guest?.length;
+  return !!cap?.length || !!guest?.length || !!learner?.length;
 }
 
 export async function requireStaff(request: Request): Promise<{ ok: true; staff: StaffCaller; sb: any } | Denied> {

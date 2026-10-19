@@ -145,6 +145,11 @@ export function GuestPortal() {
     setEmail(session.user.email ?? "");
     if (LANDED_WITH === "recovery" && !resetHandled) { setStage("reset-password"); return; }
     const { data: isGuest } = await (supabase as any).rpc("is_portal_guest");
+    if (isGuest !== true) {
+      // Crew with a Crew Academy login belong on their training page.
+      const { data: isLearner } = await (supabase as any).rpc("is_portal_learner");
+      if (isLearner === true) { window.location.assign("/academy"); return; }
+    }
     setStage(isGuest === true ? "ready" : "not-guest");
   }, [resetHandled]);
 

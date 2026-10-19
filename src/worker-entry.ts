@@ -1152,6 +1152,15 @@ export default {
       const { guestHandler } = await import('./routes/api.guest')
       return guestHandler(request)
     }
+    // Crew Academy — crew logins that see only their own training on their vessel.
+    if (url.pathname === '/api/academy/forgot-password') {
+      const { academyForgotPasswordHandler } = await import('./routes/api.academy.forgot-password')
+      return academyForgotPasswordHandler(request)
+    }
+    if (url.pathname === '/api/academy') {
+      const { academyHandler } = await import('./routes/api.academy')
+      return academyHandler(request)
+    }
     // Staff-only: kill a link that has already gone out, or put it back.
     if (url.pathname === '/api/documents/revoke') {
       const { documentRevokeHandler } = await import('./routes/api.documents.revoke')

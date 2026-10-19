@@ -15,6 +15,7 @@ import { Route as OrbitAppRouteImport } from './routes/orbit-app'
 import { Route as LogisticsAppRouteImport } from './routes/logistics-app'
 import { Route as GuestRouteImport } from './routes/guest'
 import { Route as AuthRouteImport } from './routes/auth'
+import { Route as AcademyRouteImport } from './routes/academy'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as WhatsappOptinTokenRouteImport } from './routes/whatsapp-optin.$token'
@@ -197,6 +198,11 @@ const GuestRoute = GuestRouteImport.update({
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AcademyRoute = AcademyRouteImport.update({
+  id: '/academy',
+  path: '/academy',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppRoute = AppRouteImport.update({
@@ -996,6 +1002,7 @@ const AppCrewImmigrationCrewAddCrewMemberIdPassportRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/academy': typeof AcademyRoute
   '/auth': typeof AuthRoute
   '/guest': typeof GuestRoute
   '/logistics-app': typeof LogisticsAppRoute
@@ -1156,6 +1163,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/academy': typeof AcademyRoute
   '/auth': typeof AuthRoute
   '/guest': typeof GuestRoute
   '/logistics-app': typeof LogisticsAppRoute
@@ -1303,6 +1311,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_app': typeof AppRouteWithChildren
+  '/academy': typeof AcademyRoute
   '/auth': typeof AuthRoute
   '/guest': typeof GuestRoute
   '/logistics-app': typeof LogisticsAppRoute
@@ -1465,6 +1474,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/academy'
     | '/auth'
     | '/guest'
     | '/logistics-app'
@@ -1625,6 +1635,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/academy'
     | '/auth'
     | '/guest'
     | '/logistics-app'
@@ -1771,6 +1782,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/_app'
+    | '/academy'
     | '/auth'
     | '/guest'
     | '/logistics-app'
@@ -1933,6 +1945,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRouteWithChildren
+  AcademyRoute: typeof AcademyRoute
   AuthRoute: typeof AuthRoute
   GuestRoute: typeof GuestRoute
   LogisticsAppRoute: typeof LogisticsAppRoute
@@ -1993,6 +2006,13 @@ declare module '@tanstack/react-router' {
       path: '/auth'
       fullPath: '/auth'
       preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/academy': {
+      id: '/academy'
+      path: '/academy'
+      fullPath: '/academy'
+      preLoaderRoute: typeof AcademyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app': {
@@ -3556,6 +3576,7 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
+  AcademyRoute: AcademyRoute,
   AuthRoute: AuthRoute,
   GuestRoute: GuestRoute,
   LogisticsAppRoute: LogisticsAppRoute,

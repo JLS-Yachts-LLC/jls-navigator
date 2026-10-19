@@ -343,7 +343,12 @@ export function CaptainPortal() {
     const boatLink = lastBoatLink ?? boatLinks[0];
     if (yachtLink && !lastBoatLink) setLink({ ...yachtLink, yacht_id: yachtLink.yacht_id! });
     else if (boatLink) setBoatOwner({ id: boatLink.id, display_name: boatLink.display_name, boat_id: boatLink.boat_id });
-    else { setStage("not-captain"); return; }
+    else {
+      // Crew with only a Crew Academy login belong on their training page.
+      const { data: isLearner } = await db.rpc("is_portal_learner");
+      if (isLearner === true) { window.location.assign("/academy"); return; }
+      setStage("not-captain"); return;
+    }
 
     // Signed in at another client's own address (e.g. aquila.polaris…): send
     // them to theirs. Branding only — RLS already limits them to their vessel.

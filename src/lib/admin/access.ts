@@ -73,6 +73,14 @@ export async function requireAdminAccess(
     .eq('active', true)
     .limit(1)
   if (guestAcct?.length) return denied(403, 'Guest accounts cannot access staff areas')
+  // And for a Crew Academy login (crew who only see their own training).
+  const { data: learnerAcct } = await sb
+    .from('academy_learners')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('active', true)
+    .limit(1)
+  if (learnerAcct?.length) return denied(403, 'Crew training logins cannot access staff areas')
 
   // Resolve role + org. Source order:
   //   1. app_metadata (set by the JWT hook — not deployed yet, Edge Fns off)

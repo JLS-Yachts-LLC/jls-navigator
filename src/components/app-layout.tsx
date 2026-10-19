@@ -47,6 +47,10 @@ export function AppLayout() {
     (supabase as any).rpc("is_portal_guest").then(({ data }: any) => {
       if (data === true) window.location.assign("/guest");
     });
+    // Crew on a vessel's Crew Academy see only their training.
+    (supabase as any).rpc("is_portal_learner").then(({ data }: any) => {
+      if (data === true) window.location.assign("/academy");
+    });
   }, [user]);
 
   // Capture JS errors once, for the bug-report widget's activity log + the
