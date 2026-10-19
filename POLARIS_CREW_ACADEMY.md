@@ -3,6 +3,23 @@
 Status: **Phases 1–5 done and live, 19 Oct 2026** (SCORM import not built — see decision 7).
 Decisions taken and still open are at the bottom.
 
+## Catalogue and enrolment requests (19 Oct 2026, after Phase 5 — Matt's request)
+
+- **Crew app layout:** `/academy` has a left menu (slide-out drawer on phones): My training,
+  Completed, Course catalogue, My requests, Privacy & offline (share-results switch + courses
+  saved on the phone). Catalogue and requests are greyed out with no signal.
+- **Catalogue:** `academy_courses.catalogue` (default true; "Show in the crew catalogue" in the
+  course creator, JLS and vessel courses alike). `/api/academy?op=catalogue` lists the vessel's
+  available catalogue courses with the crew member's state (enrolled / completed / requested /
+  not approved); `op=outline` gives section and lesson titles plus material types only.
+- **Requests:** `academy_enrolment_requests` (one pending per person per course; migration
+  `20261019220000`). Crew ask with an optional note and can cancel while pending. A training
+  manager (canManageAcademy) approves — enrols them (not required, optional due date) — or
+  declines, with a note the crew member sees. Portal: new Requests tab; Alerts shows "N crew
+  training requests to decide". No email is sent either way (in-app only).
+- **Verified live (build 911f8e1), 12/12** with a throwaway crew member and Chief Officer on
+  AQUILA against the sample course (deleted after).
+
 ## Phase 5 — what was built (19 Oct 2026)
 
 - **Reminder emails** (`lib/academy/reminders.ts` rules + tests, `reminders.server.ts`, 5-minute
