@@ -1006,6 +1006,15 @@ export default {
       return url.pathname === '/api/wall/display' ? wallDisplayHandler(request) : wallAdminHandler(request)
     }
 
+    // JLS Training room tablet: attendance sign-in + calendar (key-authorised), and the staff side.
+    if (url.pathname.startsWith('/api/training-kiosk/')) {
+      const k = await import('./routes/api.training-kiosk')
+      if (url.pathname === '/api/training-kiosk/display') return k.kioskDisplayHandler(request)
+      if (url.pathname === '/api/training-kiosk/sign-in') return k.kioskSignInHandler(request)
+      if (url.pathname === '/api/training-kiosk/admin') return k.kioskAdminHandler(request)
+      if (url.pathname === '/api/training-kiosk/attendance') return k.kioskAttendanceHandler(request)
+    }
+
     // Your own name and picture — scoped to the caller by their token.
     if (url.pathname === '/api/me/profile') {
       const { myProfileHandler } = await import('./routes/api.me.profile')
