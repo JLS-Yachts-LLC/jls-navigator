@@ -4,7 +4,7 @@
  * Three modules across the top, per the specification:
  *
  *   Dashboard      analytics, the calendar and workforce scheduling
- *   Project        the master registry — Project List, Bunkering, EHS NOC Record
+ *   Project        the master registry — Project List, Bunkering, Internal Request, EHS NOC Record
  *   Managed Boats  small-boat operations and maintenance
  *
  * The hub owns the data. All three screens read the same load, so a record added
@@ -19,10 +19,11 @@ import { useOrbit2, suggestionsFor } from "./orbit2-data";
 import { Orbit2Dashboard } from "./orbit2-dashboard";
 import { Orbit2Projects, type Orbit2Prefill } from "./orbit2-projects";
 import { Orbit2Noc } from "./orbit2-noc";
+import { Orbit2InternalRequests } from "./orbit2-internal-requests";
 import { Orbit2Boats } from "./orbit2-boats";
 
 type Tab = "dashboard" | "project" | "boats";
-type Sub = "list" | "bunkering" | "noc";
+type Sub = "list" | "bunkering" | "internal" | "noc";
 
 const TABS: { key: Tab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -33,6 +34,7 @@ const TABS: { key: Tab; label: string; icon: React.ComponentType<{ className?: s
 const SUBS: { key: Sub; label: string }[] = [
   { key: "list", label: "Project List" },
   { key: "bunkering", label: "Bunkering" },
+  { key: "internal", label: "Internal Request" },
   { key: "noc", label: "EHS NOC Record" },
 ];
 
@@ -105,6 +107,8 @@ export function Orbit2Hub() {
             loading={loading} reload={reload}
             focusBoatId={linkBoat} focusServices={linkView === "services"}
           />
+        ) : sub === "internal" ? (
+          <Orbit2InternalRequests />
         ) : sub === "noc" ? (
           <Orbit2Noc
             rows={noc} loading={loading} reload={reload}

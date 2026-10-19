@@ -18,6 +18,7 @@
 import { useContext, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Camera, CheckCircle2, Download, ImageOff, Loader2, Paperclip, Search, Ship, Wrench, X } from "lucide-react";
 import { portalFetch } from "@/lib/portal/portal-fetch";
+import { fmtDMY } from "@/lib/format-date";
 import { cn } from "@/lib/utils";
 import { PreviewContext } from "@/components/portal/captain-portal";
 import type { PortalBoat } from "@/components/portal/boat-portal";
@@ -33,7 +34,7 @@ type OwnerDetail = {
   compliance: Array<{ regime: "dma" | "fma" | "rya"; label: string; hasReport: boolean; lastInspection: string | null }>;
   documents: Array<{ id: string; category: string; categoryLabel: string; fileName: string }>;
   jobs: Job[];
-  inventory: Array<{ id: string; item: string; qty: number | null; unit: string | null; condition: string | null; expiryDate: string | null; onBoard: boolean }>;
+  inventory: Array<{ id: string; item: string; qty: number | null; unit: string | null; condition: string | null; expiryDate: string | null; onBoard: boolean; hasImage: boolean }>;
   expenses: Array<{ id: string; category: string; partType: string | null; date: string; cost: number; currency: string; details: string | null; jobRef: string | null; files: FileRef[] }>;
   services: Array<{ id: string; service: string; lastServiceDate: string | null; nextServiceDate: string | null; currentRunHours: number | null; nextServiceRunHours: number | null; files: FileRef[] }>;
 };
@@ -61,8 +62,7 @@ const PAPERS: { label: string; categories: string[] }[] = [
 
 const OWNER_JOB_CATEGORIES = ["Maintenance", "Repair", "Inventory", "Booked"] as const;
 
-const ukDate = (d: string | null | undefined) =>
-  d ? new Date(d.length === 10 ? `${d}T00:00:00Z` : d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }) : "—";
+const ukDate = (d: string | null | undefined) => fmtDMY(d);
 const money = (n: number, c: string) => `${c} ${n.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const hrs = (n: number | null) => (n == null ? "—" : n.toLocaleString("en-GB", { maximumFractionDigits: 1 }));
 const daysTo = (d: string) => Math.round((Date.parse(`${d}T00:00:00Z`) - Date.parse(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`)) / 86_400_000);
@@ -337,7 +337,7 @@ function PanelTable({ boatId, detail, panel, maint, query: q }: {
       .sort((a, b) => panel === "jobs" ? 0 : (b.scheduledDate ?? b.updatedAt).localeCompare(a.scheduledDate ?? a.updatedAt));
     return (
       <>
-      <Table head={["Job No.", "Category", "Description", "Date", "Assigned Crew", "Technician", "Status"]}
+      <Table head={["Job No.", "Category", "Description", "Date", "Assigned Team", "Technician", "Status"]}
              empty={panel === "jobs" ? "No jobs on the boat yet." : "No finished jobs yet — they appear here as soon as they're complete."}>
         {rows.map((j) => {
           const st = jobStatus(j);
@@ -371,9 +371,13 @@ function PanelTable({ boatId, detail, panel, maint, query: q }: {
   if (panel === "inventory") {
     const rows = detail.inventory.filter((i) => match(q, i.item, i.condition, i.unit));
     return (
-      <Table head={["Item", "Qty", "Unit", "Condition", "Expiry Date", "On Board"]} empty="Nothing on the inventory list yet.">
+      <Table head={["Image", "Item", "Qty", "Unit", "Condition", "Expiry Date", "On Board"]} empty="Nothing on the inventory list yet.">
         {rows.map((i) => (
           <tr key={i.id}>
+            <td className={cn(td, "w-14 py-1.5")}>
+              {i.hasImage ? <BoatImageThumb boatId={boatId} type="inventory_image" id={i.id} alt={i.item} size="sm" />
+                : <span className="text-muted-foreground">—</span>}
+            </td>
             <td className={cn(td, "font-medium")}>{i.item}</td>
             <td className={cn(muted, "tabular-nums")}>{i.qty ?? "—"}</td>
             <td className={muted}>{i.unit ?? "—"}</td>
@@ -441,39 +445,67 @@ function PanelTable({ boatId, detail, panel, maint, query: q }: {
 
 // ── One job, opened ──────────────────────────────────────────────────────────
 
-/** A short-lived link to one of a job's photos, through the portal's checked, logged route. */
-async function jobImageUrl(boatId: string, id: string): Promise<string> {
-  const res = await portalFetch(`/api/portal/boats/open?${new URLSearchParams({ boat: boatId, type: "job_image", id, as: "json" })}`);
+type ImageType = "job_image" | "inventory_image";
+
+/** A short-lived link to a job or inventory photo, through the portal's checked, logged route. */
+async function boatImageUrl(boatId: string, type: ImageType, id: string): Promise<string> {
+  const res = await portalFetch(`/api/portal/boats/open?${new URLSearchParams({ boat: boatId, type, id, as: "json" })}`);
   const body = await res.json().catch(() => ({}));
   if (!res.ok || !body?.url) throw new Error(body?.error ?? "That photo could not be opened.");
   return body.url as string;
 }
 
+/** A full-screen view of one photo; a click or Escape closes it (and only it). */
+function Lightbox({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopImmediatePropagation(); onClose(); } };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onClose]);
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 p-4" onClick={(e) => { e.stopPropagation(); onClose(); }}>
+      <img src={src} alt={alt} className="max-h-full max-w-full rounded-lg object-contain" />
+      <button onClick={onClose} aria-label="Close photo" className="absolute right-4 top-4 rounded-full bg-black/60 p-2 text-white"><X className="h-5 w-5" /></button>
+    </div>
+  );
+}
+
+/** A photo thumbnail: fetches its signed link on mount, opens full size on click. */
+function BoatImageThumb({ boatId, type, id, alt, size = "lg" }: { boatId: string; type: ImageType; id: string; alt: string; size?: "sm" | "lg" }) {
+  const [url, setUrl] = useState<string | null | undefined>(undefined);
+  const [zoom, setZoom] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    boatImageUrl(boatId, type, id).then((u) => { if (alive) setUrl(u); }).catch(() => { if (alive) setUrl(null); });
+    return () => { alive = false; };
+  }, [boatId, type, id]);
+  return (
+    <>
+      <button type="button" disabled={!url} onClick={(e) => { e.stopPropagation(); if (url) setZoom(true); }} title={alt}
+              className={cn("flex items-center justify-center overflow-hidden rounded-lg border border-border bg-background/40 hover:border-primary/60",
+                size === "sm" ? "h-10 w-10" : "aspect-square w-full")}>
+        {url ? <img src={url} alt={alt} className="h-full w-full object-cover" loading="lazy" />
+          : url === null ? <ImageOff className="h-4 w-4 text-muted-foreground" />
+          : <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+      </button>
+      {zoom && url && <Lightbox src={url} alt={alt} onClose={() => setZoom(false)} />}
+    </>
+  );
+}
+
 function JobDialog({ boatId, job, onClose }: { boatId: string; job: Job; onClose: () => void }) {
-  const [urls, setUrls] = useState<Record<string, string | null>>({});
-  const [zoom, setZoom] = useState<string | null>(null);
   const st = jobStatus(job);
 
   useEffect(() => {
-    let alive = true;
-    for (const img of job.images) {
-      jobImageUrl(boatId, img.id)
-        .then((u) => { if (alive) setUrls((m) => ({ ...m, [img.id]: u })); })
-        .catch(() => { if (alive) setUrls((m) => ({ ...m, [img.id]: null })); });
-    }
-    return () => { alive = false; };
-  }, [boatId, job]);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") (zoom ? setZoom(null) : onClose()); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [zoom, onClose]);
+  }, [onClose]);
 
   const facts: [string, string][] = [
     ["Category", job.kindLabel],
     ["Date", `${ukDate(job.scheduledDate ?? (job.status === "Complete" ? job.updatedAt : null))}${job.scheduledTime ? ` · ${job.scheduledTime}` : ""}`],
-    ["Assigned Crew", job.assignedCrew.join(", ") || "—"],
+    ["Assigned Team", job.assignedCrew.join(", ") || "—"],
     ["Technician", job.technician ?? "—"],
   ];
 
@@ -501,28 +533,12 @@ function JobDialog({ boatId, job, onClose }: { boatId: string; job: Job; onClose
               <p className="text-sm text-muted-foreground">No photos on this job yet.</p>
             ) : (
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                {job.images.map((img) => {
-                  const u = urls[img.id];
-                  return (
-                    <button key={img.id} type="button" disabled={!u} onClick={() => u && setZoom(u)} title={img.fileName}
-                            className="flex aspect-square items-center justify-center overflow-hidden rounded-lg border border-border bg-background/40 hover:border-primary/60">
-                      {u ? <img src={u} alt={img.fileName} className="h-full w-full object-cover" loading="lazy" />
-                        : u === null ? <ImageOff className="h-5 w-5 text-muted-foreground" />
-                        : <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />}
-                    </button>
-                  );
-                })}
+                {job.images.map((img) => <BoatImageThumb key={img.id} boatId={boatId} type="job_image" id={img.id} alt={img.fileName} />)}
               </div>
             )}
           </div>
         </div>
       </div>
-      {zoom && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 p-4" onClick={(e) => { e.stopPropagation(); setZoom(null); }}>
-          <img src={zoom} alt="Job photo" className="max-h-full max-w-full rounded-lg object-contain" />
-          <button onClick={() => setZoom(null)} aria-label="Close photo" className="absolute right-4 top-4 rounded-full bg-black/60 p-2 text-white"><X className="h-5 w-5" /></button>
-        </div>
-      )}
     </div>
   );
 }
@@ -662,8 +678,8 @@ function downloadReport(boat: PortalBoat, d: OwnerDetail, displayName: string) {
     <tr><td>Vessel type</td><td><b>${esc(boat.boatType ?? "—")}</b></td><td>Year of build</td><td><b>${esc(s.yearOfBuild ?? "—")}</b></td></tr>
     <tr><td>Max beam (m)</td><td><b>${esc(s.beamM ?? "—")}</b></td><td>Max length (m)</td><td><b>${esc(s.lengthM ?? "—")}</b></td></tr>
   </tbody></table>
-  ${hidden.has("jobs") ? "" : table("Open jobs", ["Job No.", "Category", "Description", "Date", "Assigned Crew", "Technician", "Status"], d.jobs.filter((j) => j.status !== "Complete").map(jobRow))}
-  ${hidden.has("maintenance") ? "" : table("Maintenance history", ["Job No.", "Category", "Description", "Date", "Assigned Crew", "Technician", "Status"], d.jobs.filter((j) => j.status === "Complete").map(jobRow))}
+  ${hidden.has("jobs") ? "" : table("Open jobs", ["Job No.", "Category", "Description", "Date", "Assigned Team", "Technician", "Status"], d.jobs.filter((j) => j.status !== "Complete").map(jobRow))}
+  ${hidden.has("maintenance") ? "" : table("Maintenance history", ["Job No.", "Category", "Description", "Date", "Assigned Team", "Technician", "Status"], d.jobs.filter((j) => j.status === "Complete").map(jobRow))}
   ${hidden.has("maintenance") ? "" : table("Service calendar", ["Service", "Date of service", "Next service date", "Current run hrs", "Next serv run hrs"],
     [...d.services.map((x) => [x.service, ukDate(x.lastServiceDate), ukDate(x.nextServiceDate), hrs(x.currentRunHours), hrs(x.nextServiceRunHours)]),
      ...d.inventory.filter((i) => i.expiryDate).map((i) => [`${i.item} (inventory)`, "—", ukDate(i.expiryDate), "—", "—"])])}

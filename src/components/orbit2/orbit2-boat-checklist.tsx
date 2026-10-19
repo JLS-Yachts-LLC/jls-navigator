@@ -19,6 +19,7 @@
  * the boat's DMA / FMA / RYA checklist — or directly by its form id for an
  * "additional" checklist a boat carries.
  */
+import { fmtDMY } from "@/lib/format-date";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown, ArrowUp, Camera, Check, Crosshair, FileDown, Link2, Link2Off, ListChecks, Loader2, MessageSquare, Pencil, Plus, RefreshCw, RotateCcw, Trash2, Upload, UserPlus, X,
@@ -525,7 +526,7 @@ export function ChecklistWork({ boat, regime, formId, editable, authorName, user
 
 // ── Generate the checklist's own PDF from the ticks ──────────────────────────
 
-const fmtDate = (iso: string) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString("en-GB") : "");
+const fmtDate = (iso: string) => fmtDMY(iso, { empty: "" });
 const fieldKey = (f: { key: string; label: string }) => (f.key === "custom" ? `custom:${f.label}` : f.key);
 
 function FormFillDialog({ boat, form, regime, items, stateFor, inventory, authorName, onClose, onFiled }: {

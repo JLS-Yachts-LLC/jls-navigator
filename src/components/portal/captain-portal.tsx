@@ -238,6 +238,26 @@ export function CaptainPortal() {
   const [stage, setStage] = useState<Stage>("loading");
   const [link, setLinkState] = useState<CaptainLink | null>(null);
   const [vessels, setVessels] = useState<VesselChoice[]>([]);
+  // Portal logins can't read orbit2_boats, so the captain_accounts embed above
+  // comes back without the boat's name. Fill the names in from /api/portal/boats,
+  // which is scoped server-side to the boats on the login.
+  const boatIdsKey = vessels.map((v) => v.boat?.boat_id).filter(Boolean).join(",");
+  useEffect(() => {
+    if (!boatIdsKey) return;
+    let alive = true;
+    void portalFetch("/api/portal/boats")
+      .then(async (res) => (res.ok ? ((await res.json()).boats ?? []) : []))
+      .catch(() => [])
+      .then((list: Array<{ id: string; name: string }>) => {
+        if (!alive || !list.length) return;
+        const names = new Map(list.map((b) => [b.id, b.name]));
+        setVessels((prev) => prev.map((v) => {
+          const name = v.boat?.boat_id ? names.get(v.boat.boat_id) : undefined;
+          return name && name !== v.name ? { ...v, name } : v;
+        }));
+      });
+    return () => { alive = false; };
+  }, [boatIdsKey]);
   /** Put a yacht on screen: remembered in this browser and named on every portal API call. */
   const setLink = useCallback((l: CaptainLink | null) => {
     setLinkState(l);

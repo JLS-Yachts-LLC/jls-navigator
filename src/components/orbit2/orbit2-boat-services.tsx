@@ -8,13 +8,18 @@
  * in orbit2_boat_service_files (migration 20261012100000).
  *
  * Inventory List items with an expiry date (the liferaft, flares, extinguishers…)
- * join the calendar automatically, read from the inventory — their expiry is
- * changed on the Inventory List, so there's one place to keep it.
+ * join the calendar automatically, read from the inventory — clicking one opens
+ * that Inventory List item, so its expiry is still kept in one place.
+ *
+ * Every service line has an Edit button and an "Add document" link (client
+ * request, 19 Oct 2026); the editor changes any field and adds, removes or
+ * replaces its documents.
  *
  * Anything overdue shows red; due within 30 days or 25 running hours, amber.
  */
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Paperclip, X } from "lucide-react";
+import { Loader2, Paperclip, Pencil, Plus, X } from "lucide-react";
+import { fmtDMY } from "@/lib/format-date";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { errorMessage } from "@/lib/error-message";
@@ -47,11 +52,11 @@ const COMMON_SERVICES = [
 ];
 const DUE_SOON_DAYS = 30;
 const DUE_SOON_HOURS = 25;
-const COLUMNS = ["Services", "Date of Service", "Next Service Date", "Current Run Hrs", "Next Serv Run Hrs", "Documents"];
+const COLUMNS = ["Services", "Date of Service", "Next Service Date", "Current Run Hrs", "Next Serv Run Hrs", "Documents", ""];
 
 type Due = "overdue" | "soon" | "ok";
 const today = () => new Date().toISOString().slice(0, 10);
-const ukDate = (iso: string | null) => iso ? new Date(`${iso}T00:00:00`).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+const ukDate = (iso: string | null) => fmtDMY(iso);
 const hrs = (n: number | null) => n == null ? "—" : Number(n).toLocaleString("en-GB", { maximumFractionDigits: 1 });
 
 function dateDue(next: string | null): Due {
@@ -70,12 +75,14 @@ type Row =
   | { kind: "service"; key: string; s: Orbit2BoatService; dDue: Due; hDue: Due }
   | { kind: "inventory"; key: string; item: Orbit2BoatInventoryItem; dDue: Due };
 
-export function ServiceCalendar({ boat, inventory, query, adding, setAdding }: {
+export function ServiceCalendar({ boat, inventory, query, adding, setAdding, onEditInventory }: {
   boat: Orbit2Boat;
   inventory: Orbit2BoatInventoryItem[];
   query: string;
   adding: boolean;
   setAdding: (v: boolean) => void;
+  /** Opens an Inventory List item — the calendar's inventory rows are edited there. */
+  onEditInventory?: (item: Orbit2BoatInventoryItem) => void;
 }) {
   const [services, setServices] = useState<Orbit2BoatService[]>([]);
   const [files, setFiles] = useState<ServiceFile[]>([]);
@@ -140,31 +147,44 @@ export function ServiceCalendar({ boat, inventory, query, adding, setAdding }: {
                 <td className="whitespace-nowrap px-3 py-2 tabular-nums text-muted-foreground">{hrs(r.s.current_run_hours)}</td>
                 <td className={cn("whitespace-nowrap px-3 py-2 tabular-nums", dueCls(r.hDue))}>{hrs(r.s.next_service_run_hours)}</td>
                 <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-                  {filesFor(r.s.id).length === 0 ? (
-                    <button onClick={() => setEditing(r.s)} className="text-[13px] text-primary hover:underline">Attach</button>
-                  ) : (
-                    <div className="flex flex-col gap-0.5">
-                      {filesFor(r.s.id).map((d) => (
-                        <SignedAnchor key={d.id} stored={d.storage_ref} title={d.file_name}
-                          className="flex max-w-[10rem] items-center gap-1 truncate text-[13px] text-primary hover:underline">
-                          <Paperclip className="h-3 w-3 shrink-0" /> <span className="truncate">{d.file_name}</span>
-                        </SignedAnchor>
-                      ))}
-                    </div>
-                  )}
+                  <div className="flex flex-col gap-0.5">
+                    {filesFor(r.s.id).map((d) => (
+                      <SignedAnchor key={d.id} stored={d.storage_ref} title={d.file_name}
+                        className="flex max-w-[12rem] items-center gap-1 truncate text-[14px] text-primary hover:underline">
+                        <Paperclip className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{d.file_name}</span>
+                      </SignedAnchor>
+                    ))}
+                    <button onClick={() => setEditing(r.s)} className="flex items-center gap-1 text-left text-[14px] text-muted-foreground hover:text-primary hover:underline">
+                      <Plus className="h-3.5 w-3.5" /> {filesFor(r.s.id).length ? "Add / replace document" : "Attach document"}
+                    </button>
+                  </div>
+                </td>
+                <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
+                  <button onClick={() => setEditing(r.s)} title="Edit this service"
+                    className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[14px] font-medium hover:bg-accent">
+                    <Pencil className="h-3.5 w-3.5" /> Edit
+                  </button>
                 </td>
               </tr>
             ) : (
-              <tr key={r.key} title="From the Inventory List — change the expiry date there">
+              <tr key={r.key} title="From the Inventory List — click to edit the item and its expiry date"
+                  onClick={() => onEditInventory?.(r.item)} className={cn(onEditInventory && "cursor-pointer hover:bg-muted/20")}>
                 <td className="px-3 py-2">
                   <span className="font-medium">{r.item.item}</span>
-                  <span className="ml-1.5 rounded bg-muted px-1.5 py-0.5 text-[12px] text-muted-foreground">Inventory</span>
+                  <span className="ml-1.5 rounded bg-muted px-1.5 py-0.5 text-[14px] text-muted-foreground">Inventory</span>
                 </td>
                 <td className="px-3 py-2 text-muted-foreground">—</td>
                 <td className={cn("whitespace-nowrap px-3 py-2", dueCls(r.dDue))}>{ukDate(r.item.expiry_date)}</td>
                 <td className="px-3 py-2 text-muted-foreground">—</td>
                 <td className="px-3 py-2 text-muted-foreground">—</td>
                 <td className="px-3 py-2 text-muted-foreground">—</td>
+                <td className="px-3 py-2 text-right">
+                  {onEditInventory && (
+                    <span className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[14px] font-medium">
+                      <Pencil className="h-3.5 w-3.5" /> Edit
+                    </span>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>

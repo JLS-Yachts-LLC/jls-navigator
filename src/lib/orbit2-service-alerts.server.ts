@@ -18,6 +18,7 @@
  * goes once even if the job runs more than once. Emails need
  * ORBIT2_SERVICE_ALERTS_ENABLED=true (wrangler.jsonc); the bell alerts don't.
  */
+import { fmtDMY } from "@/lib/format-date";
 import { emailBrandLockup } from "@/lib/email/brand-mark";
 import { sendEmail } from "@/lib/ses.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -34,8 +35,7 @@ function emailsEnabled(): boolean {
 }
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
-const fmtDate = (d: string) =>
-  new Date(d + "T00:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+const fmtDate = (d: string) => fmtDMY(d);
 const fmtHours = (n: number) => Number(n).toLocaleString("en-GB", { maximumFractionDigits: 1 });
 
 type Stage = "d30" | "d7" | "d0" | "hsoon" | "hdue";

@@ -13,6 +13,7 @@
  * or illustrative: with nothing entered the page reads zero and says so, because
  * a dashboard that invents numbers is worse than an empty one.
  */
+import { fmtDMY } from "@/lib/format-date";
 import { useEffect, useMemo, useState } from "react";
 import { errorMessage } from "@/lib/error-message";
 import {
@@ -45,9 +46,7 @@ const DAY_END = 24;
 const HOURS = Array.from({ length: DAY_END - DAY_START }, (_, i) => DAY_START + i);
 
 const fmtDay = (iso: string) =>
-  new Date(`${iso}T00:00:00`).toLocaleDateString("en-GB", {
-    weekday: "long", day: "numeric", month: "long", year: "numeric",
-  });
+  `${new Date(`${iso}T00:00:00`).toLocaleDateString("en-GB", { weekday: "long" })} ${fmtDMY(iso)}`;
 
 export function Orbit2Dashboard({
   projects, noc, boats, boatTasks, schedule, loading, reload, onCreateAt,
@@ -100,7 +99,7 @@ export function Orbit2Dashboard({
       fmtSchedule(p.schedule_date, p.schedule_time), p.location ?? "", minutesToHhmm(p.etc_minutes),
       (p.assigned_team ?? []).join(" / "), p.supplier ?? "", p.jls_quote ?? "", p.invoice_number ?? "",
       p.product_grade ?? "", p.quantity != null ? `${p.quantity} ${p.quantity_unit ?? ""}`.trim() : "",
-      p.work_completed_at ? new Date(p.work_completed_at).toLocaleString("en-GB") : "",
+      p.work_completed_at ? fmtDMY(p.work_completed_at, { time: true }) : "",
     ]);
     const csv = [head, ...rows]
       .map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","))
@@ -606,7 +605,7 @@ function DayDialog({
         <div className="flex items-start justify-between gap-3 border-b border-border/60 px-5 py-4">
           <div>
             <h3 className="font-display text-[22px] font-semibold tracking-tight">
-              {new Date(`${date}T00:00:00`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+              {fmtDay(date)}
             </h3>
             <p className="text-[14px] text-muted-foreground">
               {person ? person : "Everyone"} · {work.length} task{work.length === 1 ? "" : "s"}

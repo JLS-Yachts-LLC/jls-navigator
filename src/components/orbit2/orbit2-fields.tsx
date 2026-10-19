@@ -6,6 +6,7 @@
  * and the point of Smart Auto-Suggest is that the same name is offered
  * everywhere it could be typed.
  */
+import { fmtDMY } from "@/lib/format-date";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { errorMessage } from "@/lib/error-message";
 import { Paperclip, X, Upload, Loader2, Check, Pencil } from "lucide-react";
@@ -373,8 +374,7 @@ export function NoteLog({
   );
 }
 
-/** DD/MM/YYYY – HH:MM, as the spec's example log lines read. */
+/** DD/MMM/YYYY – HH:MM, as the log lines read. */
 export function stamp(iso: string): string {
-  const d = new Date(iso);
-  return `${d.toLocaleDateString("en-GB")} – ${d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`;
+  return fmtDMY(iso, { time: true }).replace(" ", " – ");
 }

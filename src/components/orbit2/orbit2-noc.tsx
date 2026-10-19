@@ -8,6 +8,7 @@
  * Saving is per cell on blur rather than a Save button — a grid with a single
  * Save invites a page of edits to be lost in one navigation.
  */
+import { fmtDMY } from "@/lib/format-date";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { errorMessage } from "@/lib/error-message";
 import { Loader2, Plus, Search, Paperclip, Upload, X, Trash2 } from "lucide-react";
@@ -31,12 +32,9 @@ const NOC_VIEWS: { key: NocView; label: string }[] = [
   { key: "Invoiced", label: "Invoiced" },
 ];
 
-/** MMM DD, YYYY — how the spec asks NOC dates to read. */
+/** DD/MMM/YYYY, as every Orbit 2 date reads (client request, 19 Oct 2026). */
 function fmtDate(iso: string | null): string {
-  if (!iso) return "";
-  return new Date(`${iso}T00:00:00`).toLocaleDateString("en-US", {
-    month: "short", day: "2-digit", year: "numeric",
-  });
+  return fmtDMY(iso, { empty: "" });
 }
 
 export function Orbit2Noc({

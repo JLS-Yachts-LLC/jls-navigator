@@ -12,6 +12,7 @@
  * Everything writes to the same tables as the desktop, so the office and the
  * phone are always looking at one record.
  */
+import { fmtDMY } from "@/lib/format-date";
 import { useMemo, useState } from "react";
 import {
   Anchor, CalendarDays, ChevronLeft, ChevronRight, ClipboardList, Loader2, Plus, Search, Ship, Users, X,
@@ -504,7 +505,7 @@ function BoatSheet({ boat, tasks, inventory, authorName, userId, onClose, reload
           <InspectionsRequired boat={boat} onSave={patchBoat} />
           {INSPECTION_REGIMES.filter((r) => (boat.inspections_required ?? INSPECTION_REGIMES).includes(r)).map((regime: InspectionRegime) => (
             <div key={regime} className="rounded-xl border border-border bg-card p-3">
-              <div className="mb-2 text-[15px] font-semibold uppercase tracking-wide">{regime}{regime !== "rya" ? "" : ""} <span className="text-[13px] font-normal text-muted-foreground">last inspection {boat[`${regime}_last_inspection`] ? new Date(`${boat[`${regime}_last_inspection`]}T00:00:00`).toLocaleDateString("en-GB") : "—"}</span></div>
+              <div className="mb-2 text-[15px] font-semibold uppercase tracking-wide">{regime}{regime !== "rya" ? "" : ""} <span className="text-[13px] font-normal text-muted-foreground">last inspection {fmtDMY(boat[`${regime}_last_inspection`])}</span></div>
               <InspectionChecklist boat={boat} regime={regime} inventory={inventory} isAdmin authorName={authorName} onDocumentAdded={reload}
                 onAssignTeam={() => setJob({ category: checklistCategoryFor(regime) })} />
             </div>

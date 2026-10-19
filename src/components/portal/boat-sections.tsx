@@ -7,6 +7,7 @@
  */
 import { useState } from "react";
 import { portalFetch } from "@/lib/portal/portal-fetch";
+import { fmtDMY } from "@/lib/format-date";
 import { cn } from "@/lib/utils";
 import {
   AlertTriangle, CalendarClock, CheckCircle2, ClipboardList, Download, FileCheck2, Loader2, ShieldCheck, Wrench,
@@ -21,12 +22,12 @@ export type BoatDetail = {
   jobs: Array<{
     id: string; jobNo: string | null; kind: string; kindLabel: string; title: string; status: string;
     dueDate: string | null; scheduledDate: string | null; scheduledTime: string | null; updatedAt: string;
+    assignedCrew: string[];
   }>;
   safetyKit: Array<{ id: string; item: string; qty: number | null; unit: string | null; condition: string | null; expiryDate: string; onBoard: boolean }>;
 };
 
-const fmtDate = (d: string | null | undefined) =>
-  d ? new Date(d.length === 10 ? `${d}T00:00:00Z` : d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }) : "—";
+const fmtDate = (d: string | null | undefined) => fmtDMY(d);
 const daysTo = (d: string) => Math.round((Date.parse(`${d.slice(0, 10)}T00:00:00Z`) - Date.parse(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`)) / 86400000);
 
 const JOB_STATUS: Record<string, { label: string; cls: string }> = {
@@ -196,7 +197,10 @@ export function BoatJobs({ detail }: { detail: BoatDetail }) {
             <span className="font-medium">{j.title || j.kindLabel}</span>
             <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase", st.cls)}>{st.label}</span>
           </div>
-          <div className="mt-0.5 text-xs text-muted-foreground">{[j.kindLabel, j.jobNo].filter(Boolean).join(" · ")}</div>
+          <div className="mt-0.5 text-sm text-muted-foreground">{[j.kindLabel, j.jobNo].filter(Boolean).join(" · ")}</div>
+          <div className="mt-0.5 text-sm text-muted-foreground">
+            Assigned team: <span className="text-foreground">{(j.assignedCrew ?? []).join(", ") || "to be assigned"}</span>
+          </div>
         </div>
         <div className="text-right text-xs text-muted-foreground">
           {j.status === "Complete" ? `Completed ${fmtDate(j.updatedAt)}`

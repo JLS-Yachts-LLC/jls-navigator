@@ -5,7 +5,7 @@
  *       → { compliance[], documents[], jobs[], safetyKit[] }
  *   GET /api/portal/boats/open?boat=<id>&type=document&id=<doc id>
  *   GET /api/portal/boats/open?boat=<id>&type=inspection&regime=dma|fma|rya
- *   GET /api/portal/boats/open?boat=<id>&type=expense_file|service_file|job_image&id=<file id>
+ *   GET /api/portal/boats/open?boat=<id>&type=expense_file|service_file|job_image|inventory_image&id=<file or item id>
  *       → 302 to a 5-minute signed URL, after an ownership check, every attempt
  *         recorded in portal_document_access (as the yacht portal does); add
  *         &as=json for { url } instead, so a job's photos can show inline
@@ -102,7 +102,7 @@ export async function portalBoatDetailHandler(request: Request): Promise<Respons
     // on each job; remarks and team comments stay office-only.
     sb.from('orbit2_boat_tasks').select('id, kind, title, status, due_date, schedule_date, schedule_time, job_no, assigned_team, technician, requested_by_name, created_at, updated_at')
       .eq('boat_id', boatId).order('created_at', { ascending: false }).limit(300),
-    sb.from('orbit2_boat_inventory').select('id, item, qty, unit, condition, expiry_date, on_board')
+    sb.from('orbit2_boat_inventory').select('id, item, qty, unit, condition, expiry_date, on_board, image_ref')
       .eq('boat_id', boatId).order('item'),
     sb.from('orbit2_boat_expenses').select('id, category, part_type, expense_date, cost, currency, details, boat_task_id')
       .eq('boat_id', boatId).order('expense_date', { ascending: false }),
@@ -164,7 +164,7 @@ export async function portalBoatDetailHandler(request: Request): Promise<Respons
     })),
     inventory: off.has('inventory') ? [] : (invR.data ?? []).map((i: any) => ({
       id: i.id, item: i.item, qty: i.qty, unit: i.unit ?? null, condition: i.condition ?? null,
-      expiryDate: i.expiry_date ?? null, onBoard: i.on_board !== false,
+      expiryDate: i.expiry_date ?? null, onBoard: i.on_board !== false, hasImage: !!i.image_ref,
     })),
     expenses: off.has('expenses') ? [] : (expR.data ?? []).map((e: any) => ({
       id: e.id, category: e.category, partType: e.part_type ?? null, date: e.expense_date, cost: Number(e.cost),
@@ -216,7 +216,20 @@ export async function portalBoatOpenHandler(request: Request): Promise<Response>
   let sourceTable = ''
   let sourceId: string | null = null
 
-  if (type === 'job_image') {
+  if (type === 'inventory_image') {
+    // An Inventory List item's photo — the item must be on this boat.
+    const id = url.searchParams.get('id') ?? ''
+    sourceTable = 'orbit2_boat_inventory'
+    if (off.has('inventory')) return json({ error: 'Document not found' }, 404)
+    if (!UUID_RE.test(id)) { await record(sb, request, owner, boatId, 'not_found', { sourceTable }); return json({ error: 'Document not found' }, 404) }
+    sourceId = id
+    const { data } = await sb.from('orbit2_boat_inventory').select('id, boat_id, image_ref').eq('id', id).maybeSingle()
+    if (!data || (data as any).boat_id !== boatId) {
+      await record(sb, request, owner, boatId, data ? 'denied' : 'not_found', { sourceTable, sourceId })
+      return json({ error: 'Document not found' }, 404)
+    }
+    stored = String((data as any).image_ref ?? '')
+  } else if (type === 'job_image') {
     // A photo on a job — checked back to this boat through the job.
     const id = url.searchParams.get('id') ?? ''
     sourceTable = 'orbit2_files'

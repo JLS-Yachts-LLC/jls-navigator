@@ -4,6 +4,7 @@
  * because that file is the fleet-level dashboard and wizard — this is everything
  * that needs a real boat_id to exist.
  */
+import { fmtDMY } from "@/lib/format-date";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { errorMessage } from "@/lib/error-message";
 import {
@@ -410,6 +411,13 @@ function MaintenanceScheduleBoard({ boat, tasks, inventory, reload, startOnCalen
   const [query, setQuery] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
   const [addingService, setAddingService] = useState(false);
+  // An Inventory List item opened from the Service Calendar (its expiry lives on the item).
+  const [invEditing, setInvEditing] = useState<Orbit2BoatInventoryItem | null>(null);
+  async function removeItem(row: Orbit2BoatInventoryItem) {
+    const { error } = await sb.from("orbit2_boat_inventory").delete().eq("id", row.id);
+    if (error) { toast.error(errorMessage(error, "Could not delete")); return; }
+    await reload();
+  }
 
   const history = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -478,7 +486,7 @@ function MaintenanceScheduleBoard({ boat, tasks, inventory, reload, startOnCalen
                     <td className="whitespace-nowrap px-3 py-2">{kindToBoatJobCategory(t.kind)}</td>
                     <td className="max-w-[16rem] px-3 py-2"><span className="line-clamp-2">{t.title}</span></td>
                     <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
-                      {d ? new Date(`${d}T00:00:00`).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—"}
+                      {fmtDMY(d)}
                     </td>
                     <td className="px-3 py-2 text-muted-foreground">{(t.assigned_team ?? []).join(", ") || "—"}</td>
                     <td className="px-3 py-2 text-muted-foreground">{t.technician ?? "—"}</td>
@@ -492,7 +500,12 @@ function MaintenanceScheduleBoard({ boat, tasks, inventory, reload, startOnCalen
           </table>
         </div>
       ) : (
-        <ServiceCalendar boat={boat} inventory={inventory} query={query} adding={addingService} setAdding={setAddingService} />
+        <ServiceCalendar boat={boat} inventory={inventory} query={query} adding={addingService} setAdding={setAddingService}
+          onEditInventory={setInvEditing} />
+      )}
+      {invEditing && (
+        <InventoryItemEditor boat={boat} existing={invEditing}
+          onClose={() => setInvEditing(null)} onDelete={removeItem} reload={reload} />
       )}
 
       {open && (
@@ -561,7 +574,7 @@ function JobsBoard({ boat, tasks, reload }: { boat: Orbit2Boat; tasks: Orbit2Boa
                     <span className="line-clamp-2">{t.title}</span>
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
-                    {t.schedule_date ? new Date(`${t.schedule_date}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }) : "—"}
+                    {fmtDMY(t.schedule_date)}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{t.schedule_time?.slice(0, 5) ?? "—"}</td>
                   <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{minutesToHhmm(t.est_minutes) || "—"}</td>
@@ -750,7 +763,7 @@ function JobEditor({
             <p className="rounded-md border border-violet-500/30 bg-violet-500/10 px-3 py-2 text-[14px]">
               Requested by the owner — <span className="font-semibold">{existing.requested_by_name}</span>
               {existing.requested_by_position ? ` (${existing.requested_by_position})` : ""}
-              {existing.requested_at ? ` on ${new Date(existing.requested_at).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}` : ""}.
+              {existing.requested_at ? ` on ${fmtDMY(existing.requested_at, { time: true })}` : ""}.
               {(existing.assigned_team ?? []).length === 0 && " Assign the crew and a date to schedule it."}
             </p>
           )}
@@ -910,7 +923,7 @@ function InventoryBoard({ boat, inventory, reload }: { boat: Orbit2Boat; invento
                     </select>
                   </td>
                   <td className="whitespace-nowrap px-3 py-1.5 text-muted-foreground">
-                    {r.expiry_date ? new Date(`${r.expiry_date}T00:00:00`).toLocaleDateString("en-GB") : "N/A"}
+                    {fmtDMY(r.expiry_date, { empty: "N/A" })}
                   </td>
                   <td className="px-3 py-1.5">
                     <select className="rounded border border-border bg-background px-1.5 py-1 text-[13px]"
@@ -922,7 +935,7 @@ function InventoryBoard({ boat, inventory, reload }: { boat: Orbit2Boat; invento
                   {/* Filled in by the crew from the field app's Inventory job — who confirmed the line, and when. */}
                   <td className="whitespace-nowrap px-3 py-1.5 text-[13px] text-muted-foreground">
                     {r.checked_at
-                      ? <span className="text-emerald-600">{r.checked_by ?? "Crew"} · {new Date(r.checked_at).toLocaleDateString("en-GB")}</span>
+                      ? <span className="text-emerald-600">{r.checked_by ?? "Crew"} · {fmtDMY(r.checked_at)}</span>
                       : "Not yet"}
                   </td>
                   <td className="px-3 py-1.5">
@@ -1096,9 +1109,9 @@ function InventoryItemEditor({ boat, existing, onClose, onDelete, reload }: {
           {existing && (
             <p className="text-[14px] text-muted-foreground">
               {existing.checked_at
-                ? <>Last checked by <span className="text-emerald-600">{existing.checked_by ?? "crew"}</span> on {new Date(existing.checked_at).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}.</>
+                ? <>Last checked by <span className="text-emerald-600">{existing.checked_by ?? "crew"}</span> on {fmtDMY(existing.checked_at, { time: true })}.</>
                 : "Not yet checked by the crew."}
-              {" "}Added {new Date(existing.created_at).toLocaleDateString("en-GB")}.
+              {" "}Added {fmtDMY(existing.created_at)}.
             </p>
           )}
         </div>

@@ -7,6 +7,7 @@
  * is on shift. Everything is counted from records entered on these pages — with
  * nothing entered the dashboard reads zero rather than inventing a number.
  */
+import { fmtDMY } from "@/lib/format-date";
 import { useCallback, useEffect, useState, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchAllRows } from "@/lib/fetch-all";
@@ -287,14 +288,11 @@ export function hhmmToMinutes(v: string): number | null {
   return Number(m[1]) * 60 + Number(m[2]);
 }
 
-/** MMM/DD/YYYY – Day – HH:MM, the format the spec asks schedules to read in. */
+/** DD/MMM/YYYY – Day – HH:MM (client request, 19 Oct 2026: DD/MMM/YYYY everywhere). */
 export function fmtSchedule(date: string | null, time: string | null): string {
   if (!date) return "—";
-  const d = new Date(`${date}T00:00:00`);
-  const md = d.toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }).replace(/,/g, "");
-  const [mon, day, year] = md.split(" ");
-  const weekday = d.toLocaleDateString("en-US", { weekday: "short" });
-  return `${mon}/${day}/${year} – ${weekday}${time ? ` – ${time.slice(0, 5)}` : ""}`;
+  const weekday = new Date(`${date}T00:00:00`).toLocaleDateString("en-GB", { weekday: "short" });
+  return `${fmtDMY(date)} – ${weekday}${time ? ` – ${time.slice(0, 5)}` : ""}`;
 }
 
 // ── Grouping used by the dashboard ──────────────────────────────────────────

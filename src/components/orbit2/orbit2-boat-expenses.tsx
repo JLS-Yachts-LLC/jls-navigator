@@ -10,6 +10,7 @@
  * (migration 20261012090000). The board loads its own data — nothing else on
  * the boat page needs it.
  */
+import { fmtDMY } from "@/lib/format-date";
 import { useEffect, useMemo, useState } from "react";
 import { Download, Loader2, Paperclip, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
@@ -46,7 +47,7 @@ type ExpenseFile = UploadedFile & { expense_id: string };
 
 const money = (n: number, currency: string) =>
   `${currency} ${Number(n).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const ukDate = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString("en-GB");
+const ukDate = (iso: string) => fmtDMY(iso);
 
 /** Totals per currency — mixed currencies are never added together. */
 function totals(rows: Orbit2BoatExpense[]): string {
