@@ -31,12 +31,15 @@ interface Detail {
   dateFixOnlyRows: number;
   unmatchedVessels: Array<{ name: string; count: number }>;
   conflicts: number;
-  conflictSamples: Array<{ polarisId: string; itemId: string; reason: string; polaris: string; sharepoint: string }>;
-  twinLinks: Array<{ polarisId: string; itemId: string; holder: string; vessel: string | null; issue: string | null }>;
+  conflictSamples: Array<{ polarisId: string; itemId: string; reason: string; polaris: string; sharepoint: string; copyOf?: string }>;
+  twinLinks: Array<{ polarisId: string; itemId: string; holder: string; vessel: string | null; issue: string | null; how?: string }>;
+  copySkips: Array<{ itemId: string; holds: string; copyOf: string }>;
+  nearMisses: Array<{ polarisId: string; polaris: string; itemId: string | null; sharepoint: string | null; why: string }>;
   testItems: number;
   testSamples: string[];
   push: { dirty: number; bulkStamped: number; patch: number; create: number; heldBack: number };
 }
+interface FixItem { list: string; itemId: string; holdsNow: string; shouldBe: string; note: string }
 interface ListResult { list: string; result: { synced: number; errors: number; samples?: string[]; dryRun?: Detail } }
 interface DryRun {
   ok: boolean; error?: string;
@@ -44,8 +47,10 @@ interface DryRun {
     updates: number; changedRows: number; riskyChanges: number; inserts: number; errors: number;
     dateFixOnlyRows: number; conflicts: number; twinLinks: number; testItems: number;
     pushDirty: number; pushBulkStamped: number; pushPatch: number; pushCreate: number; heldBack: number;
+    copySkips: number; nearMisses: number;
   };
   lists: ListResult[];
+  fixList: FixItem[];
 }
 
 const FIELD_LABEL: Record<string, string> = {
@@ -124,8 +129,8 @@ export function PermitsDryRunPanel({ lists }: { lists: Array<{ name: string; ena
               { k: "Polaris → SharePoint", v: run.totals.pushPatch, sub: "SharePoint items overwritten by Polaris", warn: run.totals.pushPatch > 0 },
               { k: "New in SharePoint", v: run.totals.pushCreate, sub: "items Polaris would create", warn: run.totals.pushCreate > 0 },
               { k: "Bulk-stamped", v: run.totals.pushBulkStamped, sub: `of ${run.totals.pushDirty.toLocaleString()} unpushed — not staff edits`, warn: run.totals.pushBulkStamped > 0 },
-              { k: "Left alone", v: run.totals.conflicts, sub: "SharePoint item now holds another permit" },
-              { k: "Linked to twin", v: run.totals.twinLinks, sub: "Polaris permit found in SharePoint" },
+              { k: "Left alone", v: run.totals.conflicts + run.totals.copySkips, sub: `SharePoint item overwritten (${run.totals.copySkips} copies not added)` },
+              { k: "Linked to twin", v: run.totals.twinLinks, sub: `Polaris permit found in SharePoint${run.totals.nearMisses ? ` · ${run.totals.nearMisses} near misses` : ""}` },
             ].map((t) => (
               <div key={t.k} className="bg-card px-3 py-2.5">
                 <div className={cn("font-display text-xl font-bold", t.warn ? "text-amber-300" : "text-foreground")}>{t.v.toLocaleString()}</div>
@@ -235,12 +240,42 @@ export function PermitsDryRunPanel({ lists }: { lists: Array<{ name: string; ena
                                 </div>
                                 <table className="w-full">
                                   <tbody>
-                                    {d.conflictSamples.map((c, i) => (
+                                    {d.conflictSamples.slice(0, 60).map((c, i) => (
                                       <tr key={i}>
                                         <td className="py-0.5 pr-3 text-muted-foreground">item {c.itemId}</td>
                                         <td className="py-0.5 pr-3">{c.polaris}</td>
                                         <td className="py-0.5 pr-3 text-muted-foreground">≠ {c.sharepoint}</td>
-                                        <td className="py-0.5 text-muted-foreground">{c.reason}</td>
+                                        <td className="py-0.5 text-muted-foreground">{c.reason}{c.copyOf && ` · same as ${c.copyOf}`}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                            {d.copySkips.length > 0 && (
+                              <div>
+                                <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">
+                                  Not added — a copy of another list&rsquo;s permit ({d.copySkips.length})
+                                </div>
+                                {d.copySkips.slice(0, 40).map((c) => (
+                                  <div key={c.itemId} className="py-0.5">
+                                    <span className="text-muted-foreground">item {c.itemId}</span> {c.holds} <span className="text-muted-foreground">· same as {c.copyOf}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {d.nearMisses.length > 0 && (
+                              <div>
+                                <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">
+                                  Would be created in SharePoint — closest SharePoint item on the same vessel
+                                </div>
+                                <table className="w-full">
+                                  <tbody>
+                                    {d.nearMisses.map((n) => (
+                                      <tr key={n.polarisId} className={cn(n.itemId && "text-amber-200")}>
+                                        <td className="py-0.5 pr-3">{n.polaris}</td>
+                                        <td className="py-0.5 pr-3 text-muted-foreground">{n.itemId ? `item ${n.itemId}: ${n.sharepoint}` : "—"}</td>
+                                        <td className="py-0.5 text-muted-foreground">{n.why}</td>
                                       </tr>
                                     ))}
                                   </tbody>
@@ -251,7 +286,7 @@ export function PermitsDryRunPanel({ lists }: { lists: Array<{ name: string; ena
                               <div>
                                 <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">Polaris permits linked to their SharePoint copy</div>
                                 {d.twinLinks.map((t) => (
-                                  <div key={t.polarisId} className="py-0.5">{t.holder} <span className="text-muted-foreground">· {t.vessel ?? "no vessel"}{t.issue ? ` · ${t.issue}` : ""} → item {t.itemId}</span></div>
+                                  <div key={t.polarisId} className="py-0.5">{t.holder} <span className="text-muted-foreground">· {t.vessel ?? "no vessel"}{t.issue ? ` · ${t.issue}` : ""} → item {t.itemId}{t.how ? ` (by ${t.how})` : ""}</span></div>
                                 ))}
                               </div>
                             )}
@@ -280,6 +315,7 @@ export function PermitsDryRunPanel({ lists }: { lists: Array<{ name: string; ena
               </tbody>
             </table>
           </div>
+          {run.fixList?.length > 0 && <FixList items={run.fixList} />}
           <div className="px-4 py-2 text-[10.5px] text-muted-foreground">
             Checked {ranAt?.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}. Click a list for detail.
             A large "would add" on a short list (e.g. Navigation License) is expected — those rows were lost to the old overwriting and SharePoint is the source of truth.
@@ -287,5 +323,64 @@ export function PermitsDryRunPanel({ lists }: { lists: Array<{ name: string; ena
         </>
       )}
     </section>
+  );
+}
+
+/**
+ * The SharePoint items staff need to correct by hand — what each holds now and
+ * what it should hold — to copy into an email or download for Hilary.
+ */
+function FixList({ items }: { items: FixItem[] }) {
+  const [all, setAll] = useState(false);
+  const shown = all ? items : items.slice(0, 25);
+  const csv = () => {
+    const q = (v: string) => `"${String(v).replace(/"/g, '""')}"`;
+    return ["List,Item,Holds now,Should be,Why", ...items.map((i) => [i.list, i.itemId, i.holdsNow, i.shouldBe, i.note].map(q).join(","))].join("\r\n");
+  };
+  const copy = async () => {
+    const text = items.map((i) => `${i.list} item ${i.itemId}: holds "${i.holdsNow}" — should be "${i.shouldBe}" (${i.note})`).join("\n");
+    try { await navigator.clipboard.writeText(text); toast.success(`Copied ${items.length} items`); }
+    catch { toast.error("Could not copy — use Download instead"); }
+  };
+  const download = () => {
+    const url = URL.createObjectURL(new Blob([csv()], { type: "text/csv" }));
+    const a = Object.assign(document.createElement("a"), { href: url, download: `permits-to-fix-in-sharepoint-${new Date().toISOString().slice(0, 10)}.csv` });
+    a.click(); URL.revokeObjectURL(url);
+  };
+  return (
+    <div className="border-t border-border/60 px-4 py-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">To fix in SharePoint ({items.length})</div>
+          <div className="text-[11px] text-muted-foreground">Items the old sync overwrote with another permit. The sync leaves them alone; correct them in SharePoint by hand.</div>
+        </div>
+        <div className="flex gap-1.5">
+          <Button size="sm" variant="outline" onClick={() => void copy()}>Copy list</Button>
+          <Button size="sm" variant="outline" onClick={download}>Download CSV</Button>
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead className="text-[10.5px] uppercase tracking-wider text-muted-foreground">
+            <tr><th className="py-1 pr-3 text-left">List · item</th><th className="py-1 pr-3 text-left">Holds now</th><th className="py-1 pr-3 text-left">Should be</th><th className="py-1 text-left">Why</th></tr>
+          </thead>
+          <tbody>
+            {shown.map((i) => (
+              <tr key={`${i.list}-${i.itemId}`} className="border-t border-border/30 align-top">
+                <td className="whitespace-nowrap py-1 pr-3">{i.list} · {i.itemId}</td>
+                <td className="py-1 pr-3 text-amber-200">{i.holdsNow}</td>
+                <td className="py-1 pr-3">{i.shouldBe}</td>
+                <td className="py-1 text-muted-foreground">{i.note}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {items.length > 25 && (
+        <button className="mt-1 text-[11px] text-teal-300 hover:underline" onClick={() => setAll(!all)}>
+          {all ? "Show fewer" : `Show all ${items.length}`}
+        </button>
+      )}
+    </div>
   );
 }

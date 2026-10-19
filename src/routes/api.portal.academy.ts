@@ -15,6 +15,7 @@
  *             POST { op: "cancel", enrolmentId } · "rule-revoke" { ruleId }
  *   Courses   POST { op: "create" | "save" | "upload-url" | "publish" | "archive" | "restore", … }  (the vessel's own)
  *   Sharing   POST { op: "share", type: "course" | "learner", id, note? } · "unshare" { shareId }
+ *   Requests  POST { op: "request-decide", requestId, approve, note?, dueDate? }  crew asking to join a catalogue course
  *
  * Needs the vessel's Crew Academy module, a position that sees it, and — for any
  * change — canManageAcademy() and not an admin preview. Everything is scoped to
@@ -112,12 +113,21 @@ async function overview(sb: any, yacht: PortalYacht, canManage: boolean) {
     sb.from("academy_jls_shares").select("id, resource_type, resource_id, shared_by_kind, shared_by_name, note, created_at")
       .eq("yacht_id", yacht.yachtId).is("revoked_at", null),
   ]);
+  const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
+  const { data: reqs } = await sb.from("academy_enrolment_requests")
+    .select("id, learner_id, course_id, note, status, decided_by_name, decided_at, decision_note, created_at")
+    .eq("yacht_id", yacht.yachtId).or(`status.eq.pending,decided_at.gte.${since}`).neq("status", "cancelled")
+    .order("created_at", { ascending: false }).limit(200);
   // Reminder emails go out only while JLS has Automatic messages on for the vessel.
   const { data: autoMsg } = await sb.from("client_auto_messages").select("enabled").eq("yacht_id", yacht.yachtId).eq("enabled", true).limit(1);
   return {
     canManage,
     vessel: yacht.vesselName,
     remindersOn: !!autoMsg?.length,
+    requests: (reqs ?? []).map((r: any) => ({
+      id: r.id, learnerId: r.learner_id, courseId: r.course_id, note: r.note, status: r.status,
+      decidedBy: r.decided_by_name, decidedAt: r.decided_at, decisionNote: r.decision_note, createdAt: r.created_at,
+    })),
     learners: (learners ?? []).map((l: any) => ({
       id: l.id, email: l.email, name: l.display_name, crewMemberId: l.crew_member_id, active: l.active,
       hasSignedIn: !!l.last_seen_at, lastSeenAt: l.last_seen_at, inviteSentAt: l.invite_sent_at,
@@ -190,7 +200,9 @@ export async function portalAcademyHandler(request: Request): Promise<Response> 
           .eq("academy_learners.active", true).not("due_date", "is", null).lte("due_date", soon);
         const todayIso = new Date().toISOString().slice(0, 10);
         const overdue = (rows ?? []).filter((r: any) => r.due_date < todayIso).length;
-        return json({ overdue, dueSoon: (rows ?? []).length - overdue });
+        const { count: pendingRequests } = await sb.from("academy_enrolment_requests").select("id", { count: "exact", head: true })
+          .eq("yacht_id", yacht.yachtId).eq("status", "pending");
+        return json({ overdue, dueSoon: (rows ?? []).length - overdue, pendingRequests: canManage ? pendingRequests ?? 0 : 0 });
       }
       return json(await overview(sb, yacht, canManage));
     }
@@ -441,6 +453,44 @@ export async function portalAcademyHandler(request: Request): Promise<Response> 
       const dropped = await dropGroupEnrolments(sb, { ruleId: r.id });
       await activity({ course_id: r.course_id, action: "group_unenrolled", detail: { groupId: r.group_id, dropped } });
       return json({ ok: true, dropped });
+    }
+
+    // ── Requests from crew ────────────────────────────────────────────────────
+    if (body.op === "request-decide") {
+      if (typeof body.requestId !== "string" || !UUID_RE.test(body.requestId)) throw new BadRequest("Choose a request");
+      const { data: r } = await sb.from("academy_enrolment_requests").select("id, learner_id, course_id, status")
+        .eq("id", body.requestId).eq("yacht_id", yacht.yachtId).maybeSingle();
+      if (!r) throw new BadRequest("Request not found");
+      if (r.status !== "pending") throw new BadRequest("That request has already been decided");
+      const note = typeof body.note === "string" ? body.note.trim().slice(0, 500) || null : null;
+      const decided = { decided_by: yacht.userId, decided_by_name: actor, decided_at: new Date().toISOString(), decision_note: note };
+      if (!body.approve) {
+        await sb.from("academy_enrolment_requests").update({ status: "declined", ...decided }).eq("id", r.id);
+        await activity({ learner_id: r.learner_id, course_id: r.course_id, action: "request_declined", detail: { note } });
+        return json({ ok: true });
+      }
+      const course = await courseForVessel(sb, r.course_id, yacht.yachtId);
+      if (!course) throw new BadRequest("That course is no longer available to your vessel");
+      const { data: learner } = await sb.from("academy_learners").select("id, active").eq("id", r.learner_id).maybeSingle();
+      if (!learner?.active) throw new BadRequest("They're no longer in your Crew Academy");
+      const dueDate = typeof body.dueDate === "string" && DATE_RE.test(body.dueDate) ? body.dueDate : null;
+      const { data: live } = await sb.from("academy_enrolments").select("id").eq("learner_id", r.learner_id)
+        .eq("course_id", r.course_id).not("status", "in", "(expired,cancelled)").maybeSingle();
+      let enrolmentId = live?.id ?? null;
+      if (!enrolmentId) {
+        const { data: rule } = await sb.from("academy_enrolment_rules").insert({
+          yacht_id: yacht.yachtId, course_id: r.course_id, learner_id: r.learner_id, mandatory: false, due_date: dueDate,
+          created_by: yacht.userId, created_by_name: actor,
+        }).select("id").single();
+        const { data: e, error } = await sb.from("academy_enrolments").insert({
+          learner_id: r.learner_id, course_id: r.course_id, yacht_id: yacht.yachtId, rule_id: rule?.id ?? null, mandatory: false, due_date: dueDate,
+        }).select("id").single();
+        if (error) throw new Error(error.message);
+        enrolmentId = e.id;
+      }
+      await sb.from("academy_enrolment_requests").update({ status: "approved", enrolment_id: enrolmentId, ...decided }).eq("id", r.id);
+      await activity({ learner_id: r.learner_id, course_id: r.course_id, action: "request_approved", detail: { dueDate, note } });
+      return json({ ok: true, enrolmentId });
     }
 
     // ── Sharing with JLS ──────────────────────────────────────────────────────

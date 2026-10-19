@@ -10,6 +10,10 @@
  *   POST /api/academy { op: "answer",      enrolment, blockId, answers } → the quiz marked
  *   POST /api/academy { op: "acknowledge", enrolment, blockId }
  *   POST /api/academy { op: "share-results", share }   let JLS see my results (or stop)
+ *   GET  /api/academy?op=catalogue                    → courses offered to their vessel and shown in the catalogue
+ *   GET  /api/academy?op=outline&course=              → one catalogue course's sections and lessons (titles only)
+ *   POST /api/academy { op: "request", course, note }  ask to be enrolled — a training manager on board decides
+ *   POST /api/academy { op: "cancel-request", request }
  *
  * Every request: resolveLearner() (an ACTIVE learner login) → the enrolment must
  * be theirs, on their vessel → only then the service role reads data. Content
@@ -24,7 +28,9 @@ import { json, resolveLearner, type LearnerCaller } from "@/lib/academy/academy-
 import {
   findBlock, findLesson, gradeBlock, isGraded, forLearner, mediaIdsIn, normalizeContent, type CourseContent,
 } from "@/lib/academy/content";
-import { UUID_RE, certificatePdf, logActivity, pdfResponse, refreshEnrolment, signedMediaUrl } from "@/lib/academy/academy.server";
+import {
+  UUID_RE, certificatePdf, courseForVessel, coursesForVessel, logActivity, pdfResponse, refreshEnrolment, signedMediaUrl,
+} from "@/lib/academy/academy.server";
 
 type Ctx = { sb: any; learner: LearnerCaller };
 
@@ -66,12 +72,90 @@ async function home(ctx: Ctx): Promise<Response> {
   const { data: share } = await sb.from("academy_jls_shares").select("id")
     .eq("resource_type", "learner").eq("resource_id", learner.learnerId).is("revoked_at", null).maybeSingle();
 
+  const { data: reqs } = await sb.from("academy_enrolment_requests")
+    .select("id, status, note, decision_note, decided_by_name, decided_at, created_at, academy_courses(title)")
+    .eq("learner_id", learner.learnerId).order("created_at", { ascending: false }).limit(30);
+
   return json({
     me: { displayName: learner.displayName, email: learner.email, sharedWithJls: !!share },
     vessel: { name: learner.vesselName, logo: learner.vesselLogo },
     todo: courses.filter((c: any) => ACTIVE_STATUSES.includes(c.status)),
     done: courses.filter((c: any) => c.status === "completed" || c.status === "expired"),
+    requests: (reqs ?? []).filter((r: any) => r.status !== "cancelled").map((r: any) => ({
+      id: r.id, status: r.status, note: r.note, decisionNote: r.decision_note, decidedBy: r.decided_by_name,
+      decidedAt: r.decided_at, createdAt: r.created_at, course: r.academy_courses?.title ?? "Course",
+    })),
   });
+}
+
+/** Courses the crew member can browse: offered to their vessel and shown in the catalogue. */
+async function catalogue(ctx: Ctx): Promise<Response> {
+  const { sb, learner } = ctx;
+  const [all, { data: mine }, { data: reqs }] = await Promise.all([
+    coursesForVessel(sb, learner.yachtId),
+    sb.from("academy_enrolments").select("course_id, status").eq("learner_id", learner.learnerId).neq("status", "cancelled"),
+    sb.from("academy_enrolment_requests").select("id, course_id, status, created_at").eq("learner_id", learner.learnerId)
+      .in("status", ["pending", "declined"]).order("created_at", { ascending: false }),
+  ]);
+  const enrolled = new Map<string, string>();
+  for (const e of mine ?? []) if (e.status !== "expired" || !enrolled.has(e.course_id)) enrolled.set(e.course_id, e.status);
+  const latestReq = new Map<string, any>();
+  for (const r of reqs ?? []) if (!latestReq.has(r.course_id)) latestReq.set(r.course_id, r);
+  return json({
+    courses: all.filter((c: any) => c.catalogue !== false).map((c: any) => {
+      const e = enrolled.get(c.id);
+      const r = latestReq.get(c.id);
+      return {
+        id: c.id, title: c.title, summary: c.summary, category: c.category, minutes: c.estimated_minutes,
+        passMark: c.pass_mark, refreshMonths: c.refresh_months, from: c.owner_type === "jls" ? "JLS Yachts" : learner.vesselName,
+        mine: e === "completed" ? "completed" : e && e !== "expired" ? "enrolled" : r?.status === "pending" ? "requested" : r?.status === "declined" ? "declined" : null,
+        requestId: r?.status === "pending" ? r.id : null,
+      };
+    }),
+  });
+}
+
+async function outline(ctx: Ctx, courseId: unknown): Promise<Response> {
+  const course = typeof courseId === "string" ? await courseForVessel(ctx.sb, courseId, ctx.learner.yachtId) : null;
+  if (!course) throw new BadRequest("That course isn't available to you");
+  const { data: c } = await ctx.sb.from("academy_courses").select("catalogue").eq("id", course.id).maybeSingle();
+  if (c?.catalogue === false) throw new BadRequest("That course isn't available to you");
+  const { data: v } = await ctx.sb.from("academy_course_versions").select("content").eq("id", course.current_version_id).maybeSingle();
+  const content = normalizeContent(v?.content);
+  // Titles and what kind of material each lesson has — nothing that would give answers away.
+  return json({
+    sections: content.sections.map((s) => ({
+      title: s.title,
+      lessons: s.lessons.map((l) => ({ title: l.title, kinds: [...new Set(l.blocks.map((b) => b.type))] })),
+    })),
+  });
+}
+
+async function requestEnrolment(ctx: Ctx, body: any): Promise<Response> {
+  const { sb, learner } = ctx;
+  const course = typeof body.course === "string" ? await courseForVessel(sb, body.course, learner.yachtId) : null;
+  if (!course) throw new BadRequest("That course isn't available to you");
+  const { data: c } = await sb.from("academy_courses").select("catalogue, title").eq("id", course.id).maybeSingle();
+  if (c?.catalogue === false) throw new BadRequest("That course isn't available to you");
+  const { data: live } = await sb.from("academy_enrolments").select("id").eq("learner_id", learner.learnerId)
+    .eq("course_id", course.id).not("status", "in", "(expired,cancelled)").limit(1);
+  if (live?.length) throw new BadRequest("You're already enrolled on this course");
+  const note = typeof body.note === "string" ? body.note.trim().slice(0, 500) || null : null;
+  const { data: req, error } = await sb.from("academy_enrolment_requests").insert({
+    yacht_id: learner.yachtId, learner_id: learner.learnerId, course_id: course.id, note,
+  }).select("id").single();
+  if (error) throw new BadRequest(error.code === "23505" ? "You've already asked for this course" : error.message);
+  await logActivity(sb, { yacht_id: learner.yachtId, learner_id: learner.learnerId, course_id: course.id,
+    actor_user_id: learner.userId, actor_name: learner.displayName ?? learner.email, action: "requested", detail: { note } });
+  return json({ ok: true, requestId: req.id });
+}
+
+async function cancelRequest(ctx: Ctx, body: any): Promise<Response> {
+  if (typeof body.request !== "string" || !UUID_RE.test(body.request)) throw new BadRequest("Choose a request");
+  const { data } = await ctx.sb.from("academy_enrolment_requests").update({ status: "cancelled" })
+    .eq("id", body.request).eq("learner_id", ctx.learner.learnerId).eq("status", "pending").select("id");
+  if (!data?.length) throw new BadRequest("That request has already been decided");
+  return json({ ok: true });
 }
 
 /**
@@ -185,6 +269,8 @@ async function shareResults(ctx: Ctx, share: boolean): Promise<Response> {
 
 async function post(ctx: Ctx, body: any): Promise<Response> {
   if (body.op === "share-results") return shareResults(ctx, body.share === true);
+  if (body.op === "request") return requestEnrolment(ctx, body);
+  if (body.op === "cancel-request") return cancelRequest(ctx, body);
   const loaded = await loadEnrolment(ctx, body?.enrolment, { start: true });
   const { sb } = ctx;
   const { enrolment, content, course } = loaded;
@@ -272,6 +358,8 @@ export async function academyHandler(request: Request): Promise<Response> {
     if (request.method === "GET") {
       const op = url.searchParams.get("op") ?? "home";
       if (op === "home") return await home(ctx);
+      if (op === "catalogue") return await catalogue(ctx);
+      if (op === "outline") return await outline(ctx, url.searchParams.get("course"));
       if (op === "course") return await course(ctx, url.searchParams.get("enrolment"));
       if (op === "media") return await media(ctx, url.searchParams.get("enrolment"), url.searchParams.get("media"));
       if (op === "certificate") {

@@ -69,7 +69,7 @@ export async function courseForEditing(sb: any, scope: CourseScope, id: unknown)
     course: {
       id: course.id, title: course.title, summary: course.summary, category: course.category,
       minutes: course.estimated_minutes, passMark: course.pass_mark, refreshMonths: course.refresh_months,
-      status: course.status, offerAll: course.offer_all, currentVersionId: course.current_version_id,
+      status: course.status, offerAll: course.offer_all, currentVersionId: course.current_version_id, catalogue: course.catalogue !== false,
       content: normalizeContent(course.draft_content), updatedAt: course.updated_at,
     },
     versions: versions ?? [],
@@ -103,6 +103,7 @@ export async function saveCourse(sb: any, scope: CourseScope, body: any) {
     title, summary: text(body.summary, 2000), category: text(body.category, 100),
     estimated_minutes: int(body.minutes, 1, 1000), pass_mark: int(body.passMark, 0, 100) ?? 80,
     refresh_months: int(body.refreshMonths, 1, 120), draft_content: content,
+    ...(typeof body.catalogue === "boolean" ? { catalogue: body.catalogue } : {}),
   }).eq("id", course.id);
   if (error) throw error;
   return content;

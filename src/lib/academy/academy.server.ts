@@ -61,7 +61,7 @@ export async function courseForVessel(sb: any, courseId: string, yachtId: string
 
 /** Every published course a vessel can use. */
 export async function coursesForVessel(sb: any, yachtId: string): Promise<any[]> {
-  const cols = "id, owner_type, title, summary, category, estimated_minutes, pass_mark, refresh_months, current_version_id";
+  const cols = "id, owner_type, title, summary, category, estimated_minutes, pass_mark, refresh_months, current_version_id, catalogue";
   const [{ data: all }, { data: offered }, { data: own }] = await Promise.all([
     sb.from("academy_courses").select(cols).eq("owner_type", "jls").eq("status", "published").eq("offer_all", true),
     sb.from("academy_course_offers").select(`academy_courses!inner(${cols}, status)`)
