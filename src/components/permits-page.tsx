@@ -32,7 +32,7 @@ import { NavigationLicenseDialog } from "@/components/navigation-license-dialog"
 import { GatePassDialog } from "@/components/gate-pass-dialog";
 import { AbuDhabiDialog } from "@/components/abu-dhabi-dialog";
 import { PermitEmailReviewDialog } from "@/components/permits/permit-email-review-dialog";
-import { Plus, Search, FileCheck2, Pencil, Trash2, AlertTriangle, CheckCircle2, Clock, Mail, MailCheck } from "lucide-react";
+import { Plus, Search, FileCheck2, Pencil, Trash2, AlertTriangle, CheckCircle2, Clock, Mail, MailCheck, RotateCw } from "lucide-react";
 import { toast } from "sonner";
 import { doPushToSharePoint } from "@/lib/sharepoint-push.server";
 import { cn } from "@/lib/utils";
@@ -282,10 +282,19 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
                       <td>
                         {r.contact_email ? (
                           r.email_sent_at ? (
-                            <div className="flex items-center gap-1 text-emerald-400/80" title={`Sent ${new Date(r.email_sent_at).toLocaleString("en-GB")} by ${r.email_sent_by ?? "unknown"}`}>
-                              <MailCheck className="h-3.5 w-3.5" />
-                              <span className="text-[10px] font-medium whitespace-nowrap">{new Date(r.email_sent_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span>
-                            </div>
+                            // Already sent — clicking resends (e.g. an extended entry permit, SD-0065),
+                            // through the same review window as a first send.
+                            <button
+                              type="button"
+                              className="group flex items-center gap-1 rounded px-1 py-0.5 text-emerald-400/80 hover:bg-primary/10 hover:text-primary"
+                              onClick={() => handleSendEmail(r)}
+                              title={`Sent ${new Date(r.email_sent_at).toLocaleString("en-GB")} by ${r.email_sent_by ?? "unknown"} — click to resend to ${r.contact_email}`}
+                            >
+                              <MailCheck className="h-3.5 w-3.5 group-hover:hidden" />
+                              <RotateCw className="hidden h-3.5 w-3.5 group-hover:block" />
+                              <span className="text-[10px] font-medium whitespace-nowrap group-hover:hidden">{new Date(r.email_sent_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span>
+                              <span className="hidden text-[10px] font-medium whitespace-nowrap group-hover:inline">Resend</span>
+                            </button>
                           ) : (
                             <Button
                               size="sm" variant="ghost"
