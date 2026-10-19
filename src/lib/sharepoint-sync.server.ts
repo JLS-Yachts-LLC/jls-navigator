@@ -2097,7 +2097,9 @@ async function _syncPermits(
           .map((p) => {
             const dI = absDays(p.issue_date, record.issue_date), dE = absDays(p.expiry_date, record.expiry_date)
             const days = Math.min(dI ?? Infinity, dE ?? Infinity)
-            const holder = _holderLikely(p.holder_name, record.holder_name)
+            // Two real, different reference numbers are two permits, however close.
+            const holder = numberKey && _isRealPermitNumber(p.permit_number) && _normRef(p.permit_number) !== numberKey
+              ? 'different' as const : _holderLikely(p.holder_name, record.holder_name)
             const score = holder === 'different' ? 0
               : days <= 1 ? (holder === 'same' ? 3 : 2)
               : days <= 7 && holder === 'same' ? 1 : 0
@@ -2115,7 +2117,7 @@ async function _syncPermits(
         for (const s of scored) {
           if (String(s.p.id) === existingId || (s.days > 45 && s.holder !== 'same')) continue
           const why = top.length > 1 && s.score === best ? `${top.length} SharePoint-less Polaris permits fit equally`
-            : s.holder === 'different' ? 'different name'
+            : s.holder === 'different' ? 'different name or permit number'
             : s.days === Infinity ? 'no date to compare'
             : `dates ${s.days} day(s) apart${s.holder === 'unknown' ? ', no name to compare' : ''}`
           const prev = nearMiss.get(String(s.p.id))
