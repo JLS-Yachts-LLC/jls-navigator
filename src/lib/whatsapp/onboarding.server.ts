@@ -309,8 +309,9 @@ export async function lineAdoptHandler(request: Request): Promise<Response> {
     }
   }
   if (!found) {
+    const visible = seen.length ? seen.map((n) => `${n.number}${n.name ? ` (${n.name})` : ""}`).join(", ") : "none";
     return json({
-      error: `${pending.display_phone} isn't under the WhatsApp accounts Polaris can reach yet. Link it in WhatsApp Manager first; if Meta put it in a new WhatsApp account, give the System User access to that account (Business settings → System users → Assign assets), then try again.`,
+      error: `${pending.display_phone} isn't under the WhatsApp accounts Polaris can reach yet. Link it in WhatsApp Manager first; if Meta put it in a new WhatsApp account, give the System User access to that account (Business settings → System users → Assign assets), then try again. Polaris can see ${wabas.size} WhatsApp account${wabas.size === 1 ? "" : "s"} (${[...wabas].join(", ") || "none"}) with these numbers: ${visible}.`,
       seen: seen.map((n) => `${n.number}${n.name ? ` (${n.name})` : ""}`),
     }, 404);
   }
