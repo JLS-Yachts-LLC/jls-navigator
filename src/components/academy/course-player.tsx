@@ -16,20 +16,10 @@ import {
   VIDEO_DONE_PERCENT, blockDone, courseOutcome, embedUrl,
   type Block, type BlockProgress, type CourseContent, type QuizBlock,
 } from "@/lib/academy/content";
+import { BlockShell, useMediaUrl, type PlayerApi, type PlayerUpdate, type QuizResultView } from "./player-shared";
+import { HotspotView, MatchView, OrderView, SortView } from "./exercises";
 
-export type QuizResultView = {
-  score: number; right: number; total: number; passed: boolean; passMark: number;
-  questions: { id: string; correct: boolean; rightAnswers: string[]; explanation?: string }[];
-};
-export type PlayerUpdate = { progress: BlockProgress[]; outcome?: { status?: string; score?: number | null } };
-
-export type PlayerApi = {
-  mediaUrl: (mediaId: string) => Promise<string | null>;
-  viewed: (lessonId: string) => Promise<PlayerUpdate | void>;
-  video: (blockId: string, percent: number, seconds: number) => Promise<PlayerUpdate | void>;
-  answer: (blockId: string, answers: Record<string, string[]>) => Promise<PlayerUpdate & { result: QuizResultView }>;
-  acknowledge: (blockId: string) => Promise<PlayerUpdate | void>;
-};
+export type { PlayerApi, PlayerUpdate, QuizResultView };
 
 export function CoursePlayer({ title, from, content, passMark, initialProgress, initialStatus, api, onExit, exitLabel = "My courses", banner }: {
   title: string;
@@ -166,32 +156,6 @@ export function CoursePlayer({ title, from, content, passMark, initialProgress, 
 }
 
 // ── Blocks ───────────────────────────────────────────────────────────────────
-function BlockShell({ done, label, children }: { done: boolean; label?: string; children: React.ReactNode }) {
-  return (
-    <section className="rounded-2xl border border-border bg-card/70 p-4 sm:p-5">
-      {label && (
-        <div className="mb-3 flex items-center justify-between gap-2">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{label}</div>
-          {done && <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-300"><CheckCircle2 className="h-3.5 w-3.5" /> Done</span>}
-        </div>
-      )}
-      {children}
-    </section>
-  );
-}
-
-function useMediaUrl(api: PlayerApi, mediaId: string | null | undefined) {
-  const [url, setUrl] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    if (!mediaId) return;
-    let live = true;
-    api.mediaUrl(mediaId).then((u) => { if (live) u ? setUrl(u) : setError("Could not load the file."); })
-      .catch((e) => live && setError(e?.message ?? "Could not load the file."));
-    return () => { live = false; };
-  }, [api, mediaId]);
-  return { url, error };
-}
 
 function BlockView({ block, progress, passMark, api, onUpdate, locked }: {
   block: Block; progress: BlockProgress | undefined; passMark: number; api: PlayerApi;
@@ -211,6 +175,14 @@ function BlockView({ block, progress, passMark, api, onUpdate, locked }: {
       return <AcknowledgeView block={block} api={api} done={done} onUpdate={onUpdate} when={progress?.completed_at ?? null} />;
     case "quiz":
       return <QuizView block={block} api={api} done={done} best={progress?.score ?? null} passMark={passMark} onUpdate={onUpdate} locked={locked} />;
+    case "match":
+      return <MatchView block={block} api={api} done={done} best={progress?.score ?? null} passMark={passMark} onUpdate={onUpdate} locked={locked} />;
+    case "order":
+      return <OrderView block={block} api={api} done={done} best={progress?.score ?? null} passMark={passMark} onUpdate={onUpdate} locked={locked} />;
+    case "sort":
+      return <SortView block={block} api={api} done={done} best={progress?.score ?? null} passMark={passMark} onUpdate={onUpdate} locked={locked} />;
+    case "hotspot":
+      return <HotspotView block={block} api={api} done={done} best={progress?.score ?? null} passMark={passMark} onUpdate={onUpdate} locked={locked} />;
   }
 }
 
