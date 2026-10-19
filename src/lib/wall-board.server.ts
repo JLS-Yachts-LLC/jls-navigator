@@ -11,7 +11,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { fetchAllRows } from "@/lib/fetch-all";
 import type {
   PositionState, WallArrival, WallBoard, WallBunker, WallDeparture, WallMapPoint,
-  WallMovement, WallPermit, WallPosition, WallVessel, WallWeather,
+  WallMovement, WallPermit, WallPosition, WallVessel, WallVesselDetail, WallWeather,
 } from "@/lib/wall-types";
 
 const UAE_DAY = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Dubai", year: "numeric", month: "2-digit", day: "2-digit" });
@@ -168,7 +168,7 @@ export async function buildWallBoard(): Promise<WallBoard> {
     if (String(e.status ?? "").toLowerCase() === "cancelled") continue;
     const vessel = nameById.get(e.yacht_id) ?? "Unassigned";
     const key = `${e.event_date}|${vessel}`;
-    const m: WallMovement = moveKey.get(key) ?? { date: e.event_date, vessel, signOn: 0, signOff: 0, ports: [], flights: [], pickups: 0 };
+    const m: WallMovement = moveKey.get(key) ?? { date: e.event_date, vessel, vesselId: nameById.has(e.yacht_id) ? e.yacht_id : null, signOn: 0, signOff: 0, ports: [], flights: [], pickups: 0 };
     if (e.event_type === "sign_on") m.signOn++; else if (e.event_type === "sign_off") m.signOff++;
     if (e.port && !m.ports.includes(e.port)) m.ports.push(e.port);
     const flight = e.flight_number ? String(e.flight_number).replace(/\s+/g, "").toUpperCase() : null;
@@ -192,16 +192,111 @@ export async function buildWallBoard(): Promise<WallBoard> {
   // ── Cruising permits running out for boats that are here ──
   const permits: WallPermit[] = inCountryRows
     .filter((y) => y.cruising_permit_expiry && y.cruising_permit_expiry >= addDays(today, -3) && y.cruising_permit_expiry <= addDays(today, 14))
-    .map((y) => ({ vessel: y.vessel_name, expires: y.cruising_permit_expiry, days: daysBetween(today, y.cruising_permit_expiry) }))
+    .map((y) => ({ vesselId: y.id, vessel: y.vessel_name, expires: y.cruising_permit_expiry, days: daysBetween(today, y.cruising_permit_expiry) }))
     .sort((a, b) => a.days - b.days);
 
   const departing = departures.filter((d) => d.kind === "upcoming" && d.date && d.date <= addDays(today, 7)).length;
   const movementsToday = movements.filter((m) => m.date === today).reduce((n, m) => n + m.signOn + m.signOff, 0);
 
-  return {
+  const board: WallBoard = {
     generatedAt: new Date().toISOString(),
     today,
     kpis: { inCountry: inCountry.length, arriving: arriving.length, underway, departing, movementsToday },
     inCountry, arriving, departures, map, movements, bunkering, permits, weather,
+  };
+  boardIds = { at: now, ids: idsOnBoard(board) };
+  return board;
+}
+
+// ── Tap-for-details ─────────────────────────────────────────────────────────
+// A screen may only open vessels that are on its board — the key can't be used
+// to walk the whole yachts table. The ids from the last build are kept per
+// isolate (screens poll every minute, so it's nearly always warm).
+let boardIds: { at: number; ids: Set<string> } | null = null;
+
+function idsOnBoard(b: WallBoard): Set<string> {
+  const ids = new Set<string>();
+  for (const v of b.inCountry) ids.add(v.id);
+  for (const a of b.arriving) ids.add(a.id);
+  for (const d of b.departures) ids.add(d.id);
+  for (const p of b.map) ids.add(p.id);
+  for (const m of b.movements) if (m.vesselId) ids.add(m.vesselId);
+  for (const p of b.permits) ids.add(p.vesselId);
+  return ids;
+}
+
+async function isOnBoard(id: string): Promise<boolean> {
+  if (!boardIds || Date.now() - boardIds.at > 5 * 60_000) await buildWallBoard();
+  return boardIds?.ids.has(id) ?? false;
+}
+
+// Vessel-level permits only. Gate passes are issued per person, so they never
+// reach the wall (even an expiry date per pass would hint at who's on board).
+const PERMIT_LABELS: Record<string, string> = {
+  cruising_mothership: "Cruising permit",
+  cruising_tenders: "Cruising permit (tenders)",
+  abu_dhabi: "Abu Dhabi permit",
+  dma: "DMA permit",
+  exit_entry: "Exit / entry permit",
+  navigation_license: "Navigation licence",
+  sanitation: "Sanitation certificate",
+  tdra: "TDRA licence",
+};
+
+/** One vessel's board-safe details, or null if it isn't on the board. */
+export async function buildWallVesselDetail(id: string): Promise<WallVesselDetail | null> {
+  if (!(await isOnBoard(id))) return null;
+  const db = supabaseAdmin as any;
+  const now = Date.now();
+  const today = uaeDate(new Date());
+
+  const [yRes, permitRes, movesRes] = await Promise.all([
+    db.from("yachts").select(`
+      id, vessel_name, status, berth, location, eta, etd, departed_date, cruising_permit_expiry,
+      ais_lat, ais_lon, ais_speed, ais_course, ais_heading, ais_navstat, ais_destination, ais_eta, ais_position_at,
+      last_departed_at, last_arrived_at
+    `).eq("id", id).maybeSingle(),
+    // Type + expiry only — never the number, holder, notes or document.
+    db.from("permits").select("permit_type, expiry_date")
+      .eq("yacht_id", id).eq("status", "active").in("permit_type", Object.keys(PERMIT_LABELS))
+      .gte("expiry_date", addDays(today, -30)).order("expiry_date").limit(50),
+    db.from("crew_signon_events").select("event_type, event_date, status, pickup_required")
+      .eq("yacht_id", id).gte("event_date", today).lte("event_date", addDays(today, 14)).limit(500),
+  ]);
+  const y = yRes.data;
+  if (!y) return null;
+
+  // Latest expiry per permit type (the permits list carries renewals as new rows).
+  const byType = new Map<string, string>();
+  if (y.cruising_permit_expiry) byType.set("Cruising permit", y.cruising_permit_expiry);
+  for (const p of (permitRes.data ?? []) as any[]) {
+    const label = PERMIT_LABELS[p.permit_type];
+    if (!p.expiry_date || !label) continue;
+    const prev = byType.get(label);
+    if (!prev || p.expiry_date > prev) byType.set(label, p.expiry_date);
+  }
+  const permits = [...byType.entries()]
+    .map(([label, expires]) => ({ label, expires, days: daysBetween(today, expires) }))
+    .filter((p) => p.days >= -30)
+    .sort((a, b) => a.days - b.days);
+
+  const perDay = new Map<string, { date: string; signOn: number; signOff: number; pickups: number }>();
+  for (const e of (movesRes.data ?? []) as any[]) {
+    if (String(e.status ?? "").toLowerCase() === "cancelled") continue;
+    const m = perDay.get(e.event_date) ?? { date: e.event_date, signOn: 0, signOff: 0, pickups: 0 };
+    if (e.event_type === "sign_on") m.signOn++; else if (e.event_type === "sign_off") m.signOff++;
+    if (e.pickup_required) m.pickups++;
+    perDay.set(e.event_date, m);
+  }
+
+  const aisEta = y.ais_eta && !isNaN(new Date(y.ais_eta).getTime()) ? new Date(y.ais_eta).toISOString() : null;
+  return {
+    id: y.id, name: y.vessel_name, status: y.status ?? null,
+    berth: y.berth ?? null, location: y.location ?? null,
+    since: y.last_arrived_at ?? null, eta: y.eta ?? null, aisEta, aisDestination: y.ais_destination ?? null,
+    etd: y.etd ?? null, departed: y.last_departed_at ?? y.departed_date ?? null,
+    position: positionOf(y, now),
+    permits,
+    movements: [...perDay.values()].filter((m) => m.signOn || m.signOff).sort((a, b) => a.date.localeCompare(b.date)),
   };
 }

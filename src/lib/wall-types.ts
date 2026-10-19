@@ -25,7 +25,14 @@ export interface WallSettings {
   panels?: WallPanelKey[];
   /** Heading across the top of the screen. */
   title?: string;
+  /**
+   * Tap a boat for its details, pan/zoom the map. Missing = on; only an explicit
+   * false switches it off (the board then runs hands-off, as before).
+   */
+  interactive?: boolean;
 }
+
+export const isInteractive = (s: WallSettings) => s.interactive !== false;
 
 export type PositionState = "moored" | "anchored" | "underway" | "unknown";
 
@@ -87,6 +94,8 @@ export interface WallMapPoint {
 export interface WallMovement {
   date: string;
   vessel: string;
+  /** null when the movement isn't linked to a vessel ("Unassigned"). */
+  vesselId: string | null;
   signOn: number;
   signOff: number;
   ports: string[];
@@ -106,6 +115,7 @@ export interface WallBunker {
 }
 
 export interface WallPermit {
+  vesselId: string;
   vessel: string;
   expires: string;
   days: number;
@@ -134,6 +144,32 @@ export interface WallBoard {
   weather: WallWeather | null;
 }
 
+/**
+ * One vessel's details, opened by tapping it on the board. Same fence as the
+ * board: dates, places, positions and counts — never documents, names or money.
+ */
+export interface WallVesselDetail {
+  id: string;
+  name: string;
+  status: string | null;
+  berth: string | null;
+  location: string | null;
+  /** Arrived (AIS) — "in since". */
+  since: string | null;
+  /** Agency ETA (yyyy-mm-dd). */
+  eta: string | null;
+  /** ETA the crew typed into AIS (ISO). */
+  aisEta: string | null;
+  aisDestination: string | null;
+  etd: string | null;
+  departed: string | null;
+  position: WallPosition | null;
+  /** Expiry dates only — no permit numbers, holders or documents. */
+  permits: { label: string; expires: string; days: number }[];
+  /** Crew sign on/off over the next two weeks, as counts per day. */
+  movements: { date: string; signOn: number; signOff: number; pickups: number }[];
+}
+
 export type WallDisplayResponse =
   | { state: "pending"; code: string; expiresAt: string }
   | { state: "paired"; name: string; settings: WallSettings; board: WallBoard }
@@ -146,5 +182,9 @@ export function normaliseWallSettings(raw: unknown): WallSettings {
     ? (s.panels.filter((p) => typeof p === "string" && valid.has(p)) as WallPanelKey[])
     : undefined;
   const title = typeof s.title === "string" ? s.title.trim().slice(0, 80) : undefined;
-  return { ...(panels && panels.length ? { panels } : {}), ...(title ? { title } : {}) };
+  return {
+    ...(panels && panels.length ? { panels } : {}),
+    ...(title ? { title } : {}),
+    ...(s.interactive === false ? { interactive: false } : {}),
+  };
 }

@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
 import { COLORS } from "@/lib/tokens";
-import { WALL_PANELS, type WallPanelKey, type WallSettings } from "@/lib/wall-types";
+import { WALL_PANELS, isInteractive, type WallPanelKey, type WallSettings } from "@/lib/wall-types";
 
 // Operations → Wall Displays: pair a TV showing /wall with its code, choose what
 // it shows, and unpair it. Pairing needs agency view (global admins always pass).
@@ -79,6 +79,21 @@ function PanelPicker({ value, onChange }: { value: WallPanelKey[]; onChange: (v:
   );
 }
 
+/** Tap a boat for details, pan/zoom the map; off = the board runs hands-off. */
+function InteractiveToggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 13, color: COLORS.frost, cursor: "pointer", lineHeight: 1.45 }}>
+      <input type="checkbox" checked={value} onChange={(e) => onChange(e.target.checked)} style={{ marginTop: 3, accentColor: COLORS.signal }} />
+      <span>
+        Interactive — tap a boat (or use the TV remote) for its details, pan and zoom the map
+        <span style={{ display: "block", color: COLORS.steel, fontSize: 12 }}>
+          Details are board-safe only: berth, ETA/ETD, AIS position, permit expiry dates and crew sign on/off counts. The board resets itself after 2 minutes untouched.
+        </span>
+      </span>
+    </label>
+  );
+}
+
 function WallDisplaysPage() {
   const { session } = useAuth();
   const token = session?.access_token ?? "";
@@ -106,6 +121,7 @@ function WallDisplaysPage() {
   const [code, setCode] = useState(search.code ?? "");
   const [name, setName] = useState("");
   const [panels, setPanels] = useState<WallPanelKey[]>(ALL);
+  const [interactive, setInteractive] = useState(true);
   const [busy, setBusy] = useState(false);
   useEffect(() => { if (search.code) setCode(search.code); }, [search.code]);
 
@@ -115,9 +131,9 @@ function WallDisplaysPage() {
     e.preventDefault();
     setBusy(true);
     try {
-      await api("POST", { code, name, settings: { panels } });
+      await api("POST", { code, name, settings: { panels, ...(interactive ? {} : { interactive: false }) } });
       toast.success(`${name} is paired — the screen will switch over in a few seconds.`);
-      setCode(""); setName(""); setPanels(ALL);
+      setCode(""); setName(""); setPanels(ALL); setInteractive(true);
       qc.invalidateQueries({ queryKey: ["wall-displays"] });
     } catch (err) {
       toast.error((err as Error).message);
@@ -183,6 +199,7 @@ function WallDisplaysPage() {
           <div style={{ fontSize: 12, color: COLORS.steel, marginBottom: 6 }}>Show on this screen</div>
           <PanelPicker value={panels} onChange={setPanels} />
         </div>
+        <InteractiveToggle value={interactive} onChange={setInteractive} />
         <div>
           <button type="submit" disabled={busy || !code.trim() || !name.trim()} style={{ ...button(), opacity: busy || !code.trim() || !name.trim() ? 0.5 : 1 }}>
             {busy ? "Pairing…" : "Pair screen"}
@@ -210,9 +227,11 @@ function WallDisplaysPage() {
 function DisplayRow({ d, onSave, onUnpair }: { d: Display; onSave: (id: string, p: { name?: string; settings?: WallSettings }) => void; onUnpair: (d: Display) => void }) {
   const [name, setName] = useState(d.name ?? "");
   const [panels, setPanels] = useState<WallPanelKey[]>(d.settings.panels?.length ? d.settings.panels : ALL);
+  const [interactive, setInteractive] = useState(isInteractive(d.settings));
   const isOn = online(d.last_seen_at);
   const device = deviceLabel(d.user_agent);
-  const dirty = name.trim() !== (d.name ?? "") || panels.join() !== (d.settings.panels?.length ? d.settings.panels : ALL).join();
+  const dirty = name.trim() !== (d.name ?? "") || panels.join() !== (d.settings.panels?.length ? d.settings.panels : ALL).join()
+    || interactive !== isInteractive(d.settings);
 
   return (
     <div style={{ border: `1px solid ${COLORS.deep}`, borderRadius: 10, padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -223,11 +242,12 @@ function DisplayRow({ d, onSave, onUnpair }: { d: Display; onSave: (id: string, 
           {isOn ? "Online" : `Last seen ${when(d.last_seen_at)}`}{device ? ` · ${device}` : ""} · paired {when(d.paired_at)}{d.paired_by_name ? ` by ${d.paired_by_name}` : ""}
         </span>
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-          {dirty && <button type="button" style={button()} onClick={() => onSave(d.id, { name: name.trim(), settings: { ...d.settings, panels } })}>Save</button>}
+          {dirty && <button type="button" style={button()} onClick={() => onSave(d.id, { name: name.trim(), settings: { ...d.settings, panels, interactive } })}>Save</button>}
           <button type="button" style={{ ...button(false), color: COLORS.error }} onClick={() => onUnpair(d)}>Unpair</button>
         </div>
       </div>
       <PanelPicker value={panels} onChange={setPanels} />
+      <InteractiveToggle value={interactive} onChange={setInteractive} />
     </div>
   );
 }

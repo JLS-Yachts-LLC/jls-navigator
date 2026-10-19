@@ -6,6 +6,7 @@
  *     GET   X-Wall-Key: <key>   → { state: 'pending', code } until a person pairs it,
  *                                 then { state: 'paired', name, settings, board };
  *                                 { state: 'unknown' } (401) once it's unpaired
+ *     GET   ?vessel=<id>        → { vessel } — one board vessel's details (interactive screens only)
  *
  *   /api/wall/admin     (staff — Bearer token, agency module)
  *     GET                       → every paired / waiting screen
@@ -18,8 +19,8 @@
  */
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireAccess } from "@/lib/auth/requireAccess.server";
-import { buildWallBoard } from "@/lib/wall-board.server";
-import { normaliseWallSettings } from "@/lib/wall-types";
+import { buildWallBoard, buildWallVesselDetail } from "@/lib/wall-board.server";
+import { isInteractive, normaliseWallSettings } from "@/lib/wall-types";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
@@ -95,8 +96,20 @@ export async function wallDisplayHandler(request: Request): Promise<Response> {
     await db.from("wall_displays").update({ last_seen_at: new Date().toISOString(), user_agent: (request.headers.get("user-agent") ?? "").slice(0, 300) }).eq("id", d.id);
   }
 
+  const settings = normaliseWallSettings(d.settings);
+
+  // Tap-for-details: only on screens set to interactive, only for vessels on the board.
+  const vessel = new URL(request.url).searchParams.get("vessel");
+  if (vessel !== null) {
+    if (!isInteractive(settings)) return json({ error: "Details are switched off on this screen" }, 403);
+    if (!/^[0-9a-f-]{36}$/i.test(vessel)) return json({ error: "Unknown vessel" }, 400);
+    const detail = await buildWallVesselDetail(vessel);
+    if (!detail) return json({ error: "That vessel isn't on the board" }, 404);
+    return json({ vessel: detail });
+  }
+
   const board = await buildWallBoard();
-  return json({ state: "paired", name: d.name ?? "Wall display", settings: normaliseWallSettings(d.settings), board });
+  return json({ state: "paired", name: d.name ?? "Wall display", settings, board });
 }
 
 export async function wallAdminHandler(request: Request): Promise<Response> {
