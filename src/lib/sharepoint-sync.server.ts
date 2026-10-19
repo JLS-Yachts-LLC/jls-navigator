@@ -1609,9 +1609,16 @@ export interface PermitDryRunDetail {
    * permit (other number / person / vessel). Left alone — never rewritten.
    */
   conflicts: number
-  conflictSamples: Array<{ polarisId: string; itemId: string; reason: string; polaris: string; sharepoint: string }>
+  conflictSamples: Array<{ polarisId: string; itemId: string; reason: string; polaris: string; sharepoint: string; copyOf?: string }>
   /** Permits made in Polaris (no SharePoint item) matched to the copy staff keyed into SharePoint by hand. */
-  twinLinks: Array<{ polarisId: string; itemId: string; holder: string; vessel: string | null; issue: string | null }>
+  twinLinks: Array<{ polarisId: string; itemId: string; holder: string; vessel: string | null; issue: string | null; how?: string }>
+  /**
+   * Unlinked SharePoint items NOT added because the same item id of another permit
+   * list holds the same permit — the old push copied one permit into every list.
+   */
+  copySkips: Array<{ itemId: string; holds: string; copyOf: string }>
+  /** Polaris permits SharePoint has never seen, with the closest SharePoint item on the same vessel and why it was not linked. */
+  nearMisses: Array<{ polarisId: string; polaris: string; itemId: string | null; sharepoint: string | null; why: string }>
   /** SharePoint items that look like tests ("TEST", "123456") — not added. */
   testItems: number
   testSamples: string[]
@@ -1680,14 +1687,75 @@ function _sameHolder(a: unknown, b: unknown): boolean {
  */
 function _permitIdentityConflict(now: Record<string, any>, next: Record<string, any>): string | null {
   const a = now.permit_number, b = next.permit_number
-  if (_isRealPermitNumber(a) && _isRealPermitNumber(b)) {
-    // The authority's own reference is the strongest identity there is: if it
-    // agrees, a changed name or vessel is a correction; if not, it is another permit.
-    return _normRef(a) === _normRef(b) ? null : 'different permit number'
-  }
-  if (!_sameHolder(now.holder_name, next.holder_name)) return 'different holder'
-  if (now.yacht_id && next.yacht_id && String(now.yacht_id) !== String(next.yacht_id)) return 'different vessel'
+  const numbersAgree = _isRealPermitNumber(a) && _isRealPermitNumber(b)
+  if (numbersAgree && _normRef(a) !== _normRef(b)) return 'different permit number'
+  // A matching number is NOT enough on its own. The old push overwrote the holder,
+  // vessel and date of Gate Pass / Tenders / Mothership items but left their own
+  // number column alone (the lists name it differently), so "SEBASTIAN ANDREI
+  // DUMITRESCU · BURKUT · 2024" now reads "Denis Shantsin · Queen Alla · 2026" under
+  // the same pass number. A replaced holder or vessel is left alone; a case change
+  // or a blank filled in is not a replacement.
+  if (!_sameHolder(now.holder_name, next.holder_name)) return numbersAgree ? 'holder replaced' : 'different holder'
+  if (now.yacht_id && next.yacht_id && String(now.yacht_id) !== String(next.yacht_id)) return numbersAgree ? 'vessel replaced' : 'different vessel'
   return null
+}
+
+/** Words in a holder field that are a rank, not a name — "Chief Officer A" and "Chief Officer B" share no name. */
+const HOLDER_NOT_NAMES = new Set(['chief', 'officer', 'master', 'skipper', 'engineer', 'crew', 'owner', 'mate', 'first', 'second', 'the', 'and', 'yacht', 'vessel', 'agent'])
+
+/** Same person, for twin-linking? 'unknown' when either side has no usable name ("Captain"). */
+function _holderLikely(a: unknown, b: unknown): 'same' | 'unknown' | 'different' {
+  const toks = (v: unknown) => new Set(_normHolder(v).split(' ').filter((t) => t.length >= 3 && !HOLDER_NOT_NAMES.has(t)))
+  const x = toks(a), y = toks(b)
+  if (!x.size || !y.size) return 'unknown'
+  for (const t of x) if (y.has(t)) return 'same'
+  return 'different'
+}
+
+/** A vessel name compared on letters and digits only: "SAY 42016" = "Say42016". */
+function _normVessel(v: unknown): string {
+  return String(v ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+/** One SharePoint permit list as read from Graph, kept so each list can be compared with the others. */
+interface PermitListSnapshot { listName: string; items: any[]; fieldMapping: Record<string, string> }
+
+async function _fetchPermitListItems(siteId: string, token: string, listName: string): Promise<any[]> {
+  let all: any[] = []
+  let nextUrl: string | null =
+    `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listName}/items?$expand=fields&$top=200`
+  while (nextUrl) {
+    const res = await fetch(nextUrl, { headers: { Authorization: `Bearer ${token}` } })
+    const page = await res.json() as Record<string, any>
+    if (!page.value) {
+      // A partial read would make every item of the missing pages look new.
+      if (!res.ok) throw new Error(`read ${listName} → ${res.status} ${JSON.stringify(page).slice(0, 200)}`)
+      break
+    }
+    all = all.concat(page.value as any[])
+    nextUrl = page['@odata.nextLink'] ?? null
+  }
+  return all
+}
+
+/** Every permit list (enabled or not), read once. */
+async function _loadPermitLists(cfg: SpConfig, token: string): Promise<Map<string, PermitListSnapshot>> {
+  const out = new Map<string, PermitListSnapshot>()
+  const sites = new Map<string, string>()
+  for (const s of (await getSpSyncs()).filter((x) => x.syncTarget === 'permits')) {
+    const siteUrl = s.sitePath ?? cfg.siteUrl
+    if (!sites.has(siteUrl)) sites.set(siteUrl, await resolveSpSite(token, cfg.tenantUrl, siteUrl))
+    out.set(s.listName, { listName: s.listName, fieldMapping: s.fieldMapping, items: await _fetchPermitListItems(sites.get(siteUrl)!, token, s.listName) })
+  }
+  return out
+}
+
+/** What identifies an item's permit for the cross-list comparison: vessel, holder and number as keyed. */
+function _permitItemSig(fields: Record<string, any>, mapping: Record<string, string>): { vessel: string; holder: string; number: string } {
+  const col = (db: string) => Object.entries(mapping).find(([, d]) => d === db)?.[0]
+  const get = (db: string) => { const c = col(db); return c ? fields[c] : null }
+  const num = get('permit_number')
+  return { vessel: _normVessel(get('vessel_name')), holder: _normHolder(get('holder_name')), number: _isRealPermitNumber(num) ? _normRef(num) : '' }
 }
 
 /** SharePoint items that are someone testing the list, not permits. */
