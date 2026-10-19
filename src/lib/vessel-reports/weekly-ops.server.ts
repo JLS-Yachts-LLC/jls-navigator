@@ -21,7 +21,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { emailBrandLockup } from "@/lib/email/brand-mark";
 import { fetchAllRows } from "@/lib/fetch-all";
 import { currentPermits, permitLabel, daysBetween, todayUae, type ExpiryPermitRow } from "@/lib/permit-expiry";
-import { buildReportPdf } from "@/routes/api.movements.reports";
+import { buildOpsPdf, type OpsPdfModel } from "./weekly-ops-pdf.server";
 import type { BuiltReport } from "./build.server";
 
 const b64 = (bytes: Uint8Array) => {
@@ -290,51 +290,66 @@ export async function buildWeeklyOperations(opts: { yachtIds: string[] | "all"; 
 
   const stats = {
     agency: `${plural(count(agency, "done"), "permit")} issued · ${count(agency, "ahead")} in progress · ${count(agency, "attention")} expiring or expired`,
-    crew: `Last week ${count(crewCare, "done", /^Sign-on/)} on · ${count(crewCare, "done", /^Sign-off/)} off · ${count(crewCare, "done", single ? /^Transfer/ : /^Transfer in/)} transfers — this week ${count(crewCare, "ahead")} planned`,
+    crew: `${count(crewCare, "done", /^Sign-on/)} sign-on${count(crewCare, "done", /^Sign-on/) === 1 ? "" : "s"}, ${count(crewCare, "done", /^Sign-off/)} sign-off${count(crewCare, "done", /^Sign-off/) === 1 ? "" : "s"} and ${plural(count(crewCare, "done", single ? /^Transfer/ : /^Transfer in/), "transfer")} ${L.last} · ${count(crewCare, "ahead")} planned ${L.next}`,
     visas: `${count(visas, "done", /approved/)} approved · ${count(visas, "done", /submitted/)} submitted · ${count(visas, "ahead")} in progress · ${count(visas, "attention")} expiring or expired`,
   };
-  // The most urgent items fleet-wide, for the summary.
+  // The most urgent items, for the summary.
   const urgent = sections.flatMap((s) => [...s.groups.entries()].flatMap(([yid, grp]) => grp.attention.map((l) => ({ ...l, section: s.title, vessel: vesselName(yid) }))))
     .sort((a, b) => (a.tone === b.tone ? 0 : a.tone === "bad" ? -1 : 1) || (a.date ?? "").localeCompare(b.date ?? ""));
+  const urgentText = (u: (typeof urgent)[number]) => `${single ? "" : `${u.vessel} — `}${u.what}: ${u.detail} (${u.status})`;
 
-  const title = single ? `${vesselName(order[0])} — Weekly operations report` : "Weekly operations report";
-  const weekLine = `Last week ${short(doneFrom)}–${nice(doneTo)} · week ahead ${short(aheadFrom)}–${nice(aheadTo)}`;
-  const subject = `${title}, w/c ${nice(aheadFrom)}${attentionTotal ? ` (${plural(attentionTotal, "item")} need${attentionTotal === 1 ? "s" : ""} attention)` : ""}`;
+  const vessel = vesselName(order[0]);
+  const title = single ? `${vessel} — ${L.name} report` : "Weekly operations report";
+  const periodLine = monthly
+    ? `${monthName(doneFrom)} completed · ${monthName(aheadFrom)} planned`
+    : `Last week ${short(doneFrom)}–${nice(doneTo)} · this week ${short(aheadFrom)}–${nice(aheadTo)}`;
+  const intro = single
+    ? `Here is what the JLS team has handled for ${vessel} ${L.last}, what is planned ${L.next}, and anything that needs attention.`
+    : `${plural(new Set(sections.flatMap((s) => [...s.groups.keys()].filter((k) => hasAny(s.groups.get(k))))).size, "vessel")} with activity.`;
+  const when = monthly ? monthName(aheadFrom) : `w/c ${nice(aheadFrom)}`;
+  const subject = `${title}, ${when}${!single && attentionTotal ? ` (${plural(attentionTotal, "item")} need${attentionTotal === 1 ? "s" : ""} attention)` : ""}`;
+  const blocksOf = (grp: Group) => [
+    { label: single ? "Your permits" : "Status", lines: grp.status ?? [] },
+    { label: "Needs attention", lines: grp.attention },
+    { label: L.done, lines: grp.done },
+    { label: L.ahead, lines: grp.ahead },
+  ];
+  const nothing = `Nothing to report ${L.last} or ${L.next}.`;
 
   const lineHtml = (l: Line) => `<tr style="border-top:1px solid #e5e7eb">
       <td style="padding:5px 6px;white-space:nowrap;color:#4b5563">${esc(l.date ? short(l.date) : "")}</td>
       <td style="padding:5px 6px"><b>${esc(l.what)}</b><br><span style="color:#4b5563">${esc(l.detail)}</span></td>
       <td style="padding:5px 6px;white-space:nowrap;color:${TONE[l.tone]};text-align:right">${esc(l.status)}</td></tr>`;
-  const block = (label: string, lines: Line[] | undefined) => !lines?.length ? "" : `
+  const block = (label: string, lines: Line[]) => !lines.length ? "" : `
       <div style="margin:8px 0 2px;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#64748b">${esc(label)}</div>
       <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:13px">${lines.map(lineHtml).join("")}</table>`;
   const yachtHtml = (yid: string, grp: Group) => `
     <div style="margin:14px 0 0;padding:10px 12px;border:1px solid #e5e7eb;border-radius:10px">
-      <div style="font-size:14px;font-weight:700;color:#07435E">${esc(vesselName(yid))}</div>
-      ${block("Status", grp.status)}${block("Needs attention", grp.attention)}${block("Done last week", grp.done)}${block("Week ahead", grp.ahead)}
+      ${single ? "" : `<div style="font-size:14px;font-weight:700;color:#07435E">${esc(vesselName(yid))}</div>`}
+      ${blocksOf(grp).map((b) => block(b.label, b.lines)).join("")}
     </div>`;
   const sectionHtml = (s: (typeof sections)[number]) => {
-    const list = order.filter((id) => hasAny(s.groups.get(id)) || (single && s.key !== "agency"));
-    const body = list.map((id) => hasAny(s.groups.get(id))
-      ? yachtHtml(id, s.groups.get(id)!)
-      : `<p style="margin:10px 0 0;color:#6b7280">Nothing for ${esc(vesselName(id))} last week or this week.</p>`).join("");
+    const list = order.filter((id) => hasAny(s.groups.get(id)));
     return `<h2 style="margin:28px 0 2px;font-size:17px;color:#07435E;border-bottom:2px solid #07435E;padding-bottom:4px">${esc(s.title)}
         <span style="font-size:12px;font-weight:400;color:#64748b">· ${esc(s.sub)}</span></h2>
-      ${body || `<p style="margin:10px 0 0;color:#6b7280">Nothing to report last week or this week.</p>`}`;
+      ${list.map((id) => yachtHtml(id, s.groups.get(id)!)).join("") || `<p style="margin:10px 0 0;color:#6b7280">${esc(nothing)}</p>`}`;
   };
   const summaryRow = (label: string, text: string) =>
-    `<tr><td style="padding:4px 8px 4px 0;font-weight:700;color:#07435E;white-space:nowrap;vertical-align:top">${esc(label)}</td><td style="padding:4px 0;color:#1f2937">${esc(text)}</td></tr>`;
+    `<tr><td style="padding:4px 10px 4px 0;font-weight:700;color:#07435E;white-space:nowrap;vertical-align:top">${esc(label)}</td><td style="padding:4px 0;color:#1f2937">${esc(text)}</td></tr>`;
   const base = process.env.VITE_APP_URL ?? "https://polaris.jlsyachts.com";
-  const footer = opts.staffCopy || !single
-    ? `Built from Polaris on ${esc(nice(today))}. The full list is attached as a PDF. Change who receives this: <a href="${base}/polaris-redesign?screen=vessel-report-automations">Automated Reports</a> / Developer → Automations.`
-    : "The full list is attached as a PDF. To change who receives this report, please contact your JLS agent.";
+  const closing = single
+    ? "The full report is attached as a PDF. If anything here needs updating, or you'd like to change who receives this report, please contact your JLS agent."
+    : `Built from Polaris on ${nice(today)}. The full report is attached as a PDF.`;
+  const footer = single ? esc(closing)
+    : `${esc(closing)} Change who receives this on <a href="${base}/polaris-redesign?screen=automations">Developer → Automations</a>; each vessel's own report is on Reports → Automated Reports.`;
 
   const html = `<!doctype html><html><body style="margin:0;background:#f5f8fb;font-family:Arial,Helvetica,sans-serif;color:#1f2937">
   <div style="max-width:720px;margin:0 auto;padding:24px 16px">
     <div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;padding:24px">
       ${emailBrandLockup(`<span style="font-size:16px;font-weight:700;color:#07435E">JLS Yachts</span>`)}
       <h1 style="margin:16px 0 2px;font-size:20px;color:#07435E">${esc(title)}</h1>
-      <p style="margin:0;color:#4b5563;font-size:13px">${esc(weekLine)}${single ? "" : ` · ${plural(new Set(sections.flatMap((s) => [...s.groups.keys()].filter((k) => hasAny(s.groups.get(k))))).size, "vessel")} with activity`}</p>
+      <p style="margin:0;color:#4b5563;font-size:13px">${esc(periodLine)}</p>
+      <p style="margin:10px 0 0;font-size:14px">${esc(intro)}</p>
 
       <div style="margin:18px 0 0;padding:14px 16px;background:#f1f5f9;border-radius:10px">
         <div style="font-size:15px;font-weight:700;color:#07435E;margin-bottom:6px">Summary</div>
@@ -342,7 +357,7 @@ export async function buildWeeklyOperations(opts: { yachtIds: string[] | "all"; 
           ${summaryRow("Agency", stats.agency)}${summaryRow("Crew Care", stats.crew)}${summaryRow("Visas", stats.visas)}
         </table>
         ${urgent.length ? `<div style="margin:12px 0 4px;font-size:13px;font-weight:700;color:#b91c1c">Needs attention (${urgent.length})</div>
-        <ul style="margin:0;padding-left:18px;font-size:13px">${urgent.slice(0, 12).map((u) => `<li style="margin:2px 0"><b>${esc(u.vessel)}</b> — ${esc(u.what)}: ${esc(u.detail)} <span style="color:${TONE[u.tone]}">(${esc(u.status)})</span></li>`).join("")}
+        <ul style="margin:0;padding-left:18px;font-size:13px">${urgent.slice(0, 12).map((u) => `<li style="margin:2px 0;color:${TONE[u.tone]}"><span style="color:#1f2937">${esc(urgentText(u))}</span></li>`).join("")}
         ${urgent.length > 12 ? `<li style="color:#6b7280">…and ${urgent.length - 12} more below.</li>` : ""}</ul>`
         : `<p style="margin:10px 0 0;font-size:13px;color:#047857">Nothing needs attention.</p>`}
       </div>
@@ -353,30 +368,34 @@ export async function buildWeeklyOperations(opts: { yachtIds: string[] | "all"; 
     <p style="text-align:center;font-size:12px;color:#94a3b8;margin:14px 0 0">JLS Yachts LLC · Superyacht Middle East</p>
   </div></body></html>`;
 
-  const textLines = (label: string, l: Line[] | undefined) => (l?.length ? `  ${label}:\n${l.map((x) => `    - ${x.date ? short(x.date) + " " : ""}${x.what}: ${x.detail} [${x.status}]`).join("\n")}\n` : "");
-  const text = `${title}\n${weekLine}\n\nSUMMARY\nAgency: ${stats.agency}\nCrew Care: ${stats.crew}\nVisas: ${stats.visas}\n`
-    + (urgent.length ? `\nNeeds attention:\n${urgent.map((u) => `- ${u.vessel} — ${u.what}: ${u.detail} (${u.status})`).join("\n")}\n` : "\nNothing needs attention.\n")
-    + sections.map((s) => `\n${s.title.toUpperCase()}\n` + (order.filter((id) => hasAny(s.groups.get(id))).map((id) => {
-      const grp = s.groups.get(id)!;
-      return `${vesselName(id)}\n${textLines("Status", grp.status)}${textLines("Needs attention", grp.attention)}${textLines("Done last week", grp.done)}${textLines("Week ahead", grp.ahead)}`;
-    }).join("\n") || "Nothing to report.\n")).join("");
+  const textLines = (label: string, l: Line[]) => (l.length ? `  ${label}:\n${l.map((x) => `    - ${x.date ? short(x.date) + " " : ""}${x.what}: ${x.detail} [${x.status}]`).join("\n")}\n` : "");
+  const text = `${title}\n${periodLine}\n${intro}\n\nSUMMARY\nAgency: ${stats.agency}\nCrew Care: ${stats.crew}\nVisas: ${stats.visas}\n`
+    + (urgent.length ? `\nNeeds attention:\n${urgent.map((u) => `- ${urgentText(u)}`).join("\n")}\n` : "\nNothing needs attention.\n")
+    + sections.map((s) => `\n${s.title.toUpperCase()}\n` + (order.filter((id) => hasAny(s.groups.get(id))).map((id) =>
+      `${single ? "" : `${vesselName(id)}\n`}${blocksOf(s.groups.get(id)!).map((b) => textLines(b.label, b.lines)).join("")}`).join("\n") || `${nothing}\n`)).join("")
+    + `\n${closing}`;
 
-  const pdfRows: string[][] = [];
-  for (const s of sections) for (const id of order) {
-    const grp = s.groups.get(id);
-    if (!hasAny(grp)) continue;
-    const push = (phase: string, l: Line[] | undefined) => { for (const x of l ?? []) pdfRows.push([s.title, vesselName(id), `${phase}: ${x.what}`, x.detail, x.date ? nice(x.date) : "—", x.status]); };
-    push("Status", grp!.status); push("Attention", grp!.attention); push("Done", grp!.done); push("Ahead", grp!.ahead);
-  }
-  if (!pdfRows.length) pdfRows.push(["—", "—", "Nothing to report", "", "", ""]);
-  const pdf = await buildReportPdf(`${title} — w/c ${nice(aheadFrom)}`,
-    ["Section", "Vessel", "Item", "Detail", "Date", "Status"], pdfRows, [1.4, 2.2, 2.8, 4.6, 1.5, 1.6]);
-  const who = single ? fileSafe(vesselName(order[0])) : "Fleet";
+  const model: OpsPdfModel = {
+    title, subtitle: periodLine, intro,
+    control: [["Report", `${L.name} operations report`], ["Vessel", single ? vessel : "Whole fleet"], ["Period", monthly ? monthName(aheadFrom) : `w/c ${nice(aheadFrom)}`], ["Issued", nice(today)]],
+    summary: [["Agency", stats.agency], ["Crew Care", stats.crew], ["Visas", stats.visas]],
+    attention: urgent.map((u) => ({ text: urgentText(u), tone: u.tone })),
+    sections: sections.map((s) => ({
+      title: s.title, sub: s.sub, empty: nothing,
+      vessels: order.filter((id) => hasAny(s.groups.get(id))).map((id) => ({
+        name: single ? "" : vesselName(id),
+        blocks: blocksOf(s.groups.get(id)!).map((b) => ({ label: b.label, lines: b.lines.map((l) => ({ date: l.date ? short(l.date) : "", what: l.what, detail: l.detail, status: l.status, tone: l.tone })) })),
+      })),
+    })),
+    closing,
+  };
+  const pdf = await buildOpsPdf(model);
+  const fileWhen = monthly ? aheadFrom.slice(0, 7) : `w-c ${aheadFrom}`;
 
   return {
     subject, html, text,
-    attachments: [{ filename: `Weekly operations - ${who} - w-c ${aheadFrom}.pdf`, contentBase64: b64(pdf), contentType: "application/pdf" }],
-    summary: `${count(agency, "done")} permits issued · ${count(crewCare, "done")} movements last week · ${count(crewCare, "ahead")} this week · ${count(visas, "done")} visa updates · ${attentionTotal} need attention`,
+    attachments: [{ filename: `${L.name} report - ${single ? fileSafe(vessel) : "Fleet"} - ${fileWhen}.pdf`, contentBase64: b64(pdf), contentType: "application/pdf" }],
+    summary: `${count(agency, "done")} permits issued · ${count(crewCare, "done")} movements ${L.last} · ${count(crewCare, "ahead")} planned ${L.next} · ${count(visas, "done")} visa updates · ${attentionTotal} need attention`,
   };
 }
 

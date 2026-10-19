@@ -626,6 +626,23 @@ function ReportRow({ yachtId, vessel, report, sub, onChanged, canEdit, wa }: {
             <input type="time" value={schedule.time} step={900} disabled={!canEdit} onChange={(e) => setSchedule({ ...schedule, time: e.target.value || schedule.time })}
                    className="h-9 rounded-md border border-input bg-background px-2 text-sm" />
           </div>
+          {report.key === "weekly_operations" && (
+            // Weekly is the standard; very small or quiet boats can go monthly.
+            <div className="flex items-center gap-1.5 pt-1 text-xs">
+              <span className="text-muted-foreground">Report covers:</span>
+              {([["mon", "Weekly"], ["monthly", "Monthly"]] as const).map(([day, label]) => {
+                const on = day === "monthly" ? schedule.day === "monthly" : schedule.day !== "monthly";
+                return (
+                  <button key={day} type="button" disabled={!canEdit}
+                          onClick={() => setSchedule({ ...schedule, day: day === "monthly" ? "monthly" : (schedule.day === "monthly" ? "mon" : schedule.day) })}
+                          className={cn("rounded-full border px-2.5 py-0.5", on ? "border-primary bg-primary/10 font-medium text-foreground" : "border-border text-muted-foreground hover:text-foreground")}>
+                    {label}
+                  </button>
+                );
+              })}
+              <span className="text-muted-foreground">{schedule.day === "monthly" ? "— last month and this month, sent on the 1st" : "— last week and this week"}</span>
+            </div>
+          )}
         </div>
       </div>
 

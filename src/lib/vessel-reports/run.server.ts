@@ -65,7 +65,7 @@ const hasTargets = (t: Targets) => t.email.length > 0 || t.whatsapp.length > 0;
  * reported back as `problems`.
  */
 async function deliver(sub: Sub, t: Targets, opts: { staffCopy?: boolean } = {}) {
-  const built = await buildVesselReport(sub.report_key, sub.yacht_id, opts);
+  const built = await buildVesselReport(sub.report_key, sub.yacht_id, { ...opts, monthly: scheduleOf(sub.schedule).day === "monthly" });
   const problems: string[] = [];
   let emailed = false;
   let whatsapped: string[] = [];
@@ -185,5 +185,8 @@ export async function sendVesselReportNow(
 
 /** The report as it would go out now — for the screen's Preview. */
 export async function previewVesselReport(key: ReportKey, yachtId: string) {
-  return buildVesselReport(key, yachtId);
+  // Preview the period the vessel is actually set to (weekly or monthly).
+  const { data: sub } = await (supabaseAdmin as any).from("vessel_report_subscriptions")
+    .select("schedule").eq("yacht_id", yachtId).eq("report_key", key).maybeSingle();
+  return buildVesselReport(key, yachtId, { monthly: scheduleOf(sub?.schedule).day === "monthly" });
 }

@@ -47,8 +47,8 @@ export const VESSEL_REPORTS: Array<{
   },
   {
     key: "weekly_operations",
-    label: "Weekly operations",
-    description: "A summary, then Agency (entry, FMA and DMA permits), Crew Care (sign-ons, sign-offs and transfers) and Visas: what was done last week, what is planned this week and anything needing attention, with the PDF attached.",
+    label: "Weekly / monthly report",
+    description: "The vessel's own report from JLS: a summary, then Agency (entry, FMA and DMA permits), Crew Care (sign-ons, sign-offs and transfers) and Visas — what was completed, what is planned and anything needing attention, as a branded PDF. Weekly as standard; set very small or quiet boats to monthly (the 1st of each month).",
     defaultSchedule: { day: "mon", time: "08:00", tz: "Asia/Dubai" },
   },
 ];

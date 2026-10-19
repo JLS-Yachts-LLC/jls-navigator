@@ -12,6 +12,7 @@ export type OpsPdfLine = { date: string; what: string; detail: string; status: s
 export type OpsPdfModel = {
   title: string;
   subtitle: string;
+  intro: string;
   control: [string, string][];
   summary: [string, string][];
   attention: { text: string; tone: OpsTone }[];
@@ -64,12 +65,14 @@ export async function buildOpsPdf(model: OpsPdfModel): Promise<Uint8Array> {
     page.drawText(winAnsiSafe(s), { x, y, size, font: f, color });
 
   newPage();
-  const inner = W - 2 * M;
+  const inner = W - 2 * M; // set after the first page so W is known
 
   // ── title ──
   need(40);
   text(model.title, M, 17, bold, NAVY); y -= 17;
-  text(model.subtitle, M, 9.5, font, JLS_PDF_COLORS.muted); y -= 18;
+  text(model.subtitle, M, 9.5, font, JLS_PDF_COLORS.muted); y -= 16;
+  for (const l of wrap(model.intro, font, 10, inner)) { need(14); text(l, M, 10, font); y -= 13; }
+  y -= 8;
 
   // ── summary box ──
   const sumRows = model.summary.map(([k, v]) => ({ k, lines: wrap(v, font, 9.5, inner - 110) }));
@@ -112,7 +115,7 @@ export async function buildOpsPdf(model: OpsPdfModel): Promise<Uint8Array> {
     if (!s.vessels.length) { text(s.empty, M, 9.5, font, JLS_PDF_COLORS.muted); y -= 22; continue; }
     for (const v of s.vessels) {
       need(40);
-      text(v.name, M, 11.5, bold, NAVY); y -= 15;
+      if (v.name) { text(v.name, M, 11.5, bold, NAVY); y -= 15; } // one-vessel reports don't repeat the name
       for (const b of v.blocks) {
         if (!b.lines.length) continue;
         need(30);

@@ -39,7 +39,7 @@ const mondayOf = (iso: string) => { const d = new Date(`${iso}T00:00:00Z`); retu
 const nice = (iso: string | null | undefined) =>
   iso ? new Date(`${String(iso).slice(0, 10)}T00:00:00Z`).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }) : "—";
 
-export async function buildVesselReport(key: ReportKey, yachtId: string, opts: { staffCopy?: boolean } = {}): Promise<BuiltReport> {
+export async function buildVesselReport(key: ReportKey, yachtId: string, opts: { staffCopy?: boolean; monthly?: boolean } = {}): Promise<BuiltReport> {
   const sb = supabaseAdmin as any;
   const { data: yacht } = await sb.from("yachts").select("id, vessel_name, qbo_customer_id").eq("id", yachtId).maybeSingle();
   if (!yacht) throw new Error("Vessel not found");
@@ -55,7 +55,8 @@ export async function buildVesselReport(key: ReportKey, yachtId: string, opts: {
   }
   if (key === "weekly_operations") {
     const { buildWeeklyOperations } = await import("./weekly-ops.server");
-    return buildWeeklyOperations({ yachtIds: [yachtId], staffCopy: opts.staffCopy });
+    // Weekly by default; a vessel scheduled for the 1st of each month gets a monthly report.
+    return buildWeeklyOperations({ yachtIds: [yachtId], staffCopy: opts.staffCopy, period: opts.monthly ? "month" : "week" });
   }
   if (key === "crew_on_board") {
     const { buildCrewOnBoard } = await import("./crew.server");
