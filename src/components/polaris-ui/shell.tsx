@@ -109,7 +109,7 @@ export const NAV_GROUPS: NavGroup[] = [
         roles: ["global_admin", "crew_immigration"],
       },
       { label: "Logistics", module: "shipsync", icon: "truck", screen: "logistics" },
-      { label: "Crew Care", module: "transport", icon: "car", screen: "route-crew-cab", route: "/crew-cab/trips" },
+      { label: "Crew Care", module: "transport", icon: "car", screen: "route-crew-cab", route: "/crew-cab/jobs" },
       { label: "Agency", module: "agency", icon: "world", screen: "route-agency", route: "/agency" },
       { label: "Provisioning", module: "provisioning", icon: "tools-kitchen-2", screen: "route-provisioning", route: "/provisioning" },
       { label: "Waypoint Chandlery", module: "waypoint", icon: "shopping-cart", screen: "route-waypoint", route: "/waypoint" },

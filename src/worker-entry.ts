@@ -1437,6 +1437,11 @@ export default {
       if (pwa) return pwa
     }
 
+    if (url.pathname === '/api/crew-care/alerts') {
+      const { crewCareAlertsHandler } = await import('./routes/api.crew-care.alerts')
+      return crewCareAlertsHandler(request)
+    }
+
     if (url.pathname === '/api/warehouse-requests/notify') {
       const { warehouseRequestsHandler } = await import('./routes/api.warehouse-requests')
       return warehouseRequestsHandler(request)
@@ -1680,6 +1685,14 @@ export default {
           .then((m) => m.sendPortalAlerts())
           .then((r) => { if (r.sent || r.failed) console.log('[portal-alerts]', JSON.stringify(r)) })
           .catch((e) => console.error('[portal-alerts] error:', e instanceof Error ? e.message : String(e)))
+      );
+      // …Crew Care job cards: email / Teams to the Crew Care team, when switched
+      //    on (the bell already rang from the database). See lib/crew-care/job-alerts.server.
+      ctx.waitUntil(
+        import('./lib/crew-care/job-alerts.server')
+          .then((m) => m.sendCrewCareJobAlerts())
+          .then((r) => { if (r.sent || r.failed) console.log('[crew-care-alerts]', JSON.stringify(r)) })
+          .catch((e) => console.error('[crew-care-alerts] error:', e instanceof Error ? e.message : String(e)))
       );
       // …Crew Academy refreshers: a certificate that has run out re-enrols the
       //    crew member on the course (due in 30 days). See lib/academy/academy.server.

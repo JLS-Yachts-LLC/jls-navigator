@@ -20,7 +20,7 @@ import {
   Bell, Compass, Wrench, CalendarRange, ShieldCheck, Menu, AlertTriangle, Eye,
   Pencil, Trash2, UserPlus, RotateCcw, ImagePlus,
   ClipboardCheck, NotebookPen, Anchor, IdCard, CalendarDays, Upload, BookOpen,
-  SquareKanban, Boxes, Receipt, CalendarClock, BadgeCheck, GraduationCap,
+  SquareKanban, Boxes, Receipt, CalendarClock, BadgeCheck, GraduationCap, Car,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { portalFetch, setPortalYacht } from "@/lib/portal/portal-fetch";
@@ -152,6 +152,7 @@ export const REQUEST_CATEGORIES = [
   { key: "permits", label: "Permits", icon: FileCheck2, blurb: "Cruising, gate & agency permits" },
   { key: "it_support", label: "IT Support", icon: Laptop, blurb: "Connectivity, hardware & systems" },
   { key: "visa_immigration", label: "Visa & Immigration", icon: Plane, blurb: "Crew visas & immigration" },
+  { key: "crew_care", label: "Crew Care", icon: Car, blurb: "Transfers, a driver & crew transport" },
   { key: "general", label: "General", icon: MessageSquare, blurb: "Anything else — just ask" },
 ] as const;
 
@@ -1691,9 +1692,16 @@ export function NewRequestSheet({ yachtId, boatId = null, initialCategory, onClo
   const [details, setDetails] = useState("");
   const [priority, setPriority] = useState("normal");
   const [neededBy, setNeededBy] = useState("");
+  // Crew Care: becomes a job card for the Crew Care team, so ask for the journey.
+  const [ccType, setCcType] = useState("transfer");
+  const [ccPickup, setCcPickup] = useState("");
+  const [ccDropoff, setCcDropoff] = useState("");
+  const [ccWhen, setCcWhen] = useState("");
+  const [ccPax, setCcPax] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const cat = REQUEST_CATEGORIES.find((c) => c.key === category);
+  const isCrewCare = category === "crew_care";
 
   const readOnly = usePreview();
   const submit = async (e: React.FormEvent) => {
@@ -1704,7 +1712,12 @@ export function NewRequestSheet({ yachtId, boatId = null, initialCategory, onClo
     const { data, error } = await db.from("captain_requests").insert({
       ...(boatId ? { boat_id: boatId } : { yacht_id: yachtId }), created_by: user?.id, category,
       title: title.trim(), details: details.trim() || null,
-      priority, needed_by: neededBy || null,
+      priority, needed_by: (isCrewCare ? ccWhen.slice(0, 10) : neededBy) || null,
+      ...(isCrewCare ? { crew_care: {
+        job_type: ccType, pickup: ccPickup.trim(), dropoff: ccDropoff.trim(),
+        // datetime-local has no zone; the browser's own offset makes it an exact moment.
+        needed_at: ccWhen ? new Date(ccWhen).toISOString() : "", passengers: ccPax,
+      } } : {}),
     }).select("id").single();
     setBusy(false);
     if (error || !data) { setError(error?.message ?? "Could not create the request"); return; }
@@ -1747,8 +1760,42 @@ export function NewRequestSheet({ yachtId, boatId = null, initialCategory, onClo
             <FieldLabel>Details</FieldLabel>
             <textarea className={cn(inputCls, "resize-none")} rows={4} value={details}
                       onChange={(e) => setDetails(e.target.value)}
-                      placeholder="Quantities, dates, crew names, berth access notes — anything that helps us move fast." />
+                      placeholder={isCrewCare
+                        ? "Crew names, flight numbers, luggage, contact on the day — anything the driver needs."
+                        : "Quantities, dates, crew names, berth access notes — anything that helps us move fast."} />
           </div>
+          {isCrewCare && (
+            <div className="space-y-3 rounded-xl border border-border bg-background/30 p-3">
+              <div>
+                <FieldLabel>What kind of job?</FieldLabel>
+                <select className={inputCls} value={ccType} onChange={(e) => setCcType(e.target.value)}>
+                  <option value="transfer">Transfer</option>
+                  <option value="driver">I need a driver</option>
+                  <option value="airport">Airport run</option>
+                  <option value="crew_logistics">Crew logistics</option>
+                  <option value="other">Something else</option>
+                </select>
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <FieldLabel>Pick-up</FieldLabel>
+                  <input className={inputCls} maxLength={300} value={ccPickup} onChange={(e) => setCcPickup(e.target.value)} placeholder="e.g. Berth 4, Port Rashid" />
+                </div>
+                <div>
+                  <FieldLabel>Drop-off</FieldLabel>
+                  <input className={inputCls} maxLength={300} value={ccDropoff} onChange={(e) => setCcDropoff(e.target.value)} placeholder="e.g. DXB Terminal 3" />
+                </div>
+                <div>
+                  <FieldLabel>Date & time</FieldLabel>
+                  <input className={inputCls} type="datetime-local" value={ccWhen} onChange={(e) => setCcWhen(e.target.value)} />
+                </div>
+                <div>
+                  <FieldLabel>Passengers</FieldLabel>
+                  <input className={inputCls} type="number" min={0} max={500} inputMode="numeric" value={ccPax} onChange={(e) => setCcPax(e.target.value)} />
+                </div>
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <FieldLabel>Priority</FieldLabel>
@@ -1759,10 +1806,12 @@ export function NewRequestSheet({ yachtId, boatId = null, initialCategory, onClo
                 <option value="urgent">Urgent</option>
               </select>
             </div>
-            <div>
-              <FieldLabel>Needed by</FieldLabel>
-              <input className={inputCls} type="date" value={neededBy} onChange={(e) => setNeededBy(e.target.value)} />
-            </div>
+            {!isCrewCare && (
+              <div>
+                <FieldLabel>Needed by</FieldLabel>
+                <input className={inputCls} type="date" value={neededBy} onChange={(e) => setNeededBy(e.target.value)} />
+              </div>
+            )}
           </div>
           {error && <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-red-300">{error}</div>}
           <PrimaryButton type="submit" disabled={busy || !title.trim()} className="w-full">

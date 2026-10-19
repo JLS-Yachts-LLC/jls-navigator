@@ -1,5 +1,5 @@
 import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
-import { Route as RouteIcon, CalendarDays, Users, Car, Wrench, MapPin } from "lucide-react";
+import { Route as RouteIcon, CalendarDays, Users, Car, Wrench, MapPin, ClipboardList } from "lucide-react";
 
 /**
  * Crew Care shell — the module's pages share this tab bar. Journeys and
@@ -7,6 +7,8 @@ import { Route as RouteIcon, CalendarDays, Users, Car, Wrench, MapPin } from "lu
  * hit with a thumb.
  */
 const TABS = [
+  // Requests for Crew Care to action (captains via the Client Portal, and staff).
+  { to: "/crew-cab/jobs", label: "Job Cards", icon: ClipboardList },
   { to: "/crew-cab/trips", label: "Trips", icon: RouteIcon },
   { to: "/crew-cab/journeys", label: "Journeys", icon: CalendarDays },
   { to: "/crew-cab/drivers", label: "Drivers", icon: Users },

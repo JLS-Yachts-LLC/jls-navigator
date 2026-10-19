@@ -143,6 +143,7 @@ import { Route as AppCrewCabTripsRouteImport } from './routes/_app.crew-cab.trip
 import { Route as AppCrewCabMaintenanceRouteImport } from './routes/_app.crew-cab.maintenance'
 import { Route as AppCrewCabLocationsRouteImport } from './routes/_app.crew-cab.locations'
 import { Route as AppCrewCabJourneysRouteImport } from './routes/_app.crew-cab.journeys'
+import { Route as AppCrewCabJobsRouteImport } from './routes/_app.crew-cab.jobs'
 import { Route as AppCrewCabDriversRouteImport } from './routes/_app.crew-cab.drivers'
 import { Route as AppAdminUsersRouteImport } from './routes/_app.admin.users'
 import { Route as AppAdminShrinkPhotosRouteImport } from './routes/_app.admin.shrink-photos'
@@ -853,6 +854,11 @@ const AppCrewCabJourneysRoute = AppCrewCabJourneysRouteImport.update({
   path: '/journeys',
   getParentRoute: () => AppCrewCabRoute,
 } as any)
+const AppCrewCabJobsRoute = AppCrewCabJobsRouteImport.update({
+  id: '/jobs',
+  path: '/jobs',
+  getParentRoute: () => AppCrewCabRoute,
+} as any)
 const AppCrewCabDriversRoute = AppCrewCabDriversRouteImport.update({
   id: '/drivers',
   path: '/drivers',
@@ -1093,6 +1099,7 @@ export interface FileRoutesByFullPath {
   '/admin/shrink-photos': typeof AppAdminShrinkPhotosRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/crew-cab/drivers': typeof AppCrewCabDriversRoute
+  '/crew-cab/jobs': typeof AppCrewCabJobsRoute
   '/crew-cab/journeys': typeof AppCrewCabJourneysRoute
   '/crew-cab/locations': typeof AppCrewCabLocationsRoute
   '/crew-cab/maintenance': typeof AppCrewCabMaintenanceRoute
@@ -1245,6 +1252,7 @@ export interface FileRoutesByTo {
   '/admin/shrink-photos': typeof AppAdminShrinkPhotosRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/crew-cab/drivers': typeof AppCrewCabDriversRoute
+  '/crew-cab/jobs': typeof AppCrewCabJobsRoute
   '/crew-cab/journeys': typeof AppCrewCabJourneysRoute
   '/crew-cab/locations': typeof AppCrewCabLocationsRoute
   '/crew-cab/maintenance': typeof AppCrewCabMaintenanceRoute
@@ -1406,6 +1414,7 @@ export interface FileRoutesById {
   '/_app/admin/shrink-photos': typeof AppAdminShrinkPhotosRoute
   '/_app/admin/users': typeof AppAdminUsersRoute
   '/_app/crew-cab/drivers': typeof AppCrewCabDriversRoute
+  '/_app/crew-cab/jobs': typeof AppCrewCabJobsRoute
   '/_app/crew-cab/journeys': typeof AppCrewCabJourneysRoute
   '/_app/crew-cab/locations': typeof AppCrewCabLocationsRoute
   '/_app/crew-cab/maintenance': typeof AppCrewCabMaintenanceRoute
@@ -1571,6 +1580,7 @@ export interface FileRouteTypes {
     | '/admin/shrink-photos'
     | '/admin/users'
     | '/crew-cab/drivers'
+    | '/crew-cab/jobs'
     | '/crew-cab/journeys'
     | '/crew-cab/locations'
     | '/crew-cab/maintenance'
@@ -1723,6 +1733,7 @@ export interface FileRouteTypes {
     | '/admin/shrink-photos'
     | '/admin/users'
     | '/crew-cab/drivers'
+    | '/crew-cab/jobs'
     | '/crew-cab/journeys'
     | '/crew-cab/locations'
     | '/crew-cab/maintenance'
@@ -1883,6 +1894,7 @@ export interface FileRouteTypes {
     | '/_app/admin/shrink-photos'
     | '/_app/admin/users'
     | '/_app/crew-cab/drivers'
+    | '/_app/crew-cab/jobs'
     | '/_app/crew-cab/journeys'
     | '/_app/crew-cab/locations'
     | '/_app/crew-cab/maintenance'
@@ -2929,6 +2941,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppCrewCabJourneysRouteImport
       parentRoute: typeof AppCrewCabRoute
     }
+    '/_app/crew-cab/jobs': {
+      id: '/_app/crew-cab/jobs'
+      path: '/jobs'
+      fullPath: '/crew-cab/jobs'
+      preLoaderRoute: typeof AppCrewCabJobsRouteImport
+      parentRoute: typeof AppCrewCabRoute
+    }
     '/_app/crew-cab/drivers': {
       id: '/_app/crew-cab/drivers'
       path: '/drivers'
@@ -3154,6 +3173,7 @@ const AppAdminRouteWithChildren = AppAdminRoute._addFileChildren(
 
 interface AppCrewCabRouteChildren {
   AppCrewCabDriversRoute: typeof AppCrewCabDriversRoute
+  AppCrewCabJobsRoute: typeof AppCrewCabJobsRoute
   AppCrewCabJourneysRoute: typeof AppCrewCabJourneysRoute
   AppCrewCabLocationsRoute: typeof AppCrewCabLocationsRoute
   AppCrewCabMaintenanceRoute: typeof AppCrewCabMaintenanceRoute
@@ -3163,6 +3183,7 @@ interface AppCrewCabRouteChildren {
 
 const AppCrewCabRouteChildren: AppCrewCabRouteChildren = {
   AppCrewCabDriversRoute: AppCrewCabDriversRoute,
+  AppCrewCabJobsRoute: AppCrewCabJobsRoute,
   AppCrewCabJourneysRoute: AppCrewCabJourneysRoute,
   AppCrewCabLocationsRoute: AppCrewCabLocationsRoute,
   AppCrewCabMaintenanceRoute: AppCrewCabMaintenanceRoute,
