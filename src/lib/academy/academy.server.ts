@@ -116,3 +116,69 @@ export async function refreshEnrolment(sb: any, enrolment: any, content: CourseC
   }
   return { ...outcome, status: enrolment.status as string };
 }
+
+// ── Groups (departments on board) ────────────────────────────────────────────
+/** Seeded the first time a vessel opens Crew Academy; the vessel can rename or add its own. */
+export const DEFAULT_GROUPS = ["Bridge", "Deck", "Engineering", "Interior", "Galley"];
+
+export async function ensureDefaultGroups(sb: any, yachtId: string) {
+  const { count } = await sb.from("academy_groups").select("id", { count: "exact", head: true }).eq("yacht_id", yachtId);
+  if ((count ?? 0) > 0) return;
+  await sb.from("academy_groups").insert(DEFAULT_GROUPS.map((name, i) => ({ yacht_id: yachtId, name, sort_order: i })));
+}
+
+const addDays = (days: number) => {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+};
+
+/**
+ * Group enrolment is live: enrol this learner on every course enrolled to a
+ * group they're in (or just `groupIds`), unless they already have it. A rule's
+ * due date is either fixed or "N days after joining". Returns how many added.
+ */
+export async function enrolFromGroupRules(sb: any, yachtId: string, learnerId: string, groupIds?: string[]): Promise<number> {
+  let ids = groupIds;
+  if (!ids) {
+    const { data } = await sb.from("academy_group_members").select("group_id").eq("learner_id", learnerId);
+    ids = (data ?? []).map((m: any) => m.group_id);
+  }
+  if (!ids?.length) return 0;
+  const { data: rules } = await sb.from("academy_enrolment_rules")
+    .select("id, course_id, mandatory, due_date, due_days").eq("yacht_id", yachtId).in("group_id", ids).is("revoked_at", null);
+  if (!rules?.length) return 0;
+  const { data: live } = await sb.from("academy_enrolments").select("course_id")
+    .eq("learner_id", learnerId).not("status", "in", "(expired,cancelled)");
+  const have = new Set((live ?? []).map((e: any) => e.course_id));
+  let added = 0;
+  for (const r of rules) {
+    if (have.has(r.course_id)) continue;
+    if (!(await courseForVessel(sb, r.course_id, yachtId))) continue; // withdrawn or archived since
+    const { error } = await sb.from("academy_enrolments").insert({
+      learner_id: learnerId, course_id: r.course_id, yacht_id: yachtId, rule_id: r.id, mandatory: r.mandatory,
+      due_date: r.due_date ?? (r.due_days ? addDays(r.due_days) : null),
+    });
+    if (!error) { have.add(r.course_id); added++; }
+  }
+  return added;
+}
+
+/**
+ * Someone left a group (or a group rule was withdrawn): take off the courses
+ * that came only from it and that they haven't started. Started or finished
+ * courses stay — that's their record.
+ */
+export async function dropGroupEnrolments(sb: any, opts: { learnerId?: string; groupId?: string; ruleId?: string }) {
+  let ruleIds: string[] = [];
+  if (opts.ruleId) ruleIds = [opts.ruleId];
+  else if (opts.groupId) {
+    const { data } = await sb.from("academy_enrolment_rules").select("id").eq("group_id", opts.groupId);
+    ruleIds = (data ?? []).map((r: any) => r.id);
+  }
+  if (!ruleIds.length) return 0;
+  let q = sb.from("academy_enrolments").update({ status: "cancelled" }).in("rule_id", ruleIds).eq("status", "not_started");
+  if (opts.learnerId) q = q.eq("learner_id", opts.learnerId);
+  const { data } = await q.select("id");
+  return (data ?? []).length;
+}

@@ -4,24 +4,28 @@
  *   GET  /api/academy-admin?op=courses              → JLS courses
  *   GET  /api/academy-admin?op=course&id=           → one course: details, draft, versions, offers, files
  *   GET  /api/academy-admin?op=vessels              → vessels a course can be offered to
- *   GET  /api/academy-admin?op=media-url&id=        → { url }: a short-lived link to one JLS course file
+ *   GET  /api/academy-admin?op=media-url&id=        → { url }: a JLS course file, or one in a course shared with JLS
+ *   GET  /api/academy-admin?op=shared               → what vessels and crew have shared with JLS for review
+ *   GET  /api/academy-admin?op=shared-course&id=    → a vessel's course shared with JLS (read-only, for preview)
  *   POST { op: "create", title }                                    (Create)
  *   POST { op: "save", id, title, summary, category, minutes, passMark, refreshMonths, content }   (Create)
  *   POST { op: "upload-url", courseId, fileName, mimeType, size }   (Create) → signed upload for one file
- *   POST { op: "publish", id }                                      (Edit) → snapshot the draft as a new version
- *   POST { op: "archive" | "restore", id }                          (Edit)
+ *   POST { op: "publish" | "archive" | "restore", id }              (Edit)
  *   POST { op: "offer", id, offerAll, yachtIds }                    (Edit)
  *
  * Permission: the "Crew Academy" module (View / Create / Edit); global admins
- * pass. Only JLS courses are reachable here — a vessel's own courses, crew and
- * results are private to the vessel unless it shares them (academy_jls_shares,
- * later phase), so nothing in this route lists learners or results.
+ * pass. A vessel's own courses, crew and results are private to the vessel —
+ * staff see them only while the vessel (or the crew member) has shared them with
+ * JLS (academy_jls_shares, live = not revoked).
  */
 import { createClient } from "@supabase/supabase-js";
 import { requireAccess } from "@/lib/auth/requireAccess.server";
 import { PERMISSION_ORDER, type PermissionLevel } from "@/lib/auth/claims";
-import { normalizeContent, publishProblems, emptyContent, ContentError } from "@/lib/academy/content";
-import { MAX_UPLOAD_BYTES, MEDIA_BUCKET, MEDIA_TYPES, UUID_RE, signedMediaUrl } from "@/lib/academy/academy.server";
+import { normalizeContent } from "@/lib/academy/content";
+import { UUID_RE, signedMediaUrl } from "@/lib/academy/academy.server";
+import {
+  AuthoringError, authoringPost, courseForEditing, listCourses, mediaUrlFor, scopedCourse, type CourseScope,
+} from "@/lib/academy/authoring.server";
 
 const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
@@ -30,25 +34,14 @@ function admin(): any {
   return createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false } });
 }
 
-class BadRequest extends Error {}
+const JLS: CourseScope = { owner: "jls" };
 
-const text = (v: unknown, max: number): string | null => {
-  if (typeof v !== "string") return null;
-  const t = v.trim().slice(0, max);
-  return t || null;
-};
-const int = (v: unknown, min: number, max: number): number | null => {
-  if (v === null || v === undefined || v === "") return null;
-  const n = Math.round(Number(v));
-  if (!Number.isFinite(n) || n < min || n > max) throw new BadRequest(`Enter a number from ${min} to ${max}`);
-  return n;
-};
-
-async function jlsCourse(sb: any, id: unknown) {
-  if (typeof id !== "string" || !UUID_RE.test(id)) throw new BadRequest("Choose a course");
-  const { data } = await sb.from("academy_courses").select("*").eq("id", id).eq("owner_type", "jls").maybeSingle();
-  if (!data) throw new BadRequest("Course not found");
-  return data;
+/** Live shares, keyed for lookups. */
+async function liveShares(sb: any) {
+  const { data } = await sb.from("academy_jls_shares")
+    .select("id, yacht_id, resource_type, resource_id, shared_by_kind, shared_by_name, note, created_at, yachts(vessel_name)")
+    .is("revoked_at", null).order("created_at", { ascending: false });
+  return (data ?? []) as any[];
 }
 
 export async function academyAdminHandler(request: Request): Promise<Response> {
@@ -58,13 +51,10 @@ export async function academyAdminHandler(request: Request): Promise<Response> {
   const level = claims.moduleLevels.academy as PermissionLevel | undefined;
   const can = (want: PermissionLevel) =>
     claims.isGlobalAdmin || (!!level && PERMISSION_ORDER.indexOf(level) >= PERMISSION_ORDER.indexOf(want));
-  const need = (want: PermissionLevel) => {
-    if (!can(want)) throw Object.assign(new Error(`This needs ${want} permission on Crew Academy.`), { status: 403 });
-  };
 
   const sb = admin();
   const { data: me } = await sb.from("user_profiles").select("display_name").eq("user_id", claims.userId).maybeSingle();
-  const actorName: string = me?.display_name ?? claims.email;
+  const actor = { userId: claims.userId, name: (me?.display_name ?? claims.email) as string };
 
   try {
     const url = new URL(request.url);
@@ -72,45 +62,12 @@ export async function academyAdminHandler(request: Request): Promise<Response> {
       const op = url.searchParams.get("op") ?? "courses";
 
       if (op === "courses") {
-        const { data, error } = await sb.from("academy_courses")
-          .select("id, title, summary, category, status, offer_all, current_version_id, updated_at, academy_course_offers(yacht_id), academy_course_versions!academy_course_versions_course_id_fkey(version)")
-          .eq("owner_type", "jls").order("updated_at", { ascending: false });
-        if (error) throw error;
-        return json({
-          canCreate: can("create"), canEdit: can("edit"),
-          courses: (data ?? []).map((c: any) => ({
-            id: c.id, title: c.title, summary: c.summary, category: c.category, status: c.status,
-            offerAll: c.offer_all, offeredTo: (c.academy_course_offers ?? []).length,
-            versions: (c.academy_course_versions ?? []).length,
-            published: !!c.current_version_id, updatedAt: c.updated_at,
-          })),
-        });
+        const shares = await liveShares(sb);
+        return json({ canCreate: can("create"), canEdit: can("edit"), courses: await listCourses(sb, JLS), sharedCount: shares.length });
       }
-
       if (op === "course") {
-        const course = await jlsCourse(sb, url.searchParams.get("id"));
-        const [{ data: versions }, { data: offers }, { data: files }] = await Promise.all([
-          sb.from("academy_course_versions").select("id, version, published_at, published_by_name")
-            .eq("course_id", course.id).order("version", { ascending: false }),
-          sb.from("academy_course_offers").select("yacht_id").eq("course_id", course.id),
-          sb.from("academy_media").select("id, kind, file_name, mime_type, size_bytes, created_at")
-            .eq("course_id", course.id).eq("owner_type", "jls").order("created_at", { ascending: false }),
-        ]);
-        return json({
-          canCreate: can("create"), canEdit: can("edit"),
-          course: {
-            id: course.id, title: course.title, summary: course.summary, category: course.category,
-            minutes: course.estimated_minutes, passMark: course.pass_mark, refreshMonths: course.refresh_months,
-            status: course.status, offerAll: course.offer_all, currentVersionId: course.current_version_id,
-            content: normalizeContent(course.draft_content), updatedAt: course.updated_at,
-          },
-          versions: versions ?? [],
-          offeredTo: (offers ?? []).map((o: any) => o.yacht_id),
-          files: files ?? [],
-          maxUploadBytes: MAX_UPLOAD_BYTES,
-        });
+        return json({ canCreate: can("create"), canEdit: can("edit"), ...(await courseForEditing(sb, JLS, url.searchParams.get("id"))) });
       }
-
       if (op === "vessels") {
         const { data } = await sb.from("yachts").select("id, vessel_name").order("vessel_name");
         return json({ vessels: (data ?? []).filter((y: any) => y.vessel_name) });
@@ -118,11 +75,55 @@ export async function academyAdminHandler(request: Request): Promise<Response> {
 
       if (op === "media-url") {
         const id = url.searchParams.get("id");
-        if (!id || !UUID_RE.test(id)) throw new BadRequest("Choose a file");
-        const { data: row } = await sb.from("academy_media").select("storage_path, kind, file_name, mime_type")
-          .eq("id", id).eq("owner_type", "jls").maybeSingle();
-        if (!row) return json({ error: "File not found" }, 404);
+        try { return json(await mediaUrlFor(sb, JLS, id)); } catch { /* not a JLS file — maybe a shared vessel course's */ }
+        if (!id || !UUID_RE.test(id)) return json({ error: "Choose a file" }, 400);
+        const { data: row } = await sb.from("academy_media").select("storage_path, kind, file_name, mime_type, course_id").eq("id", id).maybeSingle();
+        const shared = row?.course_id && (await liveShares(sb)).some((s) => s.resource_type === "course" && s.resource_id === row.course_id);
+        if (!row || !shared) return json({ error: "File not found" }, 404);
         return json({ url: await signedMediaUrl(sb, row), name: row.file_name, mimeType: row.mime_type });
+      }
+
+      if (op === "shared") {
+        const shares = await liveShares(sb);
+        const courseIds = shares.filter((s) => s.resource_type === "course").map((s) => s.resource_id);
+        const learnerIds = shares.filter((s) => s.resource_type === "learner").map((s) => s.resource_id);
+        const [{ data: courses }, { data: learners }, { data: enrolments }] = await Promise.all([
+          courseIds.length ? sb.from("academy_courses").select("id, title, summary, status, updated_at").in("id", courseIds) : { data: [] },
+          learnerIds.length ? sb.from("academy_learners").select("id, email, display_name, active").in("id", learnerIds) : { data: [] },
+          learnerIds.length ? sb.from("academy_enrolments")
+            .select("learner_id, status, mandatory, due_date, completed_at, score, expires_at, academy_courses(title, owner_type)")
+            .in("learner_id", learnerIds).neq("status", "cancelled") : { data: [] },
+        ]);
+        const courseById = new Map((courses ?? []).map((c: any) => [c.id, c]));
+        const learnerById = new Map((learners ?? []).map((l: any) => [l.id, l]));
+        const base = (s: any) => ({
+          shareId: s.id, vessel: s.yachts?.vessel_name ?? "", sharedBy: s.shared_by_name, sharedByKind: s.shared_by_kind,
+          note: s.note, sharedAt: s.created_at,
+        });
+        return json({
+          courses: shares.filter((s) => s.resource_type === "course" && courseById.has(s.resource_id)).map((s) => {
+            const c: any = courseById.get(s.resource_id);
+            return { ...base(s), courseId: c.id, title: c.title, summary: c.summary, status: c.status, updatedAt: c.updated_at };
+          }),
+          people: shares.filter((s) => s.resource_type === "learner" && learnerById.has(s.resource_id)).map((s) => {
+            const l: any = learnerById.get(s.resource_id);
+            return {
+              ...base(s), learnerId: l.id, name: l.display_name || l.email, email: l.email, active: l.active,
+              results: (enrolments ?? []).filter((e: any) => e.learner_id === l.id).map((e: any) => ({
+                course: e.academy_courses?.title ?? "Course", from: e.academy_courses?.owner_type === "jls" ? "JLS" : "Vessel",
+                status: e.status, mandatory: e.mandatory, dueDate: e.due_date, completedAt: e.completed_at, score: e.score, expiresAt: e.expires_at,
+              })),
+            };
+          }),
+        });
+      }
+
+      if (op === "shared-course") {
+        const id = url.searchParams.get("id");
+        const share = (await liveShares(sb)).find((s) => s.resource_type === "course" && s.resource_id === id);
+        if (!share) return json({ error: "That course isn't shared with JLS" }, 404);
+        const course = await scopedCourse(sb, { owner: "vessel", yachtId: share.yacht_id }, id);
+        return json({ title: course.title, passMark: course.pass_mark, vessel: share.yachts?.vessel_name ?? "", content: normalizeContent(course.draft_content) });
       }
       return json({ error: "Unknown request" }, 400);
     }
@@ -131,86 +132,9 @@ export async function academyAdminHandler(request: Request): Promise<Response> {
     const body = await request.json().catch(() => null) as any;
     if (!body || typeof body !== "object") return json({ error: "Bad request" }, 400);
 
-    if (body.op === "create") {
-      need("create");
-      const title = text(body.title, 200);
-      if (!title) throw new BadRequest("Give the course a title");
-      const { data, error } = await sb.from("academy_courses").insert({
-        owner_type: "jls", yacht_id: null, title, draft_content: emptyContent(),
-        created_by: claims.userId, created_by_name: actorName,
-      }).select("id").single();
-      if (error) throw error;
-      return json({ id: data.id });
-    }
-
-    if (body.op === "save") {
-      need("create");
-      const course = await jlsCourse(sb, body.id);
-      const title = text(body.title, 200);
-      if (!title) throw new BadRequest("Give the course a title");
-      const content = normalizeContent(body.content);
-      const { error } = await sb.from("academy_courses").update({
-        title, summary: text(body.summary, 2000), category: text(body.category, 100),
-        estimated_minutes: int(body.minutes, 1, 1000), pass_mark: int(body.passMark, 0, 100) ?? 80,
-        refresh_months: int(body.refreshMonths, 1, 120), draft_content: content,
-      }).eq("id", course.id);
-      if (error) throw error;
-      return json({ ok: true, content });
-    }
-
-    if (body.op === "upload-url") {
-      need("create");
-      const course = await jlsCourse(sb, body.courseId);
-      const mimeType = String(body.mimeType ?? "");
-      const kind = MEDIA_TYPES[mimeType];
-      if (!kind) throw new BadRequest("Use an MP4 video, a JPG / PNG / WebP / GIF picture or a PDF.");
-      const size = Number(body.size) || 0;
-      if (size <= 0) throw new BadRequest("That file is empty");
-      if (size > MAX_UPLOAD_BYTES) {
-        throw new BadRequest(`That file is ${(size / 1048576).toFixed(0)} MB — the limit is ${MAX_UPLOAD_BYTES / 1048576} MB. Export videos at 720p (H.264 MP4) to keep them small.`);
-      }
-      const fileName = (text(body.fileName, 200) ?? "file").replace(/[^\w.\- ]+/g, "_");
-      const ext = fileName.includes(".") ? fileName.split(".").pop()!.toLowerCase().slice(0, 8) : kind === "document" ? "pdf" : kind === "video" ? "mp4" : "jpg";
-      const path = `jls/${course.id}/${crypto.randomUUID()}.${ext}`;
-      const { data: signed, error: signErr } = await sb.storage.from(MEDIA_BUCKET).createSignedUploadUrl(path);
-      if (signErr || !signed) throw signErr ?? new Error("Could not prepare the upload");
-      const { data: media, error } = await sb.from("academy_media").insert({
-        owner_type: "jls", yacht_id: null, course_id: course.id, kind, storage_path: path,
-        file_name: fileName, mime_type: mimeType, size_bytes: size,
-        uploaded_by: claims.userId, uploaded_by_name: actorName,
-      }).select("id").single();
-      if (error) throw error;
-      return json({ mediaId: media.id, kind, path, token: signed.token, bucket: MEDIA_BUCKET });
-    }
-
-    if (body.op === "publish") {
-      need("edit");
-      const course = await jlsCourse(sb, body.id);
-      const content = normalizeContent(course.draft_content);
-      const problems = publishProblems(content);
-      if (problems.length) return json({ error: "The course isn't ready to publish yet.", problems }, 400);
-      const { data: last } = await sb.from("academy_course_versions").select("version")
-        .eq("course_id", course.id).order("version", { ascending: false }).limit(1).maybeSingle();
-      const version = (last?.version ?? 0) + 1;
-      const { data: v, error } = await sb.from("academy_course_versions").insert({
-        course_id: course.id, version, content, published_by: claims.userId, published_by_name: actorName,
-      }).select("id").single();
-      if (error) throw error;
-      await sb.from("academy_courses").update({ status: "published", current_version_id: v.id }).eq("id", course.id);
-      return json({ ok: true, version });
-    }
-
-    if (body.op === "archive" || body.op === "restore") {
-      need("edit");
-      const course = await jlsCourse(sb, body.id);
-      const status = body.op === "archive" ? "archived" : course.current_version_id ? "published" : "draft";
-      await sb.from("academy_courses").update({ status }).eq("id", course.id);
-      return json({ ok: true, status });
-    }
-
     if (body.op === "offer") {
-      need("edit");
-      const course = await jlsCourse(sb, body.id);
+      if (!can("edit")) return json({ error: "This needs Edit permission on Crew Academy." }, 403);
+      const course = await scopedCourse(sb, JLS, body.id);
       const yachtIds: string[] = Array.isArray(body.yachtIds)
         ? [...new Set((body.yachtIds as unknown[]).filter((y): y is string => typeof y === "string" && UUID_RE.test(y)))]
         : [];
@@ -218,18 +142,21 @@ export async function academyAdminHandler(request: Request): Promise<Response> {
       await sb.from("academy_course_offers").delete().eq("course_id", course.id);
       if (yachtIds.length) {
         const { error } = await sb.from("academy_course_offers").insert(
-          yachtIds.map((yacht_id) => ({ course_id: course.id, yacht_id, offered_by: claims.userId, offered_by_name: actorName })),
+          yachtIds.map((yacht_id) => ({ course_id: course.id, yacht_id, offered_by: actor.userId, offered_by_name: actor.name })),
         );
         if (error) throw error;
       }
       return json({ ok: true });
     }
 
+    if (!can("create")) return json({ error: "This needs Create permission on Crew Academy." }, 403);
+    const result = await authoringPost(sb, JLS, actor, body, can("edit"));
+    if (result) return json(result);
     return json({ error: "Unknown request" }, 400);
   } catch (e: any) {
-    if (e instanceof BadRequest || e instanceof ContentError) return json({ error: e.message }, 400);
-    if (e?.status === 403) return json({ error: e.message }, 403);
+    if (e instanceof AuthoringError) return json({ error: e.message, problems: e.problems }, 400);
     console.error("[academy-admin]", e);
     return json({ error: e?.message ?? "Something went wrong" }, 500);
   }
 }
+

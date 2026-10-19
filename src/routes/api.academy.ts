@@ -8,6 +8,7 @@
  *   POST /api/academy { op: "video",       enrolment, blockId, percent, seconds }
  *   POST /api/academy { op: "answer",      enrolment, blockId, answers } → the quiz marked
  *   POST /api/academy { op: "acknowledge", enrolment, blockId }
+ *   POST /api/academy { op: "share-results", share }   let JLS see my results (or stop)
  *
  * Every request: resolveLearner() (an ACTIVE learner login) → the enrolment must
  * be theirs, on their vessel → only then the service role reads data. Content
@@ -60,9 +61,11 @@ async function home(ctx: Ctx): Promise<Response> {
   }));
 
   await sb.from("academy_learners").update({ last_seen_at: new Date().toISOString() }).eq("id", learner.learnerId);
+  const { data: share } = await sb.from("academy_jls_shares").select("id")
+    .eq("resource_type", "learner").eq("resource_id", learner.learnerId).is("revoked_at", null).maybeSingle();
 
   return json({
-    me: { displayName: learner.displayName, email: learner.email },
+    me: { displayName: learner.displayName, email: learner.email, sharedWithJls: !!share },
     vessel: { name: learner.vesselName, logo: learner.vesselLogo },
     todo: courses.filter((c: any) => ACTIVE_STATUSES.includes(c.status)),
     done: courses.filter((c: any) => c.status === "completed" || c.status === "expired"),
@@ -148,7 +151,32 @@ async function after(ctx: Ctx, loaded: Awaited<ReturnType<typeof loadEnrolment>>
   return { outcome, progress: await progressRows(ctx.sb, loaded.enrolment.id) };
 }
 
+/**
+ * The crew member's own choice to let JLS see their training results (or stop).
+ * Their record is private to the vessel otherwise — decided 19 Oct 2026.
+ */
+async function shareResults(ctx: Ctx, share: boolean): Promise<Response> {
+  const { sb, learner } = ctx;
+  const { data: live } = await sb.from("academy_jls_shares").select("id")
+    .eq("resource_type", "learner").eq("resource_id", learner.learnerId).is("revoked_at", null).maybeSingle();
+  const who = learner.displayName ?? learner.email;
+  if (share && !live) {
+    await sb.from("academy_jls_shares").insert({
+      yacht_id: learner.yachtId, resource_type: "learner", resource_id: learner.learnerId,
+      shared_by_kind: "crew", shared_by: learner.userId, shared_by_name: who,
+    });
+  } else if (!share && live) {
+    await sb.from("academy_jls_shares").update({ revoked_at: new Date().toISOString(), revoked_by_name: who }).eq("id", live.id);
+  }
+  if (share !== !!live) {
+    await logActivity(sb, { yacht_id: learner.yachtId, learner_id: learner.learnerId, actor_user_id: learner.userId, actor_name: who,
+      action: share ? "shared_with_jls" : "unshared_with_jls", detail: { type: "learner", byCrew: true } });
+  }
+  return json({ ok: true, sharedWithJls: share });
+}
+
 async function post(ctx: Ctx, body: any): Promise<Response> {
+  if (body.op === "share-results") return shareResults(ctx, body.share === true);
   const loaded = await loadEnrolment(ctx, body?.enrolment, { start: true });
   const { sb } = ctx;
   const { enrolment, content, course } = loaded;
