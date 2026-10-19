@@ -5,6 +5,9 @@
  *                                              enrolments, group rules, shares with JLS, the crew list
  *   GET  ?op=course&id=                      → one of the vessel's own courses, for the course creator
  *   GET  ?op=media-url&id=                   → a file of one of the vessel's own courses
+ *   GET  ?op=certificate&enrolment=          → a crew member's certificate PDF
+ *   GET  ?op=analysis&courseId=              → which questions / exercise items the vessel's crew get wrong
+ *   GET  ?op=summary                         → overdue / due-this-week counts for Alerts
  *
  *   Crew      POST { op: "invite", crewMemberId?, email, name, groupIds? } · "resend" · "remove" · "restore" { learnerId }
  *   Groups    POST { op: "group-save", id?, name, description } · "group-delete" { id } · "group-members" { groupId, learnerIds }
@@ -27,8 +30,8 @@ import { resolvePortalYacht, portalModulesFor, type PortalYacht } from "@/lib/po
 import { canManageAcademy, hiddenSections } from "@/lib/portal/portal-positions";
 import { sectionEnabled } from "@/lib/portal/portal-modules";
 import {
-  EMAIL_RE, UUID_RE, courseForVessel, coursesForVessel, dropGroupEnrolments, enrolFromGroupRules, ensureDefaultGroups,
-  logActivity, sendLearnerInvite,
+  EMAIL_RE, UUID_RE, certificatePdf, courseForVessel, coursesForVessel, dropGroupEnrolments, enrolFromGroupRules, ensureDefaultGroups,
+  logActivity, pdfResponse, questionAnalysis, sendLearnerInvite,
 } from "@/lib/academy/academy.server";
 import {
   AuthoringError, authoringPost, courseForEditing, listCourses, mediaUrlFor, scopedCourse, type CourseScope,
@@ -98,7 +101,7 @@ async function overview(sb: any, yacht: PortalYacht, canManage: boolean) {
     coursesForVessel(sb, yacht.yachtId),
     listCourses(sb, scope),
     sb.from("academy_enrolments")
-      .select("id, learner_id, course_id, rule_id, status, mandatory, due_date, started_at, completed_at, score, expires_at, created_at")
+      .select("id, learner_id, course_id, rule_id, status, mandatory, due_date, started_at, completed_at, score, expires_at, created_at, academy_certificates(number)")
       .eq("yacht_id", yacht.yachtId).neq("status", "cancelled"),
     sb.from("crew_members").select("id, full_name, first_name, last_name, rank, email, status")
       .eq("yacht_id", yacht.yachtId).neq("status", "off_signed"),
@@ -126,6 +129,7 @@ async function overview(sb: any, yacht: PortalYacht, canManage: boolean) {
     enrolments: (enrolments ?? []).map((e: any) => ({
       id: e.id, learnerId: e.learner_id, courseId: e.course_id, ruleId: e.rule_id, status: e.status, mandatory: e.mandatory,
       dueDate: e.due_date, startedAt: e.started_at, completedAt: e.completed_at, score: e.score, expiresAt: e.expires_at,
+      certificate: (Array.isArray(e.academy_certificates) ? e.academy_certificates[0] : e.academy_certificates)?.number ?? null,
     })),
     groups: (groups ?? []).map((g: any) => ({
       id: g.id, name: g.name, description: g.description, memberIds: (g.academy_group_members ?? []).map((m: any) => m.learner_id),
@@ -162,6 +166,18 @@ export async function portalAcademyHandler(request: Request): Promise<Response> 
         return json({ canCreate: canManage, canEdit: canManage, ...(await courseForEditing(sb, scope, url.searchParams.get("id"))) });
       }
       if (op === "media-url") return json(await mediaUrlFor(sb, scope, url.searchParams.get("id")));
+      if (op === "certificate") {
+        const id = url.searchParams.get("enrolment") ?? "";
+        if (!UUID_RE.test(id)) return json({ error: "Choose an enrolment" }, 400);
+        const { data: own } = await sb.from("academy_enrolments").select("id").eq("id", id).eq("yacht_id", yacht.yachtId).maybeSingle();
+        const file = own ? await certificatePdf(sb, id) : null;
+        return file ? pdfResponse(file) : json({ error: "No certificate for that course" }, 404);
+      }
+      if (op === "analysis") {
+        const course = await courseForVessel(sb, String(url.searchParams.get("courseId") ?? ""), yacht.yachtId);
+        if (!course) return json({ error: "That course isn't available to your vessel" }, 400);
+        return json(await questionAnalysis(sb, course.id, yacht.yachtId));
+      }
       if (op === "summary") {
         // For the portal's Alerts: required training overdue or due within a week, among crew still signed up.
         const soon = new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10);

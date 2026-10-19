@@ -4,6 +4,7 @@
  *   GET  /api/academy?op=home                         → who they are, their vessel, their courses
  *   GET  /api/academy?op=course&enrolment=            → one course to take: content (no answer keys) + progress
  *   GET  /api/academy?op=media&enrolment=&media=      → { url }: a short-lived link to one file in that course
+ *   GET  /api/academy?op=certificate&enrolment=       → the certificate PDF for a course they've completed
  *   POST /api/academy { op: "viewed",      enrolment, lessonId }        reading, pictures, PDFs and links in a lesson
  *   POST /api/academy { op: "video",       enrolment, blockId, percent, seconds }
  *   POST /api/academy { op: "answer",      enrolment, blockId, answers } → the quiz marked
@@ -23,7 +24,7 @@ import { json, resolveLearner, type LearnerCaller } from "@/lib/academy/academy-
 import {
   findBlock, findLesson, gradeBlock, isGraded, forLearner, mediaIdsIn, normalizeContent, type CourseContent,
 } from "@/lib/academy/content";
-import { UUID_RE, logActivity, refreshEnrolment, signedMediaUrl } from "@/lib/academy/academy.server";
+import { UUID_RE, certificatePdf, logActivity, pdfResponse, refreshEnrolment, signedMediaUrl } from "@/lib/academy/academy.server";
 
 type Ctx = { sb: any; learner: LearnerCaller };
 
@@ -34,7 +35,7 @@ class BadRequest extends Error {}
 async function home(ctx: Ctx): Promise<Response> {
   const { sb, learner } = ctx;
   const { data: rows, error } = await sb.from("academy_enrolments")
-    .select("id, status, mandatory, due_date, started_at, completed_at, score, expires_at, academy_courses(id, title, summary, category, estimated_minutes, owner_type)")
+    .select("id, status, mandatory, due_date, started_at, completed_at, score, expires_at, academy_courses(id, title, summary, category, estimated_minutes, owner_type), academy_certificates(number)")
     .eq("learner_id", learner.learnerId)
     .eq("yacht_id", learner.yachtId)
     .neq("status", "cancelled")
@@ -50,6 +51,7 @@ async function home(ctx: Ctx): Promise<Response> {
     completedAt: r.completed_at,
     score: r.score,
     expiresAt: r.expires_at,
+    certificate: (Array.isArray(r.academy_certificates) ? r.academy_certificates[0] : r.academy_certificates)?.number ?? null,
     course: r.academy_courses && {
       id: r.academy_courses.id,
       title: r.academy_courses.title,
@@ -266,6 +268,14 @@ export async function academyHandler(request: Request): Promise<Response> {
       if (op === "home") return await home(ctx);
       if (op === "course") return await course(ctx, url.searchParams.get("enrolment"));
       if (op === "media") return await media(ctx, url.searchParams.get("enrolment"), url.searchParams.get("media"));
+      if (op === "certificate") {
+        const id = url.searchParams.get("enrolment") ?? "";
+        if (!UUID_RE.test(id)) return json({ error: "Choose a course" }, 400);
+        const { data: own } = await ctx.sb.from("academy_enrolments").select("id")
+          .eq("id", id).eq("learner_id", ctx.learner.learnerId).eq("yacht_id", ctx.learner.yachtId).maybeSingle();
+        const file = own ? await certificatePdf(ctx.sb, id) : null;
+        return file ? pdfResponse(file) : json({ error: "No certificate for that course" }, 404);
+      }
       return json({ error: "Unknown request" }, 400);
     }
     if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);

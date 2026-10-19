@@ -7,6 +7,7 @@
  *   GET  /api/academy-admin?op=media-url&id=        → { url }: a JLS course file, or one in a course shared with JLS
  *   GET  /api/academy-admin?op=shared               → what vessels and crew have shared with JLS for review
  *   GET  /api/academy-admin?op=shared-course&id=    → a vessel's course shared with JLS (read-only, for preview)
+ *   GET  /api/academy-admin?op=certificate&enrolment= → the certificate of a crew member who shared their results
  *   POST { op: "create", title }                                    (Create)
  *   POST { op: "save", id, title, summary, category, minutes, passMark, refreshMonths, content }   (Create)
  *   POST { op: "upload-url", courseId, fileName, mimeType, size }   (Create) → signed upload for one file
@@ -22,7 +23,7 @@ import { createClient } from "@supabase/supabase-js";
 import { requireAccess } from "@/lib/auth/requireAccess.server";
 import { PERMISSION_ORDER, type PermissionLevel } from "@/lib/auth/claims";
 import { normalizeContent } from "@/lib/academy/content";
-import { UUID_RE, signedMediaUrl } from "@/lib/academy/academy.server";
+import { UUID_RE, certificatePdf, pdfResponse, signedMediaUrl } from "@/lib/academy/academy.server";
 import {
   AuthoringError, authoringPost, courseForEditing, listCourses, mediaUrlFor, scopedCourse, type CourseScope,
 } from "@/lib/academy/authoring.server";
@@ -91,7 +92,7 @@ export async function academyAdminHandler(request: Request): Promise<Response> {
           courseIds.length ? sb.from("academy_courses").select("id, title, summary, status, updated_at").in("id", courseIds) : { data: [] },
           learnerIds.length ? sb.from("academy_learners").select("id, email, display_name, active").in("id", learnerIds) : { data: [] },
           learnerIds.length ? sb.from("academy_enrolments")
-            .select("learner_id, status, mandatory, due_date, completed_at, score, expires_at, academy_courses(title, owner_type)")
+            .select("id, learner_id, status, mandatory, due_date, completed_at, score, expires_at, academy_courses(title, owner_type), academy_certificates(number)")
             .in("learner_id", learnerIds).neq("status", "cancelled") : { data: [] },
         ]);
         const courseById = new Map((courses ?? []).map((c: any) => [c.id, c]));
@@ -110,12 +111,23 @@ export async function academyAdminHandler(request: Request): Promise<Response> {
             return {
               ...base(s), learnerId: l.id, name: l.display_name || l.email, email: l.email, active: l.active,
               results: (enrolments ?? []).filter((e: any) => e.learner_id === l.id).map((e: any) => ({
+                enrolmentId: e.id,
+                certificate: (Array.isArray(e.academy_certificates) ? e.academy_certificates[0] : e.academy_certificates)?.number ?? null,
                 course: e.academy_courses?.title ?? "Course", from: e.academy_courses?.owner_type === "jls" ? "JLS" : "Vessel",
                 status: e.status, mandatory: e.mandatory, dueDate: e.due_date, completedAt: e.completed_at, score: e.score, expiresAt: e.expires_at,
               })),
             };
           }),
         });
+      }
+
+      if (op === "certificate") {
+        const id = url.searchParams.get("enrolment") ?? "";
+        if (!UUID_RE.test(id)) return json({ error: "Choose an enrolment" }, 400);
+        const { data: e } = await sb.from("academy_enrolments").select("learner_id").eq("id", id).maybeSingle();
+        const shared = e && (await liveShares(sb)).some((s) => s.resource_type === "learner" && s.resource_id === e.learner_id);
+        const file = shared ? await certificatePdf(sb, id) : null;
+        return file ? pdfResponse(file) : json({ error: "Not shared with JLS" }, 404);
       }
 
       if (op === "shared-course") {

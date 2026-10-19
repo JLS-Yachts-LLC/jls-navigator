@@ -1667,6 +1667,17 @@ export default {
           .then((r) => { if (r.sent || r.failed) console.log('[portal-alerts]', JSON.stringify(r)) })
           .catch((e) => console.error('[portal-alerts] error:', e instanceof Error ? e.message : String(e)))
       );
+      // …Crew Academy refreshers: a certificate that has run out re-enrols the
+      //    crew member on the course (due in 30 days). See lib/academy/academy.server.
+      ctx.waitUntil(
+        import('./lib/academy/academy.server')
+          .then(async (m) => {
+            const { createClient } = await import('@supabase/supabase-js')
+            return m.renewExpiredEnrolments(createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false } }))
+          })
+          .then((r) => { if (r.expired) console.log('[academy-refreshers]', JSON.stringify(r)) })
+          .catch((e) => console.error('[academy-refreshers] error:', e instanceof Error ? e.message : String(e)))
+      );
       // …phone notifications to clients who switched them on (JLS replied,
       //    moved a request on, finished a job). See lib/portal/push.server.
       ctx.waitUntil(

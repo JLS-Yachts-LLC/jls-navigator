@@ -9,7 +9,11 @@
  */
 import { sendAuthLinkViaSES, type AuthLinkResult } from "@/lib/admin/auth-email.server";
 import { appBaseUrl } from "@/lib/app-url.server";
-import { courseOutcome, type BlockProgress, type CourseContent } from "@/lib/academy/content";
+import {
+  BLOCK_LABELS, courseOutcome, findBlock, gradeBlock, gradedItems, isGraded, normalizeContent,
+  type BlockProgress, type CourseContent,
+} from "@/lib/academy/content";
+import { buildCertificatePdf, certificateNumber } from "@/lib/academy/certificate.server";
 
 export const MEDIA_BUCKET = "academy-media";
 /**
@@ -112,6 +116,7 @@ export async function refreshEnrolment(sb: any, enrolment: any, content: CourseC
       yacht_id: enrolment.yacht_id, learner_id: enrolment.learner_id, course_id: enrolment.course_id,
       action: "completed", detail: { score: outcome.score },
     });
+    await issueCertificate(sb, enrolment, now, expires);
     return { ...outcome, status: "completed" as const };
   }
   return { ...outcome, status: enrolment.status as string };
@@ -181,4 +186,145 @@ export async function dropGroupEnrolments(sb: any, opts: { learnerId?: string; g
   if (opts.learnerId) q = q.eq("learner_id", opts.learnerId);
   const { data } = await q.select("id");
   return (data ?? []).length;
+}
+
+// ── Certificates ─────────────────────────────────────────────────────────────
+/**
+ * The certificate record for a completed enrolment (one per enrolment; a
+ * refresher is a new enrolment and so a new certificate). The PDF itself is
+ * drawn on demand by certificatePdf().
+ */
+export async function issueCertificate(sb: any, enrolment: any, issuedAt: Date, expiresAt: Date | null) {
+  for (let tries = 0; tries < 3; tries++) {
+    const { error } = await sb.from("academy_certificates").insert({
+      enrolment_id: enrolment.id, learner_id: enrolment.learner_id, course_id: enrolment.course_id, yacht_id: enrolment.yacht_id,
+      number: certificateNumber(issuedAt), issued_at: issuedAt.toISOString(), expires_at: expiresAt?.toISOString() ?? null,
+    });
+    if (!error || error.code !== "23505") return; // done, or a real error — a clash on the number just tries again
+    const { data: existing } = await sb.from("academy_certificates").select("id").eq("enrolment_id", enrolment.id).maybeSingle();
+    if (existing) return;
+  }
+}
+
+/**
+ * The PDF for one enrolment's certificate, or null when it has none. The
+ * caller has already checked the enrolment is one the requester may see.
+ */
+export async function certificatePdf(sb: any, enrolmentId: string): Promise<{ bytes: Uint8Array; fileName: string } | null> {
+  const { data: cert } = await sb.from("academy_certificates")
+    .select("number, issued_at, expires_at, learner_id, course_id, yacht_id, academy_enrolments(score)")
+    .eq("enrolment_id", enrolmentId).maybeSingle();
+  if (!cert) return null;
+  const [{ data: learner }, { data: course }, { data: yacht }] = await Promise.all([
+    sb.from("academy_learners").select("display_name, email").eq("id", cert.learner_id).maybeSingle(),
+    sb.from("academy_courses").select("title, owner_type").eq("id", cert.course_id).maybeSingle(),
+    sb.from("yachts").select("vessel_name, logo_url").eq("id", cert.yacht_id).maybeSingle(),
+  ]);
+  const bytes = await buildCertificatePdf({
+    number: cert.number,
+    learnerName: learner?.display_name || learner?.email || "Crew member",
+    courseTitle: course?.title ?? "Course",
+    owner: course?.owner_type === "vessel" ? "vessel" : "jls",
+    vesselName: yacht?.vessel_name ?? "",
+    vesselLogoUrl: yacht?.logo_url ?? null,
+    score: cert.academy_enrolments?.score ?? null,
+    issuedAt: cert.issued_at,
+    expiresAt: cert.expires_at,
+  });
+  return { bytes, fileName: `${cert.number} ${(course?.title ?? "certificate").replace(/[^\w .-]+/g, "")}.pdf` };
+}
+
+export function pdfResponse(file: { bytes: Uint8Array; fileName: string }): Response {
+  return new Response(file.bytes as unknown as BodyInit, {
+    headers: {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `inline; filename="${file.fileName}"`,
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
+// ── Refreshers ───────────────────────────────────────────────────────────────
+/** How long crew have to retake a course once their refresher falls due. */
+export const REFRESHER_DUE_DAYS = 30;
+
+/**
+ * Cron (worker tick): a completed course whose certificate has run out
+ * (expires_at passed) becomes "expired", and the crew member — if still on the
+ * vessel's Crew Academy and the course is still available to it — is enrolled
+ * again on the current version, due in REFRESHER_DUE_DAYS. Idempotent: the
+ * live-enrolment unique index stops a second copy.
+ */
+export async function renewExpiredEnrolments(sb: any): Promise<{ expired: number; renewed: number }> {
+  const { data: due } = await sb.from("academy_enrolments")
+    .select("id, learner_id, course_id, yacht_id, rule_id, mandatory, academy_learners!inner(active)")
+    .eq("status", "completed").not("expires_at", "is", null).lte("expires_at", new Date().toISOString()).limit(200);
+  let renewed = 0;
+  for (const e of due ?? []) {
+    await sb.from("academy_enrolments").update({ status: "expired" }).eq("id", e.id).eq("status", "completed");
+    if (!e.academy_learners?.active) continue;
+    if (!(await courseForVessel(sb, e.course_id, e.yacht_id))) continue;
+    const { error } = await sb.from("academy_enrolments").insert({
+      learner_id: e.learner_id, course_id: e.course_id, yacht_id: e.yacht_id, rule_id: e.rule_id, mandatory: e.mandatory,
+      due_date: addDays(REFRESHER_DUE_DAYS),
+    });
+    if (!error) {
+      renewed++;
+      await logActivity(sb, { yacht_id: e.yacht_id, learner_id: e.learner_id, course_id: e.course_id, action: "refresher_enrolled" });
+    }
+  }
+  return { expired: (due ?? []).length, renewed };
+}
+
+// ── Question analysis ────────────────────────────────────────────────────────
+/**
+ * Which quiz questions and exercise items a vessel's crew get wrong on one
+ * course: every submitted attempt re-marked against the course version it was
+ * taken on. "First try" counts each person's first attempt at that block only.
+ * Sorted hardest first. Names are never included — it's about the questions.
+ */
+export async function questionAnalysis(sb: any, courseId: string, yachtId: string) {
+  const { data: enrols } = await sb.from("academy_enrolments").select("id, version_id")
+    .eq("course_id", courseId).eq("yacht_id", yachtId).not("version_id", "is", null);
+  const versionOf = new Map<string, string>((enrols ?? []).map((e: any) => [e.id, e.version_id]));
+  if (!versionOf.size) return { people: 0, attempts: 0, items: [] };
+  const [{ data: attempts }, { data: versions }] = await Promise.all([
+    sb.from("academy_attempts").select("enrolment_id, block_id, answers, submitted_at")
+      .in("enrolment_id", [...versionOf.keys()]).order("submitted_at").limit(5000),
+    sb.from("academy_course_versions").select("id, version, content").in("id", [...new Set(versionOf.values())]),
+  ]);
+  const content = new Map<string, CourseContent>((versions ?? []).map((v: any) => [v.id, normalizeContent(v.content)]));
+  const newest = (versions ?? []).sort((a: any, b: any) => b.version - a.version)[0];
+  const latest: CourseContent | undefined = newest ? content.get(newest.id) : undefined;
+
+  type Row = { blockId: string; block: string; itemId: string; label: string; tries: number; right: number; firstTries: number; firstRight: number };
+  const rows = new Map<string, Row>();
+  const seenFirst = new Set<string>();
+  const people = new Set<string>();
+  for (const a of attempts ?? []) {
+    const c = content.get(versionOf.get(a.enrolment_id) ?? "");
+    const found = c && a.block_id ? findBlock(c, a.block_id) : null;
+    if (!found || !isGraded(found.block)) continue;
+    people.add(a.enrolment_id);
+    const block = found.block;
+    // Label from the newest version that still has the block, so edits read well.
+    const shown = (latest && findBlock(latest, block.id)?.block) || block;
+    const labels = new Map(gradedItems(isGraded(shown) ? shown : block).map((i) => [i.id, i.label]));
+    const first = !seenFirst.has(`${a.enrolment_id}:${block.id}`);
+    seenFirst.add(`${a.enrolment_id}:${block.id}`);
+    for (const q of gradeBlock(block, a.answers, 0).questions) {
+      const key = `${block.id}:${q.id}`;
+      const row = rows.get(key) ?? {
+        blockId: block.id, block: ("title" in shown && shown.title) || BLOCK_LABELS[block.type], itemId: q.id,
+        label: labels.get(q.id) ?? "Question", tries: 0, right: 0, firstTries: 0, firstRight: 0,
+      };
+      row.tries++; if (q.correct) row.right++;
+      if (first) { row.firstTries++; if (q.correct) row.firstRight++; }
+      rows.set(key, row);
+    }
+  }
+  const items = [...rows.values()].map((r) => ({
+    ...r, firstTryPercent: r.firstTries ? Math.round((r.firstRight / r.firstTries) * 100) : null,
+  })).sort((a, b) => (a.firstTryPercent ?? 101) - (b.firstTryPercent ?? 101));
+  return { people: people.size, attempts: (attempts ?? []).length, items };
 }
