@@ -2050,15 +2050,33 @@ async function _syncSmallBoats(cfg: SpConfig): Promise<{ synced: number; errors:
     nextUrl = page['@odata.nextLink'] ?? null
   }
 
-  // Load existing small_boats for matching (table keys on boat_name; there is no reg_no column)
+  // Load existing small_boats for matching: the stored item id first, then the
+  // name (there is no reg_no column). Until 19 Oct this matched on the name ONLY,
+  // last row wins — a boat with two Polaris rows (an old registration and its
+  // renewal) had every SharePoint item of that name written into one of them.
   const { data: existing } = await fetchAllRows(() => (supabaseAdmin as any)
     .from('small_boats')
-    .select('id, boat_name')
+    .select('id, boat_name, sharepoint_item_id')
     .order('id'))
-  const byName = new Map<string, string>()
+  const liveItemIds = new Set(allItems.filter(i => !i['@removed']).map(i => String(i.id)))
+  // Item id → rows linked to it. More than one is a conflict a person must settle.
+  const bySpId = new Map<string, string[]>()
+  // null = more than one candidate: ambiguous, so not matched at all.
+  const byName = new Map<string, string | null>()
   for (const b of (existing ?? []) as Record<string, any>[]) {
-    if (b.boat_name) byName.set(String(b.boat_name).toLowerCase(), String(b.id))
+    if (b.sharepoint_item_id) {
+      const k = String(b.sharepoint_item_id)
+      bySpId.set(k, [...(bySpId.get(k) ?? []), String(b.id)])
+      // A row linked to a live item is spoken for: only that item may update it.
+      if (liveItemIds.has(k)) continue
+    }
+    if (b.boat_name) {
+      const k = String(b.boat_name).trim().toLowerCase()
+      byName.set(k, byName.has(k) ? null : String(b.id))
+    }
   }
+  const claimedByName = new Set<string>()
+  const shared: string[] = []
 
   const updateById = new Map<string, Record<string, any>>()
   const insertByKey = new Map<string, Record<string, any>>()
@@ -2078,12 +2096,27 @@ async function _syncSmallBoats(cfg: SpConfig): Promise<{ synced: number; errors:
     if (!record.boat_name) continue
     record.sharepoint_item_id = item.id
 
-    const existingId = byName.get(String(record.boat_name).toLowerCase())
+    const linked = bySpId.get(String(item.id)) ?? []
+    if (linked.length > 1) {
+      // Writing it into either row would be a guess; leave both alone and say so.
+      shared.push(`item ${item.id} (${record.boat_name}) is linked to ${linked.length} Polaris rows — skipped`)
+      continue
+    }
+    let existingId: string | undefined = linked[0]
+    if (!existingId) {
+      const k = String(record.boat_name).trim().toLowerCase()
+      const byKey = byName.get(k)
+      if (byKey && !claimedByName.has(byKey)) { existingId = byKey; claimedByName.add(byKey) }
+    }
     if (existingId) updateById.set(existingId, { ...record, id: existingId })
     else insertByKey.set(String(item.id), { ...record })
   }
 
   const persisted = await bulkPersist('small_boats', updateById, insertByKey)
+  if (shared.length) {
+    console.warn(`[sp-small-boats] ${shared.join('; ')}`)
+    persisted.samples = [...shared, ...(persisted.samples ?? [])].slice(0, 8)
+  }
 
   // Boats deleted in SharePoint get archived, same rule as the yacht registry.
   const seen = new Set(allItems.filter(i => !i['@removed']).map(i => String(i.id)))
@@ -2825,22 +2858,18 @@ async function _syncCrew(cfg: SpConfig): Promise<{ synced: number; errors: numbe
   const bySpId = new Map<string, string>()
   const byPassport = new Map<string, string>()
   const byNameDob = new Map<string, string>()
-  const byName = new Map<string, string>()
   /** First+last name, ignoring any middle name — see the middle-name step below. */
   const byFirstLast = new Map<string, { id: string; dob: string | null; pp: string }[]>()
   /** Crew already tied to a SharePoint row — see the re-pointing guard below. */
   const existingSpIds = new Set<string>()
   for (const c of (existing ?? []) as Record<string, any>[]) {
     if (c.sharepoint_item_id) { bySpId.set(String(c.sharepoint_item_id), String(c.id)); existingSpIds.add(String(c.id)) }
-    const pp = passportKey(c.passport_number)
+    const pp = realPassportKey(c.passport_number)
     if (pp) byPassport.set(pp, String(c.id))
     if (c.first_name && c.last_name) {
       const k = crewNameKey(`${c.first_name} ${c.last_name}`)
       if (k) {
         if (c.date_of_birth) byNameDob.set(`${k}|${c.date_of_birth}`, String(c.id))
-        // First writer wins, so an established record is preferred over a later
-        // near-duplicate when only the name matches.
-        if (!byName.has(k)) byName.set(k, String(c.id))
         const list = byFirstLast.get(k) ?? []
         list.push({ id: String(c.id), dob: c.date_of_birth ?? null, pp })
         byFirstLast.set(k, list)
@@ -2884,7 +2913,12 @@ async function _syncCrew(cfg: SpConfig): Promise<{ synced: number; errors: numbe
     // space did not equal the single-spaced name, so a second profile was created
     // for someone already on file. Name+DOB is tried before name alone so two
     // genuinely different people who share a name are not merged into one.
-    const ppKey = passportKey(record.passport_number)
+    //
+    // Name alone goes ONLY through the guarded last-resort step below. Until
+    // 19 Oct a bare name lookup (first row wins) ran first, so that step was
+    // unreachable: two people sharing a name were fused even when their dates of
+    // birth or passports disagreed, and the profile took whichever row came last.
+    const ppKey = realPassportKey(record.passport_number)
     const nKey = (record.first_name && record.last_name)
       ? crewNameKey(`${record.first_name} ${record.last_name}`)
       : ''
@@ -2892,8 +2926,7 @@ async function _syncCrew(cfg: SpConfig): Promise<{ synced: number; errors: numbe
     let existingId =
       byId ??
       (ppKey ? byPassport.get(ppKey) : undefined) ??
-      ((nKey && record.date_of_birth) ? byNameDob.get(`${nKey}|${record.date_of_birth}`) : undefined) ??
-      (nKey ? byName.get(nKey) : undefined)
+      ((nKey && record.date_of_birth) ? byNameDob.get(`${nKey}|${record.date_of_birth}`) : undefined)
 
     /**
      * Last resort — the same first and last name, where nothing actually
@@ -2963,6 +2996,16 @@ function _isRealPermitNumber(v: unknown): boolean {
 function _isRealImo(v: unknown): boolean {
   const s = String(v ?? '').replace(/^\s*imo\b/i, '').replace(/[^a-z0-9]/gi, '')
   return s.length >= 5 && /\d/.test(s) && !/^0+$/.test(s)
+}
+
+/**
+ * A passport number that can identify a person: the normalised key (see
+ * passportKey), or "" for a placeholder such as "N/A", "TBC" or "0000". Matching on
+ * a placeholder would fuse everyone without a passport on file into one profile.
+ */
+function realPassportKey(v: string | null | undefined): string {
+  const k = passportKey(v)
+  return k.length >= 5 && /d/.test(k) && !/^0+$/.test(k) ? k : ''
 }
 
 function _permitTypeFromListName(listName: string): string | null {
