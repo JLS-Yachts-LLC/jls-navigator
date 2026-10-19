@@ -149,9 +149,9 @@ export const POST_SPOTS = {
   // the guest in the background (figure at x+660, scale 1: 100 × 240 box from y 380)
   guest: [spot(POST.x + 710, 450, 70), spot(POST.x + 710, 560, 70)],
   // where the yacht is: the marina sign and the location tag
-  where: [spot(POST.x + 690, 278, 120), spot(POST.x + 210, 96, 105)],
+  where: [spot(POST.x + 625, 280, 75), spot(POST.x + 755, 280, 75), spot(POST.x + 160, 94, 50), spot(POST.x + 262, 94, 50)],
   // the yacht's name: the life ring and the hashtag
-  name: [spot(POST.x + 120, 480, 100), spot(POST.x + 330, 940, 85)],
+  name: [spot(POST.x + 120, 480, 100), spot(POST.x + 296, 938, 46), spot(POST.x + 372, 938, 46)],
 };
 
 // ── 5. When a guest asks for a photo with you ──────────────────────────────
