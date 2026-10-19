@@ -21,7 +21,7 @@
  */
 import { json, resolveLearner, type LearnerCaller } from "@/lib/academy/academy-auth.server";
 import {
-  findBlock, findLesson, forLearner, gradeQuiz, mediaIdsIn, normalizeContent, type CourseContent,
+  findBlock, findLesson, gradeBlock, isGraded, forLearner, mediaIdsIn, normalizeContent, type CourseContent,
 } from "@/lib/academy/content";
 import { UUID_RE, logActivity, refreshEnrolment, signedMediaUrl } from "@/lib/academy/academy.server";
 
@@ -226,9 +226,9 @@ async function post(ctx: Ctx, body: any): Promise<Response> {
   }
 
   if (body.op === "answer") {
-    if (block.type !== "quiz") throw new BadRequest("That isn't a quiz");
+    if (!isGraded(block)) throw new BadRequest("That isn't a quiz or exercise");
     if (enrolment.status === "completed") throw new BadRequest("You've already completed this course");
-    const result = gradeQuiz(block, body.answers ?? {}, course.pass_mark);
+    const result = gradeBlock(block, body.answers ?? {}, course.pass_mark);
     await sb.from("academy_attempts").insert({
       enrolment_id: enrolment.id, block_id: block.id, answers: body.answers ?? {},
       score: result.score, max_score: 100, passed: result.passed,
@@ -244,8 +244,10 @@ async function post(ctx: Ctx, body: any): Promise<Response> {
       ...rest,
       result: {
         score: result.score, right: result.right, total: result.total, passed: result.passed, passMark: course.pass_mark,
-        // Right answers and explanations only once passed — otherwise a retry would be a formality.
+        // Right answers, explanations and an exercise's full solution only once passed —
+        // otherwise a retry would be a formality.
         questions: result.questions.map((q) => result.passed ? q : { id: q.id, correct: q.correct, rightAnswers: [] }),
+        solution: result.passed ? result.solution : undefined,
       },
     });
   }
