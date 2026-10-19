@@ -10,7 +10,7 @@
 import { randomUUID } from "node:crypto";
 import { PHISH_SPOTS, SOCIAL_SPOTS } from "./pictures.mjs";
 
-const id = () => randomUUID().replace(/-/g, "").slice(0, 12);
+export const id = () => randomUUID().replace(/-/g, "").slice(0, 12);
 
 export const COURSE = {
   title: "Cyber security at sea — crew awareness",
@@ -23,11 +23,12 @@ export const COURSE = {
 };
 
 // ── Block builders ─────────────────────────────────────────────────────────
-const reading = (markdown) => ({ id: id(), type: "reading", markdown: markdown.trim().replace(/^ +/gm, "") });
-const image = (file, caption) => ({ id: id(), type: "image", mediaId: `@${file}`, caption });
-const video = (file, title) => ({ id: id(), type: "video", mediaId: `@${file}`, url: null, title, mustWatch: true });
-const ack = (statement) => ({ id: id(), type: "acknowledge", statement });
-function quiz(title, questions) {
+export const reading = (markdown) => ({ id: id(), type: "reading", markdown: markdown.trim().replace(/^ +/gm, "") });
+export const image = (file, caption) => ({ id: id(), type: "image", mediaId: `@${file}`, caption });
+export const video = (file, title) => ({ id: id(), type: "video", mediaId: `@${file}`, url: null, title, mustWatch: true });
+export const doc = (file, title) => ({ id: id(), type: "document", mediaId: `@${file}`, title });
+export const ack = (statement) => ({ id: id(), type: "acknowledge", statement });
+export function quiz(title, questions) {
   return {
     id: id(), type: "quiz", title,
     questions: questions.map(([kind, prompt, opts, explanation]) => {
@@ -39,15 +40,15 @@ function quiz(title, questions) {
     }),
   };
 }
-const hotspot = (title, prompt, file, spots) => ({ id: id(), type: "hotspot", title, prompt, mediaId: `@${file}`, spots: spots.map((s) => ({ id: id(), ...s })) });
-const match = (title, prompt, pairs) => ({ id: id(), type: "match", title, prompt, pairs: pairs.map(([left, right]) => ({ id: id(), left, right, rightId: id() })) });
-const order = (title, prompt, steps) => ({ id: id(), type: "order", title, prompt, items: steps.map((text) => ({ id: id(), text })) });
-function sort(title, prompt, buckets, items) {
+export const hotspot = (title, prompt, file, spots) => ({ id: id(), type: "hotspot", title, prompt, mediaId: `@${file}`, spots: spots.map((s) => ({ id: id(), ...s })) });
+export const match = (title, prompt, pairs) => ({ id: id(), type: "match", title, prompt, pairs: pairs.map(([left, right]) => ({ id: id(), left, right, rightId: id() })) });
+export const order = (title, prompt, steps) => ({ id: id(), type: "order", title, prompt, items: steps.map((text) => ({ id: id(), text })) });
+export function sort(title, prompt, buckets, items) {
   const b = buckets.map((text) => ({ id: id(), text }));
   return { id: id(), type: "sort", title, prompt, buckets: b, items: items.map(([text, i]) => ({ id: id(), text, bucketId: b[i].id })) };
 }
-const lesson = (title, blocks) => ({ id: id(), title, blocks });
-const section = (title, lessons) => ({ id: id(), title, lessons });
+export const lesson = (title, blocks) => ({ id: id(), title, blocks });
+export const section = (title, lessons) => ({ id: id(), title, lessons });
 
 // ── The course ─────────────────────────────────────────────────────────────
 export function content() {
@@ -315,6 +316,12 @@ export function content() {
             The ship's response and recovery plan — the last two parts of the IMO guidelines — can only start when someone speaks up. **Nobody gets into trouble for reporting.**
           `),
           image("09-report-it.png", "Report it — straight away, no blame"),
+          reading(`
+            ### Your vessel's contacts
+
+            Every vessel fills in its own names and numbers on the pocket card and the crew mess poster, then prints them. Keep a card in your wallet or phone case. If the poster isn't up in the crew mess, or your card is blank, ask your Head of Department.
+          `),
+          doc("p2-pocket-cards.pdf", "Pocket card — \"Report it fast\" with your vessel's contacts"),
           order("You've just clicked a bad link", "Put the steps in the right order.", [
             "Stop — don't click anything else",
             "Tell the OOW, your HoD, the ETO or the Captain",
@@ -325,6 +332,7 @@ export function content() {
         ]),
         lesson("Final check", [
           image("10-six-habits.png", "Six habits that keep the ship safe"),
+          doc("p1-crew-mess-poster.pdf", "Crew mess poster — six habits and who to call"),
           quiz("Final quiz", [
             ["single", "An email from \"the management company\" says your account will be closed unless you sign in within an hour. What's the best first step?", ["Click the link quickly so you don't lose access", "Reply asking if it's genuine", "*Check it another way — ask IT or contact the company on details you already have", "Forward it to all crew as a warning"], "Urgency is a classic sign. Never use the contact details or links in the suspicious email itself."],
             ["single", "Which of these follows the Cyber Essentials rule on user access control?", ["One shared login for all deck crew", "*Your own account, a strong passphrase and MFA", "Writing the password on the monitor so nobody forgets it", "Using the same password everywhere so it's easy to remember"], "Own account, strong unique passphrase, two-step sign-in."],
@@ -343,8 +351,7 @@ export function content() {
 }
 
 /** Swap "@file" references for academy_media ids. Throws if a file is missing. */
-export function buildCourse(mediaIds) {
-  const c = content();
+export function buildCourse(mediaIds, c = content()) {
   for (const s of c.sections) for (const l of s.lessons) for (const b of l.blocks) {
     if (typeof b.mediaId === "string" && b.mediaId.startsWith("@")) {
       const idFor = mediaIds[b.mediaId.slice(1)];
@@ -358,5 +365,5 @@ export function buildCourse(mediaIds) {
 export const MEDIA_FILES = [
   "01-cover.png", "02-five-controls.png", "03-phishing-email.png", "04-gift-card-scam.png", "05-passphrase-mfa.png",
   "06-bridge-usb.png", "07-networks.png", "08-social-post.png", "09-report-it.png", "10-six-habits.png",
-  "a1-one-click-whole-ship.mp4", "a2-why-mfa.mp4", "a3-gps-spoofing.mp4",
+  "a1-one-click-whole-ship.mp4", "a2-why-mfa.mp4", "a3-gps-spoofing.mp4", "p1-crew-mess-poster.pdf", "p2-pocket-cards.pdf",
 ];
