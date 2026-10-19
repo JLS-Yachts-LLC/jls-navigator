@@ -1678,6 +1678,14 @@ export default {
           .then((r) => { if (r.expired) console.log('[academy-refreshers]', JSON.stringify(r)) })
           .catch((e) => console.error('[academy-refreshers] error:', e instanceof Error ? e.message : String(e)))
       );
+      // …and Crew Academy reminder emails (new / due soon / overdue), only for
+      //    vessels with Automatic messages switched on. See lib/academy/reminders.server.
+      ctx.waitUntil(
+        import('./lib/academy/reminders.server')
+          .then((m) => m.sendAcademyReminders())
+          .then((r) => { if (r.sent || r.held || r.failed) console.log('[academy-reminders]', JSON.stringify(r)) })
+          .catch((e) => console.error('[academy-reminders] error:', e instanceof Error ? e.message : String(e)))
+      );
       // …phone notifications to clients who switched them on (JLS replied,
       //    moved a request on, finished a job). See lib/portal/push.server.
       ctx.waitUntil(

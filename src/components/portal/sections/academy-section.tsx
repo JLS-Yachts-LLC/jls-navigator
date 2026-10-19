@@ -45,7 +45,7 @@ type GroupRule = { id: string; courseId: string; groupId: string; mandatory: boo
 type Share = { id: string; type: "course" | "learner" | "enrolment"; resourceId: string; byKind: string; by: string | null; note: string | null; at: string };
 type Crew = { id: string; name: string | null; rank: string | null; email: string | null };
 type Overview = {
-  canManage: boolean; vessel: string; learners: Learner[]; courses: Course[]; ownCourses: OwnCourse[]; enrolments: Enrolment[];
+  canManage: boolean; vessel: string; remindersOn: boolean; learners: Learner[]; courses: Course[]; ownCourses: OwnCourse[]; enrolments: Enrolment[];
   groups: Group[]; groupRules: GroupRule[]; shares: Share[]; crew: Crew[];
 };
 type TabKey = "crew" | "groups" | "courses" | "reports";
@@ -266,6 +266,11 @@ function CrewTab({ data, onChanged }: { data: Overview; onChanged: () => void })
 
   return (
     <div className="space-y-3">
+      <p className="text-xs text-muted-foreground">
+        {data.remindersOn
+          ? "Reminder emails are on: crew are emailed about new courses, courses due within 3 days and overdue ones (weekly, up to 4 times)."
+          : "Reminder emails are off for your vessel — crew see their courses when they sign in. Ask JLS Yachts if you'd like reminders switched on."}
+      </p>
       {data.canManage && notYet > 0 && (
         <p className="text-xs text-muted-foreground">{notYet} crew member{notYet === 1 ? "" : "s"} on your crew list {notYet === 1 ? "isn't" : "aren't"} signed up yet.</p>
       )}

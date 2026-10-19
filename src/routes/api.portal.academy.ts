@@ -112,9 +112,12 @@ async function overview(sb: any, yacht: PortalYacht, canManage: boolean) {
     sb.from("academy_jls_shares").select("id, resource_type, resource_id, shared_by_kind, shared_by_name, note, created_at")
       .eq("yacht_id", yacht.yachtId).is("revoked_at", null),
   ]);
+  // Reminder emails go out only while JLS has Automatic messages on for the vessel.
+  const { data: autoMsg } = await sb.from("client_auto_messages").select("enabled").eq("yacht_id", yacht.yachtId).eq("enabled", true).limit(1);
   return {
     canManage,
     vessel: yacht.vesselName,
+    remindersOn: !!autoMsg?.length,
     learners: (learners ?? []).map((l: any) => ({
       id: l.id, email: l.email, name: l.display_name, crewMemberId: l.crew_member_id, active: l.active,
       hasSignedIn: !!l.last_seen_at, lastSeenAt: l.last_seen_at, inviteSentAt: l.invite_sent_at,
