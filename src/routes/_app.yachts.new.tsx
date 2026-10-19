@@ -9,8 +9,10 @@ const doPushToSharePoint = createServerFn({ method: 'POST' })
     try {
       const { pushYachtToSharePoint } = await import('@/lib/sharepoint-sync.server')
       await pushYachtToSharePoint(data.yachtId)
-    } catch {
-      // SharePoint push is non-critical
+    } catch (e) {
+      // Non-critical for the user: the vessel stays queued (sharepoint_dirty_at)
+      // and the 5-minute Yachts tick retries it. Logged so a stuck push is visible.
+      console.error('[sp-push] new vessel push failed:', e instanceof Error ? e.message : String(e))
     }
   })
 

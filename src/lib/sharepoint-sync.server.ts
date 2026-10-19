@@ -530,113 +530,19 @@ export async function discoverSharePoint(sitePathOverride?: string): Promise<{
 
 // ─── Outbound: App → SharePoint ────────────────────────────────────────────────
 
+/**
+ * Push one vessel to the SharePoint Yachts list now (Vessels → New, and the
+ * vessel page). The same guarded path the dirty queue uses: JLS boats are skipped,
+ * an existing item is found by real IMO or name before anything is created, and
+ * the item id is stored and the dirty flag cleared only after a successful write.
+ * A failure throws and leaves the vessel queued, so the 5-minute tick retries it.
+ *
+ * Until 19 Oct 2026 this was a separate copy without those guards: its "already
+ * there?" lookup always errored (unindexed column), a failed POST was ignored, and
+ * the vessel then sat in the queue with no item for months.
+ */
 export async function pushYachtToSharePoint(yachtId: string): Promise<void> {
-  const cfg = await getSpConfig()
-  if (Object.keys(cfg.fieldMapping).length === 0) return
-
-  const token = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret)
-  const siteId = await resolveSpSite(token, cfg.tenantUrl, cfg.siteUrl)
-
-  const { data: yacht } = await supabaseAdmin
-    .from('yachts')
-    .select('*')
-    .eq('id', yachtId)
-    .maybeSingle()
-  if (!yacht) return
-  // JLS's own boats live in Polaris only. The SharePoint Yachts list is the
-  // client fleet the Port Agency App reads, and one of our boats appearing
-  // there would show up to the team as a client vessel.
-  if ((yacht as Record<string, any>).fleet === 'jls') return
-
-  // Build SP fields object from mapping (spColumn → dbField)
-  const spFields: Record<string, any> = {}
-  for (const [spField, dbField] of Object.entries(cfg.fieldMapping)) {
-    if (!dbField) continue
-    if (dbField === 'vessel_image') continue // SP image columns can't be set via field value
-    const val = (yacht as Record<string, any>)[dbField]
-    if (val !== null && val !== undefined && val !== '') {
-      spFields[spField] = val
-    }
-  }
-
-  const spItemId = (yacht as Record<string, any>).sharepoint_item_id as string | null
-
-  if (spItemId) {
-    // Update existing SP item
-    const res = await fetch(
-      `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${cfg.listName}/items/${spItemId}/fields`,
-      {
-        method: 'PATCH',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(spFields),
-      }
-    )
-    if (!res.ok) {
-      const err = await res.json() as Record<string, any>
-      throw new Error(`SP update failed: ${err.error?.message ?? res.statusText}`)
-    }
-    await supabaseAdmin
-      .from('yachts')
-      .update({ sharepoint_synced_at: new Date().toISOString() } as never)
-      .eq('id', yachtId)
-  } else {
-    // Try to find existing SP item by imo_no or vessel_name before creating
-    const y = yacht as Record<string, any>
-    let existingSpId: string | null = null
-
-    const imoSpField = Object.entries(cfg.fieldMapping).find(([, db]) => db === 'imo_no')?.[0]
-    const nameSpField = Object.entries(cfg.fieldMapping).find(([, db]) => db === 'vessel_name')?.[0]
-
-    if (imoSpField && y.imo_no) {
-      const r = await fetch(
-        `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${cfg.listName}/items?$filter=${encodeURIComponent(`fields/${imoSpField} eq '${y.imo_no}'`)}&$expand=fields`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      )
-      const d = await r.json() as Record<string, any>
-      existingSpId = d.value?.[0]?.id ?? null
-    }
-
-    if (!existingSpId && nameSpField && y.vessel_name) {
-      const r = await fetch(
-        `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${cfg.listName}/items?$filter=${encodeURIComponent(`fields/${nameSpField} eq '${y.vessel_name}'`)}&$expand=fields`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      )
-      const d = await r.json() as Record<string, any>
-      existingSpId = d.value?.[0]?.id ?? null
-    }
-
-    if (existingSpId) {
-      await fetch(
-        `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${cfg.listName}/items/${existingSpId}/fields`,
-        {
-          method: 'PATCH',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify(spFields),
-        }
-      )
-      await supabaseAdmin
-        .from('yachts')
-        .update({ sharepoint_item_id: existingSpId, sharepoint_synced_at: new Date().toISOString() } as never)
-        .eq('id', yachtId)
-    } else {
-      // Create new SP item
-      const createRes = await fetch(
-        `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${cfg.listName}/items`,
-        {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fields: spFields }),
-        }
-      )
-      const created = await createRes.json() as Record<string, any>
-      if (created.id) {
-        await supabaseAdmin
-          .from('yachts')
-          .update({ sharepoint_item_id: created.id, sharepoint_synced_at: new Date().toISOString() } as never)
-          .eq('id', yachtId)
-      }
-    }
-  }
+  await pushRecordToSharePoint('yachts', yachtId)
 }
 
 // ─── Image download helper ─────────────────────────────────────────────────────
