@@ -222,8 +222,9 @@ function AutoMessagesSwitch({ yachtId, boatId }: { yachtId: string | null; boatI
 
 // ── Portal modules per vessel ────────────────────────────────────────────────
 /**
- * The two portal modules for one vessel. Core (Agency with JLS) is always on —
- * staff can only hide features. Management (On board) is off until switched on.
+ * The portal modules for one vessel. Core (Agency with JLS) is always on —
+ * staff can only hide features. Management (On board) and Crew Academy are off
+ * until switched on.
  * Changes save straight away.
  */
 function VesselModules({ rows, onSave }: {
@@ -251,23 +252,29 @@ function VesselModules({ rows, onSave }: {
           <ChevronDown className={cn("h-3 w-3 text-muted-foreground transition", open === "core" && "rotate-180")} />
         </button>
 
-        {/* Management */}
-        <div className="inline-flex items-center gap-2">
-          <button type="button" role="switch" aria-checked={state.management.enabled}
-                  aria-label="Management module"
-                  onClick={() => onSave("management", { enabled: !state.management.enabled })}
-                  title={state.management.enabled ? "Switch Management off for this vessel" : "Switch Management on for this vessel"}
-                  className={cn("relative h-5 w-9 rounded-full transition", state.management.enabled ? "bg-teal-500" : "bg-border")}>
-            <span className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-white transition", state.management.enabled ? "left-[18px]" : "left-0.5")} />
-          </button>
-          <button type="button" onClick={() => setOpen(open === "management" ? null : "management")}
-                  className="inline-flex items-center gap-2 text-left hover:text-foreground" title={PORTAL_MODULES.management.blurb}>
-            <span className={cn("font-semibold", state.management.enabled ? "text-teal-300" : "text-muted-foreground")}>{PORTAL_MODULES.management.short}</span>
-            <span className="text-muted-foreground">· {PORTAL_MODULES.management.label}</span>
-            <span className="text-muted-foreground">· {state.management.enabled ? "on" : "off"}</span>
-            <ChevronDown className={cn("h-3 w-3 text-muted-foreground transition", open === "management" && "rotate-180")} />
-          </button>
-        </div>
+        {/* Management (On board) and Crew Academy — each switched on per vessel */}
+        {(["management", "academy"] as const).map((key) => {
+          const on = state[key].enabled;
+          const m = PORTAL_MODULES[key];
+          return (
+            <div key={key} className="inline-flex items-center gap-2">
+              <button type="button" role="switch" aria-checked={on}
+                      aria-label={`${m.label} module`}
+                      onClick={() => onSave(key, { enabled: !on })}
+                      title={on ? `Switch ${m.label} off for this vessel` : `Switch ${m.label} on for this vessel`}
+                      className={cn("relative h-5 w-9 rounded-full transition", on ? (key === "academy" ? "bg-amber-500" : "bg-teal-500") : "bg-border")}>
+                <span className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-white transition", on ? "left-[18px]" : "left-0.5")} />
+              </button>
+              <button type="button" onClick={() => setOpen(open === key ? null : key)}
+                      className="inline-flex items-center gap-2 text-left hover:text-foreground" title={m.blurb}>
+                <span className={cn("font-semibold", on ? (key === "academy" ? "text-amber-300" : "text-teal-300") : "text-muted-foreground")}>{m.short}</span>
+                <span className="text-muted-foreground">· {m.label}</span>
+                <span className="text-muted-foreground">· {on ? "on" : "off"}</span>
+                <ChevronDown className={cn("h-3 w-3 text-muted-foreground transition", open === key && "rotate-180")} />
+              </button>
+            </div>
+          );
+        })}
       </div>
 
       {open && (

@@ -20,7 +20,7 @@ import {
   Bell, Compass, Wrench, CalendarRange, ShieldCheck, Menu, AlertTriangle, Eye,
   Pencil, Trash2, UserPlus, RotateCcw, ImagePlus,
   ClipboardCheck, NotebookPen, Anchor, IdCard, CalendarDays, Upload, BookOpen,
-  SquareKanban, Boxes, Receipt, CalendarClock, BadgeCheck,
+  SquareKanban, Boxes, Receipt, CalendarClock, BadgeCheck, GraduationCap,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { portalFetch, setPortalYacht } from "@/lib/portal/portal-fetch";
@@ -46,6 +46,7 @@ import { TasksSection } from "@/components/portal/sections/tasks-section";
 import { InventorySection } from "@/components/portal/sections/inventory-section";
 import { ExpensesSection } from "@/components/portal/sections/expenses-section";
 import { RotaSection } from "@/components/portal/sections/rota-section";
+import { AcademySection } from "@/components/portal/sections/academy-section";
 import { CERT_WARN_DAYS } from "@/lib/portal/crew-rota";
 import { accountTotals } from "@/lib/portal/expenses";
 import { IsmSection } from "@/components/portal/sections/ism-section";
@@ -775,11 +776,12 @@ type Tab =
   | "home" | "brief"
   | "alerts" | "positions" | "crew" | "documents" | "pms" | "balances" | "invoices" | "charter" | "ism" | "tasks" | "inventory" | "expenses" | "rota" | "stock" | "checklists" | "hours" | "handover" | "movements" | "gatepasses" | "orders" | "calendar"
   | "requests" | "logistics" | "bunkering" | "chat" | "directory" | "reports"
+  | "academy"
   | "orbit2" // the login's own managed boats (Orbit 2) — only when it has some
   | "finances"; // legacy alias used by the Home module launcher → routes to Invoices/Finance
 
 type NavItem = { key: Tab; label: string; icon: any };
-type NavGroup = { title?: string; module?: "core" | "management"; items: NavItem[] };
+type NavGroup = { title?: string; module?: "core" | "management" | "academy"; items: NavItem[] };
 
 // Left navigation, in the portal's two modules. AGENCY WITH JLS (core) is
 // everything JLS does for the vessel as its agent; ON BOARD (management) is the
@@ -826,6 +828,8 @@ const NAV_GROUPS: NavGroup[] = [
       { key: "ism", label: "ISM & safety", icon: ShieldCheck },
     ],
   },
+  // Crew training — its own module, switched on per vessel.
+  { title: "Crew Academy", module: "academy", items: [{ key: "academy", label: "Crew Academy", icon: GraduationCap }] },
 ];
 /**
  * Orbit 2 — the vessel's managed boats (client request, 12 Oct 2026). Not a
@@ -1000,7 +1004,7 @@ function PortalShell({ link, email, onSignOut, preview = false, fleetCount = 0, 
             <div key={gi}>
               {g.title && (
                 <div className="flex items-center gap-1.5 px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/60">
-                  <span className={cn("h-1.5 w-1.5 rounded-full", g.module === "management" ? "bg-teal-400/80" : "bg-primary/80")} />
+                  <span className={cn("h-1.5 w-1.5 rounded-full", g.module === "management" ? "bg-teal-400/80" : g.module === "academy" ? "bg-amber-400/80" : "bg-primary/80")} />
                   <span className="flex-1">{g.title}</span>
                 </div>
               )}
@@ -1126,6 +1130,7 @@ function PortalShell({ link, email, onSignOut, preview = false, fleetCount = 0, 
                         onOpenInventory={allowedKeys.has("inventory") ? () => { setTab("inventory"); setOpenRequestId(null); } : undefined} />
         )}
         {tab === "rota" && <RotaSection yachtId={link.yacht_id} canEdit={!preview && canManageCrew(link.position)} />}
+        {tab === "academy" && <AcademySection />}
         {tab === "expenses" && (
           <ExpensesSection yachtId={link.yacht_id} canEdit={!preview} canManage={canManageMoney(link.position)} showJlsSpend={financeOk} />
         )}

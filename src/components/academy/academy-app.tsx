@@ -5,16 +5,18 @@
  * them there (by group or by name) and their own results. Everything comes from
  * /api/academy; the login itself can read nothing from the database.
  *
- * Phase 1: sign-in, set / reset password and the "My courses" list. The course
- * player (lessons, video, quizzes, drag-and-drop) arrives in Phase 2.
+ * Sign-in, set / reset password, the "My courses" list and the course player
+ * (course-player.tsx). Drag-and-drop exercises and certificates come later.
  *
  * The invite email is a password-set link that lands here (#type=recovery).
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Clock, GraduationCap, Loader2, LogOut, Mail, RefreshCw, Shield } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { PolarisMark } from "@/components/brand/PolarisMark";
 import { cn } from "@/lib/utils";
+import { CoursePlayer, type PlayerApi } from "@/components/academy/course-player";
+import type { BlockProgress, CourseContent } from "@/lib/academy/content";
 import "@/components/polaris-ui/tokens.css";
 
 type Stage = "loading" | "signed-out" | "reset-password" | "link-expired" | "not-learner" | "ready";
@@ -52,13 +54,18 @@ const fmtDate = (d: string | null | undefined) =>
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
-async function academyFetch(path: string): Promise<any> {
+async function academyFetch(path: string, init: RequestInit = {}): Promise<any> {
   const { data: { session } } = await supabase.auth.getSession();
-  const res = await fetch(path, { headers: { Authorization: `Bearer ${session?.access_token ?? ""}` } });
+  const res = await fetch(path, {
+    ...init,
+    headers: { ...(init.headers ?? {}), Authorization: `Bearer ${session?.access_token ?? ""}` },
+  });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw Object.assign(new Error(body?.error ?? `Request failed (${res.status})`), { status: res.status });
   return body;
 }
+const postJson = (body: unknown) =>
+  academyFetch("/api/academy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
 function PrimaryButton({ className, disabled, onClick, children, type }: {
   className?: string; disabled?: boolean; onClick?: () => void; children: React.ReactNode; type?: "button" | "submit";
@@ -282,6 +289,7 @@ function MyCourses({ onSignOut }: { onSignOut: () => void }) {
   const [home, setHome] = useState<Home | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [open, setOpen] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -290,6 +298,8 @@ function MyCourses({ onSignOut }: { onSignOut: () => void }) {
     finally { setLoading(false); }
   }, []);
   useEffect(() => { void load(); }, [load]);
+
+  if (open) return <CourseView enrolmentId={open} onExit={() => { setOpen(null); void load(); }} />;
 
   return (
     <div className="mx-auto min-h-screen max-w-3xl px-4 pb-16 pt-5 sm:px-6">
@@ -325,16 +335,16 @@ function MyCourses({ onSignOut }: { onSignOut: () => void }) {
 
       {home && (
         <>
-          <Section title="To do" rows={home.todo}
+          <Section title="To do" rows={home.todo} onOpen={setOpen}
             empty="Nothing to do yet. When your vessel enrols you on a course it will appear here." />
-          {home.done.length > 0 && <Section title="Completed" rows={home.done} />}
+          {home.done.length > 0 && <Section title="Completed" rows={home.done} onOpen={setOpen} />}
         </>
       )}
     </div>
   );
 }
 
-function Section({ title, rows, empty }: { title: string; rows: CourseRow[]; empty?: string }) {
+function Section({ title, rows, empty, onOpen }: { title: string; rows: CourseRow[]; empty?: string; onOpen: (enrolmentId: string) => void }) {
   return (
     <section className="mt-8">
       <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{title}</h2>
@@ -345,14 +355,14 @@ function Section({ title, rows, empty }: { title: string; rows: CourseRow[]; emp
         </div>
       ) : (
         <ul className="space-y-3">
-          {rows.map((r) => <CourseCard key={r.enrolmentId} row={r} />)}
+          {rows.map((r) => <CourseCard key={r.enrolmentId} row={r} onOpen={() => onOpen(r.enrolmentId)} />)}
         </ul>
       )}
     </section>
   );
 }
 
-function CourseCard({ row }: { row: CourseRow }) {
+function CourseCard({ row, onOpen }: { row: CourseRow; onOpen: () => void }) {
   const overdue = !!row.dueDate && row.dueDate < todayIso() && row.status !== "completed";
   const status =
     row.status === "completed" ? { label: `Passed${row.score != null ? ` · ${row.score}%` : ""}`, cls: "border-emerald-500/40 bg-emerald-500/10 text-emerald-300" }
@@ -361,26 +371,69 @@ function CourseCard({ row }: { row: CourseRow }) {
     : row.status === "in_progress" ? { label: "In progress", cls: "border-primary/40 bg-primary/10 text-primary" }
     : { label: "Not started", cls: "border-border bg-card text-muted-foreground" };
   return (
-    <li className="rounded-2xl border border-border bg-card/70 p-4 sm:p-5">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="font-semibold leading-snug">{row.course?.title ?? "Course"}</div>
-          {row.course?.summary && <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{row.course.summary}</p>}
+    <li>
+      <button onClick={onOpen} className="block w-full rounded-2xl border border-border bg-card/70 p-4 text-left transition hover:border-primary/40 hover:bg-card sm:p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="font-semibold leading-snug">{row.course?.title ?? "Course"}</div>
+            {row.course?.summary && <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{row.course.summary}</p>}
+          </div>
+          <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider", status.cls)}>
+            {status.label}
+          </span>
         </div>
-        <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider", status.cls)}>
-          {status.label}
-        </span>
-      </div>
-      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-        {row.course?.from && <span>From {row.course.from}</span>}
-        {row.course?.minutes && <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> {row.course.minutes} min</span>}
-        {row.mandatory && row.status !== "completed" && <span>Required</span>}
-        {row.dueDate && row.status !== "completed" && (
-          <span className={cn(overdue && "font-semibold text-red-300")}>{overdue ? "Overdue since" : "Due"} {fmtDate(row.dueDate)}</span>
-        )}
-        {row.status === "completed" && row.completedAt && <span>Completed {fmtDate(row.completedAt)}</span>}
-        {row.status === "completed" && row.expiresAt && <span>Valid until {fmtDate(row.expiresAt)}</span>}
-      </div>
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+          {row.course?.from && <span>From {row.course.from}</span>}
+          {row.course?.minutes && <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> {row.course.minutes} min</span>}
+          {row.mandatory && row.status !== "completed" && <span>Required</span>}
+          {row.dueDate && row.status !== "completed" && (
+            <span className={cn(overdue && "font-semibold text-red-300")}>{overdue ? "Overdue since" : "Due"} {fmtDate(row.dueDate)}</span>
+          )}
+          {row.status === "completed" && row.completedAt && <span>Completed {fmtDate(row.completedAt)}</span>}
+          {row.status === "completed" && row.expiresAt && <span>Valid until {fmtDate(row.expiresAt)}</span>}
+        </div>
+      </button>
     </li>
+  );
+}
+
+// ── Taking a course ──────────────────────────────────────────────────────────
+type CoursePayload = {
+  enrolment: { id: string; status: string; score: number | null; completedAt: string | null };
+  course: { title: string; summary: string | null; passMark: number; version: number; from: string };
+  content: CourseContent;
+  progress: BlockProgress[];
+};
+
+function CourseView({ enrolmentId, onExit }: { enrolmentId: string; onExit: () => void }) {
+  const [data, setData] = useState<CoursePayload | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    academyFetch(`/api/academy?op=course&enrolment=${encodeURIComponent(enrolmentId)}`).then(setData).catch((e) => setError(e.message));
+  }, [enrolmentId]);
+
+  // Stable, so the player's file links aren't fetched again on every render.
+  const api = useMemo<PlayerApi>(() => ({
+    mediaUrl: async (mediaId) =>
+      (await academyFetch(`/api/academy?op=media&enrolment=${encodeURIComponent(enrolmentId)}&media=${encodeURIComponent(mediaId)}`)).url ?? null,
+    viewed: (lessonId) => postJson({ op: "viewed", enrolment: enrolmentId, lessonId }),
+    video: (blockId, percent, seconds) => postJson({ op: "video", enrolment: enrolmentId, blockId, percent, seconds }),
+    answer: (blockId, answers) => postJson({ op: "answer", enrolment: enrolmentId, blockId, answers }),
+    acknowledge: (blockId) => postJson({ op: "acknowledge", enrolment: enrolmentId, blockId }),
+  }), [enrolmentId]);
+
+  if (error) {
+    return (
+      <div className="mx-auto max-w-3xl px-4 pt-10 sm:px-6">
+        <ErrorNote>{error}</ErrorNote>
+        <PrimaryButton onClick={onExit} className="mt-4">Back to my courses</PrimaryButton>
+      </div>
+    );
+  }
+  if (!data) return <div className="flex min-h-screen items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+  return (
+    <CoursePlayer title={data.course.title} from={data.course.from} content={data.content} passMark={data.course.passMark}
+      initialProgress={data.progress} initialStatus={data.enrolment.status} api={api} onExit={onExit} />
   );
 }
