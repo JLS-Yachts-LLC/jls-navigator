@@ -42,7 +42,6 @@ const disc = (cx, cy, r, icon, o = {}) => circle(cx, cy, r, o.fill ?? C.deep, o.
 function cover() {
   let b = backdrop(W, H);
   for (const [x, y, r] of [[180, 160, 2.5], [300, 90, 2], [420, 210, 1.8], [1210, 110, 2.2], [1330, 200, 1.8], [1450, 120, 2.5], [980, 70, 1.6], [640, 60, 1.6]]) b += circle(x, y, r, C.text, "none", 0, 'opacity="0.7"');
-  b += g(170, 200, 1.1, ic.moon("#f3e7b5"));
   b += waves(W, 700, 0, C.sea) + waves(W, 735, 1.5, "#0f3160");
   b += g(500, 535, 1, yacht());
   const items = [[520, ic.moon("#e8eefc"), "Rest", C.teal], [800, prop.heart(), "Health", C.gold], [1080, ic.sun(), "Heat", C.amber]];
@@ -61,10 +60,10 @@ function cover() {
 function fatigueCauses() {
   let b = backdrop(W, H) + titleBlock(84, 80, "Fatigue", "Why yacht crew get tired");
   const cards = [
-    ["Long charter days", "Early starts and late finishes, for weeks on end.", prop.clock(6, 0), C.gold],
+    ["Long charter days", "Early starts and late finishes, for weeks on end.", prop.clock(10, 10), C.gold],
     ["Broken sleep", "Night call-outs, alarms, a shared cabin.", prop.bed(), C.teal],
     ["Night watches", "Working through the hours your body wants to sleep.", ic.moon(), C.teal],
-    ["Noise and motion", "Engines, generators, a rolling hull, a busy corridor.", ic.waves(), C.teal],
+    ["Noise and motion", "Engines, generators and a rolling hull.", ic.waves(), C.teal],
     ["Heat", "Hot decks and engine rooms drain your energy fast.", ic.sun(), C.amber],
     ["Stress", "Demanding days, worries at home, no space of your own.", ic.cloud(), C.muted],
     ["Jet lag on rotation", "Long flights to join the yacht upset your body clock.", ic.plane(), C.text],
@@ -97,7 +96,6 @@ function cabin() {
   for (let x = 0; x < W; x += 200) b += line(x, 90, x, 880, "#27314b", 3);
   b += rect(0, 880, W, 120, 0, "#1f2433") + line(0, 880, W, 880, "#3a4560", 4);
   // sunlight from the porthole across the cabin
-  b += `<path d="M1330 250 L1470 330 L1000 880 L560 880 Z" fill="#fff3b0" opacity="0.16"/>`;
   // porthole with the curtain pulled open
   const [px, py] = CAB.port;
   b += circle(px, py, 96, "#c7ced9") + circle(px, py, 80, "#bfe6ff") + circle(px + 26, py - 22, 30, "#fff6c8") + circle(px + 26, py - 22, 44, "#fff6c8", "none", 0, 'opacity="0.45"');
@@ -112,6 +110,8 @@ function cabin() {
   b += rect(700, 238, 300, 34, 14, "#5f78b4"); // folded duvet on the upper bunk
   b += rect(158, 640, 992, 66, 10, "#c9d4ea") + rect(158, 704, 992, 64, 4, "#6b4f36") + rect(158, 768, 992, 112, 0, "#5a4330");
   for (const x of [260, 600, 940]) b += rect(x, 790, 220, 70, 8, "#6b4f36", "#4a3626", 2) + rect(x + 90, 818, 40, 10, 5, "#c7ced9");
+  // sunlight from the porthole falling across the bed
+  b += `<path d="M1318 262 L1470 340 L1140 660 L640 660 Z" fill="#fff3b0" opacity="0.18"/>`;
   // reading light under the upper bunk, switched on, with its light cone
   const [lx, ly] = CAB.lamp;
   b += `<path d="M${lx - 24} ${ly + 14} L${lx + 24} ${ly + 14} L${lx + 170} 640 L${lx - 170} 640 Z" fill="#ffe9a8" opacity="0.22"/>`;
@@ -119,24 +119,22 @@ function cabin() {
   // Ayo lying awake: pillow, head, duvet, arm up holding the phone
   const skin = SKIN[3], hair = HAIR[3];
   b += rect(180, 590, 190, 62, 26, "#eef2fb");
-  b += circle(300, 598, 40, skin, OUT, 1.5) + `<path d="M262 590 Q262 552 300 552 Q320 552 330 562 Q300 566 286 600 Q276 622 266 616 Z" fill="${hair}"/>`;
+  b += circle(292, 594, 42, hair) + circle(306, 604, 36, skin, OUT, 1.5);
   b += `<path d="M308 648 Q318 572 410 566 Q600 552 800 572 Q960 588 1140 604 L1140 660 L308 660 Z" fill="#4f6aa8" stroke="${OUT}" stroke-width="1.5"/>`;
   b += `<path d="M330 600 L1130 620" stroke="#5f78b4" stroke-width="3" fill="none" opacity="0.6"/>`;
   b += `<path d="M396 586 Q430 530 452 478" fill="none" stroke="${UNIFORM.interior[0]}" stroke-width="22" stroke-linecap="round"/>`;
   b += circle(452, 472, 13, skin);
   const [fx, fy] = CAB.phone;
-  b += `<path d="M${fx - 18} ${fy + 30} L${fx + 18} ${fy + 30} L330 610 L282 586 Z" fill="#9fe7ff" opacity="0.22"/>`; // screen glow on the face
   b += circle(fx, fy, 56, "#9fe7ff", "none", 0, 'opacity="0.18"');
   b += rect(fx - 24, fy - 42, 48, 84, 8, "#1c2433", "#4a5a78", 2) + rect(fx - 19, fy - 34, 38, 66, 3, "#9fe7ff");
   b += rect(fx - 13, fy - 26, 26, 6, 2, "#ffffff") + rect(fx - 13, fy - 14, 20, 4, 2, "#5aa7c4") + rect(fx - 13, fy - 4, 26, 18, 2, "#e98ad0") + rect(fx - 13, fy + 18, 22, 4, 2, "#5aa7c4");
-  // bedside table: energy drink (a spot), water bottle, eye mask, earplugs, book
+  // bedside table: energy drink (a spot), water bottle, eye mask
   b += rect(1210, 620, 320, 26, 6, "#7a5a3e") + rect(1230, 646, 280, 234, 4, "#6b4f36") + rect(1250, 700, 240, 70, 6, "#7a5a3e", "#4a3626", 2);
   const [cx, cy] = CAB.can;
   b += rect(cx - 27, cy - 46, 54, 94, 10, "#e5534b", OUT, 1.5) + rect(cx - 27, cy - 46, 54, 12, 6, "#c7ced9");
   b += `<path d="M${cx + 4} ${cy - 26} L${cx - 12} ${cy + 4} L${cx} ${cy + 4} L${cx - 6} ${cy + 30} L${cx + 14} ${cy - 4} L${cx + 2} ${cy - 4} Z" fill="#ffe14d"/>`;
   b += g(1322, 522, 0.98, prop.bottle("#7cc4ff"));
   b += `<path d="M1422 606 Q1440 590 1462 600 Q1484 590 1502 606 Q1484 620 1462 612 Q1440 620 1422 606 Z" fill="#1b1f2a"/>` + line(1412, 604, 1422, 606, "#1b1f2a", 3) + line(1502, 606, 1514, 604, "#1b1f2a", 3);
-  b += rect(1414, 664, 90, 18, 4, "#3fb27f") + rect(1420, 648, 78, 16, 4, "#d4a62a");
   // caption band
   b += rect(0, 0, W, 90, 0, C.deep) + txt(W / 2, 58, "14:00 · Ayo has the night watch tonight and is trying to sleep", { size: 32, weight: 600, fill: C.white, anchor: "middle" });
   return svg(W, CH, b, null);

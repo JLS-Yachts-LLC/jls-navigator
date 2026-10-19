@@ -74,7 +74,7 @@ function cover() {
   // pontoon + yacht
   b += rect(0, 806, W, 16, 0, "#4a3a2e") + [...Array(17)].map((_, i) => rect(40 + i * 96, 822, 12, 60, 2, "#3a2d24")).join("");
   b += g(180, 640, 1, yacht("#f4f6fa", C.gold, "#1d3d6e"));
-  b += g(728, 682, 0.62, prop.flag());
+  b += g(712, 700, 0.62, prop.flag());
   b += g(1250, 806, 1, palm("#16352e", "#3f3024"));
   b += txt(W / 2, 92, "CREW ACADEMY · CREW LIFE", { size: 22, weight: 700, fill: C.gold, anchor: "middle", spacing: 4 });
   b += txt(W / 2, 180, "Living and working in the UAE", { size: 72, family: SERIF, fill: C.white, anchor: "middle" });
@@ -257,14 +257,10 @@ export const SPOTS = {
 function heat() {
   let b = backdrop(W, H) + titleBlock(80, 90, "Heat", "Summer in the UAE: heat exhaustion and heatstroke");
   // thermometer
-  const tx = 150, ty = 230;
-  b += rect(tx, ty, 60, 470, 30, C.paper, "#9fb0d4", 3) + circle(tx + 30, ty + 500, 56, C.red, "#9fb0d4", 3) + rect(tx + 16, ty + 120, 28, 380, 14, C.red);
-  for (let i = 0; i <= 5; i++) {
-    const y = ty + 440 - i * 70;
-    b += line(tx + 64, y, tx + 84, y, C.muted, 3) + txt(tx + 94, y + 8, `${20 + i * 5}°`, { size: 22, fill: C.muted });
-  }
-  b += txt(tx + 30, ty + 640, "Summer days", { size: 22, fill: C.text, anchor: "middle" }) + txt(tx + 30, ty + 668, "often 40°C +", { size: 22, weight: 700, fill: C.gold, anchor: "middle" });
-  b += circle(110, 220, 34, C.gold) + [...Array(8)].map((_, i) => { const a = i * Math.PI / 4; return line(110 + Math.cos(a) * 44, 220 + Math.sin(a) * 44, 110 + Math.cos(a) * 58, 220 + Math.sin(a) * 58, C.gold, 5); }).join("");
+  const tx = 120, ty = 230, yAt = (deg) => ty + 340 - (deg - 20) * 10;
+  b += rect(tx, ty, 56, 400, 28, C.paper, "#9fb0d4", 3) + rect(tx + 15, yAt(45), 26, ty + 400 - yAt(45), 13, C.red) + circle(tx + 28, ty + 420, 48, C.red, "#9fb0d4", 3);
+  for (let d = 20; d <= 50; d += 10) b += line(tx + 62, yAt(d), tx + 80, yAt(d), C.muted, 3) + txt(tx + 90, yAt(d) + 8, `${d}°C`, { size: 22, fill: C.muted });
+  b += txt(tx + 50, 760, "Summer days:", { size: 22, fill: C.text, anchor: "middle" }) + txt(tx + 50, 790, "often 40°C +", { size: 24, weight: 700, fill: C.gold, anchor: "middle" });
   const cols = [
     ["Signs of heat exhaustion", C.amber, ["Headache, dizziness", "Feeling sick or being sick", "Heavy sweating, pale clammy skin", "Cramps in arms, legs or stomach", "Very thirsty, tired, irritable", "High temperature"]],
     ["What to do", C.teal, ["Move them somewhere cool", "Take off extra clothing", "Give water, a sports drink or rehydration salts", "Spray or sponge with cool water and fan them", "Stay with them: they should feel better within 30 minutes"]],
@@ -272,7 +268,7 @@ function heat() {
   ];
   cols.forEach(([t, col, items], i) => {
     const x = 340 + i * 410, y = 220;
-    b += rect(x, y, 390, 600, 18, C.panel, col, 3);
+    b += rect(x, y, 390, 580, 18, C.panel, col, 3);
     b += rect(x, y, 390, 70, 18, col) + rect(x, y + 50, 390, 20, 0, col);
     b += txt(x + 24, y + 47, t, { size: 27, weight: 700, fill: i === 0 ? C.bg : C.white });
     let yy = y + 116;
