@@ -107,10 +107,10 @@ const ALEX = { shirt: UNIFORM.engineer[0], legs: UNIFORM.engineer[1], skin: SKIN
 const FLOOR = 660;
 const fig = (x, o, name, s = 1.3) => g(x, FLOOR - 240 * s, s, person(o)) + txt(x + 50 * s, FLOOR + 36, name, { size: 24, weight: 600, fill: C.muted, anchor: "middle" });
 const dayPill = (s) => rect(80, 60, 190, 56, 28, C.gold) + txt(175, 98, s, { size: 28, weight: 800, fill: C.bg, anchor: "middle", spacing: 2 });
-function mess() {
+function mess(portholes = [360, 800, 1240]) {
   // crew mess wall, portholes, floor
   return rect(0, 0, W, FLOOR, 0, "#15306a") + rect(0, FLOOR, W, H - FLOOR, 0, "#0a1a3c") +
-    [360, 800, 1240].map((x) => circle(x, 170, 46, "#0f2552", "#8e98ab", 8) + circle(x - 12, 158, 10, "#2c4a86")).join("");
+    portholes.map((x) => circle(x, 170, 46, "#0f2552", "#8e98ab", 8) + circle(x - 12, 158, 10, "#2c4a86")).join("");
 }
 
 function banterToBullying(t) {
@@ -147,7 +147,7 @@ function banterToBullying(t) {
   // Scene 3 — Day 20 (18 – 25.5): it moves into the crew group chat
   const o3 = vis(t, 18, 25.5, 0.5);
   if (o3 > 0) {
-    let s = mess() + dayPill("DAY 20");
+    let s = mess([360]) + dayPill("DAY 20");
     s += fig(250, { ...KIT, mood: "sad", arm: "phone" }, "Kit");
     // phone with the chat
     const px = 760, py = 120;
