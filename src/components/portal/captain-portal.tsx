@@ -1116,7 +1116,7 @@ function PortalShell({ link, email, onSignOut, preview = false, fleetCount = 0, 
         {tab === "balances" && <BalancesTab />}
         {tab === "logistics" && <LogisticsTab yachtId={link.yacht_id} canBook={!preview} onOpenRequest={(id) => { setTab("requests"); setOpenRequestId(id); }} />}
         {tab === "bunkering" && <BunkeringSection />}
-        {tab === "alerts" && <AlertsTab yachtId={link.yacht_id} financeOk={financeOk} stockOk={allowedKeys.has("stock")} gatePassOk={allowedKeys.has("gatepasses")} tasksOk={allowedKeys.has("tasks")} inventoryOk={allowedKeys.has("inventory")} expensesOk={allowedKeys.has("expenses")} rotaOk={allowedKeys.has("rota")} onOpen={(t) => { setTab(t); setOpenRequestId(null); }} />}
+        {tab === "alerts" && <AlertsTab yachtId={link.yacht_id} financeOk={financeOk} stockOk={allowedKeys.has("stock")} gatePassOk={allowedKeys.has("gatepasses")} tasksOk={allowedKeys.has("tasks")} inventoryOk={allowedKeys.has("inventory")} expensesOk={allowedKeys.has("expenses")} rotaOk={allowedKeys.has("rota")} academyOk={allowedKeys.has("academy")} onOpen={(t) => { setTab(t); setOpenRequestId(null); }} />}
         {tab === "positions" && yacht && <PositionsTab yacht={yacht} />}
         {/* On board (Management module). The tabs only appear when the vessel
             has the module and this position can see them; editing is off in
@@ -2804,8 +2804,8 @@ const expiringWithin = (d: string | null | undefined, days: number) => {
   return n <= days && n >= -3650; // upcoming or recently lapsed, not ancient records
 };
 
-function AlertsTab({ yachtId, onOpen, financeOk, stockOk, gatePassOk, tasksOk = false, inventoryOk = false, expensesOk = false, rotaOk = false }: {
-  yachtId: string; onOpen: (t: Tab) => void; financeOk: boolean; stockOk: boolean; gatePassOk: boolean; tasksOk?: boolean; inventoryOk?: boolean; expensesOk?: boolean; rotaOk?: boolean;
+function AlertsTab({ yachtId, onOpen, financeOk, stockOk, gatePassOk, tasksOk = false, inventoryOk = false, expensesOk = false, rotaOk = false, academyOk = false }: {
+  yachtId: string; onOpen: (t: Tab) => void; financeOk: boolean; stockOk: boolean; gatePassOk: boolean; tasksOk?: boolean; inventoryOk?: boolean; expensesOk?: boolean; rotaOk?: boolean; academyOk?: boolean;
 }) {
   const [alerts, setAlerts] = useState<PortalAlert[]>([]);
   const [loading, setLoading] = useState(true);
@@ -2813,7 +2813,7 @@ function AlertsTab({ yachtId, onOpen, financeOk, stockOk, gatePassOk, tasksOk = 
   useEffect(() => {
     void (async () => {
       setLoading(true);
-      const [reqR, crewR, visaR, permitR, finR, logR, stockR, passR, taskR, invR, cashR, ledgerR, certR] = await Promise.allSettled([
+      const [reqR, crewR, visaR, permitR, finR, logR, stockR, passR, taskR, invR, cashR, ledgerR, certR, academyR] = await Promise.allSettled([
         db.from("captain_requests").select("id, reference, title, status").eq("yacht_id", yachtId),
         db.from("crew_members").select("id, full_name, first_name, last_name, passport_expiry_date").eq("yacht_id", yachtId),
         db.from("visa_applications").select("id, given_name, surname, visa_expiry").eq("yacht_id", yachtId),
@@ -2827,8 +2827,16 @@ function AlertsTab({ yachtId, onOpen, financeOk, stockOk, gatePassOk, tasksOk = 
         expensesOk ? db.from("onboard_cash_accounts").select("id, name, kind, currency, opening_balance, low_balance").eq("yacht_id", yachtId).eq("archived", false) : Promise.resolve({ data: [] }),
         expensesOk ? db.from("onboard_expenses").select("account_id, kind, amount").eq("yacht_id", yachtId).limit(10000) : Promise.resolve({ data: [] }),
         rotaOk ? db.from("training_certifications").select("id, crew_member_id, crew_name, certificate, expiry_date, crew_members!inner(yacht_id, status)").eq("crew_members.yacht_id", yachtId).not("expiry_date", "is", null) : Promise.resolve({ data: [] }),
+        academyOk ? authedFetch("/api/portal/academy?op=summary").then((r) => (r.ok ? r.json() : null)).catch(() => null) : Promise.resolve(null),
       ]);
       const out: PortalAlert[] = [];
+
+      // Crew Academy — required training overdue or due within a week
+      if (academyR.status === "fulfilled" && academyR.value) {
+        const { overdue = 0, dueSoon = 0 } = academyR.value as { overdue?: number; dueSoon?: number };
+        if (overdue) out.push({ id: "academy-overdue", severity: "high", icon: GraduationCap, title: `${overdue} required course${overdue > 1 ? "s" : ""} overdue`, detail: "Crew Academy", go: "academy" });
+        if (dueSoon) out.push({ id: "academy-soon", severity: "medium", icon: GraduationCap, title: `${dueSoon} required course${dueSoon > 1 ? "s" : ""} due this week`, detail: "Crew Academy", go: "academy" });
+      }
 
       // Overdue / outstanding invoices
       if (finR.status === "fulfilled" && finR.value?.invoices) {

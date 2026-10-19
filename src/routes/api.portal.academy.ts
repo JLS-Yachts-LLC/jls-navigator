@@ -162,6 +162,17 @@ export async function portalAcademyHandler(request: Request): Promise<Response> 
         return json({ canCreate: canManage, canEdit: canManage, ...(await courseForEditing(sb, scope, url.searchParams.get("id"))) });
       }
       if (op === "media-url") return json(await mediaUrlFor(sb, scope, url.searchParams.get("id")));
+      if (op === "summary") {
+        // For the portal's Alerts: required training overdue or due within a week, among crew still signed up.
+        const soon = new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10);
+        const { data: rows } = await sb.from("academy_enrolments")
+          .select("due_date, academy_learners!inner(active)")
+          .eq("yacht_id", yacht.yachtId).eq("mandatory", true).in("status", ["not_started", "in_progress", "failed"])
+          .eq("academy_learners.active", true).not("due_date", "is", null).lte("due_date", soon);
+        const todayIso = new Date().toISOString().slice(0, 10);
+        const overdue = (rows ?? []).filter((r: any) => r.due_date < todayIso).length;
+        return json({ overdue, dueSoon: (rows ?? []).length - overdue });
+      }
       return json(await overview(sb, yacht, canManage));
     }
     if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);

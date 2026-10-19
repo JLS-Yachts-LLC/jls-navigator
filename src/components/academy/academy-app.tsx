@@ -34,7 +34,7 @@ type CourseRow = {
   course: { id: string; title: string; summary: string | null; category: string | null; minutes: number | null; from: string } | null;
 };
 type Home = {
-  me: { displayName: string | null; email: string };
+  me: { displayName: string | null; email: string; sharedWithJls: boolean };
   vessel: { name: string; logo: string | null };
   todo: CourseRow[];
   done: CourseRow[];
@@ -344,6 +344,8 @@ function MyCourses({ onSignOut }: { onSignOut: () => void }) {
           <Section title="To do" rows={home.todo} onOpen={setOpen}
             empty="Nothing to do yet. When your vessel enrols you on a course it will appear here." />
           {home.done.length > 0 && <Section title="Completed" rows={home.done} onOpen={setOpen} />}
+          <ShareResults shared={home.me.sharedWithJls} vessel={home.vessel.name}
+            onChange={(sharedWithJls) => setHome({ ...home, me: { ...home.me, sharedWithJls } })} />
         </>
       )}
     </div>
@@ -400,6 +402,29 @@ function CourseCard({ row, onOpen }: { row: CourseRow; onOpen: () => void }) {
         </div>
       </button>
     </li>
+  );
+}
+
+/** The crew member's own choice to let JLS Yachts see their results — private to the vessel otherwise. */
+function ShareResults({ shared, vessel, onChange }: { shared: boolean; vessel: string; onChange: (v: boolean) => void }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <section className="mt-10 rounded-2xl border border-border bg-card/40 p-4">
+      <label className="flex cursor-pointer items-start gap-3 text-sm">
+        <input type="checkbox" className="mt-0.5 h-5 w-5 shrink-0" checked={shared} disabled={busy} onChange={async (e) => {
+          const next = e.target.checked;
+          setBusy(true);
+          try { await postJson({ op: "share-results", share: next }); onChange(next); } catch { /* left as it was */ }
+          setBusy(false);
+        }} />
+        <span>
+          <span className="block font-medium">Share my training results with JLS Yachts</span>
+          <span className="block text-muted-foreground">
+            Your results are seen only by {vessel || "your vessel"} unless you tick this. You can untick it any time.
+          </span>
+        </span>
+      </label>
+    </section>
   );
 }
 
