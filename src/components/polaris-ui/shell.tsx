@@ -117,6 +117,8 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: "Seaport Immigration", module: "seaport", icon: "building-lighthouse", screen: "route-seaport", route: "/seaport", roles: ["global_admin", "crew_immigration"] },
       { label: "Training", module: "training", icon: "certificate", screen: "training" },
       { label: "Training Institute", module: "training", icon: "school", screen: "route-training", route: "/training" },
+      // Crew Academy — online courses JLS publishes for vessels' crew (Client Portal module).
+      { label: "Crew Academy", module: "academy", icon: "books", screen: "route-academy-admin", route: "/academy-admin", flag: "crew-academy" },
       { label: "Yacht IT Solutions", module: "yacht_it", icon: "cpu", screen: "yacht-it" },
       { label: "Anchor", icon: "signature", screen: "anchor" },
       { label: "Crew Placement", module: "crew_placement", icon: "user-star", screen: "crew-placement", roles: ["global_admin", "crew_immigration"] },

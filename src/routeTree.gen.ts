@@ -81,6 +81,7 @@ import { Route as AppAutomationsRouteImport } from './routes/_app.automations'
 import { Route as AppAiAssistantRouteImport } from './routes/_app.ai-assistant'
 import { Route as AppAgencyRouteImport } from './routes/_app.agency'
 import { Route as AppAdminRouteImport } from './routes/_app.admin'
+import { Route as AppAcademyAdminRouteImport } from './routes/_app.academy-admin'
 import { Route as AppYachtsIndexRouteImport } from './routes/_app.yachts.index'
 import { Route as AppYachtShipmentsIndexRouteImport } from './routes/_app.yacht-shipments.index'
 import { Route as AppWaypointIndexRouteImport } from './routes/_app.waypoint.index'
@@ -530,6 +531,11 @@ const AppAgencyRoute = AppAgencyRouteImport.update({
 const AppAdminRoute = AppAdminRouteImport.update({
   id: '/admin',
   path: '/admin',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAcademyAdminRoute = AppAcademyAdminRouteImport.update({
+  id: '/academy-admin',
+  path: '/academy-admin',
   getParentRoute: () => AppRoute,
 } as any)
 const AppYachtsIndexRoute = AppYachtsIndexRouteImport.update({
@@ -1009,6 +1015,7 @@ export interface FileRoutesByFullPath {
   '/orbit-app': typeof OrbitAppRoute
   '/portal': typeof PortalRoute
   '/wall': typeof WallRoute
+  '/academy-admin': typeof AppAcademyAdminRoute
   '/admin': typeof AppAdminRouteWithChildren
   '/agency': typeof AppAgencyRoute
   '/ai-assistant': typeof AppAiAssistantRoute
@@ -1170,6 +1177,7 @@ export interface FileRoutesByTo {
   '/orbit-app': typeof OrbitAppRoute
   '/portal': typeof PortalRoute
   '/wall': typeof WallRoute
+  '/academy-admin': typeof AppAcademyAdminRoute
   '/agency': typeof AppAgencyRoute
   '/ai-assistant': typeof AppAiAssistantRoute
   '/automations': typeof AppAutomationsRoute
@@ -1318,6 +1326,7 @@ export interface FileRoutesById {
   '/orbit-app': typeof OrbitAppRoute
   '/portal': typeof PortalRoute
   '/wall': typeof WallRoute
+  '/_app/academy-admin': typeof AppAcademyAdminRoute
   '/_app/admin': typeof AppAdminRouteWithChildren
   '/_app/agency': typeof AppAgencyRoute
   '/_app/ai-assistant': typeof AppAiAssistantRoute
@@ -1481,6 +1490,7 @@ export interface FileRouteTypes {
     | '/orbit-app'
     | '/portal'
     | '/wall'
+    | '/academy-admin'
     | '/admin'
     | '/agency'
     | '/ai-assistant'
@@ -1642,6 +1652,7 @@ export interface FileRouteTypes {
     | '/orbit-app'
     | '/portal'
     | '/wall'
+    | '/academy-admin'
     | '/agency'
     | '/ai-assistant'
     | '/automations'
@@ -1789,6 +1800,7 @@ export interface FileRouteTypes {
     | '/orbit-app'
     | '/portal'
     | '/wall'
+    | '/_app/academy-admin'
     | '/_app/admin'
     | '/_app/agency'
     | '/_app/ai-assistant'
@@ -2468,6 +2480,13 @@ declare module '@tanstack/react-router' {
       path: '/admin'
       fullPath: '/admin'
       preLoaderRoute: typeof AppAdminRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/academy-admin': {
+      id: '/_app/academy-admin'
+      path: '/academy-admin'
+      fullPath: '/academy-admin'
+      preLoaderRoute: typeof AppAcademyAdminRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/yachts/': {
@@ -3416,6 +3435,7 @@ const AppYachtsIdRouteWithChildren = AppYachtsIdRoute._addFileChildren(
 )
 
 interface AppRouteChildren {
+  AppAcademyAdminRoute: typeof AppAcademyAdminRoute
   AppAdminRoute: typeof AppAdminRouteWithChildren
   AppAgencyRoute: typeof AppAgencyRoute
   AppAiAssistantRoute: typeof AppAiAssistantRoute
@@ -3494,6 +3514,7 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppAcademyAdminRoute: AppAcademyAdminRoute,
   AppAdminRoute: AppAdminRouteWithChildren,
   AppAgencyRoute: AppAgencyRoute,
   AppAiAssistantRoute: AppAiAssistantRoute,
