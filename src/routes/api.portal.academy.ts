@@ -202,7 +202,7 @@ export async function portalAcademyHandler(request: Request): Promise<Response> 
         const overdue = (rows ?? []).filter((r: any) => r.due_date < todayIso).length;
         const { count: pendingRequests } = await sb.from("academy_enrolment_requests").select("id", { count: "exact", head: true })
           .eq("yacht_id", yacht.yachtId).eq("status", "pending");
-        return json({ overdue, dueSoon: (rows ?? []).length - overdue, pendingRequests: canManage ? pendingRequests ?? 0 : 0 });
+        return json({ overdue, dueSoon: (rows ?? []).length - overdue, pendingRequests: canManageAcademy(yacht.position) ? pendingRequests ?? 0 : 0 });
       }
       return json(await overview(sb, yacht, canManage));
     }
