@@ -1,7 +1,37 @@
 # Polaris — Crew Academy (training module) — PLAN
 
-Status: **Phase 1 (foundation) done and live, 19 Oct 2026** — see "Phase 1 — what was built" below.
+Status: **Phases 1 and 2 done and live, 19 Oct 2026** — see "what was built" below.
 Decisions taken and still open are at the bottom.
+
+## Phase 2 — what was built (19 Oct 2026)
+
+- **Content model** `src/lib/academy/content.ts` (+ tests): sections → lessons → blocks (reading
+  markdown, video MP4 or YouTube/Vimeo link, PDF, picture, quiz single/multi/true-false,
+  acknowledge); `normalizeContent` (server-side cleaning), `publishProblems`, `forLearner` (strips
+  answer keys + explanations), `gradeQuiz` (all-or-nothing per question), `courseOutcome`
+  (complete when every block is done; a quiz is done once passed, retries allowed; video needs 90%
+  of the furthest point reached; score = average of quiz scores).
+- **Storage:** private bucket `academy-media` (no storage policies; signed upload URLs from
+  `/api/academy-admin`, signed read URLs — 15 min, 4 h for video). Bucket allows 500 MB but the
+  **project-wide Supabase limit is 50 MB** and wins; `MAX_UPLOAD_BYTES` in `academy.server.ts`
+  matches it — raise both together.
+- **JLS staff:** `/academy-admin` (Services → "Crew Academy", flag `crew-academy`, stage dev until
+  released; module `academy` View/Create/Edit). Course list, creator (details, sections/lessons/
+  blocks with up/down reordering, uploads, quiz editor), Preview (real player, local marking),
+  Publish (new immutable version), Vessels (offer to all or chosen), Archive/Restore.
+  API `/api/academy-admin` — JLS courses only, no learner data.
+- **Vessels:** portal module `academy` (Settings → Manage Users → Client Portal: third switch,
+  "Academy"), portal section "Crew Academy" with Crew (invite from crew list or by email, resend,
+  remove/restore — records stay) and Courses (enrol with due date / required, cancel, per-person
+  status). `canManageAcademy()` = everyone but Owner, Representative, Chef; preview read-only.
+  API `/api/portal/academy`. Invite = new login with a set-password link, or a sign-in link for
+  someone who already has one; follows CLIENT_EMAIL_ENABLED and hands back a copyable link.
+- **Crew:** `/academy` course cards open the player (`course-player.tsx`): lesson list, progress
+  bar, blocks, quiz retry, sign-off, completion banner. API `/api/academy` ops course / media /
+  viewed / video / answer / acknowledge; the version is pinned on first open. A failed quiz shows
+  which questions were wrong but not the right answers; a pass shows answers + explanations.
+- **Not yet:** groups and group enrolment, a vessel's own courses, reports, drag-and-drop blocks,
+  certificates, reminders (Phases 3–5). Nothing has been tried by a real vessel yet.
 
 ## Phase 1 — what was built (19 Oct 2026)
 
@@ -23,9 +53,7 @@ Decisions taken and still open are at the bottom.
   `/api/admin/users` + `/api/admin/portal-users` 403 "Crew training logins cannot access staff
   areas", `/api/admin/guests`, `/api/guest`, `/api/guest-shares`, `/api/portal/*` all 403; direct
   table reads return `[]`. Test login deleted afterwards.
-- Not yet: the `academy` portal module isn't in `PORTAL_MODULES` (added with the vessel screens in
-  Phase 3); the `academy-media` storage bucket comes with uploads in Phase 2; no way to invite a
-  learner from the UI yet (Phase 2).
+- (Phase 1 left the portal module, the media bucket and invites for Phase 2 — all done above.)
 
 ## 1. What it is
 
@@ -248,7 +276,8 @@ Taken (Matt, 19 Oct 2026):
 Still open:
 
 5. Can a vessel **copy and adapt** a JLS course, or only use it as published?
-6. **MFA** for crew logins? (Captains need it; guests don't.) Recommendation: no MFA for crew.
+6. **MFA** for crew logins? (Captains need it; guests don't.) Built without MFA for now (the
+   recommendation) — Matt hasn't confirmed; easy to add later.
 7. Do we need to import **bought-in courses (SCORM)**?
 8. Should the Chief Stewardess / Chief Engineer manage only their own department's training?
 9. Does JLS see **anything** about JLS-course uptake without a share (e.g. counts per vessel, no
