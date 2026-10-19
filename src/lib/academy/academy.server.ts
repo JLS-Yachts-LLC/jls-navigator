@@ -13,10 +13,11 @@ import { courseOutcome, type BlockProgress, type CourseContent } from "@/lib/aca
 
 export const MEDIA_BUCKET = "academy-media";
 /**
- * Upload ceiling. The bucket allows 500 MB, but the Supabase project's global
- * limit (Storage settings) is 50 MB and wins — raise that first, then this.
+ * Upload ceiling: 500 MB, matching the academy-media bucket and the Supabase
+ * project's global Storage limit (raised from 50 MB on 19 Oct 2026). All three
+ * must agree — the lowest wins.
  */
-export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+export const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
 export const MEDIA_TYPES: Record<string, "video" | "image" | "document"> = {
   "video/mp4": "video",
   "image/jpeg": "image", "image/png": "image", "image/webp": "image", "image/gif": "image",

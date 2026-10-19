@@ -1162,6 +1162,10 @@ export default {
       const { academyForgotPasswordHandler } = await import('./routes/api.academy.forgot-password')
       return academyForgotPasswordHandler(request)
     }
+    if (url.pathname === '/api/academy/mfa') {
+      const { academyMfaHandler } = await import('./routes/api.academy.mfa')
+      return academyMfaHandler(request)
+    }
     if (url.pathname === '/api/academy-admin') {
       const { academyAdminHandler } = await import('./routes/api.academy-admin')
       return academyAdminHandler(request)

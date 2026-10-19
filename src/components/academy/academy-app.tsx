@@ -19,7 +19,7 @@ import { CoursePlayer, type PlayerApi } from "@/components/academy/course-player
 import type { BlockProgress, CourseContent } from "@/lib/academy/content";
 import "@/components/polaris-ui/tokens.css";
 
-type Stage = "loading" | "signed-out" | "reset-password" | "link-expired" | "not-learner" | "ready";
+type Stage = "loading" | "signed-out" | "reset-password" | "link-expired" | "not-learner" | "mfa" | "ready";
 
 type CourseRow = {
   enrolmentId: string;
@@ -129,7 +129,10 @@ export function AcademyApp() {
     setEmail(session.user.email ?? "");
     if (LANDED_WITH === "recovery" && !resetHandled) { setStage("reset-password"); return; }
     const { data: isLearner } = await (supabase as any).rpc("is_portal_learner");
-    setStage(isLearner === true ? "ready" : "not-learner");
+    if (isLearner !== true) { setStage("not-learner"); return; }
+    // The second sign-in step: authenticator app or emailed code.
+    const mfa = await academyFetch("/api/academy/mfa").catch(() => null);
+    setStage(mfa?.passed ? "ready" : "mfa");
   }, [resetHandled]);
 
   useEffect(() => { void bootstrap(); }, [bootstrap]);
@@ -169,6 +172,7 @@ export function AcademyApp() {
           <PrimaryButton onClick={signOut} className="mt-6 w-full"><LogOut className="h-4 w-4" /> Sign out</PrimaryButton>
         </AuthFrame>
       )}
+      {stage === "mfa" && <MfaScreen onDone={bootstrap} onSignOut={signOut} />}
       {stage === "ready" && <MyCourses onSignOut={signOut} />}
     </div>
   );
