@@ -7,7 +7,7 @@ import type { WallMapPoint } from "@/lib/wall-types";
 /** Dot for a vessel sitting still, arrow for one under way. Interactive boards get a finger-sized hit area. */
 function icon(p: WallMapPoint, interactive: boolean, selected: boolean) {
   const color = p.stale ? "#5B6B82" : p.moving ? "#F5B83D" : p.inCountry ? "#96CBC7" : "#4590BA";
-  const box = interactive ? 36 : p.moving ? 26 : 12;
+  const box = interactive ? 44 : p.moving ? 26 : 12;
   const ring = selected ? `outline:3px solid #F5B83D;outline-offset:3px;border-radius:50%;` : "";
   const wrap = (inner: string) =>
     `<div style="width:${box}px;height:${box}px;display:flex;align-items:center;justify-content:center">${inner}</div>`;
@@ -119,7 +119,7 @@ export default function WallMap({
             >
               {/* Labels only for the boats on the move (and the one that's open) — 70+ labels in a marina is noise. */}
               {(p.moving || selected) && (
-                <Tooltip permanent direction="right" offset={[interactive ? 16 : 12, 0]} className="wall-map-label">{p.name}</Tooltip>
+                <Tooltip permanent direction="right" offset={[interactive ? 20 : 12, 0]} className="wall-map-label">{p.name}</Tooltip>
               )}
             </Marker>
           );

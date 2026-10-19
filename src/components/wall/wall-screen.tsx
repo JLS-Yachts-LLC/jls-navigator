@@ -162,9 +162,12 @@ export function WallScreen() {
   }, []);
 
   return (
-    <div style={{
+    <div onContextMenu={(e) => e.preventDefault()} style={{
       position: "fixed", inset: 0, background: C.bg, color: C.text, overflow: "hidden",
       fontFamily: "Inter, system-ui, sans-serif", fontSize: "clamp(12px, 0.88vw, 26px)",
+      // A wall touchscreen: a stray pinch or long-press must never zoom the page or select text
+      // (the map handles its own pinch-zoom). Scrolling lists still pans.
+      touchAction: "pan-x pan-y", userSelect: "none", WebkitUserSelect: "none",
     }}>
       <style>{`
         @keyframes wall-scroll { from { transform: translateY(0) } to { transform: translateY(-50%) } }
@@ -178,7 +181,7 @@ export function WallScreen() {
         .wall-map-btn { width: 2.4em; height: 2.4em; display: flex; align-items: center; justify-content: center; font-size: 1.5em; font-weight: 600;
           background: rgba(14,30,51,.92); border: 1px solid #18304D; border-radius: 10px; color: #EAF2F8; }
         .wall-map-btn:focus-visible { outline-offset: 2px; }
-        .wall-btn { padding: .6em 1.2em; border: 1px solid #18304D; border-radius: 10px; font-weight: 600; text-align: center; width: auto; }
+        .wall-btn { padding: .6em 1.2em; min-height: 3em; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #18304D; border-radius: 10px; font-weight: 600; width: auto; }
         .wall-scroll-box { scrollbar-width: thin; scrollbar-color: #18304D transparent; overscroll-behavior: contain; }
         @keyframes wall-drawer { from { transform: translateX(30px); opacity: 0 } to { transform: none; opacity: 1 } }
       `}</style>
@@ -330,7 +333,8 @@ function Tap({ id, label, style, children }: { id: string | null | undefined; la
       data-wall-focus={duplicate ? undefined : ""} tabIndex={duplicate ? -1 : undefined}
       data-selected={ui.selectedId === id ? "" : undefined}
       onClick={(e) => ui.open(id, e.currentTarget)}
-      style={style}
+      // Finger-sized on a touchscreen: rows grow a little taller than the hands-off board.
+      style={{ ...style, minHeight: "3em", paddingTop: ".7em", paddingBottom: ".7em" }}
     >
       {children}
     </button>
