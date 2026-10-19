@@ -76,6 +76,63 @@ async function api(path: string, init: RequestInit = {}) {
   return fetch(path, { ...init, headers });
 }
 
+/**
+ * The fleet edition of the weekly operations report — the internal Monday email
+ * (its recipients and send time are on Developer → Automations). Preview it as
+ * it would go out now, or open its PDF.
+ */
+function FleetWeeklyCard() {
+  const [busy, setBusy] = useState<"preview" | "pdf" | null>(null);
+  const [preview, setPreview] = useState<{ subject: string; html: string; summary: string } | null>(null);
+  const path = "/api/vessel-reports?preview=weekly_operations&yachtId=all";
+  async function show() {
+    setBusy("preview");
+    try {
+      const j = await (await api(path)).json();
+      if (!j.ok) throw new Error(j.error);
+      setPreview(j);
+    } catch (e: any) { toast.error(e?.message ?? "Couldn't build the preview."); }
+    finally { setBusy(null); }
+  }
+  async function pdf() {
+    setBusy("pdf");
+    try {
+      const r = await api(`${path}&format=pdf`);
+      if (!r.ok) throw new Error((await r.json().catch(() => null))?.error ?? "Couldn't build the PDF.");
+      const url = URL.createObjectURL(await r.blob());
+      window.open(url, "_blank", "noreferrer");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e: any) { toast.error(e?.message); }
+    finally { setBusy(null); }
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border px-4 py-3">
+      <CalendarClock className="h-4 w-4 text-muted-foreground" />
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-medium">Weekly operations report — whole fleet</div>
+        <div className="text-xs text-muted-foreground">
+          The internal Monday 08:00 email: a summary, then Agency, Crew Care and Visas grouped by yacht. Who gets it and when: Developer → Automations.
+        </div>
+      </div>
+      <Button size="sm" variant="outline" className="gap-1.5" disabled={!!busy} onClick={() => void show()}>
+        {busy === "preview" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eye className="h-3.5 w-3.5" />} Preview
+      </Button>
+      <Button size="sm" variant="outline" className="gap-1.5" disabled={!!busy} onClick={() => void pdf()}>
+        {busy === "pdf" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileDown className="h-3.5 w-3.5" />} PDF
+      </Button>
+      <Dialog open={!!preview} onOpenChange={(o) => !o && setPreview(null)}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>{preview?.subject}</DialogTitle>
+            <DialogDescription>As it would go out now · {preview?.summary} · PDF attached</DialogDescription>
+          </DialogHeader>
+          {preview && <iframe title="Weekly operations preview" srcDoc={preview.html} sandbox="" className="h-[70vh] w-full rounded-md border border-border bg-white" />}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
 type TabKey = "vessels" | "activity" | "types";
 const TABS: Array<{ key: TabKey; label: string; icon: any }> = [
   { key: "vessels", label: "All vessels", icon: LayoutGrid },
@@ -136,6 +193,8 @@ export function VesselReportsPage() {
         <span className={cn("rounded-full border px-2.5 py-1", live ? "border-emerald-500/40 text-emerald-400" : "border-border text-muted-foreground")}>{live} report{live === 1 ? "" : "s"} switched on</span>
         <span className="rounded-full border border-border px-2.5 py-1">{clientManaged} managed by the client</span>
       </div>
+
+      <FleetWeeklyCard />
 
       {wa && <WhatsAppTemplateCard wa={wa} canEdit={canEdit} onChanged={loadWa} usedBy={subs.filter((s) => s.send_whatsapp).length} />}
 

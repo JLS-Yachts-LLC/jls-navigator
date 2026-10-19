@@ -728,6 +728,7 @@ function AllRunsLog({ items, globalSearch }: { items: Automation[]; globalSearch
 const EMAIL_AUTOMATIONS: Record<string, { day: string; time: string; blurb: string }> = {
   "weekly-immigration-report": { day: "mon", time: "07:00", blurb: "Last week's sign-ons and sign-offs, this week's bookings and crew onboard, with PDFs attached." },
   "weekly-fleet-finance":      { day: "mon", time: "08:00", blurb: "Outstanding QuickBooks balances per yacht." },
+  "weekly-operations-report":  { day: "mon", time: "08:00", blurb: "Fleet summary, then Agency permits, Crew Care movements and Visas grouped by yacht — preview it on Reports → Automated Reports." },
   // (weekly-visa-report is retired: per-vessel reports — recipients, day and
   // time for each vessel — are on Reports → Automated Reports.)
 };

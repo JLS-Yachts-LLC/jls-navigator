@@ -1959,6 +1959,22 @@ export default {
         .catch((e) => console.error('[weekly-immigration] error:', e))
     )
 
+    // Weekly operations report — the whole fleet: Agency permits, Crew Care
+    // movements and Visas, grouped by yacht. Recipients and send time live on
+    // the Automations page; the values here are the fallback.
+    ctx.waitUntil(
+      runScheduledEmail(
+        'weekly-operations-report',
+        { day: 'mon', time: '08:00', tz: DEFAULT_TZ },
+        (recipients) => trackRun(
+          { key: 'weekly-operations-report', name: 'Weekly operations report', source: 'worker-cron', trigger_type: 'schedule', category: 'Crew' },
+          () => import('./lib/vessel-reports/weekly-ops.server').then((m) => m.runWeeklyOperationsReport(recipients)),
+        ).then((r) => console.log(`[weekly-operations] sent=${r.sent} ${r.summary}`)),
+      )
+        .then((r) => { if (!r.ran && r.note && r.note !== 'not due') console.log(`[weekly-operations] skipped: ${r.note}`) })
+        .catch((e) => console.error('[weekly-operations] error:', e))
+    )
+
     // Weekly Fleet Finance email — outstanding QBO balances per yacht. Toggle,
     // recipients AND send time all live on the Automations page; the values here
     // are the fallback for a row that has never been configured.

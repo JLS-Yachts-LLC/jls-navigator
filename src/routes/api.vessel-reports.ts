@@ -52,11 +52,14 @@ export async function vesselReportsHandler(request: Request): Promise<Response> 
       }
       const key = url.searchParams.get('preview') as ReportKey | null
       const yachtId = url.searchParams.get('yachtId') ?? ''
-      if (!key || !VESSEL_REPORTS.some((r) => r.key === key) || !/^[0-9a-f-]{36}$/i.test(yachtId)) {
+      // The fleet edition of the weekly operations report (the internal Monday email).
+      const fleet = key === 'weekly_operations' && yachtId === 'all'
+      if (!fleet && (!key || !VESSEL_REPORTS.some((r) => r.key === key) || !/^[0-9a-f-]{36}$/i.test(yachtId))) {
         return json({ ok: false, error: 'preview and yachtId required' }, 400)
       }
-      const { previewVesselReport } = await import('@/lib/vessel-reports/run.server')
-      const built = await previewVesselReport(key, yachtId)
+      const built = fleet
+        ? await (await import('@/lib/vessel-reports/weekly-ops.server')).buildWeeklyOperations({ yachtIds: 'all', staffCopy: true })
+        : await (await import('@/lib/vessel-reports/run.server')).previewVesselReport(key!, yachtId)
       if (url.searchParams.get('format') === 'pdf') {
         const a = built.attachments[0]
         const bytes = Uint8Array.from(atob(a.contentBase64), (c) => c.charCodeAt(0))
