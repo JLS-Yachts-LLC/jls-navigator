@@ -73,17 +73,40 @@ const MOVE_SELECT = `id, crew_member_id, yacht_id, event_type, event_date, statu
   departure_airport, arrival_airport, pickup_required, driver_assigned, driver_name,
   crew_members ( full_name, first_name, last_name, rank )`;
 
-export async function buildWeeklyOperations(opts: { yachtIds: string[] | "all"; staffCopy?: boolean }): Promise<BuiltReport> {
+/** A weekly report covers last week and this week; a monthly one, last month and this month. */
+export type OpsPeriod = "week" | "month";
+
+/** The two windows a report covers, in Dubai's calendar. */
+function windows(today: string, period: OpsPeriod) {
+  if (period === "week") {
+    const aheadFrom = mondayOf(today);
+    return { doneFrom: addDays(aheadFrom, -7), doneTo: addDays(aheadFrom, -1), aheadFrom, aheadTo: addDays(aheadFrom, 6) };
+  }
+  const aheadFrom = `${today.slice(0, 8)}01`;
+  const next = new Date(`${aheadFrom}T00:00:00Z`); next.setUTCMonth(next.getUTCMonth() + 1);
+  const prev = new Date(`${aheadFrom}T00:00:00Z`); prev.setUTCMonth(prev.getUTCMonth() - 1);
+  return { doneFrom: prev.toISOString().slice(0, 10), doneTo: addDays(aheadFrom, -1), aheadFrom, aheadTo: addDays(next.toISOString().slice(0, 10), -1) };
+}
+const monthName = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
+
+/**
+ * One vessel's report is written for the client: only that vessel, no internal
+ * working notes (driver allocation, missing flight details). The fleet edition
+ * is internal.
+ */
+export async function buildWeeklyOperations(opts: { yachtIds: string[] | "all"; staffCopy?: boolean; period?: OpsPeriod }): Promise<BuiltReport> {
   const sb = supabaseAdmin as any;
   const single = opts.yachtIds !== "all" && opts.yachtIds.length === 1;
+  const period: OpsPeriod = single ? opts.period ?? "week" : "week";
+  const monthly = period === "month";
   const today = todayUae();
-  const monday = mondayOf(today);
-  const sunday = addDays(monday, 6);
-  const lastMonday = addDays(monday, -7);
-  const lastSunday = addDays(monday, -1);
+  const { doneFrom, doneTo, aheadFrom, aheadTo } = windows(today, period);
+  const L = monthly
+    ? { done: `Completed in ${monthName(doneFrom)}`, ahead: `Planned for ${monthName(aheadFrom)}`, last: "last month", next: "this month", name: "Monthly" }
+    : { done: "Completed last week", ahead: "Planned for this week", last: "last week", next: "this week", name: "Weekly" };
   const pendingFloor = new Date(Date.now() - PENDING_FRESH_DAYS * 86_400_000).toISOString();
-  const inLastWeek = (d: string | null) => !!d && d >= lastMonday && d <= lastSunday;
-  const inWeekAhead = (d: string | null) => !!d && d >= monday && d <= sunday;
+  const inDone = (d: string | null) => !!d && d >= doneFrom && d <= doneTo;
+  const inAhead = (d: string | null) => !!d && d >= aheadFrom && d <= aheadTo;
 
   // ── vessels ────────────────────────────────────────────────────────────────
   const yq = () => {
@@ -107,7 +130,7 @@ export async function buildWeeklyOperations(opts: { yachtIds: string[] | "all"; 
       .in("permit_type", ["exit_entry", "dma", "cruising_mothership", "cruising_tenders"]).neq("status", "cancelled").order("id"))),
     // Fleet-wide on purpose, even for one vessel: a transfer's other half is on another vessel.
     fetchAllRows(() => sb.from("crew_signon_events").select(MOVE_SELECT)
-      .gte("event_date", addDays(lastMonday, -TRANSFER_DAYS)).lte("event_date", addDays(sunday, TRANSFER_DAYS))
+      .gte("event_date", addDays(doneFrom, -TRANSFER_DAYS)).lte("event_date", addDays(aheadTo, TRANSFER_DAYS))
       .neq("status", "cancelled").order("event_date").order("id")),
     fetchAllRows(() => scope(sb.from("visa_applications")
       .select("id, yacht_id, crew_member_id, given_name, surname, visa_type, status, submitted_at, approved_at, updated_at, visa_expiry")
@@ -133,7 +156,7 @@ export async function buildWeeklyOperations(opts: { yachtIds: string[] | "all"; 
     if (!kind || !p.yacht_id || !ids.has(p.yacht_id)) continue;
     const label = permitLabel(p.permit_type, p.issuing_authority, p.dma_phase);
     const ref = p.permit_number ? ` · ${p.permit_number}` : "";
-    if (inLastWeek(p.issue_date)) {
+    if (inDone(p.issue_date)) {
       g(agency, p.yacht_id).done.push({ what: label, detail: `Issued${ref}${p.expiry_date ? ` · valid to ${nice(p.expiry_date)}` : ""}`, date: p.issue_date, status: "Issued", tone: "ok" });
     }
     if (p.status === "pending" && (p.created_at ?? "") >= pendingFloor) {
@@ -194,7 +217,7 @@ export async function buildWeeklyOperations(opts: { yachtIds: string[] | "all"; 
   const route = (m: any) => [m.departure_airport, m.arrival_airport].filter(Boolean).join(" → ");
   for (const m of moves) {
     if (!m.yacht_id || !ids.has(m.yacht_id)) continue;
-    const past = inLastWeek(m.event_date), next = inWeekAhead(m.event_date);
+    const past = inDone(m.event_date), next = inAhead(m.event_date);
     if (!past && !next) continue;
     const other = pairedWith.get(m.id);
     const what = other
@@ -205,7 +228,7 @@ export async function buildWeeklyOperations(opts: { yachtIds: string[] | "all"; 
     const line: Line = { what, detail: `${nameOfMove(m)}${rank}${travel ? ` · ${travel}` : ""}`, date: m.event_date, status: past ? "Done" : (m.status ?? "Planned"), tone: past ? "ok" : "info" };
     const grp = g(crewCare, m.yacht_id);
     (past ? grp.done : grp.ahead).push(line);
-    if (next) {
+    if (next && !single) { // internal working notes — not for the client's copy
       const gaps: string[] = [];
       if (!m.flight_number && !other) gaps.push("no flight details");
       if (m.pickup_required && !m.driver_assigned && !m.driver_name) gaps.push("pickup needed, no driver");
@@ -223,9 +246,9 @@ export async function buildWeeklyOperations(opts: { yachtIds: string[] | "all"; 
     if (!v.yacht_id || !ids.has(v.yacht_id)) continue;
     const status = String(v.status ?? "").toLowerCase();
     const submitted = dayOf(v.submitted_at), approved = dayOf(v.approved_at);
-    if (inLastWeek(approved)) {
+    if (inDone(approved)) {
       g(visas, v.yacht_id).done.push({ what: "Visa approved", detail: `${visaName(v)} · ${visaType(v)}${v.visa_expiry ? ` · valid to ${nice(v.visa_expiry)}` : ""}`, date: approved, status: "Approved", tone: "ok" });
-    } else if (inLastWeek(submitted)) {
+    } else if (inDone(submitted)) {
       g(visas, v.yacht_id).done.push({ what: "Visa submitted", detail: `${visaName(v)} · ${visaType(v)}`, date: submitted, status: "Submitted", tone: "info" });
     }
     if ((status === "draft" || status === "submitted") && (v.updated_at ?? "") >= pendingFloor) {
@@ -275,8 +298,8 @@ export async function buildWeeklyOperations(opts: { yachtIds: string[] | "all"; 
     .sort((a, b) => (a.tone === b.tone ? 0 : a.tone === "bad" ? -1 : 1) || (a.date ?? "").localeCompare(b.date ?? ""));
 
   const title = single ? `${vesselName(order[0])} — Weekly operations report` : "Weekly operations report";
-  const weekLine = `Last week ${short(lastMonday)}–${nice(lastSunday)} · week ahead ${short(monday)}–${nice(sunday)}`;
-  const subject = `${title}, w/c ${nice(monday)}${attentionTotal ? ` (${plural(attentionTotal, "item")} need${attentionTotal === 1 ? "s" : ""} attention)` : ""}`;
+  const weekLine = `Last week ${short(doneFrom)}–${nice(doneTo)} · week ahead ${short(aheadFrom)}–${nice(aheadTo)}`;
+  const subject = `${title}, w/c ${nice(aheadFrom)}${attentionTotal ? ` (${plural(attentionTotal, "item")} need${attentionTotal === 1 ? "s" : ""} attention)` : ""}`;
 
   const lineHtml = (l: Line) => `<tr style="border-top:1px solid #e5e7eb">
       <td style="padding:5px 6px;white-space:nowrap;color:#4b5563">${esc(l.date ? short(l.date) : "")}</td>
@@ -346,13 +369,13 @@ export async function buildWeeklyOperations(opts: { yachtIds: string[] | "all"; 
     push("Status", grp!.status); push("Attention", grp!.attention); push("Done", grp!.done); push("Ahead", grp!.ahead);
   }
   if (!pdfRows.length) pdfRows.push(["—", "—", "Nothing to report", "", "", ""]);
-  const pdf = await buildReportPdf(`${title} — w/c ${nice(monday)}`,
+  const pdf = await buildReportPdf(`${title} — w/c ${nice(aheadFrom)}`,
     ["Section", "Vessel", "Item", "Detail", "Date", "Status"], pdfRows, [1.4, 2.2, 2.8, 4.6, 1.5, 1.6]);
   const who = single ? fileSafe(vesselName(order[0])) : "Fleet";
 
   return {
     subject, html, text,
-    attachments: [{ filename: `Weekly operations - ${who} - w-c ${monday}.pdf`, contentBase64: b64(pdf), contentType: "application/pdf" }],
+    attachments: [{ filename: `Weekly operations - ${who} - w-c ${aheadFrom}.pdf`, contentBase64: b64(pdf), contentType: "application/pdf" }],
     summary: `${count(agency, "done")} permits issued · ${count(crewCare, "done")} movements last week · ${count(crewCare, "ahead")} this week · ${count(visas, "done")} visa updates · ${attentionTotal} need attention`,
   };
 }
