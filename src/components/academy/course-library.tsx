@@ -14,7 +14,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown, ArrowLeft, ArrowUp, Archive, CheckCircle2, Crosshair, Eye, FileText, Film, GraduationCap, Image as ImageIcon,
-  LayoutGrid, Link2, ListChecks, ListOrdered, Loader2, Plus, RotateCcw, Save, Send, Ship, Signature, Trash2, Type, Upload, X,
+  LayoutGrid, Link2, ListChecks, ListOrdered, Loader2, Plus, RotateCcw, Save, Send, Ship, Signature, Sparkles, Trash2, Type, Upload, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -421,7 +421,22 @@ function Editor({ id, onBack }: { id: string; onBack: () => void }) {
                           onMove={(d) => change((c) => { swap(c.sections[si].lessons[li].blocks, bi, bi + d); return c; })}
                           onDelete={() => change((c) => { c.sections[si].lessons[li].blocks.splice(bi, 1); return c; })} />} />
                     ))}
-                    {editable && <AddBlock onAdd={(t) => change((c) => { c.sections[si].lessons[li].blocks.push(newBlock(t)); return c; })} />}
+                    {editable && <AddBlock onAdd={(t) => change((c) => { c.sections[si].lessons[li].blocks.push(newBlock(t)); return c; })}
+                      onDraft={async () => {
+                        const raw = prompt("How many questions should be drafted? (3–10)", "5");
+                        if (raw === null) return;
+                        // Drafting reads the saved lesson, so save first.
+                        if (dirty && !(await save(true))) return;
+                        try {
+                          const r = await api.post({ op: "draft-quiz", id, lessonId: l.id, count: Number(raw) || 5 });
+                          if (!r.questions?.length) { toast.error("No usable questions came back — try again."); return; }
+                          change((c) => {
+                            c.sections[si].lessons[li].blocks.push({ id: newId(), type: "quiz", title: "Quiz (AI draft — check before publishing)", questions: r.questions });
+                            return c;
+                          });
+                          toast.success(`${r.questions.length} questions drafted — check each one, then save.`);
+                        } catch (e: any) { toast.error(e.message); }
+                      }} />}
                   </div>
                 </div>
               ))}
@@ -479,9 +494,17 @@ const BLOCK_ICONS: Record<BlockType, any> = {
   match: Link2, order: ListOrdered, sort: LayoutGrid, hotspot: Crosshair,
 };
 
-function AddBlock({ onAdd }: { onAdd: (t: BlockType) => void }) {
+function AddBlock({ onAdd, onDraft }: { onAdd: (t: BlockType) => void; onDraft?: () => Promise<void> }) {
+  const [drafting, setDrafting] = useState(false);
   return (
     <div className="flex flex-wrap items-center gap-1.5 pt-1">
+      {onDraft && (
+        <button disabled={drafting} onClick={async () => { setDrafting(true); try { await onDraft(); } finally { setDrafting(false); } }}
+          title="Claude reads this lesson's text and PDFs and drafts quiz questions for you to check"
+          className="inline-flex h-7 items-center gap-1 rounded-md border border-violet-500/40 bg-violet-500/10 px-2 text-xs text-violet-200 hover:border-violet-400 disabled:opacity-60">
+          {drafting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />} {drafting ? "Drafting…" : "Draft quiz with AI"}
+        </button>
+      )}
       <span className="mr-1 text-xs text-muted-foreground">Add:</span>
       {(Object.keys(BLOCK_LABELS) as BlockType[]).map((t) => {
         const Icon = BLOCK_ICONS[t];

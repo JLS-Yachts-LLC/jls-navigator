@@ -9,6 +9,7 @@
  */
 import { ContentError, emptyContent, normalizeContent, publishProblems } from "@/lib/academy/content";
 import { MAX_UPLOAD_BYTES, MEDIA_BUCKET, MEDIA_TYPES, UUID_RE, signedMediaUrl } from "@/lib/academy/academy.server";
+import { draftQuizQuestions } from "@/lib/academy/quiz-draft.server";
 
 export type CourseScope = { owner: "jls" } | { owner: "vessel"; yachtId: string };
 export type Actor = { userId: string; name: string };
@@ -180,6 +181,16 @@ export async function authoringPost(sb: any, scope: CourseScope, actor: Actor, b
     case "publish": needPublish(); return { ok: true, version: await publishCourse(sb, scope, actor, body.id) };
     case "archive": needPublish(); return { ok: true, status: await setArchived(sb, scope, body.id, true) };
     case "restore": needPublish(); return { ok: true, status: await setArchived(sb, scope, body.id, false) };
+    case "draft-quiz": {
+      // AI-drafted questions from the SAVED lesson, returned for review — nothing is stored here.
+      const course = await scopedCourse(sb, scope, body.id);
+      const count = Math.min(10, Math.max(3, Math.round(Number(body.count) || 5)));
+      try {
+        return { questions: await draftQuizQuestions(sb, normalizeContent(course.draft_content), String(body.lessonId ?? ""), count) };
+      } catch (e: any) {
+        throw new AuthoringError(e?.message ?? "Questions couldn't be drafted");
+      }
+    }
     default: return null;
   }
 }
