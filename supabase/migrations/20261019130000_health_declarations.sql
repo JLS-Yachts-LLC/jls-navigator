@@ -37,13 +37,15 @@ create table if not exists public.health_declarations (
   visited_affected_area      text check (visited_affected_area in ('yes','no')),
   affected_area_port         text,
   affected_area_date         date,
-  -- health questions ({ q_death: 'yes'|'no', deaths_count, … }) and the schedule's particulars
+  -- health questions ({ q_death: 'yes'|'no', deaths_count, q_death_details, … }):
+  -- <question>_details is the schedule entry for each yes; particulars is any further remark
   answers                    jsonb not null default '{}'::jsonb,
   particulars                text,
   -- signing
   signature_ref              text,
   stamp_ref                  text,
   pdf_ref                    text,
+  document_id                uuid references public.yacht_documents(id) on delete set null,  -- the PDF on the vessel's Documents
   due_date                   date,
   late                       boolean not null default false,
   submitted_at               timestamptz,
@@ -77,5 +79,10 @@ create policy portal_captain_block_update on public.health_declarations as restr
 drop policy if exists portal_captain_block_delete on public.health_declarations;
 create policy portal_captain_block_delete on public.health_declarations as restrictive for delete to authenticated
   using (not public.is_portal_captain());
+
+-- Guest (outside) logins never see health data.
+drop policy if exists portal_guest_block on public.health_declarations;
+create policy portal_guest_block on public.health_declarations as restrictive for all to authenticated
+  using (not public.is_portal_guest()) with check (not public.is_portal_guest());
 
 revoke all on public.health_declarations from anon;
