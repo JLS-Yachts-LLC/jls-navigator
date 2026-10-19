@@ -29,6 +29,14 @@ Decisions taken and still open are at the bottom.
 - **Question analysis:** `/api/portal/academy?op=analysis&courseId=` re-marks every attempt
   against the version it was taken on; per question / exercise item: answers and % right first
   try, hardest first, no names. In the portal's Reports tab.
+- **Verified live (build 9f0478f), 16/16:** throwaway crew + captain (real TOTP) on AQUILA, JLS
+  course with match/order/sort offered to the vessel; answer keys absent from the crew's copy,
+  order shuffled; wrong match 0% with no solution, right match passed with solution; half-right
+  sort 50%; course completed; certificate number on home; crew and manager PDF downloads (%PDF);
+  someone else's certificate 404; analysis 7 items from 5 answers, hardest first; and the
+  refresher job (expiry backdated → next 5-minute tick marked it expired and re-enrolled, due +30
+  days). All test data deleted, Academy switched off again for AQUILA. Certificate layout checked
+  by rendering a sample. Not tested: hotspot live (unit-tested), the screens in a browser.
 - Not done (Phase 5): reminders (gated by the vessel's automatic-messages switch), offline
   courses, AI help drafting quiz questions, SCORM import, JLS-side uptake numbers (decision 9).
 
