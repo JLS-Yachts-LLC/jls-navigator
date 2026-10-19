@@ -11,7 +11,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
   CALENDAR_DAYS, TRAINING_BRAND, addDays, buildCalendar, categoryLabel, courseKeys, dubaiToday, firstName,
   isSessionEvent, matchStudent, nameKey, type CalendarRow, type KioskCourse, type SignInResult, type StudentRow,
-  type TrainingKioskBoard, type TrainingKioskSettings,
+  type TrainingKioskBoard, type TrainingKioskSettings, type AttendanceRow,
 } from "@/lib/training-kiosk";
 
 const db = () => supabaseAdmin as any;
@@ -109,25 +109,6 @@ export async function kioskSignIn(displayId: string, eventId: string, name: stri
 }
 
 // ── Staff (Training Institute → Attendance) ──────────────────────────────────
-
-export interface AttendanceRow {
-  id: string;
-  session_date: string;
-  calendar_event_id: string | null;
-  session_title: string;
-  session_time: string | null;
-  session_category: string | null;
-  full_name: string;
-  mobile: string | null;
-  student_id: string | null;
-  student_name: string | null;
-  match_method: "mobile" | "name" | "staff" | null;
-  source: "kiosk" | "staff";
-  display_name: string | null;
-  signed_in_at: string;
-  voided_at: string | null;
-  void_reason: string | null;
-}
 
 export async function listAttendance(from: string, to: string): Promise<AttendanceRow[]> {
   const { data, error } = await db().from("training_attendance")

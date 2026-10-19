@@ -74,6 +74,26 @@ export type SignInResult =
   | { ok: true; already: boolean; firstName: string; session: string }
   | { ok: false; error: string };
 
+/** One sign-in, as Training staff see it (Training Institute → Attendance). */
+export interface AttendanceRow {
+  id: string;
+  session_date: string;
+  calendar_event_id: string | null;
+  session_title: string;
+  session_time: string | null;
+  session_category: string | null;
+  full_name: string;
+  mobile: string | null;
+  student_id: string | null;
+  student_name: string | null;
+  match_method: "mobile" | "name" | "staff" | null;
+  source: "kiosk" | "staff";
+  display_name: string | null;
+  signed_in_at: string;
+  voided_at: string | null;
+  void_reason: string | null;
+}
+
 export interface CalendarRow {
   id: string;
   event_date: string;

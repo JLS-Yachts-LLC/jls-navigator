@@ -9,7 +9,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import type { TrainingKioskSettings } from "@/lib/training-kiosk";
+import { cleanUrl, type TrainingKioskSettings } from "@/lib/training-kiosk";
 
 // Training Institute → Tablet: pair the training room tablet (it shows a code at
 // /training-kiosk), set its Google review link, rename or unpair it.
@@ -67,6 +67,7 @@ export function TabletTab({ initialCode }: { initialCode?: string }) {
 
   const pair = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (reviewUrl.trim() && !cleanUrl(reviewUrl)) { toast.error("The review link must be a full https:// link."); return; }
     setBusy(true);
     try {
       await api("POST", { code, name, settings: reviewUrl.trim() ? { reviewUrl: reviewUrl.trim() } : {} });
@@ -81,6 +82,7 @@ export function TabletTab({ initialCode }: { initialCode?: string }) {
   };
 
   const save = async (t: Tablet, patch: { name?: string; settings?: TrainingKioskSettings }) => {
+    if (patch.settings?.reviewUrl && !cleanUrl(patch.settings.reviewUrl)) { toast.error("The review link must be a full https:// link."); return; }
     try {
       await api("PATCH", { id: t.id, ...patch });
       toast.success("Saved — the tablet picks it up within a minute.");

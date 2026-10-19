@@ -9,8 +9,11 @@ import { uploadCrewDocToSharePoint } from "@/lib/visa-sharepoint.server";
 import {
   GraduationCap, Award, Loader2, Plus, Search, Pencil, Trash2,
   AlertTriangle, CheckCircle2, Clock, BookOpen, X, ChevronDown, ChevronUp,
-  UserCog, Users, CalendarRange, CalendarDays, Upload, Paperclip, ExternalLink,
+  UserCog, Users, CalendarRange, CalendarDays, Upload, Paperclip, ExternalLink, ClipboardCheck, TabletSmartphone,
 } from "lucide-react";
+import { useSearch } from "@tanstack/react-router";
+import { AttendanceTab } from "@/components/training/AttendanceTab";
+import { TabletTab } from "@/components/training/TabletTab";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { InstructorsTab } from "@/components/training/InstructorsTab";
@@ -69,8 +72,9 @@ type Certification = {
 
 type CrewLite = { id: string; first_name: string; last_name: string; yacht_id?: string | null };
 
-type Tab = "instructors" | "students" | "courses" | "classes" | "calendar" | "records" | "certifications";
-const SCHOOL_TABS: Tab[] = ["instructors", "students", "courses", "classes", "calendar"];
+type Tab = "instructors" | "students" | "courses" | "classes" | "calendar" | "attendance" | "tablet" | "records" | "certifications";
+const SCHOOL_TABS: Tab[] = ["instructors", "students", "courses", "classes", "calendar", "attendance", "tablet"];
+const ALL_TABS: Tab[] = [...SCHOOL_TABS, "records", "certifications"];
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -112,10 +116,12 @@ const fmtDate = (d: string | null) =>
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function TrainingPage() {
+  // ?tab=tablet&code=… — the training room tablet's pairing QR lands here.
+  const search = useSearch({ strict: false }) as { tab?: string; code?: string };
   const [records, setRecords]       = useState<TrainingRecord[]>([]);
   const [certs, setCerts]           = useState<Certification[]>([]);
   const [loading, setLoading]       = useState(true);
-  const [tab, setTab]               = useState<Tab>("instructors");
+  const [tab, setTab]               = useState<Tab>(() => (ALL_TABS as string[]).includes(search.tab ?? "") ? (search.tab as Tab) : "instructors");
   const [q, setQ]                   = useState("");
 
   // Record dialog state
@@ -235,6 +241,8 @@ export function TrainingPage() {
             ["courses", "Courses", BookOpen],
             ["classes", "Classes", CalendarRange],
             ["calendar", "Calendar", CalendarDays],
+            ["attendance", "Attendance", ClipboardCheck],
+            ["tablet", "Tablet", TabletSmartphone],
             ["records", "Records", GraduationCap],
             ["certifications", "Certifications", Award],
           ] as [Tab, string, typeof UserCog][]).map(([t, label, Icon]) => (
@@ -259,6 +267,8 @@ export function TrainingPage() {
           {tab === "courses" && <CoursesTab />}
           {tab === "classes" && <ClassesTab />}
           {tab === "calendar" && <CalendarTab />}
+          {tab === "attendance" && <AttendanceTab />}
+          {tab === "tablet" && <TabletTab initialCode={search.code != null ? String(search.code) : undefined} />}
         </div>
       )}
 

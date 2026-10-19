@@ -9,8 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { loadCalendarEvents, loadCourses, loadStudents, type TrainingCalendarEvent, type TrainingStudent } from "@/lib/training/data";
-import { addDays, courseKeys, dubaiToday, isSessionEvent } from "@/lib/training-kiosk";
-import type { AttendanceRow } from "@/lib/training-kiosk.server";
+import { addDays, courseKeys, dubaiToday, isSessionEvent, type AttendanceRow } from "@/lib/training-kiosk";
 
 // Training Institute → Attendance: who signed in to which session, from the
 // training room tablet (or added here by staff). Each sign-in is linked to the

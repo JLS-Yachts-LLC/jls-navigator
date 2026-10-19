@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WallRouteImport } from './routes/wall'
+import { Route as TrainingKioskRouteImport } from './routes/training-kiosk'
 import { Route as PortalRouteImport } from './routes/portal'
 import { Route as OrbitAppRouteImport } from './routes/orbit-app'
 import { Route as LogisticsAppRouteImport } from './routes/logistics-app'
@@ -174,6 +175,11 @@ import { Route as AppCrewImmigrationCrewAddCrewMemberIdPassportRouteImport } fro
 const WallRoute = WallRouteImport.update({
   id: '/wall',
   path: '/wall',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TrainingKioskRoute = TrainingKioskRouteImport.update({
+  id: '/training-kiosk',
+  path: '/training-kiosk',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PortalRoute = PortalRouteImport.update({
@@ -1014,6 +1020,7 @@ export interface FileRoutesByFullPath {
   '/logistics-app': typeof LogisticsAppRoute
   '/orbit-app': typeof OrbitAppRoute
   '/portal': typeof PortalRoute
+  '/training-kiosk': typeof TrainingKioskRoute
   '/wall': typeof WallRoute
   '/academy-admin': typeof AppAcademyAdminRoute
   '/admin': typeof AppAdminRouteWithChildren
@@ -1176,6 +1183,7 @@ export interface FileRoutesByTo {
   '/logistics-app': typeof LogisticsAppRoute
   '/orbit-app': typeof OrbitAppRoute
   '/portal': typeof PortalRoute
+  '/training-kiosk': typeof TrainingKioskRoute
   '/wall': typeof WallRoute
   '/academy-admin': typeof AppAcademyAdminRoute
   '/agency': typeof AppAgencyRoute
@@ -1325,6 +1333,7 @@ export interface FileRoutesById {
   '/logistics-app': typeof LogisticsAppRoute
   '/orbit-app': typeof OrbitAppRoute
   '/portal': typeof PortalRoute
+  '/training-kiosk': typeof TrainingKioskRoute
   '/wall': typeof WallRoute
   '/_app/academy-admin': typeof AppAcademyAdminRoute
   '/_app/admin': typeof AppAdminRouteWithChildren
@@ -1489,6 +1498,7 @@ export interface FileRouteTypes {
     | '/logistics-app'
     | '/orbit-app'
     | '/portal'
+    | '/training-kiosk'
     | '/wall'
     | '/academy-admin'
     | '/admin'
@@ -1651,6 +1661,7 @@ export interface FileRouteTypes {
     | '/logistics-app'
     | '/orbit-app'
     | '/portal'
+    | '/training-kiosk'
     | '/wall'
     | '/academy-admin'
     | '/agency'
@@ -1799,6 +1810,7 @@ export interface FileRouteTypes {
     | '/logistics-app'
     | '/orbit-app'
     | '/portal'
+    | '/training-kiosk'
     | '/wall'
     | '/_app/academy-admin'
     | '/_app/admin'
@@ -1963,6 +1975,7 @@ export interface RootRouteChildren {
   LogisticsAppRoute: typeof LogisticsAppRoute
   OrbitAppRoute: typeof OrbitAppRoute
   PortalRoute: typeof PortalRoute
+  TrainingKioskRoute: typeof TrainingKioskRoute
   WallRoute: typeof WallRoute
   DTokenRoute: typeof DTokenRoute
   LegalEulaRoute: typeof LegalEulaRoute
@@ -1983,6 +1996,13 @@ declare module '@tanstack/react-router' {
       path: '/wall'
       fullPath: '/wall'
       preLoaderRoute: typeof WallRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/training-kiosk': {
+      id: '/training-kiosk'
+      path: '/training-kiosk'
+      fullPath: '/training-kiosk'
+      preLoaderRoute: typeof TrainingKioskRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/portal': {
@@ -3603,6 +3623,7 @@ const rootRouteChildren: RootRouteChildren = {
   LogisticsAppRoute: LogisticsAppRoute,
   OrbitAppRoute: OrbitAppRoute,
   PortalRoute: PortalRoute,
+  TrainingKioskRoute: TrainingKioskRoute,
   WallRoute: WallRoute,
   DTokenRoute: DTokenRoute,
   LegalEulaRoute: LegalEulaRoute,
