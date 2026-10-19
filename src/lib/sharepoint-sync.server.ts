@@ -3115,33 +3115,44 @@ async function getYachtImageConfig(cfg: SpConfig): Promise<{ listName: string; m
 // Processes up to 5 yachts per invocation to stay within CF subrequest limits.
 // Run after syncFromSharePoint() in the cron so images trickle in over time.
 
-/** Find a yacht's SharePoint list item by IMO first, then exact vessel name. */
+/**
+ * Find a yacht's SharePoint list item by real IMO, then exact vessel name — and only
+ * when the answer is unambiguous. Callers SAVE the id on the yacht, and the next pull
+ * then rewrites the row into whatever that item holds, so a wrong guess turns one
+ * vessel into another. Hence: placeholder IMOs ("N/A", "0000") are never used, two
+ * or more hits is no answer, an item already linked to another Polaris row is never
+ * taken, JLS boats are never linked (they are not in the client list), and a failed
+ * lookup is "not found", not a guess.
+ */
 async function findSpItemIdForYacht(
   siteId: string,
   token: string,
   listName: string,
   mapping: Record<string, string>,
-  yacht: { vessel_name: string | null; imo_no: string | null },
+  yacht: { id: string; vessel_name: string | null; imo_no: string | null; fleet?: string | null },
 ): Promise<string | null> {
+  if (yacht.fleet === 'jls') return null
   const imoSpField = Object.entries(mapping).find(([, db]) => db === 'imo_no')?.[0]
   const nameSpField = Object.entries(mapping).find(([, db]) => db === 'vessel_name')?.[0]
   const esc = (v: string) => v.replace(/'/g, "''")
-
-  if (imoSpField && yacht.imo_no) {
+  const lookups: Array<[string | undefined, string | null]> = [
+    [imoSpField, _isRealImo(yacht.imo_no) ? String(yacht.imo_no).trim() : null],
+    [nameSpField, yacht.vessel_name ? String(yacht.vessel_name).trim() : null],
+  ]
+  for (const [col, val] of lookups) {
+    if (!col || !val) continue
     const r = await fetch(
-      `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listName}/items?$filter=${encodeURIComponent(`fields/${imoSpField} eq '${esc(yacht.imo_no)}'`)}&$select=id`,
-      { headers: { Authorization: `Bearer ${token}` } }
+      `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listName}/items?$filter=${encodeURIComponent(`fields/${col} eq '${esc(val)}'`)}&$select=id&$top=2`,
+      { headers: { Authorization: `Bearer ${token}`, Prefer: 'HonorNonIndexedQueriesWarningMayFailRandomly' } }
     )
+    if (!r.ok) return null
     const d = await r.json() as Record<string, any>
-    if (d.value?.[0]?.id) return d.value[0].id
-  }
-  if (nameSpField && yacht.vessel_name) {
-    const r = await fetch(
-      `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listName}/items?$filter=${encodeURIComponent(`fields/${nameSpField} eq '${esc(yacht.vessel_name)}'`)}&$select=id`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    )
-    const d = await r.json() as Record<string, any>
-    if (d.value?.[0]?.id) return d.value[0].id
+    const ids = ((d.value ?? []) as any[]).map((v) => String(v.id))
+    if (ids.length !== 1) continue
+    const { data: owner } = await (supabaseAdmin as any).from('yachts')
+      .select('id').eq('sharepoint_item_id', ids[0]).neq('id', yacht.id).limit(1)
+    if (owner?.length) continue
+    return ids[0]
   }
   return null
 }
@@ -3168,11 +3179,11 @@ export async function downloadPendingImages(
   // keep failing, so one bad batch can't block the vessels behind it.
   const { data: pending } = await supabaseAdmin
     .from('yachts')
-    .select('id, vessel_name, imo_no, sharepoint_item_id')
+    .select('id, vessel_name, imo_no, fleet, sharepoint_item_id')
     .or('vessel_image.is.null,vessel_image.like.{*')
     .order('vessel_name', { ascending: true })
     .range(offset, offset + limit - 1) as {
-      data: Array<{ id: string; vessel_name: string | null; imo_no: string | null; sharepoint_item_id: string | null }> | null
+      data: Array<{ id: string; vessel_name: string | null; imo_no: string | null; fleet: string | null; sharepoint_item_id: string | null }> | null
     }
 
   if (!pending?.length) return { downloaded: 0, processed: 0, results: [] }
@@ -3189,7 +3200,7 @@ export async function downloadPendingImages(
       if (!spItemId) {
         spItemId = await findSpItemIdForYacht(siteId, token, listName, mapping, yacht)
         if (!spItemId) {
-          results.push({ id: yacht.id, ok: false, reason: 'Not found in the SharePoint list (no IMO or exact-name match)' })
+          results.push({ id: yacht.id, ok: false, reason: 'Not found in the SharePoint list (no unique, unclaimed IMO or exact-name match)' })
           continue
         }
         await supabaseAdmin.from('yachts').update({ sharepoint_item_id: spItemId } as never).eq('id', yacht.id)
@@ -3230,9 +3241,9 @@ export async function downloadYachtImage(yachtId: string): Promise<{ url: string
 
   const { data: yacht } = await supabaseAdmin
     .from('yachts')
-    .select('id, vessel_name, imo_no, sharepoint_item_id')
+    .select('id, vessel_name, imo_no, fleet, sharepoint_item_id')
     .eq('id', yachtId)
-    .maybeSingle() as { data: { id: string; vessel_name: string | null; imo_no: string | null; sharepoint_item_id: string | null } | null }
+    .maybeSingle() as { data: { id: string; vessel_name: string | null; imo_no: string | null; fleet: string | null; sharepoint_item_id: string | null } | null }
 
   if (!yacht) return { url: null, reason: 'Yacht not found.' }
 
@@ -3241,31 +3252,12 @@ export async function downloadYachtImage(yachtId: string): Promise<{ url: string
 
   let spItemId = yacht.sharepoint_item_id
 
-  // If no SP item link, try to find the item by IMO or vessel name
+  // If no SP item link, find it the same guarded way as the background download.
   if (!spItemId) {
-    const imoSpField = Object.entries(mapping).find(([, db]) => db === 'imo_no')?.[0]
-    const nameSpField = Object.entries(mapping).find(([, db]) => db === 'vessel_name')?.[0]
-
-    if (imoSpField && yacht.imo_no) {
-      const r = await fetch(
-        `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listName}/items?$filter=${encodeURIComponent(`fields/${imoSpField} eq '${yacht.imo_no}'`)}&$select=id`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      )
-      const d = await r.json() as Record<string, any>
-      spItemId = d.value?.[0]?.id ?? null
-    }
-
-    if (!spItemId && nameSpField && yacht.vessel_name) {
-      const r = await fetch(
-        `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listName}/items?$filter=${encodeURIComponent(`fields/${nameSpField} eq '${yacht.vessel_name}'`)}&$select=id`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      )
-      const d = await r.json() as Record<string, any>
-      spItemId = d.value?.[0]?.id ?? null
-    }
+    spItemId = await findSpItemIdForYacht(siteId, token, listName, mapping, yacht)
 
     if (!spItemId) {
-      return { url: null, reason: `"${yacht.vessel_name}" was not found in the SharePoint list. Check that the vessel name or IMO matches exactly.` }
+      return { url: null, reason: `"${yacht.vessel_name}" was not found in the SharePoint list, or matched more than one item or one already linked to another vessel. Check that the vessel name or IMO matches exactly.` }
     }
 
     // Save the link so future syncs are instant
