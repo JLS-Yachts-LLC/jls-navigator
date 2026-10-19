@@ -63,6 +63,12 @@ const KINDS = {
     fileColumn: 'storage_ref',
     bucket: 'permit-documents',
   },
+  // The signed Maritime Declaration of Health the master sent JLS (Arrivals & departures).
+  health_declaration: {
+    table: 'health_declarations',
+    fileColumn: 'pdf_ref',
+    bucket: 'permit-documents',
+  },
 } as const
 
 type Kind = keyof typeof KINDS
