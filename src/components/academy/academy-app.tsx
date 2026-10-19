@@ -12,13 +12,17 @@
  *
  * The invite email is a password-set link that lands here (#type=recovery).
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Award, CheckCircle2, Clock, GraduationCap, Loader2, LogOut, Mail, RefreshCw, Shield } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Award, CheckCircle2, Clock, CloudOff, Download, GraduationCap, Trash2, Loader2, LogOut, Mail, RefreshCw, Shield } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { PolarisMark } from "@/components/brand/PolarisMark";
 import { cn } from "@/lib/utils";
 import { CoursePlayer, type PlayerApi } from "@/components/academy/course-player";
 import { openAuthedPdf } from "@/components/academy/open-pdf";
+import {
+  applyLocally, claimDevice, clearOffline, deviceOwner, flush, isOffline, loadCourse, loadHome, offlineMedia, offlineSupported,
+  queue, queued, removeCourse, saveCourse, saveHome, savedCourses, updateSavedProgress,
+} from "@/components/academy/academy-offline";
 import type { BlockProgress, CourseContent } from "@/lib/academy/content";
 import "@/components/polaris-ui/tokens.css";
 
@@ -57,6 +61,7 @@ const fmtDate = (d: string | null | undefined) =>
   d ? new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "";
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
+const mb = (bytes: number) => (bytes >= 1048576 ? `${Math.round(bytes / 1048576)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
 
 async function academyFetch(path: string, init: RequestInit = {}): Promise<any> {
   const { data: { session } } = await supabase.auth.getSession();
@@ -129,11 +134,18 @@ export function AcademyApp() {
       setStage("link-expired"); return;
     }
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session) { setStage("signed-out"); return; }
+    if (!session) {
+      // Offline for a while, the sign-in can't be refreshed — the courses saved on this phone still open.
+      if (!navigator.onLine && deviceOwner() && loadHome()) { setStage("ready"); return; }
+      setStage("signed-out"); return;
+    }
     setEmail(session.user.email ?? "");
     if (LANDED_WITH === "recovery" && !resetHandled) { setStage("reset-password"); return; }
-    const { data: isLearner } = await (supabase as any).rpc("is_portal_learner");
+    const { data: isLearner, error: rpcError } = await (supabase as any).rpc("is_portal_learner");
+    // No signal: open what this person saved on this phone, if anything.
+    if (rpcError && !navigator.onLine && deviceOwner() === session.user.id && loadHome()) { setStage("ready"); return; }
     if (isLearner !== true) { setStage("not-learner"); return; }
+    await claimDevice(session.user.id);
     // The second sign-in step: authenticator app or emailed code.
     const mfa = await academyFetch("/api/academy/mfa").catch(() => null);
     setStage(mfa?.passed ? "ready" : "mfa");
@@ -141,7 +153,14 @@ export function AcademyApp() {
 
   useEffect(() => { void bootstrap(); }, [bootstrap]);
 
+  // Lets the page open with no signal (scope /academy only — see public/academy-sw.js).
+  useEffect(() => {
+    if (typeof window === "undefined" || !("serviceWorker" in navigator) || import.meta.env.DEV) return;
+    navigator.serviceWorker.register("/academy-sw.js", { scope: "/academy", updateViaCache: "none" }).catch(() => {});
+  }, []);
+
   const signOut = useCallback(async () => {
+    await clearOffline(); // nothing of theirs stays on the phone
     await supabase.auth.signOut();
     setStage("signed-out");
   }, []);
@@ -298,16 +317,30 @@ function MyCourses({ onSignOut }: { onSignOut: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState<string | null>(null);
+  const [offline, setOffline] = useState(false);
+  const [saved, setSaved] = useState(savedCourses);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
-    try { setHome(await academyFetch("/api/academy?op=home")); }
-    catch (e: any) { setError(e.message); }
-    finally { setLoading(false); }
+    try {
+      // Progress made without signal goes up first, so the list below is current.
+      if (queued().length) await flush(postJson);
+      const h = await academyFetch("/api/academy?op=home");
+      setHome(h); saveHome(h); setOffline(false);
+    } catch (e: any) {
+      const cached = isOffline(e) ? loadHome<Home>() : null;
+      if (cached) { setHome(cached); setOffline(true); } else setError(e.message);
+    } finally { setLoading(false); }
   }, []);
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    const back = () => { void load(); };
+    window.addEventListener("online", back);
+    return () => window.removeEventListener("online", back);
+  }, [load]);
+  const savedChanged = () => setSaved(savedCourses());
 
-  if (open) return <CourseView enrolmentId={open} onExit={() => { setOpen(null); void load(); }} />;
+  if (open) return <CourseView enrolmentId={open} onExit={() => { setOpen(null); setSaved(savedCourses()); void load(); }} />;
 
   return (
     <div className="mx-auto min-h-screen max-w-3xl px-4 pb-16 pt-5 sm:px-6">
@@ -341,20 +374,28 @@ function MyCourses({ onSignOut }: { onSignOut: () => void }) {
         </div>
       )}
 
+      {offline && (
+        <div className="mt-5 flex items-start gap-2.5 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-100">
+          <CloudOff className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>No signal — showing the courses saved on this phone. Your progress is kept and sent when you're back online.</span>
+        </div>
+      )}
       {home && (
         <>
-          <Section title="To do" rows={home.todo} onOpen={setOpen}
+          <Section title="To do" rows={home.todo} onOpen={setOpen} offline={offline} saved={saved} onSavedChange={savedChanged}
             empty="Nothing to do yet. When your vessel enrols you on a course it will appear here." />
-          {home.done.length > 0 && <Section title="Completed" rows={home.done} onOpen={setOpen} />}
-          <ShareResults shared={home.me.sharedWithJls} vessel={home.vessel.name}
-            onChange={(sharedWithJls) => setHome({ ...home, me: { ...home.me, sharedWithJls } })} />
+          {home.done.length > 0 && <Section title="Completed" rows={home.done} onOpen={setOpen} offline={offline} saved={saved} onSavedChange={savedChanged} />}
+          {!offline && <ShareResults shared={home.me.sharedWithJls} vessel={home.vessel.name}
+            onChange={(sharedWithJls) => setHome({ ...home, me: { ...home.me, sharedWithJls } })} />}
         </>
       )}
     </div>
   );
 }
 
-function Section({ title, rows, empty, onOpen }: { title: string; rows: CourseRow[]; empty?: string; onOpen: (enrolmentId: string) => void }) {
+type OfflineProps = { offline: boolean; saved: ReturnType<typeof savedCourses>; onSavedChange: () => void };
+
+function Section({ title, rows, empty, onOpen, ...off }: { title: string; rows: CourseRow[]; empty?: string; onOpen: (enrolmentId: string) => void } & OfflineProps) {
   return (
     <section className="mt-8">
       <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{title}</h2>
@@ -365,14 +406,17 @@ function Section({ title, rows, empty, onOpen }: { title: string; rows: CourseRo
         </div>
       ) : (
         <ul className="space-y-3">
-          {rows.map((r) => <CourseCard key={r.enrolmentId} row={r} onOpen={() => onOpen(r.enrolmentId)} />)}
+          {rows.map((r) => <CourseCard key={r.enrolmentId} row={r} onOpen={() => onOpen(r.enrolmentId)} {...off} />)}
         </ul>
       )}
     </section>
   );
 }
 
-function CourseCard({ row, onOpen }: { row: CourseRow; onOpen: () => void }) {
+function CourseCard({ row, onOpen, offline, saved, onSavedChange }: { row: CourseRow; onOpen: () => void } & OfflineProps) {
+  const isSaved = !!saved[row.enrolmentId];
+  const [saving, setSaving] = useState<string | null>(null);
+  const unavailable = offline && !isSaved;
   const overdue = !!row.dueDate && row.dueDate < todayIso() && row.status !== "completed";
   const status =
     row.status === "completed" ? { label: `Passed${row.score != null ? ` · ${row.score}%` : ""}`, cls: "border-emerald-500/40 bg-emerald-500/10 text-emerald-300" }
@@ -382,7 +426,8 @@ function CourseCard({ row, onOpen }: { row: CourseRow; onOpen: () => void }) {
     : { label: "Not started", cls: "border-border bg-card text-muted-foreground" };
   return (
     <li>
-      <button onClick={onOpen} className="block w-full rounded-2xl border border-border bg-card/70 p-4 text-left transition hover:border-primary/40 hover:bg-card sm:p-5">
+      <button onClick={onOpen} disabled={unavailable}
+        className={cn("block w-full rounded-2xl border border-border bg-card/70 p-4 text-left transition hover:border-primary/40 hover:bg-card disabled:opacity-50 sm:p-5")}>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="font-semibold leading-snug">{row.course?.title ?? "Course"}</div>
@@ -403,7 +448,34 @@ function CourseCard({ row, onOpen }: { row: CourseRow; onOpen: () => void }) {
           {row.status === "completed" && row.expiresAt && <span>Valid until {fmtDate(row.expiresAt)}</span>}
         </div>
       </button>
-      {row.certificate && (
+      {offlineSupported() && row.status !== "completed" && row.status !== "expired" && (
+        isSaved ? (
+          <button disabled={offline} onClick={async () => { await removeCourse(row.enrolmentId); onSavedChange(); }}
+            className="mt-1.5 mr-3 inline-flex min-h-9 items-center gap-1.5 px-1 text-sm text-muted-foreground hover:text-foreground disabled:hover:text-muted-foreground">
+            <CheckCircle2 className="h-4 w-4 text-emerald-400" /> Saved on this phone ({mb(saved[row.enrolmentId].bytes)}){!offline && <Trash2 className="ml-1 h-3.5 w-3.5" />}
+          </button>
+        ) : !offline && (
+          <button disabled={!!saving} onClick={async () => {
+            setSaving("Getting ready…");
+            try {
+              const payload = await academyFetch(`/api/academy?op=course&enrolment=${encodeURIComponent(row.enrolmentId)}`);
+              const total = Object.values(payload.mediaSizes ?? {}).reduce((a: number, b: any) => a + (Number(b) || 0), 0);
+              if (total > 50 * 1048576 && !confirm(`This course's videos and files are ${mb(total)}. Download them now? Best on Wi-Fi.`)) { setSaving(null); return; }
+              await saveCourse(row.enrolmentId, payload,
+                async (mediaId) => (await academyFetch(`/api/academy?op=media&enrolment=${encodeURIComponent(row.enrolmentId)}&media=${encodeURIComponent(mediaId)}`)).url ?? null,
+                (done, n) => setSaving(n ? `Downloading ${done + 1 > n ? n : done + 1} of ${n}…` : "Saving…"));
+              onSavedChange();
+            } catch (e: any) {
+              await removeCourse(row.enrolmentId).catch(() => undefined);
+              alert(e?.name === "QuotaExceededError" ? "There isn't enough space on this phone for this course." : e?.message ?? "Couldn't save the course.");
+            }
+            setSaving(null);
+          }} className="mt-1.5 mr-3 inline-flex min-h-9 items-center gap-1.5 px-1 text-sm text-primary hover:underline disabled:no-underline disabled:opacity-70">
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} {saving ?? "Save for offline"}
+          </button>
+        )
+      )}
+      {row.certificate && !offline && (
         <button onClick={() => {
           void openAuthedPdf(async () => {
             const { data: { session } } = await supabase.auth.getSession();
@@ -453,20 +525,51 @@ type CoursePayload = {
 function CourseView({ enrolmentId, onExit }: { enrolmentId: string; onExit: () => void }) {
   const [data, setData] = useState<CoursePayload | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [offline, setOffline] = useState(false);
+  const progressRef = useRef<BlockProgress[]>([]);
 
   useEffect(() => {
-    academyFetch(`/api/academy?op=course&enrolment=${encodeURIComponent(enrolmentId)}`).then(setData).catch((e) => setError(e.message));
+    academyFetch(`/api/academy?op=course&enrolment=${encodeURIComponent(enrolmentId)}`)
+      .then((d: CoursePayload) => { progressRef.current = d.progress; setData(d); void updateSavedProgress(enrolmentId, d.progress, d.enrolment.status); })
+      .catch(async (e) => {
+        const saved = isOffline(e) ? await loadCourse<CoursePayload>(enrolmentId) : null;
+        if (saved) { progressRef.current = saved.progress; setData(saved); setOffline(true); } else setError(e.message);
+      });
   }, [enrolmentId]);
 
   // Stable, so the player's file links aren't fetched again on every render.
-  const api = useMemo<PlayerApi>(() => ({
-    mediaUrl: async (mediaId) =>
-      (await academyFetch(`/api/academy?op=media&enrolment=${encodeURIComponent(enrolmentId)}&media=${encodeURIComponent(mediaId)}`)).url ?? null,
-    viewed: (lessonId) => postJson({ op: "viewed", enrolment: enrolmentId, lessonId }),
-    video: (blockId, percent, seconds) => postJson({ op: "video", enrolment: enrolmentId, blockId, percent, seconds }),
-    answer: (blockId, answers) => postJson({ op: "answer", enrolment: enrolmentId, blockId, answers }),
-    acknowledge: (blockId) => postJson({ op: "acknowledge", enrolment: enrolmentId, blockId }),
-  }), [enrolmentId]);
+  const api = useMemo<PlayerApi>(() => {
+    const content = () => data?.content;
+    // Online: save and keep the phone copy in step. No signal: queue it and move on locally.
+    const send = async (body: { op: "viewed" | "video" | "acknowledge"; enrolment: string; [k: string]: unknown }) => {
+      try {
+        const u = await postJson(body);
+        progressRef.current = u.progress;
+        void updateSavedProgress(enrolmentId, u.progress, u.outcome?.status);
+        return u;
+      } catch (e) {
+        if (!isOffline(e) || !content()) throw e;
+        queue(body);
+        progressRef.current = applyLocally(content()!, progressRef.current, body);
+        void updateSavedProgress(enrolmentId, progressRef.current);
+        return { progress: progressRef.current };
+      }
+    };
+    return {
+      mediaUrl: async (mediaId) => (await offlineMedia(enrolmentId, mediaId))
+        ?? (await academyFetch(`/api/academy?op=media&enrolment=${encodeURIComponent(enrolmentId)}&media=${encodeURIComponent(mediaId)}`)).url ?? null,
+      viewed: (lessonId) => send({ op: "viewed", enrolment: enrolmentId, lessonId }),
+      video: (blockId, percent, seconds) => send({ op: "video", enrolment: enrolmentId, blockId, percent, seconds }),
+      acknowledge: (blockId) => send({ op: "acknowledge", enrolment: enrolmentId, blockId }),
+      answer: async (blockId, answers) => {
+        try { return await postJson({ op: "answer", enrolment: enrolmentId, blockId, answers }); }
+        catch (e) {
+          if (isOffline(e)) throw new Error("No signal — quizzes and exercises are marked when you're back online. Everything else you do is saved.");
+          throw e;
+        }
+      },
+    };
+  }, [enrolmentId, data]);
 
   if (error) {
     return (
@@ -479,7 +582,12 @@ function CourseView({ enrolmentId, onExit }: { enrolmentId: string; onExit: () =
   if (!data) return <div className="flex min-h-screen items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
   return (
     <CoursePlayer title={data.course.title} from={data.course.from} content={data.content} passMark={data.course.passMark}
-      initialProgress={data.progress} initialStatus={data.enrolment.status} api={api} onExit={onExit} />
+      initialProgress={data.progress} initialStatus={data.enrolment.status} api={api} onExit={onExit}
+      banner={offline ? (
+        <div className="mt-4 flex items-start gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+          <CloudOff className="mt-0.5 h-4 w-4 shrink-0" /> No signal — you're using the copy saved on this phone. Quizzes wait until you're back online.
+        </div>
+      ) : undefined} />
   );
 }
 

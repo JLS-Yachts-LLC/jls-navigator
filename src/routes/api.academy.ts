@@ -129,12 +129,18 @@ async function upsertProgress(sb: any, enrolmentId: string, blockId: string, les
 
 async function course(ctx: Ctx, enrolmentId: unknown): Promise<Response> {
   const { enrolment, course, content, version } = await loadEnrolment(ctx, enrolmentId, { start: true });
+  // File sizes, so "Save for offline" can say how much it will download.
+  const ids = [...mediaIdsIn(content)];
+  const { data: files } = ids.length
+    ? await ctx.sb.from("academy_media").select("id, size_bytes").in("id", ids)
+    : { data: [] as any[] };
   return json({
     enrolment: { id: enrolment.id, status: enrolment.status, score: enrolment.score, completedAt: enrolment.completed_at },
     course: { title: course.title, summary: course.summary, passMark: course.pass_mark, version: version.version,
       from: course.owner_type === "jls" ? "JLS Yachts" : ctx.learner.vesselName },
     content: forLearner(content),
     progress: await progressRows(ctx.sb, enrolment.id),
+    mediaSizes: Object.fromEntries((files ?? []).map((f: any) => [f.id, f.size_bytes ?? 0])),
   });
 }
 
