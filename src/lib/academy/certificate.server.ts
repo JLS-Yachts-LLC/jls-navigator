@@ -74,15 +74,16 @@ export async function buildCertificatePdf(d: CertificateData): Promise<Uint8Arra
     page.drawText(s, { x: (W - font.widthOfTextAtSize(s, fs)) / 2, y, size: fs, font, color });
   };
 
-  // Brand
-  let top = H - 70;
+  // Brand — the whole block (logo, wording) is centred between the frame and the footer.
   const logo = d.owner === "jls" ? await pdf.embedPng(b64(JLS_BRAND_IMAGES.logoPng)) : await vesselLogo(pdf, d.vesselLogoUrl);
+  const scale = logo ? Math.min((d.owner === "jls" ? 190 : 120) / logo.width, 64 / logo.height) : 0;
+  const logoH = logo ? logo.height * scale : 0;
+  const blockH = (logo ? logoH + 18 : 0) + (d.owner === "vessel" ? 24 : 0) + 236;
+  let top = H - 70 - Math.max(0, (H - 70 - 80 - blockH) / 2);
   if (logo) {
-    const maxW = d.owner === "jls" ? 190 : 120, maxH = 64;
-    const scale = Math.min(maxW / logo.width, maxH / logo.height);
-    const w = logo.width * scale, h = logo.height * scale;
-    page.drawImage(logo, { x: (W - w) / 2, y: top - h, width: w, height: h });
-    top -= h + 18;
+    const w = logo.width * scale;
+    page.drawImage(logo, { x: (W - w) / 2, y: top - logoH, width: w, height: logoH });
+    top -= logoH + 18;
   }
   if (d.owner === "vessel") { centre(d.vesselName.toUpperCase(), top - 4, sansBold, 13, navy); top -= 24; }
 
