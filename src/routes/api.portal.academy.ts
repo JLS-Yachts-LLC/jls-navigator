@@ -525,7 +525,7 @@ export async function portalAcademyHandler(request: Request): Promise<Response> 
     return json({ error: "Unknown request" }, 400);
   } catch (e: any) {
     if (e instanceof BadRequest) return json({ error: e.message }, 400);
-    if (e instanceof AuthoringError) return json({ error: e.message, problems: e.problems }, 400);
+    if (e instanceof AuthoringError) return json({ error: e.message, problems: e.problems, conflict: e.conflict || undefined }, e.conflict ? 409 : 400);
     console.error("[portal-academy]", e);
     return json({ error: e?.message ?? "Something went wrong" }, 500);
   }

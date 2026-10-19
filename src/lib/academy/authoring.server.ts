@@ -15,7 +15,8 @@ export type CourseScope = { owner: "jls" } | { owner: "vessel"; yachtId: string 
 export type Actor = { userId: string; name: string };
 
 export class AuthoringError extends Error {
-  constructor(message: string, public problems?: string[]) { super(message); }
+  /** `conflict`: the course changed since the editor loaded it (HTTP 409). */
+  constructor(message: string, public problems?: string[], public conflict = false) { super(message); }
 }
 
 const text = (v: unknown, max: number): string | null => {
@@ -90,7 +91,13 @@ export async function createCourse(sb: any, scope: CourseScope, actor: Actor, ra
   return data.id as string;
 }
 
-export async function saveCourse(sb: any, scope: CourseScope, body: any) {
+/**
+ * Save the draft. With `baseUpdatedAt` (the course's updated_at when the editor
+ * loaded or last saved it) the write only lands if nobody — another editor, a
+ * script, SQL — has changed the course since; otherwise it's refused as a
+ * conflict, so an autosave never silently overwrites newer work.
+ */
+export async function saveCourse(sb: any, scope: CourseScope, body: any): Promise<{ content: ReturnType<typeof normalizeContent>; updatedAt: string }> {
   const course = await scopedCourse(sb, scope, body.id);
   const title = text(body.title, 200);
   if (!title) throw new AuthoringError("Give the course a title");
@@ -99,14 +106,19 @@ export async function saveCourse(sb: any, scope: CourseScope, body: any) {
     if (e instanceof ContentError) throw new AuthoringError(e.message);
     throw e;
   }
-  const { error } = await sb.from("academy_courses").update({
+  let q = sb.from("academy_courses").update({
     title, summary: text(body.summary, 2000), category: text(body.category, 100),
     estimated_minutes: int(body.minutes, 1, 1000), pass_mark: int(body.passMark, 0, 100) ?? 80,
     refresh_months: int(body.refreshMonths, 1, 120), draft_content: content,
     ...(typeof body.catalogue === "boolean" ? { catalogue: body.catalogue } : {}),
   }).eq("id", course.id);
+  if (typeof body.baseUpdatedAt === "string" && body.baseUpdatedAt) q = q.eq("updated_at", body.baseUpdatedAt);
+  const { data, error } = await q.select("updated_at");
   if (error) throw error;
-  return content;
+  if (!data?.length) {
+    throw new AuthoringError("This course was changed somewhere else since you opened it. Reload to see the latest version.", undefined, true);
+  }
+  return { content, updatedAt: data[0].updated_at };
 }
 
 /** A signed upload for one course file, and its academy_media row. */
@@ -177,7 +189,7 @@ export async function authoringPost(sb: any, scope: CourseScope, actor: Actor, b
   const needPublish = () => { if (!canPublish) throw new AuthoringError("You can write courses but not publish them."); };
   switch (body.op) {
     case "create": return { id: await createCourse(sb, scope, actor, body.title) };
-    case "save": return { ok: true, content: await saveCourse(sb, scope, body) };
+    case "save": return { ok: true, ...(await saveCourse(sb, scope, body)) };
     case "upload-url": return await uploadUrl(sb, scope, actor, body);
     case "publish": needPublish(); return { ok: true, version: await publishCourse(sb, scope, actor, body.id) };
     case "archive": needPublish(); return { ok: true, status: await setArchived(sb, scope, body.id, true) };
