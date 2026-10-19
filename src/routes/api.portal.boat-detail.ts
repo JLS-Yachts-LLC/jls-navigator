@@ -5,9 +5,10 @@
  *       → { compliance[], documents[], jobs[], safetyKit[] }
  *   GET /api/portal/boats/open?boat=<id>&type=document&id=<doc id>
  *   GET /api/portal/boats/open?boat=<id>&type=inspection&regime=dma|fma|rya
- *   GET /api/portal/boats/open?boat=<id>&type=expense_file|service_file&id=<file id>
+ *   GET /api/portal/boats/open?boat=<id>&type=expense_file|service_file|job_image&id=<file id>
  *       → 302 to a 5-minute signed URL, after an ownership check, every attempt
- *         recorded in portal_document_access (as the yacht portal does)
+ *         recorded in portal_document_access (as the yacht portal does); add
+ *         &as=json for { url } instead, so a job's photos can show inline
  *   POST /api/portal/boats/request-job  (multipart: boat, category, description,
  *       remarks, requestedBy, position, image?) → a Pending job on the boat's
  *       Jobs board, and a bell alert to the Orbit 2 admins
@@ -119,6 +120,12 @@ export async function portalBoatDetailHandler(request: Request): Promise<Respons
     expIds.length ? sb.from('orbit2_boat_expense_files').select('id, expense_id, file_name').in('expense_id', expIds).order('created_at') : Promise.resolve({ data: [] as any[] }),
     svcIds.length ? sb.from('orbit2_boat_service_files').select('id, service_id, file_name').in('service_id', svcIds).order('created_at') : Promise.resolve({ data: [] as any[] }),
   ])
+  // Photos on each job (the crew's field photos and the owner's own request
+  // photo) — names only; each opens through /api/portal/boats/open.
+  const jobIds = (jobsR.data ?? []).map((j: any) => j.id as string)
+  const jobImgR = jobIds.length
+    ? await sb.from('orbit2_files').select('id, boat_task_id, file_name').in('boat_task_id', jobIds).eq('slot', 'image').order('created_at')
+    : { data: [] as any[] }
   const jobNo = new Map((jobsR.data ?? []).map((j: any) => [j.id as string, (j.job_no as string | null) ?? null]))
   const kitR = { data: (invR.data ?? []).filter((i: any) => i.expiry_date).sort((a: any, b: any) => String(a.expiry_date).localeCompare(String(b.expiry_date))) }
 
@@ -153,6 +160,7 @@ export async function portalBoatDetailHandler(request: Request): Promise<Respons
       scheduledTime: j.schedule_time ? String(j.schedule_time).slice(0, 5) : null, updatedAt: j.updated_at,
       assignedCrew: Array.isArray(j.assigned_team) ? j.assigned_team : [], technician: j.technician ?? null,
       requestedByOwner: !!j.requested_by_name,
+      images: (jobImgR.data ?? []).filter((f: any) => f.boat_task_id === j.id).map((f: any) => ({ id: f.id, fileName: f.file_name })),
     })),
     inventory: off.has('inventory') ? [] : (invR.data ?? []).map((i: any) => ({
       id: i.id, item: i.item, qty: i.qty, unit: i.unit ?? null, condition: i.condition ?? null,
@@ -208,7 +216,21 @@ export async function portalBoatOpenHandler(request: Request): Promise<Response>
   let sourceTable = ''
   let sourceId: string | null = null
 
-  if (type === 'expense_file' || type === 'service_file') {
+  if (type === 'job_image') {
+    // A photo on a job — checked back to this boat through the job.
+    const id = url.searchParams.get('id') ?? ''
+    sourceTable = 'orbit2_files'
+    if (off.has('jobs')) return json({ error: 'Document not found' }, 404)
+    if (!UUID_RE.test(id)) { await record(sb, request, owner, boatId, 'not_found', { sourceTable }); return json({ error: 'Document not found' }, 404) }
+    sourceId = id
+    const { data } = await sb.from('orbit2_files')
+      .select('id, slot, storage_ref, task:orbit2_boat_tasks(boat_id)').eq('id', id).maybeSingle()
+    if (!data || (data as any).slot !== 'image' || (data as any).task?.boat_id !== boatId) {
+      await record(sb, request, owner, boatId, data ? 'denied' : 'not_found', { sourceTable, sourceId })
+      return json({ error: 'Document not found' }, 404)
+    }
+    stored = String((data as any).storage_ref ?? '')
+  } else if (type === 'expense_file' || type === 'service_file') {
     // A receipt on an expense, or a report on a Service Calendar line — checked
     // back to this boat through its parent row.
     const id = url.searchParams.get('id') ?? ''
@@ -258,6 +280,7 @@ export async function portalBoatOpenHandler(request: Request): Promise<Response>
     return json({ error: 'That document could not be opened' }, 502)
   }
   await record(sb, request, owner, boatId, 'allowed', { sourceTable, sourceId, storageRef: `${ref.bucket}/${ref.path}` })
+  if (url.searchParams.get('as') === 'json') return json({ url: signed.data.signedUrl })
   return new Response(null, { status: 302, headers: { Location: signed.data.signedUrl, 'Cache-Control': 'no-store' } })
 }
 

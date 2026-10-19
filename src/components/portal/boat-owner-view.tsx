@@ -7,7 +7,7 @@
  *          DMA checklist), each opening through /api/portal/boats/open
  *   right  Jobs · Inventory List · Expenses · Maintenance Schedule (History and
  *          Service Calendar) — read only: the owner can see everything and change
- *          nothing
+ *          nothing. Clicking a job opens it, with its photos.
  *   Request Job   a short form; on Submit the request lands on the boat's Jobs
  *                 board as a Pending job and the Orbit 2 admins are alerted
  *   Download Report   a printable report of all of the above (Save as PDF)
@@ -16,7 +16,7 @@
  * on the login and stripped of the office's internal notes.
  */
 import { useContext, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, Download, Loader2, Paperclip, Search, Ship, Wrench } from "lucide-react";
+import { AlertTriangle, Camera, CheckCircle2, Download, ImageOff, Loader2, Paperclip, Search, Ship, Wrench, X } from "lucide-react";
 import { portalFetch } from "@/lib/portal/portal-fetch";
 import { cn } from "@/lib/utils";
 import { PreviewContext } from "@/components/portal/captain-portal";
@@ -24,7 +24,8 @@ import type { PortalBoat } from "@/components/portal/boat-portal";
 
 type Job = {
   id: string; jobNo: string | null; kind: string; kindLabel: string; title: string; status: string;
-  scheduledDate: string | null; updatedAt: string; assignedCrew: string[]; technician: string | null; requestedByOwner: boolean;
+  scheduledDate: string | null; scheduledTime: string | null; updatedAt: string; assignedCrew: string[]; technician: string | null;
+  requestedByOwner: boolean; images: FileRef[];
 };
 type FileRef = { id: string; fileName: string };
 type OwnerDetail = {
@@ -327,6 +328,7 @@ function PanelTable({ boatId, detail, panel, maint, query: q }: {
 }) {
   const td = "px-3 py-2 align-top";
   const muted = cn(td, "text-muted-foreground");
+  const [openJob, setOpenJob] = useState<Job | null>(null);
 
   if (panel === "jobs" || (panel === "maintenance" && maint === "history")) {
     const rows = detail.jobs
@@ -334,15 +336,25 @@ function PanelTable({ boatId, detail, panel, maint, query: q }: {
       .filter((j) => match(q, j.jobNo, j.kindLabel, j.title, j.technician, ...j.assignedCrew))
       .sort((a, b) => panel === "jobs" ? 0 : (b.scheduledDate ?? b.updatedAt).localeCompare(a.scheduledDate ?? a.updatedAt));
     return (
+      <>
       <Table head={["Job No.", "Category", "Description", "Date", "Assigned Crew", "Technician", "Status"]}
              empty={panel === "jobs" ? "No jobs on the boat yet." : "No finished jobs yet — they appear here as soon as they're complete."}>
         {rows.map((j) => {
           const st = jobStatus(j);
           return (
-            <tr key={j.id}>
+            <tr key={j.id} onClick={() => setOpenJob(j)} tabIndex={0} role="button" aria-label={`Open job ${j.jobNo ?? j.title}`}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpenJob(j); } }}
+                className="cursor-pointer transition hover:bg-primary/5 focus:bg-primary/5 focus:outline-none">
               <td className={cn(td, "whitespace-nowrap font-semibold text-primary")}>{j.jobNo ?? "—"}</td>
               <td className={cn(td, "whitespace-nowrap")}>{j.kindLabel}</td>
-              <td className={cn(td, "min-w-[12rem]")}>{j.title}</td>
+              <td className={cn(td, "min-w-[12rem]")}>
+                {j.title}
+                {j.images.length > 0 && (
+                  <span className="ml-1.5 inline-flex items-center gap-1 whitespace-nowrap text-sm text-primary" title={`${j.images.length} photo${j.images.length === 1 ? "" : "s"}`}>
+                    <Camera className="h-3.5 w-3.5" />{j.images.length}
+                  </span>
+                )}
+              </td>
               <td className={cn(muted, "whitespace-nowrap")}>{ukDate(j.scheduledDate ?? (j.status === "Complete" ? j.updatedAt : null))}</td>
               <td className={muted}>{j.assignedCrew.join(", ") || "—"}</td>
               <td className={muted}>{j.technician ?? "—"}</td>
@@ -351,6 +363,8 @@ function PanelTable({ boatId, detail, panel, maint, query: q }: {
           );
         })}
       </Table>
+      {openJob && <JobDialog boatId={boatId} job={openJob} onClose={() => setOpenJob(null)} />}
+      </>
     );
   }
 
@@ -422,6 +436,94 @@ function PanelTable({ boatId, detail, panel, maint, query: q }: {
         </tr>
       ))}
     </Table>
+  );
+}
+
+// ── One job, opened ──────────────────────────────────────────────────────────
+
+/** A short-lived link to one of a job's photos, through the portal's checked, logged route. */
+async function jobImageUrl(boatId: string, id: string): Promise<string> {
+  const res = await portalFetch(`/api/portal/boats/open?${new URLSearchParams({ boat: boatId, type: "job_image", id, as: "json" })}`);
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || !body?.url) throw new Error(body?.error ?? "That photo could not be opened.");
+  return body.url as string;
+}
+
+function JobDialog({ boatId, job, onClose }: { boatId: string; job: Job; onClose: () => void }) {
+  const [urls, setUrls] = useState<Record<string, string | null>>({});
+  const [zoom, setZoom] = useState<string | null>(null);
+  const st = jobStatus(job);
+
+  useEffect(() => {
+    let alive = true;
+    for (const img of job.images) {
+      jobImageUrl(boatId, img.id)
+        .then((u) => { if (alive) setUrls((m) => ({ ...m, [img.id]: u })); })
+        .catch(() => { if (alive) setUrls((m) => ({ ...m, [img.id]: null })); });
+    }
+    return () => { alive = false; };
+  }, [boatId, job]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") (zoom ? setZoom(null) : onClose()); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [zoom, onClose]);
+
+  const facts: [string, string][] = [
+    ["Category", job.kindLabel],
+    ["Date", `${ukDate(job.scheduledDate ?? (job.status === "Complete" ? job.updatedAt : null))}${job.scheduledTime ? ` · ${job.scheduledTime}` : ""}`],
+    ["Assigned Crew", job.assignedCrew.join(", ") || "—"],
+    ["Technician", job.technician ?? "—"],
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+      <div role="dialog" aria-modal="true" aria-label={`Job ${job.jobNo ?? ""}`}
+           className="flex max-h-[88vh] w-full max-w-2xl flex-col rounded-xl border border-border bg-card shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="text-base font-semibold text-primary">{job.jobNo ?? "Job"}</span>
+            <span className={cn("whitespace-nowrap rounded-full px-2 py-0.5 text-sm font-medium", st.cls)}>{st.label}</span>
+          </div>
+          <button onClick={onClose} aria-label="Close" className="rounded p-1 text-muted-foreground hover:bg-accent"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="min-h-0 flex-1 space-y-4 overflow-auto p-5">
+          <p className="whitespace-pre-wrap text-base">{job.title}</p>
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+            {facts.map(([k, v]) => (
+              <div key={k}><dt className="text-muted-foreground">{k}</dt><dd className="font-medium">{v}</dd></div>
+            ))}
+          </dl>
+          <div>
+            <div className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-muted-foreground"><Camera className="h-4 w-4" /> Photos</div>
+            {job.images.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No photos on this job yet.</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {job.images.map((img) => {
+                  const u = urls[img.id];
+                  return (
+                    <button key={img.id} type="button" disabled={!u} onClick={() => u && setZoom(u)} title={img.fileName}
+                            className="flex aspect-square items-center justify-center overflow-hidden rounded-lg border border-border bg-background/40 hover:border-primary/60">
+                      {u ? <img src={u} alt={img.fileName} className="h-full w-full object-cover" loading="lazy" />
+                        : u === null ? <ImageOff className="h-5 w-5 text-muted-foreground" />
+                        : <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+      {zoom && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 p-4" onClick={(e) => { e.stopPropagation(); setZoom(null); }}>
+          <img src={zoom} alt="Job photo" className="max-h-full max-w-full rounded-lg object-contain" />
+          <button onClick={() => setZoom(null)} aria-label="Close photo" className="absolute right-4 top-4 rounded-full bg-black/60 p-2 text-white"><X className="h-5 w-5" /></button>
+        </div>
+      )}
+    </div>
   );
 }
 
