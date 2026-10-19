@@ -3005,7 +3005,7 @@ function _isRealImo(v: unknown): boolean {
  */
 function realPassportKey(v: string | null | undefined): string {
   const k = passportKey(v)
-  return k.length >= 5 && /d/.test(k) && !/^0+$/.test(k) ? k : ''
+  return k.length >= 5 && /\d/.test(k) && !/^0+$/.test(k) ? k : ''
 }
 
 function _permitTypeFromListName(listName: string): string | null {
