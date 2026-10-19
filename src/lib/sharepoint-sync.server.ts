@@ -1036,6 +1036,8 @@ export async function pushRecordToSharePoint(target: string, id: string): Promis
   const cfg = await getSpConfig();
   const { data: rec } = await (supabaseAdmin as any).from(table).select('*').eq('id', id).maybeSingle();
   if (!rec) return;
+  // JLS's own boats stay out of the client Yachts list — same rule as pushYachtToSharePoint.
+  if (target === 'yachts' && rec.fleet === 'jls') return;
 
   // Resolve name-based links for reverse mapping.
   let yachtName: string | null = rec.vessel_name ?? null;

@@ -125,13 +125,12 @@ function NewYacht() {
       const { data, error } = await supabase.from("yachts").insert([payload as never]).select("id").single();
       if (error) throw error;
       toast.success(isJls ? "JLS boat added" : "Yacht added");
-      // Non-blocking: push data to SP list + create folder in SP Documents/Yacht/.
-      // Not for our own boats — the SharePoint Yachts list and its folders are the
-      // client fleet, and a JLS boat there would read as a client vessel.
-      if (!isJls) {
-        doPushToSharePoint({ data: { yachtId: data.id } }).catch(() => {});
-        doCreateSpFolder({ data: { vesselName: form.vessel_name!, yachtId: data.id } }).catch(() => {});
-      }
+      // Non-blocking: create the vessel's folder in SP Documents/Yacht/ (JLS boats
+      // too — the Documents card files every vessel there), and push the data to
+      // the SP Yachts list. Not the list for our own boats: it is the client fleet,
+      // and a JLS boat there would read as a client vessel.
+      doCreateSpFolder({ data: { vesselName: form.vessel_name!, yachtId: data.id } }).catch(() => {});
+      if (!isJls) doPushToSharePoint({ data: { yachtId: data.id } }).catch(() => {});
       navigate({ to: "/yachts/$id", params: { id: data.id } });
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Failed to save");

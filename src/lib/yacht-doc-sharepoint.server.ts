@@ -61,10 +61,10 @@ async function getItemByPath(siteId: string, token: string, path: string): Promi
  * on a normalised key and prefer the busiest candidate — otherwise a near-duplicate
  * ("Yacth"/"Yacht") can win at random and files land in an empty twin.
  */
-async function resolveVesselFolder(siteId: string, token: string, vesselName: string, opts: { exactOnly?: boolean } = {}): Promise<string | null> {
+async function resolveVesselFolder(siteId: string, token: string, vesselName: string, opts: { exactOnly?: boolean; parent?: VesselParent } = {}): Promise<string | null> {
   const names = vesselNameCandidates(vesselName)
   if (!names.length) return null
-  const folders = (await listChildren(siteId, token, 'Yacht')).filter(c => !!c.folder)
+  const folders = (await listChildren(siteId, token, opts.parent ?? 'Yacht')).filter(c => !!c.folder)
   const pick = (list: Record<string, any>[]) =>
     [...list].sort((a, b) => Number(b.folder?.childCount ?? 0) - Number(a.folder?.childCount ?? 0))[0]
   // Exact matches first, in order of preference (full name, current name, former name)…
@@ -163,48 +163,86 @@ export async function sharePointDownloadUrl(itemId: string): Promise<string | nu
   return (body['@microsoft.graph.downloadUrl'] as string | undefined) ?? null
 }
 
+/** Top-level folders vessels are filed under: yachts (client and JLS) and small boats. */
+type VesselParent = 'Yacht' | 'Small Boat'
+
 /**
- * The vessel's own folder, Yacht/{vessel} — reusing one already filed under that
- * name, else creating it — and its link. Called when a client vessel is added.
- * `exactOnly` stops a new vessel ("Grace") being linked to another client's folder
- * ("Amazing Grace") on a loose word match; the repair below matches loosely, the
- * same way the Documents card picks the folder it files into.
+ * The vessel's own folder, {parent}/{vessel} — reusing one already filed under
+ * that name, else creating it — and its link. Called when a vessel or small boat
+ * is added. `exactOnly` stops a new vessel ("Grace") being linked to another
+ * client's folder ("Amazing Grace") on a loose word match; the yacht repair below
+ * matches loosely, the same way the Documents card picks the folder it files into.
  */
-export async function ensureVesselSharePointFolder(vesselName: string, opts: { exactOnly?: boolean } = {}): Promise<string | null> {
+export async function ensureVesselSharePointFolder(vesselName: string, opts: { exactOnly?: boolean; parent?: VesselParent } = {}): Promise<string | null> {
   const { token, siteId } = await spContext()
   const folder = await resolveVesselFolder(siteId, token, vesselName, opts) ?? sanitizeSegment(vesselName, 'Unnamed Vessel')
-  return ensureFoldersAndGetUrl(siteId, token, ['Yacht', folder])
+  return ensureFoldersAndGetUrl(siteId, token, [opts.parent ?? 'Yacht', folder])
 }
 
 /**
- * Hourly repair: re-point client vessels whose folder link is missing or went to
- * the doubled "Shared Documents/Shared Documents/Yacht" tree the old folder
- * creator used. The update marks the row dirty, so the next push carries the
- * corrected link to the SharePoint Yachts list too. Matches nothing once fixed.
+ * Hourly repair, in small batches to stay inside the Worker's subrequest budget:
+ *  - vessels whose folder link is missing (added in Polaris) or went to the doubled
+ *    "Shared Documents/Shared Documents/Yacht" tree the old folder creator used.
+ *    The update marks the row dirty, so the next push carries the corrected link
+ *    to the SharePoint Yachts list too;
+ *  - live small boats with no folder link (SharePoint's Small Boat Reg list doesn't
+ *    sync that column, so the link only lives in Polaris). Exact name match only —
+ *    a loose match would file "ELA" into "BELLA".
+ * Matches nothing once everything is linked.
  */
 export async function repairVesselFolderLinks(): Promise<{ checked: number; fixed: number; failed: number }> {
   const { supabaseAdmin } = await import('@/integrations/supabase/client.server')
-  const { data: rows } = await (supabaseAdmin as any)
+  const { data: yachts } = await (supabaseAdmin as any)
     .from('yachts')
     .select('id, vessel_name')
-    .eq('fleet', 'client')
     .not('vessel_name', 'is', null)
     .or('link_to_folder.ilike.*Shared%20Documents/Shared%20Documents*,and(link_to_folder.is.null,created_by.not.is.null)')
-    .limit(20)
+    .limit(10)
+  const { data: boats } = await (supabaseAdmin as any)
+    .from('small_boats')
+    .select('id, boat_name')
+    .is('link_to_folder', null)
+    .not('archive', 'is', true)
+    .not('boat_name', 'is', null)
+    .limit(15)
+  const jobs = [
+    ...((yachts ?? []) as { id: string; vessel_name: string }[])
+      .map(r => ({ table: 'yachts', id: r.id, name: r.vessel_name, opts: {} })),
+    ...((boats ?? []) as { id: string; boat_name: string }[])
+      .map(r => ({ table: 'small_boats', id: r.id, name: r.boat_name, opts: { exactOnly: true, parent: 'Small Boat' as const } })),
+  ]
   let fixed = 0, failed = 0
-  for (const r of (rows ?? []) as { id: string; vessel_name: string }[]) {
+  for (const j of jobs) {
     try {
-      const url = await ensureVesselSharePointFolder(r.vessel_name)
+      const url = await ensureVesselSharePointFolder(j.name, j.opts)
       if (!url) { failed++; continue }
-      await (supabaseAdmin as any).from('yachts').update({ link_to_folder: url }).eq('id', r.id)
+      await (supabaseAdmin as any).from(j.table).update({ link_to_folder: url }).eq('id', j.id)
       fixed++
     } catch (e) {
       failed++
-      console.error(`[vessel-folder-repair] ${r.vessel_name}:`, e instanceof Error ? e.message : String(e))
+      console.error(`[vessel-folder-repair] ${j.table} ${j.name}:`, e instanceof Error ? e.message : String(e))
     }
   }
-  return { checked: rows?.length ?? 0, fixed, failed }
+  return { checked: jobs.length, fixed, failed }
 }
+
+/** A newly registered small boat gets its Small Boat/{name} folder, unless a link was pasted in. */
+export const createSmallBoatSharePointFolder = createServerFn({ method: 'POST' })
+  .inputValidator((d: { id: string }) => d)
+  .handler(async ({ data }): Promise<{ ok: boolean; webUrl: string | null }> => {
+    try {
+      const { supabaseAdmin } = await import('@/integrations/supabase/client.server')
+      const { data: boat } = await (supabaseAdmin as any)
+        .from('small_boats').select('boat_name, link_to_folder').eq('id', data.id).maybeSingle()
+      if (!boat?.boat_name || boat.link_to_folder) return { ok: true, webUrl: boat?.link_to_folder ?? null }
+      const webUrl = await ensureVesselSharePointFolder(boat.boat_name, { exactOnly: true, parent: 'Small Boat' })
+      if (webUrl) await (supabaseAdmin as any).from('small_boats').update({ link_to_folder: webUrl }).eq('id', data.id)
+      return { ok: !!webUrl, webUrl }
+    } catch (e) {
+      console.error('[small-boat-folder]', e instanceof Error ? e.message : String(e))
+      return { ok: false, webUrl: null }
+    }
+  })
 
 /** Create a subfolder in the vessel's folder so a Polaris folder has a twin. */
 export const createYachtSharePointFolder = createServerFn({ method: 'POST' })

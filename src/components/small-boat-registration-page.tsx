@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { doPushToSharePoint } from "@/lib/sharepoint-push.server";
+import { createSmallBoatSharePointFolder } from "@/lib/yacht-doc-sharepoint.server";
 import { BoatDocuments } from "@/components/small-boats/boat-documents";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -305,7 +306,13 @@ export function SmallBoatRegistrationPage() {
         const { data: ins, error } = await (supabase as any).from("small_boats").insert([payload]).select("id").single();
         if (error) throw error;
         toast.success("Boat added");
-        if (ins?.id) doPushToSharePoint({ data: { target: "small_boats", id: ins.id } } as any).catch(() => {});
+        if (ins?.id) {
+          doPushToSharePoint({ data: { target: "small_boats", id: ins.id } } as any).catch(() => {});
+          // Its own Small Boat/{name} folder in SharePoint, unless a link was pasted in.
+          if (!payload.link_to_folder) {
+            (createSmallBoatSharePointFolder as any)({ data: { id: ins.id } }).then(() => load()).catch(() => {});
+          }
+        }
       }
       setOpen(false);
       await load();
@@ -455,7 +462,7 @@ export function SmallBoatRegistrationPage() {
                           {b.boat_name}
                           {b.link_to_folder && (
                             <a
-                              href={b.link_to_folder.startsWith("http") ? b.link_to_folder : `https://newhorizonit.sharepoint.com${b.link_to_folder}`}
+                              href={b.link_to_folder.startsWith("http") ? b.link_to_folder : `https://jlsyachts.sharepoint.com${b.link_to_folder}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               onClick={e => e.stopPropagation()}
@@ -743,7 +750,7 @@ export function SmallBoatRegistrationPage() {
                   <Input
                     value={form.link_to_folder ?? ""}
                     onChange={e => setF("link_to_folder", e.target.value)}
-                    placeholder="https://newhorizonit.sharepoint.com/sites/PortOperations…"
+                    placeholder="Left blank, a Small Boat folder is created automatically"
                   />
                   <p className="text-[10px] text-muted-foreground">Paste the full SharePoint URL or the relative path from the CSV.</p>
                 </div>
