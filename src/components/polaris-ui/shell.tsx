@@ -115,8 +115,9 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: "Waypoint Chandlery", module: "waypoint", icon: "shopping-cart", screen: "route-waypoint", route: "/waypoint" },
       { label: "Yacht Shipments", module: "shipsync", icon: "package", screen: "route-yacht-shipments", route: "/yacht-shipments" },
       { label: "Seaport Immigration", module: "seaport", icon: "building-lighthouse", screen: "route-seaport", route: "/seaport", roles: ["global_admin", "crew_immigration"] },
-      { label: "Training", module: "training", icon: "certificate", screen: "training" },
-      { label: "Training Institute", module: "training", icon: "school", screen: "route-training", route: "/training" },
+      // Training staff only (students' personal details) — hidden even from staff with no module grants yet.
+      { label: "Training", module: "training", icon: "certificate", screen: "training", grantOnly: true },
+      { label: "Training Institute", module: "training", icon: "school", screen: "route-training", route: "/training", grantOnly: true },
       // Crew Academy — online courses JLS publishes for vessels' crew (Client Portal module).
       { label: "Crew Academy", module: "academy", icon: "books", screen: "route-academy-admin", route: "/academy-admin", flag: "crew-academy" },
       { label: "Yacht IT Solutions", module: "yacht_it", icon: "cpu", screen: "yacht-it" },

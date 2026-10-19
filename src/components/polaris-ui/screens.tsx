@@ -27,6 +27,7 @@ import {
 import { ConfirmModal, useToast } from "./feedback";
 import { SignedAnchor } from "@/components/ui/signed-file";
 import { TrainingDocuments } from "@/components/training/training-documents";
+import { TrainingAccessGate } from "@/components/training/training-access";
 import { LeoPanel } from "@/components/leo/LeoPanel";
 import { ManageUsers } from "@/components/admin/manage-users";
 import { MfaSetup } from "@/components/auth/MfaSetup";
@@ -1478,7 +1479,11 @@ export function PolarisLogistics(_props: { yacht?: YachtOption | null; onSwitchV
  * document or a folder. The register still exists in full on the Training
  * Institute page for anyone who needs it.
  */
-export function PolarisTraining(_props: { yacht?: YachtOption | null; onSwitchVessel?: () => void }) {
+export function PolarisTraining(props: { yacht?: YachtOption | null; onSwitchVessel?: () => void }) {
+  return <TrainingAccessGate><PolarisTrainingDocs {...props} /></TrainingAccessGate>;
+}
+
+function PolarisTrainingDocs(_props: { yacht?: YachtOption | null; onSwitchVessel?: () => void }) {
   const { yachts, scope, setScope, yacht } = useVesselScope();
   return (
     <>
