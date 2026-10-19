@@ -7,17 +7,18 @@
  *
  * Sign-in, set / reset password, the second sign-in step (authenticator app via
  * QR code, or an emailed code — /api/academy/mfa), the "My courses" list and the
- * course player (course-player.tsx). Drag-and-drop exercises and certificates
- * come later.
+ * course player (course-player.tsx, with the exercises in exercises.tsx) and
+ * certificate downloads.
  *
  * The invite email is a password-set link that lands here (#type=recovery).
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Clock, GraduationCap, Loader2, LogOut, Mail, RefreshCw, Shield } from "lucide-react";
+import { Award, CheckCircle2, Clock, GraduationCap, Loader2, LogOut, Mail, RefreshCw, Shield } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { PolarisMark } from "@/components/brand/PolarisMark";
 import { cn } from "@/lib/utils";
 import { CoursePlayer, type PlayerApi } from "@/components/academy/course-player";
+import { openAuthedPdf } from "@/components/academy/open-pdf";
 import type { BlockProgress, CourseContent } from "@/lib/academy/content";
 import "@/components/polaris-ui/tokens.css";
 
@@ -31,6 +32,7 @@ type CourseRow = {
   completedAt: string | null;
   score: number | null;
   expiresAt: string | null;
+  certificate: string | null;
   course: { id: string; title: string; summary: string | null; category: string | null; minutes: number | null; from: string } | null;
 };
 type Home = {
@@ -401,6 +403,18 @@ function CourseCard({ row, onOpen }: { row: CourseRow; onOpen: () => void }) {
           {row.status === "completed" && row.expiresAt && <span>Valid until {fmtDate(row.expiresAt)}</span>}
         </div>
       </button>
+      {row.certificate && (
+        <button onClick={() => {
+          void openAuthedPdf(async () => {
+            const { data: { session } } = await supabase.auth.getSession();
+            return fetch(`/api/academy?op=certificate&enrolment=${encodeURIComponent(row.enrolmentId)}`, {
+              headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+            });
+          }).catch((e) => alert(e.message));
+        }} className="mt-1.5 inline-flex min-h-9 items-center gap-1.5 px-1 text-sm text-primary hover:underline">
+          <Award className="h-4 w-4" /> Certificate {row.certificate}
+        </button>
+      )}
     </li>
   );
 }

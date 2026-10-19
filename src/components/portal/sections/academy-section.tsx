@@ -16,13 +16,14 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  CheckCircle2, ChevronDown, Circle, Clock, Copy, Download, Eye, GraduationCap, Loader2, Mail, Pencil, Plus, RotateCcw,
+  Award, BarChart3, CheckCircle2, ChevronDown, Circle, Clock, Copy, Download, Eye, GraduationCap, Loader2, Mail, Pencil, Plus, RotateCcw,
   Share2, Trash2, UserMinus, UserPlus, Users, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { portalFetch } from "@/lib/portal/portal-fetch";
 import { CourseEditor, type CourseBackend } from "@/components/academy/course-library";
+import { openAuthedPdf } from "@/components/academy/open-pdf";
 import { SectionCard, SectionEmpty, SectionHeader, SectionLoading, StatusBadge, fmtDate } from "./section-ui";
 
 type Learner = {
@@ -37,6 +38,7 @@ type OwnCourse = { id: string; title: string; summary: string | null; status: st
 type Enrolment = {
   id: string; learnerId: string; courseId: string; ruleId: string | null; status: string; mandatory: boolean;
   dueDate: string | null; startedAt: string | null; completedAt: string | null; score: number | null; expiresAt: string | null;
+  certificate: string | null;
 };
 type Group = { id: string; name: string; description: string | null; memberIds: string[] };
 type GroupRule = { id: string; courseId: string; groupId: string; mandatory: boolean; dueDate: string | null; dueDays: number | null; createdAt: string; createdBy: string | null };
@@ -635,6 +637,12 @@ function CoursesTab({ data, onEnrol, onEdit, onChanged }: {
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
+                              {e.certificate && (
+                                <button title={`Certificate ${e.certificate}`} className="flex h-7 w-7 items-center justify-center rounded-lg text-primary hover:bg-card"
+                                  onClick={() => void openAuthedPdf(() => portalFetch(`/api/portal/academy?op=certificate&enrolment=${encodeURIComponent(e.id)}`)).catch((err) => toast.error(err.message))}>
+                                  <Award className="h-4 w-4" />
+                                </button>
+                              )}
                               <StatusBadge label={label} tone={tone} />
                               {data.canManage && e.status !== "completed" && (
                                 <button title="Take this course off them" onClick={async () => {
@@ -808,6 +816,8 @@ function ReportsTab({ data }: { data: Overview }) {
         </SectionCard>
       )}
 
+      <QuestionAnalysis courses={courses} />
+
       <SectionCard className="overflow-x-auto">
         <table className="w-full min-w-[520px] text-sm">
           <thead>
@@ -827,5 +837,55 @@ function ReportsTab({ data }: { data: Overview }) {
         </table>
       </SectionCard>
     </div>
+  );
+}
+
+type AnalysisItem = { blockId: string; block: string; itemId: string; label: string; tries: number; right: number; firstTries: number; firstRight: number; firstTryPercent: number | null };
+
+/** Which questions and exercise items the crew find hardest on one course — no names, just the questions. */
+function QuestionAnalysis({ courses }: { courses: Course[] }) {
+  const [courseId, setCourseId] = useState("");
+  const [data, setData] = useState<{ people: number; attempts: number; items: AnalysisItem[] } | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!courseId) { setData(null); return; }
+    setBusy(true);
+    getJson(`op=analysis&courseId=${encodeURIComponent(courseId)}`).then(setData).catch((e) => toast.error(e.message)).finally(() => setBusy(false));
+  }, [courseId]);
+  if (!courses.length) return null;
+  return (
+    <SectionCard className="p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+          <BarChart3 className="h-3.5 w-3.5" /> Question analysis
+        </h3>
+        <select className={cn(inputCls, "w-auto py-1.5")} value={courseId} onChange={(e) => setCourseId(e.target.value)}>
+          <option value="">Choose a course…</option>
+          {courses.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
+        </select>
+      </div>
+      {busy && <div className="mt-3 flex justify-center"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>}
+      {data && !busy && (data.items.length === 0
+        ? <p className="mt-3 text-sm text-muted-foreground">No quiz or exercise answers yet on this course.</p>
+        : (
+          <>
+            <p className="mt-2 text-xs text-muted-foreground">{data.attempts} answer{data.attempts === 1 ? "" : "s"} from {data.people} {data.people === 1 ? "person" : "people"}. Hardest first — "first try" counts each person's first answer only.</p>
+            <ul className="mt-2 divide-y divide-border/50 text-sm">
+              {data.items.map((it) => (
+                <li key={`${it.blockId}:${it.itemId}`} className="flex items-center justify-between gap-3 py-2">
+                  <div className="min-w-0">
+                    <div className="truncate">{it.label}</div>
+                    <div className="text-xs text-muted-foreground">{it.block} · {it.tries} answer{it.tries === 1 ? "" : "s"}</div>
+                  </div>
+                  <div className={cn("shrink-0 text-right text-sm font-semibold",
+                    (it.firstTryPercent ?? 100) < 50 ? "text-red-300" : (it.firstTryPercent ?? 100) < 80 ? "text-amber-300" : "text-emerald-300")}>
+                    {it.firstTryPercent ?? "—"}%<div className="text-[10px] font-normal text-muted-foreground">right first try</div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </>
+        ))}
+    </SectionCard>
   );
 }

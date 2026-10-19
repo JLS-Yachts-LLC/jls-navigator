@@ -21,6 +21,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/components/ui/markdown";
 import { CoursePlayer, type PlayerApi } from "@/components/academy/course-player";
+import { openAuthedPdf } from "@/components/academy/open-pdf";
 import {
   BLOCK_LABELS, emptyContent, embedUrl, findBlock, forLearner, gradeBlock, isGraded, newBlock, newId, newPair, newQuestion, publishProblems,
   type Block, type BlockProgress, type BlockType, type CourseContent, type HotspotBlock, type MatchBlock, type OrderBlock,
@@ -149,7 +150,7 @@ export function CourseLibrary() {
 type SharedData = {
   courses: { shareId: string; courseId: string; title: string; summary: string | null; vessel: string; sharedBy: string | null; note: string | null; sharedAt: string; status: string }[];
   people: { shareId: string; learnerId: string; name: string; email: string; active: boolean; vessel: string; sharedBy: string | null; sharedByKind: string; sharedAt: string;
-    results: { course: string; from: string; status: string; mandatory: boolean; dueDate: string | null; completedAt: string | null; score: number | null; expiresAt: string | null }[] }[];
+    results: { enrolmentId: string; certificate: string | null; course: string; from: string; status: string; mandatory: boolean; dueDate: string | null; completedAt: string | null; score: number | null; expiresAt: string | null }[] }[];
 };
 
 /** What vessels (and crew) have chosen to show JLS — read-only; they can withdraw it any time. */
@@ -215,7 +216,15 @@ function SharedWithJls() {
                         <tr key={i}>
                           <td className="py-1.5 pr-3">{r.course} <span className="text-xs text-muted-foreground">({r.from})</span></td>
                           <td className="py-1.5 pr-3 text-xs">{r.status === "completed" ? `Passed${r.score != null ? ` ${r.score}%` : ""} · ${fmtDate(r.completedAt)}` : r.status.replace("_", " ")}</td>
-                          <td className="py-1.5 text-right text-xs text-muted-foreground">{r.expiresAt ? `valid until ${fmtDate(r.expiresAt)}` : r.dueDate && r.status !== "completed" ? `due ${fmtDate(r.dueDate)}` : ""}</td>
+                          <td className="py-1.5 text-right text-xs text-muted-foreground">
+                            {r.expiresAt ? `valid until ${fmtDate(r.expiresAt)}` : r.dueDate && r.status !== "completed" ? `due ${fmtDate(r.dueDate)}` : ""}
+                            {r.certificate && (
+                              <button className="ml-2 text-primary hover:underline" onClick={() => void openAuthedPdf(async () => {
+                                const { data: { session } } = await supabase.auth.getSession();
+                                return fetch(`/api/academy-admin?op=certificate&enrolment=${encodeURIComponent(r.enrolmentId)}`, { headers: { Authorization: `Bearer ${session?.access_token ?? ""}` } });
+                              }).catch((e) => toast.error(e.message))}>Certificate</button>
+                            )}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
