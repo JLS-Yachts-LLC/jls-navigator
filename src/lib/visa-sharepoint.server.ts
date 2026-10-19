@@ -28,13 +28,17 @@ export { toTypeableName, nameKey };
  *  `#` and `%` are legal in SharePoint but not here: every Graph call below builds
  *  its path with encodeURI, which leaves both intact, so a visa named "Visa #12"
  *  would have everything after the # read as a URL fragment — the folders would be
- *  created and the upload would then fail on a truncated path. */
+ *  created and the upload would then fail on a truncated path.
+ *
+ *  SharePoint also refuses names ending in a full stop, so "H.I.H.Q." is filed
+ *  as "H.I.H.Q". */
 export function sanitizeSegment(s: string | null | undefined, fallback: string): string {
   const cleaned = toTypeableName(s)
     .replace(/["*:<>?/\\|#%]/g, "-")
     .replace(/\s+/g, " ")
     .trim()
-    .slice(0, 120);
+    .slice(0, 120)
+    .replace(/[.\s]+$/, "");
   return cleaned || fallback;
 }
 
