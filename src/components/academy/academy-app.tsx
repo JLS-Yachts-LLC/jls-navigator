@@ -5,8 +5,10 @@
  * them there (by group or by name) and their own results. Everything comes from
  * /api/academy; the login itself can read nothing from the database.
  *
- * Sign-in, set / reset password, the "My courses" list and the course player
- * (course-player.tsx). Drag-and-drop exercises and certificates come later.
+ * Sign-in, set / reset password, the second sign-in step (authenticator app via
+ * QR code, or an emailed code — /api/academy/mfa), the "My courses" list and the
+ * course player (course-player.tsx). Drag-and-drop exercises and certificates
+ * come later.
  *
  * The invite email is a password-set link that lands here (#type=recovery).
  */
@@ -439,5 +441,227 @@ function CourseView({ enrolmentId, onExit }: { enrolmentId: string; onExit: () =
   return (
     <CoursePlayer title={data.course.title} from={data.course.from} content={data.content} passMark={data.course.passMark}
       initialProgress={data.progress} initialStatus={data.enrolment.status} api={api} onExit={onExit} />
+  );
+}
+
+// ── Second sign-in step ──────────────────────────────────────────────────────
+type MfaStatus = { passed: boolean; hasAuthenticator: boolean; emailAvailable: boolean; email: string };
+type MfaMode = "choose" | "app-setup" | "app-code" | "email";
+
+/**
+ * Crew choose how to prove it's them: a code from an authenticator app (set up
+ * once by scanning a QR code — Supabase TOTP, like the Client Portal) or a code
+ * emailed to them (checked by /api/academy/mfa). Either works each time.
+ */
+function MfaScreen({ onDone, onSignOut }: { onDone: () => void; onSignOut: () => void }) {
+  const [status, setStatus] = useState<MfaStatus | null>(null);
+  const [mode, setMode] = useState<MfaMode>("choose");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    academyFetch("/api/academy/mfa").then((s: MfaStatus) => {
+      setStatus(s);
+      // Someone with an authenticator goes straight to its code; with no email
+      // route the app is the only way.
+      if (s.hasAuthenticator) setMode("app-code");
+      else if (!s.emailAvailable) setMode("app-setup");
+    }).catch((e) => setError(e.message));
+  }, []);
+
+  if (error) return <AuthFrame><ErrorNote>{error}</ErrorNote><SignOutLink onSignOut={onSignOut} /></AuthFrame>;
+  if (!status) return <div className="flex min-h-screen items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+
+  const other = (label: string, to: MfaMode) => (
+    <button onClick={() => setMode(to)} className="mt-3 w-full text-center text-xs text-muted-foreground hover:text-foreground">{label}</button>
+  );
+
+  if (mode === "app-setup") {
+    return <AuthenticatorSetup onDone={onDone} onSignOut={onSignOut}
+      extra={status.emailAvailable ? other("Email me a code instead", "email") : null} />;
+  }
+  if (mode === "app-code") {
+    return <AuthenticatorCode onDone={onDone} onSignOut={onSignOut}
+      extra={status.emailAvailable ? other("Lost your phone? Email me a code instead", "email") : null} />;
+  }
+  if (mode === "email") {
+    return <EmailCode email={status.email} onDone={onDone} onSignOut={onSignOut}
+      extra={other(status.hasAuthenticator ? "Use my authenticator app instead" : "Use an authenticator app instead", status.hasAuthenticator ? "app-code" : "app-setup")} />;
+  }
+
+  return (
+    <AuthFrame>
+      <h1 className="text-xl font-bold">One more step</h1>
+      <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+        To keep your training record yours, we check it's you each time you sign in. Choose how:
+      </p>
+      <div className="mt-6 space-y-3">
+        <button onClick={() => setMode("app-setup")}
+          className="flex w-full items-start gap-3 rounded-xl border border-border bg-background/40 p-4 text-left transition hover:border-primary/50">
+          <Shield className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+          <span>
+            <span className="block font-semibold">Authenticator app <span className="text-xs font-normal text-primary">recommended</span></span>
+            <span className="block text-sm text-muted-foreground">Scan a QR code once with Microsoft or Google Authenticator. Works without signal.</span>
+          </span>
+        </button>
+        <button onClick={() => setMode("email")}
+          className="flex w-full items-start gap-3 rounded-xl border border-border bg-background/40 p-4 text-left transition hover:border-primary/50">
+          <Mail className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+          <span>
+            <span className="block font-semibold">Email me a code</span>
+            <span className="block text-sm text-muted-foreground">We send a 6-digit code to {status.email} each time you sign in.</span>
+          </span>
+        </button>
+      </div>
+      <SignOutLink onSignOut={onSignOut} />
+    </AuthFrame>
+  );
+}
+
+function SignOutLink({ onSignOut }: { onSignOut: () => void }) {
+  return <button onClick={onSignOut} className="mt-4 w-full text-center text-xs text-muted-foreground hover:text-foreground">Sign out</button>;
+}
+
+function CodeInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <input className={cn(inputCls, "text-center font-mono text-xl tracking-[0.5em]")} inputMode="numeric" autoComplete="one-time-code"
+      maxLength={6} required autoFocus value={value} placeholder="000000" onChange={(e) => onChange(e.target.value.replace(/\D/g, ""))} />
+  );
+}
+
+function AuthenticatorSetup({ onDone, onSignOut, extra }: { onDone: () => void; onSignOut: () => void; extra: React.ReactNode }) {
+  const [qr, setQr] = useState<string | null>(null);
+  const [secret, setSecret] = useState<string | null>(null);
+  const [factorId, setFactorId] = useState<string | null>(null);
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      // Clear dangling unverified factors from abandoned attempts, then enrol.
+      const { data: factors } = await supabase.auth.mfa.listFactors();
+      for (const f of factors?.all ?? []) {
+        if (f.status === "unverified") await supabase.auth.mfa.unenroll({ factorId: f.id });
+      }
+      const { data, error } = await supabase.auth.mfa.enroll({ factorType: "totp", friendlyName: "Crew Academy" });
+      if (error) { setError(error.message); return; }
+      setFactorId(data.id);
+      setQr((data as any).totp?.qr_code ?? null);
+      setSecret((data as any).totp?.secret ?? null);
+    })();
+  }, []);
+
+  return (
+    <AuthFrame>
+      <h1 className="text-xl font-bold">Set up your authenticator app</h1>
+      <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+        Open Microsoft Authenticator or Google Authenticator, add an account, scan this QR code, then type the 6-digit code it shows.
+      </p>
+      <div className="mt-5 flex justify-center">
+        {qr ? (
+          <div className="rounded-2xl bg-white p-3">
+            <img alt="Authenticator QR code" width={190} height={190}
+              src={qr.startsWith("data:") ? qr : `data:image/svg+xml;utf8,${encodeURIComponent(qr)}`} />
+          </div>
+        ) : error ? null : <Loader2 className="my-10 h-6 w-6 animate-spin text-muted-foreground" />}
+      </div>
+      {secret && (
+        <p className="mt-3 break-all text-center text-[11px] text-muted-foreground/70">
+          Setting up on this phone? Enter this key in the app instead: <span className="font-mono text-muted-foreground">{secret}</span>
+        </p>
+      )}
+      <form className="mt-5 space-y-4" onSubmit={async (e) => {
+        e.preventDefault();
+        if (!factorId) return;
+        setBusy(true); setError(null);
+        const { data: ch, error: chErr } = await supabase.auth.mfa.challenge({ factorId });
+        if (chErr || !ch) { setError(chErr?.message ?? "Couldn't start the check"); setBusy(false); return; }
+        const { error: vErr } = await supabase.auth.mfa.verify({ factorId, challengeId: ch.id, code });
+        setBusy(false);
+        if (vErr) { setError("That code didn't match — try again."); return; }
+        onDone();
+      }}>
+        <div><FieldLabel>6-digit code</FieldLabel><CodeInput value={code} onChange={setCode} /></div>
+        {error && <ErrorNote>{error}</ErrorNote>}
+        <PrimaryButton type="submit" disabled={busy || code.length !== 6 || !factorId} className="w-full">
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Shield className="h-4 w-4" />} Activate and continue
+        </PrimaryButton>
+      </form>
+      {extra}
+      <SignOutLink onSignOut={onSignOut} />
+    </AuthFrame>
+  );
+}
+
+function AuthenticatorCode({ onDone, onSignOut, extra }: { onDone: () => void; onSignOut: () => void; extra: React.ReactNode }) {
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <AuthFrame>
+      <h1 className="text-xl font-bold">Enter your authenticator code</h1>
+      <p className="mt-1 text-sm text-muted-foreground">Open your authenticator app and type the 6-digit code for Crew Academy.</p>
+      <form className="mt-6 space-y-4" onSubmit={async (e) => {
+        e.preventDefault();
+        setBusy(true); setError(null);
+        const { data: factors } = await supabase.auth.mfa.listFactors();
+        const totp = factors?.totp?.[0];
+        if (!totp) { setError("No authenticator is set up on this login."); setBusy(false); return; }
+        const { data: ch, error: chErr } = await supabase.auth.mfa.challenge({ factorId: totp.id });
+        if (chErr || !ch) { setError(chErr?.message ?? "Couldn't start the check"); setBusy(false); return; }
+        const { error: vErr } = await supabase.auth.mfa.verify({ factorId: totp.id, challengeId: ch.id, code });
+        setBusy(false);
+        if (vErr) { setError("That code didn't match — try again."); return; }
+        onDone();
+      }}>
+        <CodeInput value={code} onChange={setCode} />
+        {error && <ErrorNote>{error}</ErrorNote>}
+        <PrimaryButton type="submit" disabled={busy || code.length !== 6} className="w-full">
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Shield className="h-4 w-4" />} Continue
+        </PrimaryButton>
+      </form>
+      {extra}
+      <SignOutLink onSignOut={onSignOut} />
+    </AuthFrame>
+  );
+}
+
+function EmailCode({ email, onDone, onSignOut, extra }: { email: string; onDone: () => void; onSignOut: () => void; extra: React.ReactNode }) {
+  const [sent, setSent] = useState(false);
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const post = (body: unknown) =>
+    academyFetch("/api/academy/mfa", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const send = async () => {
+    setBusy(true); setError(null);
+    try { await post({ op: "send" }); setSent(true); } catch (e: any) { setError(e.message); }
+    setBusy(false);
+  };
+  useEffect(() => { void send(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <AuthFrame>
+      <h1 className="text-xl font-bold">Check your email</h1>
+      <p className="mt-1 text-sm text-muted-foreground">
+        {sent ? `We've sent a 6-digit code to ${email}. It works for 10 minutes.` : busy ? "Sending your code…" : "We couldn't send the code."}
+      </p>
+      <form className="mt-6 space-y-4" onSubmit={async (e) => {
+        e.preventDefault();
+        setBusy(true); setError(null);
+        try { await post({ op: "verify", code }); onDone(); } catch (err: any) { setError(err.message); setBusy(false); }
+      }}>
+        <CodeInput value={code} onChange={setCode} />
+        {error && <ErrorNote>{error}</ErrorNote>}
+        <PrimaryButton type="submit" disabled={busy || code.length !== 6} className="w-full">
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} Continue
+        </PrimaryButton>
+      </form>
+      <button onClick={() => void send()} disabled={busy} className="mt-3 w-full text-center text-xs text-muted-foreground hover:text-foreground disabled:opacity-50">
+        Send a new code
+      </button>
+      {extra}
+      <SignOutLink onSignOut={onSignOut} />
+    </AuthFrame>
   );
 }
