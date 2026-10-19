@@ -5,6 +5,7 @@ import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { updateOrThrow } from "@/lib/db-write";
 import { type Permit, type PermitStatus } from "@/lib/permit-types";
+import { PermitStatusField } from "@/components/permits/permit-status-field";
 import {
   DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -313,6 +314,7 @@ export function NavigationLicenseDialog({ yachts, editing, userId, onSaved }: Pr
                 onChange={(e) => set("preferred_inspection_date" as keyof Permit, e.target.value)}
               />
             </div>
+            <PermitStatusField value={form.status} onChange={(v) => set("status", v)} />
             <div className="space-y-1.5">
               <Label>Remarks</Label>
               <Textarea

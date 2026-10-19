@@ -4,6 +4,7 @@ import { storageRef } from "@/lib/signed-url";
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { type Permit, type PermitStatus } from "@/lib/permit-types";
+import { PermitStatusField } from "@/components/permits/permit-status-field";
 import {
   DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -276,7 +277,7 @@ export function SanitationDialog({ yachts, editing, userId, onSaved }: Props) {
                 onChange={(e) => set("expiry_date", e.target.value)}
               />
             </div>
-            <div /> {/* spacer */}
+            <PermitStatusField value={form.status} onChange={(v) => set("status", v)} />
 
             {/* Row 4 */}
             <div className="space-y-1.5 col-span-2">

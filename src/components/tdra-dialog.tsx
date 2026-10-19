@@ -4,6 +4,7 @@ import { storageRef } from "@/lib/signed-url";
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { type Permit, type PermitStatus } from "@/lib/permit-types";
+import { PermitStatusField } from "@/components/permits/permit-status-field";
 import {
   DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -481,6 +482,7 @@ export function TdraDialog({ yachts, editing, userId, onSaved }: Props) {
               />
             </div>
           </div>
+          <PermitStatusField value={form.status} onChange={(v) => set("status", v)} />
         </div>
 
         {/* ── Footer actions ── */}

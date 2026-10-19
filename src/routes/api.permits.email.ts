@@ -155,10 +155,16 @@ export async function permitsEmailHandler(request: Request): Promise<Response> {
     }
 
     await sb.from('yacht_activity_log').insert([{ ...logRow, status: 'sent' }])
+    // Sending the client the permit document means it has been issued, so a
+    // pending permit becomes active. Most permit dialogs had no status control,
+    // so permits sat at "Pending" after the client already had them and staff
+    // re-sent them. Expired/cancelled are never touched.
+    const issued = !!permit.document_url && permit.status === 'pending'
     await sb.from('permits').update({
       email_sent_at: new Date().toISOString(),
       email_sent_by: session.user.id,
       email_sent_to: to,
+      ...(issued ? { status: 'active' } : {}),
     }).eq('id', permitId)
 
     // The sender's own confirmation, if they want one (My notifications).
