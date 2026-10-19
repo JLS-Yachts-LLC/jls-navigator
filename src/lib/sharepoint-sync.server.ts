@@ -248,6 +248,8 @@ export async function dryRunPermitsSync(): Promise<Array<{ list: string; result:
   const cfg = await getSpConfig()
   const syncs = (await getSpSyncs()).filter(s => s.syncTarget === 'permits')
   const out: Array<{ list: string; result: { synced: number; errors: number; samples?: string[]; dryRun?: PermitDryRunDetail } }> = []
+  // All seven lists read once: each list's check compares its items with the others'.
+  const lists = await _loadPermitLists(cfg, await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret))
   for (const sync of syncs) {
     const merged: SpConfig = {
       ...cfg,
@@ -257,7 +259,7 @@ export async function dryRunPermitsSync(): Promise<Array<{ list: string; result:
       syncTarget: sync.syncTarget,
     }
     try {
-      out.push({ list: sync.listName, result: await _syncPermits(merged, { dryRun: true }) })
+      out.push({ list: sync.listName, result: await _syncPermits(merged, { dryRun: true, lists }) })
     } catch (e) {
       out.push({ list: sync.listName, result: { synced: 0, errors: 1, samples: [e instanceof Error ? e.message : String(e)] } })
     }
@@ -1872,7 +1874,8 @@ async function _permitDryRunDetail(
     unmatchedVessels: [...extra.unmatchedVessels.entries()]
       .sort((a, b) => b[1] - a[1]).slice(0, 15).map(([name, count]) => ({ name, count })),
     conflicts: extra.conflicts.length,
-    conflictSamples: extra.conflicts.slice(0, 60),
+    // All of them: the panel's "fix in SharePoint" list is built from this.
+    conflictSamples: extra.conflicts,
     twinLinks: [...extra.twinIds].map(([pid, how]) => {
       const p = byId.get(pid) ?? {}
       const itemId = updateById.get(pid)?.sharepoint_item_id
@@ -2139,8 +2142,17 @@ async function _syncPermits(
   }
 
   if (conflicts.length) console.warn(`[sp-permits] ${cfg.listName}: ${conflicts.length} item(s) now hold a different permit than the Polaris row linked to them — left alone`)
+  if (copySkips.length) console.warn(`[sp-permits] ${cfg.listName}: ${copySkips.length} item(s) are copies of another permit list's item — not added`)
 
   if (opts.dryRun) {
+    // The permits the push would CREATE in SharePoint (made in Polaris, edited, no
+    // item, no twin found), each with the closest item on the same vessel.
+    const nearMisses: PermitDryRunDetail['nearMisses'] = unlinked
+      .filter((p) => p.sharepoint_dirty_at && !twinIds.has(String(p.id)) && !updateById.has(String(p.id)))
+      .map((p) => {
+        const m = nearMiss.get(String(p.id))
+        return { polarisId: String(p.id), polaris: describe(p), itemId: m?.itemId ?? null, sharepoint: m?.sharepoint ?? null, why: m?.why ?? 'nothing in SharePoint on this vessel within 45 days' }
+      })
     // Say what would happen without touching anything — the way to see the blast
     // radius before re-enabling a sync that has previously done damage.
     const samples = [...updateById.values()].slice(0, 5).map(r =>
@@ -2149,15 +2161,15 @@ async function _syncPermits(
       synced: 0,
       errors: 0,
       samples: [
-        `DRY RUN "${cfg.listName}": ${allItems.length} SharePoint items → ${updateById.size} update(s), ${insertByKey.size} insert(s), ${conflicts.length} conflict(s) left alone, ${twinIds.size} twin(s) linked`,
+        `DRY RUN "${cfg.listName}": ${allItems.length} SharePoint items → ${updateById.size} update(s), ${insertByKey.size} insert(s), ${conflicts.length} conflict(s) left alone, ${copySkips.length} cross-list copies skipped, ${twinIds.size} twin(s) linked`,
         ...samples,
       ],
       dryRun: await _permitDryRunDetail(permitType, cfg.listName, allItems.length, existingPermits ?? [], updateById, insertByKey,
-        { conflicts, twinIds, testSamples, unmatchedVessels }),
+        { conflicts, twinIds, testSamples, unmatchedVessels, copySkips, nearMisses }),
     }
   }
 
-  const persisted = await bulkPersist('permits', updateById, insertByKey, { keepDespiteDirty: twinIds })
+  const persisted = await bulkPersist('permits', updateById, insertByKey, { keepDespiteDirty: new Set(twinIds.keys()) })
   if (conflicts.length) {
     persisted.samples = [`${conflicts.length} SharePoint item(s) hold a different permit than the Polaris row linked to them — left alone`, ...persisted.samples].slice(0, 8)
   }
