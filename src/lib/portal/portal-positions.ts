@@ -93,3 +93,17 @@ export function canApproveQuote(position: string | null | undefined): boolean {
   const p = (position ?? "").trim().toLowerCase();
   return canSeeFinance(p) && (canApproveRequisition(p) || p === "owner" || p === "representative");
 }
+
+/**
+ * Positions that run the vessel's Crew Academy: invite crew, enrol them on
+ * courses and follow their progress. The Captain, Relief Captain, officers,
+ * Chief Engineer, Purser and Chief Stewardess (and a blank position, treated as
+ * the Captain). The Owner, Representative and Chef see the training record but
+ * don't run it.
+ */
+const ACADEMY_VIEW_ONLY = new Set(["owner", "representative", "chef"]);
+
+/** Whether this position may invite crew to Crew Academy and enrol them on courses. */
+export function canManageAcademy(position: string | null | undefined): boolean {
+  return !ACADEMY_VIEW_ONLY.has((position ?? "").trim().toLowerCase());
+}

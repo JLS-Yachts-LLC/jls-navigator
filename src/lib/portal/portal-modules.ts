@@ -6,12 +6,14 @@
  *               agent. Included for every client; staff can hide features.
  *   management  "On board" — the crew's own tools. Off until staff switch it on
  *               for the vessel.
+ *   academy     "Crew Academy" — training for the crew (POLARIS_CREW_ACADEMY.md).
+ *               Its own switch, off until staff turn it on for the vessel.
  *
  * Rows live in yacht_portal_modules; no row means the default (core on,
  * management off). `features` records only the features switched OFF for that
  * vessel, so anything new is on everywhere until someone hides it.
  */
-export type PortalModuleKey = "core" | "management";
+export type PortalModuleKey = "core" | "management" | "academy";
 
 export type PortalFeature = { key: string; label: string; blurb: string };
 
@@ -56,6 +58,14 @@ export const PORTAL_MODULES: Record<PortalModuleKey, {
       { key: "ism",     label: "ISM & safety",       blurb: "Certificates, drills and the safety-management record" },
     ],
   },
+  academy: {
+    label: "Crew Academy",
+    short: "Academy",
+    blurb: "Training for the crew: JLS courses (and later the vessel's own), crew invited once, progress and results. Private to the vessel.",
+    features: [
+      { key: "manage", label: "Crew Academy", blurb: "Invite crew, enrol them on courses and follow their progress" },
+    ],
+  },
 };
 
 /** Which module + feature each portal section (tab key) belongs to. */
@@ -88,6 +98,7 @@ export const SECTION_FEATURE: Record<string, { module: PortalModuleKey; feature:
   pms:       { module: "management", feature: "pms" },
   charter:   { module: "management", feature: "charter" },
   ism:       { module: "management", feature: "ism" },
+  academy:   { module: "academy", feature: "manage" },
 };
 
 export type PortalModuleRow = {
@@ -104,7 +115,7 @@ export type ModuleState = {
 };
 export type PortalModuleState = Record<PortalModuleKey, ModuleState>;
 
-const DEFAULT_ENABLED: Record<PortalModuleKey, boolean> = { core: true, management: false };
+const DEFAULT_ENABLED: Record<PortalModuleKey, boolean> = { core: true, management: false, academy: false };
 
 /** Fold the vessel's rows (or none) into one state per module. */
 export function moduleState(rows: PortalModuleRow[] | null | undefined): PortalModuleState {

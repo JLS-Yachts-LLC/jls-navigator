@@ -1036,6 +1036,11 @@ export default {
       const { portalRotaHandler } = await import('./routes/api.portal.rota')
       return portalRotaHandler(request)
     }
+    // Crew Academy — the vessel managers' side (invite crew, enrol, progress).
+    if (url.pathname === '/api/portal/academy') {
+      const { portalAcademyHandler } = await import('./routes/api.portal.academy')
+      return portalAcademyHandler(request)
+    }
     // Client portal — On board expenses: petty cash, crew cards, charter APA, budgets, receipt scan.
     if (url.pathname === '/api/portal/expenses') {
       const { portalExpensesHandler } = await import('./routes/api.portal.expenses')
@@ -1156,6 +1161,10 @@ export default {
     if (url.pathname === '/api/academy/forgot-password') {
       const { academyForgotPasswordHandler } = await import('./routes/api.academy.forgot-password')
       return academyForgotPasswordHandler(request)
+    }
+    if (url.pathname === '/api/academy-admin') {
+      const { academyAdminHandler } = await import('./routes/api.academy-admin')
+      return academyAdminHandler(request)
     }
     if (url.pathname === '/api/academy') {
       const { academyHandler } = await import('./routes/api.academy')
