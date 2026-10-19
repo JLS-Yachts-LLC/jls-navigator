@@ -9,6 +9,8 @@
  *   Courses  the vessel's own courses (written with the same creator JLS uses,
  *            optionally shared with JLS for review) and every course it can use;
  *            enrol groups or people, with a due date
+ *   Requests crew asking to join a catalogue course — approve (it enrols them,
+ *            optionally with a due date) or decline, with a note they can read
  *   Reports  who has done what, what's overdue, and a CSV download
  *
  * Everything goes through /api/portal/academy; private to the vessel. Positions
@@ -44,11 +46,15 @@ type Group = { id: string; name: string; description: string | null; memberIds: 
 type GroupRule = { id: string; courseId: string; groupId: string; mandatory: boolean; dueDate: string | null; dueDays: number | null; createdAt: string; createdBy: string | null };
 type Share = { id: string; type: "course" | "learner" | "enrolment"; resourceId: string; byKind: string; by: string | null; note: string | null; at: string };
 type Crew = { id: string; name: string | null; rank: string | null; email: string | null };
+type EnrolRequest = {
+  id: string; learnerId: string; courseId: string; note: string | null; status: "pending" | "approved" | "declined";
+  decidedBy: string | null; decidedAt: string | null; decisionNote: string | null; createdAt: string;
+};
 type Overview = {
   canManage: boolean; vessel: string; remindersOn: boolean; learners: Learner[]; courses: Course[]; ownCourses: OwnCourse[]; enrolments: Enrolment[];
-  groups: Group[]; groupRules: GroupRule[]; shares: Share[]; crew: Crew[];
+  groups: Group[]; groupRules: GroupRule[]; shares: Share[]; crew: Crew[]; requests: EnrolRequest[];
 };
-type TabKey = "crew" | "groups" | "courses" | "reports";
+type TabKey = "crew" | "groups" | "courses" | "requests" | "reports";
 
 const inputCls = "w-full rounded-xl border border-border bg-background/60 px-3 py-2 text-sm outline-none focus:border-primary/60";
 const today = () => new Date().toISOString().slice(0, 10);
@@ -95,10 +101,12 @@ export function AcademySection() {
 
   const active = data.learners.filter((l) => l.active);
   const overdue = data.enrolments.filter((e) => isOverdue(e) && active.some((l) => l.id === e.learnerId)).length;
+  const pending = (data.requests ?? []).filter((r) => r.status === "pending").length;
   const tabs: { key: TabKey; label: string }[] = [
     { key: "crew", label: `Crew (${active.length})` },
     { key: "groups", label: "Groups" },
     { key: "courses", label: `Courses (${data.courses.length})` },
+    { key: "requests", label: pending ? `Requests · ${pending}` : "Requests" },
     { key: "reports", label: overdue ? `Reports · ${overdue} overdue` : "Reports" },
   ];
   return (
@@ -112,7 +120,7 @@ export function AcademySection() {
           </button>
         )} />
 
-      <div className="grid grid-cols-2 gap-1 rounded-xl border border-border bg-card/60 p-1 text-sm sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-1 rounded-xl border border-border bg-card/60 p-1 text-sm sm:grid-cols-5">
         {tabs.map((t) => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className={cn("rounded-lg px-3 py-1.5 font-medium transition", tab === t.key ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")}>
@@ -124,6 +132,7 @@ export function AcademySection() {
       {tab === "crew" && <CrewTab data={data} onChanged={load} />}
       {tab === "groups" && <GroupsTab data={data} onChanged={load} />}
       {tab === "courses" && <CoursesTab data={data} onEnrol={setEnrolling} onEdit={setEditingCourse} onChanged={load} />}
+      {tab === "requests" && <RequestsTab data={data} onChanged={load} />}
       {tab === "reports" && <ReportsTab data={data} />}
 
       {inviting && <InviteModal data={data} onClose={() => setInviting(false)} onDone={() => { void load(); }} />}
@@ -891,6 +900,97 @@ function QuestionAnalysis({ courses }: { courses: Course[] }) {
             </ul>
           </>
         ))}
+    </SectionCard>
+  );
+}
+
+// ── Requests from crew ───────────────────────────────────────────────────────
+function RequestsTab({ data, onChanged }: { data: Overview; onChanged: () => void }) {
+  const learners = new Map(data.learners.map((l) => [l.id, l]));
+  const courses = new Map(data.courses.map((c) => [c.id, c]));
+  const requests = data.requests ?? [];
+  const pending = requests.filter((r) => r.status === "pending");
+  const decided = requests.filter((r) => r.status !== "pending");
+  if (!requests.length) {
+    return <SectionEmpty icon={GraduationCap} message="No requests yet. Crew can browse the course catalogue in Crew Academy and ask to join a course — their requests appear here." />;
+  }
+  return (
+    <div className="space-y-4">
+      {pending.length > 0 ? (
+        <div className="space-y-3">{pending.map((r) => (
+          <RequestCard key={r.id} r={r} who={learners.get(r.learnerId)} course={courses.get(r.courseId)} canManage={data.canManage} onChanged={onChanged} />
+        ))}</div>
+      ) : <p className="text-sm text-muted-foreground">Nothing waiting.</p>}
+      {decided.length > 0 && (
+        <div>
+          <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Decided in the last 30 days</h3>
+          <SectionCard>
+            <ul className="divide-y divide-border/60 text-sm">
+              {decided.map((r) => (
+                <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
+                  <span className="min-w-0 truncate">{learners.get(r.learnerId) ? learnerName(learners.get(r.learnerId)!) : "Former crew"} — {courses.get(r.courseId)?.title ?? "Course"}</span>
+                  <span className="text-xs text-muted-foreground">
+                    <StatusBadge label={r.status === "approved" ? "Approved" : "Declined"} tone={r.status === "approved" ? "green" : "slate"} />
+                    {r.decidedBy ? ` ${r.decidedBy}` : ""}{r.decidedAt ? ` · ${fmtDate(r.decidedAt)}` : ""}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </SectionCard>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RequestCard({ r, who, course, canManage, onChanged }: {
+  r: EnrolRequest; who?: Learner; course?: Course; canManage: boolean; onChanged: () => void;
+}) {
+  const [dueDate, setDueDate] = useState("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState<"approve" | "decline" | null>(null);
+  const decide = async (approve: boolean) => {
+    setBusy(approve ? "approve" : "decline");
+    try {
+      await call({ op: "request-decide", requestId: r.id, approve, note: note || null, dueDate: approve ? dueDate || null : null });
+      toast.success(approve ? "Approved — they're enrolled" : "Declined");
+      onChanged();
+    } catch (e: any) { toast.error(e.message); setBusy(null); }
+  };
+  return (
+    <SectionCard className="p-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="font-semibold">{who ? learnerName(who) : "Crew member"} <span className="font-normal text-muted-foreground">asked for</span> {course?.title ?? "a course"}</div>
+          <div className="mt-0.5 text-xs text-muted-foreground">{fmtDate(r.createdAt)}{course ? ` · from ${course.from}${course.minutes ? ` · ${course.minutes} min` : ""}` : ""}</div>
+          {r.note && <p className="mt-2 rounded-lg bg-background/50 px-3 py-2 text-sm">“{r.note}”</p>}
+        </div>
+        <StatusBadge label="Waiting" tone="sky" />
+      </div>
+      {canManage ? (
+        <div className="mt-3 space-y-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">Due by (optional)</label>
+              <input type="date" className={inputCls} min={today()} value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">Note to them (optional)</label>
+              <input className={inputCls} value={note} maxLength={500} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Good idea — finish it before the next charter" />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button disabled={!!busy} onClick={() => void decide(true)}
+              className="inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50">
+              {busy === "approve" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} Approve
+            </button>
+            <button disabled={!!busy} onClick={() => void decide(false)}
+              className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-border px-4 text-sm text-muted-foreground hover:text-red-300 disabled:opacity-50">
+              {busy === "decline" ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />} Decline
+            </button>
+          </div>
+        </div>
+      ) : <p className="mt-2 text-xs text-muted-foreground">A training manager on board (Captain, officers, Chief Engineer, Purser, Chief Stewardess) decides.</p>}
     </SectionCard>
   );
 }

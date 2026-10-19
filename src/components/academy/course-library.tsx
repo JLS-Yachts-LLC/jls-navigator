@@ -245,12 +245,12 @@ function StatusPill({ status }: { status: string }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-type Details = { title: string; summary: string; category: string; minutes: string; passMark: string; refreshMonths: string };
+type Details = { title: string; summary: string; category: string; minutes: string; passMark: string; refreshMonths: string; catalogue: boolean };
 type MediaFile = { id: string; kind: string; file_name: string; mime_type: string | null; size_bytes: number | null };
 type Loaded = {
   canCreate: boolean; canEdit: boolean;
   course: { id: string; title: string; summary: string | null; category: string | null; minutes: number | null; passMark: number;
-    refreshMonths: number | null; status: string; offerAll: boolean; currentVersionId: string | null; content: CourseContent };
+    refreshMonths: number | null; status: string; offerAll: boolean; currentVersionId: string | null; content: CourseContent; catalogue?: boolean };
   versions: { id: string; version: number; published_at: string; published_by_name: string | null }[];
   offeredTo: string[];
   files: MediaFile[];
@@ -280,6 +280,7 @@ function Editor({ id, onBack }: { id: string; onBack: () => void }) {
     setDetails({
       title: d.course.title, summary: d.course.summary ?? "", category: d.course.category ?? "",
       minutes: d.course.minutes?.toString() ?? "", passMark: String(d.course.passMark), refreshMonths: d.course.refreshMonths?.toString() ?? "",
+      catalogue: d.course.catalogue !== false,
     });
     setContent(d.course.content.sections.length ? d.course.content : emptyContent());
     setFiles(d.files);
@@ -308,6 +309,7 @@ function Editor({ id, onBack }: { id: string; onBack: () => void }) {
       const r = await api.post({
         op: "save", id, title: details.title, summary: details.summary, category: details.category,
         minutes: details.minutes || null, passMark: details.passMark || 80, refreshMonths: details.refreshMonths || null, content,
+        catalogue: details.catalogue,
       });
       setContent(r.content); setDirty(false);
       if (!quiet) toast.success("Saved");
@@ -387,6 +389,10 @@ function Editor({ id, onBack }: { id: string; onBack: () => void }) {
         <div className="sm:col-span-2"><label className={labelCls}>Minutes to complete</label><input className={inputCls} type="number" min={1} value={details.minutes} onChange={setD("minutes")} /></div>
         <div className="sm:col-span-2"><label className={labelCls}>Pass mark %</label><input className={inputCls} type="number" min={0} max={100} value={details.passMark} onChange={setD("passMark")} /></div>
         <div className="sm:col-span-2"><label className={labelCls}>Refresher every (months)</label><input className={inputCls} type="number" min={1} value={details.refreshMonths} onChange={setD("refreshMonths")} placeholder="Once only" /></div>
+        <label className="flex items-center gap-2 text-sm sm:col-span-6">
+          <input type="checkbox" checked={details.catalogue} onChange={(e) => { setDetails((d) => d && { ...d, catalogue: e.target.checked }); setDirty(true); }} />
+          Show in the crew catalogue — crew can see it and ask to enrol (a training manager on board approves)
+        </label>
       </fieldset>
 
       {/* Structure */}

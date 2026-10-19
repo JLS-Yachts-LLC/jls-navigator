@@ -2853,7 +2853,8 @@ function AlertsTab({ yachtId, onOpen, financeOk, stockOk, gatePassOk, tasksOk = 
 
       // Crew Academy — required training overdue or due within a week
       if (academyR.status === "fulfilled" && academyR.value) {
-        const { overdue = 0, dueSoon = 0 } = academyR.value as { overdue?: number; dueSoon?: number };
+        const { overdue = 0, dueSoon = 0, pendingRequests = 0 } = academyR.value as { overdue?: number; dueSoon?: number; pendingRequests?: number };
+        if (pendingRequests) out.push({ id: "academy-requests", severity: "medium", icon: GraduationCap, title: `${pendingRequests} crew training request${pendingRequests > 1 ? "s" : ""} to decide`, detail: "Crew Academy", go: "academy" });
         if (overdue) out.push({ id: "academy-overdue", severity: "high", icon: GraduationCap, title: `${overdue} required course${overdue > 1 ? "s" : ""} overdue`, detail: "Crew Academy", go: "academy" });
         if (dueSoon) out.push({ id: "academy-soon", severity: "medium", icon: GraduationCap, title: `${dueSoon} required course${dueSoon > 1 ? "s" : ""} due this week`, detail: "Crew Academy", go: "academy" });
       }
