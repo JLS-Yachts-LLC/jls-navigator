@@ -1113,6 +1113,7 @@ export async function pushRecordToSharePoint(
         if (!spCol || !kv) continue;
         // A placeholder reference would match every other placeholder.
         if (kf === 'permit_number' && !_isRealPermitNumber(kv)) continue;
+        if (kf === 'imo_no' && !_isRealImo(kv)) continue;
         // These columns are not indexed, and Graph refuses a filter on an unindexed
         // column unless asked with this header. Without it the lookup returned an
         // error body, `value` was undefined, and the code fell through to POST — so
@@ -1120,11 +1121,24 @@ export async function pushRecordToSharePoint(
         const r = await fetch(
           `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${list}/items?$filter=${encodeURIComponent(`fields/${spCol} eq '${String(kv).replace(/'/g, "''")}'`)}&$select=id`,
           { headers: { Authorization: `Bearer ${token}`, Prefer: 'HonorNonIndexedQueriesWarningMayFailRandomly' } });
-        // For permits a failed lookup must not turn into a POST (a duplicate); the
-        // row stays dirty and is retried.
-        if (!r.ok && target === 'permits') throw new Error(`lookup ${list} by ${spCol} → ${r.status} ${(await r.text()).slice(0, 200)}`);
+        // A failed lookup must not turn into a POST (a duplicate); the row stays
+        // dirty and is retried. Until 19 Oct this only held for permits, and every
+        // vessel made in Polaris whose name was already in the Yachts list sat in
+        // the queue for months, its "already there?" check failing every tick.
+        if (!r.ok && (target === 'permits' || target === 'yachts')) throw new Error(`lookup ${list} by ${spCol} → ${r.status} ${(await r.text()).slice(0, 200)}`);
         const d = await r.json() as any;
-        spId = d.value?.[0]?.id ?? null;
+        const found: string[] = ((d.value ?? []) as any[]).map((v) => String(v.id));
+        // An item already linked to ANOTHER Polaris record belongs to that record —
+        // writing this one's fields over it would turn it into a different vessel.
+        // (Permits are exempt: their item ids repeat across lists.)
+        if (target !== 'permits' && found.length) {
+          const { data: owners } = await (supabaseAdmin as any).from(table)
+            .select('sharepoint_item_id').in('sharepoint_item_id', found).neq('id', id);
+          const claimed = new Set(((owners ?? []) as any[]).map((o) => String(o.sharepoint_item_id)));
+          spId = found.find((f) => !claimed.has(f)) ?? null;
+        } else {
+          spId = found[0] ?? null;
+        }
         if (spId) break;
       }
     }
@@ -1567,14 +1581,24 @@ async function _syncYachts(
     .from('yachts')
     .select('id, vessel_name, imo_no, sharepoint_item_id')
     .order('id'))
+  // Items still in the list. A row linked to one of these is spoken for: only its
+  // own item may update it. Matching by IMO/name is for rows with no live item —
+  // made in Polaris, or whose item was deleted and keyed in again by hand.
+  const liveItemIds = new Set(allChanged.filter(i => !i['@removed']).map(i => String(i.id)))
   const bySpId = new Map<string, string>()
-  const byImo = new Map<string, string>()
-  const byName = new Map<string, string>()
+  // null = more than one candidate row: ambiguous, so not matched at all.
+  const byImo = new Map<string, string | null>()
+  const byName = new Map<string, string | null>()
+  const addKey = (m: Map<string, string | null>, k: string, id: string) => m.set(k, m.has(k) ? null : id)
   for (const y of (existingYachts ?? []) as Record<string, any>[]) {
     if (y.sharepoint_item_id) bySpId.set(String(y.sharepoint_item_id), String(y.id))
-    if (y.imo_no) byImo.set(String(y.imo_no).toLowerCase(), String(y.id))
-    if (y.vessel_name) byName.set(String(y.vessel_name).toLowerCase(), String(y.id))
+    if (y.sharepoint_item_id && liveItemIds.has(String(y.sharepoint_item_id))) continue
+    // Placeholder IMOs ("N/A", "0000") are shared by dozens of vessels.
+    if (_isRealImo(y.imo_no)) addKey(byImo, String(y.imo_no).trim().toLowerCase(), String(y.id))
+    if (y.vessel_name) addKey(byName, String(y.vessel_name).trim().toLowerCase(), String(y.id))
   }
+  // A row can be claimed by one unlinked item per pull, never two.
+  const claimedByKey = new Set<string>()
 
   const updateById = new Map<string, Record<string, any>>()
   const insertByKey = new Map<string, Record<string, any>>()
@@ -1608,11 +1632,18 @@ async function _syncYachts(
     record.sharepoint_item_id = item.id
     record.sharepoint_synced_at = new Date().toISOString()
 
-    // Match against pre-loaded existing yachts (sp id → imo → name).
-    const existingId =
-      bySpId.get(String(item.id)) ??
-      (record.imo_no ? byImo.get(String(record.imo_no).toLowerCase()) : undefined) ??
-      byName.get(String(record.vessel_name).toLowerCase())
+    // Match against pre-loaded existing yachts (sp id → real imo → name).
+    let existingId = bySpId.get(String(item.id))
+    if (!existingId) {
+      const byKey =
+        (_isRealImo(record.imo_no) ? byImo.get(String(record.imo_no).trim().toLowerCase()) : undefined) ??
+        byName.get(String(record.vessel_name).trim().toLowerCase()) ??
+        undefined
+      if (byKey && !claimedByKey.has(byKey)) {
+        existingId = byKey
+        claimedByKey.add(byKey)
+      }
+    }
 
     if (existingId) {
       updateById.set(existingId, { ...record, id: existingId })
@@ -3015,6 +3046,17 @@ function _isRealPermitNumber(v: unknown): boolean {
   const s = String(v ?? '').trim()
   if (s.length < 3) return false
   return !['na', 'n/a', 'n.a.', 'none', 'nil', 'tbc', 'tba', 'pending', '-', '--'].includes(s.toLowerCase())
+}
+
+/**
+ * Whether an IMO number can identify a vessel. Staff key "N/A", "NA" or "0000" when
+ * a yacht has none, so those values name a crowd: matching on "N/A" is how one
+ * SharePoint vessel took over another's Polaris row (SOCIALISTA over WIRELESS,
+ * 19 Oct 2026; ALTAVITA over SOCIALISTA and ARCTICA over COCO, 7 Oct).
+ */
+function _isRealImo(v: unknown): boolean {
+  const s = String(v ?? '').replace(/^\s*imo\b/i, '').replace(/[^a-z0-9]/gi, '')
+  return s.length >= 5 && /\d/.test(s) && !/^0+$/.test(s)
 }
 
 function _permitTypeFromListName(listName: string): string | null {
