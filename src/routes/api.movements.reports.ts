@@ -9,7 +9,8 @@
  *   GET /api/reports/crew-arriving    — confirmed upcoming sign-ons
  *   GET /api/reports/crew-departing   — confirmed upcoming sign-offs
  *
- * Each supports ?format=csv | pdf (default JSON). Reads crew_signon_events joined
+ * Each supports ?format=csv | pdf (default JSON) and ?vessel_id= for one vessel's report
+ * (the vessel's name then goes in the title and filename — SD-0061). Reads crew_signon_events joined
  * to crew_members + yachts. Gated by crew_movements view access (Sign-On/Off has
  * its own permission module, split from crew_immigration).
  */
@@ -127,7 +128,17 @@ export async function movementReportsHandler(request: Request): Promise<Response
   const path = url.pathname
   const today = new Date().toISOString().split('T')[0]
 
+  // One vessel's report (SD-0061): every report takes ?vessel_id=.
+  const vessel = url.searchParams.get('vessel_id')
+  let vesselLabel = ''
+  if (vessel) {
+    const { data: y } = await sb.from('yachts').select('vessel_name').eq('id', vessel).maybeSingle()
+    vesselLabel = (y as any)?.vessel_name ?? 'Vessel'
+  }
+  const slug = vesselLabel.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+
   const out = (title: string, headers: string[], weights: number[], rows: string[][], data: any[], file: string) => {
+    if (vesselLabel) { title = `${title} — ${vesselLabel}`; file = `${file}-${slug || 'vessel'}` }
     if (format === 'csv') return csvResponse([headers, ...rows], `${file}.csv`)
     if (format === 'pdf') return buildReportPdf(title, headers, rows, weights).then((b) => pdfResponse(b, `${file}.pdf`))
     return json({ title, total: data.length, rows: data })
@@ -136,7 +147,6 @@ export async function movementReportsHandler(request: Request): Promise<Response
   // ── crew-movement (filterable) ──────────────────────────────────────────────
   if (path.endsWith('/crew-movement')) {
     let q = sb.from('crew_signon_events').select(SELECT).order('event_date', { ascending: false })
-    const vessel = url.searchParams.get('vessel_id')
     const crewId = url.searchParams.get('crew_id')
     const mtype = url.searchParams.get('movement_type') // sign_on | sign_off
     const from = url.searchParams.get('from')
@@ -161,10 +171,11 @@ export async function movementReportsHandler(request: Request): Promise<Response
   if (weeklyOn || weeklyOff) {
     const monday = mondayOf(url.searchParams.get('week'))
     const sunday = addDaysStr(monday, 6)
-    const { data, error } = await sb.from('crew_signon_events').select(SELECT)
+    let q = sb.from('crew_signon_events').select(SELECT)
       .eq('event_type', weeklyOn ? 'sign_on' : 'sign_off')
       .gte('event_date', monday).lte('event_date', sunday)
-      .order('event_date', { ascending: true })
+    if (vessel) q = q.eq('yacht_id', vessel)
+    const { data, error } = await q.order('event_date', { ascending: true })
     if (error) return json({ error: 'Report fetch failed' }, 500)
     const rows = (data ?? []) as any[]
     const verb = weeklyOn ? 'Sign On' : 'Sign Off'
@@ -178,7 +189,9 @@ export async function movementReportsHandler(request: Request): Promise<Response
     if (error) return json({ error: 'Report fetch failed' }, 500)
     const latest = new Map<string, any>()
     for (const a of (data ?? []) as any[]) if (!latest.has(a.crew_member_id)) latest.set(a.crew_member_id, a)
-    const rows = [...latest.values()].filter((a) => a.event_type === 'sign_on')
+    // Latest movement across ALL vessels first, so crew who signed on here and then
+    // joined another vessel don't still count as onboard this one.
+    const rows = [...latest.values()].filter((a) => a.event_type === 'sign_on' && (!vessel || a.yacht_id === vessel))
       .sort((a, b) => vs(a).localeCompare(vs(b)) || nm(a).localeCompare(nm(b)))
     const body = rows.map((a) => [nm(a), a.crew_members?.rank ?? '—', vs(a), d(a.event_date), a.crew_members?.nationality ?? '—'])
     return out('Crew Currently Onboard', ['Crew', 'Rank', 'Vessel', 'Signed on', 'Nationality'], [3, 2, 3, 2, 2], body, rows, 'crew-onboard')
@@ -188,11 +201,12 @@ export async function movementReportsHandler(request: Request): Promise<Response
   const arriving = path.endsWith('/crew-arriving')
   const departing = path.endsWith('/crew-departing')
   if (arriving || departing) {
-    const { data, error } = await sb.from('crew_signon_events').select(SELECT)
+    let q = sb.from('crew_signon_events').select(SELECT)
       .eq('event_type', arriving ? 'sign_on' : 'sign_off')
       .eq('status', 'confirmed')
       .gte('event_date', today)
-      .order('event_date', { ascending: true })
+    if (vessel) q = q.eq('yacht_id', vessel)
+    const { data, error } = await q.order('event_date', { ascending: true })
     if (error) return json({ error: 'Report fetch failed' }, 500)
     const rows = (data ?? []) as any[]
     const body = rows.map((a) => [nm(a), vs(a), d(a.event_date), flt(a), arriving ? dt(a.arrival_datetime) : dt(a.departure_datetime), pick(a)])

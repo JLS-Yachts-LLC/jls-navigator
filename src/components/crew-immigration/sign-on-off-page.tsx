@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { DateInputDMY } from "@/components/ui/date-input-dmy";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { MovementImportDialog } from "@/components/crew-immigration/MovementImportDialog";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -82,37 +83,60 @@ export function SignOnOffPage() {
   const [reportBusy, setReportBusy] = useState("");
 
   const REPORTS = [
-    { path: "/api/reports/crew-movement", label: "Crew Movement", desc: "All movements — uses the current vessel & type filters", weekly: false },
+    { path: "/api/reports/crew-movement", label: "Crew Movement", desc: "All movements — uses the page's Sign On / Sign Off filter", weekly: false },
     { path: "/api/reports/weekly-sign-on", label: "Weekly Sign-On", desc: "Sign-ons for the selected week", weekly: true },
     { path: "/api/reports/weekly-sign-off", label: "Weekly Sign-Off", desc: "Sign-offs for the selected week", weekly: true },
-    { path: "/api/reports/crew-onboard", label: "Crew Onboard", desc: "Crew currently onboard, all vessels", weekly: false },
+    { path: "/api/reports/crew-onboard", label: "Crew Onboard", desc: "Crew currently onboard", weekly: false },
     { path: "/api/reports/crew-arriving", label: "Crew Arriving", desc: "Confirmed upcoming sign-ons", weekly: false },
     { path: "/api/reports/crew-departing", label: "Crew Departing", desc: "Confirmed upcoming sign-offs", weekly: false },
   ];
 
+  // Vessels ticked in the Reports window — each gets its own file (SD-0061).
+  // None ticked = one report covering every vessel.
+  const [reportVessels, setReportVessels] = useState<string[]>([]);
+  const [reportVesselQ, setReportVesselQ] = useState("");
+
+  async function fetchReport(path: string, format: "csv" | "pdf", weekly: boolean, vesselId: string | null) {
+    const params = new URLSearchParams({ format });
+    if (vesselId) params.set("vessel_id", vesselId);
+    if (path.endsWith("/crew-movement") && filterType !== "all") params.set("movement_type", filterType);
+    if (weekly && reportWeek) params.set("week", reportWeek);
+    const res = await fetch(`${path}?${params}`, { headers: { Authorization: `Bearer ${(session as any)?.access_token ?? ""}` } });
+    if (!res.ok) {
+      const reason = await res.json().then((j: any) => j?.error).catch(() => null);
+      throw new Error(reason ?? "Could not generate report");
+    }
+    const blob = await res.blob();
+    const cd = res.headers.get("Content-Disposition") ?? "";
+    const filename = /filename="([^"]+)"/.exec(cd)?.[1] ?? `report.${format}`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+  }
+
   async function downloadReport(path: string, format: "csv" | "pdf", weekly: boolean) {
     setReportBusy(`${path}:${format}`);
     try {
-      const params = new URLSearchParams({ format });
-      if (path.endsWith("/crew-movement")) {
-        if (filterYacht !== "all") params.set("vessel_id", filterYacht);
-        if (filterType !== "all") params.set("movement_type", filterType);
-      }
-      if (weekly && reportWeek) params.set("week", reportWeek);
-      const res = await fetch(`${path}?${params}`, { headers: { Authorization: `Bearer ${(session as any)?.access_token ?? ""}` } });
-      if (!res.ok) {
-        const reason = await res.json().then((j: any) => j?.error).catch(() => null);
-        toast.error(reason ? `Could not generate report: ${reason}` : "Could not generate report");
+      if (!reportVessels.length) {
+        try { await fetchReport(path, format, weekly, null); }
+        catch (e: any) { toast.error(`Could not generate report: ${e.message}`); }
         return;
       }
-      const blob = await res.blob();
-      const cd = res.headers.get("Content-Disposition") ?? "";
-      const filename = /filename="([^"]+)"/.exec(cd)?.[1] ?? `report.${format}`;
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a"); a.href = url; a.download = filename; a.click();
-      URL.revokeObjectURL(url);
-    } catch { toast.error("Could not generate report"); }
-    finally { setReportBusy(""); }
+      let done = 0;
+      for (const id of reportVessels) {
+        try { await fetchReport(path, format, weekly, id); done++; }
+        catch (e: any) { toast.error(`${yachtName(id)}: ${e.message}`); }
+        // Browsers drop rapid back-to-back downloads; a short gap keeps every file.
+        if (reportVessels.length > 1) await new Promise((r) => setTimeout(r, 400));
+      }
+      if (reportVessels.length > 1 && done) toast.success(`Downloaded ${done} vessel report${done === 1 ? "" : "s"}`);
+    } finally { setReportBusy(""); }
+  }
+
+  function openReports() {
+    setReportVessels(filterYacht !== "all" ? [filterYacht] : []);
+    setReportVesselQ("");
+    setReportsOpen(true);
   }
 
   useEffect(() => { void load(); void loadRefs(); }, []);
@@ -419,7 +443,7 @@ export function SignOnOffPage() {
           <Button size="sm" variant="outline" onClick={() => { setImmForm({ yacht_id: filterYacht !== "all" ? filterYacht : "", list_date: new Date().toISOString().slice(0, 10), notes: "", file: null, emirate: "dubai" }); setImmOpen(true); }} className="h-9 gap-1.5 px-3 text-xs"><FileText className="h-3.5 w-3.5" /> Dubai Imm.</Button>
           <Button size="sm" variant="outline" onClick={() => { setImmForm({ yacht_id: filterYacht !== "all" ? filterYacht : "", list_date: new Date().toISOString().slice(0, 10), notes: "", file: null, emirate: "abu_dhabi" }); setImmOpen(true); }} className="h-9 gap-1.5 px-3 text-xs"><FileText className="h-3.5 w-3.5" /> AUH Imm.</Button>
           <Button size="sm" variant="outline" onClick={() => setImportOpen(true)} className="h-9 gap-1.5 px-3 text-xs" title="Import a sign on/off sheet sent by the vessel"><Upload className="h-3.5 w-3.5" /> Import sheet</Button>
-          <Button size="sm" variant="outline" onClick={() => setReportsOpen(true)} className="h-9 gap-1.5 px-3 text-xs"><BarChart3 className="h-3.5 w-3.5" /> Reports</Button>
+          <Button size="sm" variant="outline" onClick={openReports} className="h-9 gap-1.5 px-3 text-xs"><BarChart3 className="h-3.5 w-3.5" /> Reports</Button>
           <Button size="sm" onClick={openNew} className="h-9 gap-1.5 px-3.5 font-medium shadow-sm"><Plus className="h-3.5 w-3.5" /> Record Event</Button>
         </div>
       </header>
@@ -762,6 +786,37 @@ export function SignOnOffPage() {
             <Label className="text-xs">Week (for weekly reports)</Label>
             <Input type="date" value={reportWeek} onChange={(e) => setReportWeek(e.target.value)} className="h-8 w-48" />
             <p className="text-[11px] text-muted-foreground">Defaults to the current week. Any date in the week works.</p>
+          </div>
+          <div className="space-y-1.5 py-1">
+            <Label className="text-xs">Vessels</Label>
+            <Popover onOpenChange={(o) => { if (!o) setReportVesselQ(""); }}>
+              <PopoverTrigger asChild>
+                <button className="flex h-8 w-64 items-center justify-between gap-2 rounded-md border border-border bg-background px-2 text-xs">
+                  <span className="truncate">{!reportVessels.length ? "All vessels (one report)" : reportVessels.length === 1 ? yachtName(reportVessels[0]) : `${reportVessels.length} vessels`}</span>
+                  <span className="text-muted-foreground">▾</span>
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-64 p-0 text-xs">
+                <div className="border-b border-border p-2">
+                  <input autoFocus value={reportVesselQ} onChange={(e) => setReportVesselQ(e.target.value)} placeholder="Search vessels…"
+                    className="h-7 w-full rounded-md border border-border bg-background px-2" />
+                </div>
+                <div className="max-h-64 overflow-auto py-1">
+                  {yachts.filter((y) => y.vessel_name.toLowerCase().includes(reportVesselQ.trim().toLowerCase())).map((y) => (
+                    <label key={y.id} className="flex cursor-pointer items-center gap-2 px-3 py-1.5 hover:bg-accent/40">
+                      <input type="checkbox" className="accent-primary" checked={reportVessels.includes(y.id)}
+                        onChange={() => setReportVessels((p) => p.includes(y.id) ? p.filter((x) => x !== y.id) : [...p, y.id])} />
+                      <span className="truncate">{y.vessel_name}</span>
+                    </label>
+                  ))}
+                </div>
+                <div className="flex items-center justify-between border-t border-border px-3 py-2 text-muted-foreground">
+                  <span>{reportVessels.length ? `${reportVessels.length} picked` : "All vessels"}</span>
+                  {reportVessels.length > 0 && <button onClick={() => setReportVessels([])} className="font-medium text-primary hover:underline">Clear</button>}
+                </div>
+              </PopoverContent>
+            </Popover>
+            <p className="text-[11px] text-muted-foreground">Tick vessels to get a separate report for each one. Leave empty for one report covering every vessel.</p>
           </div>
           <div className="divide-y divide-border">
             {REPORTS.map((r) => (
