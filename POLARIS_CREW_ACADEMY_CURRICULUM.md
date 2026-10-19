@@ -3,9 +3,21 @@
 19 Oct 2026. This is the proposed JLS library for Crew Academy beyond the first cyber course, plus specs for
 exercise types the player doesn't have yet. It goes with the module plan in `POLARIS_CREW_ACADEMY.md`.
 
-**Status:** courses 1 (built 19 Oct) and T2, T3 (built 19 Oct, below) are **drafts** in the JLS library, not
-offered to any vessel. Everything else is a proposal for Matt to pick from — **nothing else gets built until
-Matt has chosen from the shortlist (§2).**
+**Status (19 Oct 2026):** three courses are **drafts** in the JLS library, not offered to any vessel, all
+pictures and videos attached, and all passing the app's publish checks:
+
+| Course | academy_courses id | Generator |
+| --- | --- | --- |
+| A1 Cyber security at sea — crew awareness | `48783655-320b-4ba9-a08f-290049213c68` | `scripts/academy-cyber/` |
+| C2 Cisco switch essentials | `5240696d-8865-4262-ac16-d8a22b6ae79c` | `scripts/academy-avit/cisco/` |
+| C3 FortiGate essentials | `3913ba74-a7bc-4526-8d4f-a12edfdf2b85` | `scripts/academy-avit/fortigate/` |
+
+**Matt's pick for next (19 Oct):** C1 Yacht network basics, A2 Cyber risk for Captains and HoDs, and B4 AV
+first-line troubleshooting. Nothing beyond these is built until asked.
+
+Commands and output layouts in C2 and C3 were checked against Cisco's IOS-XE 17.x and Fortinet's FortiOS
+7.4 / 7.6 documentation. Points only confirmed from community sources or memory are worded cautiously in
+the courses or left out. They are listed at the end of this doc (§4).
 
 House rules for every course: written for crew, not engineers. Plain English, short lessons (5–10 min). A
 picture or animation in every lesson. An exercise in every lesson. Vendor commands checked against the vendor's
@@ -295,3 +307,48 @@ whose options are the lines of the text.
 - **Code / output block in reading markdown** that keeps a monospace layout on a phone (scrolls sideways
   instead of wrapping). C2 and C3 lean on fenced code blocks.
 - **Prerequisites** between courses (C1 before C2/C3) in the catalogue.
+
+---
+
+## 4. Building and re-uploading the AV/IT courses
+
+```
+node scripts/academy-avit/render-pictures.mjs cisco <out dir>      # or fortigate
+node scripts/academy-avit/render-animations.mjs cisco <out dir> all
+npx tsx scripts/academy-avit/check.ts cisco                       # the app's own content rules
+node scripts/academy-avit/spotcheck.mjs cisco <pictures dir> <out> # draws the hotspot targets to check by eye
+npx tsx scripts/academy-avit/check.ts cisco --json <file>         # final content with ids from cisco/ids.json
+```
+
+`ids.json` in each course folder maps file name → `academy_media` id for the files uploaded on 19 Oct. If you
+change a picture without renaming it, re-upload it in the course creator (Replace) and update the id.
+Re-running the content build gives every block a new id, which resets learners' progress. That's fine while
+the course is a draft.
+
+Upload route (no server key locally):
+1. Put the files somewhere the browser tool may read: a git-ignored folder in the repo,
+   `node_modules/.cache/academy-avit-media/`.
+2. Set `draft_content` by SQL to one lesson of empty image and video slots.
+3. Upload one file per slot through the creator's hidden file inputs, then **click Save** (otherwise the
+   editor holds unsaved changes and blocks leaving the page).
+4. Read the ids back from `academy_media` by `file_name`, then write the real content by SQL. Compare `md5`
+   of the sent text with the local file.
+
+### Not confirmed from a primary source (kept out of, or worded cautiously in, the courses)
+
+- **Cisco:**
+  - The `clear port-security sticky interface …` command on Catalyst 9000. The course says "IT removes the old
+    address" instead.
+  - The exact text of the `%PORT_SECURITY-2-PSECURE_VIOLATION` and `%SYS-5-CONFIG_I` messages, and the colon
+    alignment of `show port-security interface` (field names are confirmed).
+  - The `disabled` status value, and the copy-run-start prompt text (standard, but only seen in secondary
+    sources).
+- **FortiGate:**
+  - The physical port order on a 60F panel (the drawing is labelled simplified).
+  - The 60F console settings (the standard 9600 8N1).
+  - The `in`/`out` token and summary lines in sniffer output.
+  - Exact SD-WAN GUI tab labels.
+  - That `abort` leaves a `config` shell without saving (long-standing FortiOS behaviour, not re-checked
+    for 7.6).
+
+The research notes with sources are in the session notes folder (`academy-avit-command-research.md`).
