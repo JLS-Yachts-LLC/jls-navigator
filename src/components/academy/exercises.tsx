@@ -273,7 +273,10 @@ export function HotspotView({ block, api, done, best, passMark, onUpdate, locked
     <BlockShell done={done} label={block.title || "Tap the picture"}>
       {block.prompt && <p className="mb-3 text-[15px]">{block.prompt}</p>}
       {url ? (
-        <div ref={ref} className={cn("relative overflow-hidden rounded-lg", !frozen && "cursor-crosshair")}
+        // Big screens: keep the whole picture in view by narrowing the box (never by
+        // squashing the picture), so taps still measure against the picture itself.
+        <div ref={ref} className={cn("relative overflow-hidden rounded-lg lg:mx-auto lg:max-w-[var(--hotspot-max)]", !frozen && "cursor-crosshair")}
+          style={{ "--hotspot-max": `${75 / aspect}vh` } as React.CSSProperties}
           onClick={(e) => {
             if (frozen || !ref.current) return;
             const r = ref.current.getBoundingClientRect();

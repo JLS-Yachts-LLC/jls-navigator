@@ -21,7 +21,7 @@ import { HotspotView, MatchView, OrderView, SortView } from "./exercises";
 
 export type { PlayerApi, PlayerUpdate, QuizResultView };
 
-export function CoursePlayer({ title, from, content, passMark, initialProgress, initialStatus, api, onExit, exitLabel = "My courses", banner }: {
+export function CoursePlayer({ title, from, content, passMark, initialProgress, initialStatus, api, onExit, exitLabel = "My courses", banner, toolbar }: {
   title: string;
   from?: string;
   content: CourseContent;
@@ -33,6 +33,8 @@ export function CoursePlayer({ title, from, content, passMark, initialProgress, 
   exitLabel?: string;
   /** Shown above the lesson, e.g. "Preview — answers aren't saved". */
   banner?: React.ReactNode;
+  /** Big screens only: extra controls under the course title, e.g. a focus-mode toggle. */
+  toolbar?: React.ReactNode;
 }) {
   const lessons = useMemo(
     () => content.sections.flatMap((s) => s.lessons.map((l) => ({ ...l, sectionTitle: s.title }))),
@@ -52,6 +54,11 @@ export function CoursePlayer({ title, from, content, passMark, initialProgress, 
   const byId = useMemo(() => new Map(progress.map((p) => [p.block_id, p])), [progress]);
   const outcome = useMemo(() => courseOutcome(content, progress), [content, progress]);
   const lesson = lessons[index];
+  // The big-screen outline: sections with their lessons, numbered across the course.
+  const outline = useMemo(() => {
+    let n = 0;
+    return content.sections.map((s) => ({ id: s.id, title: s.title, lessons: s.lessons.map(() => ({ lesson: lessons[n], index: n++ })) }));
+  }, [content, lessons]);
 
   const apply = useCallback((u: PlayerUpdate | void) => {
     if (!u) return;
@@ -69,25 +76,74 @@ export function CoursePlayer({ title, from, content, passMark, initialProgress, 
   const pct = outcome.total ? Math.round((outcome.done / outcome.total) * 100) : 0;
   const complete = status === "completed" || outcome.complete;
 
+  // Phones and tablets: one column with the lesson list in a dropdown. Big screens
+  // (lg+): the outline stays on the left and the lesson takes the rest — reading
+  // text keeps a comfortable line length, pictures and exercises run wider.
   return (
-    <div ref={topRef} className="mx-auto min-h-screen max-w-3xl px-4 pb-24 pt-4 sm:px-6">
-      <div className="flex items-center justify-between gap-3">
+    <div ref={topRef} className="mx-auto min-h-screen max-w-3xl px-4 pb-24 pt-4 sm:px-6 lg:grid lg:max-w-[1480px] lg:grid-cols-[280px_minmax(0,1fr)] lg:items-start lg:gap-10 lg:px-8 lg:pt-6">
+      <aside className="hidden lg:sticky lg:top-6 lg:block lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto lg:pb-6">
         <button onClick={onExit} className="inline-flex h-9 items-center gap-1.5 rounded-lg px-1 text-sm text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-4 w-4" /> {exitLabel}
         </button>
-        <span className="text-xs text-muted-foreground">{pct}% done</span>
+        <div className="mt-3 text-lg font-bold leading-snug">{title}</div>
+        {from && <div className="mt-0.5 text-xs text-muted-foreground">From {from}</div>}
+        <div className="mt-3 flex items-center gap-3">
+          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-border/60">
+            <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${pct}%` }} />
+          </div>
+          <span className="shrink-0 text-xs text-muted-foreground">{pct}% done</span>
+        </div>
+        {toolbar && <div className="mt-3">{toolbar}</div>}
+
+        <nav aria-label="Lessons" className="mt-5 space-y-4 border-t border-border/60 pt-4">
+          {outline.map((sec) => (
+            <div key={sec.id}>
+              {sec.title && <div className="mb-1 px-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{sec.title}</div>}
+              <ol>
+                {sec.lessons.map(({ lesson: l, index: i }) => (
+                  <li key={l.id}>
+                    <button onClick={() => setIndex(i)} aria-current={i === index ? "step" : undefined}
+                      className={cn("flex w-full items-start gap-2.5 rounded-lg px-2 py-2 text-left text-sm transition hover:bg-card",
+                        i === index ? "bg-primary/10 font-medium text-primary" : "text-foreground/85")}>
+                      {lessonDone(l) ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" /> : <Circle className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/50" />}
+                      <span className="line-clamp-2">{l.title || `Lesson ${i + 1}`}</span>
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ))}
+        </nav>
+      </aside>
+
+      <div className="min-w-0 lg:max-w-[1120px]">
+      <div className="lg:hidden">
+        <div className="flex items-center justify-between gap-3">
+          <button onClick={onExit} className="inline-flex h-9 items-center gap-1.5 rounded-lg px-1 text-sm text-muted-foreground hover:text-foreground">
+            <ArrowLeft className="h-4 w-4" /> {exitLabel}
+          </button>
+          <span className="text-xs text-muted-foreground">{pct}% done</span>
+        </div>
+
+        <h1 className="mt-3 text-xl font-bold leading-snug sm:text-2xl">{title}</h1>
+        {from && <div className="mt-0.5 text-xs text-muted-foreground">From {from}</div>}
+        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-border/60">
+          <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${pct}%` }} />
+        </div>
       </div>
 
-      <h1 className="mt-3 text-xl font-bold leading-snug sm:text-2xl">{title}</h1>
-      {from && <div className="mt-0.5 text-xs text-muted-foreground">From {from}</div>}
-      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-border/60">
-        <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${pct}%` }} />
+      {/* Big screens: the lesson's own heading (the outline replaces the dropdown) */}
+      <div className={cn("hidden lg:block", TEXT_WIDTH)}>
+        <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+          Lesson {index + 1} of {lessons.length}{lesson?.sectionTitle ? ` · ${lesson.sectionTitle}` : ""}
+        </div>
+        <h1 className="mt-1 text-2xl font-bold leading-snug">{lesson?.title || "Lesson"}</h1>
       </div>
 
-      {banner}
+      <div className={TEXT_WIDTH}>{banner}</div>
 
       {complete && (
-        <div className="mt-5 flex items-start gap-3 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-4">
+        <div className={cn("mt-5 flex items-start gap-3 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-4", TEXT_WIDTH)}>
           <PartyPopper className="mt-0.5 h-5 w-5 shrink-0 text-emerald-300" />
           <div>
             <div className="font-semibold text-emerald-200">Course complete</div>
@@ -98,8 +154,8 @@ export function CoursePlayer({ title, from, content, passMark, initialProgress, 
         </div>
       )}
 
-      {/* Lessons */}
-      <div className="mt-5 rounded-2xl border border-border bg-card/60">
+      {/* Lessons (phones and tablets) */}
+      <div className="mt-5 rounded-2xl border border-border bg-card/60 lg:hidden">
         <button onClick={() => setListOpen((o) => !o)} className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left">
           <div className="min-w-0">
             <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
@@ -126,11 +182,13 @@ export function CoursePlayer({ title, from, content, passMark, initialProgress, 
 
       <div className="mt-5 space-y-5">
         {lesson?.blocks.map((b) => (
-          <BlockView key={b.id} block={b} progress={byId.get(b.id)} passMark={passMark} api={api} onUpdate={apply} locked={status === "completed"} />
+          <div key={b.id} className={WIDE_BLOCKS.has(b.type) ? undefined : TEXT_WIDTH}>
+            <BlockView block={b} progress={byId.get(b.id)} passMark={passMark} api={api} onUpdate={apply} locked={status === "completed"} />
+          </div>
         ))}
       </div>
 
-      <div className="mt-8 flex items-center justify-between gap-3">
+      <div className={cn("mt-8 flex items-center justify-between gap-3", TEXT_WIDTH)}>
         <button disabled={index === 0} onClick={() => setIndex((i) => i - 1)}
           className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-border px-4 text-sm disabled:opacity-40">
           <ArrowLeft className="h-4 w-4" /> Previous
@@ -147,15 +205,21 @@ export function CoursePlayer({ title, from, content, passMark, initialProgress, 
         )}
       </div>
       {!complete && index === lessons.length - 1 && outcome.done < outcome.total && (
-        <p className="mt-3 text-right text-xs text-muted-foreground">
+        <p className={cn("mt-3 text-right text-xs text-muted-foreground", TEXT_WIDTH)}>
           {outcome.total - outcome.done} part{outcome.total - outcome.done === 1 ? "" : "s"} still to finish — look for the empty circles in the lesson list.
         </p>
       )}
+      </div>
     </div>
   );
 }
 
 // ── Blocks ───────────────────────────────────────────────────────────────────
+
+/** Big screens: reading text, quizzes and sign-offs keep a readable measure, centred… */
+const TEXT_WIDTH = "lg:mx-auto lg:max-w-3xl";
+/** …while pictures, videos, PDFs and the visual exercises use the full lesson width. */
+const WIDE_BLOCKS = new Set<Block["type"]>(["image", "video", "document", "hotspot", "match", "sort"]);
 
 function BlockView({ block, progress, passMark, api, onUpdate, locked }: {
   block: Block; progress: BlockProgress | undefined; passMark: number; api: PlayerApi;
@@ -190,7 +254,7 @@ function ImageView({ block, api }: { block: Extract<Block, { type: "image" }>; a
   const { url, error } = useMediaUrl(api, block.mediaId);
   return (
     <figure className="overflow-hidden rounded-2xl border border-border bg-card/70">
-      {url ? <img src={url} alt={block.caption ?? ""} className="w-full" loading="lazy" />
+      {url ? <img src={url} alt={block.caption ?? ""} className="w-full lg:mx-auto lg:max-h-[75vh] lg:w-auto lg:max-w-full" loading="lazy" />
         : <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">{error ?? <Loader2 className="h-5 w-5 animate-spin" />}</div>}
       {block.caption && <figcaption className="px-4 py-2.5 text-sm text-muted-foreground">{block.caption}</figcaption>}
     </figure>
