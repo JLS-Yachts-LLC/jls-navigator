@@ -297,10 +297,13 @@ export async function lineAdoptHandler(request: Request): Promise<Response> {
   const lines = await loadLines(db);
   const seen: Array<{ waba: string; id: string; number: string; name?: string }> = [];
   let found: { waba: string; id: string; number: string; name?: string } | null = null;
+  const refused: string[] = [];
   for (const waba of wabas) {
     let numbers: Awaited<ReturnType<typeof wabaPhoneNumbers>> = [];
     try { numbers = await wabaPhoneNumbers(token, waba); } catch (e) {
-      console.warn("[wa-adopt] couldn't list numbers for", waba, metaFailure(e));
+      const f = metaFailure(e);
+      console.warn("[wa-adopt] couldn't list numbers for", waba, f);
+      refused.push(`${waba} (${f.message}${f.code ? `, code ${f.code}` : ""})`);
       continue;
     }
     for (const n of numbers) {
@@ -312,7 +315,7 @@ export async function lineAdoptHandler(request: Request): Promise<Response> {
   if (!found) {
     const visible = seen.length ? seen.map((n) => `${n.number}${n.name ? ` (${n.name})` : ""}`).join(", ") : "none";
     return json({
-      error: `${pending.display_phone} isn't under the WhatsApp accounts Polaris can reach yet. Link it in WhatsApp Manager first; if Meta put it in a new WhatsApp account, give the System User access to that account (Business settings → System users → Assign assets), then try again. Polaris can see ${wabas.size} WhatsApp account${wabas.size === 1 ? "" : "s"} (${[...wabas].join(", ") || "none"}) with these numbers: ${visible}.`,
+      error: `${pending.display_phone} isn't under the WhatsApp accounts Polaris can reach yet. Link it in WhatsApp Manager first; if Meta put it in a new WhatsApp account, give the System User access to that account (Business settings → System users → Assign assets), then try again. Polaris can see ${wabas.size} WhatsApp account${wabas.size === 1 ? "" : "s"} (${[...wabas].join(", ") || "none"}) with these numbers: ${visible}.${refused.length ? ` Meta refused to list the numbers in: ${refused.join("; ")} — the access token probably predates that account; generate a new one for the System User and update WHATSAPP_ACCESS_TOKEN.` : ""}`,
       seen: seen.map((n) => `${n.number}${n.name ? ` (${n.name})` : ""}`),
     }, 404);
   }
