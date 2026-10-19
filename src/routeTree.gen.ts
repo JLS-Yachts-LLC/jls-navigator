@@ -15,6 +15,8 @@ import { Route as PortalRouteImport } from './routes/portal'
 import { Route as OrbitAppRouteImport } from './routes/orbit-app'
 import { Route as LogisticsAppRouteImport } from './routes/logistics-app'
 import { Route as GuestRouteImport } from './routes/guest'
+import { Route as DevWidePlayerHarnessRouteImport } from './routes/dev-wide-player-harness'
+import { Route as DevBuilderHarnessRouteImport } from './routes/dev-builder-harness'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AcademyRouteImport } from './routes/academy'
 import { Route as AppRouteImport } from './routes/_app'
@@ -200,6 +202,16 @@ const LogisticsAppRoute = LogisticsAppRouteImport.update({
 const GuestRoute = GuestRouteImport.update({
   id: '/guest',
   path: '/guest',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DevWidePlayerHarnessRoute = DevWidePlayerHarnessRouteImport.update({
+  id: '/dev-wide-player-harness',
+  path: '/dev-wide-player-harness',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DevBuilderHarnessRoute = DevBuilderHarnessRouteImport.update({
+  id: '/dev-builder-harness',
+  path: '/dev-builder-harness',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthRoute = AuthRouteImport.update({
@@ -1016,6 +1028,8 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/academy': typeof AcademyRoute
   '/auth': typeof AuthRoute
+  '/dev-builder-harness': typeof DevBuilderHarnessRoute
+  '/dev-wide-player-harness': typeof DevWidePlayerHarnessRoute
   '/guest': typeof GuestRoute
   '/logistics-app': typeof LogisticsAppRoute
   '/orbit-app': typeof OrbitAppRoute
@@ -1179,6 +1193,8 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/academy': typeof AcademyRoute
   '/auth': typeof AuthRoute
+  '/dev-builder-harness': typeof DevBuilderHarnessRoute
+  '/dev-wide-player-harness': typeof DevWidePlayerHarnessRoute
   '/guest': typeof GuestRoute
   '/logistics-app': typeof LogisticsAppRoute
   '/orbit-app': typeof OrbitAppRoute
@@ -1329,6 +1345,8 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/academy': typeof AcademyRoute
   '/auth': typeof AuthRoute
+  '/dev-builder-harness': typeof DevBuilderHarnessRoute
+  '/dev-wide-player-harness': typeof DevWidePlayerHarnessRoute
   '/guest': typeof GuestRoute
   '/logistics-app': typeof LogisticsAppRoute
   '/orbit-app': typeof OrbitAppRoute
@@ -1494,6 +1512,8 @@ export interface FileRouteTypes {
     | '/'
     | '/academy'
     | '/auth'
+    | '/dev-builder-harness'
+    | '/dev-wide-player-harness'
     | '/guest'
     | '/logistics-app'
     | '/orbit-app'
@@ -1657,6 +1677,8 @@ export interface FileRouteTypes {
     | '/'
     | '/academy'
     | '/auth'
+    | '/dev-builder-harness'
+    | '/dev-wide-player-harness'
     | '/guest'
     | '/logistics-app'
     | '/orbit-app'
@@ -1806,6 +1828,8 @@ export interface FileRouteTypes {
     | '/_app'
     | '/academy'
     | '/auth'
+    | '/dev-builder-harness'
+    | '/dev-wide-player-harness'
     | '/guest'
     | '/logistics-app'
     | '/orbit-app'
@@ -1971,6 +1995,8 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   AcademyRoute: typeof AcademyRoute
   AuthRoute: typeof AuthRoute
+  DevBuilderHarnessRoute: typeof DevBuilderHarnessRoute
+  DevWidePlayerHarnessRoute: typeof DevWidePlayerHarnessRoute
   GuestRoute: typeof GuestRoute
   LogisticsAppRoute: typeof LogisticsAppRoute
   OrbitAppRoute: typeof OrbitAppRoute
@@ -2031,6 +2057,20 @@ declare module '@tanstack/react-router' {
       path: '/guest'
       fullPath: '/guest'
       preLoaderRoute: typeof GuestRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dev-wide-player-harness': {
+      id: '/dev-wide-player-harness'
+      path: '/dev-wide-player-harness'
+      fullPath: '/dev-wide-player-harness'
+      preLoaderRoute: typeof DevWidePlayerHarnessRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dev-builder-harness': {
+      id: '/dev-builder-harness'
+      path: '/dev-builder-harness'
+      fullPath: '/dev-builder-harness'
+      preLoaderRoute: typeof DevBuilderHarnessRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth': {
@@ -3619,6 +3659,8 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   AcademyRoute: AcademyRoute,
   AuthRoute: AuthRoute,
+  DevBuilderHarnessRoute: DevBuilderHarnessRoute,
+  DevWidePlayerHarnessRoute: DevWidePlayerHarnessRoute,
   GuestRoute: GuestRoute,
   LogisticsAppRoute: LogisticsAppRoute,
   OrbitAppRoute: OrbitAppRoute,
