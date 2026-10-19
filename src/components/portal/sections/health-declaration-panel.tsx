@@ -398,7 +398,7 @@ export function HealthDeclarationPanel({ canEdit, onOpenRequest }: { canEdit: bo
               </button>
               {s.late && <StatusBadge label="Sent late" tone="amber" />}
               {s.captain_requests && <StatusBadge label={REQUEST_STATUS[s.captain_requests.status] ?? s.captain_requests.status} tone={s.captain_requests.status === "completed" ? "green" : "sky"} />}
-              {s.document_id && <OpenPdfButton id={s.document_id} />}
+              <OpenPdfButton id={s.id} />
               {s.captain_request_id && <ArrowRight className="h-4 w-4 text-muted-foreground/60" />}
             </div>
           ))}
@@ -414,7 +414,7 @@ function OpenPdfButton({ id }: { id: string }) {
   async function open() {
     setBusy(true);
     try {
-      const res = await portalFetch(`/api/portal/documents/open?type=vessel_doc&id=${id}`, { redirect: "follow" });
+      const res = await portalFetch(`/api/portal/documents/open?type=health_declaration&id=${id}`, { redirect: "follow" });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body?.error ?? "That document could not be opened.");

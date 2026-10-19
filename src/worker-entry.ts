@@ -1066,11 +1066,6 @@ export default {
       const { portalPrearrivalHandler } = await import('./routes/api.portal.prearrival')
       return portalPrearrivalHandler(request)
     }
-    // Client portal — Maritime Declaration of Health (Abu Dhabi arrivals).
-    if (url.pathname === '/api/portal/health-declaration') {
-      const { portalHealthDeclarationHandler } = await import('./routes/api.portal.health-declaration')
-      return portalHealthDeclarationHandler(request)
-    }
     // Client portal — Maritime Declaration of Health (signed by the master before an Abu Dhabi arrival).
     if (url.pathname === '/api/portal/health-declaration') {
       const { portalHealthDeclarationHandler } = await import('./routes/api.portal.health-declaration')

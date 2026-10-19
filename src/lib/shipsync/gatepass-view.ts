@@ -102,6 +102,7 @@ export function gatePassEdit(p: ShipSyncPackage, column: string, nameColumn: str
   else monday[column] = value
   return {
     ...deriveFields(monday, itemName),
+    barcode: itemName || null,
     extra: { ...extra, monday_item_name: itemName, monday, edited_at: new Date().toISOString() },
   } as Partial<ShipSyncPackage>
 }

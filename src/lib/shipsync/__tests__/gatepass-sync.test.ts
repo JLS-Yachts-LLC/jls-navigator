@@ -84,6 +84,35 @@ test("a second sync updates what changed on Monday, adds new items and prunes th
   assert.ok(be.rows("shipsync_packages").some((x) => x.id === "L1"), "Local rows are not touched");
 });
 
+test("an edit made on the Gate Pass tab survives the next sync unless Monday changes that same value", async () => {
+  await gp.importMondayGatePassBoard();
+  const a = gate().find((x) => x.barcode === "GP-001")!;
+  a.extra = { ...a.extra, monday: { ...a.extra.monday, Client: "Aurora X", "Gate Pass No.": "LOCAL-1", Name: "Taufeeq" }, edited_at: "2026-10-19T00:00:00Z" };
+  a.boat_name = "AURORA X";
+  board.items[0] = { ...board.items[0], column_values: [{ id: "client", text: "Orka" }, { id: "date", text: "2026-10-05" }, { id: "no", text: "A124" }] };
+  await gp.importMondayGatePassBoard();
+  const after = gate().find((x) => x.barcode === "GP-001")!;
+  assert.equal(after.extra.monday.Client, "Aurora X", "Monday's client did not change, so the local edit stays");
+  assert.equal(after.boat_name, "AURORA X");
+  assert.equal(after.extra.monday.Name, "Taufeeq", "a column only filled in here is kept");
+  assert.equal(after.extra.monday["Gate Pass No."], "A124", "Monday changed this value, so Monday's new value wins");
+});
+
+test("a row edited or removed on the tab is never pruned or brought back, and an empty board prunes nothing", async () => {
+  await gp.importMondayGatePassBoard();
+  const [a, b] = gate().sort((x, y) => String(x.barcode).localeCompare(String(y.barcode)));
+  a.extra = { ...a.extra, edited_at: "2026-10-19T00:00:00Z" };
+  b.extra = { ...b.extra, deleted_at: "2026-10-19T00:00:00Z", edited_at: "2026-10-19T00:00:00Z" };
+  board.items = [board.items[1]];
+  let r = await gp.importMondayGatePassBoard();
+  assert.equal(r.pruned, 0, "GP-001 is gone from Monday but was edited here");
+  assert.equal(gate().find((x) => x.barcode === "GP-002")!.extra.deleted_at, "2026-10-19T00:00:00Z", "the removed row stays removed");
+  board.items = [];
+  r = await gp.importMondayGatePassBoard();
+  assert.equal(r.pruned, 0);
+  assert.equal(gate().length, 2);
+});
+
 test("a sync that starts while another is running does nothing", async () => {
   be.rows("integration_settings")[0].config.gatepass_board_sync_started_at = new Date().toISOString();
   const r = await gp.importMondayGatePassBoard();
