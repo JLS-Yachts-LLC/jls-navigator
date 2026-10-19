@@ -86,8 +86,19 @@ export async function loadImportPackages(): Promise<ShipSyncPackage[]> {
 export const loadExportPackages = () => loadPackagesByType('Export')
 /** EDAS-tab packages. */
 export const loadEdasPackages = () => loadPackagesByType('EDAS')
-/** Gate-Pass-tab rows: the mirror of the Monday Gate Pass board (see monday-gatepass-board.server.ts). */
-export const loadGatePassPackages = () => loadPackagesByType('Gate Pass')
+/** Gate-Pass-tab rows (imported from the Monday Gate Pass board, or added on the tab — see monday-gatepass-board.server.ts),
+ *  without the ones removed on the tab. */
+export async function loadGatePassPackages(): Promise<ShipSyncPackage[]> {
+  return (await loadPackagesByType('Gate Pass')).filter((p) => !(p.extra as any)?.deleted_at)
+}
+/** Remove a gate pass. One that came from Monday is only marked removed (extra.deleted_at), so the Monday sync — which would
+ *  otherwise import it again — leaves it alone; one added on the tab is deleted outright. */
+export async function removeGatePass(p: ShipSyncPackage): Promise<void> {
+  const extra = ((p.extra as any) ?? {}) as Record<string, unknown>
+  if (!extra.monday_item_id) return deletePackage(p.id)
+  const now = new Date().toISOString()
+  await patchPackage(p.id, { extra: { ...extra, deleted_at: now, edited_at: now } } as Partial<ShipSyncPackage>)
+}
 export async function loadDrivers(): Promise<ShipSyncDriver[]> {
   const { data } = await db().from('shipsync_drivers').select('*').order('name')
   return (data ?? []) as ShipSyncDriver[]

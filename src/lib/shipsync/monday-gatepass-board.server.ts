@@ -1,14 +1,19 @@
 /**
  * ShipSync Gate Pass tab ↔ Monday.com import.
  *
- * One-way, read-only mirror of the Monday "Gate Pass" board (id 5089663441) into shipsync_packages (local_import = 'Gate Pass')
- * — Monday is the source of truth, this never writes back. Built on the EDAS sync (monday-edas-board.server.ts): same
- * hardcoded board id, same column_values → byTitle approach, same lock and prune.
+ * One-way import of the Monday "Gate Pass" board (id 5089663441) into shipsync_packages (local_import = 'Gate Pass'); it never
+ * writes back. Built on the EDAS sync (monday-edas-board.server.ts): same hardcoded board id, same column_values → byTitle
+ * approach, same lock and prune.
+ *
+ * Since 19 Oct 2026 the Gate Pass tab is editable and Polaris is taking over from Monday (Logistics are cancelling it), so the
+ * sync only carries over what changed ON MONDAY since the last sync (mergeOntoExisting's three-way merge): a value edited on the
+ * tab stays unless Monday's own value for it changes, rows added on the tab have no monday_item_id and are never touched, rows
+ * edited on the tab are never pruned, and rows deleted on the tab (extra.deleted_at) are left alone rather than brought back.
  *
  * The board's columns are not hardcoded. Their titles and order are discovered at sync time and stored on every row
- * (extra.monday_columns), the raw text of each cell in extra.monday, so the screen shows exactly what Monday has and a column
- * added on Monday appears here by itself. Only two things are lifted onto the row's own columns, for searching: the item name
- * (barcode) and a client (boat_name), when the board has a client-like column.
+ * (extra.monday_columns; the item-name column's title in extra.monday_name_column), the raw text of each cell in extra.monday,
+ * and what Monday itself last showed in extra.monday_synced (the merge base). Only a few things are lifted onto the row's own
+ * columns, for searching: the item name (barcode), a client (boat_name) and a date (received_at).
  *
  * Gate Pass rows are NOT parcels. They are stored as status 'completed' so nothing treats them as waiting to go out (the
  * phone's Check-Out lists anything in the office), and they are tagged 'Gate Pass' so Local Packages, Routing and the
@@ -18,6 +23,7 @@
  */
 import { createServerFn } from '@tanstack/react-start'
 import { supabaseAdmin } from '@/integrations/supabase/client.server'
+import { deriveFields } from './gatepass-view'
 
 const db = () => supabaseAdmin as any
 
@@ -130,43 +136,17 @@ export function byTitle(item: MondayItem, colById: Map<string, MondayColumn>): R
   return out
 }
 
-export function pick(row: Record<string, string>, ...keywords: string[]): string | null {
-  const entries = Object.entries(row)
-  for (const kw of keywords) {
-    const hit = entries.find(([title]) => title.toLowerCase().includes(kw))
-    if (hit && hit[1]) return hit[1]
-  }
-  return null
-}
-
-function toDate(v: string | null): string | null {
-  if (!v) return null
-  const d = new Date(v)
-  return isNaN(d.getTime()) ? null : d.toISOString()
-}
-function toDocuments(v: string | null): { name: string; url: string }[] | null {
-  if (!v) return null
-  const docs = v.split(',').map((s) => s.trim()).filter((s) => /^https?:\/\//i.test(s))
-    .map((url) => ({ name: decodeURIComponent(url.split('/').pop() || 'Document'), url }))
-  return docs.length ? docs : null
-}
-
-/** The few things lifted from Monday's columns onto the row's own, for searching and sorting. Everything else is read straight from
- *  the verbatim row (extra.monday). Exported for the tests. */
-export function deriveFields(row: Record<string, string>, itemName: string): Record<string, unknown> {
-  return {
-    barcode: itemName,
-    boat_name: (pick(row, 'client', 'yacht', 'vessel', 'boat') ?? null)?.toUpperCase() ?? null,
-    received_at: toDate(pick(row, 'issue date', 'date')),
-  }
-}
+export { pick, deriveFields } from './gatepass-view'
 
 const sameValue = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
 
-/** Same real-merge fix as Import/Export (see monday-import-board.server.ts's
- *  mergeOntoExisting): a field only actually changes if Monday's own value
- *  for it differs from what it showed at the last sync, and a local group
- *  move (moveGroup) survives unless Monday's own group has genuinely moved. */
+/**
+ * A three-way merge, so an edit made on the Gate Pass tab survives the next sync: each value (every cell, the item name, the
+ * lifted fields, the group) only changes if Monday's own value differs from what Monday showed at the last sync
+ * (extra.monday_synced / monday_synced_item_name — rows synced before those existed fall back to what they hold, which was
+ * Monday's value then). A value Monday has not touched keeps whatever it was set to here, and a column only filled in here
+ * (not on Monday) is kept.
+ */
 export function mergeOntoExisting(
   record: Record<string, unknown>,
   existingExtra: Record<string, any> | undefined,
@@ -177,7 +157,8 @@ export function mergeOntoExisting(
   const merged: Record<string, unknown> = { ...record }
   delete merged.status
 
-  const oldFields = deriveFields(oldMondayRow, (existingExtra?.monday_item_name as string | undefined) ?? itemName)
+  const oldItemName = (existingExtra?.monday_synced_item_name ?? existingExtra?.monday_item_name ?? itemName) as string
+  const oldFields = deriveFields(oldMondayRow, oldItemName)
   const newFields = deriveFields(newMondayRow, itemName)
   for (const key of Object.keys(newFields)) {
     if (sameValue(oldFields[key], newFields[key])) delete merged[key]
@@ -191,6 +172,16 @@ export function mergeOntoExisting(
     delete newExtra.monday_group_title
     delete newExtra.monday_group_position
   }
+  if (existingExtra) {
+    if (oldItemName === itemName) delete newExtra.monday_item_name
+    const current: Record<string, string> = { ...((existingExtra.monday ?? {}) as Record<string, string>) }
+    for (const key of new Set([...Object.keys(oldMondayRow), ...Object.keys(newMondayRow)])) {
+      if (sameValue(oldMondayRow[key], newMondayRow[key])) continue
+      if (newMondayRow[key] == null) delete current[key]
+      else current[key] = newMondayRow[key]
+    }
+    newExtra.monday = current
+  }
   merged.extra = { ...(existingExtra ?? {}), ...newExtra }
   return merged
 }
@@ -202,6 +193,7 @@ async function importInner(): Promise<MondayGatePassBoardResult> {
   const { columns, groups, items } = await fetchBoard(token)
   const colById = new Map(columns.map((c) => [c.id, c] as const))
   const columnOrder = columns.map((c) => c.title)
+  const nameColumn = columns.find((c) => c.type === 'name')?.title ?? columnOrder[0] ?? null
   const groupOrder = groups.map((g) => g.title)
 
   const existingRows: { id: string; extra: any }[] = []
@@ -238,6 +230,8 @@ async function importInner(): Promise<MondayGatePassBoardResult> {
       extra: {
         monday_item_id: item.id,
         monday_item_name: item.name,
+        monday_synced_item_name: item.name,
+        monday_name_column: nameColumn,
         monday_columns: columnOrder,
         monday_group_id: item.group?.id ?? null,
         monday_group_title: item.group?.title ?? null,
@@ -245,6 +239,7 @@ async function importInner(): Promise<MondayGatePassBoardResult> {
         monday_group_order: groupOrder,
         monday_synced_group_title: item.group?.title ?? null,
         monday: row,
+        monday_synced: row,
         imported_at: now,
       },
     }
@@ -252,7 +247,8 @@ async function importInner(): Promise<MondayGatePassBoardResult> {
     const existingId = idByMonday.get(item.id)
     if (existingId) {
       const existingExtra = extraById.get(existingId)
-      const oldMondayRow = (existingExtra?.monday ?? {}) as Record<string, string>
+      if (existingExtra?.deleted_at) continue // removed on the Gate Pass tab — don't bring it back
+      const oldMondayRow = (existingExtra?.monday_synced ?? existingExtra?.monday ?? {}) as Record<string, string>
       toUpdate.push({ id: existingId, itemName: item.name, record: mergeOntoExisting(record, existingExtra, oldMondayRow, row, item.name) })
     } else {
       toInsert.push(record)
@@ -290,11 +286,13 @@ async function importInner(): Promise<MondayGatePassBoardResult> {
     }
   }
 
-  // Prune rows this sync itself created whose item no longer exists on the board.
+  // Prune rows this sync itself created whose item no longer exists on the board — but never one edited on the Gate Pass tab
+  // (Polaris is taking over from Monday), and nothing at all if the board came back empty (cleared or being wound down).
   const currentItemIds = new Set(items.map((i) => i.id))
   let pruned = 0
   for (const [mid, rowId] of idByMonday) {
-    if (currentItemIds.has(mid)) continue
+    if (items.length === 0) break
+    if (currentItemIds.has(mid) || extraById.get(rowId)?.edited_at) continue
     const { error } = await db().from('shipsync_packages').delete().eq('id', rowId)
     if (!error) pruned++
   }
