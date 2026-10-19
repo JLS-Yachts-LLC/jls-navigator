@@ -5,9 +5,185 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.77.0",
+    "date": "2026-10-19",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "The Port Operations wall is easier to use on its touchscreen — bigger rows, boat markers and buttons, and a stray pinch or long-press no longer zooms the page or selects text"
+      },
+      {
+        "type": "feature",
+        "title": "The Port Operations wall is now interactive — tap a boat (on the map or in any list) for its berth, ETA/ETD, last AIS position, permit expiry dates and crew sign on/off counts, pan and zoom the map, or use the TV remote; it resets itself after 2 minutes untouched, and can be switched off per screen in Wall Displays"
+      },
+      {
+        "type": "feature",
+        "title": "Crew Academy courses can be saved on the phone and taken with no signal — lessons, videos and PDFs open offline, progress is kept and sent when back online (quizzes wait for signal), and everything saved is wiped on sign-out"
+      },
+      {
+        "type": "feature",
+        "title": "Crew Academy course creator can draft quiz questions with AI from a lesson's text and PDFs — they arrive as a draft quiz to check and edit before publishing"
+      },
+      {
+        "type": "feature",
+        "title": "Crew Academy reminder emails — crew are told about new courses, courses due within 3 days and overdue ones (weekly, up to 4 times), one email at a time, only for vessels with Automatic messages switched on"
+      },
+      {
+        "type": "fix",
+        "title": "Crew Academy certificates are centred on the page"
+      },
+      {
+        "type": "feature",
+        "title": "Crew Academy courses can now include drag-and-drop exercises (match pairs, put steps in order, sort into groups) and tap-the-picture questions; crew get a certificate PDF when they pass, courses with a refresher re-enrol them automatically when it runs out, and vessels see which questions their crew find hardest"
+      },
+      {
+        "type": "feature",
+        "title": "When switching on a vessel's report in Automated Reports you now choose Weekly or Monthly straight away (one vessel or many at once), and the vessel list shows which each boat gets"
+      },
+      {
+        "type": "feature",
+        "title": "Each vessel can now get its own report from JLS as a branded PDF — what the team completed, what is planned and anything needing attention across Agency, Crew Care and Visas, only for that vessel — sent weekly as standard or monthly for very small or quiet boats (Reports → Automated Reports → Weekly / monthly report)"
+      },
+      {
+        "type": "feature",
+        "title": "Crew Academy for vessels — department groups (a course enrolled to a group reaches anyone who joins it), the vessel's own courses written with the course creator, a training report with overdue list and CSV download, overdue training in Alerts, and sharing a course or a crew member's results with JLS for review (crew can share their own too)"
+      },
+      {
+        "type": "feature",
+        "title": "New Weekly operations report — a summary, then Agency (entry, FMA and DMA permits), Crew Care (sign-ons, sign-offs and transfers) and Visas, grouped by yacht, showing what was done last week, what is planned this week and what needs attention; emailed every Monday at 08:00 and available for each vessel in Automated Reports"
+      },
+      {
+        "type": "feature",
+        "title": "Anyone with view access to Agency can now pair, rename and unpair Wall Display TVs — edit access is no longer needed"
+      },
+      {
+        "type": "feature",
+        "title": "Crew Academy sign-in now has a second step — crew confirm it's them with an authenticator app (scan a QR code) or a code emailed to them; course videos can now be up to 500 MB"
+      },
+      {
+        "type": "feature",
+        "title": "Crew Academy — JLS can write and publish crew training courses (reading, video, PDFs, pictures, quizzes and sign-offs) and offer them to vessels; vessels with Crew Academy switched on invite and enrol their crew from the Client Portal, and crew take their courses on their phone"
+      },
+      {
+        "type": "feature",
+        "title": "Client portal Orbit 2 jobs open on click and show the job's photos — crew field photos and the owner's request photo, full size on tap"
+      },
+      {
+        "type": "feature",
+        "title": "Permits that have already been emailed can be resent from the Permits list — click the green sent tick to send the latest copy (e.g. an extended entry permit)"
+      },
+      {
+        "type": "fix",
+        "title": "Someone who both runs a vessel's portal and takes Crew Academy training now always lands on the Client Portal after signing in"
+      },
+      {
+        "type": "feature",
+        "title": "Crew Academy groundwork — crew training logins that can only reach their own training, a Crew Academy sign-in page for crew, and a Crew Academy permission for staff"
+      },
+      {
+        "type": "fix",
+        "title": "Files sent with Polaris feedback now open from the Service Desk ticket and arrive attached to the support and New Horizon emails, instead of showing a broken storage path"
+      },
+      {
+        "type": "feature",
+        "title": "Sign On / Sign Off reports can be downloaded for each vessel separately — in Reports, tick the vessels you want and every report (Crew Movement, Weekly Sign-On/Off, Crew Onboard, Arriving, Departing) comes as one file per vessel, with the vessel's name on it"
+      }
+    ]
+  },
+  {
+    "version": "2.76.0",
+    "date": "2026-10-18",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Hovering a sidebar item now tilts its icon and turns it gold, with a warm gold label"
+      },
+      {
+        "type": "feature",
+        "title": "Gold buttons lift slightly, brighten and cast a warm shadow when you hover over them"
+      },
+      {
+        "type": "feature",
+        "title": "A signatory's signature can only go on a document with their permission — each signatory chooses \"every use needs my approval\" (they get an approve request by email and in Polaris) or names authorised users; everyone else is refused, only the signatory or a global admin can change it, and every request and use is logged on the document and the signatory's page"
+      },
+      {
+        "type": "feature",
+        "title": "Leo's Generate briefing button gently pulses until you use it, and stops while you hover over it"
+      },
+      {
+        "type": "feature",
+        "title": "On gold buttons the ✦ spins as you hover, and the button gives a small squeeze when pressed"
+      },
+      {
+        "type": "feature",
+        "title": "Gold buttons, including Leo's Generate briefing, catch a glint of light when you hover over them"
+      },
+      {
+        "type": "feature",
+        "title": "Sidebar items show a gold bar and ease right when you hover over them"
+      }
+    ]
+  },
+  {
     "version": "2.75.0",
     "date": "2026-10-16",
     "entries": [
+      {
+        "type": "fix",
+        "title": "Port Operations wall map frames UAE waters only, so a boat off Qatar no longer zooms it out"
+      },
+      {
+        "type": "fix",
+        "title": "Port Operations wall map zooms to the UAE coast instead of the whole Gulf"
+      },
+      {
+        "type": "fix",
+        "title": "Port Operations wall map shows its dark sea chart again (the previous map tiles needed an API key)"
+      },
+      {
+        "type": "feature",
+        "title": "Port Operations wall for office TVs — open /wall on a screen, pair it with its code under Operations → Wall Displays, and it shows vessels in country, arrivals, departures, live AIS positions, crew sign on/off counts, bunker deliveries, expiring cruising permits and Dubai wind and sea; the screen remembers it's paired"
+      },
+      {
+        "type": "feature",
+        "title": "Send on the permits list now opens a \"Check before sending\" window — it shows the real email, who it goes to and how the permit document travels, lets you add attachments (a quote, a letter — up to 10 files, 3 MB each), and nothing goes out until you press Send"
+      },
+      {
+        "type": "feature",
+        "title": "Staff Usage page for admins — staff grouped Daily / Regular / Light / Signed in once / New / No login, staff active each week since launch, and a searchable table of days in, days this week, hours open, actions, main area and last active per person"
+      },
+      {
+        "type": "feature",
+        "title": "Admin → Usage shows who is using Polaris — days active, screens visited, top modules and last seen per person, staff with no login, and weekly active staff; visa, ShipSync and Finance changes now record who made them"
+      },
+      {
+        "type": "feature",
+        "title": "Gate Pass tab (between EDAS and Routing) — read-only mirror of the Monday Gate Pass board, columns and groups discovered from Monday, hourly sync plus a Sync from Monday button"
+      },
+      {
+        "type": "feature",
+        "title": "Incoming list shows only shipments whose status is Incoming; Overview and Dashboard lists (and the yacht import/export lists) sit side by side"
+      },
+      {
+        "type": "feature",
+        "title": "Overview tab — a plain summary for people outside logistics, first tab and the default; incoming and open-export lists plus yacht import and export shipments (client, LOA, POL, POD, ETA/ETD); closer columns in the incoming list"
+      },
+      {
+        "type": "feature",
+        "title": "Totals on every bar of the Dashboard graphs and board charts, a Total line in the hover box, and a bold Total in the header"
+      },
+      {
+        "type": "feature",
+        "title": "Add a parcel to an existing delivery — Manage Deliveries (phone) and the Dispatched tab (desktop); joins the driver's run when the note has a driver, otherwise reserved"
+      },
+      {
+        "type": "feature",
+        "title": "Visa Reports can be filtered to several vessels at once, and \"Each vessel: CSV / PDF\" downloads a separate report for every picked vessel (SD-0061)"
+      },
+      {
+        "type": "fix",
+        "title": "Audit fixes — Warehouse line/hover/header styling side effects, Escape cancels inline edits, stale selection and partial-failure bulk delete, dispatch leaves no orphan note and reports failed writes, Locations rename edits instead of duplicating, calendar lists every boat, Warehouse shelf-edit zone bug, requests retry, edit-form photo preview"
+      },
       {
         "type": "fix",
         "title": "The visa report \"Send to vessel\" button no longer sits greyed out with no explanation — when a vessel has no recipients yet, clicking it says so and links to Reports → Automated Reports to add them"
