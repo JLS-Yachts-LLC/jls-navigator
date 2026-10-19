@@ -212,7 +212,7 @@ export function content() {
           image("t04-interfaces-trunk.png", "show interfaces trunk: the uplink carries every VLAN; the access points only crew, guest and management"),
           sort("Which VLAN?", "Using the example yacht's VLAN plan, which VLAN should each device be on?", ["10 BUSINESS", "30 GUEST", "40 AV", "50 CCTV"], [
             ["The Captain's office PC", 0],
-            ["A guest's laptop on Wi-Fi", 2 - 1],
+            ["A guest's laptop on Wi-Fi", 1],
             ["The Apple TV in the master cabin", 2],
             ["The aft-deck camera", 3],
             ["The crew office printer", 0],
@@ -390,7 +390,7 @@ export function content() {
 
             Some switches are set to bring err-disabled ports back on their own after a few minutes (\`errdisable recovery\`). \`show errdisable recovery\` shows whether that's on.
           `),
-          image("t10-port-security.png", "Why Gi1/0/5 is down: psecure-violation, caused by MAC address 0000.5e00.5399"),
+          image("t10-port-security.png", "Two commands that tell you why a port is err-disabled, and which device caused it"),
           hotspot("Why did it happen?", "Tap the line that tells you the reason the port was shut down.", "t10-port-security.png", SPOTS.reason),
           hotspot("Which device did it?", "Tap the line that shows the MAC address of the device that caused it.", "t10-port-security.png", SPOTS.lastMac),
           order("Recover an err-disabled camera port", "The aft-deck camera was replaced and its port went err-disabled. Put the recovery in order.", [

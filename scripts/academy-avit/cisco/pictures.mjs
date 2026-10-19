@@ -43,9 +43,9 @@ export const PORTS = [
   ["Gi1/0/9", "PHONE-BRIDGE-DESK", "connected", "60", "a-full", "a-1000", TX],
   ["Gi1/0/10", "CREW-MESS-SPARE", "notconnect", "20", "auto", "auto", TX],
   ["Gi1/0/11", "", "disabled", "1", "auto", "auto", TX],
-  ["Gi1/0/12", "", "notconnect", "1", "auto", "auto", TX],
+  ...[...Array(13)].map((_, i) => [`Gi1/0/${12 + i}`, "", "notconnect", "1", "auto", "auto", TX]),
   ["Gi1/1/1", "UPLINK-SW-CORE-01", "connected", "trunk", "full", "1000", "1000BaseSX SFP"],
-  ["Gi1/1/2", "", "notconnect", "1", "full", "1000", "Not Present"],
+  ...[2, 3, 4].map((n) => [`Gi1/1/${n}`, "", "notconnect", "1", "full", "1000", "Not Present"]),
 ];
 const statusRow = ([p, n, s, v, d, sp, ty]) => p.padEnd(13) + n.padEnd(19) + s.padEnd(13) + v.padEnd(11) + d.padStart(6) + " " + sp.padStart(6) + " " + ty;
 const STATUS_HEAD = "Port         Name               Status       Vlan       Duplex  Speed Type";
@@ -237,7 +237,7 @@ const tIntStatus = () => intStatusGeo().svg;
 {
   const { t } = intStatusGeo();
   SPOTS.errLine = lineSpots(t, 7, 0, 45);
-  SPOTS.trunkUplink = lineSpots(t, 15, 0, 52);
+  SPOTS.trunkUplink = lineSpots(t, 3 + PORTS.findIndex((p) => p[0] === "Gi1/1/1"), 0, 52);
 }
 
 // t2: show interfaces (one port, with CRC errors)
@@ -275,8 +275,10 @@ function tVlanBrief() {
     `${E}show vlan brief`, "",
     "VLAN Name                             Status    Ports",
     "---- -------------------------------- --------- -------------------------------",
-    row(1, "default", "active", "Gi1/0/11, Gi1/0/12, Gi1/1/2, Gi1/1/3"),
-    row("", "", "", "Gi1/1/4"),
+    row(1, "default", "active", "Gi1/0/11, Gi1/0/12, Gi1/0/13"),
+    ...[[14, 15, 16], [17, 18, 19], [20, 21, 22]].map((r) => row("", "", "", r.map((n) => `Gi1/0/${n}`).join(", "))),
+    row("", "", "", "Gi1/0/23, Gi1/0/24, Gi1/1/2"),
+    row("", "", "", "Gi1/1/3, Gi1/1/4"),
     row(10, "BUSINESS", "active", "Gi1/0/3, Gi1/0/4"),
     row(20, "CREW", "active", "Gi1/0/10"),
     row(30, "GUEST", "active", ""),
@@ -432,10 +434,10 @@ function portSecurityGeo() {
   const lines = [
     `${E}show interfaces status err-disabled`, "",
     "Port         Name               Status       Reason",
-    { t: "Gi1/0/5      CCTV-AFT-DECK      err-disabled psecure-violation", hi: true },
+    "Gi1/0/5      CCTV-AFT-DECK      err-disabled psecure-violation",
     `${E}show port-security interface gigabitEthernet 1/0/5`,
     "Port Security              : Enabled",
-    { t: "Port Status                : Secure-shutdown", hi: true },
+    "Port Status                : Secure-shutdown",
     "Violation Mode             : Shutdown",
     "Aging Time                 : 0 mins",
     "Aging Type                 : Absolute",
@@ -444,7 +446,7 @@ function portSecurityGeo() {
     "Total MAC Addresses        : 1",
     "Configured MAC Addresses   : 0",
     "Sticky MAC Addresses       : 1",
-    { t: "Last Source Address:Vlan   : 0000.5e00.5399:50", hi: true },
+    "Last Source Address:Vlan   : 0000.5e00.5399:50",
     "Security Violation Count   : 1",
     E,
   ];
