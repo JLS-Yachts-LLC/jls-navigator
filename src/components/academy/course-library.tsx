@@ -13,8 +13,8 @@
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowDown, ArrowLeft, ArrowUp, Archive, CheckCircle2, Eye, FileText, Film, GraduationCap, Image as ImageIcon,
-  ListChecks, Loader2, Plus, RotateCcw, Save, Send, Ship, Signature, Trash2, Type, Upload, X,
+  ArrowDown, ArrowLeft, ArrowUp, Archive, CheckCircle2, Crosshair, Eye, FileText, Film, GraduationCap, Image as ImageIcon,
+  LayoutGrid, Link2, ListChecks, ListOrdered, Loader2, Plus, RotateCcw, Save, Send, Ship, Signature, Trash2, Type, Upload, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -22,8 +22,9 @@ import { cn } from "@/lib/utils";
 import { Markdown } from "@/components/ui/markdown";
 import { CoursePlayer, type PlayerApi } from "@/components/academy/course-player";
 import {
-  BLOCK_LABELS, emptyContent, embedUrl, findBlock, gradeQuiz, newBlock, newId, newQuestion, publishProblems,
-  type Block, type BlockProgress, type BlockType, type CourseContent, type Question, type QuizBlock,
+  BLOCK_LABELS, emptyContent, embedUrl, findBlock, forLearner, gradeBlock, isGraded, newBlock, newId, newPair, newQuestion, publishProblems,
+  type Block, type BlockProgress, type BlockType, type CourseContent, type HotspotBlock, type MatchBlock, type OrderBlock,
+  type Question, type QuizBlock, type SortBlock,
 } from "@/lib/academy/content";
 
 async function adminFetch(path: string, init: RequestInit = {}): Promise<any> {
@@ -466,6 +467,7 @@ function MoveButtons({ i, n, onMove, onDelete }: { i: number; n: number; onMove:
 
 const BLOCK_ICONS: Record<BlockType, any> = {
   reading: Type, video: Film, document: FileText, image: ImageIcon, quiz: ListChecks, acknowledge: Signature,
+  match: Link2, order: ListOrdered, sort: LayoutGrid, hotspot: Crosshair,
 };
 
 function AddBlock({ onAdd }: { onAdd: (t: BlockType) => void }) {
@@ -538,6 +540,22 @@ function BlockEditor({ block, editable, courseId, files, maxUpload, onUploaded, 
             placeholder="What the crew member confirms, e.g. I have read and understood the garbage management plan." />
         )}
         {block.type === "quiz" && <QuizEditor block={block} onChange={onChange} />}
+        {(block.type === "match" || block.type === "order" || block.type === "sort" || block.type === "hotspot") && (
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <input className={inputCls} placeholder="Title (optional)" value={block.title ?? ""} onChange={(e) => set({ title: e.target.value })} />
+            <input className={inputCls} placeholder="Instruction shown to crew" value={block.prompt ?? ""} onChange={(e) => set({ prompt: e.target.value })} />
+          </div>
+        )}
+        {block.type === "match" && <MatchEditor block={block} onChange={onChange} />}
+        {block.type === "order" && <OrderEditor block={block} onChange={onChange} />}
+        {block.type === "sort" && <SortEditor block={block} onChange={onChange} />}
+        {block.type === "hotspot" && (
+          <>
+            <MediaPicker kind="image" accept="image/jpeg,image/png,image/webp,image/gif" mediaId={block.mediaId} courseId={courseId} files={files} maxUpload={maxUpload}
+              onUploaded={onUploaded} onPick={(mediaId) => set({ mediaId })} />
+            {block.mediaId && <HotspotEditor block={block} onChange={onChange} />}
+          </>
+        )}
       </fieldset>
     </div>
   );
@@ -554,6 +572,143 @@ function ReadingEditor({ value, onChange }: { value: string; onChange: (v: strin
       {preview
         ? <div className="min-h-[120px] rounded-lg border border-border bg-background/40 p-3"><Markdown>{value || "_Nothing yet_"}</Markdown></div>
         : <textarea className={cn(inputCls, "min-h-[160px] font-mono text-[13px]")} value={value} onChange={(e) => onChange(e.target.value)} />}
+    </div>
+  );
+}
+
+// ── Exercise editors ─────────────────────────────────────────────────────────
+function MatchEditor({ block, onChange }: { block: MatchBlock; onChange: (b: Block) => void }) {
+  const setPair = (i: number, patch: Partial<MatchBlock["pairs"][number]>) =>
+    onChange({ ...block, pairs: block.pairs.map((p, j) => (j === i ? { ...p, ...patch } : p)) });
+  return (
+    <div className="space-y-2">
+      <p className="text-[11px] text-muted-foreground">Write each item and its match. Crew see the right-hand answers shuffled and drag them into place.</p>
+      {block.pairs.map((p, i) => (
+        <div key={p.id} className="flex items-center gap-2">
+          <input className={cn(inputCls, "py-1.5")} placeholder={`Item ${i + 1}`} value={p.left} onChange={(e) => setPair(i, { left: e.target.value })} />
+          <Link2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <input className={cn(inputCls, "py-1.5")} placeholder="Its match" value={p.right} onChange={(e) => setPair(i, { right: e.target.value })} />
+          {block.pairs.length > 2 && (
+            <button type="button" onClick={() => onChange({ ...block, pairs: block.pairs.filter((_, j) => j !== i) })}
+              className="text-muted-foreground hover:text-red-300" title="Remove pair"><X className="h-4 w-4" /></button>
+          )}
+        </div>
+      ))}
+      {block.pairs.length < 20 && (
+        <button type="button" onClick={() => onChange({ ...block, pairs: [...block.pairs, newPair()] })} className="text-xs text-primary hover:underline">+ Add pair</button>
+      )}
+    </div>
+  );
+}
+
+function OrderEditor({ block, onChange }: { block: OrderBlock; onChange: (b: Block) => void }) {
+  return (
+    <div className="space-y-2">
+      <p className="text-[11px] text-muted-foreground">Write the steps in the RIGHT order. Crew get them shuffled.</p>
+      {block.items.map((it, i) => (
+        <div key={it.id} className="flex items-center gap-2">
+          <span className="w-5 text-right text-xs text-muted-foreground">{i + 1}.</span>
+          <input className={cn(inputCls, "py-1.5")} placeholder={`Step ${i + 1}`} value={it.text}
+            onChange={(e) => onChange({ ...block, items: block.items.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)) })} />
+          <MoveButtons i={i} n={block.items.length}
+            onMove={(d) => { const items = [...block.items]; swap(items, i, i + d); onChange({ ...block, items }); }}
+            onDelete={() => { if (block.items.length > 2) onChange({ ...block, items: block.items.filter((_, j) => j !== i) }); }} />
+        </div>
+      ))}
+      {block.items.length < 20 && (
+        <button type="button" onClick={() => onChange({ ...block, items: [...block.items, { id: newId(), text: "" }] })} className="text-xs text-primary hover:underline">+ Add step</button>
+      )}
+    </div>
+  );
+}
+
+function SortEditor({ block, onChange }: { block: SortBlock; onChange: (b: Block) => void }) {
+  return (
+    <div className="space-y-3">
+      <div>
+        <div className="mb-1 text-[11px] text-muted-foreground">Groups</div>
+        <div className="flex flex-wrap gap-2">
+          {block.buckets.map((b, i) => (
+            <div key={b.id} className="flex items-center gap-1">
+              <input className={cn(inputCls, "w-40 py-1.5")} placeholder={`Group ${i + 1}`} value={b.text}
+                onChange={(e) => onChange({ ...block, buckets: block.buckets.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)) })} />
+              {block.buckets.length > 2 && (
+                <button type="button" title="Remove group" className="text-muted-foreground hover:text-red-300" onClick={() => {
+                  const buckets = block.buckets.filter((_, j) => j !== i);
+                  onChange({ ...block, buckets, items: block.items.map((it) => (it.bucketId === b.id ? { ...it, bucketId: buckets[0].id } : it)) });
+                }}><X className="h-4 w-4" /></button>
+              )}
+            </div>
+          ))}
+          {block.buckets.length < 6 && (
+            <button type="button" onClick={() => onChange({ ...block, buckets: [...block.buckets, { id: newId(), text: "" }] })} className="text-xs text-primary hover:underline">+ Add group</button>
+          )}
+        </div>
+      </div>
+      <div className="space-y-2">
+        <div className="text-[11px] text-muted-foreground">Items, each with the group it belongs in</div>
+        {block.items.map((it, i) => (
+          <div key={it.id} className="flex items-center gap-2">
+            <input className={cn(inputCls, "py-1.5")} placeholder={`Item ${i + 1}`} value={it.text}
+              onChange={(e) => onChange({ ...block, items: block.items.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)) })} />
+            <select className={cn(inputCls, "w-44 py-1.5")} value={it.bucketId}
+              onChange={(e) => onChange({ ...block, items: block.items.map((x, j) => (j === i ? { ...x, bucketId: e.target.value } : x)) })}>
+              {block.buckets.map((b, bi) => <option key={b.id} value={b.id}>{b.text || `Group ${bi + 1}`}</option>)}
+            </select>
+            {block.items.length > 2 && (
+              <button type="button" title="Remove item" className="text-muted-foreground hover:text-red-300"
+                onClick={() => onChange({ ...block, items: block.items.filter((_, j) => j !== i) })}><X className="h-4 w-4" /></button>
+            )}
+          </div>
+        ))}
+        {block.items.length < 30 && (
+          <button type="button" onClick={() => onChange({ ...block, items: [...block.items, { id: newId(), text: "", bucketId: block.buckets[0]?.id ?? "" }] })}
+            className="text-xs text-primary hover:underline">+ Add item</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Click the picture to mark a right place; resize or remove each mark below. */
+function HotspotEditor({ block, onChange }: { block: HotspotBlock; onChange: (b: Block) => void }) {
+  const api = useContext(BackendCtx);
+  const [url, setUrl] = useState<string | null>(null);
+  const [aspect, setAspect] = useState(0.66);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!block.mediaId) return;
+    api.get(`op=media-url&id=${encodeURIComponent(block.mediaId)}`).then((r) => setUrl(r.url ?? null)).catch(() => setUrl(null));
+  }, [api, block.mediaId]);
+  const style = (x: number, y: number, r: number) => ({ left: `${x - r}%`, top: `${(y - r) / aspect}%`, width: `${r * 2}%`, height: `${(r * 2) / aspect}%` });
+  return (
+    <div className="space-y-2">
+      <p className="text-[11px] text-muted-foreground">Click the picture to mark the right place (you can mark more than one). A tap anywhere inside a circle counts as right.</p>
+      {url ? (
+        <div ref={ref} className="relative max-w-xl cursor-crosshair overflow-hidden rounded-lg" onClick={(e) => {
+          if (!ref.current || block.spots.length >= 10) return;
+          const r = ref.current.getBoundingClientRect();
+          const x = ((e.clientX - r.left) / r.width) * 100, y = ((e.clientY - r.top) / r.width) * 100;
+          onChange({ ...block, spots: [...block.spots, { id: newId(), x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, r: 6 }] });
+        }}>
+          <img src={url} alt="" className="block w-full select-none" draggable={false}
+            onLoad={(e) => { const i = e.currentTarget; if (i.naturalWidth) setAspect(i.naturalHeight / i.naturalWidth); }} />
+          {block.spots.map((s, i) => (
+            <span key={s.id} className="absolute flex items-center justify-center rounded-full border-2 border-emerald-400 bg-emerald-400/25 text-[10px] font-bold text-white"
+              style={style(s.x, s.y, s.r)}>{i + 1}</span>
+          ))}
+        </div>
+      ) : <div className="text-xs text-muted-foreground">Loading picture…</div>}
+      {block.spots.map((s, i) => (
+        <div key={s.id} className="flex items-center gap-3 text-xs">
+          <span className="w-16">Place {i + 1}</span>
+          <span className="text-muted-foreground">size</span>
+          <input type="range" min={2} max={25} value={s.r} className="w-40"
+            onChange={(e) => onChange({ ...block, spots: block.spots.map((x, j) => (j === i ? { ...x, r: Number(e.target.value) } : x)) })} />
+          <button type="button" className="text-muted-foreground hover:text-red-300"
+            onClick={() => onChange({ ...block, spots: block.spots.filter((_, j) => j !== i) })}>Remove</button>
+        </div>
+      ))}
     </div>
   );
 }
@@ -696,20 +851,22 @@ export function Preview({ title, content, passMark, onExit, mediaUrl, from, bann
     },
     answer: async (blockId, answers) => {
       const found = findBlock(content, blockId);
-      if (!found || found.block.type !== "quiz") throw new Error("Not a quiz");
-      const r = gradeQuiz(found.block, answers, passMark);
+      if (!found || !isGraded(found.block)) throw new Error("Not a quiz or exercise");
+      const r = gradeBlock(found.block, answers, passMark);
       const prev = progress.current.get(blockId);
       touch(blockId, { score: Math.max(prev?.score ?? 0, r.score), completed_at: prev?.completed_at ?? (r.passed ? new Date().toISOString() : null) });
       return {
         ...snapshot(),
-        result: { ...r, passMark, questions: r.questions.map((q) => (r.passed ? q : { id: q.id, correct: q.correct, rightAnswers: [] })) },
+        result: { ...r, passMark, solution: r.passed ? r.solution : undefined, questions: r.questions.map((q) => (r.passed ? q : { id: q.id, correct: q.correct, rightAnswers: [] })) },
       };
     },
     acknowledge: async (blockId) => { touch(blockId, { completed_at: new Date().toISOString() }); return snapshot(); },
   }), [content, passMark, mediaUrl, backend]);
+  // What crew would get: answer keys stripped, exercises shuffled.
+  const learnerCopy = useMemo(() => forLearner(content), [content]);
 
   return (
-    <CoursePlayer title={title} from={from ?? backend.owner} content={content} passMark={passMark} initialProgress={[]} api={api}
+    <CoursePlayer title={title} from={from ?? backend.owner} content={learnerCopy} passMark={passMark} initialProgress={[]} api={api}
       onExit={onExit} exitLabel={banner ? "Back" : "Back to editing"}
       banner={banner ?? <div className="mt-4 rounded-xl border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-sm text-sky-200">
         Preview of the unsaved draft, as crew will see it. Nothing here is recorded.
