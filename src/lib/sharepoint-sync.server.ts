@@ -1023,7 +1023,15 @@ export function sharePointPushBlocked(target: string): boolean {
 }
 
 /** Push one app record to every enabled SharePoint sync for its target. */
-export async function pushRecordToSharePoint(target: string, id: string): Promise<void> {
+export async function pushRecordToSharePoint(
+  target: string,
+  id: string,
+  // create:false = only update items the record is already linked to; never POST a
+  // new one. The hourly permits backstop uses it, because a permit made in Polaris
+  // may have a hand-keyed twin in SharePoint that only the pull can link.
+  opts: { create?: boolean } = {},
+): Promise<void> {
+  const allowCreate = opts.create !== false;
   const table = TARGET_TABLE[target];
   if (!table) return;
   if (sharePointPushBlocked(target)) {
@@ -1105,14 +1113,23 @@ export async function pushRecordToSharePoint(target: string, id: string): Promis
         if (!spCol || !kv) continue;
         // A placeholder reference would match every other placeholder.
         if (kf === 'permit_number' && !_isRealPermitNumber(kv)) continue;
+        // These columns are not indexed, and Graph refuses a filter on an unindexed
+        // column unless asked with this header. Without it the lookup returned an
+        // error body, `value` was undefined, and the code fell through to POST — so
+        // every "is it already there?" check silently said no and made a duplicate.
         const r = await fetch(
           `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${list}/items?$filter=${encodeURIComponent(`fields/${spCol} eq '${String(kv).replace(/'/g, "''")}'`)}&$select=id`,
-          { headers: { Authorization: `Bearer ${token}` } });
+          { headers: { Authorization: `Bearer ${token}`, Prefer: 'HonorNonIndexedQueriesWarningMayFailRandomly' } });
+        // For permits a failed lookup must not turn into a POST (a duplicate); the
+        // row stays dirty and is retried.
+        if (!r.ok && target === 'permits') throw new Error(`lookup ${list} by ${spCol} → ${r.status} ${(await r.text()).slice(0, 200)}`);
         const d = await r.json() as any;
         spId = d.value?.[0]?.id ?? null;
         if (spId) break;
       }
     }
+
+    if (!spId && !allowCreate) continue;
 
     if (spId) {
       const pr = await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${list}/items/${spId}/fields`,
@@ -1149,8 +1166,10 @@ const DIRTY_TABLES = new Set(['yachts', 'permits', 'crew_members', 'small_boats'
 /** Ids of rows with an in-app edit not yet pushed to SharePoint. */
 async function dirtyIds(table: string): Promise<Set<string>> {
   if (!DIRTY_TABLES.has(table)) return new Set()
-  const { data, error } = await (supabaseAdmin as any).from(table)
-    .select('id, sharepoint_dirty_at').not('sharepoint_dirty_at', 'is', null).limit(2000)
+  // Paged: a single request is capped (PostgREST returns at most 1,000 rows), and
+  // with 2,000+ dirty permits the rows past the cap were silently NOT held back.
+  const { data, error } = await fetchAllRows(() => (supabaseAdmin as any).from(table)
+    .select('id, sharepoint_dirty_at').not('sharepoint_dirty_at', 'is', null).order('id'))
   // A missing column (migration not applied) must not stop the pull — the old
   // behaviour is simply restored until it is.
   if (error) return new Set()
@@ -1173,7 +1192,11 @@ async function dirtyIds(table: string): Promise<Set<string>> {
  * `max` bounds the Graph calls per tick — Cloudflare caps subrequests per
  * invocation, and a large backlog simply drains over successive ticks.
  */
-export async function pushDirtyRecords(target: string, max = 20): Promise<{ pushed: number; failed: number; remaining: number }> {
+export async function pushDirtyRecords(
+  target: string,
+  max = 20,
+  opts: { create?: boolean } = {},
+): Promise<{ pushed: number; failed: number; remaining: number }> {
   const table = TARGET_TABLE[target]
   if (!table || !DIRTY_TABLES.has(table)) return { pushed: 0, failed: 0, remaining: 0 }
   // Suppressed target: return before touching the queue. sharepoint_dirty_at stays
@@ -1181,9 +1204,21 @@ export async function pushDirtyRecords(target: string, max = 20): Promise<{ push
   // the push is re-enabled.
   if (sharePointPushBlocked(target)) return { pushed: 0, failed: 0, remaining: 0 }
   const db = supabaseAdmin as any
-  const { data, error } = await db.from(table)
+  let q = db.from(table)
     .select('id, sharepoint_dirty_at')
     .not('sharepoint_dirty_at', 'is', null)
+  if (target === 'permits') {
+    // Only permit types that have a SharePoint list. Exit/entry and Abu Dhabi
+    // permits have none, so their dirty flag can never clear; left in, they sat at
+    // the head of this oldest-first queue and would in time fill every slot.
+    const owned = (await getSpSyncs().catch(() => [] as SpSyncConfig[]))
+      .filter(s => s.enabled && s.syncTarget === 'permits')
+      .map(s => _permitTypeFromListName(s.listName))
+      .filter((t): t is string => !!t)
+    if (!owned.length) return { pushed: 0, failed: 0, remaining: 0 }
+    q = q.in('permit_type', owned)
+  }
+  const { data, error } = await q
     .order('sharepoint_dirty_at', { ascending: true })
     .limit(max + 1)
   if (error) return { pushed: 0, failed: 0, remaining: 0 }
@@ -1193,7 +1228,7 @@ export async function pushDirtyRecords(target: string, max = 20): Promise<{ push
   let pushed = 0, failed = 0
   for (const r of rows) {
     try {
-      await pushRecordToSharePoint(target, r.id)
+      await pushRecordToSharePoint(target, r.id, opts)
       pushed++
     } catch (e) {
       // Leave the flag set so the row is retried, and never let one bad record
@@ -1224,7 +1259,10 @@ export async function pushChangedRecords(): Promise<{ pushed: number }> {
     if (DIRTY_TABLES.has(table)) {
       // A generous cap here: this is the sweep that clears any backlog the
       // per-list ticks did not get through.
-      const r = await pushDirtyRecords(target, 100).catch(() => ({ pushed: 0 }));
+      // Permits: update linked items only. A permit with no SharePoint item yet is
+      // created by its list's own tick, AFTER the pull has had the chance to link it
+      // to a twin staff keyed into SharePoint by hand.
+      const r = await pushDirtyRecords(target, 100, { create: target !== 'permits' }).catch(() => ({ pushed: 0 }));
       pushed += r.pushed;
       continue;
     }
@@ -1283,12 +1321,21 @@ async function _syncWithConfig(cfg: SpConfig, sync: SpSyncConfig): Promise<{ syn
   // Push first, then pull. In-app edits have to leave before SharePoint's copy is
   // read back, or the pull overwrites them — the whole reason two-way sync never
   // worked when the push only ran hourly.
-  await pushDirtyRecords(sync.syncTarget).catch((e) =>
-    console.error('[sp-push] pre-pull push failed:', e instanceof Error ? e.message : String(e)))
+  //
+  // Permits are the exception: pull FIRST. The pull already holds back dirty rows
+  // (bulkPersist), so nothing staff changed is overwritten — and pulling first lets
+  // a permit created in Polaris be linked to the copy staff keyed into SharePoint by
+  // hand (the "twin") before the push would POST it as a second item.
+  if (sync.syncTarget !== 'permits') {
+    await pushDirtyRecords(sync.syncTarget).catch((e) =>
+      console.error('[sp-push] pre-pull push failed:', e instanceof Error ? e.message : String(e)))
+  }
 
   let result: { synced: number; errors: number; samples?: string[] }
   if (sync.syncTarget === 'permits') {
     result = await _syncPermits(merged)
+    await pushDirtyRecords(sync.syncTarget).catch((e) =>
+      console.error('[sp-push] post-pull push failed:', e instanceof Error ? e.message : String(e)))
   } else if (sync.syncTarget === 'small_boats') {
     result = await _syncSmallBoats(merged)
   } else if (sync.syncTarget === 'visa_applications') {
@@ -1400,7 +1447,10 @@ async function bulkPersist(
   table: string,
   updateById: Map<string, Record<string, any>>,
   insertByKey: Map<string, Record<string, any>>,
-  opts: { uniformColumns?: boolean } = {},
+  // keepDespiteDirty: rows to write even though they are dirty — a permit made in
+  // Polaris being linked to its hand-keyed SharePoint twin. It stays dirty, so the
+  // push that follows fills any column SharePoint left blank.
+  opts: { uniformColumns?: boolean; keepDespiteDirty?: Set<string> } = {},
 ): Promise<{ synced: number; errors: number; samples: string[] }> {
   const samples: string[] = []
   let synced = 0, errors = 0
@@ -1411,7 +1461,7 @@ async function bulkPersist(
   const skip = await dirtyIds(table)
   if (skip.size) {
     let held = 0
-    for (const id of [...updateById.keys()]) if (skip.has(String(id))) { updateById.delete(id); held++ }
+    for (const id of [...updateById.keys()]) if (skip.has(String(id)) && !opts.keepDespiteDirty?.has(String(id))) { updateById.delete(id); held++ }
     if (held) console.log(`[sp-pull] ${table}: held back ${held} row(s) with unpushed in-app edits`)
   }
   const addSample = (m: string) => { if (m && samples.length < 8 && !samples.includes(m)) samples.push(m) }
