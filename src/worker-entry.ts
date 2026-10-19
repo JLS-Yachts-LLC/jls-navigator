@@ -1770,6 +1770,15 @@ export default {
           .catch((e) => console.error('[sp-pushback] error:', e))
       )
 
+      // ── Hourly: re-point client vessels whose SharePoint folder link is
+      //    missing or in the old doubled "Shared Documents" tree. ──
+      ctx.waitUntil(
+        import('./lib/yacht-doc-sharepoint.server')
+          .then(({ repairVesselFolderLinks }) => repairVesselFolderLinks())
+          .then((r) => { if (r.checked) console.log(`[vessel-folder-repair] checked=${r.checked} fixed=${r.fixed} failed=${r.failed}`) })
+          .catch((e) => console.error('[vessel-folder-repair] error:', e instanceof Error ? e.message : String(e)))
+      )
+
       // ── Hourly: copy Polaris-captured package photos into the SharePoint
       //    image library, so it keeps a second copy of every photo. Backup
       //    only — Supabase holds the original and a failure just retries. ──

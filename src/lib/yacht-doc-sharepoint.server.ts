@@ -61,7 +61,7 @@ async function getItemByPath(siteId: string, token: string, path: string): Promi
  * on a normalised key and prefer the busiest candidate — otherwise a near-duplicate
  * ("Yacth"/"Yacht") can win at random and files land in an empty twin.
  */
-async function resolveVesselFolder(siteId: string, token: string, vesselName: string): Promise<string | null> {
+async function resolveVesselFolder(siteId: string, token: string, vesselName: string, opts: { exactOnly?: boolean } = {}): Promise<string | null> {
   const names = vesselNameCandidates(vesselName)
   if (!names.length) return null
   const folders = (await listChildren(siteId, token, 'Yacht')).filter(c => !!c.folder)
@@ -72,6 +72,7 @@ async function resolveVesselFolder(siteId: string, token: string, vesselName: st
     const exact = folders.filter(c => nameKey(String(c.name)) === want)
     if (exact.length) return String(pick(exact).name)
   }
+  if (opts.exactOnly) return null
   // …then a folder containing every word of one of them.
   for (const want of names) {
     const words = want.split(' ').filter(w => w.length > 1)
@@ -160,6 +161,49 @@ export async function sharePointDownloadUrl(itemId: string): Promise<string | nu
   if (!res.ok) return null
   const body = (await res.json()) as Record<string, any>
   return (body['@microsoft.graph.downloadUrl'] as string | undefined) ?? null
+}
+
+/**
+ * The vessel's own folder, Yacht/{vessel} — reusing one already filed under that
+ * name, else creating it — and its link. Called when a client vessel is added.
+ * `exactOnly` stops a new vessel ("Grace") being linked to another client's folder
+ * ("Amazing Grace") on a loose word match; the repair below matches loosely, the
+ * same way the Documents card picks the folder it files into.
+ */
+export async function ensureVesselSharePointFolder(vesselName: string, opts: { exactOnly?: boolean } = {}): Promise<string | null> {
+  const { token, siteId } = await spContext()
+  const folder = await resolveVesselFolder(siteId, token, vesselName, opts) ?? sanitizeSegment(vesselName, 'Unnamed Vessel')
+  return ensureFoldersAndGetUrl(siteId, token, ['Yacht', folder])
+}
+
+/**
+ * Hourly repair: re-point client vessels whose folder link is missing or went to
+ * the doubled "Shared Documents/Shared Documents/Yacht" tree the old folder
+ * creator used. The update marks the row dirty, so the next push carries the
+ * corrected link to the SharePoint Yachts list too. Matches nothing once fixed.
+ */
+export async function repairVesselFolderLinks(): Promise<{ checked: number; fixed: number; failed: number }> {
+  const { supabaseAdmin } = await import('@/integrations/supabase/client.server')
+  const { data: rows } = await (supabaseAdmin as any)
+    .from('yachts')
+    .select('id, vessel_name')
+    .eq('fleet', 'client')
+    .not('vessel_name', 'is', null)
+    .or('link_to_folder.ilike.*Shared%20Documents/Shared%20Documents*,and(link_to_folder.is.null,created_by.not.is.null)')
+    .limit(20)
+  let fixed = 0, failed = 0
+  for (const r of (rows ?? []) as { id: string; vessel_name: string }[]) {
+    try {
+      const url = await ensureVesselSharePointFolder(r.vessel_name)
+      if (!url) { failed++; continue }
+      await (supabaseAdmin as any).from('yachts').update({ link_to_folder: url }).eq('id', r.id)
+      fixed++
+    } catch (e) {
+      failed++
+      console.error(`[vessel-folder-repair] ${r.vessel_name}:`, e instanceof Error ? e.message : String(e))
+    }
+  }
+  return { checked: rows?.length ?? 0, fixed, failed }
 }
 
 /** Create a subfolder in the vessel's folder so a Polaris folder has a twin. */

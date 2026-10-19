@@ -2835,40 +2835,6 @@ export async function renewSharePointWebhook(): Promise<string> {
   return newExpiry
 }
 
-// ─── Folder creation: new yacht → SharePoint Documents/Yacht/{name} ───────────
-
-export async function createYachtFolderInSharePoint(vesselName: string): Promise<string | null> {
-  const cfg = await getSpConfig().catch(() => null)
-  if (!cfg) return null
-
-  const token = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret)
-  const siteId = await resolveSpSite(token, cfg.tenantUrl, cfg.siteUrl)
-
-  // Get the default document library drive
-  const driveRes = await fetch(
-    `https://graph.microsoft.com/v1.0/sites/${siteId}/drive`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  )
-  const drive = await driveRes.json() as Record<string, any>
-  if (!drive.id) return null
-
-  // Create folder inside Shared Documents/Yacht/
-  const res = await fetch(
-    `https://graph.microsoft.com/v1.0/sites/${siteId}/drives/${drive.id}/root:/Shared%20Documents/Yacht:/children`,
-    {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: vesselName,
-        folder: {},
-        '@microsoft.graph.conflictBehavior': 'rename',
-      }),
-    }
-  )
-  const folder = await res.json() as Record<string, any>
-  return folder.webUrl ?? null
-}
-
 // ─── One-time setup: create the "Crew Sign On Off" SharePoint list + sync config ─
 // Idempotent. Creates the list with fixed internal column names so the field
 // mapping below is deterministic, then registers an enabled outbound sync config.

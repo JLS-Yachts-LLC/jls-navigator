@@ -18,9 +18,9 @@ const doCreateSpFolder = createServerFn({ method: 'POST' })
   .inputValidator((d: { vesselName: string; yachtId: string }) => d)
   .handler(async ({ data }) => {
     try {
-      const { createYachtFolderInSharePoint } = await import('@/lib/sharepoint-sync.server')
+      const { ensureVesselSharePointFolder } = await import('@/lib/yacht-doc-sharepoint.server')
       const { supabaseAdmin } = await import('@/integrations/supabase/client.server')
-      const folderUrl = await createYachtFolderInSharePoint(data.vesselName)
+      const folderUrl = await ensureVesselSharePointFolder(data.vesselName, { exactOnly: true })
       if (folderUrl) {
         await supabaseAdmin.from('yachts').update({ link_to_folder: folderUrl } as never).eq('id', data.yachtId)
       }
