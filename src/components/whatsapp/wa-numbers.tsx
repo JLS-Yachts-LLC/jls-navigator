@@ -155,8 +155,8 @@ function LineCard({ line, members, people, canManage, isGlobalAdmin, onChanged }
         </p>
       )}
 
-      {/* The one-time imports after connecting */}
-      {!line.is_default && line.onboarded_at && (
+      {/* The one-time imports after connecting — only a number still in the WhatsApp Business app has any */}
+      {!line.is_default && line.onboarded_at && line.coexistence && (
         <div className="mt-2 grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
           <p>
             Contacts: {line.contacts_sync_requested_at ? <span className="text-foreground">requested {fmtDate(line.contacts_sync_requested_at)}</span>
