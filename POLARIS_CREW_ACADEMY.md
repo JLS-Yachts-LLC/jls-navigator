@@ -1,7 +1,38 @@
 # Polaris — Crew Academy (training module) — PLAN
 
-Status: **Phases 1–4 done and live, 19 Oct 2026** — see "what was built" below.
+Status: **Phases 1–5 done and live, 19 Oct 2026** (SCORM import not built — see decision 7).
 Decisions taken and still open are at the bottom.
+
+## Phase 5 — what was built (19 Oct 2026)
+
+- **Reminder emails** (`lib/academy/reminders.ts` rules + tests, `reminders.server.ts`, 5-minute
+  tick, migration `20261019200000_crew_academy_reminders.sql`): `enrolled` (only enrolments from
+  the last 7 days — never announced late), `due_soon` (due today to 3 days out), `overdue-0..3`
+  (day after due, then weekly, 4 at most); one email per crew member listing everything;
+  refreshers worded as such. Each (enrolment, kind) recorded once in `academy_reminders` as
+  sent / held / failed. **Gated by the vessel's Automatic messages switch** (`client_auto_messages`,
+  the 9 Oct 2026 rule): while off → `held`, never sent later; CLIENT_EMAIL_ENABLED on top. The
+  portal Crew tab tells managers whether reminders are on.
+- **AI quiz drafting** (`lib/academy/quiz-draft.server.ts`, op `draft-quiz` in the shared
+  authoring ops — JLS and vessel creators): "Draft quiz with AI" on a lesson saves the draft,
+  sends the lesson's reading text and up to two of its PDFs (≤20 MB) to `claude-opus-5-5`
+  (effort medium, strict `record_questions` tool, server-side fallback `default`), and appends
+  the answer as a new quiz block titled "Quiz (AI draft — check before publishing)". Nothing is
+  saved or published automatically. Uses the Worker's `ANTHROPIC_API_KEY` (set).
+- **Offline courses** (`components/academy/academy-offline.ts`, `public/academy-sw.js`): the
+  service worker (scope /academy) keeps only the page shell + built assets; "Save for offline"
+  stores a course's payload and every file in Cache Storage (asks first above 50 MB); the
+  player prefers the saved files even online; opening lessons, video progress and sign-offs
+  made with no signal are queued and sent (in order) when signal returns, and applied locally
+  meanwhile; quizzes/exercises need signal (answer keys stay on the server). Store belongs to
+  one login: wiped on sign-out and when a different person signs in on the phone. With an
+  expired sign-in and no signal, the page still opens the saved courses.
+- **Verified live (build 875c735):** AI drafted 4 sound, lesson-grounded questions in 10 s (all
+  with valid answers); unknown lesson refused; reminders for a due-tomorrow enrolment recorded as
+  `held` (AQUILA's automatic messages are off) and nothing sent; course payload carries file
+  sizes; `academy-sw.js` served. Test data deleted. **Not tested:** offline behaviour on a real
+  phone (needs a device: save a course, go to flight mode, take it, come back online), and a
+  reminder actually being *sent* (needs a vessel with Automatic messages on).
 
 ## Phase 4 — what was built (19 Oct 2026)
 
