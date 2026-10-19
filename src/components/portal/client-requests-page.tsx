@@ -6,13 +6,14 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { nudgePortalPush } from "@/lib/portal/push-nudge";
-import { Loader2, Phone, Plus, RefreshCw, Save, Send, Trash2 } from "lucide-react";
+import { Download, Loader2, Phone, Plus, RefreshCw, Save, Send, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { REQUEST_CATEGORIES, REQUEST_STATUS_STYLE } from "./captain-portal";
 import { StaffChatsPanel } from "./staff-chat";
+import { SignedAnchor } from "@/components/ui/signed-file";
 
 const db = supabase as any;
 
@@ -198,6 +199,13 @@ function Thread({ requestId, staffName }: { requestId: string; staffName: string
   const [messages, setMessages] = useState<Msg[]>([]);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  // A Maritime Declaration of Health raises its request on submission: show its signed PDF here.
+  const [healthPdf, setHealthPdf] = useState<string | null>(null);
+  useEffect(() => {
+    setHealthPdf(null);
+    void db.from("health_declarations").select("pdf_ref").eq("captain_request_id", requestId).maybeSingle()
+      .then(({ data }: { data: { pdf_ref: string | null } | null }) => setHealthPdf(data?.pdf_ref ?? null));
+  }, [requestId]);
 
   const load = useCallback(async () => {
     const { data } = await db.from("captain_request_messages")
@@ -222,6 +230,12 @@ function Thread({ requestId, staffName }: { requestId: string; staffName: string
 
   return (
     <div className="mt-4 rounded-xl border border-border bg-card p-4">
+      {healthPdf && (
+        <SignedAnchor stored={healthPdf}
+          className="mb-3 inline-flex items-center gap-1.5 rounded-lg border border-border bg-muted/30 px-3 py-1.5 text-xs font-medium text-foreground transition hover:border-primary/50 aria-disabled:opacity-50">
+          <Download className="h-3.5 w-3.5" /> Declaration of Health PDF
+        </SignedAnchor>
+      )}
       <div className="label-caps mb-3">Conversation with the captain</div>
       <div className="max-h-72 space-y-2.5 overflow-y-auto pr-1">
         {messages.length === 0 && <p className="py-2 text-xs text-muted-foreground">No messages yet.</p>}
