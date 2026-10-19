@@ -289,7 +289,8 @@ export async function lineAdoptHandler(request: Request): Promise<Response> {
   if (want.length < 7) return json({ error: "This entry has no phone number to look for." }, 400);
 
   // Which accounts can the token reach? The office account, plus any it was granted.
-  const wabas = new Set<string>([env("WHATSAPP_WABA_ID")].filter(Boolean));
+  // A WhatsApp account id already noted on the pending entry is checked first.
+  const wabas = new Set<string>([pending.waba_id, env("WHATSAPP_WABA_ID")].filter(Boolean));
   try { for (const id of await grantedWabaIds(token)) wabas.add(id); } catch (e) {
     console.warn("[wa-adopt] couldn't list the token's accounts", metaFailure(e));
   }
