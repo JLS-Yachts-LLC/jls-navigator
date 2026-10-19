@@ -127,6 +127,8 @@ export const NAV_GROUPS: NavGroup[] = [
       // Open to all staff (every department raises these); the Warehouse / Agency team manage them inside the page.
       { label: "Warehouse Requests", icon: "package-import", screen: "route-warehouse-requests", route: "/warehouse-requests" },
       { label: "Bunkering", icon: "gas-station", screen: "route-bunkering", route: "/bunkering" },
+      { label: "Procurement", icon: "shopping-bag", screen: "route-procurement", route: "/procurement" },
+      { label: "Small Boat Registration", module: "agency", icon: "file-certificate", screen: "route-small-boat-registration", route: "/small-boat-registration" },
       { label: "Berth Billing", module: "finance", icon: "receipt-2", screen: "berth-billing", roles: ["global_admin"] },
       { label: "Orbit", module: "orbit", icon: "orbit", screen: "orbit" },
       { label: "Orbit 2", module: "orbit", icon: "chart-donut", screen: "orbit2" },
