@@ -127,7 +127,7 @@ export async function buildHealthDeclarationPdf(input: HealthPdfInput): Promise<
       blank(x, label, value, w, size)
       x += w + 10
     }
-    y -= size * 2.1
+    y -= size * 1.95
   }
 
   /** Yes / No boxes, the chosen one crossed. Returns the x after them. */
@@ -206,7 +206,7 @@ export async function buildHealthDeclarationPdf(input: HealthPdfInput): Promise<
 
   // ── Persons joined ────────────────────────────────────────────────────────
   para('Upon request of the competent authority at the port of arrival, list crew members, passengers or other persons who have joined ship / vessel since international voyage began or within past thirty days, whichever is shorter, including all ports / countries visited in this period (add additional names to the attached schedule):', { gap: 4 })
-  const JOINED_ON_PAGE = 6
+  const JOINED_ON_PAGE = 4
   if (joined.length === 0) para('None.', { f: italic, color: MUTED, x: M + 10 })
   for (const [i, p] of joined.slice(0, JOINED_ON_PAGE).entries()) {
     const from = [0, 1, 2].map((n) => p.joined_from?.[n] ?? '')
@@ -239,10 +239,10 @@ export async function buildHealthDeclarationPdf(input: HealthPdfInput): Promise<
   para(`Note: ${SYMPTOMS_NOTE}`, { size: 7, color: MUTED, gap: 8 })
 
   // ── Declaration & signatures ─────────────────────────────────────────────
-  ensure(150)
+  ensure(125)
   para(DECLARATION_TEXT, { size: 8.5, gap: 8 })
   const sigTop = y
-  const sigBoxW = 200, sigBoxH = 62
+  const sigBoxW = 200, sigBoxH = 50
   const sw = Math.min(sigBoxW, (signature.width / signature.height) * sigBoxH)
   page.drawImage(signature, { x: M + 40, y: sigTop - sigBoxH, width: sw, height: (sw * signature.height) / signature.width })
   if (stamp) {
