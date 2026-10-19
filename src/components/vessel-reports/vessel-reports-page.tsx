@@ -33,7 +33,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { cn } from "@/lib/utils";
 import {
   VESSEL_REPORTS, REPORT_DAYS, describeReportSchedule, isEmail, reportLabel,
-  type ReportKey, type ReportSchedule,
+  hasFrequency, frequencyOf, scheduleFor,
+  type ReportKey, type ReportSchedule, type ReportFrequency,
 } from "@/lib/vessel-reports/catalogue";
 
 const db = supabase as any;
@@ -256,15 +257,15 @@ function VesselMatrix({ yachts, subs, onOpen, onChanged, canEdit }: {
   const rows = yachts.filter((y) => (scope === "all" || byVessel.has(y.id)) && (y.vessel_name ?? "").toLowerCase().includes(q.trim().toLowerCase()));
   const toggleSel = (id: string) => setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
-  async function bulkOptIn(key: ReportKey) {
+  async function bulkOptIn(key: ReportKey, frequency?: ReportFrequency) {
     const def = VESSEL_REPORTS.find((r) => r.key === key)!;
     const ids = [...selected].filter((id) => !byVessel.get(id)?.has(key));
     if (!ids.length) { toast.message(`Those vessels already have ${def.label}.`); return; }
     setBusy(true);
-    const { error } = await db.from("vessel_report_subscriptions").insert(ids.map((id) => ({ yacht_id: id, report_key: key, schedule: def.defaultSchedule })));
+    const { error } = await db.from("vessel_report_subscriptions").insert(ids.map((id) => ({ yacht_id: id, report_key: key, schedule: scheduleFor(key, frequency) })));
     setBusy(false);
     if (error) toast.error(error.message);
-    else { toast.success(`${def.label} set up for ${ids.length} vessel${ids.length === 1 ? "" : "s"} — switched off until you add recipients and turn it on.`); setSelected(new Set()); onChanged(); }
+    else { toast.success(`${def.label}${frequency ? ` (${frequency})` : ""} set up for ${ids.length} vessel${ids.length === 1 ? "" : "s"} — switched off until you add recipients and turn it on.`); setSelected(new Set()); onChanged(); }
   }
   async function bulkClient(on: boolean) {
     const ids = subs.filter((s) => selected.has(s.yacht_id) && s.client_can_manage !== on).map((s) => s.id);
@@ -292,11 +293,18 @@ function VesselMatrix({ yachts, subs, onOpen, onChanged, canEdit }: {
         {canEdit && selected.size > 0 && (
           <div className="ml-auto flex flex-wrap items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-2 py-1 text-xs">
             <span className="px-1 font-medium">{selected.size} selected</span>
-            {VESSEL_REPORTS.map((r) => (
-              <Button key={r.key} size="sm" variant="outline" className="h-7 gap-1 text-xs" disabled={busy} onClick={() => void bulkOptIn(r.key)}>
-                <Plus className="h-3 w-3" /> Opt in to {r.label}
-              </Button>
-            ))}
+            {VESSEL_REPORTS.flatMap((r) => hasFrequency(r.key)
+              // Weekly or monthly is chosen as the vessels are opted in.
+              ? (["weekly", "monthly"] as const).map((f) => (
+                <Button key={`${r.key}-${f}`} size="sm" variant="outline" className="h-7 gap-1 text-xs" disabled={busy} onClick={() => void bulkOptIn(r.key, f)}>
+                  <Plus className="h-3 w-3" /> Opt in to {f === "weekly" ? "Weekly" : "Monthly"} report
+                </Button>
+              ))
+              : [(
+                <Button key={r.key} size="sm" variant="outline" className="h-7 gap-1 text-xs" disabled={busy} onClick={() => void bulkOptIn(r.key)}>
+                  <Plus className="h-3 w-3" /> Opt in to {r.label}
+                </Button>
+              )])}
             <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" disabled={busy} onClick={() => void bulkClient(true)}>
               <UserCheck className="h-3 w-3" /> Let client manage
             </Button>
@@ -343,6 +351,7 @@ function VesselMatrix({ yachts, subs, onOpen, onChanged, canEdit }: {
                         <td key={r.key} className="px-3 py-2.5">
                           <button type="button" onClick={() => onOpen(y.id)} className="text-left">
                             <span className={cn("rounded-full px-2 py-0.5 text-[10.5px] font-semibold", c.cls)}>{c.label}</span>
+                            {s && hasFrequency(r.key) && <span className="ml-1 text-[10.5px] font-semibold text-foreground">{frequencyOf(s.schedule) === "monthly" ? "Monthly" : "Weekly"}</span>}
                             {s && (
                               <div className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">
                                 <div>{[s.send_email && s.recipients.length ? `${s.recipients.length} by email` : null, s.send_whatsapp && s.wa_contact_ids.length ? `${s.wa_contact_ids.length} by WhatsApp` : null].filter(Boolean).join(" · ") || "No recipients"} · {describeReportSchedule(s.schedule)}</div>
@@ -501,9 +510,9 @@ function ReportRow({ yachtId, vessel, report, sub, onChanged, canEdit, wa }: {
   const savedReachable = !!sub && ((sub.send_email && sub.recipients.length > 0) || (sub.send_whatsapp && (sub.wa_contact_ids ?? []).length > 0));
   const edits = { recipients, cc, schedule, send_email: sendEmail, send_whatsapp: sendWa, wa_contact_ids: waIds };
 
-  async function optIn() {
+  async function optIn(frequency?: ReportFrequency) {
     setBusy("optin");
-    const { error } = await db.from("vessel_report_subscriptions").insert({ yacht_id: yachtId, report_key: report.key, schedule: report.defaultSchedule });
+    const { error } = await db.from("vessel_report_subscriptions").insert({ yacht_id: yachtId, report_key: report.key, schedule: scheduleFor(report.key, frequency) });
     setBusy(null);
     if (error) toast.error(error.message); else onChanged();
   }
@@ -569,9 +578,16 @@ function ReportRow({ yachtId, vessel, report, sub, onChanged, canEdit, wa }: {
           <div className="text-xs text-muted-foreground">{report.description}</div>
         </div>
         <span className="text-xs text-muted-foreground">Not opted in</span>
-        {canEdit && <Button size="sm" variant="outline" disabled={busy === "optin"} onClick={() => void optIn()} className="gap-1.5">
-          {busy === "optin" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />} Opt in
-        </Button>}
+        {canEdit && (hasFrequency(report.key)
+          // Weekly is the standard; very small or quiet boats go monthly.
+          ? (["weekly", "monthly"] as const).map((f) => (
+            <Button key={f} size="sm" variant="outline" disabled={busy === "optin"} onClick={() => void optIn(f)} className="gap-1.5">
+              {busy === "optin" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />} Opt in — {f === "weekly" ? "Weekly" : "Monthly"}
+            </Button>
+          ))
+          : <Button size="sm" variant="outline" disabled={busy === "optin"} onClick={() => void optIn()} className="gap-1.5">
+            {busy === "optin" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />} Opt in
+          </Button>)}
       </div>
     );
   }

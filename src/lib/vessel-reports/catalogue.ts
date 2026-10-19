@@ -60,7 +60,20 @@ export const REPORT_DAYS: Array<{ value: ReportDay; label: string }> = [
   { value: "monthly", label: "1st of each month" },
 ];
 
-export const reportLabel = (key: string) => VESSEL_REPORTS.find((r) => r.key === key)?.label ?? key;
+/**
+ * Reports a vessel takes either weekly or monthly — chosen when the vessel is
+ * opted in (Mike: weekly is the standard, very small boats monthly). Monthly
+ * means the 1st of each month, and the report then covers a month, not a week.
+ */
+export type ReportFrequency = "weekly" | "monthly";
+export const hasFrequency = (key: ReportKey) => key === "weekly_operations";
+export const frequencyOf = (s: ReportSchedule): ReportFrequency => (s.day === "monthly" ? "monthly" : "weekly");
+export function scheduleFor(key: ReportKey, frequency?: ReportFrequency): ReportSchedule {
+  const def = VESSEL_REPORTS.find((r) => r.key === key)!.defaultSchedule;
+  return frequency === "monthly" ? { ...def, day: "monthly" } : def;
+}
+
+export const reportLabel =(key: string) => VESSEL_REPORTS.find((r) => r.key === key)?.label ?? key;
 
 export function describeReportSchedule(s: ReportSchedule): string {
   const day = REPORT_DAYS.find((d) => d.value === s.day)?.label ?? s.day;
