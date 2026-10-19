@@ -30,6 +30,12 @@ Decisions taken and still open are at the bottom.
   bar, blocks, quiz retry, sign-off, completion banner. API `/api/academy` ops course / media /
   viewed / video / answer / acknowledge; the version is pinned on first open. A failed quiz shows
   which questions were wrong but not the right answers; a pass shows answers + explanations.
+- **Verified live (build a971f02)** with a throwaway learner + course on AQUILA (deleted after):
+  course content arrives with no answer keys or explanations; a wrong answer scores 50% and shows
+  no right answers; the retry passes and shows them; the sign-off completes the course (status
+  completed, score 100, refresher expiry +12 months, attempts and activity recorded); another
+  enrolment id, a file not in the course, `/api/academy-admin` and `/api/portal/academy` are all
+  refused to the learner. NOT click-tested in a browser: the course creator and the portal section.
 - **Not yet:** groups and group enrolment, a vessel's own courses, reports, drag-and-drop blocks,
   certificates, reminders (Phases 3–5). Nothing has been tried by a real vessel yet.
 
