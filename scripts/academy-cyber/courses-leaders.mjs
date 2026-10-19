@@ -172,7 +172,7 @@ export const OFFICERS = {
             - Backups ran — and one file was actually restored as a test.
             - Leavers' accounts disabled; joiners have accounts, MFA and the crew course done.
             - Crew Wi-Fi password changed after crew changes.
-            - Removable media log reviewed and signed.
+            - Removable media log checked — it should have been reviewed every week.
             - Anti-malware up to date on the scanning PC.
 
             **Drills — at least twice a year.** A cyber drill can be a 30-minute tabletop in the mess: read out a scenario, and walk through who does what. Ideas: ransomware on the office PC mid-charter; GPS spoofed on approach; a fake payroll email reaching all crew. Record it like any other drill, and fix what didn't work.
@@ -186,7 +186,7 @@ export const OFFICERS = {
             ["Change the crew Wi-Fi password", 1],
             ["Disable leavers' accounts", 1],
             ["Run a cyber drill", 2],
-            ["Review the removable media log", 0],
+            ["Check anti-malware is up to date on the scanning PC", 0],
           ]),
           doc("p2-pocket-cards.pdf", "Pocket cards for your crew — fill in your vessel's contacts, print and cut"),
           ack("I understand my part as an officer / Head of Department: managing joiners and leavers, removable media, contractors and remote access, responding quickly when something is reported, and keeping the monthly checks and drills going."),
