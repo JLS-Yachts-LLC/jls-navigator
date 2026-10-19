@@ -1,228 +1,304 @@
 /**
- * Maritime Declaration of Health — the PDF JLS receives (and passes on to Abu
- * Dhabi Ports), laid out like the authority's own form: the Abu Dhabi Ports
- * logo, the ship and voyage particulars, ports of call, persons who joined, the
- * health questions answered YES / NO, the symptoms note, and the master's
- * declaration with signature and (if the ship has one) its stamp. Anything that
- * doesn't fit on the form — more than three joiners, the particulars for a
- * "yes" — goes on the attached schedule, as the form itself instructs.
+ * Maritime Declaration of Health — the PDF the master signs in the Client
+ * Portal, laid out like Abu Dhabi Ports' own form (the IHR 2005 Annex 8 model):
+ * the Abu Dhabi Ports logo, the particulars, ports of call, persons joined, the
+ * nine health questions, the symptoms note, the declaration with the master's
+ * signature and ship's stamp, the surgeon's countersignature line, and a second
+ * page carrying the schedule — the details behind every yes. Built with pdf-lib.
  */
-import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
-import { winAnsiSafe } from "@/lib/pdf-winansi";
-import { ABU_DHABI_PORTS_LOGO_JPG } from "@/lib/portal/assets/abu-dhabi-ports-logo";
+import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFPage } from 'pdf-lib'
+import { ABU_DHABI_PORTS_LOGO_JPG } from '@/lib/portal/assets/abu-dhabi-ports-logo'
 import {
-  DECLARATION_TEXT, HEALTH_QUESTIONS, SYMPTOMS_NOTE,
+  DECLARATION_TEXT, HEALTH_QUESTIONS, SYMPTOMS_NOTE, detailsKey,
   type HealthAnswers, type JoinedPerson, type PortOfCall,
-} from "@/lib/portal/health-declaration";
+} from '@/lib/portal/health-declaration'
 
-export type HealthDeclarationPdfInput = {
-  port_of_arrival: string | null; arrival_date: string | null;
-  ship_name: string | null; imo_no: string | null; flag: string | null; master_name: string | null;
-  gross_tonnage: string | null; surgeon_name: string | null;
-  arriving_from: string | null; sailing_to: string | null;
-  sanitation_cert_carried: string | null; sanitation_cert_issued_at: string | null; sanitation_cert_date: string | null;
-  reinspection_required: string | null; visited_affected_area: string | null;
-  affected_area_port: string | null; affected_area_date: string | null;
-  ports_of_call: PortOfCall[]; joined_persons: JoinedPerson[];
-  crew_count: number | null; passenger_count: number | null;
-  answers: HealthAnswers; particulars: string | null;
-  signedOn: string; reference?: string | null;
-  signaturePng: Uint8Array; stamp?: Uint8Array | null;
-};
+const INK = rgb(0.08, 0.09, 0.11)
+const MUTED = rgb(0.4, 0.42, 0.46)
+const RULE = rgb(0.72, 0.74, 0.78)
+const FILL = rgb(0.05, 0.16, 0.42)
+const RED = rgb(0.7, 0.1, 0.1)
 
-const W = 595.28, H = 841.89, M = 48, BOTTOM = 60;
-const INK = rgb(0.08, 0.09, 0.11), MUTED = rgb(0.4, 0.42, 0.46), RULE = rgb(0.55, 0.57, 0.6), FILL = rgb(0.05, 0.25, 0.55);
+const W = 595.28
+const H = 841.89
+const M = 40
 
-const b64 = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
-const isPng = (b: Uint8Array) => b[0] === 0x89 && b[1] === 0x50;
-export const fmtDay = (d: string | null | undefined) =>
-  d ? new Date(`${d.slice(0, 10)}T00:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }) : "";
-const yn = (v: string | null | undefined) => (v === "yes" ? "YES" : v === "no" ? "NO" : "");
+const b64 = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0))
 
-function wrap(text: string, font: PDFFont, size: number, width: number): string[] {
-  const out: string[] = [];
-  for (const para of winAnsiSafe(text).split(/\r?\n/)) {
-    let line = "";
-    for (const word of para.split(/\s+/)) {
-      const next = line ? `${line} ${word}` : word;
-      if (font.widthOfTextAtSize(next, size) <= width || !line) line = next;
-      else { out.push(line); line = word; }
-    }
-    out.push(line);
-  }
-  return out;
+/** Helvetica only encodes WinAnsi: fold typographic punctuation and drop anything it can't draw. */
+function safe(s: unknown): string {
+  return String(s ?? '')
+    .replace(/[‘’‚′]/g, "'").replace(/[“”„″]/g, '"')
+    .replace(/[–—−]/g, '-').replace(/…/g, '...').replace(/[\r\t]/g, ' ')
+    .normalize('NFC')
+    .replace(/[^\n\x20-\x7E\xA0-\xFF]/g, '?')
 }
 
-export async function buildHealthDeclarationPdf(d: HealthDeclarationPdfInput): Promise<Uint8Array> {
-  const pdf = await PDFDocument.create();
-  pdf.setTitle(`Maritime Declaration of Health — ${winAnsiSafe(d.ship_name ?? "")}`);
-  pdf.setAuthor("JLS Yachts Client Portal");
-  const [font, bold, italic, logo] = await Promise.all([
-    pdf.embedFont(StandardFonts.Helvetica), pdf.embedFont(StandardFonts.HelveticaBold),
-    pdf.embedFont(StandardFonts.HelveticaOblique), pdf.embedJpg(b64(ABU_DHABI_PORTS_LOGO_JPG)),
-  ]);
-  const signature = await pdf.embedPng(d.signaturePng);
-  const stamp: PDFImage | null = d.stamp?.length ? await (isPng(d.stamp) ? pdf.embedPng(d.stamp) : pdf.embedJpg(d.stamp)) : null;
+const fmtDate = (d: string | null | undefined) =>
+  d ? new Date(`${String(d).slice(0, 10)}T00:00:00Z`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' }) : ''
 
-  let page: PDFPage = pdf.addPage([W, H]);
-  let y = H - M;
-  const pages: PDFPage[] = [page];
-  const newPage = () => { page = pdf.addPage([W, H]); pages.push(page); y = H - M; };
-  const ensure = (h: number) => { if (y - h < BOTTOM) newPage(); };
-  const text = (s: string, x: number, yy: number, size = 9, f: PDFFont = font, color = INK) =>
-    page.drawText(winAnsiSafe(s), { x, y: yy, size, font: f, color });
-  const para = (s: string, size = 9, f: PDFFont = font, color = INK, x = M, width = W - 2 * M, lead = 1.35) => {
-    for (const line of wrap(s, f, size, width)) { ensure(size * lead); text(line, x, y - size, size, f, color); y -= size * lead; }
-  };
+export type HealthPdfInput = {
+  form: Record<string, any>
+  signaturePng: Uint8Array
+  stamp: Uint8Array | null
+  submittedOn: string // yyyy-mm-dd
+  signedBy: string
+  late: boolean
+  dueDate: string | null
+}
 
-  /** A row of "Label: value____" fields sharing the line, each with its share of the width. */
-  const fields = (items: Array<[label: string, value: string | number | null | undefined, share?: number]>) => {
-    ensure(22);
-    const total = items.reduce((s, [, , sh]) => s + (sh ?? 1), 0);
-    let x = M;
-    for (const [label, value, share] of items) {
-      const w = ((W - 2 * M) * (share ?? 1)) / total;
-      const lw = bold.widthOfTextAtSize(winAnsiSafe(label), 8) + 4;
-      text(label, x, y - 12, 8, bold, MUTED);
-      let v = winAnsiSafe(value == null ? "" : String(value));
-      while (v && font.widthOfTextAtSize(v, 9.5) > w - lw - 8) v = v.slice(0, -1);
-      text(v, x + lw, y - 12, 9.5, font, FILL);
-      page.drawLine({ start: { x: x + lw, y: y - 14.5 }, end: { x: x + w - 8, y: y - 14.5 }, thickness: 0.5, color: RULE });
-      x += w;
+export async function buildHealthDeclarationPdf(input: HealthPdfInput): Promise<Uint8Array> {
+  const { form } = input
+  const answers = (form.answers ?? {}) as HealthAnswers
+  const ports = ((form.ports_of_call ?? []) as PortOfCall[]).filter((p) => p.port?.trim())
+  const joined = ((form.joined_persons ?? []) as JoinedPerson[]).filter((p) => p.name?.trim())
+
+  const pdf = await PDFDocument.create()
+  pdf.setTitle(`Maritime Declaration of Health — ${form.ship_name ?? ''}`)
+  pdf.setSubject('Maritime Declaration of Health (IHR 2005, Annex 8) — Abu Dhabi Ports')
+  pdf.setProducer('Polaris — JLS Yachts')
+  const font = await pdf.embedFont(StandardFonts.Helvetica)
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold)
+  const italic = await pdf.embedFont(StandardFonts.HelveticaOblique)
+  const logo = await pdf.embedJpg(b64(ABU_DHABI_PORTS_LOGO_JPG))
+  const embed = async (bytes: Uint8Array): Promise<PDFImage> =>
+    bytes[0] === 0x89 ? pdf.embedPng(bytes) : pdf.embedJpg(bytes)
+  const signature = await embed(input.signaturePng)
+  const stamp = input.stamp ? await embed(input.stamp).catch(() => null) : null
+
+  let page: PDFPage = pdf.addPage([W, H])
+  let y = H - M
+
+  const newPage = () => { page = pdf.addPage([W, H]); y = H - M }
+  const ensure = (h: number) => { if (y - h < M + 20) newPage() }
+
+  function wrap(text: string, f: PDFFont, size: number, width: number): string[] {
+    const out: string[] = []
+    for (const para of safe(text).split('\n')) {
+      let line = ''
+      for (const word of para.split(/\s+/).filter(Boolean)) {
+        const next = line ? `${line} ${word}` : word
+        if (f.widthOfTextAtSize(next, size) <= width) { line = next; continue }
+        if (line) out.push(line)
+        // A single word longer than the line is cut to fit.
+        let w = word
+        while (f.widthOfTextAtSize(w, size) > width && w.length > 1) {
+          let cut = w.length - 1
+          while (cut > 1 && f.widthOfTextAtSize(w.slice(0, cut), size) > width) cut--
+          out.push(w.slice(0, cut)); w = w.slice(cut)
+        }
+        line = w
+      }
+      out.push(line)
     }
-    y -= 22;
-  };
-  const heading = (s: string) => { ensure(30); y -= 8; text(s, M, y - 11, 11, bold); y -= 18; };
-  const table = (cols: Array<[string, number]>, rows: string[][]) => {
-    const total = cols.reduce((s, [, w]) => s + w, 0);
-    const xs: number[] = []; let acc = M;
-    for (const [, w] of cols) { xs.push(acc); acc += ((W - 2 * M) * w) / total; }
-    const line = (cells: string[], f: PDFFont, color = INK) => {
-      ensure(16);
-      cells.forEach((c, i) => {
-        const w = i + 1 < xs.length ? xs[i + 1] - xs[i] : W - M - xs[i];
-        let v = winAnsiSafe(c);
-        while (v && f.widthOfTextAtSize(v, 9) > w - 6) v = v.slice(0, -1);
-        text(v, xs[i] + 3, y - 11, 9, f, color);
-      });
-      page.drawLine({ start: { x: M, y: y - 15 }, end: { x: W - M, y: y - 15 }, thickness: 0.4, color: RULE });
-      y -= 16;
-    };
-    line(cols.map(([h]) => h), bold, MUTED);
-    for (const r of rows) line(r, font, FILL);
-  };
+    return out
+  }
 
-  // ── Header ──
-  const lw = 150, lh = (logo.height / logo.width) * lw;
-  page.drawImage(logo, { x: (W - lw) / 2, y: y - lh, width: lw, height: lh });
-  y -= lh + 6;
-  const title = "MARITIME DECLARATION OF HEALTH";
-  text(title, (W - bold.widthOfTextAtSize(title, 15)) / 2, y - 15, 15, bold);
-  y -= 24;
-  const sub = "To be completed and submitted to the competent authorities by the masters of ships arriving from foreign ports.";
-  text(sub, (W - italic.widthOfTextAtSize(sub, 8.5)) / 2, y - 9, 8.5, italic, MUTED);
-  y -= 20;
+  /** A paragraph at the cursor; returns the height used. */
+  function para(text: string, opts: { f?: PDFFont; size?: number; x?: number; width?: number; color?: ReturnType<typeof rgb>; gap?: number } = {}) {
+    const f = opts.f ?? font, size = opts.size ?? 8.5, x = opts.x ?? M, width = opts.width ?? W - M - x
+    const lh = size * 1.3
+    for (const line of wrap(text, f, size, width)) {
+      ensure(lh)
+      page.drawText(line, { x, y: y - size, size, font: f, color: opts.color ?? INK })
+      y -= lh
+    }
+    y -= opts.gap ?? 3
+  }
 
-  // ── Particulars ──
-  fields([["Submitted at the port of", d.port_of_arrival, 2], ["Date", fmtDay(d.signedOn), 1]]);
-  fields([["Name of ship", d.ship_name, 2], ["Registration / IMO No.", d.imo_no, 1]]);
-  fields([["Arriving from", d.arriving_from], ["Sailing to", d.sailing_to], ["Nationality (flag)", d.flag]]);
-  fields([["Master's name", d.master_name, 2], ["Gross tonnage", d.gross_tonnage, 1]]);
-  fields([["Expected arrival", fmtDay(d.arrival_date)], ["Valid Sanitation Control Exemption / Control Certificate on board?", yn(d.sanitation_cert_carried), 2.4]]);
-  fields([["Issued at", d.sanitation_cert_issued_at, 2], ["Date", fmtDay(d.sanitation_cert_date)], ["Re-inspection required?", yn(d.reinspection_required)]]);
-  fields([["Has ship visited an affected area identified by the WHO?", yn(d.visited_affected_area), 2.2], ["Port", d.affected_area_port], ["Date", fmtDay(d.affected_area_date)]]);
+  /** "Label: value" with the value written on a rule, like a filled-in paper form. */
+  function blank(x: number, label: string, value: string, width: number, size = 8.5) {
+    const lw = font.widthOfTextAtSize(safe(label), size) + 4
+    page.drawText(safe(label), { x, y: y - size, size, font, color: INK })
+    const vx = x + lw, vw = Math.max(20, width - lw)
+    page.drawLine({ start: { x: vx, y: y - size - 2 }, end: { x: vx + vw, y: y - size - 2 }, thickness: 0.5, color: RULE })
+    let v = safe(value)
+    while (v && bold.widthOfTextAtSize(v, size) > vw - 2) v = v.slice(0, -1)
+    if (v) page.drawText(v, { x: vx + 2, y: y - size + 0.5, size, font: bold, color: FILL })
+  }
+  /** One row of blanks sharing the line. */
+  function row(cells: Array<[label: string, value: string, share: number]>, size = 8.5) {
+    ensure(size * 2.2)
+    const total = cells.reduce((s, c) => s + c[2], 0)
+    let x = M
+    const avail = W - 2 * M - (cells.length - 1) * 10
+    for (const [label, value, share] of cells) {
+      const w = (avail * share) / total
+      blank(x, label, value, w, size)
+      x += w + 10
+    }
+    y -= size * 2.1
+  }
 
-  heading("Ports of call");
-  para("List ports of call from commencement of voyage with dates of departure, or within past thirty days, whichever is shorter:", 8.5, font, MUTED);
-  y -= 2;
-  const ports = d.ports_of_call.filter((p) => p.port?.trim());
-  if (ports.length) table([["Port", 3], ["Date of departure", 1.4]], ports.map((p) => [p.port, fmtDay(p.departed)]));
-  else para("None declared.", 9, italic, MUTED);
+  /** Yes / No boxes, the chosen one crossed. Returns the x after them. */
+  function yesNo(x: number, value: unknown, size = 8.5): number {
+    for (const opt of ['yes', 'no'] as const) {
+      const label = opt === 'yes' ? 'Yes' : 'No'
+      page.drawRectangle({ x, y: y - size - 0.5, width: size, height: size, borderColor: INK, borderWidth: 0.6 })
+      if (value === opt) {
+        page.drawLine({ start: { x: x + 1.5, y: y - size + 1 }, end: { x: x + size - 1.5, y: y - 2 }, thickness: 1.1, color: FILL })
+        page.drawLine({ start: { x: x + 1.5, y: y - 2 }, end: { x: x + size - 1.5, y: y - size + 1 }, thickness: 1.1, color: FILL })
+      }
+      page.drawText(label, { x: x + size + 3, y: y - size, size, font, color: INK })
+      x += size + 3 + font.widthOfTextAtSize(label, size) + 10
+    }
+    return x
+  }
 
-  heading("Persons who joined");
-  para("Crew members, passengers or other persons who have joined ship/vessel since international voyage began or within past thirty days, whichever is shorter, including all ports/countries visited in this period:", 8.5, font, MUTED);
-  y -= 2;
-  const joined = d.joined_persons.filter((p) => p.name?.trim());
-  const onForm = joined.slice(0, 3), onSchedule = joined.slice(3);
-  const joinedRows = (list: JoinedPerson[], from: number) =>
-    list.map((p, i) => [`${from + i + 1}) ${p.name}`, p.joined_from?.[0] ?? "", p.joined_from?.[1] ?? "", p.joined_from?.[2] ?? ""]);
-  const joinedCols: Array<[string, number]> = [["Name", 2.2], ["Joined from (1)", 1], ["(2)", 1], ["(3)", 1]];
-  if (onForm.length) table(joinedCols, joinedRows(onForm, 0));
-  else para("Nobody has joined in this period.", 9, italic, MUTED);
-  if (onSchedule.length) para(`${onSchedule.length} more listed on the attached schedule.`, 8.5, italic, MUTED);
-  y -= 4;
-  fields([["Number of crew members on board", d.crew_count], ["Number of passengers on board", d.passenger_count]]);
+  function heading(text: string) {
+    ensure(22)
+    y -= 4
+    page.drawText(safe(text), { x: M, y: y - 9.5, size: 9.5, font: bold, color: INK })
+    y -= 14
+  }
 
-  // ── Health questions ──
-  heading("Health questions");
+  // ── Header ────────────────────────────────────────────────────────────────
+  const logoH = 46
+  const logoW = (logo.width / logo.height) * logoH
+  page.drawImage(logo, { x: M, y: y - logoH, width: logoW, height: logoH })
+  const title = 'MARITIME DECLARATION OF HEALTH'
+  page.drawText(title, { x: W - M - bold.widthOfTextAtSize(title, 14), y: y - 20, size: 14, font: bold, color: INK })
+  const sub = 'International Health Regulations (2005) - Annex 8'
+  page.drawText(sub, { x: W - M - font.widthOfTextAtSize(sub, 8), y: y - 33, size: 8, font, color: MUTED })
+  y -= logoH + 8
+  page.drawLine({ start: { x: M, y }, end: { x: W - M, y }, thickness: 1, color: INK })
+  y -= 6
+  para('To be completed and submitted to the competent authorities by the masters of ships arriving from foreign ports.', { f: italic, size: 8, gap: 6 })
+
+  // ── Particulars ──────────────────────────────────────────────────────────
+  row([['Submitted at the port of', form.port_of_arrival ?? '', 3], ['Date', fmtDate(input.submittedOn), 1.4]])
+  row([['Name of ship or inland navigation vessel', form.ship_name ?? '', 3], ['Registration / IMO No.', form.imo_no ?? '', 2]])
+  row([['Arriving from', form.arriving_from ?? '', 1], ['Sailing to', form.sailing_to ?? '', 1], ['Expected arrival', fmtDate(form.arrival_date), 0.8]])
+  row([['(Nationality) (Flag of vessel)', form.flag ?? '', 1], ["Master's name", form.master_name ?? '', 1]])
+  row([['Gross tonnage (ship)', form.gross_tonnage ?? '', 1], ['Tonnage (inland navigation vessel)', form.inland_tonnage ?? '', 1]])
+
+  ensure(16)
+  page.drawText('Valid Sanitation Control Exemption / Control Certificate carried on board?', { x: M, y: y - 8.5, size: 8.5, font, color: INK })
+  yesNo(M + font.widthOfTextAtSize('Valid Sanitation Control Exemption / Control Certificate carried on board?', 8.5) + 8, form.sanitation_cert_carried)
+  y -= 18
+  row([['Issued at', form.sanitation_cert_issued_at ?? '', 1.4], ['Date', fmtDate(form.sanitation_cert_date), 1]])
+  ensure(16)
+  page.drawText('Re-inspection required?', { x: M, y: y - 8.5, size: 8.5, font, color: INK })
+  yesNo(M + font.widthOfTextAtSize('Re-inspection required?', 8.5) + 8, form.reinspection_required)
+  y -= 18
+  ensure(16)
+  const affected = 'Has ship / vessel visited an affected area identified by the World Health Organization?'
+  page.drawText(affected, { x: M, y: y - 8.5, size: 8.5, font, color: INK })
+  yesNo(M + font.widthOfTextAtSize(affected, 8.5) + 8, form.visited_affected_area)
+  y -= 18
+  row([['Port and date of visit', [form.affected_area_port, fmtDate(form.affected_area_date)].filter(Boolean).join(' - '), 1]])
+
+  // ── Ports of call ─────────────────────────────────────────────────────────
+  para('List ports of call from commencement of voyage with dates of departure, or within past thirty days, whichever is shorter:', { gap: 4 })
+  if (ports.length === 0) para('None recorded.', { f: italic, color: MUTED, x: M + 10 })
+  else {
+    const colW = (W - 2 * M) / 2
+    for (let i = 0; i < ports.length; i += 2) {
+      ensure(18)
+      for (let c = 0; c < 2 && i + c < ports.length; c++) {
+        const p = ports[i + c]
+        blank(M + c * colW, `${i + c + 1}.`, `${p.port}${p.departed ? `  (departed ${fmtDate(p.departed)})` : ''}`, colW - 12)
+      }
+      y -= 17
+    }
+  }
+  y -= 2
+
+  // ── Persons joined ────────────────────────────────────────────────────────
+  para('Upon request of the competent authority at the port of arrival, list crew members, passengers or other persons who have joined ship / vessel since international voyage began or within past thirty days, whichever is shorter, including all ports / countries visited in this period (add additional names to the attached schedule):', { gap: 4 })
+  const JOINED_ON_PAGE = 6
+  if (joined.length === 0) para('None.', { f: italic, color: MUTED, x: M + 10 })
+  for (const [i, p] of joined.slice(0, JOINED_ON_PAGE).entries()) {
+    const from = [0, 1, 2].map((n) => p.joined_from?.[n] ?? '')
+    row([[`${i + 1}. Name`, p.name, 1.3], ['joined from (1)', from[0], 1], ['(2)', from[1], 0.7], ['(3)', from[2], 0.7]], 8)
+  }
+  if (joined.length > JOINED_ON_PAGE) para(`${joined.length - JOINED_ON_PAGE} further person(s) listed on the attached schedule.`, { f: italic, size: 8, color: MUTED, x: M + 10 })
+  row([['Number of crew members on board', form.crew_count == null ? '' : String(form.crew_count), 1], ['Number of passengers on board', form.passenger_count == null ? '' : String(form.passenger_count), 1]])
+
+  // ── Health questions ──────────────────────────────────────────────────────
+  heading('Health Questions')
+  const yesNoW = 70
   HEALTH_QUESTIONS.forEach((q, i) => {
-    const a = d.answers[q.key];
-    const lines = wrap(`${i + 1}. ${q.text}`, font, 9, W - 2 * M - 70);
-    const extra: string[] = [];
-    if (a === "yes" && q.count) extra.push(`${q.count.label} ${d.answers[q.count.key] ?? ""}`);
-    if (a === "yes" && q.where && d.answers[q.where]) extra.push(`Joined the ship at: ${d.answers[q.where]}`);
-    if (a === "yes" && q.particulars) extra.push("Particulars in attached schedule.");
-    const h = lines.length * 12 + extra.length * 11 + 6;
-    ensure(h);
-    lines.forEach((l, j) => text(l, M, y - 10 - j * 12, 9));
-    // YES / NO box
-    const bx = W - M - 54;
-    page.drawRectangle({ x: bx, y: y - 15, width: 54, height: 15, borderColor: RULE, borderWidth: 0.6, color: a === "yes" ? rgb(1, 0.93, 0.85) : undefined });
-    const label = yn(typeof a === "string" ? a : null) || "—";
-    text(label, bx + (54 - bold.widthOfTextAtSize(label, 9)) / 2, y - 11.5, 9, bold, a === "yes" ? rgb(0.7, 0.25, 0) : FILL);
-    extra.forEach((e, j) => text(e, M + 14, y - 10 - lines.length * 12 - j * 11, 8.5, italic, FILL));
-    y -= h;
-  });
+    const textW = W - 2 * M - yesNoW - 14
+    const lines = wrap(`(${i + 1}) ${q.text}`, font, 8.5, textW)
+    ensure(lines.length * 11 + (q.count ? 14 : 0) + 4)
+    const top = y
+    for (const line of lines) { page.drawText(line, { x: M, y: y - 8.5, size: 8.5, font, color: INK }); y -= 11 }
+    const after = y
+    y = top
+    yesNo(W - M - yesNoW, answers[q.key])
+    y = after
+    if (q.count && answers[q.key] === 'yes') {
+      blank(M + 18, `${q.count.label}`, String(answers[q.count.key] ?? ''), 200)
+      y -= 14
+    }
+    if (answers[q.key] === 'yes') { para('If yes, details are given in the attached schedule.', { f: italic, size: 7.5, color: MUTED, x: M + 18, gap: 1 }) }
+    y -= 3
+  })
 
-  y -= 4;
-  para(`Note: ${SYMPTOMS_NOTE}`, 7.5, italic, MUTED);
+  para(`Note: ${SYMPTOMS_NOTE}`, { size: 7, color: MUTED, gap: 8 })
 
-  // ── Declaration & signature ──
-  ensure(150);
-  y -= 8;
-  para(DECLARATION_TEXT, 9, bold);
-  y -= 8;
-  const sigTop = y;
-  const sw = 170, sh = (signature.height / signature.width) * sw;
-  page.drawImage(signature, { x: M, y: sigTop - sh, width: sw, height: sh });
-  page.drawLine({ start: { x: M, y: sigTop - sh - 2 }, end: { x: M + 200, y: sigTop - sh - 2 }, thickness: 0.6, color: RULE });
-  text("Sign", M, sigTop - sh - 13, 8, bold, MUTED);
-  text(`Master: ${d.master_name ?? ""}`, M, sigTop - sh - 26, 9.5, font, FILL);
-  text(`Date: ${fmtDay(d.signedOn)}`, M, sigTop - sh - 39, 9.5, font, FILL);
-  const stx = M + 260;
+  // ── Declaration & signatures ─────────────────────────────────────────────
+  ensure(150)
+  para(DECLARATION_TEXT, { size: 8.5, gap: 8 })
+  const sigTop = y
+  const sigBoxW = 200, sigBoxH = 62
+  const sw = Math.min(sigBoxW, (signature.width / signature.height) * sigBoxH)
+  page.drawImage(signature, { x: M + 40, y: sigTop - sigBoxH, width: sw, height: (sw * signature.height) / signature.width })
   if (stamp) {
-    const box = 92, k = Math.min(box / stamp.width, box / stamp.height);
-    page.drawImage(stamp, { x: stx + (box - stamp.width * k) / 2, y: sigTop - box + (box - stamp.height * k) / 2, width: stamp.width * k, height: stamp.height * k });
-  } else {
-    text("No ship stamp provided", stx, sigTop - 46, 8.5, italic, MUTED);
+    const sh = 80
+    const sWidth = Math.min(110, (stamp.width / stamp.height) * sh)
+    page.drawImage(stamp, { x: M + 270, y: sigTop - sh + 6, width: sWidth, height: (sWidth * stamp.height) / stamp.width, opacity: 0.92 })
   }
-  page.drawLine({ start: { x: stx, y: sigTop - 96 }, end: { x: W - M, y: sigTop - 96 }, thickness: 0.6, color: RULE });
-  text("Ship stamp", stx, sigTop - 107, 8, bold, MUTED);
-  y = Math.min(sigTop - sh - 48, sigTop - 116);
-  fields([["Counter sign, Ship's Surgeon (if carried)", d.surgeon_name, 2], ["Date", d.surgeon_name ? fmtDay(d.signedOn) : ""]]);
+  y = sigTop - sigBoxH - 2
+  page.drawLine({ start: { x: M, y }, end: { x: M + 250, y }, thickness: 0.5, color: RULE })
+  page.drawText('Signed (Master)', { x: M, y: y - 9, size: 7.5, font, color: MUTED })
+  if (stamp) page.drawText("Ship's stamp", { x: M + 270, y: y - 9, size: 7.5, font, color: MUTED })
+  y -= 16
+  row([["Master's name", form.master_name ?? '', 1.4], ['Signed in the portal by', input.signedBy, 1.2], ['Date', fmtDate(input.submittedOn), 0.8]])
+  if (!stamp) para("Ship's stamp: not provided.", { f: italic, size: 7.5, color: MUTED, gap: 4 })
+  y -= 4
+  row([["Countersigned (ship's surgeon, if carried)", form.surgeon_name ? `${form.surgeon_name}` : '', 2], ['Date', '', 0.8]])
 
-  // ── Schedule ──
-  if (onSchedule.length || d.particulars?.trim()) {
-    newPage();
-    text("SCHEDULE TO THE DECLARATION OF HEALTH", M, y - 14, 13, bold);
-    y -= 22;
-    text(`${winAnsiSafe(d.ship_name ?? "")} · ${fmtDay(d.signedOn)}`, M, y - 9, 9, font, MUTED);
-    y -= 18;
-    if (onSchedule.length) {
-      heading("Further persons who joined");
-      table(joinedCols, joinedRows(onSchedule, 3));
-    }
-    if (d.particulars?.trim()) {
-      heading("Particulars of every case of illness or death, and of treatment or advice given");
-      para(d.particulars, 9.5, font, FILL);
-    }
+  if (input.late) {
+    para(`Submitted after the due date (${fmtDate(input.dueDate)}): five working days before arrival.`, { f: bold, size: 7.5, color: RED, gap: 2 })
   }
 
-  // ── Footer on every page ──
+  // ── Schedule ─────────────────────────────────────────────────────────────
+  const yeses = HEALTH_QUESTIONS.map((q, i) => ({ q, i })).filter(({ q }) => answers[q.key] === 'yes')
+  const extraJoined = joined.slice(JOINED_ON_PAGE)
+  const remarks = String(form.particulars ?? '').trim()
+  if (yeses.length || extraJoined.length || remarks) {
+    newPage()
+    page.drawImage(logo, { x: M, y: y - 30, width: (logo.width / logo.height) * 30, height: 30 })
+    const t = 'SCHEDULE - ATTACHMENT TO MARITIME DECLARATION OF HEALTH'
+    page.drawText(t, { x: W - M - bold.widthOfTextAtSize(t, 10.5), y: y - 14, size: 10.5, font: bold, color: INK })
+    const s2 = `${safe(form.ship_name ?? '')}${form.imo_no ? `  -  IMO ${safe(form.imo_no)}` : ''}  -  arriving ${fmtDate(form.arrival_date)}`
+    page.drawText(s2, { x: W - M - font.widthOfTextAtSize(s2, 8), y: y - 26, size: 8, font, color: MUTED })
+    y -= 38
+    page.drawLine({ start: { x: M, y }, end: { x: W - M, y }, thickness: 1, color: INK })
+    y -= 10
+    for (const { q, i } of yeses) {
+      ensure(40)
+      para(`(${i + 1}) ${q.text}  -  Yes${q.count ? `  (${q.count.label.replace(/\?$/, '')}: ${answers[q.count.key] ?? ''})` : ''}`, { f: bold, size: 8.5, gap: 2 })
+      para(String(answers[detailsKey(q)] ?? '') || '-', { x: M + 12, size: 8.5, gap: 8 })
+    }
+    if (extraJoined.length) {
+      heading('Further persons joined')
+      for (const [n, p] of extraJoined.entries()) {
+        para(`${JOINED_ON_PAGE + n + 1}. ${p.name}  -  joined from ${(p.joined_from ?? []).filter(Boolean).join(', ') || '-'}`, { size: 8.5, gap: 2 })
+      }
+      y -= 6
+    }
+    if (remarks) { heading('Further remarks'); para(remarks, { size: 8.5 }) }
+  }
+
+  // Footer on every page.
+  const pages = pdf.getPages()
   pages.forEach((p, i) => {
-    const foot = winAnsiSafe(`Completed and signed by the master in the JLS Yachts Client Portal${d.reference ? ` · ${d.reference}` : ""} · Page ${i + 1} of ${pages.length}`);
-    p.drawText(foot, { x: (W - font.widthOfTextAtSize(foot, 7)) / 2, y: 30, size: 7, font, color: MUTED });
-  });
+    const f = `Completed and signed by the master in the JLS Yachts Client Portal on ${fmtDate(input.submittedOn)}  -  page ${i + 1} of ${pages.length}`
+    p.drawText(safe(f), { x: M, y: M - 18, size: 6.5, font, color: MUTED })
+  })
 
-  return pdf.save();
+  return pdf.save()
 }

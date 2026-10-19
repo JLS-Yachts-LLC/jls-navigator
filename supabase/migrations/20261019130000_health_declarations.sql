@@ -28,6 +28,7 @@ create table if not exists public.health_declarations (
   flag                       text,
   master_name                text,
   gross_tonnage              text,
+  inland_tonnage             text,
   surgeon_name               text,
   -- sanitation
   sanitation_cert_carried    text check (sanitation_cert_carried in ('yes','no')),
@@ -55,6 +56,7 @@ create table if not exists public.health_declarations (
   created_at                 timestamptz not null default now(),
   updated_at                 timestamptz not null default now()
 );
+alter table public.health_declarations add column if not exists inland_tonnage text;
 create index if not exists health_declarations_yacht_idx on public.health_declarations (yacht_id, created_at desc);
 create index if not exists health_declarations_request_idx on public.health_declarations (captain_request_id);
 
