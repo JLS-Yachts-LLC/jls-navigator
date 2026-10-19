@@ -11,7 +11,7 @@
  * Talks to /api/academy-admin. Permission: the Crew Academy module — View to
  * look, Create to write, Edit to publish and offer; global admins can do all.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown, ArrowLeft, ArrowUp, Archive, CheckCircle2, Eye, FileText, Film, GraduationCap, Image as ImageIcon,
   ListChecks, Loader2, Plus, RotateCcw, Save, Send, Ship, Signature, Trash2, Type, Upload, X,
@@ -39,6 +39,26 @@ async function adminFetch(path: string, init: RequestInit = {}): Promise<any> {
 const post = (body: unknown) =>
   adminFetch("/api/academy-admin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
+/**
+ * Where the course creator reads and writes. JLS's library uses
+ * /api/academy-admin; a vessel writing its own courses in the Client Portal
+ * passes a backend for /api/portal/academy (same operations, its own scope).
+ */
+export type CourseBackend = {
+  /** GET with this query string, e.g. "op=course&id=…". */
+  get: (query: string) => Promise<any>;
+  post: (body: unknown) => Promise<any>;
+  /** JLS only: choose which vessels a course is offered to. */
+  canOffer: boolean;
+  /** Shown as "From …" in the preview. */
+  owner: string;
+  backLabel: string;
+};
+const JLS_BACKEND: CourseBackend = {
+  get: (q) => adminFetch(`/api/academy-admin?${q}`), post, canOffer: true, owner: "JLS Yachts", backLabel: "Course library",
+};
+const BackendCtx = createContext<CourseBackend>(JLS_BACKEND);
+
 const inputCls = "w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none focus:border-primary/60";
 const labelCls = "mb-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground";
 const fmtDate = (d: string | null | undefined) =>
@@ -50,9 +70,10 @@ type CourseRow = {
 };
 
 export function CourseLibrary() {
-  const [list, setList] = useState<{ canCreate: boolean; canEdit: boolean; courses: CourseRow[] } | null>(null);
+  const [list, setList] = useState<{ canCreate: boolean; canEdit: boolean; courses: CourseRow[]; sharedCount: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [tab, setTab] = useState<"library" | "shared">("library");
 
   const load = useCallback(async () => {
     try { setList(await adminFetch("/api/academy-admin?op=courses")); setError(null); }
@@ -72,7 +93,7 @@ export function CourseLibrary() {
             Client Portal. Crew, results and a vessel's own courses stay private to the vessel.
           </p>
         </div>
-        {list?.canCreate && (
+        {list?.canCreate && tab === "library" && (
           <button onClick={async () => {
             const title = prompt("Course title");
             if (!title?.trim()) return;
@@ -83,14 +104,24 @@ export function CourseLibrary() {
         )}
       </div>
 
-      {error && <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-red-300">{error}</div>}
-      {!list && !error && <div className="flex justify-center py-16"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>}
-      {list && list.courses.length === 0 && (
+      <div className="flex gap-1 border-b border-border text-sm">
+        {(["library", "shared"] as const).map((k) => (
+          <button key={k} onClick={() => setTab(k)}
+            className={cn("-mb-px border-b-2 px-3 py-2 font-medium", tab === k ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>
+            {k === "library" ? "JLS courses" : `Shared with JLS${list?.sharedCount ? ` (${list.sharedCount})` : ""}`}
+          </button>
+        ))}
+      </div>
+
+      {tab === "shared" && <SharedWithJls />}
+      {tab === "library" && error && <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-red-300">{error}</div>}
+      {tab === "library" && !list && !error && <div className="flex justify-center py-16"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>}
+      {tab === "library" && list && list.courses.length === 0 && (
         <div className="rounded-xl border border-dashed border-border px-6 py-14 text-center text-sm text-muted-foreground">
           No courses yet.{list.canCreate ? " Start with “New course”." : ""}
         </div>
       )}
-      {list && list.courses.length > 0 && (
+      {tab === "library" && list && list.courses.length > 0 && (
         <div className="divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-card/60">
           {list.courses.map((c) => (
             <button key={c.id} onClick={() => setOpenId(c.id)} className="flex w-full flex-wrap items-center justify-between gap-3 px-4 py-3 text-left hover:bg-card">
@@ -108,6 +139,91 @@ export function CourseLibrary() {
             </button>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+// ── Shared with JLS ─────────────────────────────────────────────────────────
+type SharedData = {
+  courses: { shareId: string; courseId: string; title: string; summary: string | null; vessel: string; sharedBy: string | null; note: string | null; sharedAt: string; status: string }[];
+  people: { shareId: string; learnerId: string; name: string; email: string; active: boolean; vessel: string; sharedBy: string | null; sharedByKind: string; sharedAt: string;
+    results: { course: string; from: string; status: string; mandatory: boolean; dueDate: string | null; completedAt: string | null; score: number | null; expiresAt: string | null }[] }[];
+};
+
+/** What vessels (and crew) have chosen to show JLS — read-only; they can withdraw it any time. */
+function SharedWithJls() {
+  const [data, setData] = useState<SharedData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{ title: string; passMark: number; vessel: string; content: CourseContent } | null>(null);
+  useEffect(() => { adminFetch("/api/academy-admin?op=shared").then(setData).catch((e) => setError(e.message)); }, []);
+
+  if (preview) {
+    return (
+      <div className="pds pds-embed dark fixed inset-0 z-50 overflow-y-auto bg-background text-foreground" style={{ colorScheme: "dark" }}>
+        <Preview title={preview.title} content={preview.content} passMark={preview.passMark} from={preview.vessel} onExit={() => setPreview(null)}
+          mediaUrl={async (id) => (await adminFetch(`/api/academy-admin?op=media-url&id=${encodeURIComponent(id)}`)).url ?? null}
+          banner={<div className="mt-4 rounded-xl border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-sm text-sky-200">
+            {preview.vessel}'s course, shared with JLS for review. Nothing here is recorded.
+          </div>} />
+      </div>
+    );
+  }
+  if (error) return <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-red-300">{error}</div>;
+  if (!data) return <div className="flex justify-center py-16"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
+  if (!data.courses.length && !data.people.length) {
+    return <div className="rounded-xl border border-dashed border-border px-6 py-14 text-center text-sm text-muted-foreground">
+      Nothing shared yet. Vessels can share one of their own courses, or a crew member's results, for JLS to review.
+    </div>;
+  }
+  return (
+    <div className="space-y-6">
+      {data.courses.length > 0 && (
+        <section>
+          <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Vessels' courses</h2>
+          <div className="divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-card/60">
+            {data.courses.map((c) => (
+              <div key={c.shareId} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                <div className="min-w-0">
+                  <div className="font-medium">{c.title} <span className="text-xs font-normal text-muted-foreground">· {c.vessel}</span></div>
+                  <div className="mt-0.5 text-xs text-muted-foreground">Shared {fmtDate(c.sharedAt)}{c.sharedBy ? ` by ${c.sharedBy}` : ""}{c.note ? ` — “${c.note}”` : ""}</div>
+                </div>
+                <ToolButton icon={Eye} onClick={async () => {
+                  try { setPreview(await adminFetch(`/api/academy-admin?op=shared-course&id=${encodeURIComponent(c.courseId)}`)); }
+                  catch (e: any) { toast.error(e.message); }
+                }}>Open</ToolButton>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+      {data.people.length > 0 && (
+        <section>
+          <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Crew training records</h2>
+          <div className="space-y-3">
+            {data.people.map((p) => (
+              <div key={p.shareId} className="rounded-xl border border-border bg-card/60 p-4">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <div className="font-medium">{p.name} <span className="text-xs font-normal text-muted-foreground">· {p.vessel}{p.active ? "" : " · no longer on board"}</span></div>
+                  <div className="text-xs text-muted-foreground">Shared by {p.sharedByKind === "crew" ? "them" : p.sharedBy ?? "the vessel"} · {fmtDate(p.sharedAt)}</div>
+                </div>
+                {p.results.length === 0 ? <p className="mt-2 text-sm text-muted-foreground">No courses yet.</p> : (
+                  <table className="mt-2 w-full text-sm">
+                    <tbody className="divide-y divide-border/50">
+                      {p.results.map((r, i) => (
+                        <tr key={i}>
+                          <td className="py-1.5 pr-3">{r.course} <span className="text-xs text-muted-foreground">({r.from})</span></td>
+                          <td className="py-1.5 pr-3 text-xs">{r.status === "completed" ? `Passed${r.score != null ? ` ${r.score}%` : ""} · ${fmtDate(r.completedAt)}` : r.status.replace("_", " ")}</td>
+                          <td className="py-1.5 text-right text-xs text-muted-foreground">{r.expiresAt ? `valid until ${fmtDate(r.expiresAt)}` : r.dueDate && r.status !== "completed" ? `due ${fmtDate(r.dueDate)}` : ""}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
       )}
     </div>
   );
@@ -131,7 +247,13 @@ type Loaded = {
   maxUploadBytes: number;
 };
 
-function CourseEditor({ id, onBack }: { id: string; onBack: () => void }) {
+/** The course creator. Wrap with a backend for a vessel's own courses; JLS's library is the default. */
+export function CourseEditor({ id, onBack, backend = JLS_BACKEND }: { id: string; onBack: () => void; backend?: CourseBackend }) {
+  return <BackendCtx.Provider value={backend}><Editor id={id} onBack={onBack} /></BackendCtx.Provider>;
+}
+
+function Editor({ id, onBack }: { id: string; onBack: () => void }) {
+  const api = useContext(BackendCtx);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [details, setDetails] = useState<Details | null>(null);
   const [content, setContent] = useState<CourseContent>(emptyContent());
@@ -143,7 +265,7 @@ function CourseEditor({ id, onBack }: { id: string; onBack: () => void }) {
   const [offering, setOffering] = useState(false);
 
   const load = useCallback(async () => {
-    const d: Loaded = await adminFetch(`/api/academy-admin?op=course&id=${encodeURIComponent(id)}`);
+    const d: Loaded = await api.get(`op=course&id=${encodeURIComponent(id)}`);
     setLoaded(d);
     setDetails({
       title: d.course.title, summary: d.course.summary ?? "", category: d.course.category ?? "",
@@ -173,7 +295,7 @@ function CourseEditor({ id, onBack }: { id: string; onBack: () => void }) {
     if (!details) return false;
     setBusy("save");
     try {
-      const r = await post({
+      const r = await api.post({
         op: "save", id, title: details.title, summary: details.summary, category: details.category,
         minutes: details.minutes || null, passMark: details.passMark || 80, refreshMonths: details.refreshMonths || null, content,
       });
@@ -191,7 +313,7 @@ function CourseEditor({ id, onBack }: { id: string; onBack: () => void }) {
     if (!(await save(true))) return;
     setBusy("publish");
     try {
-      const r = await post({ op: "publish", id });
+      const r = await api.post({ op: "publish", id });
       toast.success(`Published version ${r.version}`);
       await load();
     } catch (e: any) {
@@ -215,7 +337,7 @@ function CourseEditor({ id, onBack }: { id: string; onBack: () => void }) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <button onClick={() => { if (!dirty || confirm("Leave without saving your changes?")) onBack(); }}
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" /> Course library
+          <ArrowLeft className="h-4 w-4" /> {api.backLabel}
         </button>
         <div className="flex flex-wrap items-center gap-2">
           <StatusPill status={loaded.course.status} />
@@ -225,13 +347,13 @@ function CourseEditor({ id, onBack }: { id: string; onBack: () => void }) {
           <ToolButton onClick={() => setPreviewing(true)} icon={Eye}>Preview</ToolButton>
           {editable && <ToolButton onClick={() => void save()} icon={Save} busy={busy === "save"} primary={dirty}>{dirty ? "Save" : "Saved"}</ToolButton>}
           {loaded.canEdit && <ToolButton onClick={() => void publish()} icon={Send} busy={busy === "publish"}>Publish{latest ? " new version" : ""}</ToolButton>}
-          {loaded.canEdit && <ToolButton onClick={() => setOffering(true)} icon={Ship}>Vessels</ToolButton>}
+          {loaded.canEdit && api.canOffer && <ToolButton onClick={() => setOffering(true)} icon={Ship}>Vessels</ToolButton>}
           {loaded.canEdit && (
             loaded.course.status === "archived"
-              ? <ToolButton icon={RotateCcw} onClick={async () => { await post({ op: "restore", id }); await load(); }}>Restore</ToolButton>
+              ? <ToolButton icon={RotateCcw} onClick={async () => { await api.post({ op: "restore", id }); await load(); }}>Restore</ToolButton>
               : <ToolButton icon={Archive} onClick={async () => {
                   if (!confirm("Archive this course? Vessels can't enrol anyone new; crew already on it can finish.")) return;
-                  await post({ op: "archive", id }); await load();
+                  await api.post({ op: "archive", id }); await load();
                 }}>Archive</ToolButton>
           )}
         </div>
@@ -440,6 +562,7 @@ function MediaPicker({ kind, accept, mediaId, courseId, files, maxUpload, onUplo
   kind: "video" | "image" | "document"; accept: string; mediaId: string | null; courseId: string; files: MediaFile[]; maxUpload: number;
   onUploaded: (f: MediaFile) => void; onPick: (mediaId: string | null) => void;
 }) {
+  const api = useContext(BackendCtx);
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState<string | null>(null);
   const current = files.find((f) => f.id === mediaId);
@@ -451,7 +574,7 @@ function MediaPicker({ kind, accept, mediaId, courseId, files, maxUpload, onUplo
     }
     setUploading(file.name);
     try {
-      const r = await post({ op: "upload-url", courseId, fileName: file.name, mimeType: file.type, size: file.size });
+      const r = await api.post({ op: "upload-url", courseId, fileName: file.name, mimeType: file.type, size: file.size });
       const { error } = await supabase.storage.from(r.bucket).uploadToSignedUrl(r.path, r.token, file, { contentType: file.type });
       if (error) throw error;
       onUploaded({ id: r.mediaId, kind: r.kind, file_name: file.name, mime_type: file.type, size_bytes: file.size });
@@ -544,14 +667,20 @@ function QuizEditor({ block, onChange }: { block: QuizBlock; onChange: (b: Block
 }
 
 // ── Preview (local marking, nothing saved) ───────────────────────────────────
-function Preview({ title, content, passMark, onExit }: { title: string; content: CourseContent; passMark: number; onExit: () => void }) {
+export function Preview({ title, content, passMark, onExit, mediaUrl, from, banner }: {
+  title: string; content: CourseContent; passMark: number; onExit: () => void;
+  /** Defaults to the creator's backend. */
+  mediaUrl?: (mediaId: string) => Promise<string | null>;
+  from?: string; banner?: React.ReactNode;
+}) {
+  const backend = useContext(BackendCtx);
   const progress = useRef<Map<string, BlockProgress>>(new Map());
   const snapshot = () => ({ progress: [...progress.current.values()] });
   const touch = (blockId: string, patch: Partial<BlockProgress>) =>
     progress.current.set(blockId, { ...(progress.current.get(blockId) ?? { block_id: blockId }), ...patch });
 
   const api = useMemo<PlayerApi>(() => ({
-    mediaUrl: async (mediaId) => (await adminFetch(`/api/academy-admin?op=media-url&id=${encodeURIComponent(mediaId)}`)).url ?? null,
+    mediaUrl: mediaUrl ?? (async (mediaId) => (await backend.get(`op=media-url&id=${encodeURIComponent(mediaId)}`)).url ?? null),
     viewed: async (lessonId) => {
       const lesson = content.sections.flatMap((s) => s.lessons).find((l) => l.id === lessonId);
       for (const b of lesson?.blocks ?? []) {
@@ -577,12 +706,12 @@ function Preview({ title, content, passMark, onExit }: { title: string; content:
       };
     },
     acknowledge: async (blockId) => { touch(blockId, { completed_at: new Date().toISOString() }); return snapshot(); },
-  }), [content, passMark]);
+  }), [content, passMark, mediaUrl, backend]);
 
   return (
-    <CoursePlayer title={title} from="JLS Yachts" content={content} passMark={passMark} initialProgress={[]} api={api}
-      onExit={onExit} exitLabel="Back to editing"
-      banner={<div className="mt-4 rounded-xl border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-sm text-sky-200">
+    <CoursePlayer title={title} from={from ?? backend.owner} content={content} passMark={passMark} initialProgress={[]} api={api}
+      onExit={onExit} exitLabel={banner ? "Back" : "Back to editing"}
+      banner={banner ?? <div className="mt-4 rounded-xl border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-sm text-sky-200">
         Preview of the unsaved draft, as crew will see it. Nothing here is recorded.
       </div>} />
   );
