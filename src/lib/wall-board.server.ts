@@ -257,8 +257,11 @@ export async function buildWallVesselDetail(id: string): Promise<WallVesselDetai
       last_departed_at, last_arrived_at
     `).eq("id", id).maybeSingle(),
     // Type + expiry only — never the number, holder, notes or document.
+    // A "pending" row with the permit PDF attached is an issued renewal whose
+    // status was never flipped, so it counts too (otherwise the old permit shows expired).
     db.from("permits").select("permit_type, expiry_date")
-      .eq("yacht_id", id).eq("status", "active").in("permit_type", Object.keys(PERMIT_LABELS))
+      .eq("yacht_id", id).in("permit_type", Object.keys(PERMIT_LABELS))
+      .or("status.eq.active,and(status.eq.pending,document_url.not.is.null)")
       .gte("expiry_date", addDays(today, -30)).order("expiry_date").limit(50),
     db.from("crew_signon_events").select("event_type, event_date, status, pickup_required")
       .eq("yacht_id", id).gte("event_date", today).lte("event_date", addDays(today, 14)).limit(500),
