@@ -13,7 +13,10 @@
  * The invite email is a password-set link that lands here (#type=recovery).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Award, CheckCircle2, Clock, CloudOff, Download, GraduationCap, Trash2, Loader2, LogOut, Mail, RefreshCw, Shield } from "lucide-react";
+import {
+  Award, CheckCircle2, Clock, CloudOff, Download, GraduationCap, Inbox, Library, ListChecks, Loader2, LogOut, Mail, Menu, RefreshCw,
+  Send, Shield, ShieldCheck, Trash2, X,
+} from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { PolarisMark } from "@/components/brand/PolarisMark";
 import { cn } from "@/lib/utils";
@@ -44,6 +47,10 @@ type Home = {
   vessel: { name: string; logo: string | null };
   todo: CourseRow[];
   done: CourseRow[];
+  requests?: {
+    id: string; status: "pending" | "approved" | "declined"; note: string | null; decisionNote: string | null;
+    decidedBy: string | null; decidedAt: string | null; createdAt: string; course: string;
+  }[];
 };
 
 // Read once, before the Supabase client consumes the URL hash.
@@ -312,6 +319,15 @@ function SetPasswordScreen({ email, onDone, onSignOut }: { email: string; onDone
 }
 
 // ── My courses ───────────────────────────────────────────────────────────────
+type View = "training" | "completed" | "catalogue" | "requests" | "privacy";
+const VIEW_KEY = "academy.view";
+
+/**
+ * The crew member's Crew Academy: a left menu (a slide-out drawer on phones)
+ * with My training, Completed, Course catalogue, My requests and Privacy &
+ * offline. Everything comes from /api/academy; works offline for the courses
+ * saved on the phone (academy-offline.ts).
+ */
 function MyCourses({ onSignOut }: { onSignOut: () => void }) {
   const [home, setHome] = useState<Home | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -319,6 +335,16 @@ function MyCourses({ onSignOut }: { onSignOut: () => void }) {
   const [open, setOpen] = useState<string | null>(null);
   const [offline, setOffline] = useState(false);
   const [saved, setSaved] = useState(savedCourses);
+  const [view, setView] = useState<View>(() => {
+    try { return (sessionStorage.getItem(VIEW_KEY) as View) || "training"; } catch { return "training"; }
+  });
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const go = (v: View) => {
+    setView(v); setMenuOpen(false);
+    try { sessionStorage.setItem(VIEW_KEY, v); } catch { /* private mode */ }
+    window.scrollTo({ top: 0 });
+  };
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -342,54 +368,353 @@ function MyCourses({ onSignOut }: { onSignOut: () => void }) {
 
   if (open) return <CourseView enrolmentId={open} onExit={() => { setOpen(null); setSaved(savedCourses()); void load(); }} />;
 
-  return (
-    <div className="mx-auto min-h-screen max-w-3xl px-4 pb-16 pt-5 sm:px-6">
-      <header className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
-          {home?.vessel.logo
-            ? <img src={home.vessel.logo} alt="" className="h-10 w-10 shrink-0 rounded-lg bg-white object-contain p-1" />
-            : <PolarisMark size={36} title="" />}
-          <div className="min-w-0 leading-tight">
-            <div className="truncate text-[15px] font-bold tracking-wide">{home?.vessel.name || "Crew Academy"}</div>
-            <div className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">Crew Academy</div>
-          </div>
+  const pendingRequests = (home?.requests ?? []).filter((r) => r.status === "pending").length;
+  const nav: { key: View; label: string; icon: any; count?: number; online?: boolean }[] = [
+    { key: "training", label: "My training", icon: GraduationCap, count: home?.todo.length },
+    { key: "completed", label: "Completed", icon: Award, count: home?.done.length },
+    { key: "catalogue", label: "Course catalogue", icon: Library, online: true },
+    { key: "requests", label: "My requests", icon: Inbox, count: pendingRequests || undefined, online: true },
+    { key: "privacy", label: "Privacy & offline", icon: ShieldCheck },
+  ];
+  const off: OfflineProps = { offline, saved, onSavedChange: savedChanged };
+
+  const menu = (
+    <nav className="flex h-full flex-col">
+      <div className="flex items-center gap-3 px-4 pb-5 pt-5">
+        {home?.vessel.logo
+          ? <img src={home.vessel.logo} alt="" className="h-10 w-10 shrink-0 rounded-lg bg-white object-contain p-1" />
+          : <PolarisMark size={36} title="" />}
+        <div className="min-w-0 leading-tight">
+          <div className="truncate text-[15px] font-bold tracking-wide">{home?.vessel.name || "Crew Academy"}</div>
+          <div className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">Crew Academy</div>
         </div>
-        <button onClick={onSignOut}
-          className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-card/60 px-3 text-sm transition hover:bg-card">
+      </div>
+      <ul className="flex-1 space-y-1 px-2">
+        {nav.map((n) => {
+          const Icon = n.icon;
+          const disabled = n.online && offline;
+          return (
+            <li key={n.key}>
+              <button onClick={() => go(n.key)} disabled={disabled}
+                className={cn("flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition disabled:opacity-40",
+                  view === n.key ? "bg-primary/15 font-semibold text-primary" : "text-foreground/85 hover:bg-card")}>
+                <Icon className="h-4 w-4 shrink-0" />
+                <span className="flex-1">{n.label}</span>
+                {!!n.count && <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                  view === n.key ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground")}>{n.count}</span>}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="border-t border-border/60 px-4 py-4 text-xs">
+        <div className="truncate font-medium text-foreground">{home?.me.displayName || "Crew member"}</div>
+        <div className="truncate text-muted-foreground">{home?.me.email}</div>
+        <button onClick={onSignOut} className="mt-3 inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-card/60 px-3 text-sm hover:bg-card">
           <LogOut className="h-4 w-4" /> Sign out
         </button>
+      </div>
+    </nav>
+  );
+
+  const title = nav.find((n) => n.key === view)?.label ?? "My training";
+  return (
+    <div className="min-h-screen md:flex">
+      {/* Desktop menu */}
+      <aside className="sticky top-0 hidden h-screen w-64 shrink-0 border-r border-border/60 bg-card/30 md:block">{menu}</aside>
+
+      {/* Phone: top bar + drawer */}
+      <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-border/60 bg-background/95 px-4 py-3 backdrop-blur md:hidden">
+        <button onClick={() => setMenuOpen(true)} aria-label="Open menu" className="flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-card/60">
+          <Menu className="h-5 w-5" />
+        </button>
+        <div className="min-w-0 flex-1 leading-tight">
+          <div className="truncate text-sm font-bold">{title}</div>
+          <div className="truncate text-[10px] uppercase tracking-[0.2em] text-muted-foreground">{home?.vessel.name || "Crew Academy"}</div>
+        </div>
+        {pendingRequests > 0 && view !== "requests" && (
+          <button onClick={() => go("requests")} className="rounded-full bg-primary/15 px-2.5 py-1 text-[11px] font-semibold text-primary">{pendingRequests} pending</button>
+        )}
       </header>
-
-      <h1 className="mt-8 text-2xl font-bold">
-        {home?.me.displayName ? `Hello, ${home.me.displayName.split(" ")[0]}` : "My training"}
-      </h1>
-
-      {loading && !home && (
-        <div className="mt-10 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-      )}
-      {error && (
-        <div className="mt-6 space-y-3">
-          <ErrorNote>{error}</ErrorNote>
-          <PrimaryButton onClick={load}><RefreshCw className="h-4 w-4" /> Try again</PrimaryButton>
+      {menuOpen && (
+        <div className="fixed inset-0 z-50 md:hidden" onClick={() => setMenuOpen(false)}>
+          <div className="absolute inset-0 bg-black/60" />
+          <div className="absolute inset-y-0 left-0 w-72 max-w-[85vw] border-r border-border bg-background shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <button onClick={() => setMenuOpen(false)} aria-label="Close menu" className="absolute right-3 top-5 flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground">
+              <X className="h-5 w-5" />
+            </button>
+            {menu}
+          </div>
         </div>
       )}
 
-      {offline && (
-        <div className="mt-5 flex items-start gap-2.5 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-100">
-          <CloudOff className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>No signal — showing the courses saved on this phone. Your progress is kept and sent when you're back online.</span>
+      <main className="mx-auto w-full max-w-3xl px-4 pb-16 pt-5 sm:px-6 md:pt-10">
+        <h1 className="hidden text-2xl font-bold md:block">
+          {view === "training" && home?.me.displayName ? `Hello, ${home.me.displayName.split(" ")[0]}` : title}
+        </h1>
+        {view === "training" && home?.me.displayName && <h1 className="text-xl font-bold md:hidden">Hello, {home.me.displayName.split(" ")[0]}</h1>}
+
+        {loading && !home && <div className="mt-10 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>}
+        {error && (
+          <div className="mt-6 space-y-3">
+            <ErrorNote>{error}</ErrorNote>
+            <PrimaryButton onClick={load}><RefreshCw className="h-4 w-4" /> Try again</PrimaryButton>
+          </div>
+        )}
+        {offline && (
+          <div className="mt-5 flex items-start gap-2.5 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-100">
+            <CloudOff className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>No signal — showing the courses saved on this phone. Your progress is kept and sent when you're back online.</span>
+          </div>
+        )}
+
+        {home && view === "training" && (
+          <>
+            <Section title="To do" rows={home.todo} onOpen={setOpen} {...off}
+              empty="Nothing to do right now. Browse the course catalogue to ask for more training." />
+            {!offline && (
+              <button onClick={() => go("catalogue")} className="mt-6 inline-flex items-center gap-1.5 text-sm text-primary hover:underline">
+                <Library className="h-4 w-4" /> Browse the course catalogue
+              </button>
+            )}
+          </>
+        )}
+        {home && view === "completed" && (
+          <Section title="Completed" rows={home.done} onOpen={setOpen} {...off}
+            empty="Nothing completed yet. Courses you pass appear here, with their certificates." />
+        )}
+        {home && view === "catalogue" && <Catalogue onOpenCourse={setOpen} onRequested={() => { void load(); }} home={home} />}
+        {home && view === "requests" && <Requests requests={home.requests ?? []} onChanged={load} onBrowse={() => go("catalogue")} />}
+        {home && view === "privacy" && (
+          <>
+            {!offline && <ShareResults shared={home.me.sharedWithJls} vessel={home.vessel.name}
+              onChange={(sharedWithJls) => setHome({ ...home, me: { ...home.me, sharedWithJls } })} />}
+            <SavedOnPhone saved={saved} offline={offline} onChanged={savedChanged} />
+          </>
+        )}
+      </main>
+    </div>
+  );
+}
+
+// ── Course catalogue ─────────────────────────────────────────────────────────
+type CatalogueCourse = {
+  id: string; title: string; summary: string | null; category: string | null; minutes: number | null; passMark: number;
+  refreshMonths: number | null; from: string; mine: "enrolled" | "completed" | "requested" | "declined" | null; requestId: string | null;
+};
+type Outline = { sections: { title: string; lessons: { title: string; kinds: string[] }[] }[] };
+
+const KIND_LABEL: Record<string, string> = {
+  reading: "reading", video: "video", document: "PDF", image: "picture", quiz: "quiz", acknowledge: "sign-off",
+  match: "matching", order: "ordering", sort: "sorting", hotspot: "picture task",
+};
+
+function Catalogue({ home, onOpenCourse, onRequested }: { home: Home; onOpenCourse: (enrolmentId: string) => void; onRequested: () => void }) {
+  const [courses, setCourses] = useState<CatalogueCourse[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [q, setQ] = useState("");
+  const [category, setCategory] = useState("");
+  const load = useCallback(() => {
+    academyFetch("/api/academy?op=catalogue").then((r) => setCourses(r.courses)).catch((e) => setError(e.message));
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  if (error) return <div className="mt-6"><ErrorNote>{error}</ErrorNote></div>;
+  if (!courses) return <div className="mt-10 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+  const categories = [...new Set(courses.map((c) => c.category).filter(Boolean))] as string[];
+  const shown = courses.filter((c) => (!category || c.category === category)
+    && (!q.trim() || `${c.title} ${c.summary ?? ""}`.toLowerCase().includes(q.trim().toLowerCase())));
+  const enrolmentFor = (courseId: string) => [...home.todo, ...home.done].find((r) => r.course?.id === courseId)?.enrolmentId;
+
+  return (
+    <div className="mt-5 space-y-4">
+      <p className="text-sm text-muted-foreground">Courses available on {home.vessel.name || "your vessel"}. Ask to join one and a training manager on board will decide.</p>
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <input className={cn(inputCls, "py-2.5")} placeholder="Search courses" value={q} onChange={(e) => setQ(e.target.value)} />
+        {categories.length > 1 && (
+          <select className={cn(inputCls, "py-2.5 sm:w-48")} value={category} onChange={(e) => setCategory(e.target.value)}>
+            <option value="">All topics</option>
+            {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        )}
+      </div>
+      {shown.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-border bg-card/40 px-5 py-8 text-center text-sm text-muted-foreground">
+          <Library className="mx-auto mb-2 h-6 w-6 opacity-60" />
+          {courses.length ? "No courses match your search." : "No courses in the catalogue yet."}
         </div>
-      )}
-      {home && (
-        <>
-          <Section title="To do" rows={home.todo} onOpen={setOpen} offline={offline} saved={saved} onSavedChange={savedChanged}
-            empty="Nothing to do yet. When your vessel enrols you on a course it will appear here." />
-          {home.done.length > 0 && <Section title="Completed" rows={home.done} onOpen={setOpen} offline={offline} saved={saved} onSavedChange={savedChanged} />}
-          {!offline && <ShareResults shared={home.me.sharedWithJls} vessel={home.vessel.name}
-            onChange={(sharedWithJls) => setHome({ ...home, me: { ...home.me, sharedWithJls } })} />}
-        </>
+      ) : (
+        <ul className="space-y-3">
+          {shown.map((c) => <CatalogueCard key={c.id} course={c} enrolmentId={enrolmentFor(c.id)} onOpenCourse={onOpenCourse}
+            onChanged={() => { load(); onRequested(); }} />)}
+        </ul>
       )}
     </div>
+  );
+}
+
+function CatalogueCard({ course: c, enrolmentId, onOpenCourse, onChanged }: {
+  course: CatalogueCourse; enrolmentId?: string; onOpenCourse: (enrolmentId: string) => void; onChanged: () => void;
+}) {
+  const [outline, setOutline] = useState<Outline | null>(null);
+  const [showOutline, setShowOutline] = useState(false);
+  const [asking, setAsking] = useState(false);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const badge = c.mine === "completed" ? { label: "Completed", cls: "border-emerald-500/40 bg-emerald-500/10 text-emerald-300" }
+    : c.mine === "enrolled" ? { label: "Enrolled", cls: "border-primary/40 bg-primary/10 text-primary" }
+    : c.mine === "requested" ? { label: "Requested", cls: "border-sky-500/40 bg-sky-500/10 text-sky-300" }
+    : c.mine === "declined" ? { label: "Not approved", cls: "border-border bg-card text-muted-foreground" } : null;
+
+  return (
+    <li className="rounded-2xl border border-border bg-card/70 p-4 sm:p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="font-semibold leading-snug">{c.title}</div>
+          {c.summary && <p className="mt-1 text-sm text-muted-foreground">{c.summary}</p>}
+        </div>
+        {badge && <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider", badge.cls)}>{badge.label}</span>}
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        <span>From {c.from}</span>
+        {c.category && <span>{c.category}</span>}
+        {c.minutes && <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> {c.minutes} min</span>}
+        <span>Pass mark {c.passMark}%</span>
+        {c.refreshMonths && <span>Refresher every {c.refreshMonths} months</span>}
+      </div>
+
+      {showOutline && (
+        <div className="mt-3 rounded-xl bg-background/50 p-3 text-sm">
+          {!outline ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> : outline.sections.map((s, si) => (
+            <div key={si} className="mb-2 last:mb-0">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{s.title}</div>
+              <ul className="mt-1 space-y-0.5">
+                {s.lessons.map((l, li) => (
+                  <li key={li}>{l.title} <span className="text-xs text-muted-foreground">— {l.kinds.map((k) => KIND_LABEL[k] ?? k).join(", ")}</span></li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {asking && (
+        <div className="mt-3 space-y-2">
+          <textarea className={cn(inputCls, "min-h-[70px] text-sm")} maxLength={500} value={note} onChange={(e) => setNote(e.target.value)}
+            placeholder="Why would you like to do it? (optional — e.g. I'm moving to the deck team)" />
+          {error && <ErrorNote>{error}</ErrorNote>}
+          <div className="flex gap-2">
+            <PrimaryButton disabled={busy} onClick={async () => {
+              setBusy(true); setError(null);
+              try { await postJson({ op: "request", course: c.id, note }); setAsking(false); onChanged(); }
+              catch (e: any) { setError(e.message); }
+              setBusy(false);
+            }}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Send request</PrimaryButton>
+            <button onClick={() => setAsking(false)} className="px-3 text-sm text-muted-foreground">Cancel</button>
+          </div>
+        </div>
+      )}
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button onClick={() => {
+          setShowOutline((s) => !s);
+          if (!outline) academyFetch(`/api/academy?op=outline&course=${encodeURIComponent(c.id)}`).then(setOutline).catch(() => setShowOutline(false));
+        }} className="inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-border px-3 text-sm hover:bg-card">
+          <ListChecks className="h-4 w-4" /> {showOutline ? "Hide outline" : "What's in it"}
+        </button>
+        {(c.mine === "enrolled" || c.mine === "completed") && enrolmentId && (
+          <button onClick={() => onOpenCourse(enrolmentId)} className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-primary px-3 text-sm font-semibold text-primary-foreground">
+            Open course
+          </button>
+        )}
+        {(c.mine === null || c.mine === "declined") && !asking && (
+          <button onClick={() => setAsking(true)} className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-primary px-3 text-sm font-semibold text-primary-foreground">
+            <Send className="h-4 w-4" /> Ask to enrol
+          </button>
+        )}
+        {c.mine === "requested" && c.requestId && (
+          <button disabled={busy} onClick={async () => {
+            setBusy(true);
+            try { await postJson({ op: "cancel-request", request: c.requestId }); onChanged(); } catch { /* already decided */ }
+            setBusy(false);
+          }} className="inline-flex min-h-9 items-center gap-1.5 px-2 text-sm text-muted-foreground hover:text-foreground">
+            Cancel request
+          </button>
+        )}
+      </div>
+    </li>
+  );
+}
+
+// ── My requests ──────────────────────────────────────────────────────────────
+function Requests({ requests, onChanged, onBrowse }: { requests: NonNullable<Home["requests"]>; onChanged: () => void; onBrowse: () => void }) {
+  if (!requests.length) {
+    return (
+      <div className="mt-5 rounded-2xl border border-dashed border-border bg-card/40 px-5 py-8 text-center text-sm text-muted-foreground">
+        <Inbox className="mx-auto mb-2 h-6 w-6 opacity-60" />
+        You haven't asked for any courses yet.
+        <div><button onClick={onBrowse} className="mt-2 text-primary hover:underline">Browse the course catalogue</button></div>
+      </div>
+    );
+  }
+  return (
+    <ul className="mt-5 space-y-3">
+      {requests.map((r) => (
+        <li key={r.id} className="rounded-2xl border border-border bg-card/70 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="font-semibold">{r.course}</div>
+              <div className="mt-0.5 text-xs text-muted-foreground">Asked {fmtDate(r.createdAt)}{r.note ? ` — “${r.note}”` : ""}</div>
+            </div>
+            <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
+              r.status === "approved" ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+                : r.status === "declined" ? "border-border bg-card text-muted-foreground" : "border-sky-500/40 bg-sky-500/10 text-sky-300")}>
+              {r.status === "approved" ? "Approved" : r.status === "declined" ? "Not approved" : "Waiting"}
+            </span>
+          </div>
+          {r.status !== "pending" && (
+            <p className="mt-2 text-sm text-muted-foreground">
+              {r.status === "approved" ? "Approved" : "Not approved"}{r.decidedBy ? ` by ${r.decidedBy}` : ""}{r.decidedAt ? ` on ${fmtDate(r.decidedAt)}` : ""}
+              {r.decisionNote ? ` — “${r.decisionNote}”` : ""}
+              {r.status === "approved" ? ". It's in My training." : ""}
+            </p>
+          )}
+          {r.status === "pending" && (
+            <button onClick={async () => { try { await postJson({ op: "cancel-request", request: r.id }); } catch { /* decided meanwhile */ } onChanged(); }}
+              className="mt-2 text-sm text-muted-foreground hover:text-foreground">Cancel request</button>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+// ── Saved on this phone ──────────────────────────────────────────────────────
+function SavedOnPhone({ saved, offline, onChanged }: { saved: ReturnType<typeof savedCourses>; offline: boolean; onChanged: () => void }) {
+  const entries = Object.entries(saved);
+  if (!offlineSupported()) return null;
+  return (
+    <section className="mt-6 rounded-2xl border border-border bg-card/40 p-4">
+      <h2 className="font-medium">Saved on this phone</h2>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Courses you save with “Save for offline” work with no signal. Signing out removes them from this phone.
+      </p>
+      {entries.length === 0 ? <p className="mt-3 text-sm text-muted-foreground">Nothing saved yet.</p> : (
+        <ul className="mt-3 divide-y divide-border/50 text-sm">
+          {entries.map(([id, s]) => (
+            <li key={id} className="flex items-center justify-between gap-3 py-2">
+              <span className="min-w-0 truncate">{s.title} <span className="text-xs text-muted-foreground">· {mb(s.bytes)}</span></span>
+              <button disabled={offline} onClick={async () => { await removeCourse(id); onChanged(); }}
+                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-red-300 disabled:opacity-40">
+                <Trash2 className="h-3.5 w-3.5" /> Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
