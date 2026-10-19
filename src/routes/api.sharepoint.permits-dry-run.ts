@@ -3,7 +3,8 @@
  *
  * The permits sync overwrote rows across lists for three months, so before it
  * goes back on someone needs to see the blast radius. This reads SharePoint and
- * reports the planned updates and inserts per list, and writes nothing. It works
+ * reports the planned updates and inserts per list — and, since a real run also
+ * PUSHES rows Polaris changed, what would go the other way — and writes nothing. It works
  * while the lists are disabled, which is the point.
  */
 import { requireAdminAccess } from '@/lib/admin/access'
@@ -30,9 +31,22 @@ export async function permitsDryRunHandler(request: Request): Promise<Response> 
           riskyChanges: a.riskyChanges + (d?.riskyChanges ?? 0),
           inserts: a.inserts + (d?.inserts ?? 0),
           errors: a.errors + l.result.errors,
+          dateFixOnlyRows: a.dateFixOnlyRows + (d?.dateFixOnlyRows ?? 0),
+          conflicts: a.conflicts + (d?.conflicts ?? 0),
+          twinLinks: a.twinLinks + (d?.twinLinks.length ?? 0),
+          testItems: a.testItems + (d?.testItems ?? 0),
+          pushDirty: a.pushDirty + (d?.push.dirty ?? 0),
+          pushBulkStamped: a.pushBulkStamped + (d?.push.bulkStamped ?? 0),
+          pushPatch: a.pushPatch + (d?.push.patch ?? 0),
+          pushCreate: a.pushCreate + (d?.push.create ?? 0),
+          heldBack: a.heldBack + (d?.push.heldBack ?? 0),
         }
       },
-      { updates: 0, changedRows: 0, riskyChanges: 0, inserts: 0, errors: 0 },
+      {
+        updates: 0, changedRows: 0, riskyChanges: 0, inserts: 0, errors: 0,
+        dateFixOnlyRows: 0, conflicts: 0, twinLinks: 0, testItems: 0,
+        pushDirty: 0, pushBulkStamped: 0, pushPatch: 0, pushCreate: 0, heldBack: 0,
+      },
     )
     return json({ ok: true, dryRun: true, totals, lists })
   } catch (e: any) {

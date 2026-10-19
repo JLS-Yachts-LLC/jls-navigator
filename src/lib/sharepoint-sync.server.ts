@@ -1652,6 +1652,11 @@ export interface PermitDryRunDetail {
   updates: number
   /** Updates that would actually change a value (the rest only re-stamp the sync time). */
   changedRows: number
+  /**
+   * Rows whose ONLY change is a date moving one day later — the correction of the
+   * one-day-early import (SD-0017, fixed 15 Sept). Expected, and harmless.
+   */
+  dateFixOnlyRows: number
   inserts: number
   /** Field → how many rows would change it. */
   fieldChanges: Record<string, number>
@@ -1660,6 +1665,32 @@ export interface PermitDryRunDetail {
   samples: Array<{ id: string; holder: string; field: string; from: string; to: string; risky: boolean }>
   insertSamples: Array<{ holder: string; vessel: string | null; permitNumber: string | null; expiry: string | null }>
   insertsWithoutVessel: number
+  /** SharePoint vessel names (Title) that match no vessel in Polaris, with how many inserts carry each. */
+  unmatchedVessels: Array<{ name: string; count: number }>
+  /**
+   * SharePoint items still linked to a Polaris permit, but now holding a DIFFERENT
+   * permit (other number / person / vessel). Left alone — never rewritten.
+   */
+  conflicts: number
+  conflictSamples: Array<{ polarisId: string; itemId: string; reason: string; polaris: string; sharepoint: string }>
+  /** Permits made in Polaris (no SharePoint item) matched to the copy staff keyed into SharePoint by hand. */
+  twinLinks: Array<{ polarisId: string; itemId: string; holder: string; vessel: string | null; issue: string | null }>
+  /** SharePoint items that look like tests ("TEST", "123456") — not added. */
+  testItems: number
+  testSamples: string[]
+  /** The push half. On a real run the pull goes first, then rows Polaris changed are pushed. */
+  push: {
+    /** Polaris rows of this list with unpushed changes. */
+    dirty: number
+    /** …of which carry a timestamp shared by many rows: a bulk/system change, not a member of staff. */
+    bulkStamped: number
+    /** Would overwrite an existing SharePoint item with Polaris's values. */
+    patch: number
+    /** Would create a new SharePoint item (no item yet, no twin found). */
+    create: number
+    /** Updates from SharePoint that would be held back because the Polaris row is dirty. */
+    heldBack: number
+  }
 }
 
 const DRY_RUN_IGNORED = new Set(['id', 'sharepoint_synced_at', 'sharepoint_item_id', 'sharepoint_list_name'])
@@ -1672,12 +1703,76 @@ function _dryRunValue(v: unknown): string {
   return /^\d{4}-\d{2}-\d{2}([T ]|$)/.test(s) ? s.slice(0, 10) : s
 }
 
+/** Whole days from a to b (both yyyy-mm-dd…), or null. */
+function _dayDiff(a: unknown, b: unknown): number | null {
+  const x = _dryRunValue(a), y = _dryRunValue(b)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(x) || !/^\d{4}-\d{2}-\d{2}$/.test(y)) return null
+  return Math.round((Date.parse(`${y}T00:00:00Z`) - Date.parse(`${x}T00:00:00Z`)) / 86_400_000)
+}
+
+/** A permit reference compared loosely: case, spaces and stray punctuation ignored. */
+function _normRef(v: unknown): string {
+  return String(v ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+/** A holder name with titles and punctuation removed — "Capt. John Smith" ≈ "JOHN SMITH". */
+function _normHolder(v: unknown): string {
+  return String(v ?? '').toLowerCase()
+    .replace(/\b(capt|captain|mr|mrs|ms|dr)\b\.?/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ').trim()
+}
+
+/** Same person? Empty on either side is "unknown", not a mismatch. */
+function _sameHolder(a: unknown, b: unknown): boolean {
+  const x = _normHolder(a), y = _normHolder(b)
+  if (!x || !y) return true
+  return x === y || x.includes(y) || y.includes(x)
+}
+
+/**
+ * Does this SharePoint item now hold a DIFFERENT permit from the Polaris row it is
+ * linked to? Returns why, or null when it is plausibly the same permit.
+ *
+ * Until 3 Sept the push wrote every edited permit into item <id> of ALL seven lists,
+ * so low-numbered items of one list were overwritten with another list's permits —
+ * Gate Pass item 9 (Andrea D'Amato's May 2024 pass) now holds the Caudwell Marine
+ * Cheetah DMA/Sanitation permit that is item 9 of those lists. SharePoint item ids
+ * are never reused, so the link is right; the item's CONTENT is what is wrong.
+ * Pulling it would turn an old permit into a different one, so such items are left
+ * alone and reported.
+ */
+function _permitIdentityConflict(now: Record<string, any>, next: Record<string, any>): string | null {
+  const a = now.permit_number, b = next.permit_number
+  if (_isRealPermitNumber(a) && _isRealPermitNumber(b)) {
+    // The authority's own reference is the strongest identity there is: if it
+    // agrees, a changed name or vessel is a correction; if not, it is another permit.
+    return _normRef(a) === _normRef(b) ? null : 'different permit number'
+  }
+  if (!_sameHolder(now.holder_name, next.holder_name)) return 'different holder'
+  if (now.yacht_id && next.yacht_id && String(now.yacht_id) !== String(next.yacht_id)) return 'different vessel'
+  return null
+}
+
+/** SharePoint items that are someone testing the list, not permits. */
+function _looksLikeTestPermit(rec: Record<string, any>, vesselTitle: string): boolean {
+  const vals = [rec.holder_name, rec.permit_number, vesselTitle].map(v => String(v ?? '').trim().toLowerCase())
+  if (vals.some(v => /^test(ing)?\b/.test(v) || /\btest$/.test(v))) return true
+  return /^(0+|1234|12345|123456|1234567|12345678)$/.test(String(rec.permit_number ?? '').trim())
+}
+
 async function _permitDryRunDetail(
   permitType: string,
+  listName: string,
   spItems: number,
   existingPermits: Record<string, any>[],
   updateById: Map<string, Record<string, any>>,
   insertByKey: Map<string, Record<string, any>>,
+  extra: {
+    conflicts: PermitDryRunDetail['conflictSamples']
+    twinIds: Set<string>
+    testSamples: string[]
+    unmatchedVessels: Map<string, number>
+  },
 ): Promise<PermitDryRunDetail> {
   // Read the full current rows the updates would overwrite.
   const ids = [...updateById.keys()]
@@ -1692,23 +1787,49 @@ async function _permitDryRunDetail(
   const show = (field: string, v: unknown) =>
     field === 'yacht_id' && v ? (vesselName.get(String(v)) ?? String(v)) : (_dryRunValue(v) || '—')
 
+  // ── The push half ────────────────────────────────────────────────────────────
+  // Rows of this list Polaris would push (the same selection pushDirtyRecords and
+  // pushRecordToSharePoint make), and how many share their dirty timestamp with
+  // many others — a migration or bulk fix stamps hundreds of rows at one instant;
+  // a member of staff stamps one.
+  const { data: dirtyAll } = await fetchAllRows(() => (supabaseAdmin as any).from('permits')
+    .select('id, permit_type, sharepoint_item_id, sharepoint_list_name, sharepoint_dirty_at')
+    .not('sharepoint_dirty_at', 'is', null).order('id'))
+  const stampCount = new Map<string, number>()
+  for (const r of (dirtyAll ?? []) as any[]) stampCount.set(String(r.sharepoint_dirty_at), (stampCount.get(String(r.sharepoint_dirty_at)) ?? 0) + 1)
+  const mine = ((dirtyAll ?? []) as any[]).filter((r) =>
+    r.sharepoint_list_name ? r.sharepoint_list_name === listName : r.permit_type === permitType)
+  const dirtyIdSet = new Set(mine.map((r) => String(r.id)))
+  const push = {
+    dirty: mine.length,
+    bulkStamped: mine.filter((r) => (stampCount.get(String(r.sharepoint_dirty_at)) ?? 0) >= 5).length,
+    // A twin gets its item id from the pull that runs first, so it updates, not creates.
+    patch: mine.filter((r) => r.sharepoint_item_id || extra.twinIds.has(String(r.id))).length,
+    create: mine.filter((r) => !r.sharepoint_item_id && !extra.twinIds.has(String(r.id))).length,
+    heldBack: ids.filter((id) => dirtyIdSet.has(id) && !extra.twinIds.has(id)).length,
+  }
+
   const fieldChanges: Record<string, number> = {}
   const samples: PermitDryRunDetail['samples'] = []
   let changedRows = 0
+  let dateFixOnlyRows = 0
   let riskyChanges = 0
   for (const [id, next] of updateById) {
     const now = current.get(id)
     if (!now) continue
     let changed = false
+    let onlyDateFix = true
     for (const [field, value] of Object.entries(next)) {
       if (DRY_RUN_IGNORED.has(field) || !(field in now)) continue
       if (_dryRunValue(value) === _dryRunValue(now[field])) continue
       changed = true
       fieldChanges[field] = (fieldChanges[field] ?? 0) + 1
+      const dateFix = PERMIT_DATE_FIELDS.has(field) && _dayDiff(now[field], value) === 1
+      if (!dateFix) onlyDateFix = false
       // Filling an empty field is not a risk; replacing one vessel/person with another is.
       const risky = DRY_RUN_RISKY.has(field) && _dryRunValue(now[field]) !== ''
       if (risky) riskyChanges++
-      if (samples.length < 40 && (risky || samples.filter((s) => !s.risky).length < 20)) {
+      if (samples.length < 40 && (risky || (!dateFix && samples.filter((s) => !s.risky).length < 20))) {
         samples.push({
           id, holder: String(now.holder_name ?? next.holder_name ?? now.permit_number ?? '—'),
           field, from: show(field, now[field]), to: show(field, value), risky,
@@ -1716,16 +1837,19 @@ async function _permitDryRunDetail(
       }
     }
     if (changed) changedRows++
+    if (changed && onlyDateFix) dateFixOnlyRows++
   }
   samples.sort((a, b) => Number(b.risky) - Number(a.risky))
 
   const inserts = [...insertByKey.values()]
+  const byId = new Map(existingPermits.map((p) => [String(p.id), p]))
   return {
     permitType,
     spItems,
     polarisRows: existingPermits.filter((p) => p.permit_type === permitType).length,
     updates: updateById.size,
     changedRows,
+    dateFixOnlyRows,
     inserts: inserts.length,
     fieldChanges,
     riskyChanges,
@@ -1737,6 +1861,24 @@ async function _permitDryRunDetail(
       expiry: r.expiry_date ? _dryRunValue(r.expiry_date) : null,
     })),
     insertsWithoutVessel: inserts.filter((r) => !r.yacht_id).length,
+    unmatchedVessels: [...extra.unmatchedVessels.entries()]
+      .sort((a, b) => b[1] - a[1]).slice(0, 15).map(([name, count]) => ({ name, count })),
+    conflicts: extra.conflicts.length,
+    conflictSamples: extra.conflicts.slice(0, 60),
+    twinLinks: [...extra.twinIds].map((pid) => {
+      const p = byId.get(pid) ?? {}
+      const itemId = updateById.get(pid)?.sharepoint_item_id
+      return {
+        polarisId: pid,
+        itemId: String(itemId ?? ''),
+        holder: String(p.holder_name ?? '—'),
+        vessel: p.yacht_id ? (vesselName.get(String(p.yacht_id)) ?? null) : null,
+        issue: p.issue_date ? _dryRunValue(p.issue_date) : null,
+      }
+    }),
+    testItems: extra.testSamples.length,
+    testSamples: extra.testSamples.slice(0, 10),
+    push,
   }
 }
 
@@ -1775,16 +1917,23 @@ async function _syncPermits(
   // why that scoping is the whole point.
   const { data: existingPermits } = await fetchAllRows(() => (supabaseAdmin as any)
     .from('permits')
-    .select('id, permit_number, permit_type, sharepoint_item_id, sharepoint_list_name, created_at')
+    .select('id, permit_number, permit_type, holder_name, yacht_id, issue_date, expiry_date, sharepoint_item_id, sharepoint_list_name, created_at')
     .order('created_at'))
+  const existingById = new Map<string, Record<string, any>>()
 
   // Rows already claimed by this list: identity is (list, item id).
   const byListItem = new Map<string, string>()
   // Legacy rows of this list's type that predate sharepoint_list_name. Adopting
   // one stamps the list onto it, so it only ever happens once per row.
   const byTypeItem = new Map<string, string>()
-  // Last resort, still type-scoped: the authority's own reference.
+  // Last resort, still type-scoped: the authority's own reference. Only rows not
+  // already bound to an item of THIS list — a row that is item 120 must not be
+  // re-bound to item 900 because the two share a reference.
   const byTypeNumber = new Map<string, string>()
+  // Permits of this type made in Polaris that SharePoint has never seen. Staff
+  // keyed many of them into SharePoint by hand while the sync was off; the twin
+  // step below links the two instead of adding the hand-keyed copy a second time.
+  const unlinked: Record<string, any>[] = []
 
   // Rows are ordered by created_at, so `set` only when absent keeps the OLDEST
   // candidate. The old matching left the same SharePoint item inserted many times
@@ -1794,6 +1943,7 @@ async function _syncPermits(
 
   for (const p of (existingPermits ?? []) as Record<string, any>[]) {
     const id = String(p.id)
+    existingById.set(id, p)
     const itemId = p.sharepoint_item_id ? String(p.sharepoint_item_id) : null
     const list = p.sharepoint_list_name ? String(p.sharepoint_list_name) : null
     const sameType = permitType != null && p.permit_type === permitType
@@ -1801,20 +1951,34 @@ async function _syncPermits(
     if (itemId && list === cfg.listName) claim(byListItem, itemId, id)
     else if (itemId && !list && sameType) claim(byTypeItem, itemId, id)
 
-    if (sameType && _isRealPermitNumber(p.permit_number)) {
-      claim(byTypeNumber, String(p.permit_number).trim().toLowerCase(), id)
+    if (sameType && !(itemId && list === cfg.listName) && _isRealPermitNumber(p.permit_number)) {
+      claim(byTypeNumber, _normRef(p.permit_number), id)
     }
+    if (sameType && !itemId) unlinked.push(p)
   }
 
-  // Preload yachts for vessel_name → yacht_id resolution
-  const { data: yachts } = await fetchAllRows(() => supabaseAdmin.from('yachts').select('id, vessel_name').order('id'))
+  // Preload yachts for vessel_name → yacht_id resolution. A live vessel wins over
+  // an archived one of the same name.
+  const { data: yachts } = await fetchAllRows(() => supabaseAdmin.from('yachts').select('id, vessel_name, archive').order('id'))
   const yachtByName = new Map<string, string>()
+  const archivedYacht = new Set<string>()
   for (const y of (yachts ?? []) as Record<string, any>[]) {
-    if (y.vessel_name) yachtByName.set(String(y.vessel_name).toLowerCase(), String(y.id))
+    if (y.archive) archivedYacht.add(String(y.id))
+    if (!y.vessel_name) continue
+    const k = String(y.vessel_name).toLowerCase().trim()
+    const prev = yachtByName.get(k)
+    if (!prev || (archivedYacht.has(prev) && !y.archive)) yachtByName.set(k, String(y.id))
   }
 
   const updateById = new Map<string, Record<string, any>>()
   const insertByKey = new Map<string, Record<string, any>>()
+  const conflicts: PermitDryRunDetail['conflictSamples'] = []
+  const twinIds = new Set<string>()
+  const testSamples: string[] = []
+  const unmatchedVessels = new Map<string, number>()
+  const describe = (r: Record<string, any>) =>
+    [r.holder_name, r.permit_number, r.yacht_id ? (yachts as any[])?.find((y) => String(y.id) === String(r.yacht_id))?.vessel_name : null, _dryRunValue(r.issue_date)]
+      .filter(Boolean).join(' · ') || '—'
 
   for (const item of allItems) {
     if (item['@removed']) continue
@@ -1823,13 +1987,15 @@ async function _syncPermits(
       sharepoint_synced_at: new Date().toISOString(),
     }
     record.permit_type = permitType
+    let vesselTitle = ''
 
     for (const [spField, dbField] of Object.entries(cfg.fieldMapping)) {
       if (!dbField || !(spField in fields)) continue
       const raw = fields[spField]
       // vessel_name → resolve to yacht_id
       if (dbField === 'vessel_name') {
-        const key = String(raw ?? '').toLowerCase().trim()
+        vesselTitle = String(raw ?? '').trim()
+        const key = vesselTitle.toLowerCase()
         if (key) {
           const yachtId = yachtByName.get(key)
           if (yachtId) record.yacht_id = yachtId
@@ -1849,30 +2015,63 @@ async function _syncPermits(
     // What this deliberately no longer does:
     //   • match on the bare SharePoint item id — ids repeat across lists, so
     //     "item 5" matched another list's permit and overwrote it;
-    //   • match on holder_name — a person is not a permit, so one crew member's
-    //     gate pass would land on top of their DMA permit;
+    //   • match on holder_name alone — a person is not a permit, so one crew
+    //     member's gate pass would land on top of their DMA permit;
     //   • match on permit_number alone — null on 511 rows and shared by many.
     const itemKey = String(item.id)
-    const numberKey = _isRealPermitNumber(record.permit_number)
-      ? String(record.permit_number).trim().toLowerCase()
-      : null
+    const numberKey = _isRealPermitNumber(record.permit_number) ? _normRef(record.permit_number) : null
 
-    const existingId =
-      byListItem.get(itemKey) ??
-      byTypeItem.get(itemKey) ??
-      (numberKey ? byTypeNumber.get(numberKey) : undefined)
+    const byItem = byListItem.get(itemKey) ?? byTypeItem.get(itemKey)
+    let existingId: string | undefined = byItem
+    let isTwin = false
+
+    if (byItem) {
+      // Linked by item id — but is the item still the same permit? (See
+      // _permitIdentityConflict: SharePoint's own copy was overwritten across lists.)
+      const now = existingById.get(byItem) ?? {}
+      // Never move an existing permit onto an ARCHIVED vessel: that is how a merged
+      // duplicate (Socialista → ALTAVITA) would be undone by an old list entry.
+      if (record.yacht_id && archivedYacht.has(record.yacht_id) && now.yacht_id) delete record.yacht_id
+      const why = _permitIdentityConflict(now, record)
+      if (why) {
+        conflicts.push({ polarisId: byItem, itemId: itemKey, reason: why, polaris: describe(now), sharepoint: describe(record) })
+        // Claimed, so neither the number fallback nor an insert picks the item up.
+        byListItem.set(itemKey, byItem)
+        continue
+      }
+    } else {
+      existingId = numberKey ? byTypeNumber.get(numberKey) : undefined
+      if (!existingId) {
+        // Twin: a permit made in Polaris (no item yet) for the same vessel and
+        // person, dated within a day. Only an unambiguous single match counts.
+        const near = (a: unknown, b: unknown) => { const d = _dayDiff(a, b); return d !== null && Math.abs(d) <= 1 }
+        const cands = unlinked.filter((p) =>
+          !twinIds.has(String(p.id)) && !updateById.has(String(p.id)) &&
+          record.yacht_id && p.yacht_id && String(p.yacht_id) === String(record.yacht_id) &&
+          _normHolder(p.holder_name) && _normHolder(record.holder_name) && _sameHolder(p.holder_name, record.holder_name) &&
+          (near(p.issue_date, record.issue_date) || near(p.expiry_date, record.expiry_date)))
+        if (cands.length === 1) { existingId = String(cands[0].id); isTwin = true }
+      }
+      if (existingId && record.yacht_id && archivedYacht.has(record.yacht_id) && existingById.get(existingId)?.yacht_id) delete record.yacht_id
+    }
 
     if (existingId) {
       updateById.set(existingId, { ...record, id: existingId })
+      if (isTwin) twinIds.add(existingId)
       // Claim it for this list so a later item in this same run cannot land on
       // the row we just took.
       byListItem.set(itemKey, existingId)
       byTypeItem.delete(itemKey)
       if (numberKey) byTypeNumber.delete(numberKey)
+    } else if (_looksLikeTestPermit(record, vesselTitle)) {
+      testSamples.push([record.holder_name, record.permit_number, vesselTitle].filter(Boolean).join(' · '))
     } else {
       insertByKey.set(itemKey, { ...record })
+      if (!record.yacht_id && vesselTitle) unmatchedVessels.set(vesselTitle, (unmatchedVessels.get(vesselTitle) ?? 0) + 1)
     }
   }
+
+  if (conflicts.length) console.warn(`[sp-permits] ${cfg.listName}: ${conflicts.length} item(s) now hold a different permit than the Polaris row linked to them — left alone`)
 
   if (opts.dryRun) {
     // Say what would happen without touching anything — the way to see the blast
@@ -1883,14 +2082,19 @@ async function _syncPermits(
       synced: 0,
       errors: 0,
       samples: [
-        `DRY RUN "${cfg.listName}": ${allItems.length} SharePoint items → ${updateById.size} update(s), ${insertByKey.size} insert(s)`,
+        `DRY RUN "${cfg.listName}": ${allItems.length} SharePoint items → ${updateById.size} update(s), ${insertByKey.size} insert(s), ${conflicts.length} conflict(s) left alone, ${twinIds.size} twin(s) linked`,
         ...samples,
       ],
-      dryRun: await _permitDryRunDetail(permitType, allItems.length, existingPermits ?? [], updateById, insertByKey),
+      dryRun: await _permitDryRunDetail(permitType, cfg.listName, allItems.length, existingPermits ?? [], updateById, insertByKey,
+        { conflicts, twinIds, testSamples, unmatchedVessels }),
     }
   }
 
-  return bulkPersist('permits', updateById, insertByKey)
+  const persisted = await bulkPersist('permits', updateById, insertByKey, { keepDespiteDirty: twinIds })
+  if (conflicts.length) {
+    persisted.samples = [`${conflicts.length} SharePoint item(s) hold a different permit than the Polaris row linked to them — left alone`, ...persisted.samples].slice(0, 8)
+  }
+  return persisted
 }
 
 // Small boats sync: same pattern as permits but targets small_boats table
