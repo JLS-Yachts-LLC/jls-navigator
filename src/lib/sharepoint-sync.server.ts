@@ -1774,9 +1774,12 @@ async function _permitDryRunDetail(
   insertByKey: Map<string, Record<string, any>>,
   extra: {
     conflicts: PermitDryRunDetail['conflictSamples']
-    twinIds: Set<string>
+    /** Polaris id → how it was linked ("permit number" / "vessel, date and holder"). */
+    twinIds: Map<string, string>
     testSamples: string[]
     unmatchedVessels: Map<string, number>
+    copySkips: PermitDryRunDetail['copySkips']
+    nearMisses: PermitDryRunDetail['nearMisses']
   },
 ): Promise<PermitDryRunDetail> {
   // Read the full current rows the updates would overwrite.
@@ -1870,7 +1873,7 @@ async function _permitDryRunDetail(
       .sort((a, b) => b[1] - a[1]).slice(0, 15).map(([name, count]) => ({ name, count })),
     conflicts: extra.conflicts.length,
     conflictSamples: extra.conflicts.slice(0, 60),
-    twinLinks: [...extra.twinIds].map((pid) => {
+    twinLinks: [...extra.twinIds].map(([pid, how]) => {
       const p = byId.get(pid) ?? {}
       const itemId = updateById.get(pid)?.sharepoint_item_id
       return {
@@ -1879,8 +1882,11 @@ async function _permitDryRunDetail(
         holder: String(p.holder_name ?? '—'),
         vessel: p.yacht_id ? (vesselName.get(String(p.yacht_id)) ?? null) : null,
         issue: p.issue_date ? _dryRunValue(p.issue_date) : null,
+        how,
       }
     }),
+    copySkips: extra.copySkips,
+    nearMisses: extra.nearMisses,
     testItems: extra.testSamples.length,
     testSamples: extra.testSamples.slice(0, 10),
     push,
@@ -1889,7 +1895,9 @@ async function _permitDryRunDetail(
 
 async function _syncPermits(
   cfg: SpConfig,
-  opts: { dryRun?: boolean } = {},
+  // lists: every permit list, read once by the caller (the dry run reads all seven
+  // anyway). Without it they are read here — the copy check below needs them all.
+  opts: { dryRun?: boolean; lists?: Map<string, PermitListSnapshot> } = {},
 ): Promise<{ synced: number; errors: number; samples?: string[]; dryRun?: PermitDryRunDetail }> {
   const permitType = _permitTypeFromListName(cfg.listName)
 
@@ -1903,26 +1911,18 @@ async function _syncPermits(
   }
 
   const token = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret)
-  const siteId = await resolveSpSite(token, cfg.tenantUrl, cfg.siteUrl)
 
-  // Fetch ALL items (no delta for permits yet)
-  let allItems: any[] = []
-  let nextUrl: string | null =
-    `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${cfg.listName}/items?$expand=fields&$top=200`
-  while (nextUrl) {
-    const res = await fetch(nextUrl, { headers: { Authorization: `Bearer ${token}` } })
-    const page = await res.json() as Record<string, any>
-    if (!page.value) break
-    allItems = allItems.concat(page.value as any[])
-    nextUrl = page['@odata.nextLink'] ?? null
-  }
+  // Fetch ALL items of every permit list (no delta for permits yet).
+  const lists = opts.lists ?? await _loadPermitLists(cfg, token)
+  const allItems: any[] = lists.get(cfg.listName)?.items
+    ?? await _fetchPermitListItems(await resolveSpSite(token, cfg.tenantUrl, cfg.siteUrl), token, cfg.listName)
 
   // Existing permits, for matching. EVERY map below is scoped to this list or to
   // the permit type this list owns — see the cascade at the bottom of the loop for
   // why that scoping is the whole point.
   const { data: existingPermits } = await fetchAllRows(() => (supabaseAdmin as any)
     .from('permits')
-    .select('id, permit_number, permit_type, holder_name, yacht_id, issue_date, expiry_date, sharepoint_item_id, sharepoint_list_name, created_at')
+    .select('id, permit_number, permit_type, holder_name, yacht_id, issue_date, expiry_date, sharepoint_item_id, sharepoint_list_name, sharepoint_dirty_at, created_at')
     .order('created_at'))
   const existingById = new Map<string, Record<string, any>>()
 
@@ -1978,12 +1978,36 @@ async function _syncPermits(
   const updateById = new Map<string, Record<string, any>>()
   const insertByKey = new Map<string, Record<string, any>>()
   const conflicts: PermitDryRunDetail['conflictSamples'] = []
-  const twinIds = new Set<string>()
+  const twinIds = new Map<string, string>()
+  const copySkips: PermitDryRunDetail['copySkips'] = []
+  // Polaris id → the closest SharePoint item that was NOT linked to it, and why.
+  const nearMiss = new Map<string, { itemId: string; sharepoint: string; why: string; days: number }>()
   const testSamples: string[] = []
   const unmatchedVessels = new Map<string, number>()
+  const yachtNameById = new Map(((yachts ?? []) as any[]).map((y) => [String(y.id), String(y.vessel_name ?? '')]))
   const describe = (r: Record<string, any>) =>
-    [r.holder_name, r.permit_number, r.yacht_id ? (yachts as any[])?.find((y) => String(y.id) === String(r.yacht_id))?.vessel_name : null, _dryRunValue(r.issue_date)]
+    [r.holder_name, r.permit_number, r.yacht_id ? yachtNameById.get(String(r.yacht_id)) : null, _dryRunValue(r.issue_date)]
       .filter(Boolean).join(' · ') || '—'
+
+  // The same item id in the OTHER permit lists, by what it holds. Until 3 Sept the
+  // push wrote one edited permit into item <id> of all seven lists, so a Mothership
+  // or Tenders item can be a copy of a DMA Foreign Visitor Permit (Vincent Jaybert ·
+  // CAUDWELL MARINE CHEETAH · PRMT202601387 is item 9 of several lists). A copy is
+  // never added, linked or used to rewrite a row — it is listed for staff to fix.
+  const otherLists = [...lists.values()].filter((l) => l.listName !== cfg.listName).map((l) => ({
+    listName: l.listName,
+    byId: new Map(l.items.filter((i) => !i['@removed']).map((i) => [String(i.id), _permitItemSig(i.fields ?? {}, l.fieldMapping)])),
+  }))
+  const copyOf = (itemId: string, fields: Record<string, any>): string | null => {
+    const me = _permitItemSig(fields, cfg.fieldMapping)
+    const hits = otherLists.filter(({ byId }) => {
+      const o = byId.get(itemId)
+      if (!o) return false
+      const samePermit = (me.holder && me.holder === o.holder) || (me.number && me.number === o.number)
+      return !!samePermit && (!me.vessel || !o.vessel || me.vessel === o.vessel)
+    })
+    return hits.length ? hits.map((h) => `${h.listName} item ${itemId}`).join(', ') : null
+  }
 
   for (const item of allItems) {
     if (item['@removed']) continue
@@ -2039,30 +2063,68 @@ async function _syncPermits(
       if (record.yacht_id && archivedYacht.has(record.yacht_id) && now.yacht_id) delete record.yacht_id
       const why = _permitIdentityConflict(now, record)
       if (why) {
-        conflicts.push({ polarisId: byItem, itemId: itemKey, reason: why, polaris: describe(now), sharepoint: describe(record) })
+        const copy = copyOf(itemKey, fields)
+        conflicts.push({ polarisId: byItem, itemId: itemKey, reason: why, polaris: describe(now), sharepoint: describe(record), ...(copy ? { copyOf: copy } : {}) })
         // Claimed, so neither the number fallback nor an insert picks the item up.
         byListItem.set(itemKey, byItem)
         continue
       }
     } else {
+      const copy = copyOf(itemKey, fields)
+      if (copy) {
+        copySkips.push({ itemId: itemKey, holds: describe(record) + (vesselTitle && !record.yacht_id ? ` · ${vesselTitle}` : ''), copyOf: copy })
+        continue
+      }
+      let how = ''
       existingId = numberKey ? byTypeNumber.get(numberKey) : undefined
+      // A permit made in Polaris that staff also keyed into SharePoint, found by its
+      // number: link it like any twin, or it is held back as dirty and never linked.
+      if (existingId && !existingById.get(existingId)?.sharepoint_item_id) { isTwin = true; how = 'permit number' }
       if (!existingId) {
-        // Twin: a permit made in Polaris (no item yet) for the same vessel and
-        // person, dated within a day. Only an unambiguous single match counts.
-        const near = (a: unknown, b: unknown) => { const d = _dayDiff(a, b); return d !== null && Math.abs(d) <= 1 }
-        const cands = unlinked.filter((p) =>
-          !twinIds.has(String(p.id)) && !updateById.has(String(p.id)) &&
-          record.yacht_id && p.yacht_id && String(p.yacht_id) === String(record.yacht_id) &&
-          _normHolder(p.holder_name) && _normHolder(record.holder_name) && _sameHolder(p.holder_name, record.holder_name) &&
-          (near(p.issue_date, record.issue_date) || near(p.expiry_date, record.expiry_date)))
-        if (cands.length === 1) { existingId = String(cands[0].id); isTwin = true }
+        // Twin: a permit made in Polaris (no item yet) for the same vessel, dated
+        // within a day (issue or expiry) — or within a week when the name agrees —
+        // and not clearly another person. Staff key "Captain" or a first name only,
+        // so a missing name does not rule a match out. Only one best match counts.
+        const sameVessel = (p: Record<string, any>) =>
+          (!!record.yacht_id && !!p.yacht_id && String(p.yacht_id) === String(record.yacht_id)) ||
+          (!!vesselTitle && !!p.yacht_id && _normVessel(yachtNameById.get(String(p.yacht_id))) === _normVessel(vesselTitle))
+        const absDays = (a: unknown, b: unknown) => { const d = _dayDiff(a, b); return d === null ? null : Math.abs(d) }
+        const scored = unlinked
+          .filter((p) => !twinIds.has(String(p.id)) && !updateById.has(String(p.id)) && sameVessel(p))
+          .map((p) => {
+            const dI = absDays(p.issue_date, record.issue_date), dE = absDays(p.expiry_date, record.expiry_date)
+            const days = Math.min(dI ?? Infinity, dE ?? Infinity)
+            const holder = _holderLikely(p.holder_name, record.holder_name)
+            const score = holder === 'different' ? 0
+              : days <= 1 ? (holder === 'same' ? 3 : 2)
+              : days <= 7 && holder === 'same' ? 1 : 0
+            return { p, days, holder, score }
+          })
+        const best = Math.max(0, ...scored.map((s) => s.score))
+        const top = scored.filter((s) => s.score === best && best > 0)
+        if (top.length === 1) {
+          existingId = String(top[0].p.id); isTwin = true
+          how = top[0].score === 1 ? 'vessel and name, dated within a week'
+            : top[0].holder === 'same' ? 'vessel, date and name' : 'vessel and date (no name to compare)'
+        }
+        // Near misses: say why each close Polaris permit was not linked, so a
+        // likely duplicate can be checked by eye before anything is pushed.
+        for (const s of scored) {
+          if (String(s.p.id) === existingId || (s.days > 45 && s.holder !== 'same')) continue
+          const why = top.length > 1 && s.score === best ? `${top.length} SharePoint-less Polaris permits fit equally`
+            : s.holder === 'different' ? 'different name'
+            : s.days === Infinity ? 'no date to compare'
+            : `dates ${s.days} day(s) apart${s.holder === 'unknown' ? ', no name to compare' : ''}`
+          const prev = nearMiss.get(String(s.p.id))
+          if (!prev || s.days < prev.days) nearMiss.set(String(s.p.id), { itemId: itemKey, sharepoint: describe(record) || vesselTitle, why, days: s.days })
+        }
       }
       if (existingId && record.yacht_id && archivedYacht.has(record.yacht_id) && existingById.get(existingId)?.yacht_id) delete record.yacht_id
+      if (isTwin && existingId) twinIds.set(existingId, how)
     }
 
     if (existingId) {
       updateById.set(existingId, { ...record, id: existingId })
-      if (isTwin) twinIds.add(existingId)
       // Claim it for this list so a later item in this same run cannot land on
       // the row we just took.
       byListItem.set(itemKey, existingId)
