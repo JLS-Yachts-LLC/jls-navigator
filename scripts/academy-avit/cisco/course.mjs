@@ -374,10 +374,9 @@ export function content() {
 
             ### Bringing it back (with IT)
 
-            **Fix the cause first**, or the port will shut down again straight away. Was it a genuine replacement camera? Then the old MAC address the port remembers needs replacing, which IT will either do or talk you through:
+            **Fix the cause first**, or the port will shut down again straight away. Was it a genuine replacement camera? Then the port still remembers the old camera's MAC address, and that has to be removed. IT will either do this remotely or give you the exact command for your switch and software. Once the old address is gone, the port is brought back by bouncing it:
 
             \`\`\`
-            clear port-security sticky interface gigabitEthernet 1/0/5
             configure terminal
             interface gigabitEthernet 1/0/5
             shutdown
@@ -385,19 +384,20 @@ export function content() {
             end
             \`\`\`
 
-            If the port uses **sticky** MAC addresses, the switch learns the new camera's address once the port comes back up. **Save the configuration** afterwards (next lesson), otherwise the switch forgets the new address at the next restart.
+            If the port uses **sticky** MAC addresses (\`switchport port-security mac-address sticky\`), the switch learns the new camera's address once the port comes back up. **Save the configuration** afterwards (next lesson), otherwise the switch forgets the new address at the next restart.
 
             If the device that triggered it was something that shouldn't be there (a personal laptop, a travel router, an unknown device), **don't bring the port back**. Unplug it, and report it as a security incident.
 
             Some switches are set to bring err-disabled ports back on their own after a few minutes (\`errdisable recovery\`). \`show errdisable recovery\` shows whether that's on.
           `),
           image("t10-port-security.png", "Why Gi1/0/5 is down: psecure-violation, caused by MAC address 0000.5e00.5399"),
-          hotspot("Spot it on the switch", "Walking past the rack, you see the deck switch. Tap the port the switch has shut down.", "c02-front-panel.png", SPOTS.errPort),
+          hotspot("Why did it happen?", "Tap the line that tells you the reason the port was shut down.", "t10-port-security.png", SPOTS.reason),
+          hotspot("Which device did it?", "Tap the line that shows the MAC address of the device that caused it.", "t10-port-security.png", SPOTS.lastMac),
           order("Recover an err-disabled camera port", "The aft-deck camera was replaced and its port went err-disabled. Put the recovery in order.", [
             "show interfaces status err-disabled to confirm the port and the reason",
             "show port-security interface to see the MAC address that caused it",
-            "Check it's the new camera's MAC address, and agree the fix with IT",
-            "Clear the old sticky address and shutdown / no shutdown the port",
+            "Check it's the new camera's MAC address (on its label), and agree the fix with IT",
+            "IT removes the old camera's address; then shutdown / no shutdown the port",
             "Check the port is connected and the camera picture is back",
             "Save the configuration and note it in the IT log",
           ]),
@@ -405,6 +405,7 @@ export function content() {
             ["single", "What does err-disabled mean?", ["Someone switched the port off", "*The switch shut the port down itself because something broke a rule", "The cable is unplugged", "The port is broken for good"], "err-disabled is the switch protecting the network. Find the reason before bringing it back."],
             ["single", "A crew member's travel router plugged into a cabin socket has made the port err-disabled. What do you do?", ["Bring the port back up so the cabin has internet", "*Unplug the router, leave the port down, and report it to IT as a security incident", "Turn port security off on that port", "Restart the switch"], "Port security did its job. Unknown devices don't go on the ship's network."],
             ["truefalse", "If you bring an err-disabled port back up without fixing the cause, it will usually go err-disabled again.", true, "The same rule is broken the moment the port comes up. Fix the cause first."],
+            ["single", "In the rack, the light on port 5 is off, but the camera's cable is plugged in. What does that tell you?", ["The port is err-disabled", "The camera is broken", "*Not enough on its own — off can mean unplugged, switched off or err-disabled, so check show interfaces status", "The port has PoE problems"], "On Catalyst switches an err-disabled port goes dark, the same as no link. The status column tells you which it is."],
           ]),
         ]),
         lesson("Saving — and why it matters", [
