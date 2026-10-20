@@ -322,6 +322,7 @@ export function PermitsDryRunPanel({ lists }: { lists: Array<{ name: string; ena
           </div>
         </>
       )}
+      <RepairSharePoint />
     </section>
   );
 }
@@ -380,6 +381,154 @@ function FixList({ items }: { items: FixItem[] }) {
         <button className="mt-1 text-[11px] text-teal-300 hover:underline" onClick={() => setAll(!all)}>
           {all ? "Show fewer" : `Show all ${items.length}`}
         </button>
+      )}
+    </div>
+  );
+}
+
+type RepairAction = {
+  key: string;
+  kind: "restore" | "delete" | "person";
+  list: string;
+  itemId: string;
+  holds: string;
+  home: string | null;
+  polarisId?: string;
+  restoreTo?: string;
+  why: string;
+};
+
+const KIND_LABEL: Record<RepairAction["kind"], string> = {
+  restore: "Write Polaris's permit back",
+  delete: "Delete the copy",
+  person: "Check by hand",
+};
+
+async function authHeaders(): Promise<Record<string, string>> {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+/**
+ * Put right the SharePoint items the old push overwrote with another list's permit:
+ * preview first (nothing written), then apply exactly what was previewed. Deleted
+ * items go to the SharePoint recycle bin (93 days).
+ */
+function RepairSharePoint() {
+  const [busy, setBusy] = useState<"plan" | "apply" | null>(null);
+  const [actions, setActions] = useState<RepairAction[] | null>(null);
+  const [checkedAt, setCheckedAt] = useState<string | null>(null);
+  const [progress, setProgress] = useState<{ done: number; failed: Array<{ key: string; error: string }>; skipped: number } | null>(null);
+  const [all, setAll] = useState(false);
+
+  const plan = async () => {
+    setBusy("plan"); setProgress(null);
+    try {
+      const res = await fetch("/api/sharepoint/permits-repair", { headers: await authHeaders() });
+      const body = await res.json().catch(() => ({ ok: false, error: `Preview failed (${res.status})` }));
+      if (!res.ok || !body.ok) throw new Error(body.error ?? `Preview failed (${res.status})`);
+      setActions(body.actions); setCheckedAt(body.checkedAt);
+    } catch (e: any) {
+      toast.error(e?.message ?? "Preview failed");
+    } finally { setBusy(null); }
+  };
+
+  const runnable = (actions ?? []).filter((a) => a.kind !== "person");
+  const apply = async () => {
+    const restores = runnable.filter((a) => a.kind === "restore").length;
+    const deletes = runnable.length - restores;
+    if (!window.confirm(`Change SharePoint now?\n\n• Write Polaris's permit back into ${restores} item(s)\n• Delete ${deletes} copied item(s) (they go to the SharePoint recycle bin for 93 days)\n\nOnly the items in this preview are touched.`)) return;
+    setBusy("apply");
+    let keys = runnable.map((a) => a.key);
+    const total = { done: 0, failed: [] as Array<{ key: string; error: string }>, skipped: 0 };
+    try {
+      while (keys.length) {
+        const res = await fetch("/api/sharepoint/permits-repair", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+          body: JSON.stringify({ keys }),
+        });
+        const body = await res.json().catch(() => ({ ok: false, error: `Repair failed (${res.status})` }));
+        if (!res.ok || !body.ok) throw new Error(body.error ?? `Repair failed (${res.status})`);
+        total.done += body.done.length; total.failed.push(...body.failed); total.skipped += body.skipped;
+        setProgress({ ...total });
+        if (!body.done.length && !body.failed.length) break;
+        // What this call had no room for; keys that changed since the preview are dropped.
+        keys = body.remaining;
+      }
+      toast.success(`SharePoint repaired: ${total.done} item(s)${total.failed.length ? `, ${total.failed.length} failed` : ""}`);
+    } catch (e: any) {
+      toast.error(e?.message ?? "Repair failed");
+    } finally { setBusy(null); }
+  };
+
+  const counts = (actions ?? []).reduce<Record<string, number>>((m, a) => ({ ...m, [a.kind]: (m[a.kind] ?? 0) + 1 }), {});
+  const shown = all ? actions ?? [] : (actions ?? []).slice(0, 40);
+
+  return (
+    <div className="border-t border-border/60 px-4 py-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-[260px] flex-1">
+          <div className="text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">Repair in SharePoint</div>
+          <div className="text-[11px] text-muted-foreground">
+            Items the old sync overwrote with another list's permit. A copy is deleted (recycle bin, 93 days); an item Polaris still
+            has the original of gets it written back — but only when the permit it holds also sits in its own list, so nothing that
+            exists nowhere else is touched. Preview writes nothing.
+          </div>
+        </div>
+        <div className="flex gap-1.5">
+          <Button size="sm" variant="outline" className="gap-1.5" disabled={!!busy} onClick={() => void plan()}>
+            {busy === "plan" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {busy === "plan" ? "Reading SharePoint…" : actions ? "Preview again" : "Preview repair"}
+          </Button>
+          {actions && runnable.length > 0 && (
+            <Button size="sm" className="gap-1.5" disabled={!!busy} onClick={() => void apply()}>
+              {busy === "apply" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {busy === "apply" ? `Repairing… ${progress?.done ?? 0}/${runnable.length}` : `Apply ${runnable.length} change${runnable.length === 1 ? "" : "s"}`}
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {actions && (
+        <>
+          <div className="mb-2 flex flex-wrap gap-3 text-[11px]">
+            <span><b className="text-teal-300">{counts.restore ?? 0}</b> written back from Polaris</span>
+            <span><b className="text-amber-300">{counts.delete ?? 0}</b> copies deleted</span>
+            <span><b className="text-foreground">{counts.person ?? 0}</b> to check by hand</span>
+            {checkedAt && <span className="text-muted-foreground">read {new Date(checkedAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</span>}
+          </div>
+          {progress && (
+            <div className="mb-2 text-[11px] text-muted-foreground">
+              Done {progress.done}{progress.skipped ? ` · ${progress.skipped} skipped (changed since the preview)` : ""}
+              {progress.failed.length > 0 && <span className="text-amber-300"> · {progress.failed.length} failed: {progress.failed.slice(0, 3).map((f) => f.error).join("; ")}</span>}
+            </div>
+          )}
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="text-[10.5px] uppercase tracking-wider text-muted-foreground">
+                <tr><th className="py-1 pr-3 text-left">Action</th><th className="py-1 pr-3 text-left">List · item</th><th className="py-1 pr-3 text-left">Holds now</th><th className="py-1 pr-3 text-left">Becomes</th><th className="py-1 text-left">Why</th></tr>
+              </thead>
+              <tbody>
+                {shown.map((a) => (
+                  <tr key={a.key} className="border-t border-border/30 align-top">
+                    <td className={cn("whitespace-nowrap py-1 pr-3", a.kind === "delete" ? "text-amber-300" : a.kind === "restore" ? "text-teal-300" : "text-muted-foreground")}>{KIND_LABEL[a.kind]}</td>
+                    <td className="whitespace-nowrap py-1 pr-3">{a.list} · {a.itemId}</td>
+                    <td className="py-1 pr-3">{a.holds}</td>
+                    <td className="py-1 pr-3">{a.kind === "delete" ? "— (deleted)" : a.restoreTo ?? "—"}</td>
+                    <td className="py-1 text-muted-foreground">{a.why}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {actions.length > 40 && (
+            <button className="mt-1 text-[11px] text-teal-300 hover:underline" onClick={() => setAll(!all)}>
+              {all ? "Show fewer" : `Show all ${actions.length}`}
+            </button>
+          )}
+        </>
       )}
     </div>
   );
