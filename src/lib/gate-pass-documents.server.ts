@@ -37,7 +37,7 @@ const CONTENT_TYPE: Record<string, string> = {
 interface SpFile { name: string; rel: string }
 
 type Outcome =
-  | 'ready' | 'no_attachment' | 'sp_item_missing' | 'conflict' | 'copy' | 'mismatch' | 'ambiguous' | 'no_usable_file'
+  | 'ready' | 'attachment_unreadable' | 'no_attachment' | 'sp_item_missing' | 'conflict' | 'copy' | 'mismatch' | 'ambiguous' | 'no_usable_file'
 
 export interface GatePassDocPlanRow {
   id: string
@@ -94,7 +94,15 @@ function pickFile(files: SpFile[], permitNumber: unknown): { pick?: SpFile; outc
 
 async function buildPlan() {
   const job = await readPermitListForJob(LIST)
-  const { spToken, attachments } = await readAttachments(job.siteAbsoluteUrl, job.creds)
+  // SharePoint REST refuses an app-only token made from a client secret (it wants a
+  // certificate), so this can fail while Graph works. The dry run then still reports
+  // what Graph can see — each item's own "has attachments" flag — and the import refuses.
+  let spToken = ''
+  let attachments = new Map<string, SpFile[]>()
+  let attachmentsError: string | null = null
+  try { ({ spToken, attachments } = await readAttachments(job.siteAbsoluteUrl, job.creds)) }
+  catch (e) { attachmentsError = e instanceof Error ? e.message : String(e) }
+  const flagged = (i: any) => i?.fields?.Attachments === true
   const itemById = new Map(job.items.map((i) => [String(i.id), i]))
 
   const { data: rows } = await fetchAllRows(() => (supabaseAdmin as any).from('permits')
@@ -121,6 +129,7 @@ async function buildPlan() {
     if (conflict) { plan.push({ ...base, outcome: 'conflict', why: conflict, files: names }); continue }
     if (copy) { plan.push({ ...base, outcome: 'copy', why: `copy of ${copy}`, files: names }); continue }
     if (mismatch) { plan.push({ ...base, outcome: 'mismatch', why: mismatch, files: names }); continue }
+    if (attachmentsError) { plan.push({ ...base, outcome: flagged(item) ? 'attachment_unreadable' : 'no_attachment', files: [] }); continue }
     if (!files.length) { plan.push({ ...base, outcome: 'no_attachment', files: [] }); continue }
     const p = pickFile(files, r.permit_number)
     plan.push({ ...base, outcome: p.pick ? 'ready' : p.outcome!, why: p.why, files: names, pick: p.pick })
@@ -131,10 +140,12 @@ async function buildPlan() {
   for (const files of attachments.values()) for (const f of files) extCount[ext(f.name)] = (extCount[ext(f.name)] ?? 0) + 1
 
   return {
-    job, spToken, plan,
+    job, spToken, plan, attachmentsError,
     summary: {
       sharepoint: {
         items: job.items.length,
+        attachmentsError,
+        itemsFlaggedWithAttachments: job.items.filter(flagged).length,
         itemsWithAttachments: withAttachments,
         attachmentFiles: [...attachments.values()].reduce((n, f) => n + f.length, 0),
         byExtension: extCount,
@@ -191,6 +202,7 @@ export async function gatePassDocumentsDryRun(opts: { libraries?: boolean } = {}
       no_usable_file: sample(plan, 'no_usable_file'),
       sp_item_missing: sample(plan, 'sp_item_missing'),
       no_attachment: sample(plan, 'no_attachment', 10),
+      attachment_unreadable: sample(plan, 'attachment_unreadable', 10),
     },
   }
 }
@@ -201,7 +213,8 @@ export async function gatePassDocumentsDryRun(opts: { libraries?: boolean } = {}
  * candidates. Call until `remaining` is 0.
  */
 export async function gatePassDocumentsImport(limit = 150) {
-  const { job, spToken, plan } = await buildPlan()
+  const { job, spToken, plan, attachmentsError } = await buildPlan()
+  if (attachmentsError) throw new Error(`Cannot read the list's attachments, so nothing was imported: ${attachmentsError}`)
   const ready = plan.filter((p) => p.outcome === 'ready')
   const batch = ready.slice(0, Math.max(1, Math.min(limit, 250)))
   const origin = new URL(job.siteAbsoluteUrl).origin
