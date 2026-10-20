@@ -27,7 +27,11 @@ type TripType = "crew_pickup" | "inhouse" | "airport_transfer" | "arrival_transp
 type TripStatus = "pending" | "confirmed" | "in_progress" | "completed" | "cancelled";
 
 type SavedLocation = { id: string; name: string; address: string | null; latitude: number | null; longitude: number | null };
-type Driver = { id: string; full_name: string };
+type Driver = { id: string; full_name: string; status?: string };
+// Inactive (former) drivers stay on their past trips but aren't offered for new ones.
+const pickableDrivers = (drivers: Driver[], currentId?: string | null) =>
+  drivers.filter(d => d.status !== "inactive" || d.id === currentId);
+const BOARD_PAGE = 200;
 type Vehicle = { id: string; make: string; model: string; registration: string | null };
 type Yacht = { id: string; vessel_name: string };
 
@@ -662,7 +666,7 @@ function BoardRow({
         {isActive("driver_id") ? (
           <InlineSelect
             value={trip.driver_id ?? "__none"}
-            options={[{ value: "__none", label: "— None —" }, ...drivers.map(d => ({ value: d.id, label: d.full_name }))]}
+            options={[{ value: "__none", label: "— None —" }, ...pickableDrivers(drivers, trip.driver_id).map(d => ({ value: d.id, label: d.full_name }))]}
             onChange={v => onSave(trip.id, { driver_id: v === "__none" ? null : v })}
             onDone={() => onActivate("")}
           />
@@ -845,7 +849,7 @@ function BoardAddRow({
         <select value={form.driver_id} onChange={e => setForm(f => ({ ...f, driver_id: e.target.value }))}
           className="h-6 w-full rounded border border-border bg-card text-xs px-1">
           <option value="__none">— None —</option>
-          {drivers.map(d => <option key={d.id} value={d.id}>{d.full_name}</option>)}
+          {pickableDrivers(drivers, form.driver_id).map(d => <option key={d.id} value={d.id}>{d.full_name}</option>)}
         </select>
       </td>
       <td className="border-r border-border/40 px-2 py-1">
@@ -904,7 +908,7 @@ export function TripsPage() {
     const [tripsRes, locsRes, driversRes, vehiclesRes, yachtsRes] = await Promise.all([
       fetchAllRows(() => (supabase as any).from("crew_trips").select(`*, driver:crew_drivers(full_name), vehicle:crew_vehicles(make,model,registration), pickup_loc:crew_locations!pickup_location_id(name,latitude,longitude), dropoff_loc:crew_locations!dropoff_location_id(name,latitude,longitude), yacht:yachts(vessel_name)`).order("pickup_datetime", { ascending: false })),
       fetchAllRows(() => (supabase as any).from("crew_locations").select("id,name,address,latitude,longitude").order("name")),
-      fetchAllRows(() => (supabase as any).from("crew_drivers").select("id,full_name").order("full_name")),
+      fetchAllRows(() => (supabase as any).from("crew_drivers").select("id,full_name,status").order("full_name")),
       fetchAllRows(() => (supabase as any).from("crew_vehicles").select("id,make,model,registration").order("make")),
       fetchAllRows(() => (supabase as any).from("yachts").select("id,vessel_name").order("vessel_name")),
     ]);
@@ -942,6 +946,9 @@ export function TripsPage() {
     { key: "notes", label: "Remarks", value: t => t.notes?.replace(/\s+/g, " ").slice(0, 80) },
   ], []);
   const cf = useColumnFilters(filtered, columns);
+  // Years of history live here, so the board draws a page at a time; search and filters still cover every trip.
+  const [shown, setShown] = useState(BOARD_PAGE);
+  useEffect(() => { setShown(BOARD_PAGE); }, [filter, search, cf.activeCount]);
 
   // ── Form mode ──────────────────────────────────────────────────────────────
 
@@ -1157,7 +1164,7 @@ export function TripsPage() {
                   onAdd={boardAdd}
                   label="Add trip at top"
                 />
-                {cf.rows.map(t => (
+                {cf.rows.slice(0, shown).map(t => (
                   <BoardRow
                     key={t.id}
                     trip={t}
@@ -1172,6 +1179,15 @@ export function TripsPage() {
                     onEdit={openEdit}
                   />
                 ))}
+                {cf.rows.length > shown && (
+                  <tr>
+                    <td colSpan={columns.length + 1} className="px-3 py-2 text-center border-t border-border/40">
+                      <button onClick={() => setShown(n => n + BOARD_PAGE * 5)} className="text-xs font-medium text-primary hover:underline">
+                        Show more ({shown} of {cf.rows.length} shown)
+                      </button>
+                    </td>
+                  </tr>
+                )}
                 <BoardAddRow
                   locations={locations}
                   drivers={drivers}
@@ -1280,7 +1296,7 @@ export function TripsPage() {
                     <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select driver" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__none">— None —</SelectItem>
-                      {drivers.map(d => <SelectItem key={d.id} value={d.id}>{d.full_name}</SelectItem>)}
+                      {pickableDrivers(drivers, form.driver_id).map(d => <SelectItem key={d.id} value={d.id}>{d.full_name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
