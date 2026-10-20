@@ -416,7 +416,8 @@ export async function applyDmaCopyCleanup(keys: string[], max = 40): Promise<{
     if (error) throw new Error(`backup read → ${error.message}`)
     backup = `_backups/dma-copies-${new Date().toISOString().replace(/[:.]/g, '-')}.json`
     const { error: upErr } = await supabaseAdmin.storage.from('permit-documents')
-      .upload(backup, new Blob([JSON.stringify(full, null, 2)], { type: 'application/json' }), { upsert: false, contentType: 'application/json' })
+      // text/plain: the permit-documents bucket refuses application/json (the file is still JSON).
+      .upload(backup, new Blob([JSON.stringify(full, null, 2)], { type: 'text/plain' }), { upsert: false, contentType: 'text/plain' })
     if (upErr) throw new Error(`backup write → ${upErr.message} — nothing deleted`)
   }
 
